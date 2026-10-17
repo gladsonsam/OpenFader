@@ -701,9 +701,16 @@ export function wsUrlFromQuery(defHost?: string): string {
   const q = new URLSearchParams(location.search);
   const s = (q.get('server') || '').trim();
   if (/^wss?:\/\//i.test(s)) return s;
-  if (s) return `ws://${s.replace(/^https?:\/\//, '')}`;
-  const host = defHost || location.hostname || '127.0.0.1';
-  return `ws://${host}:8080`;
+  if (/^https:\/\//i.test(s)) return `wss://${s.slice(8)}`;
+  if (/^http:\/\//i.test(s)) return `ws://${s.slice(7)}`;
+  if (s) return `${location.protocol === 'https:' ? 'wss' : 'ws'}://${s}`;
+  // Same-origin by default: works on LAN (:8080), behind tunnels and
+  // reverse proxies (same host/port/scheme as the page, /ws path).
+  // A bare ?server=host[:port] keeps the legacy direct-LAN behavior.
+  const pageProto = location.protocol === 'https:' ? 'wss' : 'ws';
+  if (defHost) return `${pageProto}://${defHost}:8080`;
+  if (!location.hostname) return 'ws://127.0.0.1:8080';
+  return `${pageProto}://${location.host}/ws`;
 }
 
 export class WsBackend implements Backend {
