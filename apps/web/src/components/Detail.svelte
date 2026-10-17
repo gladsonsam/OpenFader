@@ -2,7 +2,10 @@
   import { SECTIONS, logToT, logFromT } from '../lib/sections';
   import type { FieldDef } from '../lib/sections';
   import type { MainStrip, ParamValue, Strip } from '../lib/backend';
+  import { EQ_DEFAULTS, type EqBand } from '../lib/eqCurve';
   import Spectrum from './Spectrum.svelte';
+  import EqGraph from './EqGraph.svelte';
+  import FatStrip from './FatStrip.svelte';
 
   interface Props {
     // strip: selected strip object (ch >= 0) or MAIN marker (ch < 0) / null.
@@ -25,6 +28,25 @@
   let toggles: Record<string, boolean> = $state({});
   let labels: Record<string, string> = $state({});
   let name: string = $state(strip?.name ?? '');
+
+  // EQ band working state for EqGraph/FatStrip (engineering-unit defaults, same
+  // as the slider defs). The backend never echoes param state, so this resets
+  // per channel — exact values still land via onParam like the sliders.
+  let eqBands: EqBand[] = $state(EQ_DEFAULTS.map((b) => ({ ...b })));
+  let eqCh = $state(-999);
+  $effect(() => {
+    const c = strip?.ch ?? -999;
+    if (c !== eqCh) {
+      eqCh = c;
+      eqBands = EQ_DEFAULTS.map((b) => ({ ...b }));
+    }
+  });
+
+  // Gain reduction in dB (>= 0). Null: no GR source yet — meters carry levels
+  // only, so these render a static scale until serve/relay sends real
+  // pre/post + GR frames (see V2.md deferred).
+  const grGate: number | null = null;
+  const grComp: number | null = null;
 
   type SliderEvent = Event & { currentTarget: EventTarget & HTMLInputElement };
 
@@ -52,12 +74,38 @@
   }
 </script>
 
+{#snippet grbar(label: string, v: number | null)}
+  <div
+    class="grrow"
+    title={v === null
+      ? 'no GR data yet — needs real pre/post + GR frames from serve/relay (V2.md deferred)'
+      : `${label} reduction ${v.toFixed(1)} dB`}
+  >
+    <span class="gl">{label}</span>
+    <div class="gtrack" class:nodata={v === null}>
+      <div class="gfill" style={`width: ${v === null ? 0 : Math.min(100, (v / 24) * 100)}%`}></div>
+    </div>
+    <span class="gv">{v === null ? '—' : `${v.toFixed(1)}`}</span>
+  </div>
+{/snippet}
+
 {#if !strip || strip.ch < 0}
   <h2>MAIN</h2>
   <div class="hint">Local monitor-dim in v1 (backend exposes no main fader yet). Use the console LR fader.</div>
 {:else}
   <h2>{strip.name} <small>ch{strip.ch + 1}</small></h2>
   <Spectrum ch={strip.ch} bins={spectrum} />
+  <h3>EQ</h3>
+  <EqGraph ch={strip.ch} bands={eqBands} spectrum={spectrum} hidden={hidden} onParam={onParam} />
+  <h3>Dynamics</h3>
+  <div class="dyn">
+    <FatStrip bands={eqBands} grDb={grComp} label="comp" />
+    <div class="grcol">
+      {@render grbar('gate', grGate)}
+      {@render grbar('comp', grComp)}
+      <div class="hint">GR needs relay/engine frames — static scale until then (V2.md deferred).</div>
+    </div>
+  </div>
   <div class="prow">
     <label>name</label>
     <input
@@ -106,3 +154,34 @@
   {/each}
   <div class="hint">Controls the backend rejects disappear (unsupported on this mixer).</div>
 {/if}
+
+<style>
+  .dyn {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .grcol { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+  .grrow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .gl { width: 34px; color: #9aa4b2; }
+  .gtrack {
+    flex: 1;
+    height: 8px;
+    background: #1a2230;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .gtrack.nodata {
+    background: repeating-linear-gradient(45deg, #1a2230, #1a2230 4px, #141b28 4px, #141b28 8px);
+  }
+  .gfill {
+    height: 100%;
+    background: linear-gradient(90deg, #4ade80, #facc15 60%, #f87171);
+  }
+  .gv { min-width: 30px; text-align: right; color: #9aa4b2; }
+</style>
