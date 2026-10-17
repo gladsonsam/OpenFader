@@ -6,7 +6,7 @@ use openmix_core::{MixerDriver, ParamValue, StripId};
 use std::time::Duration;
 
 const HELP: &str = "\
-Usage: openmix-cli [--driver sim|xair|dl32s] [--addr IP] [--preset generic|xr18|dl32s] <command> [args]
+Usage: openmix-cli [--driver sim|xair|dl32s] [--addr IP] [--preset generic|xr18|dl32s|studio] <command> [args]
 
 Commands:
   list                       list all strips (name, fader, mute)
@@ -19,7 +19,7 @@ Commands:
 Options:
   --driver <name>   sim (default), xair, dl32s
   --addr <ip>       mixer address (xair/dl32s connect; sim ignores)
-  --preset <name>   sim scribbles: generic (default), xr18, dl32s
+  --preset <name>   sim scribbles: generic (default), xr18, dl32s, studio (owner rig)
   -h, --help        print this help
 ";
 
@@ -202,13 +202,13 @@ async fn main() -> anyhow::Result<()> {
                     .cloned()
                     .ok_or_else(|| anyhow::anyhow!("--preset needs a value"))?;
                 preset = openmix_sim::SimPreset::parse(&raw).ok_or_else(|| {
-                    anyhow::anyhow!("unknown preset {raw:?}; expected generic|xr18|dl32s")
+                    anyhow::anyhow!("unknown preset {raw:?}; expected generic|xr18|dl32s|studio")
                 })?;
             }
             v if v.starts_with("--preset=") => {
                 let raw = &v["--preset=".len()..];
                 preset = openmix_sim::SimPreset::parse(raw).ok_or_else(|| {
-                    anyhow::anyhow!("unknown preset {raw:?}; expected generic|xr18|dl32s")
+                    anyhow::anyhow!("unknown preset {raw:?}; expected generic|xr18|dl32s|studio")
                 })?;
             }
             "-h" | "--help" | "help" => {
