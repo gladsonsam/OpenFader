@@ -47,9 +47,131 @@ button.on { outline: 2px solid var(--acc); }
 #badge.online { background: #123a1e; color: #7dffa4; }
 #via { color: var(--dim); font-size: 12px; }
 #layers {
-  display: flex; gap: 8px; padding: 8px 10px;
+  display: flex; gap: 8px; padding: 8px 10px; overflow-x: auto;
+  position: sticky; top: 57px; z-index: 8; background: var(--bg);
+}
+#views {
+  display: flex; gap: 8px; padding: 8px 10px 0;
   position: sticky; top: 57px; z-index: 9; background: var(--bg);
 }
+#views button { flex: 1; font-weight: 800; font-size: 16px; }
+#views button.on { background: #1c2733; border-color: var(--txt); }
+/* QSC-style aux rail: destination selects always on screen. */
+#auxrail {
+  display: flex; gap: 6px; padding: 8px 10px; overflow-x: auto;
+  border-bottom: 1px solid var(--line); background: var(--panel);
+  align-items: center;
+}
+#auxrail button { flex: 0 0 auto; font-weight: 700; }
+#auxrail button.lr.on { background: #123a1e; border-color: var(--grn); }
+#auxrail button.dest { box-shadow: 0 0 12px currentColor; font-weight: 800; }
+/* Sends-on-fader: whole surface tinted + labeled, never mistaken for LR. */
+#app.sof { --sof: #f5b83f; }
+#app.sof #wrap, #app.sof #ovwrap {
+  outline: 3px solid var(--sof);
+  outline-offset: -3px;
+  background: color-mix(in srgb, var(--sof) 7%, var(--bg));
+}
+#sofbanner {
+  display: flex; gap: 10px; align-items: center; padding: 8px 10px;
+  background: color-mix(in srgb, var(--sof) 22%, #000);
+  border-bottom: 2px solid var(--sof); font-size: 15px; flex-wrap: wrap;
+}
+#sofbanner b { color: var(--sof); font-size: 17px; }
+#sofbanner button.exit { margin-left: auto; border-color: var(--sof); color: var(--sof); font-weight: 800; }
+.ftrack.sof .ffill { background: var(--sof, #f5b83f); }
+.masterpin { position: relative; }
+.pinlabel {
+  text-align: center; font-size: 11px; font-weight: 800; color: #000;
+  border-radius: 6px; padding: 2px 4px; margin-bottom: 4px;
+}
+/* Mixer toolbar: safety + groups + layout edit. */
+#toolbar {
+  display: flex; gap: 8px; align-items: center; padding: 8px 10px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--line); background: var(--panel);
+}
+#toolbar .lbl { color: var(--dim); }
+#toolbar .sep { flex: 0 0 1px; align-self: stretch; background: var(--line); }
+#muteEn.on { background: #3a1416; border-color: var(--red); color: #ff8a8e; }
+.grp.has { border-color: var(--yel); }
+/* Layout edit handles + blank spacers. */
+.ehandles { display: flex; gap: 2px; width: 100%; }
+.ehandles button { flex: 1; min-width: 0; min-height: 32px; padding: 0 2px; font-size: 13px; }
+.spacer {
+  flex: 0 0 40px; border: 1px dashed var(--line); border-radius: 12px; min-height: 300px;
+}
+/* Grow & Glow: grabbed fader enlarges + glows with a live value bubble. */
+.strip { transition: transform 0.08s ease-out, box-shadow 0.08s ease-out; position: relative; }
+.strip.grab { transform: scale(1.06); z-index: 5; box-shadow: 0 0 18px var(--sof, var(--acc)); border-color: var(--sof, var(--acc)); }
+.fval {
+  position: absolute; left: 50%; top: -8px; transform: translate(-50%, -100%);
+  background: #000; border: 1px solid var(--sof, var(--acc)); color: var(--sof, var(--acc));
+  font-weight: 800; font-size: 14px; padding: 6px 10px; border-radius: 8px; white-space: nowrap;
+}
+/* Staging: clip latch LED + tappable meter/db for exact entry. */
+.clipled {
+  width: 100%; text-align: center; font-size: 11px; font-weight: 800;
+  color: #fff; background: var(--red); border-radius: 6px; padding: 2px 0;
+  animation: blink 0.7s steps(2) infinite;
+}
+@keyframes blink { 50% { opacity: 0.45; } }
+canvas.meter.clip { outline: 2px solid var(--red); }
+canvas.meter { cursor: pointer; }
+button.db {
+  width: 100%; background: none; border: 1px solid transparent; border-radius: 6px;
+  cursor: pointer; min-height: var(--touch);
+}
+button.db:active { border-color: var(--acc); }
+button.mute.locked { opacity: 0.4; }
+/* Overview: whole-show health rows. */
+#ovwrap { padding: 10px; max-width: 900px; margin: 0 auto; }
+#oview { display: flex; flex-direction: column; gap: 4px; }
+.orow {
+  display: flex; gap: 6px; align-items: center; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; min-height: var(--touch);
+}
+.orow.sel { border-color: var(--acc); }
+.orow.muted { opacity: 0.6; }
+.ojump { flex: 0 0 132px; text-align: left; min-height: 40px; }
+.ojump b { display: block; font-size: 14px; }
+.ojump small { color: var(--dim); }
+.obar { flex: 1; height: 18px; background: #000; border-radius: 4px; overflow: hidden; min-width: 60px; }
+.ofill { height: 100%; background: var(--grn); }
+.ofill.warm { background: var(--yel); }
+.ofill.hot { background: var(--red); }
+.oclip { color: rgba(255,45,45,.25); font-size: 14px; }
+.oclip.lit { color: #ff2d2d; text-shadow: 0 0 8px #ff2d2d; }
+.ofader { flex: 0 0 90px; height: 10px; background: #0a0c0e; border-radius: 5px; position: relative; }
+.ofpos { position: absolute; top: -3px; width: 4px; height: 16px; background: #dfe6ee; border-radius: 2px; }
+.omute, .osolo, .osof { min-width: var(--touch); }
+.omute.lit { background: var(--red); border-color: #ff8085; color: #fff; }
+.osolo.lit { background: #4a3a00; border-color: var(--yel); color: var(--yel); }
+.osof { border-color: var(--acc); color: var(--acc); font-weight: 800; }
+/* Channel view: selected strip full-screen DSP. */
+#chwrap { display: flex; gap: 12px; padding: 12px 10px; align-items: flex-start; flex-wrap: wrap; }
+.chstrip .strip { min-width: 130px; }
+.mgassign { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 8px 0; }
+.mgassign .lbl { color: var(--dim); }
+.mgassign button.on { background: #123a1e; border-color: var(--grn); color: #7dffa4; }
+.chdetail { flex: 1; min-width: 260px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+/* Tap-a-value modal. */
+.vmodal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; }
+.vback { position: absolute; inset: 0; background: rgba(0,0,0,.6); min-height: 0; border-radius: 0; }
+.vcard {
+  position: relative; background: var(--panel2); border: 1px solid var(--acc);
+  border-radius: 14px; padding: 18px; width: min(92vw, 380px); display: flex; flex-direction: column; gap: 10px;
+}
+.vcard h3 { margin: 0; }
+.vsub { color: var(--dim); font-size: 13px; }
+.vcard input[type='range'] { width: 100%; height: 44px; accent-color: var(--acc); }
+.vrow { display: flex; gap: 8px; align-items: center; }
+.vrow input[type='number'] {
+  background: #0a0c0e; color: var(--txt); border: 1px solid var(--line);
+  border-radius: 8px; min-height: var(--touch); padding: 0 10px; font-size: 18px; width: 110px;
+}
+.vunit { color: var(--dim); }
+.vquick { display: flex; gap: 6px; }
+.vquick button { flex: 1; }
 #layers button { flex: 1; font-weight: 700; }
 #layers button.on { background: #12395a; border-color: var(--acc); }
 #bridge { display: block; width: 100%; height: 64px; background: #000; border-bottom: 1px solid var(--line); }
