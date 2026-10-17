@@ -94,11 +94,16 @@
       {/if}
       {#each Array.from({ length: KNOWN_PARS }, (_, i) => i + 1) as par (par)}
         {@const field = fieldFor(slot, par)}
+        {@const fxId = `fx-${slot}-${par}`}
         <div class="prow">
-          <label title={field === null ? 'TODO: unmapped FX param (no guessing)' : `${field} -> ${addrFor(slot, par)}`}>
+          <label
+            for={fxId}
+            title={field === null ? 'TODO: unmapped FX param (no guessing)' : `${field} -> ${addrFor(slot, par)}`}
+          >
             {field === null ? `P${String(par).padStart(2, '0')} TODO` : `P${String(par).padStart(2, '0')}`}
           </label>
           <input
+            id={fxId}
             type="range"
             min="0"
             max="1000"
@@ -112,8 +117,8 @@
         </div>
       {/each}
       <div class="prow more">
-        <label title="par 09..64 share the fxN_parMM pattern but have no effect-type labels yet — no guessing">par 09–{PARAM_COUNT} TODO</label>
-        <input type="range" min="0" max="1000" value="0" disabled title="TODO: effect-type labels unknown — same fxN_parMM pattern, not yet mapped (no guessing)" />
+        <label for="fx-{slot}-rest" title="par 09..64 share the fxN_parMM pattern but have no effect-type labels yet — no guessing">par 09–{PARAM_COUNT} TODO</label>
+        <input id="fx-{slot}-rest" type="range" min="0" max="1000" value="0" disabled title="TODO: effect-type labels unknown — same fxN_parMM pattern, not yet mapped (no guessing)" />
         <output>—</output>
       </div>
     </section>
