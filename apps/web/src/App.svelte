@@ -255,6 +255,29 @@
     selected = ch;
   }
 
+  function selectLayer(id: string): void {
+    layer = id;
+  }
+
+  function layersKey(e: KeyboardEvent): void {
+    const ids = layers.map((l) => l.id);
+    const i = ids.indexOf(layer);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      const d = e.key === 'ArrowRight' ? 1 : -1;
+      const next = ids[(i + d + ids.length) % ids.length];
+      if (next) {
+        selectLayer(next);
+        e.preventDefault();
+      }
+    } else if (e.key === 'Home' || e.key === 'End') {
+      const next = e.key === 'Home' ? ids[0] : ids[ids.length - 1];
+      if (next) {
+        selectLayer(next);
+        e.preventDefault();
+      }
+    }
+  }
+
   function jumpTo(ch: number): void {
     selected = ch;
     setView('mixer');
@@ -648,26 +671,28 @@
     <button id="conn" class="big" onclick={connect}>connect</button>
     <span id="badge" class:online class:offline={!online}>{online ? 'online' : 'offline'}</span>
     <span id="via" title="transport">{via}</span>
-    <button id="bridgeBtn" class:on={showBridge} title="toggle meter bridge" onclick={() => { showBridge = !showBridge; }}>bridge</button>
+    <button id="bridgeBtn" class:on={showBridge} aria-pressed={showBridge} title="toggle meter bridge" onclick={() => { showBridge = !showBridge; }}>bridge</button>
   </header>
 
   <!-- Mackie 3-view nav: always visible, active one dark. -->
   <nav id="views" aria-label="views">
     {#each [{ id: 'overview', label: 'Overview' }, { id: 'mixer', label: 'Mixer' }, { id: 'channel', label: 'Channel' }, { id: 'rack', label: 'Rack' }, { id: 'shows', label: 'Shows' }] as v (v.id)}
-      <button class:on={view === v.id} onclick={() => setView(v.id as View)}>{v.label}</button>
+      <button class:on={view === v.id} aria-current={view === v.id ? 'page' : undefined} onclick={() => setView(v.id as View)}>{v.label}</button>
     {/each}
   </nav>
 
   <!-- QSC-style aux rail: always-visible bus selects, one tap flips to that mix. -->
   {#if view !== 'channel' && busStrips.length}
     <nav id="auxrail" aria-label="mix destination">
-      <button class:lr={!inSof} onclick={exitSof} title="back to LR">LR</button>
+      <button class:lr={!inSof} aria-pressed={!inSof} onclick={exitSof} title="back to LR">LR</button>
       {#each busStrips as b (b.ch)}
         <button
           class:dest={sofBus === b.ch}
+          aria-pressed={sofBus === b.ch}
           style={sofBus === b.ch ? `border-color: ${busColor(b.ch)}; color: ${busColor(b.ch)}` : ''}
           onclick={() => (sofBus === b.ch ? exitSof() : enterSof(b.ch))}
-          title="sends-on-fader to {b.name}"
+          title={`sends-on-fader to ${b.name}`}
+          aria-label={`sends-on-fader to ${b.name}`}
         >{b.name}</button>
       {/each}
     </nav>
@@ -684,27 +709,36 @@
   {/if}
 
   {#if view === 'mixer'}
-    <nav id="layers" role="tablist" aria-label="fader banks">
+    <div id="layers" role="tablist" aria-label="fader banks" tabindex={0} onkeydown={layersKey}>
       {#each layers as l (l.id)}
-        <button role="tab" data-layer={l.id} class:on={layer === l.id} onclick={() => { layer = l.id; }}>
+        <button
+          role="tab"
+          data-layer={l.id}
+          class:on={layer === l.id}
+          aria-selected={layer === l.id}
+          tabindex={layer === l.id ? 0 : -1}
+          onclick={() => { selectLayer(l.id); }}
+        >
           {l.name}
         </button>
       {/each}
-    </nav>
+    </div>
 
     <div id="toolbar">
       <button
         id="muteEn"
         class:on={mutesEnabled}
+        aria-pressed={mutesEnabled}
         title="master mute-enable: when off, all mute buttons lock out"
         onclick={() => { mutesEnabled = !mutesEnabled; saveJSON(LS.muteEn, mutesEnabled); say(mutesEnabled ? 'mutes armed' : 'mutes locked out'); }}
       >MUTE EN</button>
       <button
         class:on={fineMode}
+        aria-pressed={fineMode}
         title="fine-adjust: fader drags move at 20%, smaller key steps"
         onclick={() => { fineMode = !fineMode; saveJSON(LS.fine, fineMode); }}
       >FINE</button>
-      <button class:on={editLayout} title="edit bank layout: reorder, spacers, custom layers" onclick={() => { editLayout = !editLayout; }}>LAYOUT</button>
+      <button class:on={editLayout} aria-pressed={editLayout} title="edit bank layout: reorder, spacers, custom layers" onclick={() => { editLayout = !editLayout; }}>LAYOUT</button>
       {#if editLayout}
         <button onclick={addLayer} title="new custom layer from current strips">+layer</button>
         <button onclick={renameLayer} title="rename current layer tab">rename</button>
@@ -721,13 +755,16 @@
           class:has={g.members.length > 0}
           onclick={() => toggleGroup(i)}
           title={g.members.length ? `toggle mute: ${g.members.length} ch (${g.name})` : `${g.name} empty — assign in Channel view`}
+          aria-label={g.members.length ? `toggle mute group ${g.name}, ${g.members.length} channels` : `mute group ${g.name}, empty`}
         >{g.name}{g.members.length ? `·${g.members.length}` : ''}</button>
       {/each}
     </div>
   {/if}
 
   {#if showBridge}
-    <canvas id="bridge" bind:this={bridge} transition:fade={{ duration: 150 }}></canvas>
+    <div role="img" aria-label="meter bridge: live level per channel" style="display: contents;">
+      <canvas id="bridge" aria-hidden="true" bind:this={bridge} transition:fade={{ duration: 150 }}></canvas>
+    </div>
   {/if}
 
   <div id="scenes">
@@ -736,14 +773,15 @@
       {#each [1, 2, 3, 4] as i (i)}
         <div class="slot">
           <b>{i}{scenes[i] ? '●' : '○'}</b>
-          <button
-            title={scenes[i] ? 'tap: recall' : 'empty — arm store, then tap'}
+        <button
+            title={scenes[i] ? `tap: recall scene ${i}` : `scene ${i} empty — arm store, then tap`}
+            aria-label={scenes[i] ? `recall scene ${i}` : `scene ${i} empty — arm store first`}
             onclick={() => (storeArm ? storeScene(i) : recallScene(i))}
           >S{i}</button>
         </div>
       {/each}
     </div>
-    <button id="store" class:armed={storeArm} onclick={() => { storeArm = !storeArm; say(storeArm ? 'store armed — tap a slot' : ''); }}>store</button>
+    <button id="store" class:armed={storeArm} aria-pressed={storeArm} onclick={() => { storeArm = !storeArm; say(storeArm ? 'store armed — tap a slot' : ''); }}>store</button>
     <span id="status" role="status">{status}</span>
   </div>
 
@@ -795,8 +833,10 @@
             {#each mgroups as g, i (g.name)}
               <button
                 class:on={g.members.includes(cs.ch)}
+                aria-pressed={g.members.includes(cs.ch)}
                 onclick={() => mgToggle(cs.ch, i)}
-                title="assign {cs.name} to {g.name}"
+                title={`assign ${cs.name} to ${g.name}`}
+                aria-label={`assign ${cs.name} to mute group ${g.name}`}
               >{g.name}</button>
             {/each}
           </div>
