@@ -14,6 +14,14 @@
     hidden?: string[];
     // spectrum: live bins for this channel (null until the relay sends them).
     spectrum?: number[] | null;
+    // grGate/grComp: live gain reduction in dB (>= 0, 0 = no reduction).
+    // Null = no GR source yet — the bars render the static scale until the
+    // relay/engine sends real pre/post + GR frames (see V2.md deferred).
+    // The parent passes these down like `spectrum` once a GR feed exists
+    // (the xair driver exposes gate_gr/comp_gr via the param path; relay
+    // plumbing is a follow-up — App does not wire them yet).
+    grGate?: number | null;
+    grComp?: number | null;
     onParam: (field: string, v: ParamValue) => void;
     onName: (v: string) => void;
   }
@@ -21,7 +29,8 @@
   // strip: selected strip object (ch >= 0) or null for MAIN.
   // hidden: array of param fields the backend rejected — those stay hidden.
   // spectrum: live bins for this channel (null until the relay sends them).
-  let { strip, hidden = [], spectrum = null, onParam, onName }: Props = $props();
+  // grGate/grComp: live GR dB when the parent has a feed, else null (static).
+  let { strip, hidden = [], spectrum = null, grGate = null, grComp = null, onParam, onName }: Props = $props();
 
   // Local UI state resets whenever the selection changes
   // (parent wraps us in {#key strip?.ch}).
@@ -42,11 +51,10 @@
     }
   });
 
-  // Gain reduction in dB (>= 0). Null: no GR source yet — meters carry levels
-  // only, so these render a static scale until serve/relay sends real
+  // Gain reduction in dB (>= 0) arrives via the grGate/grComp props (live
+  // when the parent has a GR feed, null until then — meters carry levels
+  // only, so null renders a static scale until serve/relay sends real
   // pre/post + GR frames (see V2.md deferred).
-  const grGate: number | null = null;
-  const grComp: number | null = null;
 
   type SliderEvent = Event & { currentTarget: EventTarget & HTMLInputElement };
 
@@ -103,7 +111,11 @@
     <div class="grcol">
       {@render grbar('gate', grGate)}
       {@render grbar('comp', grComp)}
-      <div class="hint">GR needs relay/engine frames — static scale until then (V2.md deferred).</div>
+      {#if grGate === null && grComp === null}
+        <div class="hint">GR needs relay/engine frames — static scale until then (V2.md deferred).</div>
+      {:else}
+        <div class="hint">live GR (dB reduction)</div>
+      {/if}
     </div>
   </div>
   <div class="prow">

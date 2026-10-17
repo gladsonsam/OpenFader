@@ -3,12 +3,13 @@
 //! Thin mapping over [`openmix_transport::OscSession`]: this crate owns ONLY the
 //! X-Air address table + arg mapping. Sockets, keepalive, meter parsing, and
 //! request/response plumbing all live in `openmix-transport`.
-use openmix_core::{MixerDriver, MixerInfo, StripId};
+use openmix_core::{MixerDriver, MixerInfo, ParamValue, StripId};
 use openmix_transport::{KeepaliveConfig, OscSession, osc};
-use rosc::OscType;
+use rosc::{OscMessage, OscType};
 use std::sync::OnceLock;
 use tokio::sync::{Mutex, broadcast};
 
+pub mod dyn_gr;
 pub mod fx;
 
 pub mod addrs {
@@ -30,8 +31,19 @@ pub mod addrs {
     /// with the stream id as a string arg (NOT a bare/empty query to
     /// `/meters/1` — the desk is silent there, baseline T4). Form is
     /// community-documented (xr-meters working code, x-Air Remote Protocol
-    /// doc `/meters ,si "/meters/0" 8`); NOT yet owner-rig verified.
+    /// doc `/meters ,si "/meters/0" 8`); `/meters/1` is now owner-rig
+    /// verified (xair-protocol.md), the `/meters/6` form below is not.
     pub const METER_REQUEST: &str = "/meters";
+    /// ALL DYN stream id: one blob of 16 gate + 16 dyn + 6 bus + 1 LR GR
+    /// samples (see [`crate::dyn_gr`]). Behringer *X AIR Mixer OSC Document*
+    /// fw 1.11, community-documented — NOT owner-rig verified. Do not
+    /// confuse with X32 `/meters/6 <channel_id>` (protocol reference doc), which is a
+    /// per-channel strip meter on that desk.
+    pub const METER_DYN_SUBSCRIBE: &str = "/meters/6";
+    /// Per-channel meter stream id (`/meters/0` + channel id arg → 8 meters
+    /// incl. gate + comp GR for ONE channel). Documented in the same fw 1.11
+    /// doc; the driver does NOT subscribe it — one `/meters/6` subscribe
+    /// covers all 16 channels, so no parser is implemented here either.
     /// Hardware fader readback tolerance. The desk quantizes fader writes to
     /// ~10-bit steps (writing 0.5 reads back 0.49951124, off by ~5e-4), so
     /// fader round-trips must assert with ~1e-3 epsilon (baseline T8).
@@ -150,6 +162,7 @@ pub mod addrs {
             assert_eq!(RTN_AUX_NAME, "/rtn/aux/config/name");
             assert_eq!(METER_REQUEST, "/meters");
             assert_eq!(METER_SUBSCRIBE, "/meters/1");
+            assert_eq!(METER_DYN_SUBSCRIBE, "/meters/6");
             assert_eq!(MAIN_FADER, "/lr/mix/fader");
             assert_eq!(MAIN_ON, "/lr/mix/on");
             assert_eq!(MAIN_NAME, "/lr/config/name");
@@ -175,6 +188,10 @@ pub struct XAirDriver {
     session: Mutex<Option<OscSession>>,
     peer: Mutex<String>,
     model: addrs::XAirModel,
+    /// Last decoded `/meters/6` ALL DYN frame (`None` until the first blob
+    /// is ingested). Serves the `gate_gr` / `comp_gr` param reads — the
+    /// desk has no GR query address, so there is nothing else to read.
+    dyn_cache: Mutex<Option<dyn_gr::DynMeters>>,
 }
 
 impl Default for XAirDriver {
@@ -197,6 +214,7 @@ impl XAirDriver {
             session: Mutex::new(None),
             peer: Mutex::new(String::new()),
             model,
+            dyn_cache: Mutex::new(None),
         }
     }
 
@@ -281,6 +299,51 @@ impl XAirDriver {
             model: strings.get(2).cloned().unwrap_or_default(),
             firmware: strings.get(3).cloned().unwrap_or_default(),
             addr: peer,
+        }
+    }
+
+    /// Latest decoded ALL DYN frame, if any blob has been ingested yet.
+    pub async fn last_dyn(&self) -> Option<dyn_gr::DynMeters> {
+        self.dyn_cache.lock().await.clone()
+    }
+
+    /// Ingest one raw `/meters/6` OSC message into the GR cache (the
+    /// documented ALL DYN shape — see [`crate::dyn_gr`]). Any other address
+    /// (or a non-blob payload) bails: no guessing at unknown meter layouts.
+    ///
+    /// Ingestion lives here — not in the session recv loop — because the
+    /// shared transport hub only forwards level-only `MeterFrame`s and this
+    /// crate cannot change that routing. A future transport raw-frame hook
+    /// (or the relay slice) calls this per DYN blob; until then the cache
+    /// fills in tests, and [`MixerDriver::get_param`] reports no-data.
+    pub async fn ingest_dyn_message(&self, msg: &OscMessage) -> anyhow::Result<()> {
+        if msg.addr != addrs::METER_DYN_SUBSCRIBE {
+            anyhow::bail!("ingest_dyn_message: unsupported meter {}", msg.addr);
+        }
+        let blob = msg.args.iter().find_map(|a| match a {
+            OscType::Blob(b) => Some(b.as_slice()),
+            _ => None,
+        });
+        let Some(blob) = blob else {
+            anyhow::bail!("ingest_dyn_message: /meters/6 without blob payload");
+        };
+        let dyn_meters = dyn_gr::parse_dyn_blob(blob)?;
+        *self.dyn_cache.lock().await = Some(dyn_meters);
+        Ok(())
+    }
+
+    /// GR read for one strip from the DYN cache. Errors when no blob has
+    /// been ingested yet (caller keeps the static scale) or the strip is
+    /// out of range — never a fabricated zero.
+    async fn cached_gr(&self, strip: StripId, gate: bool) -> anyhow::Result<f32> {
+        let cache = self.dyn_cache.lock().await;
+        let Some(dyn_meters) = cache.as_ref() else {
+            anyhow::bail!("xair: no DYN meter data yet (desk not streaming /meters/6)");
+        };
+        if gate {
+            dyn_meters.gate_gr(strip.0)
+        } else {
+            dyn_meters.comp_gr(strip.0)
         }
     }
 }
@@ -456,7 +519,38 @@ impl MixerDriver for XAirDriver {
             )
             .await
             .map_err(|e| anyhow::anyhow!("meter subscribe: {e}"))?;
+        // ALL DYN (gate/comp GR) stream, same subscribe form with the
+        // `/meters/6` id (Behringer X AIR OSC doc fw 1.11 — NOT owner-rig
+        // verified). A send failure here is local socket I/O (UDP sends
+        // cannot fail remotely), so it propagates like the levels
+        // subscribe above. The DYN blobs the desk then streams decode via
+        // `ingest_dyn_message` into the `gate_gr` / `comp_gr` param reads;
+        // the shared hub only carries levels, so nothing else changes here.
+        session
+            .send(
+                addrs::METER_REQUEST,
+                vec![OscType::String(addrs::METER_DYN_SUBSCRIBE.to_string())],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("dyn meter subscribe: {e}"))?;
         Ok(session.subscribe_meters())
+    }
+
+    /// GR reads ride the param path (least invention: no trait change, no
+    /// relay change). `fader`/`mute`/`name` arms repeat the trait default
+    /// verbatim (defaults are not inheritable); `gate_gr`/`comp_gr` serve
+    /// dB reduction `>= 0` from the last `/meters/6` blob and error when no
+    /// blob has arrived yet. No GR query address exists (see
+    /// [`crate::dyn_gr`]), so `set_param` for these ids stays unsupported.
+    async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
+        match param {
+            "fader" => self.get_fader(strip).await.map(ParamValue::Float),
+            "mute" => self.get_mute(strip).await.map(ParamValue::Bool),
+            "name" => self.get_name(strip).await.map(ParamValue::Text),
+            "gate_gr" => self.cached_gr(strip, true).await.map(ParamValue::Float),
+            "comp_gr" => self.cached_gr(strip, false).await.map(ParamValue::Float),
+            _ => anyhow::bail!("{}: unknown param {param:?}", self.name()),
+        }
     }
 }
 
@@ -515,6 +609,7 @@ mod tests {
         /// FX params answer bit-exact (no quantization, baseline §6 row 5).
         fx: StdMutex<HashMap<String, f32>>,
         meter_subscribe: StdMutex<Option<rosc::OscMessage>>,
+        dyn_subscribe: StdMutex<Option<rosc::OscMessage>>,
     }
 
     impl FakeMixer {
@@ -531,6 +626,7 @@ mod tests {
                 names: StdMutex::new(HashMap::new()),
                 fx: StdMutex::new(HashMap::new()),
                 meter_subscribe: StdMutex::new(None),
+                dyn_subscribe: StdMutex::new(None),
             });
             let worker = fake.clone();
             tokio::spawn(async move {
@@ -562,6 +658,38 @@ mod tests {
                                         let blob = build_meter_blob(&[0.1, 0.5, 0.9]);
                                         let bytes = osc::encode_message(
                                             addrs::METER_SUBSCRIBE,
+                                            vec![OscType::Blob(blob)],
+                                        )
+                                        .unwrap();
+                                        let _ = sock.send_to(&bytes, peer).await;
+                                        tokio::time::sleep(std::time::Duration::from_millis(50))
+                                            .await;
+                                    }
+                                });
+                                None
+                            }
+                            ("/meters", Some(OscType::String(id)))
+                                if id == addrs::METER_DYN_SUBSCRIBE =>
+                            {
+                                // Documented ALL DYN subscribe (dyn_gr): record
+                                // it, then stream the documented blob shape
+                                // (ch1 gate 6 dB, ch1 comp 12 dB) like a desk
+                                // with dynamics engaged would.
+                                *worker.dyn_subscribe.lock().unwrap() = Some(msg.clone());
+                                let sock = worker.socket.clone();
+                                tokio::spawn(async move {
+                                    let mut m = dyn_gr::DynMeters {
+                                        gate: [0.0; dyn_gr::DYN_CHANNELS],
+                                        comp: [0.0; dyn_gr::DYN_CHANNELS],
+                                        bus: [0.0; dyn_gr::DYN_BUSES],
+                                        lr: 0.0,
+                                    };
+                                    m.gate[0] = 6.0;
+                                    m.comp[0] = 12.0;
+                                    for _ in 0..2 {
+                                        let blob = dyn_gr::build_dyn_blob(&m);
+                                        let bytes = osc::encode_message(
+                                            addrs::METER_DYN_SUBSCRIBE,
                                             vec![OscType::Blob(blob)],
                                         )
                                         .unwrap();
@@ -930,15 +1058,26 @@ mod tests {
     async fn driver_meter_subscribe_receives_blob() {
         let (driver, fake) = connected_driver().await;
         let mut rx = driver.subscribe_meters().await.unwrap();
-        // The desk streams at ~50ms; expect at least two frames.
-        for _ in 0..2 {
+        // The desk streams at ~50ms; expect at least two level frames. The
+        // fake also streams ALL DYN blobs now (same subscribe call), which
+        // the shared hub surfaces as 41-level frames — skipped here, the
+        // DYN path has its own test below.
+        let mut seen = 0;
+        for _ in 0..8 {
             let frame = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
                 .await
                 .expect("meter frame in time")
                 .unwrap();
-            assert_eq!(frame.levels.len(), 3);
+            if frame.levels.len() != 3 {
+                continue;
+            }
             assert!((frame.levels[1] - 0.5).abs() < 0.01);
+            seen += 1;
+            if seen == 2 {
+                break;
+            }
         }
+        assert_eq!(seen, 2, "expected two level frames");
         // The fake only streams after the documented subscribe shape.
         let sub = fake.meter_subscribe.lock().unwrap();
         let sub = sub.as_ref().expect("fake saw no meter subscribe");
@@ -947,5 +1086,111 @@ mod tests {
             sub.args,
             vec![OscType::String(addrs::METER_SUBSCRIBE.to_string())]
         );
+    }
+
+    /// ALL DYN subscribe uses the same documented `/meters` + string-id
+    /// form with the `/meters/6` id (Behringer X AIR OSC doc fw 1.11).
+    #[tokio::test]
+    async fn driver_meter_dyn_subscribe_shape() {
+        let (driver, fake) = connected_driver().await;
+        let _rx = driver.subscribe_meters().await.unwrap();
+        // Let the fake observe the (two) subscribes.
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let sub = fake.dyn_subscribe.lock().unwrap();
+        let sub = sub.as_ref().expect("fake saw no dyn subscribe");
+        assert_eq!(sub.addr, addrs::METER_REQUEST);
+        assert_eq!(
+            sub.args,
+            vec![OscType::String(addrs::METER_DYN_SUBSCRIBE.to_string())]
+        );
+    }
+
+    /// GR end-to-end at the codec level: the fake emits the documented
+    /// `/meters/6` shape over UDP loopback, the driver ingests the decoded
+    /// message and serves per-channel dB reduction via the param path.
+    #[tokio::test]
+    async fn driver_dyn_gr_param_loopback() {
+        let (driver, fake) = connected_driver().await;
+        // No blob yet: no-data error (the UI keeps the static scale), never
+        // a fabricated zero.
+        assert!(driver.get_param(StripId(0), "gate_gr").await.is_err());
+        assert!(driver.get_param(StripId(0), "comp_gr").await.is_err());
+
+        // Fake desk emits the documented shape: ch1 gate 6 dB, ch1 comp
+        // 12 dB, ch16 comp 3.5 dB, silence elsewhere.
+        let mut m = dyn_gr::DynMeters {
+            gate: [0.0; dyn_gr::DYN_CHANNELS],
+            comp: [0.0; dyn_gr::DYN_CHANNELS],
+            bus: [0.0; dyn_gr::DYN_BUSES],
+            lr: 0.0,
+        };
+        m.gate[0] = 6.0;
+        m.comp[0] = 12.0;
+        m.comp[15] = 3.5;
+        let wire = osc::encode_message(
+            addrs::METER_DYN_SUBSCRIBE,
+            vec![OscType::Blob(dyn_gr::build_dyn_blob(&m))],
+        )
+        .unwrap();
+        let rx_sock = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        fake.socket
+            .send_to(&wire, rx_sock.local_addr().unwrap())
+            .await
+            .unwrap();
+        let mut buf = vec![0u8; 65535];
+        let (n, _) = rx_sock.recv_from(&mut buf).await.unwrap();
+        let msgs = osc::flatten(osc::decode_packet(&buf[..n]).unwrap());
+        assert_eq!(msgs.len(), 1);
+        driver.ingest_dyn_message(&msgs[0]).await.unwrap();
+
+        // Param path serves dB reduction >= 0 per channel.
+        let gate = driver.get_param(StripId(0), "gate_gr").await.unwrap();
+        let comp = driver.get_param(StripId(0), "comp_gr").await.unwrap();
+        let comp16 = driver.get_param(StripId(15), "comp_gr").await.unwrap();
+        let ParamValue::Float(gate) = gate else {
+            panic!("gate_gr not a float");
+        };
+        let ParamValue::Float(comp) = comp else {
+            panic!("comp_gr not a float");
+        };
+        let ParamValue::Float(comp16) = comp16 else {
+            panic!("comp_gr not a float");
+        };
+        assert!((gate - 6.0).abs() < 0.01, "gate_gr {gate}");
+        assert!((comp - 12.0).abs() < 0.01, "comp_gr {comp}");
+        assert!((comp16 - 3.5).abs() < 0.01, "comp_gr ch16 {comp16}");
+        // Silent channels read 0 reduction (real zero, post-blob).
+        let ParamValue::Float(idle) = driver.get_param(StripId(1), "gate_gr").await.unwrap()
+        else {
+            panic!("gate_gr not a float");
+        };
+        assert_eq!(idle, 0.0);
+        // Phantom strips (T3) and unknown ids still bail.
+        assert!(driver.get_param(StripId(16), "gate_gr").await.is_err());
+        assert!(driver.get_param(StripId(0), "nope").await.is_err());
+        // Pre-existing arms survive the override.
+        let ParamValue::Float(fader) = driver.get_param(StripId(0), "fader").await.unwrap()
+        else {
+            panic!("fader not a float");
+        };
+        assert!((fader - 0.75).abs() < addrs::FADER_READBACK_EPSILON);
+    }
+
+    /// Non-DYN messages never poison the GR cache: wrong address and
+    /// blobless payloads bail, and the cache stays empty.
+    #[tokio::test]
+    async fn driver_dyn_ingest_rejects_other_shapes() {
+        let (driver, _) = connected_driver().await;
+        let other = OscMessage {
+            addr: addrs::METER_SUBSCRIBE.to_string(),
+            args: vec![OscType::Blob(vec![0u8; 8])],
+        };
+        assert!(driver.ingest_dyn_message(&other).await.is_err());
+        let blobless = OscMessage {
+            addr: addrs::METER_DYN_SUBSCRIBE.to_string(),
+            args: vec![],
+        };
+        assert!(driver.ingest_dyn_message(&blobless).await.is_err());
+        assert!(driver.last_dyn().await.is_none());
     }
 }
