@@ -41,9 +41,14 @@
 //! * Index 15 has no documented effect (the wire order jumps FLNG 14 →
 //!   PHAS 16); [`fx_effect_name`] returns `None` there so it exercises the
 //!   same generic fallback as any out-of-range index.
-//! * Enum wire encoding (int vs normalized float) is still open (notes
-//!   §Unknowns 1). Enums are exposed as discrete option lists; the UI sends
-//!   them as steps over `0..1` (OFF/ON exactly `0.0`/`1.0`).
+//! * Enum/switch pars reply as INT on hardware (D/FL par 02/08/09 =
+//!   `0`/`1`/`1`, VRM par 13 = `0`; baseline "Live FX par shapes") while
+//!   continuous pars reply as float — so [`parse_fx_param`] maps int wire
+//!   values through the effect's own def (option index onto `0..1` steps
+//!   for enums, raw int for continuous). Pars past the effect's own count
+//!   reply as float NaN (VRM/HALL 14+, D/FL 14+, PIT 7+) — NaN means
+//!   absent and [`parse_fx_param`] bails on it like an unknown par,
+//!   never surfacing NaN as a value.
 //!
 //! Web UI field naming (see `FxRack.svelte`): `fx{slot}_par{MM}` with the
 //! same 1-based conventions, e.g. `fx1_par01` = slot 1, param index 0.
@@ -145,6 +150,73 @@ pub fn parse_fx_type(args: &[OscType]) -> anyhow::Result<u8> {
         anyhow::bail!("fx type {index} out of range 0..=60");
     }
     Ok(index as u8)
+}
+
+// ---------------------------------------------------------------------------
+// Wire value codec (hardware-proven 2026-10-18, baseline "Live FX par shapes").
+// ---------------------------------------------------------------------------
+
+/// Decode one `/fx/N/par/MM` reply into normalized `0..1`.
+///
+/// `def` is the effect's own [`fx_param_def`] row for this par (`None` for
+/// padding/unknown — decoded raw, still validated). Hardware facts (XR18
+/// FW 1.20):
+///
+/// * Enum/switch pars reply as INT: D/FL par 02/08/09 = `0`/`1`/`1`, VRM
+///   par 13 (Freeze) = `0`. An int on an enum def is the option index,
+///   mapped onto `0..1` steps (`index / (options - 1)`, so OFF/ON lands
+///   exactly on `0.0`/`1.0`); an out-of-range index bails — no guessing.
+///   An int on a continuous (or unknown) def is the raw value (`1` →
+///   `1.0`), still range-checked.
+/// * Pars past the effect's own count reply as float NaN (VRM/HALL 14+,
+///   D/FL 14+, PIT 7+). NaN means absent: this bails (like an unknown
+///   par) and never surfaces NaN as a parameter value. Other non-finite
+///   floats bail the same way; anything non-numeric bails too.
+///
+/// ```
+/// # use openmix_proto_xair::fx::{fx_param_def, parse_fx_param};
+/// # use rosc::OscType;
+/// // VRM par 13 is Freeze (OFF/ON): int 0 → 0.0.
+/// let def = fx_param_def(7, 13);
+/// assert_eq!(parse_fx_param(&[OscType::Int(0)], def.as_ref()).unwrap(), 0.0);
+/// // Absent pad par replies NaN → bail, never NaN.
+/// assert!(parse_fx_param(&[OscType::Float(f32::NAN)], def.as_ref()).is_err());
+/// ```
+pub fn parse_fx_param(args: &[OscType], def: Option<&FxParamDef>) -> anyhow::Result<f32> {
+    match args.first() {
+        Some(OscType::Int(i)) => decode_fx_int(*i as i64, def),
+        Some(OscType::Long(l)) => decode_fx_int(*l, def),
+        Some(OscType::Float(f)) => {
+            if !f.is_finite() {
+                anyhow::bail!("fx par absent (non-finite wire float {f})");
+            }
+            check_value(*f)
+        }
+        Some(OscType::Double(d)) => {
+            if !d.is_finite() {
+                anyhow::bail!("fx par absent (non-finite wire double {d})");
+            }
+            check_value(*d as f32)
+        }
+        other => anyhow::bail!("fx par needs an int/float arg, got {other:?}"),
+    }
+}
+
+/// Int arm of [`parse_fx_param`]: option index for enum defs, raw int otherwise.
+fn decode_fx_int(i: i64, def: Option<&FxParamDef>) -> anyhow::Result<f32> {
+    match def.and_then(|d| d.options) {
+        Some(options) => {
+            let n = options.len() as i64;
+            if n < 2 {
+                anyhow::bail!("fx enum par has {n} options, cannot map int {i}");
+            }
+            if !(0..n).contains(&i) {
+                anyhow::bail!("fx enum index {i} out of range 0..{n}");
+            }
+            Ok(i as f32 / (n - 1) as f32)
+        }
+        None => check_value(i as f32),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1354,6 +1426,87 @@ mod tests {
     }
 
     #[test]
+    fn int_pars_decode_per_def_and_nan_is_absent() {
+        // VRM par 13 is Freeze (OFF/ON): hardware replies INT 0.
+        let freeze = fx_param_def(7, 13);
+        assert_eq!(freeze.unwrap().options, Some(OFF_ON));
+        assert_eq!(
+            parse_fx_param(&[OscType::Int(0)], freeze.as_ref()).unwrap(),
+            0.0
+        );
+        assert_eq!(
+            parse_fx_param(&[OscType::Int(1)], freeze.as_ref()).unwrap(),
+            1.0
+        );
+        assert_eq!(
+            parse_fx_param(&[OscType::Long(1)], freeze.as_ref()).unwrap(),
+            1.0
+        );
+        assert!(parse_fx_param(&[OscType::Int(2)], freeze.as_ref()).is_err());
+        assert!(parse_fx_param(&[OscType::Int(-1)], freeze.as_ref()).is_err());
+
+        // D/FL par 02 is Pattern (14 options): int is the option index.
+        let pattern = fx_param_def(26, 2);
+        assert_eq!(pattern.unwrap().options, Some(PATTERN14));
+        assert_eq!(
+            parse_fx_param(&[OscType::Int(0)], pattern.as_ref()).unwrap(),
+            0.0
+        );
+        assert_eq!(
+            parse_fx_param(&[OscType::Int(13)], pattern.as_ref()).unwrap(),
+            1.0
+        );
+        assert!(
+            (parse_fx_param(&[OscType::Int(1)], pattern.as_ref()).unwrap() - 1.0 / 13.0).abs()
+                < 1e-6
+        );
+        assert!(parse_fx_param(&[OscType::Int(14)], pattern.as_ref()).is_err());
+
+        // Continuous def with an int wire value (D/FL par 08/09 reply INT
+        // 1): raw int, still range-checked.
+        let depth = fx_param_def(26, 8);
+        assert!(depth.unwrap().options.is_none());
+        assert_eq!(
+            parse_fx_param(&[OscType::Int(1)], depth.as_ref()).unwrap(),
+            1.0
+        );
+        assert_eq!(
+            parse_fx_param(&[OscType::Int(0)], depth.as_ref()).unwrap(),
+            0.0
+        );
+        assert!(parse_fx_param(&[OscType::Int(2)], depth.as_ref()).is_err());
+
+        // Floats pass through validated; unknown def decodes raw too.
+        let hall = fx_param_def(0, 1);
+        assert_eq!(
+            parse_fx_param(&[OscType::Float(0.5)], hall.as_ref()).unwrap(),
+            0.5
+        );
+        assert_eq!(
+            parse_fx_param(&[OscType::Double(0.25)], hall.as_ref()).unwrap(),
+            0.25
+        );
+        assert_eq!(parse_fx_param(&[OscType::Float(0.25)], None).unwrap(), 0.25);
+        assert_eq!(parse_fx_param(&[OscType::Int(1)], None).unwrap(), 1.0);
+        assert!(parse_fx_param(&[OscType::Float(1.5)], hall.as_ref()).is_err());
+
+        // NaN (float or double, known def or not) means absent: bail with
+        // an "absent" error, never surface NaN as a value.
+        for args in [
+            vec![OscType::Float(f32::NAN)],
+            vec![OscType::Double(f64::NAN)],
+        ] {
+            for def in [hall.as_ref(), None] {
+                let err = parse_fx_param(&args, def).unwrap_err();
+                assert!(err.to_string().contains("absent"), "unexpected: {err}");
+            }
+        }
+        assert!(parse_fx_param(&[OscType::Float(f32::INFINITY)], hall.as_ref()).is_err());
+        assert!(parse_fx_param(&[], hall.as_ref()).is_err());
+        assert!(parse_fx_param(&[OscType::String("x".into())], hall.as_ref()).is_err());
+    }
+
+    #[test]
     fn effect_names_cover_wire_order() {
         // 61 slots 0..=60, one undocumented gap at 15 → 60 names.
         let named: Vec<u8> = (0..=60).filter(|i| fx_effect_name(*i).is_some()).collect();
@@ -1777,5 +1930,135 @@ mod tests {
             .unwrap();
         let back = session.query(&fx_param(1, idx).unwrap()).await.unwrap();
         assert_eq!(osc::fader_value(&back).unwrap(), vdot);
+    }
+
+    /// Loopback: a fake serving the hardware-proven mix — INT enum/switch
+    /// pars (D/FL par 02/08/09 = 0/1/1, VRM par 13 = 0), float continuous
+    /// pars, and float-NaN padding past each effect's own count — proves
+    /// the read path: int decode per def, NaN rejection, and bit-exact
+    /// float roundtrips.
+    #[tokio::test]
+    async fn loopback_mixed_int_float_pars_with_nan_padding() {
+        use openmix_transport::{osc, OscSession};
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex as StdMutex};
+        use tokio::net::UdpSocket;
+
+        let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let addr = socket.local_addr().unwrap();
+        // Verbatim wire storage so ints stay ints and NaN stays NaN.
+        let pars: Arc<StdMutex<HashMap<String, OscType>>> =
+            Arc::new(StdMutex::new(HashMap::from([
+                // Slot 3 loads D/FL (26): live shape par 02/08/09 = INT 0/1/1.
+                ("/fx/3/par/01".to_string(), OscType::Float(0.5)),
+                ("/fx/3/par/02".to_string(), OscType::Int(0)),
+                ("/fx/3/par/08".to_string(), OscType::Int(1)),
+                ("/fx/3/par/09".to_string(), OscType::Int(1)),
+                ("/fx/3/par/13".to_string(), OscType::Float(0.75)),
+                ("/fx/3/par/14".to_string(), OscType::Float(f32::NAN)),
+                // Slot 1 loads VRM (7): par 13 Freeze = INT 0, par 14+ NaN.
+                ("/fx/1/par/13".to_string(), OscType::Int(0)),
+                ("/fx/1/par/14".to_string(), OscType::Float(f32::NAN)),
+            ])));
+        let types: Arc<StdMutex<HashMap<u8, i32>>> =
+            Arc::new(StdMutex::new(HashMap::from([(1u8, 7i32), (3u8, 26i32)])));
+        let worker = socket.clone();
+        let wpars = pars.clone();
+        let wtypes = types.clone();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 65535];
+            loop {
+                let Ok((n, peer)) = worker.recv_from(&mut buf).await else {
+                    break;
+                };
+                let Ok(packet) = osc::decode_packet(&buf[..n]) else {
+                    continue;
+                };
+                for msg in osc::flatten(packet) {
+                    let parts: Vec<&str> = msg.addr.split('/').collect();
+                    if parts.len() == 4 && parts[1] == "fx" && parts[3] == "type" {
+                        if msg.args.is_empty() {
+                            let t = wtypes
+                                .lock()
+                                .unwrap()
+                                .get(&parts[2].parse::<u8>().unwrap_or(0))
+                                .copied()
+                                .unwrap_or(0);
+                            let bytes =
+                                osc::encode_message(&msg.addr, vec![OscType::Int(t)]).unwrap();
+                            let _ = worker.send_to(&bytes, peer).await;
+                        }
+                        continue;
+                    }
+                    if parts.len() == 5 && parts[1] == "fx" && parts[3] == "par" {
+                        match msg.args.first() {
+                            // Store sends verbatim (int or float) — no coercion.
+                            Some(arg @ (OscType::Float(_) | OscType::Int(_))) => {
+                                wpars.lock().unwrap().insert(msg.addr.clone(), arg.clone());
+                            }
+                            // Queries answer the stored wire value verbatim;
+                            // untouched pars read back NaN, like live padding.
+                            _ => {
+                                let v = wpars
+                                    .lock()
+                                    .unwrap()
+                                    .get(&msg.addr)
+                                    .cloned()
+                                    .unwrap_or(OscType::Float(f32::NAN));
+                                let bytes = osc::encode_message(&msg.addr, vec![v]).unwrap();
+                                let _ = worker.send_to(&bytes, peer).await;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        sock.connect(addr).await.unwrap();
+        let session = OscSession::from_connected_socket(sock, None);
+
+        // Slot 3 loads D/FL (26): int pars decode per def.
+        let reply = session.query(&fx_type(3).unwrap()).await.unwrap();
+        let loaded = parse_fx_type(&reply.args).unwrap();
+        assert_eq!(loaded, 26);
+        let def = |par| fx_param_def(loaded, par);
+        let back = session.query(&fx_param(3, 1).unwrap()).await.unwrap();
+        assert_eq!(parse_fx_param(&back.args, def(2).as_ref()).unwrap(), 0.0);
+        let back = session.query(&fx_param(3, 7).unwrap()).await.unwrap();
+        assert_eq!(parse_fx_param(&back.args, def(8).as_ref()).unwrap(), 1.0);
+        let back = session.query(&fx_param(3, 8).unwrap()).await.unwrap();
+        assert_eq!(parse_fx_param(&back.args, def(9).as_ref()).unwrap(), 1.0);
+        let back = session.query(&fx_param(3, 0).unwrap()).await.unwrap();
+        assert_eq!(parse_fx_param(&back.args, def(1).as_ref()).unwrap(), 0.5);
+        // Padding past the effect's own count replies NaN → absent, never a value.
+        let back = session.query(&fx_param(3, 13).unwrap()).await.unwrap();
+        let err = parse_fx_param(&back.args, def(14).as_ref()).unwrap_err();
+        assert!(err.to_string().contains("absent"), "unexpected: {err}");
+
+        // Slot 1 loads VRM (7): Freeze int 0 → 0.0, par 14 NaN → absent.
+        let reply = session.query(&fx_type(1).unwrap()).await.unwrap();
+        let loaded = parse_fx_type(&reply.args).unwrap();
+        assert_eq!(loaded, 7);
+        let back = session.query(&fx_param(1, 12).unwrap()).await.unwrap();
+        let freeze = fx_param_def(loaded, 13);
+        assert_eq!(parse_fx_param(&back.args, freeze.as_ref()).unwrap(), 0.0);
+        let back = session.query(&fx_param(1, 13).unwrap()).await.unwrap();
+        let err = parse_fx_param(&back.args, fx_param_def(loaded, 14).as_ref()).unwrap_err();
+        assert!(err.to_string().contains("absent"), "unexpected: {err}");
+
+        // Bit-exact roundtrips: float par stores verbatim, int switch too.
+        session
+            .send(&fx_param(3, 0).unwrap(), vec![OscType::Float(0.5)])
+            .await
+            .unwrap();
+        let back = session.query(&fx_param(3, 0).unwrap()).await.unwrap();
+        assert_eq!(parse_fx_param(&back.args, def(1).as_ref()).unwrap(), 0.5);
+        session
+            .send(&fx_param(1, 12).unwrap(), vec![OscType::Int(1)])
+            .await
+            .unwrap();
+        let back = session.query(&fx_param(1, 12).unwrap()).await.unwrap();
+        assert_eq!(parse_fx_param(&back.args, freeze.as_ref()).unwrap(), 1.0);
     }
 }
