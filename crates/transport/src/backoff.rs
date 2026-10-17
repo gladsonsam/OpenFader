@@ -86,6 +86,8 @@ pub fn backoff_delays(max_attempts: usize) -> impl Iterator<Item = Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn backoff_caps() {
@@ -93,5 +95,56 @@ mod tests {
         assert_eq!(ds[0], Duration::from_millis(250));
         assert_eq!(ds[1], Duration::from_millis(500));
         assert!(ds.iter().all(|d| *d <= Duration::from_secs(8)));
+    }
+
+    /// Flaky link: two failures then success — retries and returns the value.
+    #[tokio::test]
+    async fn retries_then_succeeds() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let worker = attempts.clone();
+        let v = connect_with_backoff(
+            move || {
+                let worker = worker.clone();
+                async move {
+                    let n = worker.fetch_add(1, Ordering::SeqCst);
+                    if n < 2 {
+                        anyhow::bail!("flaky wifi {n}")
+                    } else {
+                        Ok(42)
+                    }
+                }
+            },
+            5,
+            Duration::from_millis(1),
+            Duration::from_millis(2),
+        )
+        .await
+        .unwrap();
+        assert_eq!(v, 42);
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    /// Dead mixer: exhausts `max_attempts` and returns the last error
+    /// (bounded, never retries forever unless asked with 0).
+    #[tokio::test]
+    async fn exhaustion_returns_last_error() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let worker = attempts.clone();
+        let err = connect_with_backoff::<_, _, i32>(
+            move || {
+                let worker = worker.clone();
+                async move {
+                    worker.fetch_add(1, Ordering::SeqCst);
+                    anyhow::bail!("no route to mixer")
+                }
+            },
+            3,
+            Duration::from_millis(1),
+            Duration::from_millis(2),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("no route to mixer"));
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
     }
 }

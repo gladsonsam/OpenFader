@@ -242,4 +242,86 @@ mod tests {
         drop(rx);
         hub.push_lossy(MeterFrame::silent(2));
     }
+
+    /// Odd-length and garbage blob payloads must parse-or-skip, never
+    /// panic (truncated venue datagrams hit this path).
+    #[test]
+    fn odd_length_blob_never_panics() {
+        for len in 0..16usize {
+            let blob = vec![0xABu8; len];
+            let _ = parse_meter_blob(&blob);
+        }
+        // Odd length drops the trailing byte, keeps the rest.
+        assert_eq!(parse_meter_blob(&[0xFF, 0x7F, 0x00]).len(), 1);
+        assert!(parse_meter_blob(&[]).is_empty());
+    }
+
+    /// Garbage meter-shaped messages: no panic; documented `None` cases
+    /// (non-meter addrs, empty payloads) stay `None`.
+    #[test]
+    fn garbage_meter_messages_never_panic() {
+        // Non-meter addr with garbage blob: None.
+        let junk = OscMessage {
+            addr: "/ch/01/mix/fader".into(),
+            args: vec![OscType::Blob(vec![0xFFu8; 37])],
+        };
+        assert!(parse_meter_message(&junk).is_none());
+        // Meter addr, no args: None (empty payload).
+        let bare = OscMessage {
+            addr: "/meters/1".into(),
+            args: vec![],
+        };
+        assert!(parse_meter_message(&bare).is_none());
+        // Meter addr with empty + odd + garbage blobs: no panic either way.
+        for blob in [vec![], vec![0x00], vec![0xFFu8; 37], vec![0xABu8; 100]] {
+            let msg = OscMessage {
+                addr: "/meters/1".into(),
+                args: vec![OscType::Blob(blob)],
+            };
+            let _ = parse_meter_message(&msg);
+        }
+        // Meter addr with garbage strings/ints: no panic.
+        let mixed = OscMessage {
+            addr: "/meters/0".into(),
+            args: vec![
+                OscType::String("garbage".into()),
+                OscType::Int(-999999),
+                OscType::Blob(vec![1, 2, 3]),
+            ],
+        };
+        let _ = parse_meter_message(&mixed);
+        // Non-UTF8-adjacent addr bytes can't occur post-decode, but an
+        // empty addr must not match the meter prefix.
+        assert!(!is_meter_addr(""));
+        assert!(!is_meter_addr("/meter"));
+        assert!(is_meter_addr("/meters"));
+    }
+
+    /// Broadcast lag: a subscriber that never reads must not kill the
+    /// relay. The slow reader sees `Lagged` (skip-and-continue, what the
+    /// serve relay matches on) while pushes keep succeeding and fresh
+    /// subscribers still get live frames.
+    #[test]
+    fn slow_subscriber_lag_does_not_kill_relay() {
+        let hub = MeterHub::with_capacity(2);
+        let mut slow = hub.subscribe();
+        for i in 0..10 {
+            hub.push(MeterFrame {
+                levels: vec![i as f32],
+            })
+            .unwrap();
+        }
+        match slow.try_recv() {
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
+            other => panic!("expected lagged slow reader, got {other:?}"),
+        }
+        // Relay still alive: pushes succeed, fresh subscriber gets frames.
+        hub.push(MeterFrame { levels: vec![99.0] }).unwrap();
+        let mut fresh = hub.subscribe();
+        hub.push(MeterFrame {
+            levels: vec![100.0],
+        })
+        .unwrap();
+        assert_eq!(fresh.try_recv().unwrap().levels, vec![100.0]);
+    }
 }
