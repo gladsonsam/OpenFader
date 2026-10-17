@@ -169,15 +169,20 @@ Two levels — use the right one:
   recall with a fade (default 400 ms), reorder, mark a dirty scene
   with `*`. Also `localStorage`-first (`openmix.shows.v1`); the Tauri
   shell additionally owns server-side scene ops
-  (`capture_scene`/`recall_scene`/…) — **TODO-owner**: confirm the
-  sync story between the web library and the Tauri server-side library
-  before relying on both at once.
+  (`capture_scene`/`recall_scene`/…), and the relay now does too
+  (`list_shows`/`capture_scene`/`recall_scene`/`delete_scene` with a
+  `shows` broadcast, `crates/serve/src/lib.rs`) — **TODO-owner**: the
+  web `ShowEditor`/`Backend` is not wired to the relay's scene ops yet
+  (still `localStorage`-only over WS), so confirm the sync story before
+  relying on both at once.
 
 Gig pattern: build one Show per band/set (`Doors`, `Support`,
 `Headline`, `Encore`), one scene per song or segment. Store before
-soundcheck, recall with fade during changeover. The relay holds no
-scene state server-side, so your scenes live in the browser that stored
-them — use the same device all night, or re-store on the spare.
+soundcheck, recall with fade during changeover. The web library lives in
+the browser that stored it — use the same device all night, or re-store
+on the spare. (Relay and Tauri shells each hold their own server-side
+copy; the `./scenes` Docker volume is the deployment-side copy, not an
+auto-sync.)
 
 ## 6. Meter bridge + spectrum
 
@@ -187,9 +192,12 @@ them — use the same device all night, or re-store on the spare.
 - **Per-strip meters** are painted imperatively (no re-render at 60 fps)
   with clip latch at ≥0.985. Tap a meter to clear its clip dot.
 - **Spectrum** (Channel view, above EQ): 64 bars, bass→treble
-  green/amber/red. Until the relay sends real spectra it shows a
-  `fallback` tag — bars interpolated from the live meter level, so the
-  panel still moves. **TODO-owner**: live per-channel FFT frames.
+  green/amber/red. Over the relay the server sends one `spectrum`
+  message per channel per meter tick (first 16 channels,
+  `SPECTRUM_CHANNELS` in `crates/serve/src/lib.rs`) and the panel renders
+  it live; where no spectrum frame has arrived yet it shows a `fallback`
+  tag — bars interpolated from the live meter level. The Tauri shell has
+  no spectrum source yet, so desktop always shows the fallback.
 
 ## 7. Safety: mute-enable, fine mode, tap-a-value
 
@@ -226,9 +234,9 @@ Status line (next to the scene slots) narrates every guarded action:
 | --- | --- |
 | `No mixer found` / `discover` empty | UDP broadcast never crosses subnets or Docker's bridge. Use directed IP: `--addr <mixer-ip>` / `discover` with explicit target. Put laptop, relay, and desk on the same subnet (see `docs/docker.md` §113, `docs/xair-protocol.md`). |
 | DL32S never connects | TCP 50001, **no broadcast** — the IP field is mandatory. Check the desk's network screen, ping it, keepalive is 2.5 s so a slow join still settles. |
-| `/bus` moves do nothing | Address width: buses are **single-digit** (`/bus/1/…`), channels are two-digit (`/ch/01/…`). Hardware is silent on `/bus/01/…` (see `docs/xr18-baseline.md` T2). If a bus strip seems dead, you may be on a build with the padded form — **TODO-owner**: confirm driver emits single-digit bus addresses. |
+| `/bus` moves do nothing | Address width: buses are **single-digit** (`/bus/1/…`), channels are two-digit (`/ch/01/…`). Hardware is silent on `/bus/01/…` (see `docs/xr18-baseline.md` T2); the driver emits the single-digit form (strict-fake tested in `crates/proto-xair`). If a bus strip seems dead on an old build, update before debugging further. |
 | Fader readback off by ~0.0005 | Normal: the XR18 quantises faders to ~10-bit steps (`0.5` → `0.4995`). Not a bug; never assert exact float equality on fader writes (T8). |
-| Meters stuck at 0 | Hardware meter subscriptions are best-effort. Check signal on a known channel, then `meters` via CLI; "levels stuck at 0" is a finding to report with FW + network path, not proof of no audio (`docs/LIVE-RIG.md` §6). |
+| Meters stuck at 0 | Hardware meter subscriptions are best-effort. The subscribe form is hardware-verified (send `/meters` with one string arg `/meters/1`; bare queries stay silent — see `docs/xair-protocol.md`), but the desk only dribbles blobs without keepalive renew, so expect gaps. Check signal on a known channel, then `meters` via CLI; "levels stuck at 0" is a finding to report with FW + network path, not proof of no audio (`docs/LIVE-RIG.md` §6). |
 | Wrong channel count (ch 17–32 silent) | XR18 is 16 channels + stereo aux return (`/rtn/aux`); there are no `/ch/17..18` replies. Ignore phantom strips past 16 (T3). |
 | Rename fails on DL32S | Expected: rename write encoding unconfirmed, driver leaves it unsupported. Re-label from Master Fader instead. |
 | Scene recall missed a channel | Recall pushes fader-then-mute per strip and stops at the first error (status line names the channel). Fix the named channel (often an unsupported strip), re-recall. |
@@ -255,14 +263,18 @@ No. Everything is LAN-local (desk ↔ relay ↔ browser). The PWA installs
 from the relay itself.
 
 **Can two operators mix at once?**
-Two browsers can open the same relay, but last-write-wins with no
+Two browsers can open the same relay and each gets state, meter,
+spectrum, and `shows` broadcasts, but last-write-wins with no
 locking — **TODO-owner**: confirm multi-client arbitration before
 running FOH + monitors from two devices on one relay.
 
 **Where do my scenes live?**
 In the browser that stored them (`localStorage`). Same device all
 night, or re-store on the spare. The `./scenes` Docker volume is the
-deployment-side copy, not an auto-sync.
+deployment-side copy, not an auto-sync. (Relay and Tauri shells each
+hold a server-side library too — but the web UI only reads its own
+`localStorage` copy, so treat the browser as the source of truth until
+the sync TODO in §5 is closed.)
 
 **Sim or hardware — how do I tell?**
 The `via` label next to the badge (`tauri ipc` vs `ws <url>`) plus the
