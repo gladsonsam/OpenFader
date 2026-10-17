@@ -590,9 +590,20 @@ impl MixerDriver for XAirDriver {
     async fn get_fx_param(&self, slot: u8, param: u8) -> anyhow::Result<f32> {
         let addr = fx::fx_param(slot, param)?;
         let guard = self.session().await?;
-        let reply = guard.as_ref().unwrap().query(&addr).await?;
-        let v = osc::fader_value(&reply)?;
-        fx::check_value(v)
+        let session = guard.as_ref().unwrap();
+        // Loaded effect selects the par def (enum pars reply as INT option
+        // indices on hardware — see `crate::fx`). A missing/unparseable
+        // type falls back to raw decode (`None` def); plain floats stay
+        // bit-exact either way (baseline §6 row 5).
+        let def = match session.query(&fx::fx_type(slot)?).await {
+            Ok(treply) => match fx::parse_fx_type(&treply.args) {
+                Ok(t) => fx::fx_param_def(t, param + 1),
+                Err(_) => None,
+            },
+            Err(_) => None,
+        };
+        let reply = session.query(&addr).await?;
+        fx::parse_fx_param(&reply.args, def.as_ref())
     }
 
     async fn subscribe_meters(
@@ -843,7 +854,12 @@ mod tests {
         ons: StdMutex<HashMap<String, i32>>,
         names: StdMutex<HashMap<String, String>>,
         /// FX params answer bit-exact (no quantization, baseline §6 row 5).
-        fx: StdMutex<HashMap<String, f32>>,
+        /// Stored verbatim (`Float` or `Int`) so enum/switch pars keep
+        /// their hardware INT wire shape; untouched pars read back 0.0.
+        fx: StdMutex<HashMap<String, OscType>>,
+        /// Loaded effect per slot (`/fx/N/type` int `0..=60`); unset slots
+        /// read back 0 (HALL) like a freshly-booted desk.
+        fx_types: StdMutex<HashMap<u8, i32>>,
         /// Headamp gains store the verbatim normalized wire float
         /// (hardware quantization uncharacterized — see `crate::headamp`).
         gains: StdMutex<HashMap<String, f32>>,
@@ -879,6 +895,7 @@ mod tests {
                 )])),
                 names: StdMutex::new(HashMap::new()),
                 fx: StdMutex::new(HashMap::new()),
+                fx_types: StdMutex::new(HashMap::new()),
                 gains: StdMutex::new(HashMap::new()),
                 phantoms: StdMutex::new(HashMap::new()),
                 input_ints: StdMutex::new(HashMap::new()),
@@ -987,10 +1004,27 @@ mod tests {
                                 worker.faders.lock().unwrap().insert(a.to_string(), q);
                                 None
                             }
+                            // FX type selects store verbatim (int form).
+                            (a, Some(OscType::Int(i)))
+                                if a.starts_with("/fx/") && a.ends_with("/type") =>
+                            {
+                                if let Some(slot) = a
+                                    .split('/')
+                                    .nth(2)
+                                    .and_then(|s| s.parse::<u8>().ok())
+                                {
+                                    worker.fx_types.lock().unwrap().insert(slot, *i);
+                                }
+                                None
+                            }
                             // FX params are bit-exact on hardware (baseline
-                            // §6 row 5): store verbatim, no quantization.
-                            (a, Some(OscType::Float(f))) if a.starts_with("/fx/") => {
-                                worker.fx.lock().unwrap().insert(a.to_string(), *f);
+                            // §6 row 5): store verbatim (int or float), no
+                            // quantization — enum/switch pars keep INT shape.
+                            (a, Some(arg @ (OscType::Float(_) | OscType::Int(_))))
+                                if a.starts_with("/fx/")
+                                    && a.contains("/par/") =>
+                            {
+                                worker.fx.lock().unwrap().insert(a.to_string(), arg.clone());
                                 None
                             }
                             // Headamp gain stores the verbatim normalized
@@ -1067,11 +1101,33 @@ mod tests {
                                     osc::encode_message(a, vec![OscType::String(v)]).unwrap(),
                                 )
                             }
-                            // Untouched FX params read back 0.0.
-                            (a, None) if a.starts_with("/fx/") => {
-                                let v =
-                                    worker.fx.lock().unwrap().get(a).copied().unwrap_or(0.0);
-                                Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
+                            // `/fx/N/type` reads back the stored effect (unset → 0).
+                            (a, None) if a.starts_with("/fx/") && a.ends_with("/type") => {
+                                let slot = a
+                                    .split('/')
+                                    .nth(2)
+                                    .and_then(|s| s.parse::<u8>().ok())
+                                    .unwrap_or(0);
+                                let v = worker
+                                    .fx_types
+                                    .lock()
+                                    .unwrap()
+                                    .get(&slot)
+                                    .copied()
+                                    .unwrap_or(0);
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            // Untouched FX params read back 0.0 float;
+                            // stored pars answer verbatim (int stays int).
+                            (a, None) if a.starts_with("/fx/") && a.contains("/par/") => {
+                                let v = worker
+                                    .fx
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .cloned()
+                                    .unwrap_or(OscType::Float(0.0));
+                                Some(osc::encode_message(a, vec![v]).unwrap())
                             }
                             // Untouched headamp gains read back 0.5 wire
                             // (= 24 dB); untouched phantom reads back off.
@@ -1625,9 +1681,11 @@ mod tests {
 
     /// FX slots (`/fx/N/par/MM`, baseline §6 row 5): bit-exact loopback
     /// through the core `FxRack` hooks — set/get plus local validation.
+    /// Enum pars reply as INT on hardware, so the loopback seeds INT wire
+    /// values (multi-option indices >1 fail the old raw float range check).
     #[tokio::test]
     async fn driver_fx_param_roundtrip() {
-        let (driver, _) = connected_driver().await;
+        let (driver, fake) = connected_driver().await;
         // Slot is 1-based, index 0-based: (1, 0) drives `/fx/1/par/01`.
         driver.set_fx_param(1, 0, 0.5).await.unwrap();
         assert_eq!(driver.get_fx_param(1, 0).await.unwrap(), 0.5);
@@ -1635,6 +1693,28 @@ mod tests {
         assert_eq!(driver.get_fx_param(4, 63).await.unwrap(), 1.0);
         // Untouched params read back zero.
         assert_eq!(driver.get_fx_param(2, 10).await.unwrap(), 0.0);
+        // Enum par with >2 options (DLY Mode ST/X/M on slot 1): INT wire
+        // index 2 maps onto 1.0, not a range-check failure.
+        fake.fx_types.lock().unwrap().insert(1, 10);
+        fake.fx
+            .lock()
+            .unwrap()
+            .insert("/fx/1/par/03".to_string(), OscType::Int(2));
+        assert_eq!(driver.get_fx_param(1, 2).await.unwrap(), 1.0);
+        // 14-option Pattern (D/FL par 02 on slot 3): index 1 → 1/13.
+        fake.fx_types.lock().unwrap().insert(3, 26);
+        fake.fx
+            .lock()
+            .unwrap()
+            .insert("/fx/3/par/02".to_string(), OscType::Int(1));
+        let v = driver.get_fx_param(3, 1).await.unwrap();
+        assert!((v - 1.0 / 13.0).abs() < 1e-6, "pattern index 1 → {v}");
+        // Out-of-range enum index bails, never a fabricated float.
+        fake.fx
+            .lock()
+            .unwrap()
+            .insert("/fx/3/par/02".to_string(), OscType::Int(14));
+        assert!(driver.get_fx_param(3, 1).await.is_err());
         // Out-of-range addresses/values rejected locally, never sent.
         assert!(driver.set_fx_param(0, 0, 0.5).await.is_err());
         assert!(driver.set_fx_param(5, 0, 0.5).await.is_err());
