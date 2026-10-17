@@ -42,6 +42,15 @@ button {
 button:active { transform: scale(0.97); }
 button.big { background: #12395a; border-color: var(--acc); }
 button.on { outline: 2px solid var(--acc); }
+/* Visible keyboard focus on every interactive element. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible,
+canvas:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
 #badge { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; }
 #badge.offline { background: #3a1416; color: #ff8a8e; }
 #badge.online { background: #123a1e; color: #7dffa4; }
@@ -96,7 +105,7 @@ button.on { outline: 2px solid var(--acc); }
 .grp.has { border-color: var(--yel); }
 /* Layout edit handles + blank spacers. */
 .ehandles { display: flex; gap: 2px; width: 100%; }
-.ehandles button { flex: 1; min-width: 0; min-height: 32px; padding: 0 2px; font-size: 13px; }
+.ehandles button { flex: 1; min-width: 0; min-height: 40px; padding: 0 2px; font-size: 13px; }
 .spacer {
   flex: 0 0 40px; border: 1px dashed var(--line); border-radius: 12px; min-height: 300px;
 }
@@ -186,7 +195,7 @@ button.mute.locked { opacity: 0.4; }
   border: 1px solid var(--line); border-radius: 10px; padding: 2px 2px 2px 6px;
 }
 .slot b { font-size: 14px; }
-.slot button { min-height: 36px; min-width: 36px; padding: 0 8px; font-size: 13px; }
+.slot button { min-height: 40px; min-width: 40px; padding: 0 8px; font-size: 13px; }
 #store.armed { background: #4a2b00; border-color: var(--yel); color: var(--yel); }
 #status { color: var(--dim); font-size: 13px; }
 #wrap { display: flex; gap: 0; align-items: stretch; }

@@ -335,7 +335,7 @@
   {:else}
     <nav class="showtabs" aria-label="shows">
       {#each shows as s (s.name)}
-        <button class:on={s.name === activeName} onclick={() => selectShow(s.name)}>{s.name}</button>
+        <button class:on={s.name === activeName} aria-current={s.name === activeName ? 'true' : undefined} onclick={() => selectShow(s.name)}>{s.name}</button>
       {/each}
     </nav>
     {#if active}
@@ -357,6 +357,7 @@
                 disabled={recalling !== null}
                 onclick={() => recallScene(scene)}
                 title={dirty ? 'recall (mix has moved on — *)' : 'recall'}
+                aria-label={dirty ? `recall scene ${scene.name} (mix differs)` : `recall scene ${scene.name}`}
               >{recalling === scene.name ? '…' : '▶'}</button>
               <span class="sname" title={dirty ? 'mix differs from this scene' : 'matches live mix'}>
                 {scene.name}{dirty ? '*' : ''}
@@ -366,7 +367,8 @@
                 class="del"
                 disabled={recalling !== null}
                 onclick={() => deleteScene(scene.name)}
-                title="delete scene {scene.name}"
+                title={`delete scene ${scene.name}`}
+                aria-label={`delete scene ${scene.name}`}
               >✕</button>
             </div>
           {/each}

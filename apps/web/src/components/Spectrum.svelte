@@ -83,8 +83,14 @@
   });
 </script>
 
-<div class="spec" class:live={Array.isArray(bins) && bins.length} title={Array.isArray(bins) && bins.length ? 'live spectrum' : 'levels fallback — no spectrum message yet'}>
-  <canvas bind:this={canvas}></canvas>
+<div
+  class="spec"
+  class:live={Array.isArray(bins) && bins.length}
+  role="img"
+  aria-label={Array.isArray(bins) && bins.length ? `live spectrum for channel ${ch + 1}` : 'spectrum fallback from meter level — no spectrum feed yet'}
+  title={Array.isArray(bins) && bins.length ? 'live spectrum' : 'levels fallback — no spectrum message yet'}
+>
+  <canvas bind:this={canvas} aria-hidden="true"></canvas>
   {#if !(Array.isArray(bins) && bins.length)}
     <span class="tag">fallback</span>
   {/if}
