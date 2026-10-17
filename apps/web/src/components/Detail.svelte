@@ -1,9 +1,11 @@
 <script>
   import { SECTIONS, logToT, logFromT } from '../lib/sections.js';
+  import Spectrum from './Spectrum.svelte';
 
   // strip: selected strip object (ch >= 0) or null for MAIN.
   // hidden: array of param fields the backend rejected — those stay hidden.
-  let { strip, hidden = [], onParam, onName } = $props();
+  // spectrum: live bins for this channel (null until the relay sends them).
+  let { strip, hidden = [], spectrum = null, onParam, onName } = $props();
 
   // Local UI state resets whenever the selection changes
   // (parent wraps us in {#key strip?.ch}).
@@ -42,6 +44,7 @@
   <div class="hint">Local monitor-dim in v1 (backend exposes no main fader yet). Use the console LR fader.</div>
 {:else}
   <h2>{strip.name} <small>ch{strip.ch + 1}</small></h2>
+  <Spectrum ch={strip.ch} bins={spectrum} />
   <div class="prow">
     <label>name</label>
     <input
