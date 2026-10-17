@@ -5,13 +5,10 @@
   import type { Strip } from '../lib/backend';
 
   // Fat-channel thumbnail: rendered when the parent passes per-strip EQ
-  // state (`bands`) + live GR (`grDb`). Detail owns the selected channel's
-  // band copy today (resets per channel — the backend never echoes param
-  // state); per-strip copies for the mixer need a ch->bands store fed by
-  // future relay param echo, at which point App passes
-  // `bands={eqBandsFor(c.s.ch)} grDb={grFor(c.s.ch)}` at each <Strip> call
-  // site. Until then both stay null and the strip renders exactly as
-  // before (no layout change).
+  // state (`bands`) + live GR (`grDb`). App feeds both from the ch->bands
+  // store (lib/bands.ts — local-edit mirror, the relay never echoes param
+  // state) at each <Strip> call site: `bands={eqBandsFor(ch)} grDb={grFor(ch, gr)}`.
+  // Both stay null for MAIN, which renders exactly as before (no layout change).
 
   interface Props {
     strip: Strip;

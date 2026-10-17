@@ -19,9 +19,11 @@
 // The backend always receives the exact gain/freq/Q/type numbers; only the
 // indicative curve is approximate for unmapped values.
 //
-// Detail-owner note: Detail's `eqN_type` enum select currently pushes via
-// onParam without syncing `bands[n].type`, so the graph/thumb keep showing
-// bells until Detail copies the select into its eqBands state.
+// Detail sync: Detail's `eqN_type` enum select copies into `bands[n].type`
+// (see onEnum) so the graph/thumb render shelves immediately; App.pushParam
+// mirrors every eq edit into the lib/bands.ts per-strip store for the mixer
+// thumbs. The backend always receives the exact gain/freq/Q/type numbers;
+// only the indicative curve is approximate for unmapped values.
 
 export interface EqBand {
   gain: number; // dB, -20..+20
