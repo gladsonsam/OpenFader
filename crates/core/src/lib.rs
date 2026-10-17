@@ -186,42 +186,10 @@ impl FaderScale {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Small synthetic table: levels 0.0/0.5/1.0 map to -60/0/+10 units.
-    const SYNTH: FaderScale = FaderScale::from_uniform(&[-60.0, 0.0, 10.0]);
-
-    #[test]
-    fn endpoints_clamp() {
-        assert_eq!(SYNTH.forward(0.0), -60.0);
-        assert_eq!(SYNTH.forward(1.0), 10.0);
-        assert_eq!(SYNTH.forward(-0.5), -60.0);
-        assert_eq!(SYNTH.forward(2.0), 10.0);
-        assert_eq!(SYNTH.inverse(-120.0), 0.0);
-        assert_eq!(SYNTH.inverse(99.0), 1.0);
-    }
-
-    #[test]
-    fn segments_interpolate() {
-        // First segment: level 0.25 -> -30.0; second: level 0.75 -> +5.0.
-        assert!((SYNTH.forward(0.25) - -30.0).abs() < 1e-6);
-        assert!((SYNTH.forward(0.75) - 5.0).abs() < 1e-6);
-        assert!((SYNTH.inverse(-30.0) - 0.25).abs() < 1e-6);
-        assert!((SYNTH.inverse(5.0) - 0.75).abs() < 1e-6);
-    }
-
-    #[test]
-    fn roundtrip() {
-        for i in 0..=20 {
-            let level = i as f32 / 20.0;
-            let back = SYNTH.inverse(SYNTH.forward(level));
-            assert!((back - level).abs() < 1e-5, "level {level}");
-        }
-    }
-}
-
+/// Async-trait style is intentional: every driver method is async and the
+/// desugar to `fn ... -> impl Future` would be a breaking API change across
+/// all driver crates, so the `async_fn_in_trait` lint is allowed here.
+#[allow(async_fn_in_trait)]
 pub trait MixerDriver: Send + Sync {
     // ---- identity ----
     fn name(&self) -> &'static str;
@@ -349,5 +317,41 @@ pub trait MixerDriver: Send + Sync {
     /// Non-blocking single-frame poll (fake meters, tests, headless use).
     fn poll_meters(&self) -> MeterFrame {
         MeterFrame::silent(self.channel_count())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Small synthetic table: levels 0.0/0.5/1.0 map to -60/0/+10 units.
+    const SYNTH: FaderScale = FaderScale::from_uniform(&[-60.0, 0.0, 10.0]);
+
+    #[test]
+    fn endpoints_clamp() {
+        assert_eq!(SYNTH.forward(0.0), -60.0);
+        assert_eq!(SYNTH.forward(1.0), 10.0);
+        assert_eq!(SYNTH.forward(-0.5), -60.0);
+        assert_eq!(SYNTH.forward(2.0), 10.0);
+        assert_eq!(SYNTH.inverse(-120.0), 0.0);
+        assert_eq!(SYNTH.inverse(99.0), 1.0);
+    }
+
+    #[test]
+    fn segments_interpolate() {
+        // First segment: level 0.25 -> -30.0; second: level 0.75 -> +5.0.
+        assert!((SYNTH.forward(0.25) - -30.0).abs() < 1e-6);
+        assert!((SYNTH.forward(0.75) - 5.0).abs() < 1e-6);
+        assert!((SYNTH.inverse(-30.0) - 0.25).abs() < 1e-6);
+        assert!((SYNTH.inverse(5.0) - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn roundtrip() {
+        for i in 0..=20 {
+            let level = i as f32 / 20.0;
+            let back = SYNTH.inverse(SYNTH.forward(level));
+            assert!((back - level).abs() < 1e-5, "level {level}");
+        }
     }
 }
