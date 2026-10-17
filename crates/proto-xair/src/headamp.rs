@@ -14,10 +14,10 @@
 //!   (`range(kind.num_strip)`; XR18/XR16 = 16, XR12 = 12), so strip `i`
 //!   (0-based) drives headamp `i + 1` — the same 1:1 mapping as `/ch/NN`.
 //!
-//! NOT owner-rig hardware-verified and NOT in `docs/xair-protocol.md` (that
-//! file has no headamp rows as of 2026-10-18). This follows the repo's
-//! community-documented precedent (`addrs::METER_DYN_SUBSCRIBE`,
-//! [`crate::dyn_gr`]): wired into the driver, clearly marked here.
+//! Owner-rig verified 2026-10-18 ~01:00 AWST (XR18 FW 1.20): gain + phantom
+//! reads reply (/headamp/01/gain=0.17, /headamp/01/phantom=int 0,
+//! /headamp/16/gain=0.17); same-value gain write ACKed (readback 0.1667,
+//! i.e. write path + wire quantization confirmed).
 //!
 //! Open hardware questions (re-verify on the rig before trusting readbacks):
 //! headamp gain wire quantization is uncharacterized (faders quantize to
