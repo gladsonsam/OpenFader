@@ -6,7 +6,8 @@
 //   setParam(ch, field, v) -> Promise<void>     (number|boolean|string)
 //   onState(cb)            -> unsub             (cb(strips [{ch,name,fader,muted}]))
 //   onMeters(cb)           -> unsub             (cb(levels [0..1]))
-//   onSpectrum(cb)         -> unsub             (cb({ch,bins}) — no source yet)
+//   onSpectrum(cb)         -> unsub             (cb({ch,bins}))
+//   onGr(cb)               -> unsub             (cb({ch,gate,comp}) — dB reduction >= 0)
 //
 // Plus optional onStatus(cb) -> unsub (cb(true|false) online flag).
 // Auto-select: Tauri IPC when running inside Tauri, else WebSocket relay.
@@ -16,11 +17,11 @@
 // {cmd:'list_shows'}, {cmd:'capture_scene',show,name},
 // {cmd:'recall_scene',show,name,fade_ms}, {cmd:'delete_scene',show,name};
 // relay -> {type:'state',strips:[...]}, {type:'meters',levels:[...]},
+// {type:'spectrum',ch,bins:[...]}, {type:'gr',ch,gate,comp} (~5 Hz),
 // {type:'shows',shows:[...]} (full library; sent on connect, as the
 // list_shows reply, and broadcast after capture/delete).
-// Future: {type:'spectrum',ch,bins:[...]} (serve sends none yet; see
-// Spectrum.svelte header). Both backends expose onSpectrum(cb) so the UI
-// can subscribe today and light up when the relay starts sending spectra.
+// Both backends expose onSpectrum/onGr so the UI subscribes once and lights
+// up as the relay sends spectra/GR frames.
 // Ported from ../../ui/api.js — keep the two in sync contract-wise.
 
 export interface Strip {
@@ -44,6 +45,13 @@ export type Unsub = () => void;
 export interface SpectrumEvent {
   ch: number;
   bins: number[];
+}
+
+/** Gain-reduction frame: dB reduction >= 0 per stage (0 = no reduction). */
+export interface GrEvent {
+  ch: number;
+  gate: number;
+  comp: number;
 }
 
 /** One strip in a captured scene (cf. core SceneStrip). */
@@ -72,6 +80,7 @@ export type WsMsg =
   | { type: 'state'; strips: Strip[] }
   | { type: 'meters'; levels: number[] }
   | { type: 'spectrum'; ch: number; bins: number[] }
+  | { type: 'gr'; ch: number; gate: number; comp: number }
   | { type: 'shows'; shows: ShowLib[] };
 
 /** UI -> relay commands. */
@@ -105,6 +114,7 @@ export interface Backend {
   onState(cb: (strips: Strip[]) => void): Unsub;
   onMeters(cb: (levels: MeterLevels) => void): Unsub;
   onSpectrum(cb: (evt: SpectrumEvent) => void): Unsub;
+  onGr(cb: (evt: GrEvent) => void): Unsub;
   onStatus(cb: (online: boolean) => void): Unsub;
   close?(): void;
 }
@@ -213,6 +223,7 @@ export class TauriBackend implements Backend {
   private readonly meterCbs = new Set<(levels: MeterLevels) => void>();
   private readonly statusCbs = new Set<(online: boolean) => void>();
   private readonly spectrumCbs = new Set<(evt: SpectrumEvent) => void>();
+  private readonly grCbs = new Set<(evt: GrEvent) => void>();
   private readonly showsCbs = new Set<(shows: ShowLib[]) => void>();
   /** Local fallback library (used when the shell has no scene ops). */
   private localShows: ShowLib[] = [{ name: TAURI_SHOW, scenes: [] }];
@@ -467,6 +478,11 @@ export class TauriBackend implements Backend {
   onSpectrum(cb: (evt: SpectrumEvent) => void): Unsub {
     return sub(this.spectrumCbs, cb);
   }
+
+  // No GR source in the Tauri shell yet: subscribe works, nothing fires.
+  onGr(cb: (evt: GrEvent) => void): Unsub {
+    return sub(this.grCbs, cb);
+  }
 }
 
 /* ---------------- WebSocket relay (any browser) ---------------- */
@@ -488,6 +504,7 @@ export class WsBackend implements Backend {
   private readonly meterCbs = new Set<(levels: MeterLevels) => void>();
   private readonly statusCbs = new Set<(online: boolean) => void>();
   private readonly spectrumCbs = new Set<(evt: SpectrumEvent) => void>();
+  private readonly grCbs = new Set<(evt: GrEvent) => void>();
   private readonly showsCbs = new Set<(shows: ShowLib[]) => void>();
   private lastShows: ShowLib[] = [];
   private readonly showsWaiters: Array<(shows: ShowLib[]) => void> = [];
@@ -601,6 +618,19 @@ export class WsBackend implements Backend {
           /* ignore */
         }
       });
+    } else if (t === 'gr' && typeof rec['ch'] === 'number') {
+      const evt: GrEvent = {
+        ch: rec['ch'],
+        gate: Number(rec['gate']) || 0,
+        comp: Number(rec['comp']) || 0,
+      };
+      this.grCbs.forEach((cb) => {
+        try {
+          cb(evt);
+        } catch {
+          /* ignore */
+        }
+      });
     } else if (t === 'shows' && Array.isArray(rec['shows'])) {
       const shows = normShows(rec['shows']);
       this.lastShows = shows;
@@ -697,6 +727,9 @@ export class WsBackend implements Backend {
   }
   onSpectrum(cb: (evt: SpectrumEvent) => void): Unsub {
     return sub(this.spectrumCbs, cb);
+  }
+  onGr(cb: (evt: GrEvent) => void): Unsub {
+    return sub(this.grCbs, cb);
   }
   onStatus(cb: (online: boolean) => void): Unsub {
     const un = sub(this.statusCbs, cb);
