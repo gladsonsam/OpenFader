@@ -195,4 +195,36 @@ mod tests {
         let back = parse_dyn_blob(&blob).unwrap();
         assert_eq!(back.gate[0], 0.0);
     }
+
+    /// Fuzz-ish sweep: every truncation, every overlong extension, wrong
+    /// size words, and garbage fills must return `Err`, never panic
+    /// (truncated venue datagrams land here via `ingest_dyn_message`).
+    #[test]
+    fn fuzz_lengths_never_panic() {
+        let good = build_dyn_blob(&sample());
+        assert_eq!(good.len(), DYN_BLOB_LEN);
+        for len in 0..good.len() {
+            assert!(
+                parse_dyn_blob(&good[..len]).is_err(),
+                "truncated len {len} accepted"
+            );
+        }
+        let mut long = good.clone();
+        long.extend_from_slice(&[0u8; 16]);
+        assert!(parse_dyn_blob(&long).is_err());
+        for w in [0u32, 1, 38, 40, 0xFFFF_FFFF] {
+            let mut bad = good.clone();
+            bad[0..4].copy_from_slice(&w.to_le_bytes());
+            assert!(
+                parse_dyn_blob(&bad).is_err(),
+                "size word {w} accepted"
+            );
+        }
+        // Exact-length garbage fills: size word never matches 39.
+        assert!(parse_dyn_blob(&vec![0xABu8; DYN_BLOB_LEN]).is_err());
+        assert!(parse_dyn_blob(&vec![0u8; DYN_BLOB_LEN]).is_err());
+        assert!(parse_dyn_blob(&[]).is_err());
+        // The valid blob itself still decodes.
+        assert_eq!(parse_dyn_blob(&good).unwrap(), sample());
+    }
 }

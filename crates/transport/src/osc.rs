@@ -119,4 +119,106 @@ mod tests {
         };
         assert!(mute_is_muted(&msg).unwrap());
     }
+
+    /// Gig wifi feeds garbage: every truncation of a valid datagram must
+    /// decode-or-error, never panic. (The full datagram still decodes.)
+    #[test]
+    fn truncated_datagrams_never_panic() {
+        let valid =
+            encode_message("/ch/01/mix/fader", vec![OscType::Float(0.75)]).unwrap();
+        for len in 0..valid.len() {
+            let _ = decode_packet(&valid[..len]);
+        }
+        let bundle = {
+            let inner = encode_message("/a", vec![]).unwrap();
+            let mut b = b"#bundle\0".to_vec();
+            b.extend_from_slice(&[0u8; 8]);
+            b.extend_from_slice(&(inner.len() as u32).to_be_bytes());
+            b.extend_from_slice(&inner);
+            b
+        };
+        for len in 0..bundle.len() {
+            let _ = decode_packet(&bundle[..len]);
+        }
+        assert!(decode_packet(&valid).is_ok());
+        assert_eq!(flatten(decode_packet(&bundle).unwrap()).len(), 1);
+    }
+
+    /// Targeted malformed inputs: empty, short, zero-filled, unknown type
+    /// tags, tag/arg count mismatches, and non-OSC garbage all return
+    /// `Err` (never panic, never `Ok` on junk).
+    #[test]
+    fn malformed_datagrams_are_errors() {
+        assert!(decode_packet(&[]).is_err());
+        for n in 1..16usize {
+            assert!(
+                decode_packet(&vec![0u8; n]).is_err(),
+                "{n} zero bytes decoded"
+            );
+        }
+        // Unknown type tag: patch the `i` of an encoded Int message to `X`.
+        let mut bad_tag = encode_message("/t", vec![OscType::Int(1)]).unwrap();
+        let pos = bad_tag.iter().position(|&b| b == b'i').unwrap();
+        bad_tag[pos] = b'X';
+        assert!(decode_packet(&bad_tag).is_err());
+        // Tag claims an int arg but no payload follows.
+        assert!(decode_packet(b"/t\0\0,i\0\0").is_err());
+        // Address without a type-tag section at all.
+        assert!(decode_packet(b"/ab\0").is_err());
+        // NOTE: rosc parses bundles with `many0`, so corrupt bundle
+        // *content* (lying element sizes, trailing junk) decodes Ok with
+        // zero elements rather than Err — lenient, but safe: it flattens
+        // to nothing and the recv loop ignores it. Assert exactly that
+        // (and no panic) instead of Err here.
+        for tail in [u32::MAX.to_be_bytes().to_vec(), b"junk".to_vec()] {
+            let mut bundle = b"#bundle\0".to_vec();
+            bundle.extend_from_slice(&[0u8; 8]);
+            bundle.extend_from_slice(&tail);
+            let packet = decode_packet(&bundle).unwrap();
+            assert!(flatten(packet).is_empty());
+        }
+        // Plain non-OSC garbage in several shapes.
+        for junk in [
+            b"hello world, not osc......".to_vec(),
+            vec![0xFFu8; 64],
+            b",iii\x00\x00".to_vec(),
+            b"/".to_vec(),
+        ] {
+            assert!(decode_packet(&junk).is_err(), "junk decoded: {junk:?}");
+        }
+    }
+
+    /// Arg extractors reject wrong shapes with `Err`, never panic
+    /// (venue packets with swapped typetags must not kill the recv loop).
+    #[test]
+    fn arg_extractors_reject_wrong_shapes() {
+        let empty = OscMessage {
+            addr: "/ch/01/mix/fader".into(),
+            args: vec![],
+        };
+        assert!(fader_value(&empty).is_err());
+        assert!(int_arg(&empty).is_err());
+        let stringy = OscMessage {
+            addr: "/ch/01/mix/fader".into(),
+            args: vec![OscType::String("nope".into())],
+        };
+        assert!(fader_value(&stringy).is_err());
+        assert!(int_arg(&stringy).is_err());
+        let blobbed = OscMessage {
+            addr: "/meters/1".into(),
+            args: vec![OscType::Blob(vec![1, 2, 3])],
+        };
+        assert!(fader_value(&blobbed).is_err());
+        // Compatible widenings still work (desk sends ints/doubles too).
+        let inty = OscMessage {
+            addr: "/ch/01/mix/fader".into(),
+            args: vec![OscType::Int(1)],
+        };
+        assert!((fader_value(&inty).unwrap() - 1.0).abs() < f32::EPSILON);
+        let floaty = OscMessage {
+            addr: "/ch/01/mix/on".into(),
+            args: vec![OscType::Float(1.0)],
+        };
+        assert!(is_on(&floaty).unwrap());
+    }
 }

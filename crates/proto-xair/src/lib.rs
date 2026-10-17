@@ -1502,4 +1502,69 @@ mod tests {
         assert!(driver.ingest_dyn_message(&blobless).await.is_err());
         assert!(driver.last_dyn().await.is_none());
     }
+
+    /// Garbage `/meters/6` payloads (truncated venue datagrams, corrupted
+    /// blobs, non-blob args) must bail with `Err`, never panic and never
+    /// poison the GR cache; a later valid blob still ingests cleanly.
+    #[tokio::test]
+    async fn driver_dyn_ingest_rejects_garbage_never_panics() {
+        let (driver, _) = connected_driver().await;
+        let mut m = dyn_gr::DynMeters {
+            gate: [0.0; dyn_gr::DYN_CHANNELS],
+            comp: [0.0; dyn_gr::DYN_CHANNELS],
+            bus: [0.0; dyn_gr::DYN_BUSES],
+            lr: 0.0,
+        };
+        m.gate[0] = 6.0;
+        let good = dyn_gr::build_dyn_blob(&m);
+        // Every truncation of a valid blob bails.
+        for len in 0..good.len() {
+            let msg = OscMessage {
+                addr: addrs::METER_DYN_SUBSCRIBE.to_string(),
+                args: vec![OscType::Blob(good[..len].to_vec())],
+            };
+            assert!(
+                driver.ingest_dyn_message(&msg).await.is_err(),
+                "truncated len {len} ingested"
+            );
+        }
+        // Garbage fills at exact length (wrong size word) bail.
+        for fill in [0x00u8, 0xABu8, 0xFFu8] {
+            let msg = OscMessage {
+                addr: addrs::METER_DYN_SUBSCRIBE.to_string(),
+                args: vec![OscType::Blob(vec![fill; dyn_gr::DYN_BLOB_LEN])],
+            };
+            assert!(driver.ingest_dyn_message(&msg).await.is_err());
+        }
+        // Non-blob args (swapped typetags on the wire) bail.
+        for args in [
+            vec![OscType::Float(0.5)],
+            vec![OscType::String("garbage".into())],
+            vec![
+                OscType::Int(-1),
+                OscType::Blob(vec![0xABu8; 10]),
+            ],
+        ] {
+            let msg = OscMessage {
+                addr: addrs::METER_DYN_SUBSCRIBE.to_string(),
+                args,
+            };
+            assert!(driver.ingest_dyn_message(&msg).await.is_err());
+        }
+        // Float/string-only payloads must not have poisoned the cache…
+        // (reset: only a valid blob fills it — proven below).
+        let stringy = OscMessage {
+            addr: addrs::METER_DYN_SUBSCRIBE.to_string(),
+            args: vec![OscType::String("garbage".into())],
+        };
+        assert!(driver.ingest_dyn_message(&stringy).await.is_err());
+        assert!(driver.last_dyn().await.is_none());
+        // …and a later valid blob still ingests cleanly.
+        let valid = OscMessage {
+            addr: addrs::METER_DYN_SUBSCRIBE.to_string(),
+            args: vec![OscType::Blob(good)],
+        };
+        driver.ingest_dyn_message(&valid).await.unwrap();
+        assert_eq!(driver.last_dyn().await.unwrap().gate[0], 6.0);
+    }
 }
