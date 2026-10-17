@@ -9,6 +9,8 @@ use rosc::OscType;
 use std::sync::OnceLock;
 use tokio::sync::{Mutex, broadcast};
 
+pub mod fx;
+
 pub mod addrs {
     //! X-Air address table. The wire is 1-based with zero-padded two-digit
     //! channel numbers (`/ch/01/…`); [`StripId`](openmix_core::StripId) is
@@ -409,6 +411,28 @@ impl MixerDriver for XAirDriver {
         Ok(Self::info_from_strings(osc::string_args(&reply), peer))
     }
 
+    async fn set_fx_param(&self, slot: u8, param: u8, value: f32) -> anyhow::Result<()> {
+        // 0-based trait index; the wire is 1-based on both axes (`fx`).
+        // Validated BEFORE any I/O so out-of-range never hits the desk.
+        // Bit-exact on hardware (baseline §6 row 5) — no fader epsilon here.
+        let addr = fx::fx_param(slot, param)?;
+        let value = fx::check_value(value)?;
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(&addr, vec![OscType::Float(value)])
+            .await
+    }
+
+    async fn get_fx_param(&self, slot: u8, param: u8) -> anyhow::Result<f32> {
+        let addr = fx::fx_param(slot, param)?;
+        let guard = self.session().await?;
+        let reply = guard.as_ref().unwrap().query(&addr).await?;
+        let v = osc::fader_value(&reply)?;
+        fx::check_value(v)
+    }
+
     async fn subscribe_meters(
         &self,
     ) -> anyhow::Result<broadcast::Receiver<openmix_core::MeterFrame>> {
@@ -488,6 +512,8 @@ mod tests {
         faders: StdMutex<HashMap<String, f32>>,
         ons: StdMutex<HashMap<String, i32>>,
         names: StdMutex<HashMap<String, String>>,
+        /// FX params answer bit-exact (no quantization, baseline §6 row 5).
+        fx: StdMutex<HashMap<String, f32>>,
         meter_subscribe: StdMutex<Option<rosc::OscMessage>>,
     }
 
@@ -503,6 +529,7 @@ mod tests {
                     1,
                 )])),
                 names: StdMutex::new(HashMap::new()),
+                fx: StdMutex::new(HashMap::new()),
                 meter_subscribe: StdMutex::new(None),
             });
             let worker = fake.clone();
@@ -563,6 +590,12 @@ mod tests {
                                 worker.faders.lock().unwrap().insert(a.to_string(), q);
                                 None
                             }
+                            // FX params are bit-exact on hardware (baseline
+                            // §6 row 5): store verbatim, no quantization.
+                            (a, Some(OscType::Float(f))) if a.starts_with("/fx/") => {
+                                worker.fx.lock().unwrap().insert(a.to_string(), *f);
+                                None
+                            }
                             (a, Some(OscType::Int(i))) if a.ends_with("/mix/on") => {
                                 worker.ons.lock().unwrap().insert(a.to_string(), *i);
                                 None
@@ -597,6 +630,12 @@ mod tests {
                                 Some(
                                     osc::encode_message(a, vec![OscType::String(v)]).unwrap(),
                                 )
+                            }
+                            // Untouched FX params read back 0.0.
+                            (a, None) if a.starts_with("/fx/") => {
+                                let v =
+                                    worker.fx.lock().unwrap().get(a).copied().unwrap_or(0.0);
+                                Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
                             }
                             ("/info", _) => None,
                             _ => None,
@@ -861,6 +900,27 @@ mod tests {
         assert!(!driver.get_aux_mute().await.unwrap());
         driver.set_aux_name("COMP LR").await.unwrap();
         assert_eq!(driver.get_aux_name().await.unwrap(), "COMP LR");
+    }
+
+    /// FX slots (`/fx/N/par/MM`, baseline §6 row 5): bit-exact loopback
+    /// through the core `FxRack` hooks — set/get plus local validation.
+    #[tokio::test]
+    async fn driver_fx_param_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // Slot is 1-based, index 0-based: (1, 0) drives `/fx/1/par/01`.
+        driver.set_fx_param(1, 0, 0.5).await.unwrap();
+        assert_eq!(driver.get_fx_param(1, 0).await.unwrap(), 0.5);
+        driver.set_fx_param(4, 63, 1.0).await.unwrap();
+        assert_eq!(driver.get_fx_param(4, 63).await.unwrap(), 1.0);
+        // Untouched params read back zero.
+        assert_eq!(driver.get_fx_param(2, 10).await.unwrap(), 0.0);
+        // Out-of-range addresses/values rejected locally, never sent.
+        assert!(driver.set_fx_param(0, 0, 0.5).await.is_err());
+        assert!(driver.set_fx_param(5, 0, 0.5).await.is_err());
+        assert!(driver.set_fx_param(1, 64, 0.5).await.is_err());
+        assert!(driver.set_fx_param(1, 0, 1.5).await.is_err());
+        assert!(driver.set_fx_param(1, 0, f32::NAN).await.is_err());
+        assert!(driver.get_fx_param(1, 64).await.is_err());
     }
 
     /// Meter subscription uses the documented `/meters` + stream-id-string
