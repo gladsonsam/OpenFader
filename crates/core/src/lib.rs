@@ -9,6 +9,12 @@
 //! tokio I/O. All methods past the core four have default bodies returning
 //! "unsupported", so stub drivers keep compiling while they grow.
 
+pub mod access;
+pub mod fx;
+pub mod rta;
+pub mod show;
+pub mod sync;
+
 /// 0-based channel/bus strip index, uniform across every driver.
 ///
 /// All drivers (`sim`, `xair`, `dl32s`, …) take 0-based [`StripId`]s; a driver
@@ -304,8 +310,31 @@ pub trait MixerDriver: Send + Sync {
         anyhow::bail!("{}: recall not supported", self.name())
     }
 
+    /// Recall a [`show::Scene`] with a fader fade over `fade_ms`
+    /// (see [`show::Scene::recall_to`]). Default suits every driver.
+    async fn recall_scene(&self, scene: &crate::show::Scene, fade_ms: u64) -> anyhow::Result<()>
+    where
+        Self: Sync,
+    {
+        crate::show::recall_scene(self, scene, fade_ms).await
+    }
+
     async fn query_info(&self) -> anyhow::Result<MixerInfo> {
         anyhow::bail!("{}: query_info not supported", self.name())
+    }
+
+    // ---- FX params (openmix_core::fx; X-Air/DL32S map these later) ----
+    /// Set one numbered FX param: `slot` 1..=4, `index` 0..64, value 0..1.
+    /// Default: unsupported (validate with [`fx::FxRack`] first).
+    async fn set_fx_param(&self, slot: u8, param: u8, value: f32) -> anyhow::Result<()> {
+        let _ = (slot, param, value);
+        anyhow::bail!("{}: fx params not supported", self.name())
+    }
+
+    /// Read one numbered FX param. Default: unsupported.
+    async fn get_fx_param(&self, slot: u8, param: u8) -> anyhow::Result<f32> {
+        let _ = (slot, param);
+        anyhow::bail!("{}: fx params not supported", self.name())
     }
 
     // ---- meters ----
