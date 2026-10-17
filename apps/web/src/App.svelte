@@ -23,6 +23,7 @@
   import Detail from './components/Detail.svelte';
   import FxRack from './components/FxRack.svelte';
   import GainWizard from './components/GainWizard.svelte';
+  import Onboarding from './components/Onboarding.svelte';
   import Overview from './components/Overview.svelte';
   import ShowEditor from './components/ShowEditor.svelte';
   import ValueEntry from './components/ValueEntry.svelte';
@@ -103,6 +104,16 @@
   let storeArm: boolean = $state(false);
   let driver: string = $state('sim');
   let addr: string = $state('');
+  let showOnboard: boolean = $state(false);
+  const ONBOARD_KEY = 'openmix.onboarded.v1';
+  function closeOnboard(): void {
+    showOnboard = false;
+    try {
+      localStorage.setItem(ONBOARD_KEY, '1');
+    } catch {
+      /* private mode: wizard simply reappears next load */
+    }
+  }
   let showBridge: boolean = $state(false);
   let master: { fader: number } = $state({ fader: 0.8 }); // LR main mirror (driver-backed via onMain/setMainFader; 0.8 until first state)
   const meterMapA = new Map<number, HTMLCanvasElement>(); // ch -> canvas (imperative paint, no re-render)
@@ -690,6 +701,11 @@
   onMount(() => {
     if (!layers.some((l) => l.id === layer)) layer = 'inputs';
     if (!layers.some((l) => l.id === layerB)) layerB = layers.some((l) => l.id === 'buses') ? 'buses' : 'inputs';
+    try {
+      if (localStorage.getItem(ONBOARD_KEY) !== '1') showOnboard = true;
+    } catch {
+      showOnboard = true; // storage blocked: show it rather than lose first-run help
+    }
     const offs: Unsub[] = [
       backend.onState((next) => {
         strips = next;
@@ -788,6 +804,7 @@
     <span id="badge" class:online class:offline={!online}>{online ? 'online' : 'offline'}</span>
     <span id="via" title="transport">{via}</span>
     <button id="bridgeBtn" class:on={showBridge} aria-pressed={showBridge} title="toggle meter bridge" onclick={() => { showBridge = !showBridge; }}>bridge</button>
+    <button id="helpBtn" title="first-run wizard & guided tour" aria-label="open setup wizard and tour" onclick={() => { showOnboard = true; }}>?</button>
   </header>
 
   <!-- Mackie 3-view nav: always visible, active one dark. -->
@@ -1146,6 +1163,10 @@
         </div>
       {/key}
     </main>
+  {/if}
+
+  {#if showOnboard}
+    <Onboarding backend={backend} {online} onDone={closeOnboard} onGoto={(v) => setView(v)} />
   {/if}
 
   {#if editing}
