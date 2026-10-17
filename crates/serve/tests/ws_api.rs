@@ -1214,3 +1214,106 @@ async fn ws_main_fader_set_and_state() {
 
     server.abort();
 }
+
+/// Self-id (`you`): the first frame on connect is the unicast
+/// `{"type":"you","id":"<client-N>"}`, preceding the initial `state`
+/// snapshot, and that id later appears verbatim in `by` tags. The
+/// `connect` command re-unicasts the same id.
+#[tokio::test]
+async fn ws_you_self_id_precedes_state_and_tags_writes() {
+    use tokio_tungstenite::tungstenite::Message;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run(
+        listener,
+        openmix_serve::ServeOptions::default(),
+    ));
+
+    let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("WS connect");
+    let (mut tx, mut rx) = stream.split();
+
+    // First frame must be `you` (it precedes the initial state snapshot).
+    let you = next_msg(&mut rx).await;
+    assert_eq!(you.get("type"), Some(&serde_json::json!("you")));
+    let me = you
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .expect("you carries id")
+        .to_string();
+    assert!(!me.is_empty(), "self id is non-empty");
+
+    // Snapshot follows.
+    let state = next_typed(&mut rx, "state").await;
+    assert_eq!(state.get("driver"), Some(&serde_json::json!("sim")));
+
+    // Our own mutation comes back tagged with the `you` id.
+    tx.send(Message::Text(
+        serde_json::json!({"cmd":"fader","ch":0,"value":0.5}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let st = wait_state(&mut rx, |s| {
+        strip(s, 0)
+            .get("fader")
+            .and_then(serde_json::Value::as_f64)
+            .is_some_and(|f| (f - 0.5).abs() < 1e-6)
+    })
+    .await;
+    assert_eq!(
+        st.get("by").and_then(serde_json::Value::as_str),
+        Some(me.as_str()),
+        "by tag matches the you id"
+    );
+
+    // `connect` re-unicasts the same self id (plus a state broadcast).
+    tx.send(Message::Text(
+        serde_json::json!({"cmd":"connect","driver":"sim"}).to_string(),
+    ))
+    .await
+    .unwrap();
+    {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut saw_you = false;
+        let mut saw_state = false;
+        while !(saw_you && saw_state) {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for you + state after connect (you={saw_you}, state={saw_state})");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(&mut rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            match v.get("type").and_then(serde_json::Value::as_str) {
+                Some("you") if v.get("id") == Some(&serde_json::json!(me)) => {
+                    saw_you = true;
+                }
+                Some("state")
+                    if v.get("by").and_then(serde_json::Value::as_str) == Some(me.as_str()) =>
+                {
+                    saw_state = true;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // A second client gets a distinct id.
+    let (stream2, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("second WS connect");
+    let (_, mut rx2) = stream2.split();
+    let you2 = next_msg(&mut rx2).await;
+    assert_eq!(you2.get("type"), Some(&serde_json::json!("you")));
+    let other = you2
+        .get("id")
+        .and_then(serde_json::Value::as_str)
+        .expect("second you carries id");
+    assert_ne!(other, me, "client ids are distinct");
+
+    server.abort();
+}

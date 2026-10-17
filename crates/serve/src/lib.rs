@@ -19,6 +19,7 @@
 //!
 //! server -> client:
 //! ```json
+//! {"type":"you","id":"client-1"}
 //! {"type":"state","driver":"sim","main_fader":0.8,"strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}
 //! {"type":"param","ch":0,"field":"gain","value":0.5}
 //! {"type":"shows","shows":[{"name":"gig","scenes":[{"name":"verse","main_fader":null,"strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}]}]}
@@ -44,6 +45,13 @@
 //! Multi-client awareness (no arbitration yet): the server tracks connected
 //! WS clients (id, connect time, label from `?name=` or `client-N`) and
 //! broadcasts `{"type":"clients","count":N,"writers":[...]}` on join/leave.
+//!
+//! Self-id (`you`): on WS connect — and as the unicast reply to every
+//! `{"cmd":"connect",...}` — the server unicasts
+//! `{"type":"you","id":"<client-N>"}` to that socket only, so the client
+//! learns its server-side id without guessing from the roster (which can
+//! misattribute under concurrent joins). `by` tags on later `state`/`param`
+//! frames match this id.
 //! Every `state`/`param` frame emitted by a `fader`/`mute`/`param`
 //! (`recall_scene` included) mutation carries `"by":"<writer-id>"` so UIs
 //! can show who moved what. Writers are ids with a mutation in the last
@@ -543,6 +551,7 @@ impl Shared {
     /// Apply one client command from `writer` (its presence id).
     ///
     /// Returns a direct reply for `list_shows` (unicast `shows` frame),
+    /// for `connect` (unicast `you` self-id frame),
     /// for lock denials (`{"type":"error","locked_by":...}` unicast), and
     /// for `recall_scene` when it overrode foreign locks
     /// (`{"type":"recalled","overrode_locks":[...]}` unicast); every other
@@ -571,7 +580,7 @@ impl Shared {
                 self.note_write(writer).await;
                 self.touch_holder_locks(writer).await;
                 let _ = self.state_tx.send(writer.to_string());
-                Ok(None)
+                Ok(Some(you_message(writer)))
             }
             "fader" => {
                 let ch = channel_arg(msg)?;
@@ -844,6 +853,16 @@ fn gr_message(ch: usize, gate: f32, comp: f32) -> Value {
     json!({"type":"gr","ch":ch,"gate":gate,"comp":comp})
 }
 
+/// Self-id frame for one client: `{"type":"you","id":"<client-N>"}`.
+///
+/// Unicast to the socket on WS connect (before the initial `state` frame)
+/// and as the direct reply to every `{"cmd":"connect",...}`, so the client
+/// learns the id the server will use in later `"by":"<writer-id>"` tags
+/// without guessing from the `clients` roster.
+fn you_message(id: &str) -> Value {
+    json!({"type":"you","id":id})
+}
+
 /// One `param` echo for channel `ch`:
 /// `{"type":"param","ch":N,"field":"...","value":number|bool|string,"by":"..."}`.
 ///
@@ -933,9 +952,19 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>, name: Option<Stri
     let (client_id, label) = shared.alloc_client(name.as_deref());
     shared.add_client(&client_id, &label).await;
     let (mut tx, mut rx) = socket.split();
-    // Initial snapshot: mixer state, then the server-side show library,
-    // then the client roster and the lock table (so the newcomer sees
-    // siblings and pins immediately).
+    // Initial snapshot: `you` self-id first, then mixer state, then the
+    // server-side show library, then the client roster and the lock table
+    // (so the newcomer sees siblings and pins immediately). `you` precedes
+    // `state` so a client can correlate its id with later `by` tags before
+    // any mutation frame arrives.
+    if tx
+        .send(Message::Text(you_message(&client_id).to_string()))
+        .await
+        .is_err()
+    {
+        shared.remove_client(&client_id).await;
+        return;
+    }
     if tx
         .send(Message::Text(shared.state_message().await.to_string()))
         .await
