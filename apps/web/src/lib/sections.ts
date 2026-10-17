@@ -25,6 +25,12 @@ export const SECTIONS: Section[] = [
   { title: 'Input', fields: [
     { f: 'gain', label: 'gain', unit: 'dB', type: 'f', min: -20, max: 60, step: 0.5, def: 0 },
     { f: 'phantom', label: '+48V', type: 'b' },
+    // USB-return source (xair: /ch/NN/config/rtnsrc U01..U18, live-verified;
+    // the /insrc input-source select is live-silent on FW 1.20 so it stays
+    // unsupported and has no field here).
+    { f: 'usbreturn', label: 'usb return', type: 'enum', opts: Array.from({ length: 18 }, (_, i) => i), def: 0 },
+    { f: 'trim', label: 'trim', unit: 'dB', type: 'f', min: -18, max: 18, step: 0.1, def: 0 },
+    { f: 'polarity', label: 'phase', type: 'b' },
     { f: 'pan', label: 'pan', unit: 'L/R', type: 'f', min: -1, max: 1, step: 0.01, def: 0 },
   ]},
   { title: 'Filter / dynamics', fields: [
