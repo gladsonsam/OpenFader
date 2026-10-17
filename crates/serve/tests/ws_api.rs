@@ -513,3 +513,136 @@ async fn ws_scenes_capture_recall_delete() {
 
     server.abort();
 }
+
+/// Presence: two clients share one roster; mutations carry the writer id.
+///
+/// c1 joins (?name=alice), c2 joins (?name=bob) and immediately sees
+/// count==2; c1 gets the join broadcast. A fader/mute/param mutation
+/// from c1 arrives at c2 with `"by"` set, and a third join observes c1
+/// in `writers` (last-write-wins, 10 s window).
+#[tokio::test]
+async fn ws_client_presence_and_writer_tag() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run(
+        listener,
+        openmix_serve::ServeOptions::default(),
+    ));
+    use tokio_tungstenite::tungstenite::Message;
+
+    async fn connect(url: String) -> (WsTx, WsRx) {
+        let (stream, _) = tokio_tungstenite::connect_async(url).await.expect("WS connect");
+        stream.split()
+    }
+    type WsTx = futures::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        Message,
+    >;
+
+    async fn wait_clients(rx: &mut WsRx, want: impl Fn(&Value) -> bool) -> Value {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut last = json!(null);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for expected clients; last: {last}");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) != Some("clients") {
+                continue;
+            }
+            last = v;
+            if want(&last) {
+                return last.clone();
+            }
+        }
+    }
+
+    // c1 joins with a name; initial roster is itself alone.
+    let (mut tx1, mut rx1) = connect(format!("ws://{addr}/ws?name=alice")).await;
+    let _ = next_typed(&mut rx1, "state").await;
+    let _ = next_typed(&mut rx1, "shows").await;
+    let c1 = next_typed(&mut rx1, "clients").await;
+    assert_eq!(c1.get("count"), Some(&json!(1)));
+
+    // c2 joins (no name -> client-N fallback) and sees both clients.
+    let (mut tx2, mut rx2) = connect(format!("ws://{addr}/ws")).await;
+    let _ = next_typed(&mut rx2, "state").await;
+    let _ = next_typed(&mut rx2, "shows").await;
+    let c2 = next_typed(&mut rx2, "clients").await;
+    assert_eq!(
+        c2.get("count"),
+        Some(&json!(2)),
+        "second client sees first in clients frame"
+    );
+
+    // c1 learns about the join via broadcast.
+    let joined = wait_clients(&mut rx1, |v| v.get("count") == Some(&json!(2))).await;
+    assert_eq!(joined.get("count"), Some(&json!(2)));
+
+    // Fader mutation from c1 arrives at c2 tagged with the writer id.
+    tx1.send(Message::Text(
+        json!({"cmd":"fader","ch":0,"value":0.5}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let st = wait_state(&mut rx2, |s| {
+        strip(s, 0)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - 0.5).abs() < 1e-6)
+    })
+    .await;
+    let by_fader = st
+        .get("by")
+        .and_then(Value::as_str)
+        .expect("state carries by-field");
+    assert!(!by_fader.is_empty());
+
+    // Mute mutation is tagged too.
+    tx1.send(Message::Text(
+        json!({"cmd":"mute","ch":0,"muted":true}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let st = wait_state(&mut rx2, |s| strip(s, 0).get("muted") == Some(&json!(true))).await;
+    assert_eq!(st.get("by"), Some(&json!(by_fader)));
+
+    // Param echo carries the same writer.
+    tx1.send(Message::Text(
+        json!({"cmd":"param","ch":1,"field":"fader","value":0.25}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let echo = wait_param(&mut rx2, 1, "fader", &json!(0.25)).await;
+    assert_eq!(echo.get("by"), Some(&json!(by_fader)));
+
+    // A third join observes c1 as a recent writer.
+    let (_tx3, mut rx3) = connect(format!("ws://{addr}/ws?name=carol")).await;
+    let _ = next_typed(&mut rx3, "state").await;
+    let _ = next_typed(&mut rx3, "shows").await;
+    let c3 = next_typed(&mut rx3, "clients").await;
+    assert_eq!(c3.get("count"), Some(&json!(3)));
+    let writers = c3
+        .get("writers")
+        .and_then(Value::as_array)
+        .expect("clients carries writers");
+    assert!(
+        writers.iter().any(|w| w == &json!(by_fader)),
+        "writers include the recent mutator, got {writers:?}"
+    );
+
+    // Leave broadcast: c2 closing brings the roster back to 2.
+    tx2.send(Message::Close(None)).await.ok();
+    let _ = wait_clients(&mut rx1, |v| v.get("count") == Some(&json!(2))).await;
+
+    let _ = &mut tx1;
+    server.abort();
+}
