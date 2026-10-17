@@ -1,4 +1,4 @@
-# openmix user guide (operator's handbook)
+# openmix user guide (operator's handbook) — v0.2.0
 
 Gig-oriented: install it, connect it, mix the show, go home.
 Covers the desktop app, the Docker relay, and the phone PWA — all
@@ -27,7 +27,8 @@ Linux needs the usual Tauri system libs (`libdbus-1-dev`,
 `libwebkit2gtk-4.1-dev`, …) before the first build. Frontend served is
 `apps/web/dist` — run `npm run build` in `apps/web` first if it is
 missing. Desktop talks to the desk directly (Rust UDP/TCP sockets),
-so no relay is needed.
+so no relay is needed. Note: the Tauri shell has **no strip-lock
+support** (lock buttons never appear) — see §3.
 
 ### B. Relay + any browser (Docker / Pi)
 
@@ -38,9 +39,15 @@ server is the bridge: browser ↔ WebSocket ↔ server ↔ UDP/TCP ↔ desk
 
 ```sh
 cargo run -p openmix-serve                       # sim on :8080
+cargo run -p openmix-serve -- --preset studio     # sim rig-as-found on :8080
 docker compose up --build                        # sim on :8080
 DRIVER=xair ADDR=192.168.1.10 docker compose up --build
 ```
+
+`--preset` shapes the **sim** desk only (hardware drivers ignore it):
+`generic` (default), `xr18`, `dl32s`, `studio`. `studio` mirrors a
+desk-as-found — faders/mutes already placed — so rehearsal starts from
+something that looks like a gig, not a flat line. See §2.
 
 Then open `http://<host-lan-ip>:8080` from any laptop/phone browser on
 the same network. The `./scenes` volume keeps saved scenes next to the
@@ -54,8 +61,11 @@ deployment. Detached on a venue Pi: `docker compose up --build -d`.
 3. Browser menu → **Add to Home Screen / Install app**. Manifest is
    `standalone`, landscape, dark theme (`apps/web/manifest.webmanifest`).
 
-Touch targets are 44 px; faders use pointer capture so a drag keeps
-working if your thumb slides off the strip.
+A service worker (`apps/web/sw.js`) caches the app shell so the UI
+itself loads offline; live socket traffic (`/ws`) is never cached —
+you still need the LAN for the desk. Touch targets are 44 px; faders
+use pointer capture so a drag keeps working if your thumb slides off
+the strip.
 
 ## 2. First connect (sim vs XR18 vs DL32S)
 
@@ -65,7 +75,8 @@ Top bar: **driver** dropdown (`sim | xair | dl32s`), **addr** field,
 | What | Driver | Addr | Notes |
 | --- | --- | --- | --- |
 | Rehearse with no desk | `sim` | blank | Auto-connects on load; 8 `CHxx` strips at 0.75. Safe to learn on. |
-| Behringer XR18 (X-Air) | `xair` | mixer LAN IP, e.g. `192.168.1.10` | UDP 10024. See §9 for FW/discovery notes. |
+| Rehearse a lived-in desk | `sim` + relay `--preset studio` | blank | Sim with as-found faders/mutes. Relay only. |
+| Behringer XR18 (X-Air) | `xair` | mixer LAN IP, e.g. `192.168.1.10` | UDP 10024. See §11 for FW/discovery notes. |
 | Mackie DL32S | `dl32s` | mixer LAN IP (**required**) | TCP 50001. No broadcast — there is no discover; type the IP. |
 
 Laptop/phone **and** the relay (if used) must be on the **same LAN /
@@ -74,14 +85,21 @@ discovery does not cross Docker's default bridge or subnets — pass
 `--addr <mixer-ip>` explicitly (see `docs/docker.md`, `docs/LIVE-RIG.md`).
 
 After connect the badge flips to `online`; strips populate from the
-backend. If it stays `offline`, see §9.
+backend. If it stays `offline`, see §11.
 
 > DL32S rename is expected to fail (`set_name` encoding unconfirmed):
 > the UI keeps the old name. XR18 rename works.
 
+**First run?** The onboarding wizard opens automatically: pick the
+desk, type its LAN address, test the link, then walk a 5-step guided
+tour of the app. Skippable throughout, re-open any time from the
+top-bar **?** button. (If the browser blocks storage, the wizard
+reappears next load — that is the fallback, not a bug.)
+
 ## 3. Mixer views tour
 
-Four views, always in the nav bar: **Overview / Mixer / Channel / Shows**.
+Six views, all in the nav bar: **Overview / Mixer / Channel / Rack /
+Shows / Wizard**.
 
 ### Overview — whole-show health
 
@@ -103,12 +121,78 @@ own custom layers. Toolbar → `LAYOUT` enables edit mode: reorder strips
 Layout persists in `localStorage` per browser.
 
 **Solo** is local monitor only — it dims non-soloed strips in the UI
-and does not touch the desk. **Mute** hits the desk (when armed, §6).
+and does not touch the desk. **Mute** hits the desk (when armed, §9).
 
 In **Mains** you get the `MAIN` pseudo-strip: a local monitor-dim in
 the web UI (the relay exposes no main fader op). The Tauri shell does
 expose a driver-backed main fader — **TODO-owner**: confirm which main
 value the desk follows when both are visible.
+
+### Dual-pane (FOH + monitors, one screen)
+
+Toolbar toggle **dual-pane** (title: `dual-pane: two independent mixer
+views side by side`). Two full mixer panes, A and B, each with its own
+layer bank and its own sends-on-fader destination — run LR on A and a
+monitor bus mix on B, side by side. Drag the divider (or arrow keys,
+`Home` resets); each pane tints independently when in sends-on-fader.
+
+- On/off persists per browser (`openmix.split.v1`); pane B's bank
+  resets to `buses` on reload (session-only).
+- Below ~1100 px wide the panes stack and pane B hides — one pane on
+  a phone, two on a laptop. That is the design, not a fault.
+
+### Sends-on-fader (SoF) + aux rail
+
+The **aux rail** (under the view nav) lists `LR` plus one button per
+bus. Tap a bus (e.g. `AUX1`) to flip: input-strip faders now drive
+**send levels to that bus**, and the bus master pins itself at the end
+labelled `MASTER`. In dual-pane each pane has its own SoF destination.
+
+**Tint warning:** the whole app (or the active pane, in dual-pane)
+tints to the bus colour and a banner reads `SENDS → <name> — faders
+are sends, not LR`. If you see colour, you are NOT on LR. `EXIT ✕` (or
+tap `LR`, or tap the same bus again) returns to LR. `copy LR` seeds
+the bus mix from the current LR balance.
+
+Sends are cached locally and pushed via the existing `param` command
+(`auxN_level`, dB). If a push fails the value is kept locally and the
+status line says so — re-tap after reconnecting.
+
+### Musician mode (performer's wedge box)
+
+Top-bar **musician** button. The performer picks their own wedge/IEM
+bus, then gets ONLY that bus: giant touch faders driving that bus's
+per-channel sends, big channel names, one big master (bus) volume, a
+**CALL FOH** flash button, and single-tap exit. No LR, no mutes/solos,
+no layers, no scenes, no detail panel, no renames — hidden, not just
+disabled. Send writes reuse the normal sends path; entry and exit are
+one tap each (PIN-less by design — a locked-down device still wants
+OS-level kiosk work: guided access / screen pinning, no browser
+chrome; see the note at the top of `MusicianView.svelte`).
+
+**CALL FOH:** fires a best-effort `attention` event on the bus strip,
+which the relay fans out to every client — FOH builds flash an
+attention toast (max 3 stacked, 10 s each, tap to jump to the
+channel). The musician box always shows its own local strobing banner
+too, so the performer gets feedback even if FOH runs a build without
+the toast listener. Builds without the listener ignore the unknown
+field gracefully — nothing crashes.
+
+### Strip locks (two operators, one relay)
+
+Over the relay (WS only — Tauri direct has no locks), any operator can
+claim a strip: tap the lock affordance on the strip. The holder's id
+shows on the strip badge and in the `locks` strip at the top; writes
+to a strip locked by someone else are rejected and the denial names
+the holder. Holds expire after 60 s without holder activity and
+release on disconnect. Scene recall **bypasses** locks but the
+recaller gets a toast naming every overridden channel (`scene recall
+overrode locks on ch …`).
+
+There is no client roster in the web UI — the locks strip *is* the
+presence display. Everything else is last-write-wins: claim the
+strips you are riding, and confirm the FOH/monitors split before
+running two devices on one relay.
 
 ### Channel — one strip, big
 
@@ -116,30 +200,36 @@ Big fader for the selected strip plus the **Detail** panel (§4) and
 mute-group assignment (`G1`–`G4`; tap to assign this channel). Select
 by tapping a strip in Mixer, or jump from Overview.
 
-### Sends-on-fader (SoF) + aux rail
+### Rack / Shows / Wizard
 
-The **aux rail** (under the view nav) lists `LR` plus one button per
-bus. Tap a bus (e.g. `AUX1`) to flip: input-strip faders now drive
-**send levels to that bus**, and the bus master pins itself at the end
-labelled `MASTER`.
+- **Rack:** the 4-slot X-Air FX rack with labeled params and tap
+  tempo (§5).
+- **Shows:** the ordered show library with export/import and
+  settings backup (§6).
+- **Wizard:** the gain-staging walkthrough (§7).
 
-**Tint warning:** the whole app tints to the bus colour and a banner
-reads `SENDS → <name> — faders are sends, not LR`. If you see colour,
-you are NOT on LR. `EXIT ✕` (or tap `LR`, or tap the same bus again)
-returns to LR. `copy LR` seeds the bus mix from the current LR balance.
+## 4. Channel detail (EQ graph, dynamics, sends, presets)
 
-Sends are cached locally and pushed via the existing `param` command
-(`auxN_level`, dB). If a push fails the value is kept locally and the
-status line says so — re-tap after reconnecting.
+Channel view → Detail panel for the selected channel, plus the
+**preset picker** at the top: 10 factory strip starting points
+(Kick, Snare, Hat, Tom, OH, Bass DI, E-Gtr, Vox, Keys, Playback —
+web mirror of `crates/core/src/presets.rs`). A preset pushes its
+fields through the normal param path and reports what it set; values
+are conservative starting points, not targets — the engineer still
+dials in. Sliders map to engineering units; ranges mirror the DL32S
+address limits.
 
-## 4. Channel detail (EQ graph, dynamics, sends)
-
-Channel view → Detail panel for the selected channel. Sliders map to
-engineering units; ranges mirror the DL32S address limits.
-
-- **Input:** gain (−20…+60 dB), +48V phantom toggle, pan (L/R).
+- **Input:** gain (−20…+60 dB), +48V phantom toggle, **USB return**
+  source (`U01`…`U18` — X-Air live-verified; the `/insrc`
+  input-source select is live-silent on FW 1.20 so it stays
+  unsupported and has no field), **trim** (−18…+18 dB), **phase**
+  (polarity), pan (L/R).
 - **Filter / dynamics:** HPF on + freq (20…400 Hz), gate on, comp on,
-  EQ on.
+  EQ on. **Gain-reduction bars** (gate/comp) go live when the relay
+  sends `gr` frames — X-Air reads them from the desk's DYN blob
+  (~5 Hz, first 16 channels); sim/DL32S report 0. Until the first
+  frame arrives the bars render the static scale with a `no GR data
+  yet` note.
 - **EQ bands 1–4:** per band gain (±20 dB), freq (20 Hz…20 kHz, log),
   Q (0.1…20); bands 2–4 add a type select. The **EQ graph** at the top
   draws the combined curve — drag bands directly; the sliders follow.
@@ -151,14 +241,36 @@ Rules of the road:
   desk). A one-line hint confirms what hid.
 - The backend never echoes param state, so EQ sliders reset to defaults
   when you change channel — what you pushed already landed.
-- **Gain-reduction bars** (gate/comp) render a static scale:
-  **TODO-owner** — no GR frames come from the relay yet.
 - **Rename:** text field, ≤16 chars, pushed as `name`. (DL32S: expect
   failure, see §2.)
 
-## 5. Shows / scenes workflow
+## 5. FX rack (Rack view)
 
-Two levels — use the right one:
+Four X-Air FX slot cards. Each card: an effect picker, the slot's
+parameters, and (on delay-type effects) a tap-tempo row.
+
+- **Labeled params:** the picker selects which effect's parameter set
+  to render, from the research table mirrored in
+  `crates/proto-xair/src/fx.rs`. Continuous params render sliders,
+  stepped/mode params render selects, padding params stay hidden,
+  low-confidence rows carry a `?` suffix. Writes go through the
+  existing `param` path (`fxN_parMM`, 0.0…1.0 bit-exact) — no protocol
+  change, and a relay/shell without an FX route disables the card
+  instead of failing silently.
+- **The picker is labels-only:** it never writes `/fx/N/type`, so
+  picking an entry never retunes the desk — it just relabels the same
+  `fxN_parMM` addresses. Unknown effect index falls back to generic
+  `P01`–`P08` sliders.
+- **Tap tempo:** on delay-type effects a **TAP** button plus
+  quarter / dotted-8th division select. Tap 4+ times → BPM → ms,
+  pushed to the effect's Time param (assumed-linear ms→0..1 over the
+  documented range; the card shows the computed `BPM · ms`, or `tap
+  4×` until it has enough taps). Effects without a documented
+  time-param range get no TAP button — no guessing.
+
+## 6. Shows / scenes workflow (+ export, import, backup)
+
+Three levels — use the right one:
 
 - **Scene slots S1–S4** (strip above the views): quick local snapshots.
   `store` arms, then tap `S1`…`S4` to store; tap a filled slot (`●`) to
@@ -175,16 +287,40 @@ Two levels — use the right one:
   web `ShowEditor`/`Backend` is not wired to the relay's scene ops yet
   (still `localStorage`-only over WS), so confirm the sync story before
   relying on both at once.
+- **Share files (export/import):** Shows view exports the active show
+  or the whole library as a versioned JSON share file
+  (`openmix-show`, v1 — offline-first, no server needed). Import
+  validates first and **merges, never overwrites**: bad files are
+  rejected with a reason, good ones preview (shows/scenes/strips,
+  names) and add as new entries. Hand a support band your file on a
+  USB stick; nothing gig-tested is lost. The S1–S4 slots import once
+  into an `Imported` show so legacy snapshots survive.
+- **Settings backup/restore:** one file holding every `openmix.*`
+  localStorage entry (layers, orders, prefs, shows cache, sends,
+  mute groups, onboarding flag). Export → `openmix-backup-v1.json`;
+  restore validates **all** entries before writing anything, previews
+  key count/bytes, and keeps unknown keys aside with a warning instead
+  of applying them. Clone your tuned browser to the spare laptop
+  before doors.
 
 Gig pattern: build one Show per band/set (`Doors`, `Support`,
 `Headline`, `Encore`), one scene per song or segment. Store before
 soundcheck, recall with fade during changeover. The web library lives in
 the browser that stored it — use the same device all night, or re-store
-on the spare. (Relay and Tauri shells each hold their own server-side
-copy; the `./scenes` Docker volume is the deployment-side copy, not an
-auto-sync.)
+on the spare (or carry the export file). (Relay and Tauri shells each
+hold their own server-side copy; the `./scenes` Docker volume is the
+deployment-side copy, not an auto-sync.)
 
-## 6. Meter bridge + spectrum
+## 7. Gain wizard (Wizard view)
+
+Step-through gain staging, one input at a time: live meter against a
+**−18 dBFS target line** (peaks should kiss it, never park above it),
+±1 dB steps pushed as `gain`, clip latch at ≥0.985 (tap to clear),
+manual "staged" check per channel with a progress count. +48V is
+behind an **armed confirm** — tap to arm, tap again to apply — so a
+mis-tap never phantoms a ribbon. Input strips only: no buses, no MAIN.
+
+## 8. Meter bridge + spectrum
 
 - **Bridge button** (top bar) toggles a full-width live meter canvas —
   every strip side by side, muted strips read zero. Handy on a laptop
@@ -198,8 +334,11 @@ auto-sync.)
   it live; where no spectrum frame has arrived yet it shows a `fallback`
   tag — bars interpolated from the live meter level. The Tauri shell has
   no spectrum source yet, so desktop always shows the fallback.
+- **`?perf=1` (dev builds only):** append to a dev-server URL for a
+  tiny fps + frame-ms overlay (bottom-left) while tuning meter render
+  cost. Inert in release builds — not a gig feature, a workbench gauge.
 
-## 7. Safety: mute-enable, fine mode, tap-a-value
+## 9. Safety: mute-enable, fine mode, tap-a-value
 
 Three guards against fat-finger moments:
 
@@ -214,9 +353,10 @@ Three guards against fat-finger moments:
 
 Status line (next to the scene slots) narrates every guarded action:
 `mutes disabled — tap MUTE EN…`, `scene 2 recalled`, `send ch3→AUX1…
-(kept locally)`.
+(kept locally)`, `ch4 locked by foh-2`, `scene recall overrode lock
+on ch 5`.
 
-## 8. Offline mode
+## 10. Offline mode
 
 - The app **auto-connects `sim`** on load, so it is usable with no
   hardware and no relay.
@@ -228,7 +368,7 @@ Status line (next to the scene slots) narrates every guarded action:
   What does NOT survive offline: the live desk state itself. Reconnect
   and recall your scene to re-assert faders/mutes.
 
-## 9. Troubleshooting
+## 11. Troubleshooting
 
 | Symptom | Likely cause → fix |
 | --- | --- |
@@ -240,7 +380,11 @@ Status line (next to the scene slots) narrates every guarded action:
 | Wrong channel count (ch 17–32 silent) | XR18 is 16 channels + stereo aux return (`/rtn/aux`); there are no `/ch/17..18` replies. Ignore phantom strips past 16 (T3). |
 | Rename fails on DL32S | Expected: rename write encoding unconfirmed, driver leaves it unsupported. Re-label from Master Fader instead. |
 | Scene recall missed a channel | Recall pushes fader-then-mute per strip and stops at the first error (status line names the channel). Fix the named channel (often an unsupported strip), re-recall. |
+| `…locked by <id>` on your move | Another operator holds that strip (§3). Ask them to release, or recall the scene (recall bypasses locks and names what it overrode). |
 | App tinted a bus colour, faders "wrong" | You are in sends-on-fader. `EXIT ✕` / `LR` returns to LR (§3). |
+| Musician sees pick-your-bus, nothing else | That is musician mode (§3), not a fault. Single-tap exit returns to FOH. |
+| TAP button missing on an FX card | That effect has no documented time-param range — tap tempo is withheld rather than guessed (§5). Pick the labeled effect that matches the desk program. |
+| Import rejected / backup rejected | The file failed validation before anything was written — read the reason, re-export from the source device. Nothing was applied, nothing was lost (§6). |
 | Blank page on Android `dev` | Cleartext HTTP blocked: release loads bundled assets, but `dev` needs `usesCleartextTraffic` on Android 9+ (see `docs/mobile.md` §5). |
 | iOS asks for Local Network permission | Expected once: allow it, or all sockets fail silently. The prompt text comes from `NSLocalNetworkUsageDescription` (§5 of `docs/mobile.md`). |
 
@@ -256,32 +400,39 @@ but meaning-inferred.
 desk model + IP (static/DHCP), laptop IP (wired/wifi), mixer FW, app
 used + version, date/venue — plus which checklist step failed.
 
-## 10. FAQ
+## 12. FAQ
 
 **Do I need the internet at the venue?**
 No. Everything is LAN-local (desk ↔ relay ↔ browser). The PWA installs
-from the relay itself.
+from the relay itself, and the service worker keeps the app shell
+cached.
 
 **Can two operators mix at once?**
-Two browsers can open the same relay and each gets state, meter,
-spectrum, and `shows` broadcasts, but last-write-wins with no
-locking — **TODO-owner**: confirm multi-client arbitration before
-running FOH + monitors from two devices on one relay.
+Yes, with discipline: open the same relay from both devices, claim
+strip locks for the channels you are riding (§3), and agree the
+FOH/monitors split up front. Locks arbitrate fader/mute/param writes
+(60 s expiry, denials name the holder); scene recall bypasses locks
+and reports what it overrode. Everything unclaimed is last-write-wins.
 
 **Where do my scenes live?**
-In the browser that stored them (`localStorage`). Same device all
-night, or re-store on the spare. The `./scenes` Docker volume is the
-deployment-side copy, not an auto-sync. (Relay and Tauri shells each
-hold a server-side library too — but the web UI only reads its own
-`localStorage` copy, so treat the browser as the source of truth until
-the sync TODO in §5 is closed.)
+In the browser that stored them (`localStorage`) — plus, now,
+wherever you carried them: export a show or the whole library as a
+share file, or back up all settings to one file (§6). Same device all
+night still works; the export file is the spare.
 
 **Sim or hardware — how do I tell?**
 The `via` label next to the badge (`tauri ipc` vs `ws <url>`) plus the
 driver dropdown. Sim always works with a blank addr — if the desk is
-dark and everything responds, check you didn't rehearse the sim.
+dark and everything responds, check you didn't rehearse the sim. On a
+relay, `--preset studio` sim is deliberately lived-in; `generic` is
+the flat one.
 
 **Why do rejected controls vanish instead of greying out?**
 So an unsupported desk reads clean on a small phone screen. The hint
 line (`Controls the backend rejects disappear…`) confirms nothing is
 broken — switch desks and they come back.
+
+**Why does the effect picker not change the desk sound?**
+The Rack picker is labels-only (§5): it relabels the same `fxN_parMM`
+addresses so you can see what a param does. The desk's loaded effect
+program is the truth — match the picker to it.
