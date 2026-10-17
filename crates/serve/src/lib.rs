@@ -37,13 +37,30 @@
 //! fills asynchronously, so `gate`/`comp` read 0.0 until the desk streams
 //! `/meters/6`. Unknown/invalid commands get
 //! `{"type":"error","message":"..."}`.
+//!
+//! Multi-client awareness (no arbitration yet): the server tracks connected
+//! WS clients (id, connect time, label from `?name=` or `client-N`) and
+//! broadcasts `{"type":"clients","count":N,"writers":[...]}` on join/leave.
+//! Every `state`/`param` frame emitted by a `fader`/`mute`/`param`
+//! (`recall_scene` included) mutation carries `"by":"<writer-id>"` so UIs
+//! can show who moved what. Writers are ids with a mutation in the last
+//! 10 s. Concurrency is last-write-wins: simultaneous moves apply in
+//! arrival order with no locking or rejection.
 
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
 
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Path, State as AxumState,
+        Path, Query, State as AxumState,
     },
     http::{header, StatusCode},
     response::{Html, IntoResponse},
@@ -106,6 +123,16 @@ impl Default for ServeOptions {
     }
 }
 
+/// One connected WS client (presence tracking; no arbitration yet).
+#[derive(Clone, Debug)]
+#[allow(dead_code)]
+struct ClientInfo {
+    id: String,
+    label: String,
+    connected_at: Instant,
+    last_write: Option<Instant>,
+}
+
 /// Shared server state: driver bank + active selection + state-change fanout.
 ///
 /// Static dispatch over drivers (`MixerDriver` is not dyn-compatible due to
@@ -115,15 +142,23 @@ impl Default for ServeOptions {
 /// The show library (`shows`) is server-side, mirroring the Tauri shell
 /// (`src-tauri/src/main.rs`): scenes captured here survive UI reloads and
 /// driver switches with no localStorage round-trip.
+///
+/// Presence: `clients` tracks live sockets by id; `clients_tx` carries a
+/// prebuilt `clients` frame on join/leave. Mutation broadcasts (`state`
+/// via `state_tx`, `param` via `param_tx`) carry `"by":"<writer-id>"`.
+/// Last-write-wins: concurrent mutations apply in arrival order.
 pub struct Shared {
     sim: openmix_sim::SimDriver,
     xair: openmix_proto_xair::XAirDriver,
     dl32s: openmix_proto_dl32s::Dl32sDriver,
     active: RwLock<String>,
-    state_tx: broadcast::Sender<()>,
+    state_tx: broadcast::Sender<String>,
     shows: RwLock<Vec<Show>>,
     shows_tx: broadcast::Sender<()>,
     param_tx: broadcast::Sender<Value>,
+    clients: RwLock<HashMap<String, ClientInfo>>,
+    clients_tx: broadcast::Sender<Value>,
+    next_client: AtomicU64,
 }
 
 impl Shared {
@@ -131,6 +166,7 @@ impl Shared {
         let (state_tx, _) = broadcast::channel(16);
         let (shows_tx, _) = broadcast::channel(16);
         let (param_tx, _) = broadcast::channel(256);
+        let (clients_tx, _) = broadcast::channel(16);
         Self {
             sim: openmix_sim::SimDriver::new(),
             xair: openmix_proto_xair::XAirDriver::new(),
@@ -140,6 +176,9 @@ impl Shared {
             shows: RwLock::new(Vec::new()),
             shows_tx,
             param_tx,
+            clients: RwLock::new(HashMap::new()),
+            clients_tx,
+            next_client: AtomicU64::new(1),
         }
     }
 
@@ -178,13 +217,88 @@ impl Shared {
 
     /// Full `state` message for the active driver.
     async fn state_message(&self) -> Value {
+        self.state_message_with_by(None).await
+    }
+
+    /// Full `state` message tagged with the mutation writer (`"by"`).
+    ///
+    /// `by` is `None` for the initial per-connection snapshot; every
+    /// broadcast that follows a `fader`/`mute`/`param`/`recall_scene`/
+    /// `connect` mutation carries `Some(writer-id)`.
+    async fn state_message_with_by(&self, by: Option<&str>) -> Value {
         let name = self.active_name().await;
         let strips = match name.as_str() {
             "xair" => snapshot_strips(&self.xair).await,
             "dl32s" => snapshot_strips(&self.dl32s).await,
             _ => snapshot_strips(&self.sim).await,
         };
-        json!({"type":"state","driver":name,"strips":strips})
+        match by {
+            Some(writer) => json!({"type":"state","driver":name,"strips":strips,"by":writer}),
+            None => json!({"type":"state","driver":name,"strips":strips}),
+        }
+    }
+
+    /// Allocate the next client id/label pair (`client-N` fallback).
+    fn alloc_client(&self, name: Option<&str>) -> (String, String) {
+        let n = self.next_client.fetch_add(1, Ordering::Relaxed);
+        let id = format!("client-{n}");
+        let clean = name.map(str::trim).filter(|s| !s.is_empty());
+        let label = clean.unwrap_or(&id).to_string();
+        (id, label)
+    }
+
+    /// Register a client and broadcast the updated `clients` frame.
+    async fn add_client(&self, id: &str, label: &str) {
+        {
+            let mut clients = self.clients.write().await;
+            clients.insert(
+                id.to_string(),
+                ClientInfo {
+                    id: id.to_string(),
+                    label: label.to_string(),
+                    connected_at: Instant::now(),
+                    last_write: None,
+                },
+            );
+        }
+        let _ = self.clients_tx.send(self.clients_message().await);
+    }
+
+    /// Remove a client (on disconnect) and broadcast the updated frame.
+    async fn remove_client(&self, id: &str) {
+        {
+            let mut clients = self.clients.write().await;
+            clients.remove(id);
+        }
+        let _ = self.clients_tx.send(self.clients_message().await);
+    }
+
+    /// Record a mutation write for `writers` tracking (last 10 s).
+    async fn note_write(&self, id: &str) {
+        let now = Instant::now();
+        let mut clients = self.clients.write().await;
+        if let Some(info) = clients.get_mut(id) {
+            info.last_write = Some(now);
+        }
+    }
+
+    /// Current `clients` frame: `{"type":"clients","count":N,"writers":[...]}`.
+    ///
+    /// `writers` holds ids with a mutation in the last 10 s, sorted for
+    /// deterministic snapshots.
+    async fn clients_message(&self) -> Value {
+        let clients = self.clients.read().await;
+        let now = Instant::now();
+        let mut writers: Vec<String> = clients
+            .values()
+            .filter(|c| {
+                c.last_write
+                    .is_some_and(|t| now.duration_since(t).as_secs() < 10)
+            })
+            .map(|c| c.id.clone())
+            .collect();
+        writers.sort();
+        json!({"type":"clients","count":clients.len(),"writers":writers})
     }
 
     /// Current meter levels for the active driver (one entry per strip).
@@ -266,13 +380,15 @@ impl Shared {
         }
     }
 
-    /// Apply one client command.
+    /// Apply one client command from `writer` (its presence id).
     ///
     /// Returns a direct reply for `list_shows` (unicast `shows` frame);
     /// every other command broadcasts (`state` for mixer mutations like
     /// the pre-scene protocol, `shows` for library mutations, both for
-    /// `recall_scene` which moves faders) and returns `None`.
-    async fn apply(&self, msg: &Value) -> anyhow::Result<Option<Value>> {
+    /// `recall_scene` which moves faders) and returns `None`. Mutation
+    /// broadcasts carry `"by": writer`; last-write-wins (arrival order,
+    /// no locking).
+    async fn apply(&self, msg: &Value, writer: &str) -> anyhow::Result<Option<Value>> {
         let cmd = msg
             .get("cmd")
             .and_then(Value::as_str)
@@ -282,7 +398,8 @@ impl Shared {
                 let driver = msg.get("driver").and_then(Value::as_str).unwrap_or("sim");
                 let addr = msg.get("addr").and_then(Value::as_str);
                 self.connect(driver, addr).await?;
-                let _ = self.state_tx.send(());
+                self.note_write(writer).await;
+                let _ = self.state_tx.send(writer.to_string());
                 Ok(None)
             }
             "fader" => {
@@ -297,7 +414,8 @@ impl Shared {
                     "dl32s" => self.dl32s.set_fader(ch, value).await?,
                     _ => self.sim.set_fader(ch, value).await?,
                 }
-                let _ = self.state_tx.send(());
+                self.note_write(writer).await;
+                let _ = self.state_tx.send(writer.to_string());
                 Ok(None)
             }
             "mute" => {
@@ -311,7 +429,8 @@ impl Shared {
                     "dl32s" => self.dl32s.set_mute(ch, muted).await?,
                     _ => self.sim.set_mute(ch, muted).await?,
                 }
-                let _ = self.state_tx.send(());
+                self.note_write(writer).await;
+                let _ = self.state_tx.send(writer.to_string());
                 Ok(None)
             }
             "param" => {
@@ -334,10 +453,11 @@ impl Shared {
                     "dl32s" => self.dl32s.set_param(ch, field, pv).await?,
                     _ => self.sim.set_param(ch, field, pv).await?,
                 }
+                self.note_write(writer).await;
                 let _ = self
                     .param_tx
-                    .send(param_message(ch.0, field, raw.clone()));
-                let _ = self.state_tx.send(());
+                    .send(param_message(ch.0, field, raw.clone(), Some(writer)));
+                let _ = self.state_tx.send(writer.to_string());
                 Ok(None)
             }
             // Server-side show library (mirrors the Tauri scene ops).
@@ -382,22 +502,24 @@ impl Shared {
                         })?
                 };
                 self.recall_on_active(&scene, fade_ms).await?;
+                self.note_write(writer).await;
                 for s in &scene.strips {
                     let _ = self
                         .param_tx
-                        .send(param_message(s.strip.0, "fader", json!(s.fader)));
+                        .send(param_message(s.strip.0, "fader", json!(s.fader), Some(writer)));
                     let _ = self
                         .param_tx
-                        .send(param_message(s.strip.0, "mute", json!(s.mute)));
+                        .send(param_message(s.strip.0, "mute", json!(s.mute), Some(writer)));
                     for (field, value) in &s.params {
                         let _ = self.param_tx.send(param_message(
                             s.strip.0,
                             field,
                             param_value_json(value),
+                            Some(writer),
                         ));
                     }
                 }
-                let _ = self.state_tx.send(());
+                let _ = self.state_tx.send(writer.to_string());
                 Ok(None)
             }
             "delete_scene" => {
@@ -456,14 +578,18 @@ fn gr_message(ch: usize, gate: f32, comp: f32) -> Value {
 }
 
 /// One `param` echo for channel `ch`:
-/// `{"type":"param","ch":N,"field":"...","value":number|bool|string}`.
+/// `{"type":"param","ch":N,"field":"...","value":number|bool|string,"by":"..."}`.
 ///
 /// Emitted on every successful `param` command (all drivers) and once per
 /// applied param on `recall_scene`, so sibling UIs learn about
-/// server-side changes without re-polling. `state`/`shows`/`meters`/
-/// `spectrum`/`gr` frames are byte-identical to before.
-fn param_message(ch: u16, field: &str, value: Value) -> Value {
-    json!({"type":"param","ch":ch,"field":field,"value":value})
+/// server-side changes without re-polling. `shows`/`meters`/
+/// `spectrum`/`gr` frames are byte-identical to before; `state` frames
+/// from mutations carry the same `"by"` writer tag.
+fn param_message(ch: u16, field: &str, value: Value, by: Option<&str>) -> Value {
+    match by {
+        Some(writer) => json!({"type":"param","ch":ch,"field":field,"value":value,"by":writer}),
+        None => json!({"type":"param","ch":ch,"field":field,"value":value}),
+    }
 }
 
 fn param_value_json(pv: &ParamValue) -> Value {
@@ -524,18 +650,30 @@ fn error_message(e: impl std::fmt::Display) -> String {
     json!({"type":"error","message":e.to_string()}).to_string()
 }
 
-async fn ws_handler(ws: WebSocketUpgrade, AxumState(app): AxumState<AppState>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, app.shared))
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    Query(params): Query<HashMap<String, String>>,
+    AxumState(app): AxumState<AppState>,
+) -> impl IntoResponse {
+    let name = params.get("name").cloned();
+    ws.on_upgrade(move |socket| handle_socket(socket, app.shared, name))
 }
 
-async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
+async fn handle_socket(socket: WebSocket, shared: Arc<Shared>, name: Option<String>) {
+    // Presence: allocate + register before subscribing the new socket, so
+    // the join broadcast reaches only the already-connected siblings; the
+    // newcomer gets the same content as a unicast snapshot below.
+    let (client_id, label) = shared.alloc_client(name.as_deref());
+    shared.add_client(&client_id, &label).await;
     let (mut tx, mut rx) = socket.split();
-    // Initial snapshot: mixer state, then the server-side show library.
+    // Initial snapshot: mixer state, then the server-side show library,
+    // then the client roster (so the newcomer sees siblings immediately).
     if tx
         .send(Message::Text(shared.state_message().await.to_string()))
         .await
         .is_err()
     {
+        shared.remove_client(&client_id).await;
         return;
     }
     if tx
@@ -543,11 +681,21 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
         .await
         .is_err()
     {
+        shared.remove_client(&client_id).await;
+        return;
+    }
+    if tx
+        .send(Message::Text(shared.clients_message().await.to_string()))
+        .await
+        .is_err()
+    {
+        shared.remove_client(&client_id).await;
         return;
     }
     let mut state_rx = shared.state_tx.subscribe();
     let mut shows_rx = shared.shows_tx.subscribe();
     let mut param_rx = shared.param_tx.subscribe();
+    let mut clients_rx = shared.clients_tx.subscribe();
     // Per-connection RTA: fed by the same meter frames broadcast on the
     // ~10 Hz tick below (no new ports/threads — spectrum is derived
     // per-socket from the already-polled levels). Starts empty and grows
@@ -566,7 +714,7 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<Value>(&text) {
                             Ok(cmd) => {
-                                match shared.apply(&cmd).await {
+                                match shared.apply(&cmd, &client_id).await {
                                     Ok(Some(reply)) => {
                                         let _ = tx.send(Message::Text(reply.to_string())).await;
                                     }
@@ -623,10 +771,13 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
                 }
             }
             changed = state_rx.recv() => {
-                if changed.is_err() {
-                    break;
-                }
-                let s = shared.state_message().await;
+                let writer = match changed {
+                    Ok(by) => by,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(_) => break,
+                };
+                let by = if writer.is_empty() { None } else { Some(writer.as_str()) };
+                let s = shared.state_message_with_by(by).await;
                 if tx.send(Message::Text(s.to_string())).await.is_err() {
                     break;
                 }
@@ -651,8 +802,27 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
                     Err(_) => break,
                 }
             }
+            clients = clients_rx.recv() => {
+                match clients {
+                    Ok(msg) => {
+                        if tx.send(Message::Text(msg.to_string())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        // Re-send the current roster after a lag so the UI
+                        // never sticks on a stale count.
+                        let s = shared.clients_message().await;
+                        if tx.send(Message::Text(s.to_string())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
         }
     }
+    shared.remove_client(&client_id).await;
 }
 
 async fn health(AxumState(app): AxumState<AppState>) -> impl IntoResponse {
