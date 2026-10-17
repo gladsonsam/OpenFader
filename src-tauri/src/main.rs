@@ -10,7 +10,11 @@
 //! The WS `state` push becomes a pull `get_state` returning the same shape
 //! (`driver` + `strips` of `{ch,name,fader,muted}`), plus `connected` and
 //! `main_fader` (`null` when the driver has none). The WS `meters` tick
-//! becomes a pull `get_meters` returning live driver meters.
+//! becomes a pull `get_meters` returning live driver meters; the WS
+//! per-tick `spectrum`/`gr` frames become pull `get_spectrum`/`get_gr`
+//! (same 64 bins, same first-16-channel cap, same `RtaProcessor` approach
+//! and `gate_gr`/`comp_gr` reads — but poll-based, so the UI polls at 5 Hz
+//! instead of receiving the WS push).
 //!
 //! Beyond the WS API, the shell owns a server-side scene/show library
 //! (`capture_scene`, `recall_scene`, `list_scenes`, `get_scene`,
@@ -27,6 +31,7 @@
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use openmix_core::rta::RtaProcessor;
 use openmix_core::show::{Scene, Show, DEFAULT_FADE_MS};
 use openmix_core::{MixerDriver, ParamValue, StripId};
 use openmix_proto_dl32s::Dl32sDriver;
@@ -36,6 +41,20 @@ use serde_json::json;
 
 /// Minimum interval between fresh meter frames; faster polls get the cached frame.
 const METER_THROTTLE: Duration = Duration::from_millis(50);
+
+/// Max channels with spectrum output (first N channels only).
+///
+/// Mirrors `SPECTRUM_CHANNELS` in `crates/serve/src/lib.rs`: 16 covers a
+/// full drum/band layer while keeping the per-tick fanout bounded. Channels
+/// at/above this cap are rejected (serve simply never sends them).
+const SPECTRUM_CHANNELS: usize = 16;
+
+/// Max channels with GR output (first N channels only).
+///
+/// Mirrors `GR_CHANNELS` in `crates/serve/src/lib.rs`. Ticks at ~5 Hz over
+/// WS (every second 10 Hz `meters` tick); over invoke the UI polls at 5 Hz
+/// instead — same staleness contract, pull-based.
+const GR_CHANNELS: usize = 16;
 
 /// Static dispatch over drivers (`MixerDriver` is not dyn-compatible due to
 /// async methods). New providers add one variant + one delegation arm.
@@ -180,6 +199,10 @@ struct Inner {
     show: Show,
     last_meters: Vec<f32>,
     last_emit: Option<Instant>,
+    /// Trailing meter history feeding `get_spectrum`, mirroring serve's
+    /// per-connection `RtaProcessor` (fed by its ~10 Hz tick there; fed by
+    /// `get_meters`/`get_spectrum` polls here). Reset on `connect`.
+    rta: RtaProcessor,
 }
 
 impl Default for Inner {
@@ -191,6 +214,7 @@ impl Default for Inner {
             show: Show::new("openmix"),
             last_meters: Vec::new(),
             last_emit: None,
+            rta: RtaProcessor::new(0),
         }
     }
 }
@@ -227,9 +251,10 @@ async fn connect(state: State<'_>, driver: String, addr: String) -> Result<Strin
     }
     inner.kind = kind.clone();
     inner.connected = true;
-    // Fresh driver, fresh meters; the scene library carries over.
+    // Fresh driver, fresh meters and RTA; the scene library carries over.
     inner.last_meters.clear();
     inner.last_emit = None;
+    inner.rta = RtaProcessor::new(0);
     Ok(format!("connected via {kind}"))
 }
 
@@ -414,7 +439,8 @@ fn delete_scene(state: State<'_>, name: String) -> Result<bool, String> {
 }
 
 /// Live meter frame from the active driver, throttled: polls faster than
-/// 50 ms get the cached frame.
+/// 50 ms get the cached frame. Fresh frames also feed the shared RTA
+/// history behind `get_spectrum` (return shape unchanged).
 #[tauri::command]
 fn get_meters(state: State<'_>) -> Result<Vec<f32>, String> {
     let mut inner = state.lock().map_err(|e| e.to_string())?;
@@ -424,10 +450,74 @@ fn get_meters(state: State<'_>) -> Result<Vec<f32>, String> {
             return Ok(inner.last_meters.clone());
         }
     }
-    let frame = inner.driver.poll_meters().levels;
-    inner.last_meters = frame.clone();
+    let frame = inner.driver.poll_meters();
+    inner.rta.push_frame(&frame);
+    let levels = frame.levels;
+    inner.last_meters = levels.clone();
     inner.last_emit = Some(now);
-    Ok(frame)
+    Ok(levels)
+}
+
+/// Live 64-bin spectrum for one channel: the pull-based mirror of serve's
+/// WS `spectrum` tick (`{"type":"spectrum","ch":N,"bins":[...64 floats...]}`).
+///
+/// Same cap (`SPECTRUM_CHANNELS`) and same `RtaProcessor` approach as serve:
+/// the trailing 100 ms of meter history (fed by `get_meters` polls plus the
+/// fresh frame pushed here) is mean-removed, zero-padded to 128, and
+/// returned peak-normalized (`spectrum` is empty for channels past the live
+/// strip count, mirroring serve's per-tick bound).
+///
+/// Poll-based staleness contract: unlike the WS push (one message per
+/// channel per ~10 Hz tick), invoke has no push — the UI polls this at 5 Hz
+/// (200 ms), the same rate serve emits `gr` frames.
+#[tauri::command]
+fn get_spectrum(state: State<'_>, ch: u16) -> Result<serde_json::Value, String> {
+    if usize::from(ch) >= SPECTRUM_CHANNELS {
+        return Err(format!(
+            "spectrum capped at first {SPECTRUM_CHANNELS} channels, got ch{ch}"
+        ));
+    }
+    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    let frame = inner.driver.poll_meters();
+    inner.rta.push_frame(&frame);
+    let bins = inner.rta.spectrum(usize::from(ch));
+    Ok(json!({"ch": ch, "bins": bins}))
+}
+
+/// Gate/comp gain reduction for one channel (dB reduction `>= 0`): the
+/// pull-based mirror of serve's WS `gr` tick
+/// (`{"type":"gr","ch":N,"gate":db,"comp":db}`).
+///
+/// Same semantics as serve's `gr_db`: xair reads the DYN blob cache
+/// (`gate_gr`/`comp_gr` param path); no data yet (or out of range) falls
+/// back to 0.0 so the poll never drops a frame — the UI treats 0.0 as "no
+/// reduction", same as an idle gate. sim/dl32s have no GR source and always
+/// read (0.0, 0.0). Same 16-channel cap as serve.
+///
+/// Poll-based staleness contract: serve pushes `gr` every second `meters`
+/// tick (~5 Hz); invoke has no push, so the UI polls this at 5 Hz (200 ms)
+/// for the same freshness.
+#[tauri::command]
+async fn get_gr(state: State<'_>, ch: u16) -> Result<serde_json::Value, String> {
+    if usize::from(ch) >= GR_CHANNELS {
+        return Err(format!(
+            "gr capped at first {GR_CHANNELS} channels, got ch{ch}"
+        ));
+    }
+    let inner = state.lock().map_err(|e| e.to_string())?;
+    if inner.kind != "xair" {
+        return Ok(json!({"ch": ch, "gate": 0.0, "comp": 0.0}));
+    }
+    let id = StripId(ch);
+    let gate = match inner.driver.get_param(id, "gate_gr").await {
+        Ok(ParamValue::Float(v)) => v.max(0.0),
+        _ => 0.0,
+    };
+    let comp = match inner.driver.get_param(id, "comp_gr").await {
+        Ok(ParamValue::Float(v)) => v.max(0.0),
+        _ => 0.0,
+    };
+    Ok(json!({"ch": ch, "gate": gate, "comp": comp}))
 }
 
 fn main() {
@@ -446,7 +536,9 @@ fn main() {
             list_scenes,
             get_scene,
             delete_scene,
-            get_meters
+            get_meters,
+            get_spectrum,
+            get_gr
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
