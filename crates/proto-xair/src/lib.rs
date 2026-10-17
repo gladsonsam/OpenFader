@@ -12,6 +12,7 @@ use tokio::sync::{Mutex, broadcast};
 pub mod dyn_gr;
 pub mod fx;
 pub mod headamp;
+pub mod input;
 
 pub mod addrs {
     //! X-Air address table. The wire is 1-based with zero-padded two-digit
@@ -612,6 +613,15 @@ impl MixerDriver for XAirDriver {
     /// (`/headamp/NN/…`, community-documented via xair-api-python — see
     /// [`crate::headamp`]; NOT owner-rig verified). `set_param` mirrors
     /// these plus the trait-default arms (defaults are not inheritable).
+    ///
+    /// Channel input routing (`crate::input`, owner-rig verified
+    /// 2026-10-18 on XR18 FW 1.20): `usbreturn` (whole-number float
+    /// `0..=17`, `/ch/NN/config/rtnsrc`), `trim` (dB `−18..=18`,
+    /// `/ch/NN/preamp/rtntrim`), `polarity` (bool, `/ch/NN/preamp/invert`),
+    /// `hpf_on` (bool, `/ch/NN/preamp/hpon`) and `hpf_freq` (Hz `20..=400`,
+    /// `/ch/NN/preamp/hpf`). `inputsource` (`/ch/NN/config/insrc`) and
+    /// channel `usbinput` (`/ch/NN/preamp/rtnsw`) stay unsupported — both
+    /// are live-silent on this rig (see [`crate::input`).
     async fn set_param(
         &self,
         strip: StripId,
@@ -647,6 +657,53 @@ impl MixerDriver for XAirDriver {
                     )
                     .await
             }
+            ("usbreturn", ParamValue::Float(v)) => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&input::config_rtnsrc(ch), vec![input::usbreturn_to_arg(v)?])
+                    .await
+            }
+            ("trim", ParamValue::Float(db)) => {
+                let ch = self.check_channel(strip.0)?;
+                let wire = input::rtntrim_db_to_wire(db)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&input::preamp_rtntrim(ch), vec![OscType::Float(wire)])
+                    .await
+            }
+            ("polarity", ParamValue::Bool(on)) => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&input::preamp_invert(ch), vec![input::input_bool_arg(on)])
+                    .await
+            }
+            ("hpf_on", ParamValue::Bool(on)) => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&input::preamp_hpf_on(ch), vec![input::input_bool_arg(on)])
+                    .await
+            }
+            ("hpf_freq", ParamValue::Float(hz)) => {
+                let ch = self.check_channel(strip.0)?;
+                let wire = input::hpf_hz_to_wire(hz)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&input::preamp_hpf(ch), vec![OscType::Float(wire)])
+                    .await
+            }
             (p, _) => anyhow::bail!("{}: unknown param {p:?}", self.name()),
         }
     }
@@ -675,6 +732,56 @@ impl MixerDriver for XAirDriver {
                     .query(&headamp::headamp_phantom(ch))
                     .await?;
                 headamp::phantom_is_on(&reply).map(ParamValue::Bool)
+            }
+            "usbreturn" => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                let reply = guard
+                    .as_ref()
+                    .unwrap()
+                    .query(&input::config_rtnsrc(ch))
+                    .await?;
+                input::usbreturn_from_msg(&reply).map(|i| ParamValue::Float(i as f32))
+            }
+            "trim" => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                let reply = guard
+                    .as_ref()
+                    .unwrap()
+                    .query(&input::preamp_rtntrim(ch))
+                    .await?;
+                input::rtntrim_wire_to_db(osc::fader_value(&reply)?).map(ParamValue::Float)
+            }
+            "polarity" => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                let reply = guard
+                    .as_ref()
+                    .unwrap()
+                    .query(&input::preamp_invert(ch))
+                    .await?;
+                input::input_bool_is_on(&reply).map(ParamValue::Bool)
+            }
+            "hpf_on" => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                let reply = guard
+                    .as_ref()
+                    .unwrap()
+                    .query(&input::preamp_hpf_on(ch))
+                    .await?;
+                input::input_bool_is_on(&reply).map(ParamValue::Bool)
+            }
+            "hpf_freq" => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                let reply = guard
+                    .as_ref()
+                    .unwrap()
+                    .query(&input::preamp_hpf(ch))
+                    .await?;
+                input::hpf_wire_to_hz(osc::fader_value(&reply)?).map(ParamValue::Float)
             }
             "gate_gr" => self.cached_gr(strip, true).await.map(ParamValue::Float),
             "comp_gr" => self.cached_gr(strip, false).await.map(ParamValue::Float),
@@ -742,6 +849,13 @@ mod tests {
         gains: StdMutex<HashMap<String, f32>>,
         /// Headamp phantom switches store the verbatim int (`1`/`0`).
         phantoms: StdMutex<HashMap<String, i32>>,
+        /// Input-routing int leaves (`/config/rtnsrc`, `/preamp/invert`,
+        /// `/preamp/hpon`): verbatim ints. `insrc` / channel `rtnsw` have
+        /// NO arms — the fake stays silent there like the live desk.
+        input_ints: StdMutex<HashMap<String, i32>>,
+        /// Input-routing float leaves (`/preamp/rtntrim`, `/preamp/hpf`):
+        /// verbatim wire floats.
+        input_floats: StdMutex<HashMap<String, f32>>,
         meter_subscribe: StdMutex<Option<rosc::OscMessage>>,
         dyn_subscribe: StdMutex<Option<rosc::OscMessage>>,
         /// Resubscribe tolerance counters: the renewal loop re-sends
@@ -767,6 +881,8 @@ mod tests {
                 fx: StdMutex::new(HashMap::new()),
                 gains: StdMutex::new(HashMap::new()),
                 phantoms: StdMutex::new(HashMap::new()),
+                input_ints: StdMutex::new(HashMap::new()),
+                input_floats: StdMutex::new(HashMap::new()),
                 meter_subscribe: StdMutex::new(None),
                 dyn_subscribe: StdMutex::new(None),
                 meter_count: StdMutex::new(0),
@@ -894,6 +1010,28 @@ mod tests {
                                 worker.phantoms.lock().unwrap().insert(a.to_string(), *i);
                                 None
                             }
+                            // Input-routing int leaves store verbatim (`rtnsrc`
+                            // U01..U18 index, `invert`/`hpon` 1/0). Deliberately
+                            // NO arms for `insrc` or channel `rtnsw`: the fake
+                            // stays silent there exactly like the live desk.
+                            (a, Some(OscType::Int(i)))
+                                if a.ends_with("/config/rtnsrc")
+                                    || a.ends_with("/preamp/invert")
+                                    || a.ends_with("/preamp/hpon") =>
+                            {
+                                worker.input_ints.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
+                            // Input-routing float leaves store the verbatim
+                            // wire float (desk quantization uncharacterized;
+                            // live ch16 reads rtntrim 0.0 / hpf 0.0).
+                            (a, Some(OscType::Float(f)))
+                                if a.ends_with("/preamp/rtntrim")
+                                    || a.ends_with("/preamp/hpf") =>
+                            {
+                                worker.input_floats.lock().unwrap().insert(a.to_string(), *f);
+                                None
+                            }
                             (a, Some(OscType::Int(i))) if a.ends_with("/mix/on") => {
                                 worker.ons.lock().unwrap().insert(a.to_string(), *i);
                                 None
@@ -962,6 +1100,36 @@ mod tests {
                                     .copied()
                                     .unwrap_or(0);
                                 Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            // Untouched input int leaves read back 0 (rtnsrc
+                            // U01, invert/hpon off); untouched input floats
+                            // read back 0.0 wire (rtntrim −18 dB, hpf 20 Hz).
+                            (a, None)
+                                if a.ends_with("/config/rtnsrc")
+                                    || a.ends_with("/preamp/invert")
+                                    || a.ends_with("/preamp/hpon") =>
+                            {
+                                let v = worker
+                                    .input_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0);
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            (a, None)
+                                if a.ends_with("/preamp/rtntrim")
+                                    || a.ends_with("/preamp/hpf") =>
+                            {
+                                let v = worker
+                                    .input_floats
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0.0);
+                                Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
                             }
                             ("/info", _) => None,
                             _ => None,
@@ -1291,8 +1459,168 @@ mod tests {
                 .is_err()
         );
         assert!(driver.get_param(StripId(16), "phantom").await.is_err());
-        // Unknown params still rejected.
-        assert!(driver.get_param(StripId(0), "trim").await.is_err());
+        // Unknown params still rejected — including `inputsource`
+        // (`/ch/NN/config/insrc`), which is live-silent on this rig
+        // (see `crate::input`), and `usbinput` (`/ch/NN/preamp/rtnsw`).
+        assert!(driver.get_param(StripId(0), "inputsource").await.is_err());
+        assert!(driver.get_param(StripId(0), "usbinput").await.is_err());
+        assert!(driver.get_param(StripId(0), "pan").await.is_err());
+    }
+
+    /// Input routing loopback over UDP (`crate::input`, owner-rig verified
+    /// 2026-10-18 on XR18 FW 1.20): usb-return source, USB trim, phase
+    /// invert, HPF on/off + corner — set/get plus local validation.
+    /// `inputsource`/`usbinput` stay errors (live-silent, see `crate::input`).
+    #[tokio::test]
+    async fn driver_input_routing_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // StripId is 0-based: strip 0 drives wire `/ch/01/…`.
+        // usbreturn: whole-number floats 0..=17 (firmware U01..U18).
+        driver
+            .set_param(StripId(0), "usbreturn", ParamValue::Float(17.0))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "usbreturn").await.unwrap(),
+            ParamValue::Float(17.0)
+        );
+        driver
+            .set_param(StripId(0), "usbreturn", ParamValue::Float(0.0))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "usbreturn").await.unwrap(),
+            ParamValue::Float(0.0)
+        );
+        for bad in [18.0, -1.0, 3.5, f32::NAN, f32::INFINITY] {
+            assert!(
+                driver
+                    .set_param(StripId(0), "usbreturn", ParamValue::Float(bad))
+                    .await
+                    .is_err(),
+                "usbreturn {bad} accepted"
+            );
+        }
+        assert!(
+            driver
+                .set_param(StripId(0), "usbreturn", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+
+        // trim: dB −18..=18, linear wire (the fake stores verbatim, so
+        // epsilon covers f32 conversion only).
+        driver
+            .set_param(StripId(0), "trim", ParamValue::Float(0.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(db) = driver.get_param(StripId(0), "trim").await.unwrap()
+        else {
+            panic!("trim read back non-float");
+        };
+        assert!((db - 0.0).abs() < 1e-4, "trim readback {db}");
+        driver
+            .set_param(StripId(0), "trim", ParamValue::Float(-18.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(db) = driver.get_param(StripId(0), "trim").await.unwrap()
+        else {
+            panic!("trim read back non-float");
+        };
+        assert!((db + 18.0).abs() < 1e-4, "trim readback {db}");
+        assert!(
+            driver
+                .set_param(StripId(0), "trim", ParamValue::Float(18.1))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "trim", ParamValue::Bool(false))
+                .await
+                .is_err()
+        );
+
+        // polarity (phase invert): plain bool, NOT inverted like /mix/on.
+        driver
+            .set_param(StripId(0), "polarity", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "polarity").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        driver
+            .set_param(StripId(0), "polarity", ParamValue::Bool(false))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "polarity").await.unwrap(),
+            ParamValue::Bool(false)
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "polarity", ParamValue::Float(1.0))
+                .await
+                .is_err()
+        );
+
+        // hpf_on + hpf_freq (log 20..400 Hz; 1 Hz epsilon for log/f32).
+        driver
+            .set_param(StripId(0), "hpf_on", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "hpf_on").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        driver
+            .set_param(StripId(0), "hpf_freq", ParamValue::Float(80.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(hz) = driver.get_param(StripId(0), "hpf_freq").await.unwrap()
+        else {
+            panic!("hpf_freq read back non-float");
+        };
+        assert!((hz - 80.0).abs() < 1.0, "hpf_freq readback {hz}");
+        driver
+            .set_param(StripId(0), "hpf_freq", ParamValue::Float(400.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(hz) = driver.get_param(StripId(0), "hpf_freq").await.unwrap()
+        else {
+            panic!("hpf_freq read back non-float");
+        };
+        assert!((hz - 400.0).abs() < 1.0, "hpf_freq readback {hz}");
+        assert!(
+            driver
+                .set_param(StripId(0), "hpf_freq", ParamValue::Float(19.9))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "hpf_freq", ParamValue::Float(f32::NAN))
+                .await
+                .is_err()
+        );
+
+        // Phantom strips stay local (T3); live-silent leaves stay errors.
+        assert!(
+            driver
+                .set_param(StripId(16), "trim", ParamValue::Float(0.0))
+                .await
+                .is_err()
+        );
+        assert!(driver.get_param(StripId(16), "polarity").await.is_err());
+        assert!(driver.get_param(StripId(0), "inputsource").await.is_err());
+        assert!(
+            driver
+                .set_param(StripId(0), "inputsource", ParamValue::Float(0.0))
+                .await
+                .is_err()
+        );
+        assert!(driver.get_param(StripId(0), "usbinput").await.is_err());
     }
 
     /// FX slots (`/fx/N/par/MM`, baseline §6 row 5): bit-exact loopback
