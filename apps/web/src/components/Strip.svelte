@@ -1,5 +1,6 @@
 <script lang="ts">
   import FatStrip from './FatStrip.svelte';
+  import LockBadge from './LockBadge.svelte';
   import type { EqBand } from '../lib/eqCurve';
   import { faderDb } from '../lib/format';
   import { ensurePerfOverlay, setMeterVisible, sizeMeterCanvas } from '../lib/meters';
@@ -34,9 +35,14 @@
     bands?: EqBand[] | null;
     /** Per-strip gain reduction dB (>= 0, null = no GR feed yet). */
     grDb?: number | null;
+    /** Strip-lock holder client id (null = unlocked / no locks feed). */
+    lockHolder?: string | null;
+    /** True when this client holds the lock (tap releases). */
+    lockMine?: boolean;
     onMove?: (dir: -1 | 1) => void;
     onGap?: () => void;
     onRemove?: () => void;
+    onLockToggle?: () => void;
     registerMeter: (ch: number, cv: HTMLCanvasElement) => void;
     unregisterMeter: (ch: number) => void;
     onFader: (v: number) => void;
@@ -62,9 +68,12 @@
     canRemove = false,
     bands = null,
     grDb = null,
+    lockHolder = null,
+    lockMine = false,
     onMove,
     onGap,
     onRemove,
+    onLockToggle,
     registerMeter,
     unregisterMeter,
     onFader,
@@ -178,6 +187,9 @@
   <button class="scribble" aria-pressed={selected} aria-label={`select ${strip.name} for detail`} onclick={onSelect} title="tap: select / detail">
     {strip.name}<br /><small>ch{strip.ch < 0 ? 'M' : strip.ch + 1}</small>
   </button>
+  {#if strip.ch >= 0 && onLockToggle}
+    <LockBadge ch={strip.ch} holder={lockHolder} mine={lockMine} onToggle={() => onLockToggle?.()} />
+  {/if}
   {#if editMode}
     <div class="ehandles" role="group" aria-label="layout edit">
       <button title="move left" aria-label="move strip left" onclick={() => onMove?.(-1)}>‹</button>

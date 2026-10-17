@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { selectBackend } from './lib/backend';
-  import type { Backend, MainStrip, ParamValue, Unsub, Strip as StripData } from './lib/backend';
+  import type { Backend, LockHolds, MainStrip, ParamValue, Unsub, Strip as StripData } from './lib/backend';
   import { eqBandsFor, grFor, noteBandParam } from './lib/bands';
   import { levels, setLevels } from './lib/levels';
   import { paintStageMeter } from './lib/meters';
@@ -92,6 +92,9 @@
   let selected: number = $state(0);
   let solos: number[] = $state([]);
   let hidden: string[] = $state([]); // param fields the backend rejected
+  const locksSupported = backend.kind === 'ws';
+  let locks: LockHolds = $state({}); // ch -> holder client id (empty = no pins / no locks feed)
+  let myLocks: number[] = $state([]); // channels this client claimed (confirmed by the holds table)
   let storeArm: boolean = $state(false);
   let driver: string = $state('sim');
   let addr: string = $state('');
@@ -250,6 +253,45 @@
 
   function toggleSolo(ch: number): void {
     solos = solos.includes(ch) ? solos.filter((c) => c !== ch) : [...solos, ch];
+  }
+
+  /* ---------- strip locks (multi-client arbitration) ---------- */
+  const lockEntries = $derived(
+    Object.entries(locks)
+      .map(([k, v]): [number, string] => [Number(k), v])
+      .filter(([ch, h]) => Number.isInteger(ch) && ch >= 0 && !!h)
+      .sort((a, b) => a[0] - b[0]),
+  );
+
+  async function toggleLock(ch: number): Promise<void> {
+    if (!locksSupported || ch < 0) return;
+    if (myLocks.includes(ch)) {
+      // Release our own hold (optimistic; the locks frame confirms).
+      myLocks = myLocks.filter((c) => c !== ch);
+      try {
+        await backend.unlockStrip(ch);
+      } catch (e) {
+        say(`unlock ch${ch + 1}: ${errMsg(e)}`);
+      }
+      return;
+    }
+    if (locks[ch] !== undefined) {
+      // Held by someone else: ask anyway — the denial names the holder.
+      try {
+        await backend.lockStrip(ch);
+      } catch (e) {
+        say(`lock ch${ch + 1}: ${errMsg(e)}`);
+      }
+      return;
+    }
+    // Unlocked: claim optimistically; a denial rolls this back.
+    myLocks = [...myLocks, ch];
+    try {
+      await backend.lockStrip(ch);
+    } catch (e) {
+      myLocks = myLocks.filter((c) => c !== ch);
+      say(`lock ch${ch + 1}: ${errMsg(e)}`);
+    }
   }
 
   function select(ch: number): void {
@@ -608,6 +650,28 @@
     if (backend.onStatus) offs.push(backend.onStatus((on) => {
       online = on;
     }));
+    // Strip locks: holds table drives badges + panel; denials name the holder.
+    // Missing on old servers — the table simply stays empty (null-safe).
+    try {
+      offs.push(backend.onLocks((holds) => {
+        locks = { ...(holds ?? {}) };
+        const live = new Set(Object.keys(locks).map(Number));
+        const kept = myLocks.filter((c) => live.has(c));
+        if (kept.length !== myLocks.length) myLocks = kept;
+      }));
+    } catch {
+      /* transport without locks */
+    }
+    try {
+      offs.push(backend.onDeny((d) => {
+        if (d.ch !== null && Number.isFinite(d.ch)) {
+          myLocks = myLocks.filter((c) => c !== d.ch);
+        }
+        say(d.lockedBy ? `ch${(d.ch ?? -1) + 1} locked by ${d.lockedBy}` : d.message);
+      }));
+    } catch {
+      /* transport without locks */
+    }
 
     const staleTimer = window.setInterval(() => {
       // Offline if no meter frame for >1.5s while expecting one.
@@ -773,6 +837,21 @@
     <span id="status" role="status">{status}</span>
   </div>
 
+  {#if locksSupported && lockEntries.length}
+    <div id="locks" role="status" aria-label="strip locks">
+      <span class="lbl">locks</span>
+      {#each lockEntries as [ch, holder] (ch)}
+        {@const mine = myLocks.includes(ch)}
+        {@const nm = strips.find((s) => s.ch === ch)?.name ?? `ch${ch + 1}`}
+        {#if mine}
+          <button class="lk mine" onclick={() => toggleLock(ch)} title={`you hold ${nm} — tap to release`} aria-label={`release your lock on ${nm}`}>● {nm} · mine</button>
+        {:else}
+          <span class="lk held" title={`held by ${holder}`}>● {nm} · {holder}</span>
+        {/if}
+      {/each}
+    </div>
+  {/if}
+
   {#if view === 'overview'}
     <main id="ovwrap">
       <Overview
@@ -805,6 +884,9 @@
             clip={clips.includes(cs.ch)}
             bands={cs.ch >= 0 ? eqBandsFor(cs.ch) : null}
             grDb={grFor(cs.ch, gr)}
+            lockHolder={locksSupported ? (locks[cs.ch] ?? null) : null}
+            lockMine={myLocks.includes(cs.ch)}
+            onLockToggle={locksSupported ? () => toggleLock(cs.ch) : undefined}
             {registerMeter}
             {unregisterMeter}
             onFader={(v) => stripFader(cs, v)}
@@ -881,6 +963,9 @@
                     onMove={(d) => moveEntry(i, d)}
                     onGap={() => addGap(i)}
                     onRemove={() => removeEntry(i)}
+                    lockHolder={locksSupported ? (locks[c.s.ch] ?? null) : null}
+                    lockMine={myLocks.includes(c.s.ch)}
+                    onLockToggle={locksSupported ? () => toggleLock(c.kind === 'strip' ? c.s.ch : -1) : undefined}
                     {registerMeter}
                     {unregisterMeter}
                     onFader={(v) => stripFader(c.kind === 'strip' ? c.s : mainPseudo(), v)}

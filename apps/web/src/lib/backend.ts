@@ -75,13 +75,26 @@ export interface ShowLib {
   scenes: ShowScene[];
 }
 
+/** One strip lock holder: channel -> holder client id (e.g. "client-3"). */
+export type LockHolds = Record<number, string>;
+
+/** Lock/write denial from the relay (`{"type":"error","locked_by":…}`). */
+export interface LockDeny {
+  ch: number | null;
+  lockedBy: string | null;
+  message: string;
+}
+
 /** Relay -> UI messages (WS JSON protocol, port :8080). */
 export type WsMsg =
   | { type: 'state'; strips: Strip[] }
   | { type: 'meters'; levels: number[] }
   | { type: 'spectrum'; ch: number; bins: number[] }
   | { type: 'gr'; ch: number; gate: number; comp: number }
-  | { type: 'shows'; shows: ShowLib[] };
+  | { type: 'shows'; shows: ShowLib[] }
+  | { type: 'locks'; holds: Record<string, string> }
+  | { type: 'error'; message?: string; locked_by?: string; ch?: number }
+  | { type: 'recalled'; overrode_locks?: number[] };
 
 /** UI -> relay commands. */
 export type WsCmd =
@@ -92,7 +105,9 @@ export type WsCmd =
   | { cmd: 'list_shows' }
   | { cmd: 'capture_scene'; show: string; name: string }
   | { cmd: 'recall_scene'; show: string; name: string; fade_ms: number | null }
-  | { cmd: 'delete_scene'; show: string; name: string };
+  | { cmd: 'delete_scene'; show: string; name: string }
+  | { cmd: 'lock'; ch: number }
+  | { cmd: 'unlock'; ch: number };
 
 export interface Backend {
   readonly kind: 'tauri' | 'ws';
@@ -110,12 +125,20 @@ export interface Backend {
   recallScene(show: string, name: string, fadeMs?: number): Promise<void>;
   /** Remove name from show's library. */
   deleteScene(show: string, name: string): Promise<void>;
+  /** Claim a strip lock (no-op on transports without locks). */
+  lockStrip(ch: number): Promise<void>;
+  /** Release a strip lock (no-op on transports without locks). */
+  unlockStrip(ch: number): Promise<void>;
   onShows(cb: (shows: ShowLib[]) => void): Unsub;
   onState(cb: (strips: Strip[]) => void): Unsub;
   onMeters(cb: (levels: MeterLevels) => void): Unsub;
   onSpectrum(cb: (evt: SpectrumEvent) => void): Unsub;
   onGr(cb: (evt: GrEvent) => void): Unsub;
   onStatus(cb: (online: boolean) => void): Unsub;
+  /** Strip-lock table (empty when the server has no locks support). */
+  onLocks(cb: (holds: LockHolds) => void): Unsub;
+  /** Lock/write denials (`locked_by` holder id when the server names one). */
+  onDeny(cb: (deny: LockDeny) => void): Unsub;
   close?(): void;
 }
 
@@ -412,6 +435,24 @@ export class TauriBackend implements Backend {
     this.emitShows();
   }
 
+  // No strip locks in the Tauri shell: claim/release are no-ops, the table
+  // stays empty, and no denial ever fires (null-safe for shared UI code).
+  async lockStrip(_ch: number): Promise<void> {}
+  async unlockStrip(_ch: number): Promise<void> {}
+
+  onLocks(cb: (holds: LockHolds) => void): Unsub {
+    try {
+      cb({});
+    } catch {
+      /* ignore */
+    }
+    return () => {};
+  }
+
+  onDeny(_cb: (deny: LockDeny) => void): Unsub {
+    return () => {};
+  }
+
   onShows(cb: (shows: ShowLib[]) => void): Unsub {
     const un = sub(this.showsCbs, cb);
     try {
@@ -508,6 +549,9 @@ export class WsBackend implements Backend {
   private readonly showsCbs = new Set<(shows: ShowLib[]) => void>();
   private lastShows: ShowLib[] = [];
   private readonly showsWaiters: Array<(shows: ShowLib[]) => void> = [];
+  private readonly locksCbs = new Set<(holds: LockHolds) => void>();
+  private readonly denyCbs = new Set<(deny: LockDeny) => void>();
+  private lastHolds: LockHolds = {};
   private ws: WebSocket | null = null;
   private openPromise: Promise<string> | null = null;
   private readonly queue: string[] = [];
@@ -649,6 +693,60 @@ export class WsBackend implements Backend {
           /* ignore */
         }
       }
+    } else if (t === 'locks' && rec['holds'] !== null && typeof rec['holds'] === 'object') {
+      // Null-safe: unknown/old servers may send odd shapes; drop bad keys.
+      const holds: LockHolds = {};
+      for (const [k, v] of Object.entries(rec['holds'] as Record<string, unknown>)) {
+        const ch = Number(k);
+        if (Number.isInteger(ch) && ch >= 0 && typeof v === 'string' && v) holds[ch] = v;
+      }
+      this.lastHolds = holds;
+      const snap: LockHolds = { ...holds };
+      this.locksCbs.forEach((cb) => {
+        try {
+          cb(snap);
+        } catch {
+          /* ignore */
+        }
+      });
+    } else if (t === 'error') {
+      const lb = rec['locked_by'];
+      const chRaw = rec['ch'];
+      const deny: LockDeny = {
+        ch: typeof chRaw === 'number' && Number.isFinite(chRaw) ? chRaw : null,
+        lockedBy: typeof lb === 'string' && lb ? lb : null,
+        message: typeof rec['message'] === 'string' && rec['message'] ? rec['message'] : 'request denied',
+      };
+      // Only lock denials carry locked_by; generic errors stay silent here
+      // (callers already surface their own failures).
+      if (deny.lockedBy !== null) {
+        this.denyCbs.forEach((cb) => {
+          try {
+            cb(deny);
+          } catch {
+            /* ignore */
+          }
+        });
+      }
+    } else if (t === 'recalled' && Array.isArray(rec['overrode_locks'])) {
+      const chs: number[] = [];
+      for (const v of rec['overrode_locks']) {
+        if (typeof v === 'number' && Number.isFinite(v)) chs.push(v);
+      }
+      if (chs.length) {
+        const deny: LockDeny = {
+          ch: chs[0] ?? null,
+          lockedBy: null,
+          message: `scene recall overrode lock${chs.length > 1 ? 's' : ''} on ch ${chs.join(', ')}`,
+        };
+        this.denyCbs.forEach((cb) => {
+          try {
+            cb(deny);
+          } catch {
+            /* ignore */
+          }
+        });
+      }
     }
   }
 
@@ -709,6 +807,14 @@ export class WsBackend implements Backend {
     this.send({ cmd: 'delete_scene', show, name });
   }
 
+  async lockStrip(ch: number): Promise<void> {
+    this.send({ cmd: 'lock', ch });
+  }
+
+  async unlockStrip(ch: number): Promise<void> {
+    this.send({ cmd: 'unlock', ch });
+  }
+
   onShows(cb: (shows: ShowLib[]) => void): Unsub {
     const un = sub(this.showsCbs, cb);
     try {
@@ -739,6 +845,20 @@ export class WsBackend implements Backend {
       /* ignore */
     }
     return un;
+  }
+
+  onLocks(cb: (holds: LockHolds) => void): Unsub {
+    const un = sub(this.locksCbs, cb);
+    try {
+      cb({ ...this.lastHolds });
+    } catch {
+      /* ignore */
+    }
+    return un;
+  }
+
+  onDeny(cb: (deny: LockDeny) => void): Unsub {
+    return sub(this.denyCbs, cb);
   }
 
   close(): void {
