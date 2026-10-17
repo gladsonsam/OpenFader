@@ -27,6 +27,7 @@
   import Overview from './components/Overview.svelte';
   import ShowEditor from './components/ShowEditor.svelte';
   import ValueEntry from './components/ValueEntry.svelte';
+  import MusicianView from './components/MusicianView.svelte';
 
   const backend: Backend = selectBackend();
   const via = backend.kind === 'tauri' ? 'tauri ipc' : `ws ${backend.url}`;
@@ -91,6 +92,8 @@
   let fineMode: boolean = $state(loadJSON<boolean>(LS.fine, false));
   let sofBus: number | null = $state(null); // transient: sends-on-fader destination
   let sofBusB: number | null = $state(null); // split-mode pane B SoF destination
+  let musicianMode: boolean = $state(false); // performer wedge mix: only their bus
+  let musicianBus: number | null = $state(null); // musician's picked destination bus
   let clips: number[] = $state([]); // latched clip channels, tap meter to clear
   let editing: Editing | null = $state(null); // tap-a-value modal
   let editLayout: boolean = $state(false);
@@ -145,6 +148,15 @@
   const sofColorB = $derived(sofBusB === null ? '' : busColor(sofBusB));
   const sofNameB = $derived(sofBusB === null ? '' : (strips.find((s) => s.ch === sofBusB)?.name ?? `bus ${sofBusB}`));
   const busStrips: StripData[] = $derived(strips.filter(isBusStrip));
+  // Musician mode mirrors (read-only derives; writes go through setSend/setFader).
+  const musicianInputs: StripData[] = $derived(strips.filter((s) => !isBusStrip(s)));
+  const musicianBusName = $derived(
+    musicianBus === null ? '' : (strips.find((s) => s.ch === musicianBus)?.name ?? `bus ${musicianBus}`),
+  );
+  const musicianBusColor = $derived(musicianBus === null ? '' : busColor(musicianBus));
+  const musicianMaster = $derived(
+    musicianBus === null ? 0.8 : (strips.find((s) => s.ch === musicianBus)?.fader ?? 0.8),
+  );
 
   const mainPseudo = (): StripData => ({ ch: -1, name: 'MAIN', fader: master.fader, muted: false, main: true });
 
@@ -413,6 +425,29 @@
 
   function exitSof(): void {
     exitSofPane('a');
+  }
+
+  /* ---------- musician monitor mode (pick-your-bus wedge mix) ---------- */
+  function toggleMusician(): void {
+    musicianMode = !musicianMode;
+    say(musicianMode ? 'musician mode: pick your wedge — everything else locked out' : 'back to FOH');
+  }
+
+  function exitMusician(): void {
+    musicianMode = false;
+    say('back to FOH');
+  }
+
+  function callFoh(): void {
+    if (musicianBus === null) return;
+    // Best-effort `attention` broadcast over the EXISTING param path: the
+    // relay fans every param frame out to all clients, so a FOH build with
+    // a toast listener flashes there; builds without one ignore the unknown
+    // field and the performer's local strobe still covers the UX.
+    // TODO(kiosk): FOH-side toast on `param` `attention` frames.
+    backend.setParam(musicianBus, 'attention', 1).catch((e: unknown) => {
+      say(`call FOH stayed local: ${errMsg(e)}`);
+    });
   }
 
   async function copyLrPane(pane: 'a' | 'b'): Promise<void> {
@@ -804,8 +839,29 @@
     <span id="badge" class:online class:offline={!online}>{online ? 'online' : 'offline'}</span>
     <span id="via" title="transport">{via}</span>
     <button id="bridgeBtn" class:on={showBridge} aria-pressed={showBridge} title="toggle meter bridge" onclick={() => { showBridge = !showBridge; }}>bridge</button>
+    <button id="musicianBtn" class:on={musicianMode} aria-pressed={musicianMode} title="musician monitor mode: pick-your-bus wedge mix, everything else locked out" onclick={toggleMusician}>musician</button>
     <button id="helpBtn" title="first-run wizard & guided tour" aria-label="open setup wizard and tour" onclick={() => { showOnboard = true; }}>?</button>
   </header>
+
+  {#if musicianMode}
+    <MusicianView
+      inputs={musicianInputs}
+      buses={busStrips}
+      busCh={musicianBus}
+      busName={musicianBusName}
+      busColorHex={musicianBusColor}
+      sendValue={(ch) => (musicianBus === null ? 0 : dbToFader(sendDb(sends, ch, musicianBus)))}
+      sendLabel={(ch) => (musicianBus === null ? '-inf' : fmtSendDb(sendDb(sends, ch, musicianBus)))}
+      masterValue={musicianMaster}
+      masterLabel={faderDb(musicianMaster)}
+      onPickBus={(b) => { musicianBus = b; }}
+      onSend={(ch, v) => { if (musicianBus !== null) void setSend(ch, musicianBus, v); }}
+      onMaster={(v) => { const b = musicianBus === null ? undefined : strips.find((s) => s.ch === musicianBus); if (b) void setFader(b, v); }}
+      onCallFoh={callFoh}
+      onExit={exitMusician}
+    />
+  {/if}
+  <div id="fohwrap" style:display={musicianMode ? 'none' : ''}>
 
   <!-- Mackie 3-view nav: always visible, active one dark. -->
   <nav id="views" aria-label="views">
@@ -1164,6 +1220,8 @@
       {/key}
     </main>
   {/if}
+
+  </div><!-- /#fohwrap: FOH surface (hidden in musician mode) -->
 
   {#if showOnboard}
     <Onboarding backend={backend} {online} onDone={closeOnboard} onGoto={(v) => setView(v)} />
