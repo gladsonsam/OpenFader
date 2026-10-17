@@ -1,6 +1,17 @@
 <script lang="ts">
+  import FatStrip from './FatStrip.svelte';
+  import type { EqBand } from '../lib/eqCurve';
   import { faderDb } from '../lib/format';
   import type { Strip } from '../lib/backend';
+
+  // Fat-channel thumbnail: rendered when the parent passes per-strip EQ
+  // state (`bands`) + live GR (`grDb`). Detail owns the selected channel's
+  // band copy today (resets per channel — the backend never echoes param
+  // state); per-strip copies for the mixer need a ch->bands store fed by
+  // future relay param echo, at which point App passes
+  // `bands={eqBandsFor(c.s.ch)} grDb={grFor(c.s.ch)}` at each <Strip> call
+  // site. Until then both stay null and the strip renders exactly as
+  // before (no layout change).
 
   interface Props {
     strip: Strip;
@@ -21,6 +32,10 @@
     /** Layout edit mode: show reorder/gap/remove handles. */
     editMode?: boolean;
     canRemove?: boolean;
+    /** Per-strip EQ copy for the fat thumbnail (null = not yet available). */
+    bands?: EqBand[] | null;
+    /** Per-strip gain reduction dB (>= 0, null = no GR feed yet). */
+    grDb?: number | null;
     onMove?: (dir: -1 | 1) => void;
     onGap?: () => void;
     onRemove?: () => void;
@@ -47,6 +62,8 @@
     muteLocked = false,
     editMode = false,
     canRemove = false,
+    bands = null,
+    grDb = null,
     onMove,
     onGap,
     onRemove,
@@ -160,6 +177,11 @@
     </div>
   </div>
   <button class="db" onclick={onValueTap} title="tap: type exact value">{readout}</button>
+  {#if bands}
+    <div class="thumb">
+      <FatStrip {bands} {grDb} compact />
+    </div>
+  {/if}
   {#if clip}
     <div class="clipled" role="alert">CLIP</div>
   {/if}
@@ -179,4 +201,6 @@
 <style>
   /* Strip layout inherits the gig-theme classes from app.css. */
   .scribble { cursor: pointer; font: inherit; }
+  /* Fat thumbnail slot: full strip width, zero footprint until fed. */
+  .thumb { width: 100%; }
 </style>
