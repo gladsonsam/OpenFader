@@ -7,7 +7,7 @@
  *  - everything else: pass through.
  */
 
-const CACHE = 'openmix-shell-v1';
+const CACHE = 'openmix-shell-v2';
 const CORE = ['./', './index.html', './manifest.webmanifest'];
 
 function isSocketOrApi(url) {
