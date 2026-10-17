@@ -66,11 +66,10 @@ Spot reads: `/fx/1/par/01` → `,f 0.1`; `/ch/02/mix/01/level` → `,f 0.2`.
 
 ## 4. Discrepancies — TODOs for driver fixes
 
-- [ ] T1 (mains address): driver previously used X32-style `/main/st/*`;
-  hardware is silent there, `/lr/*` is correct. Fix exists only as
-  **uncommitted working-tree changes** (`crates/proto-xair/src/lib.rs`,
-  `docs/xair-protocol.md`); commit `xair: mains via /lr` is **absent**
-  from `git log`. Commit it.
+- [x] T1 (mains address): driver previously used X32-style `/main/st/*`;
+  hardware is silent there, `/lr/*` is correct. Fix committed by sibling as
+  `8f6a133 xair: mains via /lr (hardware-verified)` — now present in
+  `git log`. Closed.
 - [ ] T2 (bus index width): driver `bus_fader()` emits zero-padded
   `/bus/01/mix/fader` — hardware is **silent** on all `/bus/01..06/*`.
   Single-digit `/bus/1/mix/fader`, `/bus/1/mix/on`, `/bus/1/config/name`
@@ -103,6 +102,12 @@ Spot reads: `/fx/1/par/01` → `,f 0.1`; `/ch/02/mix/01/level` → `,f 0.2`.
   `/ch/02/mix/01/on` is silent. Per-send on/off may not exist on X-Air
   (check pre/post tap address, e.g. `/ch/02/mix/01/pre`, before adding
   send-mute to the driver).
+- [ ] T8 (fader quantization): hardware quantizes fader writes to ~10-bit
+  steps — writing `0.5` lands at `0.4995112419128418` (off by ~5e-4), while
+  send levels (`0.8` → `0.800000011920929`) and FX params (`0.5` → `0.5`)
+  round-trip bit-exact. Driver `get_fader`/`set_fader` round-trips are NOT
+  bit-exact; any verify/readback logic needs epsilon ≈ 1e-3, and tests must
+  not assert exact float equality on fader writes.
 
 ## 5. Deliberately NOT touched (phase 1)
 
@@ -114,4 +119,35 @@ were read but not modified, not staged, not committed.
 
 ## 6. Phase 2 — full write tests (speakers OFF, owner-approved)
 
-TBD — recorded here after write tests + restore.
+Each op: read baseline → write test value → readback → restore baseline →
+verify restore (retry × 5). Full results: `/tmp/xr18_writetests.json`.
+
+| # | Op (addr) | Test value | Readback | Restored to | Result |
+|---|-----------|------------|----------|-------------|--------|
+| 1 | ch fader `/ch/02/mix/fader` | 0.5 | 0.49951124 | 0.0 exact | PASS* |
+| 2 | ch mute `/ch/02/mix/on` | 1 | 1 | 0 exact | PASS |
+| 3 | ch rename `/ch/02/config/name` | `PROBE` | `PROBE` | `` exact | PASS |
+| 4 | aux send `/ch/02/mix/01/level` | 0.8 | 0.80000001 | 0.2 exact | PASS |
+| 5 | FX param `/fx/1/par/01` | 0.5 | 0.5 | 0.1 exact | PASS |
+| 6 | bus master `/bus/1/mix/fader` | 0.5 | 0.49951124 | 0.74975562 exact | PASS* |
+| 7 | LR master `/lr/mix/fader` | 0.5 | 0.49951124 | 0.74975562 exact | PASS* |
+
+\* PASS with quantization note (T8): fader readback differs from the written
+value by ~5e-4 (desk step size); restore-to-baseline verified exact.
+
+Driver-path write: `openmix-cli --driver xair --addr 192.168.40.123 fader 2 50`
+→ desk reads `/ch/02/mix/fader = 0.49951124` (raw OSC verify). Driver
+`set_fader` + `pct/100` scaling confirmed end-to-end. Restored to 0.0 after.
+
+Desk-as-found: full re-read sweep of all 84 baseline addresses after the
+write tests — **84/84 match §2 values**. Desk left exactly as found.
+
+Scene snapshot/recall: NOT tested — no OSC path exists. `proto-xair` has no
+scene addresses, `XAirDriver::snapshot()` is unimplemented (T6), and X-Air
+scenes transfer as bulk files, not single OSC recalls. The §2 snapshot table
+above serves as the scene record.
+
+Deliberately NOT touched in phase 2 either: network/config surface (IP,
+routing, FW, init/reset), anything outside 192.168.40.123, and all strips
+besides the 7 test addresses (ch02, ch02-s1, fx1-p1, bus1, LR) — each
+restored and re-verified.
