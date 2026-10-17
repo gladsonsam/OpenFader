@@ -3,6 +3,7 @@
   import { fade, fly } from 'svelte/transition';
   import { selectBackend } from './lib/backend';
   import type { Backend, MainStrip, ParamValue, Unsub, Strip as StripData } from './lib/backend';
+  import { eqBandsFor, grFor, noteBandParam } from './lib/bands';
   import { levels, setLevels } from './lib/levels';
   import { paintBridge, paintStageMeter } from './lib/meters';
   import { faderDb } from './lib/format';
@@ -444,6 +445,7 @@
   /* ---------- detail params ---------- */
   async function pushParam(field: string, v: ParamValue): Promise<void> {
     if (field === 'gain' && typeof v === 'number') gains[selected] = v; // staging display
+    if (selected >= 0) noteBandParam(selected, field, v); // mixer-thumb mirror (relay never echoes params)
     try {
       await backend.setParam(selected, field, v);
     } catch (e) {
@@ -775,6 +777,8 @@
             displayValue={displayFader(cs)}
             displayDb={displayDb(cs)}
             clip={clips.includes(cs.ch)}
+            bands={cs.ch >= 0 ? eqBandsFor(cs.ch) : null}
+            grDb={grFor(cs.ch, gr)}
             {registerMeter}
             {unregisterMeter}
             onFader={(v) => stripFader(cs, v)}
@@ -838,6 +842,8 @@
                     displayDb={displayDb(c.s)}
                     sofColor={inSof && !c.master ? sofColorV : null}
                     clip={clips.includes(c.s.ch)}
+                    bands={c.s.ch >= 0 ? eqBandsFor(c.s.ch) : null}
+                    grDb={grFor(c.s.ch, gr)}
                     editMode={editLayout && !inSof}
                     canRemove={!(layers.find((l) => l.id === layer)?.builtin) || c.kind === 'strip'}
                     onMove={(d) => moveEntry(i, d)}
