@@ -83,6 +83,39 @@ async fn wait_state(rx: &mut WsRx, want: impl Fn(&Value) -> bool) -> Value {
     }
 }
 
+/// Keep reading frames until a `param` echo with the expected
+/// ch/field/value arrives (siblings of the mutation broadcast).
+async fn wait_param(rx: &mut WsRx, ch: u64, field: &str, want: &Value) -> Value {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let mut last = json!(null);
+    loop {
+        if std::time::Instant::now() > deadline {
+            panic!("timed out waiting for param echo ch{ch} {field}={want}; last: {last}");
+        }
+        let next = timeout(Duration::from_millis(500), next_msg(rx)).await;
+        let v = match next {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if v.get("type").and_then(Value::as_str) != Some("param") {
+            continue;
+        }
+        last = v;
+        let ch_ok = last.get("ch") == Some(&json!(ch));
+        let field_ok = last.get("field") == Some(&json!(field));
+        let val_ok = match (last.get("value"), want) {
+            (Some(Value::Number(a)), Value::Number(b)) => {
+                a.as_f64().zip(b.as_f64()).is_some_and(|(x, y)| (x - y).abs() < 1e-6)
+            }
+            (Some(a), b) => a == b,
+            (None, _) => false,
+        };
+        if ch_ok && field_ok && val_ok {
+            return last.clone();
+        }
+    }
+}
+
 #[tokio::test]
 async fn ws_sim_connect_fader_mute() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -126,7 +159,7 @@ async fn ws_sim_connect_fader_mute() {
     ))
     .await
     .unwrap();
-    let state = wait_state(&mut rx, |s| {
+    let _state = wait_state(&mut rx, |s| {
         strip(s, 0)
             .get("fader")
             .and_then(Value::as_f64)
@@ -151,19 +184,76 @@ async fn ws_sim_connect_fader_mute() {
     let _state =
         wait_state(&mut rx, |s| strip(s, 0).get("muted") == Some(&json!(false))).await;
 
-    // Generic param: gain (float) maps through set_param.
+    // Generic param: fader (float) maps through set_param; the server
+    // echoes {"type":"param","ch":1,"field":"fader","value":0.25} so
+    // sibling UIs learn about the change without re-polling.
     tx.send(Message::Text(
         json!({"cmd":"param","ch":1,"field":"fader","value":0.25}).to_string(),
     ))
     .await
     .unwrap();
-    let _state = wait_state(&mut rx, |s| {
-        strip(s, 1)
-            .get("fader")
-            .and_then(Value::as_f64)
-            .is_some_and(|f| (f - 0.25).abs() < 1e-6)
-    })
-    .await;
+    {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut saw_param = false;
+        let mut saw_state = false;
+        while !(saw_param && saw_state) {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for param echo + state (param={saw_param}, state={saw_state})");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(&mut rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            match v.get("type").and_then(Value::as_str) {
+                Some("param") => {
+                    let ch_ok = v.get("ch") == Some(&json!(1));
+                    let field_ok = v.get("field") == Some(&json!("fader"));
+                    let val_ok = v
+                        .get("value")
+                        .and_then(Value::as_f64)
+                        .is_some_and(|f| (f - 0.25).abs() < 1e-6);
+                    if ch_ok && field_ok && val_ok {
+                        saw_param = true;
+                    }
+                }
+                Some("state") => {
+                    if strip(&v, 1)
+                        .get("fader")
+                        .and_then(Value::as_f64)
+                        .is_some_and(|f| (f - 0.25).abs() < 1e-6)
+                    {
+                        saw_state = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Bool + string params echo with identical ch/field/value.
+    tx.send(Message::Text(
+        json!({"cmd":"param","ch":2,"field":"mute","value":true}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let echo = wait_param(&mut rx, 2, "mute", &json!(true)).await;
+    assert_eq!(echo.get("value"), Some(&json!(true)));
+    tx.send(Message::Text(
+        json!({"cmd":"param","ch":2,"field":"mute","value":false}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let echo = wait_param(&mut rx, 2, "mute", &json!(false)).await;
+    assert_eq!(echo.get("value"), Some(&json!(false)));
+
+    tx.send(Message::Text(
+        json!({"cmd":"param","ch":3,"field":"name","value":"Vox"}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let echo = wait_param(&mut rx, 3, "name", &json!("Vox")).await;
+    assert_eq!(echo.get("value"), Some(&json!("Vox")));
 
     // Meters tick at ~10 Hz.
     let meters = next_typed(&mut rx, "meters").await;
@@ -355,13 +445,46 @@ async fn ws_scenes_capture_recall_delete() {
     ))
     .await
     .unwrap();
-    let _ = wait_state(&mut rx, |s| {
-        strip(s, 0)
-            .get("fader")
-            .and_then(Value::as_f64)
-            .is_some_and(|f| (f - cap_fader).abs() < 1e-6)
-    })
-    .await;
+    // Recall moves faders and re-emits each applied param so sibling UIs
+    // catch up; expect both the state snap-back and the ch0 fader echo.
+    {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut saw_param = false;
+        let mut saw_state = false;
+        while !(saw_param && saw_state) {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for recall param echo + state (param={saw_param}, state={saw_state})");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(&mut rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            match v.get("type").and_then(Value::as_str) {
+                Some("param") => {
+                    let ch_ok = v.get("ch") == Some(&json!(0));
+                    let field_ok = v.get("field") == Some(&json!("fader"));
+                    let val_ok = v
+                        .get("value")
+                        .and_then(Value::as_f64)
+                        .is_some_and(|f| (f - cap_fader).abs() < 1e-6);
+                    if ch_ok && field_ok && val_ok {
+                        saw_param = true;
+                    }
+                }
+                Some("state") => {
+                    if strip(&v, 0)
+                        .get("fader")
+                        .and_then(Value::as_f64)
+                        .is_some_and(|f| (f - cap_fader).abs() < 1e-6)
+                    {
+                        saw_state = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 
     // Unknown scene errors; connection stays alive.
     tx.send(Message::Text(
