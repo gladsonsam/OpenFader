@@ -211,10 +211,12 @@ button.mute.locked { opacity: 0.4; }
 }
 #locks .lk.mine { border-color: var(--grn); color: #7dffa4; }
 #locks .lk.held { border-color: var(--red); color: #ff8a8e; background: none; cursor: default; }
-#wrap { display: flex; gap: 0; align-items: stretch; }
+#wrap { display: flex; gap: 0; align-items: stretch; flex-direction: column; }
+.stripwrap { flex: 0 0 auto; }
+#phonenav span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #strips { flex: 1; display: flex; gap: 8px; overflow-x: auto; padding: 12px 10px; min-height: 340px; }
 .strip {
-  flex: 0 0 92px; background: var(--panel); border: 1px solid var(--line);
+  flex: 0 0 92px; width: 92px; background: var(--panel); border: 1px solid var(--line);
   border-radius: 12px; padding: 8px 6px; display: flex; flex-direction: column;
   gap: 6px; align-items: center; touch-action: pan-x;
 }
@@ -260,7 +262,91 @@ button.solo.lit { background: #4a3a00; border-color: var(--yel); color: var(--ye
 .tgl.lit { background: #123a1e; border-color: var(--grn); color: #7dffa4; }
 .hint { color: var(--dim); font-size: 13px; padding: 20px 6px; }
 .empty { color: var(--dim); padding: 30px 10px; }
-@media (max-width: 760px) {
-  #wrap { flex-direction: column; }
+/* ================= responsive: same app, every screen =================
+   Phone <600: channel-at-a-time (snap carousel + ‹ › stepper, detail
+   reachable, bridge doubles as strip nav). Small tablet ≤900 portrait:
+   condensed strips + collapsible detail sheet. Desktop/tablet landscape:
+   banks + dual-pane kept (SplitView stacks A/B below 1100px). */
+html, body { overflow-x: clip; max-width: 100vw; }
+#app { min-width: 0; max-width: 100vw; overflow-x: clip; }
+body { font-size: clamp(14px, 0.4vw + 13px, 16px); }
+#views button { font-size: clamp(14px, 0.6vw + 13px, 16px); }
+#strips, .mpstrips,
+#sofbanner, #toolbar, #scenes, #locks { scroll-margin: 0; }
+
+/* Safe-area insets (notch / home bar): pad the chrome, never the page. */
+#topbar {
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-left: max(10px, env(safe-area-inset-left));
+  padding-right: max(10px, env(safe-area-inset-right));
+}
+#strips, .mpstrips, #ovwrap, #chwrap {
+  padding-left: max(10px, env(safe-area-inset-left));
+  padding-right: max(10px, env(safe-area-inset-right));
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+}
+#scenes { padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+
+/* Coarse pointers: every control hits 44px (not UA sniff — capability). */
+@media (pointer: coarse) {
+  button { min-height: var(--touch); }
+  .slot button, .ehandles button, .ojump, #locks .lk { min-height: var(--touch); }
+  button.db { min-height: var(--touch); }
+  .ftrack { width: 60px; }
+  #toolbar, #layers, #views, #auxrail, .mpaux, .mprow { gap: 10px; }
+}
+
+/* Sub-1100px: keep both panes, stack them (SplitView.narrow), strips
+   scroll inside their pane — the page itself never scrolls sideways. */
+.split.narrow .mpstrips { min-height: 300px; }
+#splitwrap, #wrap, #chwrap, #ovwrap, #rackwrap, #showswrap, #wizwrap {
+  min-width: 0; max-width: 100vw;
+}
+#splitwrap .mpane { min-width: 0; }
+
+/* Condensed strips for small-tablet portrait (≤900px). */
+@media (max-width: 900px) {
+  .strip { flex: 0 0 76px; width: 76px; padding: 6px 4px; }
+  .mid { height: 160px; }
+  canvas.meter { height: 160px; }
   #detail { width: auto; flex: auto; border-left: 0; border-top: 1px solid var(--line); max-height: none; }
+  /* Channel detail becomes a collapsible bottom sheet (toggle in App). */
+  #chwrap { flex-direction: column; }
+  .chstrip { width: 100%; display: flex; justify-content: center; }
+  .chdetail { width: 100%; }
+  /* Unstick the tab rows (topbar height varies when compressed). */
+  #layers, #views { position: static; }
+}
+
+/* Phone portrait (<600px): channel-at-a-time. Stepper row, bridge strip
+   nav, and sheet toggle live in the component styles (scoping); here only
+   the unscoped bank geometry. */
+@media (max-width: 600px) {
+  #topbar { gap: 6px; }
+  #addr { width: 100%; }
+  #views button { flex: 0 0 auto; }
+  #strips, .mpstrips {
+    scroll-snap-type: x mandatory;
+    gap: 12px; align-items: stretch;
+  }
+  #strips .stripwrap, .mpstrips .stripwrap { scroll-snap-align: center; }
+  .strip { flex: 0 0 min(74vw, 280px); width: min(74vw, 280px); }
+  .mid { height: clamp(220px, 34vh, 300px); }
+  canvas.meter { height: clamp(220px, 34vh, 300px); width: 20px; }
+  .ftrack { width: 64px; }
+  /* Aux rail + SoF banner stay reachable, wrap instead of pushing wide. */
+  #auxrail, #toolbar, #scenes, #locks { flex-wrap: wrap; }
+  .orow { flex-wrap: wrap; }
+  .ojump { flex: 1 0 110px; }
+  .obar { flex: 1 0 120px; }
+  /* Channel view: one big strip, sheet detail below. */
+  #chwrap { flex-direction: column; align-items: stretch; }
+  .chstrip .strip { flex: 0 0 min(82vw, 320px); width: min(82vw, 320px); }
+  .mgassign { width: 100%; }
+}
+
+/* Compressed topbar: transport label hides on narrow (menu owns it). */
+@media (max-width: 820px) {
+  #via { display: none; }
+  #topbar.open .tgroup #via { display: block; flex: 1 1 100%; }
 }
