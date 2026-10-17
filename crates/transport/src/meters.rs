@@ -34,7 +34,7 @@ fn sample_to_level(raw: i16) -> f32 {
 
 /// Parse a blob payload (LE i16 run) into levels.
 pub fn parse_meter_blob(blob: &[u8]) -> Vec<f32> {
-    blob.chunks_exact(2)
+    blob.as_chunks::<2>().0.iter()
         .map(|c| sample_to_level(i16::from_le_bytes([c[0], c[1]])))
         .collect()
 }

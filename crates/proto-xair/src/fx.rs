@@ -1375,7 +1375,7 @@ mod tests {
         assert!(fx_param_def(49, 2).unwrap().inferred); // ENH Spread name
         assert!(fx_param_def(49, 6).unwrap().inferred); // ENH MidQ name
         assert!(fx_param_def(56, 6).unwrap().inferred); // AMP Level order
-        assert!(fx_param_def(56, 9).unwrap().inferred == false); // AMP Cabinet ok
+        assert!(!fx_param_def(56, 9).unwrap().inferred); // AMP Cabinet ok
         assert!(fx_param_def(54, 3).unwrap().inferred); // SON Process scale
         assert!(!fx_param_def(54, 1).unwrap().inferred);
         // Contested 47 (grid ULC2 vs section ULC): every row inferred.
