@@ -17,13 +17,16 @@
 //! server -> client:
 //! ```json
 //! {"type":"state","driver":"sim","strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}
+//! {"type":"param","ch":0,"field":"gain","value":0.5}
 //! {"type":"shows","shows":[{"name":"gig","scenes":[{"name":"verse","main_fader":null,"strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}]}]}
 //! {"type":"meters","levels":[0.1,0.2]}
 //! {"type":"spectrum","ch":0,"bins":[...64 floats...]}
 //! {"type":"gr","ch":0,"gate":0.0,"comp":0.0}
 //! ```
 //!
-//! `state` is sent on connect and after every mutation; `shows` is sent on
+//! `state` is sent on connect and after every mutation; `param` echoes every
+//! successful `param` set (all drivers) and every param applied by
+//! `recall_scene` so sibling UIs stay in sync; `shows` is sent on
 //! connect, as the direct reply to `list_shows`, and broadcast after
 //! `capture_scene`/`delete_scene` so every UI stays in sync. The show library
 //! lives server-side (mirroring the Tauri `capture_scene`/`recall_scene`
@@ -120,12 +123,14 @@ pub struct Shared {
     state_tx: broadcast::Sender<()>,
     shows: RwLock<Vec<Show>>,
     shows_tx: broadcast::Sender<()>,
+    param_tx: broadcast::Sender<Value>,
 }
 
 impl Shared {
     fn new() -> Self {
         let (state_tx, _) = broadcast::channel(16);
         let (shows_tx, _) = broadcast::channel(16);
+        let (param_tx, _) = broadcast::channel(256);
         Self {
             sim: openmix_sim::SimDriver::new(),
             xair: openmix_proto_xair::XAirDriver::new(),
@@ -134,6 +139,7 @@ impl Shared {
             state_tx,
             shows: RwLock::new(Vec::new()),
             shows_tx,
+            param_tx,
         }
     }
 
@@ -328,6 +334,9 @@ impl Shared {
                     "dl32s" => self.dl32s.set_param(ch, field, pv).await?,
                     _ => self.sim.set_param(ch, field, pv).await?,
                 }
+                let _ = self
+                    .param_tx
+                    .send(param_message(ch.0, field, raw.clone()));
                 let _ = self.state_tx.send(());
                 Ok(None)
             }
@@ -373,6 +382,21 @@ impl Shared {
                         })?
                 };
                 self.recall_on_active(&scene, fade_ms).await?;
+                for s in &scene.strips {
+                    let _ = self
+                        .param_tx
+                        .send(param_message(s.strip.0, "fader", json!(s.fader)));
+                    let _ = self
+                        .param_tx
+                        .send(param_message(s.strip.0, "mute", json!(s.mute)));
+                    for (field, value) in &s.params {
+                        let _ = self.param_tx.send(param_message(
+                            s.strip.0,
+                            field,
+                            param_value_json(value),
+                        ));
+                    }
+                }
                 let _ = self.state_tx.send(());
                 Ok(None)
             }
@@ -429,6 +453,25 @@ fn spectrum_message(ch: usize, bins: &[f32]) -> Value {
 /// `{"type":"gr","ch":N,"gate":db,"comp":db}` — dB reduction `>= 0`.
 fn gr_message(ch: usize, gate: f32, comp: f32) -> Value {
     json!({"type":"gr","ch":ch,"gate":gate,"comp":comp})
+}
+
+/// One `param` echo for channel `ch`:
+/// `{"type":"param","ch":N,"field":"...","value":number|bool|string}`.
+///
+/// Emitted on every successful `param` command (all drivers) and once per
+/// applied param on `recall_scene`, so sibling UIs learn about
+/// server-side changes without re-polling. `state`/`shows`/`meters`/
+/// `spectrum`/`gr` frames are byte-identical to before.
+fn param_message(ch: u16, field: &str, value: Value) -> Value {
+    json!({"type":"param","ch":ch,"field":field,"value":value})
+}
+
+fn param_value_json(pv: &ParamValue) -> Value {
+    match pv {
+        ParamValue::Float(v) => json!(v),
+        ParamValue::Bool(b) => json!(b),
+        ParamValue::Text(s) => json!(s),
+    }
 }
 
 fn channel_arg(msg: &Value) -> anyhow::Result<StripId> {
@@ -504,6 +547,7 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
     }
     let mut state_rx = shared.state_tx.subscribe();
     let mut shows_rx = shared.shows_tx.subscribe();
+    let mut param_rx = shared.param_tx.subscribe();
     // Per-connection RTA: fed by the same meter frames broadcast on the
     // ~10 Hz tick below (no new ports/threads — spectrum is derived
     // per-socket from the already-polled levels). Starts empty and grows
@@ -594,6 +638,17 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
                 let s = shared.shows_message().await;
                 if tx.send(Message::Text(s.to_string())).await.is_err() {
                     break;
+                }
+            }
+            param = param_rx.recv() => {
+                match param {
+                    Ok(msg) => {
+                        if tx.send(Message::Text(msg.to_string())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(_) => break,
                 }
             }
         }
