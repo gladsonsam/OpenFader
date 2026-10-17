@@ -1,38 +1,51 @@
-<script>
-  import { SECTIONS, logToT, logFromT } from '../lib/sections.js';
+<script lang="ts">
+  import { SECTIONS, logToT, logFromT } from '../lib/sections';
+  import type { FieldDef } from '../lib/sections';
+  import type { MainStrip, ParamValue, Strip } from '../lib/backend';
   import Spectrum from './Spectrum.svelte';
+
+  interface Props {
+    // strip: selected strip object (ch >= 0) or MAIN marker (ch < 0) / null.
+    strip: Strip | MainStrip | null;
+    // hidden: param fields the backend rejected — those stay hidden.
+    hidden?: string[];
+    // spectrum: live bins for this channel (null until the relay sends them).
+    spectrum?: number[] | null;
+    onParam: (field: string, v: ParamValue) => void;
+    onName: (v: string) => void;
+  }
 
   // strip: selected strip object (ch >= 0) or null for MAIN.
   // hidden: array of param fields the backend rejected — those stay hidden.
   // spectrum: live bins for this channel (null until the relay sends them).
-  let { strip, hidden = [], spectrum = null, onParam, onName } = $props();
+  let { strip, hidden = [], spectrum = null, onParam, onName }: Props = $props();
 
   // Local UI state resets whenever the selection changes
   // (parent wraps us in {#key strip?.ch}).
-  let toggles = $state({});
-  let labels = $state({});
-  let name = $state(strip?.name ?? '');
+  let toggles: Record<string, boolean> = $state({});
+  let labels: Record<string, string> = $state({});
+  let name: string = $state(strip?.name ?? '');
 
-  function fieldDef(f) {
-    return SECTIONS.flatMap((s) => s.fields).find((p) => p.f === f);
+  type SliderEvent = Event & { currentTarget: EventTarget & HTMLInputElement };
+
+  function sliderInit(p: FieldDef): number {
+    const def = p.def ?? 0;
+    return p.type === 'logf' ? Math.round(logToT(def, p.min ?? 20, p.max ?? 20000) * 1000) : def;
   }
 
-  function sliderInit(p) {
-    return p.type === 'logf' ? Math.round(logToT(p.def, p.min, p.max) * 1000) : p.def;
+  function sliderLabel(p: FieldDef): string {
+    const def = p.def ?? 0;
+    return labels[p.f] ?? `${def}${p.unit ?? ''}`;
   }
 
-  function sliderLabel(p) {
-    return labels[p.f] ?? `${p.def}${p.unit ?? ''}`;
-  }
-
-  function onSlider(p, e) {
+  function onSlider(p: FieldDef, e: SliderEvent): void {
     const t = Number(e.currentTarget.value);
-    const v = p.type === 'logf' ? Math.round(logFromT(t / 1000, p.min, p.max)) : t;
+    const v = p.type === 'logf' ? Math.round(logFromT(t / 1000, p.min ?? 20, p.max ?? 20000)) : t;
     labels[p.f] = `${v}${p.unit ?? ''}`;
     onParam(p.f, v);
   }
 
-  function onToggle(p) {
+  function onToggle(p: FieldDef): void {
     const next = !toggles[p.f];
     toggles[p.f] = next;
     onParam(p.f, next);
@@ -71,7 +84,7 @@
           <div class="prow">
             <label>{p.label}</label>
             <select onchange={(e) => onParam(p.f, Number(e.currentTarget.value))}>
-              {#each p.opts as o (o)}<option value={o}>{o}</option>{/each}
+              {#each p.opts ?? [] as o (o)}<option value={o}>{o}</option>{/each}
             </select>
           </div>
         {:else}
@@ -79,8 +92,8 @@
             <label>{p.label}</label>
             <input
               type="range"
-              min={p.type === 'logf' ? 0 : p.min}
-              max={p.type === 'logf' ? 1000 : p.max}
+              min={p.type === 'logf' ? 0 : (p.min ?? 0)}
+              max={p.type === 'logf' ? 1000 : (p.max ?? 100)}
               step={p.step ?? 1}
               value={sliderInit(p)}
               oninput={(e) => onSlider(p, e)}

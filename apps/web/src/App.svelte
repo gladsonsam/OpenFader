@@ -1,16 +1,19 @@
-<script>
+<script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
-  import { selectBackend } from './lib/backend.js';
-  import { levels, setLevels } from './lib/levels.js';
-  import { paintMeter, paintBridge } from './lib/meters.js';
+  import { selectBackend } from './lib/backend';
+  import type { Backend, MainStrip, ParamValue, Unsub, Strip as StripData } from './lib/backend';
+  import { levels, setLevels } from './lib/levels';
+  import { paintMeter, paintBridge } from './lib/meters';
   import Strip from './components/Strip.svelte';
   import Detail from './components/Detail.svelte';
 
-  const backend = selectBackend();
+  const backend: Backend = selectBackend();
   const via = backend.kind === 'tauri' ? 'tauri ipc' : `ws ${backend.url}`;
 
-  const defaultStrips = () =>
+  const MAIN: MainStrip = { ch: -1, name: 'MAIN' };
+
+  const defaultStrips = (): StripData[] =>
     Array.from({ length: 8 }, (_, i) => ({
       ch: i,
       name: `CH${String(i + 1).padStart(2, '0')}`,
@@ -19,30 +22,34 @@
     }));
 
   /* ---------- state ---------- */
-  let strips = $state(defaultStrips());
-  let online = $state(false);
-  let status = $state('');
-  let layer = $state('inputs');
-  let selected = $state(0);
-  let solos = $state([]);
-  let hidden = $state([]); // param fields the backend rejected
-  let storeArm = $state(false);
-  let driver = $state('sim');
-  let addr = $state('');
-  let showBridge = $state(false);
-  let master = $state({ fader: 0.8 }); // local monitor-dim until backend exposes main
+  let strips: StripData[] = $state(defaultStrips());
+  let online: boolean = $state(false);
+  let status: string = $state('');
+  let layer: string = $state('inputs');
+  let selected: number = $state(0);
+  let solos: number[] = $state([]);
+  let hidden: string[] = $state([]); // param fields the backend rejected
+  let storeArm: boolean = $state(false);
+  let driver: string = $state('sim');
+  let addr: string = $state('');
+  let showBridge: boolean = $state(false);
+  let master: { fader: number } = $state({ fader: 0.8 }); // local monitor-dim until backend exposes main
   let lastMeterAt = 0;
-  let spectra = $state({}); // ch -> bins (live spectrum; null until relay sends it)
+  let spectra: Record<number, number[]> = $state({}); // ch -> bins (live spectrum; null until relay sends it)
 
-  let bridge = $state(null);
-  const meterMap = new Map(); // ch -> canvas (imperative paint, no re-render)
-  const registerMeter = (ch, cv) => meterMap.set(ch, cv);
-  const unregisterMeter = (ch) => { meterMap.delete(ch); };
+  let bridge: HTMLCanvasElement | null = $state(null);
+  const meterMap = new Map<number, HTMLCanvasElement>(); // ch -> canvas (imperative paint, no re-render)
+  const registerMeter = (ch: number, cv: HTMLCanvasElement): void => {
+    meterMap.set(ch, cv);
+  };
+  const unregisterMeter = (ch: number): void => {
+    meterMap.delete(ch);
+  };
 
   /* ---------- helpers ---------- */
-  const isBus = (s) => /^bus/i.test(s.name);
+  const isBus = (s: StripData): boolean => /^bus/i.test(s.name);
 
-  let visible = $derived.by(() => {
+  let visible: StripData[] = $derived.by(() => {
     if (layer === 'mains')
       return [{ ch: -1, name: 'MAIN', fader: master.fader, muted: false, main: true }];
     const buses = strips.filter(isBus);
@@ -52,61 +59,84 @@
     return strips;
   });
 
-  let selectedStrip = $derived(
-    [...strips, { ch: -1, name: 'MAIN' }].find((x) => x.ch === selected) ?? null,
+  let selectedStrip: StripData | MainStrip | null = $derived(
+    [...strips, MAIN].find((x) => x.ch === selected) ?? null,
   );
 
-  const say = (t) => { status = t || ''; };
-  const clamp01 = (v) => Math.min(1, Math.max(0, v));
+  const say = (t: string): void => {
+    status = t || '';
+  };
+  const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
+  const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
   /* ---------- fader / mute / select ---------- */
-  async function setFader(s, v) {
+  async function setFader(s: StripData, v: number): Promise<void> {
     v = clamp01(v);
-    if (s.main) { master.fader = v; return; }
+    if (s.main) {
+      master.fader = v;
+      return;
+    }
     const cur = strips.find((x) => x.ch === s.ch);
     if (cur) cur.fader = v; // optimistic for touch latency
-    try { await backend.setFader(s.ch, v); }
-    catch (e) { say(`fader ch${s.ch + 1}: ${e.message || e}`); }
+    try {
+      await backend.setFader(s.ch, v);
+    } catch (e) {
+      say(`fader ch${s.ch + 1}: ${errMsg(e)}`);
+    }
   }
 
-  async function toggleMute(s) {
+  async function toggleMute(s: StripData): Promise<void> {
     if (s.main) return;
     const next = !s.muted;
     const cur = strips.find((x) => x.ch === s.ch);
     if (cur) cur.muted = next;
-    try { await backend.setMute(s.ch, next); }
-    catch (e) {
+    try {
+      await backend.setMute(s.ch, next);
+    } catch (e) {
       if (cur) cur.muted = !next;
-      say(`mute ch${s.ch + 1}: ${e.message || e}`);
+      say(`mute ch${s.ch + 1}: ${errMsg(e)}`);
     }
   }
 
-  function toggleSolo(ch) {
+  function toggleSolo(ch: number): void {
     solos = solos.includes(ch) ? solos.filter((c) => c !== ch) : [...solos, ch];
   }
 
-  function select(ch) { selected = ch; }
+  function select(ch: number): void {
+    selected = ch;
+  }
 
   /* ---------- detail params ---------- */
-  async function pushParam(field, v) {
-    try { await backend.setParam(selected, field, v); }
-    catch (e) {
+  async function pushParam(field: string, v: ParamValue): Promise<void> {
+    try {
+      await backend.setParam(selected, field, v);
+    } catch (e) {
       if (!hidden.includes(field)) hidden = [...hidden, field];
-      say(`${field}: unsupported (${e.message || e})`);
+      say(`${field}: unsupported (${errMsg(e)})`);
     }
   }
 
-  function pushName(v) { pushParam('name', v); }
+  function pushName(v: string): void {
+    void pushParam('name', v);
+  }
 
   /* ---------- scenes (local snapshot slots) ---------- */
   const SCENE_KEY = 'openmix.scenes.v1';
-  function loadScenes() {
-    try { return JSON.parse(localStorage.getItem(SCENE_KEY)) || {}; }
-    catch { return {}; }
+  function loadScenes(): Record<string, StripData[]> {
+    try {
+      const raw: unknown = JSON.parse(localStorage.getItem(SCENE_KEY) || 'null');
+      if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+        // Minimal documented cast: shape is app-written; entries validated on recall.
+        return raw as Record<string, StripData[]>;
+      }
+      return {};
+    } catch {
+      return {};
+    }
   }
-  let scenes = $state(loadScenes());
+  let scenes: Record<string, StripData[]> = $state(loadScenes());
 
-  function storeScene(i) {
+  function storeScene(i: number): void {
     const all = loadScenes();
     all[i] = strips.map((s) => ({ ...s }));
     localStorage.setItem(SCENE_KEY, JSON.stringify(all));
@@ -115,9 +145,12 @@
     say(`scene ${i} stored (${strips.length} strips)`);
   }
 
-  async function recallScene(i) {
-    const snap = loadScenes()[i];
-    if (!snap) { say(`scene ${i} empty — tap store, then S${i}`); return; }
+  async function recallScene(i: number): Promise<void> {
+    const snap: StripData[] | undefined = loadScenes()[i];
+    if (!snap) {
+      say(`scene ${i} empty — tap store, then S${i}`);
+      return;
+    }
     say(`recalling scene ${i}…`);
     for (const s of snap) {
       const cur = strips.find((x) => x.ch === s.ch);
@@ -127,30 +160,35 @@
         if (cur.muted !== s.muted) await backend.setMute(s.ch, s.muted);
         cur.fader = s.fader;
         cur.muted = s.muted;
-      } catch (e) { say(`scene ${i}: ch${s.ch + 1} ${e.message || e}`); break; }
+      } catch (e) {
+        say(`scene ${i}: ch${s.ch + 1} ${errMsg(e)}`);
+        break;
+      }
     }
     say(`scene ${i} recalled`);
   }
 
   /* ---------- connect ---------- */
-  async function connect() {
+  async function connect(): Promise<void> {
     say(`connecting ${driver} ${addr.trim() || '(sim)'}…`);
     try {
       const msg = await backend.connect(driver, addr.trim());
       say(msg);
-    } catch (e) { say(`connect failed: ${e.message || e}`); }
+    } catch (e) {
+      say(`connect failed: ${errMsg(e)}`);
+    }
   }
 
   /* ---------- meter loop ---------- */
   let raf = 0;
 
-  function sizeBridge() {
+  function sizeBridge(): void {
     if (!bridge) return;
     bridge.width = bridge.clientWidth * devicePixelRatio;
     bridge.height = 64 * devicePixelRatio;
   }
 
-  function loop() {
+  function loop(): void {
     for (const [ch, cv] of meterMap) {
       const s = ch === -1 ? null : strips.find((x) => x.ch === ch);
       const v = !s ? 0 : s.main ? s.fader * 0.9 : (levels[s.ch] ?? 0);
@@ -163,34 +201,51 @@
     raf = requestAnimationFrame(loop);
   }
 
-  function onKey(e) {
-    if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '')) return;
+  function onKey(e: KeyboardEvent): void {
+    if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName ?? '')) return;
     const s = strips.find((x) => x.ch === selected);
     if (!s) return;
     const step = e.shiftKey ? 0.05 : 0.01;
-    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') { setFader(s, s.fader + step); e.preventDefault(); }
-    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') { setFader(s, s.fader - step); e.preventDefault(); }
-    else if (e.key === 'm' || e.key === 'M') toggleMute(s);
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+      void setFader(s, s.fader + step);
+      e.preventDefault();
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+      void setFader(s, s.fader - step);
+      e.preventDefault();
+    } else if (e.key === 'm' || e.key === 'M') {
+      void toggleMute(s);
+    }
   }
 
-  function onResize() { if (showBridge) sizeBridge(); }
+  function onResize(): void {
+    if (showBridge) sizeBridge();
+  }
 
   onMount(() => {
-    const offs = [
+    const offs: Unsub[] = [
       backend.onState((next) => {
         strips = next;
         if (!strips.some((s) => s.ch === selected)) selected = strips[0]?.ch ?? 0;
       }),
-      backend.onMeters((lv) => { setLevels(lv); lastMeterAt = performance.now(); }),
+      backend.onMeters((lv) => {
+        setLevels(lv);
+        lastMeterAt = performance.now();
+      }),
     ];
     if (backend.onSpectrum) {
-      offs.push(backend.onSpectrum(({ ch, bins }) => {
-        spectra = { ...spectra, [ch]: bins };
-      }));
+      offs.push(
+        backend.onSpectrum(({ ch, bins }) => {
+          const next = { ...spectra };
+          next[ch] = bins;
+          spectra = next;
+        }),
+      );
     }
-    if (backend.onStatus) offs.push(backend.onStatus((on) => { online = on; }));
+    if (backend.onStatus) offs.push(backend.onStatus((on) => {
+      online = on;
+    }));
 
-    const staleTimer = setInterval(() => {
+    const staleTimer = window.setInterval(() => {
       // Offline if no meter frame for >1.5s while expecting one.
       if (lastMeterAt && performance.now() - lastMeterAt > 1500) online = false;
     }, 1000);
@@ -200,17 +255,22 @@
     window.addEventListener('resize', onResize);
 
     // Auto-connect sim for instant use; failures surface on the badge.
-    backend.connect('sim', '').then((m) => say(m)).catch((e) => say(e.message || e));
+    backend
+      .connect('sim', '')
+      .then((m) => say(m))
+      .catch((e: unknown) => say(errMsg(e)));
 
     return () => {
       offs.forEach((off) => off());
-      clearInterval(staleTimer);
+      window.clearInterval(staleTimer);
       cancelAnimationFrame(raf);
       window.removeEventListener('resize', onResize);
     };
   });
 
-  onDestroy(() => { if (backend.kind === 'ws') backend.close?.(); });
+  onDestroy(() => {
+    if (backend.kind === 'ws') backend.close?.();
+  });
 
   $effect(() => {
     // Size the bridge canvas once it becomes visible.
@@ -239,7 +299,7 @@
 <nav id="layers" role="tablist">
   {#each ['inputs', 'buses', 'mains'] as l (l)}
     <button role="tab" data-layer={l} class:on={layer === l} onclick={() => { layer = l; }}>
-      {l[0].toUpperCase() + l.slice(1)}
+      {l[0]?.toUpperCase() + l.slice(1)}
     </button>
   {/each}
 </nav>
