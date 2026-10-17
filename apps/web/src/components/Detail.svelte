@@ -79,6 +79,12 @@
     return labels[p.f] ?? `${def}${p.unit ?? ''}`;
   }
 
+  // `usbreturn` options render as U01..U18 (firmware map
+  // `rtnsrc [0,17] // U01..U18`); every other enum stays bare numbers.
+  function enumLabel(p: FieldDef, o: number): string {
+    return p.f === 'usbreturn' ? `U${String(o + 1).padStart(2, '0')}` : `${o}`;
+  }
+
   function onSlider(p: FieldDef, e: SliderEvent): void {
     const t = Number(e.currentTarget.value);
     const v = p.type === 'logf' ? Math.round(logFromT(t / 1000, p.min ?? 20, p.max ?? 20000)) : t;
@@ -179,7 +185,7 @@
           <div class="prow">
             <label for="detail-{p.f}">{p.label}</label>
             <select id="detail-{p.f}" onchange={(e) => onEnum(p, e)}>
-              {#each p.opts ?? [] as o (o)}<option value={o}>{o}</option>{/each}
+              {#each p.opts ?? [] as o (o)}<option value={o}>{enumLabel(p, o)}</option>{/each}
             </select>
           </div>
         {:else}
