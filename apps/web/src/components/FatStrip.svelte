@@ -7,8 +7,8 @@
   //   import FatStrip from './FatStrip.svelte';
   //   <FatStrip bands={eqBandsFor(ch)} grDb={grFor(ch)} />
   // `bands` is the channel's 4-band state (Detail owns the selected channel's
-  // copy; per-strip copies in the mixer need a ch->bands store — TODO once the
-  // relay echoes param state). `grDb` is dB of gain reduction (>= 0), or null
+  // copy; per-strip mixer copies come from the lib/bands.ts ch->bands store,
+  // fed by local edits — the relay never echoes param state). `grDb` is dB of gain reduction (>= 0), or null
   // until the relay/engine sends real GR frames (see V2.md deferred).
   // Strip.svelte renders this with `compact` so the 92px mixer strip keeps
   // its layout (svg scales to strip width, same curve math).

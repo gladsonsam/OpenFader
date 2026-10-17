@@ -80,6 +80,20 @@
     toggles[p.f] = next;
     onParam(p.f, next);
   }
+
+  type SelectEvent = Event & { currentTarget: EventTarget & HTMLSelectElement };
+
+  // `eqN_type` select: copy into eqBands[n].type so EqGraph/FatStrip render
+  // shelves immediately. The backend still gets the exact number via onParam.
+  function onEnum(p: FieldDef, e: SelectEvent): void {
+    const v = Number(e.currentTarget.value);
+    const m = /^eq([1-4])_type$/.exec(p.f);
+    if (m) {
+      const b = eqBands[Number(m[1]) - 1];
+      if (b) b.type = v;
+    }
+    onParam(p.f, v);
+  }
 </script>
 
 {#snippet grbar(label: string, v: number | null)}
@@ -143,7 +157,7 @@
         {:else if p.type === 'enum'}
           <div class="prow">
             <label>{p.label}</label>
-            <select onchange={(e) => onParam(p.f, Number(e.currentTarget.value))}>
+            <select onchange={(e) => onEnum(p, e)}>
               {#each p.opts ?? [] as o (o)}<option value={o}>{o}</option>{/each}
             </select>
           </div>
