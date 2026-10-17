@@ -175,6 +175,27 @@ async fn ws_sim_connect_fader_mute() {
         "meters carry levels"
     );
 
+    // Spectrum: one message per channel per tick for the first 16
+    // channels; each carries 64 peak-normalized bins in [0,1].
+    let spec = next_typed(&mut rx, "spectrum").await;
+    let ch = spec
+        .get("ch")
+        .and_then(Value::as_u64)
+        .expect("spectrum carries ch");
+    assert!(ch < 16, "spectrum capped at first 16 channels, got ch{ch}");
+    let bins = spec
+        .get("bins")
+        .and_then(Value::as_array)
+        .expect("spectrum carries bins");
+    assert_eq!(bins.len(), 64, "spectrum carries 64 bins");
+    for b in bins {
+        let v = b.as_f64().expect("bins are numbers");
+        assert!(
+            (0.0..=1.0).contains(&v),
+            "bins normalized to [0,1], got {v}"
+        );
+    }
+
     // Bad command gets an error frame, connection stays alive.
     tx.send(Message::Text(json!({"cmd":"bogus"}).to_string()))
         .await
