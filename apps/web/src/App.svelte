@@ -30,13 +30,14 @@
   import ValueEntry from './components/ValueEntry.svelte';
   import MusicianView from './components/MusicianView.svelte';
   import ClientsRoster from './components/ClientsRoster.svelte';
+  import SurfaceView from './components/SurfaceView.svelte';
 
   const backend: Backend = selectBackend();
   const via = backend.kind === 'tauri' ? 'tauri ipc' : `ws ${backend.url}`;
 
   const MAIN: MainStrip = { ch: -1, name: 'MAIN' };
 
-  type View = 'overview' | 'mixer' | 'channel' | 'rack' | 'shows' | 'wizard';
+  type View = 'overview' | 'mixer' | 'surface' | 'channel' | 'rack' | 'shows' | 'wizard';
   type Cell = { kind: 'strip'; s: StripData; master?: boolean } | { kind: 'gap'; gid: string };
   interface Editing { ch: number; title: string; sub: string; value: number; isSend: boolean; bus: number | null }
 
@@ -75,7 +76,7 @@
 
   function loadView(): View {
     const v = loadJSON<string>(LS.view, 'mixer');
-    return v === 'overview' || v === 'mixer' || v === 'channel' || v === 'rack' || v === 'shows' || v === 'wizard' ? v : 'mixer';
+    return v === 'overview' || v === 'mixer' || v === 'surface' || v === 'channel' || v === 'rack' || v === 'shows' || v === 'wizard' ? v : 'mixer';
   }
 
   /* ---------- state ---------- */
@@ -101,6 +102,8 @@
   let editLayout: boolean = $state(false);
   let tick: number = $state(0); // ~8Hz pulse for the Overview health rows
   let selected: number = $state(0);
+  // Surface status bar: active show name (ShowEditor's localStorage slot).
+  let showName: string = $state(loadJSON<string>('openmix.shows.active.v1', 'openmix'));
   let solos: number[] = $state([]);
   let hidden: string[] = $state([]); // param fields the backend rejected
   const locksSupported = backend.kind === 'ws';
@@ -698,6 +701,18 @@
     void pushParam('name', v);
   }
 
+  /** Channel-addressed param push for the Surface bank/editor knobs.
+   * Same unsupported-gracefully contract as pushParam (selected channel). */
+  async function pushParamFor(ch: number, field: string, v: ParamValue): Promise<void> {
+    if (ch >= 0) noteBandParam(ch, field, v); // mixer-thumb mirror (relay never echoes params)
+    try {
+      await backend.setParam(ch, field, v);
+    } catch (e) {
+      if (!hidden.includes(field)) hidden = [...hidden, field];
+      say(`${field}: unsupported (${errMsg(e)})`);
+    }
+  }
+
   /* ---------- scenes (local snapshot slots) ---------- */
   const SCENE_KEY = 'openmix.scenes.v1';
   function loadScenes(): Record<string, StripData[]> {
@@ -797,6 +812,15 @@
   }
 
   onMount(() => {
+    // Surface replaces the Mixer tab on wide landscape screens (and hands
+    // it back on narrow/portrait) — phone portrait + existing views untouched.
+    const wideMq = window.matchMedia('(min-width: 1100px) and (orientation: landscape)');
+    const applyWide = (): void => {
+      if (wideMq.matches && view === 'mixer') setView('surface');
+      else if (!wideMq.matches && view === 'surface') setView('mixer');
+    };
+    applyWide();
+    wideMq.addEventListener('change', applyWide);
     if (!layers.some((l) => l.id === layer)) layer = 'inputs';
     if (!layers.some((l) => l.id === layerB)) layerB = layers.some((l) => l.id === 'buses') ? 'buses' : 'inputs';
     try {
@@ -903,6 +927,7 @@
     return () => {
       offs.forEach((off) => off());
       window.clearInterval(staleTimer);
+      wideMq.removeEventListener('change', applyWide);
       cancelAnimationFrame(raf);
     };
   });
@@ -989,8 +1014,8 @@
 
   <!-- Mackie 3-view nav: always visible, active one dark. -->
   <nav id="views" aria-label="views">
-    {#each [{ id: 'overview', label: 'Overview' }, { id: 'mixer', label: 'Mixer' }, { id: 'channel', label: 'Channel' }, { id: 'rack', label: 'Rack' }, { id: 'shows', label: 'Shows' }, { id: 'wizard', label: 'Wizard' }] as v (v.id)}
-      <button class:on={view === v.id} aria-current={view === v.id ? 'page' : undefined} onclick={() => setView(v.id as View)}>{v.label}</button>
+    {#each [{ id: 'overview', label: 'Overview' }, { id: 'mixer', label: 'Mixer' }, { id: 'surface', label: 'Surface' }, { id: 'channel', label: 'Channel' }, { id: 'rack', label: 'Rack' }, { id: 'shows', label: 'Shows' }, { id: 'wizard', label: 'Wizard' }] as v (v.id)}
+      <button class:on={view === v.id} class:nav-mixer={v.id === 'mixer'} class:nav-surface={v.id === 'surface'} aria-current={view === v.id ? 'page' : undefined} onclick={() => setView(v.id as View)}>{v.label}</button>
     {/each}
   </nav>
 
@@ -1230,6 +1255,65 @@
     <main id="wizwrap">
       <GainWizard backend={backend} strips={strips} say={say} />
     </main>
+  {:else if view === 'surface'}
+    <main id="surfacewrap">
+      <SurfaceView
+        {showName}
+        {online}
+        {via}
+        cells={mixerCells}
+        {strips}
+        {busStrips}
+        {selected}
+        {solos}
+        {clips}
+        {mutesEnabled}
+        fine={fineMode}
+        sofBus={sofBus}
+        sofColor={sofColorV}
+        sofName={sofName}
+        {gr}
+        {locks}
+        {myLocks}
+        {locksSupported}
+        {hidden}
+        {displayFader}
+        {displayDb}
+        onFader={(s, v) => stripFader(s, v)}
+        onMute={(s) => toggleMute(s)}
+        onSolo={(ch) => toggleSolo(ch)}
+        onSelect={(ch) => select(ch)}
+        onLockToggle={(ch) => toggleLock(ch)}
+        onValueTap={(s) => openValue(s)}
+        onMeterTap={(ch) => clearClip(ch)}
+        {registerMeter}
+        {unregisterMeter}
+        selectedStrip={selectedStrip}
+        spectrum={spectra[selected] ?? null}
+        grGate={gr[selected]?.gate ?? null}
+        grComp={gr[selected]?.comp ?? null}
+        onParam={pushParam}
+        onParamFor={pushParamFor}
+        onName={pushName}
+        {sends}
+        onSend={(ch, bus, v) => setSend(ch, bus, v)}
+        master={mainPseudo()}
+        masterFader={master.fader}
+        onMaster={(v) => setMainFader(v)}
+        {mgroups}
+        onToggleGroup={(i) => toggleGroup(i)}
+        {backend}
+        {say}
+        {driver}
+        {addr}
+        onDriver={(d) => { driver = d; }}
+        onAddr={(a) => { addr = a; }}
+        onConnect={() => { void connect(); }}
+        {tick}
+        onNavigate={(ch) => select(ch)}
+        onRoute={(ch, bus) => { select(ch); enterSof(bus); }}
+      />
+    </main>
   {:else if split}
     <main id="splitwrap">
       <SplitView>
@@ -1450,6 +1534,14 @@
     #phonenav span { flex: 1; text-align: center; font-weight: 800; font-size: clamp(15px, 4.5vw, 19px); }
     #phonenav button { font-size: 24px; font-weight: 800; padding: 0 20px; min-width: 56px; min-height: 48px; }
     #phonenav button.phdetail { font-size: 13px; padding: 0 14px; min-width: var(--touch); text-transform: uppercase; letter-spacing: 0.5px; }
+  }
+  /* Surface replaces the Mixer tab on wide landscape; narrower screens
+     keep the current views (the matchMedia redirect in onMount agrees). */
+  @media (min-width: 1100px) and (orientation: landscape) {
+    #views button.nav-mixer { display: none; }
+  }
+  @media (max-width: 1099px), (orientation: portrait) {
+    #views button.nav-surface { display: none; }
   }
   /* CALL FOH attention toasts: status/badge shape, yellow ring like the
      musician CALL FOH button. Stacked newest-last, max 3, 10s TTL. */
