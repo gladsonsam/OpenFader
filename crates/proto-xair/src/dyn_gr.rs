@@ -221,8 +221,8 @@ mod tests {
             );
         }
         // Exact-length garbage fills: size word never matches 39.
-        assert!(parse_dyn_blob(&vec![0xABu8; DYN_BLOB_LEN]).is_err());
-        assert!(parse_dyn_blob(&vec![0u8; DYN_BLOB_LEN]).is_err());
+        assert!(parse_dyn_blob(&[0xABu8; DYN_BLOB_LEN]).is_err());
+        assert!(parse_dyn_blob(&[0u8; DYN_BLOB_LEN]).is_err());
         assert!(parse_dyn_blob(&[]).is_err());
         // The valid blob itself still decodes.
         assert_eq!(parse_dyn_blob(&good).unwrap(), sample());

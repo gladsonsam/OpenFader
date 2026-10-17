@@ -64,6 +64,8 @@ impl PendingOp {
         }
     }
 
+    /// Human-readable one-liner; test-only helper (no non-test callers).
+    #[cfg(test)]
     fn describe(&self) -> String {
         let what = match &self.kind {
             PendingOpKind::Fader { value } => format!("fader={value}"),

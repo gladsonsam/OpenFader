@@ -81,7 +81,7 @@ impl RtaProcessor {
         if frame.levels.len() > self.channels {
             let extra = frame.levels.len() - self.channels;
             self.channels += extra;
-            self.clips.extend(std::iter::repeat(false).take(extra));
+            self.clips.extend(std::iter::repeat_n(false, extra));
         }
         for (i, level) in frame.levels.iter().enumerate() {
             if *level >= CLIP_LEVEL {
