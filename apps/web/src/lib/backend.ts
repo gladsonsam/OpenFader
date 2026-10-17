@@ -19,7 +19,8 @@
 // {cmd:'param',ch,field,value},
 // {cmd:'list_shows'}, {cmd:'capture_scene',show,name},
 // {cmd:'recall_scene',show,name,fade_ms}, {cmd:'delete_scene',show,name};
-// relay -> {type:'state',strips:[...],main_fader:number|null}, {type:'meters',levels:[...]},
+// relay -> {type:'you',id} (unicast self id on connect + every connect
+// cmd, before state), {type:'state',strips:[...],main_fader:number|null}, {type:'meters',levels:[...]},
 // {type:'spectrum',ch,bins:[...]}, {type:'gr',ch,gate,comp} (~5 Hz),
 // {type:'shows',shows:[...]} (full library; sent on connect, as the
 // list_shows reply, and broadcast after capture/delete).
@@ -99,8 +100,10 @@ export interface LockDeny {
 /**
  * Client roster from the relay (`{"type":"clients","count","writers"}`).
  * `writers` holds the ids with a mutation in the last 10 s (server-sorted).
- * The frame carries ids only — labels stay server-side. `selfId` is learned
- * client-side from the first `by` echo of our own write (null until then).
+ * The frame carries ids only — labels stay server-side. `selfId` is the
+ * authoritative id from the unicast `{"type":"you","id"}` frame (null until
+ * the server sends it; old servers without `you` fall back to `by`-echo
+ * guessing after our first write).
  */
 export interface ClientsInfo {
   count: number;
@@ -108,7 +111,9 @@ export interface ClientsInfo {
   selfId: string | null;
 }
 
-/** Relay -> UI messages (WS JSON protocol, port :8080). */
+  /** Relay -> UI messages (WS JSON protocol, port :8080).
+   * `you` is the unicast authoritative self id (connect + every `connect`
+   * cmd, before `state`); `clients` is the broadcast roster. */
 export type WsMsg =
   | { type: 'state'; strips: Strip[]; main_fader?: number | null }
   | { type: 'meters'; levels: number[] }
@@ -118,6 +123,7 @@ export type WsMsg =
   | { type: 'shows'; shows: ShowLib[] }
   | { type: 'locks'; holds: Record<string, string> }
   | { type: 'clients'; count: number; writers: string[] }
+ | { type: 'you'; id: string }
   | { type: 'error'; message?: string; locked_by?: string; ch?: number }
   | { type: 'recalled'; overrode_locks?: number[] };
 
@@ -724,7 +730,9 @@ export class WsBackend implements Backend {
     else this.queue.push(msg);
   }
 
-  /** Learn our relay id from a `by` echo of our own write, then re-emit. */
+  /** Fallback self-id learning for old servers without the `you` frame:
+   * learn our relay id from a `by` echo of our own write, then re-emit.
+   * Ignored once the authoritative `you` id is known. */
   private noteBy(by: unknown): void {
     if (typeof by !== 'string' || !by || !this.pendingSelf) return;
     this.pendingSelf = false;
@@ -760,6 +768,13 @@ export class WsBackend implements Backend {
     // Minimal documented cast: wire shape validated field-by-field below.
     const rec = m as Record<string, unknown>;
     const t = rec['type'];
+    if (t === 'you' && typeof rec['id'] === 'string' && rec['id']) {
+      // Authoritative self id (unicast on connect + every `connect` cmd):
+      // overwrites any echo-guessed value, then re-emits the roster.
+      this.lastClients = { ...this.lastClients, selfId: rec['id'] };
+      this.emitClients();
+      return;
+    }
     if (t === 'state' && Array.isArray(rec['strips'])) {
       this.noteBy(rec['by']);
       const strips: Strip[] = rec['strips'].map((s: unknown, i: number) => normStrip(s, i));
