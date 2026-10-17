@@ -1,6 +1,6 @@
 # openmix run-anywhere image: static UI + WebSocket mixer API on one port.
 # The UI worker owns ui/; this image just serves whatever is in ui/ as built.
-FROM rust:1 AS builder
+FROM rust:1-bookworm AS builder
 WORKDIR /build
 
 # Workspace manifest + lockfile first for a cacheable dependency layer.

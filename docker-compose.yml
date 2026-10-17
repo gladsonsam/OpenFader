@@ -1,0 +1,38 @@
+# openmix run-anywhere stack: static UI + WebSocket mixer API on one port.
+#
+#   docker compose up --build        # sim driver on http://localhost:8080
+#   docker compose up --build -d     # detached (e.g. on a Pi at the venue)
+#
+# Hardware on the LAN (server must reach the mixer address):
+#
+#   docker compose run --rm -p 8080:8080 openmix \
+#     openmix-serve --driver xair --addr 192.168.1.10
+#
+# ...or set DRIVER/ADDR in an adjacent `.env` file:
+#
+#   DRIVER=xair
+#   ADDR=192.168.1.10
+
+services:
+  openmix:
+    build: .
+    image: openmix:latest
+    ports:
+      - "8080:8080"
+    environment:
+      # OPENMIX_UI_DIR is baked in as /app/ui; override only for dev.
+      - DRIVER=${DRIVER:-sim}
+      - ADDR=${ADDR:-}
+    volumes:
+      # Operator-managed directory for saved scene/snapshot JSON
+      # (e.g. `docker cp` a snapshot out of a session). The server
+      # itself is stateless; this keeps saved scenes next to the
+      # deployment instead of inside the container layer.
+      - ./scenes:/app/scenes
+    command: >
+      sh -c 'if [ -n "$$ADDR" ]; then
+               exec openmix-serve --driver "$$DRIVER" --addr "$$ADDR";
+             else
+               exec openmix-serve --driver "$$DRIVER";
+             fi'
+    restart: unless-stopped
