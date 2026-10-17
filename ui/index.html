@@ -2,59 +2,47 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>openmix stub</title>
-<style>
-body{font-family:system-ui,sans-serif;background:#111;color:#eee;margin:16px}
-#bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
-#strips{display:flex;gap:10px}
-.strip{display:flex;gap:6px;background:#1c1c1c;padding:8px;border-radius:8px}
-.col{display:flex;flex-direction:column;align-items:center;gap:6px}
-canvas{background:#000;border-radius:4px}
-input[type=range]{writing-mode:vertical-lr;direction:rtl;height:160px}
-button{cursor:pointer}
-.mute.on{background:#c33;color:#fff}
-#status{opacity:.8}
-</style>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>openmix</title>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>openmix stub</h1>
-<div id="bar">
-<label>driver <select id="driver"><option>sim</option><option>xair</option><option>dl32s</option></select></label>
-<label>addr <input id="addr" placeholder="192.168.1.10 (blank = sim)" size="22"></label>
-<button id="conn">connect</button>
-<span id="status">not connected (sim default)</span>
+<header id="topbar">
+  <span id="logo">openmix</span>
+  <label>driver
+    <select id="driver">
+      <option value="sim">sim</option>
+      <option value="xair">xair</option>
+      <option value="dl32s">dl32s</option>
+    </select>
+  </label>
+  <label>addr <input id="addr" inputmode="numeric" placeholder="192.168.1.10 (blank = sim)" size="22"></label>
+  <button id="conn" class="big">connect</button>
+  <span id="badge" class="offline">offline</span>
+  <span id="via" title="transport"></span>
+  <button id="bridgeBtn" title="toggle meter bridge">bridge</button>
+</header>
+
+<nav id="layers" role="tablist">
+  <button data-layer="inputs" class="on" role="tab">Inputs</button>
+  <button data-layer="buses" role="tab">Buses</button>
+  <button data-layer="mains" role="tab">Mains</button>
+</nav>
+
+<canvas id="bridge" hidden></canvas>
+
+<div id="scenes">
+  <span class="lbl">scenes</span>
+  <div id="slots"></div>
+  <button id="store">store</button>
+  <span id="status" role="status"></span>
 </div>
-<div id="strips"></div>
-<canvas id="meters" width="360" height="120"></canvas>
-<script>
-const N = 8, strips = document.getElementById('strips'), status = document.getElementById('status');
-const cv = document.getElementById('meters'), ctx = cv.getContext('2d');
-const invoke = (c, a) => window.__TAURI__?.core.invoke(c, a) ?? Promise.reject(new Error('no tauri ipc'));
-for (let ch = 0; ch < N; ch++) {
-  const d = document.createElement('div'); d.className = 'strip';
-  d.innerHTML = `<div class="col"><span>ch${ch}</span><input type="range" min="0" max="100" value="75"><button>M</button></div>`;
-  const f = d.querySelector('input'), m = d.querySelector('button');
-  f.oninput = () => invoke('set_fader', { ch, value: f.value / 100 }).catch(e => status.textContent = e);
-  m.onclick = () => { const on = !m.classList.contains('on'); m.classList.toggle('on', on);
-    invoke('set_mute', { ch, muted: on }).catch(e => status.textContent = e); };
-  strips.appendChild(d);
-}
-document.getElementById('conn').onclick = async () => {
-  const driver = document.getElementById('driver').value, addr = document.getElementById('addr').value;
-  try { status.textContent = await invoke('connect', { driver, addr }); }
-  catch (e) { status.textContent = 'connect failed: ' + e; }
-};
-function draw(levels) {
-  ctx.clearRect(0, 0, cv.width, cv.height);
-  const w = cv.width / N;
-  levels.forEach((v, i) => {
-    const h = Math.max(2, v * (cv.height - 4));
-    ctx.fillStyle = v > 0.9 ? '#c33' : v > 0.7 ? '#cc3' : '#3c3';
-    ctx.fillRect(i * w + 6, cv.height - 2 - h, w - 12, h);
-  });
-}
-setInterval(() => invoke('get_meters').then(draw).catch(() => {}), 100);
-</script>
+
+<main id="wrap">
+  <div id="strips"></div>
+  <aside id="detail" aria-label="channel detail"></aside>
+</main>
+
+<script type="module" src="app.js"></script>
 </body>
 </html>
