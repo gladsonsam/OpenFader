@@ -12,11 +12,15 @@ pub const SIM_BUSES: usize = 8;
 pub const SIM_STRIPS: usize = SIM_CHANNELS + SIM_BUSES;
 
 /// Named scene preset for [`SimDriver`]: realistic channel/bus scribbles
-/// for the two supported hardware desks. Geometry stays 32ch + 8 buses
-/// (the sim is a stand-in, not a channel-count model); only names change
-/// (plus the reported model string in [`MixerDriver::query_info`]).
+/// for the two supported hardware desks, plus a `Studio` clone of the
+/// owner's live XR18 desk (see `docs/xr18-baseline.md` §2). Geometry stays
+/// 32ch + 8 buses (the sim is a stand-in, not a channel-count model); only
+/// names change (plus the reported model string in [`MixerDriver::query_info`]).
 /// `Generic` is the historical default (`CH01..`, `BUS1..`) and is what
 /// `SimDriver::new()` / `Default` produce, so existing snapshots stay valid.
+/// `Studio` additionally mirrors the desk-as-found faders/mutes on strips
+/// 1..16, buses 1..6 and the main LR fader; strips past the 16-channel desk
+/// (17..32, buses 7..8) are parked spares.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SimPreset {
     /// Historical default: `CH01..CH32`, `BUS1..BUS8`.
@@ -26,15 +30,22 @@ pub enum SimPreset {
     Xr18,
     /// Mackie DL32S layout: 32 real inputs.
     Dl32s,
+    /// Owner's XR18 desk as found (`docs/xr18-baseline.md` §2): real
+    /// scribbles/order (`BASS`, `VOX`, `GTR L/R`, `DRUM L/R`, `KEYS L/R`,
+    /// `AC GTR`, `Abelton` — desk spelling kept), bus scribbles
+    /// (`COMP L/R`, `DRUM`, `KEYS`, `VOX`) and baseline faders/mutes.
+    Studio,
 }
 
 impl SimPreset {
-    /// Parse a `--preset` flag value (`generic|xr18|dl32s`, case-insensitive).
+    /// Parse a `--preset` flag value (`generic|xr18|dl32s|studio`,
+    /// case-insensitive).
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "generic" | "gen" | "default" | "sim" => Some(SimPreset::Generic),
             "xr18" | "xair" | "x-air" => Some(SimPreset::Xr18),
             "dl32s" | "dl32-s" | "dl" => Some(SimPreset::Dl32s),
+            "studio" | "rig" | "home" => Some(SimPreset::Studio),
             _ => None,
         }
     }
@@ -45,6 +56,7 @@ impl SimPreset {
             SimPreset::Generic => "generic",
             SimPreset::Xr18 => "xr18",
             SimPreset::Dl32s => "dl32s",
+            SimPreset::Studio => "studio",
         }
     }
 }
@@ -64,12 +76,50 @@ pub const DL32S_CHANNELS: [&str; 32] = [
     "Spare 2", "Spare 3", "Spare 4", "Spare 5", "Spare 6",
 ];
 
-/// Sim bus scribbles, shared by both desk presets: front mix, four
+/// Sim bus scribbles, shared by the generic-desk presets: front mix, four
 /// monitor sends, two FX returns, one spare. The LR mains live on the
 /// separate main fader (`set_main_fader`), as on the real desks.
 pub const PRESET_BUSES: [&str; 8] = [
     "MixBus", "Mon 1", "Mon 2", "Mon 3", "Mon 4", "Reverb", "Delay", "FX",
 ];
+
+/// Owner's XR18 desk scribbles, in channel order (`docs/xr18-baseline.md`
+/// §2). `""` is an empty desk scribble, not a spare: channels 02/03/06/14
+/// read back empty on the hardware. Desk spelling kept (`Abelton`).
+/// Strips 17..=32 keep their `CHxx` spare labels (XR18 is a 16-channel desk).
+pub const STUDIO_CHANNELS: [&str; 16] = [
+    "BASS", "", "", "VOX", "VOX", "", "GTR L", "GTR R", "DRUM L", "DRUM R", "KEYS L",
+    "KEYS R", "AC GTR", "", "Abelton", "Abelton",
+];
+
+/// Owner's desk-as-found channel faders, same order (`docs/xr18-baseline.md`
+/// §2; `/ch/NN/mix/fader`).
+pub const STUDIO_FADERS: [f32; 16] = [
+    0.197458, 0.0, 0.337243, 0.348974, 0.375367, 0.0, 0.434995, 0.434995, 0.0, 0.482893,
+    0.438905, 0.438905, 0.339198, 0.0, 0.524927, 0.524927,
+];
+
+/// Owner's desk-as-found mute state, same order: `true` = muted.
+/// Baseline column is `mix/on` (1 = ON/unmuted), so mute = `on == 0`.
+pub const STUDIO_MUTES: [bool; 16] = [
+    true, true, true, true, false, true, false, false, false, false, true, true, true,
+    true, true, true,
+];
+
+/// Owner's bus scribbles (`/bus/1..6/config/name`; bus 3 is empty on the
+/// desk). Buses 7..8 have no desk equivalent and stay parked spares.
+pub const STUDIO_BUSES: [&str; 8] = [
+    "COMP L", "COMP R", "", "DRUM", "KEYS", "VOX", "BUS7", "BUS8",
+];
+
+/// Owner's desk-as-found bus faders (`/bus/1..6/mix/fader` all ON/unmuted);
+/// buses 7..8 are parked spares at 0.75.
+pub const STUDIO_BUS_FADERS: [f32; 8] = [
+    0.749756, 0.749756, 0.749756, 1.0, 1.0, 1.0, 0.75, 0.75,
+];
+
+/// Owner's desk-as-found main LR fader (`/lr/mix/fader`, ON/unmuted).
+pub const STUDIO_MAIN: f32 = 0.749756;
 
 fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
     let mut v = Vec::with_capacity(SIM_STRIPS);
@@ -84,22 +134,50 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
                 .get(i)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| format!("CH{:02}", i + 1)),
+            SimPreset::Studio => STUDIO_CHANNELS
+                .get(i)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("CH{:02}", i + 1)),
         };
         let mut s = ChannelStrip::new(i as u16, name);
-        // A pleasant default scene: unity-ish faders with variation.
-        s.fader = 0.7 + 0.1 * ((i % 5) as f32 / 4.0);
+        match preset {
+            SimPreset::Studio => {
+                // Desk-as-found scene (§2): baseline fader/mute on strips
+                // 1..16, parked spares past the 16-channel desk.
+                if let (Some(f), Some(m)) = (STUDIO_FADERS.get(i), STUDIO_MUTES.get(i)) {
+                    s.fader = *f;
+                    s.mute = *m;
+                } else {
+                    s.fader = 0.0;
+                    s.mute = true;
+                }
+            }
+            _ => {
+                // A pleasant default scene: unity-ish faders with variation.
+                s.fader = 0.7 + 0.1 * ((i % 5) as f32 / 4.0);
+            }
+        }
         v.push(s);
     }
     for b in 0..SIM_BUSES {
         let bus_name = match preset {
             SimPreset::Generic => format!("BUS{}", b + 1),
+            SimPreset::Studio => STUDIO_BUSES
+                .get(b)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("BUS{}", b + 1)),
             _ => PRESET_BUSES
                 .get(b)
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| format!("BUS{}", b + 1)),
         };
         let mut s = ChannelStrip::new((SIM_CHANNELS + b) as u16, bus_name);
-        s.fader = 0.75;
+        s.fader = match preset {
+            SimPreset::Studio => STUDIO_BUS_FADERS.get(b).copied().unwrap_or(0.75),
+            _ => 0.75,
+        };
+        // Desk buses read back ON/unmuted; spares park unmuted.
+        s.mute = false;
         v.push(s);
     }
     v
@@ -203,13 +281,18 @@ impl SimDriver {
         Self::with_preset(SimPreset::Generic)
     }
 
-    /// Named desk preset (`--preset xr18|dl32s` in `openmix-cli`).
-    /// Geometry is unchanged (32ch + 8 buses); only scribbles differ.
+    /// Named desk preset (`--preset xr18|dl32s|studio` in `openmix-cli`).
+    /// Geometry is unchanged (32ch + 8 buses); only scribbles differ
+    /// (studio additionally mirrors desk-as-found faders/mutes + main).
     pub fn with_preset(preset: SimPreset) -> Self {
+        let main = match preset {
+            SimPreset::Studio => STUDIO_MAIN,
+            _ => 0.8,
+        };
         Self {
             strips: RwLock::new(default_strips_for(preset)),
             params: RwLock::new(vec![HashMap::new(); SIM_STRIPS]),
-            main: RwLock::new(0.8),
+            main: RwLock::new(main),
             tick: AtomicU64::new(0),
             connected: RwLock::new(false),
             preset,
@@ -447,6 +530,90 @@ impl MixerDriver for SimDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn studio_preset_mirrors_rig() {
+        // `--preset studio` parses (case-insensitive) and round-trips.
+        assert_eq!(SimPreset::parse("studio"), Some(SimPreset::Studio));
+        assert_eq!(SimPreset::parse("STUDIO"), Some(SimPreset::Studio));
+        assert_eq!(SimPreset::Studio.name(), "studio");
+        // Existing presets keep their names.
+        assert_eq!(SimPreset::parse("xr18"), Some(SimPreset::Xr18));
+        assert_eq!(SimPreset::parse("dl32s"), Some(SimPreset::Dl32s));
+        assert_eq!(SimPreset::parse("generic"), Some(SimPreset::Generic));
+
+        let d = SimDriver::with_preset(SimPreset::Studio);
+        assert_eq!(d.preset(), SimPreset::Studio);
+
+        // Channel scribbles in desk order (baseline §2; "" = empty desk
+        // scribble on 02/03/06/14; desk spelling `Abelton` kept).
+        let names = async {
+            let mut out = Vec::with_capacity(SIM_CHANNELS);
+            for i in 0..SIM_CHANNELS {
+                out.push(d.get_name(StripId(i as u16)).await.unwrap());
+            }
+            out
+        }
+        .await;
+        let expected: Vec<String> = STUDIO_CHANNELS
+            .iter()
+            .map(|s| s.to_string())
+            .chain((STUDIO_CHANNELS.len()..SIM_CHANNELS).map(|i| format!("CH{:02}", i + 1)))
+            .collect();
+        assert_eq!(names, expected);
+        // Spot names a demo viewer would recognise.
+        assert_eq!(names[0], "BASS");
+        assert_eq!(names[3], "VOX");
+        assert_eq!(names[4], "VOX");
+        assert_eq!(names[6], "GTR L");
+        assert_eq!(names[8], "DRUM L");
+        assert_eq!(names[12], "AC GTR");
+        assert_eq!(names[14], "Abelton");
+
+        // Desk-as-found faders/mutes on strips 1..16.
+        for (i, (f, m)) in STUDIO_FADERS.iter().zip(STUDIO_MUTES.iter()).enumerate() {
+            let got = d.get_fader(StripId(i as u16)).await.unwrap();
+            assert!((got - f).abs() < 1e-6, "ch{} fader {got} != {f}", i + 1);
+            assert_eq!(d.get_mute(StripId(i as u16)).await.unwrap(), *m, "ch{}", i + 1);
+        }
+        // Spares past the 16-channel desk park silent.
+        assert_eq!(names[16], "CH17");
+        assert_eq!(d.get_fader(StripId(16)).await.unwrap(), 0.0);
+        assert!(d.get_mute(StripId(16)).await.unwrap());
+
+        // Bus scribbles + faders as observed (bus 3 empty on the desk).
+        for (b, name) in STUDIO_BUSES.iter().enumerate() {
+            let strip = StripId((SIM_CHANNELS + b) as u16);
+            assert_eq!(d.get_name(strip).await.unwrap(), *name, "bus{}", b + 1);
+            let got = d.get_bus_fader(b as u8).await.unwrap();
+            assert!((got - STUDIO_BUS_FADERS[b]).abs() < 1e-6, "bus{} {got}", b + 1);
+            assert!(!d.get_mute(strip).await.unwrap(), "bus{}", b + 1);
+        }
+
+        // Main LR fader as observed.
+        assert!((d.get_main_fader().await.unwrap() - STUDIO_MAIN).abs() < 1e-6);
+        // Reported model carries the preset name.
+        let info = d.query_info().await.unwrap();
+        assert!(info.model.contains("studio"), "model: {}", info.model);
+    }
+
+    #[tokio::test]
+    async fn desk_presets_untouched() {
+        // Generic default is unchanged (CHxx/BUSx, unity-ish scene).
+        let g = SimDriver::new();
+        assert_eq!(g.preset(), SimPreset::Generic);
+        assert_eq!(g.get_name(StripId(0)).await.unwrap(), "CH01");
+        assert_eq!(g.get_name(StripId(32)).await.unwrap(), "BUS1");
+        assert!((g.get_main_fader().await.unwrap() - 0.8).abs() < 1e-6);
+
+        // XR18/DL32S scribbles unchanged.
+        let x = SimDriver::with_preset(SimPreset::Xr18);
+        assert_eq!(x.get_name(StripId(0)).await.unwrap(), "Kick");
+        assert_eq!(x.get_name(StripId(18)).await.unwrap(), "CH19");
+        let dl = SimDriver::with_preset(SimPreset::Dl32s);
+        assert_eq!(dl.get_name(StripId(0)).await.unwrap(), "Kick");
+        assert_eq!(dl.get_name(StripId(31)).await.unwrap(), "Spare 6");
+    }
 
     #[tokio::test]
     async fn param_roundtrip_float_gain() {
