@@ -1,16 +1,42 @@
 // Shared parametric-EQ curve math for EqGraph (canvas) + FatStrip (SVG thumb).
 // Single source of truth — no duplication across components.
 //
-// Model: 4 peaking bells summed in dB. Band `type` (shelf variants from
-// sections.ts `eqN_type`) is intentionally not modeled yet — b1/b4 render as
-// bells until shelf wiring lands (TODO). Good enough for staging thumbnails
-// and drag editing; the backend still receives exact gain/freq/Q numbers.
+// Filter-type word (`eqN_type`) provenance (read-only survey, 2026-10-17):
+// - DL32S wire (crates/proto-dl32s/src/addrs.rs `input_eq`): bands 2/3/4
+//   carry a `type` word (Encoding::Enum — the driver casts any finite float
+//   to u32, no range check); band 1 has gain/freq/Q ONLY, no type word.
+// - sim (crates/sim/src/lib.rs `patterned_param_kind`): `eq{2..4}_type`
+//   accepted as enum-as-float (any finite value); `eq1_type` is unknown.
+// - UI (apps/web/src/lib/sections.ts, mirrored in ui/app.js): type selects
+//   offer opts [0, 1, 2, 3], def 0.
+// - xair (crates/proto-xair/src/lib.rs `get_param`): NO eq param support —
+//   any eq field bails unknown, so shelves stay indicative until a desk
+//   mapping lands.
+// No driver or doc assigns meanings to 0..3, so the mapping below is the
+// UI-side convention, chosen to keep today's rendering stable:
+//   0 = bell/PEQ (default — what every band renders as today),
+//   1 = low shelf, 2 = high shelf, 3 = reserved (falls back to bell).
+// The backend always receives the exact gain/freq/Q/type numbers; only the
+// indicative curve is approximate for unmapped values.
+//
+// Detail-owner note: Detail's `eqN_type` enum select currently pushes via
+// onParam without syncing `bands[n].type`, so the graph/thumb keep showing
+// bells until Detail copies the select into its eqBands state.
 
 export interface EqBand {
   gain: number; // dB, -20..+20
   freq: number; // Hz, 20..20000
   q: number; // 0.1..20
+  /** Filter type word (`eqN_type`): 0 bell, 1 low shelf, 2 high shelf. Omitted = bell. */
+  type?: number;
 }
+
+/** `eqN_type` convention (see header): bell/PEQ default. */
+export const EQ_TYPE_BELL = 0;
+/** `eqN_type` convention (see header): low shelf. */
+export const EQ_TYPE_LOW_SHELF = 1;
+/** `eqN_type` convention (see header): high shelf. */
+export const EQ_TYPE_HIGH_SHELF = 2;
 
 export const FMIN = 20;
 export const FMAX = 20000;
@@ -40,11 +66,24 @@ export const freqToT = (f: number): number =>
 export const tToFreq = (t: number): number =>
   FMIN * Math.pow(FMAX / FMIN, Math.min(1, Math.max(0, t)));
 
-/** One bell's contribution in dB: gain at center, ~1/Q-octave width. */
+/** One band's contribution in dB: bell peaks at center, shelves hold the
+ *  shelf side and relax to 0 on the far side (gain/2 at center). Q sets the
+ *  bell width / shelf transition steepness. Unmapped `type` (incl. reserved
+ *  3) falls back to bell — see header. */
 export function bandDb(b: EqBand, f: number): number {
+  const t = b.type ?? EQ_TYPE_BELL;
+  if (t === EQ_TYPE_LOW_SHELF) return shelfDb(b, f, true);
+  if (t === EQ_TYPE_HIGH_SHELF) return shelfDb(b, f, false);
   const q = Math.max(0.1, b.q || 1);
   const x = Math.log2(Math.max(1, f) / Math.max(1, b.freq || 1000));
   return b.gain / (1 + Math.pow(2 * q * x, 2));
+}
+
+/** Logistic shelf in log-frequency: full gain on the shelf side. */
+function shelfDb(b: EqBand, f: number, low: boolean): number {
+  const q = Math.max(0.1, b.q || 1);
+  const x = Math.log2(Math.max(1, f) / Math.max(1, b.freq || 1000));
+  return b.gain / (1 + Math.pow(2, 2 * q * (low ? x : -x)));
 }
 
 /** Summed curve in dB at f Hz. */
