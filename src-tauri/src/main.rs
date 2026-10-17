@@ -23,12 +23,13 @@
 //!
 //! Static dispatch (`AnyDriver` enum, like `openmix-cli`): `MixerDriver` has
 //! async methods and is not dyn-safe, so `Box<dyn MixerDriver>` does not
-//! compile. Commands are `async` and `.await` the driver; the `std::sync::Mutex`
-//! guard is held across the await (brief critical sections — a production
-//! shell would switch to `tokio::sync::Mutex`).
+//! compile. Commands are `async` and `.await` the driver; state lives in a
+//! `tokio::sync::Mutex` (via `tauri::async_runtime::Mutex`) so the guard is
+//! `Send` and may be held across `.await` — Tauri commands require `Send`
+//! futures, which `std::sync::MutexGuard` is not.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::sync::Mutex;
+use tauri::async_runtime::Mutex;
 use std::time::{Duration, Instant};
 
 use openmix_core::rta::RtaProcessor;
@@ -224,7 +225,7 @@ type State<'r> = tauri::State<'r, Mutex<Inner>>;
 #[tauri::command]
 async fn connect(state: State<'_>, driver: String, addr: String) -> Result<String, String> {
     let kind = driver.to_lowercase();
-    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    let mut inner = state.lock().await;
     match kind.as_str() {
         "sim" => {
             let d = AnyDriver::Sim(SimDriver::new());
@@ -261,7 +262,7 @@ async fn connect(state: State<'_>, driver: String, addr: String) -> Result<Strin
 #[tauri::command]
 async fn set_fader(state: State<'_>, ch: u16, value: f32) -> Result<(), String> {
     openmix_core::validate_fader(value).map_err(|e| e.to_string())?;
-    let inner = state.lock().map_err(|e| e.to_string())?;
+    let inner = state.lock().await;
     inner
         .driver
         .set_fader(StripId(ch), value)
@@ -272,7 +273,7 @@ async fn set_fader(state: State<'_>, ch: u16, value: f32) -> Result<(), String> 
 
 #[tauri::command]
 async fn set_mute(state: State<'_>, ch: u16, muted: bool) -> Result<(), String> {
-    let inner = state.lock().map_err(|e| e.to_string())?;
+    let inner = state.lock().await;
     inner
         .driver
         .set_mute(StripId(ch), muted)
@@ -297,7 +298,7 @@ async fn set_param(
         serde_json::Value::String(s) => ParamValue::Text(s.clone()),
         _ => return Err("param value must be number|boolean|string".into()),
     };
-    let inner = state.lock().map_err(|e| e.to_string())?;
+    let inner = state.lock().await;
     inner
         .driver
         .set_param(StripId(ch), &field, pv)
@@ -312,7 +313,7 @@ async fn set_param(
 /// empty strips, like `serve`.
 #[tauri::command]
 async fn get_state(state: State<'_>) -> Result<serde_json::Value, String> {
-    let inner = state.lock().map_err(|e| e.to_string())?;
+    let inner = state.lock().await;
     let strips = match inner.driver.snapshot().await {
         Ok(snap) => snap
             .strips
@@ -340,7 +341,7 @@ async fn get_state(state: State<'_>) -> Result<serde_json::Value, String> {
 #[tauri::command]
 async fn set_main_fader(state: State<'_>, value: f32) -> Result<(), String> {
     openmix_core::validate_fader(value).map_err(|e| e.to_string())?;
-    let inner = state.lock().map_err(|e| e.to_string())?;
+    let inner = state.lock().await;
     inner
         .driver
         .set_main_fader(value)
@@ -351,7 +352,7 @@ async fn set_main_fader(state: State<'_>, value: f32) -> Result<(), String> {
 
 #[tauri::command]
 async fn get_main_fader(state: State<'_>) -> Result<f32, String> {
-    let inner = state.lock().map_err(|e| e.to_string())?;
+    let inner = state.lock().await;
     inner
         .driver
         .get_main_fader()
@@ -367,7 +368,7 @@ async fn capture_scene(state: State<'_>, name: String) -> Result<serde_json::Val
     if name.is_empty() {
         return Err("scene name must not be empty".into());
     }
-    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    let mut inner = state.lock().await;
     let snap = inner.driver.snapshot().await.map_err(|e| e.to_string())?;
     let mut scene = Scene::capture(&name, &snap);
     scene.main_fader = inner.driver.get_main_fader().await.ok();
@@ -390,7 +391,7 @@ async fn recall_scene(
     fade_ms: Option<u64>,
 ) -> Result<String, String> {
     let fade_ms = fade_ms.unwrap_or(DEFAULT_FADE_MS);
-    let inner = state.lock().map_err(|e| e.to_string())?;
+    let inner = state.lock().await;
     let scene = inner
         .show
         .get(&name)
@@ -406,15 +407,15 @@ async fn recall_scene(
 
 /// Names of the captured scenes, in library order.
 #[tauri::command]
-fn list_scenes(state: State<'_>) -> Result<Vec<String>, String> {
-    let inner = state.lock().map_err(|e| e.to_string())?;
+async fn list_scenes(state: State<'_>) -> Result<Vec<String>, String> {
+    let inner = state.lock().await;
     Ok(inner.show.names().into_iter().map(str::to_string).collect())
 }
 
 /// One captured scene with per-strip fader/mute, for slot display.
 #[tauri::command]
-fn get_scene(state: State<'_>, name: String) -> Result<serde_json::Value, String> {
-    let inner = state.lock().map_err(|e| e.to_string())?;
+async fn get_scene(state: State<'_>, name: String) -> Result<serde_json::Value, String> {
+    let inner = state.lock().await;
     let scene = inner
         .show
         .get(&name)
@@ -433,8 +434,8 @@ fn get_scene(state: State<'_>, name: String) -> Result<serde_json::Value, String
 
 /// Remove a scene from the library; `true` when something was removed.
 #[tauri::command]
-fn delete_scene(state: State<'_>, name: String) -> Result<bool, String> {
-    let mut inner = state.lock().map_err(|e| e.to_string())?;
+async fn delete_scene(state: State<'_>, name: String) -> Result<bool, String> {
+    let mut inner = state.lock().await;
     Ok(inner.show.remove(&name))
 }
 
@@ -442,8 +443,8 @@ fn delete_scene(state: State<'_>, name: String) -> Result<bool, String> {
 /// 50 ms get the cached frame. Fresh frames also feed the shared RTA
 /// history behind `get_spectrum` (return shape unchanged).
 #[tauri::command]
-fn get_meters(state: State<'_>) -> Result<Vec<f32>, String> {
-    let mut inner = state.lock().map_err(|e| e.to_string())?;
+async fn get_meters(state: State<'_>) -> Result<Vec<f32>, String> {
+    let mut inner = state.lock().await;
     let now = Instant::now();
     if let Some(t) = inner.last_emit {
         if now.duration_since(t) < METER_THROTTLE {
@@ -471,13 +472,13 @@ fn get_meters(state: State<'_>) -> Result<Vec<f32>, String> {
 /// channel per ~10 Hz tick), invoke has no push — the UI polls this at 5 Hz
 /// (200 ms), the same rate serve emits `gr` frames.
 #[tauri::command]
-fn get_spectrum(state: State<'_>, ch: u16) -> Result<serde_json::Value, String> {
+async fn get_spectrum(state: State<'_>, ch: u16) -> Result<serde_json::Value, String> {
     if usize::from(ch) >= SPECTRUM_CHANNELS {
         return Err(format!(
             "spectrum capped at first {SPECTRUM_CHANNELS} channels, got ch{ch}"
         ));
     }
-    let mut inner = state.lock().map_err(|e| e.to_string())?;
+    let mut inner = state.lock().await;
     let frame = inner.driver.poll_meters();
     inner.rta.push_frame(&frame);
     let bins = inner.rta.spectrum(usize::from(ch));
@@ -504,7 +505,7 @@ async fn get_gr(state: State<'_>, ch: u16) -> Result<serde_json::Value, String> 
             "gr capped at first {GR_CHANNELS} channels, got ch{ch}"
         ));
     }
-    let inner = state.lock().map_err(|e| e.to_string())?;
+    let inner = state.lock().await;
     if inner.kind != "xair" {
         return Ok(json!({"ch": ch, "gate": 0.0, "comp": 0.0}));
     }
