@@ -205,3 +205,169 @@ async fn ws_sim_connect_fader_mute() {
 
     server.abort();
 }
+
+/// Scene ops round-trip on the server-side show library:
+/// capture -> list -> move faders -> recall (jump) -> verify state -> delete.
+#[tokio::test]
+async fn ws_scenes_capture_recall_delete() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run(
+        listener,
+        openmix_serve::ServeOptions::default(),
+    ));
+
+    let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("WS connect");
+    let (mut tx, mut rx) = stream.split();
+    use tokio_tungstenite::tungstenite::Message;
+
+    // Drain the initial snapshot pair (state + shows).
+    let _ = next_typed(&mut rx, "state").await;
+    let shows = next_typed(&mut rx, "shows").await;
+    assert_eq!(shows.get("type"), Some(&json!("shows")));
+    assert!(
+        shows.get("shows").and_then(Value::as_array).is_some(),
+        "shows carries a library array"
+    );
+
+    async fn wait_shows(rx: &mut WsRx, want: impl Fn(&Value) -> bool) -> Value {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut last = json!(null);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for expected shows; last: {last}");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) != Some("shows") {
+                continue;
+            }
+            last = v;
+            if want(&last) {
+                return last.clone();
+            }
+        }
+    }
+
+    fn find_scene<'a>(shows: &'a Value, show: &str, scene: &str) -> Option<&'a Value> {
+        shows
+            .get("shows")?
+            .as_array()?
+            .iter()
+            .find(|s| s.get("name") == Some(&json!(show)))?
+            .get("scenes")?
+            .as_array()?
+            .iter()
+            .find(|s| s.get("name") == Some(&json!(scene)))
+    }
+
+    // Pin ch0 to a known value, then capture it as gig/verse.
+    tx.send(Message::Text(
+        json!({"cmd":"fader","ch":0,"value":0.5}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_state(&mut rx, |s| {
+        strip(s, 0)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - 0.5).abs() < 1e-6)
+    })
+    .await;
+    tx.send(Message::Text(
+        json!({"cmd":"capture_scene","show":"gig","name":"verse"}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let shows = wait_shows(&mut rx, |s| find_scene(s, "gig", "verse").is_some()).await;
+    let captured = find_scene(&shows, "gig", "verse").expect("captured scene");
+    let cap_fader = captured
+        .get("strips")
+        .and_then(Value::as_array)
+        .and_then(|ss| ss.iter().find(|s| s.get("ch") == Some(&json!(0))))
+        .and_then(|s| s.get("fader"))
+        .and_then(Value::as_f64)
+        .expect("scene carries ch0 fader");
+    assert!((cap_fader - 0.5).abs() < 1e-6, "captured live fader");
+
+    // Library survives a fresh connection (no localStorage round-trip).
+    let (stream2, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("second WS connect");
+    let (_, mut rx2) = stream2.split();
+    let _ = next_typed(&mut rx2, "state").await;
+    let shows2 = next_typed(&mut rx2, "shows").await;
+    assert!(
+        find_scene(&shows2, "gig", "verse").is_some(),
+        "second connection sees the server-side library"
+    );
+
+    // Explicit pull also returns the library.
+    tx.send(Message::Text(json!({"cmd":"list_shows"}).to_string()))
+        .await
+        .unwrap();
+    let listed = wait_shows(&mut rx, |s| find_scene(s, "gig", "verse").is_some()).await;
+    assert!(find_scene(&listed, "gig", "verse").is_some());
+
+    // Move ch0 away, then recall with fade 0 (jump) and verify the snap-back.
+    let moved = (cap_fader + 0.3).min(1.0);
+    assert!((moved - cap_fader).abs() > 0.05, "moved value differs");
+    tx.send(Message::Text(
+        json!({"cmd":"fader","ch":0,"value":moved}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_state(&mut rx, |s| {
+        strip(s, 0)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - moved).abs() < 1e-6)
+    })
+    .await;
+    tx.send(Message::Text(
+        json!({"cmd":"recall_scene","show":"gig","name":"verse","fade_ms":0}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_state(&mut rx, |s| {
+        strip(s, 0)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - cap_fader).abs() < 1e-6)
+    })
+    .await;
+
+    // Unknown scene errors; connection stays alive.
+    tx.send(Message::Text(
+        json!({"cmd":"recall_scene","show":"gig","name":"nope","fade_ms":0}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let err = next_typed(&mut rx, "error").await;
+    assert!(err.get("message").is_some());
+
+    // Delete the scene; the show stays with an empty scene list.
+    tx.send(Message::Text(
+        json!({"cmd":"delete_scene","show":"gig","name":"verse"}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_shows(&mut rx, |s| find_scene(s, "gig", "verse").is_none()).await;
+    tx.send(Message::Text(json!({"cmd":"list_shows"}).to_string()))
+        .await
+        .unwrap();
+    let listed = wait_shows(&mut rx, |_| true).await;
+    assert!(
+        find_scene(&listed, "gig", "verse").is_none(),
+        "deleted scene stays gone"
+    );
+
+    server.abort();
+}
