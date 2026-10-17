@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "mobile",
+  "description": "Mobile-only scope for the main window. Mixer I/O is raw UDP in Rust (no Tauri plugin), so no extra plugin permissions are needed yet; this file reserves the Android/iOS slot for future mobile-only permissions (e.g. haptics) without touching the desktop grant.",
+  "platforms": ["Android", "iOS"],
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
