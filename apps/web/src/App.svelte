@@ -32,6 +32,7 @@
   let showBridge = $state(false);
   let master = $state({ fader: 0.8 }); // local monitor-dim until backend exposes main
   let lastMeterAt = 0;
+  let spectra = $state({}); // ch -> bins (live spectrum; null until relay sends it)
 
   let bridge = $state(null);
   const meterMap = new Map(); // ch -> canvas (imperative paint, no re-render)
@@ -182,6 +183,11 @@
       }),
       backend.onMeters((lv) => { setLevels(lv); lastMeterAt = performance.now(); }),
     ];
+    if (backend.onSpectrum) {
+      offs.push(backend.onSpectrum(({ ch, bins }) => {
+        spectra = { ...spectra, [ch]: bins };
+      }));
+    }
     if (backend.onStatus) offs.push(backend.onStatus((on) => { online = on; }));
 
     const staleTimer = setInterval(() => {
@@ -286,7 +292,7 @@
   {/key}
   <aside id="detail" aria-label="channel detail">
     {#key selected}
-      <Detail strip={selectedStrip} {hidden} onParam={pushParam} onName={pushName} />
+      <Detail strip={selectedStrip} {hidden} spectrum={spectra[selected] ?? null} onParam={pushParam} onName={pushName} />
     {/key}
   </aside>
 </main>
