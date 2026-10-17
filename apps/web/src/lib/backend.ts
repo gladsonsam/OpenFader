@@ -96,6 +96,18 @@ export interface LockDeny {
   message: string;
 }
 
+/**
+ * Client roster from the relay (`{"type":"clients","count","writers"}`).
+ * `writers` holds the ids with a mutation in the last 10 s (server-sorted).
+ * The frame carries ids only — labels stay server-side. `selfId` is learned
+ * client-side from the first `by` echo of our own write (null until then).
+ */
+export interface ClientsInfo {
+  count: number;
+  writers: string[];
+  selfId: string | null;
+}
+
 /** Relay -> UI messages (WS JSON protocol, port :8080). */
 export type WsMsg =
   | { type: 'state'; strips: Strip[]; main_fader?: number | null }
@@ -105,6 +117,7 @@ export type WsMsg =
   | { type: 'param'; ch: number; field: string; value: ParamValue; by?: string }
   | { type: 'shows'; shows: ShowLib[] }
   | { type: 'locks'; holds: Record<string, string> }
+  | { type: 'clients'; count: number; writers: string[] }
   | { type: 'error'; message?: string; locked_by?: string; ch?: number }
   | { type: 'recalled'; overrode_locks?: number[] };
 
@@ -158,6 +171,11 @@ export interface Backend {
   onLocks(cb: (holds: LockHolds) => void): Unsub;
   /** Lock/write denials (`locked_by` holder id when the server names one). */
   onDeny(cb: (deny: LockDeny) => void): Unsub;
+  /**
+   * Client roster (relay only). Absent on transports without a presence
+   * feed (Tauri) — callers must null-check (`backend.onClients?.(...)`).
+   */
+  onClients?(cb: (info: ClientsInfo) => void): Unsub;
   close?(): void;
 }
 
@@ -617,6 +635,14 @@ export class WsBackend implements Backend {
   private readonly locksCbs = new Set<(holds: LockHolds) => void>();
   private readonly denyCbs = new Set<(deny: LockDeny) => void>();
   private readonly paramCbs = new Set<(evt: ParamEvent) => void>();
+  private readonly clientsCbs = new Set<(info: ClientsInfo) => void>();
+  private lastClients: ClientsInfo = { count: 0, writers: [], selfId: null };
+  /**
+   * Set when we send a mutation the relay echoes with `by`; the next `by`
+   * is (barring a concurrent writer) our own relay id. Best-effort: a
+   * simultaneous foreign write can misattribute, so this only marks "you".
+   */
+  private pendingSelf = false;
   private lastHolds: LockHolds = {};
   private ws: WebSocket | null = null;
   private openPromise: Promise<string> | null = null;
@@ -681,9 +707,45 @@ export class WsBackend implements Backend {
   }
 
   private send(obj: WsCmd): void {
+    // Mutations the relay echoes with `by` (connect/fader/main_fader/
+    // mute/param/recall_scene): arm self-id learning for the echo.
+    if (
+      obj.cmd === 'connect' ||
+      obj.cmd === 'fader' ||
+      obj.cmd === 'main_fader' ||
+      obj.cmd === 'mute' ||
+      obj.cmd === 'param' ||
+      obj.cmd === 'recall_scene'
+    ) {
+      this.pendingSelf = true;
+    }
     const msg = JSON.stringify(obj);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(msg);
     else this.queue.push(msg);
+  }
+
+  /** Learn our relay id from a `by` echo of our own write, then re-emit. */
+  private noteBy(by: unknown): void {
+    if (typeof by !== 'string' || !by || !this.pendingSelf) return;
+    this.pendingSelf = false;
+    if (this.lastClients.selfId !== null) return;
+    this.lastClients = { ...this.lastClients, selfId: by };
+    this.emitClients();
+  }
+
+  private emitClients(): void {
+    const snap: ClientsInfo = {
+      count: this.lastClients.count,
+      writers: [...this.lastClients.writers],
+      selfId: this.lastClients.selfId,
+    };
+    this.clientsCbs.forEach((cb) => {
+      try {
+        cb(snap);
+      } catch {
+        /* ignore */
+      }
+    });
   }
 
   private handle(raw: unknown): void {
@@ -699,6 +761,7 @@ export class WsBackend implements Backend {
     const rec = m as Record<string, unknown>;
     const t = rec['type'];
     if (t === 'state' && Array.isArray(rec['strips'])) {
+      this.noteBy(rec['by']);
       const strips: Strip[] = rec['strips'].map((s: unknown, i: number) => normStrip(s, i));
       const mf = rec['main_fader'];
       this.lastMain =
@@ -761,6 +824,7 @@ export class WsBackend implements Backend {
             ? raw
             : 0;
       const by = typeof rec['by'] === 'string' ? (rec['by'] as string) : undefined;
+      this.noteBy(by);
       const evt: ParamEvent = { ch: rec['ch'], field: rec['field'], value, ...(by ? { by } : {}) };
       this.paramCbs.forEach((cb) => {
         try {
@@ -787,6 +851,19 @@ export class WsBackend implements Backend {
           /* ignore */
         }
       }
+    } else if (t === 'clients') {
+      // Null-safe: old servers may send odd shapes; drop bad entries.
+      const countRaw = rec['count'];
+      const count =
+        typeof countRaw === 'number' && Number.isFinite(countRaw)
+          ? Math.max(0, Math.floor(countRaw))
+          : this.lastClients.count;
+      const writersRaw = rec['writers'];
+      const writers = Array.isArray(writersRaw)
+        ? writersRaw.filter((w): w is string => typeof w === 'string' && !!w)
+        : this.lastClients.writers;
+      this.lastClients = { count, writers, selfId: this.lastClients.selfId };
+      this.emitClients();
     } else if (t === 'locks' && rec['holds'] !== null && typeof rec['holds'] === 'object') {
       // Null-safe: unknown/old servers may send odd shapes; drop bad keys.
       const holds: LockHolds = {};
@@ -970,6 +1047,20 @@ export class WsBackend implements Backend {
 
   onParam(cb: (evt: ParamEvent) => void): Unsub {
     return sub(this.paramCbs, cb);
+  }
+
+  onClients(cb: (info: ClientsInfo) => void): Unsub {
+    const un = sub(this.clientsCbs, cb);
+    try {
+      cb({
+        count: this.lastClients.count,
+        writers: [...this.lastClients.writers],
+        selfId: this.lastClients.selfId,
+      });
+    } catch {
+      /* ignore */
+    }
+    return un;
   }
 
   close(): void {
