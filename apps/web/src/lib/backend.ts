@@ -57,6 +57,14 @@ export interface GrEvent {
   comp: number;
 }
 
+/** `param` broadcast frame (relay fans every `param` cmd out to all clients). */
+export interface ParamEvent {
+  ch: number;
+  field: string;
+  value: ParamValue;
+  by?: string;
+}
+
 /** One strip in a captured scene (cf. core SceneStrip). */
 export interface ShowSceneStrip {
   ch: number;
@@ -94,6 +102,7 @@ export type WsMsg =
   | { type: 'meters'; levels: number[] }
   | { type: 'spectrum'; ch: number; bins: number[] }
   | { type: 'gr'; ch: number; gate: number; comp: number }
+  | { type: 'param'; ch: number; field: string; value: ParamValue; by?: string }
   | { type: 'shows'; shows: ShowLib[] }
   | { type: 'locks'; holds: Record<string, string> }
   | { type: 'error'; message?: string; locked_by?: string; ch?: number }
@@ -143,6 +152,8 @@ export interface Backend {
   onSpectrum(cb: (evt: SpectrumEvent) => void): Unsub;
   onGr(cb: (evt: GrEvent) => void): Unsub;
   onStatus(cb: (online: boolean) => void): Unsub;
+  /** `param` broadcast (e.g. musician CALL FOH `attention`); empty on old servers. */
+  onParam(cb: (evt: ParamEvent) => void): Unsub;
   /** Strip-lock table (empty when the server has no locks support). */
   onLocks(cb: (holds: LockHolds) => void): Unsub;
   /** Lock/write denials (`locked_by` holder id when the server names one). */
@@ -569,6 +580,12 @@ export class TauriBackend implements Backend {
   onGr(cb: (evt: GrEvent) => void): Unsub {
     return sub(this.grCbs, cb);
   }
+
+  // No param fan-out in the Tauri shell (single client): subscribe works,
+  // nothing fires — CALL FOH stays local there.
+  onParam(_cb: (evt: ParamEvent) => void): Unsub {
+    return () => {};
+  }
 }
 
 /* ---------------- WebSocket relay (any browser) ---------------- */
@@ -599,6 +616,7 @@ export class WsBackend implements Backend {
   private readonly mainCbs = new Set<(main: number | null) => void>();
   private readonly locksCbs = new Set<(holds: LockHolds) => void>();
   private readonly denyCbs = new Set<(deny: LockDeny) => void>();
+  private readonly paramCbs = new Set<(evt: ParamEvent) => void>();
   private lastHolds: LockHolds = {};
   private ws: WebSocket | null = null;
   private openPromise: Promise<string> | null = null;
@@ -728,6 +746,23 @@ export class WsBackend implements Backend {
         comp: Number(rec['comp']) || 0,
       };
       this.grCbs.forEach((cb) => {
+        try {
+          cb(evt);
+        } catch {
+          /* ignore */
+        }
+      });
+    } else if (t === 'param' && typeof rec['ch'] === 'number' && typeof rec['field'] === 'string') {
+      const raw = rec['value'];
+      const value: ParamValue =
+        typeof raw === 'string' || typeof raw === 'boolean'
+          ? raw
+          : typeof raw === 'number' && Number.isFinite(raw)
+            ? raw
+            : 0;
+      const by = typeof rec['by'] === 'string' ? (rec['by'] as string) : undefined;
+      const evt: ParamEvent = { ch: rec['ch'], field: rec['field'], value, ...(by ? { by } : {}) };
+      this.paramCbs.forEach((cb) => {
         try {
           cb(evt);
         } catch {
@@ -931,6 +966,10 @@ export class WsBackend implements Backend {
 
   onDeny(cb: (deny: LockDeny) => void): Unsub {
     return sub(this.denyCbs, cb);
+  }
+
+  onParam(cb: (evt: ParamEvent) => void): Unsub {
+    return sub(this.paramCbs, cb);
   }
 
   close(): void {
