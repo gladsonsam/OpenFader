@@ -17,6 +17,8 @@
     type SendMap,
   } from './lib/sends';
   import Strip from './components/Strip.svelte';
+  import MixerPane from './components/MixerPane.svelte';
+  import SplitView from './components/SplitView.svelte';
   import MeterBridge from './components/MeterBridge.svelte';
   import Detail from './components/Detail.svelte';
   import FxRack from './components/FxRack.svelte';
@@ -32,7 +34,7 @@
 
   type View = 'overview' | 'mixer' | 'channel' | 'rack' | 'shows' | 'wizard';
   type Cell = { kind: 'strip'; s: StripData; master?: boolean } | { kind: 'gap'; gid: string };
-  interface Editing { ch: number; title: string; sub: string; value: number; isSend: boolean }
+  interface Editing { ch: number; title: string; sub: string; value: number; isSend: boolean; bus: number | null }
 
   const defaultStrips = (): StripData[] =>
     Array.from({ length: 8 }, (_, i) => ({
@@ -78,6 +80,8 @@
   let status: string = $state('');
   let view: View = $state(loadView());
   let layer: string = $state('inputs');
+  let layerB: string = $state('buses'); // split-mode pane B layer (own bank)
+  let split: boolean = $state(loadJSON<boolean>('openmix.split.v1', false));
   let layers: LayerDef[] = $state(loadLayers());
   let orders: Record<string, OrderEntry[]> = $state(loadOrders());
   let mgroups: MuteGroup[] = $state(loadJSON<MuteGroup[]>(LS.groups, defaultGroups()));
@@ -85,6 +89,7 @@
   let mutesEnabled: boolean = $state(loadJSON<boolean>(LS.muteEn, true));
   let fineMode: boolean = $state(loadJSON<boolean>(LS.fine, false));
   let sofBus: number | null = $state(null); // transient: sends-on-fader destination
+  let sofBusB: number | null = $state(null); // split-mode pane B SoF destination
   let clips: number[] = $state([]); // latched clip channels, tap meter to clear
   let editing: Editing | null = $state(null); // tap-a-value modal
   let editLayout: boolean = $state(false);
@@ -100,7 +105,8 @@
   let addr: string = $state('');
   let showBridge: boolean = $state(false);
   let master: { fader: number } = $state({ fader: 0.8 }); // LR main mirror (driver-backed via onMain/setMainFader; 0.8 until first state)
-  const meterMap = new Map<number, HTMLCanvasElement>(); // ch -> canvas (imperative paint, no re-render)
+  const meterMapA = new Map<number, HTMLCanvasElement>(); // ch -> canvas (imperative paint, no re-render)
+  const meterMapB = new Map<number, HTMLCanvasElement>(); // split-mode pane B canvases (same ch can show twice)
   let spectra: Record<number, number[]> = $state({}); // ch -> bins (live spectrum; null until relay sends it)
   let gr: Record<number, { gate: number; comp: number }> = $state({}); // ch -> live GR dB (null until relay sends it)
   let gains: Record<number, number> = {}; // detail gain dB per ch (staging display only)
@@ -108,10 +114,16 @@
   let lastMeterAt = 0;
   let lastTick = 0;
   const registerMeter = (ch: number, cv: HTMLCanvasElement): void => {
-    meterMap.set(ch, cv);
+    meterMapA.set(ch, cv);
   };
   const unregisterMeter = (ch: number): void => {
-    meterMap.delete(ch);
+    meterMapA.delete(ch);
+  };
+  const registerMeterB = (ch: number, cv: HTMLCanvasElement): void => {
+    meterMapB.set(ch, cv);
+  };
+  const unregisterMeterB = (ch: number): void => {
+    meterMapB.delete(ch);
   };
 
   /* ---------- helpers ---------- */
@@ -119,6 +131,8 @@
   const inSof = $derived(sofBus !== null);
   const sofColorV = $derived(sofBus === null ? '' : busColor(sofBus));
   const sofName = $derived(sofBus === null ? '' : (strips.find((s) => s.ch === sofBus)?.name ?? `bus ${sofBus}`));
+  const sofColorB = $derived(sofBusB === null ? '' : busColor(sofBusB));
+  const sofNameB = $derived(sofBusB === null ? '' : (strips.find((s) => s.ch === sofBusB)?.name ?? `bus ${sofBusB}`));
   const busStrips: StripData[] = $derived(strips.filter(isBusStrip));
 
   const mainPseudo = (): StripData => ({ ch: -1, name: 'MAIN', fader: master.fader, muted: false, main: true });
@@ -154,15 +168,16 @@
     return strips.find((s) => s.ch === selected) ?? null;
   });
 
-  let mixerCells: Cell[] = $derived.by(() => {
-    if (sofBus !== null) {
-      const bus = sofBus;
+  /** Bank cells for any (layer, SoF) pair — shared by single + split panes. */
+  function cellsFor(layerId: string, sof: number | null): Cell[] {
+    if (sof !== null) {
+      const bus = sof;
       const cells: Cell[] = strips.filter((s) => !isBusStrip(s)).map((s): Cell => ({ kind: 'strip', s }));
       const b = strips.find((s) => s.ch === bus);
       if (b) cells.push({ kind: 'strip', s: b, master: true });
       return cells;
     }
-    const ord = orders[layer] ?? defaultOrderFor(layer);
+    const ord = orders[layerId] ?? defaultOrderFor(layerId);
     const out: Cell[] = [];
     for (const e of ord) {
       if (e.t === 'gap') {
@@ -177,19 +192,30 @@
       if (f) out.push({ kind: 'strip', s: f });
     }
     return out;
-  });
+  }
+
+  let mixerCells: Cell[] = $derived.by(() => cellsFor(layer, sofBus));
+  let cellsB: Cell[] = $derived.by(() => cellsFor(layerB, sofBusB));
 
   /** Fader position actually shown for a strip (send level in SoF). */
-  function displayFader(s: StripData): number {
+  function displayFaderFor(s: StripData, sof: number | null): number {
     if (s.main || s.ch < 0) return master.fader;
-    if (sofBus !== null && !isBusStrip(s)) return dbToFader(sendDb(sends, s.ch, sofBus));
+    if (sof !== null && !isBusStrip(s)) return dbToFader(sendDb(sends, s.ch, sof));
     return s.fader;
   }
 
-  function displayDb(s: StripData): string {
+  function displayDbFor(s: StripData, sof: number | null): string {
     if (s.main || s.ch < 0) return faderDb(master.fader);
-    if (sofBus !== null && !isBusStrip(s)) return fmtSendDb(sendDb(sends, s.ch, sofBus));
+    if (sof !== null && !isBusStrip(s)) return fmtSendDb(sendDb(sends, s.ch, sof));
     return faderDb(s.fader);
+  }
+
+  function displayFader(s: StripData): number {
+    return displayFaderFor(s, sofBus);
+  }
+
+  function displayDb(s: StripData): string {
+    return displayDbFor(s, sofBus);
   }
 
   const say = (t: string): void => {
@@ -228,23 +254,25 @@
   }
 
   /** Send level in SoF: cached locally, pushed via the existing `param` cmd. */
-  async function setSend(ch: number, v: number): Promise<void> {
-    const bus = sofBus;
-    if (bus === null) return;
+  async function setSend(ch: number, bus: number, v: number): Promise<void> {
     const db = Math.round(faderToDb(v) * 2) / 2;
     sends[sendKey(ch, bus)] = db;
     saveSends(sends);
     try {
       await backend.setParam(ch, auxField(bus), db);
     } catch (e) {
-      say(`send ch${ch + 1}→${sofName}: ${errMsg(e)} (kept locally)`);
+      say(`send ch${ch + 1}→${strips.find((s) => s.ch === bus)?.name ?? bus}: ${errMsg(e)} (kept locally)`);
     }
   }
 
-  function stripFader(s: StripData, v: number): Promise<void> {
+  function stripFaderFor(s: StripData, sof: number | null, v: number): Promise<void> {
     // In SoF, input strips drive sends; the pinned bus master drives its fader.
-    if (sofBus !== null && !s.main && s.ch >= 0 && !isBusStrip(s)) return setSend(s.ch, v);
+    if (sof !== null && !s.main && s.ch >= 0 && !isBusStrip(s)) return setSend(s.ch, sof, v);
     return setFader(s, v);
+  }
+
+  function stripFader(s: StripData, v: number): Promise<void> {
+    return stripFaderFor(s, sofBus, v);
   }
 
   async function toggleMute(s: StripData): Promise<void> {
@@ -315,6 +343,10 @@
     layer = id;
   }
 
+  function selectLayerB(id: string): void {
+    layerB = id;
+  }
+
   function layersKey(e: KeyboardEvent): void {
     const ids = layers.map((l) => l.id);
     const i = ids.indexOf(layer);
@@ -344,25 +376,36 @@
   }
 
   /* ---------- sends-on-fader ---------- */
-  function enterSof(busCh: number): void {
+  function enterSofPane(pane: 'a' | 'b', busCh: number): void {
     if (busIdx(busCh) < 0) {
       say('that bus has no aux send tap on this backend');
       return;
     }
-    sofBus = busCh;
+    if (pane === 'a') sofBus = busCh;
+    else sofBusB = busCh;
     if (!solos.includes(busCh)) solos = [...solos, busCh]; // auto-cue the destination
     setView('mixer');
     say(`sends → ${strips.find((s) => s.ch === busCh)?.name ?? busCh}: faders are sends — EXIT returns to LR`);
   }
 
-  function exitSof(): void {
-    if (sofBus !== null) solos = solos.filter((c) => c !== sofBus);
-    sofBus = null;
+  function enterSof(busCh: number): void {
+    enterSofPane('a', busCh);
+  }
+
+  function exitSofPane(pane: 'a' | 'b'): void {
+    const bus = pane === 'a' ? sofBus : sofBusB;
+    if (bus !== null) solos = solos.filter((c) => c !== bus);
+    if (pane === 'a') sofBus = null;
+    else sofBusB = null;
     say('back to LR');
   }
 
-  async function copyLrToBus(): Promise<void> {
-    const bus = sofBus;
+  function exitSof(): void {
+    exitSofPane('a');
+  }
+
+  async function copyLrPane(pane: 'a' | 'b'): Promise<void> {
+    const bus = pane === 'a' ? sofBus : sofBusB;
     if (bus === null) return;
     const ins = strips.filter((s) => !isBusStrip(s));
     for (const s of ins) {
@@ -376,7 +419,11 @@
       }
     }
     saveSends(sends);
-    say(`copied LR (${ins.length} sends) → ${sofName}`);
+    say(`copied LR (${ins.length} sends) → ${strips.find((s) => s.ch === bus)?.name ?? bus}`);
+  }
+
+  async function copyLrToBus(): Promise<void> {
+    await copyLrPane('a');
   }
 
   /* ---------- mute groups ---------- */
@@ -414,40 +461,40 @@
   }
 
   /* ---------- custom layers ---------- */
-  function orderOf(): OrderEntry[] {
-    return orders[layer] ?? defaultOrderFor(layer);
+  function orderOf(layerId: string): OrderEntry[] {
+    return orders[layerId] ?? defaultOrderFor(layerId);
   }
 
-  function setOrder(next: OrderEntry[]): void {
-    orders[layer] = next;
+  function setOrder(layerId: string, next: OrderEntry[]): void {
+    orders[layerId] = next;
     saveOrders();
   }
 
-  function moveEntry(idx: number, dir: -1 | 1): void {
-    const ord = [...orderOf()];
+  function moveEntry(layerId: string, idx: number, dir: -1 | 1): void {
+    const ord = [...orderOf(layerId)];
     const j = idx + dir;
     if (idx < 0 || idx >= ord.length || j < 0 || j >= ord.length) return;
     const [e] = ord.splice(idx, 1);
     if (e) ord.splice(j, 0, e);
-    setOrder(ord);
+    setOrder(layerId, ord);
   }
 
-  function addGap(idx: number): void {
-    const ord = [...orderOf()];
+  function addGap(layerId: string, idx: number): void {
+    const ord = [...orderOf(layerId)];
     ord.splice(idx + 1, 0, { t: 'gap', gid: `gap-${Date.now()}-${idx}` });
-    setOrder(ord);
+    setOrder(layerId, ord);
   }
 
-  function removeEntry(idx: number): void {
-    const ord = [...orderOf()];
+  function removeEntry(layerId: string, idx: number): void {
+    const ord = [...orderOf(layerId)];
     ord.splice(idx, 1);
-    setOrder(ord);
+    setOrder(layerId, ord);
   }
 
-  function resetLayout(): void {
-    delete orders[layer];
+  function resetLayout(layerId: string): void {
+    delete orders[layerId];
     saveOrders();
-    say(`${layer} layout reset to backend order`);
+    say(`${layerId} layout reset to backend order`);
   }
 
   function renameLayer(): void {
@@ -487,22 +534,27 @@
   }
 
   /* ---------- tap-a-value exact entry ---------- */
-  function openValue(s: StripData): void {
+  function openValueFor(s: StripData, sof: number | null): void {
     if (s.main || s.ch < 0) {
-      editing = { ch: -1, title: 'MAIN', sub: 'master fader', value: master.fader, isSend: false };
+      editing = { ch: -1, title: 'MAIN', sub: 'master fader', value: master.fader, isSend: false, bus: null };
       return;
     }
-    if (sofBus !== null && !isBusStrip(s)) {
+    if (sof !== null && !isBusStrip(s)) {
       editing = {
         ch: s.ch,
-        title: `${s.name} → ${sofName}`,
+        title: `${s.name} → ${strips.find((x) => x.ch === sof)?.name ?? sof}`,
         sub: 'send level',
-        value: dbToFader(sendDb(sends, s.ch, sofBus)),
+        value: dbToFader(sendDb(sends, s.ch, sof)),
         isSend: true,
+        bus: sof,
       };
       return;
     }
-    editing = { ch: s.ch, title: s.name, sub: 'fader', value: s.fader, isSend: false };
+    editing = { ch: s.ch, title: s.name, sub: 'fader', value: s.fader, isSend: false, bus: null };
+  }
+
+  function openValue(s: StripData): void {
+    openValueFor(s, sofBus);
   }
 
   async function applyValue(v: number): Promise<void> {
@@ -510,7 +562,7 @@
     editing = null;
     if (!e) return;
     if (e.isSend) {
-      await setSend(e.ch, v);
+      if (e.bus !== null) await setSend(e.ch, e.bus, v);
       return;
     }
     if (e.ch < 0) {
@@ -599,15 +651,18 @@
   /* ---------- meter loop ---------- */
   let raf = 0;
 
+  function paintMeter(ch: number, cv: HTMLCanvasElement): void {
+    const s = ch === -1 ? null : strips.find((x) => x.ch === ch);
+    const f = ch === -1 ? master.fader : s ? displayFader(s) : 0;
+    const raw = ch === -1 ? f * 0.9 : !s ? 0 : (levels[s.ch] ?? 0);
+    if (!clips.includes(ch) && raw >= 0.985) clips = [...clips, ch]; // latch
+    const input = clamp01(raw / Math.max(f, 0.08)); // pre-fader estimate
+    paintStageMeter(cv, s?.muted ? 0 : input, s?.muted ? 0 : raw, clips.includes(ch));
+  }
+
   function loop(now: number): void {
-    for (const [ch, cv] of meterMap) {
-      const s = ch === -1 ? null : strips.find((x) => x.ch === ch);
-      const f = ch === -1 ? master.fader : s ? displayFader(s) : 0;
-      const raw = ch === -1 ? f * 0.9 : !s ? 0 : (levels[s.ch] ?? 0);
-      if (!clips.includes(ch) && raw >= 0.985) clips = [...clips, ch]; // latch
-      const input = clamp01(raw / Math.max(f, 0.08)); // pre-fader estimate
-      paintStageMeter(cv, s?.muted ? 0 : input, s?.muted ? 0 : raw, clips.includes(ch));
-    }
+    for (const [ch, cv] of meterMapA) paintMeter(ch, cv);
+    for (const [ch, cv] of meterMapB) paintMeter(ch, cv);
     if (now - lastTick > 120) {
       lastTick = now;
       tick++;
@@ -634,6 +689,7 @@
 
   onMount(() => {
     if (!layers.some((l) => l.id === layer)) layer = 'inputs';
+    if (!layers.some((l) => l.id === layerB)) layerB = layers.some((l) => l.id === 'buses') ? 'buses' : 'inputs';
     const offs: Unsub[] = [
       backend.onState((next) => {
         strips = next;
@@ -717,7 +773,7 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div id="app" class:sof={inSof} style={inSof ? `--sof: ${sofColorV}` : ''}>
+<div id="app" class:sof={inSof && !split} style={inSof && !split ? `--sof: ${sofColorV}` : ''}>
   <header id="topbar">
     <span id="logo">openmix</span>
     <label>driver
@@ -742,7 +798,7 @@
   </nav>
 
   <!-- QSC-style aux rail: always-visible bus selects, one tap flips to that mix. -->
-  {#if view !== 'channel' && busStrips.length}
+  {#if view !== 'channel' && busStrips.length && !split}
     <nav id="auxrail" aria-label="mix destination">
       <button class:lr={!inSof} aria-pressed={!inSof} onclick={exitSof} title="back to LR">LR</button>
       {#each busStrips as b (b.ch)}
@@ -759,7 +815,7 @@
   {/if}
 
   <!-- SoF banner: the mode can never be mistaken for LR. -->
-  {#if inSof}
+  {#if inSof && !split}
     <div id="sofbanner" style={`--sof: ${sofColorV}`} role="alert">
       <b>SENDS → {sofName}</b>
       <span>faders are sends, not LR</span>
@@ -799,10 +855,16 @@
         onclick={() => { fineMode = !fineMode; saveJSON(LS.fine, fineMode); }}
       >FINE</button>
       <button class:on={editLayout} aria-pressed={editLayout} title="edit bank layout: reorder, spacers, custom layers" onclick={() => { editLayout = !editLayout; }}>LAYOUT</button>
+      <button
+        class:on={split}
+        aria-pressed={split}
+        title="dual-pane: two independent mixer views side by side (FOH + monitor). Auto-singles below 1100px."
+        onclick={() => { split = !split; saveJSON('openmix.split.v1', split); say(split ? 'dual-pane on: A and B mix independently' : 'single pane'); }}
+      >SPLIT</button>
       {#if editLayout}
         <button onclick={addLayer} title="new custom layer from current strips">+layer</button>
         <button onclick={renameLayer} title="rename current layer tab">rename</button>
-        <button onclick={resetLayout} title="restore backend order">reset</button>
+        <button onclick={() => resetLayout(layer)} title="restore backend order">reset</button>
         {#if !(layers.find((l) => l.id === layer)?.builtin)}
           <button onclick={deleteLayer} title="delete this custom layer">del</button>
         {/if}
@@ -947,6 +1009,91 @@
     <main id="wizwrap">
       <GainWizard backend={backend} strips={strips} say={say} />
     </main>
+  {:else if split}
+    <main id="splitwrap">
+      <SplitView>
+        {#snippet paneA()}
+          <MixerPane
+            label="A"
+            {layers}
+            {layer}
+            cells={mixerCells}
+            buses={busStrips}
+            {sofBus}
+            sofColor={sofColorV}
+            {sofName}
+            {selected}
+            {solos}
+            {clips}
+            {mutesEnabled}
+            fine={fineMode}
+            {editLayout}
+            {gr}
+            {locks}
+            {myLocks}
+            {locksSupported}
+            {displayFader}
+            {displayDb}
+            onLayer={selectLayer}
+            onFader={(s, v) => stripFader(s, v)}
+            onMute={(s) => toggleMute(s)}
+            onSolo={(ch) => toggleSolo(ch)}
+            onSelect={(ch) => select(ch)}
+            onValueTap={(s) => openValue(s)}
+            onMeterTap={(ch) => clearClip(ch)}
+            onMove={(idx, d) => moveEntry(layer, idx, d)}
+            onGap={(idx) => addGap(layer, idx)}
+            onRemove={(idx) => removeEntry(layer, idx)}
+            onEnterSof={(b) => enterSofPane('a', b)}
+            onExitSof={() => exitSofPane('a')}
+            onCopyLr={() => { void copyLrPane('a'); }}
+            onLockToggle={(ch) => toggleLock(ch)}
+            {registerMeter}
+            {unregisterMeter}
+          />
+        {/snippet}
+        {#snippet paneB()}
+          <MixerPane
+            label="B"
+            {layers}
+            layer={layerB}
+            cells={cellsB}
+            buses={busStrips}
+            sofBus={sofBusB}
+            sofColor={sofColorB}
+            sofName={sofNameB}
+            {selected}
+            {solos}
+            {clips}
+            {mutesEnabled}
+            fine={fineMode}
+            {editLayout}
+            {gr}
+            {locks}
+            {myLocks}
+            {locksSupported}
+            displayFader={(s) => displayFaderFor(s, sofBusB)}
+            displayDb={(s) => displayDbFor(s, sofBusB)}
+            onLayer={selectLayerB}
+            onFader={(s, v) => stripFaderFor(s, sofBusB, v)}
+            onMute={(s) => toggleMute(s)}
+            onSolo={(ch) => toggleSolo(ch)}
+            onSelect={(ch) => select(ch)}
+            onValueTap={(s) => openValueFor(s, sofBusB)}
+            onMeterTap={(ch) => clearClip(ch)}
+            onMove={(idx, d) => moveEntry(layerB, idx, d)}
+            onGap={(idx) => addGap(layerB, idx)}
+            onRemove={(idx) => removeEntry(layerB, idx)}
+            onEnterSof={(b) => enterSofPane('b', b)}
+            onExitSof={() => exitSofPane('b')}
+            onCopyLr={() => { void copyLrPane('b'); }}
+            onLockToggle={(ch) => toggleLock(ch)}
+            registerMeter={registerMeterB}
+            unregisterMeter={unregisterMeterB}
+          />
+        {/snippet}
+      </SplitView>
+    </main>
   {:else}
     <main id="wrap">
       {#key layer + String(inSof)}
@@ -977,9 +1124,9 @@
                     grDb={grFor(c.s.ch, gr)}
                     editMode={editLayout && !inSof}
                     canRemove={!(layers.find((l) => l.id === layer)?.builtin) || c.kind === 'strip'}
-                    onMove={(d) => moveEntry(i, d)}
-                    onGap={() => addGap(i)}
-                    onRemove={() => removeEntry(i)}
+                    onMove={(d) => moveEntry(layer, i, d)}
+                    onGap={() => addGap(layer, i)}
+                    onRemove={() => removeEntry(layer, i)}
                     lockHolder={locksSupported ? (locks[c.s.ch] ?? null) : null}
                     lockMine={myLocks.includes(c.s.ch)}
                     onLockToggle={locksSupported ? () => toggleLock(c.kind === 'strip' ? c.s.ch : -1) : undefined}
