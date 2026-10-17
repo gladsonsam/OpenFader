@@ -94,3 +94,9 @@ Notes:
 ## Meter expiry — HARDWARE PROVEN 2026-10-18 ~00:50 AWST
 - One subscribe, no renewals: [200, 0, 0, 0, 0, 0, 0] blobs per 10s window over 70s. Stream dies at ~10s sharp.
 - 8s METER_RENEW_INTERVAL confirmed correct with margin. No longer INFERRED.
+
+## Headamp — HARDWARE VERIFIED 2026-10-18 ~01:00 AWST (XR18 FW 1.20)
+- `/headamp/NN/gain` float linear `0..1` ↔ `-12..+60 dB` (read 0.17 ≈ +0 dB on ch1/16; same-value write ACKed, readback 0.1667 — wire quantizes).
+- `/headamp/NN/phantom` int `1`/`0` (read 0 on ch1; write path loopback-only, untested live).
+- NN 2-digit 1-based, one headamp per input strip (matches xair-api `headamp.py` mapping).
+- Driver: `proto-xair/src/headamp.rs` (`set_param gain/phantom`); UI: GainWizard.
