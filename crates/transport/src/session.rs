@@ -197,6 +197,18 @@ impl OscSession {
     }
 }
 
+/// Join-handle discipline: dropping a session aborts its recv + keepalive
+/// loops. Without this every reconnect (gig wifi flapping) leaks two tasks
+/// that hold the old socket `Arc` alive and keep pinging a dead peer.
+impl Drop for OscSession {
+    fn drop(&mut self) {
+        self._recv.abort();
+        if let Some(keep) = &self._keepalive {
+            keep.abort();
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // UDP peer: bound socket with send/recv + timeouts.
 // Merged here from the old `udp` module so all socket setup lives next to the
@@ -300,5 +312,259 @@ mod tests {
         let msgs = osc::flatten(osc::decode_packet(&bytes).unwrap());
         assert_eq!(msgs[0].addr, "/xremote");
         assert!(msgs[0].args.is_empty());
+    }
+
+    /// Gig wifi: nobody answers. The query must fail fast with a timeout
+    /// error, never hang the caller.
+    #[tokio::test]
+    async fn query_timeout_is_clean_error() {
+        let (session, _mixer) = loopback_pair().await;
+        // Nothing reads `_mixer`, so no reply ever arrives.
+        let res = tokio::time::timeout(
+            Duration::from_secs(5),
+            session.query_timeout("/no/reply", Duration::from_millis(50)),
+        )
+        .await
+        .expect("query must not hang");
+        let err = res.unwrap_err();
+        assert!(
+            err.to_string().contains("timed out"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// A timed-out query must drop its pending entry: the late reply to
+    /// attempt #1 must not steal the reply slot of attempt #2 (which would
+    /// hang it forever on a flaky link).
+    #[tokio::test]
+    async fn query_timeout_cleans_stale_entry() {
+        let (session, mixer) = loopback_pair().await;
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 65535];
+            let mut seen = 0u32;
+            loop {
+                let Ok((n, peer)) = mixer.recv_from(&mut buf).await else {
+                    break;
+                };
+                let Ok(packet) = osc::decode_packet(&buf[..n]) else {
+                    continue;
+                };
+                for msg in osc::flatten(packet) {
+                    if msg.addr == "/info" && msg.args.is_empty() {
+                        seen += 1;
+                        if seen >= 2 {
+                            let reply = osc::encode_message(
+                                "/info",
+                                vec![rosc::OscType::String("late".into())],
+                            )
+                            .unwrap();
+                            let _ = mixer.send_to(&reply, peer).await;
+                        }
+                    }
+                }
+            }
+        });
+        let err = session
+            .query_timeout("/info", Duration::from_millis(100))
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("timed out"));
+        // Attempt #2 must get its own reply, not hang on a stale slot.
+        let reply = session
+            .query_timeout("/info", Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert_eq!(osc::string_args(&reply), vec!["late"]);
+    }
+
+    /// `UdpPeer` timeout reads fail fast with an error, never block.
+    #[tokio::test]
+    async fn udp_peer_recv_timeout_is_clean_error() {
+        let peer = UdpPeer::ephemeral().await.unwrap();
+        let mut buf = vec![0u8; 2048];
+        let start = std::time::Instant::now();
+        let res = tokio::time::timeout(
+            Duration::from_secs(5),
+            peer.recv_from_timeout(&mut buf, Duration::from_millis(50)),
+        )
+        .await
+        .expect("recv must not hang");
+        assert!(res.is_err(), "expected timeout error, got a datagram");
+        assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
+    /// Dropping a session must terminate its recv + keepalive tasks: the
+    /// socket `Arc` refcount (session + recv task + keepalive task clones)
+    /// must fall back to just the test's own handle.
+    #[tokio::test]
+    async fn dropped_session_aborts_background_tasks() {
+        let mixer = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let mixer_addr = mixer.local_addr().unwrap();
+        let sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        sock.connect(mixer_addr).await.unwrap();
+        {
+            let session = OscSession::from_connected_socket(
+                sock.clone(),
+                Some(KeepaliveConfig {
+                    addr: "/xremote".into(),
+                    interval: Duration::from_millis(10),
+                }),
+            );
+            // Ours + session's + recv task's + keepalive task's.
+            assert_eq!(Arc::strong_count(&sock), 4);
+            drop(session);
+        }
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        loop {
+            if Arc::strong_count(&sock) == 1 {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "background tasks leaked: strong_count={}",
+                Arc::strong_count(&sock)
+            );
+            tokio::task::yield_now().await;
+        }
+    }
+
+    /// After drop, the keepalive task must stop pinging: drain in-flight
+    /// pings, wait several intervals, then assert radio silence.
+    #[tokio::test]
+    async fn dropped_session_stops_keepalive() {
+        let mixer = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let mixer_addr = mixer.local_addr().unwrap();
+        let sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        sock.connect(mixer_addr).await.unwrap();
+        let session = OscSession::from_connected_socket(
+            sock,
+            Some(KeepaliveConfig {
+                addr: "/xremote".into(),
+                interval: Duration::from_millis(10),
+            }),
+        );
+        // Warm up: at least two pings arrive while the session lives.
+        let mut buf = vec![0u8; 2048];
+        let mut got = 0;
+        while got < 2 {
+            tokio::time::timeout(Duration::from_millis(500), mixer.recv(&mut buf))
+                .await
+                .expect("keepalive should fire while session lives")
+                .unwrap();
+            got += 1;
+        }
+        drop(session);
+        // Drain pings already in flight, then require silence.
+        loop {
+            match mixer.try_recv(&mut buf) {
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                _ => {}
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        match mixer.try_recv(&mut buf) {
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            other => panic!("keepalive task survived drop: {other:?}"),
+        }
+    }
+
+    /// Reconnect storm: rapid connect/drop cycles (flapping venue wifi)
+    /// must neither hang nor poison the next session.
+    #[tokio::test]
+    async fn reconnect_storm_stays_usable() {
+        let blackhole = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let peer = blackhole.local_addr().unwrap();
+        let start = std::time::Instant::now();
+        for _ in 0..30 {
+            let sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+            sock.connect(peer).await.unwrap();
+            let session = OscSession::from_connected_socket(
+                sock,
+                Some(KeepaliveConfig {
+                    addr: "/xremote".into(),
+                    interval: Duration::from_millis(5),
+                }),
+            );
+            drop(session);
+        }
+        assert!(
+            start.elapsed() < Duration::from_secs(10),
+            "reconnect storm hung"
+        );
+        // A fresh session on a answering mixer still round-trips.
+        let (session, mixer) = loopback_pair().await;
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 2048];
+            let Ok((n, peer)) = mixer.recv_from(&mut buf).await else {
+                return;
+            };
+            let Ok(packet) = osc::decode_packet(&buf[..n]) else {
+                return;
+            };
+            for msg in osc::flatten(packet) {
+                if msg.addr == "/info" {
+                    let reply = osc::encode_message(
+                        "/info",
+                        vec![rosc::OscType::String("back".into())],
+                    )
+                    .unwrap();
+                    let _ = mixer.send_to(&reply, peer).await;
+                }
+            }
+        });
+        let reply = session
+            .query_timeout("/info", Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert_eq!(osc::string_args(&reply), vec!["back"]);
+    }
+
+    /// Slow meter consumer must not kill the relay: flood 200 blobs (past
+    /// the 64-frame broadcast buffer) with nobody reading, then prove a
+    /// query still round-trips and the lagging reader sees `Lagged`
+    /// (skip-and-continue, the semantics the serve relay relies on).
+    #[tokio::test]
+    async fn meter_flood_does_not_block_queries() {
+        let (session, mixer) = loopback_pair().await;
+        let mut meters = session.subscribe_meters();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 65535];
+            loop {
+                let Ok((n, peer)) = mixer.recv_from(&mut buf).await else {
+                    break;
+                };
+                let Ok(packet) = osc::decode_packet(&buf[..n]) else {
+                    continue;
+                };
+                for msg in osc::flatten(packet) {
+                    if msg.addr == "/info" && msg.args.is_empty() {
+                        for _ in 0..200 {
+                            let blob = crate::meters::build_meter_blob(&[0.1, 0.5]);
+                            let bytes = osc::encode_message(
+                                "/meters/1",
+                                vec![rosc::OscType::Blob(blob)],
+                            )
+                            .unwrap();
+                            let _ = mixer.send_to(&bytes, peer).await;
+                        }
+                        let reply = osc::encode_message(
+                            "/info",
+                            vec![rosc::OscType::String("ok".into())],
+                        )
+                        .unwrap();
+                        let _ = mixer.send_to(&reply, peer).await;
+                    }
+                }
+            }
+        });
+        let reply = session
+            .query_timeout("/info", Duration::from_secs(2))
+            .await
+            .unwrap();
+        assert_eq!(osc::string_args(&reply), vec!["ok"]);
+        match meters.try_recv() {
+            Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
+            other => panic!("expected lagged meter backlog, got {other:?}"),
+        }
     }
 }
