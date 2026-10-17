@@ -74,6 +74,15 @@ pub mod addrs {
     pub const X32KIND_CHANNELS: u16 = 32;
     pub const MAX_BUS: u8 = 6;
 
+    /// Meter renewal interval: the desk stops streaming ~10 s after a
+    /// subscribe (INFERRED timing — owner rig saw only ~5 blobs/12 s without
+    /// renewals; 10 s expiry suspected, unconfirmed until rig confirms).
+    /// The driver re-sends `/xremote` + both `/meters` subscribes on this
+    /// schedule to keep levels (and GR) flowing. Overrides (e.g. tests) pass
+    /// an explicit [`std::time::Duration`] to
+    /// [`crate::XAirDriver::subscribe_meters_with_interval`].
+    pub const METER_RENEW_INTERVAL: std::time::Duration = std::time::Duration::from_secs(8);
+
     /// Mixer geometry: selects the channel-count validation bound.
     /// Defaults to [`XAirModel::Xr18`] (the hardware-verified desk).
     #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -307,6 +316,94 @@ impl XAirDriver {
         self.dyn_cache.lock().await.clone()
     }
 
+    /// Meter subscribe with an explicit renewal interval (tests pass a short
+    /// interval; production uses [`addrs::METER_RENEW_INTERVAL`]).
+    pub async fn subscribe_meters_with_interval(
+        &self,
+        interval: std::time::Duration,
+    ) -> anyhow::Result<broadcast::Receiver<openmix_core::MeterFrame>> {
+        let rx = self.subscribe_meters_once().await?;
+        self.spawn_meter_renewal(interval).await?;
+        Ok(rx)
+    }
+
+    /// One-shot subscribe (no renewal loop). Shared by
+    /// [`MixerDriver::subscribe_meters`] and
+    /// [`Self::subscribe_meters_with_interval`].
+    async fn subscribe_meters_once(
+        &self,
+    ) -> anyhow::Result<broadcast::Receiver<openmix_core::MeterFrame>> {
+        let guard = self.session().await?;
+        let session = guard.as_ref().unwrap();
+        // Documented working form (xr-meters against real XR hardware, x-Air
+        // Remote Protocol doc `/meters ,si <id> <n>`): subscribe by sending
+        // the stream id AS A STRING ARG to bare `/meters` — NOT an empty
+        // query to `/meters/1` (desk is silent there, baseline T4).
+        //
+        // INFERRED, not owner-rig verified: the subscription reportedly
+        // expires after ~10 s (xr-meters re-issues every 9 s) and needs the
+        // `/xremote` keepalive (every ~8 s, already running via `connect`)
+        // alongside. Owner-rig step: capture a real meter blob and confirm
+        // the LE-i16 run shape (xr-meters skips 4 header bytes before the
+        // samples — transport parses from offset 0; reconcile on hardware).
+        session
+            .send(
+                addrs::METER_REQUEST,
+                vec![OscType::String(addrs::METER_SUBSCRIBE.to_string())],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("meter subscribe: {e}"))?;
+        // ALL DYN (gate/comp GR) stream, same subscribe form with the
+        // `/meters/6` id (Behringer X AIR OSC doc fw 1.11 — NOT owner-rig
+        // verified). A send failure here is local socket I/O (UDP sends
+        // cannot fail remotely), so it propagates like the levels
+        // subscribe above. The DYN blobs the desk then streams decode via
+        // `ingest_dyn_message` into the `gate_gr` / `comp_gr` param reads;
+        // the shared hub only carries levels, so nothing else changes here.
+        session
+            .send(
+                addrs::METER_REQUEST,
+                vec![OscType::String(addrs::METER_DYN_SUBSCRIBE.to_string())],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("dyn meter subscribe: {e}"))?;
+        Ok(session.subscribe_meters())
+    }
+
+    /// Spawn the meter renewal loop: re-send `/xremote` + both `/meters`
+    /// subscribes every `interval` so the desk (suspected ~10 s expiry,
+    /// INFERRED) keeps streaming. Fire-and-forget detached task over a
+    /// cloned [`std::sync::Arc`] socket — no driver/session lock held, so
+    /// renewals never block queries and tolerate resubscribes.
+    async fn spawn_meter_renewal(&self, interval: std::time::Duration) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        let sock = std::sync::Arc::clone(guard.as_ref().unwrap().socket());
+        drop(guard);
+        let xremote = osc::query_message(addrs::XREMOTE)?;
+        let sub_levels = osc::encode_message(
+            addrs::METER_REQUEST,
+            vec![OscType::String(addrs::METER_SUBSCRIBE.to_string())],
+        )?;
+        let sub_dyn = osc::encode_message(
+            addrs::METER_REQUEST,
+            vec![OscType::String(addrs::METER_DYN_SUBSCRIBE.to_string())],
+        )?;
+        tokio::spawn(async move {
+            let mut ticker =
+                openmix_transport::session::keepalive_ticker(interval);
+            // `keepalive_ticker` fires immediately; consume it so the first
+            // renewal lands one full `interval` after the initial subscribe.
+            ticker.tick().await;
+            loop {
+                ticker.tick().await;
+                let _ = sock.send(&xremote).await;
+                let _ = sock.send(&sub_levels).await;
+                let _ = sock.send(&sub_dyn).await;
+            }
+        });
+        Ok(())
+    }
+
     /// Ingest one raw `/meters/6` OSC message into the GR cache (the
     /// documented ALL DYN shape — see [`crate::dyn_gr`]). Any other address
     /// (or a non-blob payload) bails: no guessing at unknown meter layouts.
@@ -499,41 +596,8 @@ impl MixerDriver for XAirDriver {
     async fn subscribe_meters(
         &self,
     ) -> anyhow::Result<broadcast::Receiver<openmix_core::MeterFrame>> {
-        let guard = self.session().await?;
-        let session = guard.as_ref().unwrap();
-        // Documented working form (xr-meters against real XR hardware, x-Air
-        // Remote Protocol doc `/meters ,si <id> <n>`): subscribe by sending
-        // the stream id AS A STRING ARG to bare `/meters` — NOT an empty
-        // query to `/meters/1` (desk is silent there, baseline T4).
-        //
-        // INFERRED, not owner-rig verified: the subscription reportedly
-        // expires after ~10 s (xr-meters re-issues every 9 s) and needs the
-        // `/xremote` keepalive (every ~8 s, already running via `connect`)
-        // alongside. Owner-rig step: capture a real meter blob and confirm
-        // the LE-i16 run shape (xr-meters skips 4 header bytes before the
-        // samples — transport parses from offset 0; reconcile on hardware).
-        session
-            .send(
-                addrs::METER_REQUEST,
-                vec![OscType::String(addrs::METER_SUBSCRIBE.to_string())],
-            )
+        self.subscribe_meters_with_interval(addrs::METER_RENEW_INTERVAL)
             .await
-            .map_err(|e| anyhow::anyhow!("meter subscribe: {e}"))?;
-        // ALL DYN (gate/comp GR) stream, same subscribe form with the
-        // `/meters/6` id (Behringer X AIR OSC doc fw 1.11 — NOT owner-rig
-        // verified). A send failure here is local socket I/O (UDP sends
-        // cannot fail remotely), so it propagates like the levels
-        // subscribe above. The DYN blobs the desk then streams decode via
-        // `ingest_dyn_message` into the `gate_gr` / `comp_gr` param reads;
-        // the shared hub only carries levels, so nothing else changes here.
-        session
-            .send(
-                addrs::METER_REQUEST,
-                vec![OscType::String(addrs::METER_DYN_SUBSCRIBE.to_string())],
-            )
-            .await
-            .map_err(|e| anyhow::anyhow!("dyn meter subscribe: {e}"))?;
-        Ok(session.subscribe_meters())
     }
 
     /// GR reads ride the param path (least invention: no trait change, no
@@ -610,6 +674,12 @@ mod tests {
         fx: StdMutex<HashMap<String, f32>>,
         meter_subscribe: StdMutex<Option<rosc::OscMessage>>,
         dyn_subscribe: StdMutex<Option<rosc::OscMessage>>,
+        /// Resubscribe tolerance counters: the renewal loop re-sends
+        /// `/meters` subscribes (and `/xremote`) on schedule, so the fake
+        /// counts every hit instead of asserting exactly-one.
+        meter_count: StdMutex<u64>,
+        dyn_count: StdMutex<u64>,
+        xremote_count: StdMutex<u64>,
     }
 
     impl FakeMixer {
@@ -627,6 +697,9 @@ mod tests {
                 fx: StdMutex::new(HashMap::new()),
                 meter_subscribe: StdMutex::new(None),
                 dyn_subscribe: StdMutex::new(None),
+                meter_count: StdMutex::new(0),
+                dyn_count: StdMutex::new(0),
+                xremote_count: StdMutex::new(0),
             });
             let worker = fake.clone();
             tokio::spawn(async move {
@@ -645,13 +718,19 @@ mod tests {
                     };
                     for msg in osc::flatten(packet) {
                         let reply: Option<Vec<u8>> = match (msg.addr.as_str(), msg.args.first()) {
-                            ("/xremote", _) => None,
+                            ("/xremote", _) => {
+                                *worker.xremote_count.lock().unwrap() += 1;
+                                None
+                            }
                             ("/meters", Some(OscType::String(id)))
                                 if id == addrs::METER_SUBSCRIBE =>
                             {
                                 // Documented subscribe form (T4): record it,
                                 // then stream blobs at ~50ms like the desk.
+                                // Resubscribes (renewal loop) just restart the
+                                // burst — the desk tolerates them, so does this fake.
                                 *worker.meter_subscribe.lock().unwrap() = Some(msg.clone());
+                                *worker.meter_count.lock().unwrap() += 1;
                                 let sock = worker.socket.clone();
                                 tokio::spawn(async move {
                                     for _ in 0..4 {
@@ -674,8 +753,10 @@ mod tests {
                                 // Documented ALL DYN subscribe (dyn_gr): record
                                 // it, then stream the documented blob shape
                                 // (ch1 gate 6 dB, ch1 comp 12 dB) like a desk
-                                // with dynamics engaged would.
+                                // with dynamics engaged would. Resubscribes
+                                // restart the burst, like the levels stream.
                                 *worker.dyn_subscribe.lock().unwrap() = Some(msg.clone());
+                                *worker.dyn_count.lock().unwrap() += 1;
                                 let sock = worker.socket.clone();
                                 tokio::spawn(async move {
                                     let mut m = dyn_gr::DynMeters {
@@ -1102,6 +1183,50 @@ mod tests {
         assert_eq!(
             sub.args,
             vec![OscType::String(addrs::METER_DYN_SUBSCRIBE.to_string())]
+        );
+    }
+
+    /// Renewal loop: `/xremote` + both `/meters` resubscribes go out on
+    /// schedule (INFERRED ~8 s production interval;
+    /// [`addrs::METER_RENEW_INTERVAL`]). Short 50 ms interval here keeps the
+    /// test fast; the fake tolerates resubscribes by restarting its blob
+    /// burst and counting every hit.
+    #[tokio::test]
+    async fn meter_renewal_resubscribes_on_schedule() {
+        use std::time::Duration;
+        assert_eq!(
+            addrs::METER_RENEW_INTERVAL,
+            Duration::from_secs(8),
+            "production renewal stays ~8s (INFERRED until rig confirms)"
+        );
+        let (driver, fake) = connected_driver().await;
+        // Session keepalive (`/xremote` every 8 s) fires immediately too —
+        // reset its counter so only the renewal loop is measured below.
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        *fake.xremote_count.lock().unwrap() = 0;
+        *fake.meter_count.lock().unwrap() = 0;
+        *fake.dyn_count.lock().unwrap() = 0;
+
+        let _rx = driver
+            .subscribe_meters_with_interval(Duration::from_millis(50))
+            .await
+            .unwrap();
+        // Initial subscribe + ~4 renewals in 250 ms.
+        tokio::time::sleep(Duration::from_millis(250)).await;
+        let levels = *fake.meter_count.lock().unwrap();
+        let dyns = *fake.dyn_count.lock().unwrap();
+        let keepalives = *fake.xremote_count.lock().unwrap();
+        assert!(
+            levels >= 3,
+            "expected >=3 /meters/1 subscribes (initial + renewals), saw {levels}"
+        );
+        assert!(
+            dyns >= 3,
+            "expected >=3 /meters/6 subscribes (initial + renewals), saw {dyns}"
+        );
+        assert!(
+            keepalives >= 3,
+            "expected >=3 /xremote renewals, saw {keepalives}"
         );
     }
 
