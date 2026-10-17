@@ -350,3 +350,13 @@ body { font-size: clamp(14px, 0.4vw + 13px, 16px); }
   #via { display: none; }
   #topbar.open .tgroup #via { display: block; flex: 1 1 100%; }
 }
+
+/* Console takeover: in Surface mode the surface carries its own status bar,
+   connect UI, SoF indicator and locks — the legacy app chrome hides. */
+#app.surface #topbar,
+#app.surface #views,
+#app.surface #auxrail,
+#app.surface #sofbanner,
+#app.surface #scenes,
+#app.surface #roster,
+#app.surface #locks { display: none; }
