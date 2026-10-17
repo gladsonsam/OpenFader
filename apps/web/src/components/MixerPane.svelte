@@ -1,6 +1,7 @@
 <script lang="ts">
   import { fly } from 'svelte/transition';
   import Strip from './Strip.svelte';
+  import { swipe } from '../lib/swipe';
   import { eqBandsFor, grFor } from '../lib/bands';
   import type { Strip as StripData } from '../lib/backend';
   import type { LayerDef } from '../lib/persist';
@@ -90,11 +91,30 @@
 
   const inSof = $derived(sofBus !== null);
   const builtin = $derived(layers.find((l) => l.id === layer)?.builtin ?? false);
+
+  // Phone stepper / swipe: step selection through this pane's cells.
+  function paneIds(): number[] {
+    const out: number[] = [];
+    for (const c of cells) if (c.kind === 'strip') out.push(c.s.ch);
+    return out;
+  }
+  function step(dir: -1 | 1): void {
+    const ids = paneIds();
+    if (!ids.length) return;
+    const at = ids.indexOf(selected);
+    const i = at < 0 ? (dir > 0 ? 0 : ids.length - 1) : (at + dir + ids.length) % ids.length;
+    const next = ids[i];
+    if (next !== undefined) onSelect(next);
+  }
 </script>
 
 <section class="mpane" class:sof={inSof} style={inSof ? `--sof: ${sofColor}` : ''} aria-label={`mixer pane ${label}`}>
   <div class="mprow">
     <span class="mplabel" title="independent pane: own layer + sends-on-fader mix">{label}</span>
+    <span class="pstep" aria-label={`step channels pane ${label}`}>
+      <button aria-label={`previous channel pane ${label}`} title="previous channel" onclick={() => step(-1)}>‹</button>
+      <button aria-label={`next channel pane ${label}`} title="next channel" onclick={() => step(1)}>›</button>
+    </span>
     <div class="mptabs" role="tablist" aria-label={`fader banks pane ${label}`}>
       {#each layers as l (l.id)}
         <button
@@ -133,7 +153,10 @@
     </div>
   {/if}
 
-  <div class="mpstrips">
+  <div
+    class="mpstrips"
+    use:swipe={step}
+  >
     {#if !cells.length}
       <div class="empty">empty bank — reset layout restores backend order</div>
     {:else}
@@ -141,7 +164,7 @@
         {#if c.kind === 'gap'}
           <div class="spacer" title="blank spacer"></div>
         {:else}
-          <div in:fly={{ y: 14, duration: 160, delay: Math.min(i, 8) * 25 }} class:masterpin={c.master}>
+          <div class="stripwrap" in:fly={{ y: 14, duration: 160, delay: Math.min(i, 8) * 25 }} class:masterpin={c.master}>
             {#if c.master}
               <div class="pinlabel" style={`background: ${sofColor}`}>MASTER</div>
             {/if}
@@ -217,4 +240,10 @@
   .mpsof b { color: var(--sof); font-size: 15px; }
   .mpsof button.exit { margin-left: auto; border-color: var(--sof); color: var(--sof); font-weight: 800; }
   .mpstrips { flex: 1; display: flex; gap: 8px; overflow-x: auto; padding: 12px 10px; min-height: 340px; }
+  .pstep { display: none; gap: 6px; }
+  .pstep button { font-size: 20px; font-weight: 800; padding: 0 16px; }
+  @media (max-width: 600px) {
+    .pstep { display: inline-flex; }
+    .mpstrips { scroll-snap-type: x mandatory; }
+  }
 </style>

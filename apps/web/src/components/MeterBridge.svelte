@@ -126,6 +126,17 @@
     display: flex; flex-direction: column; align-items: center; gap: 3px;
     background: var(--panel); cursor: pointer; touch-action: manipulation;
   }
+  /* Coarse pointers: full 44px targets so the bridge works as strip nav. */
+  @media (pointer: coarse) {
+    .mtap { min-height: var(--touch); min-width: var(--touch); padding: 6px 4px; }
+    .mbar { height: 48px; }
+    .mname { font-size: 11px; }
+  }
+  /* Phone: the bridge doubles as the horizontal strip nav (static — only
+     the topbar sticks, so bars can never overlap). */
+  @media (max-width: 600px) {
+    #mbridge .mcell { flex: 0 0 64px; }
+  }
   .mtap.clip { outline: 2px solid var(--red); }
   .mclip { font-size: 12px; line-height: 1; color: rgba(255, 45, 45, 0.25); }
   .mclip.lit { color: #ff2d2d; text-shadow: 0 0 8px #ff2d2d; }

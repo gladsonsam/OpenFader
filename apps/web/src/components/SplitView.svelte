@@ -59,7 +59,7 @@
   class:narrow
   bind:this={root}
   style={`--split: ${pos}%`}
-  aria-label={narrow ? 'dual mixer (stacked: second pane hidden on narrow screens)' : 'dual mixer'}
+  aria-label={narrow ? 'dual mixer (stacked: A above B)' : 'dual mixer'}
 >
   <section class="pane pane-a" aria-label="mixer pane A">
     {@render paneA()}
@@ -83,14 +83,17 @@
       onpointercancel={onUp}
       onkeydown={onKeys}
     ></div>
-    <section class="pane pane-b" aria-label="mixer pane B">
-      {@render paneB()}
-    </section>
   {/if}
+  <section class="pane pane-b" aria-label="mixer pane B">
+    {@render paneB()}
+  </section>
 </div>
 
 <style>
   .split { display: flex; gap: 0; align-items: stretch; padding: 10px; }
+  .split.narrow { flex-direction: column; gap: 10px; }
+  .split.narrow .pane-a, .split.narrow .pane-b { flex: none; width: 100%; }
+  .pane { min-width: 0; display: flex; }
   .pane { min-width: 0; display: flex; }
   .pane-a { flex: 0 0 var(--split); }
   .pane-b { flex: 1; }
