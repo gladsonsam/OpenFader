@@ -90,3 +90,7 @@ Notes:
 ## Meter renewal — HARDWARE VERIFIED 2026-10-18 ~01:30 AWST
 - Without renewals: ~5 blobs/12s (dribble). With /xremote + resubscribe every 8s: 601 blobs/30s = ~20/s (~50ms rate confirmed).
 - 8s METER_RENEW_INTERVAL is now the driver default. 10s expiry still suspected-not-proven; 8s gives margin either way.
+
+## Meter expiry — HARDWARE PROVEN 2026-10-18 ~00:50 AWST
+- One subscribe, no renewals: [200, 0, 0, 0, 0, 0, 0] blobs per 10s window over 70s. Stream dies at ~10s sharp.
+- 8s METER_RENEW_INTERVAL confirmed correct with margin. No longer INFERRED.
