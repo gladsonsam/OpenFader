@@ -11,6 +11,7 @@ use tokio::sync::{Mutex, broadcast};
 
 pub mod dyn_gr;
 pub mod fx;
+pub mod headamp;
 
 pub mod addrs {
     //! X-Air address table. The wire is 1-based with zero-padded two-digit
@@ -606,11 +607,75 @@ impl MixerDriver for XAirDriver {
     /// dB reduction `>= 0` from the last `/meters/6` blob and error when no
     /// blob has arrived yet. No GR query address exists (see
     /// [`crate::dyn_gr`]), so `set_param` for these ids stays unsupported.
+    ///
+    /// `gain` (dB) and `phantom` (bool) drive the channel preamps
+    /// (`/headamp/NN/…`, community-documented via xair-api-python — see
+    /// [`crate::headamp`]; NOT owner-rig verified). `set_param` mirrors
+    /// these plus the trait-default arms (defaults are not inheritable).
+    async fn set_param(
+        &self,
+        strip: StripId,
+        param: &str,
+        value: ParamValue,
+    ) -> anyhow::Result<()> {
+        match (param, value) {
+            ("fader", ParamValue::Float(v)) => self.set_fader(strip, v).await,
+            ("mute", ParamValue::Bool(m)) => self.set_mute(strip, m).await,
+            ("name", ParamValue::Text(n)) => self.set_name(strip, &n).await,
+            ("pan", ParamValue::Float(_)) => {
+                anyhow::bail!("{}: pan not supported", self.name())
+            }
+            ("gain", ParamValue::Float(db)) => {
+                let ch = self.check_channel(strip.0)?;
+                let wire = headamp::db_to_wire(db)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&headamp::headamp_gain(ch), vec![OscType::Float(wire)])
+                    .await
+            }
+            ("phantom", ParamValue::Bool(on)) => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(
+                        &headamp::headamp_phantom(ch),
+                        vec![headamp::phantom_arg(on)],
+                    )
+                    .await
+            }
+            (p, _) => anyhow::bail!("{}: unknown param {p:?}", self.name()),
+        }
+    }
+
     async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
         match param {
             "fader" => self.get_fader(strip).await.map(ParamValue::Float),
             "mute" => self.get_mute(strip).await.map(ParamValue::Bool),
             "name" => self.get_name(strip).await.map(ParamValue::Text),
+            "gain" => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                let reply = guard
+                    .as_ref()
+                    .unwrap()
+                    .query(&headamp::headamp_gain(ch))
+                    .await?;
+                headamp::wire_to_db(osc::fader_value(&reply)?).map(ParamValue::Float)
+            }
+            "phantom" => {
+                let ch = self.check_channel(strip.0)?;
+                let guard = self.session().await?;
+                let reply = guard
+                    .as_ref()
+                    .unwrap()
+                    .query(&headamp::headamp_phantom(ch))
+                    .await?;
+                headamp::phantom_is_on(&reply).map(ParamValue::Bool)
+            }
             "gate_gr" => self.cached_gr(strip, true).await.map(ParamValue::Float),
             "comp_gr" => self.cached_gr(strip, false).await.map(ParamValue::Float),
             _ => anyhow::bail!("{}: unknown param {param:?}", self.name()),
@@ -672,6 +737,11 @@ mod tests {
         names: StdMutex<HashMap<String, String>>,
         /// FX params answer bit-exact (no quantization, baseline §6 row 5).
         fx: StdMutex<HashMap<String, f32>>,
+        /// Headamp gains store the verbatim normalized wire float
+        /// (hardware quantization uncharacterized — see `crate::headamp`).
+        gains: StdMutex<HashMap<String, f32>>,
+        /// Headamp phantom switches store the verbatim int (`1`/`0`).
+        phantoms: StdMutex<HashMap<String, i32>>,
         meter_subscribe: StdMutex<Option<rosc::OscMessage>>,
         dyn_subscribe: StdMutex<Option<rosc::OscMessage>>,
         /// Resubscribe tolerance counters: the renewal loop re-sends
@@ -695,6 +765,8 @@ mod tests {
                 )])),
                 names: StdMutex::new(HashMap::new()),
                 fx: StdMutex::new(HashMap::new()),
+                gains: StdMutex::new(HashMap::new()),
+                phantoms: StdMutex::new(HashMap::new()),
                 meter_subscribe: StdMutex::new(None),
                 dyn_subscribe: StdMutex::new(None),
                 meter_count: StdMutex::new(0),
@@ -805,6 +877,23 @@ mod tests {
                                 worker.fx.lock().unwrap().insert(a.to_string(), *f);
                                 None
                             }
+                            // Headamp gain stores the verbatim normalized
+                            // wire float (quantization uncharacterized).
+                            (a, Some(OscType::Float(f)))
+                                if a.starts_with("/headamp/")
+                                    && a.ends_with("/gain") =>
+                            {
+                                worker.gains.lock().unwrap().insert(a.to_string(), *f);
+                                None
+                            }
+                            // Headamp phantom stores the verbatim int.
+                            (a, Some(OscType::Int(i)))
+                                if a.starts_with("/headamp/")
+                                    && a.ends_with("/phantom") =>
+                            {
+                                worker.phantoms.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
                             (a, Some(OscType::Int(i))) if a.ends_with("/mix/on") => {
                                 worker.ons.lock().unwrap().insert(a.to_string(), *i);
                                 None
@@ -845,6 +934,34 @@ mod tests {
                                 let v =
                                     worker.fx.lock().unwrap().get(a).copied().unwrap_or(0.0);
                                 Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
+                            }
+                            // Untouched headamp gains read back 0.5 wire
+                            // (= 24 dB); untouched phantom reads back off.
+                            (a, None)
+                                if a.starts_with("/headamp/")
+                                    && a.ends_with("/gain") =>
+                            {
+                                let v = worker
+                                    .gains
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0.5);
+                                Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
+                            }
+                            (a, None)
+                                if a.starts_with("/headamp/")
+                                    && a.ends_with("/phantom") =>
+                            {
+                                let v = worker
+                                    .phantoms
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0);
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
                             }
                             ("/info", _) => None,
                             _ => None,
@@ -1109,6 +1226,73 @@ mod tests {
         assert!(!driver.get_aux_mute().await.unwrap());
         driver.set_aux_name("COMP LR").await.unwrap();
         assert_eq!(driver.get_aux_name().await.unwrap(), "COMP LR");
+    }
+
+    /// Headamp gain/phantom loopback over UDP (`crate::headamp`,
+    /// community-documented via xair-api-python, NOT owner-rig verified):
+    /// dB gain maps linearly onto the wire float, phantom rides int 1/0.
+    #[tokio::test]
+    async fn driver_headamp_gain_phantom_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // StripId is 0-based: strip 0 drives wire `/headamp/01/…`.
+        driver
+            .set_param(StripId(0), "gain", ParamValue::Float(24.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(db) = driver.get_param(StripId(0), "gain").await.unwrap()
+        else {
+            panic!("headamp gain read back non-float");
+        };
+        // The fake stores verbatim; epsilon covers f32 conversion only —
+        // hardware quantization is uncharacterized (see `crate::headamp`).
+        assert!((db - 24.0).abs() < 0.05, "headamp gain readback {db}");
+        // Range and kind enforced locally, never sent.
+        assert!(
+            driver
+                .set_param(StripId(0), "gain", ParamValue::Float(61.0))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "gain", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+
+        driver
+            .set_param(StripId(0), "phantom", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "phantom").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        driver
+            .set_param(StripId(0), "phantom", ParamValue::Bool(false))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "phantom").await.unwrap(),
+            ParamValue::Bool(false)
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "phantom", ParamValue::Float(1.0))
+                .await
+                .is_err()
+        );
+
+        // Phantom strips stay local: no headamp past the model bound (T3).
+        assert!(
+            driver
+                .set_param(StripId(16), "gain", ParamValue::Float(24.0))
+                .await
+                .is_err()
+        );
+        assert!(driver.get_param(StripId(16), "phantom").await.is_err());
+        // Unknown params still rejected.
+        assert!(driver.get_param(StripId(0), "trim").await.is_err());
     }
 
     /// FX slots (`/fx/N/par/MM`, baseline §6 row 5): bit-exact loopback
