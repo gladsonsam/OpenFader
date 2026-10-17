@@ -64,7 +64,7 @@
 
 use std::{
     collections::HashMap,
-    path::PathBuf,
+    path::{Path as StdPath, PathBuf},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc,
@@ -1033,7 +1033,7 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>, name: Option<Stri
                 // GR follows at ~5 Hz (every 2nd meter tick), first
                 // GR_CHANNELS channels, bounded by the live strip count so
                 // phantom strips never get a frame.
-                if tick % 2 == 0 {
+                if tick.is_multiple_of(2) {
                     let n = levels.len().min(GR_CHANNELS);
                     for ch in 0..n {
                         let (gate, comp) = shared.gr_db(ch).await;
@@ -1153,7 +1153,7 @@ fn api_only() -> axum::response::Response {
         .into_response()
 }
 
-async fn read_index(dir: &PathBuf) -> axum::response::Response {
+async fn read_index(dir: &StdPath) -> axum::response::Response {
     match tokio::fs::read(dir.join("index.html")).await {
         Ok(bytes) => ([(header::CONTENT_TYPE, "text/html; charset=utf-8")], bytes).into_response(),
         Err(_) => (StatusCode::NOT_FOUND, Html("<h1>not found</h1>")).into_response(),
@@ -1170,7 +1170,7 @@ async fn static_file(
     // Fall back to index.html for unknown paths (SPA).
     match tokio::fs::read(dir.join(&path)).await {
         Ok(bytes) => {
-            return ([(header::CONTENT_TYPE, content_type(&path))], bytes).into_response();
+            ([(header::CONTENT_TYPE, content_type(&path))], bytes).into_response()
         }
         Err(_) => read_index(dir).await,
     }
@@ -1188,15 +1188,12 @@ pub fn resolve_static_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
             return Some(p);
         }
     }
-    for candidate in [
+    [
         PathBuf::from("ui"),
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../ui"),
-    ] {
-        if candidate.is_dir() {
-            return Some(candidate);
-        }
-    }
-    None
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_dir())
 }
 
 /// Single axum state for every route: WS/API share [`Shared`], static

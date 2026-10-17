@@ -122,8 +122,10 @@ async fn ws_sim_studio_preset() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let mut opts = openmix_serve::ServeOptions::default();
-    opts.preset = Some("studio".to_string());
+    let opts = openmix_serve::ServeOptions {
+        preset: Some("studio".to_string()),
+        ..Default::default()
+    };
     let server = tokio::spawn(openmix_serve::run(listener, opts));
 
     let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
@@ -241,15 +243,14 @@ async fn ws_sim_connect_fader_mute() {
                         saw_param = true;
                     }
                 }
-                Some("state") => {
+                Some("state")
                     if strip(&v, 1)
                         .get("fader")
                         .and_then(Value::as_f64)
                         .is_some_and(|f| (f - 0.25).abs() < 1e-6)
-                    {
+                    => {
                         saw_state = true;
                     }
-                }
                 _ => {}
             }
         }
@@ -496,15 +497,14 @@ async fn ws_scenes_capture_recall_delete() {
                         saw_param = true;
                     }
                 }
-                Some("state") => {
+                Some("state")
                     if strip(&v, 0)
                         .get("fader")
                         .and_then(Value::as_f64)
                         .is_some_and(|f| (f - cap_fader).abs() < 1e-6)
-                    {
+                    => {
                         saw_state = true;
                     }
-                }
                 _ => {}
             }
         }
