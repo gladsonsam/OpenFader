@@ -1,0 +1,117 @@
+# XR18 hardware baseline — FW 1.20
+
+Live-desk verification against the owner's XR18 at `192.168.40.123`
+("Home Studio", FW 1.20). Desk pingable, speakers OFF during write tests.
+
+- Date: 2026-10-17
+- Method: python3 stdlib UDP to port 10024 (X-Air OSC: pad-string address +
+  `","` empty typetag query, 1.5 s timeout per address). Scripts kept outside
+  the repo: `/tmp/xr18_probe.py`, `/tmp/xr18_probe2.py`,
+  `/tmp/xr18_probe3.py`, `/tmp/xr18_probe4.py`; raw results in
+  `/tmp/xr18_results.json`, `/tmp/xr18_round{2,3,4}.json`.
+- Scope rule for this doc: reads always; writes only as same-value roundtrips
+  in phase 1 (read baseline), full write tests in phase 2 with restore.
+
+## 1. Desk identity
+
+| Query   | Reply tags | Values (in order)                                     |
+|---------|------------|-------------------------------------------------------|
+| `/xinfo`  | `,ssss`    | `192.168.40.123`, `Home Studio`, `XR18`, `1.20`       |
+| `/info`   | `,ssss`    | `V0.04`, `Home Studio`, `XR18`, `1.20`                |
+| `/status` | `,sss`     | `active`, `192.168.40.123`, `Home Studio`             |
+
+## 2. Strip snapshot (baseline values — restore target)
+
+`/ch/NN/mix/fader` → `,f`; `/ch/NN/mix/on` → `,i` (1 = ON/unmuted,
+0 = OFF/muted); `/ch/NN/config/name` → `,s`.
+
+| Ch | Fader    | On | Name     | Ch | Fader    | On | Name     |
+|----|----------|----|----------|----|----------|----|----------|
+| 01 | 0.197458 | 0  | BASS     | 09 | 0.000000 | 1  | DRUM L   |
+| 02 | 0.000000 | 0  | (empty)  | 10 | 0.482893 | 1  | DRUM R   |
+| 03 | 0.337243 | 0  | (empty)  | 11 | 0.438905 | 0  | KEYS L   |
+| 04 | 0.348974 | 0  | VOX      | 12 | 0.438905 | 0  | KEYS R   |
+| 05 | 0.375367 | 1  | VOX      | 13 | 0.339198 | 0  | AC GTR   |
+| 06 | 0.000000 | 0  | (empty)  | 14 | 0.000000 | 0  | (empty)  |
+| 07 | 0.434995 | 1  | GTR L    | 15 | 0.524927 | 0  | Abelton  |
+| 08 | 0.434995 | 1  | GTR R    | 16 | 0.524927 | 0  | Abelton  |
+
+| Strip        | Fader    | On | Name    |
+|--------------|----------|----|---------|
+| `/lr`        | 0.749756 | 1  | (empty) |
+| `/rtn/aux`   | 0.457478 | 1  | COMP LR |
+| `/bus/1`     | 0.749756 | 1  | COMP L  |
+| `/bus/2`     | 0.749756 | 1  | COMP R  |
+| `/bus/3`     | 0.749756 | 1  | (empty) |
+| `/bus/4`     | 1.000000 | 1  | DRUM    |
+| `/bus/5`     | 1.000000 | 1  | KEYS    |
+| `/bus/6`     | 1.000000 | 1  | VOX     |
+| `/dca/1..4`  | 0.749756 | 1  | n/a     |
+
+Spot reads: `/fx/1/par/01` → `,f 0.1`; `/ch/02/mix/01/level` → `,f 0.2`.
+
+## 3. Verified driver behaviors (hardware agrees)
+
+- V1: `/ch/NN/mix/fader` (2-digit NN, 01–16) get/set float 0.0–1.0.
+- V2: `/ch/NN/mix/on` get/set int; 1 = on/unmuted, 0 = off/muted.
+  Matches `osc::on_arg` / `mute_is_muted` in `crates/transport/src/osc.rs`.
+- V3: `/ch/NN/config/name` get/set string (incl. empty string).
+- V4: Mains live at `/lr/mix/fader` (`,f` 0.749756), `/lr/mix/on` (`,i` 1),
+  `/lr/config/name` (`,s` empty). X32-style `/main/st/mix/fader` and
+  `/main/st/mix/on` get NO reply (re-queried with 1.5 s timeout).
+- V5: Same-value roundtrip writes succeed: `/ch/01/mix/fader`,
+  `/ch/01/mix/on`, `/ch/01/config/name` (read → write same → read back
+  identical). Proves the write path with zero audible change.
+- V6: CLI rebuilds clean (`cargo build -p openmix-cli`).
+
+## 4. Discrepancies — TODOs for driver fixes
+
+- [ ] T1 (mains address): driver previously used X32-style `/main/st/*`;
+  hardware is silent there, `/lr/*` is correct. Fix exists only as
+  **uncommitted working-tree changes** (`crates/proto-xair/src/lib.rs`,
+  `docs/xair-protocol.md`); commit `xair: mains via /lr` is **absent**
+  from `git log`. Commit it.
+- [ ] T2 (bus index width): driver `bus_fader()` emits zero-padded
+  `/bus/01/mix/fader` — hardware is **silent** on all `/bus/01..06/*`.
+  Single-digit `/bus/1/mix/fader`, `/bus/1/mix/on`, `/bus/1/config/name`
+  reply correctly for buses 1–6. Driver must emit `/bus/1/…` (channels
+  stay 2-digit `/ch/01/…`; the widths differ per strip kind).
+- [ ] T3 (channel count): `/ch/17/*` and `/ch/18/*` (fader/on/name) get NO
+  reply — XR18 is a 16-channel desk (stereo aux returns via `/rtn/aux`).
+  Driver `MAX_CHANNEL = 32` is an X32-ism; needs a per-model channel count
+  (XR18: 16 + rtn/aux) so `list`/sweeps don't query phantom strips.
+- [ ] T4 (meters): desk sent **zero** meter blobs for every subscribe
+  variant tried: query `/xremote`, bare `/xremote` (no typetag, XAirEdit
+  style) with 2 s × 3 keepalive windows, bare/query `/meters/0`,
+  bare/query `/meters/1`, and a 10 s bare-`/xremote` listen. Driver
+  `METER_SUBSCRIBE = "/meters/1"` + immediate-blob expectation (as in the
+  `proto-xair` fake, which answers `/meters/1` instantly) is unverified
+  against hardware. Meter streaming path needs a rethink (capture what
+  XAirEdit actually sends, or treat meters as best-effort/empty).
+- [ ] T5 (`query_info` field mapping): driver `info_from_strings` maps
+  `model = strings[0]`, `firmware = strings[1]`, `name = strings[2]`.
+  Hardware `/info` returns `[V0.04, Home Studio, XR18, 1.20]`, i.e. correct
+  mapping is `name = [1]`, `model = [2]`, `firmware = [3]` (current code
+  yields model=`V0.04`, firmware=`Home Studio`, name=`XR18` — all wrong).
+- [ ] T6 (snapshot/CLI): `XAirDriver` has no `snapshot()` impl, so
+  `openmix-cli --driver xair --addr 192.168.40.123 list` fails with
+  `Error: xair: snapshot not supported` against live hardware. Either
+  implement snapshot from per-strip queries (respecting T2/T3 address
+  rules) or give the CLI per-strip get commands (current `fader`/`mute`
+  commands are set-only; `name` is sim-only).
+- [ ] T7 (send on/off): `/ch/02/mix/01/level` replies (`,f` 0.2) but
+  `/ch/02/mix/01/on` is silent. Per-send on/off may not exist on X-Air
+  (check pre/post tap address, e.g. `/ch/02/mix/01/pre`, before adding
+  send-mute to the driver).
+
+## 5. Deliberately NOT touched (phase 1)
+
+Network/config surface: IP, routing, FW update, init/reset — never probed.
+`/main/st/*` silence confirmed by absence of reply only. No scene recall,
+no FX writes, no value-changing writes of any kind in phase 1. Sibling's
+uncommitted edits (`crates/proto-xair/src/lib.rs`, `docs/xair-protocol.md`)
+were read but not modified, not staged, not committed.
+
+## 6. Phase 2 — full write tests (speakers OFF, owner-approved)
+
+TBD — recorded here after write tests + restore.
