@@ -1,0 +1,22 @@
+[package]
+name = "openmix-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "openmix-cli"
+path = "src/main.rs"
+
+[dependencies]
+openmix-core = { path = "../core" }
+openmix-sim = { path = "../sim" }
+openmix-proto-xair = { path = "../proto-xair" }
+openmix-proto-dl32s = { path = "../proto-dl32s" }
+openmix-transport = { path = "../transport" }
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+openmix-core = { path = "../core" }
+openmix-sim = { path = "../sim" }
