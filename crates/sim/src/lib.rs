@@ -1,5 +1,6 @@
 //! Offline fake mixer for UI dev: 32 channels + 8 buses, fake meters.
-use openmix_core::{validate_fader, ChannelStrip, MeterFrame, MixerDriver, MixerSnapshot, StripId};
+use openmix_core::{validate_fader, ChannelStrip, MeterFrame, MixerDriver, MixerSnapshot, ParamValue, StripId};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -104,8 +105,93 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
     v
 }
 
+/// Expected value kind for one canonical detail-panel field.
+///
+/// Vocabulary mirrors the `openmix-proto-dl32s` input-strip address table:
+/// `gain`, `phantom`, `pan`, `hpf_*`, `gate_*`, `comp_*`, `eq{1..4}_*`,
+/// `aux{1..8}_*`, `fx{1..4}_*`, plus mute-group/view/subgroup/VCA membership.
+/// Enum/int wire fields accept [`ParamValue::Float`] (whole numbers), the same
+/// convention as the DL32S driver; sim stores everything bit-exact.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ParamKind {
+    Float,
+    Bool,
+    Text,
+}
+
+fn canonical_param_kind(param: &str) -> Option<ParamKind> {
+    match param {
+        "fader" | "pan" | "trim" | "gain" | "hpf_freq" | "gate_threshold" | "gate_attack"
+        | "gate_release" | "gate_hold" | "gate_range" | "comp_gain" | "comp_threshold"
+        | "comp_attack" | "comp_release" | "comp_ratio" => Some(ParamKind::Float),
+        "mute" | "polarity" | "main_assign" | "stereo_link" | "phantom" | "hpf_on"
+        | "gate_on" | "comp_on" | "eq_on" => Some(ParamKind::Bool),
+        "name" => Some(ParamKind::Text),
+        // Enum/int wire fields (accepted as whole-number floats).
+        "source_a" | "source_b" | "source_select" | "icon" | "colour" | "unknown_16"
+        | "gate_mode" | "comp_mode" | "comp_knee" | "eq_mode" | "eq_bands" => {
+            Some(ParamKind::Float)
+        }
+        _ => patterned_param_kind(param),
+    }
+}
+
+/// Indexed families of the canonical field set: `eq{1..4}_*`,
+/// `aux{1..8}_*`, `fx{1..4}_*`, mute-group/view/subgroup/VCA membership.
+/// Out-of-family indices (`eq5_gain`, `aux9_level`, …) are NOT canonical and
+/// return `None` so they keep failing as unknown params.
+fn patterned_param_kind(param: &str) -> Option<ParamKind> {
+    // EQ bands: eq{1..4}_{gain,freq,q} floats; eq{2..4}_type enum-as-float
+    // (band 1 has no filter-type word on the wire).
+    if let Some(rest) = param.strip_prefix("eq") {
+        let (band, suffix) = rest.split_once('_')?;
+        let band: u32 = band.parse().ok()?;
+        if !(1..=4).contains(&band) {
+            return None;
+        }
+        return match suffix {
+            "gain" | "freq" | "q" => Some(ParamKind::Float),
+            "type" if band != 1 => Some(ParamKind::Float),
+            _ => None,
+        };
+    }
+    // Sends: aux{1..8}_{level,mute,unknown}, fx{1..4}_{level,mute}.
+    for (prefix, count) in [("aux", 8u32), ("fx", 4u32)] {
+        if let Some(rest) = param.strip_prefix(prefix) {
+            let (n, suffix) = rest.split_once('_')?;
+            let n: u32 = n.parse().ok()?;
+            if !(1..=count).contains(&n) {
+                return None;
+            }
+            return match suffix {
+                "level" | "unknown" => Some(ParamKind::Float),
+                "mute" => Some(ParamKind::Bool),
+                _ => None,
+            };
+        }
+    }
+    // Membership rows: mutegroup/view/sub/vca{1..6} bools.
+    for prefix in ["mutegroup", "view", "sub", "vca"] {
+        if let Some(n) = param.strip_prefix(prefix) {
+            let n: u32 = n.parse().ok()?;
+            return if (1..=6).contains(&n) {
+                Some(ParamKind::Bool)
+            } else {
+                None
+            };
+        }
+    }
+    None
+}
+
 pub struct SimDriver {
     strips: RwLock<Vec<ChannelStrip>>,
+    /// Per-strip detail-panel state (`gain`, `phantom`, `eq1_gain`, …): the
+    /// canonical DL32S field set, stored bit-exact (no wire quantization in
+    /// sim). Strip-backed params (`fader`, `mute`, `name`, `pan`) live in
+    /// [`ChannelStrip`] and are intentionally NOT mirrored here; `get_param`
+    /// reads those from the strip so the two views cannot disagree.
+    params: RwLock<Vec<HashMap<String, ParamValue>>>,
     main: RwLock<f32>,
     tick: AtomicU64,
     connected: RwLock<bool>,
@@ -122,6 +208,7 @@ impl SimDriver {
     pub fn with_preset(preset: SimPreset) -> Self {
         Self {
             strips: RwLock::new(default_strips_for(preset)),
+            params: RwLock::new(vec![HashMap::new(); SIM_STRIPS]),
             main: RwLock::new(0.8),
             tick: AtomicU64::new(0),
             connected: RwLock::new(false),
@@ -255,7 +342,71 @@ impl MixerDriver for SimDriver {
         Ok(*self.main.read().expect("sim main poisoned"))
     }
 
+    async fn set_param(
+        &self,
+        strip: StripId,
+        param: &str,
+        value: ParamValue,
+    ) -> anyhow::Result<()> {
+        let i = self.idx(strip)?;
+        // Strip-backed params stay the single source of truth in ChannelStrip.
+        match (param, &value) {
+            ("fader", ParamValue::Float(v)) => return self.set_fader(strip, *v).await,
+            ("mute", ParamValue::Bool(m)) => return self.set_mute(strip, *m).await,
+            ("name", ParamValue::Text(n)) => return self.set_name(strip, n).await,
+            ("pan", ParamValue::Float(v)) => {
+                if !v.is_finite() {
+                    anyhow::bail!("sim: pan must be finite, got {v}");
+                }
+                self.write()[i].pan = *v;
+                return Ok(());
+            }
+            _ => {}
+        }
+        let kind = canonical_param_kind(param)
+            .ok_or_else(|| anyhow::anyhow!("sim: unknown param {param:?}"))?;
+        let kind_ok = matches!(
+            (kind, &value),
+            (ParamKind::Float, ParamValue::Float(_))
+                | (ParamKind::Bool, ParamValue::Bool(_))
+                | (ParamKind::Text, ParamValue::Text(_))
+        );
+        if !kind_ok {
+            anyhow::bail!("sim: {param} expects {kind:?}, got {value:?}");
+        }
+        if let ParamValue::Float(v) = &value {
+            if !v.is_finite() {
+                anyhow::bail!("sim: {param} must be finite, got {v}");
+            }
+        }
+        // Bit-exact store: no dB conversion, no quantization in sim.
+        self.params.write().expect("sim params poisoned")[i].insert(param.to_string(), value);
+        Ok(())
+    }
+
+    async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
+        let i = self.idx(strip)?;
+        match param {
+            "fader" => return self.get_fader(strip).await.map(ParamValue::Float),
+            "mute" => return self.get_mute(strip).await.map(ParamValue::Bool),
+            "name" => return self.get_name(strip).await.map(ParamValue::Text),
+            "pan" => return Ok(ParamValue::Float(self.read()[i].pan)),
+            _ => {}
+        }
+        canonical_param_kind(param)
+            .ok_or_else(|| anyhow::anyhow!("sim: unknown param {param:?}"))?;
+        self.params.read().expect("sim params poisoned")[i]
+            .get(param)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("sim: {param} has no value yet"))
+    }
+
     async fn snapshot(&self) -> anyhow::Result<MixerSnapshot> {
+        // Strip-backed params (fader/mute/name/pan) ride along in the strips.
+        // Extended detail params (gain, phantom, …) are live driver state in
+        // the per-strip map: `MixerSnapshot` (a core type) carries strips
+        // only, so `recall` restores strips and leaves the map intact rather
+        // than clobbering detail state it cannot represent.
         Ok(MixerSnapshot {
             strips: self.read().clone(),
         })
@@ -290,5 +441,185 @@ impl MixerDriver for SimDriver {
         let n = self.read().len();
         let levels = (0..n).map(|i| self.meter_level(i, tick)).collect();
         MeterFrame { levels }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn param_roundtrip_float_gain() {
+        let d = SimDriver::new();
+        // Bit-exact: values that dB quantization would mangle survive intact.
+        for v in [12.5f32, 0.1, -19.95, 60.0] {
+            d.set_param(StripId(0), "gain", ParamValue::Float(v))
+                .await
+                .unwrap();
+            assert_eq!(
+                d.get_param(StripId(0), "gain").await.unwrap(),
+                ParamValue::Float(v),
+                "gain {v}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn param_roundtrip_bool_phantom() {
+        let d = SimDriver::new();
+        d.set_param(StripId(3), "phantom", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            d.get_param(StripId(3), "phantom").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        d.set_param(StripId(3), "phantom", ParamValue::Bool(false))
+            .await
+            .unwrap();
+        assert_eq!(
+            d.get_param(StripId(3), "phantom").await.unwrap(),
+            ParamValue::Bool(false)
+        );
+    }
+
+    #[tokio::test]
+    async fn param_roundtrip_text_name() {
+        let d = SimDriver::new();
+        d.set_param(StripId(0), "name", ParamValue::Text("Kick".into()))
+            .await
+            .unwrap();
+        assert_eq!(
+            d.get_param(StripId(0), "name").await.unwrap(),
+            ParamValue::Text("Kick".into())
+        );
+        // Strip-backed: the generic param and the dedicated accessor agree.
+        assert_eq!(d.get_name(StripId(0)).await.unwrap(), "Kick");
+    }
+
+    #[tokio::test]
+    async fn param_covers_detail_panel_families() {
+        let d = SimDriver::new();
+        let s = StripId(1);
+        // One field per detail-panel family: hpf, gate, comp, eq, aux, fx,
+        // plus pan and an enum-as-float (eq2_type).
+        let fields: &[(&str, ParamValue)] = &[
+            ("pan", ParamValue::Float(-0.25)),
+            ("hpf_on", ParamValue::Bool(true)),
+            ("hpf_freq", ParamValue::Float(80.0)),
+            ("gate_on", ParamValue::Bool(true)),
+            ("gate_threshold", ParamValue::Float(-30.0)),
+            ("comp_on", ParamValue::Bool(true)),
+            ("comp_ratio", ParamValue::Float(4.0)),
+            ("eq_on", ParamValue::Bool(true)),
+            ("eq1_gain", ParamValue::Float(3.0)),
+            ("eq4_freq", ParamValue::Float(12000.0)),
+            ("eq2_q", ParamValue::Float(1.4)),
+            ("eq2_type", ParamValue::Float(1.0)),
+            ("aux1_level", ParamValue::Float(-10.0)),
+            ("aux1_mute", ParamValue::Bool(true)),
+            ("fx2_level", ParamValue::Float(-20.0)),
+            ("fx2_mute", ParamValue::Bool(false)),
+            ("mutegroup1", ParamValue::Bool(true)),
+        ];
+        for (f, v) in fields {
+            d.set_param(s, f, v.clone())
+                .await
+                .unwrap_or_else(|e| panic!("set {f}: {e}"));
+        }
+        for (f, v) in fields {
+            assert_eq!(
+                d.get_param(s, f).await.unwrap(),
+                *v,
+                "roundtrip {f}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn param_snapshot_includes_params() {
+        let d = SimDriver::new();
+        let s = StripId(0);
+        d.set_param(s, "gain", ParamValue::Float(12.5))
+            .await
+            .unwrap();
+        d.set_param(s, "phantom", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        d.set_param(s, "name", ParamValue::Text("Kick".into()))
+            .await
+            .unwrap();
+        d.set_param(s, "pan", ParamValue::Float(-0.25))
+            .await
+            .unwrap();
+        let snap = d.snapshot().await.unwrap();
+        // Strip-backed params ride along in the snapshot strips, bit-exact.
+        assert_eq!(snap.strips[0].name, "Kick");
+        assert_eq!(snap.strips[0].pan, -0.25);
+        // A snapshot/recall cycle keeps detail params readable and exact
+        // (recall restores strips without clobbering the param map).
+        d.recall(&snap).await.unwrap();
+        assert_eq!(
+            d.get_param(s, "gain").await.unwrap(),
+            ParamValue::Float(12.5)
+        );
+        assert_eq!(
+            d.get_param(s, "phantom").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        assert_eq!(
+            d.get_param(s, "name").await.unwrap(),
+            ParamValue::Text("Kick".into())
+        );
+        assert_eq!(
+            d.get_param(s, "pan").await.unwrap(),
+            ParamValue::Float(-0.25)
+        );
+    }
+
+    #[tokio::test]
+    async fn param_rejects_unknown_and_wrong_kind() {
+        let d = SimDriver::new();
+        let s = StripId(0);
+        for bad in ["nope", "eq5_gain", "aux9_level", "fx5_mute", "eq1_type"] {
+            let err = d
+                .set_param(s, bad, ParamValue::Float(1.0))
+                .await
+                .unwrap_err()
+                .to_string();
+            assert!(err.contains("unknown"), "{bad}: {err}");
+            let err = d.get_param(s, bad).await.unwrap_err().to_string();
+            assert!(err.contains("unknown"), "{bad}: {err}");
+        }
+        // Wrong value kind per field kind.
+        let err = d
+            .set_param(s, "gain", ParamValue::Bool(true))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Float"), "{err}");
+        let err = d
+            .set_param(s, "phantom", ParamValue::Float(1.0))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("Bool"), "{err}");
+        // Non-finite floats rejected; unset params read back as missing.
+        assert!(d
+            .set_param(s, "gain", ParamValue::Float(f32::NAN))
+            .await
+            .is_err());
+        let err = d
+            .get_param(StripId(5), "gain")
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("no value yet"), "{err}");
+        // Out-of-range strips still error.
+        assert!(d
+            .set_param(StripId(99), "gain", ParamValue::Float(1.0))
+            .await
+            .is_err());
+        assert!(d.get_param(StripId(99), "gain").await.is_err());
     }
 }
