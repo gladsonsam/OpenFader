@@ -24,6 +24,16 @@
     serializeShowFile,
   } from '../lib/showFile';
   import type { ShowFile } from '../lib/showFile';
+  import {
+    BACKUP_FILE_NAME,
+    buildBackupFile,
+    parseBackupFileText,
+    previewBackup,
+    readLiveEntries,
+    restoreToLocalStorage,
+    serializeBackupFile,
+  } from '../lib/backup';
+  import type { BackupFile } from '../lib/backup';
 
   /** Ordered library of scenes (cf. core Show). */
   type Show = ShowLib;
@@ -111,6 +121,10 @@
   let importFile: ShowFile | null = $state(null); // validated pick, awaiting merge
   let importError: string | null = $state(null); // last pick rejected: show, don't crash
   let fileInput: HTMLInputElement | undefined = $state(undefined);
+  let backupFile: BackupFile | null = $state(null); // validated backup, awaiting restore
+  let backupWarnings: string[] = $state([]); // unknown keys kept aside
+  let backupError: string | null = $state(null); // last backup pick rejected
+  let backupInput: HTMLInputElement | undefined = $state(undefined);
 
   /**
    * Server wins on conflicts; local-only shows (created offline) are kept.
@@ -426,6 +440,66 @@
   }
 
   const importPreview = $derived(importFile ? previewShowFile(importFile) : null);
+
+  /** Export every `openmix.*` setting (layers, prefs, shows cache) as one file. */
+  function exportBackup(): void {
+    download(
+      BACKUP_FILE_NAME,
+      serializeBackupFile(buildBackupFile(readLiveEntries(), { app: APP_VERSION })),
+    );
+  }
+
+  /** Validate a picked backup; preview on success, reject cleanly otherwise. */
+  async function onPickBackup(e: Event): Promise<void> {
+    backupFile = null;
+    backupWarnings = [];
+    backupError = null;
+    try {
+      const input = e.target as HTMLInputElement | null;
+      const picked = input?.files?.[0];
+      if (!picked) return;
+      const text = await picked.text();
+      const res = parseBackupFileText(text);
+      if (!res.ok) {
+        backupError = res.error;
+        tell(`backup rejected (${res.error})`);
+        return;
+      }
+      backupFile = res.file;
+      backupWarnings = res.warnings;
+      tell(`checked "${picked.name}" — confirm to restore`);
+    } catch (err) {
+      backupError = `could not read that file (${errMsg(err)})`;
+    } finally {
+      if (backupInput) backupInput.value = ''; // same file re-pickable
+    }
+  }
+
+  /** Restore the validated backup (validate-all-then-write; unknown keys stay aside). */
+  function confirmBackup(): void {
+    if (!backupFile) return;
+    const { applied, skippedUnknown } = restoreToLocalStorage(backupFile);
+    const n = applied.length;
+    backupFile = null;
+    backupWarnings = [];
+    // Reload the shows cache view so the restored library shows immediately.
+    shows = loadShows();
+    if (!shows.some((s) => s.name === activeName)) activeName = shows[0]?.name ?? '';
+    persist();
+    tell(
+      skippedUnknown.length
+        ? `restored ${n} setting${n === 1 ? '' : 's'} (${skippedUnknown.length} unknown kept aside)`
+        : `restored ${n} setting${n === 1 ? '' : 's'}`,
+    );
+  }
+
+  function cancelBackup(): void {
+    backupFile = null;
+    backupWarnings = [];
+    backupError = null;
+  }
+
+  const backupPreview = $derived(backupFile ? previewBackup(backupFile) : null);
 </script>
 
 <div id="showedit">
@@ -537,6 +611,39 @@
       <div class="editrow">
         <button onclick={confirmImport} title="add as new show(s); existing shows are never overwritten">import as new</button>
         <button class="del" onclick={cancelImport}>cancel</button>
+      </div>
+    </div>
+  {/if}
+
+  <div class="editrow">
+    <button onclick={exportBackup} title="download all app settings (layers, prefs, shows cache) as one file">export settings</button>
+    <label class="filebtn" title="pick a settings backup to preview and restore">
+      restore
+      <input
+        type="file"
+        accept="application/json,.json"
+        bind:this={backupInput}
+        onchange={(e) => void onPickBackup(e)}
+        aria-label="restore settings backup"
+      />
+    </label>
+  </div>
+  {#if backupError}
+    <div class="ioerr" role="alert">{backupError}</div>
+  {/if}
+  {#if backupFile && backupPreview}
+    <div class="preview" role="group" aria-label="settings restore preview">
+      <div class="pvline">
+        <b>{backupPreview.keys} setting{backupPreview.keys === 1 ? '' : 's'}</b>
+        <span class="scope">{backupPreview.bytes} bytes</span>
+      </div>
+      <div class="pvnames">{backupPreview.entries.filter((e) => e.known).map((e) => `${e.key} (${e.bytes}B)`).join(' · ')}</div>
+      {#if backupWarnings.length}
+        <div class="hint">{backupWarnings.join(' ')}</div>
+      {/if}
+      <div class="editrow">
+        <button onclick={confirmBackup} title="overwrite local settings with this backup">restore settings</button>
+        <button class="del" onclick={cancelBackup}>cancel</button>
       </div>
     </div>
   {/if}
