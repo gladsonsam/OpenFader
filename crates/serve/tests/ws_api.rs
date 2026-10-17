@@ -196,6 +196,25 @@ async fn ws_sim_connect_fader_mute() {
         );
     }
 
+    // GR: one message per channel at ~5 Hz (every 2nd meter tick), first
+    // 16 channels; gate/comp are dB reduction >= 0 (sim has no GR source,
+    // so the relay sends idle 0.0 — still proves the frames flow).
+    let frame = next_typed(&mut rx, "gr").await;
+    let ch = frame
+        .get("ch")
+        .and_then(Value::as_u64)
+        .expect("gr carries ch");
+    assert!(ch < 16, "gr capped at first 16 channels, got ch{ch}");
+    for key in ["gate", "comp"] {
+        let v = frame
+            .get(key)
+            .and_then(Value::as_f64)
+            .unwrap_or_else(|| panic!("gr carries {key}"));
+        assert!(
+            v >= 0.0,
+            "gr {key} is dB reduction >= 0, got {v}"
+        );
+    }
     // Bad command gets an error frame, connection stays alive.
     tx.send(Message::Text(json!({"cmd":"bogus"}).to_string()))
         .await
