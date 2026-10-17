@@ -14,10 +14,13 @@
 //! ```json
 //! {"type":"state","driver":"sim","strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}
 //! {"type":"meters","levels":[0.1,0.2]}
+//! {"type":"spectrum","ch":0,"bins":[...64 floats...]}
 //! ```
 //!
 //! `state` is sent on connect and after every mutation; `meters` ticks at
-//! ~10 Hz. Unknown/invalid commands get `{"type":"error","message":"..."}`.
+//! ~10 Hz. One `spectrum` message per channel per tick follows each `meters`
+//! tick (see [`SPECTRUM_CHANNELS`]). Unknown/invalid commands get
+//! `{"type":"error","message":"..."}`.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -32,12 +35,24 @@ use axum::{
     Json, Router,
 };
 use futures::{SinkExt, StreamExt};
-use openmix_core::{MixerDriver, ParamValue, StripId};
+use openmix_core::{rta::RtaProcessor, MeterFrame, MixerDriver, ParamValue, StripId};
 use serde_json::{json, Value};
 use tokio::{
     net::TcpListener,
     sync::{broadcast, RwLock},
 };
+
+/// Max channels with per-tick spectrum output (first N channels only).
+///
+/// 16 covers a full drum/band layer on typical 16/24/32ch surfaces while
+/// keeping the ~10 Hz WS fanout bounded: 16 msgs x 64 floats/tick stays
+/// well under one MTU-friendly JSON burst per tick, and the per-client
+/// naive-DFT cost (128-pt, no `fft` feature needed — `RtaProcessor` falls
+/// back to an identical O(N^2) path) is ~1.3M flops/s, negligible next to
+/// the socket writes. Channels beyond this cap still stream `meters`
+/// levels; raise the cap only with a matching client-side subscription
+/// filter so idle 32ch surfaces don't 2x the broadcast bytes.
+pub const SPECTRUM_CHANNELS: usize = 16;
 
 /// Startup options for [`run`].
 #[derive(Clone, Debug)]
@@ -129,14 +144,20 @@ impl Shared {
         json!({"type":"state","driver":name,"strips":strips})
     }
 
-    /// Current `meters` message for the active driver (~10 Hz tick).
-    async fn meters_message(&self) -> Value {
-        let levels = match self.active_name().await.as_str() {
+    /// Current meter levels for the active driver (one entry per strip).
+    async fn meter_levels(&self) -> Vec<f32> {
+        match self.active_name().await.as_str() {
             "xair" => self.xair.poll_meters().levels,
             "dl32s" => self.dl32s.poll_meters().levels,
             _ => self.sim.poll_meters().levels,
-        };
-        json!({"type":"meters","levels":levels})
+        }
+    }
+
+    /// Current `meters` message for the active driver (~10 Hz tick).
+    #[allow(dead_code)]
+    async fn meters_message(&self) -> Value {
+        let levels = self.meter_levels().await;
+        meters_message_for(&levels)
     }
 
     /// Apply one client command. Broadcasts a state refresh on success.
@@ -222,6 +243,16 @@ async fn snapshot_strips(d: &impl MixerDriver) -> Vec<Value> {
     }
 }
 
+fn meters_message_for(levels: &[f32]) -> Value {
+    json!({"type":"meters","levels":levels})
+}
+
+/// One `spectrum` message for channel `ch` (see `Spectrum.svelte`):
+/// `{"type":"spectrum","ch":N,"bins":[...64 floats in 0..1...]}`.
+fn spectrum_message(ch: usize, bins: &[f32]) -> Value {
+    json!({"type":"spectrum","ch":ch,"bins":bins})
+}
+
 fn channel_arg(msg: &Value) -> anyhow::Result<StripId> {
     let ch = msg
         .get("ch")
@@ -252,6 +283,11 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
         return;
     }
     let mut state_rx = shared.state_tx.subscribe();
+    // Per-connection RTA: fed by the same meter frames broadcast on the
+    // ~10 Hz tick below (no new ports/threads — spectrum is derived
+    // per-socket from the already-polled levels). Starts empty and grows
+    // to the mixer width on the first frame.
+    let mut rta = RtaProcessor::new(0);
     let mut meters = tokio::time::interval(std::time::Duration::from_millis(100));
     // Skip the immediate first tick so a fresh client gets state first.
     meters.tick().await;
@@ -277,8 +313,21 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
                 }
             }
             _ = meters.tick() => {
-                let m = shared.meters_message().await;
-                if tx.send(Message::Text(m.to_string())).await.is_err() {
+                let levels = shared.meter_levels().await;
+                rta.push_frame(&MeterFrame { levels: levels.clone() });
+                if tx.send(Message::Text(meters_message_for(&levels).to_string())).await.is_err() {
+                    break;
+                }
+                // Spectrum follows meters, first SPECTRUM_CHANNELS channels.
+                let mut dead = false;
+                for (ch, _) in levels.iter().enumerate().take(SPECTRUM_CHANNELS) {
+                    let bins = rta.spectrum(ch);
+                    if tx.send(Message::Text(spectrum_message(ch, &bins).to_string())).await.is_err() {
+                        dead = true;
+                        break;
+                    }
+                }
+                if dead {
                     break;
                 }
             }
