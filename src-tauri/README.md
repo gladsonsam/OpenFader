@@ -7,7 +7,10 @@ state stays in the `Mutex<Inner>` behind the `MixerDriver` trait.
 Command parity with the `openmix-serve` WebSocket API (`crates/serve`):
 WS `connect`/`fader`/`mute`/`param` map to `connect`/`set_fader`/`set_mute`/
 `set_param` (same number|bool|string encoding); the WS `state` push is a pull
-`get_state`; the WS `meters` tick is a pull `get_meters`. Beyond the WS API,
+`get_state`; the WS `meters` tick is a pull `get_meters`; the WS per-tick
+`spectrum`/`gr` frames are pulls `get_spectrum`/`get_gr` (same 64 bins,
+same first-16-channel cap — but poll-based: the UI polls at 5 Hz since
+invoke has no push). Beyond the WS API,
 the shell owns a server-side scene/show library and the main fader.
 
 ## Commands
@@ -36,7 +39,19 @@ the shell owns a server-side scene/show library and the main fader.
 - `list_scenes()` / `get_scene(name)` / `delete_scene(name)` — library ops;
   `get_scene` returns `{name, main_fader, strips: [{ch, name, fader, muted}]}`.
 - `get_meters` — live `driver.poll_meters()` frame, throttled: fresh frame at
-  most every 50 ms, faster polls get the cached frame.
+  most every 50 ms, faster polls get the cached frame. Fresh frames also feed
+  the shared RTA history behind `get_spectrum` (return shape unchanged).
+- `get_spectrum(ch)` — 64-bin spectrum for one channel (`ch` 0-based, first
+  16 only): `{ch, bins}` mirroring the WS `spectrum` frame (same
+  `RtaProcessor`: trailing 100 ms of meter history, mean-removed,
+  zero-padded to 128, peak-normalized; empty `bins` past the live strip
+  count). Poll-based — the UI polls at 5 Hz (200 ms), the same rate serve
+  emits `gr` frames; invoke has no push.
+- `get_gr(ch)` — gate/comp gain reduction for one channel (`ch` 0-based,
+  first 16 only): `{ch, gate, comp}` (dB reduction `>= 0`) mirroring the WS
+  `gr` frame (same `gate_gr`/`comp_gr` reads: xair DYN cache, 0.0 fallback
+  when the cache hasn't filled; sim/dl32s always 0.0). Poll-based — the UI
+  polls at 5 Hz like serve's every-second-tick `gr` push.
 
 ## Run desktop
 
@@ -79,14 +94,19 @@ the browser page connects to.
 `src/main.rs` implements the full engine: generic `set_param`, pull
 `get_state` (all strips incl names/mutes, plus main), server-side
 scene/show ops (`capture_scene`/`recall_scene`/`list_scenes`/`get_scene`/
-`delete_scene`), main fader (`set_main_fader`/`get_main_fader`), and live
+`delete_scene`), main fader (`set_main_fader`/`get_main_fader`), live
 driver meters via `poll_meters` (the stub's synthesized meters and 8-channel
-cache are gone). `tauri.conf.json` points `frontendDist` at
+cache are gone), and pull `get_spectrum`/`get_gr` mirroring the serve
+`spectrum`/`gr` ticks (same 64 bins, first-16-channel cap, `RtaProcessor`
+history shared with `get_meters` polls, same DYN-cache reads — reset on
+`connect`, like serve's per-connection RTA). `tauri.conf.json` points `frontendDist` at
 `../../apps/web/dist` (see fallback note above). The driver-facing logic
 type-checks: verified by compiling the identical enum + command bodies
 against the workspace crates in a scratch harness (`cargo check` clean plus
 a runtime smoke: connect → fader/mute/param → get_state asserts → main
-fader → capture/recall/delete scene → meters non-empty).
+fader → capture/recall/delete scene → meters non-empty → spectrum 64 bins
+in [0,1] with the 16ch cap → gr idle zeros with the 16ch cap → reconnect
+resets the RTA).
 
 What remains unverified is the Tauri macro/API surface itself, because the
 crate never reaches type-check here:
