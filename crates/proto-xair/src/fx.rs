@@ -1199,6 +1199,111 @@ pub fn fx_param_def(index: u8, par: u8) -> Option<FxParamDef> {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Tap-tempo mapping (delay-type effects with a confident Time par only).
+// ---------------------------------------------------------------------------
+
+/// Tap-tempo subdivision: quarter-note or dotted-eighth.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TapSubdiv {
+    Quarter,
+    Dotted8th,
+}
+
+/// Tap-tempo target for an effect-type index: 1-based `par` carrying the
+/// delay time, its display range in ms, and whether the effect offers a
+/// documented note-division enum (Factor/Pattern) alongside it.
+///
+/// Only delay-type effects whose Time row is documented (non-`inferred`)
+/// in the notes are wired: DLY (10, par 2), 3TAP (11), 4TAP (12),
+/// D/RV (22), D/CR (25), D/FL (26) and MODD (27) — all par 1, all
+/// `1..=3000` ms. Every one of these also carries a documented
+/// Factor/Pattern division enum, so `subdiv` is always true here and the
+/// UI offers quarter + dotted-eighth. All other effects — including PIT
+/// (60) / PIT2 (59), whose Delay rows are range-inferred — return `None`
+/// and get no TAP button (no guessing).
+///
+/// ```
+/// # use openmix_proto_xair::fx::{fx_tap_target, TapSubdiv, tap_delay_ms};
+/// let t = fx_tap_target(10).unwrap();
+/// assert_eq!((t.par, t.min_ms, t.max_ms), (2, 1.0, 3000.0));
+/// assert!(t.subdiv);
+/// assert!(fx_tap_target(0).is_none()); // HALL: reverb, no tap
+/// assert!(fx_tap_target(60).is_none()); // PIT Delay row is inferred
+/// assert!((tap_delay_ms(120.0, TapSubdiv::Quarter) - 500.0).abs() < 1e-9);
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FxTapTarget {
+    pub par: u8,
+    pub min_ms: f64,
+    pub max_ms: f64,
+    pub subdiv: bool,
+}
+
+pub fn fx_tap_target(index: u8) -> Option<FxTapTarget> {
+    match index {
+        10 => Some(FxTapTarget {
+            par: 2,
+            min_ms: 1.0,
+            max_ms: 3000.0,
+            subdiv: true,
+        }),
+        11 | 12 | 22 | 25 | 26 | 27 => Some(FxTapTarget {
+            par: 1,
+            min_ms: 1.0,
+            max_ms: 3000.0,
+            subdiv: true,
+        }),
+        _ => None,
+    }
+}
+
+/// BPM from tap intervals: needs 3+ intervals (4+ taps); `None` when too
+/// few, non-finite/non-positive, or outside a sane 20..=300 BPM window.
+///
+/// ```
+/// # use openmix_proto_xair::fx::tap_bpm_from_intervals_ms;
+/// assert!((tap_bpm_from_intervals_ms(&[500.0, 500.0, 500.0]).unwrap() - 120.0).abs() < 1e-9);
+/// assert!(tap_bpm_from_intervals_ms(&[500.0, 500.0]).is_none()); // only 3 taps
+/// ```
+pub fn tap_bpm_from_intervals_ms(intervals_ms: &[f64]) -> Option<f64> {
+    if intervals_ms.len() < 3 {
+        return None;
+    }
+    if intervals_ms.iter().any(|i| !i.is_finite() || *i <= 0.0) {
+        return None;
+    }
+    let mean = intervals_ms.iter().sum::<f64>() / intervals_ms.len() as f64;
+    if !mean.is_finite() || mean <= 0.0 {
+        return None;
+    }
+    let bpm = 60_000.0 / mean;
+    if !(20.0..=300.0).contains(&bpm) {
+        return None;
+    }
+    Some(bpm)
+}
+
+/// Delay time in ms for a BPM: quarter = one beat (`60000/bpm`),
+/// dotted-eighth = three-quarters of a beat (`45000/bpm`).
+pub fn tap_delay_ms(bpm: f64, subdiv: TapSubdiv) -> f64 {
+    match subdiv {
+        TapSubdiv::Quarter => 60_000.0 / bpm,
+        TapSubdiv::Dotted8th => 45_000.0 / bpm,
+    }
+}
+
+/// Linear map of an ms delay time onto the `0..1` wire value over the
+/// par's display range, clamped. The notes pin no fader law for FX time
+/// pars, so this is explicitly assumed-linear (same standing as the UI's
+/// assumed discrete enum steps) — documented, never asserted on hardware.
+pub fn tap_ms_to_normalized(ms: f64, min_ms: f64, max_ms: f64) -> f32 {
+    if !ms.is_finite() || !min_ms.is_finite() || !max_ms.is_finite() || max_ms <= min_ms {
+        return 0.0;
+    }
+    ((ms - min_ms) / (max_ms - min_ms)).clamp(0.0, 1.0) as f32
+}
+
 /// Assert the module stays in lockstep with the core shape (4 slots × 64).
 pub(crate) fn _shape_check() {
     const _: () = assert!(FX_SLOT_MIN == 1 && FX_SLOT_MAX == 4);
@@ -1538,5 +1643,139 @@ mod tests {
         // Untouched labeled pars read back zero.
         let back = session.query(&fx_param(1, 5).unwrap()).await.unwrap();
         assert_eq!(osc::fader_value(&back).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn tap_targets_cover_confident_delays_only() {
+        // Wired: DLY par 2, combos + taps + MODD par 1, all 1..3000 ms.
+        let dly = fx_tap_target(10).unwrap();
+        assert_eq!(
+            (dly.par, dly.min_ms, dly.max_ms, dly.subdiv),
+            (2, 1.0, 3000.0, true)
+        );
+        for index in [11u8, 12, 22, 25, 26, 27] {
+            let t = fx_tap_target(index).unwrap();
+            assert_eq!((t.par, t.min_ms, t.max_ms, t.subdiv), (1, 1.0, 3000.0, true));
+        }
+        // No tap: reverbs, modulation, and inferred-range pitch delays.
+        for index in [0u8, 1, 7, 13, 14, 16, 34, 59, 60, 15, 99] {
+            assert!(fx_tap_target(index).is_none(), "index {index}");
+        }
+    }
+
+    #[test]
+    fn tap_bpm_needs_four_taps_in_window() {
+        assert!((tap_bpm_from_intervals_ms(&[500.0, 500.0, 500.0]).unwrap() - 120.0).abs() < 1e-9);
+        assert!((tap_bpm_from_intervals_ms(&[250.0, 250.0, 250.0]).unwrap() - 240.0).abs() < 1e-9);
+        assert!(tap_bpm_from_intervals_ms(&[500.0, 500.0]).is_none());
+        assert!(tap_bpm_from_intervals_ms(&[]).is_none());
+        assert!(tap_bpm_from_intervals_ms(&[0.0, 500.0, 500.0]).is_none());
+        assert!(tap_bpm_from_intervals_ms(&[50.0, 50.0, 50.0]).is_none()); // >300 BPM
+        assert!(tap_bpm_from_intervals_ms(&[5000.0, 5000.0, 5000.0]).is_none()); // <20 BPM
+        // Quarter vs dotted-eighth at 120 BPM: 500 ms vs 375 ms.
+        assert!((tap_delay_ms(120.0, TapSubdiv::Quarter) - 500.0).abs() < 1e-9);
+        assert!((tap_delay_ms(120.0, TapSubdiv::Dotted8th) - 375.0).abs() < 1e-9);
+        // Linear ms→01 over 1..3000, clamped; degenerate ranges stay safe.
+        assert!((tap_ms_to_normalized(500.0, 1.0, 3000.0) - 499.0 / 2999.0) < 1e-6);
+        assert_eq!(tap_ms_to_normalized(1.0, 1.0, 3000.0), 0.0);
+        assert_eq!(tap_ms_to_normalized(3000.0, 1.0, 3000.0), 1.0);
+        assert_eq!(tap_ms_to_normalized(9999.0, 1.0, 3000.0), 1.0);
+        assert_eq!(tap_ms_to_normalized(0.5, 1.0, 3000.0), 0.0);
+        assert_eq!(tap_ms_to_normalized(f64::NAN, 1.0, 3000.0), 0.0);
+    }
+
+    /// Loopback: a fake serving a delay type + time par proves the tap path
+    /// — tap target par writes round-trip bit-exact via `set_fx_param`.
+    #[tokio::test]
+    async fn loopback_tap_target_par_roundtrip() {
+        use openmix_transport::{osc, OscSession};
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex as StdMutex};
+        use tokio::net::UdpSocket;
+
+        let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let addr = socket.local_addr().unwrap();
+        let pars: Arc<StdMutex<HashMap<String, f32>>> = Arc::new(StdMutex::new(HashMap::new()));
+        let worker = socket.clone();
+        let wpars = pars.clone();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 65535];
+            loop {
+                let Ok((n, peer)) = worker.recv_from(&mut buf).await else {
+                    break;
+                };
+                let Ok(packet) = osc::decode_packet(&buf[..n]) else {
+                    continue;
+                };
+                for msg in osc::flatten(packet) {
+                    let parts: Vec<&str> = msg.addr.split('/').collect();
+                    if parts.len() == 4 && parts[1] == "fx" && parts[3] == "type" {
+                        // Fake serves DLY (10) on every slot.
+                        if msg.args.is_empty() {
+                            let bytes =
+                                osc::encode_message(&msg.addr, vec![OscType::Int(10)]).unwrap();
+                            let _ = worker.send_to(&bytes, peer).await;
+                        }
+                        continue;
+                    }
+                    if parts.len() == 5 && parts[1] == "fx" && parts[3] == "par" {
+                        match msg.args.first() {
+                            Some(OscType::Float(f)) => {
+                                wpars.lock().unwrap().insert(msg.addr.clone(), *f);
+                            }
+                            _ => {
+                                let v = wpars
+                                    .lock()
+                                    .unwrap()
+                                    .get(&msg.addr)
+                                    .copied()
+                                    .unwrap_or(0.0);
+                                let bytes = osc::encode_message(
+                                    &msg.addr,
+                                    vec![OscType::Float(v)],
+                                )
+                                .unwrap();
+                                let _ = worker.send_to(&bytes, peer).await;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        let sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        sock.connect(addr).await.unwrap();
+        let session = OscSession::from_connected_socket(sock, None);
+
+        // Fake type query → DLY (10) → tap target par 2 (0-based index 1).
+        let reply = session.query(&fx_type(1).unwrap()).await.unwrap();
+        let loaded = parse_fx_type(&reply.args).unwrap();
+        assert_eq!(loaded, 10);
+        let target = fx_tap_target(loaded).unwrap();
+        assert_eq!(target.par, 2);
+        // 120 BPM quarter → 500 ms → linear 01 → bit-exact roundtrip.
+        let ms = tap_delay_ms(120.0, TapSubdiv::Quarter);
+        assert!((ms - 500.0).abs() < 1e-9);
+        let v01 = tap_ms_to_normalized(ms, target.min_ms, target.max_ms);
+        let idx = target.par - 1; // wire par is 1-based; driver index 0-based
+        session
+            .send(&fx_param(1, idx).unwrap(), vec![OscType::Float(v01)])
+            .await
+            .unwrap();
+        let back = session.query(&fx_param(1, idx).unwrap()).await.unwrap();
+        assert_eq!(osc::fader_value(&back).unwrap(), v01);
+        // Dotted-eighth lands lower on the same fader, still exact.
+        let vdot = tap_ms_to_normalized(
+            tap_delay_ms(120.0, TapSubdiv::Dotted8th),
+            target.min_ms,
+            target.max_ms,
+        );
+        assert!(vdot < v01);
+        session
+            .send(&fx_param(1, idx).unwrap(), vec![OscType::Float(vdot)])
+            .await
+            .unwrap();
+        let back = session.query(&fx_param(1, idx).unwrap()).await.unwrap();
+        assert_eq!(osc::fader_value(&back).unwrap(), vdot);
     }
 }

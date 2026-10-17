@@ -545,6 +545,36 @@
     return EFFECTS.find((e) => e.index === index) ?? null;
   }
 
+  // Tap-tempo target per effect index (cf. fx.rs fx_tap_target): delay-type
+  // effects with a confident Time par only. DLY par 2, the rest par 1, all
+  // 1..3000 ms. Every wired effect also carries a documented Factor/Pattern
+  // division enum, so the UI offers quarter + dotted-eighth for all of them.
+  // Anything absent here (reverbs, modulation, PIT/PIT2 with inferred Delay
+  // ranges, unknown) gets no TAP button — no guessing.
+  interface TapTarget {
+    par: number;
+    minMs: number;
+    maxMs: number;
+  }
+  const TAP_TARGETS: Record<number, TapTarget> = {
+    10: { par: 2, minMs: 1, maxMs: 3000 },
+    11: { par: 1, minMs: 1, maxMs: 3000 },
+    12: { par: 1, minMs: 1, maxMs: 3000 },
+    22: { par: 1, minMs: 1, maxMs: 3000 },
+    25: { par: 1, minMs: 1, maxMs: 3000 },
+    26: { par: 1, minMs: 1, maxMs: 3000 },
+    27: { par: 1, minMs: 1, maxMs: 3000 },
+  };
+  function tapTarget(fx: FxEffectDef | null): TapTarget | null {
+    if (fx === null) return null;
+    return TAP_TARGETS[fx.index] ?? null;
+  }
+  /** Linear ms -> 0..1 over the Time par display range, clamped. Assumed-
+   * linear: the notes pin no fader law (cf. fx.rs tap_ms_to_normalized). */
+  function tapMsTo01(ms: number, t: TapTarget): number {
+    return Math.min(1, Math.max(0, (ms - t.minMs) / (t.maxMs - t.minMs)));
+  }
+
   const tell = (t: string): void => {
     say?.(t);
   };
@@ -572,6 +602,13 @@
   let vals: Record<string, number> = $state({});
   // Slots the backend rejected: reason string disables the card's sliders.
   let dead: Record<number, string> = $state({});
+  // Tap-tempo state per card: tap timestamps (ms), last computed BPM/ms,
+  // and the subdivision (q = quarter, d8 = dotted-eighth). A >2 s gap
+  // resets the tap run; 4+ taps compute BPM and push the Time par.
+  let tapTimes: number[][] = $state([[], [], [], []]);
+  let tapBpm: (number | null)[] = $state([null, null, null, null]);
+  let tapMs: (number | null)[] = $state([null, null, null, null]);
+  let tapSub: ('q' | 'd8')[] = $state(['q', 'q', 'q', 'q']);
 
   const key = (slot: number, par: number): string => `${slot}:${par}`;
   const pos = (slot: number, par: number): number => vals[key(slot, par)] ?? 0;
@@ -582,6 +619,37 @@
 
   function pickFx(card: number, raw: string): void {
     cardFx[card] = raw === 'generic' ? null : Number(raw);
+    // New effect, new tap run.
+    tapTimes[card] = [];
+    tapBpm[card] = null;
+    tapMs[card] = null;
+  }
+
+  function setTapSub(card: number, raw: string): void {
+    tapSub[card] = raw === 'd8' ? 'd8' : 'q';
+  }
+
+  /** Tap-tempo: 4+ taps -> BPM -> ms, pushed to the Time par via the
+   * existing set_fx_param path (push). Shows computed ms + BPM. */
+  async function tap(card: number, fx: FxEffectDef | null): Promise<void> {
+    const t = tapTarget(fx);
+    if (t === null) return;
+    const now = performance.now();
+    let times = tapTimes[card] ?? [];
+    if (times.length > 0 && now - times[times.length - 1] > 2000) times = [];
+    times = [...times, now].slice(-8);
+    tapTimes[card] = times;
+    if (times.length < 4) return;
+    const intervals: number[] = [];
+    for (let i = 1; i < times.length; i++) intervals.push(times[i] - times[i - 1]);
+    const mean = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+    if (!Number.isFinite(mean) || mean <= 0) return;
+    const bpm = 60000 / mean;
+    if (bpm < 20 || bpm > 300) return;
+    const ms = tapSub[card] === 'd8' ? 45000 / bpm : 60000 / bpm;
+    tapBpm[card] = bpm;
+    tapMs[card] = ms;
+    await push(card, t.par, tapMsTo01(ms, t));
   }
 
   async function push(card: number, par: number, v01: number): Promise<void> {
@@ -661,6 +729,28 @@
         <div class="fxname" title={fx.desc}>{fx.index} · {fx.name} — {fx.pars.length} pars</div>
         {#if fxInferred}
           <div class="infnote" title="Some rows are inferred from docs (see research_notes/FX param labels/fx-labels.md) — unverified on hardware">labels with ? are inferred — unverified, never asserted</div>
+        {/if}
+        {@const tapT = tapTarget(fx)}
+        {#if tapT !== null}
+          {@const bpm = tapBpm[card]}
+          {@const ms = tapMs[card]}
+          <div class="taprow">
+            <button
+              type="button"
+              disabled={why !== undefined}
+              title={`Tap tempo -> par ${String(tapT.par).padStart(2, '0')} Time (quarter = 60000/BPM${tapSub[card] === 'd8' ? ', dotted-8th = 45000/BPM' : ''}; assumed-linear ms->0..1 over ${tapT.minMs}..${tapT.maxMs} ms)`}
+              onclick={() => void tap(card, fx)}>TAP</button>
+            <select
+              value={tapSub[card]}
+              disabled={why !== undefined}
+              title="Note division for the tapped BPM (effect has a documented Factor/Pattern enum)"
+              onchange={(e: SelectEvent) => setTapSub(card, e.currentTarget.value)}
+            >
+              <option value="q">1/4</option>
+              <option value="d8">dotted-8th</option>
+            </select>
+            <output>{bpm !== null && ms !== null ? `${Math.round(bpm)} BPM · ${Math.round(ms)} ms` : 'tap 4×'}</output>
+          </div>
         {/if}
         {#each fx.pars as p (p.par)}
           {@const field = fieldFor(slot, p.par)}
@@ -769,6 +859,34 @@
   .infnote {
     font-size: 11px;
     color: #fbbf24;
+  }
+  .taprow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .taprow button {
+    flex: none;
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 3px 12px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .taprow button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .taprow select {
+    flex: none;
+  }
+  .taprow output {
+    flex: 1;
+    text-align: right;
+    color: #e2e8f0;
   }
   .deadnote {
     font-size: 11px;
