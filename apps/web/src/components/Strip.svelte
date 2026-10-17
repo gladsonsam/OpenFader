@@ -2,6 +2,7 @@
   import FatStrip from './FatStrip.svelte';
   import type { EqBand } from '../lib/eqCurve';
   import { faderDb } from '../lib/format';
+  import { ensurePerfOverlay, setMeterVisible, sizeMeterCanvas } from '../lib/meters';
   import type { Strip } from '../lib/backend';
 
   // Fat-channel thumbnail: rendered when the parent passes per-strip EQ
@@ -83,8 +84,22 @@
 
   $effect(() => {
     if (canvas) {
-      registerMeter(strip.ch, canvas);
-      return () => unregisterMeter(strip.ch);
+      const cv = canvas;
+      registerMeter(strip.ch, cv);
+      // Backing store sized once (DPR-capped); CSS keeps 16x190 display size.
+      sizeMeterCanvas(cv, 16, 190);
+      ensurePerfOverlay();
+      // Skip painting while scrolled out of view; observer fires only on change.
+      setMeterVisible(cv, true);
+      const io = new IntersectionObserver((entries) => {
+        for (let i = 0; i < entries.length; i++) setMeterVisible(cv, entries[i].isIntersecting);
+      });
+      io.observe(cv);
+      return () => {
+        io.disconnect();
+        setMeterVisible(cv, true);
+        unregisterMeter(strip.ch);
+      };
     }
   });
 
