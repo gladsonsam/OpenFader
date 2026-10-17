@@ -157,7 +157,7 @@ impl Message {
         command: Command,
         body: Vec<u8>,
     ) -> Result<Self, FrameError> {
-        if body.len() % 4 != 0 {
+        if !body.len().is_multiple_of(4) {
             return Err(FrameError::BadBodyLen);
         }
         Ok(Self {
@@ -261,7 +261,7 @@ pub fn decode_one(buf: &[u8]) -> Result<Option<(Message, usize)>, FrameError> {
 /// last whole word are dropped: the protocol always pads to a word.
 pub fn word_swap(data: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(data.len() - data.len() % 4);
-    for word in data.chunks_exact(4) {
+    for word in data.as_chunks::<4>().0 {
         out.extend_from_slice(&[word[3], word[2], word[1], word[0]]);
     }
     out
@@ -314,7 +314,7 @@ pub struct ValueBlock {
 }
 
 pub fn parse_value_block(body: &[u8]) -> Option<ValueBlock> {
-    if body.len() < 8 || body.len() % 4 != 0 {
+    if body.len() < 8 || !body.len().is_multiple_of(4) {
         return None;
     }
     let start = u32::from_be_bytes(body[0..4].try_into().ok()?);
@@ -480,7 +480,7 @@ pub const GENERAL_INFO_REPLY: [u8; 8] = [0, 0, 0, 2, 0, 0, 0x40, 0];
 /// every chunk, padding included — those land past the real 75-slot table
 /// and never surface through name lookups.
 pub fn parse_name_table(body: &[u8]) -> Option<Vec<(u32, String)>> {
-    if body.len() < 8 || body.len() % 4 != 0 {
+    if body.len() < 8 || !body.len().is_multiple_of(4) {
         return None;
     }
     let start = u32::from_be_bytes(body[0..4].try_into().ok()?);
@@ -549,7 +549,7 @@ pub fn build_snapshot_save(snapshot: u32, epoch_secs: u64, name: &str) -> Vec<u8
     let mut padded = clipped.to_vec();
     // NUL-terminate and pad to a whole word.
     padded.push(0);
-    while padded.len() % 4 != 0 {
+    while !padded.len().is_multiple_of(4) {
         padded.push(0);
     }
     let mut out = Vec::with_capacity(12 + padded.len());
@@ -657,7 +657,7 @@ impl MackieSession {
             pending,
             caches,
             rx_task,
-            keepalive_task: keepalive_task,
+            keepalive_task,
         };
         this.initialize().await?;
         Ok(this)
@@ -698,7 +698,7 @@ impl MackieSession {
         body: Vec<u8>,
         timeout: Duration,
     ) -> anyhow::Result<Message> {
-        if body.len() % 4 != 0 {
+        if !body.len().is_multiple_of(4) {
             anyhow::bail!("request body length must be a multiple of 4");
         }
         let (seq, rx) = {
@@ -743,7 +743,7 @@ impl MackieSession {
         command: Command,
         body: Vec<u8>,
     ) -> anyhow::Result<()> {
-        if body.len() % 4 != 0 {
+        if !body.len().is_multiple_of(4) {
             anyhow::bail!("frame body length must be a multiple of 4");
         }
         let mut guard = self.write.lock().await;
@@ -1292,7 +1292,7 @@ mod tests {
         // Slots 1-3: "Kick", "", "Snare" — the blank still consumes index 2.
         let text = b"Kick\x00\x00Snare\x00\x00\x00";
         let mut padded = text.to_vec();
-        while padded.len() % 4 != 0 {
+        while !padded.len().is_multiple_of(4) {
             padded.push(0);
         }
         let mut body = vec![];
@@ -1314,7 +1314,7 @@ mod tests {
     fn name_table_count_bounds_single_rename() {
         // A one-slot rename must not blank the neighbour with padding NULs.
         let mut padded = b"Vox\x00".to_vec();
-        while padded.len() % 4 != 0 {
+        while !padded.len().is_multiple_of(4) {
             padded.push(0);
         }
         let mut body = vec![];
@@ -1336,7 +1336,7 @@ mod tests {
         save.extend_from_slice(&2u32.to_be_bytes());
         save.extend_from_slice(&0u32.to_be_bytes()); // epoch placeholder
         let mut name = b"Main\x00".to_vec();
-        while name.len() % 4 != 0 {
+        while !name.len().is_multiple_of(4) {
             name.push(0);
         }
         save.extend_from_slice(&word_swap(&name));
@@ -1456,7 +1456,7 @@ mod tests {
                                     // slot 3 "Snare".
                                     let text = b"Kick\x00\x00Snare\x00\x00\x00";
                                     let mut padded = text.to_vec();
-                                    while padded.len() % 4 != 0 {
+                                    while !padded.len().is_multiple_of(4) {
                                         padded.push(0);
                                     }
                                     let mut nbody = vec![];
@@ -1476,7 +1476,7 @@ mod tests {
                                     sbody.extend_from_slice(&2u32.to_be_bytes());
                                     sbody.extend_from_slice(&0u32.to_be_bytes());
                                     let mut nm = b"Main\x00".to_vec();
-                                    while nm.len() % 4 != 0 {
+                                    while !nm.len().is_multiple_of(4) {
                                         nm.push(0);
                                     }
                                     sbody.extend_from_slice(&word_swap(&nm));
