@@ -117,6 +117,30 @@ async fn wait_param(rx: &mut WsRx, ch: u64, field: &str, want: &Value) -> Value 
 }
 
 #[tokio::test]
+async fn ws_sim_studio_preset() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let mut opts = openmix_serve::ServeOptions::default();
+    opts.preset = Some("studio".to_string());
+    let server = tokio::spawn(openmix_serve::run(listener, opts));
+
+    let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("WS connect");
+    let (_tx, mut rx) = stream.split();
+
+    let state = next_typed(&mut rx, "state").await;
+    assert_eq!(
+        strip(&state, 0).get("name"),
+        Some(&json!("BASS")),
+        "studio preset mirrors the rig"
+    );
+    server.abort();
+}
+
+#[tokio::test]
 async fn ws_sim_connect_fader_mute() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
