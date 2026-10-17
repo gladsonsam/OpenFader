@@ -8,17 +8,26 @@
 //! {"cmd":"fader","ch":0,"value":0.0}
 //! {"cmd":"mute","ch":0,"muted":true}
 //! {"cmd":"param","ch":0,"field":"gain","value":0.5}
+//! {"cmd":"list_shows"}
+//! {"cmd":"capture_scene","show":"gig","name":"verse"}
+//! {"cmd":"recall_scene","show":"gig","name":"verse","fade_ms":400}
+//! {"cmd":"delete_scene","show":"gig","name":"verse"}
 //! ```
 //!
 //! server -> client:
 //! ```json
 //! {"type":"state","driver":"sim","strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}
+//! {"type":"shows","shows":[{"name":"gig","scenes":[{"name":"verse","main_fader":null,"strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}]}]}
 //! {"type":"meters","levels":[0.1,0.2]}
 //! {"type":"spectrum","ch":0,"bins":[...64 floats...]}
 //! ```
 //!
-//! `state` is sent on connect and after every mutation; `meters` ticks at
-//! ~10 Hz. One `spectrum` message per channel per tick follows each `meters`
+//! `state` is sent on connect and after every mutation; `shows` is sent on
+//! connect, as the direct reply to `list_shows`, and broadcast after
+//! `capture_scene`/`delete_scene` so every UI stays in sync. The show library
+//! lives server-side (mirroring the Tauri `capture_scene`/`recall_scene`
+//! semantics in `src-tauri/src/main.rs`), so scenes survive UI reloads.
+//! `meters` ticks at ~10 Hz. One `spectrum` message per channel per tick follows each `meters`
 //! tick (see [`SPECTRUM_CHANNELS`]). Unknown/invalid commands get
 //! `{"type":"error","message":"..."}`.
 
@@ -35,7 +44,11 @@ use axum::{
     Json, Router,
 };
 use futures::{SinkExt, StreamExt};
-use openmix_core::{rta::RtaProcessor, MeterFrame, MixerDriver, ParamValue, StripId};
+use openmix_core::{
+    rta::RtaProcessor,
+    show::{Scene, Show, DEFAULT_FADE_MS},
+    MeterFrame, MixerDriver, ParamValue, StripId,
+};
 use serde_json::{json, Value};
 use tokio::{
     net::TcpListener,
@@ -80,23 +93,32 @@ impl Default for ServeOptions {
 /// Static dispatch over drivers (`MixerDriver` is not dyn-compatible due to
 /// async methods). New providers add one field + one match arm, as in
 /// `openmix-cli`.
+///
+/// The show library (`shows`) is server-side, mirroring the Tauri shell
+/// (`src-tauri/src/main.rs`): scenes captured here survive UI reloads and
+/// driver switches with no localStorage round-trip.
 pub struct Shared {
     sim: openmix_sim::SimDriver,
     xair: openmix_proto_xair::XAirDriver,
     dl32s: openmix_proto_dl32s::Dl32sDriver,
     active: RwLock<String>,
     state_tx: broadcast::Sender<()>,
+    shows: RwLock<Vec<Show>>,
+    shows_tx: broadcast::Sender<()>,
 }
 
 impl Shared {
     fn new() -> Self {
         let (state_tx, _) = broadcast::channel(16);
+        let (shows_tx, _) = broadcast::channel(16);
         Self {
             sim: openmix_sim::SimDriver::new(),
             xair: openmix_proto_xair::XAirDriver::new(),
             dl32s: openmix_proto_dl32s::Dl32sDriver::new(),
             active: RwLock::new("sim".to_string()),
             state_tx,
+            shows: RwLock::new(Vec::new()),
+            shows_tx,
         }
     }
 
@@ -160,8 +182,51 @@ impl Shared {
         meters_message_for(&levels)
     }
 
-    /// Apply one client command. Broadcasts a state refresh on success.
-    async fn apply(&self, msg: &Value) -> anyhow::Result<()> {
+    /// Full `shows` message: every show with its scenes and per-strip
+    /// fader/mute (the Tauri `get_scene` shape per scene, so the web
+    /// `ShowEditor` can rebuild its library from one frame).
+    async fn shows_message(&self) -> Value {
+        let shows = self.shows.read().await;
+        json!({
+            "type": "shows",
+            "shows": shows.iter().map(show_json).collect::<Vec<_>>(),
+        })
+    }
+
+    /// Snapshot the active driver (used by `capture_scene`).
+    async fn active_snapshot(&self) -> anyhow::Result<openmix_core::MixerSnapshot> {
+        match self.active_name().await.as_str() {
+            "xair" => self.xair.snapshot().await,
+            "dl32s" => self.dl32s.snapshot().await,
+            _ => self.sim.snapshot().await,
+        }
+    }
+
+    /// Main fader of the active driver, `None` when the driver has none.
+    async fn active_main_fader(&self) -> Option<f32> {
+        match self.active_name().await.as_str() {
+            "xair" => self.xair.get_main_fader().await.ok(),
+            "dl32s" => self.dl32s.get_main_fader().await.ok(),
+            _ => self.sim.get_main_fader().await.ok(),
+        }
+    }
+
+    /// Recall `scene` on the active driver, ramping over `fade_ms`.
+    async fn recall_on_active(&self, scene: &Scene, fade_ms: u64) -> anyhow::Result<()> {
+        match self.active_name().await.as_str() {
+            "xair" => scene.recall_to(&self.xair, fade_ms).await,
+            "dl32s" => scene.recall_to(&self.dl32s, fade_ms).await,
+            _ => scene.recall_to(&self.sim, fade_ms).await,
+        }
+    }
+
+    /// Apply one client command.
+    ///
+    /// Returns a direct reply for `list_shows` (unicast `shows` frame);
+    /// every other command broadcasts (`state` for mixer mutations like
+    /// the pre-scene protocol, `shows` for library mutations, both for
+    /// `recall_scene` which moves faders) and returns `None`.
+    async fn apply(&self, msg: &Value) -> anyhow::Result<Option<Value>> {
         let cmd = msg
             .get("cmd")
             .and_then(Value::as_str)
@@ -171,6 +236,8 @@ impl Shared {
                 let driver = msg.get("driver").and_then(Value::as_str).unwrap_or("sim");
                 let addr = msg.get("addr").and_then(Value::as_str);
                 self.connect(driver, addr).await?;
+                let _ = self.state_tx.send(());
+                Ok(None)
             }
             "fader" => {
                 let ch = channel_arg(msg)?;
@@ -184,6 +251,8 @@ impl Shared {
                     "dl32s" => self.dl32s.set_fader(ch, value).await?,
                     _ => self.sim.set_fader(ch, value).await?,
                 }
+                let _ = self.state_tx.send(());
+                Ok(None)
             }
             "mute" => {
                 let ch = channel_arg(msg)?;
@@ -196,6 +265,8 @@ impl Shared {
                     "dl32s" => self.dl32s.set_mute(ch, muted).await?,
                     _ => self.sim.set_mute(ch, muted).await?,
                 }
+                let _ = self.state_tx.send(());
+                Ok(None)
             }
             "param" => {
                 let ch = channel_arg(msg)?;
@@ -217,11 +288,72 @@ impl Shared {
                     "dl32s" => self.dl32s.set_param(ch, field, pv).await?,
                     _ => self.sim.set_param(ch, field, pv).await?,
                 }
+                let _ = self.state_tx.send(());
+                Ok(None)
+            }
+            // Server-side show library (mirrors the Tauri scene ops).
+            "list_shows" => Ok(Some(self.shows_message().await)),
+            "capture_scene" => {
+                let show = name_arg(msg, "show")?;
+                let name = name_arg(msg, "name")?;
+                let snap = self.active_snapshot().await?;
+                let mut scene = Scene::capture(&name, &snap);
+                scene.main_fader = self.active_main_fader().await;
+                let mut shows = self.shows.write().await;
+                match shows.iter_mut().find(|s| s.name == show) {
+                    Some(slot) => slot.add_scene(scene),
+                    None => {
+                        let mut fresh = Show::new(&show);
+                        fresh.add_scene(scene);
+                        shows.push(fresh);
+                    }
+                }
+                drop(shows);
+                let _ = self.shows_tx.send(());
+                Ok(None)
+            }
+            "recall_scene" => {
+                let show = name_arg(msg, "show")?;
+                let name = name_arg(msg, "name")?;
+                let fade_ms = match msg.get("fade_ms") {
+                    None | Some(Value::Null) => DEFAULT_FADE_MS,
+                    Some(v) => v.as_u64().ok_or_else(|| {
+                        anyhow::anyhow!("recall_scene needs integer \"fade_ms\" (ms)")
+                    })?,
+                };
+                let scene = {
+                    let shows = self.shows.read().await;
+                    shows
+                        .iter()
+                        .find(|s| s.name == show)
+                        .and_then(|s| s.get(&name))
+                        .cloned()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("unknown scene {name:?} in show {show:?}")
+                        })?
+                };
+                self.recall_on_active(&scene, fade_ms).await?;
+                let _ = self.state_tx.send(());
+                Ok(None)
+            }
+            "delete_scene" => {
+                let show = name_arg(msg, "show")?;
+                let name = name_arg(msg, "name")?;
+                {
+                    let mut shows = self.shows.write().await;
+                    let slot = shows
+                        .iter_mut()
+                        .find(|s| s.name == show)
+                        .ok_or_else(|| anyhow::anyhow!("unknown show {show:?}"))?;
+                    if !slot.remove(&name) {
+                        anyhow::bail!("unknown scene {name:?} in show {show:?}");
+                    }
+                }
+                let _ = self.shows_tx.send(());
+                Ok(None)
             }
             other => anyhow::bail!("unknown cmd {other:?}"),
         }
-        let _ = self.state_tx.send(());
-        Ok(())
     }
 }
 
@@ -264,6 +396,41 @@ fn channel_arg(msg: &Value) -> anyhow::Result<StripId> {
     Ok(StripId(ch))
 }
 
+/// Trimmed non-empty string arg (`"show"` / `"name"` for scene ops).
+fn name_arg(msg: &Value, key: &str) -> anyhow::Result<String> {
+    let raw = msg
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow::anyhow!("scene command needs string \"{key}\""))?;
+    let clean = raw.trim().to_string();
+    if clean.is_empty() {
+        anyhow::bail!("scene command needs non-empty \"{key}\"");
+    }
+    Ok(clean)
+}
+
+/// One scene in the `shows` event (the Tauri `get_scene` shape).
+fn scene_json(scene: &Scene) -> Value {
+    json!({
+        "name": scene.name,
+        "main_fader": scene.main_fader,
+        "strips": scene.strips.iter().map(|s| json!({
+            "ch": s.strip.0,
+            "name": s.name,
+            "fader": s.fader,
+            "muted": s.mute,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+/// One show in the `shows` event, in library order.
+fn show_json(show: &Show) -> Value {
+    json!({
+        "name": show.name,
+        "scenes": show.scenes.iter().map(scene_json).collect::<Vec<_>>(),
+    })
+}
+
 fn error_message(e: impl std::fmt::Display) -> String {
     json!({"type":"error","message":e.to_string()}).to_string()
 }
@@ -274,7 +441,7 @@ async fn ws_handler(ws: WebSocketUpgrade, AxumState(app): AxumState<AppState>) -
 
 async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
     let (mut tx, mut rx) = socket.split();
-    // Initial snapshot.
+    // Initial snapshot: mixer state, then the server-side show library.
     if tx
         .send(Message::Text(shared.state_message().await.to_string()))
         .await
@@ -282,7 +449,15 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
     {
         return;
     }
+    if tx
+        .send(Message::Text(shared.shows_message().await.to_string()))
+        .await
+        .is_err()
+    {
+        return;
+    }
     let mut state_rx = shared.state_tx.subscribe();
+    let mut shows_rx = shared.shows_tx.subscribe();
     // Per-connection RTA: fed by the same meter frames broadcast on the
     // ~10 Hz tick below (no new ports/threads — spectrum is derived
     // per-socket from the already-polled levels). Starts empty and grows
@@ -298,8 +473,14 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
                     Some(Ok(Message::Text(text))) => {
                         match serde_json::from_str::<Value>(&text) {
                             Ok(cmd) => {
-                                if let Err(e) = shared.apply(&cmd).await {
-                                    let _ = tx.send(Message::Text(error_message(e))).await;
+                                match shared.apply(&cmd).await {
+                                    Ok(Some(reply)) => {
+                                        let _ = tx.send(Message::Text(reply.to_string())).await;
+                                    }
+                                    Ok(None) => {}
+                                    Err(e) => {
+                                        let _ = tx.send(Message::Text(error_message(e))).await;
+                                    }
                                 }
                             }
                             Err(e) => {
@@ -336,6 +517,15 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
                     break;
                 }
                 let s = shared.state_message().await;
+                if tx.send(Message::Text(s.to_string())).await.is_err() {
+                    break;
+                }
+            }
+            changed = shows_rx.recv() => {
+                if changed.is_err() {
+                    break;
+                }
+                let s = shared.shows_message().await;
                 if tx.send(Message::Text(s.to_string())).await.is_err() {
                     break;
                 }
