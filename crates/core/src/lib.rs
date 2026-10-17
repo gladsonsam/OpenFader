@@ -11,6 +11,7 @@
 
 pub mod access;
 pub mod fx;
+pub mod presets;
 pub mod rta;
 pub mod show;
 pub mod sync;

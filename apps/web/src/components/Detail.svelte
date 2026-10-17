@@ -6,6 +6,7 @@
   import Spectrum from './Spectrum.svelte';
   import EqGraph from './EqGraph.svelte';
   import FatStrip from './FatStrip.svelte';
+  import PresetPicker from './PresetPicker.svelte';
 
   interface Props {
     // strip: selected strip object (ch >= 0) or MAIN marker (ch < 0) / null.
@@ -144,6 +145,7 @@
       {/if}
     </div>
   </div>
+  <PresetPicker ch={strip.ch} {hidden} {onParam} />
   <div class="prow">
     <label for="detail-name">name</label>
     <input
