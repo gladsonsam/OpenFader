@@ -39,11 +39,20 @@ built assets resolve from any location, including `tauri://localhost`).
 
 ## layout
 
-- `src/lib/backend.js` — transports (contract port, keep in sync with `ui/api.js`)
-- `src/lib/levels.js` — shared mutable meter frames (not reactive: no re-render at 60fps)
-- `src/lib/meters.js` — imperative canvas painting (strips + bridge)
-- `src/lib/sections.js` — detail-panel control defs (ranges mirror `proto-dl32s` limits)
-- `src/lib/format.js` — fader→dB readout
-- `src/components/Strip.svelte` — name, canvas meter, touch fader (pointer capture + dB), mute/solo
+- `src/lib/backend.ts` — transports (contract port, keep in sync with `ui/api.js`)
+- `src/lib/levels.ts` — shared mutable meter frames (not reactive: no re-render at 60fps)
+- `src/lib/meters.ts` — imperative canvas painting (staging strips + bridge)
+- `src/lib/sections.ts` — detail-panel control defs (ranges mirror `proto-dl32s` limits)
+- `src/lib/format.ts` — fader→dB readout
+- `src/lib/persist.ts` — localStorage prefs (layers, orders, mute groups, safety)
+- `src/lib/sends.ts` — SoF send cache, pushed via existing `param` cmd (`auxN_level`)
+- `src/components/Strip.svelte` — name, staging meter, touch fader (pointer capture,
+  fine mode, Grow&Glow, exact-entry), mute/solo, clip latch, layout handles
+- `src/components/Overview.svelte` — whole-show health rows, tap-to-jump
+- `src/components/ValueEntry.svelte` — tap-a-value exact-entry modal
 - `src/components/Detail.svelte` — gain/phantom/pan, HPF/gate/comp, 4-band EQ, aux/FX sends
-- `src/App.svelte` — top bar, Inputs/Buses/Mains layers, scenes, bridge, keyboard, rAF loop
+- `src/components/Spectrum.svelte` — per-channel spectrum (fallback until relay sends it)
+- `src/App.svelte` — views (Overview/Mixer/Channel), aux rail + SoF, layers, groups,
+  safety, scenes, bridge, keyboard, rAF loop
+
+See `V2.md` for what the v2 structural pass shipped vs what stays deferred to DSP.
