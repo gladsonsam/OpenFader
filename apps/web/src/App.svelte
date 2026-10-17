@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { selectBackend } from './lib/backend';
-  import type { Backend, LockHolds, MainStrip, ParamValue, Unsub, Strip as StripData } from './lib/backend';
+  import type { Backend, ClientsInfo, LockHolds, MainStrip, ParamValue, Unsub, Strip as StripData } from './lib/backend';
   import { eqBandsFor, grFor, noteBandParam } from './lib/bands';
   import { levels, setLevels } from './lib/levels';
   import { paintStageMeter } from './lib/meters';
@@ -28,6 +28,7 @@
   import ShowEditor from './components/ShowEditor.svelte';
   import ValueEntry from './components/ValueEntry.svelte';
   import MusicianView from './components/MusicianView.svelte';
+  import ClientsRoster from './components/ClientsRoster.svelte';
 
   const backend: Backend = selectBackend();
   const via = backend.kind === 'tauri' ? 'tauri ipc' : `ws ${backend.url}`;
@@ -102,6 +103,8 @@
   let solos: number[] = $state([]);
   let hidden: string[] = $state([]); // param fields the backend rejected
   const locksSupported = backend.kind === 'ws';
+  const clientsSupported = backend.kind === 'ws';
+  let clients: ClientsInfo | null = $state(null); // relay roster (null until the first `clients` frame)
   let locks: LockHolds = $state({}); // ch -> holder client id (empty = no pins / no locks feed)
   let myLocks: number[] = $state([]); // channels this client claimed (confirmed by the holds table)
   let storeArm: boolean = $state(false);
@@ -829,6 +832,20 @@
     } catch {
       /* transport without locks */
     }
+    // Client roster: relay-only presence feed; Tauri has no `onClients`
+    // (stays hidden there). Null-safe for transports without the feed.
+    try {
+      const off = backend.onClients?.((info) => {
+        clients = {
+          count: info?.count ?? 0,
+          writers: [...(info?.writers ?? [])],
+          selfId: info?.selfId ?? null,
+        };
+      });
+      if (off) offs.push(off);
+    } catch {
+      /* transport without a clients feed */
+    }
     // Musician CALL FOH: `param` `attention` frames fanned out by the relay.
     // Null-safe for old servers / transports without a param feed.
     try {
@@ -1057,6 +1074,10 @@
     <button id="store" class:armed={storeArm} aria-pressed={storeArm} onclick={() => { storeArm = !storeArm; say(storeArm ? 'store armed — tap a slot' : ''); }}>store</button>
     <span id="status" role="status">{status}</span>
   </div>
+
+  {#if clientsSupported && clients && clients.count > 0}
+    <ClientsRoster count={clients.count} writers={clients.writers} selfId={clients.selfId} />
+  {/if}
 
   {#if locksSupported && lockEntries.length}
     <div id="locks" role="status" aria-label="strip locks">
