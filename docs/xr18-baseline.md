@@ -151,3 +151,8 @@ Deliberately NOT touched in phase 2 either: network/config surface (IP,
 routing, FW, init/reset), anything outside 192.168.40.123, and all strips
 besides the 7 test addresses (ch02, ch02-s1, fx1-p1, bus1, LR) — each
 restored and re-verified.
+
+## Live FX slots (2026-10-18 ~03:10 AWST, read-only /fx/N/type)
+- slot1 = 7 VRM (vintage room), slot2 = 0 HALL, slot3 = 26 D/FL (delay+flanger), slot4 = 60 PIT (pitch shifter).
+- Index↔name per research table; index 15 reads as gap (consistent with driver treating 15 as unknown).
+- Priority spot-check order for labeled params: VRM, HALL, D/FL, PIT.
