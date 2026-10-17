@@ -82,3 +82,7 @@ Notes:
 - ch1: name "BASS", fader float ~0.196, /mix/on = 0 (muted). ch2 fader 0.0.
 - BUG FOUND: /main/st/mix/fader gets NO reply on X-Air. Main LR on X-Air is /lr/mix/fader (X32 uses /main/st). Driver must use /lr/* for X-Air mains.
 - FIXED 2026-10-17: `proto-xair` mains routed via `/lr/*` (`MAIN_FADER = /lr/mix/fader`, plus `MAIN_ON = /lr/mix/on`, `MAIN_NAME = /lr/config/name` by analogy, not yet live-queried). Confirmed on FW 1.20 hardware. Loopback test `main_fader_uses_lr_not_main_st` uses a strict fake answering only `/lr/mix/fader` (silent on `/main/st`, like the real desk).
+
+## Meter subscribe — HARDWARE VERIFIED 2026-10-18
+- Subscribe = send `/meters` with ONE string arg `/meters/1` (typetag `,s`). Bare/empty queries to /meters/0 or /meters/1 get silence.
+- Desk streams LE-i16 blobs (~104B for /meters/1). Observed only ~5 blobs/12s without keepalive renew — driver must repeat /xremote + resubscribe (10s expiry suspected, unconfirmed).
