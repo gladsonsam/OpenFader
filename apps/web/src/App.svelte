@@ -97,6 +97,7 @@
   let lastMeterAt = 0;
   let lastTick = 0;
   let spectra: Record<number, number[]> = $state({}); // ch -> bins (live spectrum; null until relay sends it)
+  let gr: Record<number, { gate: number; comp: number }> = $state({}); // ch -> live GR dB (null until relay sends it)
   let gains: Record<number, number> = {}; // detail gain dB per ch (staging display only)
 
   let bridge: HTMLCanvasElement | null = $state(null);
@@ -585,6 +586,13 @@
         }),
       );
     }
+    offs.push(
+      backend.onGr(({ ch, gate, comp }) => {
+        const next = { ...gr };
+        next[ch] = { gate, comp };
+        gr = next;
+      }),
+    );
     if (backend.onStatus) offs.push(backend.onStatus((on) => {
       online = on;
     }));
@@ -790,7 +798,7 @@
           </div>
         {/if}
         <div class="chdetail">
-          <Detail strip={selectedStrip} {hidden} spectrum={spectra[selected] ?? null} onParam={pushParam} onName={pushName} />
+          <Detail strip={selectedStrip} {hidden} spectrum={spectra[selected] ?? null} grGate={gr[selected]?.gate ?? null} grComp={gr[selected]?.comp ?? null} onParam={pushParam} onName={pushName} />
         </div>
       {:else}
         <div class="empty">no channel selected</div>

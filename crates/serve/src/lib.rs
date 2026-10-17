@@ -20,6 +20,7 @@
 //! {"type":"shows","shows":[{"name":"gig","scenes":[{"name":"verse","main_fader":null,"strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}]}]}
 //! {"type":"meters","levels":[0.1,0.2]}
 //! {"type":"spectrum","ch":0,"bins":[...64 floats...]}
+//! {"type":"gr","ch":0,"gate":0.0,"comp":0.0}
 //! ```
 //!
 //! `state` is sent on connect and after every mutation; `shows` is sent on
@@ -28,7 +29,10 @@
 //! lives server-side (mirroring the Tauri `capture_scene`/`recall_scene`
 //! semantics in `src-tauri/src/main.rs`), so scenes survive UI reloads.
 //! `meters` ticks at ~10 Hz. One `spectrum` message per channel per tick follows each `meters`
-//! tick (see [`SPECTRUM_CHANNELS`]). Unknown/invalid commands get
+//! tick (see [`SPECTRUM_CHANNELS`]). One `gr` message per channel follows every
+//! second `meters` tick (~5 Hz, see [`GR_CHANNELS`]): the DYN blob cache
+//! fills asynchronously, so `gate`/`comp` read 0.0 until the desk streams
+//! `/meters/6`. Unknown/invalid commands get
 //! `{"type":"error","message":"..."}`.
 
 use std::{path::PathBuf, sync::Arc};
@@ -66,6 +70,17 @@ use tokio::{
 /// levels; raise the cap only with a matching client-side subscription
 /// filter so idle 32ch surfaces don't 2x the broadcast bytes.
 pub const SPECTRUM_CHANNELS: usize = 16;
+
+/// Max channels with per-tick GR output (first N channels only).
+///
+/// Same 16ch cap as [`SPECTRUM_CHANNELS`]: covers a full drum/band layer on
+/// typical 16/24/32ch surfaces while keeping the WS fanout bounded (16 small
+/// `gr` frames per GR tick). GR ticks at ~5 Hz — every second 10 Hz `meters`
+/// tick — so dynamics bars stay live without doubling the meter broadcast
+/// bytes. Channels beyond this cap still stream `meters` levels; `gate` /
+/// `comp` read 0.0 until the driver's DYN cache fills (xair `/meters/6`
+/// blob; sim/dl32s have no GR source and always read 0.0).
+pub const GR_CHANNELS: usize = 16;
 
 /// Startup options for [`run`].
 #[derive(Clone, Debug)]
@@ -180,6 +195,31 @@ impl Shared {
     async fn meters_message(&self) -> Value {
         let levels = self.meter_levels().await;
         meters_message_for(&levels)
+    }
+
+    /// Gate/comp GR (dB reduction `>= 0`) for one 0-based channel.
+    ///
+    /// xair reads the DYN blob cache (`gate_gr`/`comp_gr` param path); no
+    /// data yet (or out of range) falls back to 0.0 so the tick never drops
+    /// a frame — the UI treats 0.0 as "no reduction", same as an idle gate.
+    /// sim/dl32s have no GR source and always read (0.0, 0.0).
+    async fn gr_db(&self, ch: usize) -> (f32, f32) {
+        if self.active_name().await.as_str() != "xair" {
+            return (0.0, 0.0);
+        }
+        let Ok(strip) = u16::try_from(ch) else {
+            return (0.0, 0.0);
+        };
+        let id = StripId(strip);
+        let gate = match self.xair.get_param(id, "gate_gr").await {
+            Ok(ParamValue::Float(v)) => v.max(0.0),
+            _ => 0.0,
+        };
+        let comp = match self.xair.get_param(id, "comp_gr").await {
+            Ok(ParamValue::Float(v)) => v.max(0.0),
+            _ => 0.0,
+        };
+        (gate, comp)
     }
 
     /// Full `shows` message: every show with its scenes and per-strip
@@ -385,6 +425,12 @@ fn spectrum_message(ch: usize, bins: &[f32]) -> Value {
     json!({"type":"spectrum","ch":ch,"bins":bins})
 }
 
+/// One `gr` message for channel `ch` (see `Detail.svelte` GR bars):
+/// `{"type":"gr","ch":N,"gate":db,"comp":db}` — dB reduction `>= 0`.
+fn gr_message(ch: usize, gate: f32, comp: f32) -> Value {
+    json!({"type":"gr","ch":ch,"gate":gate,"comp":comp})
+}
+
 fn channel_arg(msg: &Value) -> anyhow::Result<StripId> {
     let ch = msg
         .get("ch")
@@ -466,6 +512,9 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
     let mut meters = tokio::time::interval(std::time::Duration::from_millis(100));
     // Skip the immediate first tick so a fresh client gets state first.
     meters.tick().await;
+    // Counts 10 Hz meter ticks; GR broadcasts on every second tick (~5 Hz)
+    // to bound traffic separately from meters/spectrum.
+    let mut tick: u64 = 0;
     loop {
         tokio::select! {
             incoming = rx.next() => {
@@ -494,6 +543,7 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
                 }
             }
             _ = meters.tick() => {
+                tick += 1;
                 let levels = shared.meter_levels().await;
                 rta.push_frame(&MeterFrame { levels: levels.clone() });
                 if tx.send(Message::Text(meters_message_for(&levels).to_string())).await.is_err() {
@@ -510,6 +560,22 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>) {
                 }
                 if dead {
                     break;
+                }
+                // GR follows at ~5 Hz (every 2nd meter tick), first
+                // GR_CHANNELS channels, bounded by the live strip count so
+                // phantom strips never get a frame.
+                if tick % 2 == 0 {
+                    let n = levels.len().min(GR_CHANNELS);
+                    for ch in 0..n {
+                        let (gate, comp) = shared.gr_db(ch).await;
+                        if tx.send(Message::Text(gr_message(ch, gate, comp).to_string())).await.is_err() {
+                            dead = true;
+                            break;
+                        }
+                    }
+                    if dead {
+                        break;
+                    }
                 }
             }
             changed = state_rx.recv() => {
