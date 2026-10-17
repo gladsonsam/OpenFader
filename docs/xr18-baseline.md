@@ -156,3 +156,10 @@ restored and re-verified.
 - slot1 = 7 VRM (vintage room), slot2 = 0 HALL, slot3 = 26 D/FL (delay+flanger), slot4 = 60 PIT (pitch shifter).
 - Index↔name per research table; index 15 reads as gap (consistent with driver treating 15 as unknown).
 - Priority spot-check order for labeled params: VRM, HALL, D/FL, PIT.
+
+## Live FX par shapes (2026-10-18 ~03:15 AWST, read-only)
+- VRM(7): par01-12 float, par13 INT (=0, switch/enum), par14+ float NaN (unused → NaN, not echo).
+- HALL(0): par01-12 float, par13+ NaN.
+- D/FL(26): par02/08/09 INT (0/1/1, enums), rest float through par13, par14+ NaN.
+- PIT(60): par01-06 float, par07+ NaN.
+- Rules for driver: expect INT pars mixed among floats (decode both); NaN float = absent par, must not surface as a value.
