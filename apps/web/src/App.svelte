@@ -17,6 +17,7 @@
   } from './lib/sends';
   import Strip from './components/Strip.svelte';
   import Detail from './components/Detail.svelte';
+  import FxRack from './components/FxRack.svelte';
   import Overview from './components/Overview.svelte';
   import ShowEditor from './components/ShowEditor.svelte';
   import ValueEntry from './components/ValueEntry.svelte';
@@ -26,7 +27,7 @@
 
   const MAIN: MainStrip = { ch: -1, name: 'MAIN' };
 
-  type View = 'overview' | 'mixer' | 'channel' | 'shows';
+  type View = 'overview' | 'mixer' | 'channel' | 'rack' | 'shows';
   type Cell = { kind: 'strip'; s: StripData; master?: boolean } | { kind: 'gap'; gid: string };
   interface Editing { ch: number; title: string; sub: string; value: number; isSend: boolean }
 
@@ -65,7 +66,7 @@
 
   function loadView(): View {
     const v = loadJSON<string>(LS.view, 'mixer');
-    return v === 'overview' || v === 'mixer' || v === 'channel' || v === 'shows' ? v : 'mixer';
+    return v === 'overview' || v === 'mixer' || v === 'channel' || v === 'rack' || v === 'shows' ? v : 'mixer';
   }
 
   /* ---------- state ---------- */
@@ -642,7 +643,7 @@
 
   <!-- Mackie 3-view nav: always visible, active one dark. -->
   <nav id="views" aria-label="views">
-    {#each [{ id: 'overview', label: 'Overview' }, { id: 'mixer', label: 'Mixer' }, { id: 'channel', label: 'Channel' }, { id: 'shows', label: 'Shows' }] as v (v.id)}
+    {#each [{ id: 'overview', label: 'Overview' }, { id: 'mixer', label: 'Mixer' }, { id: 'channel', label: 'Channel' }, { id: 'rack', label: 'Rack' }, { id: 'shows', label: 'Shows' }] as v (v.id)}
       <button class:on={view === v.id} onclick={() => setView(v.id as View)}>{v.label}</button>
     {/each}
   </nav>
@@ -794,6 +795,10 @@
       {:else}
         <div class="empty">no channel selected</div>
       {/if}
+    </main>
+  {:else if view === 'rack'}
+    <main id="rackwrap">
+      <FxRack backend={backend} say={say} />
     </main>
   {:else if view === 'shows'}
     <main id="showswrap">
