@@ -2,9 +2,11 @@
 //
 //   connect(driver, addr)  -> Promise<string>  ("connected via sim")
 //   setFader(ch, v01)      -> Promise<void>     (v01 in 0..1)
+//   setMainFader(v01)      -> Promise<void>     (LR main, v01 in 0..1)
 //   setMute(ch, muted)     -> Promise<void>
 //   setParam(ch, field, v) -> Promise<void>     (number|boolean|string)
 //   onState(cb)            -> unsub             (cb(strips [{ch,name,fader,muted}]))
+//   onMain(cb)             -> unsub             (cb(mainFader number|null; null until first state / driver without main))
 //   onMeters(cb)           -> unsub             (cb(levels [0..1]))
 //   onSpectrum(cb)         -> unsub             (cb({ch,bins}))
 //   onGr(cb)               -> unsub             (cb({ch,gate,comp}) — dB reduction >= 0)
@@ -13,10 +15,11 @@
 // Auto-select: Tauri IPC when running inside Tauri, else WebSocket relay.
 //
 // WS protocol (port :8080): host -> {cmd:'connect',driver,addr},
-// {cmd:'fader',ch,value}, {cmd:'mute',ch,muted}, {cmd:'param',ch,field,value},
+// {cmd:'fader',ch,value}, {cmd:'main_fader',value}, {cmd:'mute',ch,muted},
+// {cmd:'param',ch,field,value},
 // {cmd:'list_shows'}, {cmd:'capture_scene',show,name},
 // {cmd:'recall_scene',show,name,fade_ms}, {cmd:'delete_scene',show,name};
-// relay -> {type:'state',strips:[...]}, {type:'meters',levels:[...]},
+// relay -> {type:'state',strips:[...],main_fader:number|null}, {type:'meters',levels:[...]},
 // {type:'spectrum',ch,bins:[...]}, {type:'gr',ch,gate,comp} (~5 Hz),
 // {type:'shows',shows:[...]} (full library; sent on connect, as the
 // list_shows reply, and broadcast after capture/delete).
@@ -32,7 +35,7 @@ export interface Strip {
   main?: boolean;
 }
 
-/** Layer-switcher marker for the MAIN pseudo-strip (no backend fader yet). */
+/** Layer-switcher marker for the MAIN pseudo-strip (driver-backed LR main). */
 export interface MainStrip {
   readonly ch: -1;
   name: string;
@@ -87,7 +90,7 @@ export interface LockDeny {
 
 /** Relay -> UI messages (WS JSON protocol, port :8080). */
 export type WsMsg =
-  | { type: 'state'; strips: Strip[] }
+  | { type: 'state'; strips: Strip[]; main_fader?: number | null }
   | { type: 'meters'; levels: number[] }
   | { type: 'spectrum'; ch: number; bins: number[] }
   | { type: 'gr'; ch: number; gate: number; comp: number }
@@ -100,6 +103,7 @@ export type WsMsg =
 export type WsCmd =
   | { cmd: 'connect'; driver: string; addr: string }
   | { cmd: 'fader'; ch: number; value: number }
+  | { cmd: 'main_fader'; value: number }
   | { cmd: 'mute'; ch: number; muted: boolean }
   | { cmd: 'param'; ch: number; field: string; value: ParamValue }
   | { cmd: 'list_shows' }
@@ -115,6 +119,8 @@ export interface Backend {
   readonly url?: string;
   connect(driver: string, addr: string): Promise<string>;
   setFader(ch: number, v01: number): Promise<void>;
+  /** LR main fader (0..1; rejects when the driver has no main). */
+  setMainFader(v01: number): Promise<void>;
   setMute(ch: number, muted: boolean): Promise<void>;
   setParam(ch: number, field: string, v: ParamValue): Promise<void>;
   /** Full server show library (source of truth while connected). */
@@ -131,6 +137,8 @@ export interface Backend {
   unlockStrip(ch: number): Promise<void>;
   onShows(cb: (shows: ShowLib[]) => void): Unsub;
   onState(cb: (strips: Strip[]) => void): Unsub;
+  /** LR main fader (null until the first state frame / driver without main). */
+  onMain(cb: (main: number | null) => void): Unsub;
   onMeters(cb: (levels: MeterLevels) => void): Unsub;
   onSpectrum(cb: (evt: SpectrumEvent) => void): Unsub;
   onGr(cb: (evt: GrEvent) => void): Unsub;
@@ -248,6 +256,9 @@ export class TauriBackend implements Backend {
   private readonly spectrumCbs = new Set<(evt: SpectrumEvent) => void>();
   private readonly grCbs = new Set<(evt: GrEvent) => void>();
   private readonly showsCbs = new Set<(shows: ShowLib[]) => void>();
+  /** LR main fader mirror (null until the shell reports one). */
+  private main: number | null = null;
+  private readonly mainCbs = new Set<(main: number | null) => void>();
   /** Local fallback library (used when the shell has no scene ops). */
   private localShows: ShowLib[] = [{ name: TAURI_SHOW, scenes: [] }];
   private strips: Strip[] = Array.from({ length: 8 }, (_, i) => ({
@@ -289,10 +300,28 @@ export class TauriBackend implements Backend {
     });
   }
 
+  private emitMain(): void {
+    const v = this.main;
+    this.mainCbs.forEach((cb) => {
+      try {
+        cb(v);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
   async connect(driver: string, addr: string): Promise<string> {
     const msg = await this.invoke('connect', { driver, addr: addr || '' });
     this.setOnline(true);
+    try {
+      const raw: unknown = await this.invoke('get_main_fader');
+      this.main = typeof raw === 'number' && Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : null;
+    } catch {
+      /* shell without a main command: stays null */
+    }
     this.emitState();
+    this.emitMain();
     void this.refreshShows();
     return String(msg);
   }
@@ -311,6 +340,12 @@ export class TauriBackend implements Backend {
       this.strips[ch].muted = muted;
       this.emitState();
     }
+  }
+
+  async setMainFader(v01: number): Promise<void> {
+    await this.invoke('set_main_fader', { value: v01 });
+    this.main = v01;
+    this.emitMain();
   }
 
   // No `set_param` command in the Tauri shell yet: the invoke rejects and
@@ -473,6 +508,16 @@ export class TauriBackend implements Backend {
     return un;
   }
 
+  onMain(cb: (main: number | null) => void): Unsub {
+    const un = sub(this.mainCbs, cb);
+    try {
+      cb(this.main);
+    } catch {
+      /* ignore */
+    }
+    return un;
+  }
+
   onMeters(cb: (levels: MeterLevels) => void): Unsub {
     const un = sub(this.meterCbs, cb);
     if (this.pollTimer === null) {
@@ -549,6 +594,9 @@ export class WsBackend implements Backend {
   private readonly showsCbs = new Set<(shows: ShowLib[]) => void>();
   private lastShows: ShowLib[] = [];
   private readonly showsWaiters: Array<(shows: ShowLib[]) => void> = [];
+  /** LR main fader from the last state frame (null until first state). */
+  private lastMain: number | null = null;
+  private readonly mainCbs = new Set<(main: number | null) => void>();
   private readonly locksCbs = new Set<(holds: LockHolds) => void>();
   private readonly denyCbs = new Set<(deny: LockDeny) => void>();
   private lastHolds: LockHolds = {};
@@ -634,6 +682,17 @@ export class WsBackend implements Backend {
     const t = rec['type'];
     if (t === 'state' && Array.isArray(rec['strips'])) {
       const strips: Strip[] = rec['strips'].map((s: unknown, i: number) => normStrip(s, i));
+      const mf = rec['main_fader'];
+      this.lastMain =
+        typeof mf === 'number' && Number.isFinite(mf) ? Math.min(1, Math.max(0, mf)) : null;
+      const main = this.lastMain;
+      this.mainCbs.forEach((cb) => {
+        try {
+          cb(main);
+        } catch {
+          /* ignore */
+        }
+      });
       this.stateCbs.forEach((cb) => {
         try {
           cb(strips);
@@ -760,6 +819,10 @@ export class WsBackend implements Backend {
     this.send({ cmd: 'fader', ch, value: v01 });
   }
 
+  async setMainFader(v01: number): Promise<void> {
+    this.send({ cmd: 'main_fader', value: v01 });
+  }
+
   async setMute(ch: number, muted: boolean): Promise<void> {
     this.send({ cmd: 'mute', ch, muted });
   }
@@ -827,6 +890,15 @@ export class WsBackend implements Backend {
 
   onState(cb: (strips: Strip[]) => void): Unsub {
     return sub(this.stateCbs, cb);
+  }
+  onMain(cb: (main: number | null) => void): Unsub {
+    const un = sub(this.mainCbs, cb);
+    try {
+      cb(this.lastMain);
+    } catch {
+      /* ignore */
+    }
+    return un;
   }
   onMeters(cb: (levels: MeterLevels) => void): Unsub {
     return sub(this.meterCbs, cb);
