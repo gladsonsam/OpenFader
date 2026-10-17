@@ -29,7 +29,10 @@ services:
       # itself is stateless; this keeps saved scenes next to the
       # deployment instead of inside the container layer.
       - ./scenes:/app/scenes
-    command: >
+    # ENTRYPOINT is ["openmix-serve"] (see Dockerfile), so this overrides
+    # it with the same shell wrapper to keep DRIVER/ADDR .env support:
+    # plain `command:` args would append to the image entrypoint instead.
+    entrypoint: >
       sh -c 'if [ -n "$$ADDR" ]; then
                exec openmix-serve --driver "$$DRIVER" --addr "$$ADDR";
              else
