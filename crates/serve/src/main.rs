@@ -13,12 +13,14 @@ use openmix_serve::{run, ServeOptions};
 
 const HELP: &str = "\
 Usage: openmix-serve [--port PORT] [--bind ADDR] [--driver sim|xair|dl32s]
-                     [--addr IP] [--static-dir DIR]
+                     [--preset generic|xr18|dl32s|studio] [--addr IP] [--static-dir DIR]
 
 Options:
   --port <n>       HTTP+WS port (default 8080)
   --bind <addr>    bind address (default 0.0.0.0, reachable over LAN)
   --driver <name>  sim (default), xair, dl32s
+  --preset <name>  sim desk preset: generic (default), xr18, dl32s, studio
+                   (hardware drivers ignore it)
   --addr <ip>      mixer address (xair/dl32s; sim ignores it)
   --static-dir <d> UI directory (default: auto-detect ui/)
   -h, --help       print this help
@@ -65,6 +67,17 @@ async fn main() -> anyhow::Result<()> {
             }
             v if v.starts_with("--driver=") => {
                 opts.driver = v["--driver=".len()..].to_string();
+            }
+            "--preset" => {
+                i += 1;
+                opts.preset = Some(
+                    argv.get(i)
+                        .cloned()
+                        .ok_or_else(|| anyhow::anyhow!("--preset needs a value"))?,
+                );
+            }
+            v if v.starts_with("--preset=") => {
+                opts.preset = Some(v["--preset=".len()..].to_string());
             }
             "--addr" => {
                 i += 1;
