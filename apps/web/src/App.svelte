@@ -99,7 +99,7 @@
   let driver: string = $state('sim');
   let addr: string = $state('');
   let showBridge: boolean = $state(false);
-  let master: { fader: number } = $state({ fader: 0.8 }); // local monitor-dim until backend exposes main
+  let master: { fader: number } = $state({ fader: 0.8 }); // LR main mirror (driver-backed via onMain/setMainFader; 0.8 until first state)
   const meterMap = new Map<number, HTMLCanvasElement>(); // ch -> canvas (imperative paint, no re-render)
   let spectra: Record<number, number[]> = $state({}); // ch -> bins (live spectrum; null until relay sends it)
   let gr: Record<number, { gate: number; comp: number }> = $state({}); // ch -> live GR dB (null until relay sends it)
@@ -199,10 +199,23 @@
   const errMsg = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
   /* ---------- fader / mute / select ---------- */
+  /** LR main fader: optimistic mirror, authoritative value arrives via onMain. */
+  async function setMainFader(v: number): Promise<void> {
+    v = clamp01(v);
+    const prev = master.fader;
+    master.fader = v; // optimistic for touch latency
+    try {
+      await backend.setMainFader(v);
+    } catch (e) {
+      master.fader = prev;
+      say(`main: ${errMsg(e)}`);
+    }
+  }
+
   async function setFader(s: StripData, v: number): Promise<void> {
     v = clamp01(v);
     if (s.main || s.ch < 0) {
-      master.fader = v;
+      await setMainFader(v);
       return;
     }
     const cur = strips.find((x) => x.ch === s.ch);
@@ -501,7 +514,7 @@
       return;
     }
     if (e.ch < 0) {
-      master.fader = clamp01(v);
+      await setMainFader(v);
       return;
     }
     const s = strips.find((x) => x.ch === e.ch);
@@ -625,6 +638,10 @@
       backend.onState((next) => {
         strips = next;
         if (!strips.some((s) => s.ch === selected)) selected = strips[0]?.ch ?? 0;
+      }),
+      // Driver-backed LR main: server state is the source of truth.
+      backend.onMain((m) => {
+        if (m !== null) master.fader = m;
       }),
       backend.onMeters((lv) => {
         setLevels(lv);
