@@ -36,7 +36,17 @@
   // (parent wraps us in {#key strip?.ch}).
   let toggles: Record<string, boolean> = $state({});
   let labels: Record<string, string> = $state({});
-  let name: string = $state(strip?.name ?? '');
+  let name: string = $state('');
+  let nameCh: number | null = $state(null);
+  $effect(() => {
+    // Seed the name field once per selection (track ch only, so backend
+    // state pushes can't clobber an in-progress edit).
+    const c = strip?.ch ?? null;
+    if (c !== nameCh) {
+      nameCh = c;
+      name = strip?.name ?? '';
+    }
+  });
 
   // EQ band working state for EqGraph/FatStrip (engineering-unit defaults, same
   // as the slider defs). The backend never echoes param state, so this resets
@@ -99,6 +109,8 @@
 {#snippet grbar(label: string, v: number | null)}
   <div
     class="grrow"
+    role="img"
+    aria-label={v === null ? `${label}: no GR data yet` : `${label} reduction ${v.toFixed(1)} dB`}
     title={v === null
       ? 'no GR data yet — needs real pre/post + GR frames from serve/relay (V2.md deferred)'
       : `${label} reduction ${v.toFixed(1)} dB`}
@@ -133,8 +145,9 @@
     </div>
   </div>
   <div class="prow">
-    <label>name</label>
+    <label for="detail-name">name</label>
     <input
+      id="detail-name"
       type="text"
       maxlength="16"
       value={name}
@@ -149,22 +162,29 @@
       {#each vis as p (p.f)}
         {#if p.type === 'b'}
           <div class="prow">
-            <label>{p.label}</label>
-            <button class="tgl" class:lit={!!toggles[p.f]} onclick={() => onToggle(p)}>
+            <span class="plabel" id="detail-{p.f}">{p.label}</span>
+            <button
+              class="tgl"
+              class:lit={!!toggles[p.f]}
+              aria-labelledby="detail-{p.f}"
+              aria-pressed={!!toggles[p.f]}
+              onclick={() => onToggle(p)}
+            >
               {toggles[p.f] ? 'on' : 'off'}
             </button>
           </div>
         {:else if p.type === 'enum'}
           <div class="prow">
-            <label>{p.label}</label>
-            <select onchange={(e) => onEnum(p, e)}>
+            <label for="detail-{p.f}">{p.label}</label>
+            <select id="detail-{p.f}" onchange={(e) => onEnum(p, e)}>
               {#each p.opts ?? [] as o (o)}<option value={o}>{o}</option>{/each}
             </select>
           </div>
         {:else}
           <div class="prow">
-            <label>{p.label}</label>
+            <label for="detail-{p.f}">{p.label}</label>
             <input
+              id="detail-{p.f}"
               type="range"
               min={p.type === 'logf' ? 0 : (p.min ?? 0)}
               max={p.type === 'logf' ? 1000 : (p.max ?? 100)}
@@ -193,6 +213,11 @@
     align-items: center;
     gap: 6px;
     font-size: 12px;
+  }
+  .prow .plabel {
+    flex: 0 0 86px;
+    font-size: 13px;
+    color: #9aa4b2;
   }
   .gl { width: 34px; color: #9aa4b2; }
   .gtrack {
