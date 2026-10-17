@@ -31,7 +31,12 @@
   const pct = $derived(grDb === null ? 0 : Math.min(100, Math.max(0, (grDb / 20) * 100)));
 </script>
 
-<div class="fat" class:compact title={grDb === null ? 'no GR data yet — needs relay/engine frames (see V2.md deferred)' : `${label} ${grDb.toFixed(1)} dB`}>
+<div
+  class="fat"
+  class:compact
+  role="img"
+  aria-label={grDb === null ? 'EQ curve thumbnail, no gain-reduction data' : `EQ curve thumbnail, ${label} reduction ${grDb.toFixed(1)} dB`}
+  title={grDb === null ? 'no GR data yet — needs relay/engine frames (see V2.md deferred)' : `${label} ${grDb.toFixed(1)} dB`}>
   <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
     <line x1="0" y1={H / 2} x2={W} y2={H / 2} stroke="rgba(148,163,184,0.4)" stroke-width="1" />
     <path {d} fill="none" stroke="#38bdf8" stroke-width="1.5" />

@@ -133,6 +133,38 @@
   function onPointerUp(): void {
     grabbed = false;
   }
+
+  function faderKey(e: KeyboardEvent): void {
+    const step = fine ? 0.002 : e.shiftKey ? 0.05 : 0.01;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') {
+      onFader(clamp01(shown + step));
+      e.preventDefault();
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') {
+      onFader(clamp01(shown - step));
+      e.preventDefault();
+    } else if (e.key === 'Home') {
+      onFader(1);
+      e.preventDefault();
+    } else if (e.key === 'End') {
+      onFader(0);
+      e.preventDefault();
+    } else if (e.key === 'PageUp') {
+      onFader(clamp01(shown + step * 10));
+      e.preventDefault();
+    } else if (e.key === 'PageDown') {
+      onFader(clamp01(shown - step * 10));
+      e.preventDefault();
+    }
+  }
+
+  const clamp01 = (v: number): number => Math.min(1, Math.max(0, v));
+
+  function meterKey(e: KeyboardEvent): void {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onMeterTap();
+    }
+  }
 </script>
 
 <div
@@ -143,16 +175,16 @@
   class:clipped={clip}
   style={sofColor ? `--sof: ${sofColor}` : ''}
 >
-  <button class="scribble" onclick={onSelect} title="tap: select / detail">
+  <button class="scribble" aria-pressed={selected} aria-label={`select ${strip.name} for detail`} onclick={onSelect} title="tap: select / detail">
     {strip.name}<br /><small>ch{strip.ch < 0 ? 'M' : strip.ch + 1}</small>
   </button>
   {#if editMode}
-    <div class="ehandles" aria-label="layout edit">
-      <button title="move left" onclick={() => onMove?.(-1)}>‹</button>
-      <button title="insert blank spacer after" onclick={() => onGap?.()}>+gap</button>
-      <button title="move right" onclick={() => onMove?.(1)}>›</button>
+    <div class="ehandles" role="group" aria-label="layout edit">
+      <button title="move left" aria-label="move strip left" onclick={() => onMove?.(-1)}>‹</button>
+      <button title="insert blank spacer after" aria-label="insert blank spacer after" onclick={() => onGap?.()}>+gap</button>
+      <button title="move right" aria-label="move strip right" onclick={() => onMove?.(1)}>›</button>
       {#if canRemove}
-        <button title="remove from layer" onclick={() => onRemove?.()}>×</button>
+        <button title="remove from layer" aria-label="remove strip from layer" onclick={() => onRemove?.()}>×</button>
       {/if}
     </div>
   {/if}
@@ -163,7 +195,11 @@
       width="16"
       height="190"
       bind:this={canvas}
+      tabindex="0"
+      role="button"
+      aria-label={clip ? `CLIP latched on ${strip.name} — activate to clear` : `staging meter for ${strip.name} — activate clears clip`}
       onclick={(e) => { e.stopPropagation(); onMeterTap(); }}
+      onkeydown={meterKey}
       title={clip ? 'CLIP latched — tap meter to clear' : 'staging meter (input behind, output front) — tap clears clip'}
     ></canvas>
     <div
@@ -179,6 +215,9 @@
       aria-valuemin="0"
       aria-valuemax="100"
       aria-valuenow={pct}
+      aria-valuetext={readout}
+      aria-orientation="vertical"
+      onkeydown={faderKey}
       tabindex="0"
     >
       <div class="ffill" style="height: {pct}%"></div>
@@ -188,7 +227,7 @@
       {/if}
     </div>
   </div>
-  <button class="db" onclick={onValueTap} title="tap: type exact value">{readout}</button>
+  <button class="db" aria-label={`type exact value for ${strip.name}, currently ${readout}`} onclick={onValueTap} title="tap: type exact value">{readout}</button>
   {#if bands}
     <div class="thumb">
       <FatStrip {bands} {grDb} compact />
@@ -203,10 +242,19 @@
       class:lit={strip.muted}
       class:locked={muteLocked}
       disabled={muteLocked}
+      aria-pressed={strip.muted}
+      aria-label={muteLocked ? `mute ${strip.name} (locked — MUTE EN off)` : strip.muted ? `unmute ${strip.name}` : `mute ${strip.name}`}
       onclick={(e) => { e.stopPropagation(); onMute(); }}
       title={muteLocked ? 'mutes disabled (MUTE EN off)' : 'mute'}
-    >M</button>
-    <button class="solo" class:lit={soloed} onclick={(e) => { e.stopPropagation(); onSolo(); }}>S</button>
+    >{strip.muted ? 'M✓' : 'M'}</button>
+    <button
+      class="solo"
+      class:lit={soloed}
+      aria-pressed={soloed}
+      aria-label={soloed ? `unsolo ${strip.name}` : `solo ${strip.name}`}
+      onclick={(e) => { e.stopPropagation(); onSolo(); }}
+      title="solo (local monitor)"
+    >{soloed ? 'S✓' : 'S'}</button>
   </div>
 </div>
 

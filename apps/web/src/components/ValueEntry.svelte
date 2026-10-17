@@ -13,10 +13,16 @@
   let { title, sub, value, format, onApply, onCancel }: Props = $props();
 
   let pct: number = $state(0);
+  let numInput: HTMLInputElement | null = $state(null);
 
   $effect(() => {
     // Re-seed whenever a new exact-entry session opens (parent remounts us).
     pct = Math.round(value * 100);
+  });
+
+  $effect(() => {
+    // Move focus into the dialog for keyboard users (no autofocus attr).
+    numInput?.focus();
   });
 
   function apply(): void {
@@ -52,14 +58,15 @@
         min="0"
         max="100"
         step="1"
+        bind:this={numInput}
         bind:value={pct}
         aria-label="level percent number"
       />
       <span class="vunit">% = <b>{format(pct / 100)}</b></span>
     </div>
-    <div class="vquick" aria-label="quick values">
+    <div class="vquick" role="group" aria-label="quick values">
       {#each [0, 25, 50, 75, 100] as q (q)}
-        <button type="button" onclick={() => { pct = q; }}>{q}</button>
+        <button type="button" aria-label={`set ${q} percent`} onclick={() => { pct = q; }}>{q}</button>
       {/each}
     </div>
     <div class="vrow">
