@@ -939,7 +939,35 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div id="app" class:sof={inSof && !split} style={inSof && !split ? `--sof: ${sofColorV}` : ''}>
+<div id="app" class:sof={inSof && !split} class:surface={view === 'surface' && !musicianMode} style={inSof && !split ? `--sof: ${sofColorV}` : ''}>
+  <!-- Console surface carries its own status bar, connect UI, SoF + locks:
+       legacy chrome hides via CSS (#app.surface …) so Surface is a full
+       takeover, not a view. -->
+  {#if attentions.length}
+    <div id="attn" role="alert" aria-live="assertive" aria-label="musician calls">
+      {#each attentions as a (a.id)}
+        {@const nm = attnName(a.ch)}
+        <div class="attn-toast" style={`border-color: ${busColor(a.ch)}`}>
+          <button
+            class="attn-jump"
+            onclick={() => jumpToAttention(a)}
+            title={`jump to ${nm} mix`}
+            aria-label={`🎙 ${nm} calling FOH — tap to jump to that mix`}
+          >
+            <b>🎙 {nm} calling FOH</b>
+            <small>tap to jump · {Math.round(ATTN_TTL_MS / 1000)}s</small>
+          </button>
+          <button
+            class="attn-x"
+            onclick={() => dismissAttention(a.id)}
+            title="dismiss"
+            aria-label={`dismiss call from ${nm}`}
+          >✕</button>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
   <header id="topbar" class:open={menuOpen}>
     <span id="logo">openmix</span>
     <button
@@ -987,32 +1015,6 @@
   {/if}
   <div id="fohwrap" style:display={musicianMode ? 'none' : ''}>
 
-  {#if attentions.length}
-    <div id="attn" role="alert" aria-live="assertive" aria-label="musician calls">
-      {#each attentions as a (a.id)}
-        {@const nm = attnName(a.ch)}
-        <div class="attn-toast" style={`border-color: ${busColor(a.ch)}`}>
-          <button
-            class="attn-jump"
-            onclick={() => jumpToAttention(a)}
-            title={`jump to ${nm} mix`}
-            aria-label={`🎙 ${nm} calling FOH — tap to jump to that mix`}
-          >
-            <b>🎙 {nm} calling FOH</b>
-            <small>tap to jump · {Math.round(ATTN_TTL_MS / 1000)}s</small>
-          </button>
-          <button
-            class="attn-x"
-            onclick={() => dismissAttention(a.id)}
-            title="dismiss"
-            aria-label={`dismiss call from ${nm}`}
-          >✕</button>
-        </div>
-      {/each}
-    </div>
-  {/if}
-
-  <!-- Mackie 3-view nav: always visible, active one dark. -->
   <nav id="views" aria-label="views">
     {#each [{ id: 'overview', label: 'Overview' }, { id: 'mixer', label: 'Mixer' }, { id: 'surface', label: 'Surface' }, { id: 'channel', label: 'Channel' }, { id: 'rack', label: 'Rack' }, { id: 'shows', label: 'Shows' }, { id: 'wizard', label: 'Wizard' }] as v (v.id)}
       <button class:on={view === v.id} class:nav-mixer={v.id === 'mixer'} class:nav-surface={v.id === 'surface'} aria-current={view === v.id ? 'page' : undefined} onclick={() => setView(v.id as View)}>{v.label}</button>
