@@ -12,8 +12,12 @@
 // Auto-select: Tauri IPC when running inside Tauri, else WebSocket relay.
 //
 // WS protocol (port :8080): host -> {cmd:'connect',driver,addr},
-// {cmd:'fader',ch,value}, {cmd:'mute',ch,muted}, {cmd:'param',ch,field,value};
-// relay -> {type:'state',strips:[...]}, {type:'meters',levels:[...]}.
+// {cmd:'fader',ch,value}, {cmd:'mute',ch,muted}, {cmd:'param',ch,field,value},
+// {cmd:'list_shows'}, {cmd:'capture_scene',show,name},
+// {cmd:'recall_scene',show,name,fade_ms}, {cmd:'delete_scene',show,name};
+// relay -> {type:'state',strips:[...]}, {type:'meters',levels:[...]},
+// {type:'shows',shows:[...]} (full library; sent on connect, as the
+// list_shows reply, and broadcast after capture/delete).
 // Future: {type:'spectrum',ch,bins:[...]} (serve sends none yet; see
 // Spectrum.svelte header). Both backends expose onSpectrum(cb) so the UI
 // can subscribe today and light up when the relay starts sending spectra.
@@ -42,18 +46,44 @@ export interface SpectrumEvent {
   bins: number[];
 }
 
+/** One strip in a captured scene (cf. core SceneStrip). */
+export interface ShowSceneStrip {
+  ch: number;
+  name: string;
+  fader: number;
+  muted: boolean;
+}
+
+/** Named, recallable mixer state (cf. core Scene; notes stay empty). */
+export interface ShowScene {
+  name: string;
+  strips: ShowSceneStrip[];
+  main_fader: number | null;
+}
+
+/** Ordered library of scenes (cf. core Show). */
+export interface ShowLib {
+  name: string;
+  scenes: ShowScene[];
+}
+
 /** Relay -> UI messages (WS JSON protocol, port :8080). */
 export type WsMsg =
   | { type: 'state'; strips: Strip[] }
   | { type: 'meters'; levels: number[] }
-  | { type: 'spectrum'; ch: number; bins: number[] };
+  | { type: 'spectrum'; ch: number; bins: number[] }
+  | { type: 'shows'; shows: ShowLib[] };
 
 /** UI -> relay commands. */
 export type WsCmd =
   | { cmd: 'connect'; driver: string; addr: string }
   | { cmd: 'fader'; ch: number; value: number }
   | { cmd: 'mute'; ch: number; muted: boolean }
-  | { cmd: 'param'; ch: number; field: string; value: ParamValue };
+  | { cmd: 'param'; ch: number; field: string; value: ParamValue }
+  | { cmd: 'list_shows' }
+  | { cmd: 'capture_scene'; show: string; name: string }
+  | { cmd: 'recall_scene'; show: string; name: string; fade_ms: number | null }
+  | { cmd: 'delete_scene'; show: string; name: string };
 
 export interface Backend {
   readonly kind: 'tauri' | 'ws';
@@ -63,6 +93,15 @@ export interface Backend {
   setFader(ch: number, v01: number): Promise<void>;
   setMute(ch: number, muted: boolean): Promise<void>;
   setParam(ch: number, field: string, v: ParamValue): Promise<void>;
+  /** Full server show library (source of truth while connected). */
+  listShows(): Promise<ShowLib[]>;
+  /** Snapshot live state into show/name (upsert; creates the show server-side). */
+  captureScene(show: string, name: string): Promise<void>;
+  /** Server-side recall with a fader fade over fadeMs (default 400; 0 jumps). */
+  recallScene(show: string, name: string, fadeMs?: number): Promise<void>;
+  /** Remove name from show's library. */
+  deleteScene(show: string, name: string): Promise<void>;
+  onShows(cb: (shows: ShowLib[]) => void): Unsub;
   onState(cb: (strips: Strip[]) => void): Unsub;
   onMeters(cb: (levels: MeterLevels) => void): Unsub;
   onSpectrum(cb: (evt: SpectrumEvent) => void): Unsub;
@@ -93,7 +132,69 @@ function normStrip(s: unknown, i: number): Strip {
   };
 }
 
+/** Normalize one wire show strip into a ShowSceneStrip (null when unusable). */
+function normShowStrip(s: unknown): ShowSceneStrip | null {
+  if (s === null || typeof s !== 'object') return null;
+  const rec = (s !== null && typeof s === 'object' ? s : {}) as Record<string, unknown>;
+  if (typeof rec['ch'] !== 'number' || !Number.isFinite(rec['ch'])) return null;
+  const f = Number(rec['fader'] ?? 0.75);
+  return {
+    ch: rec['ch'],
+    name: typeof rec['name'] === 'string' ? rec['name'] : `CH${rec['ch'] + 1}`,
+    fader: Number.isFinite(f) ? Math.min(1, Math.max(0, f)) : 0.75,
+    muted: !!rec['muted'],
+  };
+}
+
+/** Normalize one wire show; null when the shape is unusable. */
+export function normShow(v: unknown): ShowLib | null {
+  if (v === null || typeof v !== 'object') return null;
+  const r = v as Record<string, unknown>;
+  if (typeof r['name'] !== 'string' || !Array.isArray(r['scenes'])) return null;
+  const scenes: ShowScene[] = [];
+  for (const e of r['scenes']) {
+    if (e === null || typeof e !== 'object') return null;
+    const er = e as Record<string, unknown>;
+    if (typeof er['name'] !== 'string' || !Array.isArray(er['strips'])) return null;
+    const strips: ShowSceneStrip[] = [];
+    for (const s of er['strips']) {
+      const ok = normShowStrip(s);
+      if (!ok) return null;
+      strips.push(ok);
+    }
+    const mf = er['main_fader'];
+    scenes.push({
+      name: er['name'],
+      strips,
+      main_fader: typeof mf === 'number' && Number.isFinite(mf) ? Math.min(1, Math.max(0, mf)) : null,
+    });
+  }
+  return { name: r['name'], scenes };
+}
+
+/** Normalize a wire `shows` array, dropping unusable entries. */
+export function normShows(v: unknown): ShowLib[] {
+  if (!Array.isArray(v)) return [];
+  const out: ShowLib[] = [];
+  for (const e of v) {
+    const s = normShow(e);
+    if (s && s.name) out.push(s);
+  }
+  return out;
+}
+
+/** Deep copy a show library (snapshot isolation for subscribers). */
+function copyShows(libs: ShowLib[]): ShowLib[] {
+  return libs.map((s) => ({
+    name: s.name,
+    scenes: s.scenes.map((sc) => ({ ...sc, strips: sc.strips.map((st) => ({ ...st })) })),
+  }));
+}
+
 /* ---------------- Tauri (desktop/mobile webview) ---------------- */
+
+/** Show name the Tauri shell files its flat scene list under (cf. main.rs). */
+const TAURI_SHOW = 'openmix';
 
 interface TauriCore {
   invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown>;
@@ -112,6 +213,9 @@ export class TauriBackend implements Backend {
   private readonly meterCbs = new Set<(levels: MeterLevels) => void>();
   private readonly statusCbs = new Set<(online: boolean) => void>();
   private readonly spectrumCbs = new Set<(evt: SpectrumEvent) => void>();
+  private readonly showsCbs = new Set<(shows: ShowLib[]) => void>();
+  /** Local fallback library (used when the shell has no scene ops). */
+  private localShows: ShowLib[] = [{ name: TAURI_SHOW, scenes: [] }];
   private strips: Strip[] = Array.from({ length: 8 }, (_, i) => ({
     ch: i,
     name: `CH${String(i + 1).padStart(2, '0')}`,
@@ -155,6 +259,7 @@ export class TauriBackend implements Backend {
     const msg = await this.invoke('connect', { driver, addr: addr || '' });
     this.setOnline(true);
     this.emitState();
+    void this.refreshShows();
     return String(msg);
   }
 
@@ -178,6 +283,132 @@ export class TauriBackend implements Backend {
   // the detail panel hides that control (unsupported-gracefully).
   async setParam(ch: number, field: string, v: ParamValue): Promise<void> {
     await this.invoke('set_param', { ch, field, value: v });
+  }
+
+  private emitShows(): void {
+    const snap = copyShows(this.localShows);
+    this.showsCbs.forEach((cb) => {
+      try {
+        cb(snap);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
+  /**
+   * Rebuild the library from the shell's flat scene list
+   * (`list_scenes` + `get_scene` per name, filed under TAURI_SHOW).
+   * A shell without scene ops (or away) leaves the local fallback alone.
+   */
+  private async refreshShows(): Promise<ShowLib[]> {
+    try {
+      const names: unknown = await this.invoke('list_scenes');
+      if (!Array.isArray(names)) throw new Error('list_scenes shape');
+      const scenes: ShowScene[] = [];
+      for (const n of names) {
+        if (typeof n !== 'string') continue;
+        try {
+          const raw = ((await this.invoke('get_scene', { name: n })) ?? {}) as Record<string, unknown>;
+          const scene = normShow({
+            name: TAURI_SHOW,
+            scenes: [{ name: n, strips: raw['strips'], main_fader: raw['main_fader'] }],
+          })?.scenes[0];
+          if (scene) scenes.push(scene);
+        } catch {
+          /* skip one bad scene, keep the rest */
+        }
+      }
+      this.localShows = [{ name: TAURI_SHOW, scenes }];
+    } catch {
+      /* shell without scene ops: keep the local fallback */
+    }
+    this.emitShows();
+    return copyShows(this.localShows);
+  }
+
+  async listShows(): Promise<ShowLib[]> {
+    return this.refreshShows();
+  }
+
+  async captureScene(show: string, name: string): Promise<void> {
+    const clean = name.trim().slice(0, 32);
+    if (!clean) throw new Error('scene name must not be empty');
+    try {
+      await this.invoke('capture_scene', { name: clean });
+      await this.refreshShows();
+      return;
+    } catch {
+      /* shell without scene ops: snapshot the local strip mirror */
+    }
+    const snap: ShowScene = {
+      name: clean,
+      strips: this.strips.map((s) => ({ ch: s.ch, name: s.name, fader: s.fader, muted: s.muted })),
+      main_fader: null,
+    };
+    const slotName = show.trim() || TAURI_SHOW;
+    const libs = copyShows(this.localShows);
+    let slot = libs.find((s) => s.name === slotName);
+    if (!slot) {
+      slot = { name: slotName, scenes: [] };
+      libs.push(slot);
+    }
+    const idx = slot.scenes.findIndex((s) => s.name === clean);
+    if (idx >= 0) slot.scenes[idx] = snap;
+    else slot.scenes.push(snap);
+    this.localShows = libs;
+    this.emitShows();
+  }
+
+  async recallScene(show: string, name: string, fadeMs?: number): Promise<void> {
+    const clean = name.trim();
+    try {
+      await this.invoke('recall_scene', {
+        name: clean,
+        fade_ms: fadeMs === undefined ? 400 : Math.max(0, Math.round(fadeMs) || 0),
+      });
+      return;
+    } catch {
+      /* shell without scene ops: apply the local fallback instantly */
+    }
+    const slotName = show.trim() || TAURI_SHOW;
+    const scene =
+      this.localShows.find((s) => s.name === slotName)?.scenes.find((s) => s.name === clean) ??
+      this.localShows.flatMap((s) => s.scenes).find((s) => s.name === clean);
+    if (!scene) throw new Error(`unknown scene ${clean}`);
+    for (const s of scene.strips) {
+      if (!s.muted) await this.setMute(s.ch, false);
+    }
+    for (const s of scene.strips) await this.setFader(s.ch, s.fader);
+    for (const s of scene.strips) {
+      if (s.muted) await this.setMute(s.ch, true);
+    }
+  }
+
+  async deleteScene(show: string, name: string): Promise<void> {
+    const clean = name.trim();
+    try {
+      await this.invoke('delete_scene', { name: clean });
+      await this.refreshShows();
+      return;
+    } catch {
+      /* shell without scene ops: drop from the local fallback */
+    }
+    const slotName = show.trim() || TAURI_SHOW;
+    this.localShows = copyShows(this.localShows).map((s) =>
+      s.name === slotName ? { ...s, scenes: s.scenes.filter((sc) => sc.name !== clean) } : s,
+    );
+    this.emitShows();
+  }
+
+  onShows(cb: (shows: ShowLib[]) => void): Unsub {
+    const un = sub(this.showsCbs, cb);
+    try {
+      cb(copyShows(this.localShows));
+    } catch {
+      /* ignore */
+    }
+    return un;
   }
 
   onState(cb: (strips: Strip[]) => void): Unsub {
@@ -257,6 +488,9 @@ export class WsBackend implements Backend {
   private readonly meterCbs = new Set<(levels: MeterLevels) => void>();
   private readonly statusCbs = new Set<(online: boolean) => void>();
   private readonly spectrumCbs = new Set<(evt: SpectrumEvent) => void>();
+  private readonly showsCbs = new Set<(shows: ShowLib[]) => void>();
+  private lastShows: ShowLib[] = [];
+  private readonly showsWaiters: Array<(shows: ShowLib[]) => void> = [];
   private ws: WebSocket | null = null;
   private openPromise: Promise<string> | null = null;
   private readonly queue: string[] = [];
@@ -367,6 +601,24 @@ export class WsBackend implements Backend {
           /* ignore */
         }
       });
+    } else if (t === 'shows' && Array.isArray(rec['shows'])) {
+      const shows = normShows(rec['shows']);
+      this.lastShows = shows;
+      const snap = copyShows(shows);
+      this.showsCbs.forEach((cb) => {
+        try {
+          cb(snap);
+        } catch {
+          /* ignore */
+        }
+      });
+      for (const w of this.showsWaiters.splice(0)) {
+        try {
+          w(snap);
+        } catch {
+          /* ignore */
+        }
+      }
     }
   }
 
@@ -386,6 +638,55 @@ export class WsBackend implements Backend {
 
   async setParam(ch: number, field: string, v: ParamValue): Promise<void> {
     this.send({ cmd: 'param', ch, field, value: v });
+  }
+
+  /**
+   * Fresh server library: sends `list_shows` and resolves on the unicast
+   * `shows` reply. Rejects on timeout so callers can fall back to cache.
+   */
+  async listShows(): Promise<ShowLib[]> {
+    const next = new Promise<ShowLib[]>((resolve, reject) => {
+      let res: (shows: ShowLib[]) => void = () => {};
+      const to = window.setTimeout(() => {
+        const i = this.showsWaiters.indexOf(res);
+        if (i >= 0) this.showsWaiters.splice(i, 1);
+        reject(new Error(`shows timeout ${this.url}`));
+      }, 5000);
+      res = (shows) => {
+        window.clearTimeout(to);
+        resolve(shows);
+      };
+      this.showsWaiters.push(res);
+    });
+    this.send({ cmd: 'list_shows' });
+    return next;
+  }
+
+  async captureScene(show: string, name: string): Promise<void> {
+    this.send({ cmd: 'capture_scene', show, name });
+  }
+
+  async recallScene(show: string, name: string, fadeMs?: number): Promise<void> {
+    this.send({
+      cmd: 'recall_scene',
+      show,
+      name,
+      fade_ms: fadeMs === undefined ? null : Math.max(0, Math.round(fadeMs) || 0),
+    });
+  }
+
+  async deleteScene(show: string, name: string): Promise<void> {
+    this.send({ cmd: 'delete_scene', show, name });
+  }
+
+  onShows(cb: (shows: ShowLib[]) => void): Unsub {
+    const un = sub(this.showsCbs, cb);
+    try {
+      cb(copyShows(this.lastShows));
+    } catch {
+      /* ignore */
+    }
+    return un;
   }
 
   onState(cb: (strips: Strip[]) => void): Unsub {

@@ -2,39 +2,23 @@
   // Shows editor: ordered library of named, recallable mixer states (gig-simple).
   //
   // Shape mirrors crates/core/src/show.rs (Show { name, scenes }, Scene
-  // { name, strips: [{ch,name,fader,muted}], main_fader, notes }) so a future
-  // backend sync is a straight serialization.
+  // { name, strips: [{ch,name,fader,muted}], main_fader }) so the server
+  // library (crates/serve `shows` event / Tauri scene commands) deserializes
+  // straight through lib/backend.ts.
   //
-  // Offline-first: the WS relay (crates/serve) exposes no scene ops and the
-  // web Backend contract (lib/backend.ts) exposes none either, so the library
-  // lives in localStorage. Tauri *does* have server-side scene ops
-  // (capture_scene/recall_scene/list_scenes/get_scene/delete_scene) but they
-  // are not in the Backend contract — recall goes through setFader/setMute so
-  // both transports behave identically.
-  // TODO: sync to serve — when openmix-serve grows scene ops, push/pull this
-  // library through them (and reconcile with the Tauri server-side show).
-  import type { Backend, Strip } from '../lib/backend';
-
-  /** One strip's contribution to a scene (cf. core SceneStrip). */
-  interface SceneStrip {
-    ch: number;
-    name: string;
-    fader: number;
-    muted: boolean;
-  }
-
-  /** Named, recallable scene (cf. core Scene; params/notes stay empty). */
-  interface Scene {
-    name: string;
-    strips: SceneStrip[];
-    main_fader: number | null;
-  }
+  // Sync strategy: the server library is the source of truth while connected
+  // (server wins on connect and on every `shows` push; local-only shows are
+  // kept). Scene capture/recall/delete push through the backend scene ops;
+  // show create/rename/delete have no server op and stay local. localStorage
+  // is the offline cache: it seeds the UI and receives every update, so a
+  // dropped transport degrades to this-device recall via setFader/setMute.
+  import { normShow, normShows } from '../lib/backend';
+  import type { Backend, ShowLib, ShowScene, Strip } from '../lib/backend';
 
   /** Ordered library of scenes (cf. core Show). */
-  interface Show {
-    name: string;
-    scenes: Scene[];
-  }
+  type Show = ShowLib;
+  /** Named, recallable scene (cf. core Scene). */
+  type Scene = ShowScene;
 
   interface Props {
     strips: Strip[];
@@ -56,52 +40,11 @@
   const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
   const clamp01 = (v: number): number => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0.75);
 
-  function validStrip(s: unknown): SceneStrip | null {
-    if (s === null || typeof s !== 'object') return null;
-    const r = s as Record<string, unknown>;
-    if (typeof r['ch'] !== 'number' || !Number.isFinite(r['ch'])) return null;
-    return {
-      ch: r['ch'],
-      name: typeof r['name'] === 'string' ? r['name'] : `CH${r['ch'] + 1}`,
-      fader: clamp01(Number(r['fader'] ?? 0.75)),
-      muted: !!r['muted'],
-    };
-  }
-
-  function validShow(v: unknown): Show | null {
-    if (v === null || typeof v !== 'object') return null;
-    const r = v as Record<string, unknown>;
-    if (typeof r['name'] !== 'string' || !Array.isArray(r['scenes'])) return null;
-    const scenes: Scene[] = [];
-    for (const e of r['scenes']) {
-      if (e === null || typeof e !== 'object') return null;
-      const er = e as Record<string, unknown>;
-      if (typeof er['name'] !== 'string' || !Array.isArray(er['strips'])) return null;
-      const ss: SceneStrip[] = [];
-      for (const s of er['strips']) {
-        const ok = validStrip(s);
-        if (!ok) return null;
-        ss.push(ok);
-      }
-      scenes.push({
-        name: er['name'],
-        strips: ss,
-        main_fader: typeof er['main_fader'] === 'number' ? clamp01(er['main_fader']) : null,
-      });
-    }
-    return { name: r['name'], scenes };
-  }
-
   function loadShows(): Show[] {
     try {
       const raw: unknown = JSON.parse(localStorage.getItem(LS_SHOWS) || 'null');
-      if (!Array.isArray(raw)) return importLegacy();
-      const out: Show[] = [];
-      for (const e of raw) {
-        const s = validShow(e);
-        if (s && s.name) out.push(s);
-      }
-      return out.length ? out : importLegacy();
+      const libs = normShows(raw);
+      return libs.length ? libs : importLegacy();
     } catch {
       return importLegacy();
     }
@@ -113,18 +56,14 @@
       const raw: unknown = JSON.parse(localStorage.getItem(LEGACY_SLOTS) || 'null');
       if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return [];
       const rec = raw as Record<string, unknown>;
-      const scenes: Scene[] = [];
+      const scenes: unknown[] = [];
       for (const k of Object.keys(rec).sort()) {
         const arr = rec[k];
         if (!Array.isArray(arr)) continue;
-        const ss: SceneStrip[] = [];
-        for (const s of arr) {
-          const ok = validStrip(s);
-          if (ok) ss.push(ok);
-        }
-        if (ss.length) scenes.push({ name: `S${k}`, strips: ss, main_fader: null });
+        scenes.push({ name: `S${k}`, strips: arr, main_fader: null });
       }
-      return scenes.length ? [{ name: 'Imported', scenes }] : [];
+      const show = normShow({ name: 'Imported', scenes });
+      return show && show.scenes.length ? [show] : [];
     } catch {
       return [];
     }
@@ -157,6 +96,49 @@
   let newSceneName: string = $state('');
   let fadeMs: number = $state(FADE_DEFAULT);
   let recalling: string | null = $state(null); // scene name currently fading
+  let online: boolean = $state(false); // transport up (server ops usable)
+
+  /**
+   * Server wins on conflicts; local-only shows (created offline) are kept.
+   * Remote shells left empty (all scenes deleted) are dropped — capture
+   * always recreates a shell, so an empty shell only means "deleted".
+   */
+  function applyServer(remote: ShowLib[]): void {
+    const merged: Show[] = remote
+      .filter((s) => s.scenes.length > 0)
+      .map((s) => ({ ...s, scenes: [...s.scenes] }));
+    for (const local of shows) {
+      if (!merged.some((s) => s.name === local.name)) merged.push(local);
+    }
+    shows = merged;
+    if (!activeName || !shows.some((s) => s.name === activeName)) {
+      activeName = shows[0]?.name ?? '';
+    }
+    persist();
+  }
+
+  /** Pull the server library (server wins); stay local when unreachable. */
+  async function syncFromServer(): Promise<void> {
+    try {
+      applyServer(await backend.listShows());
+    } catch {
+      /* offline or transport without ops: keep the offline cache */
+    }
+  }
+
+  $effect(() => {
+    const offs = [
+      backend.onShows((remote) => applyServer(remote)),
+      backend.onStatus((on) => {
+        const was = online;
+        online = on;
+        if (on && !was) void syncFromServer();
+      }),
+    ];
+    return () => {
+      offs.forEach((off) => off());
+    };
+  });
 
   const active: Show | null = $derived(shows.find((s) => s.name === activeName) ?? null);
   const liveByCh = $derived(new Map(strips.map((s) => [s.ch, s])));
@@ -221,14 +203,28 @@
   function deleteShow(): void {
     const show = active;
     if (!show) return;
+    const condemned = show.scenes.map((s) => s.name);
     shows = shows.filter((s) => s.name !== show.name);
     activeName = shows[0]?.name ?? '';
     persist();
+    // Best effort: show shells have no server op, but dropping their scenes
+    // keeps the server library consistent (empty shells are pruned on merge).
+    if (online && condemned.length) {
+      void (async () => {
+        for (const n of condemned) {
+          try {
+            await backend.deleteScene(show.name, n);
+          } catch {
+            /* stays server-side until the next successful delete */
+          }
+        }
+      })();
+    }
     tell(`show "${show.name}" deleted`);
   }
 
-  /** Capture live state as a scene (upsert by name, cf. core Show::add_scene). */
-  function captureScene(): void {
+  /** Capture live state as a scene (upsert, cf. core Show::add_scene). */
+  async function captureScene(): Promise<void> {
     const show = active;
     if (!show) {
       tell('create a show first');
@@ -239,6 +235,7 @@
       tell('scene needs a name');
       return;
     }
+    // Optimistic local capture: works offline, confirmed by the server push.
     const scene: Scene = {
       name,
       strips: strips.map((s) => ({ ch: s.ch, name: s.name, fader: s.fader, muted: s.muted })),
@@ -250,47 +247,79 @@
     shows = [...shows];
     newSceneName = '';
     persist();
+    if (online) {
+      try {
+        await backend.captureScene(show.name, name);
+      } catch (e) {
+        tell(`scene "${name}" cached on this device (${errMsg(e)})`);
+        return;
+      }
+    }
     tell(`scene "${name}" captured (${scene.strips.length}ch)`);
   }
 
-  function deleteScene(name: string): void {
+  async function deleteScene(name: string): Promise<void> {
     const show = active;
     if (!show) return;
     show.scenes = show.scenes.filter((s) => s.name !== name);
     shows = [...shows];
     persist();
+    if (online) {
+      try {
+        await backend.deleteScene(show.name, name);
+      } catch (e) {
+        tell(`scene "${name}" deleted locally (${errMsg(e)})`);
+        return;
+      }
+    }
     tell(`scene "${name}" deleted`);
   }
 
-  /** Recall with a fader fade (order mirrors core Scene::recall_to). */
+  /** This-device fade (offline fallback; order mirrors core Scene::recall_to). */
+  async function fadeLocal(scene: Scene, ms: number): Promise<void> {
+    for (const s of scene.strips) {
+      if (!s.muted && liveByCh.get(s.ch)?.muted) await backend.setMute(s.ch, false);
+    }
+    if (ms === 0) {
+      for (const s of scene.strips) await backend.setFader(s.ch, s.fader);
+    } else {
+      const starts = scene.strips.map((s) => liveByCh.get(s.ch)?.fader ?? s.fader);
+      const stepMs = ms / FADE_STEPS;
+      for (let step = 1; step <= FADE_STEPS; step++) {
+        const t = step / FADE_STEPS;
+        for (let i = 0; i < scene.strips.length; i++) {
+          const s = scene.strips[i];
+          if (!s) continue;
+          await backend.setFader(s.ch, clamp01((starts[i] ?? s.fader) + (s.fader - (starts[i] ?? s.fader)) * t));
+        }
+        if (step < FADE_STEPS && stepMs > 0) await sleep(stepMs);
+      }
+      for (const s of scene.strips) await backend.setFader(s.ch, s.fader);
+    }
+    for (const s of scene.strips) {
+      if (s.muted && !liveByCh.get(s.ch)?.muted) await backend.setMute(s.ch, true);
+    }
+  }
+
+  /** Recall via the server op when connected, else a this-device fade. */
   async function recallScene(scene: Scene): Promise<void> {
     if (recalling) return;
+    const show = active;
+    if (!show) return;
     recalling = scene.name;
     const ms = Math.max(0, Math.round(fadeMs) || 0);
     tell(`recalling "${scene.name}"…`);
     try {
-      for (const s of scene.strips) {
-        if (!s.muted && liveByCh.get(s.ch)?.muted) await backend.setMute(s.ch, false);
-      }
-      if (ms === 0) {
-        for (const s of scene.strips) await backend.setFader(s.ch, s.fader);
-      } else {
-        const starts = scene.strips.map((s) => liveByCh.get(s.ch)?.fader ?? s.fader);
-        const stepMs = ms / FADE_STEPS;
-        for (let step = 1; step <= FADE_STEPS; step++) {
-          const t = step / FADE_STEPS;
-          for (let i = 0; i < scene.strips.length; i++) {
-            const s = scene.strips[i];
-            if (!s) continue;
-            await backend.setFader(s.ch, clamp01((starts[i] ?? s.fader) + (s.fader - (starts[i] ?? s.fader)) * t));
-          }
-          if (step < FADE_STEPS && stepMs > 0) await sleep(stepMs);
+      if (online) {
+        try {
+          await backend.recallScene(show.name, scene.name, ms);
+          tell(`recalled "${scene.name}" (fade ${ms}ms)`);
+          return;
+        } catch {
+          /* server lacks the scene (or the op): fall back to this device */
         }
-        for (const s of scene.strips) await backend.setFader(s.ch, s.fader);
       }
-      for (const s of scene.strips) {
-        if (s.muted && !liveByCh.get(s.ch)?.muted) await backend.setMute(s.ch, true);
-      }
+      await fadeLocal(scene, ms);
       tell(`recalled "${scene.name}" (fade ${ms}ms)`);
     } catch (e) {
       tell(`recall "${scene.name}": ${errMsg(e)}`);
@@ -378,7 +407,7 @@
       />ms
     </label>
   </div>
-  <div class="hint">`*` = mix differs from the scene. Capture snapshots live faders + mutes; recall fades faders then snaps mutes. Library is on this device only.</div>
+  <div class="hint">`*` = mix differs from the scene. Capture snapshots live faders + mutes; recall fades faders then snaps mutes. {online ? 'Library syncs with the server (server wins).' : 'Offline — library is on this device and merges on connect.'}</div>
 </div>
 
 <style>
