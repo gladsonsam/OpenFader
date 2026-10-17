@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { svelte, vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
 // Static output only (no SSR): dist/ is served as plain files,
 // by `vite preview`, any static file server, or the Tauri shell.
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [svelte({ preprocess: vitePreprocess() })],
   base: './',
   build: {
     outDir: 'dist',

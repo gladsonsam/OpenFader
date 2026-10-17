@@ -1,5 +1,19 @@
-<script>
-  import { faderDb } from '../lib/format.js';
+<script lang="ts">
+  import { faderDb } from '../lib/format';
+  import type { Strip } from '../lib/backend';
+
+  interface Props {
+    strip: Strip;
+    selected?: boolean;
+    dimmed?: boolean;
+    soloed?: boolean;
+    registerMeter: (ch: number, cv: HTMLCanvasElement) => void;
+    unregisterMeter: (ch: number) => void;
+    onFader: (v: number) => void;
+    onMute: () => void;
+    onSolo: () => void;
+    onSelect: () => void;
+  }
 
   let {
     strip,
@@ -12,10 +26,10 @@
     onMute,
     onSolo,
     onSelect,
-  } = $props();
+  }: Props = $props();
 
-  let track = $state(null);
-  let canvas = $state(null);
+  let track: HTMLDivElement | null = $state(null);
+  let canvas: HTMLCanvasElement | null = $state(null);
 
   $effect(() => {
     if (canvas) {
@@ -26,19 +40,21 @@
 
   const pct = $derived(Math.round(strip.fader * 100));
 
-  function setFromEvent(e) {
+  function setFromEvent(e: PointerEvent): void {
+    if (!track) return;
     const r = track.getBoundingClientRect();
     const v = Math.min(1, Math.max(0, 1 - (e.clientY - r.top) / r.height));
     onFader(v);
   }
 
-  function onPointerDown(e) {
+  function onPointerDown(e: PointerEvent): void {
+    if (!track) return;
     track.setPointerCapture(e.pointerId);
     onSelect();
     setFromEvent(e);
   }
 
-  function onPointerMove(e) {
+  function onPointerMove(e: PointerEvent): void {
     // With pointer capture set, buttons>0 means an active drag.
     if (e.buttons) setFromEvent(e);
   }
