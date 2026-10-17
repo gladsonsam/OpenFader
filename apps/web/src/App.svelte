@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { fade, fly } from 'svelte/transition';
   import { selectBackend } from './lib/backend';
+  import { swipe } from './lib/swipe';
   import type { Backend, ClientsInfo, LockHolds, MainStrip, ParamValue, Unsub, Strip as StripData } from './lib/backend';
   import { eqBandsFor, ensureBandsFor, grFor, noteBandParam } from './lib/bands';
   import { levels, setLevels } from './lib/levels';
@@ -121,6 +122,8 @@
     }
   }
   let showBridge: boolean = $state(false);
+  let menuOpen: boolean = $state(false); // topbar overflow menu (narrow screens)
+  let detailOpen: boolean = $state(true); // channel detail bottom-sheet collapse
   let master: { fader: number } = $state({ fader: 0.8 }); // LR main mirror (driver-backed via onMain/setMainFader; 0.8 until first state)
   const meterMapA = new Map<number, HTMLCanvasElement>(); // ch -> canvas (imperative paint, no re-render)
   const meterMapB = new Map<number, HTMLCanvasElement>(); // split-mode pane B canvases (same ch can show twice)
@@ -395,6 +398,30 @@
   function jumpTo(ch: number): void {
     selected = ch;
     setView('mixer');
+  }
+
+  /** Step selection through the current bank (phone arrows / swipe). */
+  function stepStrip(dir: -1 | 1): void {
+    const ids = mixerCells.flatMap((c): number[] => (c.kind === 'strip' ? [c.s.ch] : []));
+    if (!ids.length) return;
+    const at = ids.indexOf(selected);
+    const i = at < 0 ? (dir > 0 ? 0 : ids.length - 1) : (at + dir + ids.length) % ids.length;
+    const next = ids[i];
+    if (next === undefined) return;
+    selected = next;
+    requestAnimationFrame(() => {
+      document.querySelector(`[data-strip="${next}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
+    });
+  }
+
+  /** Step selection through every strip (channel view stepper). */
+  function stepChannel(dir: -1 | 1): void {
+    const ids = [...strips.map((s) => s.ch), -1];
+    if (!ids.length) return;
+    const at = ids.indexOf(selected);
+    const i = at < 0 ? 0 : (at + dir + ids.length) % ids.length;
+    const next = ids[i];
+    if (next !== undefined) selected = next;
   }
 
   function clearClip(ch: number): void {
@@ -888,22 +915,31 @@
 <svelte:window onkeydown={onKey} />
 
 <div id="app" class:sof={inSof && !split} style={inSof && !split ? `--sof: ${sofColorV}` : ''}>
-  <header id="topbar">
+  <header id="topbar" class:open={menuOpen}>
     <span id="logo">openmix</span>
+    <button
+      id="menubtn"
+      aria-expanded={menuOpen}
+      aria-label={menuOpen ? 'close menu' : 'open menu'}
+      title="menu"
+      onclick={() => { menuOpen = !menuOpen; }}
+    >{menuOpen ? '✕' : '☰'}</button>
+    <div class="tgroup" id="tgroup">
     <label>driver
-      <select bind:value={driver}>
+      <select bind:value={driver} onchange={() => { menuOpen = false; }}>
         <option value="sim">sim</option>
         <option value="xair">xair</option>
         <option value="dl32s">dl32s</option>
       </select>
     </label>
     <label>addr <input id="addr" inputmode="numeric" placeholder="192.168.1.10 (blank = sim)" size="22" bind:value={addr} /></label>
-    <button id="conn" class="big" onclick={connect}>connect</button>
+    <button id="conn" class="big" onclick={() => { menuOpen = false; connect(); }}>connect</button>
     <span id="badge" class:online class:offline={!online}>{online ? 'online' : 'offline'}</span>
     <span id="via" title="transport">{via}</span>
     <button id="bridgeBtn" class:on={showBridge} aria-pressed={showBridge} title="toggle meter bridge" onclick={() => { showBridge = !showBridge; }}>bridge</button>
-    <button id="musicianBtn" class:on={musicianMode} aria-pressed={musicianMode} title="musician monitor mode: pick-your-bus wedge mix, everything else locked out" onclick={toggleMusician}>musician</button>
-    <button id="helpBtn" title="first-run wizard & guided tour" aria-label="open setup wizard and tour" onclick={() => { showOnboard = true; }}>?</button>
+    <button id="musicianBtn" class:on={musicianMode} aria-pressed={musicianMode} title="musician monitor mode: pick-your-bus wedge mix, everything else locked out" onclick={() => { toggleMusician(); menuOpen = false; }}>musician</button>
+    <button id="helpBtn" title="first-run wizard & guided tour" aria-label="open setup wizard and tour" onclick={() => { showOnboard = true; menuOpen = false; }}>?</button>
+    </div>
   </header>
 
   {#if musicianMode}
@@ -1019,7 +1055,7 @@
       <button
         class:on={split}
         aria-pressed={split}
-        title="dual-pane: two independent mixer views side by side (FOH + monitor). Auto-singles below 1100px."
+        title="dual-pane: two independent mixer views side by side (FOH + monitor). Stacks below 1100px."
         onclick={() => { split = !split; saveJSON('openmix.split.v1', split); say(split ? 'dual-pane on: A and B mix independently' : 'single pane'); }}
       >SPLIT</button>
       {#if editLayout}
@@ -1113,10 +1149,21 @@
       />
     </main>
   {:else if view === 'channel'}
-    <main id="chwrap">
+    <main id="chwrap" class:sheetclosed={!detailOpen}>
       {#if channelStrip}
         {@const cs = channelStrip}
-        <div class="chstrip">
+        <div id="chstep" aria-label="step channels">
+          <button aria-label="previous channel" title="previous channel" onclick={() => stepChannel(-1)}>‹</button>
+          <span>{cs.ch < 0 ? 'MAIN' : `${cs.name} · ch${cs.ch + 1}`}</span>
+          <button aria-label="next channel" title="next channel" onclick={() => stepChannel(1)}>›</button>
+          {#if sofBus !== null}
+            <span class="chsof" style={`--sof: ${sofColorV}`}>SENDS → {sofName}</span>
+          {/if}
+        </div>
+        <div
+          class="chstrip"
+          use:swipe={stepChannel}
+        >
           <Strip
             strip={cs}
             selected={true}
@@ -1155,8 +1202,17 @@
             {/each}
           </div>
         {/if}
-        <div class="chdetail">
+        <div class="chdetail" class:closed={!detailOpen}>
+          <button
+            id="sheethandle"
+            aria-expanded={detailOpen}
+            aria-label={detailOpen ? 'collapse channel detail' : 'expand channel detail'}
+            title={detailOpen ? 'collapse detail' : 'expand detail'}
+            onclick={() => { detailOpen = !detailOpen; }}
+          ><span aria-hidden="true"></span>{detailOpen ? 'detail ▾' : 'detail ▴'}</button>
+          <div class="sheetbody">
           <Detail strip={selectedStrip} {hidden} spectrum={spectra[selected] ?? null} grGate={gr[selected]?.gate ?? null} grComp={gr[selected]?.comp ?? null} onParam={pushParam} onName={pushName} />
+          </div>
         </div>
       {:else}
         <div class="empty">no channel selected</div>
@@ -1262,7 +1318,17 @@
   {:else}
     <main id="wrap">
       {#key layer + String(inSof)}
-        <div id="strips" transition:fade={{ duration: 120 }}>
+        <div id="phonenav" aria-label="step channels">
+          <button aria-label="previous channel" title="previous channel" onclick={() => stepStrip(-1)}>‹</button>
+          <span>{selected < 0 ? 'MAIN' : (strips.find((s) => s.ch === selected)?.name ?? `ch${selected + 1}`)}</span>
+          <button aria-label="next channel" title="next channel" onclick={() => stepStrip(1)}>›</button>
+          <button class="phdetail" title="open channel detail" aria-label="open channel detail" onclick={() => setView('channel')}>detail</button>
+        </div>
+        <div
+          id="strips"
+          transition:fade={{ duration: 120 }}
+          use:swipe={stepStrip}
+        >
           {#if !mixerCells.length}
             <div class="empty">{layer === 'buses' && !busStrips.length ? 'no buses on this backend yet' : 'empty bank — LAYOUT › reset restores backend order'}</div>
           {:else}
@@ -1270,7 +1336,7 @@
               {#if c.kind === 'gap'}
                 <div class="spacer" title="blank spacer"></div>
               {:else}
-                <div in:fly={{ y: 14, duration: 160, delay: Math.min(i, 8) * 25 }} class:masterpin={c.master}>
+                <div data-strip={c.kind === 'strip' ? c.s.ch : -99} class="stripwrap" in:fly={{ y: 14, duration: 160, delay: Math.min(i, 8) * 25 }} class:masterpin={c.master}>
                   {#if c.master}
                     <div class="pinlabel" style={`background: ${sofColorV}`}>MASTER</div>
                   {/if}
@@ -1332,6 +1398,59 @@
 </div>
 
 <style>
+  /* Topbar overflow menu: hamburger hidden on wide screens. */
+  #menubtn { display: none; }
+  .tgroup { display: contents; }
+  /* Phone channel stepper: hidden on wide screens (see app.css). */
+  #phonenav { display: none; }
+  /* Channel-view stepper row. */
+  #chstep {
+    display: none; width: 100%; gap: 8px; align-items: center;
+    padding: 4px 2px 8px;
+  }
+  #chstep span { flex: 1; text-align: center; font-weight: 800; font-size: clamp(15px, 4vw, 18px); }
+  #chstep button { font-size: 22px; font-weight: 800; padding: 0 18px; }
+  #chstep .chsof {
+    flex: 0 0 auto; font-size: 11px; font-weight: 800; color: var(--sof, var(--yel));
+    border: 1px solid var(--sof, var(--yel)); border-radius: 6px; padding: 2px 6px;
+  }
+  /* Bottom-sheet handle for channel detail. */
+  #sheethandle {
+    display: none; width: 100%; align-items: center; justify-content: center; gap: 8px;
+    background: none; border: 1px solid var(--line); border-radius: 10px;
+    color: var(--dim); font-weight: 800; font-size: 13px; text-transform: uppercase;
+    letter-spacing: 0.6px; margin-bottom: 6px;
+  }
+  #sheethandle span[aria-hidden="true"] {
+    display: inline-block; width: 44px; height: 4px; border-radius: 2px; background: var(--dim);
+  }
+  /* Narrow topbar: hamburger + dropdown (scoped here so it beats .tgroup). */
+  @media (max-width: 820px) {
+    #menubtn { display: inline-flex; align-items: center; justify-content: center; font-size: 20px; }
+    .tgroup { display: none; }
+    #topbar.open .tgroup {
+      display: flex; flex-basis: 100%; flex-wrap: wrap; gap: 8px;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px;
+    }
+    #topbar.open .tgroup label { flex: 1 1 100%; }
+    #topbar.open .tgroup input#addr { flex: 1; width: 100%; }
+  }
+  /* Tablet portrait and down: channel stepper + collapsible detail sheet. */
+  @media (max-width: 900px) {
+    #chstep { display: flex; }
+    #sheethandle { display: flex; }
+    .chdetail.closed > .sheetbody { display: none; }
+  }
+  /* Phone: channel-at-a-time stepper row (static — only the topbar sticks). */
+  @media (max-width: 600px) {
+    #phonenav {
+      display: flex; gap: 8px; align-items: center;
+      padding: 8px max(10px, env(safe-area-inset-right)) 0 max(10px, env(safe-area-inset-left));
+    }
+    #phonenav span { flex: 1; text-align: center; font-weight: 800; font-size: clamp(15px, 4.5vw, 19px); }
+    #phonenav button { font-size: 24px; font-weight: 800; padding: 0 20px; min-width: 56px; min-height: 48px; }
+    #phonenav button.phdetail { font-size: 13px; padding: 0 14px; min-width: var(--touch); text-transform: uppercase; letter-spacing: 0.5px; }
+  }
   /* CALL FOH attention toasts: status/badge shape, yellow ring like the
      musician CALL FOH button. Stacked newest-last, max 3, 10s TTL. */
   #attn {
