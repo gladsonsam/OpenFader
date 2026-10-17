@@ -444,10 +444,43 @@
     // relay fans every param frame out to all clients, so a FOH build with
     // a toast listener flashes there; builds without one ignore the unknown
     // field and the performer's local strobe still covers the UX.
-    // TODO(kiosk): FOH-side toast on `param` `attention` frames.
     backend.setParam(musicianBus, 'attention', 1).catch((e: unknown) => {
       say(`call FOH stayed local: ${errMsg(e)}`);
     });
+  }
+
+  /* ---------- FOH attention toasts (musician CALL FOH) ---------- */
+  interface Attention {
+    id: number;
+    ch: number;
+  }
+  let attentions: Attention[] = $state([]);
+  let attnSeq = 0;
+  const ATTN_TTL_MS = 10_000;
+  const ATTN_MAX = 3;
+
+  function attnName(ch: number): string {
+    return strips.find((s) => s.ch === ch)?.name ?? `bus ${ch}`;
+  }
+
+  function pushAttention(ch: number): void {
+    // FOH surface only: the musician box already has its local strobe.
+    if (musicianMode) return;
+    attnSeq += 1;
+    const id = attnSeq;
+    attentions = [...attentions.filter((a) => a.ch !== ch), { id, ch }].slice(-ATTN_MAX);
+    window.setTimeout(() => {
+      attentions = attentions.filter((a) => a.id !== id);
+    }, ATTN_TTL_MS);
+  }
+
+  function dismissAttention(id: number): void {
+    attentions = attentions.filter((a) => a.id !== id);
+  }
+
+  function jumpToAttention(a: Attention): void {
+    dismissAttention(a.id);
+    enterSof(a.ch);
   }
 
   async function copyLrPane(pane: 'a' | 'b'): Promise<void> {
@@ -796,6 +829,17 @@
     } catch {
       /* transport without locks */
     }
+    // Musician CALL FOH: `param` `attention` frames fanned out by the relay.
+    // Null-safe for old servers / transports without a param feed.
+    try {
+      offs.push(
+        backend.onParam((evt) => {
+          if (evt.field === 'attention') pushAttention(evt.ch);
+        }),
+      );
+    } catch {
+      /* transport without param frames */
+    }
 
     const staleTimer = window.setInterval(() => {
       // Offline if no meter frame for >1.5s while expecting one.
@@ -862,6 +906,31 @@
     />
   {/if}
   <div id="fohwrap" style:display={musicianMode ? 'none' : ''}>
+
+  {#if attentions.length}
+    <div id="attn" role="alert" aria-live="assertive" aria-label="musician calls">
+      {#each attentions as a (a.id)}
+        {@const nm = attnName(a.ch)}
+        <div class="attn-toast" style={`border-color: ${busColor(a.ch)}`}>
+          <button
+            class="attn-jump"
+            onclick={() => jumpToAttention(a)}
+            title={`jump to ${nm} mix`}
+            aria-label={`🎙 ${nm} calling FOH — tap to jump to that mix`}
+          >
+            <b>🎙 {nm} calling FOH</b>
+            <small>tap to jump · {Math.round(ATTN_TTL_MS / 1000)}s</small>
+          </button>
+          <button
+            class="attn-x"
+            onclick={() => dismissAttention(a.id)}
+            title="dismiss"
+            aria-label={`dismiss call from ${nm}`}
+          >✕</button>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   <!-- Mackie 3-view nav: always visible, active one dark. -->
   <nav id="views" aria-label="views">
@@ -1238,3 +1307,30 @@
     />
   {/if}
 </div>
+
+<style>
+  /* CALL FOH attention toasts: status/badge shape, yellow ring like the
+     musician CALL FOH button. Stacked newest-last, max 3, 10s TTL. */
+  #attn {
+    display: flex; flex-direction: column; gap: 6px;
+    padding: 8px 10px 0;
+  }
+  .attn-toast {
+    display: flex; gap: 10px; align-items: center; width: 100%;
+    background: #4a2b00; border: 2px solid var(--yel); color: var(--txt);
+    border-radius: 12px; padding: 6px 6px 6px 12px; min-height: var(--touch);
+    animation: attnblink 0.7s steps(2) infinite;
+  }
+  .attn-jump {
+    flex: 1; display: flex; gap: 10px; align-items: center; min-width: 0;
+    background: none; border: 0; padding: 0; color: inherit;
+    font-size: 16px; cursor: pointer; text-align: left; min-height: var(--touch);
+  }
+  .attn-jump b { font-weight: 800; }
+  .attn-jump small { color: var(--yel); margin-left: auto; white-space: nowrap; }
+  .attn-x {
+    min-width: var(--touch); min-height: var(--touch);
+    border: 1px solid var(--line); border-radius: 8px; color: var(--dim);
+  }
+  @keyframes attnblink { 50% { box-shadow: 0 0 14px var(--yel); } }
+</style>
