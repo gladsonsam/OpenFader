@@ -646,3 +646,439 @@ async fn ws_client_presence_and_writer_tag() {
     let _ = &mut tx1;
     server.abort();
 }
+
+/// Strip locks: holder pins, others are denied, holder writes through,
+/// unlock releases, recall bypasses with a report, disconnect auto-releases.
+///
+/// c1 locks ch0 -> c2 fader/mute/param + lock + unlock all denied with
+/// `locked_by`; c1 writes through; c1 unlocks -> c2 allowed. Then a
+/// lock/recall round-trip proves `recall_scene` bypasses but reports
+/// `overrode_locks`, and a disconnect proves auto-release.
+#[tokio::test]
+async fn ws_strip_locks_deny_unlock_recall_disconnect() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run(
+        listener,
+        openmix_serve::ServeOptions::default(),
+    ));
+    use tokio_tungstenite::tungstenite::Message;
+
+    async fn connect(url: String) -> (WsTx, WsRx) {
+        let (stream, _) = tokio_tungstenite::connect_async(url).await.expect("WS connect");
+        stream.split()
+    }
+    type WsTx = futures::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        Message,
+    >;
+
+    async fn wait_locks(rx: &mut WsRx, want: impl Fn(&Value) -> bool) -> Value {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut last = json!(null);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for expected locks; last: {last}");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) != Some("locks") {
+                continue;
+            }
+            last = v;
+            if want(&last) {
+                return last.clone();
+            }
+        }
+    }
+
+    async fn wait_error_locked(rx: &mut WsRx, holder: &str) -> Value {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut last = json!(null);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for locked_by={holder} error; last: {last}");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) != Some("error") {
+                continue;
+            }
+            last = v;
+            if last.get("locked_by") == Some(&json!(holder)) {
+                return last.clone();
+            }
+        }
+    }
+
+    async fn wait_recalled(rx: &mut WsRx) -> Value {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for recalled report");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) == Some("recalled") {
+                return v;
+            }
+        }
+    }
+
+    async fn wait_shows_with(rx: &mut WsRx, want: impl Fn(&Value) -> bool) -> Value {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut last = json!(null);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for shows; last: {last}");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) != Some("shows") {
+                continue;
+            }
+            last = v;
+            if want(&last) {
+                return last.clone();
+            }
+        }
+    }
+
+    fn holds_ch(locks: &Value, ch: u64) -> Option<String> {
+        locks
+            .get("holds")?
+            .get(ch.to_string())?
+            .as_str()
+            .map(str::to_string)
+    }
+
+    // Two clients; drain the 4-frame snapshot (state/shows/clients/locks).
+    let (mut tx1, mut rx1) = connect(format!("ws://{addr}/ws?name=alice")).await;
+    let _ = next_typed(&mut rx1, "state").await;
+    let _ = next_typed(&mut rx1, "shows").await;
+    let _ = next_typed(&mut rx1, "clients").await;
+    let _ = next_typed(&mut rx1, "locks").await;
+    let (mut tx2, mut rx2) = connect(format!("ws://{addr}/ws?name=bob")).await;
+    let _ = next_typed(&mut rx2, "state").await;
+    let _ = next_typed(&mut rx2, "shows").await;
+    let _ = next_typed(&mut rx2, "clients").await;
+    let _ = next_typed(&mut rx2, "locks").await;
+    // c1 sees the join (clients broadcast, count 2).
+    {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for join broadcast");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(&mut rx1)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) == Some("clients")
+                && v.get("count") == Some(&json!(2))
+            {
+                break;
+            }
+        }
+    }
+
+    // c1 locks ch0; both sides observe holds {"0": holder}.
+    tx1.send(Message::Text(json!({"cmd":"lock","ch":0}).to_string()))
+        .await
+        .unwrap();
+    let l1 = wait_locks(&mut rx1, |v| holds_ch(v, 0).is_some()).await;
+    let holder = holds_ch(&l1, 0).expect("holder id");
+    let l2 = wait_locks(&mut rx2, |v| holds_ch(v, 0).as_deref() == Some(holder.as_str())).await;
+    assert_eq!(holds_ch(&l2, 0).as_deref(), Some(holder.as_str()));
+
+    // Locked strip rejects other writers' fader/mute/param with locked_by.
+    tx2.send(Message::Text(
+        json!({"cmd":"fader","ch":0,"value":0.9}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let err = wait_error_locked(&mut rx2, &holder).await;
+    assert_eq!(err.get("locked_by"), Some(&json!(holder)));
+
+    tx2.send(Message::Text(
+        json!({"cmd":"mute","ch":0,"muted":true}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let err = wait_error_locked(&mut rx2, &holder).await;
+    assert_eq!(err.get("locked_by"), Some(&json!(holder)));
+
+    tx2.send(Message::Text(
+        json!({"cmd":"param","ch":0,"field":"gain","value":0.5}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let err = wait_error_locked(&mut rx2, &holder).await;
+    assert_eq!(err.get("locked_by"), Some(&json!(holder)));
+
+    // Contending lock + foreign unlock are denied the same way.
+    tx2.send(Message::Text(json!({"cmd":"lock","ch":0}).to_string()))
+        .await
+        .unwrap();
+    let err = wait_error_locked(&mut rx2, &holder).await;
+    assert_eq!(err.get("locked_by"), Some(&json!(holder)));
+    tx2.send(Message::Text(json!({"cmd":"unlock","ch":0}).to_string()))
+        .await
+        .unwrap();
+    let err = wait_error_locked(&mut rx2, &holder).await;
+    assert_eq!(err.get("locked_by"), Some(&json!(holder)));
+
+    // Holder writes through on the pinned strip.
+    tx1.send(Message::Text(
+        json!({"cmd":"fader","ch":0,"value":0.6}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_state(&mut rx2, |s| {
+        strip(s, 0)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - 0.6).abs() < 1e-6)
+    })
+    .await;
+
+    // Holder unlocks; both sides see the empty table; c2 writes freely.
+    tx1.send(Message::Text(json!({"cmd":"unlock","ch":0}).to_string()))
+        .await
+        .unwrap();
+    let _ = wait_locks(&mut rx1, |v| holds_ch(v, 0).is_none()).await;
+    let _ = wait_locks(&mut rx2, |v| holds_ch(v, 0).is_none()).await;
+    tx2.send(Message::Text(
+        json!({"cmd":"fader","ch":0,"value":0.1}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_state(&mut rx1, |s| {
+        strip(s, 0)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - 0.1).abs() < 1e-6)
+    })
+    .await;
+
+    // recall_scene bypasses locks but reports overrides. Capture ch1=0.3
+    // while unlocked, pin it, move it as the holder, recall as the other.
+    tx2.send(Message::Text(
+        json!({"cmd":"fader","ch":1,"value":0.3}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_state(&mut rx1, |s| {
+        strip(s, 1)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - 0.3).abs() < 1e-6)
+    })
+    .await;
+    tx2.send(Message::Text(
+        json!({"cmd":"capture_scene","show":"gig","name":"verse"}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_shows_with(&mut rx2, |_| true).await;
+    tx1.send(Message::Text(json!({"cmd":"lock","ch":1}).to_string()))
+        .await
+        .unwrap();
+    let locked = wait_locks(&mut rx2, |v| holds_ch(v, 1).is_some()).await;
+    let holder1 = holds_ch(&locked, 1).expect("ch1 holder");
+    assert_eq!(holder1, holder, "same allocator order: c1 still holder");
+    tx1.send(Message::Text(
+        json!({"cmd":"fader","ch":1,"value":0.8}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_state(&mut rx2, |s| {
+        strip(s, 1)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - 0.8).abs() < 1e-6)
+    })
+    .await;
+    tx2.send(Message::Text(
+        json!({"cmd":"recall_scene","show":"gig","name":"verse","fade_ms":0}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let reported = wait_recalled(&mut rx2).await;
+    assert_eq!(
+        reported.get("overrode_locks"),
+        Some(&json!([1])),
+        "recall reports the locked strip it changed"
+    );
+    let _ = wait_state(&mut rx2, |s| {
+        strip(s, 1)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - 0.3).abs() < 1e-6)
+    })
+    .await;
+
+    // Disconnect auto-releases: c1 (holder of ch1) leaves, c2 sees the
+    // pin vanish and can write the strip.
+    tx1.send(Message::Close(None)).await.ok();
+    let _ = wait_locks(&mut rx2, |v| holds_ch(v, 1).is_none()).await;
+    tx2.send(Message::Text(
+        json!({"cmd":"fader","ch":1,"value":0.5}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_state(&mut rx2, |s| {
+        strip(s, 1)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - 0.5).abs() < 1e-6)
+    })
+    .await;
+
+    server.abort();
+}
+
+/// Strip-lock expiry uses a short test TTL (`run_with_lock_ttl`) instead
+/// of waiting out the 60 s production [`openmix_serve::LOCK_TTL`]: c1 pins
+/// ch2, c2 is denied, then after the TTL the pin auto-releases (sweeper
+/// broadcast) and c2 writes freely.
+#[tokio::test]
+async fn ws_strip_locks_expiry() {
+    use tokio_tungstenite::tungstenite::Message;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run_with_lock_ttl(
+        listener,
+        openmix_serve::ServeOptions::default(),
+        std::time::Duration::from_millis(200),
+    ));
+
+    let (stream1, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws?name=alice"))
+        .await
+        .expect("WS connect");
+    let (mut tx1, mut rx1) = stream1.split();
+    let _ = next_typed(&mut rx1, "state").await;
+    let _ = next_typed(&mut rx1, "shows").await;
+    let _ = next_typed(&mut rx1, "clients").await;
+    let _ = next_typed(&mut rx1, "locks").await;
+    let (stream2, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws?name=bob"))
+        .await
+        .expect("WS connect");
+    let (mut tx2, mut rx2) = stream2.split();
+    let _ = next_typed(&mut rx2, "state").await;
+    let _ = next_typed(&mut rx2, "shows").await;
+    let _ = next_typed(&mut rx2, "clients").await;
+    let _ = next_typed(&mut rx2, "locks").await;
+
+    async fn wait_locks(rx: &mut WsRx, want: impl Fn(&Value) -> bool) -> Value {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut last = json!(null);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for locks; last: {last}");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) != Some("locks") {
+                continue;
+            }
+            last = v;
+            if want(&last) {
+                return last.clone();
+            }
+        }
+    }
+
+    tx1.send(Message::Text(json!({"cmd":"lock","ch":2}).to_string()))
+        .await
+        .unwrap();
+    let pinned = wait_locks(&mut rx1, |v| {
+        v.get("holds")
+            .and_then(|h| h.get("2"))
+            .and_then(Value::as_str)
+            .is_some()
+    })
+    .await;
+    let holder = pinned
+        .get("holds")
+        .and_then(|h| h.get("2"))
+        .and_then(Value::as_str)
+        .expect("holder")
+        .to_string();
+    let _ = wait_locks(&mut rx2, |v| {
+        v.get("holds")
+            .and_then(|h| h.get("2"))
+            .and_then(Value::as_str)
+            .is_some_and(|h| h == holder)
+    })
+    .await;
+
+    // Still pinned: c2 is denied.
+    tx2.send(Message::Text(
+        json!({"cmd":"fader","ch":2,"value":0.9}).to_string(),
+    ))
+    .await
+    .unwrap();
+    {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for locked_by error");
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(&mut rx2)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) == Some("error")
+                && v.get("locked_by") == Some(&json!(holder))
+            {
+                break;
+            }
+        }
+    }
+
+    // After the 200 ms TTL the sweeper releases + broadcasts; c2 writes.
+    let _ = wait_locks(&mut rx2, |v| {
+        v.get("holds")
+            .and_then(|h| h.get("2"))
+            .is_none()
+    })
+    .await;
+    tx2.send(Message::Text(
+        json!({"cmd":"fader","ch":2,"value":0.4}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_state(&mut rx2, |s| {
+        strip(s, 2)
+            .get("fader")
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - 0.4).abs() < 1e-6)
+    })
+    .await;
+
+    server.abort();
+}
