@@ -5,7 +5,7 @@
   import type { Backend, MainStrip, ParamValue, Unsub, Strip as StripData } from './lib/backend';
   import { eqBandsFor, grFor, noteBandParam } from './lib/bands';
   import { levels, setLevels } from './lib/levels';
-  import { paintBridge, paintStageMeter } from './lib/meters';
+  import { paintStageMeter } from './lib/meters';
   import { faderDb } from './lib/format';
   import {
     loadJSON, saveJSON, defaultLayers, defaultGroups, cleanOrder, LS,
@@ -17,6 +17,7 @@
     type SendMap,
   } from './lib/sends';
   import Strip from './components/Strip.svelte';
+  import MeterBridge from './components/MeterBridge.svelte';
   import Detail from './components/Detail.svelte';
   import FxRack from './components/FxRack.svelte';
   import GainWizard from './components/GainWizard.svelte';
@@ -96,14 +97,13 @@
   let addr: string = $state('');
   let showBridge: boolean = $state(false);
   let master: { fader: number } = $state({ fader: 0.8 }); // local monitor-dim until backend exposes main
-  let lastMeterAt = 0;
-  let lastTick = 0;
+  const meterMap = new Map<number, HTMLCanvasElement>(); // ch -> canvas (imperative paint, no re-render)
   let spectra: Record<number, number[]> = $state({}); // ch -> bins (live spectrum; null until relay sends it)
   let gr: Record<number, { gate: number; comp: number }> = $state({}); // ch -> live GR dB (null until relay sends it)
   let gains: Record<number, number> = {}; // detail gain dB per ch (staging display only)
 
-  let bridge: HTMLCanvasElement | null = $state(null);
-  const meterMap = new Map<number, HTMLCanvasElement>(); // ch -> canvas (imperative paint, no re-render)
+  let lastMeterAt = 0;
+  let lastTick = 0;
   const registerMeter = (ch: number, cv: HTMLCanvasElement): void => {
     meterMap.set(ch, cv);
   };
@@ -544,12 +544,6 @@
   /* ---------- meter loop ---------- */
   let raf = 0;
 
-  function sizeBridge(): void {
-    if (!bridge) return;
-    bridge.width = bridge.clientWidth * devicePixelRatio;
-    bridge.height = 64 * devicePixelRatio;
-  }
-
   function loop(now: number): void {
     for (const [ch, cv] of meterMap) {
       const s = ch === -1 ? null : strips.find((x) => x.ch === ch);
@@ -558,10 +552,6 @@
       if (!clips.includes(ch) && raw >= 0.985) clips = [...clips, ch]; // latch
       const input = clamp01(raw / Math.max(f, 0.08)); // pre-fader estimate
       paintStageMeter(cv, s?.muted ? 0 : input, s?.muted ? 0 : raw, clips.includes(ch));
-    }
-    if (showBridge && bridge) {
-      const frame = strips.map((s, i) => (s.muted ? 0 : (levels[i] ?? 0)));
-      paintBridge(bridge, frame);
     }
     if (now - lastTick > 120) {
       lastTick = now;
@@ -585,10 +575,6 @@
     } else if (e.key === 'm' || e.key === 'M') {
       void toggleMute(s);
     }
-  }
-
-  function onResize(): void {
-    if (showBridge) sizeBridge();
   }
 
   onMount(() => {
@@ -628,9 +614,7 @@
       if (lastMeterAt && performance.now() - lastMeterAt > 1500) online = false;
     }, 1000);
 
-    if (showBridge) sizeBridge();
     raf = requestAnimationFrame(loop);
-    window.addEventListener('resize', onResize);
 
     // Auto-connect sim for instant use; failures surface on the badge.
     backend
@@ -642,17 +626,11 @@
       offs.forEach((off) => off());
       window.clearInterval(staleTimer);
       cancelAnimationFrame(raf);
-      window.removeEventListener('resize', onResize);
     };
   });
 
   onDestroy(() => {
     if (backend.kind === 'ws') backend.close?.();
-  });
-
-  $effect(() => {
-    // Size the bridge canvas once it becomes visible.
-    if (showBridge && bridge) sizeBridge();
   });
 </script>
 
@@ -763,8 +741,17 @@
   {/if}
 
   {#if showBridge}
-    <div role="img" aria-label="meter bridge: live level per channel" style="display: contents;">
-      <canvas id="bridge" aria-hidden="true" bind:this={bridge} transition:fade={{ duration: 150 }}></canvas>
+    <div transition:fade={{ duration: 150 }}>
+      <MeterBridge
+        {strips}
+        {selected}
+        {solos}
+        {clips}
+        {tick}
+        onNavigate={jumpTo}
+        onSolo={toggleSolo}
+        onClearClip={clearClip}
+      />
     </div>
   {/if}
 
