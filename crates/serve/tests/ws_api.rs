@@ -1082,3 +1082,111 @@ async fn ws_strip_locks_expiry() {
 
     server.abort();
 }
+
+/// Main fader end-to-end (sim): `state` carries `main_fader`, the
+/// `main_fader` command (and its `set_main_fader` alias, mirroring the
+/// Tauri command) drives it with 0.0..=1.0 validation, and invalid
+/// values error without moving it.
+#[tokio::test]
+async fn ws_main_fader_set_and_state() {
+    use tokio_tungstenite::tungstenite::Message;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run(
+        listener,
+        openmix_serve::ServeOptions::default(),
+    ));
+
+    let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("WS connect");
+    let (mut tx, mut rx) = stream.split();
+
+    fn main_of(state: &Value) -> Option<f64> {
+        state.get("main_fader")?.as_f64()
+    }
+
+    // Initial snapshot carries the sim default main (0.8).
+    let state = next_typed(&mut rx, "state").await;
+    assert!(
+        main_of(&state).is_some_and(|m| (m - 0.8).abs() < 1e-6),
+        "state carries sim default main_fader 0.8, got {state}"
+    );
+
+    // Drive the main fader; the broadcast is writer-tagged like strips.
+    tx.send(Message::Text(
+        json!({"cmd":"main_fader","value":0.5}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let state = wait_state(&mut rx, |s| {
+        main_of(s).is_some_and(|m| (m - 0.5).abs() < 1e-6)
+    })
+    .await;
+    assert!(
+        state.get("by").and_then(Value::as_str).is_some_and(|b| !b.is_empty()),
+        "main_fader mutation is writer-tagged"
+    );
+
+    // `set_main_fader` alias (the Tauri command name) works the same.
+    tx.send(Message::Text(
+        json!({"cmd":"set_main_fader","value":0.3}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let _ = wait_state(&mut rx, |s| {
+        main_of(s).is_some_and(|m| (m - 0.3).abs() < 1e-6)
+    })
+    .await;
+
+    // Out-of-range is rejected and the fader does not move.
+    tx.send(Message::Text(
+        json!({"cmd":"main_fader","value":1.5}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let err = next_typed(&mut rx, "error").await;
+    assert!(err.get("message").is_some(), "range error explains itself");
+    tx.send(Message::Text(json!({"cmd":"list_shows"}).to_string()))
+        .await
+        .unwrap();
+    // Drain to a fresh shows frame, then confirm main is still 0.3 via
+    // the next state tick (mutations only broadcast on success, so no
+    // state frame follows the rejected command — poll explicitly).
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        if std::time::Instant::now() > deadline {
+            panic!("timed out waiting for shows after rejected main_fader");
+        }
+        let next = timeout(Duration::from_millis(500), next_msg(&mut rx)).await;
+        let v = match next {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if v.get("type").and_then(Value::as_str) == Some("shows") {
+            break;
+        }
+    }
+    tx.send(Message::Text(json!({"cmd":"connect","driver":"sim"}).to_string()))
+        .await
+        .unwrap();
+    let state = wait_state(&mut rx, |s| {
+        main_of(s).is_some_and(|m| (m - 0.3).abs() < 1e-6)
+    })
+    .await;
+    assert!(
+        main_of(&state).is_some_and(|m| (m - 0.3).abs() < 1e-6),
+        "rejected value did not move the main fader"
+    );
+
+    // Missing value errors too; connection stays alive.
+    tx.send(Message::Text(json!({"cmd":"main_fader"}).to_string()))
+        .await
+        .unwrap();
+    let err = next_typed(&mut rx, "error").await;
+    assert!(err.get("message").is_some());
+
+    server.abort();
+}

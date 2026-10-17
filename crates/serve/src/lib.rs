@@ -6,6 +6,7 @@
 //! ```json
 //! {"cmd":"connect","driver":"sim|xair|dl32s","addr":"..."}
 //! {"cmd":"fader","ch":0,"value":0.0}
+//! {"cmd":"main_fader","value":0.8}
 //! {"cmd":"mute","ch":0,"muted":true}
 //! {"cmd":"param","ch":0,"field":"gain","value":0.5}
 //! {"cmd":"lock","ch":0}
@@ -18,7 +19,7 @@
 //!
 //! server -> client:
 //! ```json
-//! {"type":"state","driver":"sim","strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}
+//! {"type":"state","driver":"sim","main_fader":0.8,"strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}
 //! {"type":"param","ch":0,"field":"gain","value":0.5}
 //! {"type":"shows","shows":[{"name":"gig","scenes":[{"name":"verse","main_fader":null,"strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}]}]}
 //! {"type":"meters","levels":[0.1,0.2]}
@@ -266,8 +267,11 @@ impl Shared {
     /// Full `state` message tagged with the mutation writer (`"by"`).
     ///
     /// `by` is `None` for the initial per-connection snapshot; every
-    /// broadcast that follows a `fader`/`mute`/`param`/`recall_scene`/
-    /// `connect` mutation carries `Some(writer-id)`.
+    /// broadcast that follows a `fader`/`main_fader`/`mute`/`param`/
+    /// `recall_scene`/`connect` mutation carries `Some(writer-id)`.
+    /// `main_fader` is the active driver's LR main (`null` when the
+    /// driver has none, e.g. dl32s) and mirrors the Tauri `get_state`
+    /// shape in `src-tauri/src/main.rs`.
     async fn state_message_with_by(&self, by: Option<&str>) -> Value {
         let name = self.active_name().await;
         let strips = match name.as_str() {
@@ -275,9 +279,10 @@ impl Shared {
             "dl32s" => snapshot_strips(&self.dl32s).await,
             _ => snapshot_strips(&self.sim).await,
         };
+        let main_fader = self.active_main_fader().await;
         match by {
-            Some(writer) => json!({"type":"state","driver":name,"strips":strips,"by":writer}),
-            None => json!({"type":"state","driver":name,"strips":strips}),
+            Some(writer) => json!({"type":"state","driver":name,"strips":strips,"main_fader":main_fader,"by":writer}),
+            None => json!({"type":"state","driver":name,"strips":strips,"main_fader":main_fader}),
         }
     }
 
@@ -531,8 +536,8 @@ impl Shared {
     /// protocol, `shows` for library mutations, `locks` for lock changes,
     /// both `state`+`param` for `recall_scene`) and returns `None`.
     /// Mutation broadcasts carry `"by": writer`; `fader`/`mute`/`param`
-    /// on a strip locked by someone else are rejected, `recall_scene`
-    /// bypasses locks.
+    /// on a strip locked by someone else are rejected (`main_fader` is
+    /// not strip-locked), `recall_scene` bypasses locks.
     async fn apply(&self, msg: &Value, writer: &str) -> anyhow::Result<Option<Value>> {
         // Opportunistic expiry: release stale holds before any check so a
         // just-expired strip reads as unlocked, and broadcast when the
@@ -591,6 +596,28 @@ impl Shared {
                     "xair" => self.xair.set_mute(ch, muted).await?,
                     "dl32s" => self.dl32s.set_mute(ch, muted).await?,
                     _ => self.sim.set_mute(ch, muted).await?,
+                }
+                self.note_write(writer).await;
+                self.touch_holder_locks(writer).await;
+                let _ = self.state_tx.send(writer.to_string());
+                Ok(None)
+            }
+            // LR main fader (all drivers via `get_main_fader`; `None` in
+            // state when the driver has none, e.g. dl32s). `set_main_fader`
+            // is accepted as an alias and mirrors the Tauri command of the
+            // same name (`src-tauri/src/main.rs`), including 0.0..=1.0
+            // validation. Not strip-locked: locks pin per-channel strips.
+            "main_fader" | "set_main_fader" => {
+                let value = msg
+                    .get("value")
+                    .and_then(Value::as_f64)
+                    .ok_or_else(|| anyhow::anyhow!("main_fader needs numeric \"value\" 0.0..=1.0"))?
+                    as f32;
+                let value = openmix_core::validate_fader(value)?;
+                match self.active_name().await.as_str() {
+                    "xair" => self.xair.set_main_fader(value).await?,
+                    "dl32s" => self.dl32s.set_main_fader(value).await?,
+                    _ => self.sim.set_main_fader(value).await?,
                 }
                 self.note_write(writer).await;
                 self.touch_holder_locks(writer).await;
