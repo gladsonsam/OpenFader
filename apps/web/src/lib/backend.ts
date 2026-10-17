@@ -304,6 +304,8 @@ export class TauriBackend implements Backend {
   }));
   private lastLevels: MeterLevels = this.strips.map(() => 0);
   private pollTimer: number | null = null;
+  /** ~5 Hz spectrum/GR poll (pull mirror of the WS push; see ensureAvPoll). */
+  private avTimer: number | null = null;
   private readonly invoke: TauriCore['invoke'];
 
   constructor() {
@@ -350,10 +352,28 @@ export class TauriBackend implements Backend {
     const msg = await this.invoke('connect', { driver, addr: addr || '' });
     this.setOnline(true);
     try {
-      const raw: unknown = await this.invoke('get_main_fader');
-      this.main = typeof raw === 'number' && Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : null;
+      const raw = ((await this.invoke('get_state')) ?? {}) as Record<string, unknown>;
+      if (Array.isArray(raw['strips'])) {
+        const strips = (raw['strips'] as unknown[]).map((s, i) => normStrip(s, i));
+        if (strips.length) {
+          this.strips = strips;
+          this.lastLevels = strips.map(() => 0);
+        }
+      }
+      const mf = raw['main_fader'];
+      this.main =
+        typeof mf === 'number' && Number.isFinite(mf) ? Math.min(1, Math.max(0, mf)) : null;
     } catch {
-      /* shell without a main command: stays null */
+      /* shell without get_state: keep the local default mirror */
+    }
+    if (this.main === null) {
+      try {
+        const raw: unknown = await this.invoke('get_main_fader');
+        this.main =
+          typeof raw === 'number' && Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : null;
+      } catch {
+        /* shell without a main command: stays null */
+      }
     }
     this.emitState();
     this.emitMain();
@@ -383,8 +403,8 @@ export class TauriBackend implements Backend {
     this.emitMain();
   }
 
-  // No `set_param` command in the Tauri shell yet: the invoke rejects and
-  // the detail panel hides that control (unsupported-gracefully).
+  // `set_param` maps to the shell's `set_param` command (same
+  // number|boolean|string encoding as the WS `param` cmd).
   async setParam(ch: number, field: string, v: ParamValue): Promise<void> {
     await this.invoke('set_param', { ch, field, value: v });
   }
@@ -595,14 +615,77 @@ export class TauriBackend implements Backend {
     return un;
   }
 
-  // No spectrum source in the Tauri shell yet: subscribe works, nothing fires.
-  onSpectrum(cb: (evt: SpectrumEvent) => void): Unsub {
-    return sub(this.spectrumCbs, cb);
+  /** Start the ~5 Hz spectrum/GR poll (pull mirror of the WS push). */
+  private ensureAvPoll(): void {
+    if (this.avTimer !== null) return;
+    this.avTimer = window.setInterval(() => {
+      if (!this.spectrumCbs.size && !this.grCbs.size) return;
+      const chs = this.strips.slice(0, 16).map((s) => s.ch);
+      for (const ch of chs) {
+        if (this.spectrumCbs.size) {
+          void (async () => {
+            try {
+              const raw = ((await this.invoke('get_spectrum', { ch })) ?? {}) as Record<
+                string,
+                unknown
+              >;
+              const binsRaw = raw['bins'];
+              if (!Array.isArray(binsRaw)) return;
+              const evt: SpectrumEvent = {
+                ch,
+                bins: binsRaw.map((v: unknown) => Number(v) || 0),
+              };
+              this.spectrumCbs.forEach((f) => {
+                try {
+                  f(evt);
+                } catch {
+                  /* ignore */
+                }
+              });
+            } catch {
+              /* backend away: skip frame */
+            }
+          })();
+        }
+        if (this.grCbs.size) {
+          void (async () => {
+            try {
+              const raw = ((await this.invoke('get_gr', { ch })) ?? {}) as Record<string, unknown>;
+              const evt: GrEvent = {
+                ch,
+                gate: Number(raw['gate']) || 0,
+                comp: Number(raw['comp']) || 0,
+              };
+              this.grCbs.forEach((f) => {
+                try {
+                  f(evt);
+                } catch {
+                  /* ignore */
+                }
+              });
+            } catch {
+              /* backend away: skip frame */
+            }
+          })();
+        }
+      }
+    }, 200);
   }
 
-  // No GR source in the Tauri shell yet: subscribe works, nothing fires.
+  // Spectrum frames via the shell's `get_spectrum` pull (~5 Hz poll, same
+  // 64-bin shape as the WS `spectrum` tick).
+  onSpectrum(cb: (evt: SpectrumEvent) => void): Unsub {
+    const un = sub(this.spectrumCbs, cb);
+    this.ensureAvPoll();
+    return un;
+  }
+
+  // GR frames via the shell's `get_gr` pull (~5 Hz poll, same
+  // dB-reduction shape as the WS `gr` tick).
   onGr(cb: (evt: GrEvent) => void): Unsub {
-    return sub(this.grCbs, cb);
+    const un = sub(this.grCbs, cb);
+    this.ensureAvPoll();
+    return un;
   }
 
   // No param fan-out in the Tauri shell (single client): subscribe works,
