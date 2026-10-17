@@ -18,7 +18,13 @@ pub mod addrs {
     pub const XREMOTE: &str = "/xremote";
     pub const INFO: &str = "/info";
     pub const METER_SUBSCRIBE: &str = "/meters/1";
-    pub const MAIN_FADER: &str = "/main/st/mix/fader";
+    /// Main LR fader. X32 uses `/main/st/mix/fader`; X-Air uses `/lr/*`.
+    /// Hardware-verified: `/main/st/mix/fader` gets NO reply on XR18 FW 1.20.
+    pub const MAIN_FADER: &str = "/lr/mix/fader";
+    /// Main LR mute, by analogy with `/ch/XX/mix/on` (not yet live-queried).
+    pub const MAIN_ON: &str = "/lr/mix/on";
+    /// Main LR name, by analogy with `/ch/XX/config/name` (not yet live-queried).
+    pub const MAIN_NAME: &str = "/lr/config/name";
 
     pub const MAX_CHANNEL: u16 = 32;
     pub const MAX_BUS: u8 = 6;
@@ -69,7 +75,9 @@ pub mod addrs {
             assert_eq!(ch_on(3), "/ch/03/mix/on");
             assert_eq!(ch_name(5), "/ch/05/config/name");
             assert_eq!(bus_fader(2), "/bus/02/mix/fader");
-            assert_eq!(MAIN_FADER, "/main/st/mix/fader");
+            assert_eq!(MAIN_FADER, "/lr/mix/fader");
+            assert_eq!(MAIN_ON, "/lr/mix/on");
+            assert_eq!(MAIN_NAME, "/lr/config/name");
             // 0-based mapping: strip 0 is wire ch 1, strip 31 is ch 32.
             assert_eq!(channel(0).unwrap(), 1);
             assert_eq!(channel(31).unwrap(), 32);
@@ -450,6 +458,73 @@ mod tests {
         let info = driver.query_info().await.unwrap();
         assert_eq!(info.model, "XR18");
         assert_eq!(info.firmware, "1.22");
+    }
+
+    /// Main LR must go through `/lr/mix/fader`: the strict fake below answers
+    /// ONLY that address and stays silent on `/main/st/mix/fader`, mirroring
+    /// live XR18 hardware (FW 1.20, 2026-10-17) where X32-style `/main/st`
+    /// gets NO reply. A driver still querying `/main/st` would time out here.
+    #[tokio::test]
+    async fn main_fader_uses_lr_not_main_st() {
+        let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let mixer_addr = socket.local_addr().unwrap();
+        let seen = Arc::new(StdMutex::new(Vec::<String>::new()));
+        let seen_worker = seen.clone();
+        let worker = socket.clone();
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 65535];
+            let mut level = 0.8f32;
+            loop {
+                let Ok((n, peer)) = worker.recv_from(&mut buf).await else {
+                    break;
+                };
+                let Ok(packet) = osc::decode_packet(&buf[..n]) else {
+                    continue;
+                };
+                for msg in osc::flatten(packet) {
+                    if msg.addr == "/xremote" {
+                        continue;
+                    }
+                    seen_worker.lock().unwrap().push(msg.addr.clone());
+                    match (msg.addr.as_str(), msg.args.first()) {
+                        ("/lr/mix/fader", Some(OscType::Float(f))) => level = *f,
+                        ("/lr/mix/fader", None) => {
+                            let bytes =
+                                osc::encode_message("/lr/mix/fader", vec![OscType::Float(level)])
+                                    .unwrap();
+                            let _ = worker.send_to(&bytes, peer).await;
+                        }
+                        // Deliberately NO reply for /main/st/mix/fader: the
+                        // real mixer stays silent there.
+                        _ => {}
+                    }
+                }
+            }
+        });
+
+        let sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        sock.connect(mixer_addr).await.unwrap();
+        let session =
+            OscSession::from_connected_socket(sock, Some(KeepaliveConfig::xremote()));
+        let driver = XAirDriver::new();
+        *driver.session.lock().await = Some(session);
+
+        driver.set_main_fader(0.66).await.unwrap();
+        let v = tokio::time::timeout(std::time::Duration::from_secs(2), driver.get_main_fader())
+            .await
+            .expect("main fader reply in time")
+            .unwrap();
+        assert!((v - 0.66).abs() < 1e-5);
+
+        let addrs = seen.lock().unwrap();
+        assert!(
+            addrs.iter().any(|a| a == "/lr/mix/fader"),
+            "driver never queried /lr/mix/fader: {addrs:?}"
+        );
+        assert!(
+            !addrs.iter().any(|a| a == "/main/st/mix/fader"),
+            "driver queried X32-style /main/st/mix/fader: {addrs:?}"
+        );
     }
 
     #[tokio::test]
