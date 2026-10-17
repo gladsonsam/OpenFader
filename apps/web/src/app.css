@@ -198,6 +198,19 @@ button.mute.locked { opacity: 0.4; }
 .slot button { min-height: 40px; min-width: 40px; padding: 0 8px; font-size: 13px; }
 #store.armed { background: #4a2b00; border-color: var(--yel); color: var(--yel); }
 #status { color: var(--dim); font-size: 13px; }
+/* Strip locks: who holds what (multi-client arbitration). */
+#locks {
+  display: flex; gap: 8px; align-items: center; padding: 6px 10px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--line); background: var(--panel); font-size: 13px;
+}
+#locks .lbl { color: var(--dim); }
+#locks .lk {
+  display: inline-flex; gap: 4px; align-items: center;
+  border: 1px solid var(--line); border-radius: 8px; padding: 4px 10px;
+  min-height: 0; font-size: 13px;
+}
+#locks .lk.mine { border-color: var(--grn); color: #7dffa4; }
+#locks .lk.held { border-color: var(--red); color: #ff8a8e; background: none; cursor: default; }
 #wrap { display: flex; gap: 0; align-items: stretch; }
 #strips { flex: 1; display: flex; gap: 8px; overflow-x: auto; padding: 12px 10px; min-height: 340px; }
 .strip {
