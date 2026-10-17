@@ -37,7 +37,7 @@ fn parse_ch(s: &str, count: usize) -> anyhow::Result<StripId> {
 /// async methods). New providers add one variant + one delegation arm.
 enum AnyDriver {
     Sim(openmix_sim::SimDriver),
-    XAir(openmix_proto_xair::XAirDriver),
+    XAir(Box<openmix_proto_xair::XAirDriver>),
     Dl32s(openmix_proto_dl32s::Dl32sDriver),
 }
 
@@ -156,7 +156,7 @@ impl MixerDriver for AnyDriver {
 
 fn make_driver(kind: &str, preset: openmix_sim::SimPreset) -> AnyDriver {
     match kind {
-        "xair" => AnyDriver::XAir(openmix_proto_xair::XAirDriver::new()),
+        "xair" => AnyDriver::XAir(Box::new(openmix_proto_xair::XAirDriver::new())),
         "dl32s" => AnyDriver::Dl32s(openmix_proto_dl32s::Dl32sDriver::new()),
         _ => AnyDriver::Sim(openmix_sim::SimDriver::with_preset(preset)),
     }
