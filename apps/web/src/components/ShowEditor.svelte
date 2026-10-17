@@ -14,6 +14,16 @@
   // dropped transport degrades to this-device recall via setFader/setMute.
   import { normShow, normShows } from '../lib/backend';
   import type { Backend, ShowLib, ShowScene, Strip } from '../lib/backend';
+  import {
+    SHOW_FILE_NAME,
+    SHOW_LIB_FILE_NAME,
+    buildShowFile,
+    mergeImported,
+    parseShowFileText,
+    previewShowFile,
+    serializeShowFile,
+  } from '../lib/showFile';
+  import type { ShowFile } from '../lib/showFile';
 
   /** Ordered library of scenes (cf. core Show). */
   type Show = ShowLib;
@@ -31,6 +41,7 @@
   const LS_SHOWS = 'openmix.shows.v1';
   const LS_ACTIVE = 'openmix.shows.active.v1';
   const LEGACY_SLOTS = 'openmix.scenes.v1'; // App.svelte snapshot slots S1..S4
+  const APP_VERSION = '0.1.0'; // cf. apps/web/package.json (share-file stamp)
   const FADE_DEFAULT = 400; // cf. core DEFAULT_FADE_MS
   const FADE_STEPS = 20; // cf. core DEFAULT_FADE_STEPS
   const EPS = 0.0015; // fader drift tolerance for the dirty `*`
@@ -97,6 +108,9 @@
   let fadeMs: number = $state(FADE_DEFAULT);
   let recalling: string | null = $state(null); // scene name currently fading
   let online: boolean = $state(false); // transport up (server ops usable)
+  let importFile: ShowFile | null = $state(null); // validated pick, awaiting merge
+  let importError: string | null = $state(null); // last pick rejected: show, don't crash
+  let fileInput: HTMLInputElement | undefined = $state(undefined);
 
   /**
    * Server wins on conflicts; local-only shows (created offline) are kept.
@@ -327,6 +341,91 @@
       recalling = null;
     }
   }
+
+  /** Save text to a download (share files stay offline-first: no server needed). */
+  function download(filename: string, text: string): void {
+    try {
+      const blob = new Blob([text], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      tell(`exported ${filename}`);
+    } catch (e) {
+      tell(`export failed (${errMsg(e)})`);
+    }
+  }
+
+  /** Export the active show as a versioned share file. */
+  function exportShow(): void {
+    const show = active;
+    if (!show) {
+      tell('nothing to export — create a show first');
+      return;
+    }
+    download(
+      SHOW_FILE_NAME,
+      serializeShowFile(buildShowFile([show], { app: APP_VERSION, driver: backend.kind })),
+    );
+  }
+
+  /** Export the whole library as a versioned share file. */
+  function exportLibrary(): void {
+    if (!shows.length) {
+      tell('nothing to export — library is empty');
+      return;
+    }
+    download(
+      SHOW_LIB_FILE_NAME,
+      serializeShowFile(buildShowFile(shows, { app: APP_VERSION, driver: backend.kind })),
+    );
+  }
+
+  /** Validate a picked file; preview on success, clear error on reject. */
+  async function onPickFile(e: Event): Promise<void> {
+    importFile = null;
+    importError = null;
+    try {
+      const input = e.target as HTMLInputElement | null;
+      const picked = input?.files?.[0];
+      if (!picked) return;
+      const text = await picked.text();
+      const res = parseShowFileText(text);
+      if (!res.ok) {
+        importError = res.error;
+        tell(`import rejected (${res.error})`);
+        return;
+      }
+      importFile = res.file;
+      tell(`checked "${picked.name}" — confirm to import`);
+    } catch (err) {
+      importError = `could not read that file (${errMsg(err)})`;
+    } finally {
+      if (fileInput) fileInput.value = ''; // same file re-pickable
+    }
+  }
+
+  /** Merge the validated pick as new show(s); existing shows are untouched. */
+  function confirmImport(): void {
+    if (!importFile) return;
+    const { merged, added } = mergeImported(shows, importFile);
+    shows = merged;
+    activeName = added[0] ?? activeName;
+    importFile = null;
+    persist();
+    tell(`imported ${added.length === 1 ? `"${added[0]}"` : `${added.length} shows`} (new, nothing overwritten)`);
+  }
+
+  function cancelImport(): void {
+    importFile = null;
+    importError = null;
+  }
+
+  const importPreview = $derived(importFile ? previewShowFile(importFile) : null);
 </script>
 
 <div id="showedit">
@@ -410,6 +509,37 @@
     </label>
   </div>
   <div class="hint">`*` = mix differs from the scene. Capture snapshots live faders + mutes; recall fades faders then snaps mutes. {online ? 'Library syncs with the server (server wins).' : 'Offline — library is on this device and merges on connect.'}</div>
+
+  <div class="editrow">
+    <button onclick={exportShow} disabled={!active} title="download the active show as a shareable file">export show</button>
+    <button onclick={exportLibrary} disabled={!shows.length} title="download the whole library as a shareable file">export library</button>
+    <label class="filebtn" title="pick a shared show file to preview and import">
+      import
+      <input
+        type="file"
+        accept="application/json,.json"
+        bind:this={fileInput}
+        onchange={(e) => void onPickFile(e)}
+        aria-label="import show file"
+      />
+    </label>
+  </div>
+  {#if importError}
+    <div class="ioerr" role="alert">{importError}</div>
+  {/if}
+  {#if importFile && importPreview}
+    <div class="preview" role="group" aria-label="import preview">
+      <div class="pvline">
+        <b>{importPreview.shows} show{importPreview.shows === 1 ? '' : 's'}</b>
+        <span class="scope">{importPreview.scenes} scene{importPreview.scenes === 1 ? '' : 's'} · {importPreview.strips} strips{importPreview.scenes && importFile.driver ? ` · from ${importFile.driver}` : ''}</span>
+      </div>
+      <div class="pvnames">{importPreview.names.join(' · ')}</div>
+      <div class="editrow">
+        <button onclick={confirmImport} title="add as new show(s); existing shows are never overwritten">import as new</button>
+        <button class="del" onclick={cancelImport}>cancel</button>
+      </div>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -429,4 +559,10 @@
   .fade { display: flex; gap: 6px; align-items: center; color: var(--dim); font-size: 13px; }
   .fade input[type='number'] { background: #0a0c0e; color: var(--txt); border: 1px solid var(--line); border-radius: 8px; min-height: var(--touch); padding: 0 8px; font-size: 15px; width: 90px; }
   .hint { color: var(--dim); font-size: 13px; }
+  .ioerr { color: #ff9a9a; background: #3a1414; border: 1px solid #7a2a2a; border-radius: 10px; padding: 8px 10px; }
+  .preview { display: flex; flex-direction: column; gap: 6px; background: var(--panel); border: 1px dashed var(--acc); border-radius: 10px; padding: 8px 10px; }
+  .pvline { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .pvnames { color: var(--dim); font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+  .filebtn { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; min-height: var(--touch); font-size: 15px; cursor: pointer; background: #141a20; color: var(--txt); }
+  .filebtn input[type='file'] { display: none; }
 </style>
