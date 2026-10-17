@@ -60,9 +60,11 @@ The UI directory is auto-detected (`ui/`, `$OPENMIX_UI_DIR`,
 ```sh
 docker build -t openmix .
 docker run --rm -p 8080:8080 openmix
+# studio desk preset (sim driver):
+docker run -d -p 8080:8080 openmix --preset studio
 # hardware: point the server at the mixer (same LAN / routable net)
 docker run --rm -p 8080:8080 openmix \
-  openmix-serve --driver xair --addr 192.168.1.10
+  --driver xair --addr 192.168.1.10
 ```
 
 Open `http://<host-lan-ip>:8080` from any browser on the network.
@@ -86,13 +88,21 @@ container layer.
 - Multi-stage build: `rust:1-bookworm` builder compiles
   `cargo build --release -p openmix-serve`, runtime is
   `debian:bookworm-slim` running as non-root `openmix`.
+- `ENTRYPOINT ["openmix-serve"]` with `CMD ["--driver", "sim"]`, so
+  extra `docker run` args append to the server flags
+  (`docker run openmix --preset studio`). `docker-compose.yml`
+  overrides the entrypoint with an equivalent `sh` wrapper to keep
+  `DRIVER`/`ADDR` `.env` support.
+- `HEALTHCHECK` polls `GET /healthz` via `wget` (the only addition to
+  `-slim`; no curl/python in the base).
 - The dependency tree is pure Rust (no OpenSSL in `Cargo.lock`), so the
   `-slim` runtime needs no extra system libraries.
 - `.dockerignore` excludes `target/` (2.7 GB in a dev checkout), `.git/`,
   `src-tauri/` and `apps/` — the build context is only
   `Cargo.toml` + `Cargo.lock` + `crates/` + `ui/`.
   (The runtime stage `COPY ui ./ui` needs `ui/` in context — do not ignore it.)
-- Verified: `docker build -t openmix .` succeeds; image size **118 MB**.
+- Verified: `docker build -t openmix .` succeeds; image size **120 MB**
+  (118 MB before the `wget` HEALTHCHECK dependency).
 - Base pin: `rust:1-bookworm` (major-version pin + suite match with the
   runtime). Renovate/dependabot can bump the patch; re-verify with the
   build command above after any base change.
