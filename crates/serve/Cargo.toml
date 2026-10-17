@@ -1,0 +1,30 @@
+[package]
+name = "openmix-serve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "openmix-serve"
+path = "src/main.rs"
+
+[lib]
+name = "openmix_serve"
+path = "src/lib.rs"
+
+[dependencies]
+openmix-core = { path = "../core" }
+openmix-sim = { path = "../sim" }
+openmix-proto-xair = { path = "../proto-xair" }
+openmix-proto-dl32s = { path = "../proto-dl32s" }
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.7", features = ["ws"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.24"
+futures = "0.3"
