@@ -19,9 +19,13 @@
 // (a backend that rejects a field hides that control; the thumb keeps the
 // last local intent).
 //
-// Reactivity: plain .ts (no runes), so state lives in a SvelteMap —
-// `eqBandsFor` reads track per-channel in render, and noteBandParam replaces
-// the channel array via .set so thumbs invalidate on edit.
+// Reactivity: plain .ts (no runes), so state lives in a SvelteMap.
+// `eqBandsFor` is a READ-ONLY render-safe lookup (shared frozen defaults
+// until seeded — never .set during render, or Svelte throws
+// state_unsafe_mutation and the page goes black). Seeding happens only in
+// event/subscription contexts: App's onState ingest (ensureBandsFor per
+// strip) and noteBandParam (user edits). Edits replace the channel array
+// via .set so thumbs invalidate.
 
 import { SvelteMap } from 'svelte/reactivity';
 import { EQ_DEFAULTS, clampFreq, clampGain, clampQ, type EqBand } from './eqCurve';
@@ -29,19 +33,30 @@ import type { ParamValue } from './backend';
 
 const store = new SvelteMap<number, EqBand[]>();
 
-/** Live band state for ch (MAIN ch<0: flat defaults, caller passes null). */
+/** Live band state for ch (MAIN ch<0: flat defaults, caller passes null).
+ * READ-ONLY: never mutates — safe to call during render. Unseeded channels
+ * share the frozen defaults until an edit seeds a private copy. */
 export function eqBandsFor(ch: number): EqBand[] {
+  return store.get(ch) ?? EQ_DEFAULTS;
+}
+
+/** Forget a channel's copy (next read falls back to shared defaults). */
+export function resetBandsFor(ch: number): void {
+  store.delete(ch);
+}
+
+/**
+ * Get-or-create a channel's private copy. EVENT/EFFECT CONTEXTS ONLY —
+ * never call during render (Svelte will throw state_unsafe_mutation).
+ * Used by edit paths and the state-ingest seeder below.
+ */
+export function ensureBandsFor(ch: number): EqBand[] {
   let bands = store.get(ch);
   if (!bands) {
     bands = EQ_DEFAULTS.map((b) => ({ ...b }));
     store.set(ch, bands);
   }
   return bands;
-}
-
-/** Forget a channel's copy (next read re-seeds from defaults). */
-export function resetBandsFor(ch: number): void {
-  store.delete(ch);
 }
 
 const EQ_PARAM = /^eq([1-4])_(gain|freq|q|type)$/;
@@ -55,7 +70,7 @@ export function noteBandParam(ch: number, field: string, value: ParamValue): voi
   if (!m || typeof value !== 'number' || !Number.isFinite(value)) return;
   const n = Number(m[1]) - 1;
   const kind = m[2];
-  const bands = eqBandsFor(ch);
+  const bands = ensureBandsFor(ch);
   const cur = bands[n];
   if (!cur) return;
   const next: EqBand = { ...cur };

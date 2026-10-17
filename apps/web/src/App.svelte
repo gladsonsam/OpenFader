@@ -3,7 +3,7 @@
   import { fade, fly } from 'svelte/transition';
   import { selectBackend } from './lib/backend';
   import type { Backend, ClientsInfo, LockHolds, MainStrip, ParamValue, Unsub, Strip as StripData } from './lib/backend';
-  import { eqBandsFor, grFor, noteBandParam } from './lib/bands';
+  import { eqBandsFor, ensureBandsFor, grFor, noteBandParam } from './lib/bands';
   import { levels, setLevels } from './lib/levels';
   import { paintStageMeter } from './lib/meters';
   import { faderDb } from './lib/format';
@@ -780,6 +780,8 @@
     const offs: Unsub[] = [
       backend.onState((next) => {
         strips = next;
+        // Seed per-channel EQ copies here (subscription context, not render).
+        for (const s of next) if (s.ch >= 0) ensureBandsFor(s.ch);
         if (!strips.some((s) => s.ch === selected)) selected = strips[0]?.ch ?? 0;
       }),
       // Driver-backed LR main: server state is the source of truth.
