@@ -6,6 +6,7 @@
 //   setParam(ch, field, v) -> Promise<void>     (number|boolean|string)
 //   onState(cb)            -> unsub             (cb(strips [{ch,name,fader,muted}]))
 //   onMeters(cb)           -> unsub             (cb(levels [0..1]))
+//   onSpectrum(cb)         -> unsub             (cb({ch,bins}) — no source yet)
 //
 // Plus optional onStatus(cb) -> unsub (cb(true|false) online flag).
 // Auto-select: Tauri IPC when running inside Tauri, else WebSocket relay.
@@ -13,6 +14,9 @@
 // WS protocol (port :8080): host -> {cmd:'connect',driver,addr},
 // {cmd:'fader',ch,value}, {cmd:'mute',ch,muted}, {cmd:'param',ch,field,value};
 // relay -> {type:'state',strips:[...]}, {type:'meters',levels:[...]}.
+// Future: {type:'spectrum',ch,bins:[...]} (serve sends none yet; see
+// Spectrum.svelte header). Both backends expose onSpectrum(cb) so the UI
+// can subscribe today and light up when the relay starts sending spectra.
 // Ported from ../../ui/api.js — keep the two in sync contract-wise.
 
 function sub(list, cb) {
@@ -39,6 +43,7 @@ export class TauriBackend {
     this.stateCbs = new Set();
     this.meterCbs = new Set();
     this.statusCbs = new Set();
+    this.spectrumCbs = new Set();
     this.strips = Array.from({ length: 8 }, (_, i) => ({
       ch: i, name: `CH${String(i + 1).padStart(2, '0')}`, fader: 0.75, muted: false,
     }));
@@ -108,6 +113,9 @@ export class TauriBackend {
     try { cb(this.online); } catch { /* ignore */ }
     return un;
   }
+
+  // No spectrum source in the Tauri shell yet: subscribe works, nothing fires.
+  onSpectrum(cb) { return sub(this.spectrumCbs, cb); }
 }
 
 /* ---------------- WebSocket relay (any browser) ---------------- */
@@ -129,6 +137,7 @@ export class WsBackend {
     this.stateCbs = new Set();
     this.meterCbs = new Set();
     this.statusCbs = new Set();
+    this.spectrumCbs = new Set();
     this.ws = null;
     this.queue = [];
     this.driver = 'sim';
@@ -185,6 +194,9 @@ export class WsBackend {
       this.stateCbs.forEach((cb) => { try { cb(strips); } catch { /* ignore */ } });
     } else if (m.type === 'meters' && Array.isArray(m.levels)) {
       this.meterCbs.forEach((cb) => { try { cb(m.levels); } catch { /* ignore */ } });
+    } else if (m.type === 'spectrum' && typeof m.ch === 'number' && Array.isArray(m.bins)) {
+      const evt = { ch: m.ch, bins: m.bins };
+      this.spectrumCbs.forEach((cb) => { try { cb(evt); } catch { /* ignore */ } });
     }
   }
 
@@ -208,6 +220,7 @@ export class WsBackend {
 
   onState(cb) { return sub(this.stateCbs, cb); }
   onMeters(cb) { return sub(this.meterCbs, cb); }
+  onSpectrum(cb) { return sub(this.spectrumCbs, cb); }
   onStatus(cb) {
     const un = sub(this.statusCbs, cb);
     try { cb(this.online); } catch { /* ignore */ }
