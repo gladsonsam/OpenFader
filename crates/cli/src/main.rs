@@ -265,14 +265,21 @@ async fn main() -> anyhow::Result<()> {
 
     match rest[0].as_str() {
         "list" => {
-            let snap = drv.snapshot().await?;
-            for s in &snap.strips {
+            // Per-strip queries (fader/on/name reads), never `snapshot()`:
+            // the xair driver has no snapshot impl, and this way `list`
+            // works against live hardware (T6). One row per channel strip.
+            for i in 0..count {
+                let strip = StripId(i as u16);
+                let name = drv.get_name(strip).await?;
+                let fader = drv.get_fader(strip).await?;
+                let mute = drv.get_mute(strip).await?;
                 println!(
                     "{:>3} {:<8} fader={:.2} {}",
-                    s.id.0 + 1,
-                    s.name,
-                    s.fader,
-                    if s.mute { "MUTED" } else { "      " }
+                    // `s.id.0 + 1` display numbering kept from snapshot form.
+                    strip.0 + 1,
+                    name,
+                    fader,
+                    if mute { "MUTED" } else { "      " }
                 );
             }
         }
