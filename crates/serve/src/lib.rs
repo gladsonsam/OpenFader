@@ -131,6 +131,8 @@ pub struct ServeOptions {
     pub driver: String,
     /// Initial mixer address (hardware drivers; sim ignores it).
     pub addr: Option<String>,
+    /// Sim desk preset (`generic|xr18|dl32s|studio`). Hardware drivers ignore it.
+    pub preset: Option<String>,
     /// Directory of static UI files. `None` = auto-detect (`ui/`).
     pub static_dir: Option<PathBuf>,
 }
@@ -140,6 +142,7 @@ impl Default for ServeOptions {
         Self {
             driver: "sim".to_string(),
             addr: None,
+            preset: None,
             static_dir: None,
         }
     }
@@ -203,13 +206,24 @@ impl Shared {
     /// `Shared` with an explicit lock TTL (tests use a short TTL to cover
     /// expiry without waiting 60 s; production uses [`LOCK_TTL`]).
     pub fn with_lock_ttl(lock_ttl: Duration) -> Self {
+        Self::with_lock_ttl_and_preset(lock_ttl, None)
+    }
+
+    /// [`with_lock_ttl`], plus an optional sim desk preset.
+    pub fn with_lock_ttl_and_preset(
+        lock_ttl: Duration,
+        preset: Option<openmix_sim::SimPreset>,
+    ) -> Self {
         let (state_tx, _) = broadcast::channel(16);
         let (shows_tx, _) = broadcast::channel(16);
         let (param_tx, _) = broadcast::channel(256);
         let (clients_tx, _) = broadcast::channel(16);
         let (locks_tx, _) = broadcast::channel(16);
         Self {
-            sim: openmix_sim::SimDriver::new(),
+            sim: match preset {
+                Some(p) => openmix_sim::SimDriver::with_preset(p),
+                None => openmix_sim::SimDriver::new(),
+            },
             xair: openmix_proto_xair::XAirDriver::new(),
             dl32s: openmix_proto_dl32s::Dl32sDriver::new(),
             active: RwLock::new("sim".to_string()),
@@ -1211,7 +1225,13 @@ pub async fn run_with_lock_ttl(
     lock_ttl: Duration,
 ) -> anyhow::Result<()> {
     let local = listener.local_addr()?;
-    let shared = Arc::new(Shared::with_lock_ttl(lock_ttl));
+    let preset = match opts.preset.as_deref() {
+        None => None,
+        Some(name) => Some(openmix_sim::SimPreset::parse(name).ok_or_else(|| {
+            anyhow::anyhow!("unknown --preset {name:?} (want generic|xr18|dl32s|studio)")
+        })?),
+    };
+    let shared = Arc::new(Shared::with_lock_ttl_and_preset(lock_ttl, preset));
 
     // Expiry sweeper: lazy pruning in `apply` covers the next-command path,
     // but an idle server still needs to release + broadcast expired pins.
