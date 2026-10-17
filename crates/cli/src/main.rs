@@ -6,7 +6,7 @@ use openmix_core::{MixerDriver, ParamValue, StripId};
 use std::time::Duration;
 
 const HELP: &str = "\
-Usage: openmix-cli [--driver sim|xair|dl32s] [--addr IP] <command> [args]
+Usage: openmix-cli [--driver sim|xair|dl32s] [--addr IP] [--preset generic|xr18|dl32s] <command> [args]
 
 Commands:
   list                       list all strips (name, fader, mute)
@@ -19,6 +19,7 @@ Commands:
 Options:
   --driver <name>   sim (default), xair, dl32s
   --addr <ip>       mixer address (xair/dl32s connect; sim ignores)
+  --preset <name>   sim scribbles: generic (default), xr18, dl32s
   -h, --help        print this help
 ";
 
@@ -153,11 +154,11 @@ impl MixerDriver for AnyDriver {
     }
 }
 
-fn make_driver(kind: &str) -> AnyDriver {
+fn make_driver(kind: &str, preset: openmix_sim::SimPreset) -> AnyDriver {
     match kind {
         "xair" => AnyDriver::XAir(openmix_proto_xair::XAirDriver::new()),
         "dl32s" => AnyDriver::Dl32s(openmix_proto_dl32s::Dl32sDriver::new()),
-        _ => AnyDriver::Sim(openmix_sim::SimDriver::new()),
+        _ => AnyDriver::Sim(openmix_sim::SimDriver::with_preset(preset)),
     }
 }
 
@@ -168,6 +169,7 @@ async fn main() -> anyhow::Result<()> {
     // Global flags (may appear before the command).
     let mut driver = "sim".to_string();
     let mut addr: Option<String> = None;
+    let mut preset = openmix_sim::SimPreset::Generic;
     let mut rest: Vec<String> = Vec::new();
     let mut i = 0;
     while i < argv.len() {
@@ -192,6 +194,22 @@ async fn main() -> anyhow::Result<()> {
             }
             v if v.starts_with("--addr=") => {
                 addr = Some(v["--addr=".len()..].to_string());
+            }
+            "--preset" => {
+                i += 1;
+                let raw = argv
+                    .get(i)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("--preset needs a value"))?;
+                preset = openmix_sim::SimPreset::parse(&raw).ok_or_else(|| {
+                    anyhow::anyhow!("unknown preset {raw:?}; expected generic|xr18|dl32s")
+                })?;
+            }
+            v if v.starts_with("--preset=") => {
+                let raw = &v["--preset=".len()..];
+                preset = openmix_sim::SimPreset::parse(raw).ok_or_else(|| {
+                    anyhow::anyhow!("unknown preset {raw:?}; expected generic|xr18|dl32s")
+                })?;
             }
             "-h" | "--help" | "help" => {
                 print!("{HELP}");
@@ -230,7 +248,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let drv = make_driver(&driver);
+    let drv = make_driver(&driver, preset);
     let target = addr.clone().unwrap_or_else(|| {
         if driver == "sim" {
             "sim://local".to_string()
