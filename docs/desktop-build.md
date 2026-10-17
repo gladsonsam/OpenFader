@@ -53,3 +53,26 @@ cd src-tauri
 npx -y @tauri-apps/cli@2 build
 ls -l target/release/bundle/deb target/release/bundle/rpm target/release/bundle/appimage
 ```
+
+## 0.3.0 rebuild (2026-10-17 UTC)
+
+Exact command (from `src-tauri/`):
+
+```sh
+npx -y @tauri-apps/cli@2 build
+```
+
+- First attempt: succeeded, no retry needed.
+- Release compile time: ~25s (`Finished release profile [optimized]`).
+- Version fields bumped to `0.3.0`: workspace `Cargo.toml`, `src-tauri/Cargo.toml`,
+  `src-tauri/tauri.conf.json` (`Cargo.lock` / `src-tauri/Cargo.lock` updated by cargo).
+- `cargo check --workspace`: green.
+- Frontend: used prebuilt `../apps/web/dist` as-is.
+
+Bundles (`src-tauri/target/release/bundle/`, built 2026-10-17 ~19:00-19:01 UTC):
+
+| Path | Size (bytes) | Size (human) |
+| --- | --- | --- |
+| `src-tauri/target/release/bundle/deb/openmix_0.3.0_amd64.deb` | 3446192 | 3.3M |
+| `src-tauri/target/release/bundle/rpm/openmix-0.3.0-1.x86_64.rpm` | 3450148 | 3.3M |
+| `src-tauri/target/release/bundle/appimage/openmix_0.3.0_amd64.AppImage` | 111675896 | 107M |
