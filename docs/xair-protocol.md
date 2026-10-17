@@ -86,3 +86,7 @@ Notes:
 ## Meter subscribe — HARDWARE VERIFIED 2026-10-18
 - Subscribe = send `/meters` with ONE string arg `/meters/1` (typetag `,s`). Bare/empty queries to /meters/0 or /meters/1 get silence.
 - Desk streams LE-i16 blobs (~104B for /meters/1). Observed only ~5 blobs/12s without keepalive renew — driver must repeat /xremote + resubscribe (10s expiry suspected, unconfirmed).
+
+## Meter renewal — HARDWARE VERIFIED 2026-10-18 ~01:30 AWST
+- Without renewals: ~5 blobs/12s (dribble). With /xremote + resubscribe every 8s: 601 blobs/30s = ~20/s (~50ms rate confirmed).
+- 8s METER_RENEW_INTERVAL is now the driver default. 10s expiry still suspected-not-proven; 8s gives margin either way.
