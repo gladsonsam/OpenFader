@@ -67,6 +67,51 @@ docker run --rm -p 8080:8080 openmix \
 
 Open `http://<host-lan-ip>:8080` from any browser on the network.
 
+### Compose (sim + scenes volume)
+
+```sh
+docker compose up --build        # sim on http://localhost:8080
+docker compose up --build -d     # detached (e.g. a Pi at the venue)
+# hardware via .env (DRIVER=xair|dl32s, ADDR=<mixer-ip>):
+DRIVER=xair ADDR=192.168.1.10 docker compose up --build
+```
+
+`docker-compose.yml` mounts `./scenes:/app/scenes` — an operator-managed
+directory for saved scene/snapshot JSON. The server is stateless; the
+volume keeps saved scenes next to the deployment instead of inside the
+container layer.
+
+### Image notes (verified 2026-10-17)
+
+- Multi-stage build: `rust:1-bookworm` builder compiles
+  `cargo build --release -p openmix-serve`, runtime is
+  `debian:bookworm-slim` running as non-root `openmix`.
+- The dependency tree is pure Rust (no OpenSSL in `Cargo.lock`), so the
+  `-slim` runtime needs no extra system libraries.
+- `.dockerignore` excludes `target/` (2.7 GB in a dev checkout), `.git/`,
+  `src-tauri/` and `apps/` — the build context is only
+  `Cargo.toml` + `Cargo.lock` + `crates/` + `ui/`.
+  (The runtime stage `COPY ui ./ui` needs `ui/` in context — do not ignore it.)
+- Verified: `docker build -t openmix .` succeeds; image size **118 MB**.
+- Base pin: `rust:1-bookworm` (major-version pin + suite match with the
+  runtime). Renovate/dependabot can bump the patch; re-verify with the
+  build command above after any base change.
+
+### Raspberry Pi / aarch64
+
+- Both stages are Debian bookworm, which publishes `arm64` variants, so
+  the same `Dockerfile` builds natively on a Pi:
+  `docker build -t openmix .` on Raspberry Pi OS (64-bit) / Ubuntu 22.04+.
+- Use a **Pi 4 (4 GB+) or Pi 5**. The release build peaks around 2–4 GB
+  RAM; on a 4 GB Pi add swap (`2 GB`) or build with fewer codegen units.
+  Expect ~10–20 min for the first (cold-cache) build on a Pi 5.
+- Cross-building from x86: `docker buildx build --platform linux/arm64
+  -t openmix:arm64 .` (needs QEMU `binfmt`; slow — prefer native Pi builds).
+- At the venue run detached: `docker compose up --build -d`, then open
+  `http://<pi-lan-ip>:8080` from a phone/laptop. For X-Air hardware on the
+  same subnet you may need `--network host` (Linux only) if you rely on
+  UDP broadcast discovery instead of `--addr <mixer-ip>`.
+
 Notes:
 
 - The image runs as a non-root `openmix` user and defaults to
