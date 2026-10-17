@@ -8,6 +8,8 @@
 //! {"cmd":"fader","ch":0,"value":0.0}
 //! {"cmd":"mute","ch":0,"muted":true}
 //! {"cmd":"param","ch":0,"field":"gain","value":0.5}
+//! {"cmd":"lock","ch":0}
+//! {"cmd":"unlock","ch":0}
 //! {"cmd":"list_shows"}
 //! {"cmd":"capture_scene","show":"gig","name":"verse"}
 //! {"cmd":"recall_scene","show":"gig","name":"verse","fade_ms":400}
@@ -44,8 +46,20 @@
 //! Every `state`/`param` frame emitted by a `fader`/`mute`/`param`
 //! (`recall_scene` included) mutation carries `"by":"<writer-id>"` so UIs
 //! can show who moved what. Writers are ids with a mutation in the last
-//! 10 s. Concurrency is last-write-wins: simultaneous moves apply in
-//! arrival order with no locking or rejection.
+//! 10 s.
+//!
+//! Strip locks (light arbitration): `{"cmd":"lock","ch":N}` claims a strip
+//! for the sender id; `{"cmd":"unlock","ch":N}` releases it. Holds are
+//! `ch -> holder-id` with a 60 s expiry refreshed by holder activity
+//! (any successful command from the holder) and auto-released on
+//! disconnect. The server broadcasts `{"type":"locks","holds":{...}}`
+//! (ch keys as strings) on every change including expiry. A strip locked
+//! by another writer rejects `fader`/`mute`/`param` with
+//! `{"type":"error","locked_by":"<holder-id>",...}`. `recall_scene`
+//! bypasses locks but unicasts `{"type":"recalled","overrode_locks":[ch..]}`
+//! to the recaller when it changed strips locked by someone else.
+//! Lock TTL defaults to [`LOCK_TTL`]; tests use [`run_with_lock_ttl`] with
+//! a short TTL to cover expiry without waiting 60 s.
 
 use std::{
     collections::HashMap,
@@ -54,7 +68,7 @@ use std::{
         atomic::{AtomicU64, Ordering},
         Arc,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -102,6 +116,13 @@ pub const SPECTRUM_CHANNELS: usize = 16;
 /// blob; sim/dl32s have no GR source and always read 0.0).
 pub const GR_CHANNELS: usize = 16;
 
+/// Default per-strip lock TTL: holder id + expiry, refreshed by holder
+/// activity, auto-released on disconnect/expiry.
+///
+/// Tests needing expiry coverage use [`run_with_lock_ttl`] with a short
+/// TTL instead of waiting 60 s.
+pub const LOCK_TTL: Duration = Duration::from_secs(60);
+
 /// Startup options for [`run`].
 #[derive(Clone, Debug)]
 pub struct ServeOptions {
@@ -133,6 +154,13 @@ struct ClientInfo {
     last_write: Option<Instant>,
 }
 
+/// One strip lock: holder id + expiry.
+#[derive(Clone, Debug)]
+struct StripLock {
+    holder: String,
+    expires_at: Instant,
+}
+
 /// Shared server state: driver bank + active selection + state-change fanout.
 ///
 /// Static dispatch over drivers (`MixerDriver` is not dyn-compatible due to
@@ -146,7 +174,8 @@ struct ClientInfo {
 /// Presence: `clients` tracks live sockets by id; `clients_tx` carries a
 /// prebuilt `clients` frame on join/leave. Mutation broadcasts (`state`
 /// via `state_tx`, `param` via `param_tx`) carry `"by":"<writer-id>"`.
-/// Last-write-wins: concurrent mutations apply in arrival order.
+/// Strip locks (`locks` + `locks_tx`) arbitrate per-channel `fader`/`mute`/
+/// `param` writes; `recall_scene` bypasses them but reports overrides.
 pub struct Shared {
     sim: openmix_sim::SimDriver,
     xair: openmix_proto_xair::XAirDriver,
@@ -159,14 +188,25 @@ pub struct Shared {
     clients: RwLock<HashMap<String, ClientInfo>>,
     clients_tx: broadcast::Sender<Value>,
     next_client: AtomicU64,
+    locks: RwLock<HashMap<u16, StripLock>>,
+    locks_tx: broadcast::Sender<Value>,
+    lock_ttl: Duration,
 }
 
 impl Shared {
+    #[allow(dead_code)]
     fn new() -> Self {
+        Self::with_lock_ttl(LOCK_TTL)
+    }
+
+    /// `Shared` with an explicit lock TTL (tests use a short TTL to cover
+    /// expiry without waiting 60 s; production uses [`LOCK_TTL`]).
+    pub fn with_lock_ttl(lock_ttl: Duration) -> Self {
         let (state_tx, _) = broadcast::channel(16);
         let (shows_tx, _) = broadcast::channel(16);
         let (param_tx, _) = broadcast::channel(256);
         let (clients_tx, _) = broadcast::channel(16);
+        let (locks_tx, _) = broadcast::channel(16);
         Self {
             sim: openmix_sim::SimDriver::new(),
             xair: openmix_proto_xair::XAirDriver::new(),
@@ -179,6 +219,9 @@ impl Shared {
             clients: RwLock::new(HashMap::new()),
             clients_tx,
             next_client: AtomicU64::new(1),
+            locks: RwLock::new(HashMap::new()),
+            locks_tx,
+            lock_ttl,
         }
     }
 
@@ -264,13 +307,24 @@ impl Shared {
         let _ = self.clients_tx.send(self.clients_message().await);
     }
 
-    /// Remove a client (on disconnect) and broadcast the updated frame.
+    /// Remove a client (on disconnect), auto-release its strip locks, and
+    /// broadcast the updated frames.
     async fn remove_client(&self, id: &str) {
         {
             let mut clients = self.clients.write().await;
             clients.remove(id);
         }
         let _ = self.clients_tx.send(self.clients_message().await);
+        // Auto-release: a disconnecting holder must not pin strips.
+        let released = {
+            let mut locks = self.locks.write().await;
+            let before = locks.len();
+            locks.retain(|_, l| l.holder != id);
+            locks.len() != before
+        };
+        if released {
+            let _ = self.locks_tx.send(self.locks_message_inner().await);
+        }
     }
 
     /// Record a mutation write for `writers` tracking (last 10 s).
@@ -299,6 +353,93 @@ impl Shared {
             .collect();
         writers.sort();
         json!({"type":"clients","count":clients.len(),"writers":writers})
+    }
+
+    /// Drop expired holds. Returns true when anything was removed.
+    async fn prune_expired_locks(&self) -> bool {
+        let now = Instant::now();
+        let mut locks = self.locks.write().await;
+        let before = locks.len();
+        locks.retain(|_, l| now < l.expires_at);
+        locks.len() != before
+    }
+
+    /// Holder of `ch`, or `None` when unlocked/expired.
+    async fn lock_holder(&self, ch: u16) -> Option<String> {
+        let locks = self.locks.read().await;
+        let entry = locks.get(&ch)?;
+        if Instant::now() >= entry.expires_at {
+            return None;
+        }
+        Some(entry.holder.clone())
+    }
+
+    /// Refresh expiry on every non-expired hold owned by `writer`
+    /// (holder activity keeps its strips pinned for another TTL).
+    async fn touch_holder_locks(&self, writer: &str) {
+        let deadline = Instant::now() + self.lock_ttl;
+        let now = Instant::now();
+        let mut locks = self.locks.write().await;
+        for entry in locks.values_mut() {
+            if entry.holder == writer && now < entry.expires_at {
+                entry.expires_at = deadline;
+            }
+        }
+    }
+
+    /// Current `locks` frame: `{"type":"locks","holds":{ch:holder-id}}`
+    /// with channel keys as strings (JSON object keys). Prunes expired
+    /// holds first so newcomers never see stale pins.
+    async fn locks_message(&self) -> Value {
+        let _ = self.prune_for_message().await;
+        self.locks_message_inner().await
+    }
+
+    /// Prune helper split out so [`Self::remove_client`] (which already
+    /// holds no lock across the broadcast) and the expiry sweeper share
+    /// one path without double-locking.
+    async fn prune_for_message(&self) -> bool {
+        self.prune_expired_locks().await
+    }
+
+    /// Build the `locks` frame from the current (already pruned) table.
+    /// Expired entries are skipped defensively even if pruning was skipped.
+    async fn locks_message_inner(&self) -> Value {
+        let locks = self.locks.read().await;
+        let now = Instant::now();
+        let mut holds = serde_json::Map::new();
+        let mut chs: Vec<u16> = locks.keys().copied().collect();
+        chs.sort_unstable();
+        for ch in chs {
+            if let Some(entry) = locks.get(&ch) {
+                if now < entry.expires_at {
+                    holds.insert(ch.to_string(), Value::String(entry.holder.clone()));
+                }
+            }
+        }
+        Value::Object({
+            let mut m = serde_json::Map::new();
+            m.insert("type".to_string(), Value::String("locks".to_string()));
+            m.insert("holds".to_string(), Value::Object(holds));
+            m
+        })
+    }
+
+    /// Broadcast the current `locks` frame (after pruning).
+    async fn broadcast_locks(&self) {
+        // Prune inside `locks_message`; a second prune here is a no-op.
+        let msg = self.locks_message().await;
+        let _ = self.locks_tx.send(msg);
+    }
+
+    /// Denied-write error frame: `{"type":"error","locked_by":id,...}`.
+    fn locked_error(ch: u16, holder: &str) -> Value {
+        json!({
+            "type": "error",
+            "message": format!("strip {ch} locked by {holder}"),
+            "locked_by": holder,
+            "ch": ch,
+        })
     }
 
     /// Current meter levels for the active driver (one entry per strip).
@@ -382,13 +523,23 @@ impl Shared {
 
     /// Apply one client command from `writer` (its presence id).
     ///
-    /// Returns a direct reply for `list_shows` (unicast `shows` frame);
-    /// every other command broadcasts (`state` for mixer mutations like
-    /// the pre-scene protocol, `shows` for library mutations, both for
-    /// `recall_scene` which moves faders) and returns `None`. Mutation
-    /// broadcasts carry `"by": writer`; last-write-wins (arrival order,
-    /// no locking).
+    /// Returns a direct reply for `list_shows` (unicast `shows` frame),
+    /// for lock denials (`{"type":"error","locked_by":...}` unicast), and
+    /// for `recall_scene` when it overrode foreign locks
+    /// (`{"type":"recalled","overrode_locks":[...]}` unicast); every other
+    /// command broadcasts (`state` for mixer mutations like the pre-scene
+    /// protocol, `shows` for library mutations, `locks` for lock changes,
+    /// both `state`+`param` for `recall_scene`) and returns `None`.
+    /// Mutation broadcasts carry `"by": writer`; `fader`/`mute`/`param`
+    /// on a strip locked by someone else are rejected, `recall_scene`
+    /// bypasses locks.
     async fn apply(&self, msg: &Value, writer: &str) -> anyhow::Result<Option<Value>> {
+        // Opportunistic expiry: release stale holds before any check so a
+        // just-expired strip reads as unlocked, and broadcast when the
+        // sweep actually removed something.
+        if self.prune_expired_locks().await {
+            let _ = self.locks_tx.send(self.locks_message_inner().await);
+        }
         let cmd = msg
             .get("cmd")
             .and_then(Value::as_str)
@@ -399,11 +550,17 @@ impl Shared {
                 let addr = msg.get("addr").and_then(Value::as_str);
                 self.connect(driver, addr).await?;
                 self.note_write(writer).await;
+                self.touch_holder_locks(writer).await;
                 let _ = self.state_tx.send(writer.to_string());
                 Ok(None)
             }
             "fader" => {
                 let ch = channel_arg(msg)?;
+                if let Some(holder) = self.lock_holder(ch.0).await {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch.0, &holder)));
+                    }
+                }
                 let value = msg
                     .get("value")
                     .and_then(Value::as_f64)
@@ -415,11 +572,17 @@ impl Shared {
                     _ => self.sim.set_fader(ch, value).await?,
                 }
                 self.note_write(writer).await;
+                self.touch_holder_locks(writer).await;
                 let _ = self.state_tx.send(writer.to_string());
                 Ok(None)
             }
             "mute" => {
                 let ch = channel_arg(msg)?;
+                if let Some(holder) = self.lock_holder(ch.0).await {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch.0, &holder)));
+                    }
+                }
                 let muted = msg
                     .get("muted")
                     .and_then(Value::as_bool)
@@ -430,11 +593,17 @@ impl Shared {
                     _ => self.sim.set_mute(ch, muted).await?,
                 }
                 self.note_write(writer).await;
+                self.touch_holder_locks(writer).await;
                 let _ = self.state_tx.send(writer.to_string());
                 Ok(None)
             }
             "param" => {
                 let ch = channel_arg(msg)?;
+                if let Some(holder) = self.lock_holder(ch.0).await {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch.0, &holder)));
+                    }
+                }
                 let field = msg
                     .get("field")
                     .and_then(Value::as_str)
@@ -454,10 +623,51 @@ impl Shared {
                     _ => self.sim.set_param(ch, field, pv).await?,
                 }
                 self.note_write(writer).await;
+                self.touch_holder_locks(writer).await;
                 let _ = self
                     .param_tx
                     .send(param_message(ch.0, field, raw.clone(), Some(writer)));
                 let _ = self.state_tx.send(writer.to_string());
+                Ok(None)
+            }
+            "lock" => {
+                let ch = channel_arg(msg)?;
+                if let Some(holder) = self.lock_holder(ch.0).await {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch.0, &holder)));
+                    }
+                    // Already ours: refresh expiry below.
+                }
+                {
+                    let mut locks = self.locks.write().await;
+                    locks.insert(
+                        ch.0,
+                        StripLock {
+                            holder: writer.to_string(),
+                            expires_at: Instant::now() + self.lock_ttl,
+                        },
+                    );
+                }
+                self.note_write(writer).await;
+                self.touch_holder_locks(writer).await;
+                self.broadcast_locks().await;
+                Ok(None)
+            }
+            "unlock" => {
+                let ch = channel_arg(msg)?;
+                if let Some(holder) = self.lock_holder(ch.0).await {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch.0, &holder)));
+                    }
+                    {
+                        let mut locks = self.locks.write().await;
+                        locks.remove(&ch.0);
+                    }
+                    self.note_write(writer).await;
+                    self.touch_holder_locks(writer).await;
+                    self.broadcast_locks().await;
+                }
+                // Unlocking an unlocked/expired strip is a no-op success.
                 Ok(None)
             }
             // Server-side show library (mirrors the Tauri scene ops).
@@ -503,6 +713,18 @@ impl Shared {
                 };
                 self.recall_on_active(&scene, fade_ms).await?;
                 self.note_write(writer).await;
+                self.touch_holder_locks(writer).await;
+                // Bypass locks, but report which locked strips were changed:
+                // scene strips locked by someone other than the recaller.
+                let mut overrode: Vec<u16> = Vec::new();
+                for s in &scene.strips {
+                    if let Some(holder) = self.lock_holder(s.strip.0).await {
+                        if holder != writer && !overrode.contains(&s.strip.0) {
+                            overrode.push(s.strip.0);
+                        }
+                    }
+                }
+                overrode.sort_unstable();
                 for s in &scene.strips {
                     let _ = self
                         .param_tx
@@ -520,7 +742,11 @@ impl Shared {
                     }
                 }
                 let _ = self.state_tx.send(writer.to_string());
-                Ok(None)
+                if overrode.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(json!({"type":"recalled","overrode_locks":overrode})))
+                }
             }
             "delete_scene" => {
                 let show = name_arg(msg, "show")?;
@@ -667,7 +893,8 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>, name: Option<Stri
     shared.add_client(&client_id, &label).await;
     let (mut tx, mut rx) = socket.split();
     // Initial snapshot: mixer state, then the server-side show library,
-    // then the client roster (so the newcomer sees siblings immediately).
+    // then the client roster and the lock table (so the newcomer sees
+    // siblings and pins immediately).
     if tx
         .send(Message::Text(shared.state_message().await.to_string()))
         .await
@@ -692,10 +919,19 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>, name: Option<Stri
         shared.remove_client(&client_id).await;
         return;
     }
+    if tx
+        .send(Message::Text(shared.locks_message().await.to_string()))
+        .await
+        .is_err()
+    {
+        shared.remove_client(&client_id).await;
+        return;
+    }
     let mut state_rx = shared.state_tx.subscribe();
     let mut shows_rx = shared.shows_tx.subscribe();
     let mut param_rx = shared.param_tx.subscribe();
     let mut clients_rx = shared.clients_tx.subscribe();
+    let mut locks_rx = shared.locks_tx.subscribe();
     // Per-connection RTA: fed by the same meter frames broadcast on the
     // ~10 Hz tick below (no new ports/threads — spectrum is derived
     // per-socket from the already-polled levels). Starts empty and grows
@@ -820,6 +1056,23 @@ async fn handle_socket(socket: WebSocket, shared: Arc<Shared>, name: Option<Stri
                     Err(_) => break,
                 }
             }
+            locks = locks_rx.recv() => {
+                match locks {
+                    Ok(msg) => {
+                        if tx.send(Message::Text(msg.to_string())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        // Same lag-recovery as clients: re-send current pins.
+                        let s = shared.locks_message().await;
+                        if tx.send(Message::Text(s.to_string())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
         }
     }
     shared.remove_client(&client_id).await;
@@ -916,8 +1169,40 @@ struct AppState {
 /// Serve the API + static UI until the listener errors or the future is
 /// dropped (tests abort the spawned task).
 pub async fn run(listener: TcpListener, opts: ServeOptions) -> anyhow::Result<()> {
+    run_with_lock_ttl(listener, opts, LOCK_TTL).await
+}
+
+/// [`run`] with an explicit strip-lock TTL.
+///
+/// Production passes [`LOCK_TTL`] (60 s); tests pass a short TTL (e.g.
+/// 200 ms) to cover expiry without waiting a minute. A background sweeper
+/// prunes expired holds every `ttl/2` (clamped 50 ms..5 s) and broadcasts
+/// the updated `locks` frame so idle expiry still notifies siblings.
+pub async fn run_with_lock_ttl(
+    listener: TcpListener,
+    opts: ServeOptions,
+    lock_ttl: Duration,
+) -> anyhow::Result<()> {
     let local = listener.local_addr()?;
-    let shared = Arc::new(Shared::new());
+    let shared = Arc::new(Shared::with_lock_ttl(lock_ttl));
+
+    // Expiry sweeper: lazy pruning in `apply` covers the next-command path,
+    // but an idle server still needs to release + broadcast expired pins.
+    {
+        let sweeper = Arc::clone(&shared);
+        let interval = (lock_ttl / 2).clamp(Duration::from_millis(50), Duration::from_secs(5));
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(interval);
+            loop {
+                tick.tick().await;
+                if sweeper.prune_expired_locks().await {
+                    let _ = sweeper
+                        .locks_tx
+                        .send(sweeper.locks_message_inner().await);
+                }
+            }
+        });
+    }
 
     // Initial driver connect. Hardware may be unreachable at boot; stay up
     // so a browser client can retry via the `connect` command.
