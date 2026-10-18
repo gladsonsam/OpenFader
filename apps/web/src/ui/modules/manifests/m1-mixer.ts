@@ -18,6 +18,7 @@ import StripFrame from '../../screens/mixer/StripFrame.svelte';
 import StripMute from '../../screens/mixer/StripMute.svelte';
 import StripFader from '../../screens/mixer/StripFader.svelte';
 import StripName from '../../screens/mixer/StripName.svelte';
+import StripGroupBadges from '../../screens/mixer/StripGroupBadges.svelte';
 import StripNameEditor from '../../screens/mixer/StripNameEditor.svelte';
 import StripSolo from '../../screens/mixer/StripSolo.svelte';
 import StripEmpty from '../../screens/mixer/StripEmpty.svelte';
@@ -164,10 +165,22 @@ export const manifests: ModuleManifest[] = [
     props: {
       name: { type: 'text', default: 'Ch 1' },
       selectedColor: { type: 'color', default: '#5cdb5c' },
+      selectedIcon: { type: 'text', default: '' },
     },
     defaults: {},
     size: { minW: 60 },
-    events: [{ name: 'rename' }, { name: 'recolor' }, { name: 'close' }],
+    events: [{ name: 'rename' }, { name: 'recolor' }, { name: 'reicon' }, { name: 'close' }],
+  },
+  {
+    id: 'strip-group-badges',
+    title: 'Strip desk-group badges',
+    category: 'strip',
+    component: as(StripGroupBadges),
+    props: {
+      desk: { type: 'object' },
+    },
+    defaults: {},
+    size: { minW: 60 },
   },
   {
     id: 'strip-solo',

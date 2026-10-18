@@ -308,6 +308,7 @@ export function registerBuiltins(): void {
   uiThrough('ui.closeNameEditor', () => [], S('Close the name-bar editor'));
   uiThrough('ui.setChannelName', a => [a['id'], a['value']], { args: { id: 'string', value: 'string' }, describe: 'Rename a channel (lock-checked)' });
   uiThrough('ui.setChannelColor', a => [a['id'], a['color'], a['text']], { args: { id: 'string', color: 'string', text: 'string' }, describe: 'Recolour a channel (lock-checked)' });
+  uiThrough('ui.setChannelIcon', a => [a['id'], a['icon']], { args: { id: 'string', icon: 'any' }, describe: 'Set a channel strip icon (lock-checked)' });
 
   // EQ / dynamics / input (not lock-checked in the design)
   uiThrough('ui.setEqParam', a => [a['id'], a['band'], a['param'], a['value']], { args: { id: 'string', band: 'number', param: 'string', value: 'number' }, describe: 'Set EQ param' });
