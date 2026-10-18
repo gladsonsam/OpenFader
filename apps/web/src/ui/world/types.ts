@@ -299,7 +299,7 @@ export interface World {
   readonly driver: string;
   /** Authoritative self id from the unicast `you` frame (null until seen). */
   readonly selfId: string | null;
-  /** Open/connect (driver + optional addr); hello negotiation is automatic. */
+  /** Open/attach (no driver = no switch; explicit driver = switch to it); hello negotiation is automatic. */
   connect(driver?: string, addr?: string): void;
   onStatus(cb: (online: boolean) => void): Unsub;
   /** Reactive poke: called after every ingested frame / local edit. */
@@ -310,6 +310,8 @@ export interface World {
   // ---- topology / banks / strips ----
   /** Total addressable strips (topology end; grows meters/state windows). */
   readonly stripCount: number;
+  /** Strip family kind for a global strip index (null when out of range). */
+  kindOf(ch: number): StripKind | null;
   /** Derived banks in rail order (see mapping/banks.ts). */
   readonly banks: WorldBank[];
   bankFor(ch: number): WorldBank | null;
@@ -400,6 +402,24 @@ export interface World {
   offline(model: string): void;
   offlinePush(confirm: boolean): void;
   offlineDiscard(): void;
+
+  // ---- masters / groups / files (R2) ----
+  readonly groupCaps: { buses: number; subgroups: number; muteGroups: number; files: boolean };
+  busMaster(bus: number): { fader: number; muted: boolean } | null;
+  subgroupMaster(group: number): { fader: number; muted: boolean } | null;
+  muteGroupMaster(group: number): boolean | null;
+  subgroupAssigned(ch: number, group: number): boolean | null;
+  muteGroupAssigned(ch: number, group: number): boolean | null;
+  readonly lastFile: { filename: string; size: number; fileType: number } | null;
+  busFader(bus: number, v01: number): void;
+  busMute(bus: number, muted: boolean): void;
+  subgroupFader(group: number, v01: number): void;
+  subgroupMute(group: number, muted: boolean): void;
+  subgroupAssign(ch: number, group: number, member: boolean): void;
+  muteGroup(group: number, muted: boolean): void;
+  muteGroupAssign(ch: number, group: number, member: boolean): void;
+  fileDownload(filename: string): void;
+  fileUpload(filename: string, dataB64: string, fileType: number): void;
 
   // ---- debug counters (world-debug screen) ----
   /** performance.now() at connect, or null. */

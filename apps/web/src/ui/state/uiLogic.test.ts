@@ -284,7 +284,7 @@ function eq<T>(a: T, b: T, label: string): void {
   eq(visibleCount(8), 8, 'spp 8');
   eq(gridCols(null).includes('/ 12)'), true, 'grid 12');
   eq(gridCols(8).includes('/ 8)'), true, 'grid 8');
-  eq(gridCols(16), 'repeat(16, minmax(64px, 1fr))', 'grid 16');
+  eq(gridCols(16), 'repeat(16, minmax(80px, min(150px, calc((100% - 45px) / 16))))', 'grid 16');
   eq(pageCount(16, 8), 2, 'pages 16/8');
   eq(pageCount(16, 12), 2, 'pages 16/12');
   eq(pageCount(10, 16), 1, 'pages 10/16');

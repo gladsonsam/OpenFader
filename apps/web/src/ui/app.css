@@ -10,6 +10,30 @@ body {
   background: var(--u4-page-bg, #05070b);
 }
 
+/* Native-app shell: the document never scrolls. All scrolling happens in
+ * inner regions (L0 scroll containers / overflow-auto cols) with
+ * overscroll containment, so there is no page bounce, no pull-to-refresh
+ * and no URL-bar-driven resize feedback loop. `manipulation` kills the
+ * double-tap-zoom delay while keeping pan/pinch working. */
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+#app {
+  height: 100%;
+}
+
 @font-face {
   font-family: 'Geist';
   src: url('/fonts/Geist-latin.woff2') format('woff2');
@@ -28,8 +52,11 @@ body {
 }
 
 .u4-frame {
+  /* 100vh fallback (older browsers) + 100dvh so the iOS/Android URL bar
+   * never resizes the app or leaves a gap; the document can't scroll
+   * (see html/body above) so dvh is stable here. */
   height: 100vh;
-  min-height: 600px;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
   background: var(--u4-page-bg);
@@ -37,8 +64,13 @@ body {
   font-family: 'Geist', system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
   overflow: hidden;
+  /* No page bounce / pull-to-refresh / double-tap zoom inside the app. */
+  overscroll-behavior: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-touch-callout: none;
   margin: 0;
   /* Edge-to-edge (Tauri mobile plugin injects --safe-area-*, PWA falls
    * back to env() via viewport-fit=cover). Content clears the status
@@ -49,8 +81,36 @@ body {
   padding-right: var(--safe-area-right, env(safe-area-inset-right, 0px));
 }
 
+/* Desktop keeps the design's 600px minimum (diff canvas is 1280x720);
+ * phones/tablets and short viewports shrink to the real viewport so the
+ * frame itself never overflows the document. */
+@media (min-width: 1100px) {
+  .u4-frame {
+    min-height: 600px;
+  }
+}
+
 .u4-frame button {
   font-family: inherit;
+}
+
+/* Touch press feedback: discrete tap buttons shrink snappily while held.
+ * Apply `tpress` only to tap buttons (mute/solo/name/bank/editor) — never
+ * to direct-manipulation sliders (fader/pan/knob), where a transform would
+ * fight the drag. */
+.u4-frame .tpress {
+  transition: transform 0.08s ease-out;
+}
+.u4-frame .tpress:active {
+  transform: scale(0.94);
+}
+@media (prefers-reduced-motion: reduce) {
+  .u4-frame .tpress {
+    transition: none;
+  }
+  .u4-frame .tpress:active {
+    transform: none;
+  }
 }
 
 .u4-frame button:focus-visible {
@@ -78,6 +138,23 @@ body {
  * the attribute is only set by the phone/tablet variants. */
 [data-snap-items] > * {
   scroll-snap-align: start;
+}
+
+/* Inner scroll regions: shrink inside flex parents (never force the page
+ * taller), contain scroll chaining/bounce, and keep momentum on iOS.
+ * Content fits on desktop, so the 1280x720 design is unaffected. */
+.u4-frame [data-l0='scroll'] {
+  min-width: 0;
+  min-height: 0;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+.u4-frame main,
+.u4-frame [data-node='content'] {
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 @media (max-width: 1099px) {

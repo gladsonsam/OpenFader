@@ -92,4 +92,23 @@ assert.equal(w0.state.connected, 'foh');
   assert.equal(vm.isConnected, false);
 }
 
+// Live relay state owns the status card when a link is active.
+{
+  const base = { phase: 'connecting' as const, message: 'Connecting to h …', host: 'h', latencyMs: null, strips: 0 };
+  const busy = buildConnectionVm(w0.state, base);
+  assert.equal(busy.title, 'Connecting to relay …');
+  assert.equal(busy.dot, '#f0b44a');
+  assert.equal(busy.isConnected, false);
+
+  const on = buildConnectionVm(w0.state, { ...base, phase: 'online', message: 'Live · sim · 77 strips', latencyMs: 12, strips: 77 });
+  assert.equal(on.title, 'Live · relay link');
+  assert.equal(on.sub, 'Live · sim · 77 strips · h');
+  assert.equal(on.dot, '#5fe060');
+
+  const err = buildConnectionVm(w0.state, { ...base, phase: 'error', message: 'No response from relay at h' });
+  assert.equal(err.title, 'Relay connection failed');
+  assert.equal(err.sub, 'No response from relay at h');
+  assert.equal(err.dot, '#ff4a3d');
+}
+
 console.log('connectionVm.test.ts: ok');

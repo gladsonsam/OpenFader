@@ -22,6 +22,8 @@ export interface BoxProps {
   margin?: SizeValue;
   /** Full CSS overflow, e.g. 'hidden' (proc wells clip their SVG thumbs). */
   overflow?: string;
+  /** CSS position, e.g. 'relative' (anchor for an absolutely-positioned popup). */
+  position?: string;
   /** Full CSS box-shadow, e.g. the strip selection ring. */
   shadow?: string;
   /** box-sizing override; cards use 'content-box' like the design. */
@@ -57,6 +59,7 @@ export function boxStyle(p: BoxProps): Array<string | undefined | false> {
     sizeCss(p.minHeight) ? `min-height:${sizeCss(p.minHeight)}` : undefined,
     sizeCss(p.margin) ? `margin:${sizeCss(p.margin)}` : undefined,
     p.overflow ? `overflow:${p.overflow}` : undefined,
+    p.position ? `position:${p.position}` : undefined,
     p.shadow ? `box-shadow:${p.shadow}` : undefined,
     p.box ? `box-sizing:${p.box}` : undefined,
   ];

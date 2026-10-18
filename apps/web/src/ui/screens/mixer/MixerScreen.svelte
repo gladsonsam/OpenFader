@@ -12,6 +12,7 @@
      does no work per animation frame). -->
 <script lang="ts">
   import { ui } from '../../state/uiStore.svelte.ts';
+  import { live } from '../../state/live.svelte.ts';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
   import { fixtureSource } from '../../modules/context.ts';
   import { createProfileStore } from '../../modules/profile/store.svelte.ts';
@@ -39,8 +40,12 @@
   });
 
   const frozen = $derived(ui.frozen && ui.meter !== null);
-  const cells = $derived(mixerCells(ui.state, ui.chans, ui.meter, frozen));
-  const master = $derived(mixerMasterCell(ui.state, ui.chans, ui.meter, frozen));
+  // Live relay meters win over the fixture sim when a link is up (the
+  // closure reads the engine arrays imperatively each animation frame, so
+  // no reactive re-derivation is needed for drawing).
+  const liveDb = (id: string): number | null => live.liveLevelDb(id);
+  const cells = $derived(mixerCells(ui.state, ui.chans, ui.meter, frozen, liveDb));
+  const master = $derived(mixerMasterCell(ui.state, ui.chans, ui.meter, frozen, liveDb));
   const emptyCount = $derived(Math.max(0, SLOT_COUNT - cells.length));
   const tree = $derived(store.tree(defaults as unknown as LayoutNode));
   // The user-editable strip anatomy, derived through the same profile store

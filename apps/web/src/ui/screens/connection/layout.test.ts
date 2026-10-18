@@ -10,7 +10,7 @@ const tree = JSON.parse(
   readFileSync(new URL('../../layouts/connection.default.json', import.meta.url), 'utf8'),
 ) as LayoutNode;
 
-const LEAVES = new Set(['btn', 'status-dot', 'device-row', 'text']);
+const LEAVES = new Set(['btn', 'status-dot', 'device-row', 'relay-card', 'text']);
 
 function walk(n: LayoutNode, out: LayoutNode[]): LayoutNode[] {
   out.push(n);
@@ -45,6 +45,22 @@ function walk(n: LayoutNode, out: LayoutNode[]): LayoutNode[] {
   // status border is computed, title/sub interpolate the vm
   const status = nodes.find(n => n.id === 'status');
   assert.deepEqual(status?.bind, { border: "'1px solid ' + conn.cardBorder" });
+  // relay card carries the real socket: host in, connect/disconnect out.
+  // Phone/tablet only (desktop stays design-exact for the diff baselines).
+  const relay = nodes.find(n => n.id === 'relay');
+  assert.equal(relay?.module, 'relay-card');
+  assert.deepEqual(relay?.when, { device: ['phone', 'tablet'] });
+  assert.deepEqual(relay?.bind, {
+    host: 'relay.host',
+    phase: 'relay.phase',
+    message: 'relay.message',
+    latencyMs: 'relay.latencyMs',
+    strips: 'relay.strips',
+  });
+  assert.deepEqual(relay?.on, {
+    connect: { do: 'ui.connectRelay', args: { host: { $expr: 'payload.host' } } },
+    disconnect: { do: 'ui.disconnectRelay' },
+  });
 }
 
 console.log('connection layout.test.ts: ok');
