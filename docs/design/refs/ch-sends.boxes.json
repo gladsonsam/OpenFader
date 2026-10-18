@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "screen": "ch-sends",
+  "boxes": [
+    {
+      "name": "hdr-toolbar",
+      "match": {
+        "kind": "aria",
+        "value": "Console tools"
+      },
+      "ref": {
+        "x": 884.77,
+        "y": 5,
+        "w": 196,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-fx",
+      "match": {
+        "kind": "aria",
+        "value": "Effects"
+      },
+      "ref": {
+        "x": 884.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-routing",
+      "match": {
+        "kind": "aria",
+        "value": "Routing"
+      },
+      "ref": {
+        "x": 934.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-connection",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Connection"
+      },
+      "ref": {
+        "x": 984.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-settings",
+      "match": {
+        "kind": "aria",
+        "value": "Settings"
+      },
+      "ref": {
+        "x": 1034.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-scene",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Scene "
+      },
+      "ref": {
+        "x": 1097.77,
+        "y": 5,
+        "w": 174.23,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-back",
+      "match": {
+        "kind": "aria",
+        "value": "Back"
+      },
+      "ref": {
+        "x": 12,
+        "y": 5,
+        "w": 83.23,
+        "h": 46
+      }
+    },
+    {
+      "name": "processing-nav",
+      "match": {
+        "kind": "aria",
+        "value": "Processing"
+      },
+      "ref": {
+        "x": 6,
+        "y": 63,
+        "w": 112,
+        "h": 651
+      }
+    },
+    {
+      "name": "tab-sends",
+      "match": {
+        "kind": "textPrefix",
+        "value": "Sends"
+      },
+      "ref": {
+        "x": 166.27,
+        "y": 19,
+        "w": 40.31,
+        "h": 18
+      }
+    },
+    {
+      "name": "send-row",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Send to Mix 1 "
+      },
+      "ref": {
+        "x": 199,
+        "y": 70,
+        "w": 116.66,
+        "h": 46
+      }
+    },
+    {
+      "name": "send-pre",
+      "match": {
+        "kind": "aria",
+        "value": "Mix 1 pre-fader"
+      },
+      "ref": {
+        "x": 385.66,
+        "y": 73,
+        "w": 56,
+        "h": 40
+      }
+    },
+    {
+      "name": "chstrip-region",
+      "match": {
+        "kind": "aria",
+        "value": "Channel strip"
+      },
+      "ref": {
+        "x": 1128,
+        "y": 63,
+        "w": 146,
+        "h": 651
+      }
+    },
+    {
+      "name": "chstrip-mute",
+      "match": {
+        "kind": "aria",
+        "value": "Mute Ch 2"
+      },
+      "ref": {
+        "x": 1133,
+        "y": 215,
+        "w": 136,
+        "h": 44
+      }
+    },
+    {
+      "name": "chstrip-fader",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Fader Ch 2 "
+      },
+      "ref": {
+        "x": 1133,
+        "y": 282,
+        "w": 136,
+        "h": 404
+      }
+    }
+  ]
+}

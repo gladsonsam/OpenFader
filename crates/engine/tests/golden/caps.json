@@ -1,0 +1,86 @@
+{
+  "driver": "sim",
+  "fx": {
+    "slots": 8,
+    "types": [
+      {
+        "id": "hall",
+        "label": "Hall",
+        "params": [
+          {
+            "default": 1.0,
+            "id": "mix",
+            "label": "Mix",
+            "max": 100.0,
+            "min": 0.0,
+            "scale": "lin",
+            "unit": "%"
+          }
+        ]
+      }
+    ]
+  },
+  "meter_taps": [
+    "in",
+    "post",
+    "gr_gate",
+    "gr_comp"
+  ],
+  "params": [
+    {
+      "default": 20.0,
+      "id": "gain",
+      "kind": "float",
+      "label": "Gain",
+      "max": 60.0,
+      "min": -12.0,
+      "scope": "channel",
+      "scopes": [
+        "in"
+      ],
+      "unit": "dB"
+    },
+    {
+      "default": false,
+      "id": "phantom",
+      "kind": "bool",
+      "label": "Phantom",
+      "max": null,
+      "min": null,
+      "scope": "channel",
+      "scopes": [
+        "in"
+      ],
+      "unit": ""
+    }
+  ],
+  "routing": {
+    "groups": [
+      {
+        "count": 32,
+        "key": "Lcl",
+        "label": "Local"
+      }
+    ],
+    "per_strip": true,
+    "supported": true
+  },
+  "topology": [
+    {
+      "color_default": 2,
+      "count": 32,
+      "first": 0,
+      "key": "ch",
+      "kind": "in",
+      "label": "Ch 1-32",
+      "name_prefix": "Ch",
+      "params_scope": [
+        "in"
+      ]
+    }
+  ],
+  "type": "caps",
+  "unsupported": [
+    "usbreturn"
+  ]
+}

@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "screen": "routing",
+  "boxes": [
+    {
+      "name": "hdr-toolbar",
+      "match": {
+        "kind": "aria",
+        "value": "Console tools"
+      },
+      "ref": {
+        "x": 884.77,
+        "y": 5,
+        "w": 196,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-fx",
+      "match": {
+        "kind": "aria",
+        "value": "Effects"
+      },
+      "ref": {
+        "x": 884.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-routing",
+      "match": {
+        "kind": "aria",
+        "value": "Routing"
+      },
+      "ref": {
+        "x": 934.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-connection",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Connection"
+      },
+      "ref": {
+        "x": 984.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-settings",
+      "match": {
+        "kind": "aria",
+        "value": "Settings"
+      },
+      "ref": {
+        "x": 1034.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-scene",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Scene "
+      },
+      "ref": {
+        "x": 1097.77,
+        "y": 5,
+        "w": 174.23,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-back",
+      "match": {
+        "kind": "aria",
+        "value": "Back"
+      },
+      "ref": {
+        "x": 12,
+        "y": 5,
+        "w": 83.23,
+        "h": 46
+      }
+    },
+    {
+      "name": "sec-channels",
+      "match": {
+        "kind": "aria",
+        "value": "Channels"
+      },
+      "ref": {
+        "x": 6,
+        "y": 63,
+        "w": 631,
+        "h": 379
+      }
+    },
+    {
+      "name": "sec-sources",
+      "match": {
+        "kind": "aria",
+        "value": "Sources"
+      },
+      "ref": {
+        "x": 643,
+        "y": 63,
+        "w": 631,
+        "h": 379
+      }
+    },
+    {
+      "name": "route-bank",
+      "match": {
+        "kind": "text",
+        "value": "1–16"
+      },
+      "ref": {
+        "x": 443.03,
+        "y": 85.5,
+        "w": 25.25,
+        "h": 17
+      }
+    }
+  ]
+}

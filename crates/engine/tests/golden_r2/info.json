@@ -1,0 +1,8 @@
+{
+  "console_name": "sim",
+  "driver": "sim",
+  "firmware": "0.1.0",
+  "model": "SimDriver 32+8",
+  "sample_rate": 48000,
+  "type": "info"
+}

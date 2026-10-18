@@ -1,0 +1,188 @@
+{
+  "version": 1,
+  "screen": "ch-eq",
+  "boxes": [
+    {
+      "name": "hdr-toolbar",
+      "match": {
+        "kind": "aria",
+        "value": "Console tools"
+      },
+      "ref": {
+        "x": 884.77,
+        "y": 5,
+        "w": 196,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-fx",
+      "match": {
+        "kind": "aria",
+        "value": "Effects"
+      },
+      "ref": {
+        "x": 884.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-routing",
+      "match": {
+        "kind": "aria",
+        "value": "Routing"
+      },
+      "ref": {
+        "x": 934.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-connection",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Connection"
+      },
+      "ref": {
+        "x": 984.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-settings",
+      "match": {
+        "kind": "aria",
+        "value": "Settings"
+      },
+      "ref": {
+        "x": 1034.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-scene",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Scene "
+      },
+      "ref": {
+        "x": 1097.77,
+        "y": 5,
+        "w": 174.23,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-back",
+      "match": {
+        "kind": "aria",
+        "value": "Back"
+      },
+      "ref": {
+        "x": 12,
+        "y": 5,
+        "w": 83.23,
+        "h": 46
+      }
+    },
+    {
+      "name": "processing-nav",
+      "match": {
+        "kind": "aria",
+        "value": "Processing"
+      },
+      "ref": {
+        "x": 6,
+        "y": 63,
+        "w": 112,
+        "h": 651
+      }
+    },
+    {
+      "name": "tab-eq",
+      "match": {
+        "kind": "textPrefix",
+        "value": "HPF + EQ"
+      },
+      "ref": {
+        "x": 166.27,
+        "y": 19,
+        "w": 60.31,
+        "h": 18
+      }
+    },
+    {
+      "name": "eq-graph",
+      "match": {
+        "kind": "css",
+        "value": "[data-graph]"
+      },
+      "ref": {
+        "x": 124,
+        "y": 109,
+        "w": 998,
+        "h": 409
+      }
+    },
+    {
+      "name": "eq-knob-freq",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Freq "
+      },
+      "ref": {
+        "x": 192.39,
+        "y": 612,
+        "w": 58,
+        "h": 58
+      }
+    },
+    {
+      "name": "chstrip-region",
+      "match": {
+        "kind": "aria",
+        "value": "Channel strip"
+      },
+      "ref": {
+        "x": 1128,
+        "y": 63,
+        "w": 146,
+        "h": 651
+      }
+    },
+    {
+      "name": "chstrip-mute",
+      "match": {
+        "kind": "aria",
+        "value": "Mute Ch 2"
+      },
+      "ref": {
+        "x": 1133,
+        "y": 215,
+        "w": 136,
+        "h": 44
+      }
+    },
+    {
+      "name": "chstrip-fader",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Fader Ch 2 "
+      },
+      "ref": {
+        "x": 1133,
+        "y": 282,
+        "w": 136,
+        "h": 404
+      }
+    }
+  ]
+}

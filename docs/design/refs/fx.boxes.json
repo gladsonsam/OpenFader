@@ -1,0 +1,149 @@
+{
+  "version": 1,
+  "screen": "fx",
+  "boxes": [
+    {
+      "name": "hdr-toolbar",
+      "match": {
+        "kind": "aria",
+        "value": "Console tools"
+      },
+      "ref": {
+        "x": 884.77,
+        "y": 5,
+        "w": 196,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-fx",
+      "match": {
+        "kind": "aria",
+        "value": "Effects"
+      },
+      "ref": {
+        "x": 884.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-routing",
+      "match": {
+        "kind": "aria",
+        "value": "Routing"
+      },
+      "ref": {
+        "x": 934.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-connection",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Connection"
+      },
+      "ref": {
+        "x": 984.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-settings",
+      "match": {
+        "kind": "aria",
+        "value": "Settings"
+      },
+      "ref": {
+        "x": 1034.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-scene",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Scene "
+      },
+      "ref": {
+        "x": 1097.77,
+        "y": 5,
+        "w": 174.23,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-back",
+      "match": {
+        "kind": "aria",
+        "value": "Back"
+      },
+      "ref": {
+        "x": 12,
+        "y": 5,
+        "w": 83.23,
+        "h": 46
+      }
+    },
+    {
+      "name": "fx-type",
+      "match": {
+        "kind": "aria",
+        "value": "Effect type"
+      },
+      "ref": {
+        "x": 21,
+        "y": 240,
+        "w": 1238,
+        "h": 44
+      }
+    },
+    {
+      "name": "fx-title",
+      "match": {
+        "kind": "text",
+        "value": "FX 1 · Hall"
+      },
+      "ref": {
+        "x": 21,
+        "y": 189,
+        "w": 93.2,
+        "h": 26
+      }
+    },
+    {
+      "name": "fx-slot1",
+      "match": {
+        "kind": "textPrefix",
+        "value": "FX 1"
+      },
+      "ref": {
+        "x": 18,
+        "y": 75,
+        "w": 21.73,
+        "h": 16
+      }
+    },
+    {
+      "name": "fx-knob-decay",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Decay "
+      },
+      "ref": {
+        "x": 92.39,
+        "y": 434,
+        "w": 92,
+        "h": 92
+      }
+    }
+  ]
+}

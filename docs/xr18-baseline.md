@@ -163,3 +163,44 @@ restored and re-verified.
 - D/FL(26): par02/08/09 INT (0/1/1, enums), rest float through par13, par14+ NaN.
 - PIT(60): par01-06 float, par07+ NaN.
 - Rules for driver: expect INT pars mixed among floats (decode both); NaN float = absent par, must not surface as a value.
+
+## 7. Driver-path probe (2026-10-18, owner rig, FW 1.20)
+
+65/65 through the `MixerDriver` param path (`XAirDriver::get_param` /
+`set_param` — the same code the relay poller uses). Read-only except
+same-value write roundtrips on quiet ch2 (fader 0.0, muted — no audible
+change; speakers left on). Temporary probe, deleted after use.
+
+Live ch1 (BASS) readbacks, engineering units:
+
+| Leaf | Readback |
+|------|----------|
+| pan | 0 (centre) |
+| eq_on | true; eq1 gain 0 dB, freq 124.7 Hz, Q 2, type 2 |
+| gate_on | true; thr −41 dB, range 60 dB, att 12 ms, hold 126.2 ms, rel 752.1 ms, mode 0 |
+| gate filter | on false, type 6, f 990.9 Hz; gate key_src 0 |
+| comp_on | false; thr 0 dB, ratio 3.0 (wire INT index 5 of the 12-step table), knee 1, makeup 0 dB, att 10 ms, hold 10.0 ms, rel 151.2 ms, mode 0, det 0, env 1, mix 100 %, auto false |
+| comp filter | on false, type 6, f 990.9 Hz; comp key_src 0 |
+| send1..6_tap (bus slots) | 2 (POSTEQ) |
+| send7..10_tap (FX slots) | 4 (POST) |
+| bus/1 eq5 | gain 0 dB, freq 20 Hz, Q 2, type 2 |
+| bus/1 eq6 | gain 0 dB, freq 20 Hz, Q 2, type 4 |
+| lr eq5_gain | 0 dB (main carries bands 5..6) |
+| /rtn/1 fader / on | 0.7497556 / muted |
+| /dca/1 fader / on | 0.7497556 / on |
+| /ch/16 color | 0 (answers — contradicts the earlier "silent on /ch/16" note, which is corrected) |
+
+Same-value roundtrips on ch2 (read → write identical → re-read):
+fader `0 → 0` exact, mute/colour/send1_tap/gate_filter_type/comp_ratio
+(`3.0`) all bit-exact. Bus-only `eq5_gain` on a channel is rejected
+driver-side (`out of scope for In strips`, no I/O).
+
+Deltas vs the old (wrong) map:
+- tap was `0..=1` pre/post → desk reads `2`/`4`; six-point enum `0..=5` (IN, PREEQ, POSTEQ, PRE, POST, GRP) confirmed.
+- comp ratio was a direct float (readback misreported as `5.0`) → wire is the INT step-table index (`5` → `3.0`).
+- gate range was `0..=60` → `3..=60`; gate hold was `0..=500` → `0.02..=2000` (log); gate release was `5..=1000` → `5..=4000` (log).
+- gate mode/key/filter was `0..=2` / `0..=3` / `0..=2` → mode `0..=4` (GATE, EXP2, EXP3, EXP4, DUCK), key_src `0..=22`, plus the `filter/` node (on `0..=1`, type `0..=8`, f log `20..20000`).
+- comp ranges/curves: thr `-60..=0` lin, knee `0..=5` lin, makeup `0..=24` lin, att `0..=120` lin, hold `0.02..=2000` log, rel `5..=4000` log, mix `0..=100` lin (old table had `0..=300` / `0..=500` / `10..=1000` assumed-linear).
+- strip roots: FX returns live at `/rtn/N` (there is no `/fxrtn` leaf); DCA fader/on sit directly under `/dca/N` (no `/mix` segment).
+- caps: `icon` / `link` / `sendN_on` are OUT (no desk leaf — send block lists `level`, `grpon`, `tap`, `pan` only); gate/comp `filter/` leaves, `comp_key_src` and bus/main `eq5/eq6` are IN (all answer).
+- ch16 `config/color` answers (the input-module "silent on /ch/16" note was wrong).

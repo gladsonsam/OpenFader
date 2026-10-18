@@ -1,0 +1,12 @@
+{
+  "changes": [
+    {
+      "from": 20.0,
+      "id": "gain",
+      "strip": 0,
+      "to": 25.0
+    }
+  ],
+  "count": 1,
+  "type": "offline_diff"
+}

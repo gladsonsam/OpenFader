@@ -1,5 +1,5 @@
 # openmix run-anywhere image: static UI + WebSocket mixer API on one port.
-# The UI worker owns ui/; this image just serves whatever is in ui/ as built.
+# The single built UI is apps/web/dist; this image just serves it as built.
 FROM rust:1-bookworm AS builder
 WORKDIR /build
 
@@ -16,7 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget \
 WORKDIR /app
 COPY --from=builder /build/target/release/openmix-serve /usr/local/bin/openmix-serve
 # Static UI served by openmix-serve (override with --static-dir / $OPENMIX_UI_DIR).
-COPY ui ./ui
+# Destination stays ./ui so the server's auto-detect default keeps working.
+COPY apps/web/dist ./ui
 RUN chown -R openmix:openmix /app
 USER openmix
 EXPOSE 8080

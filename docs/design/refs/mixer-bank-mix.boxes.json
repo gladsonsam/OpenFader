@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "screen": "mixer-bank-mix",
+  "boxes": [
+    {
+      "name": "hdr-toolbar",
+      "match": {
+        "kind": "aria",
+        "value": "Console tools"
+      },
+      "ref": {
+        "x": 884.77,
+        "y": 5,
+        "w": 196,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-fx",
+      "match": {
+        "kind": "aria",
+        "value": "Effects"
+      },
+      "ref": {
+        "x": 884.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-routing",
+      "match": {
+        "kind": "aria",
+        "value": "Routing"
+      },
+      "ref": {
+        "x": 934.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-connection",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Connection"
+      },
+      "ref": {
+        "x": 984.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-settings",
+      "match": {
+        "kind": "aria",
+        "value": "Settings"
+      },
+      "ref": {
+        "x": 1034.77,
+        "y": 5,
+        "w": 46,
+        "h": 46
+      }
+    },
+    {
+      "name": "hdr-scene",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Scene "
+      },
+      "ref": {
+        "x": 1097.77,
+        "y": 5,
+        "w": 174.23,
+        "h": 46
+      }
+    },
+    {
+      "name": "layers-nav",
+      "match": {
+        "kind": "aria",
+        "value": "Layers"
+      },
+      "ref": {
+        "x": 1184,
+        "y": 61,
+        "w": 92,
+        "h": 655
+      }
+    },
+    {
+      "name": "strip-mute",
+      "match": {
+        "kind": "aria",
+        "value": "Mute Mix 1"
+      },
+      "ref": {
+        "x": 7,
+        "y": 275.25,
+        "w": 78.91,
+        "h": 40
+      }
+    },
+    {
+      "name": "strip-fader",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Fader Mix 1 "
+      },
+      "ref": {
+        "x": 7,
+        "y": 333.25,
+        "w": 78.91,
+        "h": 324.75
+      }
+    },
+    {
+      "name": "strip-select",
+      "match": {
+        "kind": "ariaPrefix",
+        "value": "Select Mix 1"
+      },
+      "ref": {
+        "x": 7,
+        "y": 661,
+        "w": 78.91,
+        "h": 52
+      }
+    },
+    {
+      "name": "master-region",
+      "match": {
+        "kind": "aria",
+        "value": "Master strip"
+      },
+      "ref": {
+        "x": 1060,
+        "y": 61,
+        "w": 120,
+        "h": 655
+      }
+    },
+    {
+      "name": "master-mute",
+      "match": {
+        "kind": "aria",
+        "value": "Mute Main LR"
+      },
+      "ref": {
+        "x": 1064,
+        "y": 251,
+        "w": 112,
+        "h": 40
+      }
+    }
+  ]
+}

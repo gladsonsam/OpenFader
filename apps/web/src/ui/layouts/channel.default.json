@@ -1,0 +1,1078 @@
+{
+  "id": "channel",
+  "module": "row",
+  "props": {
+    "gap": 6,
+    "flex": "1",
+    "minWidth": 0,
+    "box": "content-box"
+  },
+  "variants": {
+    "phone": {
+      "module": "col",
+      "props": { "gap": 8 }
+    }
+  },
+  "children": [
+    {
+      "id": "tab-list",
+      "module": "col",
+      "props": {
+        "tag": "nav",
+        "label": "Processing",
+        "width": 112,
+        "gap": 5,
+        "flex": "none",
+        "box": "content-box"
+      },
+      "variants": {
+        "phone": {
+          "module": "row",
+          "props": { "width": "100%", "flex": "none", "overflow": "auto" }
+        }
+      },
+      "children": [
+        {
+          "id": "tab-buttons",
+          "module": "repeat",
+          "props": {
+            "over": "list:tabs"
+          },
+          "children": [
+            {
+              "id": "tab-button",
+              "module": "channel-tab-button",
+              "bind": {
+                "entry": "item"
+              },
+              "on": {
+                "pick": {
+                  "do": "ui.setTab",
+                  "args": {
+                    "tab": {
+                      "$expr": "payload.id"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "content",
+      "module": "col",
+      "props": {
+        "tag": "main",
+        "flex": "1",
+        "minWidth": 0,
+        "gap": 6,
+        "box": "content-box",
+        "overflow": "auto"
+      },
+      "variants": {
+        "phone": { "props": { "minHeight": 0 } }
+      },
+      "children": [
+        {
+          "id": "tab-input",
+          "module": "grid",
+          "props": {
+            "columns": "repeat(auto-fit, minmax(270px, 1fr))",
+            "gap": 6,
+            "box": "content-box"
+          },
+          "when": "store.tab == 'input'",
+          "children": [
+            {
+              "id": "input-empty",
+              "module": "col",
+              "props": {
+                "flex": "1",
+                "align": "center",
+                "justify": "center",
+                "padding": 24,
+                "radius": 3,
+                "border": "1px solid #1f2836",
+                "background": "#0a0f17",
+                "box": "content-box"
+              },
+              "when": "!inputVm.hasInput",
+              "children": [
+                {
+                  "id": "input-empty-text",
+                  "module": "text",
+                  "props": {
+                    "value": "No preamp on this channel — its signal comes from inside the console.",
+                    "size": 15,
+                    "color": "#a7b1c0",
+                    "align": "center"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "preamp",
+              "module": "input-preamp-card",
+              "bind": {
+                "vm": "inputVm",
+                "fine": "store.fine"
+              },
+              "when": "inputVm.hasInput",
+              "on": {
+                "knob": {
+                  "do": "ui.setInputKnob",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "key": {
+                      "$expr": "payload.key"
+                    },
+                    "value": {
+                      "$expr": "payload.value"
+                    }
+                  }
+                },
+                "phantom": {
+                  "do": "ui.togglePhantom",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    }
+                  }
+                },
+                "invert": {
+                  "do": "ui.toggleInvert",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "source",
+              "module": "input-source-card",
+              "bind": {
+                "vm": "inputVm",
+                "levelText": "levelText",
+                "meter": "hbarMeter",
+                "meterFrozen": "frozen"
+              },
+              "when": "inputVm.hasInput",
+              "on": {
+                "patch": {
+                  "do": "ui.goPatch",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "delay",
+              "module": "input-delay-card",
+              "bind": {
+                "vm": "inputVm",
+                "fine": "store.fine"
+              },
+              "when": "inputVm.hasInput",
+              "on": {
+                "knob": {
+                  "do": "ui.setInputKnob",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "key": {
+                      "$expr": "payload.key"
+                    },
+                    "value": {
+                      "$expr": "payload.value"
+                    }
+                  }
+                },
+                "toggle": {
+                  "do": "ui.toggleDelayOn",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "tab-sends",
+          "module": "grid",
+          "props": {
+            "columns": "repeat(auto-fill, minmax(320px, 1fr))",
+            "gap": 6,
+            "box": "content-box"
+          },
+          "when": "store.tab == 'sends'",
+          "children": [
+            {
+              "id": "sends-empty",
+              "module": "col",
+              "props": {
+                "flex": "1",
+                "align": "center",
+                "justify": "center",
+                "padding": 24,
+                "radius": 3,
+                "border": "1px solid #1f2836",
+                "background": "#0a0f17",
+                "box": "content-box"
+              },
+              "when": "count(sendRows) == 0",
+              "children": [
+                {
+                  "id": "sends-empty-text",
+                  "module": "text",
+                  "props": {
+                    "value": "Buses and outputs don't send to mixes.",
+                    "size": 15,
+                    "color": "#a7b1c0",
+                    "align": "center"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "rows",
+              "module": "repeat",
+              "props": {
+                "over": "list:sends"
+              },
+              "when": "count(sendRows) > 0",
+              "children": [
+                {
+                  "id": "row",
+                  "module": "send-row",
+                  "bind": {
+                    "row": "item",
+                    "fine": "store.fine"
+                  },
+                  "on": {
+                    "input": {
+                      "do": "ui.setSend",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "k": {
+                          "$expr": "index"
+                        },
+                        "value": {
+                          "$expr": "payload.value"
+                        }
+                      }
+                    },
+                    "togglePre": {
+                      "do": "ui.toggleSendPre",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "k": {
+                          "$expr": "index"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tab-eq",
+          "module": "col",
+          "props": {
+            "gap": 6,
+            "flex": "1 1 auto",
+            "box": "content-box"
+          },
+          "when": "store.tab == 'eq' && eqGraph != null",
+          "children": [
+            {
+              "id": "top",
+              "module": "row",
+              "props": {
+                "gap": 8,
+                "align": "center",
+                "wrap": true,
+                "box": "content-box"
+              },
+              "children": [
+                {
+                  "id": "head",
+                  "module": "eq-head",
+                  "bind": {
+                    "label": "eqMaster.label",
+                    "bg": "eqMaster.bg",
+                    "fg": "eqMaster.text",
+                    "pressed": "eqMaster.str",
+                    "ariaLabel": "eqMaster.label == 'EQ In' ? 'EQ in' : 'EQ bypassed'"
+                  },
+                  "on": {
+                    "toggle": {
+                      "do": "ui.toggleEqOn",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        }
+                      }
+                    },
+                    "flat": {
+                      "do": "ui.flatEq",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "summary",
+                  "module": "eq-summary",
+                  "bind": {
+                    "text": "eqSummary"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "graph",
+              "module": "eq-graph",
+              "bind": {
+                "graph": "eqGraph",
+                "locked": "store.locked",
+                "fine": "store.fine"
+              },
+              "on": {
+                "select": {
+                  "do": "ui.setSelBand",
+                  "args": {
+                    "band": {
+                      "$expr": "payload.band"
+                    }
+                  }
+                },
+                "node": {
+                  "do": "channel.eqNode",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "band": {
+                      "$expr": "payload.band"
+                    },
+                    "f": {
+                      "$expr": "payload.f"
+                    },
+                    "g": {
+                      "$expr": "payload.g"
+                    },
+                    "locked": {
+                      "$expr": "store.locked"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "cards",
+              "module": "grid",
+              "props": {
+                "columns": "repeat(auto-fit, minmax(180px, 1fr))",
+                "gap": 6,
+                "box": "content-box"
+              },
+              "children": [
+                {
+                  "id": "hpf",
+                  "module": "eq-hpf-card",
+                  "bind": {
+                    "hpf": "eqHpf",
+                    "fine": "store.fine",
+                    "locked": "store.locked"
+                  },
+                  "on": {
+                    "select": {
+                      "do": "ui.setSelBand",
+                      "args": {
+                        "band": 0
+                      }
+                    },
+                    "toggle": {
+                      "do": "ui.toggleEqBand",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "band": 0
+                      }
+                    },
+                    "slope": {
+                      "do": "ui.setHpfSlope",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "slope": {
+                          "$expr": "payload.slope"
+                        }
+                      }
+                    },
+                    "freq": {
+                      "do": "ui.setEqParam",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "band": 0,
+                        "param": "f",
+                        "value": {
+                          "$expr": "payload.value"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "bands",
+                  "module": "repeat",
+                  "props": {
+                    "over": "list:eqBands"
+                  },
+                  "children": [
+                    {
+                      "id": "band",
+                      "module": "eq-band-card",
+                      "bind": {
+                        "card": "item",
+                        "fine": "store.fine",
+                        "locked": "store.locked"
+                      },
+                      "on": {
+                        "select": {
+                          "do": "ui.setSelBand",
+                          "args": {
+                            "band": {
+                              "$expr": "payload.band"
+                            }
+                          }
+                        },
+                        "toggle": {
+                          "do": "ui.toggleEqBand",
+                          "args": {
+                            "id": {
+                              "$expr": "selId"
+                            },
+                            "band": {
+                              "$expr": "payload.band"
+                            }
+                          }
+                        },
+                        "type": {
+                          "do": "ui.setEqBandType",
+                          "args": {
+                            "id": {
+                              "$expr": "selId"
+                            },
+                            "band": {
+                              "$expr": "payload.band"
+                            },
+                            "type": {
+                              "$expr": "payload.type"
+                            }
+                          }
+                        },
+                        "param": {
+                          "do": "ui.setEqParam",
+                          "args": {
+                            "id": {
+                              "$expr": "selId"
+                            },
+                            "band": {
+                              "$expr": "payload.band"
+                            },
+                            "param": {
+                              "$expr": "payload.param"
+                            },
+                            "value": {
+                              "$expr": "payload.value"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tab-gate",
+          "module": "col",
+          "props": {
+            "gap": 6,
+            "flex": "1 1 auto",
+            "box": "content-box"
+          },
+          "when": "store.tab == 'gate'",
+          "children": [
+            {
+              "id": "head",
+              "module": "dyn-summary",
+              "props": {
+                "kind": "gate"
+              },
+              "bind": {
+                "label": "dynLabel",
+                "bg": "dynBg",
+                "fg": "dynFg",
+                "pressed": "dynPressed",
+                "summary": "dynSummary"
+              },
+              "on": {
+                "toggle": {
+                  "do": "ui.toggleDyn",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "which": {
+                      "$expr": "dynKind"
+                    }
+                  }
+                }
+              },
+              "when": "dynParams != null"
+            },
+            {
+              "id": "body",
+              "module": "row",
+              "props": {
+                "gap": 6,
+                "wrap": true,
+                "flex": "1 1 auto",
+                "minHeight": 0,
+                "box": "content-box"
+              },
+              "children": [
+                {
+                  "id": "graph",
+                  "module": "dyn-transfer-graph",
+                  "props": {
+                    "kind": "gate",
+                    "color": "#3ed0e0"
+                  },
+                  "bind": {
+                    "aria": "dynAria",
+                    "path": "dynPath",
+                    "fill": "dynFill",
+                    "fillColor": "dynFillColor",
+                    "thrX": "dynThrX",
+                    "thrLeft": "dynThrLeft",
+                    "thrText": "dynThrText",
+                    "grid": "dynGrid",
+                    "axis": "dynAxis",
+                    "params": "dynParams",
+                    "frozen": "frozen",
+                    "staticDotL": "dynDotL",
+                    "staticDotT": "dynDotT",
+                    "getLevel": "dynGetLevel"
+                  }
+                },
+                {
+                  "id": "knobs",
+                  "module": "dyn-knob-panel",
+                  "props": {
+                    "kind": "gate",
+                    "color": "#3ed0e0"
+                  },
+                  "bind": {
+                    "knobs": "dynKnobs",
+                    "gate": "dynGate",
+                    "comp": "dynComp",
+                    "fine": "store.fine",
+                    "locked": "store.locked"
+                  },
+                  "on": {
+                    "knob": {
+                      "do": "channel.dynKnob",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "which": {
+                          "$expr": "dynKind"
+                        },
+                        "prop": {
+                          "$expr": "payload.prop"
+                        },
+                        "value": {
+                          "$expr": "payload.value"
+                        },
+                        "locked": {
+                          "$expr": "store.locked"
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "when": "dynParams != null"
+            },
+            {
+              "id": "dyn-empty",
+              "module": "col",
+              "props": {
+                "flex": "1 1 auto",
+                "align": "center",
+                "justify": "center",
+                "padding": 24,
+                "radius": 3,
+                "border": "1px solid #1f2836",
+                "background": "#0a0f17",
+                "box": "content-box"
+              },
+              "when": "dynParams == null",
+              "children": [
+                {
+                  "id": "dyn-empty-text",
+                  "module": "text",
+                  "props": {
+                    "value": "No dynamics on this channel.",
+                    "size": 15,
+                    "color": "#a7b1c0",
+                    "align": "center"
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "tab-comp",
+          "module": "col",
+          "props": {
+            "gap": 6,
+            "flex": "1 1 auto",
+            "box": "content-box"
+          },
+          "when": "store.tab == 'comp'",
+          "children": [
+            {
+              "id": "head",
+              "module": "dyn-summary",
+              "props": {
+                "kind": "comp"
+              },
+              "bind": {
+                "label": "dynLabel",
+                "bg": "dynBg",
+                "fg": "dynFg",
+                "pressed": "dynPressed",
+                "summary": "dynSummary"
+              },
+              "on": {
+                "toggle": {
+                  "do": "ui.toggleDyn",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "which": {
+                      "$expr": "dynKind"
+                    }
+                  }
+                }
+              },
+              "when": "dynParams != null"
+            },
+            {
+              "id": "body",
+              "module": "row",
+              "props": {
+                "gap": 6,
+                "wrap": true,
+                "flex": "1 1 auto",
+                "minHeight": 0,
+                "box": "content-box"
+              },
+              "children": [
+                {
+                  "id": "graph",
+                  "module": "dyn-transfer-graph",
+                  "props": {
+                    "kind": "comp",
+                    "color": "#ff9f43"
+                  },
+                  "bind": {
+                    "aria": "dynAria",
+                    "path": "dynPath",
+                    "fill": "dynFill",
+                    "fillColor": "dynFillColor",
+                    "thrX": "dynThrX",
+                    "thrLeft": "dynThrLeft",
+                    "thrText": "dynThrText",
+                    "grid": "dynGrid",
+                    "axis": "dynAxis",
+                    "params": "dynParams",
+                    "frozen": "frozen",
+                    "staticDotL": "dynDotL",
+                    "staticDotT": "dynDotT",
+                    "getLevel": "dynGetLevel"
+                  }
+                },
+                {
+                  "id": "knobs",
+                  "module": "dyn-knob-panel",
+                  "props": {
+                    "kind": "comp",
+                    "color": "#ff9f43"
+                  },
+                  "bind": {
+                    "knobs": "dynKnobs",
+                    "gate": "dynGate",
+                    "comp": "dynComp",
+                    "fine": "store.fine",
+                    "locked": "store.locked"
+                  },
+                  "on": {
+                    "knob": {
+                      "do": "channel.dynKnob",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "which": {
+                          "$expr": "dynKind"
+                        },
+                        "prop": {
+                          "$expr": "payload.prop"
+                        },
+                        "value": {
+                          "$expr": "payload.value"
+                        },
+                        "locked": {
+                          "$expr": "store.locked"
+                        }
+                      }
+                    }
+                  }
+                }
+              ],
+              "when": "dynParams != null"
+            },
+            {
+              "id": "dyn-empty",
+              "module": "col",
+              "props": {
+                "flex": "1 1 auto",
+                "align": "center",
+                "justify": "center",
+                "padding": 24,
+                "radius": 3,
+                "border": "1px solid #1f2836",
+                "background": "#0a0f17",
+                "box": "content-box"
+              },
+              "when": "dynParams == null",
+              "children": [
+                {
+                  "id": "dyn-empty-text",
+                  "module": "text",
+                  "props": {
+                    "value": "No dynamics on this channel.",
+                    "size": 15,
+                    "color": "#a7b1c0",
+                    "align": "center"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "master",
+      "module": "col",
+      "props": {
+        "tag": "aside",
+        "label": "Channel strip",
+        "width": 136,
+        "gap": 5,
+        "padding": 5,
+        "radius": 0,
+        "background": "#0e1520",
+        "flex": "none",
+        "box": "content-box"
+      },
+      "variants": {
+        "phone": {
+          "module": "row",
+          "props": { "width": "100%", "flex": "none", "align": "stretch" },
+          "children": [
+            {
+              "id": "m-side",
+              "module": "col",
+              "props": { "gap": 5, "flex": "none", "width": 148, "box": "content-box" },
+              "children": [
+                {
+                  "id": "name",
+                  "module": "channel-name-chip",
+                  "bind": {
+                    "name": "master.name",
+                    "color": "master.color",
+                    "text": "master.text"
+                  }
+                },
+                {
+                  "id": "step",
+                  "module": "channel-stepper",
+                  "on": {
+                    "prev": {
+                      "do": "ui.stepChannel",
+                      "args": {
+                        "delta": -1
+                      }
+                    },
+                    "next": {
+                      "do": "ui.stepChannel",
+                      "args": {
+                        "delta": 1
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "pan",
+                  "module": "channel-pan-bar",
+                  "bind": {
+                    "value": "master.pan",
+                    "name": "master.name",
+                    "fine": "store.fine"
+                  },
+                  "on": {
+                    "input": {
+                      "do": "ui.setPan",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "value": {
+                          "$expr": "payload.value"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "mute",
+                  "module": "channel-mute",
+                  "bind": {
+                    "muted": "master.muted",
+                    "enabled": "master.muteEnabled",
+                    "label": "master.muteAria"
+                  },
+                  "on": {
+                    "press": {
+                      "do": "ui.toggleMute",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "src",
+                  "module": "channel-source-label",
+                  "bind": {
+                    "src": "master.src"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "m-fader",
+              "module": "col",
+              "props": { "flex": "1", "minWidth": 0, "box": "content-box" },
+              "children": [
+                {
+                  "id": "fader-wrap",
+                  "module": "col",
+                  "props": {
+                    "flex": "1",
+                    "minHeight": 180,
+                    "box": "content-box"
+                  },
+                  "children": [
+                    {
+                      "id": "fader",
+                      "module": "channel-fader",
+                      "bind": {
+                        "pos": "master.faderPos",
+                        "readout": "master.readout",
+                        "aria": "master.faderAria",
+                        "accent": "master.accent",
+                        "readColor": "master.readColor",
+                        "fine": "store.fine",
+                        "meter": "stripMeter",
+                        "meterFrozen": "frozen"
+                      },
+                      "on": {
+                        "input": {
+                          "do": "ui.setFader",
+                          "args": {
+                            "id": {
+                              "$expr": "selId"
+                            },
+                            "value": {
+                              "$expr": "payload.value"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "children": [
+        {
+          "id": "name",
+          "module": "channel-name-chip",
+          "bind": {
+            "name": "master.name",
+            "color": "master.color",
+            "text": "master.text"
+          }
+        },
+        {
+          "id": "step",
+          "module": "channel-stepper",
+          "on": {
+            "prev": {
+              "do": "ui.stepChannel",
+              "args": {
+                "delta": -1
+              }
+            },
+            "next": {
+              "do": "ui.stepChannel",
+              "args": {
+                "delta": 1
+              }
+            }
+          }
+        },
+        {
+          "id": "pan",
+          "module": "channel-pan-bar",
+          "bind": {
+            "value": "master.pan",
+            "name": "master.name",
+            "fine": "store.fine"
+          },
+          "on": {
+            "input": {
+              "do": "ui.setPan",
+              "args": {
+                "id": {
+                  "$expr": "selId"
+                },
+                "value": {
+                  "$expr": "payload.value"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "mute",
+          "module": "channel-mute",
+          "bind": {
+            "muted": "master.muted",
+            "enabled": "master.muteEnabled",
+            "label": "master.muteAria"
+          },
+          "on": {
+            "press": {
+              "do": "ui.toggleMute",
+              "args": {
+                "id": {
+                  "$expr": "selId"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "fader-wrap",
+          "module": "col",
+          "props": {
+            "flex": "1",
+            "minHeight": 180,
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "fader",
+              "module": "channel-fader",
+              "bind": {
+                "pos": "master.faderPos",
+                "readout": "master.readout",
+                "aria": "master.faderAria",
+                "accent": "master.accent",
+                "readColor": "master.readColor",
+                "fine": "store.fine",
+                "meter": "stripMeter",
+                "meterFrozen": "frozen"
+              },
+              "on": {
+                "input": {
+                  "do": "ui.setFader",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "value": {
+                      "$expr": "payload.value"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "src",
+          "module": "channel-source-label",
+          "bind": {
+            "src": "master.src"
+          }
+        }
+      ]
+    }
+  ]
+}

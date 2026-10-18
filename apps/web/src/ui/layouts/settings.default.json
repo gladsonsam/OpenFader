@@ -1,0 +1,142 @@
+{
+  "$doc": "S910 default layout for the Settings screen (docs/design/shots/09-settings.png). Rendered by the generic LayoutRenderer. The centred max-width 1100px wrapper the template uses is owned here (grid maxWidth + margin, added by L1). Rows are data-driven: each panel repeats over its SETTING_DESCRIPTORS-derived row list from scope (displayRows/faderRows/safetyRows/aboutRows in screen order), so users can add/reorder settings in a profile; each row is a `setting-row` module emitting change -> ui.setSetting.",
+  "id": "settings-root",
+  "module": "grid",
+  "props": {
+    "columns": "repeat(auto-fit, minmax(380px, 1fr))",
+    "gap": 8,
+    "align": "start",
+    "maxWidth": 1100,
+    "margin": "0 auto",
+    "box": "content-box"
+  },
+  "variants": {
+    "phone": { "props": { "columns": "1fr" } }
+  },
+  "children": [
+    {
+      "id": "settings-panel-display",
+      "module": "settings-panel",
+      "props": { "title": "Display" },
+      "children": [
+        {
+          "id": "settings-rows-display",
+          "module": "repeat",
+          "props": { "over": "list:displayRows" },
+          "children": [
+            {
+              "id": "settings-row",
+              "module": "setting-row",
+              "bind": {
+                "rowKey": "item.key",
+                "label": "item.label",
+                "desc": "item.desc",
+                "control": "item.control",
+                "options": "item.options"
+              },
+              "on": {
+                "change": {
+                  "do": "ui.setSetting",
+                  "args": { "key": { "$expr": "payload.key" }, "value": { "$expr": "payload.value" } }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings-panel-faders",
+      "module": "settings-panel",
+      "props": { "title": "Faders" },
+      "children": [
+        {
+          "id": "settings-rows-faders",
+          "module": "repeat",
+          "props": { "over": "list:faderRows" },
+          "children": [
+            {
+              "id": "settings-row",
+              "module": "setting-row",
+              "bind": {
+                "rowKey": "item.key",
+                "label": "item.label",
+                "desc": "item.desc",
+                "control": "item.control",
+                "options": "item.options"
+              },
+              "on": {
+                "change": {
+                  "do": "ui.setSetting",
+                  "args": { "key": { "$expr": "payload.key" }, "value": { "$expr": "payload.value" } }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings-panel-safety",
+      "module": "settings-panel",
+      "props": { "title": "Safety" },
+      "children": [
+        {
+          "id": "settings-rows-safety",
+          "module": "repeat",
+          "props": { "over": "list:safetyRows" },
+          "children": [
+            {
+              "id": "settings-row",
+              "module": "setting-row",
+              "bind": {
+                "rowKey": "item.key",
+                "label": "item.label",
+                "desc": "item.desc",
+                "control": "item.control",
+                "options": "item.options"
+              },
+              "on": {
+                "change": {
+                  "do": "ui.setSetting",
+                  "args": { "key": { "$expr": "payload.key" }, "value": { "$expr": "payload.value" } }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings-panel-about",
+      "module": "settings-panel",
+      "props": { "title": "About" },
+      "children": [
+        {
+          "id": "settings-rows-about",
+          "module": "repeat",
+          "props": { "over": "list:aboutRows" },
+          "children": [
+            {
+              "id": "settings-row",
+              "module": "setting-row",
+              "bind": {
+                "rowKey": "item.key",
+                "label": "item.label",
+                "desc": "item.desc",
+                "control": "item.control",
+                "options": "item.options"
+              },
+              "on": {
+                "change": {
+                  "do": "ui.setSetting",
+                  "args": { "key": { "$expr": "payload.key" }, "value": { "$expr": "payload.value" } }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "generatedFrom": {
+    "shots": [
+      "live-0.png",
+      "live-1.png",
+      "live-2.png",
+      "live-3.png",
+      "live-4.png"
+    ],
+    "sensitivity": 8
+  },
+  "rects": [
+    [
+      73,
+      125,
+      30,
+      30
+    ],
+    [
+      249,
+      125,
+      46,
+      30
+    ],
+    [
+      553,
+      125,
+      42,
+      30
+    ],
+    [
+      721,
+      125,
+      46,
+      30
+    ],
+    [
+      885,
+      125,
+      42,
+      30
+    ],
+    [
+      1041,
+      125,
+      38,
+      30
+    ]
+  ],
+  "coveragePct": 0.794,
+  "notes": "Animated regions (meters, level bars, GR, input level) differ between live captures taken at different times. Review before use."
+}

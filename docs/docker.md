@@ -99,8 +99,11 @@ container layer.
   `-slim` runtime needs no extra system libraries.
 - `.dockerignore` excludes `target/` (2.7 GB in a dev checkout), `.git/`,
   `src-tauri/` and `apps/` — the build context is only
-  `Cargo.toml` + `Cargo.lock` + `crates/` + `ui/`.
-  (The runtime stage `COPY ui ./ui` needs `ui/` in context — do not ignore it.)
+  `Cargo.toml` + `Cargo.lock` + `crates/` + the built web UI
+  (`apps/web/dist/`, via a `.dockerignore` re-inclusion exception).
+  (The runtime stage `COPY apps/web/dist ./ui` needs `apps/web/dist`
+  in context — do not ignore it; build the web UI first with
+  `npm run build` in `apps/web/`.)
 - Verified: `docker build -t openmix .` succeeds; image size **120 MB**
   (118 MB before the `wget` HEALTHCHECK dependency).
 - Base pin: `rust:1-bookworm` (major-version pin + suite match with the

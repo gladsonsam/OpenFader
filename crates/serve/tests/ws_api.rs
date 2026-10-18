@@ -1317,3 +1317,451 @@ async fn ws_you_self_id_precedes_state_and_tags_writes() {
 
     server.abort();
 }
+
+/// Next `params` frame matching `want` (skips meters/spectrum/gr/state).
+async fn wait_params(rx: &mut WsRx, want: impl Fn(&Value) -> bool) -> Value {
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut last = json!(null);
+    loop {
+        if std::time::Instant::now() > deadline {
+            panic!("timed out waiting for expected params frame; last: {last}");
+        }
+        let next = timeout(Duration::from_millis(500), next_msg(rx)).await;
+        let v = match next {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if v.get("type").and_then(Value::as_str) != Some("params") {
+            continue;
+        }
+        last = v;
+        if want(&last) {
+            return last.clone();
+        }
+    }
+}
+
+/// Param plane over WS against the sim driver: `caps` in the initial
+/// snapshot (full v2 catalogue, nothing unsupported), a `connect`
+/// command re-broadcasts `caps`, a `param` write echoes the confirmed
+/// (re-read) value, and a second connection gets a full `params`
+/// snapshot including the written value.
+#[tokio::test]
+async fn ws_caps_and_params_snapshot() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run(
+        listener,
+        openmix_serve::ServeOptions::default(),
+    ));
+
+    let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("WS connect");
+    let (mut tx, mut rx) = stream.split();
+
+    // Initial snapshot ends with caps (after you/state/shows/clients/locks).
+    let caps = next_typed(&mut rx, "caps").await;
+    assert_eq!(caps.get("driver"), Some(&json!("sim")));
+    let params = caps.get("params").and_then(Value::as_array).unwrap();
+    assert_eq!(params.len(), 159, "sim caps list the full catalogue (v2)");
+    for p in params {
+        for key in ["id", "kind", "scope", "scopes", "min", "max", "unit", "default", "label"] {
+            assert!(p.get(key).is_some(), "caps entry misses {key}: {p}");
+        }
+    }
+    assert_eq!(
+        caps.get("unsupported"),
+        Some(&json!([])),
+        "sim supports everything"
+    );
+
+    // A `connect` command re-broadcasts caps to every client, plus the
+    // state echo. State and caps ride separate broadcasts so their order
+    // is a race — collect both in either order instead of assuming caps
+    // lands first (consuming the lone state echo while scanning for caps
+    // would starve the drain below).
+    {
+        use tokio_tungstenite::tungstenite::Message;
+        tx.send(Message::Text(
+            json!({"cmd":"connect","driver":"sim"}).to_string(),
+        ))
+        .await
+        .unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        let mut saw_caps = false;
+        let mut saw_state = false;
+        while !(saw_caps && saw_state) {
+            if std::time::Instant::now() > deadline {
+                panic!(
+                    "timed out waiting for connect caps + state echo (caps={saw_caps}, state={saw_state})"
+                );
+            }
+            let next = timeout(Duration::from_millis(500), next_msg(&mut rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            match v.get("type").and_then(Value::as_str) {
+                Some("caps") => {
+                    assert_eq!(v.get("driver"), Some(&json!("sim")));
+                    assert_eq!(
+                        v.get("params").and_then(Value::as_array).map(Vec::len),
+                        Some(159)
+                    );
+                    saw_caps = true;
+                }
+                Some("state") => {
+                    saw_state = true;
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // `param` write: the echo carries the confirmed (re-read) value.
+    {
+        use tokio_tungstenite::tungstenite::Message;
+        tx.send(Message::Text(
+            json!({"cmd":"param","ch":0,"field":"gain","value":12.5}).to_string(),
+        ))
+        .await
+        .unwrap();
+        wait_param(&mut rx, 0, "gain", &json!(12.5)).await;
+    }
+
+    // A second connection gets caps plus a full params snapshot with it.
+    let (stream2, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("second WS connect");
+    let (_, mut rx2) = stream2.split();
+    let caps3 = next_typed(&mut rx2, "caps").await;
+    assert_eq!(caps3.get("driver"), Some(&json!("sim")));
+    let snap = wait_params(&mut rx2, |v| {
+        v.get("ch") == Some(&json!(0))
+            && v.get("values")
+                .and_then(|vals| vals.get("gain"))
+                .and_then(Value::as_f64)
+                .is_some_and(|g| (g - 12.5).abs() < 1e-6)
+    })
+    .await;
+    assert_eq!(snap.get("ch"), Some(&json!(0)));
+
+    server.abort();
+}
+
+/// Param-plane diff over WS: a change made outside the param-write path
+/// (here a `fader` command, which does not touch the param cache) surfaces
+/// as a `params` frame from the background poller. Fast test poll interval
+/// (1 ms) keeps the sweep to ~2 s worst case.
+#[tokio::test]
+async fn ws_params_diff_broadcast() {
+    use tokio_tungstenite::tungstenite::Message;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run_with_poll(
+        listener,
+        openmix_serve::ServeOptions::default(),
+        openmix_serve::LOCK_TTL,
+        Duration::from_millis(1),
+    ));
+
+    let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("WS connect");
+    let (mut tx, mut rx) = stream.split();
+    let _ = next_typed(&mut rx, "caps").await;
+
+    tx.send(Message::Text(
+        json!({"cmd":"fader","ch":5,"value":0.6}).to_string(),
+    ))
+    .await
+    .unwrap();
+    // The state echo for the write...
+    wait_state(&mut rx, |s| {
+        s.get("strips")
+            .and_then(Value::as_array)
+            .and_then(|strips| {
+                strips
+                    .iter()
+                    .find(|s| s.get("ch") == Some(&json!(5)))
+            })
+            .and_then(|s| s.get("fader"))
+            .and_then(Value::as_f64)
+            .is_some_and(|f| (f - 0.6).abs() < 1e-6)
+    })
+    .await;
+    // ...then the poller diff for the same value.
+    let diff = wait_params(&mut rx, |v| {
+        v.get("ch") == Some(&json!(5))
+            && v
+                .get("values")
+                .and_then(|vals| vals.get("fader"))
+                .and_then(Value::as_f64)
+                .is_some_and(|f| (f - 0.6).abs() < 1e-6)
+    })
+    .await;
+    assert_eq!(diff.get("type"), Some(&json!("params")));
+
+    server.abort();
+}
+
+/// Focus jumps the poll queue over WS: after `focus` ch5, all of ch5's
+/// supported params arrive before ch0's complete set (ch0 still partial
+/// at that moment); the `chs` array form works the same; out-of-range
+/// focus yields an error frame and the socket stays open. Fast test poll
+/// interval (2 ms) so a channel block drains in ~100 ms.
+#[tokio::test]
+async fn ws_focus_prioritizes_channel() {
+    use std::collections::{HashMap, HashSet};
+    use tokio_tungstenite::tungstenite::Message;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run_with_poll(
+        listener,
+        openmix_serve::ServeOptions::default(),
+        openmix_serve::LOCK_TTL,
+        Duration::from_millis(2),
+    ));
+
+    let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("WS connect");
+    let (mut tx, mut rx) = stream.split();
+    let caps = next_typed(&mut rx, "caps").await;
+    let params = caps
+        .get("params")
+        .and_then(Value::as_array)
+        .expect("caps carries params");
+    let nparams = params.len();
+    // v2 catalogue size (was 54 in v1).
+    assert_eq!(nparams, 159, "sim caps list the full catalogue");
+    // Channel strips (ch5/ch7 below) only ever receive the In-scoped
+    // subset — bus/main-only EQ bands 5..6 never land on a channel
+    // (firmware band counts).
+    let nchan = params
+        .iter()
+        .filter(|p| {
+            p.get("scopes")
+                .and_then(Value::as_array)
+                .map(|s| s.iter().any(|k| k.as_str() == Some("in")))
+                .unwrap_or(false)
+        })
+        .count();
+    assert!(nchan < nparams && nchan > 100, "chan-scoped subset sane: {nchan}");
+
+    // Merge params frames into per-channel key sets until `ch` is complete.
+    async fn wait_channel_complete(
+        rx: &mut WsRx,
+        keys: &mut HashMap<u64, HashSet<String>>,
+        ch: u64,
+        nparams: usize,
+        what: &str,
+    ) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+        while keys.get(&ch).map(HashSet::len).unwrap_or(0) < nparams {
+            if std::time::Instant::now() > deadline {
+                panic!(
+                    "timed out waiting for ch{ch} full set ({what}); progress: {:?}",
+                    keys.get(&ch).map(HashSet::len)
+                );
+            }
+            let next = timeout(std::time::Duration::from_millis(500), next_msg(rx)).await;
+            let v = match next {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) != Some("params") {
+                continue;
+            }
+            let Some(got_ch) = v.get("ch").and_then(Value::as_u64) else {
+                continue;
+            };
+            let entry = keys.entry(got_ch).or_default();
+            if let Some(values) = v.get("values").and_then(Value::as_object) {
+                entry.extend(values.keys().cloned());
+            }
+        }
+    }
+
+    // Jump the queue to channel 5 before its round-robin slot.
+    tx.send(Message::Text(
+        json!({"cmd":"focus","ch":5}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let mut keys: HashMap<u64, HashSet<String>> = HashMap::new();
+    wait_channel_complete(&mut rx, &mut keys, 5, nchan, "focus ch5").await;
+    let ch0 = keys.get(&0).map(HashSet::len).unwrap_or(0);
+    assert!(
+        ch0 < nchan,
+        "ch5 completed ({nchan} params) while ch0 still partial ({ch0})"
+    );
+
+    // The `chs` array form focuses channel 7 the same way.
+    tx.send(Message::Text(
+        json!({"cmd":"focus","chs":[7]}).to_string(),
+    ))
+    .await
+    .unwrap();
+    wait_channel_complete(&mut rx, &mut keys, 7, nchan, "focus chs [7]").await;
+
+    // Out-of-range focus: error frame, socket stays open.
+    tx.send(Message::Text(json!({"cmd":"focus","ch":999}).to_string()))
+        .await
+        .unwrap();
+    let err = next_typed(&mut rx, "error").await;
+    assert!(err.get("message").is_some(), "focus error explains itself");
+    tx.send(Message::Text(json!({"cmd":"list_shows"}).to_string()))
+        .await
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        if std::time::Instant::now() > deadline {
+            panic!("socket died after out-of-range focus");
+        }
+        let next = timeout(std::time::Duration::from_millis(500), next_msg(&mut rx)).await;
+        let v = match next {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if v.get("type").and_then(Value::as_str) == Some("shows") {
+            break;
+        }
+    }
+
+    // Mixed valid + out-of-range: error for the ignored one, the valid
+    // channel still jumps the queue.
+    tx.send(Message::Text(
+        json!({"cmd":"focus","chs":[3, 999]}).to_string(),
+    ))
+    .await
+    .unwrap();
+    let err = next_typed(&mut rx, "error").await;
+    assert!(
+        err.get("message").is_some_and(|m| m.as_str().is_some_and(|s| s.contains("999"))),
+        "mixed focus error names the ignored channel: {err}"
+    );
+    wait_channel_complete(&mut rx, &mut keys, 3, nchan, "mixed focus ch3").await;
+
+    server.abort();
+}
+
+/// Focus flood over WS (CATALOGUE-V2 §5): 30 focus commands flood the
+/// queue, then focusing strip 33 makes its whole set drain first — ahead
+/// of the flood backlog. A second phase at the default 50 ms budget shows
+/// the first focused params landing within ~3 s.
+#[tokio::test]
+async fn ws_focus_flood_superseded() {
+    use std::collections::{HashMap, HashSet};
+    use tokio_tungstenite::tungstenite::Message;
+
+    // Phase 1 (fast poll): strip 33's full set drains before any flooded
+    // channel completes.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run_with_poll(
+        listener,
+        openmix_serve::ServeOptions::default(),
+        openmix_serve::LOCK_TTL,
+        Duration::from_millis(2),
+    ));
+    let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("WS connect");
+    let (mut tx, mut rx) = stream.split();
+    let caps = next_typed(&mut rx, "caps").await;
+    let params = caps.get("params").and_then(Value::as_array).unwrap();
+    // Strip 40 is an extended input (Ch33): it supports the In-scoped
+    // subset (bus/main-only EQ bands 5..6 never land on a channel).
+    let nparams = params
+        .iter()
+        .filter(|p| {
+            p.get("scopes")
+                .and_then(Value::as_array)
+                .map(|s| s.iter().any(|k| k.as_str() == Some("in")))
+                .unwrap_or(false)
+        })
+        .count();
+    for i in 0..30u64 {
+        tx.send(Message::Text(json!({"cmd":"focus","ch": i % 32}).to_string()))
+            .await
+            .unwrap();
+    }
+    tx.send(Message::Text(json!({"cmd":"focus","ch":40}).to_string()))
+        .await
+        .unwrap();
+    let mut keys: HashMap<u64, HashSet<String>> = HashMap::new();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    while keys.get(&40).map(HashSet::len).unwrap_or(0) < nparams {
+        if std::time::Instant::now() > deadline {
+            panic!("flooded focus never yielded to ch40: {:?} ", keys.get(&40).map(HashSet::len));
+        }
+        let next = timeout(std::time::Duration::from_millis(500), next_msg(&mut rx)).await;
+        let v = match next {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if v.get("type").and_then(Value::as_str) != Some("params") {
+            continue;
+        }
+        let Some(got) = v.get("ch").and_then(Value::as_u64) else { continue };
+        if let Some(values) = v.get("values").and_then(Value::as_object) {
+            keys.entry(got).or_default().extend(values.keys().cloned());
+        }
+    }
+    // No flooded channel completed first.
+    for (ch, set) in &keys {
+        if *ch != 40 {
+            assert!(set.len() < nparams, "ch{ch} completed before ch40");
+        }
+    }
+    server.abort();
+
+    // Phase 2 (default 50 ms budget): the first focused params land well
+    // within ~3 s despite the flood backlog.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(openmix_serve::run_with_poll(
+        listener,
+        openmix_serve::ServeOptions::default(),
+        openmix_serve::LOCK_TTL,
+        Duration::from_millis(50),
+    ));
+    let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
+        .await
+        .expect("WS connect");
+    let (mut tx, mut rx) = stream.split();
+    let _ = next_typed(&mut rx, "caps").await;
+    for i in 0..30u64 {
+        tx.send(Message::Text(json!({"cmd":"focus","ch": i % 32}).to_string()))
+            .await
+            .unwrap();
+    }
+    tx.send(Message::Text(json!({"cmd":"focus","ch":40}).to_string()))
+        .await
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        if std::time::Instant::now() > deadline {
+            panic!("no focused ch40 params within 3 s at the default budget");
+        }
+        let next = timeout(std::time::Duration::from_millis(500), next_msg(&mut rx)).await;
+        let v = match next {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if v.get("type").and_then(Value::as_str) == Some("params")
+            && v.get("ch").and_then(Value::as_u64) == Some(40)
+        {
+            break;
+        }
+    }
+    server.abort();
+}

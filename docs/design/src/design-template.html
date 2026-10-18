@@ -1,0 +1,1420 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<title>Mixing Station</title>
+<script src="6470b840-995d-4c51-8f72-0a675f4c29a8"></script>
+<meta name="hz:slide-selector" content="[data-canvas-width]"><meta name="hz:canvas-width" content="1280"><meta name="hz:canvas-height" content="720"></head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<style></style>
+<style>
+body{margin:0;background:#05070b}
+button{font-family:inherit}
+button:focus-visible{outline:2px solid #7cc4ff;outline-offset:1px}
+a{color:#7cc4ff}a:hover{color:#a9d8ff}
+</style>
+</helmet>
+<div style="height: 100vh; min-height: 600px; display: flex; flex-direction: column; background: #05070b; color: #e8edf5; font-family: 'Geist', sans-serif; font-variant-numeric: tabular-nums; overflow: hidden; user-select: none; -webkit-user-select: none" data-canvas-width="1280" data-canvas-height="720" data-document-role="page" data-label="Mixer + Channel EQ">
+
+  <header style="height: 56px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; background: #000; border-bottom: 1px solid #1a212c">
+    <sc-if value="{{isMixer}}" hint-placeholder-val="{{ true }}">
+      <div style="font-size: 17px; font-weight: 600; letter-spacing: .02em">Mixer</div>
+    </sc-if>
+    <sc-if value="{{showBack}}" hint-placeholder-val="{{ false }}">
+      <button sc-camel-on-click="{{goBack}}" aria-label="Back" style="height: 46px; padding: 0 14px 0 10px; display: flex; align-items: center; gap: 4px; border-radius: 3px; border: 1px solid #3a4352; background: #161c26; color: #e8edf5; font-size: 14px; cursor: pointer">
+        <svg width="18" height="18" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+        {{backLabel}}
+      </button>
+    </sc-if>
+    <sc-if value="{{isChannel}}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; align-items: center; gap: 8px; white-space: nowrap; min-width: 0">
+        <span style="width: 10px; height: 10px; flex: none; border-radius: 2px; background: {{cs.color}}"></span>
+        <span style="font-size: 17px; font-weight: 600">{{cs.name}}</span>
+        <span style="font-size: 14px; color: #a7b1c0">{{tabLabel}}</span>
+      </div>
+    </sc-if>
+    <sc-if value="{{showPageTitle}}" hint-placeholder-val="{{ false }}">
+      <div style="font-size: 17px; font-weight: 600; white-space: nowrap">{{pageTitle}}</div>
+    </sc-if>
+    <sc-if value="{{locked}}" hint-placeholder-val="{{ false }}">
+      <button sc-camel-on-click="{{unlock}}" style="height: 40px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-radius: 3px; border: 1px solid #f0b44a; background: #2a1f0a; color: #f6c76a; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap">
+        <svg width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="1.5"></rect><path d="M8 11V8a4 4 0 0 1 8 0v3"></path></svg>
+        Locked · tap to unlock
+      </button>
+    </sc-if>
+
+    <div style="flex: 1 1 0; min-width: 4px"></div>
+
+    <div role="toolbar" aria-label="Console tools" style="display: flex; gap: 4px; flex: none">
+      <button sc-camel-on-click="{{goFx}}" aria-label="Effects" aria-current="{{fxCur}}" style="width: 46px; height: 46px; border-radius: 3px; border: 1px solid {{fxBorder}}; background: {{fxBg}}; color: #dfe6ef; cursor: pointer; font-size: 16px; font-weight: 600; padding: 0">FX</button>
+      <button sc-camel-on-click="{{goRouting}}" aria-label="Routing" aria-current="{{rtCur}}" style="width: 46px; height: 46px; border-radius: 3px; border: 1px solid {{rtBorder}}; background: {{rtBg}}; color: #dfe6ef; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0">
+        <svg width="22" height="22" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h18M7 3v18M12 3v18M17 3v18"></path><circle cx="7" cy="12" r="1.8" fill="currentColor"></circle><circle cx="12" cy="17" r="1.8" fill="currentColor"></circle><circle cx="17" cy="7" r="1.8" fill="currentColor"></circle></svg>
+      </button>
+      <button sc-camel-on-click="{{goConnect}}" aria-label="{{connAria}}" aria-current="{{cnCur}}" style="width: 46px; height: 46px; position: relative; border-radius: 3px; border: 1px solid {{cnBorder}}; background: {{cnBg}}; color: #dfe6ef; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0">
+        <svg width="22" height="22" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0zM12 17v5"></path></svg>
+        <span style="position: absolute; right: 6px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: {{connDot}}; box-shadow: 0 0 0 2px #0d1219"></span>
+      </button>
+      <button sc-camel-on-click="{{goSettings}}" aria-label="Settings" aria-current="{{stCur}}" style="width: 46px; height: 46px; border-radius: 3px; border: 1px solid {{stBorder}}; background: {{stBg}}; color: #dfe6ef; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0">
+        <svg width="22" height="22" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+      </button>
+    </div>
+
+    <div aria-hidden="true" style="width: 1px; height: 30px; flex: none; background: #2a323f"></div>
+
+<button sc-camel-on-click="{{openScenes}}" aria-label="{{sceneAria}}" style="height: 46px; flex: none; max-width: 280px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-radius: 3px; border: 1px solid {{sceneBtnBorder}}; background: {{sceneBtnBg}}; color: #eef2f7; cursor: pointer; text-align: left; min-width: 0">
+      <span style="display: flex; flex-direction: column; line-height: 1.15; min-width: 0"><span style="font-size: 11px; color: #8792a4"><span style="font-size: 15px; white-space: nowrap; color: rgb(167, 177, 192); margin-right: 6px">{{curSceneNum}}</span><span style="font-size: 15px; font-weight: 600; white-space: nowrap; color: rgb(238, 242, 247); font-family: inherit">{{curSceneName}}</span></span>
+      </span>
+      <svg width="16" height="16" sc-camel-view-box="0 0 24 24" fill="none" stroke="#a7b1c0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex: none"><path d="M6 9l6 6 6-6"></path></svg>
+    </button>
+
+  </header>
+
+  <sc-if value="{{isMixer}}" hint-placeholder-val="{{ true }}">
+  <div style="flex: 1; min-height: 0; display: flex; gap: 4px; padding: 4px">
+    <div style="flex: 1 1 auto; min-width: 0; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory">
+      <div style="display: grid; grid-template-columns: {{gridCols}}; gap: 3px; height: 100%; min-width: 0">
+        <sc-for list="{{strips}}" as="s" hint-placeholder-count="16">
+          <sc-if value="{{s.empty}}" hint-placeholder-val="{{ false }}">
+            <div style="background: #0a0e15; border-radius: 0"></div>
+          </sc-if>
+          <sc-if value="{{s.real}}" hint-placeholder-val="{{ true }}">
+          <div style="display: flex; flex-direction: column; gap: 3px; min-width: 0; min-height: 0; background: #0e1520; border-radius: 0; padding: 3px; box-shadow: {{s.ring}}; scroll-snap-align: start">
+            <sc-if value="{{s.hasPan}}" hint-placeholder-val="{{ true }}">
+              <button aria-label="{{s.panAria}}" sc-camel-on-pointer-down="{{s.panDown}}" sc-camel-on-pointer-move="{{s.move}}" sc-camel-on-pointer-up="{{s.up}}" sc-camel-on-pointer-cancel="{{s.up}}" sc-camel-on-double-click="{{s.panReset}}" style="height: 30px; flex: none; position: relative; border: 1px solid #2a3343; border-radius: 3px; background: #0a0f17; padding: 0; touch-action: none; cursor: ew-resize">
+                <span style="position: absolute; left: 50%; top: 9px; bottom: 9px; width: 1px; background: #3a4558"></span>
+                <span style="position: absolute; top: 4px; bottom: 4px; width: 3px; border-radius: 1px; background: #ffffff; left: {{s.panLeft}}%; transform: translateX(-50%)"></span>
+              </button>
+            </sc-if>
+            <sc-if value="{{s.noPan}}" hint-placeholder-val="{{ false }}">
+              <div style="height: 30px; flex: none; border: 1px solid #1a2230; border-radius: 3px"></div>
+            </sc-if>
+            <sc-if value="{{s.hasEq}}" hint-placeholder-val="{{ true }}">
+            <div style="flex: 1 1 140px; min-height: 80px; display: flex; flex-direction: column; border: 1px solid #1f2836; border-radius: 3px; overflow: hidden; background: #0b111b">
+              <button sc-camel-on-click="{{s.openEq}}" aria-label="{{s.eqAria}}" style="flex: 1; position: relative; padding: 0; border: 0; border-bottom: 1px solid #1f2836; background: transparent; cursor: pointer">
+                <svg sc-camel-view-box="0 0 100 40" sc-camel-preserve-aspect-ratio="none" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block" aria-hidden="true">
+                  <line x1="0" y1="20" x2="100" y2="20" stroke="#1d2737" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+                  <path d="{{s.eqPath}}" fill="none" stroke="{{s.eqStroke}}" stroke-width="1.6" vector-effect="non-scaling-stroke"></path>
+                </svg>
+                <span style="position: absolute; left: 4px; top: 2px; font-size: 11px; color: #6c788c">EQ</span>
+              </button>
+              <button sc-camel-on-click="{{s.openDyn}}" aria-label="{{s.dynAria}}" style="flex: 1; position: relative; padding: 0; border: 0; background: transparent; cursor: pointer">
+                <svg sc-camel-view-box="0 0 100 40" sc-camel-preserve-aspect-ratio="none" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block" aria-hidden="true">
+                  <path d="{{s.dynPath}}" fill="none" stroke="#c8b43c" stroke-width="1.4" vector-effect="non-scaling-stroke"></path>
+                </svg>
+                <span style="position: absolute; left: 4px; top: 2px; font-size: 11px; color: #6c788c">Dyn</span>
+              </button>
+            </div>
+            </sc-if>
+            <sc-if value="{{s.noEq}}" hint-placeholder-val="{{ false }}">
+              <div style="flex: 1 1 140px; min-height: 80px; border: 1px solid #161d29; border-radius: 3px; background: #090d14"></div>
+            </sc-if>
+            <button sc-camel-on-click="{{s.onMute}}" aria-pressed="{{s.mutedStr}}" aria-label="{{s.muteAria}}" style="height: 40px; flex: none; border-radius: 3px; border: 1px solid {{s.muteBorder}}; background: {{s.muteBg}}; color: {{s.muteText}}; opacity: {{s.muteOpacity}}; font-size: 15px; cursor: pointer">MUTE</button>
+            <div style="flex: 3 1 240px; min-height: 180px; display: flex; flex-direction: column">
+              <div style="height: 15px; flex: none; text-align: center; font-size: 12px; color: {{s.readColor}}">{{s.readout}}</div>
+              <button aria-label="{{s.faderAria}}" sc-camel-on-pointer-down="{{s.faderDown}}" sc-camel-on-pointer-move="{{s.move}}" sc-camel-on-pointer-up="{{s.up}}" sc-camel-on-pointer-cancel="{{s.up}}" style="flex: 1; position: relative; display: block; width: 100%; padding: 0; border: 0; background: transparent; touch-action: none; cursor: ns-resize">
+                <span style="position: absolute; left: 0; right: 0; top: 26px; bottom: 28px; display: block">
+                  <sc-for list="{{marks}}" as="m" hint-placeholder-count="8">
+                    <span style="position: absolute; left: 0; width: 17px; bottom: {{m.pct}}%; transform: translateY(50%); font-size: 10px; line-height: 1; color: #8792a4; text-align: right">{{m.label}}</span>
+                    <span style="position: absolute; left: 19px; width: 7px; height: 1px; bottom: {{m.pct}}%; background: {{m.tick}}"></span>
+                  </sc-for>
+                  <span style="position: absolute; left: calc(50% - 2px); width: 4px; top: 0; bottom: 0; border-radius: 2px; background: #000; box-shadow: inset 0 0 0 1px #1f2a3a"></span>
+                  <span style="position: absolute; right: 9px; width: 6px; top: 0; bottom: 0; overflow: hidden; background: linear-gradient(to top, #5fe060 0%, #5fe060 66%, #e7c12f 66%, #e7c12f 84%, #ff4a3d 84%)">
+                    <span style="position: absolute; left: 0; right: 0; top: 0; height: {{s.meterCover}}%; background: #1c2416"></span>
+                    <span style="position: absolute; left: 0; right: 0; height: 2px; bottom: {{s.peakPct}}%; background: {{s.peakColor}}"></span>
+                  </span>
+                  <span style="position: absolute; right: 1px; width: 5px; top: 0; height: 22%; border-radius: 1px; background: {{s.clipColor}}"></span>
+                  <span style="position: absolute; right: 1px; width: 5px; top: 26%; height: 18%; border-radius: 1px; background: {{s.grColor}}"></span>
+                  <span style="position: absolute; left: 50%; bottom: {{s.faderPct}}%; width: 36px; height: 50px; transform: translate(-50%, 50%); border-radius: 3px; background: linear-gradient(to bottom, #7a808a 0%, #4a4f58 7%, #30343b 44%, #1c1f24 50%, #30343b 56%, #4a4f58 93%, #646a73 100%); box-shadow: 0 8px 14px rgba(0,0,0,.75), 0 2px 3px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.7), inset 1px 0 0 rgba(255,255,255,.08), inset -1px 0 0 rgba(255,255,255,.08)">
+                    <span style="position: absolute; left: 4px; right: 4px; top: 5px; height: 14px; border-radius: 1px; background: repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px)"></span>
+                    <span style="position: absolute; left: 4px; right: 4px; bottom: 5px; height: 14px; border-radius: 1px; background: repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px)"></span>
+                    <span style="position: absolute; left: 0; right: 0; top: 50%; height: 3px; margin-top: -1.5px; background: {{s.capLine}}; box-shadow: 0 0 6px {{s.capGlow}}"></span>
+                  </span>
+                </span>
+              </button>
+            </div>
+            <button sc-camel-on-click="{{s.onSelect}}" aria-label="{{s.selectAria}}" style="height: 52px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 3px; border: 1px solid rgba(0,0,0,.35); background: {{s.color}}; color: {{s.text}}; cursor: pointer; padding: 0 3px; min-width: 0; overflow: hidden">
+              <span style="display: block; max-width: 100%; font-size: 16px; font-weight: 600; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{s.name}}</span>
+              <span style="display: block; max-width: 100%; font-size: 12px; line-height: 1.1; opacity: .8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{s.src}}</span>
+            </button>
+          </div>
+          </sc-if>
+        </sc-for>
+      </div>
+    </div>
+
+    <section aria-label="Master strip" style="width: 112px; flex: none; display: flex; flex-direction: column; gap: 3px; padding: 3px; background: #121a27; border: 1px solid #2a3443; box-shadow: {{ms.ring}}">
+      <div style="flex: 1 1 140px; min-height: 80px; display: flex; flex-direction: column; border: 1px solid #1f2836; border-radius: 3px; overflow: hidden; background: #0b111b">
+        <button sc-camel-on-click="{{ms.openEq}}" aria-label="{{ms.eqAria}}" style="flex: 1; position: relative; padding: 0; border: 0; border-bottom: 1px solid #1f2836; background: transparent; cursor: pointer">
+          <svg sc-camel-view-box="0 0 100 40" sc-camel-preserve-aspect-ratio="none" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block" aria-hidden="true">
+            <line x1="0" y1="20" x2="100" y2="20" stroke="#1d2737" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+            <path d="{{ms.eqPath}}" fill="none" stroke="{{ms.eqStroke}}" stroke-width="1.6" vector-effect="non-scaling-stroke"></path>
+          </svg>
+          <span style="position: absolute; left: 4px; top: 2px; font-size: 11px; color: #6c788c">EQ</span>
+        </button>
+        <button sc-camel-on-click="{{ms.openDyn}}" aria-label="{{ms.dynAria}}" style="flex: 1; position: relative; padding: 0; border: 0; background: transparent; cursor: pointer">
+          <svg sc-camel-view-box="0 0 100 40" sc-camel-preserve-aspect-ratio="none" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block" aria-hidden="true">
+            <path d="{{ms.dynPath}}" fill="none" stroke="#c8b43c" stroke-width="1.4" vector-effect="non-scaling-stroke"></path>
+          </svg>
+          <span style="position: absolute; left: 4px; top: 2px; font-size: 11px; color: #6c788c">Dyn</span>
+        </button>
+      </div>
+      <button sc-camel-on-click="{{ms.onMute}}" aria-pressed="{{ms.mutedStr}}" aria-label="{{ms.muteAria}}" style="height: 40px; flex: none; border-radius: 3px; border: 1px solid {{ms.muteBorder}}; background: {{ms.muteBg}}; color: {{ms.muteText}}; opacity: {{ms.muteOpacity}}; font-size: 15px; cursor: pointer">MUTE</button>
+      <div style="flex: 3 1 240px; min-height: 180px; display: flex; flex-direction: column">
+        <div style="height: 15px; flex: none; text-align: center; font-size: 12px; color: #e8edf5">{{ms.readout}}</div>
+        <button aria-label="{{ms.faderAria}}" sc-camel-on-pointer-down="{{ms.faderDown}}" sc-camel-on-pointer-move="{{ms.move}}" sc-camel-on-pointer-up="{{ms.up}}" sc-camel-on-pointer-cancel="{{ms.up}}" style="flex: 1; position: relative; display: block; width: 100%; padding: 0; border: 0; background: transparent; touch-action: none; cursor: ns-resize">
+          <span style="position: absolute; left: 2px; right: 2px; top: 26px; bottom: 28px; display: block">
+            <sc-for list="{{marks}}" as="m" hint-placeholder-count="8">
+              <span style="position: absolute; left: 0; width: 17px; bottom: {{m.pct}}%; transform: translateY(50%); font-size: 10px; line-height: 1; color: #8792a4; text-align: right">{{m.label}}</span>
+              <span style="position: absolute; left: 19px; width: 7px; height: 1px; bottom: {{m.pct}}%; background: {{m.tick}}"></span>
+            </sc-for>
+            <span style="position: absolute; left: calc(50% - 6px); width: 4px; top: 0; bottom: 0; border-radius: 2px; background: #000; box-shadow: inset 0 0 0 1px #1f2a3a"></span>
+            <span style="position: absolute; right: 13px; width: 6px; top: 0; bottom: 0; overflow: hidden; background: linear-gradient(to top, #5fe060 0%, #5fe060 66%, #e7c12f 66%, #e7c12f 84%, #ff4a3d 84%)">
+              <span style="position: absolute; left: 0; right: 0; top: 0; height: {{ms.meterCover}}%; background: #1c2416"></span>
+            </span>
+            <span style="position: absolute; right: 4px; width: 6px; top: 0; bottom: 0; overflow: hidden; background: linear-gradient(to top, #5fe060 0%, #5fe060 66%, #e7c12f 66%, #e7c12f 84%, #ff4a3d 84%)">
+              <span style="position: absolute; left: 0; right: 0; top: 0; height: {{ms.meterCover2}}%; background: #1c2416"></span>
+            </span>
+            <span style="position: absolute; left: calc(50% - 4px); bottom: {{ms.faderPct}}%; width: 40px; height: 52px; transform: translate(-50%, 50%); border-radius: 3px; background: linear-gradient(to bottom, #8a909a 0%, #565b64 7%, #3a3e46 44%, #22252b 50%, #3a3e46 56%, #565b64 93%, #737983 100%); box-shadow: 0 8px 14px rgba(0,0,0,.75), 0 2px 3px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.3), inset 0 -1px 0 rgba(0,0,0,.7), inset 1px 0 0 rgba(255,255,255,.08), inset -1px 0 0 rgba(255,255,255,.08)">
+              <span style="position: absolute; left: 4px; right: 4px; top: 5px; height: 15px; border-radius: 1px; background: repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px)"></span>
+              <span style="position: absolute; left: 4px; right: 4px; bottom: 5px; height: 15px; border-radius: 1px; background: repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px)"></span>
+              <span style="position: absolute; left: 0; right: 0; top: 50%; height: 3px; margin-top: -1.5px; background: {{ms.masterLine}}; box-shadow: 0 0 6px {{ms.masterLine}}"></span>
+            </span>
+          </span>
+        </button>
+      </div>
+      <button sc-camel-on-click="{{ms.onSelect}}" aria-label="{{ms.selectAria}}" style="height: 52px; flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; border-radius: 3px; border: 1px solid rgba(0,0,0,.35); background: {{ms.color}}; color: {{ms.text}}; cursor: pointer; padding: 0 3px; min-width: 0; overflow: hidden">
+        <span style="display: block; max-width: 100%; font-size: 16px; font-weight: 600; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ms.name}}</span>
+        <span style="display: block; max-width: 100%; font-size: 12px; line-height: 1.1; opacity: .8; white-space: nowrap">{{msSub}}</span>
+      </button>
+    </section>
+    <nav aria-label="Layers" style="width: 92px; flex: none; display: flex; flex-direction: column; gap: 4px">
+      <sc-for list="{{bankBtns}}" as="b" hint-placeholder-count="8">
+        <button sc-camel-on-click="{{b.pick}}" aria-pressed="{{b.pressed}}" style="flex: 1 1 0; min-height: 48px; border-radius: 8px; border: 1px solid {{b.border}}; background: {{b.bg}}; color: {{b.fg}}; font-size: 15px; font-weight: {{b.weight}}; cursor: pointer; padding: 0 4px; white-space: nowrap">{{b.label}}</button>
+      </sc-for>
+    </nav>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{isChannel}}" hint-placeholder-val="{{ false }}">
+  <div style="flex: 1; min-height: 0; display: flex; gap: 6px; padding: 6px">
+    <nav aria-label="Processing" style="width: 112px; flex: none; display: flex; flex-direction: column; gap: 5px">
+      <sc-for list="{{tabs}}" as="t" hint-placeholder-count="5">
+        <button sc-camel-on-click="{{t.pick}}" aria-current="{{t.current}}" style="height: 56px; flex: none; position: relative; border-radius: 5px; border: 2px solid {{t.border}}; background: {{t.bg}}; color: {{t.fg}}; font-size: 15px; cursor: pointer; text-align: left; padding: 0 10px">
+          {{t.label}}
+          <span style="display: block; font-size: 12px; color: #7f8a9c">{{t.note}}</span>
+        </button>
+      </sc-for>
+    </nav>
+
+    <main style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto">
+      <sc-if value="{{isEqTab}}" hint-placeholder-val="{{ true }}">
+        <div style="flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+          <button sc-camel-on-click="{{toggleEq}}" aria-pressed="{{eqOnStr}}" style="height: 40px; padding: 0 16px; border-radius: 5px; border: 1px solid #3a414c; background: {{eqOnBg}}; color: {{eqOnText}}; font-size: 15px; cursor: pointer">{{eqOnLabel}}</button>
+          <button sc-camel-on-click="{{flatEq}}" style="height: 40px; padding: 0 16px; border-radius: 5px; border: 1px solid #3a414c; background: #2b3038; color: #e8edf5; font-size: 15px; cursor: pointer">Flat</button>
+          <div style="flex: 1; min-width: 160px; text-align: right; font-size: 13px; color: #c9d1dc">{{selInfo}}</div>
+        </div>
+
+        <div data-graph="1" style="flex: 1 1 280px; min-height: 220px; position: relative; border-radius: 6px; border: 1px solid #1f2836; background: #0a0f17; overflow: hidden; touch-action: none">
+          <svg sc-camel-view-box="0 0 1000 300" sc-camel-preserve-aspect-ratio="none" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block" aria-hidden="true">
+            <sc-for list="{{gridV}}" as="g" hint-placeholder-count="20">
+              <line x1="{{g.x}}" y1="0" x2="{{g.x}}" y2="300" stroke="{{g.stroke}}" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+            </sc-for>
+            <sc-for list="{{gridH}}" as="g" hint-placeholder-count="5">
+              <line x1="0" y1="{{g.y}}" x2="1000" y2="{{g.y}}" stroke="{{g.stroke}}" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+            </sc-for>
+            <path d="{{bandFill}}" fill="{{bandFillColor}}" stroke="{{bandStroke}}" stroke-width="1.2" stroke-dasharray="4 3" vector-effect="non-scaling-stroke"></path>
+            <path d="{{fillPath}}" fill="{{curveFill}}" stroke="none"></path>
+            <path d="{{curvePath}}" fill="none" stroke="{{curveStroke}}" stroke-width="2.5" vector-effect="non-scaling-stroke"></path>
+          </svg>
+          <sc-for list="{{freqLabels}}" as="l" hint-placeholder-count="8">
+            <span style="position: absolute; bottom: 4px; left: {{l.x}}%; transform: translateX(-50%); font-size: 12px; color: #6c788c">{{l.label}}</span>
+          </sc-for>
+          <sc-for list="{{gainLabels}}" as="l" hint-placeholder-count="5">
+            <span style="position: absolute; left: 6px; top: {{l.y}}%; transform: translateY(-50%); font-size: 12px; color: #6c788c">{{l.label}}</span>
+          </sc-for>
+          <sc-for list="{{nodes}}" as="n" hint-placeholder-count="5">
+            <button aria-label="{{n.aria}}" sc-camel-on-pointer-down="{{n.down}}" sc-camel-on-pointer-move="{{n.move}}" sc-camel-on-pointer-up="{{n.up}}" sc-camel-on-pointer-cancel="{{n.up}}" style="position: absolute; left: {{n.x}}%; top: {{n.y}}%; width: {{n.size}}px; height: {{n.size}}px; transform: translate(-50%, -50%); border-radius: 50%; border: 2px solid {{n.ring}}; background: {{n.color}}; color: #0b0f14; font-size: 13px; font-weight: 600; opacity: {{n.op}}; padding: 0; touch-action: none; cursor: grab; box-shadow: 0 2px 8px rgba(0,0,0,.6)">{{n.label}}</button>
+          </sc-for>
+        </div>
+
+        <div style="flex: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px">
+          <sc-for list="{{cards}}" as="c" hint-placeholder-count="5">
+            <div style="display: flex; flex-direction: column; gap: 8px; padding: 8px; border-radius: 6px; border: 2px solid {{c.border}}; background: #0e1520">
+              <div style="display: flex; align-items: center; gap: 6px">
+                <button sc-camel-on-click="{{c.select}}" style="flex: 1; min-width: 0; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; color: #eef2f7; font-size: 15px; font-weight: 600; text-align: left; cursor: pointer">
+                  <span style="width: 12px; height: 12px; flex: none; border-radius: 50%; background: {{c.color}}"></span>
+                  {{c.name}}
+                </button>
+                <button sc-camel-on-click="{{c.toggle}}" aria-pressed="{{c.onStr}}" aria-label="{{c.toggleAria}}" style="height: 32px; padding: 0 10px; border-radius: 4px; border: 1px solid #3a414c; background: {{c.onBg}}; color: {{c.onText}}; font-size: 13px; cursor: pointer">{{c.onLabel}}</button>
+              </div>
+              <div style="display: flex; gap: 4px">
+                <sc-for list="{{c.types}}" as="t" hint-placeholder-count="2">
+                  <button sc-camel-on-click="{{t.pick}}" aria-pressed="{{t.pressed}}" style="flex: 1; height: 30px; border-radius: 4px; border: 1px solid #3a414c; background: {{t.bg}}; color: {{t.fg}}; font-size: 13px; cursor: pointer">{{t.label}}</button>
+                </sc-for>
+              </div>
+              <div style="display: flex; justify-content: space-around; gap: 2px">
+                <sc-for list="{{c.knobs}}" as="k" hint-placeholder-count="3">
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0">
+                    <button aria-label="{{k.aria}}" sc-camel-on-pointer-down="{{k.down}}" sc-camel-on-pointer-move="{{k.move}}" sc-camel-on-pointer-up="{{k.up}}" sc-camel-on-pointer-cancel="{{k.up}}" sc-camel-on-double-click="{{k.reset}}" style="width: 58px; height: 58px; padding: 0; border: 0; background: transparent; touch-action: none; cursor: ns-resize">
+                      <svg width="58" height="58" sc-camel-view-box="0 0 56 56" aria-hidden="true">
+                        <circle cx="28" cy="28" r="22" fill="none" stroke="#243042" stroke-width="5" stroke-linecap="round" stroke-dasharray="103.67 138.23" transform="rotate(135 28 28)"></circle>
+                        <circle cx="28" cy="28" r="22" fill="none" stroke="{{k.color}}" stroke-width="5" stroke-linecap="round" stroke-dasharray="{{k.dash}}" transform="rotate(135 28 28)"></circle>
+                        <circle cx="28" cy="28" r="15" fill="#1a2332" stroke="#2f3b4f" stroke-width="1"></circle>
+                        <line x1="28" y1="28" x2="28" y2="15" stroke="#eef2f7" stroke-width="2.5" stroke-linecap="round" transform="{{k.rot}}"></line>
+                      </svg>
+                    </button>
+                    <span style="font-size: 12px; color: #8f9bb0">{{k.label}}</span>
+                    <span style="font-size: 12px; color: #e8edf5; white-space: nowrap">{{k.value}}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isInputTab}}" hint-placeholder-val="{{ false }}">
+        <sc-if value="{{noInput}}" hint-placeholder-val="{{ false }}">
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; border-radius: 3px; border: 1px solid #1f2836; background: #0a0f17; padding: 24px; font-size: 15px; color: #a7b1c0; text-align: center">No preamp on this channel — its signal comes from inside the console.</div>
+        </sc-if>
+        <sc-if value="{{hasInput}}" hint-placeholder-val="{{ true }}">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 6px">
+            <section aria-label="Preamp" style="display: flex; flex-direction: column; gap: 14px; padding: 14px; border-radius: 3px; border: 1px solid #1f2836; background: #0e1520">
+              <div style="font-size: 12px; color: #8f9bb0">Preamp</div>
+              <div style="display: flex; justify-content: space-around; gap: 6px">
+                <sc-for list="{{inKnobs}}" as="k" hint-placeholder-count="2">
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0">
+                    <button aria-label="{{k.aria}}" sc-camel-on-pointer-down="{{k.down}}" sc-camel-on-pointer-move="{{k.move}}" sc-camel-on-pointer-up="{{k.up}}" sc-camel-on-pointer-cancel="{{k.up}}" sc-camel-on-double-click="{{k.reset}}" style="width: 68px; height: 68px; padding: 0; border: 0; background: transparent; touch-action: none; cursor: ns-resize">
+                      <svg width="68" height="68" sc-camel-view-box="0 0 56 56" aria-hidden="true">
+                        <circle cx="28" cy="28" r="22" fill="none" stroke="#243042" stroke-width="5" stroke-linecap="round" stroke-dasharray="103.67 138.23" transform="rotate(135 28 28)"></circle>
+                        <circle cx="28" cy="28" r="22" fill="none" stroke="{{k.color}}" stroke-width="5" stroke-linecap="round" stroke-dasharray="{{k.dash}}" transform="rotate(135 28 28)"></circle>
+                        <circle cx="28" cy="28" r="15" fill="#1a2332" stroke="#2f3b4f" stroke-width="1"></circle>
+                        <line x1="28" y1="28" x2="28" y2="15" stroke="#eef2f7" stroke-width="2.5" stroke-linecap="round" transform="{{k.rot}}"></line>
+                      </svg>
+                    </button>
+                    <span style="font-size: 12px; color: #8f9bb0">{{k.label}}</span>
+                    <span style="font-size: 13px; color: #e8edf5; white-space: nowrap">{{k.value}}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display: flex; gap: 6px">
+                <button sc-camel-on-click="{{togglePhantom}}" aria-pressed="{{phantomStr}}" style="flex: 1; height: 48px; border-radius: 3px; border: 1px solid {{phantomBorder}}; background: {{phantomBg}}; color: {{phantomText}}; font-size: 14px; font-weight: 600; cursor: pointer">{{phantomLabel}}</button>
+                <button sc-camel-on-click="{{toggleInvert}}" aria-pressed="{{invertStr}}" style="flex: 1; height: 48px; border-radius: 3px; border: 1px solid #3a414c; background: {{invertBg}}; color: {{invertText}}; font-size: 14px; font-weight: 600; cursor: pointer">Ø Polarity</button>
+              </div>
+            </section>
+            <section aria-label="Source" style="display: flex; flex-direction: column; gap: 14px; padding: 14px; border-radius: 3px; border: 1px solid #1f2836; background: #0e1520">
+              <div style="font-size: 12px; color: #8f9bb0">Source</div>
+              <div style="display: flex; align-items: baseline; gap: 10px">
+                <span style="font-size: 34px; font-weight: 600;">{{srcName}}</span>
+                <span style="font-size: 14px; color: #a7b1c0">{{srcGroup}}</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 6px">
+                <div style="display: flex; justify-content: space-between; font-size: 12px; color: #8f9bb0"><span>Input level</span><span style="color: #e8edf5">{{inLvlText}}</span></div>
+                <div style="height: 12px; position: relative; overflow: hidden; border-radius: 2px; background: linear-gradient(to right, #5fe060 0%, #5fe060 70%, #e7c12f 70%, #e7c12f 88%, #ff4a3d 88%)">
+                  <span style="position: absolute; top: 0; bottom: 0; right: 0; width: {{inLvlCover}}%; background: #1c2416"></span>
+                </div>
+              </div>
+              <button sc-camel-on-click="{{goPatch}}" style="height: 48px; margin-top: auto; border-radius: 3px; border: 1px solid #3a414c; background: #2b3038; color: #e8edf5; font-size: 14px; cursor: pointer">Change patch in Routing</button>
+            </section>
+            <section aria-label="Delay" style="display: flex; flex-direction: column; gap: 14px; padding: 14px; border-radius: 3px; border: 1px solid #1f2836; background: #0e1520">
+              <div style="display: flex; align-items: center; justify-content: space-between">
+                <span style="font-size: 12px; color: #8f9bb0">Delay</span>
+                <button sc-camel-on-click="{{toggleDelay}}" aria-pressed="{{delayStr}}" style="height: 34px; padding: 0 14px; border-radius: 3px; border: 1px solid #3a414c; background: {{delayBg}}; color: {{delayText}}; font-size: 13px; cursor: pointer">{{delayLabel}}</button>
+              </div>
+              <div style="display: flex; justify-content: space-around; gap: 6px">
+                <sc-for list="{{delayKnobs}}" as="k" hint-placeholder-count="1">
+                  <div style="display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0">
+                    <button aria-label="{{k.aria}}" sc-camel-on-pointer-down="{{k.down}}" sc-camel-on-pointer-move="{{k.move}}" sc-camel-on-pointer-up="{{k.up}}" sc-camel-on-pointer-cancel="{{k.up}}" sc-camel-on-double-click="{{k.reset}}" style="width: 68px; height: 68px; padding: 0; border: 0; background: transparent; touch-action: none; cursor: ns-resize">
+                      <svg width="68" height="68" sc-camel-view-box="0 0 56 56" aria-hidden="true">
+                        <circle cx="28" cy="28" r="22" fill="none" stroke="#243042" stroke-width="5" stroke-linecap="round" stroke-dasharray="103.67 138.23" transform="rotate(135 28 28)"></circle>
+                        <circle cx="28" cy="28" r="22" fill="none" stroke="{{k.color}}" stroke-width="5" stroke-linecap="round" stroke-dasharray="{{k.dash}}" transform="rotate(135 28 28)"></circle>
+                        <circle cx="28" cy="28" r="15" fill="#1a2332" stroke="#2f3b4f" stroke-width="1"></circle>
+                        <line x1="28" y1="28" x2="28" y2="15" stroke="#eef2f7" stroke-width="2.5" stroke-linecap="round" transform="{{k.rot}}"></line>
+                      </svg>
+                    </button>
+                    <span style="font-size: 12px; color: #8f9bb0">{{k.label}}</span>
+                    <span style="font-size: 13px; color: #e8edf5; white-space: nowrap">{{k.value}}</span>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="font-size: 13px; color: #a7b1c0; text-align: center">{{delayDist}}</div>
+            </section>
+          </div>
+        </sc-if>
+      </sc-if>
+
+      <sc-if value="{{isDynTab}}" hint-placeholder-val="{{ false }}">
+        <div style="flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+          <button sc-camel-on-click="{{dvToggle}}" aria-pressed="{{dvOnStr}}" style="height: 40px; padding: 0 16px; border-radius: 3px; border: 1px solid #3a414c; background: {{dvOnBg}}; color: {{dvOnText}}; font-size: 15px; cursor: pointer">{{dvOnLabel}}</button>
+          <div style="flex: 1; min-width: 160px; text-align: right; font-size: 13px; color: #c9d1dc">{{dvSummary}}</div>
+        </div>
+        <div style="flex: 1 1 auto; min-height: 0; display: flex; flex-wrap: wrap; gap: 6px">
+          <div style="flex: 1 1 400px; min-height: 300px; display: flex; gap: 10px; padding: 12px 12px 12px 6px; border-radius: 3px; border: 1px solid #1f2836; background: #0a0f17">
+            <div aria-hidden="true" style="width: 34px; flex: none; position: relative; margin-bottom: 24px">
+              <sc-for list="{{dvAxis}}" as="a" hint-placeholder-count="5">
+                <span style="position: absolute; right: 0; top: {{a.top}}%; transform: translateY(-50%); font-size: 12px; color: #7d889b; font-variant-numeric: tabular-nums">{{a.label}}</span>
+              </sc-for>
+            </div>
+            <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px">
+              <div style="flex: 1; position: relative; overflow: hidden; border-radius: 3px; border: 1px solid #1f2836; background: #0b111b">
+                <svg sc-camel-view-box="0 0 200 200" sc-camel-preserve-aspect-ratio="none" style="position: absolute; inset: 0; width: 100%; height: 100%; display: block" role="img" aria-label="{{dvAria}}">
+                  <sc-for list="{{dvGrid}}" as="g" hint-placeholder-count="6">
+                    <line x1="{{g.p}}" y1="0" x2="{{g.p}}" y2="200" stroke="#18212f" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+                    <line x1="0" y1="{{g.q}}" x2="200" y2="{{g.q}}" stroke="#18212f" stroke-width="1" vector-effect="non-scaling-stroke"></line>
+                  </sc-for>
+                  <line x1="0" y1="200" x2="200" y2="0" stroke="#34445e" stroke-width="1" stroke-dasharray="5 5" vector-effect="non-scaling-stroke"></line>
+                  <path d="{{dvFill}}" fill="{{dvFillColor}}" stroke="none"></path>
+                  <line x1="{{dvThrX}}" y1="0" x2="{{dvThrX}}" y2="200" stroke="{{dvColor}}" stroke-width="1.5" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"></line>
+                  <path d="{{dvPath}}" fill="none" stroke="#f0d36a" stroke-width="3" stroke-linejoin="round" vector-effect="non-scaling-stroke"></path>
+                </svg>
+                <span style="position: absolute; top: 8px; left: {{dvThrL}}%; transform: translateX(-50%); padding: 3px 7px; border-radius: 3px; background: {{dvColor}}; color: #0b0f14; font-size: 12px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums">{{dvThrText}}</span>
+                <span style="position: absolute; left: {{dvDotL}}%; top: {{dvDotT}}%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #ffffff; box-shadow: 0 0 0 4px rgba(255,255,255,.16)"></span>
+                <span style="position: absolute; left: 10px; bottom: 8px; font-size: 12px; color: #6c788c">Input →</span>
+                <span style="position: absolute; left: 10px; top: 8px; font-size: 12px; color: #6c788c">↑ Output</span>
+              </div>
+              <div aria-hidden="true" style="height: 18px; flex: none; position: relative">
+                <sc-for list="{{dvAxis}}" as="a" hint-placeholder-count="5">
+                  <span style="position: absolute; top: 0; left: {{a.left}}%; transform: translateX({{a.shift}}); font-size: 12px; color: #7d889b; font-variant-numeric: tabular-nums">{{a.label}}</span>
+                </sc-for>
+              </div>
+            </div>
+            <div style="width: 48px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; margin-bottom: 24px">
+              <span style="font-size: 12px; color: #8f9bb0">GR</span>
+              <div style="flex: 1; width: 18px; position: relative; overflow: hidden; border-radius: 3px; background: #1a2332">
+                <span style="position: absolute; left: 0; right: 0; top: 0; height: {{dvGrPct}}%; background: {{dvColor}}"></span>
+              </div>
+              <span style="font-size: 13px; font-variant-numeric: tabular-nums">{{dvGrText}}</span>
+            </div>
+          </div>
+          <div style="flex: 1 1 300px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: center; gap: 20px 8px; padding: 18px; border-radius: 3px; border: 1px solid #1f2836; background: #0e1520">
+            <sc-for list="{{dvKnobs}}" as="k" hint-placeholder-count="6">
+              <div style="display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 0">
+                <button aria-label="{{k.aria}}" sc-camel-on-pointer-down="{{k.down}}" sc-camel-on-pointer-move="{{k.move}}" sc-camel-on-pointer-up="{{k.up}}" sc-camel-on-pointer-cancel="{{k.up}}" sc-camel-on-double-click="{{k.reset}}" style="width: 80px; height: 80px; padding: 0; border: 0; background: transparent; touch-action: none; cursor: ns-resize">
+                  <svg width="80" height="80" sc-camel-view-box="0 0 56 56" aria-hidden="true">
+                    <circle cx="28" cy="28" r="22" fill="none" stroke="#243042" stroke-width="5" stroke-linecap="round" stroke-dasharray="103.67 138.23" transform="rotate(135 28 28)"></circle>
+                    <circle cx="28" cy="28" r="22" fill="none" stroke="{{k.color}}" stroke-width="5" stroke-linecap="round" stroke-dasharray="{{k.dash}}" transform="rotate(135 28 28)"></circle>
+                    <circle cx="28" cy="28" r="15" fill="#1a2332" stroke="#2f3b4f" stroke-width="1"></circle>
+                    <line x1="28" y1="28" x2="28" y2="15" stroke="#eef2f7" stroke-width="2.5" stroke-linecap="round" transform="{{k.rot}}"></line>
+                  </svg>
+                </button>
+                <span style="font-size: 12px; color: #8f9bb0">{{k.label}}</span>
+                <span style="font-size: 13px; color: #e8edf5; white-space: nowrap">{{k.value}}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isSendsTab}}" hint-placeholder-val="{{ false }}">
+        <sc-if value="{{noSends}}" hint-placeholder-val="{{ false }}">
+          <div style="flex: 1; display: flex; align-items: center; justify-content: center; border-radius: 3px; border: 1px solid #1f2836; background: #0a0f17; padding: 24px; font-size: 15px; color: #a7b1c0; text-align: center">Buses and outputs don't send to mixes.</div>
+        </sc-if>
+        <sc-if value="{{hasSends}}" hint-placeholder-val="{{ true }}">
+          <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 6px">
+            <sc-for list="{{sendRows}}" as="r" hint-placeholder-count="16">
+              <div style="height: 58px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border-radius: 3px; border: 1px solid #1f2836; background: #0e1520">
+                <span style="width: 54px; flex: none; font-size: 15px; font-weight: 600">{{r.name}}</span>
+                <button aria-label="{{r.aria}}" sc-camel-on-pointer-down="{{r.down}}" sc-camel-on-pointer-move="{{r.move}}" sc-camel-on-pointer-up="{{r.up}}" sc-camel-on-pointer-cancel="{{r.up}}" style="flex: 1; min-width: 0; height: 46px; position: relative; padding: 0; border: 0; background: transparent; touch-action: none; cursor: ew-resize">
+                  <span style="position: absolute; left: 9px; right: 9px; top: 0; bottom: 0; display: block">
+                    <span style="position: absolute; left: 0; right: 0; top: 50%; height: 6px; margin-top: -3px; border-radius: 2px; background: #1a2332"></span>
+                    <span style="position: absolute; left: 0; width: {{r.pct}}%; top: 50%; height: 6px; margin-top: -3px; border-radius: 2px; background: {{r.fill}}"></span>
+                    <span style="position: absolute; left: 75%; top: 50%; width: 1px; height: 16px; margin-top: -8px; background: #566175"></span>
+                    <span style="position: absolute; left: {{r.pct}}%; top: 50%; width: 18px; height: 36px; transform: translate(-50%, -50%); border-radius: 3px; background: linear-gradient(to right, #646a73, #30343b 45%, #1c1f24 50%, #30343b 55%, #646a73); box-shadow: 0 3px 6px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.25)">
+                      <span style="position: absolute; top: 3px; bottom: 3px; left: 50%; width: 2px; margin-left: -1px; background: {{r.fill}}"></span>
+                    </span>
+                  </span>
+                </button>
+                <span style="width: 50px; flex: none; text-align: right; font-size: 13px">{{r.text}}</span>
+                <button sc-camel-on-click="{{r.togglePre}}" aria-pressed="{{r.preStr}}" aria-label="{{r.preAria}}" style="width: 56px; height: 40px; flex: none; border-radius: 3px; border: 1px solid #3a414c; background: {{r.preBg}}; color: {{r.preText}}; font-size: 12px; font-weight: 600; cursor: pointer">{{r.preLabel}}</button>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+      </sc-if>
+    </main>
+
+    <aside aria-label="Channel strip" style="width: 136px; flex: none; display: flex; flex-direction: column; gap: 5px; padding: 5px; border-radius: 0; background: #0e1520">
+      <div style="height: 54px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 3px; background: {{cs.color}}; color: {{cs.text}}; font-size: 17px; font-weight: 600">{{cs.name}}</div>
+      <div style="display: flex; gap: 5px; flex: none">
+        <button sc-camel-on-click="{{prevCh}}" aria-label="Previous channel" style="flex: 1; height: 44px; border-radius: 3px; border: 1px solid #3a414c; background: #2b3038; color: #e8edf5; cursor: pointer; display: flex; align-items: center; justify-content: center">
+          <svg width="20" height="20" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"></path></svg>
+        </button>
+        <button sc-camel-on-click="{{nextCh}}" aria-label="Next channel" style="flex: 1; height: 44px; border-radius: 3px; border: 1px solid #3a414c; background: #2b3038; color: #e8edf5; cursor: pointer; display: flex; align-items: center; justify-content: center">
+          <svg width="20" height="20" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"></path></svg>
+        </button>
+      </div>
+      <sc-if value="{{cs.hasPan}}" hint-placeholder-val="{{ true }}">
+        <button aria-label="{{cs.panAria}}" sc-camel-on-pointer-down="{{cs.panDown}}" sc-camel-on-pointer-move="{{cs.move}}" sc-camel-on-pointer-up="{{cs.up}}" sc-camel-on-pointer-cancel="{{cs.up}}" sc-camel-on-double-click="{{cs.panReset}}" style="height: 34px; flex: none; position: relative; border: 1px solid #2a3343; border-radius: 3px; background: #0a0f17; padding: 0; touch-action: none; cursor: ew-resize">
+          <span style="position: absolute; left: 50%; top: 10px; bottom: 10px; width: 1px; background: #3a4558"></span>
+          <span style="position: absolute; top: 4px; bottom: 4px; width: 3px; border-radius: 1px; background: #ffffff; left: {{cs.panLeft}}%; transform: translateX(-50%)"></span>
+          <span style="position: absolute; right: 5px; top: 50%; transform: translateY(-50%); font-size: 11px; color: #8792a4">{{cs.panText}}</span>
+        </button>
+      </sc-if>
+      <button sc-camel-on-click="{{cs.onMute}}" aria-pressed="{{cs.mutedStr}}" aria-label="{{cs.muteAria}}" style="height: 44px; flex: none; border-radius: 3px; border: 1px solid {{cs.muteBorder}}; background: {{cs.muteBg}}; color: {{cs.muteText}}; opacity: {{cs.muteOpacity}}; font-size: 15px; cursor: pointer">MUTE</button>
+      <div style="flex: 1; min-height: 180px; display: flex; flex-direction: column">
+        <div style="height: 18px; flex: none; text-align: center; font-size: 13px; color: {{cs.readColor}}">{{cs.readout}}</div>
+        <button aria-label="{{cs.faderAria}}" sc-camel-on-pointer-down="{{cs.faderDown}}" sc-camel-on-pointer-move="{{cs.move}}" sc-camel-on-pointer-up="{{cs.up}}" sc-camel-on-pointer-cancel="{{cs.up}}" style="flex: 1; position: relative; display: block; width: 100%; padding: 0; border: 0; background: transparent; touch-action: none; cursor: ns-resize">
+          <span style="position: absolute; left: 6px; right: 6px; top: 32px; bottom: 34px; display: block">
+            <sc-for list="{{marks}}" as="m" hint-placeholder-count="8">
+              <span style="position: absolute; left: 0; width: 20px; bottom: {{m.pct}}%; transform: translateY(50%); font-size: 11px; line-height: 1; color: #8792a4; text-align: right">{{m.label}}</span>
+              <span style="position: absolute; left: 23px; width: 9px; height: 1px; bottom: {{m.pct}}%; background: {{m.tick}}"></span>
+            </sc-for>
+            <span style="position: absolute; left: calc(50% - 2px); width: 4px; top: 0; bottom: 0; border-radius: 2px; background: #000; box-shadow: inset 0 0 0 1px #1f2a3a"></span>
+            <span style="position: absolute; right: 10px; width: 8px; top: 0; bottom: 0; overflow: hidden; background: linear-gradient(to top, #5fe060 0%, #5fe060 66%, #e7c12f 66%, #e7c12f 84%, #ff4a3d 84%)">
+              <span style="position: absolute; left: 0; right: 0; top: 0; height: {{cs.meterCover}}%; background: #1c2416"></span>
+            </span>
+            <span style="position: absolute; right: 0; width: 6px; top: 0; height: 22%; border-radius: 1px; background: {{cs.clipColor}}"></span>
+            <span style="position: absolute; left: 50%; bottom: {{cs.faderPct}}%; width: 46px; height: 60px; transform: translate(-50%, 50%); border-radius: 3px; background: linear-gradient(to bottom, #7a808a 0%, #4a4f58 7%, #30343b 44%, #1c1f24 50%, #30343b 56%, #4a4f58 93%, #646a73 100%); box-shadow: 0 8px 14px rgba(0,0,0,.75), 0 2px 3px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.7), inset 1px 0 0 rgba(255,255,255,.08), inset -1px 0 0 rgba(255,255,255,.08)">
+              <span style="position: absolute; left: 5px; right: 5px; top: 6px; height: 17px; border-radius: 1px; background: repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px)"></span>
+              <span style="position: absolute; left: 5px; right: 5px; bottom: 6px; height: 17px; border-radius: 1px; background: repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px)"></span>
+              <span style="position: absolute; left: 0; right: 0; top: 50%; height: 3px; margin-top: -1.5px; background: {{cs.capLine}}; box-shadow: 0 0 6px {{cs.capGlow}}"></span>
+            </span>
+          </span>
+        </button>
+      </div>
+      <div style="height: 18px; flex: none; text-align: center; font-size: 13px; color: #a7b1c0">{{cs.src}}</div>
+    </aside>
+  </div>
+  </sc-if>
+  <sc-if value="{{isScenes}}" hint-placeholder-val="{{ false }}">
+  <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px">
+    <div style="flex: 1; min-height: 0; overflow-y: auto">
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px">
+        <sc-for list="{{sceneCards}}" as="c" hint-placeholder-count="10">
+          <button sc-camel-on-click="{{c.pick}}" aria-pressed="{{c.pressed}}" style="height: 84px; display: flex; flex-direction: column; justify-content: space-between; padding: 10px 12px; border-radius: 3px; border: 2px solid {{c.border}}; background: {{c.bg}}; color: #eef2f7; cursor: pointer; text-align: left">
+            <span style="display: flex; justify-content: space-between; align-items: center; gap: 8px">
+              <span style="font-size: 13px; color: #a7b1c0">{{c.num}}</span>
+              <span style="font-size: 11px; font-weight: 600; color: #7be27b">{{c.tag}}</span>
+            </span>
+            <span style="font-size: 18px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{c.name}}</span>
+          </button>
+        </sc-for>
+      </div>
+    </div>
+    <div style="flex: none; display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 3px; border: 1px solid {{recallBarBorder}}; background: #0e1520">
+      <div style="flex: 1; min-width: 0; line-height: 1.2">
+        <div style="font-size: 12px; color: {{recallTagColor}}">{{recallTag}}</div>
+        <div style="font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis"><span style="font-weight: 500; color: #a7b1c0; margin-right: 6px">{{pvSceneNum}}</span>{{pvSceneName}}</div>
+      </div>
+      <button sc-camel-on-click="{{goBack}}" style="height: 48px; padding: 0 20px; border-radius: 3px; border: 1px solid #3a414c; background: #2b3038; color: #e8edf5; font-size: 15px; cursor: pointer">Cancel</button>
+      <button sc-camel-on-click="{{sceneRecall}}" aria-disabled="{{recallDisabled}}" style="height: 48px; padding: 0 28px; border-radius: 3px; border: 1px solid {{recallBorder}}; background: {{recallBg}}; color: {{recallText}}; font-size: 15px; font-weight: 600; cursor: pointer">Recall</button>
+    </div>
+  </div>
+  </sc-if>
+  <sc-if value="{{isFx}}" hint-placeholder-val="{{ false }}">
+  <div style="flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 6px; overflow-y: auto">
+    <div style="flex: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px">
+      <sc-for list="{{fxSlots}}" as="f" hint-placeholder-count="8">
+        <button sc-camel-on-click="{{f.pick}}" aria-pressed="{{f.pressed}}" style="height: 96px; display: flex; flex-direction: column; justify-content: space-between; gap: 4px; padding: 10px; border-radius: 3px; border: 2px solid {{f.border}}; background: {{f.bg}}; color: #eef2f7; cursor: pointer; text-align: left">
+          <span style="display: flex; justify-content: space-between; align-items: center">
+            <span style="font-size: 12px; color: #a7b1c0">{{f.name}}</span>
+            <span style="font-size: 11px; font-weight: 600; color: {{f.stateColor}}">{{f.state}}</span>
+          </span>
+          <span style="font-size: 18px; font-weight: 600">{{f.type}}</span>
+          <span style="display: flex; align-items: center; gap: 8px">
+            <span style="font-size: 12px; color: #8792a4; white-space: nowrap">{{f.ret}}</span>
+            <span style="flex: 1; height: 4px; position: relative; overflow: hidden; border-radius: 1px; background: #1a2332"><span style="position: absolute; left: 0; top: 0; bottom: 0; width: {{f.meter}}%; background: #b28cff"></span></span>
+          </span>
+        </button>
+      </sc-for>
+    </div>
+    <div style="flex: 1 1 auto; min-height: 300px; display: flex; flex-direction: column; gap: 16px; padding: 14px; border-radius: 3px; border: 1px solid #1f2836; background: #0e1520">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+        <div style="font-size: 20px; font-weight: 600; margin-right: auto">{{fxTitle}}</div>
+        <sc-if value="{{fxIsDelay}}" hint-placeholder-val="{{ false }}">
+          <button sc-camel-on-click="{{doTap}}" style="height: 44px; padding: 0 18px; border-radius: 3px; border: 1px solid #3a414c; background: #2b3038; color: #e8edf5; font-size: 14px; cursor: pointer">{{tapLabel}}</button>
+        </sc-if>
+        <button sc-camel-on-click="{{fxToggle}}" aria-pressed="{{fxOnStr}}" style="height: 44px; padding: 0 18px; border-radius: 3px; border: 1px solid {{fxOnBorder}}; background: {{fxOnBg}}; color: {{fxOnText}}; font-size: 14px; cursor: pointer">{{fxOnLabel}}</button>
+      </div>
+      <div role="group" aria-label="Effect type" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px">
+        <sc-for list="{{fxTypes}}" as="t" hint-placeholder-count="6">
+          <button sc-camel-on-click="{{t.pick}}" aria-pressed="{{t.pressed}}" style="height: 44px; border-radius: 3px; border: 1px solid #3a414c; background: {{t.bg}}; color: {{t.fg}}; font-size: 14px; cursor: pointer">{{t.label}}</button>
+        </sc-for>
+      </div>
+      <div style="flex: 1; display: flex; flex-wrap: wrap; justify-content: space-around; align-items: center; gap: 16px">
+        <sc-for list="{{fxKnobs}}" as="k" hint-placeholder-count="5">
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0">
+            <button aria-label="{{k.aria}}" sc-camel-on-pointer-down="{{k.down}}" sc-camel-on-pointer-move="{{k.move}}" sc-camel-on-pointer-up="{{k.up}}" sc-camel-on-pointer-cancel="{{k.up}}" sc-camel-on-double-click="{{k.reset}}" style="width: 92px; height: 92px; padding: 0; border: 0; background: transparent; touch-action: none; cursor: ns-resize">
+              <svg width="92" height="92" sc-camel-view-box="0 0 56 56" aria-hidden="true">
+                <circle cx="28" cy="28" r="22" fill="none" stroke="#243042" stroke-width="4" stroke-linecap="round" stroke-dasharray="103.67 138.23" transform="rotate(135 28 28)"></circle>
+                <circle cx="28" cy="28" r="22" fill="none" stroke="{{k.color}}" stroke-width="4" stroke-linecap="round" stroke-dasharray="{{k.dash}}" transform="rotate(135 28 28)"></circle>
+                <circle cx="28" cy="28" r="16" fill="#1a2332" stroke="#2f3b4f" stroke-width="1"></circle>
+                <line x1="28" y1="28" x2="28" y2="14" stroke="#eef2f7" stroke-width="2.2" stroke-linecap="round" transform="{{k.rot}}"></line>
+              </svg>
+            </button>
+            <span style="font-size: 12px; color: #8f9bb0">{{k.label}}</span>
+            <span style="font-size: 15px; color: #e8edf5; white-space: nowrap">{{k.value}}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{isRouting}}" hint-placeholder-val="{{ false }}">
+  <div style="flex: 1; min-height: 0; display: flex; flex-wrap: wrap; gap: 6px; padding: 6px; overflow-y: auto; align-content: flex-start">
+    <section aria-label="Channels" style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 3px; border: 1px solid #1f2836; background: #0e1520">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+        <span style="font-size: 12px; color: #8f9bb0; margin-right: auto">Pick a channel</span>
+        <sc-for list="{{routeBanks}}" as="b" hint-placeholder-count="3">
+          <button sc-camel-on-click="{{b.pick}}" aria-pressed="{{b.pressed}}" style="height: 36px; padding: 0 12px; border-radius: 3px; border: 1px solid #3a414c; background: {{b.bg}}; color: {{b.fg}}; font-size: 13px; cursor: pointer">{{b.label}}</button>
+        </sc-for>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px">
+        <sc-for list="{{routeTiles}}" as="t" hint-placeholder-count="16">
+          <button sc-camel-on-click="{{t.pick}}" aria-pressed="{{t.pressed}}" style="height: 60px; display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: 0 10px; border-radius: 3px; border: 2px solid {{t.border}}; background: {{t.bg}}; color: #eef2f7; cursor: pointer; text-align: left">
+            <span style="font-size: 15px; font-weight: 600">{{t.name}}</span>
+            <span style="font-size: 12px; color: {{t.srcColor}}">{{t.src}}</span>
+          </button>
+        </sc-for>
+      </div>
+    </section>
+    <section aria-label="Sources" style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 3px; border: 1px solid #1f2836; background: #0e1520">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px">
+        <span style="font-size: 12px; color: #8f9bb0; margin-right: auto">Patch {{patchSelName}} to</span>
+        <sc-for list="{{srcGroups}}" as="g" hint-placeholder-count="3">
+          <button sc-camel-on-click="{{g.pick}}" aria-pressed="{{g.pressed}}" style="height: 36px; padding: 0 12px; border-radius: 3px; border: 1px solid #3a414c; background: {{g.bg}}; color: {{g.fg}}; font-size: 13px; cursor: pointer">{{g.label}}</button>
+        </sc-for>
+        <button sc-camel-on-click="{{unpatch}}" style="height: 36px; padding: 0 12px; border-radius: 3px; border: 1px solid #6a1b1e; background: #2a0d0e; color: #f2d6d6; font-size: 13px; cursor: pointer">Unpatch</button>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 5px">
+        <sc-for list="{{srcTiles}}" as="s" hint-placeholder-count="32">
+          <button sc-camel-on-click="{{s.pick}}" aria-pressed="{{s.pressed}}" style="height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 0 4px; border-radius: 3px; border: 1px solid {{s.border}}; background: {{s.bg}}; color: {{s.fg}}; cursor: pointer">
+            <span style="font-size: 13px; font-weight: 500">{{s.label}}</span>
+            <span style="font-size: 11px; opacity: .75; white-space: nowrap">{{s.used}}</span>
+          </button>
+        </sc-for>
+      </div>
+      <div style="font-size: 13px; color: #8792a4">After patching, the selection moves to the next channel.</div>
+    </section>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{isConnect}}" hint-placeholder-val="{{ false }}">
+  <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 12px">
+    <div style="max-width: 860px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px">
+      <section aria-label="Connection status" style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; padding: 18px; border-radius: 3px; border: 1px solid {{connCardBorder}}; background: #0e1520">
+        <span style="width: 14px; height: 14px; flex: none; border-radius: 50%; background: {{connDot}}; box-shadow: 0 0 0 4px {{connHalo}}"></span>
+        <div style="flex: 1; min-width: 200px">
+          <div style="font-size: 22px; font-weight: 600">{{connTitle}}</div>
+          <div style="font-size: 13px; color: #a7b1c0; margin-top: 2px">{{connSub}}</div>
+        </div>
+        <sc-if value="{{isConnected}}" hint-placeholder-val="{{ true }}">
+          <button sc-camel-on-click="{{disconnect}}" style="height: 46px; padding: 0 18px; border-radius: 3px; border: 1px solid #3a414c; background: #2b3038; color: #e8edf5; font-size: 14px; cursor: pointer">Disconnect</button>
+        </sc-if>
+      </section>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 6px">
+        <span style="font-size: 12px; color: #8f9bb0; margin-right: auto">Devices on this network</span>
+        <span style="font-size: 13px; color: #8792a4">{{lastScan}}</span>
+        <button sc-camel-on-click="{{scan}}" style="height: 40px; padding: 0 14px; border-radius: 3px; border: 1px solid #3a414c; background: #2b3038; color: #e8edf5; font-size: 14px; cursor: pointer">Scan</button>
+      </div>
+      <sc-for list="{{devCards}}" as="d" hint-placeholder-count="3">
+        <div style="display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 3px; border: 1px solid {{d.border}}; background: #0e1520">
+          <div style="width: 44px; height: 44px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 3px; background: #1a2332; color: #c9d1dc">
+            <svg width="24" height="24" sc-camel-view-box="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{d.icon}}"></path></svg>
+          </div>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-size: 16px; font-weight: 600">{{d.name}}</div>
+            <div style="font-size: 12px; color: #8792a4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{d.sub}}</div>
+          </div>
+          <span style="font-size: 12px; font-weight: 600; color: {{d.statusColor}}; white-space: nowrap">{{d.status}}</span>
+          <sc-if value="{{d.canConnect}}" hint-placeholder-val="{{ true }}">
+            <button sc-camel-on-click="{{d.act}}" style="height: 44px; min-width: 104px; padding: 0 14px; border-radius: 3px; border: 1px solid {{d.btnBorder}}; background: {{d.btnBg}}; color: {{d.btnText}}; font-size: 14px; cursor: pointer">{{d.btnLabel}}</button>
+          </sc-if>
+        </div>
+      </sc-for>
+      <div style="display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 3px; border: 1px dashed #2c3442; background: #0a0f17">
+        <div style="flex: 1; min-width: 0">
+          <div style="font-size: 16px; font-weight: 600">Offline editing</div>
+          <div style="font-size: 13px; color: #8792a4">Prepare a show without a console. Changes sync when you connect.</div>
+        </div>
+        <button sc-camel-on-click="{{goOffline}}" style="height: 44px; min-width: 104px; padding: 0 14px; border-radius: 3px; border: 1px solid #3a414c; background: #2b3038; color: #e8edf5; font-size: 14px; cursor: pointer">Work offline</button>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <sc-if value="{{isSettings}}" hint-placeholder-val="{{ false }}">
+  <div style="flex: 1; min-height: 0; overflow-y: auto; padding: 12px">
+    <div style="max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 8px; align-items: start">
+      <sc-for list="{{settingsSections}}" as="sec" hint-placeholder-count="4">
+        <section aria-label="{{sec.title}}" style="display: flex; flex-direction: column; border-radius: 3px; border: 1px solid #1f2836; background: #0e1520">
+          <div style="padding: 12px 14px 4px; font-size: 12px; color: #8f9bb0">{{sec.title}}</div>
+          <sc-for list="{{sec.rows}}" as="row" hint-placeholder-count="3">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid #18212f">
+              <div style="flex: 1 1 180px; min-width: 0">
+                <div style="font-size: 15px; font-weight: 600">{{row.label}}</div>
+                <div style="font-size: 13px; color: #8792a4">{{row.desc}}</div>
+              </div>
+              <div role="group" aria-label="{{row.label}}" style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end">
+                <sc-for list="{{row.opts}}" as="o" hint-placeholder-count="2">
+                  <button sc-camel-on-click="{{o.pick}}" aria-pressed="{{o.pressed}}" style="height: 40px; min-width: 52px; padding: 0 12px; border-radius: 3px; border: 1px solid {{o.border}}; background: {{o.bg}}; color: {{o.fg}}; font-size: 14px; cursor: pointer">{{o.label}}</button>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </section>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script="" data-props="{&quot;stripsPerScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;16&quot;,&quot;12&quot;,&quot;8&quot;],&quot;default&quot;:&quot;12&quot;},&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:720}}">
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.levels = {};
+    this.clips = {};
+    this.peaks = {};
+    this.drag = null;
+    this._tc = {};
+    this.taps = [];
+    this.state = {
+      mode: 'mixer', prevMode: 'mixer', tab: 'eq', bank: 'ch1', sel: 'in1', selBand: 1,
+      fine: false, muteEnable: true, sof: false, mix: 0, tick: 0, scene: 4, scenePv: 4,
+      spp: null, peakHold: true, locked: false, sceneConfirm: true, phantomArm: null,
+      fxSel: 0, fx: this.buildFx(),
+      patchSel: 'in1', patchGroup: 'Lcl', routeBank: 0,
+      connected: 'foh', lastScan: 'Scanned at start-up',
+      chans: this.buildChannels()
+    };
+  }
+
+  componentDidMount() { this.timer = setInterval(() => this.stepMeters(), 80); }
+  componentWillUnmount() { clearInterval(this.timer); clearTimeout(this.armTimer); }
+
+  // ---------- data ----------
+  bankDefs() {
+    if (this._banks) return this._banks;
+    const range = (n, f) => Array.from({ length: n }, (_, i) => f(i));
+    const pad = n => String(n).padStart(2, '0');
+    const G = '#5cdb5c', GT = '#10240f';
+    this._banks = [
+      { key: 'ch1', label: 'Ch 1-16', color: G, text: GT, items: range(16, i => ({ id: 'in' + (i + 1), name: 'Ch ' + (i + 1), src: 'Lcl ' + pad(i + 1), eq: true, kind: 'in' })) },
+      { key: 'ch17', label: 'Ch 17-32', color: G, text: GT, items: range(16, i => ({ id: 'in' + (i + 17), name: 'Ch ' + (i + 17), src: 'Lcl ' + pad(i + 17), eq: true, kind: 'in' })) },
+      { key: 'ch33', label: 'Ch 33-48', color: G, text: GT, items: range(16, i => ({ id: 'in' + (i + 33), name: 'Ch ' + (i + 33), src: 'Net ' + pad(i + 1), eq: true, kind: 'in' })) },
+      { key: 'fx', label: 'FxRet', color: G, text: GT, items: range(16, i => ({ id: 'fx' + (i + 1), name: 'FxRet ' + (i + 1), src: 'FX ' + (Math.floor(i / 2) + 1) + (i % 2 ? 'R' : 'L'), eq: true, kind: 'ret' })) },
+      { key: 'mix', label: 'Mix', color: '#22d3e6', text: '#062a30', items: range(16, i => ({ id: 'mix' + (i + 1), name: 'Mix ' + (i + 1), src: 'Bus', eq: true, kind: 'bus' })) },
+      { key: 'grp', label: 'Grp/FxSnd', color: '#2563eb', text: '#ffffff', items: range(8, i => ({ id: 'grp' + (i + 1), name: 'Grp ' + (i + 1), src: 'Bus', eq: true, kind: 'bus' })).concat(range(8, i => ({ id: 'fxs' + (i + 1), name: 'FxSnd ' + (i + 1), src: 'FX ' + (i + 1), eq: true, kind: 'bus' }))) },
+      { key: 'mtx', label: 'Mtx/Main', color: '#c026d3', text: '#ffffff', items: range(8, i => ({ id: 'mtx' + (i + 1), name: 'Mtx ' + (i + 1), src: 'Out', eq: true, kind: 'out' })).concat([{ id: 'mainlr', name: 'Main LR', src: 'Out', eq: true, kind: 'out' }, { id: 'mainc', name: 'Main C', src: 'Out', eq: true, kind: 'out' }]) },
+      { key: 'dca', label: 'DCA', color: '#dc2626', text: '#ffffff', items: range(16, i => ({ id: 'dca' + (i + 1), name: 'DCA ' + (i + 1), src: 'DCA', eq: false, kind: 'dca' })) }
+    ];
+    return this._banks;
+  }
+
+  buildChannels() {
+    let seed = 7;
+    const r = () => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
+    const half = v => Math.round(v * 2) / 2;
+    const out = {};
+    this.bankDefs().forEach(b => b.items.forEach(it => {
+      const isIn = it.kind === 'in' || it.kind === 'ret';
+      out[it.id] = {
+        id: it.id, name: it.name, src: it.src, color: b.color, text: b.text, kind: it.kind,
+        act: it.kind === 'dca' ? 0.55 : (r() < 0.15 ? 0.05 : 0.35 + r() * 0.62),
+        ph: r() * 6,
+        fader: it.kind === 'dca' ? 0.75 : 0.6 + r() * 0.15,
+        mute: false,
+        pan: (it.kind === 'dca' || it.kind === 'out') ? null : (r() < 0.5 ? 0 : Math.round((r() * 2 - 1) * 60) / 100),
+        sends: isIn ? Array.from({ length: 16 }, () => Math.round(r() * 70) / 100) : null,
+        sendPre: isIn ? Array.from({ length: 16 }, (_, k) => k < 8) : null,
+        input: it.kind === 'in' ? { gain: Math.round(20 + r() * 30), trim: 0, phantom: false, invert: false, delayOn: false, delay: 0 } : null,
+        eq: it.eq ? {
+          on: true,
+          hpf: { on: it.kind === 'in' && r() < 0.7, f: 60 + Math.round(r() * 80), slope: 12 },
+          bands: [
+            { type: 'LS', f: 120, g: r() < 0.4 ? half(r() * 8 - 4) : 0, q: 0.7, on: true },
+            { type: 'PEQ', f: Math.round(250 + r() * 400), g: r() < 0.5 ? -half(r() * 6) : 0, q: 1.4, on: true },
+            { type: 'PEQ', f: Math.round(1800 + r() * 2500), g: r() < 0.5 ? half(r() * 5) : 0, q: Math.round((1.2 + r()) * 100) / 100, on: true },
+            { type: 'HS', f: 8000, g: r() < 0.4 ? half(r() * 4) : 0, q: 0.7, on: true }
+          ]
+        } : null,
+        dyn: it.eq ? {
+          gate: { on: r() < 0.3, thr: Math.round(-55 + r() * 15), range: 40, att: 0.5, hold: 50, rel: 150 },
+          comp: { on: r() < 0.7, thr: Math.round(-28 + r() * 16), ratio: [2, 3, 4, 6][Math.floor(r() * 4)], att: 10, rel: 120, knee: 3, makeup: 0 }
+        } : null
+      };
+    }));
+    return out;
+  }
+
+  buildFx() {
+    const T = ['Hall', 'Plate', 'Delay', 'Chorus', 'Room', 'Delay', 'Flanger', 'Hall'];
+    const P = { Hall: [0.42, 0.15, 0.6, 0.55, 1], Plate: [0.25, 0.08, 0.5, 0.65, 1], Room: [0.1, 0.05, 0.3, 0.6, 1], Delay: [0.55, 0.35, 0.55, 0.4, 1], Chorus: [0.4, 0.5, 0.6, 1, 1], Flanger: [0.3, 0.6, 0.4, 1, 1] };
+    return T.map((t, i) => ({ type: t, on: i !== 7, p: P[t].slice(), bpm: null }));
+  }
+  fxDefs(type) {
+    const pct = v => Math.round(v * 100) + '%';
+    const hz = v => this.fmtF(1000 * Math.pow(20, v));
+    const rev = [['Decay', v => (0.2 + v * 9.8).toFixed(1) + ' s'], ['Pre-delay', v => Math.round(v * 200) + ' ms'], ['Size', pct], ['Hi Damp', hz], ['Mix', pct]];
+    const rate = ['Rate', v => (0.05 * Math.pow(100, v)).toFixed(2) + ' Hz'];
+    return {
+      Hall: rev, Plate: rev, Room: rev,
+      Delay: [['Time', v => this.fmtMs(20 * Math.pow(100, v))], ['Feedback', v => Math.round(v * 95) + '%'], ['Hi Cut', hz], ['Spread', pct], ['Mix', pct]],
+      Chorus: [rate, ['Depth', pct], ['Spread', pct], ['Mix', pct]],
+      Flanger: [rate, ['Depth', pct], ['Feedback', v => Math.round(v * 90) + '%'], ['Mix', pct]]
+    }[type];
+  }
+  scenes() { return ['Soundcheck', 'Doors', 'Walk-in', 'Support act', 'Changeover', 'Set 1', 'Acoustic', 'Set 2', 'Encore', 'Walk-out']; }
+  devices() {
+    return [
+      { key: 'foh', name: 'FOH Console', model: '[Console model]', ip: '192.168.1.20', kind: 'console' },
+      { key: 'mon', name: 'Monitor Console', model: '[Console model]', ip: '192.168.1.21', kind: 'console' },
+      { key: 'sb1', name: 'Stage Box A', model: '[I/O model]', ip: '192.168.1.40', kind: 'io' }
+    ];
+  }
+
+  // ---------- fader law ----------
+  law() { return [[0, -90], [0.125, -50], [0.25, -30], [0.375, -20], [0.5, -10], [0.625, -5], [0.75, 0], [0.875, 5], [1, 10]]; }
+  posToDb(p) {
+    if (p <= 0.003) return -Infinity;
+    const T = this.law();
+    for (let i = 1; i < T.length; i++) if (p <= T[i][0]) { const a = T[i - 1], b = T[i]; return a[1] + (b[1] - a[1]) * (p - a[0]) / (b[0] - a[0]); }
+    return 10;
+  }
+  dbToPos(db) {
+    const T = this.law();
+    if (db <= -90) return 0;
+    for (let i = 1; i < T.length; i++) if (db <= T[i][1]) { const a = T[i - 1], b = T[i]; return a[0] + (b[0] - a[0]) * (db - a[1]) / (b[1] - a[1]); }
+    return 1;
+  }
+  fmtDb(p) { const d = this.posToDb(p); if (!isFinite(d) || d < -89) return '-∞'; return (d > 0.04 ? '+' : '') + d.toFixed(1); }
+  fmtF(f) { return f < 1000 ? Math.round(f) + ' Hz' : (f / 1000).toFixed(f < 10000 ? 2 : 1) + ' kHz'; }
+  fmtG(g) { return (g > 0 ? '+' : '') + g.toFixed(1) + ' dB'; }
+  fmtMs(v) { return v >= 1000 ? (v / 1000).toFixed(2) + ' s' : v < 10 ? v.toFixed(2) + ' ms' : v < 100 ? v.toFixed(1) + ' ms' : Math.round(v) + ' ms'; }
+  clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+  // ---------- EQ math (RBJ biquads @ 48k) ----------
+  coefs(type, f, g, q) {
+    const fs = 48000, A = Math.pow(10, g / 40), w = 2 * Math.PI * f / fs, cs = Math.cos(w), sn = Math.sin(w), al = sn / (2 * q);
+    let b0, b1, b2, a0, a1, a2;
+    if (type === 'PEQ') { b0 = 1 + al * A; b1 = -2 * cs; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * cs; a2 = 1 - al / A; }
+    else if (type === 'LS') { const s = 2 * Math.sqrt(A) * al; b0 = A * ((A + 1) - (A - 1) * cs + s); b1 = 2 * A * ((A - 1) - (A + 1) * cs); b2 = A * ((A + 1) - (A - 1) * cs - s); a0 = (A + 1) + (A - 1) * cs + s; a1 = -2 * ((A - 1) + (A + 1) * cs); a2 = (A + 1) + (A - 1) * cs - s; }
+    else if (type === 'HS') { const s = 2 * Math.sqrt(A) * al; b0 = A * ((A + 1) + (A - 1) * cs + s); b1 = -2 * A * ((A - 1) + (A + 1) * cs); b2 = A * ((A + 1) + (A - 1) * cs - s); a0 = (A + 1) - (A - 1) * cs + s; a1 = 2 * ((A - 1) - (A + 1) * cs); a2 = (A + 1) - (A - 1) * cs - s; }
+    else { b0 = (1 + cs) / 2; b1 = -(1 + cs); b2 = (1 + cs) / 2; a0 = 1 + al; a1 = -2 * cs; a2 = 1 - al; }
+    return [b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0];
+  }
+  magDb(c, f) {
+    const w = 2 * Math.PI * f / 48000, c1 = Math.cos(w), s1 = Math.sin(w), c2 = Math.cos(2 * w), s2 = Math.sin(2 * w);
+    const nr = c[0] + c[1] * c1 + c[2] * c2, ni = -(c[1] * s1 + c[2] * s2), dr = 1 + c[3] * c1 + c[4] * c2, di = -(c[3] * s1 + c[4] * s2);
+    return 10 * Math.log10((nr * nr + ni * ni) / (dr * dr + di * di));
+  }
+  filters(eq) {
+    const out = [];
+    if (!eq || !eq.on) return out;
+    if (eq.hpf && eq.hpf.on) { const c = this.coefs('HP', eq.hpf.f, 0, 0.7071); out.push(c); if (eq.hpf.slope === 24) out.push(c); }
+    (eq.bands || []).forEach(b => { if (b.on) out.push(this.coefs(b.type, b.f, b.g, b.q)); });
+    return out;
+  }
+  resp(fl, f) { let s = 0; for (let i = 0; i < fl.length; i++) s += this.magDb(fl[i], f); return s; }
+  eqThumb(c) {
+    if (!c.eq) return '';
+    const k = JSON.stringify(c.eq);
+    if (this._tc[c.id] && this._tc[c.id].k === k) return this._tc[c.id].p;
+    const fl = this.filters(c.eq), pts = [];
+    for (let i = 0; i <= 40; i++) { const f = 20 * Math.pow(1000, i / 40); const db = fl.length ? this.resp(fl, f) : 0; pts.push((i * 2.5).toFixed(1) + ' ' + Math.max(0, Math.min(40, 20 - db / 15 * 20)).toFixed(1)); }
+    const p = 'M' + pts.join(' L');
+    this._tc[c.id] = { k, p };
+    return p;
+  }
+
+  // ---------- dynamics math ----------
+  gateOut(g, x) { return g.on && x < g.thr ? x - g.range : x; }
+  compOut(c, x) {
+    if (!c.on) return x;
+    const d = x - c.thr, k = c.knee;
+    let y;
+    if (2 * d < -k) y = x;
+    else if (k > 0 && 2 * Math.abs(d) <= k) y = x + (1 / c.ratio - 1) * Math.pow(d + k / 2, 2) / (2 * k);
+    else y = c.thr + d / c.ratio;
+    return y + c.makeup;
+  }
+  dynThumb(c) {
+    if (!c.dyn) return '';
+    const pts = [];
+    for (let i = 0; i <= 24; i++) {
+      const inp = -60 + i * 2.5;
+      const o = this.compOut(c.dyn.comp, this.gateOut(c.dyn.gate, inp));
+      pts.push(((inp + 60) / 60 * 100).toFixed(1) + ' ' + Math.max(0, Math.min(40, -o / 60 * 40)).toFixed(1));
+    }
+    return 'M' + pts.join(' L');
+  }
+  spec(key) {
+    const db = v => v.toFixed(1) + ' dB', ms = v => this.fmtMs(v);
+    return {
+      gain: { min: 0, max: 60, step: 0.5, fmt: db },
+      trim: { min: -18, max: 18, step: 0.5, fmt: v => this.fmtG(v) },
+      delay: { min: 0, max: 500, step: 0.1, fmt: ms },
+      gthr: { min: -80, max: 0, step: 0.5, fmt: db },
+      range: { min: 0, max: 80, step: 1, fmt: v => v + ' dB' },
+      gatt: { min: 0.05, max: 50, log: true, fmt: ms },
+      hold: { min: 1, max: 2000, log: true, fmt: ms },
+      grel: { min: 5, max: 4000, log: true, fmt: ms },
+      cthr: { min: -60, max: 0, step: 0.5, fmt: db },
+      ratio: { min: 1, max: 20, log: true, fmt: v => v.toFixed(1) + ':1' },
+      catt: { min: 0.1, max: 100, log: true, fmt: ms },
+      crel: { min: 5, max: 2000, log: true, fmt: ms },
+      knee: { min: 0, max: 12, step: 0.5, fmt: db },
+      makeup: { min: 0, max: 24, step: 0.5, fmt: v => this.fmtG(v) }
+    }[key];
+  }
+  toN(s, v) { return s.log ? Math.log(v / s.min) / Math.log(s.max / s.min) : (v - s.min) / (s.max - s.min); }
+  fromN(s, n) {
+    let v = s.log ? s.min * Math.pow(s.max / s.min, n) : s.min + n * (s.max - s.min);
+    return s.step ? Math.round(v / s.step) * s.step : Math.round(v * 100) / 100;
+  }
+
+  // ---------- state helpers ----------
+  updCh(id, fn) {
+    this.setState(s => { const c = JSON.parse(JSON.stringify(s.chans[id])); fn(c); return { chans: Object.assign({}, s.chans, { [id]: c }) }; });
+  }
+  updFx(i, fn) {
+    this.setState(s => { const fx = s.fx.map((x, k) => k === i ? JSON.parse(JSON.stringify(x)) : x); fn(fx[i]); return { fx }; });
+  }
+  openPage(m, extra) {
+    const st = this.state;
+    const pages = ['fx', 'routing', 'connect', 'settings', 'scenes'];
+    const prev = pages.indexOf(st.mode) >= 0 ? st.prevMode : st.mode;
+    this.setState(Object.assign({ mode: m, prevMode: prev }, extra || {}));
+  }
+
+  stepMeters() {
+    const st = this.state, bank = this.bankDefs().find(b => b.key === st.bank);
+    const ids = bank.items.map(i => i.id);
+    [st.sel, 'mainlr', 'mix' + (st.mix + 1), 'fx1', 'fx3', 'fx5', 'fx7', 'fx9', 'fx11', 'fx13', 'fx15'].forEach(x => { if (ids.indexOf(x) < 0) ids.push(x); });
+    const t = Date.now() / 1000, now = Date.now();
+    ids.forEach(id => {
+      const c = st.chans[id];
+      let cur = this.levels[id] != null ? this.levels[id] : -90, target = -90;
+      if (c.act > 0.12) {
+        target = -42 + c.act * 40 + Math.sin(t * (1.3 + c.act * 2) + c.ph) * 6 + (Math.random() * 10 - 7);
+        if (Math.random() < 0.06) target += 6;
+      }
+      cur = target > cur ? cur + (target - cur) * 0.7 : Math.max(-90, cur - 1.4);
+      this.levels[id] = cur;
+      if (cur > -0.3) this.clips[id] = now + 1500;
+      const pk = this.peaks[id];
+      if (!pk || cur >= pk.v || now > pk.until) this.peaks[id] = { v: cur, until: now + 1500 };
+    });
+    this.setState({ tick: (st.tick + 1) % 1000000 });
+  }
+
+  // ---------- pointer drags ----------
+  capture(e) { try { e.currentTarget.setPointerCapture(e.pointerId); } catch (err) {} }
+  faderDown(e, id) {
+    this.capture(e);
+    const c = this.state.chans[id], useSend = this.state.sof && !!c.sends;
+    const h = Math.max(80, e.currentTarget.getBoundingClientRect().height - 60);
+    this.drag = { kind: 'fader', id, useSend, y: e.clientY, start: useSend ? c.sends[this.state.mix] : c.fader, h };
+  }
+  panDown(e, id) {
+    this.capture(e);
+    this.drag = { kind: 'pan', id, x: e.clientX, start: this.state.chans[id].pan || 0, w: e.currentTarget.getBoundingClientRect().width };
+  }
+  knobDown(e, id, band, param) {
+    this.capture(e);
+    const eq = this.state.chans[id].eq;
+    const v = band === 0 ? eq.hpf.f : eq.bands[band - 1][param];
+    this.drag = { kind: 'knob', id, band, param, y: e.clientY, start: v };
+    if (this.state.selBand !== band) this.setState({ selBand: band });
+  }
+  nodeDown(e, id, band) {
+    this.capture(e);
+    const g = e.currentTarget.closest('[data-graph]');
+    this.drag = { kind: 'node', id, band, r: g.getBoundingClientRect() };
+    if (this.state.selBand !== band) this.setState({ selBand: band });
+  }
+  move(e) {
+    const d = this.drag;
+    if (!d || this.state.locked) return;
+    const fine = this.state.fine ? 0.25 : 1;
+    if (d.kind === 'fader') {
+      const v = this.clamp(d.start + (d.y - e.clientY) / d.h * fine, 0, 1);
+      const mix = this.state.mix;
+      this.updCh(d.id, c => { if (d.useSend) c.sends[mix] = v; else c.fader = v; });
+    } else if (d.kind === 'pan') {
+      let v = this.clamp(d.start + (e.clientX - d.x) / d.w * 2 * fine, -1, 1);
+      if (Math.abs(v) < 0.03) v = 0;
+      this.updCh(d.id, c => { c.pan = Math.round(v * 100) / 100; });
+    } else if (d.kind === 'knob') {
+      const dy = (d.y - e.clientY) * fine;
+      let v;
+      if (d.param === 'f') v = this.clamp(d.start * Math.pow(2, dy / 30), 20, d.band === 0 ? 1000 : 20000);
+      else if (d.param === 'g') v = Math.round(this.clamp(d.start + dy * 0.1, -15, 15) * 10) / 10;
+      else v = Math.round(this.clamp(d.start * Math.pow(2, dy / 60), 0.3, 16) * 100) / 100;
+      this.updCh(d.id, c => { if (d.band === 0) c.eq.hpf.f = v; else c.eq.bands[d.band - 1][d.param] = v; });
+    } else if (d.kind === 'node') {
+      const x = this.clamp((e.clientX - d.r.left) / d.r.width, 0, 1), y = this.clamp((e.clientY - d.r.top) / d.r.height, 0, 1);
+      const f = 20 * Math.pow(1000, x), g = Math.round((15 - 30 * y) * 10) / 10;
+      this.updCh(d.id, c => { if (d.band === 0) c.eq.hpf.f = Math.min(1000, f); else { const b = c.eq.bands[d.band - 1]; b.f = f; b.g = g; } });
+    } else if (d.kind === 'g') {
+      d.set(this.clamp(d.start + (d.y - e.clientY) / 180 * fine, 0, 1));
+    } else if (d.kind === 'h') {
+      d.set(this.clamp(d.start + (e.clientX - d.x) / d.w * fine, 0, 1));
+    }
+  }
+  end() { this.drag = null; }
+  resetParam(id, band, param) {
+    const F = [80, 100, 400, 2500, 8000], Q = [0.7, 0.7, 1.4, 1.4, 0.7];
+    this.updCh(id, c => {
+      if (band === 0) { c.eq.hpf.f = 80; return; }
+      const b = c.eq.bands[band - 1];
+      if (param === 'f') b.f = F[band]; else if (param === 'g') b.g = 0; else b.q = Q[band];
+    });
+  }
+  tap(i) {
+    const now = Date.now();
+    this.taps = this.taps.filter(t => now - t < 2500);
+    this.taps.push(now);
+    if (this.taps.length >= 2) {
+      const iv = (this.taps[this.taps.length - 1] - this.taps[0]) / (this.taps.length - 1);
+      const bpm = Math.round(60000 / iv), ms = this.clamp(60000 / bpm, 20, 2000);
+      this.updFx(i, s => { s.bpm = bpm; s.p[0] = Math.log(ms / 20) / Math.log(100); });
+    }
+  }
+
+  // ---------- view helpers ----------
+  knobItem(label, n, text, color, onDown, onReset) {
+    n = this.clamp(n, 0, 1);
+    return {
+      label, value: text, aria: label + ' ' + text, color,
+      dash: (n * 103.67).toFixed(2) + ' 138.23',
+      rot: 'rotate(' + (-135 + n * 270).toFixed(1) + ' 28 28)',
+      down: onDown, move: e => this.move(e), up: () => this.end(), reset: onReset
+    };
+  }
+  chKnob(id, label, key, get, set, def, color) {
+    const s = this.spec(key), v = get(this.state.chans[id]);
+    return this.knobItem(label, this.toN(s, v), s.fmt(v), color,
+      e => { this.capture(e); this.drag = { kind: 'g', y: e.clientY, start: this.toN(s, get(this.state.chans[id])), set: n => { const nv = this.fromN(s, n); this.updCh(id, x => set(x, nv)); } }; },
+      () => this.updCh(id, x => set(x, def)));
+  }
+  knob(id, band, param, label, norm, text, color) {
+    return this.knobItem(label, norm, text, color, e => this.knobDown(e, id, band, param), () => this.resetParam(id, band, param));
+  }
+  toggleBtn(on, onBg, onText) { return { str: on ? 'true' : 'false', bg: on ? onBg : '#2b3038', text: on ? onText : '#c9d1dc' }; }
+
+  stripVals(id) {
+    const st = this.state, c = st.chans[id];
+    const useSend = st.sof && !!c.sends;
+    const pos = useSend ? c.sends[st.mix] : c.fader;
+    const lvl = this.levels[id] != null ? this.levels[id] : -90;
+    const mpos = this.dbToPos(lvl);
+    const clip = (this.clips[id] || 0) > Date.now();
+    const gr = c.dyn && c.dyn.comp.on && lvl > c.dyn.comp.thr;
+    const hasEq = !!c.eq;
+    const pan = c.pan;
+    const pk = this.peaks[id];
+    const panText = pan == null ? '' : (pan === 0 ? 'C' : (pan < 0 ? 'L' : 'R') + Math.round(Math.abs(pan) * 100));
+    return {
+      real: true, empty: false, id, src: c.src, name: c.name, color: c.color, text: c.text,
+      ring: id === st.sel ? '0 0 0 2px ' + c.color : 'none',
+      hasEq, noEq: !hasEq,
+      eqPath: this.eqThumb(c), eqStroke: hasEq && c.eq.on ? '#d9c24a' : '#4a5262',
+      dynPath: this.dynThumb(c),
+      selectAria: 'Select ' + c.name + ', source ' + c.src,
+      eqAria: 'Open EQ for ' + c.name, dynAria: 'Open dynamics for ' + c.name,
+      hasPan: pan != null, noPan: pan == null, panLeft: 50 + (pan || 0) * 44, panText, panAria: 'Pan ' + c.name + ' ' + panText,
+      muted: c.mute, mutedStr: c.mute ? 'true' : 'false', muteAria: 'Mute ' + c.name,
+      muteBg: c.mute ? '#e5322b' : '#4b0d0f', muteText: c.mute ? '#ffffff' : '#f2d6d6', muteBorder: c.mute ? '#ff7a73' : '#6a1b1e',
+      muteOpacity: st.muteEnable && !st.locked ? 1 : 0.45,
+      readout: this.fmtDb(pos), readColor: useSend ? '#22d3e6' : '#c9d1dc',
+      faderPct: (pos * 100).toFixed(2), capLine: useSend ? '#22d3e6' : '#ffffff', capGlow: useSend ? 'rgba(34,211,230,.7)' : 'rgba(255,255,255,.35)',
+      faderAria: (useSend ? 'Send to Mix ' + (st.mix + 1) + ' from ' : 'Fader ') + c.name + ' ' + this.fmtDb(pos) + ' dB',
+      meterCover: ((1 - mpos) * 100).toFixed(1),
+      peakPct: pk ? (this.dbToPos(pk.v) * 100).toFixed(1) : '0', peakColor: st.peakHold && pk && pk.v > -80 ? '#f2f5f9' : 'transparent',
+      clipColor: clip ? '#ff3b30' : '#3a1214',
+      grColor: gr ? '#ff6b4a' : '#3a1a14',
+      onSelect: () => this.setState({ sel: id }),
+      openEq: () => hasEq && this.setState({ sel: id, mode: 'channel', tab: 'eq' }),
+      openDyn: () => hasEq && this.setState({ sel: id, mode: 'channel', tab: 'comp' }),
+      onMute: () => { if (this.state.muteEnable && !this.state.locked) this.updCh(id, x => { x.mute = !x.mute; }); },
+      faderDown: e => this.faderDown(e, id),
+      panDown: e => this.panDown(e, id),
+      panReset: () => { if (!this.state.locked) this.updCh(id, x => { x.pan = 0; }); },
+      move: e => this.move(e),
+      up: () => this.end()
+    };
+  }
+
+  eqVals(c) {
+    const st = this.state, W = 1000, H = 300, eq = c.eq, N = 180, id = c.id;
+    const COL = ['#d7dde8', '#ff9f43', '#f6d743', '#3ed0e0', '#b28cff'];
+    const NAMES = ['HPF', 'Low', 'Lo-Mid', 'Hi-Mid', 'High'];
+    const toY = db => this.clamp((15 - db) / 30 * H, -20, H + 20);
+    const xOf = f => Math.log(f / 20) / Math.log(1000);
+    const pathFor = fl => { const pts = []; for (let i = 0; i <= N; i++) { const f = 20 * Math.pow(1000, i / N); pts.push((i / N * W).toFixed(1) + ' ' + toY(fl.length ? this.resp(fl, f) : 0).toFixed(1)); } return 'M' + pts.join(' L'); };
+    const all = this.filters(eq);
+    const curvePath = pathFor(all);
+    const fillPath = curvePath + ' L' + W + ' ' + H / 2 + ' L0 ' + H / 2 + ' Z';
+    const sb = st.selBand;
+    let own = [];
+    if (eq.on) {
+      if (sb === 0 && eq.hpf.on) own = this.filters({ on: true, hpf: eq.hpf, bands: [] });
+      if (sb > 0 && eq.bands[sb - 1].on) own = this.filters({ on: true, hpf: { on: false }, bands: [eq.bands[sb - 1]] });
+    }
+    const bandFill = own.length ? pathFor(own) + ' L' + W + ' ' + H / 2 + ' L0 ' + H / 2 + ' Z' : '';
+    const gridV = [];
+    [10, 100, 1000, 10000].forEach(dd => { for (let m = 1; m <= 9; m++) { const f = dd * m; if (f < 20 || f > 20000) continue; gridV.push({ x: (xOf(f) * W).toFixed(1), stroke: (m === 1 || m === 2 || m === 5) ? '#223047' : '#141c2a' }); } });
+    const gridH = [12, 6, 0, -6, -12].map(g => ({ y: toY(g).toFixed(1), stroke: g === 0 ? '#34445e' : '#1b2536' }));
+    const freqLabels = [[50, '50'], [100, '100'], [200, '200'], [500, '500'], [1000, '1k'], [2000, '2k'], [5000, '5k'], [10000, '10k']].map(a => ({ x: (xOf(a[0]) * 100).toFixed(2), label: a[1] }));
+    const gainLabels = [12, 6, 0, -6, -12].map(g => ({ y: ((15 - g) / 30 * 100).toFixed(2), label: (g > 0 ? '+' : '') + g }));
+    const nodes = [];
+    const mkNode = (band, f, g, on) => {
+      const active = sb === band;
+      nodes.push({
+        label: band === 0 ? 'H' : String(band), aria: NAMES[band] + ' node, ' + this.fmtF(f) + (band ? ', ' + this.fmtG(g) : ''),
+        x: (this.clamp(xOf(f), 0, 1) * 100).toFixed(2), y: (this.clamp((15 - g) / 30, 0.03, 0.97) * 100).toFixed(2),
+        size: active ? 36 : 30, ring: active ? '#ffffff' : 'rgba(0,0,0,.55)', color: COL[band], op: on && eq.on ? 1 : 0.4,
+        down: e => this.nodeDown(e, id, band), move: e => this.move(e), up: () => this.end()
+      });
+    };
+    mkNode(0, eq.hpf.f, -3, eq.hpf.on);
+    eq.bands.forEach((b, i) => mkNode(i + 1, b.f, b.g, b.on));
+    const chip = (label, active, pick) => ({ label, pressed: active ? 'true' : 'false', bg: active ? '#e8edf5' : '#2b3038', fg: active ? '#0b0f14' : '#c9d1dc', pick });
+    const onBtn = (on, toggle, name) => ({ onStr: on ? 'true' : 'false', onBg: on ? '#5cdb5c' : '#2b3038', onText: on ? '#10240f' : '#a7b1c0', onLabel: on ? 'On' : 'Off', toggle, toggleAria: name + ' on/off' });
+    const cards = [];
+    cards.push(Object.assign({
+      name: 'HPF', color: COL[0], border: sb === 0 ? COL[0] : '#1f2836', select: () => this.setState({ selBand: 0 }),
+      types: [12, 24].map(s => chip(s + ' dB/oct', eq.hpf.slope === s, () => this.updCh(id, x => { x.eq.hpf.slope = s; }))),
+      knobs: [this.knob(id, 0, 'f', 'Freq', Math.log(eq.hpf.f / 20) / Math.log(50), this.fmtF(eq.hpf.f), COL[0])]
+    }, onBtn(eq.hpf.on, () => this.updCh(id, x => { x.eq.hpf.on = !x.eq.hpf.on; }), 'HPF')));
+    const typeSets = [[['LS', 'Shelf'], ['PEQ', 'Bell']], [['PEQ', 'Bell']], [['PEQ', 'Bell']], [['PEQ', 'Bell'], ['HS', 'Shelf']]];
+    eq.bands.forEach((b, i) => {
+      const band = i + 1;
+      cards.push(Object.assign({
+        name: NAMES[band], color: COL[band], border: sb === band ? COL[band] : '#1f2836', select: () => this.setState({ selBand: band }),
+        types: typeSets[i].map(t => chip(t[1], b.type === t[0], () => this.updCh(id, x => { x.eq.bands[i].type = t[0]; }))),
+        knobs: [
+          this.knob(id, band, 'f', 'Freq', xOf(b.f), this.fmtF(b.f), COL[band]),
+          this.knob(id, band, 'g', 'Gain', (b.g + 15) / 30, this.fmtG(b.g), COL[band]),
+          this.knob(id, band, 'q', 'Q', Math.log(b.q / 0.3) / Math.log(16 / 0.3), b.q.toFixed(2), COL[band])
+        ]
+      }, onBtn(b.on, () => this.updCh(id, x => { x.eq.bands[i].on = !x.eq.bands[i].on; }), NAMES[band])));
+    });
+    let selInfo;
+    if (sb === 0) selInfo = 'HPF · ' + this.fmtF(eq.hpf.f) + ' · ' + eq.hpf.slope + ' dB/oct' + (eq.hpf.on ? '' : ' · off');
+    else { const b = eq.bands[sb - 1]; selInfo = NAMES[sb] + ' · ' + this.fmtF(b.f) + ' · ' + this.fmtG(b.g) + ' · Q ' + b.q.toFixed(2) + (b.on ? '' : ' · off'); }
+    return {
+      curvePath, fillPath, curveStroke: eq.on ? '#f0d36a' : '#5a6272', curveFill: eq.on ? 'rgba(240,211,106,0.10)' : 'none',
+      bandFill, bandFillColor: own.length ? COL[sb] + '2e' : 'none', bandStroke: own.length ? COL[sb] : 'none',
+      gridV, gridH, freqLabels, gainLabels, nodes, cards, selInfo,
+      eqOnStr: eq.on ? 'true' : 'false', eqOnBg: eq.on ? '#5cdb5c' : '#2b3038', eqOnText: eq.on ? '#10240f' : '#c9d1dc', eqOnLabel: eq.on ? 'EQ In' : 'EQ Bypassed',
+      toggleEq: () => this.updCh(id, x => { x.eq.on = !x.eq.on; }),
+      flatEq: () => this.updCh(id, x => { x.eq.bands.forEach(b => { b.g = 0; }); })
+    };
+  }
+
+  inputVals(c) {
+    const st = this.state, id = c.id, inp = c.input;
+    const lvl = this.levels[id] != null ? this.levels[id] : -90;
+    const base = { hasInput: !!inp, noInput: !inp, inKnobs: [], delayKnobs: [] };
+    if (!inp) return base;
+    const armed = st.phantomArm === id;
+    const del = this.toggleBtn(inp.delayOn, '#5cdb5c', '#10240f');
+    const inv = this.toggleBtn(inp.invert, '#e8edf5', '#0b0f14');
+    const grp = c.src.slice(0, 3);
+    return Object.assign(base, {
+      inKnobs: [
+        this.chKnob(id, 'Gain', 'gain', x => x.input.gain, (x, v) => { x.input.gain = v; }, 30, '#7be27b'),
+        this.chKnob(id, 'Trim', 'trim', x => x.input.trim, (x, v) => { x.input.trim = v; }, 0, '#7be27b')
+      ],
+      delayKnobs: [this.chKnob(id, 'Time', 'delay', x => x.input.delay, (x, v) => { x.input.delay = v; }, 0, inp.delayOn ? '#8fb4ff' : '#4a5262')],
+      delayDist: '≈ ' + (inp.delay * 0.343).toFixed(2) + ' m of distance',
+      delayStr: del.str, delayBg: del.bg, delayText: del.text, delayLabel: inp.delayOn ? 'On' : 'Off',
+      toggleDelay: () => { if (!st.locked) this.updCh(id, x => { x.input.delayOn = !x.input.delayOn; }); },
+      invertStr: inv.str, invertBg: inv.bg, invertText: inv.text,
+      toggleInvert: () => { if (!st.locked) this.updCh(id, x => { x.input.invert = !x.input.invert; }); },
+      phantomStr: inp.phantom ? 'true' : 'false',
+      phantomLabel: armed ? (inp.phantom ? 'Tap again: 48V off' : 'Tap again: 48V on') : (inp.phantom ? '48V On' : '48V Off'),
+      phantomBg: armed ? '#f0b44a' : inp.phantom ? '#d92d22' : '#2b3038',
+      phantomText: armed ? '#241703' : inp.phantom ? '#ffffff' : '#c9d1dc',
+      phantomBorder: armed ? '#f6c76a' : inp.phantom ? '#ff6a60' : '#3a414c',
+      togglePhantom: () => {
+        if (st.locked) return;
+        clearTimeout(this.armTimer);
+        if (armed) { this.updCh(id, x => { x.input.phantom = !x.input.phantom; }); this.setState({ phantomArm: null }); }
+        else { this.setState({ phantomArm: id }); this.armTimer = setTimeout(() => { if (this.state.phantomArm === id) this.setState({ phantomArm: null }); }, 3000); }
+      },
+      srcName: c.src, srcGroup: grp === 'Lcl' ? 'Local input' : grp === 'Net' ? 'Network input' : grp === 'USB' ? 'USB input' : 'Unpatched',
+      inLvlText: lvl < -89 ? '-∞ dBFS' : lvl.toFixed(1) + ' dBFS',
+      inLvlCover: (100 - this.clamp((lvl + 60) / 60 * 100, 0, 100)).toFixed(1),
+      goPatch: () => this.openPage('routing', { patchSel: id, routeBank: Math.floor((parseInt(id.slice(2), 10) - 1) / 16) })
+    });
+  }
+
+  dynVals(c, which) {
+    const st = this.state, id = c.id, g = which === 'gate', p = g ? c.dyn.gate : c.dyn.comp, lo = g ? -80 : -60, S = 200;
+    const map = v => (v - lo) / (-lo) * S;
+    const fOut = x => g ? this.gateOut(p, x) : this.compOut(p, x);
+    const pts = [];
+    for (let i = 0; i <= 80; i++) { const x = lo + (-lo) * i / 80; pts.push(map(x).toFixed(1) + ' ' + (S - this.clamp(map(fOut(x)), -4, S + 4)).toFixed(1)); }
+    const lvl = this.clamp(this.levels[id] != null ? this.levels[id] : -90, lo, 0);
+    const outL = fOut(lvl);
+    const grDb = g ? (p.on && lvl < p.thr ? p.range : 0) : Math.max(0, lvl - (outL - p.makeup));
+    const grid = [];
+    for (let v = lo + 10; v < 0; v += 10) grid.push({ p: map(v).toFixed(1), q: (S - map(v)).toFixed(1) });
+    const color = g ? '#3ed0e0' : '#ff9f43';
+    const K = (label, key, prop, def) => this.chKnob(id, label, key, x => x.dyn[which][prop], (x, v) => { x.dyn[which][prop] = v; }, def, color);
+    const knobs = g
+      ? [K('Threshold', 'gthr', 'thr', -50), K('Range', 'range', 'range', 40), K('Attack', 'gatt', 'att', 0.5), K('Hold', 'hold', 'hold', 50), K('Release', 'grel', 'rel', 150)]
+      : [K('Threshold', 'cthr', 'thr', -20), K('Ratio', 'ratio', 'ratio', 3), K('Knee', 'knee', 'knee', 3), K('Attack', 'catt', 'att', 10), K('Release', 'crel', 'rel', 120), K('Makeup', 'makeup', 'makeup', 0)];
+    const t = this.toggleBtn(p.on, '#5cdb5c', '#10240f');
+    return {
+      dvPath: 'M' + pts.join(' L'), dvThrX: map(p.thr).toFixed(1), dvDotX: map(lvl).toFixed(1), dvDotY: (S - this.clamp(map(outL), 0, S)).toFixed(1),
+      dvGrid: grid, dvKnobs: knobs, dvColor: color,
+      dvFill: 'M' + pts.join(' L') + ' L200 200 L0 200 Z', dvFillColor: color + '1c',
+      dvThrL: this.clamp(map(p.thr) / 2, 8, 92).toFixed(1), dvThrText: p.thr.toFixed(1) + ' dB',
+      dvDotL: (map(lvl) / 2).toFixed(1), dvDotT: (100 - this.clamp(map(outL), 0, S) / 2).toFixed(1),
+      dvAxis: (g ? [-80, -60, -40, -20, 0] : [-60, -45, -30, -15, 0]).map((v, i, arr) => ({ label: String(v), left: (map(v) / 2).toFixed(1), top: (100 - map(v) / 2).toFixed(1), shift: i === 0 ? '0' : i === arr.length - 1 ? '-100%' : '-50%' })),
+      dvGrPct: this.clamp(grDb / (g ? 80 : 24) * 100, 0, 100).toFixed(1), dvGrText: grDb > 0.05 ? '-' + grDb.toFixed(1) : '0.0',
+      dvOnStr: t.str, dvOnBg: t.bg, dvOnText: t.text, dvOnLabel: (g ? 'Gate ' : 'Compressor ') + (p.on ? 'In' : 'Bypassed'),
+      dvToggle: () => { if (!st.locked) this.updCh(id, x => { x.dyn[which].on = !x.dyn[which].on; }); },
+      dvSummary: g ? 'Thr ' + p.thr.toFixed(1) + ' dB · Range ' + p.range + ' dB' : 'Thr ' + p.thr.toFixed(1) + ' dB · ' + p.ratio.toFixed(1) + ':1 · Makeup ' + this.fmtG(p.makeup),
+      dvAria: (g ? 'Gate' : 'Compressor') + ' transfer curve'
+    };
+  }
+
+  sendVals(c) {
+    const st = this.state, id = c.id;
+    if (!c.sends) return { hasSends: false, noSends: true, sendRows: [] };
+    return {
+      hasSends: true, noSends: false,
+      sendRows: c.sends.map((v, k) => {
+        const pre = c.sendPre[k];
+        return {
+          name: 'Mix ' + (k + 1), pct: (v * 100).toFixed(1), text: this.fmtDb(v), fill: pre ? '#e8edf5' : '#22d3e6',
+          aria: 'Send to Mix ' + (k + 1) + ' ' + this.fmtDb(v) + ' dB',
+          preLabel: pre ? 'Pre' : 'Post', preStr: pre ? 'true' : 'false', preAria: 'Mix ' + (k + 1) + ' pre-fader',
+          preBg: pre ? '#e8edf5' : '#2b3038', preText: pre ? '#0b0f14' : '#c9d1dc',
+          togglePre: () => { if (!st.locked) this.updCh(id, x => { x.sendPre[k] = !x.sendPre[k]; }); },
+          down: e => { this.capture(e); this.drag = { kind: 'h', x: e.clientX, w: Math.max(60, e.currentTarget.getBoundingClientRect().width - 18), start: this.state.chans[id].sends[k], set: n => this.updCh(id, x => { x.sends[k] = Math.round(n * 1000) / 1000; }) }; },
+          move: e => this.move(e), up: () => this.end()
+        };
+      })
+    };
+  }
+
+  fxVals() {
+    const st = this.state, i = st.fxSel, cur = st.fx[i];
+    const TYPES = ['Hall', 'Plate', 'Room', 'Delay', 'Chorus', 'Flanger'];
+    const defs = this.fxDefs(cur.type);
+    return {
+      fxSlots: st.fx.map((s, k) => {
+        const lv = this.levels['fx' + (2 * k + 1)];
+        return {
+          name: 'FX ' + (k + 1), type: s.type, ret: 'Ret ' + (2 * k + 1) + '/' + (2 * k + 2),
+          pressed: k === i ? 'true' : 'false', border: k === i ? '#b28cff' : '#222a36', bg: k === i ? '#1b2330' : '#0e1520',
+          state: s.on ? 'On' : 'Bypassed', stateColor: s.on ? '#7be27b' : '#f0b44a',
+          meter: s.on ? (this.dbToPos(lv != null ? lv : -90) * 100).toFixed(1) : '0',
+          pick: () => this.setState({ fxSel: k })
+        };
+      }),
+      fxTitle: 'FX ' + (i + 1) + ' · ' + cur.type,
+      fxTypes: TYPES.map(t => ({ label: t, pressed: t === cur.type ? 'true' : 'false', bg: t === cur.type ? '#b28cff' : '#2b3038', fg: t === cur.type ? '#1a0f2e' : '#c9d1dc', pick: () => this.updFx(i, s => { s.type = t; }) })),
+      fxKnobs: defs.map((d, pi) => this.knobItem(d[0], cur.p[pi], d[1](cur.p[pi]), '#b28cff',
+        e => { this.capture(e); this.drag = { kind: 'g', y: e.clientY, start: this.state.fx[i].p[pi], set: v => this.updFx(i, s => { s.p[pi] = Math.round(v * 1000) / 1000; if (pi === 0) s.bpm = null; }) }; },
+        () => this.updFx(i, s => { s.p[pi] = 0.5; }))),
+      fxOnStr: cur.on ? 'true' : 'false', fxOnLabel: cur.on ? 'On' : 'Bypassed',
+      fxOnBg: cur.on ? '#5cdb5c' : '#2a1f0a', fxOnText: cur.on ? '#10240f' : '#f6c76a', fxOnBorder: cur.on ? '#5cdb5c' : '#f0b44a',
+      fxToggle: () => this.updFx(i, s => { s.on = !s.on; }),
+      fxIsDelay: cur.type === 'Delay', tapLabel: cur.bpm ? 'Tap · ' + cur.bpm + ' BPM' : 'Tap tempo',
+      doTap: () => this.tap(i)
+    };
+  }
+
+  routingVals() {
+    const st = this.state, pad = n => String(n).padStart(2, '0');
+    const used = {};
+    for (let n = 1; n <= 48; n++) { const c = st.chans['in' + n]; used[c.src] = c.name; }
+    const selC = st.chans[st.patchSel];
+    const ids = Array.from({ length: 16 }, (_, k) => 'in' + (st.routeBank * 16 + k + 1));
+    const chipOf = (on) => ({ pressed: on ? 'true' : 'false', bg: on ? '#e8edf5' : '#2b3038', fg: on ? '#0b0f14' : '#c9d1dc' });
+    const next = () => { const n = parseInt(st.patchSel.slice(2), 10); const nn = n % 48 + 1; return { patchSel: 'in' + nn, routeBank: Math.floor((nn - 1) / 16) }; };
+    return {
+      routeBanks: ['1–16', '17–32', '33–48'].map((l, b) => Object.assign({ label: l, pick: () => this.setState({ routeBank: b }) }, chipOf(st.routeBank === b))),
+      routeTiles: ids.map(id => {
+        const c = st.chans[id], on = id === st.patchSel;
+        return { name: c.name, src: c.src, srcColor: c.src === '—' ? '#ff8a80' : '#5fe3f0', pressed: on ? 'true' : 'false', border: on ? '#ffffff' : '#222a36', bg: on ? '#1b2330' : '#0a0f17', pick: () => this.setState({ patchSel: id }) };
+      }),
+      patchSelName: selC.name,
+      srcGroups: [['Lcl', 'Local'], ['Net', 'Network'], ['USB', 'USB']].map(g => Object.assign({ label: g[1], pick: () => this.setState({ patchGroup: g[0] }) }, chipOf(st.patchGroup === g[0]))),
+      srcTiles: Array.from({ length: 32 }, (_, k) => {
+        const label = st.patchGroup + ' ' + pad(k + 1), isCur = selC.src === label, u = used[label];
+        return {
+          label, used: isCur ? 'patched' : (u ? '→ ' + u : ''), pressed: isCur ? 'true' : 'false',
+          bg: isCur ? '#5cdb5c' : u ? '#141b26' : '#0a0f17', fg: isCur ? '#10240f' : u ? '#c9d1dc' : '#8792a4', border: isCur ? '#5cdb5c' : '#222a36',
+          pick: () => { if (st.locked) return; this.updCh(st.patchSel, x => { x.src = label; }); this.setState(next()); }
+        };
+      }),
+      unpatch: () => { if (!st.locked) this.updCh(st.patchSel, x => { x.src = '—'; }); }
+    };
+  }
+
+  connectVals(clock) {
+    const st = this.state, devs = this.devices();
+    const cur = devs.find(d => d.key === st.connected);
+    const offline = st.connected === 'offline';
+    const ICON = { console: 'M3 5h18v14H3zM7 9v6M11 9v6M15 9v6M19 9v6', io: 'M4 7h16v10H4zM7 12h.01M10 12h.01M13 12h.01M16 12h.01' };
+    return {
+      isConnected: !!cur,
+      connTitle: cur ? 'Connected to ' + cur.name : offline ? 'Working offline' : 'Not connected',
+      connSub: cur ? cur.ip + ' · 48 kHz · latency 1.2 ms' : offline ? 'Changes sync when you connect' : 'Pick a console below',
+      connHalo: cur ? 'rgba(95,224,96,.18)' : offline ? 'rgba(240,180,74,.18)' : 'rgba(255,74,61,.18)',
+      connCardBorder: cur ? '#2c4a2e' : offline ? '#5a4420' : '#5a2420',
+      lastScan: st.lastScan,
+      scan: () => this.setState({ lastScan: 'Scanned at ' + clock }),
+      disconnect: () => this.setState({ connected: null }),
+      goOffline: () => this.setState({ connected: 'offline' }),
+      devCards: devs.map(d => {
+        const on = d.key === st.connected;
+        return {
+          name: d.name, sub: d.model + ' · ' + d.ip, icon: ICON[d.kind], canConnect: d.kind === 'console',
+          status: on ? 'Connected' : d.kind === 'io' ? 'I/O · in use' : 'Available',
+          statusColor: on ? '#7be27b' : d.kind === 'io' ? '#8792a4' : '#c9d1dc',
+          border: on ? '#2c4a2e' : '#1f2836',
+          btnLabel: on ? 'Connected' : 'Connect', btnBg: on ? '#1a2a1b' : '#5cdb5c', btnText: on ? '#7be27b' : '#10240f', btnBorder: on ? '#2c4a2e' : '#5cdb5c',
+          act: () => { if (!on) this.setState({ connected: d.key }); }
+        };
+      })
+    };
+  }
+
+  settingsVals() {
+    const st = this.state;
+    const spp = st.spp || parseInt(this.props.stripsPerScreen ?? '12', 10) || 12;
+    const seg = (opts, cur, set) => opts.map(o => {
+      const on = o[1] === cur;
+      return { label: o[0], pressed: on ? 'true' : 'false', bg: on ? '#e8edf5' : '#1b222d', fg: on ? '#0b0f14' : '#c9d1dc', border: on ? '#e8edf5' : '#343d4b', pick: () => set(o[1]) };
+    });
+    const onoff = (cur, key) => seg([['Off', false], ['On', true]], cur, v => this.setState({ [key]: v }));
+    return {
+      settingsSections: [
+        { title: 'Display', rows: [
+          { label: 'Strips per screen', desc: 'Fewer strips are wider and easier to hit. Swipe to reach the rest.', opts: seg([['8', 8], ['12', 12], ['16', 16]], spp, v => this.setState({ spp: v })) },
+          { label: 'Meter peak hold', desc: 'Keeps a line at the highest level for 1.5 s.', opts: onoff(st.peakHold, 'peakHold') }
+        ] },
+        { title: 'Faders', rows: [
+          { label: 'Fine control', desc: 'Faders and knobs move a quarter as far per drag.', opts: onoff(st.fine, 'fine') },
+          { label: 'Sends on faders', desc: 'Strip faders set sends to the target mix. The master strip shows that mix.', opts: onoff(st.sof, 'sof') },
+          { label: 'Send target', desc: 'Which mix the faders control when sends are on.', opts: Array.from({ length: 16 }, (_, k) => k).map(k => seg([[String(k + 1), k]], st.mix, v => this.setState({ mix: v }))[0]) }
+        ] },
+        { title: 'Safety', rows: [
+          { label: 'Mute Enable', desc: 'When off, mute buttons ignore taps.', opts: onoff(st.muteEnable, 'muteEnable') },
+          { label: 'Screen lock', desc: 'Blocks faders, knobs, mutes and patching. Unlock from the top bar.', opts: onoff(st.locked, 'locked') },
+          { label: 'Scene recall', desc: 'Confirm needs a press on RECALL. Instant loads on tap.', opts: seg([['Confirm', true], ['Instant', false]], st.sceneConfirm, v => this.setState({ sceneConfirm: v })) }
+        ] },
+        { title: 'About', rows: [
+          { label: 'App version', desc: '[VERSION]', opts: [] },
+          { label: 'Console', desc: st.connected === 'offline' ? 'Offline' : st.connected ? 'FOH / Monitor · 48 kHz' : 'Not connected', opts: [] }
+        ] }
+      ]
+    };
+  }
+
+  renderVals() {
+    const st = this.state;
+    const banks = this.bankDefs();
+    const bank = banks.find(b => b.key === st.bank);
+    const mode = st.mode;
+    const isMixer = mode === 'mixer', isChannel = mode === 'channel', isScenes = mode === 'scenes';
+    const isFx = mode === 'fx', isRouting = mode === 'routing', isConnect = mode === 'connect', isSettings = mode === 'settings';
+    const strips = [];
+    for (let i = 0; i < 16; i++) { const it = bank.items[i]; strips.push(it ? this.stripVals(it.id) : { real: false, empty: true }); }
+    const marks = [[1, '10'], [0.875, '5'], [0.75, '0'], [0.625, '-5'], [0.5, '-10'], [0.375, '-20'], [0.25, '-30'], [0.125, '-50']].map(a => ({ pct: a[0] * 100, label: a[1], tick: a[1] === '0' ? '#e8edf5' : '#566175' }));
+    const TINT = { ch1: '#7be27b', ch17: '#7be27b', ch33: '#7be27b', fx: '#7be27b', mix: '#5fe3f0', grp: '#8fb4ff', mtx: '#ea8cf2', dca: '#ff8a80' };
+    const bankBtns = banks.map(b => {
+      const on = b.key === st.bank;
+      return { label: b.label, pressed: on ? 'true' : 'false', bg: on ? b.color : '#161c26', fg: on ? b.text : TINT[b.key], border: on ? b.color : '#2a323f', weight: on ? 600 : 500, pick: () => this.setState({ bank: b.key }) };
+    });
+    const n = st.spp || parseInt(this.props.stripsPerScreen ?? '12', 10) || 12;
+    const gridCols = n >= 16 ? 'repeat(16, minmax(64px, 1fr))' : 'repeat(16, calc((100% - ' + (3 * (n - 1)) + 'px) / ' + n + '))';
+
+    const sel = st.chans[st.sel];
+    const TABS = [['input', 'Input'], ['eq', 'HPF + EQ'], ['gate', 'Gate'], ['comp', 'Compressor'], ['sends', 'Sends']];
+    const noteOf = k => {
+      if (k === 'input') return sel.input ? sel.src + (sel.input.phantom ? ' · 48V' : '') : 'Bus';
+      if (k === 'eq') return sel.eq && sel.eq.on ? 'In' : 'Bypassed';
+      if (k === 'gate') return sel.dyn && sel.dyn.gate.on ? 'In' : 'Off';
+      if (k === 'comp') return sel.dyn && sel.dyn.comp.on ? 'In' : 'Off';
+      return sel.sends ? '16 mixes' : 'None';
+    };
+    const tabs = TABS.map(t => ({ label: t[1], note: noteOf(t[0]), current: st.tab === t[0] ? 'page' : 'false', border: st.tab === t[0] ? sel.color : '#2b3038', bg: st.tab === t[0] ? '#363d48' : '#2b3038', fg: '#eef2f7', pick: () => this.setState({ tab: t[0] }) }));
+    const tabLabel = (TABS.find(t => t[0] === st.tab) || TABS[1])[1];
+
+    const order = [];
+    banks.forEach(b => b.items.forEach(it => { if (it.eq) order.push(it.id); }));
+    const idx = Math.max(0, order.indexOf(st.sel));
+    const goTo = d => { const nid = order[(idx + d + order.length) % order.length]; this.setState({ sel: nid }); };
+
+    const blank = { curvePath: '', fillPath: '', curveStroke: 'none', curveFill: 'none', bandFill: '', bandFillColor: 'none', bandStroke: 'none', gridV: [], gridH: [], freqLabels: [], gainLabels: [], nodes: [], cards: [], selInfo: '', eqOnStr: 'false', eqOnBg: '#2b3038', eqOnText: '#c9d1dc', eqOnLabel: 'EQ', toggleEq: () => {}, flatEq: () => {} };
+    const dynBlank = { dvFill: '', dvFillColor: 'none', dvThrL: 0, dvThrText: '', dvDotL: 0, dvDotT: 0, dvAxis: [], dvPath: '', dvThrX: 0, dvDotX: 0, dvDotY: 0, dvGrid: [], dvKnobs: [], dvColor: '#ff9f43', dvGrPct: 0, dvGrText: '', dvOnStr: 'false', dvOnBg: '#2b3038', dvOnText: '#c9d1dc', dvOnLabel: '', dvToggle: () => {}, dvSummary: '', dvAria: '' };
+    const hasProc = isChannel && !!sel.eq;
+    const eqv = hasProc && st.tab === 'eq' ? this.eqVals(sel) : blank;
+    const isDynTab = st.tab === 'gate' || st.tab === 'comp';
+    const dv = hasProc && isDynTab ? this.dynVals(sel, st.tab) : dynBlank;
+    const iv = this.inputVals(sel);
+    const sv = this.sendVals(sel);
+
+    const SCENES = this.scenes();
+    const pv = st.scenePv, pending = pv !== st.scene;
+    const now = new Date();
+    const clock = String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
+
+    const msId = st.sof ? 'mix' + (st.mix + 1) : 'mainlr';
+    const msLvl = this.levels[msId] != null ? this.levels[msId] : -90;
+    const ms = Object.assign(this.stripVals(msId), { meterCover2: ((1 - this.dbToPos(msLvl - 1.5)) * 100).toFixed(1), masterLine: st.sof ? '#22d3e6' : '#ffd25a' });
+
+    const tb = on => ({ bg: on ? '#232b37' : '#0d1219', border: on ? '#5a6577' : '#2a323f', cur: on ? 'page' : 'false' });
+    const tFx = tb(isFx), tRt = tb(isRouting), tCn = tb(isConnect), tSt = tb(isSettings);
+    const offline = st.connected === 'offline';
+    const PAGE_TITLES = { scenes: 'Scenes', fx: 'Effects', routing: 'Routing', connect: 'Connection', settings: 'Settings' };
+    const backTo = isChannel ? 'mixer' : (st.prevMode === 'channel' ? 'channel' : 'mixer');
+
+    return Object.assign({
+      ms, msTag: st.sof ? 'SENDS MASTER' : 'MASTER', msTagColor: st.sof ? '#5fe3f0' : '#ffd25a', msSub: st.sof ? 'Aux bus' : 'Stereo out',
+      isMixer, isChannel, isScenes, isFx, isRouting, isConnect, isSettings,
+      showBack: !isMixer, backLabel: backTo === 'channel' ? sel.name : 'Mixer',
+      goBack: () => this.setState({ mode: backTo }),
+      showPageTitle: !!PAGE_TITLES[mode], pageTitle: PAGE_TITLES[mode] || '',
+      locked: st.locked, unlock: () => this.setState({ locked: false }),
+      goFx: () => this.openPage('fx'), goRouting: () => this.openPage('routing'), goConnect: () => this.openPage('connect'), goSettings: () => this.openPage('settings'),
+      fxBg: tFx.bg, fxBorder: tFx.border, fxCur: tFx.cur, rtBg: tRt.bg, rtBorder: tRt.border, rtCur: tRt.cur,
+      cnBg: tCn.bg, cnBorder: tCn.border, cnCur: tCn.cur, stBg: tSt.bg, stBorder: tSt.border, stCur: tSt.cur,
+      connDot: st.connected && !offline ? '#5fe060' : offline ? '#f0b44a' : '#ff4a3d',
+      connAria: st.connected && !offline ? 'Connection: online, select device' : 'Connection: not connected, select device',
+
+      curSceneNum: String(st.scene + 1).padStart(3, '0'), curSceneName: SCENES[st.scene],
+      sceneAria: 'Scene ' + (st.scene + 1) + ' ' + SCENES[st.scene] + ', open scene list',
+      sceneBtnBg: isScenes ? '#232b37' : '#0d1219', sceneBtnBorder: isScenes ? '#5a6577' : '#2a323f',
+      openScenes: () => { if (!isScenes) this.openPage('scenes', { scenePv: st.scene }); },
+      sceneRecall: () => { if (pending) this.setState({ scene: pv, mode: backTo }); },
+      sceneCards: SCENES.map((nm, i) => ({
+        num: String(i + 1).padStart(3, '0'), name: nm, tag: i === st.scene ? 'Current' : '', pressed: i === pv ? 'true' : 'false',
+        border: i === pv ? (i === st.scene ? '#7be27b' : '#f0b44a') : '#222a36', bg: i === pv ? '#1b2330' : '#0e1520',
+        pick: () => this.setState(st.sceneConfirm ? { scenePv: i } : { scenePv: i, scene: i })
+      })),
+      pvSceneNum: String(pv + 1).padStart(3, '0'), pvSceneName: SCENES[pv],
+      recallTag: pending ? 'Selected · not recalled yet' : 'Current scene', recallTagColor: pending ? '#f0b44a' : '#7be27b',
+      recallBarBorder: pending ? '#a87622' : '#222a36', recallBorder: pending ? '#f0b44a' : '#2a323f', recallDisabled: pending ? 'false' : 'true',
+      recallBg: pending ? '#f0b44a' : '#161c26', recallText: pending ? '#241703' : '#5d6878',
+
+      gridCols, strips, marks, bankBtns,
+      cs: this.stripVals(st.sel),
+      prevCh: () => goTo(-1), nextCh: () => goTo(1),
+      tabs, tabLabel,
+      isEqTab: st.tab === 'eq', isInputTab: st.tab === 'input', isDynTab, isSendsTab: st.tab === 'sends'
+    }, eqv, dv, iv, sv,
+      isFx ? this.fxVals() : { fxSlots: [], fxTypes: [], fxKnobs: [], fxIsDelay: false },
+      isRouting ? this.routingVals() : { routeBanks: [], routeTiles: [], srcGroups: [], srcTiles: [] },
+      isConnect ? this.connectVals(clock) : { devCards: [], isConnected: false },
+      isSettings ? this.settingsVals() : { settingsSections: [] });
+  }
+}
+</script>
+
+
+</body></html>
