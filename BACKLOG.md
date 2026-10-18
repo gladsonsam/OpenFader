@@ -18,6 +18,9 @@ free AND its files don't collide with the running worker.
    (Tauri IPC transport, no relay/server/LAN needed). Auto-select
    transport: IPC inside the app, WebSocket in the browser. The W2a
    TauriBackend is currently a stub — this is the ME2 work to finish it.
+4. Mobile master strip parity: Main LR renders like every other channel
+   strip (volume + mute only); tap to expand for more. No special-case
+   master layout on phone.
 
 ## Queued — server-side (NOT today; parked, do not dispatch)
 - Automixing (gain-sharing across channels on the server).
