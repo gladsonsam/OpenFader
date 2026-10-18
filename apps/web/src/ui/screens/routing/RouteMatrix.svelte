@@ -10,11 +10,10 @@
 <script lang="ts">
   import type { ModuleContext } from '../../modules/types.ts';
 
-  interface MatrixRow {
-    id: string;
-    name: string;
-    src: string;
-  }
+  type MatrixRow =
+    | { kind: 'row'; id: string; name: string; src: string }
+    | { kind: 'gap'; label: string };
+  type MatrixCellRow = Extract<MatrixRow, { kind: 'row' }>;
 
   let {
     props = {},
@@ -39,22 +38,22 @@
   const rows = $derived(props.rows ?? []);
   const cols = $derived(props.cols ?? []);
   const used = $derived(props.used ?? {});
-  const cell = $derived(props.cell ?? 54);
-  const headW = $derived(props.headW ?? 180);
+  const cell = $derived(props.cell ?? 68);
+  const headW = $derived(props.headW ?? 220);
   const fCol = $derived(Math.max(9, Math.round(cell * 0.2)));
   const fName = $derived(Math.round(cell * 0.26));
   const fSrc = $derived(Math.round(cell * 0.22));
 
   type CellState = 'current' | 'conflict' | 'free';
-  function stateOf(row: MatrixRow, col: string): CellState {
+  function stateOf(row: MatrixCellRow, col: string): CellState {
     if (row.src === col) return 'current';
     return used[col] ? 'conflict' : 'free';
   }
-  function ariaOf(row: MatrixRow, col: string, st: CellState): string {
+  function ariaOf(row: MatrixCellRow, col: string, st: CellState): string {
     if (st === 'current') return row.name + ' patched to ' + col + ', activate to unpatch';
     return 'Patch ' + row.name + ' to ' + col + (st === 'conflict' ? ', now on ' + used[col] : '');
   }
-  function tipOf(row: MatrixRow, col: string, st: CellState): string {
+  function tipOf(row: MatrixCellRow, col: string, st: CellState): string {
     const base = row.name + ' → ' + col;
     if (st === 'current') return base + ' (patched — click to unpatch)';
     if (st === 'conflict') return base + ' (now on ' + used[col] + ' — click to steal)';
@@ -63,7 +62,7 @@
 
   let hover = $state({ row: '', col: '' });
   let readout = $state('');
-  function enter(row: MatrixRow, col: string): void {
+  function enter(row: MatrixCellRow, col: string): void {
     hover = { row: row.id, col };
     const st = stateOf(row, col);
     readout = tipOf(row, col, st);
@@ -71,7 +70,7 @@
   function leave(): void {
     hover = { row: '', col: '' };
   }
-  function press(row: MatrixRow, col: string): void {
+  function press(row: MatrixCellRow, col: string): void {
     readout = tipOf(row, col, stateOf(row, col));
     onEvent?.('press', { rowId: row.id, col });
   }
@@ -102,7 +101,15 @@
         {col}
       </div>
     {/each}
-    {#each rows as row, i (row.id)}
+    {#each rows as row, ri (ri)}
+      {#if row.kind === 'gap'}
+        <div
+          aria-hidden="true"
+          style="grid-column:1 / -1;box-sizing:border-box;display:flex;align-items:center;padding:6px 10px 2px;background:transparent;color:#5b6678;font-size:11px;font-weight:700;letter-spacing:1px"
+        >
+          {row.label}
+        </div>
+      {:else}
       <div
         role="rowheader"
         onmouseenter={() => {
@@ -141,7 +148,7 @@
             ? '#0e2018'
             : hot
               ? '#182435'
-              : i % 2 === 0
+              : ri % 2 === 0
                 ? '#0c1320'
                 : '#0a0f17'};cursor:pointer;{j % 8 === 0 ? 'border-left:2px solid #33415a;' : ''}"
         >
@@ -157,6 +164,7 @@
           ></span>
         </button>
       {/each}
+      {/if}
     {/each}
     <div
       role="status"
