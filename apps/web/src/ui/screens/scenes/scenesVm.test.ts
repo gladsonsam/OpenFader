@@ -28,7 +28,7 @@ const w0 = initialWorld(); // scene 4 ('Changeover'), scenePv 4, confirm mode
   assert.equal(vm.recall.name, 'Changeover');
   assert.equal(vm.recall.barBorder, 'var(--u4-line-faint)');
   assert.equal(vm.recall.border, 'var(--u4-divider)');
-  assert.equal(vm.recall.bg, '#161c26');
+  assert.equal(vm.recall.bg, 'var(--u4-bank-off)');
   assert.equal(vm.recall.text, 'var(--u4-text-dim)');
   assert.equal(vm.recall.disabled, true);
 }

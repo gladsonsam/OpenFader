@@ -26,7 +26,7 @@
 {#if orientation === 'bottom'}
   <nav
     aria-label="Layers"
-    style="height:56px;flex:none;display:flex;flex-direction:row;overflow-x:auto;background:#101722;border-top:1px solid var(--u4-line-panel)"
+    style="height:56px;flex:none;display:flex;flex-direction:row;overflow-x:auto;background:var(--u4-rail-bg);border-top:1px solid var(--u4-line-panel)"
   >
     {#each banks as b, i (b.key)}
       {@const s = bankBtnStyle(b, b.key === activeKey)}
@@ -46,7 +46,7 @@
 {:else}
   <nav
     aria-label="Layers"
-    style="width:92px;flex:none;display:flex;flex-direction:column;background:#101722;border-left:1px solid var(--u4-line-panel)"
+    style="width:92px;flex:none;display:flex;flex-direction:column;background:var(--u4-rail-bg);border-left:1px solid var(--u4-line-panel)"
   >
     {#each banks as b, i (b.key)}
       {@const s = bankBtnStyle(b, b.key === activeKey)}
