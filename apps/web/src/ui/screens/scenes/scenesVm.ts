@@ -49,8 +49,8 @@ export function buildScenesVm(state: UiState): ScenesVm {
       name,
       tag: i === state.scene ? 'Current' : '',
       pressed: pv,
-      border: pv ? (i === state.scene ? '#7be27b' : '#f0b44a') : '#222a36',
-      bg: pv ? '#1b2330' : '#0e1520',
+      border: pv ? (i === state.scene ? '#7be27b' : '#f0b44a') : 'var(--u4-line-faint)',
+      bg: pv ? '#1b2330' : 'var(--u4-panel-bg)',
     };
   });
   return {
@@ -61,10 +61,10 @@ export function buildScenesVm(state: UiState): ScenesVm {
       tagColor: pending ? '#f0b44a' : '#7be27b',
       num: String(state.scenePv + 1).padStart(3, '0'),
       name: names[state.scenePv],
-      barBorder: pending ? '#a87622' : '#222a36',
-      border: pending ? '#f0b44a' : '#2a323f',
-      bg: pending ? '#f0b44a' : '#161c26',
-      text: pending ? '#241703' : '#5d6878',
+      barBorder: pending ? '#a87622' : 'var(--u4-line-faint)',
+      border: pending ? '#f0b44a' : 'var(--u4-divider)',
+      bg: pending ? '#f0b44a' : 'var(--u4-bank-off)',
+      text: pending ? '#241703' : 'var(--u4-text-dim)',
       disabled: !pending,
     },
   };

@@ -34,7 +34,7 @@
   aria-label="Edit channel name, colour and icon"
   onclick={(e) => e.stopPropagation()}
   onpointerdown={(e) => e.stopPropagation()}
-  style="position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:10;display:flex;flex-direction:column;gap:6px;padding:8px;border-radius:var(--u4-r-3);border:1px solid #2f3b4f;background:#0b111b;box-shadow:0 8px 20px rgba(0,0,0,.6)"
+  style="position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:10;display:flex;flex-direction:column;gap:6px;padding:8px;border-radius:var(--u4-r-3);border:1px solid var(--u4-knob-hubline);background:var(--u4-well-bg-2);box-shadow:0 8px 20px rgba(0,0,0,.6)"
 >
   <input
     type="text"
@@ -51,7 +51,7 @@
     }}
     onclick={(e) => e.stopPropagation()}
     onpointerdown={(e) => e.stopPropagation()}
-    style="width:100%;box-sizing:border-box;height:36px;padding:0 8px;border-radius:3px;border:1px solid #2f3b4f;background:#0e1520;color:var(--u4-text-1);font-size:15px;font-weight:600"
+    style="width:100%;box-sizing:border-box;height:36px;padding:0 8px;border-radius:3px;border:1px solid var(--u4-knob-hubline);background:var(--u4-panel-bg);color:var(--u4-text-1);font-size:15px;font-weight:600"
   />
   <div style="display:grid;grid-template-columns:repeat(8, 1fr);gap:4px" role="group" aria-label="Channel colour">
     {#each CHAN_TAPE as tape (tape.color)}
@@ -65,7 +65,7 @@
           onEvent?.('recolor', { color: tape.color, text: tape.text });
         }}
         style="height:28px;padding:0;border-radius:3px;border:{props.selectedColor === tape.color
-          ? '2px solid #ffffff'
+          ? '2px solid var(--u4-seg-on-bg)'
           : '1px solid rgba(0,0,0,.5)'};background:{tape.color};cursor:pointer"
       ></button>
     {/each}
@@ -81,8 +81,8 @@
         onEvent?.('reicon', { icon: null });
       }}
       style="height:32px;padding:0;border-radius:3px;border:{selectedIcon == null
-        ? '2px solid #ffffff'
-        : '1px solid #3a414c'};background:transparent;color:#5b6678;font-size:11px;font-weight:600;cursor:pointer"
+        ? '2px solid var(--u4-seg-on-bg)'
+        : '1px solid var(--u4-line-ctl)'};background:transparent;color:var(--u4-text-dim);font-size:11px;font-weight:600;cursor:pointer"
       >None</button
     >
     {#each CHAN_ICON_NAMES as iconName (iconName)}
@@ -98,8 +98,8 @@
         }}
         style="height:32px;padding:0;border-radius:3px;display:flex;align-items:center;justify-content:center;border:{selectedIcon ===
         iconName
-          ? '2px solid #ffffff'
-          : '1px solid #3a414c'};background:transparent;color:#e8edf5;cursor:pointer"
+          ? '2px solid var(--u4-seg-on-bg)'
+          : '1px solid var(--u4-line-ctl)'};background:transparent;color:var(--u4-text-1);cursor:pointer"
       >
         <svg
           width="20"
@@ -124,7 +124,7 @@
       e.stopPropagation();
       onEvent?.('close');
     }}
-    style="height:32px;border-radius:3px;border:1px solid #3a414c;background:#2b3038;color:#c9d1dc;font-size:13px;font-weight:600;cursor:pointer"
+    style="height:32px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-btn-bg);color:var(--u4-text-4);font-size:13px;font-weight:600;cursor:pointer"
     >Done</button
   >
 </div>

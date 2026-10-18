@@ -19,17 +19,17 @@ const w0 = initialWorld(); // scene 4 ('Changeover'), scenePv 4, confirm mode
   assert.deepEqual(vm.cards.map(c => c.pressed), [false, false, false, false, true, false, false, false, false, false]);
   assert.equal(vm.cards[4].border, '#7be27b');
   assert.equal(vm.cards[4].bg, '#1b2330');
-  assert.equal(vm.cards[0].border, '#222a36');
-  assert.equal(vm.cards[0].bg, '#0e1520');
+  assert.equal(vm.cards[0].border, 'var(--u4-line-faint)');
+  assert.equal(vm.cards[0].bg, 'var(--u4-panel-bg)');
   assert.equal(vm.recall.pending, false);
   assert.equal(vm.recall.tag, 'Current scene');
   assert.equal(vm.recall.tagColor, '#7be27b');
   assert.equal(vm.recall.num, '005');
   assert.equal(vm.recall.name, 'Changeover');
-  assert.equal(vm.recall.barBorder, '#222a36');
-  assert.equal(vm.recall.border, '#2a323f');
-  assert.equal(vm.recall.bg, '#161c26');
-  assert.equal(vm.recall.text, '#5d6878');
+  assert.equal(vm.recall.barBorder, 'var(--u4-line-faint)');
+  assert.equal(vm.recall.border, 'var(--u4-divider)');
+  assert.equal(vm.recall.bg, 'var(--u4-bank-off)');
+  assert.equal(vm.recall.text, 'var(--u4-text-dim)');
   assert.equal(vm.recall.disabled, true);
 }
 

@@ -94,7 +94,7 @@ const g: EqGraphVm = eqGraphVm(eq, 1);
     g.gridH.map(h => h.y),
     ['30.0', '90.0', '150.0', '210.0', '270.0'],
   );
-  assert.equal(g.gridH[2].stroke, '#34445e', '0 dB line emphasized');
+  assert.equal(g.gridH[2].stroke, 'var(--u4-graph-unity)', '0 dB line emphasized');
   assert.deepEqual(
     g.freqLabels.map(l => l.label),
     ['50', '100', '200', '500', '1k', '2k', '5k', '10k'],
@@ -162,8 +162,8 @@ const g: EqGraphVm = eqGraphVm(eq, 1);
   assert.deepEqual(eqTypeOptions(1, 'PEQ').values, ['PEQ']);
   assert.deepEqual(eqTypeOptions(2, 'PEQ').values, ['PEQ']);
   assert.deepEqual(eqTypeOptions(3, 'HS').values, ['PEQ', 'HS']);
-  assert.equal(eqTypeOptions(0, 'LS').options[0].bg, '#e8edf5', 'active chip is lit');
-  assert.equal(eqTypeOptions(0, 'LS').options[1].bg, '#2b3038');
+  assert.equal(eqTypeOptions(0, 'LS').options[0].bg, 'var(--u4-text-1)', 'active chip is lit');
+  assert.equal(eqTypeOptions(0, 'LS').options[1].bg, 'var(--u4-btn-bg)');
 }
 
 // --- 8. cards ---
@@ -177,7 +177,7 @@ const g: EqGraphVm = eqGraphVm(eq, 1);
   assert.equal(cards.length, 4);
   assert.equal(cards[0].name, 'Low');
   assert.equal(cards[0].border, EQ_BAND_COLORS[1], 'selected card takes the accent border');
-  assert.equal(cards[1].border, '#1f2836');
+  assert.equal(cards[1].border, 'var(--u4-line-panel)');
   assert.equal(cards[1].types.length, 1, 'Lo-Mid offers Bell only');
   assert.equal(cards[3].types.length, 2, 'High offers Bell/Shelf');
   assert.deepEqual([cards[2].freq, cards[2].gain, cards[2].q], [2940, 0, 1.84]);

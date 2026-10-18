@@ -115,8 +115,8 @@ export function eqChip(label: string, active: boolean): EqChip {
   return {
     label,
     pressed: active ? 'true' : 'false',
-    bg: active ? '#e8edf5' : '#2b3038',
-    fg: active ? '#0b0f14' : '#c9d1dc',
+    bg: active ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
+    fg: active ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
   };
 }
 
@@ -131,8 +131,8 @@ export interface EqOnOff {
 export function eqOnOff(on: boolean, name: string): EqOnOff {
   return {
     onStr: on ? 'true' : 'false',
-    onBg: on ? '#5cdb5c' : '#2b3038',
-    onText: on ? '#10240f' : '#a7b1c0',
+    onBg: on ? '#5cdb5c' : 'var(--u4-btn-bg)',
+    onText: on ? '#10240f' : 'var(--u4-text-5)',
     onLabel: on ? 'On' : 'Off',
     toggleAria: name + ' on/off',
   };
@@ -180,7 +180,7 @@ function bandName(band: number): string {
 }
 
 function bandColor(band: number, colors: string[]): string {
-  return colors[band] ?? '#e8edf5';
+  return colors[band] ?? 'var(--u4-text-1)';
 }
 
 function visibleBands(eq: Eq, bandCount: number): EqBand[] {
@@ -236,7 +236,7 @@ export interface EqMasterToggle {
 export function eqMasterToggle(eq: Eq): EqMasterToggle {
   return eq.on
     ? { str: 'true', bg: '#5cdb5c', text: '#10240f', label: 'EQ In' }
-    : { str: 'false', bg: '#2b3038', text: '#c9d1dc', label: 'EQ Bypassed' };
+    : { str: 'false', bg: 'var(--u4-btn-bg)', text: 'var(--u4-text-4)', label: 'EQ Bypassed' };
 }
 
 /** Port of eqVals(): every path, grid line, label, node and card VM. */
@@ -288,7 +288,7 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
   });
   const gridH: EqGridLineH[] = [12, 6, 0, -6, -12].map(g => ({
     y: toY(g).toFixed(1),
-    stroke: g === 0 ? '#34445e' : '#1b2536',
+    stroke: g === 0 ? 'var(--u4-graph-unity)' : '#1b2536',
   }));
   const freqLabels: EqAxisLabel[] = [
     [50, '50'], [100, '100'], [200, '200'], [500, '500'],
@@ -345,7 +345,7 @@ export function eqHpfCardVm(eq: Eq, selBand: number, colors: string[] = EQ_BAND_
     name: 'HPF',
     color: colors[0] ?? '#d7dde8',
     selected: selBand === 0,
-    border: selBand === 0 ? (colors[0] ?? '#d7dde8') : '#1f2836',
+    border: selBand === 0 ? (colors[0] ?? '#d7dde8') : 'var(--u4-line-panel)',
     slope: eq.hpf.slope,
     freq: eq.hpf.f,
     ...eqOnOff(eq.hpf.on, 'HPF'),
@@ -366,9 +366,9 @@ export function eqBandCardsVm(
       kind: 'band',
       band,
       name: bandName(band),
-      color: colors[band] ?? '#e8edf5',
+      color: colors[band] ?? 'var(--u4-text-1)',
       selected: selBand === band,
-      border: selBand === band ? (colors[band] ?? '#e8edf5') : '#1f2836',
+      border: selBand === band ? (colors[band] ?? 'var(--u4-text-1)') : 'var(--u4-line-panel)',
       types: options,
       typeValues: values,
       freq: b.f,

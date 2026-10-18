@@ -27,7 +27,7 @@
 <button
   onclick={() => onEvent?.('press')}
   aria-pressed={props.pressed}
-  style="box-sizing:border-box;font-variant-numeric:normal;height:60px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:0 10px;border-radius:3px;border:2px solid {props.border};background:{props.bg};color:#eef2f7;cursor:pointer;text-align:left"
+  style="box-sizing:border-box;font-variant-numeric:normal;height:60px;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:0 10px;border-radius:3px;border:2px solid {props.border};background:{props.bg};color:var(--u4-text-2);cursor:pointer;text-align:left"
 >
   <span style="font-size:15px;font-weight:600">{props.name}</span>
   <span style="font-size:12px;color:{props.srcColor}">{props.src}</span>

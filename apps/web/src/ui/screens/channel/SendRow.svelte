@@ -35,8 +35,8 @@
       pre: false,
       preLabel: 'Post',
       preAria: '',
-      preBg: '#2b3038',
-      preFg: '#c9d1dc',
+      preBg: 'var(--u4-btn-bg)',
+      preFg: 'var(--u4-text-4)',
     },
   );
   const fine = $derived(props.fine ?? false);
@@ -100,7 +100,7 @@
 </script>
 
 <div
-  style="box-sizing:content-box;height:58px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:3px;border:1px solid #1f2836;background:#0e1520"
+  style="box-sizing:content-box;height:58px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
 >
   <span style="width:54px;flex:none;font-size:15px;font-weight:600">{row.name}</span>
   <button
@@ -120,7 +120,7 @@
   >
     <span style="position:absolute;left:9px;right:9px;top:0;bottom:0;display:block">
       <span
-        style="position:absolute;left:0;right:0;top:50%;height:6px;margin-top:-3px;border-radius:2px;background:#1a2332"
+        style="position:absolute;left:0;right:0;top:50%;height:6px;margin-top:-3px;border-radius:2px;background:var(--u4-io-tile)"
       ></span>
       <span
         style="position:absolute;left:0;width:{row.pct}%;top:50%;height:6px;margin-top:-3px;border-radius:2px;background:{row.fill}"
@@ -142,7 +142,7 @@
     onclick={() => onEvent?.('togglePre')}
     aria-pressed={row.pre ? 'true' : 'false'}
     aria-label={row.preAria}
-    style="box-sizing:border-box;font-variant-numeric:normal;width:56px;height:40px;flex:none;border-radius:3px;border:1px solid #3a414c;background:{row.preBg};color:{row.preFg};font-size:12px;font-weight:600;cursor:pointer"
+    style="box-sizing:border-box;font-variant-numeric:normal;width:56px;height:40px;flex:none;border-radius:3px;border:1px solid var(--u4-line-ctl);background:{row.preBg};color:{row.preFg};font-size:12px;font-weight:600;cursor:pointer"
     >{row.preLabel}</button
   >
 </div>

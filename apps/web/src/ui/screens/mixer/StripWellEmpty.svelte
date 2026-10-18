@@ -20,5 +20,5 @@
 
 <div
   aria-hidden="true"
-  style="flex:1 1 140px;min-height:80px;border:1px solid #161d29;border-radius:3px;background:#090d14;box-sizing:content-box"
+  style="flex:1 1 140px;min-height:80px;border:1px solid var(--u4-line-faint);border-radius:3px;background:var(--u4-well-bg);box-sizing:content-box"
 ></div>
