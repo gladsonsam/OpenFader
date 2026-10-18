@@ -25,6 +25,7 @@
     {
       "id": "pan",
       "module": "strip-pan",
+      "variants": { "phone": { "hidden": true } },
       "bind": {
         "value": "item.pan",
         "name": "item.name",
@@ -43,6 +44,7 @@
     {
       "id": "proc",
       "module": "col",
+      "variants": { "phone": { "hidden": true } },
       "props": {
         "flex": "1 1 140px",
         "minHeight": 80,
@@ -92,6 +94,7 @@
     {
       "id": "proc-empty",
       "module": "strip-well-empty",
+      "variants": { "phone": { "hidden": true } },
       "when": "!item.hasEq"
     },
     {
@@ -101,7 +104,7 @@
         "height": 40
       },
       "variants": {
-        "phone": { "props": { "height": 48 } },
+        "phone": { "hidden": true, "props": { "height": 48 } },
         "tablet": { "props": { "height": 48 } }
       },
       "bind": {
@@ -163,7 +166,7 @@
         "height": 40
       },
       "variants": {
-        "phone": { "props": { "height": 48 } },
+        "phone": { "hidden": true, "props": { "height": 48 } },
         "tablet": { "props": { "height": 48 } }
       },
       "bind": {
@@ -225,6 +228,7 @@
         {
           "id": "name",
           "module": "strip-name",
+          "when": "device != 'phone'",
           "props": {
             "variant": "strip"
           },
@@ -246,8 +250,39 @@
           }
         },
         {
+          "id": "name-open",
+          "module": "strip-name",
+          "when": "device == 'phone'",
+          "props": {
+            "variant": "strip"
+          },
+          "bind": {
+            "name": "item.name",
+            "sub": "item.sub",
+            "color": "item.color",
+            "text": "item.text",
+            "icon": "item.icon",
+            "selectAria": "item.selectAria"
+          },
+          "on": {
+            "select": [
+              {
+                "do": "ui.select",
+                "args": {
+                  "id": { "$expr": "item.id" }
+                }
+              },
+              {
+                "do": "ui.openPage",
+                "args": { "mode": "channel" }
+              }
+            ]
+          }
+        },
+        {
           "id": "name-badges",
           "module": "strip-group-badges",
+          "variants": { "phone": { "hidden": true } },
           "bind": {
             "desk": "item.desk"
           },
