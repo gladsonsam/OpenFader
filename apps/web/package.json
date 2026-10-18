@@ -12,7 +12,14 @@
     "smoke": "node e2e-smoke.mjs"
   },
   "dependencies": {
-    "svelte": "^5.57.2"
+    "svelte": "^5.57.2",
+    "@tauri-apps/api": "^2.7.0",
+    "@tauri-apps/plugin-haptics": "^2.4.2",
+    "@tauri-apps/plugin-log": "^2.10.1",
+    "@tauri-apps/plugin-os": "^2.4.0",
+    "@tauri-apps/plugin-store": "^2.5.0",
+    "tauri-plugin-edge-to-edge-api": "^0.1.1",
+    "tauri-plugin-keep-screen-on-api": "^0.1.4"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
