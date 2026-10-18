@@ -14,7 +14,8 @@ free AND its files don't collide with the running worker.
    live screen bindings.
 
 ## Queued
-- (empty — owner is about to spam features here)
+- RTA overlay for EQ (live spectrum on the EQ graph).
+- Presets: inbuilt presets + user presets (create/save/recall).
 
 ## Done (this wave)
 - ui4 is the only UI; desktop diffs held; phone responsive layout.
