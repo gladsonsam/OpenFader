@@ -65,9 +65,13 @@ interface StageKey {
   c: number;
   w: number;
   h: number;
+  p: number;
 }
 
 const stageCache = new WeakMap<HTMLCanvasElement, StageKey>();
+
+/* Peak-hold state per canvas (decays ~1.5 dB/s). */
+const peakState = new WeakMap<HTMLCanvasElement, { peak: number; t: number }>();
 
 interface BarKey {
   v: number;
@@ -229,17 +233,22 @@ export function paintStageMeter(
   const W = cv.width;
   const H = cv.height;
   const c = clip ? 1 : 0;
-  const hit = stageCache.get(cv);
-  if (hit !== undefined && hit.i === input && hit.o === output && hit.c === c && hit.w === W && hit.h === H)
-    return;
-  if (hit === undefined) stageCache.set(cv, { i: input, o: output, c, w: W, h: H });
+  // Peak hold: decay ~1.5 dB/s (~0.04/s in linear).
+  const now = performance.now();
+  let ps = peakState.get(cv);
+  if (!ps) { ps = { peak: output, t: now }; peakState.set(cv, ps); }
+  if (output >= ps.peak) { ps.peak = output; ps.t = now; }
   else {
-    hit.i = input;
-    hit.o = output;
-    hit.c = c;
-    hit.w = W;
-    hit.h = H;
+    const dt = (now - ps.t) / 1000;
+    ps.peak = Math.max(output, ps.peak - dt * 0.04);
+    ps.t = now;
   }
+  const peak = ps.peak;
+  const hit = stageCache.get(cv);
+  if (hit !== undefined && hit.i === input && hit.o === output && hit.c === c && hit.p === peak && hit.w === W && hit.h === H)
+    return;
+  if (hit === undefined) stageCache.set(cv, { i: input, o: output, c, p: peak, w: W, h: H });
+  else { hit.i = input; hit.o = output; hit.c = c; hit.p = peak; hit.w = W; hit.h = H; }
   ctx.clearRect(0, 0, W, H);
   const inH = Math.max(1, Math.min(1, input) * (H - 8));
   ctx.fillStyle = barColor(Math.min(1, input));
@@ -250,6 +259,12 @@ export function paintStageMeter(
   ctx.fillStyle = barColor(Math.min(1, output));
   const cw = Math.max(3, W * 0.45);
   ctx.fillRect((W - cw) / 2, H - outH, cw, outH);
+  // Peak-hold line.
+  const pH = Math.max(1, Math.min(1, peak) * (H - 8));
+  ctx.fillStyle = '#fff';
+  ctx.globalAlpha = 0.85;
+  ctx.fillRect(0, H - pH, W, 1.5);
+  ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(255,255,255,.25)';
   for (let k = 0; k < GRID_FRACTIONS.length; k++) {
     const f = GRID_FRACTIONS[k];
