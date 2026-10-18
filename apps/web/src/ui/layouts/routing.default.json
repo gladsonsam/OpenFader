@@ -36,98 +36,6 @@
           },
           "children": [
             {
-              "id": "mx-preset",
-              "module": "btn",
-              "props": {
-                "label": "1:1",
-                "height": 48,
-                "fontSize": 15,
-                "bg": "#2b3038",
-                "fg": "#e8edf5",
-                "border": "1px solid #3a414c",
-                "bare": true
-              },
-              "bind": {
-                "pressed": "store.pendingPatch != null && store.pendingPatch.kind == 'oneToOne' ? 'true' : 'false'"
-              },
-              "on": {
-                "press": {
-                  "do": "ui.armPatch",
-                  "args": {
-                    "kind": "oneToOne",
-                    "group": {
-                      "$expr": "store.patchGroup"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "id": "mx-clear",
-              "module": "btn",
-              "props": {
-                "label": "Clear",
-                "height": 48,
-                "fontSize": 15,
-                "bg": "#2a0d0e",
-                "fg": "#f2d6d6",
-                "border": "1px solid #6a1b1e",
-                "bare": true
-              },
-              "bind": {
-                "pressed": "store.pendingPatch != null && store.pendingPatch.kind == 'clear' ? 'true' : 'false'"
-              },
-              "on": {
-                "press": {
-                  "do": "ui.armPatch",
-                  "args": {
-                    "kind": "clear",
-                    "group": {
-                      "$expr": "store.patchGroup"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "id": "mx-apply",
-              "module": "btn",
-              "props": {
-                "label": "Apply",
-                "height": 48,
-                "fontSize": 15,
-                "bg": "#0f2e1d",
-                "fg": "#7dffa8",
-                "border": "1px solid #1f7a3d",
-                "bare": true
-              },
-              "when": "store.pendingPatch != null",
-              "on": {
-                "press": {
-                  "do": "ui.applyPatch"
-                }
-              }
-            },
-            {
-              "id": "mx-cancel",
-              "module": "btn",
-              "props": {
-                "label": "Cancel",
-                "height": 48,
-                "fontSize": 15,
-                "bg": "#2b3038",
-                "fg": "#c9d1dc",
-                "border": "1px solid #3a414c",
-                "bare": true
-              },
-              "when": "store.pendingPatch != null",
-              "on": {
-                "press": {
-                  "do": "ui.cancelPatch"
-                }
-              }
-            },
-            {
               "id": "mx-groups",
               "module": "repeat",
               "props": {
@@ -161,6 +69,104 @@
                   }
                 }
               ]
+            },
+            {
+              "id": "mx-presets",
+              "module": "row",
+              "props": {
+                "align": "center",
+                "gap": 8,
+                "margin": "0 0 0 auto",
+                "box": "content-box"
+              },
+              "children": [
+                {
+                  "id": "mx-preset",
+                  "module": "btn",
+                  "props": {
+                    "label": "1:1",
+                    "height": 48,
+                    "fontSize": 15,
+                    "bg": "#2b3038",
+                    "fg": "#e8edf5",
+                    "border": "1px solid #3a414c",
+                    "bare": true
+                  },
+                  "on": {
+                    "press": {
+                      "do": "ui.stagePreset",
+                      "args": {
+                        "kind": "oneToOne",
+                        "group": {
+                          "$expr": "store.patchGroup"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "mx-clear",
+                  "module": "btn",
+                  "props": {
+                    "label": "Clear",
+                    "height": 48,
+                    "fontSize": 15,
+                    "bg": "#2a0d0e",
+                    "fg": "#f2d6d6",
+                    "border": "1px solid #6a1b1e",
+                    "bare": true
+                  },
+                  "on": {
+                    "press": {
+                      "do": "ui.stagePreset",
+                      "args": {
+                        "kind": "clear",
+                        "group": {
+                          "$expr": "store.patchGroup"
+                        }
+                      }
+                    }
+                  }
+                },
+                {
+                  "id": "mx-apply",
+                  "module": "btn",
+                  "props": {
+                    "label": "Apply",
+                    "height": 48,
+                    "fontSize": 15,
+                    "bg": "#0f2e1d",
+                    "fg": "#7dffa8",
+                    "border": "1px solid #1f7a3d",
+                    "bare": true
+                  },
+                  "when": "store.pendingPatch != null",
+                  "on": {
+                    "press": {
+                      "do": "ui.applyPatch"
+                    }
+                  }
+                },
+                {
+                  "id": "mx-cancel",
+                  "module": "btn",
+                  "props": {
+                    "label": "Cancel",
+                    "height": 48,
+                    "fontSize": 15,
+                    "bg": "#2b3038",
+                    "fg": "#c9d1dc",
+                    "border": "1px solid #3a414c",
+                    "bare": true
+                  },
+                  "when": "store.pendingPatch != null",
+                  "on": {
+                    "press": {
+                      "do": "ui.cancelPatch"
+                    }
+                  }
+                }
+              ]
             }
           ]
         },
@@ -189,7 +195,8 @@
               "bind": {
                 "rows": "routing.matrix.rows",
                 "cols": "routing.matrix.cols",
-                "used": "routing.matrix.used"
+                "used": "routing.matrix.used",
+                "pending": "routing.matrix.pending"
               },
               "on": {
                 "press": {

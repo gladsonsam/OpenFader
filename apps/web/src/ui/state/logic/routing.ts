@@ -69,29 +69,60 @@ export function toggleRoute(w: World, id: string, label: string): World {
   return cur === label ? unpatchChannel(w, id) : patchChannelSrc(w, id, label);
 }
 
-/** Stage a mass-patch preset (1:1 straight patch or clear-all) without
- * applying it. Tapping the same preset again disarms it. Lock-checked. */
-export function armPatch(w: World, kind: 'oneToOne' | 'clear', group: RouteGroup): World {
-  if (w.state.locked) return w;
-  const cur = w.state.pendingPatch;
-  if (cur && cur.kind === kind && (kind === 'clear' || cur.group === group)) {
-    return withState(w, { pendingPatch: null });
+/** Stage one matrix tap. Tapping the staged target again unstages it;
+ * tapping the channel's current source stages an unpatch. Entries that
+ * end up equal to the live value are dropped, so an empty map clears. */
+export function stageRoute(w: World, id: string, label: string): World {
+  const cur = w.chans[id]?.src;
+  if (cur === undefined) return w;
+  const staged: Record<string, string> = { ...(w.state.pendingPatch?.cells ?? {}) };
+  if (staged[id] !== undefined) {
+    if (staged[id] === label) delete staged[id];
+    else staged[id] = label;
+  } else if (cur === label) {
+    staged[id] = '—';
+  } else {
+    staged[id] = label;
   }
-  return withState(w, { pendingPatch: { kind, group } });
+  if (staged[id] === cur) delete staged[id];
+  return withState(w, { pendingPatch: Object.keys(staged).length ? { cells: staged } : null });
 }
 
-/** Drop the staged preset without applying it. */
+/** Stage a 1:1 straight patch (inputs 1..32 to the group's 01..32).
+ * Only real changes are staged; a no-op stages nothing. */
+export function stagePreset(w: World, kind: 'oneToOne' | 'clear', group: RouteGroup): World {
+  if (w.state.locked) return w;
+  const staged: Record<string, string> = {};
+  if (kind === 'oneToOne') {
+    for (let n = 1; n <= 32; n++) {
+      const id = 'in' + n;
+      const label = group + ' ' + String(n).padStart(2, '0');
+      if (w.chans[id] && w.chans[id].src !== label) staged[id] = label;
+    }
+  } else {
+    for (let n = 1; n <= 48; n++) {
+      const id = 'in' + n;
+      if (w.chans[id] && w.chans[id].src !== '—') staged[id] = '—';
+    }
+  }
+  return withState(w, { pendingPatch: Object.keys(staged).length ? { cells: staged } : null });
+}
+
+/** Drop everything staged without applying it. */
 export function cancelPatch(w: World): World {
   if (!w.state.pendingPatch) return w;
   return withState(w, { pendingPatch: null });
 }
 
-/** Commit the staged preset, then clear it. Lock-checked. */
+/** Commit every staged change, then clear. Lock-checked. */
 export function applyPatch(w: World): World {
-  const p = w.state.pendingPatch;
-  if (!p || w.state.locked) return w;
-  const done = p.kind === 'oneToOne' ? patchOneToOne(w, p.group) : clearPatches(w);
-  return withState(done, { pendingPatch: null });
+  const cells = w.state.pendingPatch?.cells;
+  if (!cells || w.state.locked) return w;
+  let next = w;
+  for (const [id, label] of Object.entries(cells)) {
+    next = withChannel(next, id, c => { c.src = label; });
+  }
+  return withState(next, { pendingPatch: null });
 }
 /** Commit helper: straight 1:1 patch of inputs 1..32 to the group's
  * 01..32 sockets (the common stagebox reset). No bank jumping. */
