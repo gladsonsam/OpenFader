@@ -128,7 +128,7 @@ body {
 
 /* ---- Responsive phone/tablet rules (MODULES.md §1 "Responsive") ----
  * Everything below is viewport-gated (phone <= 599px, tablet <= 1099px, or
- * short viewports), so the 1280x720 desktop design — and its diff baselines
+ * short viewports), so the 1280x720 desktop design — and its fixture baselines
  * — are byte-identical. These pair with the per-device layout `variants`
  * the renderer applies: the JSON owns structure, this owns minimum touch
  * sizes for controls whose heights are hard-coded in primitives. */

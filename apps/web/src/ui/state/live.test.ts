@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import {
   CONNECT_TIMEOUT_MS,
   DEFAULT_RELAY_HOST,
-  fixtureIdToEngineCh,
   linearToDb,
   loadRelayAuto,
   relayHostFromSearch,
@@ -31,29 +30,9 @@ assert.deepEqual(relayHostFromSearch('?server=ws://a:1/ws', 'h'), { host: 'ws://
 assert.deepEqual(relayHostFromSearch('?server=http://a:8080', 'h'), { host: 'a:8080', fromUrl: true });
 assert.deepEqual(relayHostFromSearch('?server=http://a:8080/ws', 'h'), { host: 'a:8080', fromUrl: true });
 
-// ---- fixtureIdToEngineCh (sim topology) ----
-assert.equal(fixtureIdToEngineCh('in1'), 0);
-assert.equal(fixtureIdToEngineCh('in32'), 31);
-assert.equal(fixtureIdToEngineCh('in33'), 40);
-assert.equal(fixtureIdToEngineCh('in48'), 55);
-assert.equal(fixtureIdToEngineCh('in49'), null);
-assert.equal(fixtureIdToEngineCh('mix1'), 32);
-assert.equal(fixtureIdToEngineCh('mix8'), 39);
-assert.equal(fixtureIdToEngineCh('mix9'), null);
-assert.equal(fixtureIdToEngineCh('fx1'), 56);
-assert.equal(fixtureIdToEngineCh('fx4'), 59);
-assert.equal(fixtureIdToEngineCh('fx5'), null);
-assert.equal(fixtureIdToEngineCh('fxs1'), 60);
-assert.equal(fixtureIdToEngineCh('fxs4'), 63);
-assert.equal(fixtureIdToEngineCh('mtx1'), 64);
-assert.equal(fixtureIdToEngineCh('mtx8'), 71);
-assert.equal(fixtureIdToEngineCh('mainlr'), 72);
-assert.equal(fixtureIdToEngineCh('mainc'), null);
-assert.equal(fixtureIdToEngineCh('dca1'), 73);
-assert.equal(fixtureIdToEngineCh('dca4'), 76);
-assert.equal(fixtureIdToEngineCh('dca5'), null);
-assert.equal(fixtureIdToEngineCh('grp1'), null);
-assert.equal(fixtureIdToEngineCh('nope'), null);
+// ---- REMOVED (owner order, item 5): fixtureIdToEngineCh sim-topology
+// asserts deleted with the function (live.ts). Live meter lookup is
+// topology-driven via bridgeStrip now.
 
 // ---- linearToDb ----
 assert.equal(linearToDb(0), -90);

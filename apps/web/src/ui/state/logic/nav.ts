@@ -44,6 +44,37 @@ export function setBank(w: World, bank: string): World {
   return withState(w, { bank });
 }
 
+// ---------- bus selector popup (item 7) ----------
+
+/** Open/close the master bus selector popup. */
+export function setBusPopup(w: World, open: boolean): World {
+  return withState(w, { busPopup: open });
+}
+
+/** Bank key containing a strip id (fixture banks; first match wins). */
+export function bankForStrip(id: string): string | null {
+  for (const b of bankDefs()) {
+    if (b.items.some(it => it.id === id)) return b.key;
+  }
+  return null;
+}
+
+/** Pick a bus popup row: bank jumps to the row's bank; buses become the
+ * SOF master (tap Main LR to leave SOF); popup closes. */
+export function selectBusMaster(w: World, id: string): World {
+  const bank = bankForStrip(id);
+  let next = withState(w, { busPopup: false });
+  if (bank) next = withState(next, { bank });
+  const m = /^mix(\d+)$/.exec(id);
+  if (m) {
+    const n = parseInt(m[1]!, 10);
+    if (n >= 1) return withState(next, { sof: true, mix: n - 1 });
+  } else if (id === 'mainlr') {
+    return withState(next, { sof: false });
+  }
+  return withState(next, { sof: false });
+}
+
 export function selectChannel(w: World, id: string): World {
   if (!w.chans[id]) return w;
   return withState(w, { sel: id, nameEdit: null });

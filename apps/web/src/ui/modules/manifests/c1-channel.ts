@@ -16,6 +16,7 @@
 import type { Component } from 'svelte';
 import type { ModuleManifest, ModuleProps } from '../types.ts';
 import ChannelTabButton from '../../screens/channel/ChannelTabButton.svelte';
+import GroupsCard from '../../screens/channel/GroupsCard.svelte';
 import StripNameChip from '../../screens/channel/StripNameChip.svelte';
 import StripStepper from '../../screens/channel/StripStepper.svelte';
 import StripPanBar from '../../screens/channel/StripPanBar.svelte';
@@ -175,6 +176,16 @@ export const manifests: ModuleManifest[] = [
     defaults: { fine: false },
     size: { minW: 320, fixedH: 58 },
     events: [{ name: 'input', args: ['value'] }, { name: 'togglePre' }],
+  },
+  {
+    id: 'channel-groups-card',
+    title: 'Channel desk-groups card',
+    category: 'channel',
+    component: as(GroupsCard),
+    props: { vm: vmObject },
+    defaults: {},
+    size: { flex: true, minW: 270 },
+    events: [{ name: 'assign', args: ['kind', 'group', 'member'] }, { name: 'master', args: ['kind', 'group', 'muted'] }],
   },
 ];
 

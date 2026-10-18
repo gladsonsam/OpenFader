@@ -370,14 +370,18 @@ export interface World {
   recallScene(show: string, name: string, fadeMs?: number): void;
   deleteScene(show: string, name: string): void;
   sceneSave(n: number, name: string): void;
-  sceneRecall(n: number, fadeMs?: number): void;
+  sceneRecall(
+    n: number,
+    fadeMs?: number,
+    scope?: { strips?: number[]; groups?: string[]; globals?: string[] } | null,
+  ): void;
   sceneRename(n: number, name: string): void;
   sceneDelete(n: number): void;
   sceneClear(): void;
 
   // ---- fx (R2; empty rows / null caps until the engine sends them) ----
   readonly fxSlots: FxSlotView[];
-  readonly fxCaps: { slots: number; types: Array<{ id: string; label: string }> } | null;
+  readonly fxCaps: { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string }> }> } | null;
   fxSetType(slot: number, type: string): void;
   fxParam(slot: number, id: string, v01: number): void;
   fxBypass(slot: number, bypass: boolean): void;
@@ -404,7 +408,7 @@ export interface World {
   offlineDiscard(): void;
 
   // ---- masters / groups / files (R2) ----
-  readonly groupCaps: { buses: number; subgroups: number; muteGroups: number; files: boolean };
+  readonly groupCaps: { buses: number; subgroups: number; muteGroups: number; mgAssign: boolean; subAssign: boolean; files: boolean };
   busMaster(bus: number): { fader: number; muted: boolean } | null;
   subgroupMaster(group: number): { fader: number; muted: boolean } | null;
   muteGroupMaster(group: number): boolean | null;
@@ -418,6 +422,12 @@ export interface World {
   subgroupAssign(ch: number, group: number, member: boolean): void;
   muteGroup(group: number, muted: boolean): void;
   muteGroupAssign(ch: number, group: number, member: boolean): void;
+  /** Main LR master mute (LR solo has no verified desk leaf: no setter). */
+  readonly mainMuted: boolean | null;
+  setMainMute(muted: boolean): void;
+  /** Per-strip solo (false when never echoed). */
+  soloOf(ch: number): boolean;
+  setSolo(ch: number, soloed: boolean): void;
   fileDownload(filename: string): void;
   fileUpload(filename: string, dataB64: string, fileType: number): void;
 

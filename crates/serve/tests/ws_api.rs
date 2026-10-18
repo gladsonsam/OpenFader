@@ -1481,7 +1481,29 @@ async fn ws_params_diff_broadcast() {
     ))
     .await
     .unwrap();
-    // The state echo for the write...
+    // The confirmed singular `param` echo for the write arrives first (the
+    // write primes the poller cache, so no background `params` diff
+    // follows — same contract as `engine_api::params_diff_broadcast`)...
+    let echo = {
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
+        loop {
+            if std::time::Instant::now() > deadline {
+                panic!("timed out waiting for param echo");
+            }
+            let v = timeout(Duration::from_millis(500), next_msg(&mut rx)).await;
+            let v = match v {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            if v.get("type").and_then(Value::as_str) == Some("param")
+                && v.get("ch") == Some(&json!(5))
+                && v.get("field") == Some(&json!("fader"))
+            {
+                break v;
+            }
+        }
+    };
+    assert!((echo.get("value").and_then(Value::as_f64).unwrap() - 0.6).abs() < 1e-6);
     wait_state(&mut rx, |s| {
         s.get("strips")
             .and_then(Value::as_array)
@@ -1495,17 +1517,6 @@ async fn ws_params_diff_broadcast() {
             .is_some_and(|f| (f - 0.6).abs() < 1e-6)
     })
     .await;
-    // ...then the poller diff for the same value.
-    let diff = wait_params(&mut rx, |v| {
-        v.get("ch") == Some(&json!(5))
-            && v
-                .get("values")
-                .and_then(|vals| vals.get("fader"))
-                .and_then(Value::as_f64)
-                .is_some_and(|f| (f - 0.6).abs() < 1e-6)
-    })
-    .await;
-    assert_eq!(diff.get("type"), Some(&json!("params")));
 
     server.abort();
 }

@@ -41,6 +41,10 @@ pub const SIM_MTX: usize = 8;
 pub const SIM_MAINS: usize = 1;
 /// DCA masters.
 pub const SIM_DCAS: usize = 4;
+/// R2 subgroup master count (matches the DL32S desk family).
+pub const SIM_SUBGROUPS: usize = 6;
+/// R2 mute-group master count (matches the DL32S desk family).
+pub const SIM_MUTE_GROUPS: usize = 6;
 /// Total strips (0..77). Indices 0..40 keep their historic meaning.
 pub const SIM_STRIPS: usize =
     SIM_CHANNELS + SIM_BUSES + SIM_INPUTS_EXT + SIM_RETS + SIM_FXSNDS + SIM_MTX + SIM_MAINS + SIM_DCAS;
@@ -628,6 +632,9 @@ pub struct SimDriver {
     /// reads those from the strip so the two views cannot disagree.
     params: RwLock<Vec<HashMap<String, ParamValue>>>,
     main: RwLock<f32>,
+    /// R2 Main LR master mute + per-strip solo (monitor bus), in-memory.
+    main_muted: RwLock<bool>,
+    solos: RwLock<HashMap<u16, bool>>,
     tick: AtomicU64,
     connected: RwLock<bool>,
     preset: SimPreset,
@@ -635,6 +642,18 @@ pub struct SimDriver {
     /// normalized params). Seeded from [`openmix_core::fx`] design defaults
     /// (`buildFx` order); writes overwrite and read back bit-exact.
     fx: RwLock<Vec<SimFxSlot>>,
+    /// R2 subgroup masters: 6 × (fader 0..1, mute), in-memory (no desk
+    /// leaf on the sim model — the reference surface for the DL32S desk).
+    subgroups: RwLock<[(f32, bool); SIM_SUBGROUPS]>,
+    /// R2 mute-group masters: 6 × muted, in-memory.
+    mute_groups: RwLock<[bool; SIM_MUTE_GROUPS]>,
+    /// R2 group membership: (strip, 0-based group) -> member. Subgroup and
+    /// mute-group assigns share the shape; absent entries read false.
+    sub_assign: RwLock<HashMap<(u16, u8), bool>>,
+    mg_assign: RwLock<HashMap<(u16, u8), bool>>,
+    /// R2 desk files: filename -> (bytes, file type), in-memory stand-in
+    /// for the DL32S up/download path.
+    files: RwLock<HashMap<String, (Vec<u8>, u32)>>,
 }
 
 impl SimDriver {
@@ -672,10 +691,17 @@ impl SimDriver {
             strips: RwLock::new(strips),
             params: RwLock::new(params),
             main: RwLock::new(main),
+            main_muted: RwLock::new(false),
+            solos: RwLock::new(HashMap::new()),
             tick: AtomicU64::new(0),
             connected: RwLock::new(false),
             preset,
             fx: RwLock::new(default_fx_for(preset)),
+            subgroups: RwLock::new([(0.0, false); SIM_SUBGROUPS]),
+            mute_groups: RwLock::new([false; SIM_MUTE_GROUPS]),
+            sub_assign: RwLock::new(HashMap::new()),
+            mg_assign: RwLock::new(HashMap::new()),
+            files: RwLock::new(HashMap::new()),
         }
     }
 
@@ -886,6 +912,42 @@ impl Default for SimDriver {
     }
 }
 
+impl SimDriver {
+    fn sim_check_filename(filename: &str) -> anyhow::Result<()> {
+        if filename.is_empty() || filename.len() > 128 {
+            anyhow::bail!("sim: filename must be 1..=128 chars");
+        }
+        if filename.contains(['/', '\\', '\0']) {
+            anyhow::bail!("sim: filename {filename:?} must not contain path separators");
+        }
+        Ok(())
+    }
+
+    fn sim_check_subgroup(group: u8) -> anyhow::Result<usize> {
+        if (group as usize) >= SIM_SUBGROUPS {
+            anyhow::bail!("sim: subgroup {group} out of range 0..{SIM_SUBGROUPS}");
+        }
+        Ok(group as usize)
+    }
+
+    fn sim_check_sub_assign(&self, ch: StripId, group: u8) -> anyhow::Result<(u16, u8)> {
+        let _ = self.idx(ch)?;
+        Ok((ch.0, Self::sim_check_subgroup(group)? as u8))
+    }
+
+    fn sim_check_mute_group(group: u8) -> anyhow::Result<usize> {
+        if (group as usize) >= SIM_MUTE_GROUPS {
+            anyhow::bail!("sim: mute group {group} out of range 0..{SIM_MUTE_GROUPS}");
+        }
+        Ok(group as usize)
+    }
+
+    fn sim_check_mg_assign(&self, ch: StripId, group: u8) -> anyhow::Result<(u16, u8)> {
+        let _ = self.idx(ch)?;
+        Ok((ch.0, Self::sim_check_mute_group(group)? as u8))
+    }
+}
+
 impl MixerDriver for SimDriver {
     fn name(&self) -> &'static str {
         "sim"
@@ -980,6 +1042,115 @@ impl MixerDriver for SimDriver {
         Ok(self.read()[i].fader)
     }
 
+    fn bus_count(&self) -> u8 {
+        SIM_BUSES as u8
+    }
+
+    async fn set_bus_mute(&self, bus: u8, muted: bool) -> anyhow::Result<()> {
+        if bus as usize >= SIM_BUSES {
+            anyhow::bail!("sim: bus {bus} out of range 0..{}", SIM_BUSES);
+        }
+        let i = SIM_CHANNELS + bus as usize;
+        self.write()[i].mute = muted;
+        Ok(())
+    }
+
+    async fn get_bus_mute(&self, bus: u8) -> anyhow::Result<bool> {
+        if bus as usize >= SIM_BUSES {
+            anyhow::bail!("sim: bus {bus} out of range 0..{}", SIM_BUSES);
+        }
+        let i = SIM_CHANNELS + bus as usize;
+        Ok(self.read()[i].mute)
+    }
+
+    fn subgroup_count(&self) -> u8 {
+        SIM_SUBGROUPS as u8
+    }
+
+
+    async fn set_subgroup_fader(&self, group: u8, value: f32) -> anyhow::Result<()> {
+        let v = validate_fader(value)?;
+        let i = Self::sim_check_subgroup(group)?;
+        self.subgroups.write().expect("sim subgroups poisoned")[i].0 = v;
+        Ok(())
+    }
+
+    async fn get_subgroup_fader(&self, group: u8) -> anyhow::Result<f32> {
+        let i = Self::sim_check_subgroup(group)?;
+        Ok(self.subgroups.read().expect("sim subgroups poisoned")[i].0)
+    }
+
+    async fn set_subgroup_mute(&self, group: u8, muted: bool) -> anyhow::Result<()> {
+        let i = Self::sim_check_subgroup(group)?;
+        self.subgroups.write().expect("sim subgroups poisoned")[i].1 = muted;
+        Ok(())
+    }
+
+    async fn get_subgroup_mute(&self, group: u8) -> anyhow::Result<bool> {
+        let i = Self::sim_check_subgroup(group)?;
+        Ok(self.subgroups.read().expect("sim subgroups poisoned")[i].1)
+    }
+
+    async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+        let key = self.sim_check_sub_assign(ch, group)?;
+        self.sub_assign.write().expect("sim sub_assign poisoned").insert(key, member);
+        Ok(())
+    }
+
+    async fn get_subgroup_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        let key = self.sim_check_sub_assign(ch, group)?;
+        Ok(self.sub_assign.read().expect("sim sub_assign poisoned").get(&key).copied().unwrap_or(false))
+    }
+
+    fn mute_group_count(&self) -> u8 {
+        SIM_MUTE_GROUPS as u8
+    }
+
+    async fn set_mute_group(&self, group: u8, muted: bool) -> anyhow::Result<()> {
+        let i = Self::sim_check_mute_group(group)?;
+        self.mute_groups.write().expect("sim mute_groups poisoned")[i] = muted;
+        Ok(())
+    }
+
+    async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool> {
+        let i = Self::sim_check_mute_group(group)?;
+        Ok(self.mute_groups.read().expect("sim mute_groups poisoned")[i])
+    }
+
+    async fn set_mute_group_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+        let key = self.sim_check_mg_assign(ch, group)?;
+        self.mg_assign.write().expect("sim mg_assign poisoned").insert(key, member);
+        Ok(())
+    }
+
+    async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        let key = self.sim_check_mg_assign(ch, group)?;
+        Ok(self.mg_assign.read().expect("sim mg_assign poisoned").get(&key).copied().unwrap_or(false))
+    }
+
+    fn file_transfer(&self) -> bool {
+        true
+    }
+
+    async fn download_file(&self, filename: &str) -> anyhow::Result<Vec<u8>> {
+        Self::sim_check_filename(filename)?;
+        self.files
+            .read()
+            .expect("sim files poisoned")
+            .get(filename)
+            .map(|(bytes, _)| bytes.clone())
+            .ok_or_else(|| anyhow::anyhow!("sim: file {filename:?} not found"))
+    }
+
+    async fn upload_file(&self, filename: &str, data: &[u8], file_type: u32) -> anyhow::Result<()> {
+        Self::sim_check_filename(filename)?;
+        self.files
+            .write()
+            .expect("sim files poisoned")
+            .insert(filename.to_string(), (data.to_vec(), file_type));
+        Ok(())
+    }
+
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
         let v = validate_fader(value)?;
         *self.main.write().expect("sim main poisoned") = v;
@@ -988,6 +1159,26 @@ impl MixerDriver for SimDriver {
 
     async fn get_main_fader(&self) -> anyhow::Result<f32> {
         Ok(*self.main.read().expect("sim main poisoned"))
+    }
+
+    async fn set_main_mute(&self, muted: bool) -> anyhow::Result<()> {
+        *self.main_muted.write().expect("sim main mute poisoned") = muted;
+        Ok(())
+    }
+
+    async fn get_main_mute(&self) -> anyhow::Result<bool> {
+        Ok(*self.main_muted.read().expect("sim main mute poisoned"))
+    }
+
+    async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
+        self.idx(strip)?;
+        self.solos.write().expect("sim solos poisoned").insert(strip.0, soloed);
+        Ok(())
+    }
+
+    async fn get_solo(&self, strip: StripId) -> anyhow::Result<bool> {
+        self.idx(strip)?;
+        Ok(self.solos.read().expect("sim solos poisoned").get(&strip.0).copied().unwrap_or(false))
     }
 
     async fn set_param(

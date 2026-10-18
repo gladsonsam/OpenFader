@@ -74,6 +74,12 @@ pub struct OscSession {
     pending: Arc<Mutex<HashMap<String, oneshot::Sender<OscMessage>>>>,
     query_lock: Mutex<()>,
     meter_tx: broadcast::Sender<MeterFrame>,
+    /// Desk-originated traffic: every non-meter message that matches no
+    /// outstanding query (change broadcasts to all `/xremote` subscribers,
+    /// other clients' query replies the desk echoes to everyone, stale
+    /// late replies). Drivers subscribe here to learn desk-side changes
+    /// without polling. Bounded (256); slow readers lag, never block.
+    update_tx: broadcast::Sender<OscMessage>,
     _recv: JoinHandle<()>,
     _keepalive: Option<JoinHandle<()>>,
 }
@@ -97,11 +103,13 @@ impl OscSession {
         let pending: Arc<Mutex<HashMap<String, oneshot::Sender<OscMessage>>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let (meter_tx, _) = broadcast::channel::<MeterFrame>(64);
+        let (update_tx, _) = broadcast::channel::<OscMessage>(256);
 
         let recv = {
             let socket = socket.clone();
             let pending = pending.clone();
             let meter_tx = meter_tx.clone();
+            let update_tx = update_tx.clone();
             tokio::spawn(async move {
                 let mut buf = vec![0u8; RECV_BUF];
                 loop {
@@ -121,6 +129,13 @@ impl OscSession {
                         let mut guard = pending.lock().await;
                         if let Some(tx) = guard.remove(&msg.addr) {
                             let _ = tx.send(msg);
+                        } else {
+                            // No outstanding query: desk-originated traffic.
+                            // Forward a clone to update subscribers (drivers
+                            // ingest these into live param caches); drops
+                            // when nobody listens, lags slow readers.
+                            drop(guard);
+                            let _ = update_tx.send(msg);
                         }
                     }
                 }
@@ -144,6 +159,7 @@ impl OscSession {
             pending,
             query_lock: Mutex::new(()),
             meter_tx,
+            update_tx,
             _recv: recv,
             _keepalive: keep,
         }
@@ -189,6 +205,13 @@ impl OscSession {
     /// Meter broadcast receiver (fed by the recv loop).
     pub fn subscribe_meters(&self) -> broadcast::Receiver<MeterFrame> {
         self.meter_tx.subscribe()
+    }
+
+    /// Desk-originated message receiver (fed by the recv loop): every
+    /// non-meter message that matches no outstanding query. Drivers use
+    /// this to ingest desk-side change broadcasts without polling.
+    pub fn subscribe_updates(&self) -> broadcast::Receiver<OscMessage> {
+        self.update_tx.subscribe()
     }
 
     /// Raw socket access for driver-specific fire-and-forget flows.
