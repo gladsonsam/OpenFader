@@ -24,6 +24,8 @@ free AND its files don't collide with the running worker.
 5. Channel view topbar simplification: back-to-mixer button + channel
    name + prev/next channel buttons only; then remove the separate
    channel switcher UI it replaces.
+6. Routing usable on mobile (currently unusable — rework for small
+   screens: readable, tappable, no precision-dependent patching).
 
 ## Queued — server-side (NOT today; parked, do not dispatch)
 - Automixing (gain-sharing across channels on the server).
