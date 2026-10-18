@@ -1,0 +1,11 @@
+{
+  "binary": true,
+  "gr_dropped": 1,
+  "gr_sent": 40,
+  "meters_dropped": 3,
+  "meters_sent": 120,
+  "queue_depth": 2,
+  "spectrum_dropped": 0,
+  "spectrum_sent": 40,
+  "type": "stats"
+}

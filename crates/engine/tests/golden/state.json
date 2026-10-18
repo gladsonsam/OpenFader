@@ -1,0 +1,20 @@
+{
+  "by": "client-1",
+  "driver": "sim",
+  "main_fader": 0.800000011920929,
+  "strips": [
+    {
+      "ch": 0,
+      "fader": 0.5,
+      "muted": false,
+      "name": "CH01"
+    },
+    {
+      "ch": 1,
+      "fader": 0.25,
+      "muted": true,
+      "name": "Vox"
+    }
+  ],
+  "type": "state"
+}

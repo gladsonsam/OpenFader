@@ -1,0 +1,274 @@
+{
+  "id": "routing",
+  "module": "row",
+  "props": {
+    "gap": 6,
+    "wrap": true,
+    "flex": "1 1 auto",
+    "width": "100%"
+  },
+  "children": [
+    {
+      "id": "channels",
+      "module": "col",
+      "props": {
+        "tag": "section",
+        "label": "Channels",
+        "gap": 10,
+        "padding": 12,
+        "radius": 3,
+        "border": "1px solid #1f2836",
+        "background": "#0e1520",
+        "flex": "1 1 400px",
+        "minWidth": 0,
+        "box": "content-box"
+      },
+      "children": [
+        {
+          "id": "ch-head",
+          "module": "row",
+          "props": {
+            "align": "center",
+            "wrap": true,
+            "gap": 8,
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "ch-label",
+              "module": "text",
+              "props": {
+                "tag": "span",
+                "value": "Pick a channel",
+                "size": 12,
+                "color": "#8f9bb0",
+                "margin": "0 auto 0 0"
+              }
+            },
+            {
+              "id": "ch-banks",
+              "module": "repeat",
+              "props": {
+                "over": "list:routeBanks"
+              },
+              "children": [
+                {
+                  "id": "ch-bank",
+                  "module": "btn",
+                  "props": {
+                    "height": 36,
+                    "fontSize": 13,
+                    "border": "1px solid #3a414c"
+                  },
+                  "bind": {
+                    "label": "item.label",
+                    "bg": "item.bg",
+                    "fg": "item.fg",
+                    "pressed": "item.pressed ? 'true' : 'false'"
+                  },
+                  "on": {
+                    "press": {
+                      "do": "ui.setRouteBank",
+                      "args": {
+                        "bank": {
+                          "$expr": "index"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "ch-grid",
+          "module": "grid",
+          "props": {
+            "columns": "repeat(4,minmax(0,1fr))",
+            "gap": 6,
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "ch-tiles",
+              "module": "repeat",
+              "props": {
+                "over": "list:routeTiles"
+              },
+              "children": [
+                {
+                  "id": "ch-tile",
+                  "module": "route-tile",
+                  "bind": {
+                    "name": "item.name",
+                    "src": "item.src",
+                    "srcColor": "item.srcColor",
+                    "pressed": "item.pressed ? 'true' : 'false'",
+                    "border": "item.border",
+                    "bg": "item.bg"
+                  },
+                  "on": {
+                    "press": {
+                      "do": "ui.setPatchSel",
+                      "args": {
+                        "id": {
+                          "$expr": "item.id"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "sources",
+      "module": "col",
+      "props": {
+        "tag": "section",
+        "label": "Sources",
+        "gap": 10,
+        "padding": 12,
+        "radius": 3,
+        "border": "1px solid #1f2836",
+        "background": "#0e1520",
+        "flex": "1 1 400px",
+        "minWidth": 0,
+        "box": "content-box"
+      },
+      "children": [
+        {
+          "id": "src-head",
+          "module": "row",
+          "props": {
+            "align": "center",
+            "wrap": true,
+            "gap": 8,
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "src-label",
+              "module": "text",
+              "props": {
+                "tag": "span",
+                "value": "Patch {{ routing.selName }} to",
+                "size": 12,
+                "color": "#8f9bb0",
+                "margin": "0 auto 0 0"
+              }
+            },
+            {
+              "id": "src-groups",
+              "module": "repeat",
+              "props": {
+                "over": "list:routeGroups"
+              },
+              "children": [
+                {
+                  "id": "src-group",
+                  "module": "btn",
+                  "props": {
+                    "height": 36,
+                    "fontSize": 13,
+                    "border": "1px solid #3a414c",
+                    "bare": true
+                  },
+                  "bind": {
+                    "label": "item.label",
+                    "bg": "item.bg",
+                    "fg": "item.fg",
+                    "pressed": "item.pressed ? 'true' : 'false'"
+                  },
+                  "on": {
+                    "press": {
+                      "do": "ui.setPatchGroup",
+                      "args": {
+                        "group": {
+                          "$expr": "item.key"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "id": "src-unpatch",
+              "module": "btn",
+              "props": {
+                "label": "Unpatch",
+                "height": 36,
+                "fontSize": 13,
+                "bg": "#2a0d0e",
+                "fg": "#f2d6d6",
+                "border": "1px solid #6a1b1e",
+                "bare": true
+              },
+              "on": {
+                "press": {
+                  "do": "ui.unpatch"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "src-grid",
+          "module": "grid",
+          "props": {
+            "columns": "repeat(auto-fill,minmax(76px,1fr))",
+            "gap": 5,
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "src-tiles",
+              "module": "repeat",
+              "props": {
+                "over": "list:srcTiles"
+              },
+              "children": [
+                {
+                  "id": "src-tile",
+                  "module": "src-tile",
+                  "bind": {
+                    "label": "item.label",
+                    "used": "item.used",
+                    "pressed": "item.pressed ? 'true' : 'false'",
+                    "bg": "item.bg",
+                    "fg": "item.fg",
+                    "border": "item.border"
+                  },
+                  "on": {
+                    "press": {
+                      "do": "ui.patchSrc",
+                      "args": {
+                        "label": {
+                          "$expr": "item.label"
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "src-note",
+          "module": "text",
+          "props": {
+            "value": "After patching, the selection moves to the next channel.",
+            "size": 13,
+            "color": "#8792a4"
+          }
+        }
+      ]
+    }
+  ]
+}

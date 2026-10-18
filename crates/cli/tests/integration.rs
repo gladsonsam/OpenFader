@@ -34,7 +34,7 @@ async fn sim_fader_roundtrip() {
 
     // Snapshot recall restores prior state.
     let snap = drv.snapshot().await.unwrap();
-    assert_eq!(snap.strips.len(), 40); // 32ch + 8 buses
+    assert_eq!(snap.strips.len(), openmix_sim::SIM_STRIPS); // full v2 topology (77 strips)
     drv.set_fader(StripId(0), 0.9).await.unwrap();
     drv.recall(&snap).await.unwrap();
     assert!((drv.get_fader(StripId(0)).await.unwrap() - 0.5).abs() < 1e-6);
@@ -45,7 +45,7 @@ async fn sim_fader_roundtrip() {
 
     // Fake meters: one frame per strip, muted strip reads 0.
     let frame = drv.poll_meters();
-    assert_eq!(frame.levels.len(), 40);
+    assert_eq!(frame.levels.len(), openmix_sim::SIM_STRIPS);
     assert_eq!(frame.levels[2], 0.0);
     assert!(frame.levels[0] > 0.0);
 }
