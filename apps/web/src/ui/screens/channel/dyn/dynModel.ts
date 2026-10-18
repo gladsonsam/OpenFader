@@ -250,8 +250,8 @@ export interface DynToggle {
 
 export function dynToggle(kind: DynKind, on: boolean): DynToggle {
   return {
-    bg: on ? '#5cdb5c' : '#2b3038',
-    fg: on ? '#10240f' : '#c9d1dc',
+    bg: on ? '#5cdb5c' : 'var(--u4-btn-bg)',
+    fg: on ? '#10240f' : 'var(--u4-text-4)',
     label: (kind === 'gate' ? 'Gate ' : 'Compressor ') + (on ? 'In' : 'Bypassed'),
     pressed: on ? 'true' : 'false',
   };

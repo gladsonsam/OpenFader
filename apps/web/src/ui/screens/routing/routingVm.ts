@@ -68,8 +68,8 @@ function chipOf(label: string, on: boolean): { label: string; pressed: boolean; 
   return {
     label,
     pressed: on,
-    bg: on ? '#e8edf5' : '#2b3038',
-    fg: on ? '#0b0f14' : '#c9d1dc',
+    bg: on ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
+    fg: on ? '#0b0f14' : 'var(--u4-text-4)',
   };
 }
 
@@ -91,8 +91,8 @@ export function buildRoutingVm(state: UiState, chans: Record<string, Channel>): 
       src: c.src,
       srcColor: c.src === '—' ? '#ff8a80' : '#5fe3f0',
       pressed: on,
-      border: on ? '#ffffff' : '#222a36',
-      bg: on ? '#1b2330' : '#0a0f17',
+      border: on ? '#ffffff' : 'var(--u4-line-faint)',
+      bg: on ? '#1b2330' : 'var(--u4-well-bg)',
     };
   });
   const groups: PatchGroupVm[] = PATCH_GROUPS.map(g => ({
@@ -106,9 +106,9 @@ export function buildRoutingVm(state: UiState, chans: Record<string, Channel>): 
       label,
       used: isCur ? 'patched' : u ? '→ ' + u : '',
       pressed: isCur,
-      bg: isCur ? '#5cdb5c' : u ? '#141b26' : '#0a0f17',
-      fg: isCur ? '#10240f' : u ? '#c9d1dc' : '#8792a4',
-      border: isCur ? '#5cdb5c' : '#222a36',
+      bg: isCur ? '#5cdb5c' : u ? '#141b26' : 'var(--u4-well-bg)',
+      fg: isCur ? '#10240f' : u ? 'var(--u4-text-4)' : 'var(--u4-text-7)',
+      border: isCur ? '#5cdb5c' : 'var(--u4-line-faint)',
     };
   });
   return { banks, tiles, selName, groups, srcTiles, matrix: buildRouteMatrix(state, chans) };

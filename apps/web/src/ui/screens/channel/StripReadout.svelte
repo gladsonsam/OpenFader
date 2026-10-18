@@ -17,7 +17,7 @@
 </script>
 
 <div
-  style="height:18px;flex:none;text-align:center;font-size:13px;color:{props.color ?? '#c9d1dc'}"
+  style="height:18px;flex:none;text-align:center;font-size:13px;color:{props.color ?? 'var(--u4-text-4)'}"
 >
   {props.text ?? ''}
 </div>

@@ -10,9 +10,9 @@ export interface BoxProps {
   tag?: BoxTag | string;
   /** aria-label for landmark sections. */
   label?: string;
-  /** Full CSS border, e.g. '1px solid #1f2836'. */
+  /** Full CSS border, e.g. '1px solid var(--u4-line-panel)'. */
   border?: string;
-  /** CSS background, e.g. '#0e1520'. */
+  /** CSS background, e.g. 'var(--u4-panel-bg)'. */
   background?: string;
   /** Border radius (px number or CSS string). */
   radius?: SizeValue;
