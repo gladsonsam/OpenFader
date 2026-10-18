@@ -16,6 +16,10 @@ free AND its files don't collide with the running worker.
 ## Queued
 - RTA overlay for EQ (live spectrum on the EQ graph).
 - Presets: inbuilt presets + user presets (create/save/recall).
+- Global meter bridge (X-Air Edit Meters pattern: Analog Inputs 1-16+17/18,
+  Effects Sends 1-4, FX Returns, Bus Outputs 1-6, Mon/Solo, Main L/R, USB
+  Returns, P16 sends; grouped ladders 0..-50) with an icon button in the
+  topbar to open it.
 
 ## Done (this wave)
 - ui4 is the only UI; desktop diffs held; phone responsive layout.
