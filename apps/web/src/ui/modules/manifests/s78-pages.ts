@@ -15,6 +15,7 @@ import RouteTile from '../../screens/routing/RouteTile.svelte';
 import SrcTile from '../../screens/routing/SrcTile.svelte';
 import StatusDot from '../../screens/connection/StatusDot.svelte';
 import DeviceRow from '../../screens/connection/DeviceRow.svelte';
+import RelayCard from '../../screens/connection/RelayCard.svelte';
 
 function as<P>(c: unknown): Component<ModuleProps<P>> {
   return c as Component<ModuleProps<P>>;
@@ -101,6 +102,22 @@ export const manifests: ModuleManifest[] = [
     defaults: {},
     size: { flex: true },
     events: [{ name: 'connect', args: ['key'] }],
+  },
+  {
+    id: 'relay-card',
+    title: 'Relay connection card',
+    category: 'screen',
+    component: as(RelayCard),
+    props: {
+      host: { type: 'text', default: '127.0.0.1:8080' },
+      phase: { type: 'text', default: 'idle' },
+      message: { type: 'text', default: 'Not connected' },
+      latencyMs: { type: 'number' },
+      strips: { type: 'number', default: 0 },
+    },
+    defaults: { host: '127.0.0.1:8080', phase: 'idle', message: 'Not connected' },
+    size: { flex: true },
+    events: [{ name: 'connect', args: ['host'] }, { name: 'disconnect' }],
   },
 ];
 

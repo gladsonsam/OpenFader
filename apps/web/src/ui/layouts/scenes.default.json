@@ -2,7 +2,7 @@
   "$doc": "S910 default layout for the Scenes screen (docs/design/shots/10-scenes.png). Rendered by the generic LayoutRenderer. The scrollable card grid is a layout repeat over the scene card vms (sceneCards in scope order); the recall bar is one module bound to the recall vm. Select dispatches ui.pickScene (Instant loads immediately, Confirm previews); Cancel/Recall dispatch ui.goBack/ui.recallScene.",
   "id": "scenes-root",
   "module": "col",
-  "props": { "gap": 8, "flex": 1 },
+  "props": { "gap": 8, "flex": 1, "minHeight": 0 },
   "children": [
     {
       "id": "scenes-scroll",

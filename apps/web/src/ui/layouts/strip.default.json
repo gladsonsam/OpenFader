@@ -7,10 +7,19 @@
     "background": "#0e1520",
     "radius": 0,
     "minWidth": 0,
-    "minHeight": 0
+    "minHeight": 0,
+    "selectable": true
   },
   "bind": {
     "shadow": "item.ring"
+  },
+  "on": {
+    "select": {
+      "do": "ui.select",
+      "args": {
+        "id": { "$expr": "item.id" }
+      }
+    }
   },
   "children": [
     {
@@ -148,26 +157,86 @@
       ]
     },
     {
-      "id": "name",
-      "module": "strip-name",
+      "id": "solo",
+      "module": "strip-solo",
       "props": {
-        "variant": "strip"
+        "height": 40
+      },
+      "variants": {
+        "phone": { "props": { "height": 48 } },
+        "tablet": { "props": { "height": 48 } }
       },
       "bind": {
-        "name": "item.name",
-        "sub": "item.sub",
-        "color": "item.color",
-        "text": "item.text",
-        "selectAria": "item.selectAria"
+        "solo": "item.solo",
+        "enabled": "item.soloEnabled",
+        "label": "concat('Solo ', item.name)"
       },
       "on": {
-        "select": {
-          "do": "ui.select",
+        "press": {
+          "do": "ui.toggleSolo",
           "args": {
             "id": { "$expr": "item.id" }
           }
         }
       }
+    },
+    {
+      "id": "name-wrap",
+      "module": "col",
+      "props": {
+        "position": "relative"
+      },
+      "children": [
+        {
+          "id": "name-editor",
+          "module": "strip-name-editor",
+          "bind": {
+            "name": "item.name",
+            "selectedColor": "item.color"
+          },
+          "when": "store.nameEdit == item.id",
+          "on": {
+            "rename": {
+              "do": "ui.setChannelName",
+              "args": {
+                "id": { "$expr": "item.id" },
+                "value": { "$expr": "payload.value" }
+              }
+            },
+            "recolor": {
+              "do": "ui.setChannelColor",
+              "args": {
+                "id": { "$expr": "item.id" },
+                "color": { "$expr": "payload.color" },
+                "text": { "$expr": "payload.text" }
+              }
+            },
+            "close": { "do": "ui.closeNameEditor" }
+          }
+        },
+        {
+          "id": "name",
+          "module": "strip-name",
+          "props": {
+            "variant": "strip"
+          },
+          "bind": {
+            "name": "item.name",
+            "sub": "item.sub",
+            "color": "item.color",
+            "text": "item.text",
+            "selectAria": "item.selectAria"
+          },
+          "on": {
+            "select": {
+              "do": "ui.openNameEditor",
+              "args": {
+                "id": { "$expr": "item.id" }
+              }
+            }
+          }
+        }
+      ]
     }
   ]
 }

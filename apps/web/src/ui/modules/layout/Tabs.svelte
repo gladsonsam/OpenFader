@@ -6,6 +6,7 @@
   import type { ModuleContext } from '../types.ts';
   import type { LayoutNode } from '../schema.ts';
   import { styleJoin } from './css.ts';
+  import { tap } from '../../primitives/feel.ts';
 
   let {
     props = {},
@@ -32,7 +33,10 @@
       <button
         role="tab"
         aria-selected={i === active ? 'true' : 'false'}
-        onclick={() => (active = i)}
+        onclick={() => {
+          active = i;
+          tap();
+        }}
         style="cursor:pointer"
       >
         {label}

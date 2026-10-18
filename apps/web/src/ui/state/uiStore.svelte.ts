@@ -28,6 +28,8 @@ import {
   masterId,
   openDyn,
   openEq,
+  openNameEditor,
+  closeNameEditor,
   openScenes,
   openPage,
   patchSrc,
@@ -38,6 +40,8 @@ import {
   scanDevices,
   selectChannel,
   setBank,
+  setChannelColor,
+  setChannelName,
   setFader,
   setFine,
   setFxParam,
@@ -73,6 +77,7 @@ import {
   toggleFxOn,
   toggleInvert,
   toggleMute,
+  toggleSolo,
   togglePhantom,
   toggleSendPre,
   resetPan,
@@ -87,6 +92,30 @@ import {
   type World,
 } from './uiLogic.ts';
 import { initialStateFromUrl, markReady } from './urlBridge.ts';
+import { live } from './live.svelte.ts';
+import type { EngineWorld } from '../world/engineWorld/engineWorld.ts';
+import {
+  bridgeDelayMs,
+  bridgeColor,
+  bridgeDyn,
+  bridgeDynOn,
+  bridgeEq,
+  bridgeEqOn,
+  bridgeEqType,
+  bridgeFader,
+  bridgeGainTrim,
+  bridgeHpfOn,
+  bridgeHpfSlope,
+  bridgeInputBool,
+  bridgeMute,
+  bridgeName,
+  bridgePan,
+  bridgePatch,
+  bridgeSend,
+  bridgeSendPre,
+  bridgeUnpatch,
+  type EqBridgeParam,
+} from './engineBridge.ts';
 import { MeterSim, meterIdsFor } from '../fixtures/meterSim.ts';
 import { bankByKey, spec, toN, type Channel } from '../fixtures/designData.ts';
 
@@ -129,6 +158,37 @@ function bankItemIds(key: string): string[] {
   }
 }
 
+/** Live engine when a relay link is up with caps (null in fixture mode). */
+function liveEngine(): EngineWorld | null {
+  const w = live.engine;
+  return live.phase === 'online' && w && w.capsReady ? w : null;
+}
+
+/**
+ * Forward one edit to the desk over the live link. Silent no-op in fixture
+ * mode (or when the engine refuses the id); the fixture model stays the
+ * source of truth and engine denials surface as world error events.
+ */
+function forward(fn: (w: EngineWorld) => void): void {
+  const w = liveEngine();
+  if (!w) return;
+  try {
+    fn(w);
+  } catch {
+    /* ignore: fixture already updated */
+  }
+}
+
+/** Read back one EQ band value from the fixture model for forwarding. */
+function eqBandVal(id: string, band: number, param: EqParam): number | null {
+  const eq = world.chans[id]?.eq;
+  if (!eq) return null;
+  if (band === 0) return param === 'f' ? eq.hpf.f : null;
+  const b = eq.bands[band - 1];
+  if (!b) return null;
+  return b[param];
+}
+
 export const ui = {
   get state(): UiState {
     return world.state;
@@ -152,7 +212,20 @@ export const ui = {
     return masterId(world);
   },
   get header() {
-    return headerView(world);
+    const h = headerView(world);
+    // The header dot is the one place that must tell the truth about the
+    // real socket (fixture `connected` is a console picker until wave 3
+    // binds desks to discovery). Live phases override the fixture dot.
+    if (live.phase === 'online') {
+      return { ...h, connDot: '#5fe060', connAria: `Connection: live via ${live.host}, select device` };
+    }
+    if (live.phase === 'connecting') {
+      return { ...h, connDot: '#f0b44a', connAria: `Connection: connecting to ${live.host}, select device` };
+    }
+    if (live.phase === 'error') {
+      return { ...h, connDot: '#ff4a3d', connAria: `Connection: ${live.message}, select device` };
+    }
+    return h;
   },
   get backTo(): Mode {
     return backTo(world);
@@ -177,6 +250,7 @@ export const ui = {
   initFromUrl(search: string): { fixture: boolean; freeze: boolean } {
     const r = initialStateFromUrl(search, world.state, world.chans);
     update({ state: r.state, chans: world.chans, fx: world.fx });
+    live.initFromUrl(search);
     frozen = r.freeze;
     refreshMeterIds();
     return { fixture: r.fixture, freeze: r.freeze };
@@ -209,31 +283,113 @@ export const ui = {
     stepChannel: (d: number) => { update(stepChannel(world, d)); refreshMeterIds(); },
     setTab: (t: Tab) => update(setTab(world, t)),
     setSelBand: (b: number) => update(setSelBand(world, b)),
-    setFader: (id: string, v: number) => update(setFader(world, id, v)),
-    setSend: (id: string, k: number, v: number) => update(setSend(world, id, k, v)),
-    setPan: (id: string, v: number) => update(setPan(world, id, v)),
-    resetPan: (id: string) => update(resetPan(world, id)),
-    setInputKnob: (id: string, key: 'gain' | 'trim' | 'delay', v: number) =>
+    setFader: (id: string, v: number) => {
+      update(setFader(world, id, v));
+      const nv = world.chans[id]?.fader;
+      if (typeof nv === 'number') forward(w => { bridgeFader(w, id, nv); });
+    },
+    setSend: (id: string, k: number, v: number) => {
+      update(setSend(world, id, k, v));
+      const nv = world.chans[id]?.sends?.[k];
+      if (typeof nv === 'number') forward(w => { bridgeSend(w, id, k, nv); });
+    },
+    setPan: (id: string, v: number) => {
+      update(setPan(world, id, v));
+      const nv = world.chans[id]?.pan;
+      if (typeof nv === 'number') forward(w => { bridgePan(w, id, nv); });
+    },
+    resetPan: (id: string) => {
+      update(resetPan(world, id));
+      forward(w => { bridgePan(w, id, 0); });
+    },
+    setInputKnob: (id: string, key: 'gain' | 'trim' | 'delay', v: number) => {
       update(setSpecValue(world, id, key, (c: Channel, nv: number) => {
         if (!c.input) return;
         if (key === 'gain') c.input.gain = nv;
         else if (key === 'trim') c.input.trim = nv;
         else c.input.delay = nv;
-      }, toN(spec(key), v))),
-    toggleMute: (id: string) => update(toggleMute(world, id)),
-    setEqParam: (id: string, band: number, param: EqParam, v: number) => update(setEqParam(world, id, band, param, v)),
-    resetEqParam: (id: string, band: number, param: EqParam) => update(resetEqParam(world, id, band, param)),
-    toggleEqOn: (id: string) => update(toggleEqOn(world, id)),
-    toggleEqBand: (id: string, band: number) => update(toggleEqBand(world, id, band)),
-    flatEq: (id: string) => update(flatEq(world, id)),
-    setHpfSlope: (id: string, s: 12 | 24) => update(setHpfSlope(world, id, s)),
-    setEqBandType: (id: string, band: number, t: 'LS' | 'PEQ' | 'HS') => update(setEqBandType(world, id, band, t)),
-    toggleDelayOn: (id: string) => update(toggleDelayOn(world, id)),
-    toggleInvert: (id: string) => update(toggleInvert(world, id)),
+      }, toN(spec(key), v)));
+      const input = world.chans[id]?.input;
+      if (!input) return;
+      if (key === 'gain') forward(w => { bridgeGainTrim(w, id, 'gain', input.gain); });
+      else if (key === 'trim') forward(w => { bridgeGainTrim(w, id, 'trim', input.trim); });
+      else forward(w => { bridgeDelayMs(w, id, input.delay); });
+    },
+    toggleMute: (id: string) => {
+      update(toggleMute(world, id));
+      const nv = world.chans[id]?.mute;
+      if (typeof nv === 'boolean') forward(w => { bridgeMute(w, id, nv); });
+    },
+    toggleSolo: (id: string) => update(toggleSolo(world, id)),
+    openNameEditor: (id: string) => update(openNameEditor(world, id)),
+    closeNameEditor: () => update(closeNameEditor(world)),
+    setChannelName: (id: string, name: string) => {
+      update(setChannelName(world, id, name));
+      const nv = world.chans[id]?.name;
+      if (typeof nv === 'string' && nv) forward(w => { bridgeName(w, id, nv); });
+    },
+    setChannelColor: (id: string, color: string, text: string) => {
+      update(setChannelColor(world, id, color, text));
+      const nv = world.chans[id]?.color;
+      if (typeof nv === 'string' && nv) forward(w => { bridgeColor(w, id, nv); });
+    },
+    setEqParam: (id: string, band: number, param: EqParam, v: number) => {
+      update(setEqParam(world, id, band, param, v));
+      const nv = eqBandVal(id, band, param);
+      if (typeof nv === 'number') forward(w => { bridgeEq(w, id, band, param as EqBridgeParam, nv); });
+    },
+    resetEqParam: (id: string, band: number, param: EqParam) => {
+      update(resetEqParam(world, id, band, param));
+      const nv = eqBandVal(id, band, param);
+      if (typeof nv === 'number') forward(w => { bridgeEq(w, id, band, param as EqBridgeParam, nv); });
+    },
+    toggleEqOn: (id: string) => {
+      update(toggleEqOn(world, id));
+      const nv = world.chans[id]?.eq?.on;
+      if (typeof nv === 'boolean') forward(w => { bridgeEqOn(w, id, nv); });
+    },
+    toggleEqBand: (id: string, band: number) => {
+      update(toggleEqBand(world, id, band));
+      // Only the HPF has an engine leaf; per-band bypass stays fixture-local.
+      if (band === 0) {
+        const nv = world.chans[id]?.eq?.hpf.on;
+        if (typeof nv === 'boolean') forward(w => { bridgeHpfOn(w, id, nv); });
+      }
+    },
+    flatEq: (id: string) => {
+      update(flatEq(world, id));
+      const bands = world.chans[id]?.eq?.bands;
+      if (bands) forward(w => {
+        bands.forEach((b, i) => { bridgeEq(w, id, i + 1, 'g', b.g); });
+      });
+    },
+    setHpfSlope: (id: string, s: 12 | 24) => {
+      update(setHpfSlope(world, id, s));
+      forward(w => { bridgeHpfSlope(w, id, s); });
+    },
+    setEqBandType: (id: string, band: number, t: 'LS' | 'PEQ' | 'HS') => {
+      update(setEqBandType(world, id, band, t));
+      forward(w => { bridgeEqType(w, id, band, t); });
+    },
+    toggleDelayOn: (id: string) => {
+      update(toggleDelayOn(world, id));
+      const nv = world.chans[id]?.input?.delayOn;
+      if (typeof nv === 'boolean') forward(w => { bridgeInputBool(w, id, 'delay_on', nv); });
+    },
+    toggleInvert: (id: string) => {
+      update(toggleInvert(world, id));
+      const nv = world.chans[id]?.input?.invert;
+      if (typeof nv === 'boolean') forward(w => { bridgeInputBool(w, id, 'polarity', nv); });
+    },
     togglePhantom: (id: string) => {
       clearArmTimer();
       const before = world.state.phantomArm;
       update(togglePhantom(world, id));
+      // Forward only the commit tap (arming alone touches nothing).
+      if (before === id) {
+        const nv = world.chans[id]?.input?.phantom;
+        if (typeof nv === 'boolean') forward(w => { bridgeInputBool(w, id, 'phantom', nv); });
+      }
       if (before !== id && world.state.phantomArm === id) {
         armTimer = setTimeout(() => {
           update(expirePhantom(world, id));
@@ -241,10 +397,22 @@ export const ui = {
         }, 3000);
       }
     },
-    setDynParam: (id: string, which: 'gate' | 'comp', prop: string, n: number) =>
-      update(setDynParam(world, id, which, prop, n)),
-    toggleDyn: (id: string, which: 'gate' | 'comp') => update(toggleDyn(world, id, which)),
-    toggleSendPre: (id: string, k: number) => update(toggleSendPre(world, id, k)),
+    setDynParam: (id: string, which: 'gate' | 'comp', prop: string, n: number) => {
+      update(setDynParam(world, id, which, prop, n));
+      const d = world.chans[id]?.dyn?.[which] as unknown as Record<string, number> | undefined;
+      const nv = d?.[prop];
+      if (typeof nv === 'number') forward(w => { bridgeDyn(w, id, which, prop, nv); });
+    },
+    toggleDyn: (id: string, which: 'gate' | 'comp') => {
+      update(toggleDyn(world, id, which));
+      const nv = world.chans[id]?.dyn?.[which]?.on;
+      if (typeof nv === 'boolean') forward(w => { bridgeDynOn(w, id, which, nv); });
+    },
+    toggleSendPre: (id: string, k: number) => {
+      update(toggleSendPre(world, id, k));
+      const nv = world.chans[id]?.sendPre?.[k];
+      if (typeof nv === 'boolean') forward(w => { bridgeSendPre(w, id, k, nv); });
+    },
     setFxSel: (i: number) => update(setFxSel(world, i)),
     setFxType: (i: number, t: string) => update(setFxType(world, i, t)),
     setFxParam: (i: number, p: number, n: number) => update(setFxParam(world, i, p, n)),
@@ -258,11 +426,36 @@ export const ui = {
     setPatchSel: (id: string) => update(setPatchSel(world, id)),
     setPatchGroup: (g: RouteGroup) => update(setPatchGroup(world, g)),
     setRouteBank: (b: number) => update(setRouteBank(world, b)),
-    patchSrc: (label: string) => update(patchSrc(world, label)),
-    unpatch: () => update(unpatch(world)),
-    scan: (clock: string) => update(scanDevices(world, clock)),
-    disconnect: () => update(disconnect(world)),
-    connect: (key: string) => update(connectDevice(world, key)),
+    patchSrc: (label: string) => {
+      const target = world.state.patchSel;
+      update(patchSrc(world, label));
+      forward(w => { bridgePatch(w, target, label); });
+    },
+    unpatch: () => {
+      const target = world.state.patchSel;
+      update(unpatch(world));
+      forward(w => { bridgeUnpatch(w, target); });
+    },
+    scan: (clock: string) => {
+      update(scanDevices(world, clock));
+      forward(w => { w.scan(); });
+    },
+    disconnect: () => {
+      const was = world.state.connected;
+      update(disconnect(world));
+      if (was) forward(w => { w.disconnectDesk(); });
+    },
+    connect: (key: string) => {
+      const before = world.state.connected;
+      update(connectDevice(world, key));
+      if (world.state.connected !== before && world.state.connected) {
+        forward(w => { w.connectDevice(world.state.connected as string); });
+      }
+    },
+    /** Real relay link (connection screen relay card; driver only when explicitly chosen). */
+    connectRelay: (host?: string, driver?: string) => live.connect(host, driver),
+    disconnectRelay: () => live.disconnect(),
+    setRelayHost: (host: string) => live.setHost(host),
     setSpp: (n: number) => update(setSpp(world, n)),
     setFine: (v: boolean) => update(setFine(world, v)),
     setSof: (v: boolean) => { update(setSof(world, v)); refreshMeterIds(); },

@@ -12,12 +12,15 @@
 <script lang="ts">
   import { dynDotNums, type DynAxisTick, type DynGridLine, type DynKind, type DynParams } from './dynModel.ts';
   import type { ModuleContext } from '../../../modules/types.ts';
+  import { fromN, spec } from '../../../fixtures/designData.ts';
+  import { tap } from '../../../primitives/feel.ts';
   import GrBar from './GrBar.svelte';
 
   let {
     props = {},
     ctx: _ctx,
     nodeId: _nodeId,
+    onEvent,
   }: {
     props: {
       kind?: DynKind;
@@ -40,6 +43,7 @@
     };
     ctx: ModuleContext;
     nodeId: string;
+    onEvent?: (name: string, payload?: unknown) => void;
   } = $props();
 
   const kind = $derived(props.kind ?? 'comp');
@@ -73,6 +77,80 @@
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
   });
+
+  // Graph drag: horizontal moves the threshold (both kinds); on comp,
+  // vertical moves the ratio (log 1..20 through the spec). Emits RAW spec
+  // values through `thr` / `ratio` for the layout `on` action
+  // (channel.dynKnob, lock-checked there). Direction lock with slop:
+  // gate ignores vertical (touch-action pan-y scrolls the page natively);
+  // comp needs both axes, so it takes touch (touch-action none) and the
+  // lock decides threshold vs ratio per gesture.
+  const THR_LO: Record<DynKind, number> = { gate: -80, comp: -60 };
+  let plot: HTMLDivElement | null = $state(null);
+  let drag: {
+    x0: number;
+    y0: number;
+    px: number;
+    py: number;
+    w: number;
+    h: number;
+    mode: 'thr' | 'ratio' | null;
+    el: HTMLElement | null;
+  } | null = null;
+
+  function down(e: PointerEvent): void {
+    if (!onEvent || e.button !== 0) return;
+    const r = plot?.getBoundingClientRect();
+    if (!r || r.width < 1 || r.height < 1) return;
+    drag = {
+      x0: e.clientX,
+      y0: e.clientY,
+      px: r.left,
+      py: r.top,
+      w: r.width,
+      h: r.height,
+      mode: null,
+      el: e.currentTarget as HTMLElement,
+    };
+  }
+  function move(e: PointerEvent): void {
+    if (!drag || !onEvent) return;
+    const ax = Math.abs(e.clientX - drag.x0);
+    const ay = Math.abs(e.clientY - drag.y0);
+    if (kind === 'gate') {
+      // Threshold only: vertical falls through (touch-action pan-y lets
+      // the page scroll natively on touch).
+      if (ax <= 10) return;
+      if (!drag.mode) {
+        try {
+          drag.el?.setPointerCapture(e.pointerId);
+        } catch {
+          /* noop */
+        }
+        drag.mode = 'thr';
+      }
+    } else if (!drag.mode) {
+      if (ax <= 10 && ay <= 10) return;
+      try {
+        drag.el?.setPointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+      drag.mode = ax >= ay ? 'thr' : 'ratio';
+    }
+    if (drag.mode === 'thr') {
+      const frac = Math.max(0, Math.min(1, (e.clientX - drag.px) / drag.w));
+      const rawDb = THR_LO[kind] + frac * -THR_LO[kind];
+      onEvent('thr', { value: Math.round(rawDb * 2) / 2 });
+    } else if (drag.mode === 'ratio') {
+      const n = Math.max(0, Math.min(1, 1 - (e.clientY - drag.py) / drag.h));
+      onEvent('ratio', { value: fromN(spec('ratio'), n) });
+    }
+  }
+  function up(): void {
+    if (drag?.mode) tap();
+    drag = null;
+  }
 </script>
 
 <div
@@ -88,8 +166,22 @@
   </div>
   <div style="box-sizing:content-box;flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
     <div
-      style="box-sizing:content-box;flex:1;position:relative;overflow:hidden;border-radius:3px;border:1px solid #1f2836;background:#0b111b"
+      bind:this={plot}
+      onpointerdown={down}
+      onpointermove={move}
+      onpointerup={up}
+      onpointercancel={up}
+      title={kind === 'gate' ? 'Drag horizontally: threshold' : 'Drag: threshold (horizontal), ratio (vertical)'}
+      style="box-sizing:content-box;flex:1;position:relative;overflow:hidden;border-radius:3px;border:1px solid #1f2836;background:#0b111b;touch-action:{kind ===
+      'gate'
+        ? 'pan-y'
+        : 'none'};cursor:{kind === 'gate' ? 'ew-resize' : 'move'}"
     >
+      <span
+        aria-hidden="true"
+        style="position:absolute;left:{props.thrLeft ??
+          '50'}%;top:34px;width:28px;height:28px;transform:translate(-50%, -50%);border-radius:50%;border:2px solid {color};background:rgba(11,15,20,.55);box-shadow:0 0 8px {color};pointer-events:none"
+      ></span>
       <svg
         viewBox="0 0 200 200"
         preserveAspectRatio="none"

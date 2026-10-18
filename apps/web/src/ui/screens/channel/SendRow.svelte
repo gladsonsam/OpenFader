@@ -42,20 +42,44 @@
   const fine = $derived(props.fine ?? false);
 
   let area: HTMLButtonElement | null = $state(null);
-  let drag: { x: number; start: number; w: number } | null = null;
+  // Tablet direction lock: touch/pen stays pending until horizontal intent
+  // locks the send drag; vertical intent aborts so the page scrolls.
+  let drag: {
+    x0: number;
+    y0: number;
+    start: number;
+    w: number;
+    active: boolean;
+    el: HTMLElement | null;
+  } | null = null;
 
   function down(e: PointerEvent): void {
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      /* noop */
-    }
     const rect = area?.getBoundingClientRect();
-    drag = { x: e.clientX, start: row.value, w: Math.max(60, (rect?.width ?? 64) - 18) };
+    const w = Math.max(60, (rect?.width ?? 64) - 18);
+    const target = e.currentTarget as HTMLElement;
+    // All pointers start pending with NO capture: no value change until
+    // horizontal intent locks the send drag (then we capture); vertical
+    // intent aborts so the page scrolls.
+    drag = { x0: e.clientX, y0: e.clientY, start: row.value, w, active: false, el: target };
   }
   function move(e: PointerEvent): void {
     if (!drag) return;
-    onEvent?.('input', { value: sendFromDrag(drag.start, e.clientX - drag.x, drag.w, fine) });
+    if (!drag.active) {
+      const ax = Math.abs(e.clientX - drag.x0);
+      const ay = Math.abs(e.clientY - drag.y0);
+      if (ay > 12 && ay > ax) {
+        drag = null;
+        return;
+      }
+      if (ax <= 10 || ax <= ay) return;
+      try {
+        drag.el?.setPointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+      drag.active = true;
+    }
+    onEvent?.('input', { value: sendFromDrag(drag.start, e.clientX - drag.x0, drag.w, fine) });
   }
   function up(): void {
     drag = null;

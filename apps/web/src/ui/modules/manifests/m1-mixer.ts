@@ -18,6 +18,8 @@ import StripFrame from '../../screens/mixer/StripFrame.svelte';
 import StripMute from '../../screens/mixer/StripMute.svelte';
 import StripFader from '../../screens/mixer/StripFader.svelte';
 import StripName from '../../screens/mixer/StripName.svelte';
+import StripNameEditor from '../../screens/mixer/StripNameEditor.svelte';
+import StripSolo from '../../screens/mixer/StripSolo.svelte';
 import StripEmpty from '../../screens/mixer/StripEmpty.svelte';
 import StripWellEmpty from '../../screens/mixer/StripWellEmpty.svelte';
 import DbReadout from '../../screens/mixer/DbReadout.svelte';
@@ -153,6 +155,34 @@ export const manifests: ModuleManifest[] = [
     defaults: { variant: 'strip' },
     size: { minW: 60, fixedH: 52 },
     events: [{ name: 'select' }],
+  },
+  {
+    id: 'strip-name-editor',
+    title: 'Strip name editor',
+    category: 'strip',
+    component: as(StripNameEditor),
+    props: {
+      name: { type: 'text', default: 'Ch 1' },
+      selectedColor: { type: 'color', default: '#5cdb5c' },
+    },
+    defaults: {},
+    size: { minW: 60 },
+    events: [{ name: 'rename' }, { name: 'recolor' }, { name: 'close' }],
+  },
+  {
+    id: 'strip-solo',
+    title: 'Strip solo button',
+    category: 'strip',
+    component: as(StripSolo),
+    props: {
+      solo: { type: 'bool', default: false },
+      enabled: { type: 'bool', default: true },
+      height: { type: 'number', min: 30, max: 56, default: 40 },
+      label: { type: 'text', default: 'Solo Ch 1' },
+    },
+    defaults: { solo: false, enabled: true, height: 40, label: 'Solo Ch 1' },
+    size: { minW: 60, minH: 30, fixedH: 40 },
+    events: [{ name: 'press' }],
   },
   {
     id: 'strip-empty',
