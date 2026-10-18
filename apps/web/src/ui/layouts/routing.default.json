@@ -17,8 +17,8 @@
         "gap": 10,
         "padding": 12,
         "radius": 3,
-        "border": "1px solid #1f2836",
-        "background": "#0e1520",
+        "border": "1px solid var(--u4-line-panel)",
+        "background": "var(--u4-panel-bg)",
         "flex": "1 1 auto",
         "minWidth": 0,
         "minHeight": 0,
@@ -48,7 +48,7 @@
                   "props": {
                     "height": 48,
                     "fontSize": 15,
-                    "border": "1px solid #3a414c",
+                    "border": "1px solid var(--u4-line-ctl)",
                     "bare": true
                   },
                   "bind": {
@@ -87,9 +87,9 @@
                     "label": "1:1",
                     "height": 48,
                     "fontSize": 15,
-                    "bg": "#2b3038",
-                    "fg": "#e8edf5",
-                    "border": "1px solid #3a414c",
+                    "bg": "var(--u4-btn-bg)",
+                    "fg": "var(--u4-text-1)",
+                    "border": "1px solid var(--u4-line-ctl)",
                     "bare": true
                   },
                   "on": {
@@ -135,9 +135,9 @@
                     "label": "Apply",
                     "height": 48,
                     "fontSize": 15,
-                    "bg": "#0f2e1d",
-                    "fg": "#7dffa8",
-                    "border": "1px solid #1f7a3d",
+                    "bg": "var(--u4-apply-bg)",
+                    "fg": "var(--u4-apply-fg)",
+                    "border": "1px solid var(--u4-apply-border)",
                     "bare": true
                   },
                   "when": "store.pendingPatch != null",
@@ -154,9 +154,9 @@
                     "label": "Cancel",
                     "height": 48,
                     "fontSize": 15,
-                    "bg": "#2b3038",
-                    "fg": "#c9d1dc",
-                    "border": "1px solid #3a414c",
+                    "bg": "var(--u4-btn-bg)",
+                    "fg": "var(--u4-text-4)",
+                    "border": "1px solid var(--u4-line-ctl)",
                     "bare": true
                   },
                   "when": "store.pendingPatch != null",

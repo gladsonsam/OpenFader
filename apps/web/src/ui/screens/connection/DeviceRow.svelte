@@ -25,8 +25,8 @@
       sub: '',
       icon: '',
       status: '',
-      statusColor: '#8792a4',
-      border: '#1f2836',
+      statusColor: 'var(--u4-text-7)',
+      border: 'var(--u4-line-panel)',
       canConnect: false,
       btnLabel: '',
       btnBg: '#1a2a1b',
@@ -37,10 +37,10 @@
 </script>
 
 <div
-  style="box-sizing:content-box;display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:3px;border:1px solid {d.border};background:#0e1520"
+  style="box-sizing:content-box;display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:3px;border:1px solid {d.border};background:var(--u4-panel-bg)"
 >
   <div
-    style="box-sizing:content-box;width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:3px;background:#1a2332;color:#c9d1dc"
+    style="box-sizing:content-box;width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:3px;background:#1a2332;color:var(--u4-text-4)"
   >
     <svg
       width="24"
@@ -57,7 +57,7 @@
   <div style="box-sizing:content-box;flex:1;min-width:0">
     <div style="box-sizing:content-box;font-size:16px;font-weight:600">{d.name}</div>
     <div
-      style="box-sizing:content-box;font-size:12px;color:#8792a4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+      style="box-sizing:content-box;font-size:12px;color:var(--u4-text-7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
     >{d.sub}</div>
   </div>
   <span style="font-size:12px;font-weight:600;color:{d.statusColor};white-space:nowrap">{d.status}</span>

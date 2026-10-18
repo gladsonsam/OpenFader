@@ -29,8 +29,8 @@
 <NameBar
   name={props.name ?? ''}
   sub={props.sub ?? ''}
-  color={props.color ?? '#222a36'}
-  text={props.text ?? '#e8edf5'}
+  color={props.color ?? 'var(--u4-line-faint)'}
+  text={props.text ?? 'var(--u4-text-1)'}
   icon={props.icon ?? null}
   variant={props.variant ?? 'strip'}
   selectAria={props.selectAria ?? null}

@@ -30,8 +30,7 @@
 
   /** Guarded lookup: fixtures default to null; the store only writes known names. */
   const iconDef = $derived(icon != null && icon in chanIcons ? chanIcons[icon as ChanIconName] : null);
-
-  const h = variant === 'plate' ? (iconDef ? 76 : 54) : 76;
+  const h = $derived(variant === 'plate' ? (iconDef ? 76 : 54) : 76);
   const nameSize = variant === 'plate' ? 17 : 16;
   const iconSize = 44;
 </script>

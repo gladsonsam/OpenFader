@@ -273,7 +273,7 @@ function eq<T>(a: T, b: T, label: string): void {
   eq(masterId(w), 'mix5', 'mix target');
   const st = stripText(w, 'in2')!;
   eq(st.faderAria.startsWith('Send to Mix 5 from Ch 2'), true, 'sof fader aria');
-  eq(st.readColor, '#22d3e6', 'sof read color');
+  eq(st.readColor, 'var(--u4-cyan)', 'sof read color');
   const w2 = setSof(initialWorld(), false);
   eq(stripText(w2, 'in2')!.faderAria.startsWith('Fader Ch 2'), true, 'fader aria');
 }

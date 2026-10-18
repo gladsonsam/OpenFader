@@ -33,7 +33,7 @@
   <div
     aria-hidden="true"
     data-ctl="pan-empty"
-    style="height:30px;flex:none;border:1px solid #1a2230;border-radius:3px;box-sizing:content-box"
+    style="height:30px;flex:none;border:1px solid var(--u4-rail-border);border-radius:3px;box-sizing:content-box"
   ></div>
 {:else}
   <PanBar
