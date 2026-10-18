@@ -20,7 +20,13 @@ free AND its files don't collide with the running worker.
    topbar, channel density; no separate agent).
 3. Devices: scan shows ONLY real desks (owner's XR18, no sim/fake
    entries) + explicit work-offline mode.
-4. Push merged main (post-merge verification first).
+4. Linked-fader pairing in the frontend: where the app knows two strips
+   are linked (stereo pair), moving one fader moves the other locally —
+   no WS round-trip, no re-read, sync computed front-end-side.
+5. Strip status mini-icons below the mute button: tiny indicators for
+   phantom power, mute-group membership, and similar strip state —
+   glanceable, no extra taps.
+6. Push merged main (post-merge verification first).
 
 ## Queued — server-side (NOT today; parked, do not dispatch)
 - Automixing (gain-sharing across channels on the server).
