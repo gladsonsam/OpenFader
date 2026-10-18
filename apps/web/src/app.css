@@ -398,3 +398,22 @@ body { font-size: clamp(14px, 0.4vw + 13px, 16px); }
 #app.surface #scenes,
 #app.surface #roster,
 #app.surface #locks { display: none; }
+
+/* Persistent console status strip (non-surface views). */
+#statusstrip {
+  display: flex; gap: 10px; align-items: center; padding: 4px 10px;
+  background: var(--chassis); border-bottom: 1px solid var(--line);
+  font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums;
+}
+#statusstrip .ss-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--red);
+  box-shadow: 0 0 6px var(--led-red);
+}
+#statusstrip .ss-dot.on { background: var(--grn); box-shadow: 0 0 6px var(--led-grn); }
+#statusstrip .ss-solo { color: var(--yel); font-weight: 800; }
+#statusstrip .ss-clip { color: var(--red); font-weight: 800; }
+#statusstrip .ss-clear {
+  min-height: 28px; min-width: 0; padding: 0 8px; font-size: 11px; font-weight: 800;
+  border-color: var(--yel); color: var(--yel);
+}
+#statusstrip .ss-clock { margin-left: auto; color: var(--txt); }
