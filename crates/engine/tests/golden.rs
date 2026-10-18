@@ -179,6 +179,14 @@ fn examples() -> Vec<(String, Value)> {
                     per_strip: true,
                     supported: true,
                 },
+                groups: openmix_engine::protocol::GroupsCaps {
+                    buses: 8,
+                    subgroups: 6,
+                    mute_groups: 6,
+                    mg_assign: true,
+                    sub_assign: true,
+                },
+                files: openmix_engine::protocol::FilesCaps { supported: true },
             },
         ),
         (
@@ -223,6 +231,54 @@ fn examples() -> Vec<(String, Value)> {
                 overrode_locks: vec![1],
             },
         ),
+        (
+            "bus",
+            Event::Bus {
+                bus: 0,
+                fader: 0.75,
+                muted: false,
+            },
+        ),
+        (
+            "subgroup",
+            Event::Subgroup {
+                group: 1,
+                fader: 0.7,
+                muted: true,
+            },
+        ),
+        (
+            "subgroup_assign",
+            Event::SubgroupAssign {
+                ch: 0,
+                group: 1,
+                member: true,
+            },
+        ),
+        (
+            "mute_group",
+            Event::MuteGroup {
+                group: 0,
+                muted: true,
+            },
+        ),
+        (
+            "mute_group_assign",
+            Event::MuteGroupAssign {
+                ch: 5,
+                group: 2,
+                member: false,
+            },
+        ),
+        (
+            "file",
+            Event::File {
+                filename: "Show.zip".to_string(),
+                size: 4,
+                file_type: 0,
+                data: Some("AAECAw==".to_string()),
+            },
+        ),
     ];
     let mut out: Vec<(String, Value)> = frames
         .into_iter()
@@ -260,6 +316,33 @@ fn examples() -> Vec<(String, Value)> {
         (
             "delete_scene",
             json!({"cmd":"delete_scene","show":"gig","name":"verse"}),
+        ),
+        ("bus_fader", json!({"cmd":"bus_fader","bus":0,"value":0.5})),
+        ("bus_mute", json!({"cmd":"bus_mute","bus":0,"muted":true})),
+        (
+            "subgroup_fader",
+            json!({"cmd":"subgroup_fader","group":1,"value":0.7}),
+        ),
+        (
+            "subgroup_mute",
+            json!({"cmd":"subgroup_mute","group":1,"muted":true}),
+        ),
+        (
+            "subgroup_assign",
+            json!({"cmd":"subgroup_assign","ch":0,"group":1,"member":true}),
+        ),
+        ("mute_group", json!({"cmd":"mute_group","group":0,"muted":true})),
+        (
+            "mute_group_assign",
+            json!({"cmd":"mute_group_assign","ch":5,"group":2,"member":false}),
+        ),
+        (
+            "file_download",
+            json!({"cmd":"file_download","filename":"Show.zip"}),
+        ),
+        (
+            "file_upload",
+            json!({"cmd":"file_upload","filename":"Show.zip","data":"AAECAw==","file_type":0}),
         ),
     ]
     .into_iter()

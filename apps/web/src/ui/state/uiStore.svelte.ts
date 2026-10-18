@@ -42,8 +42,10 @@ import {
   resetEqParam,
   resetFxParam,
   scanDevices,
+  selectBusMaster,
   selectChannel,
   setBank,
+  setBusPopup,
   setChannelColor,
   setChannelIcon,
   setChannelName,
@@ -111,6 +113,10 @@ import {
   bridgeEqOn,
   bridgeEqType,
   bridgeFader,
+  bridgeFxBypass,
+  bridgeFxOn,
+  bridgeFxParamByIndex,
+  bridgeFxType,
   bridgeGainTrim,
   bridgeHpfOn,
   bridgeHpfSlope,
@@ -123,6 +129,7 @@ import {
   bridgePatch,
   bridgeSend,
   bridgeSendPre,
+  bridgeSolo,
   bridgeSubgroupAssign,
   bridgeSubgroupMute,
   bridgeUnpatch,
@@ -241,6 +248,14 @@ function syncWorldToFixture(w: EngineWorld): void {
           changed = true;
         }
       }
+      // Live solo (monitor bus): sparse engine echoes flow into the
+      // fixture solo flag so desk-side solos (and our own echo) show.
+      // No pending gate: solo has no optimistic param entry.
+      const es = w.soloOf(ch);
+      if (slot.solo !== es) {
+        slot.solo = es;
+        changed = true;
+      }
       // Desk name/colour/source/pan ride the same confirmed-only path:
       // pending local edits win, unsupported ids (xair source/link) stay
       // fixture-local because the poller never confirms them.
@@ -279,6 +294,15 @@ function syncWorldToFixture(w: EngineWorld): void {
           }
         }
       }
+    }
+    // Main LR master mute: the attach `main` frame + `main_mute` echoes
+    // land in the library store; copy confirmed truth into the master
+    // strip the same way strip mutes flow above.
+    const mm = w.mainMuted;
+    const master = world.chans['mainlr'];
+    if (typeof mm === 'boolean' && master && master.mute !== mm) {
+      master.mute = mm;
+      changed = true;
     }
     if (changed) update(world);
   } finally {
@@ -431,6 +455,12 @@ export const ui = {
     openScenes: () => update(openScenes(world)),
     goPatch: (id: string) => update(goPatch(world, id)),
     setBank: (b: string) => { update(setBank(world, b)); refreshMeterIds(); },
+    openBusPopup: () => update(setBusPopup(world, true)),
+    closeBusPopup: () => update(setBusPopup(world, false)),
+    selectBusMaster: (id: string) => {
+      update(selectBusMaster(world, id));
+      refreshMeterIds();
+    },
     select: (id: string) => { update(selectChannel(world, id)); refreshMeterIds(); },
     openEq: (id: string) => update(openEq(world, id)),
     openDyn: (id: string) => update(openDyn(world, id)),
@@ -491,7 +521,11 @@ export const ui = {
         else if (kind === 'sg') bridgeSubgroupMute(w, group, muted);
       });
     },
-    toggleSolo: (id: string) => update(toggleSolo(world, id)),
+    toggleSolo: (id: string) => {
+      update(toggleSolo(world, id));
+      const nv = world.chans[id]?.solo;
+      if (typeof nv === 'boolean') forward(w => { bridgeSolo(w, id, nv); });
+    },
     openNameEditor: (id: string) => update(openNameEditor(world, id)),
     closeNameEditor: () => update(closeNameEditor(world)),
     setChannelName: (id: string, name: string) => {
@@ -588,10 +622,23 @@ export const ui = {
       if (typeof nv === 'boolean') forward(w => { bridgeSendPre(w, id, k, nv); });
     },
     setFxSel: (i: number) => update(setFxSel(world, i)),
-    setFxType: (i: number, t: string) => update(setFxType(world, i, t)),
-    setFxParam: (i: number, p: number, n: number) => update(setFxParam(world, i, p, n)),
-    resetFxParam: (i: number, p: number) => update(resetFxParam(world, i, p)),
-    toggleFxOn: (i: number) => update(toggleFxOn(world, i)),
+    setFxType: (i: number, t: string) => {
+      update(setFxType(world, i, t));
+      forward(w => { bridgeFxType(w, i, t); });
+    },
+    setFxParam: (i: number, p: number, n: number) => {
+      update(setFxParam(world, i, p, n));
+      forward(w => { bridgeFxParamByIndex(w, i, p, n); });
+    },
+    resetFxParam: (i: number, p: number) => {
+      update(resetFxParam(world, i, p));
+      forward(w => { bridgeFxParamByIndex(w, i, p, 0.5); });
+    },
+    toggleFxOn: (i: number) => {
+      update(toggleFxOn(world, i));
+      const nv = world.fx[i]?.on;
+      if (typeof nv === 'boolean') forward(w => { bridgeFxOn(w, i, nv); });
+    },
     tapFx: (i: number) => {
       const r = tapFx(world, i, taps, Date.now());
       taps = r.taps;

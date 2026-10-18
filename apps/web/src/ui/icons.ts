@@ -80,6 +80,13 @@ export const icons = {
     1.8,
     { linecap: 'round', linejoin: 'round' },
   ),
+  /** Meter bridge (lucide audio-lines artwork, 24x24, stroke 2) */
+  meters: def(
+    '0 0 24 24',
+    '<path d="M2 10v3" /><path d="M6 6v11" /><path d="M10 3v18" /><path d="M14 8v8" /><path d="M18 5v13" /><path d="M22 10v3" />',
+    2,
+    { linecap: 'round', linejoin: 'round' },
+  ),
   /** Previous channel (channel strip pager, 20x20, stroke 2.2) */
   chevronLeft: def(
     '0 0 24 24',

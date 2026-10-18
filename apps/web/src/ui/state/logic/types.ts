@@ -55,6 +55,8 @@ export interface UiState {
   /** Connected device key, 'offline', or null. */
   connected: string | null;
   lastScan: string;
+  /** Bus selector popup over the mixer master (item 7; null = closed). */
+  busPopup: boolean;
 }
 
 export interface World {
@@ -69,7 +71,7 @@ export function initialUiState(): UiState {
     fine: false, muteEnable: true, sof: false, mix: 0, scene: 4, scenePv: 4,
     spp: null, peakHold: true, locked: false, sceneConfirm: true, phantomArm: null,
     fxSel: 0, patchSel: 'in1', patchGroup: 'Lcl', routeBank: 0, pendingPatch: null, nameEdit: null,
-    connected: 'foh', lastScan: 'Scanned at start-up',
+    connected: 'foh', lastScan: 'Scanned at start-up', busPopup: false,
   };
 }
 

@@ -50,6 +50,8 @@ import {
 } from './eq/eqModel.ts';
 import type { Channel } from '../fixtures/designData.ts';
 import type { Tab, UiState, World } from '../state/uiLogic.ts';
+import type { GroupsVm, LiveGroupsSource } from './groupsModel.ts';
+import { groupsVmFor } from './groupsModel.ts';
 
 export interface ChannelScopeFeeds {
   /** Live meter feed for the master strip fader (reads ui.meter). */
@@ -70,6 +72,8 @@ export interface ChannelScopeArgs extends ChannelScopeFeeds {
   /** FX plane (part of the World the strip vm reads). */
   fx: import('../state/uiLogic.ts').World['fx'];
   sel: Channel;
+  /** Live desk groups source (null offline: the card hides). */
+  liveGroups: LiveGroupsSource | null;
 }
 
 export interface ChannelScope {
@@ -112,6 +116,8 @@ export interface ChannelScope {
   hbarMeter: unknown;
   dynGetLevel: (() => number) | null;
   frozen: boolean;
+  /** Desk groups card vm (null offline: the layout `when` hides the card). */
+  groupsVm: GroupsVm | null;
 }
 
 /** Tab the dyn modules render for (gate tab -> gate, everything else -> comp). */
@@ -180,5 +186,6 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     hbarMeter: a.hbarMeter,
     dynGetLevel: a.dynGetLevel,
     frozen: a.frozen,
+    groupsVm: groupsVmFor(a.liveGroups),
   };
 }

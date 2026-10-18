@@ -25,10 +25,28 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 use crate::protocol::{Cmd, DeviceDesc, Event, FxSlotState, OfflineChange, ParamDef, PatchEntry, Scene as SceneFrame, Show as ShowFrame};
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 /// Link re-broadcast interval (R2): the `link` event goes out on every
 /// change plus on this cadence with a fresh round-trip measurement.
 pub const LINK_INTERVAL: Duration = Duration::from_secs(2);
+
+/// R2 file-transfer upload cap (16 MiB): bounds one WS JSON frame's base64
+/// payload so a bad client cannot blow the engine's memory.
+pub const FILE_MAX_BYTES: usize = 16 << 20;
+
+/// Validate a desk filename for `file_download` / `file_upload` (mirrors
+/// the driver-side rules so bad names fail before touching the desk).
+pub fn check_filename(name: &str) -> anyhow::Result<String> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 128 {
+        anyhow::bail!("filename must be 1..=128 chars");
+    }
+    if name.contains(['/', '\\', '\0']) {
+        anyhow::bail!("filename {name:?} must not contain path separators");
+    }
+    Ok(name.to_string())
+}
 
 /// R2 scene slot range: numbered library slots `001..=999`.
 pub const SCENE_MIN: u16 = 1;
@@ -96,6 +114,92 @@ pub struct StoredStrip {
     pub fader: f32,
     pub mute: bool,
     pub params: HashMap<String, Value>,
+}
+
+/// Scoped recall: which strips / param groups / globals a `scene_recall`
+/// applies (`None` scope = full plane, the historical behavior). The
+/// groups mirror the desk Edit-Snapshots layout: Source, Input, Config,
+/// EQ, Dyn, Fdr-Pan, Mute, per-bus sends, per-FX sends; the globals are
+/// Main LR, the FX rack and routing. Unknown group/global names are
+/// ignored (never fail a recall); an empty allowlist recalls nothing in
+/// that axis.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub struct RecallScope {
+    /// Strip allowlist (engine strip indices). `None` = all strips.
+    #[serde(default)]
+    pub strips: Option<Vec<u16>>,
+    /// Param-group allowlist (see [`param_scope_group`]). `None` = all.
+    #[serde(default)]
+    pub groups: Option<Vec<String>>,
+    /// Global allowlist (`main`, `fx`, `routing`). `None` = all.
+    #[serde(default)]
+    pub globals: Option<Vec<String>>,
+}
+
+impl RecallScope {
+    pub fn allows_strip(&self, strip: u16) -> bool {
+        self.strips.as_ref().is_none_or(|s| s.contains(&strip))
+    }
+    pub fn allows_group(&self, group: &str) -> bool {
+        self.groups.as_ref().is_none_or(|g| g.iter().any(|x| x == group))
+    }
+    pub fn allows_param(&self, id: &str) -> bool {
+        self.allows_group(param_scope_group(id))
+    }
+    pub fn allows_global(&self, global: &str) -> bool {
+        self.globals.as_ref().is_none_or(|g| g.iter().any(|x| x == global))
+    }
+}
+
+/// Catalogue param id -> recall scope group (the desk Edit-Snapshots
+/// columns). `fader`/`pan` ride Fdr-Pan, `mute` rides Mute, `name`/
+/// `link`/`color` ride Config; send ids split by slot number (1..6 bus,
+/// 7..10 FX) across all send suffixes (`level`, `tap`, `pan`, `on`);
+/// anything unrecognized falls back to Config (never silently dropped
+/// from a partial recall — Config off excludes it like the rest).
+pub fn param_scope_group(id: &str) -> &'static str {
+    if id == "fader" || id == "pan" {
+        return "fader_pan";
+    }
+    if id == "mute" {
+        return "mute";
+    }
+    if id == "source" {
+        return "source";
+    }
+    if matches!(
+        id,
+        "gain" | "trim" | "phantom" | "polarity" | "delay_on" | "delay_ms"
+    ) {
+        return "input";
+    }
+    if id == "link" || id == "color" || id == "name" {
+        return "config";
+    }
+    if id.starts_with("eq_") || id.starts_with("hpf_") || id == "eq_on" || id == "hpf_on" {
+        return "eq";
+    }
+    if id.starts_with("gate_") || id.starts_with("comp_") || id.starts_with("dyn_") {
+        return "dyn";
+    }
+    if let Some(n) = send_slot_number(id) {
+        return if n <= 6 { "sends_bus" } else { "sends_fx" };
+    }
+    "config"
+}
+
+/// Numeric send slot behind `auxN_*` / `fxN_*` / `sendN_*` ids (`None`
+/// when the id is not a send leaf).
+fn send_slot_number(id: &str) -> Option<u8> {
+    let rest = id
+        .strip_prefix("aux")
+        .or_else(|| id.strip_prefix("fx"))
+        .or_else(|| id.strip_prefix("send"))?;
+    let digits: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+    if digits.is_empty() || !rest[digits.len()..].starts_with('_') {
+        return None;
+    }
+    digits.parse::<u8>().ok()
 }
 
 /// One FX slot's contribution to a [`StoredScene`].
@@ -410,6 +514,16 @@ pub struct Engine {
     rtt_ema_us: AtomicU64,
     /// R2 LAN scanner (real discovery or an injected fake).
     scanner: Arc<dyn DeviceScanner>,
+    /// Which driver holds an active hardware meter subscription (`None`
+    /// until the first hardware connect kicks one). The xair
+    /// `subscribe_meters` installs the blob-order cache behind
+    /// `poll_meters`; without this kick the meter ticker would fan out
+    /// silence on hardware (the sim synthesizes its own levels).
+    meter_driver: RwLock<Option<String>>,
+    /// Guard receiver for the hardware meter stream: held so the broadcast
+    /// stays alive for the process lifetime (the driver's cache drain
+    /// holds its own resubscribed clone).
+    meter_guard: RwLock<Option<tokio::sync::broadcast::Receiver<openmix_core::MeterFrame>>>,
 }
 
 impl Engine {
@@ -469,6 +583,8 @@ impl Engine {
             scanner: config
                 .scanner
                 .unwrap_or_else(|| Arc::new(RealScanner)),
+            meter_driver: RwLock::new(None),
+            meter_guard: RwLock::new(None),
         });
         // FX cache for the default driver (sim): seeded synchronously so
         // the first attach already carries the rack.
@@ -508,13 +624,36 @@ impl Engine {
             _ => self.sim.connect(&target).await?,
         }
         *self.active.write().unwrap() = driver.to_string();
+        // The FX cache mirrors the active driver (sim rows / xair
+        // placeholders); refresh it on every switch, including the boot
+        // connect — otherwise a hardware boot keeps the sim-seeded rows
+        // and the UI shows a fake rack.
+        self.refresh_fx_cache().await;
+        // Hardware meter streams need an explicit subscribe (sim
+        // synthesizes its own levels via `poll_meters`). Best-effort:
+        // a failed subscribe leaves the ticker on silence, never fails
+        // the connect. One subscription per driver (the driver's renewal
+        // loop keeps it alive across reconnects of the same driver).
+        if driver == "xair" && self.meter_driver.read().unwrap().as_deref() != Some("xair") {
+            match self.xair.subscribe_meters().await {
+                Ok(rx) => {
+                    *self.meter_guard.write().unwrap() = Some(rx);
+                    *self.meter_driver.write().unwrap() = Some("xair".to_string());
+                }
+                Err(e) => {
+                    eprintln!("engine: xair meter subscribe failed (meters stay silent): {e:#}");
+                }
+            }
+        }
         Ok(())
     }
 
     /// Attach a client: allocate its id, register it, and queue the
     /// initial snapshot (`you`, `state`, `shows`, `clients`, `locks`,
     /// `caps`, `devices`, `link`, `info`?, `scenes`, `fx`, `routing`,
-    /// then one `params` frame per cached channel) into the new
+    /// master-section frames (`bus`/`subgroup`/`mute_group` + sparse
+    /// assigns + `main` + sparse `solo`), then one `params` frame per
+    /// cached channel) into the new
     /// mailbox before any live broadcast can reach it. The join roster
     /// update goes to the already-connected siblings only.
     ///
@@ -541,6 +680,10 @@ impl Engine {
         let fx = self.fx_message().await;
         let routing = self.routing_message().await;
         let params = self.params_snapshot();
+        // Master-section snapshot: bus/subgroup/mute-group masters +
+        // memberships + Main LR (fresh pages learn existing assignments
+        // without a write; sparse solos where the driver serves them).
+        let masters = self.masters_snapshot().await;
 
         {
             let mut clients = self.clients.write().unwrap();
@@ -567,7 +710,7 @@ impl Engine {
         // The entry exists again (unless detached concurrently); push the
         // snapshot in socket order. The R1 six-frame prefix (you, state,
         // shows, clients, locks, caps) is unchanged; R2 frames follow
-        // (devices, link, info?, scenes, fx, routing) before params.
+        // (devices, link, info?, scenes, fx, routing, masters) before params.
         if let Some(entry) = self.clients.read().unwrap().get(&id) {
             let _ = entry.mailbox.send(you);
             let _ = entry.mailbox.send(state);
@@ -583,6 +726,9 @@ impl Engine {
             let _ = entry.mailbox.send(scenes);
             let _ = entry.mailbox.send(fx);
             let _ = entry.mailbox.send(routing);
+            for frame in masters {
+                let _ = entry.mailbox.send(frame);
+            }
             for frame in params {
                 let _ = entry.mailbox.send(frame);
             }
@@ -620,6 +766,35 @@ impl Engine {
     fn ensure_tasks(self: &Arc<Self>) {
         if self.tasks_started.swap(true, Ordering::SeqCst) {
             return;
+        }
+        // R2 desk-broadcast ingest: the xair driver publishes
+        // desk-originated mix-surface updates (another client's moves,
+        // echoed to every /xremote subscriber) on a connection-stable
+        // channel — subscribe once here and apply them to the param cache
+        // live as `params` diffs, no poll-sweep wait. While another driver
+        // is active, xair updates never touch the cache.
+        {
+            let weak: Weak<Self> = Arc::downgrade(self);
+            tokio::spawn(async move {
+                let mut rx = match weak.upgrade().and_then(|e| e.xair.subscribe_updates()) {
+                    Some(rx) => rx,
+                    None => return,
+                };
+                loop {
+                    let update = match rx.recv().await {
+                        Ok(u) => u,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    };
+                    let Some(engine) = weak.upgrade() else {
+                        break;
+                    };
+                    if engine.active_driver() != "xair" {
+                        continue;
+                    }
+                    engine.apply_inbound(update.strip.0, &update.param, &update.value);
+                }
+            });
         }
         // Param-plane poller: pipelined batch per tick (R2; one query per
         // tick at default inflight 1, more when configured), diff
@@ -1093,6 +1268,8 @@ impl Engine {
             meter_taps: self.driver_meter_taps(&driver),
             fx: self.fx_caps(&driver),
             routing: self.routing_caps(&driver),
+            groups: self.groups_caps(&driver),
+            files: self.files_caps(&driver),
         }
     }
 
@@ -1330,43 +1507,68 @@ impl Engine {
     /// FX + routing + main. Locks are bypassed (show control) and reported
     /// via the returned `overrode_locks` (existing error semantics for
     /// direct writes are untouched).
+    /// Scoped recall: `scope` restricts the recall to strips / param
+    /// groups / globals (`None` = full plane, the historical behavior).
+    /// Axes outside the scope keep their live values: the fade targets
+    /// use current desk reads for excluded fader/mute axes (best-effort;
+    /// a failed read falls back to the scene value), excluded params are
+    /// skipped, and FX/routing/main apply only under their global.
     async fn recall_full(
         &self,
         scene: &StoredScene,
         fade_ms: u64,
+        scope: Option<&RecallScope>,
         writer: &str,
         out: &mut Vec<Event>,
     ) -> anyhow::Result<Vec<u16>> {
+        let in_scope = |strip: u16| scope.is_none_or(|s| s.allows_strip(strip));
+        let strips: Vec<&StoredStrip> = scene.strips.iter().filter(|s| in_scope(s.strip)).collect();
         // Faders ride the single shared fade (legacy order: pre-unmute
         // targets, ramp, snap, target mutes); params/FX/routing/main follow.
-        let targets: Vec<(StripId, f32, bool)> = scene
-            .strips
-            .iter()
-            .map(|s| (StripId(s.strip), s.fader, s.mute))
-            .collect();
+        let mut targets: Vec<(StripId, f32, bool)> = Vec::with_capacity(strips.len());
+        for s in &strips {
+            let id = StripId(s.strip);
+            let want_fader = scope.is_none_or(|sc| sc.allows_param("fader"));
+            let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
+            let (cur_fader, cur_mute) = if !want_fader || !want_mute {
+                self.current_fader_mute(id).await
+            } else {
+                (s.fader, s.mute)
+            };
+            targets.push((id, if want_fader { s.fader } else { cur_fader }, if want_mute { s.mute } else { cur_mute }));
+        }
         openmix_core::show::fade_strips(self, &targets, fade_ms).await?;
-        for s in &scene.strips {
-            if s.mute {
+        for s in &strips {
+            let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
+            if want_mute && s.mute {
                 self.drv_set_mute(StripId(s.strip), true).await?;
             }
-            out.push(Event::Param {
-                ch: s.strip,
-                field: "fader".to_string(),
-                value: json!(s.fader),
-                by: Some(writer.to_string()),
-            });
-            out.push(Event::Param {
-                ch: s.strip,
-                field: "mute".to_string(),
-                value: json!(s.mute),
-                by: Some(writer.to_string()),
-            });
+            if scope.is_none_or(|sc| sc.allows_param("fader")) {
+                out.push(Event::Param {
+                    ch: s.strip,
+                    field: "fader".to_string(),
+                    value: json!(s.fader),
+                    by: Some(writer.to_string()),
+                });
+            }
+            if want_mute {
+                out.push(Event::Param {
+                    ch: s.strip,
+                    field: "mute".to_string(),
+                    value: json!(s.mute),
+                    by: Some(writer.to_string()),
+                });
+            }
         }
-        // Remaining params in safe order (names ride along: full plane).
-        for s in &scene.strips {
+        // Remaining params in safe order (names ride along unless the
+        // scope excludes them).
+        for s in &strips {
             let mut ids: Vec<&String> = s.params.keys().collect();
             ids.sort_by_key(|id| safe_order_key(id));
             for id in ids {
+                if scope.is_some_and(|sc| !sc.allows_param(id)) {
+                    continue;
+                }
                 let value = s.params.get(id).expect("key just listed");
                 let pv = json_to_param_value(value)?;
                 // Best-effort per param on hardware (a desk that went
@@ -1382,7 +1584,7 @@ impl Engine {
                     by: Some(writer.to_string()),
                 });
             }
-            if s.name.is_empty() {
+            if s.name.is_empty() || scope.is_some_and(|sc| !sc.allows_param("name")) {
                 continue;
             }
             let r = self
@@ -1392,15 +1594,22 @@ impl Engine {
                 r?;
             }
         }
-        // FX + routing snapshots (sim-strict, best-effort elsewhere).
-        self.recall_fx(&scene.fx).await?;
-        self.recall_routing(&scene.routing).await?;
-        if let Some(m) = scene.main_fader {
-            self.drv_set_main(m).await?;
+        // FX + routing snapshots (sim-strict, best-effort elsewhere),
+        // gated on their globals; Main LR on its own global.
+        if scope.is_none_or(|sc| sc.allows_global("fx")) {
+            self.recall_fx(&scene.fx).await?;
+        }
+        if scope.is_none_or(|sc| sc.allows_global("routing")) {
+            self.recall_routing(&scene.routing).await?;
+        }
+        if scope.is_none_or(|sc| sc.allows_global("main")) {
+            if let Some(m) = scene.main_fader {
+                self.drv_set_main(m).await?;
+            }
         }
         self.refresh_fx_cache().await;
         let mut overrode: Vec<u16> = Vec::new();
-        for s in &scene.strips {
+        for s in &strips {
             if let Some(holder) = self.lock_holder(s.strip) {
                 if holder != writer && !overrode.contains(&s.strip) {
                     overrode.push(s.strip);
@@ -1409,6 +1618,25 @@ impl Engine {
         }
         overrode.sort_unstable();
         Ok(overrode)
+    }
+
+    /// Current fader + mute of one strip (best-effort; failures read back
+    /// subscriber silence so a scoped recall degrades to a no-op axis
+    /// rather than failing the whole recall).
+    async fn current_fader_mute(&self, strip: StripId) -> (f32, bool) {
+        let fader = match self.active_driver().as_str() {
+            "xair" => self.xair.get_fader(strip).await.ok(),
+            "dl32s" => self.dl32s.get_fader(strip).await.ok(),
+            _ => self.sim.get_fader(strip).await.ok(),
+        }
+        .unwrap_or(0.0);
+        let mute = match self.active_driver().as_str() {
+            "xair" => self.xair.get_mute(strip).await.ok(),
+            "dl32s" => self.dl32s.get_mute(strip).await.ok(),
+            _ => self.sim.get_mute(strip).await.ok(),
+        }
+        .unwrap_or(false);
+        (fader, mute)
     }
 
     // ================= R2: FX =================
@@ -1531,16 +1759,17 @@ impl Engine {
                     })
                     .collect()
             }
+            // xair/dl32s racks are not polled (no verified state path —
+            // writes are fire-and-forget there). Placeholder rows stay
+            // placeholders: never inherit sim-seeded rows (or any unverified
+            // state) as `prev` — the UI renders "—" honestly.
             "xair" => (1..=4u8)
-                .map(|slot| {
-                    let prev = self.fx_cache.read().unwrap().iter().find(|r| r.slot == slot).cloned();
-                    prev.unwrap_or(FxSlotRt {
-                        slot,
-                        fx_type: "—".to_string(),
-                        on: true,
-                        bypass: false,
-                        params: Default::default(),
-                    })
+                .map(|slot| FxSlotRt {
+                    slot,
+                    fx_type: "—".to_string(),
+                    on: true,
+                    bypass: false,
+                    params: Default::default(),
                 })
                 .collect(),
             _ => Vec::new(),
@@ -1655,6 +1884,196 @@ impl Engine {
             }
         }
     }
+
+    /// R2 `caps.groups`: master-section counts of the named driver (bus /
+    /// subgroup / mute-group masters behind the new commands; zero =
+    /// honest `unsupported`). Assign-leaf support rides alongside so the
+    /// UI collapses assign toggles where the desk has masters only.
+    fn groups_caps(&self, driver: &str) -> crate::protocol::GroupsCaps {
+        let (buses, subgroups, mute_groups, mg_assign, sub_assign) = match driver {
+            "xair" => (
+                self.xair.bus_count(),
+                0,
+                self.xair.mute_group_count(),
+                false,
+                false,
+            ),
+            "dl32s" => (
+                self.dl32s.bus_count(),
+                self.dl32s.subgroup_count(),
+                self.dl32s.mute_group_count(),
+                true,
+                true,
+            ),
+            _ => (
+                self.sim.bus_count(),
+                self.sim.subgroup_count(),
+                self.sim.mute_group_count(),
+                true,
+                true,
+            ),
+        };
+        crate::protocol::GroupsCaps {
+            buses,
+            subgroups,
+            mute_groups,
+            mg_assign,
+            sub_assign,
+        }
+    }
+
+    /// R2 `caps.files`: desk file-transfer support of the named driver.
+    fn files_caps(&self, driver: &str) -> crate::protocol::FilesCaps {
+        let supported = match driver {
+            "xair" => self.xair.file_transfer(),
+            "dl32s" => self.dl32s.file_transfer(),
+            _ => self.sim.file_transfer(),
+        };
+        crate::protocol::FilesCaps { supported }
+    }
+
+    /// Full-state `bus` echo: both master fields re-read after the write.
+    async fn bus_message(&self, bus: u8) -> anyhow::Result<Event> {
+        let (fader, muted) = match self.active_driver().as_str() {
+            "xair" => (self.xair.get_bus_fader(bus).await?, self.xair.get_bus_mute(bus).await?),
+            "dl32s" => (self.dl32s.get_bus_fader(bus).await?, self.dl32s.get_bus_mute(bus).await?),
+            _ => (self.sim.get_bus_fader(bus).await?, self.sim.get_bus_mute(bus).await?),
+        };
+        Ok(Event::Bus { bus, fader, muted })
+    }
+
+    /// Full-state `subgroup` echo (sim in-memory, DL32S native).
+    async fn subgroup_message(&self, group: u8) -> anyhow::Result<Event> {
+        let (fader, muted) = match self.active_driver().as_str() {
+            "dl32s" => (self.dl32s.get_subgroup_fader(group).await?, self.dl32s.get_subgroup_mute(group).await?),
+            "sim" => (self.sim.get_subgroup_fader(group).await?, self.sim.get_subgroup_mute(group).await?),
+            other => anyhow::bail!("{other}: subgroup faders not supported"),
+        };
+        Ok(Event::Subgroup { group, fader, muted })
+    }
+
+    /// Full-state `main` echo: Main LR fader + mute re-read from the
+    /// active driver (`None` fields where the driver has no master).
+    async fn main_message(&self) -> Event {
+        let (fader, muted) = match self.active_driver().as_str() {
+            "xair" => (
+                self.xair.get_main_fader().await.ok(),
+                self.xair.get_main_mute().await.ok(),
+            ),
+            "dl32s" => (
+                self.dl32s.get_main_fader().await.ok(),
+                self.dl32s.get_main_mute().await.ok(),
+            ),
+            _ => (
+                self.sim.get_main_fader().await.ok(),
+                self.sim.get_main_mute().await.ok(),
+            ),
+        };
+        Event::Main { fader, muted }
+    }
+
+    /// Master-section + membership snapshot for attach/post_switch: every
+    /// bus/subgroup/mute-group master re-read live, every known membership
+    /// (sparse — members only), Main LR, and sparse solos. Fresh pages
+    /// learn existing assignments without a write (gap: the engine used to
+    /// broadcast these only as write echoes). Assign/solo reads are
+    /// driver-gated: sim/dl32s serve them from memory/cache; xair has no
+    /// assign leaf (unsupported) and its solo bank costs a live query per
+    /// strip for momentary monitor state, so xair solos ride write echoes
+    /// only. All reads are best-effort: a failed re-read drops that frame
+    /// instead of failing the snapshot.
+    async fn masters_snapshot(&self) -> Vec<Event> {
+        let mut out = Vec::new();
+        let driver = self.active_driver();
+        let (buses, subgroups, mute_groups) = match driver.as_str() {
+            "xair" => (self.xair.bus_count(), 0, self.xair.mute_group_count()),
+            "dl32s" => (self.dl32s.bus_count(), self.dl32s.subgroup_count(), self.dl32s.mute_group_count()),
+            _ => (self.sim.bus_count(), self.sim.subgroup_count(), self.sim.mute_group_count()),
+        };
+        for bus in 0..buses {
+            let msg = match driver.as_str() {
+                "xair" => match (self.xair.get_bus_fader(bus).await, self.xair.get_bus_mute(bus).await) {
+                    (Ok(fader), Ok(muted)) => Some(Event::Bus { bus, fader, muted }),
+                    _ => None,
+                },
+                "dl32s" => match (self.dl32s.get_bus_fader(bus).await, self.dl32s.get_bus_mute(bus).await) {
+                    (Ok(fader), Ok(muted)) => Some(Event::Bus { bus, fader, muted }),
+                    _ => None,
+                },
+                _ => match (self.sim.get_bus_fader(bus).await, self.sim.get_bus_mute(bus).await) {
+                    (Ok(fader), Ok(muted)) => Some(Event::Bus { bus, fader, muted }),
+                    _ => None,
+                },
+            };
+            if let Some(m) = msg {
+                out.push(m);
+            }
+        }
+        for group in 0..subgroups {
+            let msg = match driver.as_str() {
+                "dl32s" => match (self.dl32s.get_subgroup_fader(group).await, self.dl32s.get_subgroup_mute(group).await) {
+                    (Ok(fader), Ok(muted)) => Some(Event::Subgroup { group, fader, muted }),
+                    _ => None,
+                },
+                _ => match (self.sim.get_subgroup_fader(group).await, self.sim.get_subgroup_mute(group).await) {
+                    (Ok(fader), Ok(muted)) => Some(Event::Subgroup { group, fader, muted }),
+                    _ => None,
+                },
+            };
+            if let Some(m) = msg {
+                out.push(m);
+            }
+        }
+        for group in 0..mute_groups {
+            let muted = match driver.as_str() {
+                "xair" => self.xair.get_mute_group(group).await.ok(),
+                "dl32s" => <openmix_proto_dl32s::Dl32sDriver as openmix_core::MixerDriver>::get_mute_group(&self.dl32s, group).await.ok(),
+                _ => self.sim.get_mute_group(group).await.ok(),
+            };
+            if let Some(muted) = muted {
+                out.push(Event::MuteGroup { group, muted });
+            }
+        }
+        // Membership: sparse (members only). Reads are memory/cache-speed
+        // on sim/dl32s; xair has no assign leaf at all.
+        if driver.as_str() != "xair" {
+            let strips = self.driver_strips(&driver);
+            for ch in 0..strips as u16 {
+                let id = StripId(ch);
+                for group in 0..subgroups {
+                    let member = match driver.as_str() {
+                        "dl32s" => self.dl32s.get_subgroup_assign(id, group).await.unwrap_or(false),
+                        _ => self.sim.get_subgroup_assign(id, group).await.unwrap_or(false),
+                    };
+                    if member {
+                        out.push(Event::SubgroupAssign { ch, group, member });
+                    }
+                }
+                for group in 0..mute_groups {
+                    let member = match driver.as_str() {
+                        "dl32s" => self.dl32s.get_mute_group_assign(id, group).await.unwrap_or(false),
+                        _ => self.sim.get_mute_group_assign(id, group).await.unwrap_or(false),
+                    };
+                    if member {
+                        out.push(Event::MuteGroupAssign { ch, group, member });
+                    }
+                }
+            }
+            // Sparse solos (sim in-memory; dl32s/xair solos ride echoes).
+            if driver.as_str() == "sim" {
+                for ch in 0..strips as u16 {
+                    if self.sim.get_solo(StripId(ch)).await.unwrap_or(false) {
+                        out.push(Event::Solo { ch, soloed: true });
+                    }
+                }
+            }
+        }
+        out.push(self.main_message().await);
+        out
+    }
+
+    /// Current `routing` event: one row per patched input strip (sim reads
+    /// the `source` param plane; elsewhere the list is empty).
 
     /// Current `routing` event: one row per patched input strip (sim reads
     /// the `source` param plane; elsewhere the list is empty).
@@ -1936,6 +2355,24 @@ impl Engine {
         }
     }
 
+    // ================= R2: desk-broadcast ingest =================
+
+    /// Apply one desk-originated update (broadcast ingest): same
+    /// compare-and-broadcast as a poll read, minus the I/O.
+    fn apply_inbound(&self, ch: u16, param: &str, pv: &ParamValue) {
+        let v = param_value_json(pv);
+        let changed = {
+            let mut cache = self.param_cache.write().unwrap();
+            cache_store(&mut cache, ch, param, v.clone())
+        };
+        if changed {
+            self.broadcast(&Event::Params {
+                ch,
+                values: [(param.to_string(), v)].into_iter().collect(),
+            });
+        }
+    }
+
     // ================= R2: pipelined poller =================
 
     /// Visible-group lane: (strip, param) pairs serving the currently
@@ -2163,6 +2600,9 @@ impl Engine {
         }
         out.push(self.fx_message().await);
         out.push(self.routing_message().await);
+        // Master-section snapshot: fresh pages (and driver switches) learn
+        // existing masters/assignments without a write.
+        out.extend(self.masters_snapshot().await);
         if entering_offline {
             return Ok(());
         }
@@ -2261,6 +2701,13 @@ impl Engine {
     /// detached client's pending focus is dropped with it (see
     /// [`Engine::remove_client`]).
     ///
+    /// Drain order is core-first across the whole focused set: pass 1 queues
+    /// `fader`+`mute` of every strip (a 16-strip mixer bank is fader-live
+    /// after ~32 ticks ≈ 1.6 s at the 20 q/s budget instead of waiting out
+    /// a full strip-major catalogue sweep), pass 2 `name`+`pan`, pass 3 the
+    /// remaining scoped ids in catalogue order. A single-strip focus still
+    /// drains as one unbroken block ahead of the background sweep.
+    ///
     /// R2: the focused strips also become the visible set (capped at 16,
     /// most-recent-first) backing the poller's visible-group lane
     /// (EQ/dyn/sends of visible strips ahead of the background sweep).
@@ -2286,6 +2733,9 @@ impl Engine {
         };
         let mut q = self.focus_queue.write().unwrap();
         q.retain(|(d, c, _, _)| d != &driver || !chs.contains(c));
+        // Core-first drain order (three push waves; each wave pushes its
+        // strips back-to-front so the queue head ends up in `chs` order):
+        // fader+mute for every strip, then name+pan, then the rest.
         for &ch in chs.iter().rev() {
             if (ch as usize) >= nstrips {
                 continue;
@@ -2296,13 +2746,55 @@ impl Engine {
             let scoped: Vec<&String> = ids
                 .iter()
                 .filter(|id| {
-                    params::find(id)
-                        .map(|def| params::supports_kind(def, kind))
-                        .unwrap_or(true)
+                    !is_core_id(id, true)
+                        && !is_core_id(id, false)
+                        && params::find(id)
+                            .map(|def| params::supports_kind(def, kind))
+                            .unwrap_or(true)
                 })
                 .collect();
             for id in scoped.iter().rev() {
                 q.push_front((driver.clone(), ch, (*id).clone(), writer.to_string()));
+            }
+        }
+        for &ch in chs.iter().rev() {
+            if (ch as usize) >= nstrips {
+                continue;
+            }
+            let Some(kind) = kind_of(ch) else {
+                continue;
+            };
+            for id in ["pan", "name"].iter().rev() {
+                if !ids.iter().any(|s| s == id) {
+                    continue;
+                }
+                if !params::find(id)
+                    .map(|def| params::supports_kind(def, kind))
+                    .unwrap_or(true)
+                {
+                    continue;
+                }
+                q.push_front((driver.clone(), ch, id.to_string(), writer.to_string()));
+            }
+        }
+        for &ch in chs.iter().rev() {
+            if (ch as usize) >= nstrips {
+                continue;
+            }
+            let Some(kind) = kind_of(ch) else {
+                continue;
+            };
+            for id in ["mute", "fader"].iter().rev() {
+                if !ids.iter().any(|s| s == id) {
+                    continue;
+                }
+                if !params::find(id)
+                    .map(|def| params::supports_kind(def, kind))
+                    .unwrap_or(true)
+                {
+                    continue;
+                }
+                q.push_front((driver.clone(), ch, id.to_string(), writer.to_string()));
             }
         }
         let max = 4 * nstrips * ids.len().max(1);
@@ -2401,19 +2893,7 @@ impl Engine {
     /// Read one (channel, param) and broadcast the diff frame on change.
     async fn poll_read(&self, driver: &str, ch: u16, param: &str) {
         match self.read_param(driver, StripId(ch), param).await {
-            Ok(pv) => {
-                let v = param_value_json(&pv);
-                let changed = {
-                    let mut cache = self.param_cache.write().unwrap();
-                    cache_store(&mut cache, ch, param, v.clone())
-                };
-                if changed {
-                    self.broadcast(&Event::Params {
-                        ch,
-                        values: [(param.to_string(), v)].into_iter().collect(),
-                    });
-                }
-            }
+            Ok(pv) => self.apply_inbound(ch, param, &pv),
             Err(e) => {
                 self.note_poll_error(driver, param, &e).await;
             }
@@ -2440,10 +2920,23 @@ impl Engine {
     /// Re-read one param after a client write, caching the confirmed value.
     /// Returns the confirmed JSON value (`None` when the re-read fails, in
     /// which case the caller falls back to echoing the written value).
-    async fn refresh_param(&self, ch: StripId, param: &str) -> Option<Value> {
+    ///
+    /// The desk applies writes with a delay of tens of ms: an immediate
+    /// re-read usually returns the PRE-write value (owner-rig measured on
+    /// XR18 FW 1.20 — every clip of `fader` echo read back the previous
+    /// value). A re-read that disagrees with what was just written is
+    /// therefore treated as that stale pre-image: it is NOT cached (it
+    /// would regress the broadcast-confirmed value) and the caller echoes
+    /// the written value instead; the desk's own change broadcast confirms
+    /// within ~100 ms. Floats agree within the desk's ~10-bit quantization
+    /// step; bools/text must match exactly.
+    async fn refresh_param(&self, ch: StripId, param: &str, written: &Value) -> Option<Value> {
         let driver = self.active_driver();
         let pv = self.read_param(&driver, ch, param).await.ok()?;
         let v = param_value_json(&pv);
+        if !refresh_agrees(&v, written) {
+            return None;
+        }
         {
             let mut cache = self.param_cache.write().unwrap();
             cache_store(&mut cache, ch.0, param, v.clone());
@@ -2643,6 +3136,22 @@ impl Engine {
                 }
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
+                // Confirmed-value echo (same as the `param` arm): the state
+                // frame alone cannot confirm the write on drivers whose
+                // snapshot is empty (xair), so re-read and broadcast what
+                // the desk reports, falling back to the written value
+                // (including when the re-read races the desk's apply lag —
+                // see `refresh_param`).
+                let confirmed = self
+                    .refresh_param(StripId(ch), "fader", &json!(value))
+                    .await
+                    .unwrap_or(json!(value));
+                out.push(Event::Param {
+                    ch,
+                    field: "fader".to_string(),
+                    value: confirmed,
+                    by: Some(writer.to_string()),
+                });
                 self.push_state_with_by(writer, out).await;
                 Ok(None)
             }
@@ -2664,6 +3173,17 @@ impl Engine {
                 }
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
+                // Confirmed-value echo (same rationale as `fader` above).
+                let confirmed = self
+                    .refresh_param(StripId(ch), "mute", &json!(muted))
+                    .await
+                    .unwrap_or(json!(muted));
+                out.push(Event::Param {
+                    ch,
+                    field: "mute".to_string(),
+                    value: confirmed,
+                    by: Some(writer.to_string()),
+                });
                 self.push_state_with_by(writer, out).await;
                 Ok(None)
             }
@@ -2689,6 +3209,47 @@ impl Engine {
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 self.push_state_with_by(writer, out).await;
+                Ok(None)
+            }
+            // R2 Main LR master mute (all drivers via `get_main_mute`;
+            // unsupported drivers bail honestly). Master gate: the main
+            // master is a shared mix like the bus masters.
+            Cmd::MainMute { muted } => {
+                policy.allow_master_mute()?;
+                match self.active_driver().as_str() {
+                    "xair" => self.xair.set_main_mute(muted).await?,
+                    "dl32s" => self.dl32s.set_main_mute(muted).await?,
+                    _ => self.sim.set_main_mute(muted).await?,
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                out.push(self.main_message().await);
+                self.push_state_with_by(writer, out).await;
+                Ok(None)
+            }
+            // R2 per-strip solo (monitor bus only). Channel-scoped lock +
+            // strip gate (no FOH impact, but a locked strip is someone's).
+            Cmd::Solo { ch, soloed } => {
+                policy.allow_strip(StripId(ch))?;
+                if let Some(holder) = self.lock_holder(ch) {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch, &holder)));
+                    }
+                }
+                match self.active_driver().as_str() {
+                    "xair" => self.xair.set_solo(StripId(ch), soloed).await?,
+                    "sim" => self.sim.set_solo(StripId(ch), soloed).await?,
+                    other => anyhow::bail!("{other}: solo not supported"),
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                // Echo the commanded state (house pattern, same as mute:
+                // the re-read races the desk's apply lag, so a disagreeing
+                // read falls back to the written value instead of flashing
+                // a phantom unsoloed. The write path itself is rig-verified:
+                // `/-stat/solosw/NN` 1-based sets the bank bit, `/-action/
+                // clearsolo` clears it — XR18 FW 1.20, 2026-10-18.)
+                out.push(Event::Solo { ch, soloed });
                 Ok(None)
             }
             Cmd::Param { ch, field, value } => {
@@ -2725,9 +3286,10 @@ impl Engine {
                 // Confirmed-value echo: re-read the param just written and
                 // broadcast what the driver reports (wire quantization may
                 // shift it); fall back to the written value when the
-                // re-read fails so the echo still lands.
+                // re-read fails — or when it races the desk's apply lag
+                // (see `refresh_param`) — so the echo still lands.
                 let confirmed = self
-                    .refresh_param(StripId(ch), &field)
+                    .refresh_param(StripId(ch), &field, &value)
                     .await
                     .unwrap_or(value);
                 if let Some(from) = from {
@@ -2971,10 +3533,19 @@ impl Engine {
                 if entry.kind == "io" {
                     anyhow::bail!("{:?} is I/O (in use) — connect a console", entry.name);
                 }
-                // Discovered xair devices dial hardware (UNVERIFIED-ON-RIG);
-                // the design's sim devices re-link the local model.
-                if id.starts_with("xair-") {
+                // Discovered xair/dl32s devices dial hardware
+                // (UNVERIFIED-ON-RIG for dl32s); the design's sim devices
+                // re-link the local model.
+                if id.starts_with("xair-")
+                    || entry.model.to_lowercase().contains("x-air")
+                    || entry.model.to_lowercase().contains("xr18")
+                {
                     self.connect("xair", Some(&entry.ip)).await?;
+                } else if id.starts_with("dl32s-")
+                    || entry.model.to_lowercase().contains("dl32s")
+                    || entry.model.to_lowercase().contains("dl ")
+                {
+                    self.connect("dl32s", Some(&entry.ip)).await?;
                 } else {
                     self.connect("sim", Some(&entry.ip)).await?;
                 }
@@ -3002,7 +3573,7 @@ impl Engine {
                 out.push(self.scenes_message());
                 Ok(None)
             }
-            Cmd::SceneRecall { n, fade_ms } => {
+            Cmd::SceneRecall { n, fade_ms, scope } => {
                 policy.allow_recall()?;
                 let n = validate_scene_n(n)?;
                 let fade_ms = fade_ms.unwrap_or(DEFAULT_FADE_MS);
@@ -3014,7 +3585,7 @@ impl Engine {
                         .cloned()
                         .ok_or_else(|| anyhow::anyhow!("unknown scene {n:03}"))?
                 };
-                let overrode = self.recall_full(&scene, fade_ms, writer, out).await?;
+                let overrode = self.recall_full(&scene, fade_ms, scope.as_ref(), writer, out).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 *self.scenes_current.write().unwrap() = Some(n);
@@ -3297,6 +3868,160 @@ impl Engine {
                 out.push(self.offline_diff_message());
                 Ok(None)
             }
+            // R2 mix-bus masters (0-based `bus` over `0..bus_count()`).
+            Cmd::BusFader { bus, value } => {
+                let value = openmix_core::validate_fader(value)?;
+                policy.allow_master_fader(value)?;
+                match self.active_driver().as_str() {
+                    "xair" => self.xair.set_bus_fader(bus, value).await?,
+                    "dl32s" => self.dl32s.set_bus_fader(bus, value).await?,
+                    _ => self.sim.set_bus_fader(bus, value).await?,
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                out.push(self.bus_message(bus).await?);
+                Ok(None)
+            }
+            Cmd::BusMute { bus, muted } => {
+                policy.allow_master_mute()?;
+                match self.active_driver().as_str() {
+                    "xair" => self.xair.set_bus_mute(bus, muted).await?,
+                    "dl32s" => self.dl32s.set_bus_mute(bus, muted).await?,
+                    _ => self.sim.set_bus_mute(bus, muted).await?,
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                out.push(self.bus_message(bus).await?);
+                Ok(None)
+            }
+            // R2 subgroup masters (0-based `group` over `0..subgroup_count()`).
+            Cmd::SubgroupFader { group, value } => {
+                let value = openmix_core::validate_fader(value)?;
+                policy.allow_master_fader(value)?;
+                match self.active_driver().as_str() {
+                    "dl32s" => self.dl32s.set_subgroup_fader(group, value).await?,
+                    "sim" => self.sim.set_subgroup_fader(group, value).await?,
+                    other => anyhow::bail!("{other}: subgroup faders not supported"),
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                out.push(self.subgroup_message(group).await?);
+                Ok(None)
+            }
+            Cmd::SubgroupMute { group, muted } => {
+                policy.allow_master_mute()?;
+                match self.active_driver().as_str() {
+                    "dl32s" => <openmix_proto_dl32s::Dl32sDriver as openmix_core::MixerDriver>::set_subgroup_mute(&self.dl32s, group, muted).await?,
+                    "sim" => self.sim.set_subgroup_mute(group, muted).await?,
+                    other => anyhow::bail!("{other}: subgroup mutes not supported"),
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                out.push(self.subgroup_message(group).await?);
+                Ok(None)
+            }
+            // R2 group membership (channel-scoped lock + master gate).
+            Cmd::SubgroupAssign { ch, group, member } => {
+                policy.allow_assign(StripId(ch))?;
+                if let Some(holder) = self.lock_holder(ch) {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch, &holder)));
+                    }
+                }
+                match self.active_driver().as_str() {
+                    "dl32s" => self.dl32s.set_subgroup_assign(StripId(ch), group, member).await?,
+                    "sim" => self.sim.set_subgroup_assign(StripId(ch), group, member).await?,
+                    other => anyhow::bail!("{other}: subgroup assign not supported"),
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                out.push(Event::SubgroupAssign { ch, group, member });
+                Ok(None)
+            }
+            Cmd::MuteGroup { group, muted } => {
+                policy.allow_master_mute()?;
+                match self.active_driver().as_str() {
+                    "dl32s" => <openmix_proto_dl32s::Dl32sDriver as openmix_core::MixerDriver>::set_mute_group(&self.dl32s, group, muted).await?,
+                    "xair" => <openmix_proto_xair::XAirDriver as openmix_core::MixerDriver>::set_mute_group(&self.xair, group, muted).await?,
+                    "sim" => self.sim.set_mute_group(group, muted).await?,
+                    other => anyhow::bail!("{other}: mute groups not supported"),
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                let muted = match self.active_driver().as_str() {
+                    "dl32s" => <openmix_proto_dl32s::Dl32sDriver as openmix_core::MixerDriver>::get_mute_group(&self.dl32s, group).await?,
+                    "xair" => <openmix_proto_xair::XAirDriver as openmix_core::MixerDriver>::get_mute_group(&self.xair, group).await?,
+                    _ => self.sim.get_mute_group(group).await?,
+                };
+                out.push(Event::MuteGroup { group, muted });
+                Ok(None)
+            }
+            Cmd::MuteGroupAssign { ch, group, member } => {
+                policy.allow_assign(StripId(ch))?;
+                if let Some(holder) = self.lock_holder(ch) {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch, &holder)));
+                    }
+                }
+                match self.active_driver().as_str() {
+                    "dl32s" => self.dl32s.set_mute_group_assign(StripId(ch), group, member).await?,
+                    "sim" => self.sim.set_mute_group_assign(StripId(ch), group, member).await?,
+                    other => anyhow::bail!("{other}: mute-group assign not supported"),
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                out.push(Event::MuteGroupAssign { ch, group, member });
+                Ok(None)
+            }
+            // R2 desk file transfer (DL32S native, sim in-memory).
+            Cmd::FileDownload { filename } => {
+                let filename = check_filename(&filename)?;
+                let bytes = match self.active_driver().as_str() {
+                    "dl32s" => self.dl32s.download_file(&filename).await?,
+                    "xair" => anyhow::bail!("xair: file transfer not supported"),
+                    _ => self.sim.download_file(&filename).await?,
+                };
+                self.note_write(writer);
+                out.push(Event::File {
+                    filename,
+                    size: bytes.len(),
+                    file_type: 0,
+                    data: Some(STANDARD.encode(&bytes)),
+                });
+                Ok(None)
+            }
+            Cmd::FileUpload { filename, data, file_type } => {
+                policy.allow_upload()?;
+                let filename = check_filename(&filename)?;
+                let bytes = STANDARD.decode(data.trim()).map_err(|e| anyhow::anyhow!("invalid base64 data: {e}"))?;
+                if bytes.len() > FILE_MAX_BYTES {
+                    anyhow::bail!("file {filename:?} too large ({} > {FILE_MAX_BYTES} bytes)", bytes.len());
+                }
+                match self.active_driver().as_str() {
+                    "dl32s" => self.dl32s.upload_file(&filename, &bytes, file_type).await?,
+                    "xair" => anyhow::bail!("xair: file transfer not supported"),
+                    _ => self.sim.upload_file(&filename, &bytes, file_type).await?,
+                }
+                self.note_write(writer);
+                out.push(Event::File {
+                    filename,
+                    size: bytes.len(),
+                    file_type,
+                    data: None,
+                });
+                Ok(None)
+            }
+            // R2 desk fire-and-forget action: clear all solos (X-Air
+            // `/-action/clearsolo`; monitoring-side only). No echo — the
+            // desk ACKs by silence.
+            Cmd::ClearSolo => {
+                match self.active_driver().as_str() {
+                    "xair" => self.xair.clear_solo().await?,
+                    other => anyhow::bail!("{other}: clear solo not supported"),
+                }
+                self.note_write(writer);
+                Ok(None)
+            }
         }
     }
 }
@@ -3457,6 +4182,22 @@ fn cache_store(
     }
 }
 
+/// Post-write re-read/write agreement (see `refresh_param`): floats agree
+/// within the desk's ~10-bit quantization step (2e-3 covers the measured
+/// 1e-3 readback epsilon plus f32 noise), bools/text must match exactly.
+/// A disagreeing re-read is the desk's stale pre-image, not a rejection.
+fn refresh_agrees(read: &Value, written: &Value) -> bool {
+    match (read, written) {
+        (Value::Number(a), Value::Number(b)) => {
+            match (a.as_f64(), b.as_f64()) {
+                (Some(a), Some(b)) => (a - b).abs() <= 2e-3,
+                _ => false,
+            }
+        }
+        _ => read == written,
+    }
+}
+
 /// R2 seed devices: the design's connection screen (FOH .20, Monitor .21,
 /// Stage Box A .40). States here are the scan-time base; the `devices`
 /// event overrides the linked console with `connected`.
@@ -3531,6 +4272,17 @@ fn is_priority_id(id: &str) -> bool {
         || id.starts_with("aux")
         || id.starts_with("fx")
         || id.starts_with("hpf")
+}
+
+/// R2 focus core ids: the mixer strip essentials (`fader`+`mute` first
+/// wave, `name`+`pan` second — see [`Engine::request_focus`]). `first`
+/// selects the fader/mute wave; `false` the name/pan wave.
+fn is_core_id(id: &str, first: bool) -> bool {
+    if first {
+        id == "fader" || id == "mute"
+    } else {
+        id == "name" || id == "pan"
+    }
 }
 
 /// Safe recall order for full-plane scene params: input stage first
@@ -3854,9 +4606,11 @@ mod tests {
         let engine = Engine::new(EngineConfig::default());
         let mut client = engine.attach(None).await;
         // Drain the attach snapshot (R1 six-frame prefix, then the R2
-        // frames: devices/link/info/scenes/fx/routing).
+        // frames: devices/link/info/scenes/fx/routing + the master-section
+        // snapshot: sim serves 8 bus + 6 subgroup + 6 mute-group masters +
+        // main, no assigns/solos on a fresh engine).
         let mut tags: Vec<String> = Vec::new();
-        for _ in 0..12 {
+        for _ in 0..33 {
             let event = tokio::time::timeout(Duration::from_secs(2), client.events.recv())
                 .await
                 .expect("snapshot in time")
@@ -3869,10 +4623,26 @@ mod tests {
             "R1 snapshot prefix unchanged"
         );
         assert_eq!(
-            &tags[6..],
+            &tags[6..12],
             ["devices", "link", "info", "scenes", "fx", "routing"],
-            "R2 snapshot suffix"
+            "R2 snapshot frames"
         );
+        assert_eq!(
+            &tags[12..20],
+            ["bus", "bus", "bus", "bus", "bus", "bus", "bus", "bus"],
+            "attach carries all sim bus masters"
+        );
+        assert_eq!(
+            &tags[20..26],
+            ["subgroup", "subgroup", "subgroup", "subgroup", "subgroup", "subgroup"],
+            "attach carries all sim subgroup masters"
+        );
+        assert_eq!(
+            &tags[26..32],
+            ["mute_group", "mute_group", "mute_group", "mute_group", "mute_group", "mute_group"],
+            "attach carries all sim mute-group masters"
+        );
+        assert_eq!(&tags[32..], ["main"], "attach ends masters with Main LR");
         // Timeout-class read: dropped from the poll set and reported.
         let err = anyhow::anyhow!("/ch/01/eq/on: timed out after 2s");
         assert!(engine.note_poll_error("xair", "eq_on", &err).await);

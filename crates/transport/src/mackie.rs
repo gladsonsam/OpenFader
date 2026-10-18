@@ -70,6 +70,7 @@ impl TryFrom<u8> for MessageType {
 #[repr(u8)]
 pub enum Command {
     KeepAlive = 0x01,
+    Reboot = 0x05,
     ClientHandshake = 0x03,
     FirmwareInfo = 0x04,
     ChannelInfoControl = 0x06,
@@ -80,6 +81,7 @@ pub enum Command {
     FileRead = 0x0C,
     PostFile = 0x0D,
     GeneralInfo = 0x0E,
+    SetSystemState = 0x0F,
     ShowStatus = 0x12,
     ChannelValues = 0x13,
     BroadcastControl = 0x15,
@@ -93,6 +95,7 @@ impl TryFrom<u8> for Command {
     fn try_from(v: u8) -> Result<Self, FrameError> {
         match v {
             0x01 => Ok(Self::KeepAlive),
+            0x05 => Ok(Self::Reboot),
             0x03 => Ok(Self::ClientHandshake),
             0x04 => Ok(Self::FirmwareInfo),
             0x06 => Ok(Self::ChannelInfoControl),
@@ -103,6 +106,7 @@ impl TryFrom<u8> for Command {
             0x0C => Ok(Self::FileRead),
             0x0D => Ok(Self::PostFile),
             0x0E => Ok(Self::GeneralInfo),
+            0x0F => Ok(Self::SetSystemState),
             0x12 => Ok(Self::ShowStatus),
             0x13 => Ok(Self::ChannelValues),
             0x15 => Ok(Self::BroadcastControl),
@@ -278,6 +282,10 @@ pub const VALUE_TYPE_PARAM: u8 = 5;
 pub const VALUE_TYPE_MUTE_GROUP: u8 = 2;
 /// Meter address space (pushed periodically; value encoding unconfirmed, ignored).
 pub const VALUE_TYPE_METERS: u8 = 1;
+/// Show-parameter address space (set_show_parameter uses type 3).
+pub const VALUE_TYPE_SHOW: u8 = 3;
+/// File-CRC address space (set_file_crc uses type 4).
+pub const VALUE_TYPE_FILE: u8 = 4;
 
 /// Number of mute groups on the DL family.
 pub const MUTE_GROUP_COUNT: u32 = 6;
@@ -935,6 +943,417 @@ impl MackieSession {
         if let Ok(mut c) = self.caches.snapshot_names.lock() {
             c.insert(snapshot_1_based, name.trim().to_string());
         }
+        Ok(())
+    }
+
+    // ---- channel names (rename) ----
+
+    pub async fn set_channel_name(&self, slot: u32, name: &str) -> anyhow::Result<()> {
+        if slot == 0 {
+            anyhow::bail!("slot must be >= 1");
+        }
+        let text = name.as_bytes();
+        let clipped = &text[..text.len().min(63)];
+        let mut padded = clipped.to_vec();
+        padded.push(0);
+        while !padded.len().is_multiple_of(4) {
+            padded.push(0);
+        }
+        let mut body = Vec::with_capacity(8 + padded.len());
+        body.extend_from_slice(&slot.to_be_bytes());
+        body.extend_from_slice(&0x00010500u32.to_be_bytes());
+        body.extend_from_slice(&word_swap(&padded));
+        self.send_request(Command::ChannelNames, body, REQUEST_TIMEOUT)
+            .await?;
+        if let Ok(mut c) = self.caches.names.lock() {
+            c.insert(slot, name.trim().to_string());
+        }
+        Ok(())
+    }
+
+    // ---- mute groups already in separate methods; expose alias ----
+
+    // ---- meters ----
+
+    pub async fn enable_meter_reports(&self) -> anyhow::Result<()> {
+        let addrs = dl32_family_meter_addresses();
+        let _ = self
+            .send_request(Command::MeterLayout, build_meter_layout(&addrs), REQUEST_TIMEOUT)
+            .await;
+        let _ = self
+            .send_request(Command::BroadcastControl, BROADCAST_CONTROL_BODY.to_vec(), REQUEST_TIMEOUT)
+            .await;
+        Ok(())
+    }
+
+    // ---- multi-address write (fan-out to singles per Python) ----
+    // Python's set_values sends one single write per address because the pairs
+    // layout is misparsed by DL32S firmware. We keep build_multi_set for
+    // compatibility but implement as fan-out singles.
+
+    pub async fn set_values(&self, values: &std::collections::HashMap<u32, u32>, value_type: u8) -> anyhow::Result<()> {
+        for (addr, raw) in values {
+            self.write_int(*addr, *raw, value_type).await?;
+        }
+        Ok(())
+    }
+
+    // ---- delete snapshot ----
+
+    pub async fn delete_snapshot(&self, snapshot_1_based: u32) -> anyhow::Result<()> {
+        if !(1..=99).contains(&snapshot_1_based) {
+            anyhow::bail!("snapshot number must be 1..99");
+        }
+        let epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0) as u32;
+        let mut body = Vec::with_capacity(12);
+        body.extend_from_slice(&3u32.to_be_bytes());
+        body.extend_from_slice(&snapshot_1_based.to_be_bytes());
+        body.extend_from_slice(&epoch.to_be_bytes());
+        self.send_request(Command::ShowSnapshot, body, REQUEST_TIMEOUT)
+            .await?;
+        if let Ok(mut c) = self.caches.snapshot_names.lock() {
+            c.remove(&snapshot_1_based);
+        }
+        Ok(())
+    }
+
+    // ---- reboot ----
+
+    pub async fn reboot(&self, mode: u32) -> anyhow::Result<()> {
+        if mode != 1 && mode != 2 {
+            anyhow::bail!("reboot mode must be 1 or 2");
+        }
+        self.send_request(Command::Reboot, mode.to_be_bytes().to_vec(), REQUEST_TIMEOUT)
+            .await?;
+        Ok(())
+    }
+
+    // ---- recall snapshot with address ----
+
+    pub async fn recall_snapshot(&self, address: u32, snapshot_1_based: u32) -> anyhow::Result<()> {
+        if snapshot_1_based == 0 {
+            anyhow::bail!("snapshot number must be >= 1");
+        }
+        if address != 0 {
+            // legacy single write
+            self.write_int(address, snapshot_1_based, VALUE_TYPE_PARAM).await?;
+            return Ok(());
+        }
+        self.recall_show_snapshot(snapshot_1_based).await
+    }
+
+    // ---- disconnect notice ----
+
+    pub async fn disconnect_notice(&self) -> anyhow::Result<()> {
+        self.send_request(Command::ChannelInfoControl, [1u32.to_be_bytes(), 4u32.to_be_bytes()].concat(), REQUEST_TIMEOUT)
+            .await?;
+        Ok(())
+    }
+
+    // ---- device admin (0x0E / 0x0F) ----
+
+    pub async fn request_general_info(&self, info_type: u32, timeout: std::time::Duration) -> anyhow::Result<Message> {
+        self.send_request(Command::GeneralInfo, info_type.to_be_bytes().to_vec(), timeout)
+            .await
+    }
+
+    pub async fn request_firmware_info(&self, timeout: std::time::Duration) -> anyhow::Result<Message> {
+        self.send_request(Command::FirmwareInfo, vec![], timeout).await
+    }
+
+    pub fn info_string(body: &[u8]) -> String {
+        if body.len() < 8 {
+            return String::new();
+        }
+        let swapped = word_swap(&body[4..]);
+        String::from_utf8_lossy(swapped.split(|b| *b == 0).next().unwrap_or(&[]))
+            .to_string()
+    }
+
+    pub fn info_ipv4(word: u32) -> String {
+        use std::net::Ipv4Addr;
+        Ipv4Addr::from(word).to_string()
+    }
+
+    pub async fn get_device_name(&self, timeout: std::time::Duration) -> anyhow::Result<String> {
+        let body = self.request_general_info(3, timeout).await?.body;
+        Ok(Self::info_string(&body))
+    }
+
+    pub async fn get_subdevice_name(&self, timeout: std::time::Duration) -> anyhow::Result<String> {
+        let body = self.request_general_info(7, timeout).await?.body;
+        Ok(Self::info_string(&body))
+    }
+
+    pub async fn get_ip_address(&self, timeout: std::time::Duration) -> anyhow::Result<String> {
+        let body = self.request_general_info(4, timeout).await?.body;
+        if body.len() < 8 {
+            anyhow::bail!("IP address reply too short");
+        }
+        let word = u32::from_be_bytes(body[4..8].try_into().unwrap());
+        Ok(Self::info_ipv4(word))
+    }
+
+    pub async fn get_lock_status(&self, timeout: std::time::Duration) -> anyhow::Result<u32> {
+        let body = self.request_general_info(5, timeout).await?.body;
+        if body.len() < 8 {
+            anyhow::bail!("Lock status reply too short");
+        }
+        Ok(u32::from_be_bytes(body[4..8].try_into().unwrap()))
+    }
+
+    pub async fn get_static_ip_config(&self, timeout: std::time::Duration) -> anyhow::Result<(bool, String, String, String)> {
+        let body = self.request_general_info(6, timeout).await?.body;
+        if body.len() < 20 {
+            anyhow::bail!("Static IP config reply too short");
+        }
+        let flag = u32::from_be_bytes(body[4..8].try_into().unwrap());
+        let ip = u32::from_be_bytes(body[8..12].try_into().unwrap());
+        let mask = u32::from_be_bytes(body[12..16].try_into().unwrap());
+        let gw = u32::from_be_bytes(body[16..20].try_into().unwrap());
+        Ok((flag != 0, Self::info_ipv4(ip), Self::info_ipv4(mask), Self::info_ipv4(gw)))
+    }
+
+    pub async fn get_max_message_words(&self, timeout: std::time::Duration) -> anyhow::Result<u32> {
+        let body = self.request_general_info(2, timeout).await?.body;
+        if body.len() < 8 {
+            anyhow::bail!("Max message words reply too short");
+        }
+        Ok(u32::from_be_bytes(body[4..8].try_into().unwrap()))
+    }
+
+    pub async fn get_network_config(&self, timeout: std::time::Duration) -> anyhow::Result<Vec<u32>> {
+        let body = self.request_general_info(0x12, timeout).await?.body;
+        if body.len() < 4 + 65 * 4 {
+            anyhow::bail!("Network config reply too short");
+        }
+        let mut out = Vec::with_capacity(65);
+        for i in 0..65 {
+            let off = 4 + i * 4;
+            out.push(u32::from_be_bytes(body[off..off + 4].try_into().unwrap()));
+        }
+        Ok(out)
+    }
+
+    pub async fn site_survey(&self, timeout: std::time::Duration) -> anyhow::Result<Vec<[u32; 11]>> {
+        let body = self.request_general_info(0x13, timeout).await?.body;
+        if body.len() < 8 {
+            return Ok(Vec::new());
+        }
+        let count = u32::from_be_bytes(body[4..8].try_into().unwrap()) as usize;
+        let mut out = Vec::new();
+        let max = count.min((body.len().saturating_sub(8)) / 44);
+        for i in 0..max {
+            let mut entry = [0u32; 11];
+            for j in 0..11 {
+                let off = 8 + i * 44 + j * 4;
+                entry[j] = u32::from_be_bytes(body[off..off + 4].try_into().unwrap());
+            }
+            out.push(entry);
+        }
+        Ok(out)
+    }
+
+    pub async fn set_device_name(&self, name: &str, timeout: std::time::Duration) -> anyhow::Result<()> {
+        let text = name.as_bytes();
+        let clipped = &text[..text.len().min(1019)];
+        let mut padded = clipped.to_vec();
+        // pad to word boundary with NUL
+        while !padded.len().is_multiple_of(4) {
+            padded.push(0);
+        }
+        if padded.len() == clipped.len() {
+            padded.push(0);
+            while !padded.len().is_multiple_of(4) {
+                padded.push(0);
+            }
+        }
+        let mut body = Vec::with_capacity(4 + padded.len());
+        body.extend_from_slice(&3u32.to_be_bytes());
+        body.extend_from_slice(&word_swap(&padded));
+        self.send_request(Command::SetSystemState, body, timeout).await?;
+        Ok(())
+    }
+
+    pub async fn set_static_ip_config(&self, is_static: bool, address: &str, mask: &str, gateway: &str, timeout: std::time::Duration) -> anyhow::Result<()> {
+        fn pack_ip(s: &str) -> anyhow::Result<u32> {
+            let parts: Vec<&str> = s.split('.').collect();
+            if parts.len() != 4 {
+                anyhow::bail!("bad ip");
+            }
+            let mut v = 0u32;
+            for p in parts {
+                v = (v << 8) | p.parse::<u32>().map_err(|_| anyhow::anyhow!("bad ip"))?;
+            }
+            Ok(v)
+        }
+        let body_bytes: [u8; 20] = {
+            let mut b = [0u8; 20];
+            b[0..4].copy_from_slice(&6u32.to_be_bytes());
+            b[4..8].copy_from_slice(&(if is_static { 1u32 } else { 0u32 }).to_be_bytes());
+            b[8..12].copy_from_slice(&pack_ip(address)?.to_be_bytes());
+            b[12..16].copy_from_slice(&pack_ip(mask)?.to_be_bytes());
+            b[16..20].copy_from_slice(&pack_ip(gateway)?.to_be_bytes());
+            b
+        };
+        self.send_request(Command::SetSystemState, body_bytes.to_vec(), timeout).await?;
+        Ok(())
+    }
+
+    pub async fn get_show_info(&self, timeout: std::time::Duration) -> anyhow::Result<Message> {
+        self.send_request(Command::FileInfo, 5u32.to_be_bytes().to_vec(), timeout).await
+    }
+
+    pub async fn show_ok(&self) -> anyhow::Result<()> {
+        self.send_frame_no_reply(MessageType::Request, Command::ShowSnapshot, 10u32.to_be_bytes().to_vec()).await
+    }
+
+    pub async fn get_show_crc(&self, pid: u32, timeout: std::time::Duration) -> anyhow::Result<Message> {
+        let mut body = Vec::with_capacity(8);
+        body.extend_from_slice(&pid.to_be_bytes());
+        body.extend_from_slice(&0x00010400u32.to_be_bytes());
+        self.send_request(Command::ShowStatus, body, timeout).await
+    }
+
+    pub async fn set_show_parameter(&self, pid: u32, value: u32) -> anyhow::Result<()> {
+        let mut body = Vec::with_capacity(12);
+        body.extend_from_slice(&pid.to_be_bytes());
+        body.extend_from_slice(&0x00010300u32.to_be_bytes());
+        body.extend_from_slice(&value.to_be_bytes());
+        self.send_request(Command::ChannelValues, body, REQUEST_TIMEOUT).await?;
+        Ok(())
+    }
+
+    pub async fn set_show_name(&self, pid: u32, name: &str) -> anyhow::Result<()> {
+        let text = name.as_bytes();
+        let clipped = &text[..text.len().min(63)];
+        let mut padded = clipped.to_vec();
+        padded.push(0);
+        while !padded.len().is_multiple_of(4) {
+            padded.push(0);
+        }
+        let mut body = Vec::with_capacity(8 + padded.len());
+        body.extend_from_slice(&pid.to_be_bytes());
+        body.extend_from_slice(&0x00010300u32.to_be_bytes());
+        body.extend_from_slice(&word_swap(&padded));
+        self.send_request(Command::ChannelNames, body, REQUEST_TIMEOUT).await?;
+        Ok(())
+    }
+
+    // ---- file transfer ----
+
+    pub async fn download_file(&self, filename: &str, timeout: std::time::Duration) -> anyhow::Result<Vec<u8>> {
+        let name = filename.as_bytes();
+        let mut padded = name.to_vec();
+        while !padded.len().is_multiple_of(4) {
+            padded.push(0);
+        }
+        let mut open_body = Vec::with_capacity(4 + padded.len());
+        open_body.extend_from_slice(&0x80000004u32.to_be_bytes());
+        open_body.extend_from_slice(&word_swap(&padded));
+        self.send_request(Command::FileOpen, open_body, timeout).await?;
+
+        // file info
+        let info = self.send_request(Command::FileInfo, [2u32.to_be_bytes(), 0u32.to_be_bytes()].concat(), timeout).await?;
+        if info.body.len() < 12 {
+            anyhow::bail!("File info response too short");
+        }
+        let size = u32::from_be_bytes(info.body[8..12].try_into().unwrap()) as usize;
+        if size == 0 {
+            let _ = self.send_request(Command::FileClose, 0u32.to_be_bytes().to_vec(), timeout).await;
+            return Ok(Vec::new());
+        }
+
+        let mut out = Vec::with_capacity(size);
+        const CHUNK: usize = 0x2FEC;
+        while out.len() < size {
+            let length = CHUNK.min(size - out.len());
+            let mut req = Vec::with_capacity(16);
+            req.extend_from_slice(&0u32.to_be_bytes());
+            req.extend_from_slice(&(size as u32).to_be_bytes());
+            req.extend_from_slice(&(out.len() as u32).to_be_bytes());
+            req.extend_from_slice(&(length as u32).to_be_bytes());
+            let resp = self.send_request(Command::FileRead, req, timeout).await?;
+            if resp.body.len() <= 16 {
+                anyhow::bail!("File read returned no data");
+            }
+            let chunk = word_swap(&resp.body[16..]);
+            let take = length.min(chunk.len());
+            if take == 0 {
+                anyhow::bail!("File read returned an empty chunk");
+            }
+            out.extend_from_slice(&chunk[..take]);
+        }
+        let _ = self.send_request(Command::FileClose, 0u32.to_be_bytes().to_vec(), timeout).await;
+        out.truncate(size);
+        Ok(out)
+    }
+
+    pub async fn upload_file(&self, filename: &str, data: &[u8], file_type: u32, timeout: std::time::Duration) -> anyhow::Result<()> {
+        let payload = data;
+        let total = payload.len();
+        let name = filename.as_bytes();
+        let mut padded_name = name.to_vec();
+        while !padded_name.len().is_multiple_of(4) {
+            padded_name.push(0);
+        }
+        let mut open_body = Vec::with_capacity(4 + padded_name.len());
+        open_body.extend_from_slice(&(file_type & 0xFFFFFFFF).to_be_bytes());
+        open_body.extend_from_slice(&word_swap(&padded_name));
+        let resp = self.send_request(Command::FileOpen, open_body, timeout).await?;
+        if resp.body.len() < 8 || u32::from_be_bytes(resp.body[0..4].try_into().unwrap()) == 0 {
+            anyhow::bail!("File open for upload refused");
+        }
+        let file_id = u32::from_be_bytes(resp.body[4..8].try_into().unwrap());
+
+        const CHUNK: usize = 0x2FEC;
+        let mut offset = 0usize;
+        while offset < total {
+            let length = CHUNK.min(total - offset);
+            let chunk_raw = &payload[offset..offset + length];
+            let mut chunk = word_swap(chunk_raw);
+            while !chunk.len().is_multiple_of(4) {
+                chunk.push(0);
+            }
+            let mut body = Vec::with_capacity(16 + chunk.len());
+            body.extend_from_slice(&file_id.to_be_bytes());
+            body.extend_from_slice(&(total as u32).to_be_bytes());
+            body.extend_from_slice(&(offset as u32).to_be_bytes());
+            body.extend_from_slice(&(length as u32).to_be_bytes());
+            body.extend_from_slice(&chunk);
+            let ack = self.send_request(Command::PostFile, body, timeout).await?;
+            if ack.body.len() < 4 || u32::from_be_bytes(ack.body[0..4].try_into().unwrap()) == 0 {
+                anyhow::bail!("POST chunk not acknowledged");
+            }
+            offset += length;
+        }
+        // zero-length END chunk
+        let mut end_body = Vec::with_capacity(16);
+        end_body.extend_from_slice(&file_id.to_be_bytes());
+        end_body.extend_from_slice(&(total as u32).to_be_bytes());
+        end_body.extend_from_slice(&(total as u32).to_be_bytes());
+        end_body.extend_from_slice(&0u32.to_be_bytes());
+        let end = self.send_request(Command::PostFile, end_body, timeout).await?;
+        if end.body.len() < 4 || u32::from_be_bytes(end.body[0..4].try_into().unwrap()) != 0 {
+            anyhow::bail!("END of POST not accepted");
+        }
+        let _ = self.send_request(Command::FileClose, file_id.to_be_bytes().to_vec(), timeout).await;
+        Ok(())
+    }
+
+    pub async fn set_file_crc(&self, address: u32, crc32: u32) -> anyhow::Result<()> {
+        let body = build_single_set(address, RawValue::Int(crc32), VALUE_TYPE_FILE);
+        // build_single_set uses meta count 1 | type; but type must be 4. build_single_set takes value_type param. Good.
+        // However build_single_set sets meta = (1<<16) | (value_type<<8). For file crc we need 0x00010400 = count 1 type 4. Good.
+        self.send_request(Command::ChannelValues, body, REQUEST_TIMEOUT).await?;
+        Ok(())
+    }
+
+    pub async fn process_files(&self) -> anyhow::Result<()> {
+        self.send_request(Command::ChannelInfoControl, 10u32.to_be_bytes().to_vec(), REQUEST_TIMEOUT).await?;
         Ok(())
     }
 }

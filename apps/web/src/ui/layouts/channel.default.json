@@ -206,6 +206,15 @@
                   }
                 }
               }
+            },
+            {
+              "id": "presets",
+              "module": "channel-presets-card",
+              "bind": {
+                "channelId": {
+                  "$expr": "selId"
+                }
+              }
             }
           ]
         },
@@ -1006,6 +1015,33 @@
                       }
                     }
                   ]
+                },
+                {
+                  "id": "m-groups",
+                  "module": "channel-groups-card",
+                  "bind": {
+                    "vm": "groupsVm"
+                  },
+                  "when": "groupsVm != null",
+                  "on": {
+                    "assign": {
+                      "do": "ui.setGroupAssign",
+                      "args": {
+                        "kind": { "$expr": "payload.kind" },
+                        "id": { "$expr": "selId" },
+                        "group": { "$expr": "payload.group" },
+                        "member": { "$expr": "payload.member" }
+                      }
+                    },
+                    "master": {
+                      "do": "ui.setGroupMute",
+                      "args": {
+                        "kind": { "$expr": "payload.kind" },
+                        "group": { "$expr": "payload.group" },
+                        "muted": { "$expr": "payload.muted" }
+                      }
+                    }
+                  }
                 }
               ]
             }
@@ -1124,6 +1160,33 @@
           "module": "channel-source-label",
           "bind": {
             "src": "master.src"
+          }
+        },
+        {
+          "id": "groups",
+          "module": "channel-groups-card",
+          "bind": {
+            "vm": "groupsVm"
+          },
+          "when": "groupsVm != null",
+          "on": {
+            "assign": {
+              "do": "ui.setGroupAssign",
+              "args": {
+                "kind": { "$expr": "payload.kind" },
+                "id": { "$expr": "selId" },
+                "group": { "$expr": "payload.group" },
+                "member": { "$expr": "payload.member" }
+              }
+            },
+            "master": {
+              "do": "ui.setGroupMute",
+              "args": {
+                "kind": { "$expr": "payload.kind" },
+                "group": { "$expr": "payload.group" },
+                "muted": { "$expr": "payload.muted" }
+              }
+            }
           }
         }
       ]

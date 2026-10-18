@@ -47,7 +47,10 @@ async fn wait_for(
 /// and the R2 suffix (devices/link/info/scenes/fx/routing).
 async fn drain_snapshot(handle: &mut openmix_engine::engine::ClientHandle) -> Vec<Event> {
     let mut out = Vec::new();
-    for _ in 0..12 {
+    // R1 prefix (6) + R2 frames (devices/link/info/scenes/fx/routing) +
+    // master-section snapshot (sim: 8 bus + 6 subgroup + 6 mute-group +
+    // main; no assigns/solos on a fresh engine).
+    for _ in 0..33 {
         out.push(next_event(handle).await);
     }
     let tags: Vec<&str> = out.iter().map(Event::tag).collect();
@@ -57,10 +60,11 @@ async fn drain_snapshot(handle: &mut openmix_engine::engine::ClientHandle) -> Ve
         "R1 snapshot prefix unchanged"
     );
     assert_eq!(
-        &tags[6..],
+        &tags[6..12],
         ["devices", "link", "info", "scenes", "fx", "routing"],
-        "R2 snapshot suffix"
+        "R2 snapshot frames"
     );
+    assert_eq!(&tags[32..], ["main"], "attach ends masters with Main LR");
     out
 }
 
@@ -201,7 +205,7 @@ async fn scene_save_recall_roundtrip_restores_plane() {
         .await
         .unwrap();
     while client.events.try_recv().is_ok() {}
-    client.send(Cmd::SceneRecall { n: 1, fade_ms: Some(0) }).await.unwrap();
+    client.send(Cmd::SceneRecall { n: 1, fade_ms: Some(0), scope: None }).await.unwrap();
     // Recall applies every captured value (fader/mute echoes + params).
     let mut got: std::collections::HashMap<String, Value> = Default::default();
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
@@ -235,7 +239,7 @@ async fn scene_save_recall_roundtrip_restores_plane() {
     let scenes = wait_for(&mut client, |e| matches!(e, Event::Scenes { .. })).await;
     assert_eq!(ev_json(&scenes).get("scenes").and_then(Value::as_array).unwrap().len(), 0);
     // Unknown slots + bad numbers error.
-    client.send(Cmd::SceneRecall { n: 2, fade_ms: Some(0) }).await.unwrap();
+    client.send(Cmd::SceneRecall { n: 2, fade_ms: Some(0), scope: None }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "unknown scene"));
     client.send(Cmd::SceneSave { n: 0, name: "x".to_string() }).await.unwrap();
@@ -244,6 +248,67 @@ async fn scene_save_recall_roundtrip_restores_plane() {
     client.send(Cmd::SceneSave { n: 3, name: "   ".to_string() }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "non-empty"));
+}
+
+#[tokio::test]
+async fn scene_recall_scope_filters_axes() {
+    use openmix_engine::engine::RecallScope;
+    let engine = new_engine().await;
+    let mut client = engine.attach(None).await;
+    let _snap = drain_snapshot(&mut client).await;
+    // Seed known state, then save as scene 5.
+    client.send(Cmd::Fader { ch: 0, value: 0.9 }).await.unwrap();
+    client.send(Cmd::Mute { ch: 0, muted: true }).await.unwrap();
+    client
+        .send(Cmd::Param { ch: 0, field: "eq1_gain".to_string(), value: json!(5.0) })
+        .await
+        .unwrap();
+    client.send(Cmd::Fader { ch: 1, value: 0.2 }).await.unwrap();
+    while client.events.try_recv().is_ok() {}
+    client.send(Cmd::SceneSave { n: 5, name: "Scoped".to_string() }).await.unwrap();
+    wait_for(&mut client, |e| matches!(e, Event::Scenes { .. })).await;
+    // Move away everywhere.
+    client.send(Cmd::Fader { ch: 0, value: 0.1 }).await.unwrap();
+    client.send(Cmd::Mute { ch: 0, muted: false }).await.unwrap();
+    client
+        .send(Cmd::Param { ch: 0, field: "eq1_gain".to_string(), value: json!(-5.0) })
+        .await
+        .unwrap();
+    client.send(Cmd::Fader { ch: 1, value: 0.8 }).await.unwrap();
+    while client.events.try_recv().is_ok() {}
+    // Scoped recall: mute group only, strip 0 only.
+    client
+        .send(Cmd::SceneRecall {
+            n: 5,
+            fade_ms: Some(0),
+            scope: Some(RecallScope {
+                strips: Some(vec![0]),
+                groups: Some(vec!["mute".to_string()]),
+                globals: Some(vec![]),
+            }),
+        })
+        .await
+        .unwrap();
+    // The mute echo for ch 0 arrives; fader/eq echoes for ch 0 must not
+    // (axis outside the scope), and ch 1 stays untouched.
+    let mut saw_mute = false;
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    while !saw_mute {
+        assert!(std::time::Instant::now() < deadline, "scoped mute echo arrives");
+        if let Ok(Some(e)) = tokio::time::timeout(Duration::from_millis(500), client.events.recv()).await {
+            if let Event::Param { ch: 0, field, value, .. } = &e {
+                assert_ne!(field, "fader", "fader axis excluded from scope");
+                assert_ne!(field, "eq1_gain", "eq axis excluded from scope");
+                if field == "mute" {
+                    assert_eq!(value, &json!(true));
+                    saw_mute = true;
+                }
+            }
+            if let Event::Param { ch: 1, .. } = &e {
+                panic!("strip 1 outside the scope must not recall: {e:?}");
+            }
+        }
+    }
 }
 
 #[tokio::test]
@@ -284,7 +349,7 @@ async fn scenes_persist_across_restart() {
     assert_eq!(list[0].get("number"), Some(&json!(7)));
     assert_eq!(list[0].get("name"), Some(&json!("Persist")));
     // And the restored fader value recalls.
-    client2.send(Cmd::SceneRecall { n: 7, fade_ms: Some(0) }).await.unwrap();
+    client2.send(Cmd::SceneRecall { n: 7, fade_ms: Some(0), scope: None }).await.unwrap();
     let echo = wait_for(
         &mut client2,
         |e| matches!(e, Event::Param { ch: 2, field, .. } if field == "fader"),
@@ -645,4 +710,135 @@ async fn pipelined_writes_still_preempt() {
     })
     .await;
     let _ = state;
+}
+
+// ---------- masters / groups / files ----------
+
+#[tokio::test]
+async fn masters_groups_files_roundtrip() {
+    let engine = new_engine().await;
+    let mut client = engine.attach(None).await;
+    let snap = drain_snapshot(&mut client).await;
+    // caps groups/files advertisement (sim: 8 buses, 6 subgroups, 6 mute
+    // groups, file transfer modeled in-memory).
+    let caps = snap.iter().find(|e| matches!(e, Event::Caps { .. })).unwrap();
+    let v = ev_json(caps);
+    assert_eq!(v.get("groups"), Some(&json!({"buses": 8, "subgroups": 6, "mute_groups": 6, "mg_assign": true, "sub_assign": true})));
+    assert_eq!(v.get("files"), Some(&json!({"supported": true})));
+
+    // Bus master round-trip (sim mix bus 0 == strip 32).
+    client.send(Cmd::BusFader { bus: 0, value: 0.75 }).await.unwrap();
+    let bus = wait_for(&mut client, |e| matches!(e, Event::Bus { bus: 0, .. })).await;
+    let fader = ev_json(&bus).get("fader").and_then(Value::as_f64).unwrap();
+    assert!((fader - 0.75).abs() < 1e-6, "bus fader echo {fader}");
+    client.send(Cmd::BusMute { bus: 0, muted: true }).await.unwrap();
+    let bus = wait_for(&mut client, |e| matches!(e, Event::Bus { bus: 0, muted: true, .. })).await;
+    assert_eq!(ev_json(&bus).get("muted"), Some(&json!(true)));
+    client.send(Cmd::BusMute { bus: 0, muted: false }).await.unwrap();
+    wait_for(&mut client, |e| matches!(e, Event::Bus { bus: 0, muted: false, .. })).await;
+
+    // Subgroup master round-trip.
+    client.send(Cmd::SubgroupFader { group: 1, value: 0.7 }).await.unwrap();
+    let sub = wait_for(&mut client, |e| matches!(e, Event::Subgroup { group: 1, .. })).await;
+    let fader = ev_json(&sub).get("fader").and_then(Value::as_f64).unwrap();
+    assert!((fader - 0.7).abs() < 1e-6, "subgroup fader echo {fader}");
+    client.send(Cmd::SubgroupMute { group: 1, muted: true }).await.unwrap();
+    wait_for(&mut client, |e| matches!(e, Event::Subgroup { group: 1, muted: true, .. })).await;
+
+    // Membership round-trips.
+    client.send(Cmd::SubgroupAssign { ch: 0, group: 1, member: true }).await.unwrap();
+    wait_for(
+        &mut client,
+        |e| matches!(e, Event::SubgroupAssign { ch: 0, group: 1, member: true }),
+    )
+    .await;
+    client.send(Cmd::MuteGroup { group: 0, muted: true }).await.unwrap();
+    wait_for(&mut client, |e| matches!(e, Event::MuteGroup { group: 0, muted: true })).await;
+    client.send(Cmd::MuteGroupAssign { ch: 5, group: 2, member: false }).await.unwrap();
+    wait_for(
+        &mut client,
+        |e| matches!(e, Event::MuteGroupAssign { ch: 5, group: 2, member: false }),
+    )
+    .await;
+
+    // Main LR master mute round-trip (sim in-memory).
+    client.send(Cmd::MainMute { muted: true }).await.unwrap();
+    let main = wait_for(&mut client, |e| matches!(e, Event::Main { muted: Some(true), .. })).await;
+    assert_eq!(ev_json(&main).get("muted"), Some(&json!(true)));
+    client.send(Cmd::MainMute { muted: false }).await.unwrap();
+    wait_for(&mut client, |e| matches!(e, Event::Main { muted: Some(false), .. })).await;
+
+    // Per-strip solo round-trip (sim in-memory; monitor bus only).
+    client.send(Cmd::Solo { ch: 3, soloed: true }).await.unwrap();
+    wait_for(&mut client, |e| matches!(e, Event::Solo { ch: 3, soloed: true })).await;
+    client.send(Cmd::Solo { ch: 3, soloed: false }).await.unwrap();
+    wait_for(&mut client, |e| matches!(e, Event::Solo { ch: 3, soloed: false })).await;
+
+    // File upload then download round-trip (base64 `AAECAw==` == [0,1,2,3]).
+    client
+        .send(Cmd::FileUpload {
+            filename: "Show.zip".to_string(),
+            data: "AAECAw==".to_string(),
+            file_type: 0,
+        })
+        .await
+        .unwrap();
+    let ack = wait_for(&mut client, |e| matches!(e, Event::File { filename, .. } if filename == "Show.zip")).await;
+    assert_eq!(ev_json(&ack).get("size"), Some(&json!(4)));
+    assert!(ev_json(&ack).get("data").is_none());
+    client.send(Cmd::FileDownload { filename: "Show.zip".to_string() }).await.unwrap();
+    let file = wait_for(
+        &mut client,
+        |e| matches!(e, Event::File { filename, data: Some(_), .. } if filename == "Show.zip"),
+    )
+    .await;
+    let fv = ev_json(&file);
+    assert_eq!(fv.get("data"), Some(&json!("AAECAw==")));
+    assert_eq!(fv.get("size"), Some(&json!(4)));
+}
+
+#[tokio::test]
+async fn masters_reject_out_of_range_and_bad_input() {
+    let engine = new_engine().await;
+    let mut client = engine.attach(None).await;
+    drain_snapshot(&mut client).await;
+    // Bus 8 is out of range on sim (0..8); subgroup 6 out of range (0..6).
+    client.send(Cmd::BusFader { bus: 8, value: 0.5 }).await.unwrap();
+    let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
+    assert!(is_error_containing(&err, "out of range"));
+    client.send(Cmd::SubgroupMute { group: 6, muted: true }).await.unwrap();
+    let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
+    assert!(is_error_containing(&err, "out of range"));
+    // Invalid base64 + missing file.
+    client
+        .send(Cmd::FileUpload {
+            filename: "Show.zip".to_string(),
+            data: "!!!not-base64!!!".to_string(),
+            file_type: 0,
+        })
+        .await
+        .unwrap();
+    let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
+    assert!(is_error_containing(&err, "base64"));
+    client.send(Cmd::FileDownload { filename: "../evil.zip".to_string() }).await.unwrap();
+    let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
+    assert!(is_error_containing(&err, "path separators"));
+    client.send(Cmd::FileDownload { filename: "missing.zip".to_string() }).await.unwrap();
+    let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
+    assert!(is_error_containing(&err, "not found"));
+    // Restricted role: musician cannot move masters or upload files.
+    engine.set_client_policy(&client.id, openmix_core::access::Policy::musician([0]));
+    client.send(Cmd::BusFader { bus: 0, value: 0.5 }).await.unwrap();
+    let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
+    assert!(is_error_containing(&err, "blocked"));
+    client
+        .send(Cmd::FileUpload {
+            filename: "Show.zip".to_string(),
+            data: "AAECAw==".to_string(),
+            file_type: 0,
+        })
+        .await
+        .unwrap();
+    let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
+    assert!(is_error_containing(&err, "blocked"));
 }

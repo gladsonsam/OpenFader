@@ -131,7 +131,7 @@ export function modeTabToScreen(mode: Mode, tab: Tab): ScreenId | null {
   return null;
 }
 
-/** Lets screens signal fixture readiness (design-diff waits on this). */
+/** Lets screens signal fixture readiness (headless screenshot checks wait on this). */
 export function markReady(): void {
   if (typeof window !== 'undefined') (window as unknown as Record<string, unknown>).__uiReady = true;
 }

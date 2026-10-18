@@ -117,6 +117,27 @@
       },
       "children": [
         {
+          "id": "master-bus",
+          "module": "btn",
+          "props": {
+            "height": 30,
+            "fontSize": 12,
+            "padding": "0 8px",
+            "bg": "#1b2330",
+            "fg": "#e8edf5",
+            "border": "1px solid #3a414c"
+          },
+          "bind": {
+            "label": "master.busLabel",
+            "ariaLabel": "concat('Select master bus, current ', master.name)"
+          },
+          "on": {
+            "press": {
+              "do": "ui.openBusPopup"
+            }
+          }
+        },
+        {
           "id": "master-proc",
           "module": "col",
           "props": {

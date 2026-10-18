@@ -40,6 +40,9 @@ pub struct Policy {
     pub allow_main: bool,
     pub allow_rename: bool,
     pub allow_recall: bool,
+    /// Desk file upload (scenes/shows to the desk). Reads (download) are
+    /// never blocked; only the mutating upload is gated.
+    pub allow_files: bool,
     pub max_fader: f32,
 }
 
@@ -52,6 +55,7 @@ impl Policy {
             allow_main: true,
             allow_rename: true,
             allow_recall: true,
+            allow_files: true,
             max_fader: 1.0,
         }
     }
@@ -66,7 +70,7 @@ impl Policy {
     }
 
     /// Restricted operator: only `allowed` strips, no main LR, no scene
-    /// recall, no renames, faders capped at [`MUSICIAN_MAX_FADER`].
+    /// recall, no renames, no file uploads, faders capped at [`MUSICIAN_MAX_FADER`].
     pub fn musician(allowed: impl IntoIterator<Item = u16>) -> Self {
         Self {
             role: Role::Musician,
@@ -74,6 +78,7 @@ impl Policy {
             allow_main: false,
             allow_rename: false,
             allow_recall: false,
+            allow_files: false,
             max_fader: MUSICIAN_MAX_FADER,
         }
     }
@@ -139,6 +144,44 @@ impl Policy {
     pub fn allow_recall(&self) -> anyhow::Result<()> {
         if !self.allow_recall {
             anyhow::bail!("role {:?}: scene recall is blocked", self.role);
+        }
+        Ok(())
+    }
+
+    /// Master-section gate: mix-bus / subgroup / mute-group masters are
+    /// shared mixes, so restricted roles (no `allow_main`) cannot touch
+    /// them even when their own strips are allowed.
+    pub fn allow_master(&self) -> anyhow::Result<()> {
+        if !self.allow_main {
+            anyhow::bail!("role {:?}: masters are blocked", self.role);
+        }
+        Ok(())
+    }
+
+    /// Master fader write (bus / subgroup): master gate plus the fader cap.
+    pub fn allow_master_fader(&self, value: f32) -> anyhow::Result<()> {
+        self.allow_master()?;
+        self.check_level(value)
+    }
+
+    /// Master mute write (bus / subgroup / mute group): master gate.
+    pub fn allow_master_mute(&self) -> anyhow::Result<()> {
+        self.allow_master()
+    }
+
+    /// Group-membership write scoped to one strip: the strip must be
+    /// allowed AND the role must hold the master gate (membership changes
+    /// what the shared group masters sum).
+    pub fn allow_assign(&self, strip: StripId) -> anyhow::Result<()> {
+        self.check_strip(strip)?;
+        self.allow_master()
+    }
+
+    /// Desk file-upload gate (scenes/shows to the desk). Downloads are
+    /// reads and are never blocked.
+    pub fn allow_upload(&self) -> anyhow::Result<()> {
+        if !self.allow_files {
+            anyhow::bail!("role {:?}: file upload is blocked", self.role);
         }
         Ok(())
     }
@@ -212,6 +255,85 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.get_bus_fader(bus).await
     }
 
+    async fn set_bus_mute(&self, bus: u8, muted: bool) -> anyhow::Result<()> {
+        self.policy.allow_master_mute()?;
+        self.inner.set_bus_mute(bus, muted).await
+    }
+
+    async fn get_bus_mute(&self, bus: u8) -> anyhow::Result<bool> {
+        self.inner.get_bus_mute(bus).await
+    }
+
+    fn bus_count(&self) -> u8 {
+        self.inner.bus_count()
+    }
+
+    fn subgroup_count(&self) -> u8 {
+        self.inner.subgroup_count()
+    }
+
+    async fn set_subgroup_fader(&self, group: u8, value: f32) -> anyhow::Result<()> {
+        self.policy.allow_master_fader(value)?;
+        self.inner.set_subgroup_fader(group, value).await
+    }
+
+    async fn get_subgroup_fader(&self, group: u8) -> anyhow::Result<f32> {
+        self.inner.get_subgroup_fader(group).await
+    }
+
+    async fn set_subgroup_mute(&self, group: u8, muted: bool) -> anyhow::Result<()> {
+        self.policy.allow_master_mute()?;
+        self.inner.set_subgroup_mute(group, muted).await
+    }
+
+    async fn get_subgroup_mute(&self, group: u8) -> anyhow::Result<bool> {
+        self.inner.get_subgroup_mute(group).await
+    }
+
+    async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+        self.policy.allow_assign(ch)?;
+        self.inner.set_subgroup_assign(ch, group, member).await
+    }
+
+    async fn get_subgroup_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        self.inner.get_subgroup_assign(ch, group).await
+    }
+
+    fn mute_group_count(&self) -> u8 {
+        self.inner.mute_group_count()
+    }
+
+    async fn set_mute_group(&self, group: u8, muted: bool) -> anyhow::Result<()> {
+        self.policy.allow_master_mute()?;
+        self.inner.set_mute_group(group, muted).await
+    }
+
+    async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool> {
+        self.inner.get_mute_group(group).await
+    }
+
+    async fn set_mute_group_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+        self.policy.allow_assign(ch)?;
+        self.inner.set_mute_group_assign(ch, group, member).await
+    }
+
+    async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        self.inner.get_mute_group_assign(ch, group).await
+    }
+
+    fn file_transfer(&self) -> bool {
+        self.inner.file_transfer()
+    }
+
+    async fn download_file(&self, filename: &str) -> anyhow::Result<Vec<u8>> {
+        self.inner.download_file(filename).await
+    }
+
+    async fn upload_file(&self, filename: &str, data: &[u8], file_type: u32) -> anyhow::Result<()> {
+        self.policy.allow_upload()?;
+        self.inner.upload_file(filename, data, file_type).await
+    }
+
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
         self.policy.allow_main(value)?;
         self.inner.set_main_fader(value).await
@@ -219,6 +341,24 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
 
     async fn get_main_fader(&self) -> anyhow::Result<f32> {
         self.inner.get_main_fader().await
+    }
+
+    async fn set_main_mute(&self, muted: bool) -> anyhow::Result<()> {
+        self.policy.allow_master_mute()?;
+        self.inner.set_main_mute(muted).await
+    }
+
+    async fn get_main_mute(&self) -> anyhow::Result<bool> {
+        self.inner.get_main_mute().await
+    }
+
+    async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
+        self.policy.allow_strip(strip)?;
+        self.inner.set_solo(strip, soloed).await
+    }
+
+    async fn get_solo(&self, strip: StripId) -> anyhow::Result<bool> {
+        self.inner.get_solo(strip).await
     }
 
     async fn set_param(
@@ -279,6 +419,10 @@ mod tests {
     fn policy_constructors() {
         let admin = Policy::admin();
         assert!(admin.allow_main && admin.allow_recall && admin.allow_rename);
+        assert!(admin.allow_files);
+        admin.allow_master().unwrap();
+        admin.allow_master_fader(1.0).unwrap();
+        admin.allow_upload().unwrap();
         assert_eq!(admin.max_fader, 1.0);
         assert!(admin.allowed_strips.is_none());
 
@@ -289,6 +433,12 @@ mod tests {
         let mus = Policy::musician([0, 1]);
         assert_eq!(mus.role, Role::Musician);
         assert!(!mus.allow_main && !mus.allow_recall && !mus.allow_rename);
+        assert!(!mus.allow_files);
+        assert!(mus.allow_master().is_err());
+        assert!(mus.allow_master_fader(0.5).is_err());
+        assert!(mus.allow_master_mute().is_err());
+        assert!(mus.allow_assign(StripId(0)).is_err());
+        assert!(mus.allow_upload().is_err());
         assert_eq!(mus.max_fader, MUSICIAN_MAX_FADER);
         let allowed = mus.allowed_strips.unwrap();
         assert!(allowed.contains(&0) && allowed.contains(&1) && !allowed.contains(&5));

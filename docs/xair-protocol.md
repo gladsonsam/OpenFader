@@ -47,9 +47,22 @@ Notes:
 - `/mix/on` is inverted vs mute: `1` means channel ON (unmuted).
 - X32 uses `/main/st/mix/fader` for mains; X-Air uses `/lr/*`.
   Hardware-confirmed on XR18 FW 1.20 (2026-10-17): `/main/st/mix/fader`
-  gets NO reply. Driver uses `/lr/*` only. `/lr/mix/on` and
-  `/lr/config/name` follow by analogy with `/ch` (mute also confirmed on
-  `/rtn/1` and `/dca/1` via the driver path, 2026-10-18).
+  gets NO reply. Driver uses `/lr/*` only. `/lr/config/name` follows by
+  analogy with `/ch`. VERIFIED 2026-10-18: `/lr/mix/on` answers queries
+  (reads `1` unmuted) and the full `main_mute` write->readback path
+  round-trips on the owner rig (same-value; the audible `true` direction
+  uses the identical leaf/codec as channel mutes).
+- VERIFIED 2026-10-18: per-channel solo writes to `/-stat/solosw/NN`
+  (1-based; stereo-linked partners follow, e.g. soloing ch16 sets bits 14
+  + 15) and `/-action/clearsolo` clears the 54-int bank, read back via
+  `/-stat/solosw`. `/-stat/solo`, `/lr/mix/solo`, `/ch/NN/mix/solo`
+  and `/bus/N/mix/solo` are all silent (no desk leaf).
+- VERIFIED 2026-10-18: the `/meters/1` blob is 84 B = 42 LE-i16 samples
+  with NO header (whole-packet parse); index 0 = ch 1 (ch1 mic noise floor
+  reads ~40 counts while the silent rig holds all other indices at 0).
+  Bus/main/FX blob positions are NOT mapped (silent rig) — the driver and
+  UI treat unverified families as unknown/silent, never as another
+  strip's level.
 
 ## Address table: param plane (rig-verified 2026-10-18 unless noted)
 
@@ -157,9 +170,14 @@ covered by the earlier meter findings, not that probe.)
 
 ## Meters
 
-- Subscribe: send empty `/meters/1`; mixer streams `/meters/0..3` blobs ~50ms.
-- Blob payload: run of **little-endian i16** samples, level = `raw / 32767`
-  clamped to `0.0..1.0`. Index 0 = ch 1.
+- Subscribe: send `/meters` with ONE string arg `/meters/1` (bare/empty
+  queries to `/meters/1` get silence — baseline T4). Mixer streams blobs
+  addressed `/meters/1` (also `/meters/2`, `/meters/3` when subscribed)
+  at ~20/s with /xremote + resubscribe every 8 s.
+- Blob payload (`/meters/1`, rig-verified 2026-10-18): exactly 84 B = 42
+  **little-endian i16** samples, NO header; level = `raw / 32767` clamped
+  to `0.0..1.0`. Index 0 = ch 1; indices past the 16 channels are NOT
+  mapped (silent rig — never assume the blob order for bus/main).
 - Parsing lives in `openmix-transport::meter` (`parse_meter_message`,
   `MeterRing`) and also accepts float/int arg-list forms so future providers
   reuse it. The recv loop + broadcast hub is `OscSession`; the driver only

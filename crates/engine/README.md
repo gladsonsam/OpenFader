@@ -82,6 +82,23 @@ client.detach().await; // also runs on drop
 | `offline` (R2) | `model` (`sim`\|`xair`\|`dl32s`) | broadcast `state`, `caps`, `link` (`offline`), `fx`, `routing` |
 | `offline_push` (R2) | `confirm` (must be `true`) | broadcast `param` (every pushed value) + `state`; errors without a pending diff or without confirm |
 | `offline_discard` (R2) | — | broadcast `offline_diff` (`count: 0`) |
+| `bus_fader` (R2) | `bus` (0-based), `value` 0.0..=1.0 | broadcast full-state `bus` (both fields re-read) |
+| `bus_mute` (R2) | `bus` (0-based), `muted` | broadcast full-state `bus` |
+| `subgroup_fader` (R2) | `group` (0-based), `value` 0.0..=1.0 | broadcast full-state `subgroup` |
+| `subgroup_mute` (R2) | `group` (0-based), `muted` | broadcast full-state `subgroup` |
+| `subgroup_assign` (R2) | `ch`, `group` (0-based), `member` | broadcast `subgroup_assign` echo; channel-lock checked |
+| `mute_group` (R2) | `group` (0-based), `muted` | broadcast `mute_group` (re-read) |
+| `mute_group_assign` (R2) | `ch`, `group` (0-based), `member` | broadcast `mute_group_assign` echo; channel-lock checked |
+| `file_download` (R2) | `filename` | unicast `file` with base64 `data` |
+| `file_upload` (R2) | `filename`, `data` (base64, ≤16 MiB), `file_type` | broadcast `file` ack (`data` absent, `size` = bytes written) |
+
+Driver coverage: mix-bus masters ride every driver (sim mix strips,
+XR18 `/bus/N`, DL32S aux masters). Subgroup / mute-group / file transfer
+are DL32S-native and sim-modelled in-memory; the XR18 has no subgroup,
+mute-group or file leaf on its OSC map, so those commands answer
+`error ... not supported` there — honest `unsupported`, never faked
+(`caps.groups` counts are 0 and `caps.files.supported` is false on xair).
+"Create" needs no command: group counts are fixed per desk family.
 
 Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
 `error` (`invalid JSON: ...`); wrong shapes → `error` (`invalid command:
@@ -159,7 +176,8 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   `name_prefix`,`color_default`,`params_scope`}],"meter_taps":[...],
   "fx":{`slots`,`types`:[{`id`,`label`,`params`:[{`id`,`label`,`unit`,
   `min`,`max`,`default`,`scale`}]}]},"routing":{`groups`:[{`key`,
-  `label`,`count`}],`per_strip`,`supported`}}`
+  `label`,`count`}],`per_strip`,`supported`},"groups":{`buses`,
+  `subgroups`,`mute_groups`},"files":{`supported`}}`
   — supported catalogue entries (v2: 159 ids) plus the rest in catalogue
   order; `scope` is the legacy single-scope tag (kept for back-compat),
   `scopes` the v2 strip-kind set the id applies to (the poller filters on
@@ -171,6 +189,9 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   xair: 4 slots, desk-native types not projected yet; dl32s: 0 slots).
   `routing` declares patch support (sim: Lcl/Net/USB × 32, per-strip;
   xair/dl32s: `supported:false` — `insrc` is live-silent on FW 1.20).
+  `groups` counts the master-section commands the driver backs (sim:
+  8/6/6; xair: 6/0/0; dl32s: 8/6/6). `files` flags desk file transfer
+  (sim/dl32s: true; xair: false).
   `min`/`max` are `null` for bool/text. Broadcast on `connect` and when
   a param drops out (below); unicast to every newly attached client.
   Additive: old fields are byte-identical.
@@ -188,6 +209,21 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
 - `recalled`: `{"type":"recalled","overrode_locks":[1]}` — unicast to the
   recaller when `recall_scene` changed strips pinned by someone else
   (recall bypasses pins).
+- `bus`: `{"type":"bus","bus":0,"fader":0.75,"muted":false}` — full
+  master state after a `bus_fader`/`bus_mute` write (both fields re-read).
+- `subgroup`: `{"type":"subgroup","group":1,"fader":0.7,"muted":true}` —
+  subgroup master echo.
+- `subgroup_assign`: `{"type":"subgroup_assign","ch":0,"group":1,
+  "member":true}` — membership echo.
+- `mute_group`: `{"type":"mute_group","group":0,"muted":true}` — mute-group
+  master echo (re-read).
+- `mute_group_assign`: `{"type":"mute_group_assign","ch":5,"group":2,
+  "member":false}` — membership echo.
+- `file`: `{"type":"file","filename":"Show.zip","size":4,
+  "file_type":0,"data":"AAECAw=="?}` — `file_download` replies carry
+  base64 `data` (`size` = decoded bytes); `file_upload` replies are acks
+  (`data` absent, `size` = bytes written). `data` is skipped on the wire
+  while absent.
 
 Unicast vs broadcast: `you`, `list_shows` replies, denials, `recalled`,
 command errors → sender only. Everything else → every client.
@@ -337,9 +373,14 @@ misuse. Transient I/O keeps polling silently.
 
 `focus` moves strips to the FRONT of the shared queue (most-recent-first:
 a new focus supersedes older ones, pending (strip, param) pairs are
-de-duplicated, re-read at the same budget, then round-robin resumes): one
-strip's whole set lands in ~8 s at the default budget (~159 sim input
-params). The queue is bounded (~4 sweeps, oldest dropped from the back)
+de-duplicated, re-read at the same budget, then round-robin resumes). The
+fresh set drains core-first across the whole focused set: `fader`+`mute`
+of every strip first, then `name`+`pan`, then the remaining scoped ids in
+catalogue order — a 16-strip mixer bank is fader-live after ~32 ticks
+(≈1.6 s at the default budget) instead of waiting out a full strip-major
+catalogue sweep. A single-strip focus still drains as one unbroken block
+ahead of the background. The queue is bounded (~4 sweeps, oldest dropped
+from the back)
 and a detached client's pending focus is dropped with it, so a gone
 client's flood never starves the next focus. Flood-then-focus ordering is
 covered by `focus_flood_superseded` (engine) and `ws_focus_flood_superseded`
@@ -487,8 +528,10 @@ for taps-negotiated clients.
 ## Roles / access policy
 
 Each client carries a `core::access::Policy` (default: admin). Musician
-(allow-list of strips, no main LR, no scene recall, no renames, fader cap
-`MUSICIAN_MAX_FADER` ≈ −10 dB) denials arrive as unicast `error` events;
+(allow-list of strips, no main LR, no scene recall, no renames, no file
+uploads, fader cap `MUSICIAN_MAX_FADER` ≈ −10 dB; master-section writes —
+bus/subgroup/mute-group masters and membership — are blocked like main LR)
+denials arrive as unicast `error` events;
 reads are never blocked. `CheckedDriver` enforces the same rules
 driver-side; the engine checks up front so denials never touch hardware.
 

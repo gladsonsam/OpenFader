@@ -290,6 +290,9 @@ export function registerBuiltins(): void {
 
   // banks / selection
   uiThrough('ui.setBank', a => [a['bank']], { args: { bank: 'string' }, describe: 'Select a bank' });
+  uiThrough('ui.openBusPopup', () => [], S('Open the master bus selector popup'));
+  uiThrough('ui.closeBusPopup', () => [], S('Close the master bus selector popup'));
+  uiThrough('ui.selectBusMaster', a => [a['id']], { args: { id: 'string' }, describe: 'Pick a bus popup row (bank/master switch)' });
   uiThrough('ui.select', a => [a['id']], S('Select a channel'));
   uiThrough('ui.openEq', a => [a['id']], S('Open EQ for channel'));
   uiThrough('ui.openDyn', a => [a['id']], S('Open dynamics for channel'));
@@ -303,7 +306,7 @@ export function registerBuiltins(): void {
   uiThrough('ui.setPan', a => [a['id'], a['value']], { args: { id: 'string', value: 'number' }, describe: 'Set pan (lock-checked)' });
   uiThrough('ui.resetPan', a => [a['id']], S('Reset pan (lock-checked)'));
   uiThrough('ui.toggleMute', a => [a['id']], S('Toggle mute (muteEnable + lock checked)'));
-  uiThrough('ui.toggleSolo', a => [a['id']], S('Toggle solo (muteEnable + lock checked, UI-only)'));
+  uiThrough('ui.toggleSolo', a => [a['id']], S('Toggle solo (muteEnable + lock checked; forwarded live)'));
   uiThrough('ui.openNameEditor', a => [a['id']], S('Open/close the name-bar editor (also selects)'));
   uiThrough('ui.closeNameEditor', () => [], S('Close the name-bar editor'));
   uiThrough('ui.setChannelName', a => [a['id'], a['value']], { args: { id: 'string', value: 'string' }, describe: 'Rename a channel (lock-checked)' });

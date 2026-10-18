@@ -9,6 +9,7 @@
 //! verified here and stay unimplemented — see [`model_status`].
 
 use openmix_core::FaderScale;
+use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
 /// DL32S input strip geometry.
@@ -114,14 +115,14 @@ fn input_head() -> Vec<Field> {
         field("phantom", 13, Bool, "48V phantom", None, true),
         field("hpf_on", 14, Bool, "HPF on", None, true),
         field("hpf_freq", 15, Float, "HPF frequency", Some((20.0, 400.0)), true),
-        field("unknown_16", 16, Int, "(unknown)", None, false),
+        field("hpf_slope", 16, Int, "HPF slope", None, false),
         field("gate_mode", 17, Enum, "Gate modern/vintage", None, true),
         field("gate_on", 18, Bool, "Gate on", None, true),
         field("gate_threshold", 19, Db, "Gate threshold", Some((-120.0, 0.0)), true),
         field("gate_attack", 20, Float, "Gate attack ms", None, false),
         field("gate_release", 21, Float, "Gate release ms", None, false),
-        field("gate_hold", 22, Float, "Gate hold ms", None, false),
-        field("gate_range", 23, Float, "Gate range", None, false),
+        field("gate_range", 22, Float, "Gate range", None, false),
+        field("gate_hold", 23, Float, "Gate hold ms", None, false),
         field("comp_mode", 24, Enum, "Comp modern/vintage", None, true),
         field("comp_on", 25, Bool, "Comp on", None, true),
         field("comp_gain", 26, Db, "Comp makeup gain", None, false),
@@ -204,7 +205,7 @@ fn sends(prefix: &str, label: &str, first: u32, count: u32, with_third: bool) ->
         ));
         out.push(field(key("mute"), base + 1, Encoding::Bool, lab("send mute"), None, true));
         if with_third {
-            out.push(field(key("unknown"), base + 2, Encoding::Int, lab("send (unknown)"), None, false));
+            out.push(field(key("pan"), base + 2, Encoding::Float, lab("send pan"), Some((-1.0, 1.0)), false));
         }
     }
     out
@@ -282,6 +283,87 @@ fn build_dl32s_inputs() -> ChannelBlock {
     }
 }
 
+
+/// Subgroup master strips: 6 strips of 51 words from 4041.
+pub fn dl32s_subgroups() -> &'static ChannelBlock {
+    static B: OnceLock<ChannelBlock> = OnceLock::new();
+    B.get_or_init(|| ChannelBlock {
+        name: "subgroup",
+        base: 4041,
+        stride: 51,
+        count: 6,
+        fields: vec![
+            field("mute", 0, Encoding::Bool, "Subgroup master mute", None, true),
+            field("fader", 1, Encoding::Db, "Subgroup master fader", Some((-120.0, 10.0)), true),
+        ],
+    })
+}
+
+/// Main-out master strip: 87 words from 4347.
+pub fn dl32s_main() -> &'static ChannelBlock {
+    static B: OnceLock<ChannelBlock> = OnceLock::new();
+    B.get_or_init(|| ChannelBlock {
+        name: "main",
+        base: 4347,
+        stride: 87,
+        count: 1,
+        fields: vec![
+            field("fader", 0, Encoding::Db, "Main master fader", Some((-120.0, 10.0)), false),
+            field("mute", 1, Encoding::Bool, "Main master mute", None, false),
+            field("balance", 2, Encoding::Float, "Main balance", None, false),
+        ],
+    })
+}
+
+/// Aux master strips: 8 strips of 90 words from 4434.
+pub fn dl32s_auxmasters() -> &'static ChannelBlock {
+    static B: OnceLock<ChannelBlock> = OnceLock::new();
+    B.get_or_init(|| ChannelBlock {
+        name: "auxmaster",
+        base: 4434,
+        stride: 90,
+        count: 8,
+        fields: vec![
+            field("mute", 3, Encoding::Bool, "Aux master mute", None, false),
+            field("fader", 4, Encoding::Db, "Aux master fader", Some((-120.0, 10.0)), false),
+        ],
+    })
+}
+
+
+/// Declarative map of the Mackie DL value space (mirrors the Python
+/// `addressmap.MixerMap`). Only the verified DL32S map is served.
+#[derive(Clone, Debug)]
+pub struct MixerMap {
+    pub model: &'static str,
+    pub inputs: ChannelBlock,
+    pub blocks: BTreeMap<&'static str, ChannelBlock>,
+    pub notes: &'static str,
+}
+
+/// Resolve a configured mixer model to its map. `auto` resolves to DL32S.
+pub fn get_map(model: &str) -> anyhow::Result<&'static MixerMap> {
+    match model.trim().to_lowercase().as_str() {
+        "dl32s" | "auto" | "" => Ok(DL32S_MAP.get_or_init(build_dl32s_map)),
+        _ => anyhow::bail!("no address map for mixer model {model:?}"),
+    }
+}
+
+static DL32S_MAP: OnceLock<MixerMap> = OnceLock::new();
+
+fn build_dl32s_map() -> MixerMap {
+    let mut blocks = BTreeMap::new();
+    blocks.insert("subgroup", dl32s_subgroups().clone());
+    blocks.insert("main", dl32s_main().clone());
+    blocks.insert("auxmaster", dl32s_auxmasters().clone());
+    MixerMap {
+        model: "dl32s",
+        inputs: dl32s_inputs().clone(),
+        blocks,
+        notes: "verified DL32S map",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -322,7 +404,7 @@ mod tests {
         assert!(!block.field("comp_gain").unwrap().verified);
         assert!(block.field("eq4_gain").unwrap().verified);
         assert!(block.field("aux8_mute").unwrap().verified);
-        assert!(!block.field("aux8_unknown").unwrap().verified);
+        assert!(!block.field("aux8_pan").unwrap().verified);
         assert!(!block.field("mutegroup1").unwrap().verified);
         assert!(!block.field("vca6").unwrap().verified);
         // Band 1 has no filter-type word.
