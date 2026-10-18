@@ -522,6 +522,12 @@ async fn get_gr(state: State<'_>, ch: u16) -> Result<serde_json::Value, String> 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(tauri_plugin_haptics::init())
+        .plugin(tauri_plugin_edge_to_edge::init())
+        .plugin(tauri_plugin_keep_screen_on::init())
         .manage(Mutex::new(Inner::default()))
         .invoke_handler(tauri::generate_handler![
             connect,
