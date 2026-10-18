@@ -21,6 +21,9 @@ free AND its files don't collide with the running worker.
 4. Mobile master strip parity: Main LR renders like every other channel
    strip (volume + mute only); tap to expand for more. No special-case
    master layout on phone.
+5. Channel view topbar simplification: back-to-mixer button + channel
+   name + prev/next channel buttons only; then remove the separate
+   channel switcher UI it replaces.
 
 ## Queued — server-side (NOT today; parked, do not dispatch)
 - Automixing (gain-sharing across channels on the server).
