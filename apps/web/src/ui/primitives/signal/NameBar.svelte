@@ -28,8 +28,9 @@
     onselect?: (() => void) | null;
   } = $props();
 
-  const h = variant === 'plate' ? 54 : 52;
+  const h = variant === 'plate' ? (iconDef ? 76 : 54) : 76;
   const nameSize = variant === 'plate' ? 17 : 16;
+  const iconSize = 44;
   /** Guarded lookup: fixtures default to null; the store only writes known names. */
   const iconDef = $derived(icon != null && icon in chanIcons ? chanIcons[icon as ChanIconName] : null);
 </script>
@@ -51,8 +52,8 @@
   >
     {#if iconDef}
       <svg
-        width="22"
-        height="22"
+        width={iconSize}
+        height={iconSize}
         viewBox={iconDef.viewBox}
         fill="none"
         stroke="currentColor"
