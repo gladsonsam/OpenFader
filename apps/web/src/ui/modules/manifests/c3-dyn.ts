@@ -67,6 +67,11 @@ export const manifests: ModuleManifest[] = [
     },
     defaults: { kind: 'comp', color: '#ff9f43', frozen: true },
     size: { minW: 400, minH: 300, flex: true },
+    events: [
+      { name: 'thr', args: ['value'] },
+      { name: 'ratio', args: ['value'] },
+      { name: 'makeup', args: ['value'] },
+    ],
   },
   {
     id: 'dyn-knob-panel',
@@ -76,6 +81,7 @@ export const manifests: ModuleManifest[] = [
     props: {
       kind: kindProp,
       color: colorProp,
+      size: { type: 'number', min: 40, max: 160, step: 4, unit: 'px', default: 80 },
       knobs: knobsProp,
       gate: vmObject,
       comp: vmObject,

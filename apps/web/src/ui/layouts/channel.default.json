@@ -613,7 +613,12 @@
                   "module": "dyn-knob-panel",
                   "props": {
                     "kind": "gate",
-                    "color": "#3ed0e0"
+                    "color": "#3ed0e0",
+                    "size": 104
+                  },
+                  "variants": {
+                    "tablet": { "props": { "size": 88 } },
+                    "phone": { "props": { "size": 76 } }
                   },
                   "bind": {
                     "knobs": "dynKnobs",
@@ -753,6 +758,16 @@
                         "value": { "$expr": "payload.value" },
                         "locked": { "$expr": "store.locked" }
                       }
+                    },
+                    "makeup": {
+                      "do": "channel.dynKnob",
+                      "args": {
+                        "id": { "$expr": "selId" },
+                        "which": { "$expr": "dynKind" },
+                        "prop": "makeup",
+                        "value": { "$expr": "payload.value" },
+                        "locked": { "$expr": "store.locked" }
+                      }
                     }
                   },
                   "bind": {
@@ -777,7 +792,12 @@
                   "module": "dyn-knob-panel",
                   "props": {
                     "kind": "comp",
-                    "color": "#ff9f43"
+                    "color": "#ff9f43",
+                    "size": 104
+                  },
+                  "variants": {
+                    "tablet": { "props": { "size": 88 } },
+                    "phone": { "props": { "size": 76 } }
                   },
                   "bind": {
                     "knobs": "dynKnobs",
