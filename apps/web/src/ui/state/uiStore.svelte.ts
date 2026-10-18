@@ -8,7 +8,6 @@
 
 import {
   applyPatch,
-  armPatch,
   backLabel,
   backTo,
   cancelPatch,
@@ -61,6 +60,8 @@ import {
   setPatchSel,
   setPeakHold,
   setRouteBank,
+  stagePreset,
+  stageRoute,
   setSceneConfirm,
   setSelBand,
   setSend,
@@ -601,12 +602,7 @@ export const ui = {
       forward(w => { bridgePatch(w, target, label); });
     },
     toggleRoute: (id: string, label: string) => {
-      update(toggleRoute(world, id, label));
-      const cur = world.chans[id]?.src;
-      forward(w => {
-        if (cur === label) bridgePatch(w, id, label);
-        else bridgeUnpatch(w, id);
-      });
+      update(stageRoute(world, id, label));
     },
     patchOneToOne: (group: RouteGroup) => {
       update(patchOneToOne(world, group));
@@ -620,21 +616,22 @@ export const ui = {
         for (let n = 1; n <= 48; n++) bridgeUnpatch(w, 'in' + n);
       });
     },
-    armPatch: (kind: 'oneToOne' | 'clear', group: RouteGroup) => {
-      update(armPatch(world, kind, group));
+    stagePreset: (kind: 'oneToOne' | 'clear', group: RouteGroup) => {
+      update(stagePreset(world, kind, group));
     },
     cancelPatch: () => {
       update(cancelPatch(world));
     },
     applyPatch: () => {
-      const p = world.state.pendingPatch;
+      const cells = world.state.pendingPatch?.cells;
+      const before = world.chans;
       update(applyPatch(world));
-      if (!p) return;
+      if (!cells) return;
       forward(w => {
-        if (p.kind === 'oneToOne') {
-          for (let n = 1; n <= 32; n++) bridgePatch(w, 'in' + n, p.group + ' ' + String(n).padStart(2, '0'));
-        } else {
-          for (let n = 1; n <= 48; n++) bridgeUnpatch(w, 'in' + n);
+        for (const [id, label] of Object.entries(cells)) {
+          if (before[id]?.src === label) continue;
+          if (label === '—') bridgeUnpatch(w, id);
+          else bridgePatch(w, id, label);
         }
       });
     },
