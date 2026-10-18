@@ -171,6 +171,31 @@
       ]
     },
     {
+      "id": "relay",
+      "module": "relay-card",
+      "when": { "device": ["phone", "tablet"] },
+      "bind": {
+        "host": "relay.host",
+        "phase": "relay.phase",
+        "message": "relay.message",
+        "latencyMs": "relay.latencyMs",
+        "strips": "relay.strips"
+      },
+      "on": {
+        "connect": {
+          "do": "ui.connectRelay",
+          "args": {
+            "host": {
+              "$expr": "payload.host"
+            }
+          }
+        },
+        "disconnect": {
+          "do": "ui.disconnectRelay"
+        }
+      }
+    },
+    {
       "id": "offline",
       "module": "row",
       "props": {

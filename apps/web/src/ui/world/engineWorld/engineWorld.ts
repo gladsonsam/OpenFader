@@ -20,7 +20,6 @@ import type {
   DeviceView,
   DynView,
   EqView,
-  FieldView,
   FxSlotView,
   InfoView,
   InputView,
@@ -40,36 +39,13 @@ import type {
   WorldStrip,
 } from '../types.ts';
 import {
-  BIN_HEADER_LEN,
-  cmdCaptureScene,
   cmdConnect,
-  cmdConnectDevice,
-  cmdDeleteScene,
-  cmdDisconnect,
   cmdFader,
   cmdFocus,
-  cmdFxBypass,
-  cmdFxOn,
-  cmdFxParam,
-  cmdFxSetType,
-  cmdInfo,
-  cmdListShows,
   cmdLock,
   cmdMainFader,
   cmdMute,
-  cmdOffline,
-  cmdOfflineDiscard,
-  cmdOfflinePush,
   cmdParam,
-  cmdPatchClear,
-  cmdPatchSet,
-  cmdRecallScene,
-  cmdScan,
-  cmdSceneClear,
-  cmdSceneDelete,
-  cmdSceneRecall,
-  cmdSceneRename,
-  cmdSceneSave,
   cmdUnlock,
   parseBinary,
   parseEvent,
@@ -79,21 +55,7 @@ import {
 import type { Transport, TransportMessage } from '../transport.ts';
 import { deriveBanks } from '../mapping/banks.ts';
 import { lawForDriver } from '../mapping/faderLaw.ts';
-import {
-  COLOR_HEX,
-  clamp,
-  colorToHex,
-  design01ToSendDb,
-  designEqTypeToEngine,
-  designPanToEngine,
-  designSlopeToEngine,
-  engineEqTypeToDesign,
-  enginePanToDesign,
-  engineSlopeToDesign,
-  preToTap,
-  sendDbToDesign01,
-  tapToPre,
-} from '../mapping/params.ts';
+import { COLOR_HEX, clamp, enginePanToDesign } from '../mapping/params.ts';
 import {
   CONFIRM_TIMEOUT_MS,
   FOCUS_DEBOUNCE_MS,
@@ -114,7 +76,18 @@ import {
   type StoreMaps,
 } from './paramStore.ts';
 import { WriteCoalescer } from './writeCoalescer.ts';
-
+import {
+  buildChannelDyn,
+  buildChannelEq,
+  buildChannelInput,
+  buildChannelSends,
+  writeEqBandType as writeEqBandTypeTo,
+  writePan as writePanTo,
+  writeSendLevel as writeSendLevelTo,
+  writeSendPre as writeSendPreTo,
+  writeSlope as writeSlopeTo,
+} from './channelViews.ts';
+import { LibraryStore } from './libraries.ts';
 export interface EngineWorldOptions {
   now?: () => number;
   perfNow?: () => number;
@@ -129,13 +102,6 @@ interface StateStrip {
   fader: number;
   muted: boolean;
 }
-
-function field<T>(value: T | null, status: ParamStatus): FieldView<T> {
-  return { value, status };
-}
-
-const numOrNull = (v: ParamValue | null): number | null => (typeof v === 'number' ? v : null);
-const boolOrNull = (v: ParamValue | null): boolean | null => (typeof v === 'boolean' ? v : null);
 
 export class EngineWorld implements World {
   readonly kind = 'engine';
@@ -167,18 +133,8 @@ export class EngineWorld implements World {
   private locks = new Map<number, string>();
   private _clients = { count: 0, writers: [] as string[], selfId: null as string | null };
   private _lastDeny: DenyInfo | null = null;
-  private _shows: ShowLib[] = [];
-  private _scenes: SceneEntry[] = [];
-  private _fxSlots: FxSlotView[] = [];
-  private _fxCaps: { slots: number; types: Array<{ id: string; label: string }> } | null = null;
-  private _patches: PatchView[] = [];
-  private _routingSupported = false;
-  private _devices: DeviceView[] = [];
-  private _scannedAt = 0;
-  private _link: LinkView | null = null;
-  private _info: InfoView | null = null;
-  private _offlineDiff: OfflineChangeView[] = [];
-  private _offlineCount = 0;
+  /** Shows/scenes/FX/routing/devices/link/info/offline (libraries.ts). */
+  private readonly lib: LibraryStore;
 
   // meters (preallocated; resized on topology/state/meters growth)
   private _stripCount = 0;
@@ -226,6 +182,7 @@ export class EngineWorld implements World {
       spectrum: (ch: number) => this.spectra.get(ch) ?? null,
       taps: this._taps,
     };
+    this.lib = new LibraryStore((msg) => this.transport.send(msg));
     this.unsubs.push(transport.onMessage((m) => this.ingest(m)));
     this.unsubs.push(
       transport.onStatus((online) => {
@@ -289,13 +246,19 @@ export class EngineWorld implements World {
     return Object.keys(this.maps.pending).length + (this.mainPending ? 1 : 0);
   }
 
-  connect(driver = 'sim', addr = ''): void {
+  connect(driver?: string, addr?: string): void {
     this.maps = emptyMaps();
     this.firstSeenAt.clear();
     this.mainPending = null;
     this._connectedAt = this.perf();
     this.transport.connect();
-    this.transport.send(cmdConnect(driver, addr || undefined));
+    // Attach-only when the caller chose no driver: open the socket (the
+    // transport sends hello on open) and accept whatever driver the relay
+    // already runs — the relay's hello/state reports it. A
+    // driver-switching Connect goes out only when a driver was explicitly
+    // chosen (connection screen), never on auto-attach: an unsolicited
+    // Connect flips a hardware-desk relay off its desk driver.
+    if (driver !== undefined) this.transport.send(cmdConnect(driver, addr || undefined));
     this.bump();
   }
 
@@ -342,6 +305,8 @@ export class EngineWorld implements World {
   }
 
   private apply(evt: EngineEvent): void {
+    if (evt.kind === 'info' && evt.driver) this._driver = evt.driver;
+    if (this.lib.apply(evt)) return;
     switch (evt.kind) {
       case 'unknown':
         return;
@@ -394,8 +359,12 @@ export class EngineWorld implements World {
         this._driver = evt.driver || this._driver;
         this.topology = evt.topology;
         this._banks = deriveBanks(this.topology);
-        this._fxCaps = { slots: evt.fx.slots, types: evt.fx.types.map((t) => ({ id: t.id, label: t.label })) };
-        this._routingSupported = evt.routing.supported;
+        this.lib.setCaps(
+          { slots: evt.fx.slots, types: evt.fx.types.map((t) => ({ id: t.id, label: t.label })) },
+          evt.routing.supported,
+          evt.groups,
+          evt.files.supported,
+        );
         const end = this.topology.reduce((m, f) => Math.max(m, f.first + f.count), 0);
         this.ensureStripCount(end);
         break;
@@ -418,16 +387,6 @@ export class EngineWorld implements World {
         break;
       case 'taps':
         this.applyTap(evt.tap, evt.levels);
-        break;
-      case 'shows':
-        this._shows = evt.shows.map((s) => ({
-          name: s.name,
-          scenes: s.scenes.map((sc) => ({
-            name: sc.name,
-            strips: sc.strips.map((st) => ({ ch: st.ch, name: st.name, fader: st.fader, muted: st.muted })),
-            main_fader: sc.main_fader,
-          })),
-        }));
         break;
       case 'locks':
         this.locks = new Map(
@@ -459,36 +418,6 @@ export class EngineWorld implements World {
         break;
       case 'stats':
         (this as { lastStats?: EngineEvent }).lastStats = evt;
-        break;
-      case 'devices':
-        this._devices = evt.list.map((d) => ({ ...d }));
-        this._scannedAt = evt.scanned_at;
-        break;
-      case 'link':
-        this._link = { state: evt.state, name: evt.name, ip: evt.ip, fs: evt.fs, latencyMs: evt.latency_ms };
-        break;
-      case 'info':
-        this._info = {
-          model: evt.model,
-          firmware: evt.firmware,
-          sampleRate: evt.sample_rate,
-          consoleName: evt.console_name,
-          driver: evt.driver,
-        };
-        if (evt.driver) this._driver = evt.driver;
-        break;
-      case 'scenes':
-        this._scenes = evt.scenes.map((s) => ({ ...s }));
-        break;
-      case 'fx':
-        this._fxSlots = evt.slots.map((s) => ({ ...s, params: { ...s.params } }));
-        break;
-      case 'routing':
-        this._patches = evt.patches.map((p) => ({ ...p }));
-        break;
-      case 'offline_diff':
-        this._offlineDiff = evt.changes.map((c) => ({ ...c }));
-        this._offlineCount = evt.count;
         break;
     }
     // NOTE: no bump here — ingest() bumps for control frames only, so the
@@ -778,92 +707,28 @@ export class EngineWorld implements World {
       .map((s) => `${s.ch}:${s.id}`);
   }
 
-  // ---- channel detail views ----
+  // ---- channel detail views (design model over engine ids; builders live
+  // in channelViews.ts, one concern per file) ----
+
+  /** Confirmed-value probe for the view builders (band-5 presence). */
+  confirmed(ch: number, id: string): boolean {
+    return confirmedKnown(this.maps, ch, id);
+  }
 
   channelEq(ch: number): EqView {
-    const st = (id: string): FieldView<number> => field(numOrNull(this.param(ch, id)), this.status(ch, id));
-    const stb = (id: string): FieldView<boolean> => field(boolOrNull(this.param(ch, id)), this.status(ch, id));
-    const band = (n: number): EqView['bands'][number] => {
-      const raw = numOrNull(this.param(ch, `eq${n}_type`));
-      return {
-        type: raw === null ? 'PEQ' : engineEqTypeToDesign(raw),
-        f: st(`eq${n}_freq`),
-        g: st(`eq${n}_gain`),
-        q: st(`eq${n}_q`),
-        // The engine has no per-band bypass: band.on mirrors the global EQ
-        // switch (a single-band toggle is unsupported -> W3 fallback).
-        on: { value: stb('eq_on').value, status: this.status(ch, 'eq_on') },
-        rawType: raw,
-      };
-    };
-    const slopeRaw = numOrNull(this.param(ch, 'hpf_slope'));
-    return {
-      on: stb('eq_on'),
-      hpf: {
-        on: stb('hpf_on'),
-        f: st('hpf_freq'),
-        slope: field(slopeRaw === null ? null : engineSlopeToDesign(slopeRaw), this.status(ch, 'hpf_slope')),
-      },
-      bands: [band(1), band(2), band(3), band(4)],
-      band5: this.supports('eq5_gain', ch) || confirmedKnown(this.maps, ch, 'eq5_gain') ? band(5) : null,
-    };
+    return buildChannelEq(this, ch);
   }
 
   channelDyn(ch: number): DynView {
-    const st = (id: string): FieldView<number> => field(numOrNull(this.param(ch, id)), this.status(ch, id));
-    const stb = (id: string): FieldView<boolean> => field(boolOrNull(this.param(ch, id)), this.status(ch, id));
-    return {
-      gate: {
-        on: stb('gate_on'),
-        thr: st('gate_thr'),
-        range: st('gate_range'),
-        att: st('gate_att'),
-        hold: st('gate_hold'),
-        rel: st('gate_rel'),
-      },
-      // NOTE: engine comp_hold has no design knob; it stays param-level
-      // (param()/status()) until W3 adds a control or collapses it.
-      comp: {
-        on: stb('comp_on'),
-        thr: st('comp_thr'),
-        ratio: st('comp_ratio'),
-        att: st('comp_att'),
-        rel: st('comp_rel'),
-        knee: st('comp_knee'),
-        makeup: st('comp_makeup'),
-      },
-    };
+    return buildChannelDyn(this, ch);
   }
 
   channelSends(ch: number): SendView[] {
-    const out: SendView[] = [];
-    for (let n = 1; n <= 16; n++) {
-      const db = numOrNull(this.param(ch, `send${n}_level`));
-      const tap = numOrNull(this.param(ch, `send${n}_tap`));
-      const on = boolOrNull(this.param(ch, `send${n}_on`));
-      out.push({
-        value: field(db === null ? null : sendDbToDesign01(db, lawForDriver(this.driver)), this.status(ch, `send${n}_level`)),
-        pre: field(tap === null ? null : tapToPre(tap), this.status(ch, `send${n}_tap`)),
-        on: field(on, this.status(ch, `send${n}_on`)),
-      });
-    }
-    return out;
+    return buildChannelSends(this, ch);
   }
 
   channelInput(ch: number): InputView {
-    const st = (id: string): FieldView<number> => field(numOrNull(this.param(ch, id)), this.status(ch, id));
-    const stb = (id: string): FieldView<boolean> => field(boolOrNull(this.param(ch, id)), this.status(ch, id));
-    return {
-      gain: st('gain'),
-      trim: st('trim'),
-      phantom: stb('phantom'),
-      invert: {
-        value: stb('polarity').value,
-        status: this.status(ch, 'polarity'),
-      },
-      delayOn: stb('delay_on'),
-      delayMs: st('delay_ms'),
-    };
+    return buildChannelInput(this, ch);
   }
 
   // ---- fader law ----
@@ -880,19 +745,19 @@ export class EngineWorld implements World {
 
   /** Design-side write helpers (used by W1 binding; tested round-trip). */
   writeEqBandType(ch: number, band: number, t: 'LS' | 'PEQ' | 'HS'): boolean {
-    return this.setParam(ch, `eq${band}_type`, designEqTypeToEngine(t));
+    return writeEqBandTypeTo(this, ch, band, t);
   }
   writeSlope(ch: number, s: 12 | 24): boolean {
-    return this.setParam(ch, 'hpf_slope', designSlopeToEngine(s));
+    return writeSlopeTo(this, ch, s);
   }
   writePan(ch: number, p: number): boolean {
-    return this.setParam(ch, 'pan', designPanToEngine(p));
+    return writePanTo(this, ch, p);
   }
   writeSendLevel(ch: number, n: number, v01: number): boolean {
-    return this.setParam(ch, `send${n}_level`, design01ToSendDb(v01, lawForDriver(this.driver)));
+    return writeSendLevelTo(this, ch, n, v01);
   }
   writeSendPre(ch: number, n: number, pre: boolean): boolean {
-    return this.setParam(ch, `send${n}_tap`, preToTap(pre));
+    return writeSendPreTo(this, ch, n, pre);
   }
 
   // ---- locks / clients ----
@@ -913,125 +778,171 @@ export class EngineWorld implements World {
     return this._lastDeny ? { ...this._lastDeny } : null;
   }
 
-  // ---- shows / scenes ----
+  // ---- shows / scenes (state + commands live in libraries.ts) ----
 
   get shows(): ShowLib[] {
-    return this._shows.map((s) => ({
-      name: s.name,
-      scenes: s.scenes.map((sc) => ({
-        ...sc,
-        strips: sc.strips.map((st) => ({ ...st })),
-      })),
-    }));
+    return this.lib.shows;
   }
   get numberedScenes(): SceneEntry[] {
-    return this._scenes.map((s) => ({ ...s }));
+    return this.lib.numberedScenes;
   }
   listShows(): void {
-    this.transport.send(cmdListShows());
+    this.lib.listShows();
   }
   captureScene(show: string, name: string): void {
-    this.transport.send(cmdCaptureScene(show, name));
+    this.lib.captureScene(show, name);
   }
   recallScene(show: string, name: string, fadeMs?: number): void {
-    this.transport.send(cmdRecallScene(show, name, fadeMs ?? null));
+    this.lib.recallScene(show, name, fadeMs);
   }
   deleteScene(show: string, name: string): void {
-    this.transport.send(cmdDeleteScene(show, name));
+    this.lib.deleteScene(show, name);
   }
   sceneSave(n: number, name: string): void {
-    this.transport.send(cmdSceneSave(n, name));
+    this.lib.sceneSave(n, name);
   }
   sceneRecall(n: number, fadeMs?: number): void {
-    this.transport.send(cmdSceneRecall(n, fadeMs));
+    this.lib.sceneRecall(n, fadeMs);
   }
   sceneRename(n: number, name: string): void {
-    this.transport.send(cmdSceneRename(n, name));
+    this.lib.sceneRename(n, name);
   }
   sceneDelete(n: number): void {
-    this.transport.send(cmdSceneDelete(n));
+    this.lib.sceneDelete(n);
   }
   sceneClear(): void {
-    this.transport.send(cmdSceneClear());
+    this.lib.sceneClear();
   }
 
   // ---- fx ----
 
   get fxSlots(): FxSlotView[] {
-    return this._fxSlots.map((s) => ({ ...s, params: { ...s.params } }));
+    return this.lib.fxSlots;
   }
   get fxCaps(): { slots: number; types: Array<{ id: string; label: string }> } | null {
-    return this._fxCaps ? { slots: this._fxCaps.slots, types: this._fxCaps.types.map((t) => ({ ...t })) } : null;
+    return this.lib.fxCaps;
   }
   fxSetType(slot: number, type: string): void {
-    this.transport.send(cmdFxSetType(slot, type));
+    this.lib.fxSetType(slot, type);
   }
   fxParam(slot: number, id: string, v01: number): void {
-    this.transport.send(cmdFxParam(slot, id, clamp(v01, 0, 1)));
+    this.lib.fxParam(slot, id, v01);
   }
   fxBypass(slot: number, bypass: boolean): void {
-    this.transport.send(cmdFxBypass(slot, bypass));
+    this.lib.fxBypass(slot, bypass);
   }
   fxOn(slot: number, on: boolean): void {
-    this.transport.send(cmdFxOn(slot, on));
+    this.lib.fxOn(slot, on);
   }
 
   // ---- routing ----
 
   get patches(): PatchView[] {
-    return this._patches.map((p) => ({ ...p }));
+    return this.lib.patches;
   }
   get routingSupported(): boolean {
-    return this._routingSupported;
+    return this.lib.routingSupported;
   }
   patchSet(strip: number, group: string, index: number): void {
-    this.transport.send(cmdPatchSet(strip, group, index));
+    this.lib.patchSet(strip, group, index);
   }
   patchClear(strip: number): void {
-    this.transport.send(cmdPatchClear(strip));
+    this.lib.patchClear(strip);
   }
 
   // ---- devices / link / info / offline ----
 
   get devices(): DeviceView[] {
-    return this._devices.map((d) => ({ ...d }));
+    return this.lib.devices;
   }
   get scannedAt(): number {
-    return this._scannedAt;
+    return this.lib.scannedAt;
   }
   scan(): void {
-    this.transport.send(cmdScan());
+    this.lib.scan();
   }
   connectDevice(id: string): void {
-    this.transport.send(cmdConnectDevice(id));
+    this.lib.connectDevice(id);
   }
   disconnectDesk(): void {
-    this.transport.send(cmdDisconnect());
+    this.lib.disconnectDesk();
   }
   requestInfo(): void {
-    this.transport.send(cmdInfo());
+    this.lib.requestInfo();
   }
   get link(): LinkView | null {
-    return this._link ? { ...this._link } : null;
+    return this.lib.link;
   }
   get info(): InfoView | null {
-    return this._info ? { ...this._info } : null;
+    return this.lib.info;
   }
   get offlineDiff(): OfflineChangeView[] {
-    return this._offlineDiff.map((c) => ({ ...c }));
+    return this.lib.offlineDiff;
   }
   get offlineCount(): number {
-    return this._offlineCount;
+    return this.lib.offlineCount;
   }
   offline(model: string): void {
-    this.transport.send(cmdOffline(model));
+    this.lib.offline(model);
   }
   offlinePush(confirm: boolean): void {
-    this.transport.send(cmdOfflinePush(confirm));
+    this.lib.offlinePush(confirm);
   }
   offlineDiscard(): void {
-    this.transport.send(cmdOfflineDiscard());
+    this.lib.offlineDiscard();
   }
+
+  // ---- masters / groups / files (state + commands live in libraries.ts) ----
+
+  get groupCaps(): { buses: number; subgroups: number; muteGroups: number; files: boolean } {
+    return this.lib.groupCaps;
+  }
+  busMaster(bus: number): { fader: number; muted: boolean } | null {
+    return this.lib.busMaster(bus);
+  }
+  subgroupMaster(group: number): { fader: number; muted: boolean } | null {
+    return this.lib.subgroupMaster(group);
+  }
+  muteGroupMaster(group: number): boolean | null {
+    return this.lib.muteGroupMaster(group);
+  }
+  subgroupAssigned(ch: number, group: number): boolean | null {
+    return this.lib.subgroupAssigned(ch, group);
+  }
+  muteGroupAssigned(ch: number, group: number): boolean | null {
+    return this.lib.muteGroupAssigned(ch, group);
+  }
+  get lastFile(): { filename: string; size: number; fileType: number } | null {
+    return this.lib.lastFile;
+  }
+  busFader(bus: number, value: number): void {
+    this.lib.busFader(bus, value);
+  }
+  busMute(bus: number, muted: boolean): void {
+    this.lib.busMute(bus, muted);
+  }
+  subgroupFader(group: number, value: number): void {
+    this.lib.subgroupFader(group, value);
+  }
+  subgroupMute(group: number, muted: boolean): void {
+    this.lib.subgroupMute(group, muted);
+  }
+  subgroupAssign(ch: number, group: number, member: boolean): void {
+    this.lib.subgroupAssign(ch, group, member);
+  }
+  muteGroup(group: number, muted: boolean): void {
+    this.lib.muteGroup(group, muted);
+  }
+  muteGroupAssign(ch: number, group: number, member: boolean): void {
+    this.lib.muteGroupAssign(ch, group, member);
+  }
+  fileDownload(filename: string): void {
+    this.lib.fileDownload(filename);
+  }
+  fileUpload(filename: string, data: string, fileType: number): void {
+    this.lib.fileUpload(filename, data, fileType);
+  }
+
 }
 
 /** Contrast text for a name-bar hex (light bg -> dark ink). */

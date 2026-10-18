@@ -8,6 +8,7 @@
      (channelScope) + live meter feeds, then binds ui.do. -->
 <script lang="ts">
   import { ui } from '../../state/uiStore.svelte.ts';
+  import { live } from '../../state/live.svelte.ts';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
   import { fixtureSource } from '../../modules/context.ts';
   import { createProfileStore } from '../../modules/profile/store.svelte.ts';
@@ -28,17 +29,17 @@
   const device = useDeviceClass();
 
   const stripMeter = $derived<MeterSource>({
-    getLevel: () => ui.meter?.levelOf(ui.sel.id) ?? -90,
+    getLevel: () => live.liveLevelDb(ui.sel.id) ?? ui.meter?.levelOf(ui.sel.id) ?? -90,
     getPeak: () => ui.meter?.peakOf(ui.sel.id) ?? null,
     getClip: () => (ui.meter ? ui.meter.clipping(ui.sel.id, Date.now()) : false),
     showPeak: ui.state.peakHold,
   });
   const hbarMeter = $derived<MeterSource>({
-    getLevel: () => ui.meter?.levelOf(ui.sel.id) ?? -90,
+    getLevel: () => live.liveLevelDb(ui.sel.id) ?? ui.meter?.levelOf(ui.sel.id) ?? -90,
   });
-  const levelDb = $derived(ui.meter?.levelOf(ui.sel.id) ?? -90);
+  const levelDb = $derived(live.liveLevelDb(ui.sel.id) ?? ui.meter?.levelOf(ui.sel.id) ?? -90);
   const dynGetLevel = $derived(
-    ui.frozen ? null : (() => ui.meter?.levelOf(ui.sel.id) ?? -90),
+    ui.frozen ? null : (() => live.liveLevelDb(ui.sel.id) ?? ui.meter?.levelOf(ui.sel.id) ?? -90),
   );
 
   // Live 80 ms meter loop (M1 pattern); frozen fixtures paint silence.

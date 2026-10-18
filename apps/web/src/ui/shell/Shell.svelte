@@ -7,6 +7,8 @@
      (see registry.ts). Rail is mixer-only, like the design. -->
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { fly } from 'svelte/transition';
+  import { REDUCED_MOTION } from '../primitives/feel.ts';
   import AppFrame from '../AppFrame.svelte';
   import HeaderBar from './HeaderBar.svelte';
   import BankRail from './BankRail.svelte';
@@ -79,11 +81,18 @@
     onScene={() => ui.do.openScenes()}
   />
   <div style={bodyStyle}>
-    {#if Content}
-      <Content />
-    {:else}
-      <div style={placeholderStyle}>screen not built yet: {screenId}</div>
-    {/if}
+    {#key ui.state.mode}
+      <div
+        style="flex:1;min-height:0;min-width:0;display:flex;flex-direction:column"
+        in:fly={{ y: REDUCED_MOTION ? 0 : -16, duration: REDUCED_MOTION ? 0 : 120 }}
+      >
+        {#if Content}
+          <Content />
+        {:else}
+          <div style={placeholderStyle}>screen not built yet: {screenId}</div>
+        {/if}
+      </div>
+    {/key}
     {#if showRail}
       <BankRail {banks} activeKey={ui.state.bank} onSelect={(k) => ui.do.setBank(k)} orientation={isPhone ? 'bottom' : 'side'} />
     {/if}
