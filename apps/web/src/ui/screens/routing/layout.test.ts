@@ -59,9 +59,9 @@ function walk(n: LayoutNode, out: LayoutNode[]): LayoutNode[] {
   const matrix = nodes.find(n => n.id === 'mx-matrix');
   assert.equal(matrix?.module, 'route-matrix');
   assert.equal((matrix?.on?.['press'] as { do: string } | undefined)?.do, 'ui.toggleRoute');
-  // presets stage (arm) instead of patching directly; Apply commits
+  // presets stage instead of patching directly; Apply commits everything
   const preset = nodes.find(n => n.id === 'mx-preset');
-  assert.equal((preset?.on?.['press'] as { do: string } | undefined)?.do, 'ui.armPatch');
+  assert.equal((preset?.on?.['press'] as { do: string } | undefined)?.do, 'ui.stagePreset');
   const apply = nodes.find(n => n.id === 'mx-apply');
   assert.equal((apply?.on?.['press'] as { do: string } | undefined)?.do, 'ui.applyPatch');
   assert.ok(typeof apply?.when === 'string' && apply.when.length > 0, 'apply gated on staged preset');

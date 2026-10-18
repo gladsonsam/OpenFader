@@ -10,10 +10,11 @@
 <script lang="ts">
   import type { ModuleContext } from '../../modules/types.ts';
 
-  type MatrixRow =
-    | { kind: 'row'; id: string; name: string; src: string }
-    | { kind: 'gap'; label: string };
-  type MatrixCellRow = Extract<MatrixRow, { kind: 'row' }>;
+  interface MatrixRow {
+    id: string;
+    name: string;
+    src: string;
+  }
 
   let {
     props = {},
@@ -25,7 +26,7 @@
       rows?: MatrixRow[];
       cols?: string[];
       used?: Record<string, string>;
-      pending?: { kind: 'oneToOne' | 'clear'; group: string } | null;
+      pending?: { cells: Record<string, string> } | null;
       /** Body cell px (fonts derive from it). Layouts widen per device. */
       cell?: number;
       /** Row header width px. */
@@ -47,31 +48,27 @@
   const fSrc = $derived(Math.round(cell * 0.22));
 
   type CellState = 'current' | 'conflict' | 'free' | 'preview';
-  function stateOf(row: MatrixCellRow, col: string): CellState {
+  function stateOf(row: MatrixRow, col: string): CellState {
     if (isPreview(row, col)) return 'preview';
     if (row.src === col) return 'current';
     return used[col] ? 'conflict' : 'free';
   }
-  /** Staged-preset preview: the cells Apply would change. 1:1 previews
-   * inputs 1..32 at their same-numbered sockets; clear previews every
-   * currently patched cell. */
-  function isPreview(row: MatrixCellRow, col: string): boolean {
-    if (!pending) return false;
-    if (pending.kind === 'clear') return row.src !== '—' && row.src === col;
-    const m = /^in(\d+)$/.exec(row.id);
-    const n = m ? parseInt(m[1], 10) : NaN;
-    if (!Number.isFinite(n) || n < 1 || n > 32) return false;
-    const label = pending.group + ' ' + String(n).padStart(2, '0');
-    return col === label && row.src !== label;
+  /** Staged cells preview hollow: the staged target, or — for a staged
+   * unpatch — the row's current cell (it is the one going away). */
+  function isPreview(row: MatrixRow, col: string): boolean {
+    const staged = pending?.cells[row.id];
+    if (staged === undefined) return false;
+    if (staged === '—') return row.src === col && row.src !== '—';
+    return staged === col;
   }
-  function ariaOf(row: MatrixCellRow, col: string, st: CellState): string {
-    if (st === 'preview') return row.name + ' staged to ' + col + ', activate Apply to confirm';
+  function ariaOf(row: MatrixRow, col: string, st: CellState): string {
+    if (st === 'preview') return row.name + ' staged to ' + (pending?.cells[row.id] ?? col) + ', Apply to commit';
     if (st === 'current') return row.name + ' patched to ' + col + ', activate to unpatch';
     return 'Patch ' + row.name + ' to ' + col + (st === 'conflict' ? ', now on ' + used[col] : '');
   }
-  function tipOf(row: MatrixCellRow, col: string, st: CellState): string {
+  function tipOf(row: MatrixRow, col: string, st: CellState): string {
     const base = row.name + ' → ' + col;
-    if (st === 'preview') return base + ' (staged — Apply to confirm)';
+    if (st === 'preview') return base + ' (staged — Apply to commit)';
     if (st === 'current') return base + ' (patched — click to unpatch)';
     if (st === 'conflict') return base + ' (now on ' + used[col] + ' — click to steal)';
     return base;
@@ -79,16 +76,15 @@
 
   let hover = $state({ row: '', col: '' });
   let readout = $state('');
-  const rowCount = $derived(rows.filter((r) => r.kind === 'row').length);
-  const patchedCount = $derived(rows.filter((r) => r.kind === 'row' && r.src !== '—').length);
+  const rowCount = $derived(rows.length);
+  const patchedCount = $derived(rows.filter((r) => r.src !== '—').length);
+  const stagedCount = $derived(pending ? Object.keys(pending.cells).length : 0);
   const defaultLine = $derived(
-    pending
-      ? pending.kind === 'clear'
-        ? 'Staged: unpatch ' + patchedCount + ' inputs — Apply to confirm'
-        : 'Staged: 1:1 ' + pending.group + ' — Apply to confirm'
+    stagedCount > 0
+      ? stagedCount + ' staged — Apply to confirm'
       : patchedCount + ' patched · ' + (rowCount - patchedCount) + ' open',
   );
-  function enter(row: MatrixCellRow, col: string): void {
+  function enter(row: MatrixRow, col: string): void {
     hover = { row: row.id, col };
     const st = stateOf(row, col);
     readout = tipOf(row, col, st);
@@ -96,7 +92,7 @@
   function leave(): void {
     hover = { row: '', col: '' };
   }
-  function press(row: MatrixCellRow, col: string): void {
+  function press(row: MatrixRow, col: string): void {
     readout = tipOf(row, col, stateOf(row, col));
     onEvent?.('press', { rowId: row.id, col });
   }
@@ -127,15 +123,7 @@
         {col}
       </div>
     {/each}
-    {#each rows as row, ri (ri)}
-      {#if row.kind === 'gap'}
-        <div
-          aria-hidden="true"
-          style="grid-column:1 / -1;box-sizing:border-box;display:flex;align-items:center;padding:6px 10px 2px;background:transparent;color:#5b6678;font-size:11px;font-weight:700;letter-spacing:1px"
-        >
-          {row.label}
-        </div>
-      {:else}
+    {#each rows as row, ri (row.id)}
       <div
         role="rowheader"
         onmouseenter={() => {
@@ -198,7 +186,6 @@
           ></span>
         </button>
       {/each}
-      {/if}
     {/each}
     <div
       role="status"
