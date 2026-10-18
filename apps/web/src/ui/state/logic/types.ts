@@ -46,8 +46,10 @@ export interface UiState {
   patchSel: string;
   patchGroup: RouteGroup;
   routeBank: number;
-  /** Staged mass-patch (1:1 / clear presets); Apply commits, tap-away cancels. Null = none staged. */
-  pendingPatch: { kind: 'oneToOne' | 'clear'; group: RouteGroup } | null;
+  /** Staged routing changes (channel id -> source, '—' = unpatch).
+   * Every matrix tap and preset stages here; Apply commits, tap-away
+   * cancels. Null = nothing staged. */
+  pendingPatch: { cells: Record<string, string> } | null;
   /** Name-bar editor target channel id (null = closed). */
   nameEdit: string | null;
   /** Connected device key, 'offline', or null. */
