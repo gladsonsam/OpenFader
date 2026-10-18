@@ -101,6 +101,8 @@
   let editing: Editing | null = $state(null); // tap-a-value modal
   let editLayout: boolean = $state(false);
   let tick: number = $state(0); // ~8Hz pulse for the Overview health rows
+  let clock: string = $state(new Date().toLocaleTimeString());
+  let lastClock: number = 0;
   let selected: number = $state(0);
   // Surface status bar: active show name (ShowEditor's localStorage slot).
   let showName: string = $state(loadJSON<string>('openmix.shows.active.v1', 'openmix'));
@@ -791,6 +793,10 @@
       lastTick = now;
       tick++;
     }
+    if (now - lastClock > 1000) {
+      lastClock = now;
+      clock = new Date().toLocaleTimeString();
+    }
     raf = requestAnimationFrame(loop);
   }
 
@@ -994,6 +1000,21 @@
     <button id="helpBtn" title="first-run wizard & guided tour" aria-label="open setup wizard and tour" onclick={() => { showOnboard = true; menuOpen = false; }}>?</button>
     </div>
   </header>
+
+  {#if view !== 'surface'}
+    <div id="statusstrip" aria-label="console status">
+      <span class="ss-dot" class:on={online}></span>
+      <span class="ss-txt">{online ? 'online' : 'offline'}</span>
+      {#if solos.length}
+        <span class="ss-solo">{solos.length} solo</span>
+        <button class="ss-clear" onclick={() => { solos = []; }}>clear solo</button>
+      {/if}
+      {#if clips.length}
+        <span class="ss-clip">{clips.length} clip</span>
+      {/if}
+      <span class="ss-clock">{clock}</span>
+    </div>
+  {/if}
 
   {#if musicianMode}
     <MusicianView
