@@ -4,5 +4,13 @@
   "description": "Mobile-only scope for the main window. Mixer I/O is raw UDP in Rust (no Tauri plugin), so no extra plugin permissions are needed yet; this file reserves the Android/iOS slot for future mobile-only permissions (e.g. haptics) without touching the desktop grant.",
   "platforms": ["android", "iOS"],
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": [
+    "core:default",
+    "haptics:allow-impact-feedback",
+    "haptics:allow-notification-feedback",
+    "haptics:allow-selection-feedback",
+    "haptics:allow-vibrate",
+    "keep-screen-on:allow-keep-screen-on",
+    "edge-to-edge:default"
+  ]
 }
