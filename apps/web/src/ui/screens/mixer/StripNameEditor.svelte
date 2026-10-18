@@ -6,6 +6,7 @@
      keystroke (`rename`); colours come from the shared console-tape palette
      (`recolor` with the tape text colour); Done / Escape closes (`close`). -->
 <script lang="ts">
+  import { CHAN_ICON_NAMES, chanIcons, type ChanIconName } from '../../icons.ts';
   import { CHAN_TAPE } from '../../fixtures/designData.ts';
   import type { ModuleContext } from '../../modules/types.ts';
 
@@ -18,16 +19,19 @@
     props: {
       name?: string;
       selectedColor?: string;
+      selectedIcon?: string | null;
     };
     ctx: ModuleContext;
     nodeId: string;
     onEvent?: (name: string, payload?: unknown) => void;
   } = $props();
+
+  const selectedIcon = $derived(props.selectedIcon ?? null);
 </script>
 
 <div
   role="dialog"
-  aria-label="Edit channel name and colour"
+  aria-label="Edit channel name, colour and icon"
   onclick={(e) => e.stopPropagation()}
   onpointerdown={(e) => e.stopPropagation()}
   style="position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:10;display:flex;flex-direction:column;gap:6px;padding:8px;border-radius:var(--u4-r-3);border:1px solid #2f3b4f;background:#0b111b;box-shadow:0 8px 20px rgba(0,0,0,.6)"
@@ -64,6 +68,53 @@
           ? '2px solid #ffffff'
           : '1px solid rgba(0,0,0,.5)'};background:{tape.color};cursor:pointer"
       ></button>
+    {/each}
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(4, 1fr);gap:4px" role="group" aria-label="Channel icon">
+    <button
+      type="button"
+      aria-label="No icon"
+      aria-pressed={selectedIcon == null ? 'true' : 'false'}
+      class="tpress"
+      onclick={(e) => {
+        e.stopPropagation();
+        onEvent?.('reicon', { icon: null });
+      }}
+      style="height:32px;padding:0;border-radius:3px;border:{selectedIcon == null
+        ? '2px solid #ffffff'
+        : '1px solid #3a414c'};background:transparent;color:#5b6678;font-size:11px;font-weight:600;cursor:pointer"
+      >None</button
+    >
+    {#each CHAN_ICON_NAMES as iconName (iconName)}
+      {@const def = chanIcons[iconName as ChanIconName]}
+      <button
+        type="button"
+        aria-label="Icon {iconName}"
+        aria-pressed={selectedIcon === iconName ? 'true' : 'false'}
+        class="tpress"
+        onclick={(e) => {
+          e.stopPropagation();
+          onEvent?.('reicon', { icon: iconName });
+        }}
+        style="height:32px;padding:0;border-radius:3px;display:flex;align-items:center;justify-content:center;border:{selectedIcon ===
+        iconName
+          ? '2px solid #ffffff'
+          : '1px solid #3a414c'};background:transparent;color:#e8edf5;cursor:pointer"
+      >
+        <svg
+          width="20"
+          height="20"
+          viewBox={def.viewBox}
+          fill="none"
+          stroke="currentColor"
+          stroke-width={def.strokeWidth}
+          stroke-linecap={def.linecap ?? 'butt'}
+          stroke-linejoin={def.linejoin ?? 'miter'}
+          aria-hidden="true"
+        >
+          {@html def.body}
+        </svg>
+      </button>
     {/each}
   </div>
   <button

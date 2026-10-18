@@ -83,6 +83,8 @@ export interface Channel {
   src: string;
   color: string;
   text: string;
+  /** Channel strip icon (UI-only, no desk counterpart). Null = none. */
+  icon?: string | null;
   kind: ChannelKind;
   act: number;
   ph: number;

@@ -16,6 +16,7 @@
       sub?: string;
       color?: string;
       text?: string;
+      icon?: string | null;
       variant?: 'strip' | 'plate';
       selectAria?: string | null;
     };
@@ -30,6 +31,7 @@
   sub={props.sub ?? ''}
   color={props.color ?? '#222a36'}
   text={props.text ?? '#e8edf5'}
+  icon={props.icon ?? null}
   variant={props.variant ?? 'strip'}
   selectAria={props.selectAria ?? null}
   onselect={() => onEvent?.('select')}

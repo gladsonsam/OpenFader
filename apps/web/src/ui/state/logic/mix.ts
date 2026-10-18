@@ -3,6 +3,7 @@
 // the logic lives here; uiLogic.ts re-exports it). DOM-free, node-testable.
 
 import { clamp } from '../../fixtures/designData.ts';
+import { CHAN_ICON_NAMES, type ChanIconName } from '../../icons.ts';
 import { type World, withChannel } from './types.ts';
 
 // ---------- fader / pan / mute (lock-checked, ports of move/onMute) ----------
@@ -70,6 +71,15 @@ export function setChannelColor(w: World, id: string, color: string, text: strin
   if (w.state.locked) return w;
   if (!/^#[0-9a-fA-F]{6}$/.test(color) || !/^#[0-9a-fA-F]{6}$/.test(text)) return w;
   return withChannel(w, id, c => { c.color = color; c.text = text; });
+}
+
+/** Set a channel strip icon (UI-only, like solo; lock-checked). Null or
+ * '' clears it; unknown names are ignored. */
+export function setChannelIcon(w: World, id: string, icon: string | null): World {
+  if (w.state.locked) return w;
+  const clean = icon == null || icon === '' ? null : String(icon);
+  if (clean !== null && !CHAN_ICON_NAMES.includes(clean as ChanIconName)) return w;
+  return withChannel(w, id, c => { c.icon = clean; });
 }
 // ---------- sends ----------
 
