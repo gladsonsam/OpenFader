@@ -25,9 +25,6 @@
 //! and `/headamp/NN/phantom` has no documented readback shape beyond the
 //! int the python setter writes.
 
-use openmix_transport::osc;
-use rosc::{OscMessage, OscType};
-
 /// Lowest headamp gain in dB (xair-api-python `HeadAmp.gain` lower bound).
 pub const GAIN_MIN_DB: f32 = -12.0;
 /// Highest headamp gain in dB (xair-api-python `HeadAmp.gain` upper bound).
@@ -80,16 +77,6 @@ pub fn wire_to_db(v: f32) -> anyhow::Result<f32> {
     Ok(GAIN_MIN_DB + (GAIN_MAX_DB - GAIN_MIN_DB) * v)
 }
 
-/// Encode a phantom switch state the way the python setter writes it.
-pub fn phantom_arg(on: bool) -> OscType {
-    OscType::Int(if on { 1 } else { 0 })
-}
-
-/// Decode a phantom reply (`wire == 1` means on).
-pub fn phantom_is_on(msg: &OscMessage) -> anyhow::Result<bool> {
-    Ok(osc::int_arg(msg)? != 0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,9 +126,13 @@ mod tests {
     }
 
     #[test]
-    fn phantom_codec_shapes() {
-        assert_eq!(phantom_arg(true), OscType::Int(1));
-        assert_eq!(phantom_arg(false), OscType::Int(0));
+    fn phantom_roundtrips_as_plain_bool_int() {
+        // Phantom shares the single plain-bool wire codec: int `1`/`0`,
+        // decoded with `osc::is_on` (`wire == 1` means on).
+        use openmix_transport::osc;
+        use rosc::{OscMessage, OscType};
+        assert_eq!(crate::codec::bool_arg(true), OscType::Int(1));
+        assert_eq!(crate::codec::bool_arg(false), OscType::Int(0));
         let on = OscMessage {
             addr: "/headamp/01/phantom".into(),
             args: vec![OscType::Int(1)],
@@ -150,7 +141,7 @@ mod tests {
             addr: "/headamp/01/phantom".into(),
             args: vec![OscType::Int(0)],
         };
-        assert!(phantom_is_on(&on).unwrap());
-        assert!(!phantom_is_on(&off).unwrap());
+        assert!(osc::is_on(&on).unwrap());
+        assert!(!osc::is_on(&off).unwrap());
     }
 }

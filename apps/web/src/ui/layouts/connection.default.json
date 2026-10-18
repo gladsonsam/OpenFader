@@ -1,0 +1,238 @@
+{
+  "id": "connection",
+  "module": "col",
+  "props": {
+    "gap": 10,
+    "width": "100%",
+    "maxWidth": 860,
+    "margin": "0 auto",
+    "box": "content-box"
+  },
+  "children": [
+    {
+      "id": "status",
+      "module": "row",
+      "props": {
+        "tag": "section",
+        "label": "Connection status",
+        "align": "center",
+        "wrap": true,
+        "gap": 14,
+        "padding": 18,
+        "radius": 3,
+        "background": "#0e1520",
+        "box": "content-box"
+      },
+      "bind": {
+        "border": "'1px solid ' + conn.cardBorder"
+      },
+      "children": [
+        {
+          "id": "dot",
+          "module": "status-dot",
+          "bind": {
+            "color": "conn.dot",
+            "halo": "conn.halo"
+          }
+        },
+        {
+          "id": "status-text",
+          "module": "col",
+          "props": {
+            "flex": "1",
+            "minWidth": 200,
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "status-title",
+              "module": "text",
+              "props": {
+                "size": 22,
+                "weight": 600
+              },
+              "bind": {
+                "value": "conn.title"
+              }
+            },
+            {
+              "id": "status-sub",
+              "module": "text",
+              "props": {
+                "size": 13,
+                "color": "#a7b1c0",
+                "margin": "2px 0 0 0"
+              },
+              "bind": {
+                "value": "conn.sub"
+              }
+            }
+          ]
+        },
+        {
+          "id": "disconnect",
+          "module": "btn",
+          "props": {
+            "label": "Disconnect",
+            "height": 46,
+            "fontSize": 14,
+            "padding": "0 18px",
+            "bg": "#2b3038",
+            "fg": "#e8edf5",
+            "border": "1px solid #3a414c",
+            "bare": true
+          },
+          "when": "conn.isConnected",
+          "on": {
+            "press": {
+              "do": "ui.disconnect"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "dev-head",
+      "module": "row",
+      "props": {
+        "align": "center",
+        "gap": 8,
+        "margin": "6px 0 0 0",
+        "box": "content-box"
+      },
+      "children": [
+        {
+          "id": "dev-label",
+          "module": "text",
+          "props": {
+            "tag": "span",
+            "value": "Devices on this network",
+            "size": 12,
+            "color": "#8f9bb0",
+            "margin": "0 auto 0 0"
+          }
+        },
+        {
+          "id": "dev-scan-label",
+          "module": "text",
+          "props": {
+            "size": 13,
+            "color": "#8792a4"
+          },
+          "bind": {
+            "value": "conn.lastScan"
+          }
+        },
+        {
+          "id": "scan",
+          "module": "btn",
+          "props": {
+            "label": "Scan",
+            "height": 40,
+            "fontSize": 14,
+            "padding": "0 14px",
+            "bg": "#2b3038",
+            "fg": "#e8edf5",
+            "border": "1px solid #3a414c",
+            "bare": true
+          },
+          "on": {
+            "press": {
+              "do": "ui.scan"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "dev-rows",
+      "module": "repeat",
+      "props": {
+        "over": "list:devices"
+      },
+      "children": [
+        {
+          "id": "dev-row",
+          "module": "device-row",
+          "bind": {
+            "device": "item"
+          },
+          "on": {
+            "connect": {
+              "do": "ui.connect",
+              "args": {
+                "key": {
+                  "$expr": "payload.key"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "offline",
+      "module": "row",
+      "props": {
+        "align": "center",
+        "gap": 14,
+        "padding": "12px 14px",
+        "radius": 3,
+        "border": "1px dashed #2c3442",
+        "background": "#0a0f17",
+        "box": "content-box"
+      },
+      "children": [
+        {
+          "id": "off-text",
+          "module": "col",
+          "props": {
+            "flex": "1",
+            "minWidth": 0,
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "off-title",
+              "module": "text",
+              "props": {
+                "value": "Offline editing",
+                "size": 16,
+                "weight": 600
+              }
+            },
+            {
+              "id": "off-sub",
+              "module": "text",
+              "props": {
+                "value": "Prepare a show without a console. Changes sync when you connect.",
+                "size": 13,
+                "color": "#8792a4"
+              }
+            }
+          ]
+        },
+        {
+          "id": "off-btn",
+          "module": "btn",
+          "props": {
+            "label": "Work offline",
+            "height": 44,
+            "minWidth": 104,
+            "fontSize": 14,
+            "padding": "0 14px",
+            "bg": "#2b3038",
+            "fg": "#e8edf5",
+            "border": "1px solid #3a414c",
+            "bare": true
+          },
+          "on": {
+            "press": {
+              "do": "ui.goOffline"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

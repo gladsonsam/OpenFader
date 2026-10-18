@@ -1,83 +1,32 @@
-//! openmix-serve library: HTTP static UI + WebSocket mixer API on one port.
+//! openmix-serve: thin adapter over [`openmix_engine::Engine`].
 //!
-//! JSON protocol (channels are 0-based, the [`openmix_core`] convention):
+//! Serves the static `ui/` directory over HTTP plus a WebSocket JSON mixer
+//! API on one port. Every socket owns one engine client: inbound text lines
+//! decode to [`Cmd`](openmix_engine::Cmd), live
+//! [`Event`](openmix_engine::Event)s encode back to text (or to WS BINARY
+//! frames for meter fan-out when the client opted in via `hello`). No mixer
+//! state lives here — sessions, the driver bank, the poller, shows, pins
+//! and the roster all live in the engine. The wire protocol is specified in
+//! `crates/engine/README.md`.
 //!
-//! client -> server:
-//! ```json
-//! {"cmd":"connect","driver":"sim|xair|dl32s","addr":"..."}
-//! {"cmd":"fader","ch":0,"value":0.0}
-//! {"cmd":"main_fader","value":0.8}
-//! {"cmd":"mute","ch":0,"muted":true}
-//! {"cmd":"param","ch":0,"field":"gain","value":0.5}
-//! {"cmd":"lock","ch":0}
-//! {"cmd":"unlock","ch":0}
-//! {"cmd":"list_shows"}
-//! {"cmd":"capture_scene","show":"gig","name":"verse"}
-//! {"cmd":"recall_scene","show":"gig","name":"verse","fade_ms":400}
-//! {"cmd":"delete_scene","show":"gig","name":"verse"}
-//! ```
-//!
-//! server -> client:
-//! ```json
-//! {"type":"you","id":"client-1"}
-//! {"type":"state","driver":"sim","main_fader":0.8,"strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}
-//! {"type":"param","ch":0,"field":"gain","value":0.5}
-//! {"type":"shows","shows":[{"name":"gig","scenes":[{"name":"verse","main_fader":null,"strips":[{"ch":0,"name":"CH01","fader":0.7,"muted":false}]}]}]}
-//! {"type":"meters","levels":[0.1,0.2]}
-//! {"type":"spectrum","ch":0,"bins":[...64 floats...]}
-//! {"type":"gr","ch":0,"gate":0.0,"comp":0.0}
-//! ```
-//!
-//! `state` is sent on connect and after every mutation; `param` echoes every
-//! successful `param` set (all drivers) and every param applied by
-//! `recall_scene` so sibling UIs stay in sync; `shows` is sent on
-//! connect, as the direct reply to `list_shows`, and broadcast after
-//! `capture_scene`/`delete_scene` so every UI stays in sync. The show library
-//! lives server-side (mirroring the Tauri `capture_scene`/`recall_scene`
-//! semantics in `src-tauri/src/main.rs`), so scenes survive UI reloads.
-//! `meters` ticks at ~10 Hz. One `spectrum` message per channel per tick follows each `meters`
-//! tick (see [`SPECTRUM_CHANNELS`]). One `gr` message per channel follows every
-//! second `meters` tick (~5 Hz, see [`GR_CHANNELS`]): the DYN blob cache
-//! fills asynchronously, so `gate`/`comp` read 0.0 until the desk streams
-//! `/meters/6`. Unknown/invalid commands get
-//! `{"type":"error","message":"..."}`.
-//!
-//! Multi-client awareness (no arbitration yet): the server tracks connected
-//! WS clients (id, connect time, label from `?name=` or `client-N`) and
-//! broadcasts `{"type":"clients","count":N,"writers":[...]}` on join/leave.
-//!
-//! Self-id (`you`): on WS connect — and as the unicast reply to every
-//! `{"cmd":"connect",...}` — the server unicasts
-//! `{"type":"you","id":"<client-N>"}` to that socket only, so the client
-//! learns its server-side id without guessing from the roster (which can
-//! misattribute under concurrent joins). `by` tags on later `state`/`param`
-//! frames match this id.
-//! Every `state`/`param` frame emitted by a `fader`/`mute`/`param`
-//! (`recall_scene` included) mutation carries `"by":"<writer-id>"` so UIs
-//! can show who moved what. Writers are ids with a mutation in the last
-//! 10 s.
-//!
-//! Strip locks (light arbitration): `{"cmd":"lock","ch":N}` claims a strip
-//! for the sender id; `{"cmd":"unlock","ch":N}` releases it. Holds are
-//! `ch -> holder-id` with a 60 s expiry refreshed by holder activity
-//! (any successful command from the holder) and auto-released on
-//! disconnect. The server broadcasts `{"type":"locks","holds":{...}}`
-//! (ch keys as strings) on every change including expiry. A strip locked
-//! by another writer rejects `fader`/`mute`/`param` with
-//! `{"type":"error","locked_by":"<holder-id>",...}`. `recall_scene`
-//! bypasses locks but unicasts `{"type":"recalled","overrode_locks":[ch..]}`
-//! to the recaller when it changed strips locked by someone else.
-//! Lock TTL defaults to [`LOCK_TTL`]; tests use [`run_with_lock_ttl`] with
-//! a short TTL to cover expiry without waiting 60 s.
+//! Realtime duties of this adapter (MR1):
+//! - `TCP_NODELAY` on every accepted socket ([`configure_accepted`], wired
+//!   into the accept loop below); no permessage-deflate anywhere — the
+//!   upgrade path (`axum` over a raw hyper connection) never negotiates
+//!   extensions, so frames go out uncompressed.
+//! - Latest-only meter delivery: per client, per stream (`meters`, `gr`,
+//!   `spectrum`) a bounded slot of 1 ([`Outbox`]). A slow socket's stale
+//!   frame is replaced, never queued; drops are counted and exposed via the
+//!   [`stats_json`] reply to `{"cmd":"stats"}`. Control frames (`state`,
+//!   `params`, `locks`, …) keep reliable ordered delivery.
+//! - Binary meter encoding for opted-in clients
+//!   (`{"cmd":"hello","binary_meters":true}` → [`Event::to_binary`]).
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     path::{Path as StdPath, PathBuf},
-    sync::{
-        atomic::{AtomicU64, Ordering},
-        Arc,
-    },
-    time::{Duration, Instant},
+    sync::Arc,
+    time::Duration,
 };
 
 use axum::{
@@ -91,46 +40,14 @@ use axum::{
     Json, Router,
 };
 use futures::{SinkExt, StreamExt};
-use openmix_core::{
-    rta::RtaProcessor,
-    show::{Scene, Show, DEFAULT_FADE_MS},
-    MeterFrame, MixerDriver, ParamValue, StripId,
+use hyper_util::{
+    rt::{TokioExecutor, TokioIo},
+    server::conn::auto::Builder,
+    service::TowerToHyperService,
 };
-use serde_json::{json, Value};
-use tokio::{
-    net::TcpListener,
-    sync::{broadcast, RwLock},
-};
+use tokio::sync::{mpsc, Mutex, Notify};
 
-/// Max channels with per-tick spectrum output (first N channels only).
-///
-/// 16 covers a full drum/band layer on typical 16/24/32ch surfaces while
-/// keeping the ~10 Hz WS fanout bounded: 16 msgs x 64 floats/tick stays
-/// well under one MTU-friendly JSON burst per tick, and the per-client
-/// naive-DFT cost (128-pt, no `fft` feature needed — `RtaProcessor` falls
-/// back to an identical O(N^2) path) is ~1.3M flops/s, negligible next to
-/// the socket writes. Channels beyond this cap still stream `meters`
-/// levels; raise the cap only with a matching client-side subscription
-/// filter so idle 32ch surfaces don't 2x the broadcast bytes.
-pub const SPECTRUM_CHANNELS: usize = 16;
-
-/// Max channels with per-tick GR output (first N channels only).
-///
-/// Same 16ch cap as [`SPECTRUM_CHANNELS`]: covers a full drum/band layer on
-/// typical 16/24/32ch surfaces while keeping the WS fanout bounded (16 small
-/// `gr` frames per GR tick). GR ticks at ~5 Hz — every second 10 Hz `meters`
-/// tick — so dynamics bars stay live without doubling the meter broadcast
-/// bytes. Channels beyond this cap still stream `meters` levels; `gate` /
-/// `comp` read 0.0 until the driver's DYN cache fills (xair `/meters/6`
-/// blob; sim/dl32s have no GR source and always read 0.0).
-pub const GR_CHANNELS: usize = 16;
-
-/// Default per-strip lock TTL: holder id + expiry, refreshed by holder
-/// activity, auto-released on disconnect/expiry.
-///
-/// Tests needing expiry coverage use [`run_with_lock_ttl`] with a short
-/// TTL instead of waiting 60 s.
-pub const LOCK_TTL: Duration = Duration::from_secs(60);
+pub use openmix_engine::{LOCK_TTL, PARAM_POLL_INTERVAL};
 
 /// Startup options for [`run`].
 #[derive(Clone, Debug)]
@@ -143,6 +60,12 @@ pub struct ServeOptions {
     pub preset: Option<String>,
     /// Directory of static UI files. `None` = auto-detect (`ui/`).
     pub static_dir: Option<PathBuf>,
+    /// R2 poller pipelining: max concurrent driver queries per poll tick
+    /// (`--poll-inflight`; `None` = per-driver default: sim 4, xair 1).
+    pub poll_inflight: Option<usize>,
+    /// R2 scene library directory (`--data-dir`; persisted `scenes.json`,
+    /// reloaded on restart). `None` = in-memory scenes only.
+    pub data_dir: Option<PathBuf>,
 }
 
 impl Default for ServeOptions {
@@ -152,1004 +75,398 @@ impl Default for ServeOptions {
             addr: None,
             preset: None,
             static_dir: None,
+            poll_inflight: None,
+            data_dir: None,
         }
     }
 }
 
-/// One connected WS client (presence tracking; no arbitration yet).
-#[derive(Clone, Debug)]
-#[allow(dead_code)]
-struct ClientInfo {
-    id: String,
-    label: String,
-    connected_at: Instant,
-    last_write: Option<Instant>,
-}
-
-/// One strip lock: holder id + expiry.
-#[derive(Clone, Debug)]
-struct StripLock {
-    holder: String,
-    expires_at: Instant,
-}
-
-/// Shared server state: driver bank + active selection + state-change fanout.
-///
-/// Static dispatch over drivers (`MixerDriver` is not dyn-compatible due to
-/// async methods). New providers add one field + one match arm, as in
-/// `openmix-cli`.
-///
-/// The show library (`shows`) is server-side, mirroring the Tauri shell
-/// (`src-tauri/src/main.rs`): scenes captured here survive UI reloads and
-/// driver switches with no localStorage round-trip.
-///
-/// Presence: `clients` tracks live sockets by id; `clients_tx` carries a
-/// prebuilt `clients` frame on join/leave. Mutation broadcasts (`state`
-/// via `state_tx`, `param` via `param_tx`) carry `"by":"<writer-id>"`.
-/// Strip locks (`locks` + `locks_tx`) arbitrate per-channel `fader`/`mute`/
-/// `param` writes; `recall_scene` bypasses them but reports overrides.
-pub struct Shared {
-    sim: openmix_sim::SimDriver,
-    xair: openmix_proto_xair::XAirDriver,
-    dl32s: openmix_proto_dl32s::Dl32sDriver,
-    active: RwLock<String>,
-    state_tx: broadcast::Sender<String>,
-    shows: RwLock<Vec<Show>>,
-    shows_tx: broadcast::Sender<()>,
-    param_tx: broadcast::Sender<Value>,
-    clients: RwLock<HashMap<String, ClientInfo>>,
-    clients_tx: broadcast::Sender<Value>,
-    next_client: AtomicU64,
-    locks: RwLock<HashMap<u16, StripLock>>,
-    locks_tx: broadcast::Sender<Value>,
-    lock_ttl: Duration,
-}
-
-impl Shared {
-    #[allow(dead_code)]
-    fn new() -> Self {
-        Self::with_lock_ttl(LOCK_TTL)
-    }
-
-    /// `Shared` with an explicit lock TTL (tests use a short TTL to cover
-    /// expiry without waiting 60 s; production uses [`LOCK_TTL`]).
-    pub fn with_lock_ttl(lock_ttl: Duration) -> Self {
-        Self::with_lock_ttl_and_preset(lock_ttl, None)
-    }
-
-    /// [`with_lock_ttl`], plus an optional sim desk preset.
-    pub fn with_lock_ttl_and_preset(
-        lock_ttl: Duration,
-        preset: Option<openmix_sim::SimPreset>,
-    ) -> Self {
-        let (state_tx, _) = broadcast::channel(16);
-        let (shows_tx, _) = broadcast::channel(16);
-        let (param_tx, _) = broadcast::channel(256);
-        let (clients_tx, _) = broadcast::channel(16);
-        let (locks_tx, _) = broadcast::channel(16);
-        Self {
-            sim: match preset {
-                Some(p) => openmix_sim::SimDriver::with_preset(p),
-                None => openmix_sim::SimDriver::new(),
-            },
-            xair: openmix_proto_xair::XAirDriver::new(),
-            dl32s: openmix_proto_dl32s::Dl32sDriver::new(),
-            active: RwLock::new("sim".to_string()),
-            state_tx,
-            shows: RwLock::new(Vec::new()),
-            shows_tx,
-            param_tx,
-            clients: RwLock::new(HashMap::new()),
-            clients_tx,
-            next_client: AtomicU64::new(1),
-            locks: RwLock::new(HashMap::new()),
-            locks_tx,
-            lock_ttl,
-        }
-    }
-
-    async fn active_name(&self) -> String {
-        self.active.read().await.clone()
-    }
-
-    fn known(driver: &str) -> bool {
-        matches!(driver, "sim" | "xair" | "dl32s")
-    }
-
-    fn default_addr(driver: &str) -> &str {
-        if driver == "sim" {
-            "sim://local"
-        } else {
-            "192.168.1.1"
-        }
-    }
-
-    /// Select `driver` and connect it. Broadcasts a state refresh on success.
-    async fn connect(&self, driver: &str, addr: Option<&str>) -> anyhow::Result<()> {
-        if !Self::known(driver) {
-            anyhow::bail!("unknown driver {driver:?}; expected sim|xair|dl32s");
-        }
-        let target = addr
-            .map(str::to_string)
-            .unwrap_or_else(|| Self::default_addr(driver).to_string());
-        match driver {
-            "xair" => self.xair.connect(&target).await?,
-            "dl32s" => self.dl32s.connect(&target).await?,
-            _ => self.sim.connect(&target).await?,
-        }
-        *self.active.write().await = driver.to_string();
-        Ok(())
-    }
-
-    /// Full `state` message for the active driver.
-    async fn state_message(&self) -> Value {
-        self.state_message_with_by(None).await
-    }
-
-    /// Full `state` message tagged with the mutation writer (`"by"`).
-    ///
-    /// `by` is `None` for the initial per-connection snapshot; every
-    /// broadcast that follows a `fader`/`main_fader`/`mute`/`param`/
-    /// `recall_scene`/`connect` mutation carries `Some(writer-id)`.
-    /// `main_fader` is the active driver's LR main (`null` when the
-    /// driver has none, e.g. dl32s) and mirrors the Tauri `get_state`
-    /// shape in `src-tauri/src/main.rs`.
-    async fn state_message_with_by(&self, by: Option<&str>) -> Value {
-        let name = self.active_name().await;
-        let strips = match name.as_str() {
-            "xair" => snapshot_strips(&self.xair).await,
-            "dl32s" => snapshot_strips(&self.dl32s).await,
-            _ => snapshot_strips(&self.sim).await,
-        };
-        let main_fader = self.active_main_fader().await;
-        match by {
-            Some(writer) => json!({"type":"state","driver":name,"strips":strips,"main_fader":main_fader,"by":writer}),
-            None => json!({"type":"state","driver":name,"strips":strips,"main_fader":main_fader}),
-        }
-    }
-
-    /// Allocate the next client id/label pair (`client-N` fallback).
-    fn alloc_client(&self, name: Option<&str>) -> (String, String) {
-        let n = self.next_client.fetch_add(1, Ordering::Relaxed);
-        let id = format!("client-{n}");
-        let clean = name.map(str::trim).filter(|s| !s.is_empty());
-        let label = clean.unwrap_or(&id).to_string();
-        (id, label)
-    }
-
-    /// Register a client and broadcast the updated `clients` frame.
-    async fn add_client(&self, id: &str, label: &str) {
-        {
-            let mut clients = self.clients.write().await;
-            clients.insert(
-                id.to_string(),
-                ClientInfo {
-                    id: id.to_string(),
-                    label: label.to_string(),
-                    connected_at: Instant::now(),
-                    last_write: None,
-                },
-            );
-        }
-        let _ = self.clients_tx.send(self.clients_message().await);
-    }
-
-    /// Remove a client (on disconnect), auto-release its strip locks, and
-    /// broadcast the updated frames.
-    async fn remove_client(&self, id: &str) {
-        {
-            let mut clients = self.clients.write().await;
-            clients.remove(id);
-        }
-        let _ = self.clients_tx.send(self.clients_message().await);
-        // Auto-release: a disconnecting holder must not pin strips.
-        let released = {
-            let mut locks = self.locks.write().await;
-            let before = locks.len();
-            locks.retain(|_, l| l.holder != id);
-            locks.len() != before
-        };
-        if released {
-            let _ = self.locks_tx.send(self.locks_message_inner().await);
-        }
-    }
-
-    /// Record a mutation write for `writers` tracking (last 10 s).
-    async fn note_write(&self, id: &str) {
-        let now = Instant::now();
-        let mut clients = self.clients.write().await;
-        if let Some(info) = clients.get_mut(id) {
-            info.last_write = Some(now);
-        }
-    }
-
-    /// Current `clients` frame: `{"type":"clients","count":N,"writers":[...]}`.
-    ///
-    /// `writers` holds ids with a mutation in the last 10 s, sorted for
-    /// deterministic snapshots.
-    async fn clients_message(&self) -> Value {
-        let clients = self.clients.read().await;
-        let now = Instant::now();
-        let mut writers: Vec<String> = clients
-            .values()
-            .filter(|c| {
-                c.last_write
-                    .is_some_and(|t| now.duration_since(t).as_secs() < 10)
-            })
-            .map(|c| c.id.clone())
-            .collect();
-        writers.sort();
-        json!({"type":"clients","count":clients.len(),"writers":writers})
-    }
-
-    /// Drop expired holds. Returns true when anything was removed.
-    async fn prune_expired_locks(&self) -> bool {
-        let now = Instant::now();
-        let mut locks = self.locks.write().await;
-        let before = locks.len();
-        locks.retain(|_, l| now < l.expires_at);
-        locks.len() != before
-    }
-
-    /// Holder of `ch`, or `None` when unlocked/expired.
-    async fn lock_holder(&self, ch: u16) -> Option<String> {
-        let locks = self.locks.read().await;
-        let entry = locks.get(&ch)?;
-        if Instant::now() >= entry.expires_at {
-            return None;
-        }
-        Some(entry.holder.clone())
-    }
-
-    /// Refresh expiry on every non-expired hold owned by `writer`
-    /// (holder activity keeps its strips pinned for another TTL).
-    async fn touch_holder_locks(&self, writer: &str) {
-        let deadline = Instant::now() + self.lock_ttl;
-        let now = Instant::now();
-        let mut locks = self.locks.write().await;
-        for entry in locks.values_mut() {
-            if entry.holder == writer && now < entry.expires_at {
-                entry.expires_at = deadline;
-            }
-        }
-    }
-
-    /// Current `locks` frame: `{"type":"locks","holds":{ch:holder-id}}`
-    /// with channel keys as strings (JSON object keys). Prunes expired
-    /// holds first so newcomers never see stale pins.
-    async fn locks_message(&self) -> Value {
-        let _ = self.prune_for_message().await;
-        self.locks_message_inner().await
-    }
-
-    /// Prune helper split out so [`Self::remove_client`] (which already
-    /// holds no lock across the broadcast) and the expiry sweeper share
-    /// one path without double-locking.
-    async fn prune_for_message(&self) -> bool {
-        self.prune_expired_locks().await
-    }
-
-    /// Build the `locks` frame from the current (already pruned) table.
-    /// Expired entries are skipped defensively even if pruning was skipped.
-    async fn locks_message_inner(&self) -> Value {
-        let locks = self.locks.read().await;
-        let now = Instant::now();
-        let mut holds = serde_json::Map::new();
-        let mut chs: Vec<u16> = locks.keys().copied().collect();
-        chs.sort_unstable();
-        for ch in chs {
-            if let Some(entry) = locks.get(&ch) {
-                if now < entry.expires_at {
-                    holds.insert(ch.to_string(), Value::String(entry.holder.clone()));
-                }
-            }
-        }
-        Value::Object({
-            let mut m = serde_json::Map::new();
-            m.insert("type".to_string(), Value::String("locks".to_string()));
-            m.insert("holds".to_string(), Value::Object(holds));
-            m
-        })
-    }
-
-    /// Broadcast the current `locks` frame (after pruning).
-    async fn broadcast_locks(&self) {
-        // Prune inside `locks_message`; a second prune here is a no-op.
-        let msg = self.locks_message().await;
-        let _ = self.locks_tx.send(msg);
-    }
-
-    /// Denied-write error frame: `{"type":"error","locked_by":id,...}`.
-    fn locked_error(ch: u16, holder: &str) -> Value {
-        json!({
-            "type": "error",
-            "message": format!("strip {ch} locked by {holder}"),
-            "locked_by": holder,
-            "ch": ch,
-        })
-    }
-
-    /// Current meter levels for the active driver (one entry per strip).
-    async fn meter_levels(&self) -> Vec<f32> {
-        match self.active_name().await.as_str() {
-            "xair" => self.xair.poll_meters().levels,
-            "dl32s" => self.dl32s.poll_meters().levels,
-            _ => self.sim.poll_meters().levels,
-        }
-    }
-
-    /// Current `meters` message for the active driver (~10 Hz tick).
-    #[allow(dead_code)]
-    async fn meters_message(&self) -> Value {
-        let levels = self.meter_levels().await;
-        meters_message_for(&levels)
-    }
-
-    /// Gate/comp GR (dB reduction `>= 0`) for one 0-based channel.
-    ///
-    /// xair reads the DYN blob cache (`gate_gr`/`comp_gr` param path); no
-    /// data yet (or out of range) falls back to 0.0 so the tick never drops
-    /// a frame — the UI treats 0.0 as "no reduction", same as an idle gate.
-    /// sim/dl32s have no GR source and always read (0.0, 0.0).
-    async fn gr_db(&self, ch: usize) -> (f32, f32) {
-        if self.active_name().await.as_str() != "xair" {
-            return (0.0, 0.0);
-        }
-        let Ok(strip) = u16::try_from(ch) else {
-            return (0.0, 0.0);
-        };
-        let id = StripId(strip);
-        let gate = match self.xair.get_param(id, "gate_gr").await {
-            Ok(ParamValue::Float(v)) => v.max(0.0),
-            _ => 0.0,
-        };
-        let comp = match self.xair.get_param(id, "comp_gr").await {
-            Ok(ParamValue::Float(v)) => v.max(0.0),
-            _ => 0.0,
-        };
-        (gate, comp)
-    }
-
-    /// Full `shows` message: every show with its scenes and per-strip
-    /// fader/mute (the Tauri `get_scene` shape per scene, so the web
-    /// `ShowEditor` can rebuild its library from one frame).
-    async fn shows_message(&self) -> Value {
-        let shows = self.shows.read().await;
-        json!({
-            "type": "shows",
-            "shows": shows.iter().map(show_json).collect::<Vec<_>>(),
-        })
-    }
-
-    /// Snapshot the active driver (used by `capture_scene`).
-    async fn active_snapshot(&self) -> anyhow::Result<openmix_core::MixerSnapshot> {
-        match self.active_name().await.as_str() {
-            "xair" => self.xair.snapshot().await,
-            "dl32s" => self.dl32s.snapshot().await,
-            _ => self.sim.snapshot().await,
-        }
-    }
-
-    /// Main fader of the active driver, `None` when the driver has none.
-    async fn active_main_fader(&self) -> Option<f32> {
-        match self.active_name().await.as_str() {
-            "xair" => self.xair.get_main_fader().await.ok(),
-            "dl32s" => self.dl32s.get_main_fader().await.ok(),
-            _ => self.sim.get_main_fader().await.ok(),
-        }
-    }
-
-    /// Recall `scene` on the active driver, ramping over `fade_ms`.
-    async fn recall_on_active(&self, scene: &Scene, fade_ms: u64) -> anyhow::Result<()> {
-        match self.active_name().await.as_str() {
-            "xair" => scene.recall_to(&self.xair, fade_ms).await,
-            "dl32s" => scene.recall_to(&self.dl32s, fade_ms).await,
-            _ => scene.recall_to(&self.sim, fade_ms).await,
-        }
-    }
-
-    /// Apply one client command from `writer` (its presence id).
-    ///
-    /// Returns a direct reply for `list_shows` (unicast `shows` frame),
-    /// for `connect` (unicast `you` self-id frame),
-    /// for lock denials (`{"type":"error","locked_by":...}` unicast), and
-    /// for `recall_scene` when it overrode foreign locks
-    /// (`{"type":"recalled","overrode_locks":[...]}` unicast); every other
-    /// command broadcasts (`state` for mixer mutations like the pre-scene
-    /// protocol, `shows` for library mutations, `locks` for lock changes,
-    /// both `state`+`param` for `recall_scene`) and returns `None`.
-    /// Mutation broadcasts carry `"by": writer`; `fader`/`mute`/`param`
-    /// on a strip locked by someone else are rejected (`main_fader` is
-    /// not strip-locked), `recall_scene` bypasses locks.
-    async fn apply(&self, msg: &Value, writer: &str) -> anyhow::Result<Option<Value>> {
-        // Opportunistic expiry: release stale holds before any check so a
-        // just-expired strip reads as unlocked, and broadcast when the
-        // sweep actually removed something.
-        if self.prune_expired_locks().await {
-            let _ = self.locks_tx.send(self.locks_message_inner().await);
-        }
-        let cmd = msg
-            .get("cmd")
-            .and_then(Value::as_str)
-            .ok_or_else(|| anyhow::anyhow!("missing \"cmd\""))?;
-        match cmd {
-            "connect" => {
-                let driver = msg.get("driver").and_then(Value::as_str).unwrap_or("sim");
-                let addr = msg.get("addr").and_then(Value::as_str);
-                self.connect(driver, addr).await?;
-                self.note_write(writer).await;
-                self.touch_holder_locks(writer).await;
-                let _ = self.state_tx.send(writer.to_string());
-                Ok(Some(you_message(writer)))
-            }
-            "fader" => {
-                let ch = channel_arg(msg)?;
-                if let Some(holder) = self.lock_holder(ch.0).await {
-                    if holder != writer {
-                        return Ok(Some(Self::locked_error(ch.0, &holder)));
-                    }
-                }
-                let value = msg
-                    .get("value")
-                    .and_then(Value::as_f64)
-                    .ok_or_else(|| anyhow::anyhow!("fader needs numeric \"value\" 0.0..=1.0"))?
-                    as f32;
-                match self.active_name().await.as_str() {
-                    "xair" => self.xair.set_fader(ch, value).await?,
-                    "dl32s" => self.dl32s.set_fader(ch, value).await?,
-                    _ => self.sim.set_fader(ch, value).await?,
-                }
-                self.note_write(writer).await;
-                self.touch_holder_locks(writer).await;
-                let _ = self.state_tx.send(writer.to_string());
-                Ok(None)
-            }
-            "mute" => {
-                let ch = channel_arg(msg)?;
-                if let Some(holder) = self.lock_holder(ch.0).await {
-                    if holder != writer {
-                        return Ok(Some(Self::locked_error(ch.0, &holder)));
-                    }
-                }
-                let muted = msg
-                    .get("muted")
-                    .and_then(Value::as_bool)
-                    .ok_or_else(|| anyhow::anyhow!("mute needs boolean \"muted\""))?;
-                match self.active_name().await.as_str() {
-                    "xair" => self.xair.set_mute(ch, muted).await?,
-                    "dl32s" => self.dl32s.set_mute(ch, muted).await?,
-                    _ => self.sim.set_mute(ch, muted).await?,
-                }
-                self.note_write(writer).await;
-                self.touch_holder_locks(writer).await;
-                let _ = self.state_tx.send(writer.to_string());
-                Ok(None)
-            }
-            // LR main fader (all drivers via `get_main_fader`; `None` in
-            // state when the driver has none, e.g. dl32s). `set_main_fader`
-            // is accepted as an alias and mirrors the Tauri command of the
-            // same name (`src-tauri/src/main.rs`), including 0.0..=1.0
-            // validation. Not strip-locked: locks pin per-channel strips.
-            "main_fader" | "set_main_fader" => {
-                let value = msg
-                    .get("value")
-                    .and_then(Value::as_f64)
-                    .ok_or_else(|| anyhow::anyhow!("main_fader needs numeric \"value\" 0.0..=1.0"))?
-                    as f32;
-                let value = openmix_core::validate_fader(value)?;
-                match self.active_name().await.as_str() {
-                    "xair" => self.xair.set_main_fader(value).await?,
-                    "dl32s" => self.dl32s.set_main_fader(value).await?,
-                    _ => self.sim.set_main_fader(value).await?,
-                }
-                self.note_write(writer).await;
-                self.touch_holder_locks(writer).await;
-                let _ = self.state_tx.send(writer.to_string());
-                Ok(None)
-            }
-            "param" => {
-                let ch = channel_arg(msg)?;
-                if let Some(holder) = self.lock_holder(ch.0).await {
-                    if holder != writer {
-                        return Ok(Some(Self::locked_error(ch.0, &holder)));
-                    }
-                }
-                let field = msg
-                    .get("field")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| anyhow::anyhow!("param needs string \"field\""))?;
-                let raw = msg
-                    .get("value")
-                    .ok_or_else(|| anyhow::anyhow!("param needs \"value\""))?;
-                let pv = match raw {
-                    Value::Number(n) => ParamValue::Float(n.as_f64().unwrap_or(0.0) as f32),
-                    Value::Bool(b) => ParamValue::Bool(*b),
-                    Value::String(s) => ParamValue::Text(s.clone()),
-                    _ => anyhow::bail!("param value must be number|bool|string"),
-                };
-                match self.active_name().await.as_str() {
-                    "xair" => self.xair.set_param(ch, field, pv).await?,
-                    "dl32s" => self.dl32s.set_param(ch, field, pv).await?,
-                    _ => self.sim.set_param(ch, field, pv).await?,
-                }
-                self.note_write(writer).await;
-                self.touch_holder_locks(writer).await;
-                let _ = self
-                    .param_tx
-                    .send(param_message(ch.0, field, raw.clone(), Some(writer)));
-                let _ = self.state_tx.send(writer.to_string());
-                Ok(None)
-            }
-            "lock" => {
-                let ch = channel_arg(msg)?;
-                if let Some(holder) = self.lock_holder(ch.0).await {
-                    if holder != writer {
-                        return Ok(Some(Self::locked_error(ch.0, &holder)));
-                    }
-                    // Already ours: refresh expiry below.
-                }
-                {
-                    let mut locks = self.locks.write().await;
-                    locks.insert(
-                        ch.0,
-                        StripLock {
-                            holder: writer.to_string(),
-                            expires_at: Instant::now() + self.lock_ttl,
-                        },
-                    );
-                }
-                self.note_write(writer).await;
-                self.touch_holder_locks(writer).await;
-                self.broadcast_locks().await;
-                Ok(None)
-            }
-            "unlock" => {
-                let ch = channel_arg(msg)?;
-                if let Some(holder) = self.lock_holder(ch.0).await {
-                    if holder != writer {
-                        return Ok(Some(Self::locked_error(ch.0, &holder)));
-                    }
-                    {
-                        let mut locks = self.locks.write().await;
-                        locks.remove(&ch.0);
-                    }
-                    self.note_write(writer).await;
-                    self.touch_holder_locks(writer).await;
-                    self.broadcast_locks().await;
-                }
-                // Unlocking an unlocked/expired strip is a no-op success.
-                Ok(None)
-            }
-            // Server-side show library (mirrors the Tauri scene ops).
-            "list_shows" => Ok(Some(self.shows_message().await)),
-            "capture_scene" => {
-                let show = name_arg(msg, "show")?;
-                let name = name_arg(msg, "name")?;
-                let snap = self.active_snapshot().await?;
-                let mut scene = Scene::capture(&name, &snap);
-                scene.main_fader = self.active_main_fader().await;
-                let mut shows = self.shows.write().await;
-                match shows.iter_mut().find(|s| s.name == show) {
-                    Some(slot) => slot.add_scene(scene),
-                    None => {
-                        let mut fresh = Show::new(&show);
-                        fresh.add_scene(scene);
-                        shows.push(fresh);
-                    }
-                }
-                drop(shows);
-                let _ = self.shows_tx.send(());
-                Ok(None)
-            }
-            "recall_scene" => {
-                let show = name_arg(msg, "show")?;
-                let name = name_arg(msg, "name")?;
-                let fade_ms = match msg.get("fade_ms") {
-                    None | Some(Value::Null) => DEFAULT_FADE_MS,
-                    Some(v) => v.as_u64().ok_or_else(|| {
-                        anyhow::anyhow!("recall_scene needs integer \"fade_ms\" (ms)")
-                    })?,
-                };
-                let scene = {
-                    let shows = self.shows.read().await;
-                    shows
-                        .iter()
-                        .find(|s| s.name == show)
-                        .and_then(|s| s.get(&name))
-                        .cloned()
-                        .ok_or_else(|| {
-                            anyhow::anyhow!("unknown scene {name:?} in show {show:?}")
-                        })?
-                };
-                self.recall_on_active(&scene, fade_ms).await?;
-                self.note_write(writer).await;
-                self.touch_holder_locks(writer).await;
-                // Bypass locks, but report which locked strips were changed:
-                // scene strips locked by someone other than the recaller.
-                let mut overrode: Vec<u16> = Vec::new();
-                for s in &scene.strips {
-                    if let Some(holder) = self.lock_holder(s.strip.0).await {
-                        if holder != writer && !overrode.contains(&s.strip.0) {
-                            overrode.push(s.strip.0);
-                        }
-                    }
-                }
-                overrode.sort_unstable();
-                for s in &scene.strips {
-                    let _ = self
-                        .param_tx
-                        .send(param_message(s.strip.0, "fader", json!(s.fader), Some(writer)));
-                    let _ = self
-                        .param_tx
-                        .send(param_message(s.strip.0, "mute", json!(s.mute), Some(writer)));
-                    for (field, value) in &s.params {
-                        let _ = self.param_tx.send(param_message(
-                            s.strip.0,
-                            field,
-                            param_value_json(value),
-                            Some(writer),
-                        ));
-                    }
-                }
-                let _ = self.state_tx.send(writer.to_string());
-                if overrode.is_empty() {
-                    Ok(None)
-                } else {
-                    Ok(Some(json!({"type":"recalled","overrode_locks":overrode})))
-                }
-            }
-            "delete_scene" => {
-                let show = name_arg(msg, "show")?;
-                let name = name_arg(msg, "name")?;
-                {
-                    let mut shows = self.shows.write().await;
-                    let slot = shows
-                        .iter_mut()
-                        .find(|s| s.name == show)
-                        .ok_or_else(|| anyhow::anyhow!("unknown show {show:?}"))?;
-                    if !slot.remove(&name) {
-                        anyhow::bail!("unknown scene {name:?} in show {show:?}");
-                    }
-                }
-                let _ = self.shows_tx.send(());
-                Ok(None)
-            }
-            other => anyhow::bail!("unknown cmd {other:?}"),
-        }
-    }
-}
-
-async fn snapshot_strips(d: &impl MixerDriver) -> Vec<Value> {
-    match d.snapshot().await {
-        Ok(snap) => snap
-            .strips
-            .iter()
-            .map(|s| {
-                json!({
-                    "ch": s.id.0,
-                    "name": s.name,
-                    "fader": s.fader,
-                    "muted": s.mute,
-                })
-            })
-            .collect(),
-        Err(_) => Vec::new(),
-    }
-}
-
-fn meters_message_for(levels: &[f32]) -> Value {
-    json!({"type":"meters","levels":levels})
-}
-
-/// One `spectrum` message for channel `ch` (see `Spectrum.svelte`):
-/// `{"type":"spectrum","ch":N,"bins":[...64 floats in 0..1...]}`.
-fn spectrum_message(ch: usize, bins: &[f32]) -> Value {
-    json!({"type":"spectrum","ch":ch,"bins":bins})
-}
-
-/// One `gr` message for channel `ch` (see `Detail.svelte` GR bars):
-/// `{"type":"gr","ch":N,"gate":db,"comp":db}` — dB reduction `>= 0`.
-fn gr_message(ch: usize, gate: f32, comp: f32) -> Value {
-    json!({"type":"gr","ch":ch,"gate":gate,"comp":comp})
-}
-
-/// Self-id frame for one client: `{"type":"you","id":"<client-N>"}`.
-///
-/// Unicast to the socket on WS connect (before the initial `state` frame)
-/// and as the direct reply to every `{"cmd":"connect",...}`, so the client
-/// learns the id the server will use in later `"by":"<writer-id>"` tags
-/// without guessing from the `clients` roster.
-fn you_message(id: &str) -> Value {
-    json!({"type":"you","id":id})
-}
-
-/// One `param` echo for channel `ch`:
-/// `{"type":"param","ch":N,"field":"...","value":number|bool|string,"by":"..."}`.
-///
-/// Emitted on every successful `param` command (all drivers) and once per
-/// applied param on `recall_scene`, so sibling UIs learn about
-/// server-side changes without re-polling. `shows`/`meters`/
-/// `spectrum`/`gr` frames are byte-identical to before; `state` frames
-/// from mutations carry the same `"by"` writer tag.
-fn param_message(ch: u16, field: &str, value: Value, by: Option<&str>) -> Value {
-    match by {
-        Some(writer) => json!({"type":"param","ch":ch,"field":field,"value":value,"by":writer}),
-        None => json!({"type":"param","ch":ch,"field":field,"value":value}),
-    }
-}
-
-fn param_value_json(pv: &ParamValue) -> Value {
-    match pv {
-        ParamValue::Float(v) => json!(v),
-        ParamValue::Bool(b) => json!(b),
-        ParamValue::Text(s) => json!(s),
-    }
-}
-
-fn channel_arg(msg: &Value) -> anyhow::Result<StripId> {
-    let ch = msg
-        .get("ch")
-        .and_then(Value::as_u64)
-        .ok_or_else(|| anyhow::anyhow!("command needs integer \"ch\" (0-based)"))?;
-    let ch: u16 = ch
-        .try_into()
-        .map_err(|_| anyhow::anyhow!("channel {ch} out of range"))?;
-    Ok(StripId(ch))
-}
-
-/// Trimmed non-empty string arg (`"show"` / `"name"` for scene ops).
-fn name_arg(msg: &Value, key: &str) -> anyhow::Result<String> {
-    let raw = msg
-        .get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| anyhow::anyhow!("scene command needs string \"{key}\""))?;
-    let clean = raw.trim().to_string();
-    if clean.is_empty() {
-        anyhow::bail!("scene command needs non-empty \"{key}\"");
-    }
-    Ok(clean)
-}
-
-/// One scene in the `shows` event (the Tauri `get_scene` shape).
-fn scene_json(scene: &Scene) -> Value {
-    json!({
-        "name": scene.name,
-        "main_fader": scene.main_fader,
-        "strips": scene.strips.iter().map(|s| json!({
-            "ch": s.strip.0,
-            "name": s.name,
-            "fader": s.fader,
-            "muted": s.mute,
-        })).collect::<Vec<_>>(),
-    })
-}
-
-/// One show in the `shows` event, in library order.
-fn show_json(show: &Show) -> Value {
-    json!({
-        "name": show.name,
-        "scenes": show.scenes.iter().map(scene_json).collect::<Vec<_>>(),
-    })
-}
-
-fn error_message(e: impl std::fmt::Display) -> String {
-    json!({"type":"error","message":e.to_string()}).to_string()
+/// Socket options for an accepted connection (MR1): disable Nagle so
+/// fader/meter frames go out immediately. No permessage-deflate is
+/// configured anywhere (the upgrade path never negotiates extensions),
+/// which this function documents by taking no compression parameter.
+pub(crate) fn configure_accepted(stream: &tokio::net::TcpStream) -> std::io::Result<()> {
+    stream.set_nodelay(true)
 }
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    Query(params): Query<HashMap<String, String>>,
+    Query(params): Query<std::collections::HashMap<String, String>>,
     AxumState(app): AxumState<AppState>,
 ) -> impl IntoResponse {
     let name = params.get("name").cloned();
-    ws.on_upgrade(move |socket| handle_socket(socket, app.shared, name))
+    ws.on_upgrade(move |socket| handle_socket(socket, app.engine, name))
 }
 
-async fn handle_socket(socket: WebSocket, shared: Arc<Shared>, name: Option<String>) {
-    // Presence: allocate + register before subscribing the new socket, so
-    // the join broadcast reaches only the already-connected siblings; the
-    // newcomer gets the same content as a unicast snapshot below.
-    let (client_id, label) = shared.alloc_client(name.as_deref());
-    shared.add_client(&client_id, &label).await;
-    let (mut tx, mut rx) = socket.split();
-    // Initial snapshot: `you` self-id first, then mixer state, then the
-    // server-side show library, then the client roster and the lock table
-    // (so the newcomer sees siblings and pins immediately). `you` precedes
-    // `state` so a client can correlate its id with later `by` tags before
-    // any mutation frame arrives.
-    if tx
-        .send(Message::Text(you_message(&client_id).to_string()))
-        .await
-        .is_err()
-    {
-        shared.remove_client(&client_id).await;
-        return;
+/// Which meter stream a queued outbound frame belongs to (for drop/send
+/// accounting). `Control` frames are never dropped.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StreamKind {
+    Meters,
+    Spectrum,
+    Gr,
+    Control,
+}
+
+/// Per-connection latest-only outbox (MR1).
+///
+/// Meter-class events land in bounded slots of 1 (`meters`, per-tap
+/// `taps` maps, per-channel `spectrum` / `gr` maps): storing a frame
+/// while the previous one is still unsent replaces it and counts a drop.
+/// Everything else queues in `control` FIFO with reliable ordered
+/// delivery. The sender task drains control first, then one stream frame
+/// per pass.
+struct Outbox {
+    binary: bool,
+    /// R2 taps preference (`hello {"taps":true}`): taps frames encode as
+    /// WS BINARY type 3 when set, JSON text otherwise.
+    taps_binary: bool,
+    seq: u32,
+    meters: Option<openmix_engine::Event>,
+    meters_sent: u64,
+    meters_dropped: u64,
+    /// R2 per-tap latest-only slots (one frame per tap id). Drops/sends
+    /// fold into the meters counters (the `stats` shape is pinned).
+    taps: HashMap<String, openmix_engine::Event>,
+    spectrum: HashMap<u16, openmix_engine::Event>,
+    spectrum_sent: u64,
+    spectrum_dropped: u64,
+    gr: HashMap<u16, openmix_engine::Event>,
+    gr_sent: u64,
+    gr_dropped: u64,
+    control: VecDeque<openmix_engine::Event>,
+    pump_closed: bool,
+}
+
+impl Outbox {
+    fn new() -> Self {
+        Self {
+            binary: false,
+            taps_binary: false,
+            seq: 0,
+            meters: None,
+            meters_sent: 0,
+            meters_dropped: 0,
+            taps: HashMap::new(),
+            spectrum: HashMap::new(),
+            spectrum_sent: 0,
+            spectrum_dropped: 0,
+            gr: HashMap::new(),
+            gr_sent: 0,
+            gr_dropped: 0,
+            control: VecDeque::new(),
+            pump_closed: false,
+        }
     }
-    if tx
-        .send(Message::Text(shared.state_message().await.to_string()))
-        .await
-        .is_err()
-    {
-        shared.remove_client(&client_id).await;
-        return;
+
+    /// Store one engine event: meter-class events collapse into bounded
+    /// slots of 1 (replacement counts a drop), everything else queues in
+    /// the reliable control FIFO. The pump task calls this per mailbox
+    /// event; it never blocks, so the engine mailbox stays drained even
+    /// when the socket stalls.
+    fn store(&mut self, event: openmix_engine::Event) {
+        use openmix_engine::Event as E;
+        match event {
+            E::Meters { .. } => {
+                if self.meters.replace(event).is_some() {
+                    self.meters_dropped += 1;
+                }
+            }
+            E::Taps { ref tap, .. } => {
+                if self.taps.insert(tap.clone(), event).is_some() {
+                    self.meters_dropped += 1;
+                }
+            }
+            E::Spectrum { ch, .. } => {
+                if self.spectrum.insert(ch, event).is_some() {
+                    self.spectrum_dropped += 1;
+                }
+            }
+            E::Gr { ch, .. } => {
+                if self.gr.insert(ch, event).is_some() {
+                    self.gr_dropped += 1;
+                }
+            }
+            other => self.control.push_back(other),
+        }
     }
-    if tx
-        .send(Message::Text(shared.shows_message().await.to_string()))
-        .await
-        .is_err()
-    {
-        shared.remove_client(&client_id).await;
-        return;
+
+    /// Currently held frames (occupied stream slots + pending control).
+    fn queue_depth(&self) -> usize {
+        self.control.len()
+            + usize::from(self.meters.is_some())
+            + self.taps.len()
+            + self.spectrum.len()
+            + self.gr.len()
     }
-    if tx
-        .send(Message::Text(shared.clients_message().await.to_string()))
-        .await
-        .is_err()
-    {
-        shared.remove_client(&client_id).await;
-        return;
+
+    fn is_empty(&self) -> bool {
+        self.queue_depth() == 0
     }
-    if tx
-        .send(Message::Text(shared.locks_message().await.to_string()))
-        .await
-        .is_err()
-    {
-        shared.remove_client(&client_id).await;
-        return;
+
+    fn snapshot(&self) -> StatsSnapshot {
+        StatsSnapshot {
+            meters_sent: self.meters_sent,
+            meters_dropped: self.meters_dropped,
+            gr_sent: self.gr_sent,
+            gr_dropped: self.gr_dropped,
+            spectrum_sent: self.spectrum_sent,
+            spectrum_dropped: self.spectrum_dropped,
+            queue_depth: self.queue_depth(),
+            binary: self.binary,
+        }
     }
-    let mut state_rx = shared.state_tx.subscribe();
-    let mut shows_rx = shared.shows_tx.subscribe();
-    let mut param_rx = shared.param_tx.subscribe();
-    let mut clients_rx = shared.clients_tx.subscribe();
-    let mut locks_rx = shared.locks_tx.subscribe();
-    // Per-connection RTA: fed by the same meter frames broadcast on the
-    // ~10 Hz tick below (no new ports/threads — spectrum is derived
-    // per-socket from the already-polled levels). Starts empty and grows
-    // to the mixer width on the first frame.
-    let mut rta = RtaProcessor::new(0);
-    let mut meters = tokio::time::interval(std::time::Duration::from_millis(100));
-    // Skip the immediate first tick so a fresh client gets state first.
-    meters.tick().await;
-    // Counts 10 Hz meter ticks; GR broadcasts on every second tick (~5 Hz)
-    // to bound traffic separately from meters/spectrum.
-    let mut tick: u64 = 0;
-    loop {
-        tokio::select! {
-            incoming = rx.next() => {
-                match incoming {
-                    Some(Ok(Message::Text(text))) => {
-                        match serde_json::from_str::<Value>(&text) {
-                            Ok(cmd) => {
-                                match shared.apply(&cmd, &client_id).await {
-                                    Ok(Some(reply)) => {
-                                        let _ = tx.send(Message::Text(reply.to_string())).await;
-                                    }
-                                    Ok(None) => {}
-                                    Err(e) => {
-                                        let _ = tx.send(Message::Text(error_message(e))).await;
-                                    }
-                                }
+
+    /// Next frame to put on the socket: control FIFO first, then one
+    /// stream frame. Encodes binary when the client opted in and the event
+    /// supports it ([`Event::to_binary`](openmix_engine::Event::to_binary));
+    /// control frames (and `spectrum`, which stays JSON) always encode as
+    /// text, so JSON stays byte-identical for clients that did not opt in.
+    /// R2 taps frames encode binary (type 3) only for taps-negotiated
+    /// clients and count into the meters stream (the `stats` shape is
+    /// pinned, so taps fold into `meters_sent`/`meters_dropped`).
+    fn take_next(
+        &mut self,
+        engine: &openmix_engine::Engine,
+    ) -> Option<(Message, StreamKind)> {
+        if let Some(event) = self.control.pop_front() {
+            return Some((Message::Text(event.to_json()), StreamKind::Control));
+        }
+        let t_ms = engine.now_ms();
+        if let Some(event) = self.meters.take() {
+            return Some((encode_stream(event, &mut self.seq, t_ms, self.binary), StreamKind::Meters));
+        }
+        if let Some(tap) = self.taps.keys().next().cloned() {
+            let event = self.taps.remove(&tap).expect("key just read");
+            return Some((
+                encode_stream(event, &mut self.seq, t_ms, self.taps_binary),
+                StreamKind::Meters,
+            ));
+        }
+        if let Some(ch) = self.spectrum.keys().next().copied() {
+            let event = self.spectrum.remove(&ch).expect("key just read");
+            return Some((encode_stream(event, &mut self.seq, t_ms, self.binary), StreamKind::Spectrum));
+        }
+        if let Some(ch) = self.gr.keys().next().copied() {
+            let event = self.gr.remove(&ch).expect("key just read");
+            return Some((encode_stream(event, &mut self.seq, t_ms, self.binary), StreamKind::Gr));
+        }
+        None
+    }
+
+    fn mark_sent(&mut self, kind: StreamKind) {
+        match kind {
+            StreamKind::Meters => self.meters_sent += 1,
+            StreamKind::Spectrum => self.spectrum_sent += 1,
+            StreamKind::Gr => self.gr_sent += 1,
+            StreamKind::Control => {}
+        }
+    }
+}
+
+fn encode_stream(
+    event: openmix_engine::Event,
+    seq: &mut u32,
+    t_ms: u32,
+    binary: bool,
+) -> Message {
+    if binary {
+        if let Some(bytes) = event.to_binary(*seq, t_ms) {
+            *seq = seq.wrapping_add(1);
+            return Message::Binary(bytes);
+        }
+    }
+    Message::Text(event.to_json())
+}
+
+/// Per-connection realtime counters behind the `stats` event.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct StatsSnapshot {
+    pub meters_sent: u64,
+    pub meters_dropped: u64,
+    pub gr_sent: u64,
+    pub gr_dropped: u64,
+    pub spectrum_sent: u64,
+    pub spectrum_dropped: u64,
+    pub queue_depth: usize,
+    pub binary: bool,
+}
+
+/// Build the unicast `stats` reply (`{"type":"stats",…}`).
+///
+/// Keys are byte-stable (serde_json sorts map keys); the example shape is
+/// pinned in `crates/serve/tests/golden/stats.json`.
+pub fn stats_json(s: &StatsSnapshot) -> String {
+    serde_json::json!({
+        "type": "stats",
+        "meters_sent": s.meters_sent,
+        "meters_dropped": s.meters_dropped,
+        "gr_sent": s.gr_sent,
+        "gr_dropped": s.gr_dropped,
+        "spectrum_sent": s.spectrum_sent,
+        "spectrum_dropped": s.spectrum_dropped,
+        "queue_depth": s.queue_depth,
+        "binary": s.binary,
+    })
+    .to_string()
+}
+
+/// True when `text` is a `stats` request (answered locally from the
+/// connection's [`Outbox`] counters, never forwarded to the engine).
+fn is_stats_request(text: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(text)
+        .ok()
+        .and_then(|v| {
+            v.get("cmd")
+                .and_then(serde_json::Value::as_str)
+                .map(|cmd| cmd == "stats")
+        })
+        .unwrap_or(false)
+}
+
+enum SenderJob {
+    Stats,
+}
+
+/// One socket: inbound text lines → engine, engine events → socket.
+///
+/// Three tasks, one concern each: `inbound` forwards commands (and answers
+/// `stats` requests via the sender), `pump` drains the engine mailbox into
+/// the latest-only [`Outbox`] without ever blocking on the socket, and
+/// `sender` puts frames on the wire. Parse failures and command errors
+/// arrive as unicast `error` events; leaving the loop detaches the client.
+async fn handle_socket(
+    socket: WebSocket,
+    engine: Arc<openmix_engine::Engine>,
+    name: Option<String>,
+) {
+    let client = engine.attach(name).await;
+    let id = client.id.clone();
+    let (ws_tx, ws_rx) = socket.split();
+    let outbox = Arc::new(Mutex::new(Outbox::new()));
+    let notify = Arc::new(Notify::new());
+    let (job_tx, job_rx) = mpsc::channel::<SenderJob>(8);
+
+    // Inbound: socket -> engine. Owns no handle: commands go through
+    // `Engine::handle_json`; the binary/taps preferences are re-read from
+    // the engine after every command (single source of truth).
+    let inbound = {
+        let engine = Arc::clone(&engine);
+        let outbox = Arc::clone(&outbox);
+        let id = id.clone();
+        tokio::spawn(async move {
+            let mut rx = ws_rx;
+            while let Some(msg) = rx.next().await {
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        if is_stats_request(&text) {
+                            if job_tx.send(SenderJob::Stats).await.is_err() {
+                                break;
                             }
-                            Err(e) => {
-                                let _ = tx.send(Message::Text(error_message(format!("invalid JSON: {e}")))).await;
-                            }
+                        } else {
+                            engine.handle_json(&id, &text).await;
+                            let mut outbox = outbox.lock().await;
+                            outbox.binary =
+                                engine.client_binary_meters(&id);
+                            outbox.taps_binary = engine.client_taps(&id);
                         }
                     }
-                    Some(Ok(Message::Close(_))) | None => break,
-                    // Ignore binary/ping/pong frames.
+                    Ok(Message::Close(_)) => break,
+                    // Ignore binary/ping/pong frames and read errors,
+                    // like the pre-MR1 loop did.
                     _ => {}
                 }
             }
-            _ = meters.tick() => {
-                tick += 1;
-                let levels = shared.meter_levels().await;
-                rta.push_frame(&MeterFrame { levels: levels.clone() });
-                if tx.send(Message::Text(meters_message_for(&levels).to_string())).await.is_err() {
-                    break;
-                }
-                // Spectrum follows meters, first SPECTRUM_CHANNELS channels.
-                let mut dead = false;
-                for (ch, _) in levels.iter().enumerate().take(SPECTRUM_CHANNELS) {
-                    let bins = rta.spectrum(ch);
-                    if tx.send(Message::Text(spectrum_message(ch, &bins).to_string())).await.is_err() {
-                        dead = true;
-                        break;
+            engine.detach_client(&id).await;
+        })
+    };
+
+    // Pump: engine mailbox -> outbox. Never blocks on the socket, so the
+    // engine mailbox stays drained even when the peer stalls; meter-class
+    // events collapse into slots of 1 (drop counted), control stays FIFO.
+    let pump = {
+        let outbox = Arc::clone(&outbox);
+        let notify = Arc::clone(&notify);
+        tokio::spawn(async move {
+            let mut client = client;
+            while let Some(event) = client.events.recv().await {
+                outbox.lock().await.store(event);
+                notify.notify_one();
+            }
+            outbox.lock().await.pump_closed = true;
+            notify.notify_one();
+            client.detach().await;
+        })
+    };
+
+    // Sender: outbox -> socket. The only task that blocks on the wire;
+    // backpressure here never grows the engine mailbox (the pump keeps
+    // draining it into bounded slots).
+    let sender = {
+        let engine = Arc::clone(&engine);
+        let outbox = Arc::clone(&outbox);
+        let notify = Arc::clone(&notify);
+        let id = id.clone();
+        let mut job_rx = job_rx;
+        tokio::spawn(async move {
+            let mut tx = ws_tx;
+            loop {
+                while job_rx.try_recv().is_ok() {
+                    let text = stats_json(&outbox.lock().await.snapshot());
+                    if tx.send(Message::Text(text)).await.is_err() {
+                        engine.detach_client(&id).await;
+                        return;
                     }
                 }
-                if dead {
-                    break;
-                }
-                // GR follows at ~5 Hz (every 2nd meter tick), first
-                // GR_CHANNELS channels, bounded by the live strip count so
-                // phantom strips never get a frame.
-                if tick.is_multiple_of(2) {
-                    let n = levels.len().min(GR_CHANNELS);
-                    for ch in 0..n {
-                        let (gate, comp) = shared.gr_db(ch).await;
-                        if tx.send(Message::Text(gr_message(ch, gate, comp).to_string())).await.is_err() {
-                            dead = true;
-                            break;
+                let next = outbox.lock().await.take_next(&engine);
+                match next {
+                    Some((msg, kind)) => {
+                        if tx.send(msg).await.is_err() {
+                            engine.detach_client(&id).await;
+                            return;
                         }
+                        outbox.lock().await.mark_sent(kind);
                     }
-                    if dead {
-                        break;
+                    None => {
+                        let drained = {
+                            let o = outbox.lock().await;
+                            o.pump_closed && o.is_empty() && job_rx.is_closed()
+                        };
+                        if drained {
+                            engine.detach_client(&id).await;
+                            return;
+                        }
+                        // Wait for pump output or a stats request. A job
+                        // received here must be answered, not dropped (the
+                        // top-of-loop drain only sees jobs queued while a
+                        // frame was ready).
+                        let job = if job_rx.is_closed() {
+                            notify.notified().await;
+                            None
+                        } else {
+                            tokio::select! {
+                                _ = notify.notified() => None,
+                                res = job_rx.recv() => res,
+                            }
+                        };
+                        if job.is_some() {
+                            let text = stats_json(&outbox.lock().await.snapshot());
+                            if tx.send(Message::Text(text)).await.is_err() {
+                                engine.detach_client(&id).await;
+                                return;
+                            }
+                        }
                     }
                 }
             }
-            changed = state_rx.recv() => {
-                let writer = match changed {
-                    Ok(by) => by,
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
-                    Err(_) => break,
-                };
-                let by = if writer.is_empty() { None } else { Some(writer.as_str()) };
-                let s = shared.state_message_with_by(by).await;
-                if tx.send(Message::Text(s.to_string())).await.is_err() {
-                    break;
-                }
-            }
-            changed = shows_rx.recv() => {
-                if changed.is_err() {
-                    break;
-                }
-                let s = shared.shows_message().await;
-                if tx.send(Message::Text(s.to_string())).await.is_err() {
-                    break;
-                }
-            }
-            param = param_rx.recv() => {
-                match param {
-                    Ok(msg) => {
-                        if tx.send(Message::Text(msg.to_string())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
-                    Err(_) => break,
-                }
-            }
-            clients = clients_rx.recv() => {
-                match clients {
-                    Ok(msg) => {
-                        if tx.send(Message::Text(msg.to_string())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        // Re-send the current roster after a lag so the UI
-                        // never sticks on a stale count.
-                        let s = shared.clients_message().await;
-                        if tx.send(Message::Text(s.to_string())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-            locks = locks_rx.recv() => {
-                match locks {
-                    Ok(msg) => {
-                        if tx.send(Message::Text(msg.to_string())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        // Same lag-recovery as clients: re-send current pins.
-                        let s = shared.locks_message().await;
-                        if tx.send(Message::Text(s.to_string())).await.is_err() {
-                            break;
-                        }
-                    }
-                    Err(_) => break,
-                }
-            }
-        }
-    }
-    shared.remove_client(&client_id).await;
+        })
+    };
+
+    let _ = tokio::join!(inbound, pump, sender);
 }
 
 async fn health(AxumState(app): AxumState<AppState>) -> impl IntoResponse {
-    Json(json!({"ok": true, "driver": app.shared.active_name().await}))
+    Json(serde_json::json!({"ok": true, "driver": app.engine.active_driver()}))
 }
 
 fn content_type(path: &str) -> &'static str {
@@ -1192,7 +509,7 @@ async fn read_index(dir: &StdPath) -> axum::response::Response {
 async fn static_file(
     AxumState(app): AxumState<AppState>,
     Path(path): Path<String>,
-) -> impl IntoResponse {
+) -> axum::response::Response {
     let Some(dir) = app.static_dir.as_deref() else {
         return api_only();
     };
@@ -1225,31 +542,97 @@ pub fn resolve_static_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
     .find(|candidate| candidate.is_dir())
 }
 
-/// Single axum state for every route: WS/API share [`Shared`], static
+/// Single axum state for every route: WS/API share the [`Engine`](openmix_engine::Engine), static
 /// files read the (optional) UI directory.
 #[derive(Clone)]
 struct AppState {
-    shared: Arc<Shared>,
+    engine: Arc<openmix_engine::Engine>,
     static_dir: Option<Arc<PathBuf>>,
+}
+
+/// Accept loop with MR1 socket options (see [`configure_accepted`]).
+///
+/// `axum::serve` applies the same `TCP_NODELAY` via `.tcp_nodelay(true)`,
+/// but its accept path is not unit-testable from here; this loop keeps the
+/// option-setting in [`configure_accepted`], covered by
+/// `accepted_socket_has_nodelay` below. Otherwise identical behaviour:
+/// HTTP/1 + upgrades, one task per connection.
+async fn serve_loop(
+    listener: tokio::net::TcpListener,
+    app: Router,
+) -> std::io::Result<()> {
+    loop {
+        let (stream, _peer) = match listener.accept().await {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("openmix-serve: accept error: {e:#}; continuing");
+                continue;
+            }
+        };
+        if let Err(e) = configure_accepted(&stream) {
+            eprintln!("openmix-serve: TCP_NODELAY failed: {e:#}");
+        }
+        let svc = TowerToHyperService::new(app.clone());
+        tokio::spawn(async move {
+            let io = TokioIo::new(stream);
+            if let Err(e) = Builder::new(TokioExecutor::new())
+                .serve_connection_with_upgrades(io, svc)
+                .await
+            {
+                eprintln!("openmix-serve: connection error: {e:#}");
+            }
+        });
+    }
 }
 
 /// Serve the API + static UI until the listener errors or the future is
 /// dropped (tests abort the spawned task).
-pub async fn run(listener: TcpListener, opts: ServeOptions) -> anyhow::Result<()> {
+pub async fn run(
+    listener: tokio::net::TcpListener,
+    opts: ServeOptions,
+) -> anyhow::Result<()> {
     run_with_lock_ttl(listener, opts, LOCK_TTL).await
 }
 
-/// [`run`] with an explicit strip-lock TTL.
+/// [`run`] with an explicit strip-pin TTL.
 ///
 /// Production passes [`LOCK_TTL`] (60 s); tests pass a short TTL (e.g.
-/// 200 ms) to cover expiry without waiting a minute. A background sweeper
-/// prunes expired holds every `ttl/2` (clamped 50 ms..5 s) and broadcasts
-/// the updated `locks` frame so idle expiry still notifies siblings.
+/// 200 ms) to cover expiry without waiting a minute.
 pub async fn run_with_lock_ttl(
-    listener: TcpListener,
+    listener: tokio::net::TcpListener,
     opts: ServeOptions,
     lock_ttl: Duration,
 ) -> anyhow::Result<()> {
+    run_with_poll(listener, opts, lock_ttl, PARAM_POLL_INTERVAL).await
+}
+
+/// [`run_with_lock_ttl`] with an explicit engine tick.
+///
+/// Production passes [`PARAM_POLL_INTERVAL`] (one driver query per 50 ms =
+/// 20 queries/s total); tests pass a short interval (e.g. 1 ms) so a full
+/// sweep finishes in milliseconds.
+pub async fn run_with_poll(
+    listener: tokio::net::TcpListener,
+    opts: ServeOptions,
+    lock_ttl: Duration,
+    poll_interval: Duration,
+) -> anyhow::Result<()> {
+    run_with_full(listener, opts, lock_ttl, poll_interval, None, None).await
+}
+
+/// [`run_with_poll`] with explicit R2 engine options: poller pipelining
+/// (`--poll-inflight`, `None` = per-driver default) and the scene library
+/// directory (`--data-dir`, `None` = in-memory scenes).
+pub async fn run_with_full(
+    listener: tokio::net::TcpListener,
+    opts: ServeOptions,
+    lock_ttl: Duration,
+    poll_interval: Duration,
+    poll_inflight: Option<usize>,
+    data_dir: Option<PathBuf>,
+) -> anyhow::Result<()> {
+    use openmix_engine::{Engine, EngineConfig};
+
     let local = listener.local_addr()?;
     let preset = match opts.preset.as_deref() {
         None => None,
@@ -1257,29 +640,18 @@ pub async fn run_with_lock_ttl(
             anyhow::anyhow!("unknown --preset {name:?} (want generic|xr18|dl32s|studio)")
         })?),
     };
-    let shared = Arc::new(Shared::with_lock_ttl_and_preset(lock_ttl, preset));
-
-    // Expiry sweeper: lazy pruning in `apply` covers the next-command path,
-    // but an idle server still needs to release + broadcast expired pins.
-    {
-        let sweeper = Arc::clone(&shared);
-        let interval = (lock_ttl / 2).clamp(Duration::from_millis(50), Duration::from_secs(5));
-        tokio::spawn(async move {
-            let mut tick = tokio::time::interval(interval);
-            loop {
-                tick.tick().await;
-                if sweeper.prune_expired_locks().await {
-                    let _ = sweeper
-                        .locks_tx
-                        .send(sweeper.locks_message_inner().await);
-                }
-            }
-        });
-    }
+    let engine = Engine::new(EngineConfig {
+        lock_ttl,
+        poll_interval,
+        preset,
+        data_dir: data_dir.or(opts.data_dir),
+        poll_inflight: poll_inflight.or(opts.poll_inflight),
+        scanner: None,
+    });
 
     // Initial driver connect. Hardware may be unreachable at boot; stay up
     // so a browser client can retry via the `connect` command.
-    if let Err(e) = shared.connect(&opts.driver, opts.addr.as_deref()).await {
+    if let Err(e) = engine.connect(&opts.driver, opts.addr.as_deref()).await {
         eprintln!(
             "openmix-serve: initial connect ({} @ {}) failed: {e:#}; continuing, \
              retry with {{\"cmd\":\"connect\",...}}",
@@ -1298,9 +670,145 @@ pub async fn run_with_lock_ttl(
         .route("/healthz", get(health))
         .route("/", get(static_root))
         .route("/*path", get(static_file))
-        .with_state(AppState { shared, static_dir });
+        .with_state(AppState { engine, static_dir });
 
     eprintln!("openmix-serve: listening on http://{local} (ws://{local}/ws)");
-    axum::serve(listener, app).await?;
+    serve_loop(listener, app).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The accept path sets TCP_NODELAY on the accepted stream (MR1):
+    /// real loopback pair, real `configure_accepted`, real `getsockopt`.
+    #[tokio::test]
+    async fn accepted_socket_has_nodelay() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .unwrap();
+        let addr = listener.local_addr().unwrap();
+        let accepted = tokio::spawn(async move { listener.accept().await.unwrap().0 });
+        let _client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let stream = accepted.await.unwrap();
+        configure_accepted(&stream).unwrap();
+        assert!(
+            socket2::SockRef::from(&stream).nodelay().unwrap(),
+            "TCP_NODELAY must be set on accepted sockets"
+        );
+    }
+
+    /// `stats` shape: required keys with the right JSON types.
+    #[test]
+    fn stats_json_shape() {
+        let s = StatsSnapshot {
+            meters_sent: 120,
+            meters_dropped: 3,
+            gr_sent: 40,
+            gr_dropped: 1,
+            spectrum_sent: 40,
+            spectrum_dropped: 0,
+            queue_depth: 2,
+            binary: true,
+        };
+        let v: serde_json::Value = serde_json::from_str(&stats_json(&s)).unwrap();
+        assert_eq!(v.get("type"), Some(&serde_json::json!("stats")));
+        for key in [
+            "meters_sent",
+            "meters_dropped",
+            "gr_sent",
+            "gr_dropped",
+            "spectrum_sent",
+            "spectrum_dropped",
+            "queue_depth",
+        ] {
+            assert!(
+                v.get(key).and_then(serde_json::Value::as_u64).is_some(),
+                "stats carries integer {key}: {v}"
+            );
+        }
+        assert_eq!(v.get("binary"), Some(&serde_json::json!(true)));
+    }
+
+    /// `stats` detection: only the `stats` command is answered locally.
+    #[test]
+    fn stats_request_detection() {
+        assert!(is_stats_request(r#"{"cmd":"stats"}"#));
+        assert!(!is_stats_request(r#"{"cmd":"hello","binary_meters":true}"#));
+        assert!(!is_stats_request(r#"{"cmd":"list_shows"}"#));
+        assert!(!is_stats_request("not json"));
+    }
+
+    /// Latest-only slots (MR1): a second meter-class frame replaces the
+    /// first (drop counted); control stays FIFO and reliable; the sender
+    /// drains control first, then one stream frame per pass.
+    /// R2 taps slots: one latest-only slot per tap id (replacement counts
+    /// into the meters drop counter — the `stats` shape is pinned), and
+    /// taps frames go binary (type 3) only for taps-negotiated clients.
+    #[test]
+    fn outbox_taps_latest_only_and_binary() {
+        use openmix_engine::protocol::BIN_TYPE_TAPS;
+        use openmix_engine::Event;
+        let engine = openmix_engine::Engine::new(openmix_engine::EngineConfig::default());
+        let mut o = Outbox::new();
+        o.store(Event::Taps { tap: "in".into(), levels: vec![0.1] });
+        o.store(Event::Taps { tap: "post".into(), levels: vec![0.2] });
+        assert_eq!(o.queue_depth(), 2);
+        // Same tap replaces: one drop folded into the meters counter.
+        o.store(Event::Taps { tap: "in".into(), levels: vec![0.3] });
+        assert_eq!(o.meters_dropped, 1);
+        assert_eq!(o.queue_depth(), 2);
+        // JSON by default…
+        let (msg, kind) = o.take_next(&engine).unwrap();
+        assert!(matches!(kind, StreamKind::Meters));
+        assert!(matches!(msg, Message::Text(_)));
+        // …binary type 3 once the client negotiated taps.
+        o.taps_binary = true;
+        o.store(Event::Taps { tap: "gr_comp".into(), levels: vec![6.0] });
+        // Drain remaining queued taps first (per-tap slots are unordered).
+        while o.taps.len() > 1 {
+            let _ = o.take_next(&engine).unwrap();
+        }
+        let (msg, _) = o.take_next(&engine).unwrap();
+        match msg {
+            Message::Binary(bytes) => assert_eq!(bytes[0], BIN_TYPE_TAPS),
+            Message::Text(_) => panic!("taps-negotiated client gets binary taps"),
+            _ => panic!("unexpected control frame kind"),
+        }
+        o.mark_sent(StreamKind::Meters);
+        let snap = o.snapshot();
+        assert_eq!(snap.queue_depth, 0);
+    }
+
+    #[test]
+    fn outbox_latest_only_slots() {
+        use openmix_engine::Event;
+        let engine = openmix_engine::Engine::new(openmix_engine::EngineConfig::default());
+        let mut o = Outbox::new();
+        // Two meter frames with no take in between: one drop.
+        o.store(Event::Meters { levels: vec![0.1] });
+        o.store(Event::Meters { levels: vec![0.2] });
+        assert_eq!(o.meters_dropped, 1);
+        assert_eq!(o.queue_depth(), 1);
+        // Per-channel spectrum/gr slots are independent per channel.
+        o.store(Event::Spectrum { ch: 3, bins: vec![] });
+        o.store(Event::Gr { ch: 3, gate: 1.0, comp: 0.0 });
+        assert_eq!(o.queue_depth(), 3);
+        o.store(Event::Spectrum { ch: 3, bins: vec![] });
+        assert_eq!(o.spectrum_dropped, 1);
+        o.store(Event::Gr { ch: 4, gate: 0.0, comp: 0.0 });
+        assert_eq!(o.gr_dropped, 0, "other channels do not collide");
+        // Control first, then streams; marks advance the sent counters.
+        o.store(Event::You { id: "client-1".into() });
+        let (first, kind) = o.take_next(&engine).unwrap();
+        assert!(matches!(kind, StreamKind::Control));
+        assert!(matches!(first, Message::Text(_)));
+        let (_, kind) = o.take_next(&engine).unwrap();
+        assert!(matches!(kind, StreamKind::Meters));
+        o.mark_sent(kind);
+        assert_eq!(o.meters_sent, 1);
+        let snap = o.snapshot();
+        assert_eq!(snap.queue_depth, 3, "spectrum(3) + gr(3,4) remain");
+    }
 }

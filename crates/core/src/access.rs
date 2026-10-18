@@ -97,6 +97,51 @@ impl Policy {
         }
         Ok(())
     }
+
+    /// Pre-write check for strip-targeted commands (`fader`/`mute`/`param`).
+    ///
+    /// The engine (`openmix-engine`) calls these per connected client so one
+    /// session can host several roles; [`CheckedDriver`] uses the same paths.
+    /// Reads are never blocked.
+    pub fn allow_strip(&self, strip: StripId) -> anyhow::Result<()> {
+        self.check_strip(strip)
+    }
+
+    /// [`allow_strip`](Self::allow_strip), plus the role fader cap.
+    pub fn allow_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
+        self.check_strip(strip)?;
+        self.check_level(value)
+    }
+
+    /// [`allow_strip`](Self::allow_strip) for mute writes (no level cap).
+    pub fn allow_mute(&self, strip: StripId) -> anyhow::Result<()> {
+        self.check_strip(strip)
+    }
+
+    /// [`allow_strip`](Self::allow_strip), plus the rename gate.
+    pub fn allow_rename(&self, strip: StripId) -> anyhow::Result<()> {
+        self.check_strip(strip)?;
+        if !self.allow_rename {
+            anyhow::bail!("role {:?}: renaming strips not allowed", self.role);
+        }
+        Ok(())
+    }
+
+    /// Main-LR gate plus the role fader cap.
+    pub fn allow_main(&self, value: f32) -> anyhow::Result<()> {
+        if !self.allow_main {
+            anyhow::bail!("role {:?}: main LR is blocked", self.role);
+        }
+        self.check_level(value)
+    }
+
+    /// Scene-recall gate.
+    pub fn allow_recall(&self) -> anyhow::Result<()> {
+        if !self.allow_recall {
+            anyhow::bail!("role {:?}: scene recall is blocked", self.role);
+        }
+        Ok(())
+    }
 }
 
 /// [`MixerDriver`] wrapper enforcing a [`Policy`]. Reads pass through;
@@ -130,8 +175,7 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
     }
 
     async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
-        self.policy.check_strip(strip)?;
-        self.policy.check_level(value)?;
+        self.policy.allow_fader(strip, value)?;
         self.inner.set_fader(strip, value).await
     }
 
@@ -140,7 +184,7 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
     }
 
     async fn set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
-        self.policy.check_strip(strip)?;
+        self.policy.allow_mute(strip)?;
         self.inner.set_mute(strip, muted).await
     }
 
@@ -149,10 +193,7 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
     }
 
     async fn set_name(&self, strip: StripId, name: &str) -> anyhow::Result<()> {
-        self.policy.check_strip(strip)?;
-        if !self.policy.allow_rename {
-            anyhow::bail!("role {:?}: renaming strips not allowed", self.policy.role);
-        }
+        self.policy.allow_rename(strip)?;
         self.inner.set_name(strip, name).await
     }
 
@@ -172,10 +213,7 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
     }
 
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
-        if !self.policy.allow_main {
-            anyhow::bail!("role {:?}: main LR is blocked", self.policy.role);
-        }
-        self.policy.check_level(value)?;
+        self.policy.allow_main(value)?;
         self.inner.set_main_fader(value).await
     }
 
@@ -189,12 +227,10 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         param: &str,
         value: ParamValue,
     ) -> anyhow::Result<()> {
-        self.policy.check_strip(strip)?;
+        self.policy.allow_strip(strip)?;
         match (param, &value) {
-            ("fader", ParamValue::Float(v)) => self.policy.check_level(*v)?,
-            ("name", _) if !self.policy.allow_rename => {
-                anyhow::bail!("role {:?}: renaming strips not allowed", self.policy.role);
-            }
+            ("fader", ParamValue::Float(v)) => self.policy.allow_fader(strip, *v)?,
+            ("name", _) => self.policy.allow_rename(strip)?,
             _ => {}
         }
         self.inner.set_param(strip, param, value).await
@@ -209,9 +245,7 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
     }
 
     async fn recall(&self, snapshot: &MixerSnapshot) -> anyhow::Result<()> {
-        if !self.policy.allow_recall {
-            anyhow::bail!("role {:?}: scene recall is blocked", self.policy.role);
-        }
+        self.policy.allow_recall()?;
         self.inner.recall(snapshot).await
     }
 

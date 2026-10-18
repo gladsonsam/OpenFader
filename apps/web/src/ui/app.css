@@ -1,0 +1,106 @@
+/* Global rules for the ui=4 design layer, from the template's <style> block:
+ * body margin 0 + page bg, button font inherit, focus-visible outline,
+ * link colours. Plus the frame invariants: border-box, no text selection,
+ * hidden overflow on the root frame (class .u4-frame). */
+
+/* Design template: body{margin:0;background:#05070b} (H1 found D0 had not applied it: 8px offset on every real route). */
+html,
+body {
+  margin: 0;
+  background: var(--u4-page-bg, #05070b);
+}
+
+@font-face {
+  font-family: 'Geist';
+  src: url('/fonts/Geist-latin.woff2') format('woff2');
+  /* File is the Geist variable latin subset (wght 100..900, default 400).
+   * The design uses weights 500 and 600; the variable range covers them. */
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+.u4-frame,
+.u4-frame *,
+.u4-frame *::before,
+.u4-frame *::after {
+  box-sizing: border-box;
+}
+
+.u4-frame {
+  height: 100vh;
+  min-height: 600px;
+  display: flex;
+  flex-direction: column;
+  background: var(--u4-page-bg);
+  color: var(--u4-root-fg);
+  font-family: 'Geist', system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  margin: 0;
+}
+
+.u4-frame button {
+  font-family: inherit;
+}
+
+.u4-frame button:focus-visible {
+  outline: 2px solid var(--u4-focus);
+  outline-offset: 1px;
+}
+
+.u4-frame a {
+  color: var(--u4-link);
+}
+
+.u4-frame a:hover {
+  color: var(--u4-link-hover);
+}
+
+/* ---- Responsive phone/tablet rules (MODULES.md §1 "Responsive") ----
+ * Everything below is viewport-gated (phone <= 599px, tablet <= 1099px, or
+ * short viewports), so the 1280x720 desktop design — and its diff baselines
+ * — are byte-identical. These pair with the per-device layout `variants`
+ * the renderer applies: the JSON owns structure, this owns minimum touch
+ * sizes for controls whose heights are hard-coded in primitives. */
+
+/* Grid items snap to the scrollport start under a `snapItems` grid (the
+ * mixer phone/tablet strip pager). Attribute-gated, no media query needed:
+ * the attribute is only set by the phone/tablet variants. */
+[data-snap-items] > * {
+  scroll-snap-align: start;
+}
+
+@media (max-width: 1099px) {
+  /* Strip/channel pan bars are 30/34px tall in the design; on touch devices
+   * they must be at least 44px. Flex parents absorb the extra height
+   * (the vertical strip fader shrinks slightly). */
+  .u4-frame [data-ctl='pan'],
+  .u4-frame [data-ctl='pan-empty'] {
+    min-height: 44px;
+  }
+  /* EQ graph node handles are 30/36px; enlarge the hit area on touch. The
+   * nodes stay centred (translate -50%,-50%) and drag math is position-based. */
+  .u4-frame .eq-node {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  /* Channel content + settings rows: every tappable control >= 44px tall
+   * (EQ band chips, HPF slope, Flat/In, Pre/Post, segmented options), and
+   * at least 44px wide (narrow ON toggles). */
+  .u4-frame [data-node='content'] button,
+  .u4-frame [data-node='settings-root'] button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+@media (max-height: 599px) {
+  /* Landscape phones: let the frame shrink below the 600px design minimum
+   * instead of clipping (screens scroll internally where needed). */
+  .u4-frame {
+    min-height: 0;
+  }
+}

@@ -101,44 +101,12 @@ impl Scene {
         driver: &D,
         fade_ms: u64,
     ) -> anyhow::Result<()> {
-        for s in &self.strips {
-            if !s.mute {
-                driver.set_mute(s.strip, false).await?;
-            }
-        }
-        if fade_ms == 0 {
-            for s in &self.strips {
-                driver.set_fader(s.strip, s.fader).await?;
-            }
-        } else {
-            let mut starts = Vec::with_capacity(self.strips.len());
-            for s in &self.strips {
-                // Unsupported `get_fader` -> start at target (jump that strip).
-                starts.push(driver.get_fader(s.strip).await.unwrap_or(s.fader));
-            }
-            let steps = DEFAULT_FADE_STEPS;
-            let step_ms = fade_ms / steps as u64;
-            for step in 1..=steps {
-                let t = step as f32 / steps as f32;
-                for (s, start) in self.strips.iter().zip(starts.iter()) {
-                    driver
-                        .set_fader(s.strip, clamp_fader(start + (s.fader - start) * t))
-                        .await?;
-                }
-                if step < steps && step_ms > 0 {
-                    tokio::time::sleep(Duration::from_millis(step_ms)).await;
-                }
-            }
-            // Snap to exact targets (no float residue).
-            for s in &self.strips {
-                driver.set_fader(s.strip, s.fader).await?;
-            }
-        }
-        for s in &self.strips {
-            if s.mute {
-                driver.set_mute(s.strip, true).await?;
-            }
-        }
+        let targets: Vec<(StripId, f32, bool)> = self
+            .strips
+            .iter()
+            .map(|s| (s.strip, s.fader, s.mute))
+            .collect();
+        fade_strips(driver, &targets, fade_ms).await?;
         for s in &self.strips {
             for (param, value) in &s.params {
                 driver.set_param(s.strip, param, value.clone()).await?;
@@ -149,6 +117,82 @@ impl Scene {
         }
         Ok(())
     }
+}
+
+/// Minimal driver surface a fader fade needs. Blanket-implemented for every
+/// [`MixerDriver`]; the engine implements it for its write-through path so
+/// both scene mechanisms (named shows via [`Scene::recall_to`], numbered
+/// scenes via the engine) share the single [`fade_strips`] implementation.
+#[allow(async_fn_in_trait)]
+pub trait FadeDriver {
+    async fn fade_set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()>;
+    async fn fade_get_fader(&self, strip: StripId) -> anyhow::Result<f32>;
+    async fn fade_set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()>;
+}
+
+impl<T: MixerDriver + Sync + ?Sized> FadeDriver for T {
+    async fn fade_set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
+        MixerDriver::set_mute(self, strip, muted).await
+    }
+
+    async fn fade_get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
+        MixerDriver::get_fader(self, strip).await
+    }
+
+    async fn fade_set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
+        MixerDriver::set_fader(self, strip, value).await
+    }
+}
+
+/// Shared fader fade for every scene mechanism: pre-unmute strips whose
+/// target is unmuted (so the fade is audible), ramp faders over `fade_ms`,
+/// snap to exact targets (no float residue), then apply target mutes.
+/// `fade_ms == 0` jumps. A strip whose readback fails starts at its target
+/// (jumps that strip).
+pub async fn fade_strips<D: FadeDriver + Sync + ?Sized>(
+    driver: &D,
+    targets: &[(StripId, f32, bool)],
+    fade_ms: u64,
+) -> anyhow::Result<()> {
+    for (strip, _, mute) in targets {
+        if !mute {
+            driver.fade_set_mute(*strip, false).await?;
+        }
+    }
+    if fade_ms == 0 {
+        for (strip, fader, _) in targets {
+            driver.fade_set_fader(*strip, *fader).await?;
+        }
+    } else {
+        let mut starts = Vec::with_capacity(targets.len());
+        for (strip, fader, _) in targets {
+            // Unsupported readback -> start at target (jump that strip).
+            starts.push(driver.fade_get_fader(*strip).await.unwrap_or(*fader));
+        }
+        let steps = DEFAULT_FADE_STEPS;
+        let step_ms = fade_ms / steps as u64;
+        for step in 1..=steps {
+            let t = step as f32 / steps as f32;
+            for ((strip, fader, _), start) in targets.iter().zip(starts.iter()) {
+                driver
+                    .fade_set_fader(*strip, clamp_fader(start + (fader - start) * t))
+                    .await?;
+            }
+            if step < steps && step_ms > 0 {
+                tokio::time::sleep(Duration::from_millis(step_ms)).await;
+            }
+        }
+        // Snap to exact targets (no float residue).
+        for (strip, fader, _) in targets {
+            driver.fade_set_fader(*strip, *fader).await?;
+        }
+    }
+    for (strip, _, mute) in targets {
+        if *mute {
+            driver.fade_set_mute(*strip, true).await?;
+        }
+    }
+    Ok(())
 }
 
 /// Free-function form of [`Scene::recall_to`]; backs the default

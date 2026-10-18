@@ -1,0 +1,28 @@
+{
+  "shows": [
+    {
+      "name": "gig",
+      "scenes": [
+        {
+          "main_fader": 0.800000011920929,
+          "name": "verse",
+          "strips": [
+            {
+              "ch": 0,
+              "fader": 0.5,
+              "muted": false,
+              "name": "CH01"
+            },
+            {
+              "ch": 1,
+              "fader": 0.25,
+              "muted": true,
+              "name": "Vox"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "type": "shows"
+}

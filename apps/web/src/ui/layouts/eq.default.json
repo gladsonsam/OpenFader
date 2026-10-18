@@ -1,0 +1,229 @@
+{
+  "id": "eq",
+  "module": "col",
+  "props": {
+    "gap": 6,
+    "flex": "1 1 auto",
+    "box": "content-box"
+  },
+  "children": [
+    {
+      "id": "top",
+      "module": "row",
+      "props": {
+        "gap": 8,
+        "align": "center",
+        "wrap": true,
+        "box": "content-box"
+      },
+      "children": [
+        {
+          "id": "head",
+          "module": "eq-head",
+          "bind": {
+            "label": "eqMaster.label",
+            "bg": "eqMaster.bg",
+            "fg": "eqMaster.text",
+            "pressed": "eqMaster.str",
+            "ariaLabel": "eqMaster.label == 'EQ In' ? 'EQ in' : 'EQ bypassed'"
+          },
+          "on": {
+            "toggle": {
+              "do": "ui.toggleEqOn",
+              "args": {
+                "id": {
+                  "$expr": "selId"
+                }
+              }
+            },
+            "flat": {
+              "do": "ui.flatEq",
+              "args": {
+                "id": {
+                  "$expr": "selId"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "summary",
+          "module": "eq-summary",
+          "bind": {
+            "text": "eqSummary"
+          }
+        }
+      ]
+    },
+    {
+      "id": "graph",
+      "module": "eq-graph",
+      "bind": {
+        "graph": "eqGraph",
+        "locked": "store.locked",
+        "fine": "store.fine"
+      },
+      "on": {
+        "select": {
+          "do": "ui.setSelBand",
+          "args": {
+            "band": {
+              "$expr": "payload.band"
+            }
+          }
+        },
+        "node": {
+          "do": "channel.eqNode",
+          "args": {
+            "id": {
+              "$expr": "selId"
+            },
+            "band": {
+              "$expr": "payload.band"
+            },
+            "f": {
+              "$expr": "payload.f"
+            },
+            "g": {
+              "$expr": "payload.g"
+            },
+            "locked": {
+              "$expr": "store.locked"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "cards",
+      "module": "grid",
+      "props": {
+        "columns": "repeat(auto-fit, minmax(180px, 1fr))",
+        "gap": 6,
+        "box": "content-box"
+      },
+      "children": [
+        {
+          "id": "hpf",
+          "module": "eq-hpf-card",
+          "bind": {
+            "hpf": "eqHpf",
+            "fine": "store.fine",
+            "locked": "store.locked"
+          },
+          "on": {
+            "select": {
+              "do": "ui.setSelBand",
+              "args": {
+                "band": 0
+              }
+            },
+            "toggle": {
+              "do": "ui.toggleEqBand",
+              "args": {
+                "id": {
+                  "$expr": "selId"
+                },
+                "band": 0
+              }
+            },
+            "slope": {
+              "do": "ui.setHpfSlope",
+              "args": {
+                "id": {
+                  "$expr": "selId"
+                },
+                "slope": {
+                  "$expr": "payload.slope"
+                }
+              }
+            },
+            "freq": {
+              "do": "ui.setEqParam",
+              "args": {
+                "id": {
+                  "$expr": "selId"
+                },
+                "band": 0,
+                "param": "f",
+                "value": {
+                  "$expr": "payload.value"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "bands",
+          "module": "repeat",
+          "props": {
+            "over": "list:eqBands"
+          },
+          "children": [
+            {
+              "id": "band",
+              "module": "eq-band-card",
+              "bind": {
+                "card": "item",
+                "fine": "store.fine",
+                "locked": "store.locked"
+              },
+              "on": {
+                "select": {
+                  "do": "ui.setSelBand",
+                  "args": {
+                    "band": {
+                      "$expr": "payload.band"
+                    }
+                  }
+                },
+                "toggle": {
+                  "do": "ui.toggleEqBand",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "band": {
+                      "$expr": "payload.band"
+                    }
+                  }
+                },
+                "type": {
+                  "do": "ui.setEqBandType",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "band": {
+                      "$expr": "payload.band"
+                    },
+                    "type": {
+                      "$expr": "payload.type"
+                    }
+                  }
+                },
+                "param": {
+                  "do": "ui.setEqParam",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "band": {
+                      "$expr": "payload.band"
+                    },
+                    "param": {
+                      "$expr": "payload.param"
+                    },
+                    "value": {
+                      "$expr": "payload.value"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

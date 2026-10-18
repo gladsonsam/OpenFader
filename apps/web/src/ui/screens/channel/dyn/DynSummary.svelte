@@ -1,0 +1,43 @@
+<!-- W5b `dyn-summary` module: the dyn tab top row (In toggle + summary).
+     Presentational: toggle visuals + summary text in via layout `bind`,
+     `toggle` out. Verbatim from design-template.html (isDynTab head row).
+     The toggle keeps the design's look when locked (the store blocks the
+     edit, like dvToggle). -->
+<script lang="ts">
+  import type { ModuleContext } from '../../../modules/types.ts';
+
+  let {
+    props = {},
+    ctx: _ctx,
+    nodeId: _nodeId,
+    onEvent,
+  }: {
+    props: {
+      label?: string;
+      bg?: string;
+      fg?: string;
+      pressed?: string;
+      summary?: string;
+    };
+    ctx: ModuleContext;
+    nodeId: string;
+    onEvent?: (name: string, payload?: unknown) => void;
+  } = $props();
+</script>
+
+<div
+  style="box-sizing:content-box;flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:8px"
+>
+  <button
+    onclick={() => onEvent?.('toggle')}
+    aria-pressed={props.pressed ?? 'false'}
+    style="box-sizing:border-box;font-variant-numeric:normal;height:40px;padding:0 16px;border-radius:3px;border:1px solid #3a414c;background:{props.bg ??
+      '#2b3038'};color:{props.fg ?? '#c9d1dc'};font-size:15px;cursor:pointer"
+    ><span>{props.label ?? ''}</span></button
+  >
+  <div
+    style="box-sizing:content-box;flex:1;min-width:160px;text-align:right;font-size:13px;color:#c9d1dc"
+  >
+    {props.summary ?? ''}
+  </div>
+</div>

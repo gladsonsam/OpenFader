@@ -1,9 +1,15 @@
-# openmix-web — Svelte mixer UI (static build)
+# openmix-web — mixer UI (static build)
 
-Svelte 5 port of the `../../ui/` vanilla mixer UI. Same screens, same
-backend contract (`src/lib/backend.js` mirrors `../../ui/api.js`):
-`TauriBackend` + `WsBackend`, same WebSocket JSON protocol on `:8080`
-(`connect`/`fader`/`mute`/`param` out, `state`/`meters` in).
+Single UI: `src/ui/` (ui4, design-faithful). It is the default and only
+route — `/` renders it, `?ui=4` is an alias. Fixture mode for the
+design-diff harness: `?ui=4&fixture=1&freeze=1&screen=<id>` (screens and
+galleries listed in `src/ui/screens/index.ts`; harness in
+`tools/design-diff/`).
+
+Prior UI versions (v1 vanilla `ui/`, v2/v3 Svelte trees) were removed at
+the ui4 cutover; the UI lives entirely under `src/ui/` with its own
+transport (`src/ui/world/transport.ts`) speaking the same engine
+`Cmd`/`Event` JSON over WS (`:8080`) or Tauri IPC.
 
 ## dev
 
@@ -30,29 +36,13 @@ Any static file server works — no backend required for the sim demo.
 
 ## Tauri wiring
 
-`TauriBackend` (selected automatically when `window.__TAURI__.core.invoke`
-exists) calls the same IPC commands as the vanilla UI: `connect`,
-`set_fader`, `set_mute`, `get_meters`, `set_param` (rejected controls
-hide themselves). To load this UI in the Tauri shell instead of `ui/`,
-point the webview at `apps/web/dist/index.html` (with `base: './'` the
-built assets resolve from any location, including `tauri://localhost`).
+`src-tauri/tauri.conf.json` `frontendDist` points at `apps/web/dist`.
+With `base: './'` the built assets resolve from any location, including
+`tauri://localhost`.
 
 ## layout
 
-- `src/lib/backend.ts` — transports (contract port, keep in sync with `ui/api.js`)
-- `src/lib/levels.ts` — shared mutable meter frames (not reactive: no re-render at 60fps)
-- `src/lib/meters.ts` — imperative canvas painting (staging strips + bridge)
-- `src/lib/sections.ts` — detail-panel control defs (ranges mirror `proto-dl32s` limits)
-- `src/lib/format.ts` — fader→dB readout
-- `src/lib/persist.ts` — localStorage prefs (layers, orders, mute groups, safety)
-- `src/lib/sends.ts` — SoF send cache, pushed via existing `param` cmd (`auxN_level`)
-- `src/components/Strip.svelte` — name, staging meter, touch fader (pointer capture,
-  fine mode, Grow&Glow, exact-entry), mute/solo, clip latch, layout handles
-- `src/components/Overview.svelte` — whole-show health rows, tap-to-jump
-- `src/components/ValueEntry.svelte` — tap-a-value exact-entry modal
-- `src/components/Detail.svelte` — gain/phantom/pan, HPF/gate/comp, 4-band EQ, aux/FX sends
-- `src/components/Spectrum.svelte` — per-channel spectrum (fallback until relay sends it)
-- `src/App.svelte` — views (Overview/Mixer/Channel), aux rail + SoF, layers, groups,
-  safety, scenes, bridge, keyboard, rAF loop
-
-See `V2.md` for what the v2 structural pass shipped vs what stays deferred to DSP.
+- `src/main.ts` — mounts `src/ui/` (sole entry)
+- `src/ui/` — screens, shell, state, fixtures, world (engine transport),
+  primitives, modules, layouts, gallery
+- `tools/design-diff/` — pixel + layout-box regression vs `docs/design`

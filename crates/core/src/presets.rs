@@ -4,11 +4,12 @@
 //! Vox, Keys, Playback) expressed as generic `set_param` field/value pairs.
 //! Apply with [`apply_preset`]; drivers need no changes.
 //!
-//! Field vocabulary is the intersection every driver understands: the
-//! `openmix-proto-dl32s` input-strip table (`hpf_*`, `gate_*`, `comp_*`,
-//! `eq{1..4}_*`) as mirrored by the sim's canonical param set. No `pan`
-//! (X-Air rejects it), no sends (mix-dependent), no unverified comp/gate
-//! timing words — those stay the engineer's call on the desk.
+//! Field vocabulary is the canonical param catalogue
+//! ([`crate::params::CATALOGUE`]): `hpf_*`, `gate_*`, `comp_*`,
+//! `eq{1..4}_*`. Every id resolves on every driver whose capabilities cover
+//! it (sim covers the whole catalogue; X-Air covers the loopback-tested
+//! param plane). No sends (mix-dependent), no unverified comp/gate timing
+//! words — those stay the engineer's call on the desk.
 //!
 //! Values are STARTING POINTS, not targets: HPFs sit at the safe end,
 //! cuts are shallow (-2..-3 dB), boosts cap at +3 dB, ratios at 2:1..4:1.
@@ -58,10 +59,10 @@ static KICK: &[PresetSetting] = &[
     b("hpf_on", true),
     f("hpf_freq", 45.0),
     b("gate_on", true),
-    f("gate_threshold", -30.0),
+    f("gate_thr", -30.0),
     b("comp_on", true),
     f("comp_ratio", 4.0),
-    f("comp_threshold", -18.0),
+    f("comp_thr", -18.0),
     b("eq_on", true),
     f("eq1_gain", -2.0),
     f("eq1_freq", 80.0),
@@ -73,10 +74,10 @@ static SNARE: &[PresetSetting] = &[
     b("hpf_on", true),
     f("hpf_freq", 90.0),
     b("gate_on", true),
-    f("gate_threshold", -28.0),
+    f("gate_thr", -28.0),
     b("comp_on", true),
     f("comp_ratio", 3.0),
-    f("comp_threshold", -16.0),
+    f("comp_thr", -16.0),
     b("eq_on", true),
     f("eq2_gain", -3.0),
     f("eq2_freq", 450.0),
@@ -90,7 +91,7 @@ static HAT: &[PresetSetting] = &[
     b("gate_on", false),
     b("comp_on", true),
     f("comp_ratio", 2.0),
-    f("comp_threshold", -20.0),
+    f("comp_thr", -20.0),
     b("eq_on", true),
     f("eq1_gain", -3.0),
     f("eq1_freq", 250.0),
@@ -102,10 +103,10 @@ static TOM: &[PresetSetting] = &[
     b("hpf_on", true),
     f("hpf_freq", 70.0),
     b("gate_on", true),
-    f("gate_threshold", -28.0),
+    f("gate_thr", -28.0),
     b("comp_on", true),
     f("comp_ratio", 3.0),
-    f("comp_threshold", -16.0),
+    f("comp_thr", -16.0),
     b("eq_on", true),
     f("eq2_gain", 2.0),
     f("eq2_freq", 220.0),
@@ -119,7 +120,7 @@ static OH: &[PresetSetting] = &[
     b("gate_on", false),
     b("comp_on", true),
     f("comp_ratio", 2.0),
-    f("comp_threshold", -22.0),
+    f("comp_thr", -22.0),
     b("eq_on", true),
     f("eq1_gain", -3.0),
     f("eq1_freq", 200.0),
@@ -133,7 +134,7 @@ static BASS_DI: &[PresetSetting] = &[
     b("gate_on", false),
     b("comp_on", true),
     f("comp_ratio", 4.0),
-    f("comp_threshold", -16.0),
+    f("comp_thr", -16.0),
     b("eq_on", true),
     f("eq1_gain", 2.0),
     f("eq1_freq", 90.0),
@@ -147,7 +148,7 @@ static EGTR: &[PresetSetting] = &[
     b("gate_on", false),
     b("comp_on", true),
     f("comp_ratio", 3.0),
-    f("comp_threshold", -18.0),
+    f("comp_thr", -18.0),
     b("eq_on", true),
     f("eq1_gain", -3.0),
     f("eq1_freq", 120.0),
@@ -161,7 +162,7 @@ static VOX: &[PresetSetting] = &[
     b("gate_on", false),
     b("comp_on", true),
     f("comp_ratio", 3.0),
-    f("comp_threshold", -14.0),
+    f("comp_thr", -14.0),
     b("eq_on", true),
     f("eq1_gain", -2.0),
     f("eq1_freq", 200.0),
@@ -177,7 +178,7 @@ static KEYS: &[PresetSetting] = &[
     b("gate_on", false),
     b("comp_on", true),
     f("comp_ratio", 2.0),
-    f("comp_threshold", -20.0),
+    f("comp_thr", -20.0),
     b("eq_on", true),
     f("eq2_gain", 1.0),
     f("eq2_freq", 2500.0),

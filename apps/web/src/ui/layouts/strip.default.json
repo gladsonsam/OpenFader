@@ -1,0 +1,173 @@
+{
+  "id": "strip",
+  "module": "col",
+  "props": {
+    "gap": 3,
+    "padding": 3,
+    "background": "#0e1520",
+    "radius": 0,
+    "minWidth": 0,
+    "minHeight": 0
+  },
+  "bind": {
+    "shadow": "item.ring"
+  },
+  "children": [
+    {
+      "id": "pan",
+      "module": "strip-pan",
+      "bind": {
+        "value": "item.pan",
+        "name": "item.name",
+        "fine": "item.fine"
+      },
+      "on": {
+        "input": {
+          "do": "ui.setPan",
+          "args": {
+            "id": { "$expr": "item.id" },
+            "value": { "$expr": "payload.value" }
+          }
+        }
+      }
+    },
+    {
+      "id": "proc",
+      "module": "col",
+      "props": {
+        "flex": "1 1 140px",
+        "minHeight": 80,
+        "border": "1px solid #1f2836",
+        "radius": 3,
+        "overflow": "hidden",
+        "background": "#0b111b",
+        "box": "content-box"
+      },
+      "when": "item.hasEq",
+      "children": [
+        {
+          "id": "eq-mini",
+          "module": "strip-eq-mini",
+          "bind": {
+            "path": "item.eqPath",
+            "stroke": "item.eqStroke",
+            "ariaLabel": "item.eqAria"
+          },
+          "on": {
+            "open": {
+              "do": "ui.openEq",
+              "args": {
+                "id": { "$expr": "item.id" }
+              }
+            }
+          }
+        },
+        {
+          "id": "dyn-mini",
+          "module": "strip-dyn-mini",
+          "bind": {
+            "path": "item.dynPath",
+            "ariaLabel": "item.dynAria"
+          },
+          "on": {
+            "open": {
+              "do": "ui.openDyn",
+              "args": {
+                "id": { "$expr": "item.id" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "proc-empty",
+      "module": "strip-well-empty",
+      "when": "!item.hasEq"
+    },
+    {
+      "id": "mute",
+      "module": "strip-mute",
+      "props": {
+        "height": 40
+      },
+      "variants": {
+        "phone": { "props": { "height": 48 } },
+        "tablet": { "props": { "height": 48 } }
+      },
+      "bind": {
+        "muted": "item.muted",
+        "enabled": "item.muteEnabled",
+        "label": "concat('Mute ', item.name)"
+      },
+      "on": {
+        "press": {
+          "do": "ui.toggleMute",
+          "args": {
+            "id": { "$expr": "item.id" }
+          }
+        }
+      }
+    },
+    {
+      "id": "fader-area",
+      "module": "col",
+      "props": {
+        "flex": "3 1 240px",
+        "minHeight": 180
+      },
+      "children": [
+        {
+          "id": "fader",
+          "module": "strip-fader",
+          "props": {
+            "variant": "strip"
+          },
+          "bind": {
+            "value": "item.value",
+            "dbText": "item.readout",
+            "ariaLabel": "item.faderAria",
+            "accent": "item.useSend ? 'sof' : 'chan'",
+            "readColor": "item.readColor",
+            "fine": "item.fine",
+            "meter": "item.meter",
+            "meterFrozen": "frozen"
+          },
+          "on": {
+            "input": {
+              "do": "ui.setStripFader",
+              "args": {
+                "id": { "$expr": "item.id" },
+                "value": { "$expr": "payload.value" },
+                "useSend": { "$expr": "item.useSend" },
+                "mix": { "$expr": "store.mix" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "name",
+      "module": "strip-name",
+      "props": {
+        "variant": "strip"
+      },
+      "bind": {
+        "name": "item.name",
+        "sub": "item.sub",
+        "color": "item.color",
+        "text": "item.text",
+        "selectAria": "item.selectAria"
+      },
+      "on": {
+        "select": {
+          "do": "ui.select",
+          "args": {
+            "id": { "$expr": "item.id" }
+          }
+        }
+      }
+    }
+  ]
+}

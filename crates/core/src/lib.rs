@@ -11,6 +11,7 @@
 
 pub mod access;
 pub mod fx;
+pub mod params;
 pub mod presets;
 pub mod rta;
 pub mod show;
@@ -25,6 +26,81 @@ pub mod sync;
 /// (the CLI) display channels 1-based and subtract 1 before calling in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StripId(pub u16);
+
+/// Strip family kind, as carried in `caps.topology[].kind`
+/// (`in|ret|bus|fxsnd|mtx|main|dca`). Catalogue entries declare which kinds
+/// they apply to via [`params::ParamDef::scopes`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum StripKind {
+    In,
+    Ret,
+    Bus,
+    FxSnd,
+    Mtx,
+    Main,
+    Dca,
+}
+
+impl StripKind {
+    /// Wire name used in the `caps` frame (`in|ret|bus|fxsnd|mtx|main|dca`).
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            StripKind::In => "in",
+            StripKind::Ret => "ret",
+            StripKind::Bus => "bus",
+            StripKind::FxSnd => "fxsnd",
+            StripKind::Mtx => "mtx",
+            StripKind::Main => "main",
+            StripKind::Dca => "dca",
+        }
+    }
+
+    /// Parse a wire kind name back (caps round-trip / tests).
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "in" => Some(StripKind::In),
+            "ret" => Some(StripKind::Ret),
+            "bus" => Some(StripKind::Bus),
+            "fxsnd" => Some(StripKind::FxSnd),
+            "mtx" => Some(StripKind::Mtx),
+            "main" => Some(StripKind::Main),
+            "dca" => Some(StripKind::Dca),
+            _ => None,
+        }
+    }
+}
+
+/// One ordered strip family in the global strip index space
+/// (`caps.topology`). Families are contiguous, non-overlapping and ordered
+/// by `first`; the UI builds banks from this table for any desk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StripFamily {
+    /// Stable family key (`ch`, `mix`, `fxret`, `fxsnd`, `mtx`, `main`, `dca` …).
+    pub key: &'static str,
+    pub kind: StripKind,
+    /// Display label (`Ch 1-32`, `Mix 1-8`, `Main LR`, …).
+    pub label: &'static str,
+    /// First global strip index (0-based [`StripId`]).
+    pub first: usize,
+    /// Strip count in this family.
+    pub count: usize,
+    /// Name prefix for default scribbles (`Ch`, `FxRet`, `Mix`, `Grp`, `FxSnd`, `Mtx`, `Main`, `DCA`).
+    pub name_prefix: &'static str,
+    /// Default desk channel colour (0..=15 enum, bank colour).
+    pub color_default: u8,
+}
+
+impl StripFamily {
+    /// One past the last strip index in this family.
+    pub const fn end(self) -> usize {
+        self.first + self.count
+    }
+
+    /// Whether global strip index `i` belongs to this family.
+    pub const fn contains(self, i: usize) -> bool {
+        i >= self.first && i < self.first + self.count
+    }
+}
 
 /// Per-tick meter levels, one entry per strip (linear 0.0..=1.0).
 #[derive(Clone, Debug, PartialEq)]
@@ -243,6 +319,10 @@ pub trait MixerDriver: Send + Sync {
     // ---- generic params (default: thin dispatch to the above) ----
     /// Well-known ids: `"fader"`, `"mute"`, `"name"`, `"pan"`.
     /// Driver-specific ids pass through to the driver override.
+    ///
+    /// [`capabilities`](MixerDriver::capabilities) advertises which
+    /// [`params`](crate::params) catalogue ids this driver implements;
+    /// the relay `caps` frame renders the catalogue filtered by it.
     async fn set_param(
         &self,
         strip: StripId,
@@ -267,6 +347,51 @@ pub trait MixerDriver: Send + Sync {
             "name" => self.get_name(strip).await.map(ParamValue::Text),
             _ => anyhow::bail!("{}: unknown param {param:?}", self.name()),
         }
+    }
+
+    // ---- capabilities ----
+    /// Catalogue ids ([`crate::params::CATALOGUE`]) this driver implements
+    /// for `get_param`/`set_param`. The relay polls and advertises exactly
+    /// this set; anything else on the wire is hidden from the UI (never
+    /// shown as unknown). Default is the always-available triple; drivers
+    /// override with their loopback-tested set.
+    fn capabilities(&self) -> &'static [&'static str] {
+        &["fader", "mute", "name"]
+    }
+
+    /// Ordered strip families in the global strip index space
+    /// (`caps.topology`). Default is one `in` family covering
+    /// [`MixerDriver::channel_count`] so drivers that have not grown
+    /// topology yet keep working; the poller treats an empty topology the
+    /// same way. Families must be contiguous, non-overlapping and ordered
+    /// by `first`; the first `channel_count` strips keep their historic
+    /// indices.
+    fn topology(&self) -> Vec<StripFamily> {
+        vec![StripFamily {
+            key: "ch",
+            kind: StripKind::In,
+            label: "Ch",
+            first: 0,
+            count: self.channel_count(),
+            name_prefix: "Ch",
+            color_default: 2,
+        }]
+    }
+
+    /// Total addressable strips (sum of [`MixerDriver::topology`]).
+    /// Defaults to [`MixerDriver::channel_count`] so old drivers keep their
+    /// poll/snapshot geometry; drivers with extra families (sim, xair)
+    /// override with the topology total.
+    fn strip_count(&self) -> usize {
+        self.channel_count()
+    }
+
+    /// Declared meter taps (`caps.meter_taps`): per-strip `in` (pre-fader
+    /// input level), `post` (post-fader), `gr_gate` / `gr_comp` (dB
+    /// reduction), plus main LR L/R. Transport carries them (MR formats);
+    /// the param poller is never used for meters.
+    fn meter_taps(&self) -> &'static [&'static str] {
+        &["in", "post", "gr_gate", "gr_comp"]
     }
 
     // ---- snapshot / info ----
