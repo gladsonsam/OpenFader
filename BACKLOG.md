@@ -5,18 +5,20 @@ Queued with the owner's words. A worker is dispatched only when a slot is
 free AND its files don't collide with the running worker.
 
 ## In flight (2/2 slots full)
-1. APK build (`ses_eb1c6c33fffeg3UdMqs67cwO6p`) — src-tauri + builds.
-   Desktop bundle done; debug APK built, final verification pending.
-2. UI gaps + snapshot package (`ses_eb0dfe76dffeDSz8OhB880Fqr9`) —
-   crates/engine + proto-xair + apps/web/src/ui. Deterministic-check
-   removal, LR mute/solo, attach snapshot, mute-group UI, channel
-   filtering, LR meter, phantom meters, FX racks, bus popup, snapshots,
-   live screen bindings.
+1. Worktree merge (`ses_eb07b0b58ffevIdir5Y5YMhulo`) — phone/daylight UI
+   branch `fix/boot-crashes` into main (reconcile + rebuild + screenshots).
+2. Bidirectional verification loop (`ses_eb0877d76ffeFIOsVr9lbo0kFj`) —
+   scripts/verify-bidirectional.mjs matrix + root-caused gap list.
 
-## Queued
-- (verification loop running; APK rebuild running)
-
-## Queued — server-side (later; venue PC on LAN + USB/ASIO)
+## Queued (in order)
+1. Mobile UI audit loop — kill excess vibration/haptics; topbar too big;
+   channel detail wastes space (not intuitive, not dense). Iterate
+   screenshot→fix→screenshot until genuinely usable on phone.
+   (Owner suggested a smarter/different model for the reviewer; no model
+   switched — no exact model specified.)
+2. Devices: scan shows ONLY real desks (owner's XR18, no sim/fake
+   entries) + explicit work-offline mode.
+3. Push merged main (post-merge verification first).
 
 ## Queued — server-side (later; venue PC on LAN + USB/ASIO)
 - Automixing (gain-sharing across channels on the server).
@@ -43,3 +45,5 @@ free AND its files don't collide with the running worker.
 - RTA overlay for EQ (live engine spectrum; honest non-analyzer caveat).
 - Presets (8 built-in + user save/recall/rename/delete, live-proven).
 - Global meter bridge (grouped ladders + topbar icon, live XR18 verified).
+- Fresh APK from current tree (/mnt/gladson/temp, badging verified).
+- Worktree phone/daylight UI (merged or in merge — see In flight).
