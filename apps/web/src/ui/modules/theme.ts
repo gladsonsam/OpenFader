@@ -28,6 +28,7 @@ export const PRESETS: Record<ThemePresetId, Theme> = {
     id: 'graphite',
     label: 'Graphite',
     overrides: {
+      '--u4-rail-bg': '#101214',
       '--u4-page-bg': '#0c0d0e',
       '--u4-root-fg': '#e9e9e9',
       '--u4-panel-bg': '#141516',
@@ -86,6 +87,7 @@ export const PRESETS: Record<ThemePresetId, Theme> = {
     id: 'tungsten',
     label: 'Tungsten',
     overrides: {
+      '--u4-rail-bg': '#120d08',
       '--u4-page-bg': '#0d0906',
       '--u4-root-fg': '#f0e8dc',
       '--u4-panel-bg': '#171009',
@@ -146,6 +148,9 @@ export const PRESETS: Record<ThemePresetId, Theme> = {
     overrides: {
       '--u4-page-bg': '#e9ebef',
       '--u4-root-fg': '#131a24',
+      '--u4-header-bg': '#ffffff',
+      '--u4-header-border': '#d4dae2',
+      '--u4-rail-bg': '#e4e8ee',
       '--u4-panel-bg': '#ffffff',
       '--u4-panel-border': '#c9d1dc',
       '--u4-well-bg': '#dfe4ea',
@@ -209,6 +214,7 @@ export const PRESETS: Record<ThemePresetId, Theme> = {
       '--u4-root-fg': '#f5d9d9',
       '--u4-panel-bg': '#160a0b',
       '--u4-panel-border': '#4a1d1d',
+      '--u4-rail-bg': '#160a0b',
       '--u4-bank-off': '#1f1010',
       '--u4-well-bg': '#100506',
       '--u4-well-bg-2': '#140708',

@@ -46,6 +46,6 @@
     onclick={() => onEvent?.('recall')}
     aria-disabled={props.disabled ? 'true' : 'false'}
     style="box-sizing:border-box;font-variant-numeric:normal;height:48px;padding:0 28px;border-radius:3px;border:1px solid {props.border ??
-      'var(--u4-divider)'};background:{props.bg ?? '#161c26'};color:{props.text ?? 'var(--u4-text-dim)'};font-size:15px;font-weight:600;cursor:pointer"
+      'var(--u4-divider)'};background:{props.bg ?? 'var(--u4-bank-off)'};color:{props.text ?? 'var(--u4-text-dim)'};font-size:15px;font-weight:600;cursor:pointer"
   >Recall</button>
 </div>
