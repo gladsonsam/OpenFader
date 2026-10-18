@@ -98,9 +98,9 @@ function opt(label: string, value: string, on: boolean): SettingOptionVm {
     label,
     value,
     pressed: on,
-    bg: on ? 'var(--u4-text-1)' : 'var(--u4-seg-opt-bg)',
+    bg: on ? 'var(--u4-seg-on-bg)' : 'var(--u4-seg-opt-bg)',
     fg: on ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
-    border: on ? 'var(--u4-text-1)' : 'var(--u4-seg-border)',
+    border: on ? 'var(--u4-seg-on-bg)' : 'var(--u4-seg-border)',
   };
 }
 

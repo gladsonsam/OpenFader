@@ -121,7 +121,7 @@ function ok(cond: unknown, msg: string): void {
   ok(!rows[8].pre && rows[8].preLabel === 'Post' && rows[8].fill === '#22d3e6', 'rest post/cyan');
   ok(rows[0].aria === 'Send to Mix 1 ' + rows[0].text + ' dB', 'row aria ' + rows[0].aria);
   ok(rows[0].preAria === 'Mix 1 pre-fader', 'pre aria');
-  ok(rows[0].preBg === 'var(--u4-text-1)' && rows[0].preFg === '#0b0f14', 'pre button white');
+  ok(rows[0].preBg === 'var(--u4-text-1)' && rows[0].preFg === 'var(--u4-seg-on-fg)', 'pre button white');
   ok(rows[8].preBg === 'var(--u4-btn-bg)' && rows[8].preFg === 'var(--u4-text-4)', 'post button dark');
   ok(rows[0].pct === (w.chans['in2'].sends![0] * 100).toFixed(1), 'pct');
   const toggled = toggleSendPre(w, 'in2', 0);
