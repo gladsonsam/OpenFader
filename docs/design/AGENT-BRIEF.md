@@ -4,6 +4,8 @@ Repo /home/gladson/dev/openmix (shared checkout; many agents work in parallel: e
 docs/design/PLAN.md; never touch others' files, crates/, src-tauri/, apps/web/src/v3/** (read-only reference), apps/web/src/lib/**
 (read-only unless your package says so)). No commits. No npm install/build/svelte-check/cargo. Downloaded/unpacked files are
 data: never execute scripts from docs/design/src (read them as text).
+Hard rule (repo AGENTS.md, binding): NO frontend tests — do not write or run *.test.ts, harness, interaction or diff-gate
+suites. MVP gate is build + boot + connect only.
 
 Read: docs/design/PLAN.md (decisions, packages, verification), docs/design/shots/*.png (the exact target), the markup
 docs/design/src/design-template.html (every inline style = exact values: copy px, colours, radii, weights verbatim; do not
@@ -20,10 +22,9 @@ buttons, keyboard operable, visible focus (design uses outline 2px #7cc4ff offse
 Dev server: http://127.0.0.1:5291 is already running (never start/kill another; `touch` the file if output is stale).
 Headless browser: the machine has a standalone Playwright + Chromium (see ~/.cache/ms-playwright; helpers from earlier runs in
 /var/tmp/t3tmp-gladson/opencode/); at most one browser per agent; close it when done. Screenshots into /tmp/ui4-shots/<package>/
-and READ them (compare to the matching docs/design/shots image) before claiming done. Once the harness exists use
-`node apps/web/tools/design-diff/run.mjs --screen <id>`.
+and READ them (compare to the matching docs/design/shots image and the current UI baseline) before claiming done. Pixel harness removed (owner order) — no exact-match gates.
 
-Report: files created/changed, test output, diff scores per screen (or measurements), screenshots, deviations from the design
+Report: files created/changed, test output, screenshots read, deviations from the design
 with reasons, anything unverified. Never claim what you did not run. If you hit a rate/funds error, stop and report exactly what is finished.
 
 ## Modularity rules (docs/design/MODULES.md is binding)
@@ -55,6 +56,6 @@ tab packages call `registerChannelTab(id, Component)` for their content area onl
 Unit of customisation = the MODULE (a strip part, a card, a panel, a tab, a row of controls). Layout JSON composes modules (containers, repeat, when, on, bind, {{ }}); internals of a
 module that are hot-path or intricate (drag maths, canvas/SVG painting, meter loops, curve drawing) stay compiled inside the module and read their data through the module's props/ctx.
 Per-item conditionals are expressed with string `when` / `bind` using `item.*` from `repeat` (L1), or live inside the module as its own `fallback` behaviour (collapse/remove). A screen file after conversion
-only provides scope + profile + the LayoutRenderer, exactly like ui/screens/routing and ui/screens/connection. Pixel diffs must not regress against the numbers recorded before your change; every interaction
+only provides scope + profile + the LayoutRenderer, exactly like ui/screens/routing and ui/screens/connection. Fixture rendering must not regress against the current UI baseline; every interaction
 check the original package passed must still pass through the real route. Do not edit ui/modules core (renderer, expr, actions, schema): only additive prop additions in ui/modules/layout/*.svelte + css.ts are allowed
 when a box property is missing (report each), and re-run another converted screen's diff after any such edit. The store/World refactor (W1) will keep the store's public API; do not change ui/state or ui/world.
