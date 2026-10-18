@@ -133,6 +133,8 @@ export interface RouteMatrix {
   cols: string[];
   /** Source label -> using channel name (last wins). */
   used: Record<string, string>;
+  /** Staged preset (Apply commits it); previewed in the grid. */
+  pending: { kind: 'oneToOne' | 'clear'; group: RouteGroup } | null;
 }
 
 /** Dante-style patchbay grid: every input channel in one scroll (bank
@@ -151,5 +153,5 @@ export function buildRouteMatrix(state: UiState, chans: Record<string, Channel>)
       rows.push({ kind: 'row', id, name: c?.name ?? id, src: c?.src ?? '—' });
     }
   }
-  return { rows, cols, used: usedSources(chans) };
+  return { rows, cols, used: usedSources(chans), pending: state.pendingPatch };
 }
