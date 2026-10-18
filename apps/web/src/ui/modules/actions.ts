@@ -337,12 +337,12 @@ export function registerBuiltins(): void {
   uiThrough('ui.setPatchGroup', a => [a['group']], { args: { group: 'string' }, describe: 'Pick patch group' });
   uiThrough('ui.setRouteBank', a => [a['bank']], { args: { bank: 'number' }, describe: 'Pick routing bank' });
   uiThrough('ui.patchSrc', a => [a['label']], { args: { label: 'string' }, describe: 'Patch source (advances; lock-checked)' });
-  uiThrough('ui.toggleRoute', a => [a['id'], a['label']], { args: { id: 'string', label: 'string' }, describe: 'Matrix cell: patch there, or unpatch when current (lock-checked)' });
+  uiThrough('ui.toggleRoute', a => [a['id'], a['label']], { args: { id: 'string', label: 'string' }, describe: 'Matrix cell: stage it (Apply commits; lock-checked)' });
   uiThrough('ui.patchOneToOne', a => [a['group']], { args: { group: 'string' }, describe: 'Preset: straight 1:1 patch of inputs 1..32 (lock-checked)' });
   uiThrough('ui.clearPatches', () => [], A('Preset: unpatch all inputs (lock-checked)'));
-  uiThrough('ui.armPatch', a => [a['kind'], a['group']], { args: { kind: 'string', group: 'string' }, describe: 'Stage a mass-patch preset (lock-checked)' });
-  uiThrough('ui.applyPatch', () => [], A('Commit the staged preset (lock-checked)'));
-  uiThrough('ui.cancelPatch', () => [], A('Drop the staged preset'));
+  uiThrough('ui.stagePreset', a => [a['kind'], a['group']], { args: { kind: 'string', group: 'string' }, describe: 'Stage a mass-patch preset (lock-checked)' });
+  uiThrough('ui.applyPatch', () => [], A('Commit everything staged (lock-checked)'));
+  uiThrough('ui.cancelPatch', () => [], A('Drop everything staged'));
   uiThrough('ui.unpatch', () => [], A('Unpatch channel (lock-checked)'));
 
   // desk groups (live-only; fixture model untouched, the engine holds the
