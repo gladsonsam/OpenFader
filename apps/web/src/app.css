@@ -1,26 +1,53 @@
 /* openmix svelte UI — dark gig theme. Touch-first: 44px targets. */
 :root {
-  --bg: #0d0f12;
-  --panel: #15181d;
-  --panel2: #1b1f26;
-  --line: #262c35;
+  /* Console chassis palette — instrument, not web app. */
+  --bg: #0a0c0f;
+  --chassis: #07090c;
+  --panel: #12161c;
+  --panel2: #1a1f27;
+  --panel3: #222936;
+  --line: #2a313d;
+  --line2: #3a4352;
   --txt: #e8ecf1;
   --dim: #9aa3b0;
+  --dim2: #6b7482;
   --acc: #3fa9f5;
+  --acc2: #22d3ee;
   --red: #e5484d;
   --yel: #f5b83f;
   --grn: #46c46a;
   --touch: 44px;
+  /* LED / lamp colors for console controls. */
+  --led-red: #ff3b40;
+  --led-amber: #ffb020;
+  --led-grn: #3ddc84;
+  --led-blue: #3fa9f5;
+  /* Typography: technical labels + mono readouts. */
+  --font-ui: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-cond: 'Arial Narrow', 'Roboto Condensed', 'Helvetica Neue Condensed', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* Surfaces. */
+  --radius: 10px;
+  --shadow-recess: inset 0 1px 3px rgba(0,0,0,0.6), inset 0 -1px 1px rgba(255,255,255,0.04);
+  --shadow-raise: 0 2px 6px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.05);
 }
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { margin: 0; padding: 0; }
 body {
-  background: var(--bg);
+  background:
+    radial-gradient(1200px 600px at 50% -10%, rgba(63,169,245,0.06), transparent 60%),
+    linear-gradient(180deg, #0c1015 0%, var(--bg) 100%);
   color: var(--txt);
-  font: 15px/1.4 system-ui, sans-serif;
+  font: 15px/1.4 var(--font-ui);
+  font-feature-settings: 'tnum' 1, 'cv05' 1;
   overscroll-behavior: none;
   user-select: none;
   -webkit-user-select: none;
+  /* subtle chassis texture */
+  background-image:
+    radial-gradient(1200px 600px at 50% -10%, rgba(63,169,245,0.06), transparent 60%),
+    linear-gradient(180deg, #0c1015 0%, var(--bg) 100%),
+    url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.04 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
 }
 #topbar {
   display: flex; gap: 8px; align-items: center; padding: 8px 10px;
