@@ -45,6 +45,7 @@ import {
   selectChannel,
   setBank,
   setChannelColor,
+  setChannelIcon,
   setChannelName,
   setFader,
   setFine,
@@ -502,6 +503,9 @@ export const ui = {
       update(setChannelColor(world, id, color, text));
       const nv = world.chans[id]?.color;
       if (typeof nv === 'string' && nv) forward(w => { bridgeColor(w, id, nv); });
+    },
+    setChannelIcon: (id: string, icon: string | null) => {
+      update(setChannelIcon(world, id, icon));
     },
     setEqParam: (id: string, band: number, param: EqParam, v: number) => {
       update(setEqParam(world, id, band, param, v));

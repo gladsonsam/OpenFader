@@ -192,7 +192,8 @@
           "module": "strip-name-editor",
           "bind": {
             "name": "item.name",
-            "selectedColor": "item.color"
+            "selectedColor": "item.color",
+            "selectedIcon": "item.icon"
           },
           "when": "store.nameEdit == item.id",
           "on": {
@@ -211,6 +212,13 @@
                 "text": { "$expr": "payload.text" }
               }
             },
+            "reicon": {
+              "do": "ui.setChannelIcon",
+              "args": {
+                "id": { "$expr": "item.id" },
+                "icon": { "$expr": "payload.icon" }
+              }
+            },
             "close": { "do": "ui.closeNameEditor" }
           }
         },
@@ -225,6 +233,7 @@
             "sub": "item.sub",
             "color": "item.color",
             "text": "item.text",
+            "icon": "item.icon",
             "selectAria": "item.selectAria"
           },
           "on": {
@@ -235,6 +244,14 @@
               }
             }
           }
+        },
+        {
+          "id": "name-badges",
+          "module": "strip-group-badges",
+          "bind": {
+            "desk": "item.desk"
+          },
+          "when": "item.desk != null"
         }
       ]
     }
