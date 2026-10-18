@@ -47,6 +47,33 @@ export interface LiveStatus {
   host: string;
   latencyMs: number | null;
   strips: number;
+  /** Engine devices (scan results) when online; absent = fixture list. */
+  devices?: Array<{ id: string; name: string; model: string; ip: string; kind: string; state: string; fw?: string }>;
+  /** Engine link console name (the desk we are actually on). */
+  linkName?: string | null;
+}
+
+function liveDeviceVms(
+  devs: NonNullable<LiveStatus['devices']>,
+  linkName: string | null | undefined,
+): DeviceVm[] {
+  return devs.map(d => {
+    const on = !!linkName && (d.name === linkName || d.ip === linkName);
+    return {
+      key: d.id,
+      name: d.name,
+      sub: d.model + ' · ' + d.ip + (d.fw ? ' · FW ' + d.fw : ''),
+      icon: CONN_ICONS[d.kind] ?? CONN_ICONS['console']!,
+      status: on ? 'Connected' : d.state === 'connected' ? 'Reachable' : d.state,
+      statusColor: on ? '#7be27b' : '#c9d1dc',
+      border: on ? '#2c4a2e' : '#1f2836',
+      canConnect: d.kind === 'console',
+      btnLabel: on ? 'Connected' : 'Connect',
+      btnBg: on ? '#1a2a1b' : '#5cdb5c',
+      btnText: on ? '#7be27b' : '#10240f',
+      btnBorder: on ? '#2c4a2e' : '#5cdb5c',
+    };
+  });
 }
 
 export function buildConnectionVm(state: UiState, live?: LiveStatus): ConnectionVm {
@@ -67,7 +94,9 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
       sub: live.message + (on ? ` · ${live.host}` : ''),
       isConnected: false,
       lastScan: state.lastScan,
-      devices: deviceVms(devs, state.connected),
+      // Live desk scan results replace the fixture console list online;
+      // connecting state (or never-scanned) keeps the fixture list.
+      devices: on && live.devices ? liveDeviceVms(live.devices, live.linkName) : deviceVms(devs, state.connected),
     };
   }
   return {

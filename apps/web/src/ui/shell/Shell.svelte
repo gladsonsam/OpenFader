@@ -13,17 +13,43 @@
   import HeaderBar from './HeaderBar.svelte';
   import BankRail from './BankRail.svelte';
   import { ui } from '../state/uiStore.svelte.ts';
+  import { live } from '../state/live.svelte.ts';
   import { bankDefs } from '../fixtures/designData.ts';
+  import { bridgeStrip } from '../state/engineBridge.ts';
   import { modeTabToScreen } from '../state/urlBridge.ts';
   import { getShellScreen } from './registry.ts';
+  import MeterBridge from '../screens/meters/MeterBridge.svelte';
+  import { meterBridge } from '../screens/meters/meterBridgeState.svelte.ts';
   import { useDeviceClass } from '../modules/device.svelte.ts';
   import type { Mode } from '../state/uiLogic.ts';
 
   const banks = bankDefs();
 
+  // Live availability filter (item 4): online, banks with no strip on the
+  // desk topology hide (XR18: Ch 17-32/33-48/Mtx/Grp/DCA banks vanish).
+  // Offline/fixture keeps every bank (the design baseline).
+  const liveBanks = $derived(
+    (() => {
+      const w = live.engine;
+      if (live.phase !== 'online' || !w || !w.capsReady) return banks;
+      void live.version;
+      return banks.filter(b => b.items.some(it => bridgeStrip(w, it.id) !== null));
+    })(),
+  );
+
+  // If the active bank has no live strips (e.g. just connected while on
+  // Ch 17-32), fall back to the first bank that does — never strand the
+  // mixer on an empty grid.
+  $effect(() => {
+    const bs = liveBanks;
+    if (live.phase !== 'online') return;
+    if (!bs.length) return;
+    if (!bs.some(b => b.key === ui.state.bank)) ui.do.setBank(bs[0]!.key);
+  });
+
   // Responsive chrome: phone viewports stack the body vertically and move
   // the bank rail to a bottom bar; desktop strings below are byte-identical
-  // to the design template, so diff baselines are untouched.
+  // to the design template, so fixture baselines are untouched.
   const device = useDeviceClass();
   const isPhone = $derived(device.now === 'phone');
 
@@ -79,6 +105,8 @@
     onConnect={() => ui.do.goConnect()}
     onSettings={() => ui.do.goSettings()}
     onScene={() => ui.do.openScenes()}
+    onMeters={() => meterBridge.toggle()}
+    metersActive={meterBridge.open}
   />
   <div style={bodyStyle}>
     {#key ui.state.mode}
@@ -94,7 +122,10 @@
       </div>
     {/key}
     {#if showRail}
-      <BankRail {banks} activeKey={ui.state.bank} onSelect={(k) => ui.do.setBank(k)} orientation={isPhone ? 'bottom' : 'side'} />
+      <BankRail banks={liveBanks} activeKey={ui.state.bank} onSelect={(k) => ui.do.setBank(k)} orientation={isPhone ? 'bottom' : 'side'} />
     {/if}
   </div>
+  {#if meterBridge.open}
+    <MeterBridge />
+  {/if}
 </AppFrame>

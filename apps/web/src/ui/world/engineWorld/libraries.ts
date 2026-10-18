@@ -22,6 +22,8 @@ import {
   cmdListShows,
   cmdMuteGroup,
   cmdMuteGroupAssign,
+  cmdMainMute,
+  cmdSolo,
   cmdOffline,
   cmdOfflineDiscard,
   cmdOfflinePush,
@@ -55,7 +57,7 @@ export class LibraryStore {
   private _shows: ShowLib[] = [];
   private _scenes: SceneEntry[] = [];
   private _fxSlots: FxSlotView[] = [];
-  private _fxCaps: { slots: number; types: Array<{ id: string; label: string }> } | null = null;
+  private _fxCaps: { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string }> }> } | null = null;
   private _patches: PatchView[] = [];
   private _routingSupported = false;
   private _devices: DeviceView[] = [];
@@ -65,7 +67,7 @@ export class LibraryStore {
   private _offlineDiff: OfflineChangeView[] = [];
   private _offlineCount = 0;
   /** Master-section counts from caps.groups (0 = unsupported on the driver). */
-  private _groups = { buses: 0, subgroups: 0, muteGroups: 0 };
+  private _groups = { buses: 0, subgroups: 0, muteGroups: 0, mgAssign: true, subAssign: true };
   private _filesSupported = false;
   /** Last-known master states from bus/subgroup/mute_group echoes. */
   private _busMasters: Record<number, { fader: number; muted: boolean }> = {};
@@ -73,6 +75,11 @@ export class LibraryStore {
   private _muteMasters: Record<number, boolean> = {};
   private _subAssign: Record<string, boolean> = {};
   private _mgAssign: Record<string, boolean> = {};
+  /** Main LR master state (attachunicast + main_mute echoes; null = unknown). */
+  private _mainFader: number | null = null;
+  private _mainMuted: boolean | null = null;
+  /** Per-strip solo (sparse solo echoes; absent = not soloed). */
+  private _solos: Record<number, boolean> = {};
   private _lastFile: { filename: string; size: number; fileType: number } | null = null;
 
   private readonly send: (msg: string) => void;
@@ -138,6 +145,13 @@ export class LibraryStore {
       case 'mute_group_assign':
         this._mgAssign[`${evt.ch}:${evt.group}`] = evt.member;
         return true;
+      case 'main':
+        if (evt.fader !== null) this._mainFader = evt.fader;
+        if (evt.muted !== null) this._mainMuted = evt.muted;
+        return true;
+      case 'solo':
+        this._solos[evt.ch] = evt.soloed;
+        return true;
       case 'file':
         this._lastFile = { filename: evt.filename, size: evt.size, fileType: evt.file_type };
         return true;
@@ -148,18 +162,20 @@ export class LibraryStore {
 
   /** caps addendum: FX type tables + routing support (additive, R2). */
   setCaps(
-    fx: { slots: number; types: Array<{ id: string; label: string }> },
+    fx: { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string }> }> },
     routingSupported: boolean,
-    groups?: { buses: number; subgroups: number; mute_groups: number },
+    groups?: { buses: number; subgroups: number; mute_groups: number; mg_assign?: boolean; sub_assign?: boolean },
     filesSupported?: boolean,
   ): void {
-    this._fxCaps = { slots: fx.slots, types: fx.types.map((t) => ({ ...t })) };
+    this._fxCaps = { slots: fx.slots, types: fx.types.map((t) => ({ id: t.id, label: t.label, params: t.params.map((q) => ({ ...q })) })) };
     this._routingSupported = routingSupported;
     if (groups) {
       this._groups = {
         buses: Math.max(0, groups.buses),
         subgroups: Math.max(0, groups.subgroups),
         muteGroups: Math.max(0, groups.mute_groups),
+        mgAssign: groups.mg_assign ?? true,
+        subAssign: groups.sub_assign ?? true,
       };
     }
     if (filesSupported !== undefined) this._filesSupported = filesSupported;
@@ -194,8 +210,8 @@ export class LibraryStore {
   sceneSave(n: number, name: string): void {
     this.send(cmdSceneSave(n, name));
   }
-  sceneRecall(n: number, fadeMs?: number): void {
-    this.send(cmdSceneRecall(n, fadeMs));
+  sceneRecall(n: number, fadeMs?: number, scope?: { strips?: number[]; groups?: string[]; globals?: string[] } | null): void {
+    this.send(cmdSceneRecall(n, fadeMs, scope ?? null));
   }
   sceneRename(n: number, name: string): void {
     this.send(cmdSceneRename(n, name));
@@ -212,8 +228,8 @@ export class LibraryStore {
   get fxSlots(): FxSlotView[] {
     return this._fxSlots.map((s) => ({ ...s, params: { ...s.params } }));
   }
-  get fxCaps(): { slots: number; types: Array<{ id: string; label: string }> } | null {
-    return this._fxCaps ? { slots: this._fxCaps.slots, types: this._fxCaps.types.map((t) => ({ ...t })) } : null;
+  get fxCaps(): { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string }> }> } | null {
+    return this._fxCaps ? { slots: this._fxCaps.slots, types: this._fxCaps.types.map((t) => ({ id: t.id, label: t.label, params: t.params.map((q) => ({ ...q })) })) } : null;
   }
   fxSetType(slot: number, type: string): void {
     this.send(cmdFxSetType(slot, type));
@@ -287,7 +303,7 @@ export class LibraryStore {
 
   // ---- masters / groups / files (R2) ----
 
-  get groupCaps(): { buses: number; subgroups: number; muteGroups: number; files: boolean } {
+  get groupCaps(): { buses: number; subgroups: number; muteGroups: number; mgAssign: boolean; subAssign: boolean; files: boolean } {
     return { ...this._groups, files: this._filesSupported };
   }
   busMaster(bus: number): { fader: number; muted: boolean } | null {
@@ -309,6 +325,14 @@ export class LibraryStore {
   muteGroupAssigned(ch: number, group: number): boolean | null {
     const m = this._mgAssign[`${ch}:${group}`];
     return typeof m === 'boolean' ? m : null;
+  }
+  /** Main LR master fader/mute (attach + echoes; null = unknown yet). */
+  get mainMaster(): { fader: number | null; muted: boolean | null } {
+    return { fader: this._mainFader, muted: this._mainMuted };
+  }
+  /** Per-strip solo (sparse echoes; false when never echoed). */
+  soloOf(ch: number): boolean {
+    return this._solos[ch] === true;
   }
   get lastFile(): { filename: string; size: number; fileType: number } | null {
     return this._lastFile ? { ...this._lastFile } : null;
@@ -333,6 +357,12 @@ export class LibraryStore {
   }
   muteGroupAssign(ch: number, group: number, member: boolean): void {
     this.send(cmdMuteGroupAssign(ch, group, member));
+  }
+  setMainMute(muted: boolean): void {
+    this.send(cmdMainMute(muted));
+  }
+  setSolo(ch: number, soloed: boolean): void {
+    this.send(cmdSolo(ch, soloed));
   }
   fileDownload(filename: string): void {
     this.send(cmdFileDownload(filename));

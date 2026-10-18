@@ -33,9 +33,24 @@ pub enum Cmd {
     MainFader {
         value: f32,
     },
+    /// R2 Main LR master mute (`{"cmd":"main_mute","muted":true}`): all
+    /// drivers with a main master (sim in-memory, X-Air `/lr/mix/on`
+    /// rig-verified, DL32S native). Honest `unsupported` elsewhere.
+    MainMute {
+        muted: bool,
+    },
     Mute {
         ch: u16,
         muted: bool,
+    },
+    /// R2 per-strip solo (`{"cmd":"solo","ch":0,"soloed":true}`, monitor
+    /// bus only — never touches the FOH mix). Sim in-memory; X-Air
+    /// `/-stat/solosw/NN` 1-based for channel strips (write + bank
+    /// readback + clear live-verified XR18 FW 1.20 2026-10-18); honest
+    /// `unsupported` elsewhere.
+    Solo {
+        ch: u16,
+        soloed: bool,
     },
     Param {
         ch: u16,
@@ -91,11 +106,16 @@ pub enum Cmd {
     },
     /// R2 numbered scene recall (`{"cmd":"scene_recall","n":1,
     /// "fade_ms":400}`). Faders ride the existing fade; every other param
-    /// is applied through `set_param` in catalogue order.
+    /// is applied through `set_param` in catalogue order. The optional
+    /// `scope` (`{"strips":[0,1],"groups":["eq","mute"],
+    /// "globals":["main"]}`) restricts the recall to those strips /
+    /// param groups / globals (`None` = full plane).
     SceneRecall {
         n: u16,
         #[serde(default)]
         fade_ms: Option<u64>,
+        #[serde(default)]
+        scope: Option<crate::engine::RecallScope>,
     },
     /// R2: rename a numbered scene slot.
     SceneRename {
@@ -168,6 +188,69 @@ pub enum Cmd {
         #[serde(default)]
         taps: Option<bool>,
     },
+    /// R2 mix-bus master fader (`{"cmd":"bus_fader","bus":0,"value":0.75}`):
+    /// 0-based bus over `0..bus_count()` (sim/XR18 bus strips, DL32S aux
+    /// masters). Honest `unsupported` where the driver has no bus masters.
+    BusFader {
+        bus: u8,
+        value: f32,
+    },
+    /// R2 mix-bus master mute (`{"cmd":"bus_mute","bus":0,"muted":true}`).
+    BusMute {
+        bus: u8,
+        muted: bool,
+    },
+    /// R2 subgroup master fader (`{"cmd":"subgroup_fader","group":0,
+    /// "value":0.75}`): 0-based over `0..subgroup_count()` (sim in-memory,
+    /// DL32S native; XR18 has no subgroups — honest `unsupported`).
+    SubgroupFader {
+        group: u8,
+        value: f32,
+    },
+    /// R2 subgroup master mute.
+    SubgroupMute {
+        group: u8,
+        muted: bool,
+    },
+    /// R2 channel -> subgroup membership (`{"cmd":"subgroup_assign","ch":0,
+    /// "group":0,"member":true}`).
+    SubgroupAssign {
+        ch: u16,
+        group: u8,
+        member: bool,
+    },
+    /// R2 mute-group master mute (`{"cmd":"mute_group","group":0,
+    /// "muted":true}`): 0-based over `0..mute_group_count()` (sim
+    /// in-memory, DL32S native, X-Air `/config/mute/1..4` masters on XR18
+    /// FW 1.20 — assign path stays `unsupported` there, no desk leaf).
+    MuteGroup {
+        group: u8,
+        muted: bool,
+    },
+    /// R2 channel -> mute-group membership.
+    MuteGroupAssign {
+        ch: u16,
+        group: u8,
+        member: bool,
+    },
+    /// R2 desk file download (`{"cmd":"file_download",
+    /// "filename":"Show.zip"}`): replies with [`Event::File`] carrying
+    /// base64 `data` (DL32S native, sim in-memory; XR18: unsupported).
+    FileDownload {
+        filename: String,
+    },
+    /// R2 desk file upload (`{"cmd":"file_upload","filename":"Show.zip",
+    /// "data":"<base64>","file_type":0}`): replies with an [`Event::File`]
+    /// ack (`data` absent, `size` = bytes written).
+    FileUpload {
+        filename: String,
+        data: String,
+        file_type: u32,
+    },
+    /// R2: clear all soloed channels on the desk (fire-and-forget, no echo).
+    /// X-Air `/-action/clearsolo` (rig-verified answering on XR18 FW 1.20);
+    /// other drivers: honest `unsupported`.
+    ClearSolo,
 }
 
 impl Cmd {
@@ -178,7 +261,9 @@ impl Cmd {
             "fader",
             "main_fader",
             "set_main_fader",
+            "main_mute",
             "mute",
+            "solo",
             "param",
             "focus",
             "lock",
@@ -206,6 +291,16 @@ impl Cmd {
             "offline",
             "offline_push",
             "offline_discard",
+            "bus_fader",
+            "bus_mute",
+            "subgroup_fader",
+            "subgroup_mute",
+            "subgroup_assign",
+            "mute_group",
+            "mute_group_assign",
+            "file_download",
+            "file_upload",
+            "clear_solo",
         ]
     }
 }
@@ -305,6 +400,38 @@ pub struct FxCaps {
     pub types: Vec<FxTypeCaps>,
 }
 
+/// One `caps.groups` row (R2): addressable master-section counts behind
+/// the bus/subgroup/mute-group commands. Zero = honest `unsupported` on
+/// the active driver (never faked).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct GroupsCaps {
+    #[serde(default)]
+    pub buses: u8,
+    #[serde(default)]
+    pub subgroups: u8,
+    #[serde(default)]
+    pub mute_groups: u8,
+    /// Per-channel assign-leaf support: false where the desk has no
+    /// assign leaf (X-Air: no subgroup/mute-group membership leaves —
+    /// masters only). The UI collapses assign toggles there (never faked).
+    #[serde(default = "default_true")]
+    pub mg_assign: bool,
+    #[serde(default = "default_true")]
+    pub sub_assign: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// `caps.files` (R2): desk file-transfer support behind `file_download` /
+/// `file_upload` (`supported:false` on sim? no — sim models it in-memory;
+/// false on XR18, whose OSC map has no file path).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FilesCaps {
+    #[serde(default)]
+    pub supported: bool,
+}
 /// One `caps.routing` patch group (R2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingGroupCaps {
@@ -440,6 +567,13 @@ pub enum Event {
         /// R2 routing support block. Same back-compat default.
         #[serde(default)]
         routing: RoutingCaps,
+        /// R2 master-section counts (buses/subgroups/mute groups). Same
+        /// back-compat default (all zero = unsupported).
+        #[serde(default)]
+        groups: GroupsCaps,
+        /// R2 file-transfer support. Same back-compat default.
+        #[serde(default)]
+        files: FilesCaps,
     },
     Params {
         ch: u16,
@@ -522,6 +656,59 @@ pub enum Event {
         tap: String,
         levels: Vec<f32>,
     },
+    /// R2 mix-bus master echo (`bus_fader`/`bus_mute`): full master state
+    /// after the write (both fields re-read from the driver).
+    Bus {
+        bus: u8,
+        fader: f32,
+        muted: bool,
+    },
+    /// R2 subgroup master echo (`subgroup_fader`/`subgroup_mute`).
+    Subgroup {
+        group: u8,
+        fader: f32,
+        muted: bool,
+    },
+    /// R2 subgroup-membership echo (`subgroup_assign`).
+    SubgroupAssign {
+        ch: u16,
+        group: u8,
+        member: bool,
+    },
+    /// R2 mute-group master echo (`mute_group`).
+    MuteGroup {
+        group: u8,
+        muted: bool,
+    },
+    /// R2 mute-group-membership echo (`mute_group_assign`).
+    MuteGroupAssign {
+        ch: u16,
+        group: u8,
+        member: bool,
+    },
+    /// R2 Main LR master echo (`main_mute`): full master state after the
+    /// write (fader + mute re-read from the driver). Also unicast in the
+    /// attach snapshot so fresh pages learn the master without a write.
+    Main {
+        fader: Option<f32>,
+        muted: Option<bool>,
+    },
+    /// R2 per-strip solo echo (`solo`): the confirmed solo state after the
+    /// write. Sparse in the attach snapshot (only soloed strips emit).
+    Solo {
+        ch: u16,
+        soloed: bool,
+    },
+    /// R2 file frame: `file_download` replies carry base64 `data` (`size`
+    /// = decoded bytes); `file_upload` replies are acks (`data` absent,
+    /// `size` = bytes written).
+    File {
+        filename: String,
+        size: usize,
+        file_type: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        data: Option<String>,
+    },
 /// Realtime negotiation ack (MR1): unicast reply to [`Cmd::Hello`],
     /// carrying the client's current binary-meter preference. Never
     /// broadcast. Old clients never see it (they never send `hello`).
@@ -560,6 +747,14 @@ impl Event {
             Event::Routing { .. } => "routing",
             Event::OfflineDiff { .. } => "offline_diff",
             Event::Taps { .. } => "taps",
+            Event::Bus { .. } => "bus",
+            Event::Subgroup { .. } => "subgroup",
+            Event::SubgroupAssign { .. } => "subgroup_assign",
+            Event::MuteGroup { .. } => "mute_group",
+            Event::MuteGroupAssign { .. } => "mute_group_assign",
+            Event::Main { .. } => "main",
+            Event::Solo { .. } => "solo",
+            Event::File { .. } => "file",
         }
     }
 

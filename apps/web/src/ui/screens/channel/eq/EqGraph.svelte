@@ -13,12 +13,30 @@
      Keyboard (addition to the design's pointer behaviour): arrows nudge
      freq (semitone, quarter in fine) / gain (0.5 dB, 0.1 in fine);
      Home/End jump to range ends. Focus ring is the design's
-     2px #7cc4ff outline. -->
+     2px #7cc4ff outline.
+     RTA overlay (backlog: live spectrum on the EQ graph): a teal area path
+     behind the curve driven by the engine's cached per-channel spectrum
+     (world.meters.spectrum for the selected strip, polled at ~8 Hz — meter
+     frames never bump reactive state by design). Peak-hold + decay in
+     rtaOverlay.ts; hides (renders nothing) when frozen/offline/silent or
+     the strip has no spectrum. Honest backdrop, not a calibrated RTA: the
+     desk streams ~20 Hz meter envelopes, so bins are envelope-modulation
+     content, not audio frequencies (see rtaOverlay.ts). -->
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { REDUCED_MOTION } from '../../../primitives/feel.ts';
   import { eqNodeApply, eqPointFromPos, type EqGraphVm } from './eqModel.ts';
   import type { ModuleContext } from '../../../modules/types.ts';
+  import { bridgeStrip } from '../../../state/engineBridge.ts';
+  import { live } from '../../../state/live.svelte.ts';
+  import { ui } from '../../../state/uiStore.svelte.ts';
+  import {
+    RTA_TICK_MS,
+    RTA_TICK_MS_CALM,
+    rtaAreaPath,
+    rtaHasSignal,
+    rtaSmooth,
+  } from './rtaOverlay.ts';
 
   let {
     props = {},
@@ -38,6 +56,37 @@
 
   let box: HTMLDivElement | null = null;
   let dragBand: number | null = null;
+
+  // ---- RTA overlay state (see header comment) ----
+  let rtaPeaks: Float32Array | null = $state(null);
+  let rtaPath = $state('');
+
+  $effect(() => {
+    const tick = (): void => {
+      const world = live.engine;
+      const ch =
+        live.phase === 'online' && world !== null && world.capsReady && !ui.frozen
+          ? bridgeStrip(world, ui.sel.id)
+          : null;
+      let bins: Float32Array | null = null;
+      if (world !== null && ch !== null) {
+        // Mirror liveLevelDb honesty: on xair only channel strips have
+        // rig-verified levels; other families read silence there.
+        if (world.driver === 'xair' && world.kindOf(ch) !== 'in') bins = null;
+        else bins = world.meters.spectrum(ch);
+      }
+      if (!bins || !rtaHasSignal(bins)) {
+        rtaPeaks = null;
+        rtaPath = '';
+        return;
+      }
+      rtaPeaks = rtaSmooth(rtaPeaks, bins);
+      rtaPath = rtaAreaPath(rtaPeaks);
+    };
+    tick();
+    const iv = setInterval(tick, REDUCED_MOTION ? RTA_TICK_MS_CALM : RTA_TICK_MS);
+    return () => clearInterval(iv);
+  });
 
   function down(e: PointerEvent, band: number): void {
     onEvent?.('select', { band });
@@ -105,6 +154,17 @@
         <line x1="0" y1={gh.y} x2="1000" y2={gh.y} stroke={gh.stroke} stroke-width="1" vector-effect="non-scaling-stroke"
         ></line>
       {/each}
+      {#if rtaPath}
+        <path
+          d={rtaPath}
+          fill="rgba(62,208,224,0.12)"
+          stroke="rgba(62,208,224,0.45)"
+          stroke-width="1.2"
+          vector-effect="non-scaling-stroke"
+          pointer-events="none"
+          aria-hidden="true"
+        ></path>
+      {/if}
       <path
         d={graph.bandFill}
         fill={graph.bandFillColor}

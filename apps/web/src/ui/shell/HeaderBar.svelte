@@ -25,6 +25,8 @@
     onConnect,
     onSettings,
     onScene,
+    onMeters = null,
+    metersActive = false,
     compact = false,
   }: {
     vm: HeaderView;
@@ -36,6 +38,10 @@
     onConnect: () => void;
     onSettings: () => void;
     onScene: () => void;
+    /** Meter-bridge toggle (null = hide the button). */
+    onMeters?: (() => void) | null;
+    /** Meter-bridge overlay open (toolbar active state). */
+    metersActive?: boolean;
     /** Phone density: hide redundant titles, narrow the scene button. */
     compact?: boolean;
   } = $props();
@@ -44,6 +50,7 @@
   const rt = $derived(tileStyle(mode === 'routing'));
   const cn = $derived(tileStyle(mode === 'connect'));
   const st = $derived(tileStyle(mode === 'settings'));
+  const mb = $derived(tileStyle(metersActive));
 </script>
 
 <header
@@ -121,6 +128,16 @@
     >
       <Icon name="gear" size={22} />
     </button>
+    {#if onMeters}
+      <button
+        onclick={onMeters}
+        aria-label="Meter bridge"
+        aria-current={ariaCurrent(metersActive)}
+        style="width:var(--u4-iconbtn);height:var(--u4-iconbtn);border-radius:var(--u4-r-3);border:1px solid {mb.border};background:{mb.bg};color:var(--u4-text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
+      >
+        <Icon name="meters" size={22} />
+      </button>
+    {/if}
   </div>
 
   <div aria-hidden="true" style="width:1px;height:30px;flex:none;background:var(--u4-divider)"></div>

@@ -11,7 +11,7 @@ use addrs::{dl32s_inputs, INPUT_COUNT};
 use openmix_core::{
     validate_fader, ChannelStrip, MixerDriver, MixerInfo, MixerSnapshot, ParamValue, StripId,
 };
-use openmix_transport::mackie::{MackieSession, VALUE_TYPE_PARAM};
+use openmix_transport::mackie::{MackieSession, MUTE_GROUP_COUNT, REQUEST_TIMEOUT, VALUE_TYPE_PARAM};
 use tokio::sync::{Mutex, MutexGuard};
 
 /// Live DL32S-class mixer on TCP 50001.
@@ -41,6 +41,16 @@ impl Dl32sDriver {
             anyhow::bail!("channel {} out of range 1..={INPUT_COUNT}", strip.0);
         }
         Ok(ch)
+    }
+
+    fn check_filename(filename: &str) -> anyhow::Result<()> {
+        if filename.is_empty() || filename.len() > 128 {
+            anyhow::bail!("dl32s: filename must be 1..=128 chars");
+        }
+        if filename.contains(['/', '\\', '\0']) {
+            anyhow::bail!("dl32s: filename {filename:?} must not contain path separators");
+        }
+        Ok(())
     }
 
     async fn session(&self) -> anyhow::Result<MutexGuard<'_, Option<MackieSession>>> {
@@ -153,6 +163,254 @@ impl Dl32sDriver {
             .save_show_snapshot(snapshot_1_based, name)
             .await
     }
+
+    // ---- aux sends (per input strip) ----
+
+    pub async fn set_aux_mute(&self, channel: u32, aux: u32, muted: bool) -> anyhow::Result<()> {
+        let addr = dl32s_inputs().address(channel, &format!("aux{aux}_mute"))?;
+        let _ = aux; // validation via address table
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_int(addr, u32::from(muted), VALUE_TYPE_PARAM).await
+    }
+
+    pub async fn set_aux_fader_db(&self, channel: u32, aux: u32, db: f32) -> anyhow::Result<()> {
+        let db = db.clamp(-120.0, 10.0);
+        let addr = dl32s_inputs().address(channel, &format!("aux{aux}_level"))?;
+        let _ = aux;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_float(addr, db).await
+    }
+
+    pub async fn set_aux_pan(&self, channel: u32, aux: u32, pan: f32) -> anyhow::Result<()> {
+        let pan = pan.clamp(-1.0, 1.0);
+        let addr = dl32s_inputs().address(channel, &format!("aux{aux}_pan"))?;
+        let _ = aux;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_float(addr, pan).await
+    }
+
+    // ---- subgroups ----
+
+    pub async fn set_subgroup_mute(&self, group: u32, muted: bool) -> anyhow::Result<()> {
+        let addr = addrs::dl32s_subgroups().address(group, "mute")?;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_int(addr, u32::from(muted), VALUE_TYPE_PARAM).await
+    }
+
+    pub async fn set_subgroup_fader_db(&self, group: u32, db: f32) -> anyhow::Result<()> {
+        let db = db.clamp(-120.0, 10.0);
+        let addr = addrs::dl32s_subgroups().address(group, "fader")?;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_float(addr, db).await
+    }
+
+    // ---- main ----
+
+    pub async fn set_main_mute(&self, muted: bool) -> anyhow::Result<()> {
+        let addr = addrs::dl32s_main().address(1, "mute")?;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_int(addr, u32::from(muted), VALUE_TYPE_PARAM).await
+    }
+
+    pub async fn set_main_fader_db(&self, db: f32) -> anyhow::Result<()> {
+        let db = db.clamp(-120.0, 10.0);
+        let addr = addrs::dl32s_main().address(1, "fader")?;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_float(addr, db).await
+    }
+
+    // ---- aux masters ----
+
+    pub async fn set_auxmaster_mute(&self, aux: u32, muted: bool) -> anyhow::Result<()> {
+        let addr = addrs::dl32s_auxmasters().address(aux, "mute")?;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_int(addr, u32::from(muted), VALUE_TYPE_PARAM).await
+    }
+
+    pub async fn set_auxmaster_fader_db(&self, aux: u32, db: f32) -> anyhow::Result<()> {
+        let db = db.clamp(-120.0, 10.0);
+        let addr = addrs::dl32s_auxmasters().address(aux, "fader")?;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_float(addr, db).await
+    }
+
+    // ---- rename (channel names) ----
+
+    pub async fn set_channel_name(&self, slot: u32, name: &str) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").set_channel_name(slot, name).await
+    }
+
+    // ---- mute group (already) + snapshot delete/reboot/etc via session ----
+
+    pub async fn delete_snapshot(&self, slot: u32) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").delete_snapshot(slot).await
+    }
+
+    pub async fn reboot(&self, mode: u32) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").reboot(mode).await
+    }
+
+    pub async fn disconnect_notice(&self) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").disconnect_notice().await
+    }
+
+    // ---- file transfer ----
+
+    pub async fn download_file(&self, filename: &str) -> anyhow::Result<Vec<u8>> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").download_file(filename, REQUEST_TIMEOUT).await
+    }
+
+    pub async fn upload_file(&self, filename: &str, data: &[u8], file_type: u32) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").upload_file(filename, data, file_type, REQUEST_TIMEOUT).await
+    }
+
+    pub async fn set_file_crc(&self, address: u32, crc: u32) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").set_file_crc(address, crc).await
+    }
+
+    pub async fn process_files(&self) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").process_files().await
+    }
+
+    pub async fn refresh_snapshot_names(&self) -> anyhow::Result<std::collections::HashMap<u32, String>> {
+        let guard = self.session().await?;
+        let session = guard.as_ref().expect("checked above");
+        let _ = session.download_file("Show.zip", REQUEST_TIMEOUT).await;
+        Ok(session.snapshot_names())
+    }
+
+    // ---- device admin ----
+
+    pub async fn get_device_name(&self) -> anyhow::Result<String> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").get_device_name(REQUEST_TIMEOUT).await
+    }
+    pub async fn set_device_name(&self, name: &str) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").set_device_name(name, REQUEST_TIMEOUT).await
+    }
+    pub async fn get_subdevice_name(&self) -> anyhow::Result<String> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").get_subdevice_name(REQUEST_TIMEOUT).await
+    }
+    pub async fn get_ip_address(&self) -> anyhow::Result<String> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").get_ip_address(REQUEST_TIMEOUT).await
+    }
+    pub async fn get_lock_status(&self) -> anyhow::Result<u32> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").get_lock_status(REQUEST_TIMEOUT).await
+    }
+    pub async fn get_static_ip_config(&self) -> anyhow::Result<(bool, String, String, String)> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").get_static_ip_config(REQUEST_TIMEOUT).await
+    }
+    pub async fn set_static_ip_config(&self, is_static: bool, address: &str, mask: &str, gateway: &str) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").set_static_ip_config(is_static, address, mask, gateway, REQUEST_TIMEOUT).await
+    }
+    pub async fn get_max_message_words(&self) -> anyhow::Result<u32> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").get_max_message_words(REQUEST_TIMEOUT).await
+    }
+    pub async fn get_network_config(&self) -> anyhow::Result<Vec<u32>> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").get_network_config(REQUEST_TIMEOUT).await
+    }
+    pub async fn site_survey(&self) -> anyhow::Result<Vec<[u32; 11]>> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").site_survey(REQUEST_TIMEOUT).await
+    }
+    pub async fn get_transport_status(&self, kind: &str) -> anyhow::Result<openmix_transport::mackie::Message> {
+        let guard = self.session().await?;
+        let session = guard.as_ref().expect("checked above");
+        let subtype = match kind {
+            "transport" => 8u32,
+            "multitrack" => 9u32,
+            "music" => 10u32,
+            _ => anyhow::bail!("kind must be transport, multitrack or music"),
+        };
+        session.request_general_info(subtype, REQUEST_TIMEOUT).await
+    }
+    pub async fn get_show_info(&self) -> anyhow::Result<openmix_transport::mackie::Message> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").get_show_info(REQUEST_TIMEOUT).await
+    }
+    pub async fn show_ok(&self) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").show_ok().await
+    }
+    pub async fn get_show_crc(&self, pid: u32) -> anyhow::Result<openmix_transport::mackie::Message> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").get_show_crc(pid, REQUEST_TIMEOUT).await
+    }
+    pub async fn set_show_parameter(&self, pid: u32, value: u32) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").set_show_parameter(pid, value).await
+    }
+    pub async fn set_show_name(&self, pid: u32, name: &str) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").set_show_name(pid, name).await
+    }
+    pub async fn enable_meter_reports(&self) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").enable_meter_reports().await
+    }
+    pub async fn recall_snapshot_addr(&self, address: u32, slot: u32) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").recall_snapshot(address, slot).await
+    }
+    pub async fn set_values(&self, values: &std::collections::HashMap<u32, u32>, value_type: u8) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").set_values(values, value_type).await
+    }
+    pub async fn raw_set_value_int(&self, address: u32, value: i64) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_int(address, value as u32, VALUE_TYPE_PARAM).await
+    }
+    pub async fn raw_set_value_float(&self, address: u32, value: f32) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_float(address, value).await
+    }
+    pub async fn request_value_u32(&self, address: u32) -> anyhow::Result<Option<u32>> {
+        let guard = self.session().await?;
+        let session = guard.as_ref().expect("checked above");
+        Ok(session.cached(address))
+    }
+}
+
+impl Dl32sDriver {
+    fn dl_check_bus(bus: u8) -> anyhow::Result<u32> {
+        let count = addrs::dl32s_auxmasters().count;
+        if (bus as u32) >= count {
+            anyhow::bail!("dl32s: bus {bus} out of range 0..{count} (0-based)");
+        }
+        Ok(bus as u32 + 1)
+    }
+
+    fn dl_check_subgroup(group: u8) -> anyhow::Result<u32> {
+        let count = addrs::dl32s_subgroups().count;
+        if (group as u32) >= count {
+            anyhow::bail!("dl32s: subgroup {group} out of range 0..{count} (0-based)");
+        }
+        Ok(group as u32 + 1)
+    }
+
+    fn dl_check_mute_group(group: u8) -> anyhow::Result<u32> {
+        let count = MUTE_GROUP_COUNT;
+        if (group as u32) >= count {
+            anyhow::bail!("dl32s: mute group {group} out of range 0..{count} (0-based)");
+        }
+        Ok(group as u32 + 1)
+    }
 }
 
 impl MixerDriver for Dl32sDriver {
@@ -218,6 +476,49 @@ impl MixerDriver for Dl32sDriver {
             .write_int(addr, u32::from(muted), VALUE_TYPE_PARAM)
             .await
     }
+    async fn set_name(&self, strip: StripId, name: &str) -> anyhow::Result<()> {
+        let ch = Self::channel(strip)?;
+        self.set_channel_name(ch, name).await
+    }
+    async fn get_name(&self, strip: StripId) -> anyhow::Result<String> {
+        let ch = Self::channel(strip)?;
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .expect("checked above")
+            .name(ch)
+            .ok_or_else(|| anyhow::anyhow!("name: no value pushed yet"))
+    }
+    async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
+        self.set_main_fader_db(addrs::DL32S_FADER_SCALE.forward(value)).await
+    }
+    async fn get_main_fader(&self) -> anyhow::Result<f32> {
+        let addr = addrs::dl32s_main().address(1, "fader")?;
+        let guard = self.session().await?;
+        let raw = guard
+            .as_ref()
+            .expect("checked above")
+            .cached(addr)
+            .ok_or_else(|| anyhow::anyhow!("main fader: no value pushed yet"))?;
+        Ok(addrs::DL32S_FADER_SCALE.inverse(f32::from_bits(raw)))
+    }
+
+    /// Main LR master mute: the inherent `set_main_mute` leaf exists; the
+    /// read rides the pushed-value cache like every other DL32S mute.
+    async fn set_main_mute(&self, muted: bool) -> anyhow::Result<()> {
+        self.set_main_mute(muted).await
+    }
+
+    async fn get_main_mute(&self) -> anyhow::Result<bool> {
+        let addr = addrs::dl32s_main().address(1, "mute")?;
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .expect("checked above")
+            .cached(addr)
+            .map(|v| v != 0)
+            .ok_or_else(|| anyhow::anyhow!("main mute: no value pushed yet"))
+    }
 
     async fn get_mute(&self, strip: StripId) -> anyhow::Result<bool> {
         let ch = Self::channel(strip)?;
@@ -231,14 +532,144 @@ impl MixerDriver for Dl32sDriver {
             .ok_or_else(|| anyhow::anyhow!("mute: no value pushed yet"))
     }
 
-    async fn get_name(&self, strip: StripId) -> anyhow::Result<String> {
-        let ch = Self::channel(strip)?;
+    // ---- R2 mix-bus masters (aux masters 1..8, 0-based bus) ----
+    fn bus_count(&self) -> u8 {
+        addrs::dl32s_auxmasters().count as u8
+    }
+
+    async fn set_bus_fader(&self, bus: u8, value: f32) -> anyhow::Result<()> {
+        let aux = Self::dl_check_bus(bus)?;
+        self.set_auxmaster_fader_db(aux, addrs::DL32S_FADER_SCALE.forward(validate_fader(value)?)).await
+    }
+
+    async fn get_bus_fader(&self, bus: u8) -> anyhow::Result<f32> {
+        let aux = Self::dl_check_bus(bus)?;
+        let addr = addrs::dl32s_auxmasters().address(aux, "fader")?;
+        let guard = self.session().await?;
+        let raw = guard
+            .as_ref()
+            .expect("checked above")
+            .cached(addr)
+            .ok_or_else(|| anyhow::anyhow!("bus fader: no value pushed yet"))?;
+        Ok(addrs::DL32S_FADER_SCALE.inverse(f32::from_bits(raw)))
+    }
+
+    async fn set_bus_mute(&self, bus: u8, muted: bool) -> anyhow::Result<()> {
+        let aux = Self::dl_check_bus(bus)?;
+        self.set_auxmaster_mute(aux, muted).await
+    }
+
+    async fn get_bus_mute(&self, bus: u8) -> anyhow::Result<bool> {
+        let aux = Self::dl_check_bus(bus)?;
+        let addr = addrs::dl32s_auxmasters().address(aux, "mute")?;
         let guard = self.session().await?;
         guard
             .as_ref()
             .expect("checked above")
-            .name(ch)
-            .ok_or_else(|| anyhow::anyhow!("name: no value pushed yet"))
+            .cached(addr)
+            .map(|v| v != 0)
+            .ok_or_else(|| anyhow::anyhow!("bus mute: no value pushed yet"))
+    }
+
+    // ---- R2 subgroup masters (1..6, 0-based group) + membership ----
+    fn subgroup_count(&self) -> u8 {
+        addrs::dl32s_subgroups().count as u8
+    }
+
+    async fn set_subgroup_fader(&self, group: u8, value: f32) -> anyhow::Result<()> {
+        let g = Self::dl_check_subgroup(group)?;
+        self.set_subgroup_fader_db(g, addrs::DL32S_FADER_SCALE.forward(validate_fader(value)?)).await
+    }
+
+    async fn get_subgroup_fader(&self, group: u8) -> anyhow::Result<f32> {
+        let g = Self::dl_check_subgroup(group)?;
+        let addr = addrs::dl32s_subgroups().address(g, "fader")?;
+        let guard = self.session().await?;
+        let raw = guard
+            .as_ref()
+            .expect("checked above")
+            .cached(addr)
+            .ok_or_else(|| anyhow::anyhow!("subgroup fader: no value pushed yet"))?;
+        Ok(addrs::DL32S_FADER_SCALE.inverse(f32::from_bits(raw)))
+    }
+
+    async fn set_subgroup_mute(&self, group: u8, muted: bool) -> anyhow::Result<()> {
+        let g = Self::dl_check_subgroup(group)?;
+        self.set_subgroup_mute(g, muted).await
+    }
+
+    async fn get_subgroup_mute(&self, group: u8) -> anyhow::Result<bool> {
+        let g = Self::dl_check_subgroup(group)?;
+        let addr = addrs::dl32s_subgroups().address(g, "mute")?;
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .expect("checked above")
+            .cached(addr)
+            .map(|v| v != 0)
+            .ok_or_else(|| anyhow::anyhow!("subgroup mute: no value pushed yet"))
+    }
+
+    async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+        let g = Self::dl_check_subgroup(group)?;
+        let ch1 = Self::channel(ch)?;
+        let addr = dl32s_inputs().address(ch1, &format!("sub{g}"))?;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_int(addr, u32::from(member), VALUE_TYPE_PARAM).await
+    }
+
+    async fn get_subgroup_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        let g = Self::dl_check_subgroup(group)?;
+        let ch1 = Self::channel(ch)?;
+        let addr = dl32s_inputs().address(ch1, &format!("sub{g}"))?;
+        let v = self.request_value_u32(addr).await?.ok_or_else(|| anyhow::anyhow!("subgroup assign: no value pushed yet"))?;
+        Ok(v != 0)
+    }
+
+    // ---- R2 mute-group masters + membership ----
+    fn mute_group_count(&self) -> u8 {
+        MUTE_GROUP_COUNT as u8
+    }
+
+    async fn set_mute_group(&self, group: u8, muted: bool) -> anyhow::Result<()> {
+        let g = Self::dl_check_mute_group(group)?;
+        self.set_mute_group(g, muted).await
+    }
+
+    async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool> {
+        let g = Self::dl_check_mute_group(group)?;
+        self.get_mute_group(g).await
+    }
+
+    async fn set_mute_group_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+        let g = Self::dl_check_mute_group(group)?;
+        let ch1 = Self::channel(ch)?;
+        let addr = dl32s_inputs().address(ch1, &format!("mutegroup{g}"))?;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above").write_int(addr, u32::from(member), VALUE_TYPE_PARAM).await
+    }
+
+    async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        let g = Self::dl_check_mute_group(group)?;
+        let ch1 = Self::channel(ch)?;
+        let addr = dl32s_inputs().address(ch1, &format!("mutegroup{g}"))?;
+        let v = self.request_value_u32(addr).await?.ok_or_else(|| anyhow::anyhow!("mute-group assign: no value pushed yet"))?;
+        Ok(v != 0)
+    }
+
+    // ---- R2 file transfer (Show.zip up/download) ----
+    fn file_transfer(&self) -> bool {
+        true
+    }
+
+    async fn download_file(&self, filename: &str) -> anyhow::Result<Vec<u8>> {
+        Self::check_filename(filename)?;
+        self.download_file(filename).await
+    }
+
+    async fn upload_file(&self, filename: &str, data: &[u8], file_type: u32) -> anyhow::Result<()> {
+        Self::check_filename(filename)?;
+        self.upload_file(filename, data, file_type).await
     }
 
     async fn set_param(
@@ -250,7 +681,8 @@ impl MixerDriver for Dl32sDriver {
         match (param, value) {
             ("fader", ParamValue::Float(v)) => self.set_fader(strip, v).await,
             ("mute", ParamValue::Bool(m)) => self.set_mute(strip, m).await,
-            ("name", _) => anyhow::bail!("dl32s: set_name not supported (rename write encoding unconfirmed)"),
+            ("name", ParamValue::Text(n)) => self.set_name(strip, &n).await,
+            ("name", _) => anyhow::bail!("dl32s: set_name requires text"),
             (key, v) => self.set_field(strip, key, v).await,
         }
     }
@@ -279,7 +711,7 @@ impl MixerDriver for Dl32sDriver {
                 .map(|raw| addrs::DL32S_FADER_SCALE.inverse(f32::from_bits(raw)))
                 .unwrap_or(0.0);
             let mute = session.cached(mute_addr).map(|v| v != 0).unwrap_or(false);
-            let pan = session.cached(pan_addr).map(f32::from_bits).unwrap_or(0.5);
+            let pan = session.cached(pan_addr).map(f32::from_bits).unwrap_or(0.0);
             let name = session
                 .name(ch)
                 .unwrap_or_else(|| format!("CH{ch:02}"));

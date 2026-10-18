@@ -6,6 +6,8 @@
 use openmix_core::{MixerDriver, MixerInfo, ParamValue, StripId};
 use openmix_transport::{KeepaliveConfig, OscSession, osc};
 use rosc::{OscMessage, OscType};
+use std::net::SocketAddr;
+use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, broadcast};
 
 pub mod dyn_gr;
@@ -31,6 +33,9 @@ pub mod addrs {
     pub const PORT: u16 = 10024;
     pub const XREMOTE: &str = "/xremote";
     pub const INFO: &str = "/info";
+    /// Clear-solo action leaf (fire-and-forget). Rig-verified answering
+    /// (int) on XR18 FW 1.20; no undo leaf answers (probed 2026-10-18).
+    pub const CLEAR_SOLO: &str = "/-action/clearsolo";
     /// Meter stream id requested from the mixer (`/meters/1` carries the
     /// 16-ch + aux + FX + bus + main + monitor blob; see xr-meters).
     pub const METER_SUBSCRIBE: &str = "/meters/1";
@@ -60,7 +65,8 @@ pub mod addrs {
     /// Main LR fader. X32 uses `/main/st/mix/fader`; X-Air uses `/lr/*`.
     /// Hardware-verified: `/main/st/mix/fader` gets NO reply on XR18 FW 1.20.
     pub const MAIN_FADER: &str = "/lr/mix/fader";
-    /// Main LR mute, by analogy with `/ch/XX/mix/on` (not yet live-queried).
+    /// Main LR mute (`/lr/mix/on`, int `1` = unmuted / `0` = muted).
+    /// Hardware-verified answering on XR18 FW 1.20 (2026-10-18).
     pub const MAIN_ON: &str = "/lr/mix/on";
     /// Main LR name, by analogy with `/ch/XX/config/name` (not yet live-queried).
     pub const MAIN_NAME: &str = "/lr/config/name";
@@ -80,6 +86,32 @@ pub mod addrs {
     /// 32-strip maps still validate when the model is explicitly selected).
     pub const X32KIND_CHANNELS: u16 = 32;
     pub const MAX_BUS: u8 = 6;
+
+    /// Fallback UDP port for the connect-time sweep: some firmware/network
+    /// setups answer on 10023 instead of 10024. Owner rig (XR18 FW 1.20)
+    /// is silent on 10023 — the fallback is a no-op there by design.
+    pub const FALLBACK_PORT: u16 = 10023;
+
+    /// Per-probe timeout for the connect-time port sweep. Connect path only;
+    /// steady-state queries keep the 2 s `DEFAULT_QUERY_TIMEOUT` (venue-wifi
+    /// safety: a slow gig reply must not drop a poll read).
+    pub const CONNECT_PROBE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(400);
+
+    /// Mute-group master count, rig-verified (XR18 FW 1.20, 2026-10-18):
+    /// `/config/mute/1..4` answer int, `/config/mute/5..8` are silent.
+    /// (`/config/mute/N/name` and per-channel membership leaves are silent
+    /// — masters only, no assign path.)
+    pub const MUTE_GROUPS: u8 = 4;
+
+    /// OSC address of one mute-group master (`/config/mute/N`, 1-based,
+    /// `1..=MUTE_GROUPS`). Out-of-range groups error locally instead of
+    /// hitting a silent address.
+    pub fn mute_group(group: u8) -> anyhow::Result<String> {
+        if group >= MUTE_GROUPS {
+            anyhow::bail!("mute group {group} out of range 0..{MUTE_GROUPS} (0-based)");
+        }
+        Ok(format!("/config/mute/{}", group + 1))
+    }
 
     /// Meter renewal interval: the desk stops streaming ~10 s after a
     /// subscribe (INFERRED timing — owner rig saw only ~5 blobs/12 s without
@@ -427,8 +459,7 @@ fn generic_send(param: &str) -> anyhow::Result<(u8, &str)> {
 /// desk is silent there); buses are single-digit `/bus/N` (T2); DCA strips
 /// are `/dca/N` with fader/on directly underneath (no `/mix` segment).
 /// Every root below is live-verified on the owner rig (FW 1.20).
-fn strip_root(strip: u16) -> anyhow::Result<(openmix_core::StripKind, String)> {
-    use openmix_core::StripKind as K;
+fn strip_root(strip: u16) -> anyhow::Result<(openmix_core::StripKind, String)> {    use openmix_core::StripKind as K;
     let s = strip as usize;
     if s < 16 {
         return Ok((K::In, format!("/ch/{:02}", s + 1)));
@@ -495,6 +526,199 @@ fn strip_config_name(root: &str) -> String {
     format!("{root}/config/name")
 }
 
+/// True when `addr` carries an explicit `:port` (or parses as a full
+/// `SocketAddr`): the connect sweep leaves those alone and dials as-is.
+/// Mirrors [`openmix_transport::session::resolve_peer`]'s host/port split
+/// (bare IPv6 without brackets is treated as a bare host, same as there).
+fn has_explicit_port(addr: &str) -> bool {
+    if addr.parse::<SocketAddr>().is_ok() {
+        return true;
+    }
+    let host = addr.trim().trim_matches(['[', ']']);
+    if let Some((_, p)) = host.rsplit_once(':') {
+        return p.parse::<u16>().is_ok();
+    }
+    false
+}
+
+/// One connect-time `/info` ping to `host:port`: any datagram back counts
+/// as alive. Bounded by [`addrs::CONNECT_PROBE_TIMEOUT`]; never used on
+/// the steady-state path.
+async fn probe_port(host: &str, port: u16) -> bool {
+    use openmix_transport::session::resolve_peer;
+    let peer = match resolve_peer(host, port) {
+        Ok(p) => p,
+        Err(_) => return false,
+    };
+    let sock = match UdpSocket::bind("0.0.0.0:0").await {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    if sock.connect(peer).await.is_err() {
+        return false;
+    }
+    let bytes = match osc::query_message(addrs::INFO) {
+        Ok(b) => b,
+        Err(_) => return false,
+    };
+    if sock.send(&bytes).await.is_err() {
+        return false;
+    }
+    let mut buf = vec![0u8; 65535];
+    matches!(
+        tokio::time::timeout(addrs::CONNECT_PROBE_TIMEOUT, sock.recv(&mut buf)).await,
+        Ok(Ok(_))
+    )
+}
+
+/// Reverse of [`strip_root`]: an OSC root back to its global strip index.
+/// Returns `None` for roots outside the XR18 map (including the legacy
+/// stereo `/rtn/aux` form, which this driver never addresses).
+fn strip_of_root(root: &str) -> Option<u16> {
+    let path = root.strip_prefix('/')?;
+    let (fam, n) = path.split_once('/')?;
+    let n: usize = n.parse().ok()?;
+    match fam {
+        "ch" if (1..=16).contains(&n) => Some((n - 1) as u16),
+        "rtn" if (1..=4).contains(&n) => Some((15 + n) as u16),
+        "bus" if (1..=6).contains(&n) => Some((19 + n) as u16),
+        "fxsend" if (1..=4).contains(&n) => Some((25 + n) as u16),
+        "dca" if (1..=4).contains(&n) => Some((30 + n) as u16),
+        _ => None,
+    }
+}
+
+/// Strip index of the `/lr` root (the main-LR family, one strip).
+const LR_STRIP: u16 = 30;
+
+/// Canonical catalogue id per send slot (bus slots 1..=6 ride `auxN_level`,
+/// FX slots 7..=10 ride `fxN_level` — the same ids `get_param` decodes).
+const AUX_LEVEL_IDS: [&str; 6] = [
+    "aux1_level",
+    "aux2_level",
+    "aux3_level",
+    "aux4_level",
+    "aux5_level",
+    "aux6_level",
+];
+const FX_LEVEL_IDS: [&str; 4] = ["fx1_level", "fx2_level", "fx3_level", "fx4_level"];
+
+/// Parse one desk-originated OSC message into a mix-surface param update.
+///
+/// The desk broadcasts every param change to all `/xremote` subscribers
+/// (owner-rig verified: a fader set from a second client arrives here in
+/// ~250 ms), and it also echoes every client's query replies to everyone.
+/// This covers the mixer surface the desk actually moves under operators'
+/// hands — fader/mute/name/pan/send-level/headamp-gain/color (+ the DCA
+/// direct `fader`/`on` forms, which carry no `/mix` segment) — so desk-side
+/// moves apply live instead of waiting for the background poll sweep.
+/// Everything deeper (EQ/dyn/tap) keeps riding the poller; add leaves here
+/// (mirroring `get_param`'s decode arms) to extend live coverage.
+///
+/// Returns the global strip index, the catalogue id and the value in
+/// engineering units (same as `get_param`); `None` for anything outside
+/// the mix surface (other clients' poll traffic, meter streams, `/info`).
+pub fn parse_inbound(msg: &OscMessage) -> Option<(u16, &'static str, ParamValue)> {
+    let addr = msg.addr.strip_prefix('/')?;
+    // Headamp gain (`/headamp/NN/gain`, 1-based wire channel): the only
+    // non-strip-root leaf covered here, decoded like `get_param`'s `gain`
+    // arm (linear wire `0..1` <-> `-12..=+60` dB).
+    if let Some(rest) = addr.strip_prefix("headamp/") {
+        let (n, leaf) = rest.split_once('/')?;
+        if leaf != "gain" {
+            return None;
+        }
+        let ch: u16 = n.parse().ok()?;
+        if !(1..=addrs::XR18_CHANNELS).contains(&ch) {
+            return None;
+        }
+        let db = headamp::wire_to_db(osc::fader_value(msg).ok()?).ok()?;
+        return Some((ch - 1, "gain", ParamValue::Float(db)));
+    }
+    // DCA direct forms first (`/dca/N/fader`, `/dca/N/on` — no `/mix`).
+    if let Some(rest) = addr.strip_prefix("dca/") {
+        let (n, leaf) = rest.split_once('/')?;
+        let strip = strip_of_root(&format!("/dca/{n}"))?;
+        return match leaf {
+            "fader" => Some((strip, "fader", ParamValue::Float(osc::fader_value(msg).ok()?))),
+            "on" => Some((strip, "mute", ParamValue::Bool(osc::mute_is_muted(msg).ok()?))),
+            _ => None,
+        };
+    }
+    // Main LR (`/lr/mix/fader`, `/lr/mix/on`, `/lr/config/name`).
+    if addr == "lr/mix/fader" {
+        return Some((LR_STRIP, "fader", ParamValue::Float(osc::fader_value(msg).ok()?)));
+    }
+    if addr == "lr/mix/on" {
+        return Some((LR_STRIP, "mute", ParamValue::Bool(osc::mute_is_muted(msg).ok()?)));
+    }
+    if addr == "lr/config/name" {
+        return Some((LR_STRIP, "name", ParamValue::Text(osc::string_args(msg).into_iter().next()?)));
+    }
+    if addr == "lr/config/color" {
+        let i = look::int_from_msg(msg, look::COLOR_MIN, look::COLOR_MAX, "color").ok()?;
+        return Some((LR_STRIP, "color", ParamValue::Float(i as f32)));
+    }
+    // Family roots: `/ch/NN`, `/rtn/N`, `/bus/N`, `/fxsend/N`, with the
+    // mix block (`…/mix/fader|on|pan`), a send slot (`…/mix/MM/level`) or a
+    // config name/color (`…/config/name|color`).
+    let (head, leaf) = addr.rsplit_once('/')?;
+    // Send level (`/ch/NN/mix/MM/level`, slots 1..=10): channel roots only
+    // (the `get_param` send arms are channel-scoped), decoded like the
+    // `aux/fx/send…_level` arms (X-Air fader law, dB).
+    if leaf == "level" {
+        let (mix_root, slot) = head.rsplit_once('/')?;
+        let (root, block) = mix_root.rsplit_once('/')?;
+        if block != "mix" {
+            return None;
+        }
+        let ch: u16 = root.strip_prefix("ch/")?.parse().ok()?;
+        if !(1..=addrs::XR18_CHANNELS).contains(&ch) {
+            return None;
+        }
+        let slot: usize = slot.parse().ok()?;
+        let id = match slot {
+            1..=6 => AUX_LEVEL_IDS[slot - 1],
+            7..=10 => FX_LEVEL_IDS[slot - 7],
+            _ => return None,
+        };
+        let db = mix::wire_to_send_db(mix::send_level_value(msg).ok()?).ok()?;
+        return Some((ch - 1, id, ParamValue::Float(db)));
+    }
+    let (root, leaf) = match leaf {
+        "fader" | "on" | "pan" => {
+            let (root, block) = head.rsplit_once('/')?;
+            if block != "mix" {
+                return None;
+            }
+            (root, leaf)
+        }
+        "name" | "color" => {
+            let (root, block) = head.rsplit_once('/')?;
+            if block != "config" {
+                return None;
+            }
+            (root, leaf)
+        }
+        _ => return None,
+    };
+    let strip = strip_of_root(&format!("/{root}"))?;
+    match leaf {
+        "fader" => Some((strip, "fader", ParamValue::Float(osc::fader_value(msg).ok()?))),
+        "on" => Some((strip, "mute", ParamValue::Bool(osc::mute_is_muted(msg).ok()?))),
+        "pan" => {
+            let pan = mix::wire_to_pan(osc::fader_value(msg).ok()?).ok()?;
+            Some((strip, "pan", ParamValue::Float(pan)))
+        }
+        "name" => Some((strip, "name", ParamValue::Text(osc::string_args(msg).into_iter().next()?))),
+        "color" => {
+            let i = look::int_from_msg(msg, look::COLOR_MIN, look::COLOR_MAX, "color").ok()?;
+            Some((strip, "color", ParamValue::Float(i as f32)))
+        }
+        _ => None,
+    }
+}
+
 /// Parse an `fx{n}_level` param id into its 1-based send number.
 fn fx_send(param: &str) -> anyhow::Result<u8> {
     let rest = param
@@ -524,6 +748,16 @@ pub struct XAirDriver {
     /// is ingested). Serves the `gate_gr` / `comp_gr` param reads — the
     /// desk has no GR query address, so there is nothing else to read.
     dyn_cache: Mutex<Option<dyn_gr::DynMeters>>,
+    /// Desk-originated mix-surface updates (see [`parse_inbound`]): stable
+    /// across reconnects, fed by one ingest task per connection. The engine
+    /// subscribes once and applies these to its param cache live.
+    update_tx: broadcast::Sender<openmix_core::ParamUpdate>,
+    /// Latest `/meters/1` level blob in BLOB order (index 0 = ch 1,
+    /// rig-verified; families past the 16 channels are NOT mapped to
+    /// strips — see [`XAirDriver::poll_meters`]). `None` until the first
+    /// blob arrives. Filled by the cache-drain task that
+    /// [`MixerDriver::subscribe_meters`] installs; read by `poll_meters`.
+    meter_latest: std::sync::Arc<std::sync::Mutex<Option<Vec<f32>>>>,
 }
 
 impl Default for XAirDriver {
@@ -542,11 +776,14 @@ impl XAirDriver {
     /// [`addrs::XAirModel::X32Kind`] only for 32-strip maps (not
     /// hardware-verified on X-Air).
     pub fn with_model(model: addrs::XAirModel) -> Self {
+        let (update_tx, _) = broadcast::channel(256);
         Self {
             session: Mutex::new(None),
             peer: Mutex::new(String::new()),
             model,
             dyn_cache: Mutex::new(None),
+            update_tx,
+            meter_latest: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -557,6 +794,23 @@ impl XAirDriver {
         addrs::channel_in(strip, self.model.channels())
     }
 
+    /// Connect-time port sweep for a bare host (no `:port`): ping `/info`
+    /// on 10024, then the 10023 fallback, each bounded by
+    /// [`addrs::CONNECT_PROBE_TIMEOUT`](crate::addrs::CONNECT_PROBE_TIMEOUT);
+    /// dial the first responder, preferring 10024. If neither answers,
+    /// dial 10024 anyway — venue wifi may drop the ping but pass the
+    /// session (same best-effort posture as the old unconditional dial).
+    async fn sweep_peer(host: &str) -> anyhow::Result<SocketAddr> {
+        use openmix_transport::session::resolve_peer;
+        if probe_port(host, addrs::PORT).await {
+            return Ok(resolve_peer(host, addrs::PORT)?);
+        }
+        if probe_port(host, addrs::FALLBACK_PORT).await {
+            return Ok(resolve_peer(host, addrs::FALLBACK_PORT)?);
+        }
+        Ok(resolve_peer(host, addrs::PORT)?)
+    }
+
     async fn session(&self) -> anyhow::Result<tokio::sync::MutexGuard<'_, Option<OscSession>>> {
         let guard = self.session.lock().await;
         if guard.is_none() {
@@ -565,12 +819,25 @@ impl XAirDriver {
         Ok(guard)
     }
 
+    /// Clear all solos (`/-action/clearsolo`, fire-and-forget int `1` =
+    /// button press). Monitoring-side only — main LR untouched. The desk
+    /// answers queries on this leaf with int `0` (nothing soloed); the
+    /// trigger semantic itself is UNVERIFIED-ON-RIG (no solo was active to
+    /// clear during the single live fire, 2026-10-18).
+    pub async fn clear_solo(&self) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(addrs::CLEAR_SOLO, vec![OscType::Int(1)])
+            .await
+    }
+
     /// Stereo aux return strip (`/rtn/aux`, hardware-verified present,
     /// baseline §2). Kept as explicit methods — not a `StripId` — so the
     /// 0..16 channel range maps 1:1 to wire `/ch/01..16` with no phantom
     /// strips (T3).
-    pub async fn get_aux_fader(&self) -> anyhow::Result<f32> {
-        let guard = self.session().await?;
+    pub async fn get_aux_fader(&self) -> anyhow::Result<f32> {        let guard = self.session().await?;
         let reply = guard
             .as_ref()
             .unwrap()
@@ -666,9 +933,10 @@ impl XAirDriver {
         // INFERRED, not owner-rig verified: the subscription reportedly
         // expires after ~10 s (xr-meters re-issues every 9 s) and needs the
         // `/xremote` keepalive (every ~8 s, already running via `connect`)
-        // alongside. Owner-rig step: capture a real meter blob and confirm
-        // the LE-i16 run shape (xr-meters skips 4 header bytes before the
-        // samples — transport parses from offset 0; reconcile on hardware).
+        // alongside. Rig-verified 2026-10-18: the /meters/1 blob is 84 B
+        // = 42 LE-i16 samples with NO header (transport parses from offset
+        // 0 — correct). The xr-meters 4-header-byte note applies to a
+        // different stream shape, not this one.
         session
             .send(
                 addrs::METER_REQUEST,
@@ -796,12 +1064,42 @@ impl MixerDriver for XAirDriver {
     }
 
     async fn connect(&self, addr: &str) -> anyhow::Result<()> {
-        let peer = openmix_transport::session::resolve_peer(addr, addrs::PORT)?;
+        // Connect-time port sweep: bare hosts try 10024 then the 10023
+        // fallback (sub-second probes each); an explicit `:port` is dialed
+        // as-is with no sweep. Neither path touches the steady-state 2 s
+        // query timeout.
+        let peer = if has_explicit_port(addr) {
+            openmix_transport::session::resolve_peer(addr, addrs::PORT)?
+        } else {
+            Self::sweep_peer(addr).await?
+        };
         let session = OscSession::connect(peer, Some(KeepaliveConfig::xremote())).await?;
         // Best-effort discovery ping; failure still leaves the session usable.
         let _ = session
             .query_timeout(addrs::INFO, std::time::Duration::from_millis(800))
             .await;
+        // Desk-broadcast ingest: parse every unmatched inbound message into
+        // the stable update channel (one task per connection; it exits when
+        // the next connect drops this session).
+        let mut rx = session.subscribe_updates();
+        let tx = self.update_tx.clone();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(msg) => {
+                        if let Some((strip, param, value)) = parse_inbound(&msg) {
+                            let _ = tx.send(openmix_core::ParamUpdate {
+                                strip: StripId(strip),
+                                param: param.to_string(),
+                                value,
+                            });
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
         *self.session.lock().await = Some(session);
         *self.peer.lock().await = peer.to_string();
         Ok(())
@@ -883,6 +1181,57 @@ impl MixerDriver for XAirDriver {
         osc::fader_value(&reply)
     }
 
+    /// XR18 bus masters are strips 20..25 (`/bus/N`): mute rides the same
+    /// `/bus/N/mix/on` leaf as any strip (verified present on FW 1.20).
+    fn bus_count(&self) -> u8 {
+        addrs::MAX_BUS
+    }
+
+    async fn set_bus_mute(&self, bus: u8, muted: bool) -> anyhow::Result<()> {
+        if bus >= addrs::MAX_BUS {
+            anyhow::bail!("bus {bus} out of range 0..{} (0-based)", addrs::MAX_BUS);
+        }
+        self.set_mute(StripId(20 + bus as u16), muted).await
+    }
+
+    async fn get_bus_mute(&self, bus: u8) -> anyhow::Result<bool> {
+        if bus >= addrs::MAX_BUS {
+            anyhow::bail!("bus {bus} out of range 0..{} (0-based)", addrs::MAX_BUS);
+        }
+        self.get_mute(StripId(20 + bus as u16)).await
+    }
+
+    /// Mute-group master count, rig-verified (XR18 FW 1.20, 2026-10-18):
+    /// `/config/mute/1..4` answer, `/config/mute/5..8` are silent.
+    fn mute_group_count(&self) -> u8 {
+        addrs::MUTE_GROUPS
+    }
+
+    /// Mute-group master mute (`/config/mute/N`, int). Polarity is
+    /// INFERRED from the leaf name (`1` = group muted): only `0` has ever
+    /// been observed live and the master has never been toggled on hardware
+    /// (toggling could mute member channels audibly), so the `1` direction
+    /// is UNVERIFIED-ON-RIG. Same-value writes round-trip bit-exact.
+    async fn set_mute_group(&self, group: u8, muted: bool) -> anyhow::Result<()> {
+        let addr = addrs::mute_group(group)?;
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(&addr, vec![OscType::Int(i32::from(muted))])
+            .await
+    }
+
+    async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool> {
+        let addr = addrs::mute_group(group)?;
+        let guard = self.session().await?;
+        let reply = guard.as_ref().unwrap().query(&addr).await?;
+        match reply.args.first() {
+            Some(OscType::Int(i)) => Ok(*i != 0),
+            other => anyhow::bail!("{addr}: mute group needs an int arg, got {other:?}"),
+        }
+    }
+
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
         let guard = self.session().await?;
         guard
@@ -900,6 +1249,70 @@ impl MixerDriver for XAirDriver {
             .query(addrs::MAIN_FADER)
             .await?;
         osc::fader_value(&reply)
+    }
+
+    /// Main LR master mute (`/lr/mix/on`, int `1` = unmuted / `0` = muted,
+    /// same polarity as channel `/mix/on`). The leaf answers queries
+    /// (rig-verified XR18 FW 1.20, 2026-10-18: reads `1`).
+    async fn set_main_mute(&self, muted: bool) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(addrs::MAIN_ON, vec![osc::on_arg(muted)])
+            .await
+    }
+
+    async fn get_main_mute(&self) -> anyhow::Result<bool> {
+        let guard = self.session().await?;
+        let reply = guard.as_ref().unwrap().query(addrs::MAIN_ON).await?;
+        osc::mute_is_muted(&reply)
+    }
+
+    /// Per-channel solo via the `/-stat/solosw` switch bank: live-verified
+    /// on the owner rig (XR18 FW 1.20, 2026-10-18) — writing `1` to the
+    /// 1-based `/-stat/solosw/NN` sets bank bit `NN - 1` (soloing ch16 set
+    /// bits 14+15: ch15/16 are stereo-linked on that desk), and
+    /// `/-action/clearsolo` clears the bank. Only channel strips
+    /// (`0..16`) map (1-based index `strip + 1`); buses/mains/DCAs have no
+    /// verified solo leaf and bail out (never faked).
+    async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
+        let ch = self.check_channel(strip.0)?;
+        let addr = format!("/-stat/solosw/{ch:02}");
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(&addr, vec![OscType::Int(i32::from(soloed))])
+            .await
+    }
+
+    async fn get_solo(&self, strip: StripId) -> anyhow::Result<bool> {
+        let ch = self.check_channel(strip.0)?;
+        let guard = self.session().await?;
+        let reply = guard
+            .as_ref()
+            .unwrap()
+            .query("/-stat/solosw")
+            .await?;
+        let idx = ch as usize - 1;
+        match reply.args.get(idx) {
+            Some(OscType::Int(i)) => Ok(*i != 0),
+            other => anyhow::bail!("/-stat/solosw: solo bank needs an int at index {idx}, got {other:?}"),
+        }
+    }
+
+    /// Live meter levels in BLOB order (index 0 = ch 1, rig-verified). The
+    /// `/meters/1` blob carries 42 LE-i16 samples (84 B, no header —
+    /// rig-verified 2026-10-18: whole-packet parse); only the first 16
+    /// (channels) map to strips. Families past the channels (aux/FX/bus/
+    /// main/monitor) have no rig-verified index, so they are NOT mapped
+    /// here: consumers read channels `0..16` and treat the rest as
+    /// unknown (silence), never as another strip's level. `None` (no blob
+    /// yet) reads back channel-count silence, like the core default.
+    fn poll_meters(&self) -> openmix_core::MeterFrame {
+        let latest = self.meter_latest.lock().unwrap().clone().unwrap_or_default();
+        openmix_core::MeterFrame { levels: latest }
     }
 
     async fn query_info(&self) -> anyhow::Result<MixerInfo> {
@@ -945,8 +1358,37 @@ impl MixerDriver for XAirDriver {
     async fn subscribe_meters(
         &self,
     ) -> anyhow::Result<broadcast::Receiver<openmix_core::MeterFrame>> {
-        self.subscribe_meters_with_interval(addrs::METER_RENEW_INTERVAL)
-            .await
+        let rx = self
+            .subscribe_meters_with_interval(addrs::METER_RENEW_INTERVAL)
+            .await?;
+        // Blob-order cache drain feeding `poll_meters`: a resubscribed
+        // clone sees every frame alongside the caller's receiver.
+        let mut drain = rx.resubscribe();
+        let cache = self.meter_latest.clone();
+        tokio::spawn(async move {
+            loop {
+                match drain.recv().await {
+                    Ok(frame) => {
+                        if let Ok(mut guard) = cache.lock() {
+                            *guard = Some(frame.levels);
+                        }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+        Ok(rx)
+    }
+
+    /// Desk-originated mix-surface updates (see [`parse_inbound`]): the
+    /// stable channel fed by the per-connection ingest task. The engine
+    /// subscribes once and applies these live; reconnects never disturb
+    /// the receiver.
+    fn subscribe_updates(
+        &self,
+    ) -> Option<broadcast::Receiver<openmix_core::ParamUpdate>> {
+        Some(self.update_tx.subscribe())
     }
 
     /// Full param plane (see [`XAIR_CAPABILITIES`]). Strip roots come from
@@ -2105,7 +2547,66 @@ mod tests {
                                     .unwrap_or(fallback);
                                 Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
                             }
+                            // Mute-group masters (`/config/mute/1..4`): verbatim
+                            // ints, untouched reads answer 0. Groups 5+
+                            // stay silent like the live desk (MUTE_GROUPS).
+                            (a, Some(OscType::Int(i)))
+                                if a.starts_with("/config/mute/")
+                                    && matches!(a["/config/mute/".len()..].parse::<u8>(), Ok(n) if (1..=addrs::MUTE_GROUPS).contains(&n)) =>
+                            {
+                                worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
+                            (a, None)
+                                if a.starts_with("/config/mute/")
+                                    && matches!(a["/config/mute/".len()..].parse::<u8>(), Ok(n) if (1..=addrs::MUTE_GROUPS).contains(&n)) =>
+                            {
+                                let v = worker
+                                    .plane_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0);
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
                             ("/info", _) => None,
+                            // Solo switches (`/-stat/solosw/NN`, 1-based):
+                            // fire-and-forget sets store verbatim; the bank
+                            // query reads back 54 ints (like the live desk,
+                            // all 0 when nothing is soloed).
+                            (a, Some(OscType::Int(i)))
+                                if a.starts_with("/-stat/solosw/")
+                                    && matches!(a["/-stat/solosw/".len()..].parse::<u8>(), Ok(n) if (1..=54).contains(&n)) =>
+                            {
+                                worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
+                            (a, None) if a == "/-stat/solosw" => {
+                                let stored = worker.plane_ints.lock().unwrap();
+                                let args: Vec<OscType> = (1..=54u8)
+                                    .map(|n| {
+                                        OscType::Int(
+                                            stored
+                                                .get(&format!("/-stat/solosw/{n:02}"))
+                                                .copied()
+                                                .unwrap_or(0),
+                                        )
+                                    })
+                                    .collect();
+                                Some(osc::encode_message(a, args).unwrap())
+                            }
+                            // Clear-solo action: fire-and-forget sets are
+                            // ACKed by silence; queries read back int 0
+                            // (nothing soloed), like the live desk.
+                            (a, Some(OscType::Int(_)))
+                                if a == addrs::CLEAR_SOLO =>
+                            {
+                                None
+                            }
+                            (a, None) if a == addrs::CLEAR_SOLO => {
+                                Some(osc::encode_message(a, vec![OscType::Int(0)]).unwrap())
+                            }
                             _ => None,
                         };
                         if let Some(bytes) = reply {
@@ -2178,6 +2679,232 @@ mod tests {
         assert_eq!(info.name, "FakeXR");
         assert_eq!(info.model, "XR18");
         assert_eq!(info.firmware, "1.22");
+    }
+
+    /// Mute-group masters: `/config/mute/1..4` answer (strict fake stays
+    /// silent on 5+ like the live desk), same-value writes round-trip
+    /// bit-exact, out-of-range groups error locally.
+    #[tokio::test]
+    async fn driver_mute_group_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        assert_eq!(driver.mute_group_count(), 4);
+        for g in 0..4 {
+            driver.set_mute_group(g, false).await.unwrap();
+            assert!(!driver.get_mute_group(g).await.unwrap());
+        }
+        assert!(driver.set_mute_group(4, false).await.is_err());
+    }
+
+    /// Clear-solo action: fire-and-forget set ACKed by silence, query reads
+    /// back int 0 (nothing soloed) — the live-desk shape.
+    #[tokio::test]
+    async fn driver_clear_solo_fire_and_forget() {
+        let (driver, _) = connected_driver().await;
+        driver.clear_solo().await.unwrap();
+    }
+
+    /// Rig-gated solo write-path discovery (env `OPENMIX_RIG=1` + XR18 at
+    /// 192.168.50.123; skipped otherwise so CI stays green). Uses muted
+    /// ch16 only, read -> write -> readback -> clear -> verify. Reports
+    /// which `/-stat/solosw/NN` numbering the desk honors (1-based `16`
+    /// vs 0-based `15`) — run with `-- --nocapture` to see the verdict.
+    /// PFL only, cleared immediately; never run while the rig is live.
+    #[tokio::test]
+    async fn rig_solo_write_path() {
+        if std::env::var("OPENMIX_RIG").as_deref() != Ok("1") {
+            return;
+        }
+        let driver = XAirDriver::new();
+        driver.connect("192.168.50.123:10024").await.unwrap();
+        let bank = async || {
+            let guard = driver.session().await.unwrap();
+            let reply = guard
+                .as_ref()
+                .unwrap()
+                .query("/-stat/solosw")
+                .await
+                .unwrap();
+            reply
+                .args
+                .iter()
+                .map(|a| match a {
+                    rosc::OscType::Int(i) => *i,
+                    _ => -999,
+                })
+                .collect::<Vec<_>>()
+        };
+        let set_idx = async |nn: u8, v: i32| {
+            let guard = driver.session().await.unwrap();
+            guard
+                .as_ref()
+                .unwrap()
+                .send(&format!("/-stat/solosw/{nn:02}"), vec![rosc::OscType::Int(v)])
+                .await
+                .unwrap();
+        };
+        let b0 = bank().await;
+        println!("rig solosw bank len: {}", b0.len());
+        println!("baseline nonzero: {:?}", b0.iter().enumerate().filter(|(_, &v)| v != 0).collect::<Vec<_>>());
+        // Hypothesis A: 1-based (ch16 -> /16, bank idx 15).
+        set_idx(16, 1).await;
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        let ba = bank().await;
+        println!("after /16=1: {:?}", ba.iter().enumerate().filter(|(_, &v)| v != 0).collect::<Vec<_>>());
+        driver.clear_solo().await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        // Hypothesis B: 0-based (ch16 -> /15, bank idx 15).
+        set_idx(15, 1).await;
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        let bb = bank().await;
+        println!("after /15=1: {:?}", bb.iter().enumerate().filter(|(_, &v)| v != 0).collect::<Vec<_>>());
+        driver.clear_solo().await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+        let b1 = bank().await;
+        assert!(b1.iter().all(|&v| v == 0), "rig solos not cleared: {b1:?}");
+    }
+
+    /// Main LR mute (`/lr/mix/on`): same-value writes round-trip bit-exact
+    /// against the strict fake (the live desk answers this leaf, rig-verified
+    /// XR18 FW 1.20 2026-10-18: reads `1` unmuted).
+    #[tokio::test]
+    async fn driver_main_mute_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        driver.set_main_mute(false).await.unwrap();
+        assert!(!driver.get_main_mute().await.unwrap());
+        driver.set_main_mute(true).await.unwrap();
+        assert!(driver.get_main_mute().await.unwrap());
+    }
+
+    /// Per-channel solo (`/-stat/solosw/NN` set, `/-stat/solosw` bank
+    /// readback): round-trips against the strict fake's 54-int bank. Non-
+    /// channel strips bail locally (no verified desk leaf — never faked).
+    #[tokio::test]
+    async fn driver_solo_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        assert!(!driver.get_solo(StripId(15)).await.unwrap());
+        driver.set_solo(StripId(15), true).await.unwrap();
+        assert!(driver.get_solo(StripId(15)).await.unwrap());
+        assert!(!driver.get_solo(StripId(0)).await.unwrap());
+        driver.clear_solo().await.unwrap();
+        // Bus/main/DCA strips have no verified solo leaf.
+        assert!(driver.set_solo(StripId(20), true).await.is_err());
+        assert!(driver.set_solo(StripId(30), true).await.is_err());
+        assert!(driver.get_solo(StripId(20)).await.is_err());
+    }
+
+    /// Meter subscription fills the blob-order cache that `poll_meters`
+    /// serves: the strict fake streams `[0.1, 0.5, 0.9]`, which must show
+    /// up verbatim (no header skip — the `/meters/1` blob has none).
+    #[tokio::test]
+    async fn driver_meter_cache_fills() {
+        let (driver, _) = connected_driver().await;
+        assert!(driver.poll_meters().levels.is_empty());
+        let _rx = driver.subscribe_meters().await.unwrap();
+        let t0 = std::time::Instant::now();
+        loop {
+            if !driver.poll_meters().levels.is_empty() || t0.elapsed() > std::time::Duration::from_secs(3) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let levels = driver.poll_meters().levels;
+        assert_eq!(levels.len(), 3);
+        assert!((levels[0] - 0.1).abs() < 1e-4);
+        assert!((levels[1] - 0.5).abs() < 1e-4);
+        assert!((levels[2] - 0.9).abs() < 1e-4);
+    }
+
+    /// Connect-time port sweep stays sub-second and honors explicit ports:
+    /// `probe_port` sees the strict fake, `has_explicit_port` gates the
+    /// sweep, and `connect()` with an explicit port dials it directly.
+    #[test]
+    fn explicit_port_detection() {
+        assert!(has_explicit_port("192.168.50.123:10024"));
+        assert!(has_explicit_port("192.168.50.123:10023"));
+        assert!(!has_explicit_port("192.168.50.123"));
+        assert!(!has_explicit_port("mixer.lan"));
+    }
+
+    #[tokio::test]
+    async fn connect_probe_sees_fake_fast() {
+        let (addr, _fake) = FakeMixer::spawn().await;
+        let ip = addr.ip().to_string();
+        let t0 = std::time::Instant::now();
+        assert!(probe_port(&ip, addr.port()).await);
+        assert!(t0.elapsed() < addrs::CONNECT_PROBE_TIMEOUT);
+        // Unused loopback port: connection-refused (or silence on wifi) —
+        // either way the probe fails fast, never the steady-state 2 s.
+        let probe = async {
+            let sock = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+            sock.local_addr().unwrap().port()
+        };
+        let free = probe.await;
+        let t0 = std::time::Instant::now();
+        assert!(!probe_port("127.0.0.1", free).await);
+        assert!(t0.elapsed() < std::time::Duration::from_secs(2));
+    }
+
+    #[tokio::test]
+    async fn connect_explicit_port_dials_directly() {
+        let (addr, _fake) = FakeMixer::spawn().await;
+        let driver = XAirDriver::new();
+        driver.connect(&addr.to_string()).await.unwrap();
+        let info = driver.query_info().await.unwrap();
+        assert_eq!(info.model, "XR18");
+    }
+    /// like their `get_param` arms (same codecs, engineering units), and
+    /// out-of-scope shapes stay silent. Pure unit test (no sockets): the
+    /// messages below are the wire shapes the desk (and the strict fake)
+    /// emits.
+    #[test]
+    fn inbound_covers_send_level_gain_color() {
+        let msg = |addr: &str, args: Vec<OscType>| OscMessage {
+            addr: addr.to_string(),
+            args,
+        };
+        // Bus-send slot 1 -> `aux1_level` (dB via the X-Air fader law).
+        let (strip, param, value) = parse_inbound(&msg(
+            "/ch/01/mix/01/level",
+            vec![OscType::Float(0.5)],
+        ))
+        .expect("send level parses");
+        assert_eq!((strip, param), (0, "aux1_level"));
+        assert!(matches!(value, ParamValue::Float(v) if (v - mix::wire_to_send_db(0.5).unwrap()).abs() < 1e-6));
+        // FX-send slot 7 -> `fx1_level`.
+        let (strip, param, _) = parse_inbound(&msg(
+            "/ch/02/mix/07/level",
+            vec![OscType::Float(0.25)],
+        ))
+        .expect("fx send level parses");
+        assert_eq!((strip, param), (1, "fx1_level"));
+        // Headamp gain -> dB like the `gain` arm.
+        let (strip, param, value) = parse_inbound(&msg(
+            "/headamp/01/gain",
+            vec![OscType::Float(0.5)],
+        ))
+        .expect("headamp gain parses");
+        assert_eq!((strip, param), (0, "gain"));
+        assert!(matches!(value, ParamValue::Float(v) if (v - 24.0).abs() < 1e-5));
+        // Strip + LR color -> float enum like the `color` arm.
+        let (strip, param, value) = parse_inbound(&msg(
+            "/ch/01/config/color",
+            vec![OscType::Int(3)],
+        ))
+        .expect("strip color parses");
+        assert_eq!((strip, param), (0, "color"));
+        assert!(matches!(value, ParamValue::Float(v) if v == 3.0));
+        let (strip, param, _) = parse_inbound(&msg(
+            "/lr/config/color",
+            vec![OscType::Int(7)],
+        ))
+        .expect("lr color parses");
+        assert_eq!((strip, param), (LR_STRIP, "color"));
+        // Out-of-scope shapes stay silent: bus roots carry no send slots,
+        // headamp ends at ch16, slots end at 10, icon has no arm.
+        assert!(parse_inbound(&msg("/bus/1/mix/01/level", vec![OscType::Float(0.5)])).is_none());
+        assert!(parse_inbound(&msg("/headamp/17/gain", vec![OscType::Float(0.5)])).is_none());
+        assert!(parse_inbound(&msg("/ch/01/mix/11/level", vec![OscType::Float(0.5)])).is_none());
+        assert!(parse_inbound(&msg("/ch/01/config/icon", vec![OscType::Int(1)])).is_none());
     }
 
     /// Main LR must go through `/lr/mix/fader`: the strict fake below answers

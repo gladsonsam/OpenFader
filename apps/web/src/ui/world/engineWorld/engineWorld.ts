@@ -360,7 +360,7 @@ export class EngineWorld implements World {
         this.topology = evt.topology;
         this._banks = deriveBanks(this.topology);
         this.lib.setCaps(
-          { slots: evt.fx.slots, types: evt.fx.types.map((t) => ({ id: t.id, label: t.label })) },
+          { slots: evt.fx.slots, types: evt.fx.types.map((t) => ({ id: t.id, label: t.label, params: t.params.map((q) => ({ id: q.id, label: q.label })) })) },
           evt.routing.supported,
           evt.groups,
           evt.files.supported,
@@ -567,7 +567,13 @@ export class EngineWorld implements World {
 
   get mainFader(): number | null {
     if (this.mainPending) return this.mainPending.value;
-    return this._mainFader;
+    return this.lib.mainMaster.fader ?? this._mainFader;
+  }
+
+  /** Main LR master mute (pending-optimistic not tracked: the mute button
+   *  flips on echo; null = unknown yet). */
+  get mainMuted(): boolean | null {
+    return this.lib.mainMaster.muted;
   }
 
   // ---- params / caps ----
@@ -801,8 +807,9 @@ export class EngineWorld implements World {
   sceneSave(n: number, name: string): void {
     this.lib.sceneSave(n, name);
   }
-  sceneRecall(n: number, fadeMs?: number): void {
-    this.lib.sceneRecall(n, fadeMs);
+  sceneRecall(n: number, fadeMs?: number, scope?: { strips?: number[]; groups?: string[]; globals?: string[] } | null): void {
+    this.lib.sceneRecall(n, fadeMs, scope ?? null);
+    this.bump();
   }
   sceneRename(n: number, name: string): void {
     this.lib.sceneRename(n, name);
@@ -819,7 +826,7 @@ export class EngineWorld implements World {
   get fxSlots(): FxSlotView[] {
     return this.lib.fxSlots;
   }
-  get fxCaps(): { slots: number; types: Array<{ id: string; label: string }> } | null {
+  get fxCaps(): { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string }> }> } | null {
     return this.lib.fxCaps;
   }
   fxSetType(slot: number, type: string): void {
@@ -894,7 +901,7 @@ export class EngineWorld implements World {
 
   // ---- masters / groups / files (state + commands live in libraries.ts) ----
 
-  get groupCaps(): { buses: number; subgroups: number; muteGroups: number; files: boolean } {
+  get groupCaps(): { buses: number; subgroups: number; muteGroups: number; mgAssign: boolean; subAssign: boolean; files: boolean } {
     return this.lib.groupCaps;
   }
   busMaster(bus: number): { fader: number; muted: boolean } | null {
@@ -935,6 +942,24 @@ export class EngineWorld implements World {
   }
   muteGroupAssign(ch: number, group: number, member: boolean): void {
     this.lib.muteGroupAssign(ch, group, member);
+  }
+  /** Main LR master state (null fields = unknown yet). */
+  get mainMaster(): { fader: number | null; muted: boolean | null } {
+    return this.lib.mainMaster;
+  }
+  /** Per-strip solo (false when never echoed). */
+  soloOf(ch: number): boolean {
+    return this.lib.soloOf(ch);
+  }
+  setMainMute(muted: boolean): void {
+    if (typeof muted !== 'boolean') return;
+    this.lib.setMainMute(muted);
+    this.bump();
+  }
+  setSolo(ch: number, soloed: boolean): void {
+    if (!Number.isInteger(ch) || ch < 0 || typeof soloed !== 'boolean') return;
+    this.lib.setSolo(ch, soloed);
+    this.bump();
   }
   fileDownload(filename: string): void {
     this.lib.fileDownload(filename);

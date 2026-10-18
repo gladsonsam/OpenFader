@@ -85,47 +85,13 @@ export function relayHostFromSearch(search: string, fallback: string): { host: s
 }
 
 /**
- * Fixture channel id -> engine strip index (sim topology: ch 0..31 = Ch 1-32,
- * mix 32..39 = Mix 1-8, ch2 40..55 = Ch 33-48, fxret 56..59, fxsnd 60..63,
- * mtx 64..71, main 72, dca 73..76). Null when the engine has no equivalent
- * (Grp buses, FxRet 5+, Main C, sends beyond Mix 8).
+ * REMOVED (owner order, item 5): the old sim-topology fixture id -> engine
+ * strip index map (`in1` -> 0 … `mainlr` -> 72). It fed every live meter
+ * the wrong strip on any non-sim desk (XR18: `mainlr` -> 72 is out of
+ * range, buses land on other families' blobs) and the null fallback
+ * animated the fixture sim over live pages (phantom meters). Live meter
+ * lookup is topology-driven now (`bridgeStrip` in engineBridge.ts).
  */
-export function fixtureIdToEngineCh(id: string): number | null {
-  let m = /^in(\d+)$/.exec(id);
-  if (m) {
-    const n = parseInt(m[1]!, 10);
-    if (n >= 1 && n <= 32) return n - 1;
-    if (n >= 33 && n <= 48) return 7 + n;
-    return null;
-  }
-  m = /^mix(\d+)$/.exec(id);
-  if (m) {
-    const n = parseInt(m[1]!, 10);
-    return n >= 1 && n <= 8 ? 31 + n : null;
-  }
-  m = /^fx(\d+)$/.exec(id);
-  if (m) {
-    const n = parseInt(m[1]!, 10);
-    return n >= 1 && n <= 4 ? 55 + n : null;
-  }
-  m = /^fxs(\d+)$/.exec(id);
-  if (m) {
-    const n = parseInt(m[1]!, 10);
-    return n >= 1 && n <= 4 ? 59 + n : null;
-  }
-  m = /^mtx(\d+)$/.exec(id);
-  if (m) {
-    const n = parseInt(m[1]!, 10);
-    return n >= 1 && n <= 8 ? 63 + n : null;
-  }
-  if (id === 'mainlr') return 72;
-  m = /^dca(\d+)$/.exec(id);
-  if (m) {
-    const n = parseInt(m[1]!, 10);
-    return n >= 1 && n <= 4 ? 72 + n : null;
-  }
-  return null;
-}
 
 /** Linear 0..1 meter tap -> dB for the canvas meters (-90 = silence). */
 export function linearToDb(v: number): number {
