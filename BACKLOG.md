@@ -11,22 +11,10 @@ free AND its files don't collide with the running worker.
    scripts/verify-bidirectional.mjs matrix + root-caused gap list.
 
 ## Queued (in order)
-1. Frontend review loop (tonight's job) — subtractive only: no new
-   features/screens. Screenshot-driven rounds on phone + desktop:
-   slim the topbar, densify channel detail, remove/reduce/resize,
-   tone down haptics/vibration. Uses the frontend-design skill.
-   Iterate until genuinely usable. Starts when the merge lands.
-2. Mobile UI audit loop — FOLDS INTO #1 (same loop covers vibration,
-   topbar, channel density; no separate agent).
-3. Devices: scan shows ONLY real desks (owner's XR18, no sim/fake
-   entries) + explicit work-offline mode.
-4. Linked-fader pairing in the frontend: where the app knows two strips
-   are linked (stereo pair), moving one fader moves the other locally —
-   no WS round-trip, no re-read, sync computed front-end-side.
-5. Strip status mini-icons below the mute button: tiny indicators for
-   phantom power, mute-group membership, and similar strip state —
-   glanceable, no extra taps.
-6. Push merged main (post-merge verification first).
+1. Bidirectional verification matrix (running — `ses_eb0877d76dffeFIOsVr9lbo0kFj`):
+   per-control both-directions proof + root-caused gap list.
+2. Push merged main — DONE (merge `69964b9` verified + pushed; backlog
+   commits on top).
 
 ## Queued — server-side (NOT today; parked, do not dispatch)
 - Automixing (gain-sharing across channels on the server).
@@ -53,5 +41,9 @@ free AND its files don't collide with the running worker.
 - RTA overlay for EQ (live engine spectrum; honest non-analyzer caveat).
 - Presets (8 built-in + user save/recall/rename/delete, live-proven).
 - Global meter bridge (grouped ladders + topbar icon, live XR18 verified).
+- Subtractive review loop (6 rounds, net −17 lines, topbar/haptics/dedup).
+- Real-only device scan + offline mode (honest empty states).
+- Linked-fader pairing (sim + fixture proven, xair honestly scoped).
+- Strip mini-icons (phantom/groups/link/polarity, live-verified).
 - Fresh APK from current tree (/mnt/gladson/temp, badging verified).
 - Worktree phone/daylight UI (merged or in merge — see In flight).
