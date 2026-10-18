@@ -231,8 +231,6 @@
   <header class="sstat" aria-label="status">
     <span class="show" title="active show">{showName}</span>
     <span class="clock" title="surface clock">{clock}</span>
-    <span class="eng" title="engine load — placeholder, no backend feed">DSP —</span>
-    <span class="sr" title="sample rate — assumed, no backend feed">48k</span>
     <span class="sbadge" class:on={online} class:off={!online}>{online ? 'online' : 'offline'}</span>
     <span class="svia" title="transport">{via}</span>
   </header>
