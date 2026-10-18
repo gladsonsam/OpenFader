@@ -251,3 +251,37 @@ export function bridgeUnpatch(world: World, id: string): boolean {
   world.patchClear(ch);
   return true;
 }
+
+/** Mute-group membership write-through (desk-only; no fixture counterpart). */
+export function bridgeMuteGroupAssign(world: World, id: string, group: number, member: boolean): boolean {
+  const ch = bridgeStrip(world, id);
+  if (ch === null || !Number.isInteger(group) || group < 0 || typeof member !== 'boolean') return false;
+  if (world.groupCaps.muteGroups <= group) return false;
+  world.muteGroupAssign(ch, group, member);
+  return true;
+}
+
+/** Subgroup membership write-through (desk-only; no fixture counterpart). */
+export function bridgeSubgroupAssign(world: World, id: string, group: number, member: boolean): boolean {
+  const ch = bridgeStrip(world, id);
+  if (ch === null || !Number.isInteger(group) || group < 0 || typeof member !== 'boolean') return false;
+  if (world.groupCaps.subgroups <= group) return false;
+  world.subgroupAssign(ch, group, member);
+  return true;
+}
+
+/** Mute-group master mute write-through. */
+export function bridgeMuteGroupMute(world: World, group: number, muted: boolean): boolean {
+  if (!Number.isInteger(group) || group < 0 || typeof muted !== 'boolean') return false;
+  if (world.groupCaps.muteGroups <= group) return false;
+  world.muteGroup(group, muted);
+  return true;
+}
+
+/** Subgroup master mute write-through. */
+export function bridgeSubgroupMute(world: World, group: number, muted: boolean): boolean {
+  if (!Number.isInteger(group) || group < 0 || typeof muted !== 'boolean') return false;
+  if (world.groupCaps.subgroups <= group) return false;
+  world.subgroupMute(group, muted);
+  return true;
+}
