@@ -116,7 +116,7 @@ export function eqChip(label: string, active: boolean): EqChip {
     label,
     pressed: active ? 'true' : 'false',
     bg: active ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
-    fg: active ? '#0b0f14' : 'var(--u4-text-4)',
+    fg: active ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
   };
 }
 
