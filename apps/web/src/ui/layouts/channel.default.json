@@ -963,51 +963,6 @@
                   }
                 }
               ]
-            },
-            {
-              "id": "m-fader",
-              "module": "col",
-              "props": { "flex": "1", "minWidth": 0, "box": "content-box" },
-              "children": [
-                {
-                  "id": "fader-wrap",
-                  "module": "col",
-                  "props": {
-                    "flex": "1",
-                    "minHeight": 180,
-                    "box": "content-box"
-                  },
-                  "children": [
-                    {
-                      "id": "fader",
-                      "module": "channel-fader",
-                      "bind": {
-                        "pos": "master.faderPos",
-                        "readout": "master.readout",
-                        "aria": "master.faderAria",
-                        "accent": "master.accent",
-                        "readColor": "master.readColor",
-                        "fine": "store.fine",
-                        "meter": "stripMeter",
-                        "meterFrozen": "frozen"
-                      },
-                      "on": {
-                        "input": {
-                          "do": "ui.setFader",
-                          "args": {
-                            "id": {
-                              "$expr": "selId"
-                            },
-                            "value": {
-                              "$expr": "payload.value"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                }
-              ]
             }
           ]
         }
@@ -1080,44 +1035,6 @@
               }
             }
           }
-        },
-        {
-          "id": "fader-wrap",
-          "module": "col",
-          "props": {
-            "flex": "1",
-            "minHeight": 180,
-            "box": "content-box"
-          },
-          "children": [
-            {
-              "id": "fader",
-              "module": "channel-fader",
-              "bind": {
-                "pos": "master.faderPos",
-                "readout": "master.readout",
-                "aria": "master.faderAria",
-                "accent": "master.accent",
-                "readColor": "master.readColor",
-                "fine": "store.fine",
-                "meter": "stripMeter",
-                "meterFrozen": "frozen"
-              },
-              "on": {
-                "input": {
-                  "do": "ui.setFader",
-                  "args": {
-                    "id": {
-                      "$expr": "selId"
-                    },
-                    "value": {
-                      "$expr": "payload.value"
-                    }
-                  }
-                }
-              }
-            }
-          ]
         },
         {
           "id": "src",
