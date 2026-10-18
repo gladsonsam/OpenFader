@@ -53,6 +53,7 @@ export interface RoutingVm {
   selName: string;
   groups: PatchGroupVm[];
   srcTiles: SrcTileVm[];
+  matrix: RouteMatrix;
 }
 
 export const ROUTE_BANK_LABELS = ['1–16', '17–32', '33–48'];
@@ -73,11 +74,7 @@ function chipOf(label: string, on: boolean): { label: string; pressed: boolean; 
 }
 
 export function buildRoutingVm(state: UiState, chans: Record<string, Channel>): RoutingVm {
-  const used: Record<string, string> = {};
-  for (let n = 1; n <= 48; n++) {
-    const c = chans['in' + n];
-    if (c) used[c.src] = c.name;
-  }
+  const used = usedSources(chans);
   const selC = chans[state.patchSel];
   const selName = selC?.name ?? '';
   const selSrc = selC?.src ?? '';
@@ -114,5 +111,40 @@ export function buildRoutingVm(state: UiState, chans: Record<string, Channel>): 
       border: isCur ? '#5cdb5c' : '#222a36',
     };
   });
-  return { banks, tiles, selName, groups, srcTiles };
+  return { banks, tiles, selName, groups, srcTiles, matrix: buildRouteMatrix(state, chans) };
+}
+
+/** Source label -> using channel name (last wins), over all 48 inputs. */
+export function usedSources(chans: Record<string, Channel>): Record<string, string> {
+  const used: Record<string, string> = {};
+  for (let n = 1; n <= 48; n++) {
+    const c = chans['in' + n];
+    if (c) used[c.src] = c.name;
+  }
+  return used;
+}
+
+export interface RouteMatrixRow {
+  id: string;
+  name: string;
+  src: string;
+}
+
+export interface RouteMatrix {
+  rows: RouteMatrixRow[];
+  cols: string[];
+  /** Source label -> using channel name (last wins). */
+  used: Record<string, string>;
+}
+
+/** Dante-style patchbay grid: one row per banked channel, one column
+ * per source of the selected group. The module derives per-cell state
+ * (current / conflict / free) from row sources + the used map. */
+export function buildRouteMatrix(state: UiState, chans: Record<string, Channel>): RouteMatrix {
+  const cols = srcTileLabels(state.patchGroup);
+  const rows: RouteMatrixRow[] = routeBankIds(state.routeBank).map((id) => {
+    const c = chans[id];
+    return { id, name: c?.name ?? id, src: c?.src ?? '—' };
+  });
+  return { rows, cols, used: usedSources(chans) };
 }
