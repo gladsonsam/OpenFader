@@ -63,7 +63,7 @@ export function buildScenesVm(state: UiState): ScenesVm {
       name: names[state.scenePv],
       barBorder: pending ? '#a87622' : 'var(--u4-line-faint)',
       border: pending ? '#f0b44a' : 'var(--u4-divider)',
-      bg: pending ? '#f0b44a' : '#161c26',
+      bg: pending ? '#f0b44a' : 'var(--u4-bank-off)',
       text: pending ? '#241703' : 'var(--u4-text-dim)',
       disabled: !pending,
     },
