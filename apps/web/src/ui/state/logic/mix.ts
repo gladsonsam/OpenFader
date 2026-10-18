@@ -51,8 +51,8 @@ export function toggleMute(w: World, id: string): World {
   return withChannel(w, id, c => { c.mute = !c.mute; });
 }
 
-/** Solo flip, same gate as mute (muteEnable + lock). UI-only: the desk
- *  protocol has no solo counterpart, so nothing is sent to the relay. */
+/** Solo flip, same gate as mute (muteEnable + lock). Monitor bus only;
+ * forwarded live via bridgeSolo (Main LR has no solo leaf — no-op there). */
 export function toggleSolo(w: World, id: string): World {
   if (!w.state.muteEnable || w.state.locked) return w;
   return withChannel(w, id, c => { c.solo = !c.solo; });

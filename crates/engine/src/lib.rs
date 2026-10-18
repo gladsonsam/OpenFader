@@ -32,7 +32,7 @@
 pub mod engine;
 pub mod protocol;
 
-pub use engine::{ClientHandle, Engine, EngineConfig};
+pub use engine::{ClientHandle, Engine, EngineConfig, RecallScope};
 pub use protocol::{parse_cmd, Cmd, Event};
 
 /// Default per-strip lock TTL (see [`EngineConfig::lock_ttl`]).

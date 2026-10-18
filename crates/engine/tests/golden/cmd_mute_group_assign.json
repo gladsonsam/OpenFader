@@ -1,0 +1,6 @@
+{
+  "ch": 5,
+  "cmd": "mute_group_assign",
+  "group": 2,
+  "member": false
+}

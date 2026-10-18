@@ -73,11 +73,16 @@ function chipOf(label: string, on: boolean): { label: string; pressed: boolean; 
   };
 }
 
-export function buildRoutingVm(state: UiState, chans: Record<string, Channel>): RoutingVm {
-  const used = usedSources(chans);
+export function buildRoutingVm(
+  state: UiState,
+  chans: Record<string, Channel>,
+  /** Live source overlay (desk truth wins online): fixture id -> label. */
+  liveSrc?: Record<string, string>,
+): RoutingVm {
+  const used = usedSources(chans, liveSrc);
   const selC = chans[state.patchSel];
   const selName = selC?.name ?? '';
-  const selSrc = selC?.src ?? '';
+  const selSrc = liveSrc?.[state.patchSel] ?? selC?.src ?? '';
   const banks: RouteBankVm[] = ROUTE_BANK_LABELS.map((label, b) => ({
     ...chipOf(label, state.routeBank === b),
     index: b,
@@ -85,14 +90,15 @@ export function buildRoutingVm(state: UiState, chans: Record<string, Channel>): 
   const tiles: RouteTileVm[] = routeBankIds(state.routeBank).map(id => {
     const c = chans[id];
     const on = id === state.patchSel;
+    const src = liveSrc?.[id] ?? c.src;
     return {
       id,
       name: c.name,
-      src: c.src,
-      srcColor: c.src === '—' ? '#ff8a80' : '#5fe3f0',
+      src,
+      srcColor: src === '—' ? '#ff8a80' : '#5fe3f0',
       pressed: on,
       border: on ? '#ffffff' : '#222a36',
-      bg: on ? '#1b2330' : '#0a0f17',
+      bg: on ? '#1b2330' : '#0a0f17' ,
     };
   });
   const groups: PatchGroupVm[] = PATCH_GROUPS.map(g => ({
@@ -111,15 +117,15 @@ export function buildRoutingVm(state: UiState, chans: Record<string, Channel>): 
       border: isCur ? '#5cdb5c' : '#222a36',
     };
   });
-  return { banks, tiles, selName, groups, srcTiles, matrix: buildRouteMatrix(state, chans) };
+  return { banks, tiles, selName, groups, srcTiles, matrix: buildRouteMatrix(state, chans, liveSrc) };
 }
 
 /** Source label -> using channel name (last wins), over all 48 inputs. */
-export function usedSources(chans: Record<string, Channel>): Record<string, string> {
+export function usedSources(chans: Record<string, Channel>, liveSrc?: Record<string, string>): Record<string, string> {
   const used: Record<string, string> = {};
   for (let n = 1; n <= 48; n++) {
     const c = chans['in' + n];
-    if (c) used[c.src] = c.name;
+    if (c) used[liveSrc?.['in' + n] ?? c.src] = c.name;
   }
   return used;
 }
@@ -143,13 +149,13 @@ export interface RouteMatrix {
  * column per source of the selected group. The module derives per-cell
  * state (current / conflict / free / staged preview) from row sources,
  * the used map and the pending map. */
-export function buildRouteMatrix(state: UiState, chans: Record<string, Channel>): RouteMatrix {
+export function buildRouteMatrix(state: UiState, chans: Record<string, Channel>, liveSrc?: Record<string, string>): RouteMatrix {
   const cols = srcTileLabels(state.patchGroup);
   const rows: RouteMatrixRow[] = [];
   for (let n = 1; n <= 48; n++) {
     const id = 'in' + n;
     const c = chans[id];
-    rows.push({ id, name: c?.name ?? id, src: c?.src ?? '—' });
+    rows.push({ id, name: c?.name ?? id, src: liveSrc?.[id] ?? c?.src ?? '—' });
   }
-  return { rows, cols, used: usedSources(chans), pending: state.pendingPatch };
+  return { rows, cols, used: usedSources(chans, liveSrc), pending: state.pendingPatch };
 }

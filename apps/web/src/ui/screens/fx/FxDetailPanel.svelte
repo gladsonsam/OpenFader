@@ -59,12 +59,14 @@
         >{props.tapLabel ?? ''}</button
       >
     {/if}
-    <button
-      onclick={() => onEvent?.('toggle')}
-      aria-pressed={toggle.pressed ? 'true' : 'false'}
-      style="box-sizing:border-box;font-variant-numeric:normal;height:44px;padding:0 18px;border-radius:3px;border:1px solid {toggle.border};background:{toggle.bg};color:{toggle.fg};font-size:14px;cursor:pointer"
-      >{toggle.label}</button
-    >
+    {#if props.toggle}
+      <button
+        onclick={() => onEvent?.('toggle')}
+        aria-pressed={toggle.pressed ? 'true' : 'false'}
+        style="box-sizing:border-box;font-variant-numeric:normal;height:44px;padding:0 18px;border-radius:3px;border:1px solid {toggle.border};background:{toggle.bg};color:{toggle.fg};font-size:14px;cursor:pointer"
+        >{toggle.label}</button
+      >
+    {/if}
   </div>
   <FxTypeSelector
     props={{ types: props.types ?? [] }}

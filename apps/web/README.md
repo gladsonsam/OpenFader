@@ -1,10 +1,9 @@
 # openmix-web — mixer UI (static build)
 
 Single UI: `src/ui/` (ui4, design-faithful). It is the default and only
-route — `/` renders it, `?ui=4` is an alias. Fixture mode for the
-design-diff harness: `?ui=4&fixture=1&freeze=1&screen=<id>` (screens and
-galleries listed in `src/ui/screens/index.ts`; harness in
-`tools/design-diff/`).
+route — `/` renders it, `?ui=4` is an alias. Fixture mode: `?ui=4&fixture=1&freeze=1&screen=<id>` (screens and
+galleries listed in `src/ui/screens/index.ts`; current UI + screenshots
+are the baseline, no pixel harness).
 
 Prior UI versions (v1 vanilla `ui/`, v2/v3 Svelte trees) were removed at
 the ui4 cutover; the UI lives entirely under `src/ui/` with its own
@@ -45,4 +44,4 @@ With `base: './'` the built assets resolve from any location, including
 - `src/main.ts` — mounts `src/ui/` (sole entry)
 - `src/ui/` — screens, shell, state, fixtures, world (engine transport),
   primitives, modules, layouts, gallery
-- `tools/design-diff/` — pixel + layout-box regression vs `docs/design`
+- `tools/` — headless helpers (no pixel gates)

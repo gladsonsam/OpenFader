@@ -25,11 +25,11 @@ import {
   relayHostFromSearch,
   saveRelayAuto,
   saveRelayHost,
-  fixtureIdToEngineCh,
   linearToDb,
   relayUrlFromHost,
   type LivePhase,
 } from './live.ts';
+import { bridgeStrip } from './engineBridge.ts';
 
 export type { LivePhase };
 
@@ -55,6 +55,26 @@ class LiveRelay {
 
   get engine(): EngineWorld | null {
     return this.world;
+  }
+
+  /** EngineWorld observers (the fixture sync): called with the world on
+   * every world bump, plus immediately when the world already exists.
+   * Survives reconnects — each new world fans out to the same set. */
+  private worldSubs = new Set<(w: EngineWorld) => void>();
+
+  observeWorld(cb: (w: EngineWorld) => void): () => void {
+    this.worldSubs.add(cb);
+    const w = this.world;
+    if (w) {
+      try {
+        cb(w);
+      } catch {
+        /* ignore: observer-local failure */
+      }
+    }
+    return () => {
+      this.worldSubs.delete(cb);
+    };
   }
 
   /** Apply `?server=` once at boot (called by the shell mount). */
@@ -131,6 +151,13 @@ class LiveRelay {
           this.latencyMs = Date.now() - this.helloAt;
           this.phase = 'online';
           this.message = 'Live · ' + world.driver + ' · ' + world.stripCount + ' strips';
+        }
+        for (const cb of [...this.worldSubs]) {
+          try {
+            cb(world);
+          } catch {
+            /* ignore: observer-local failure */
+          }
         }
       }),
     );
@@ -215,12 +242,22 @@ class LiveRelay {
     this.transport = null;
   }
 
-  /** Live meter level in dB for a fixture strip id (null = use fixture sim). */
+  /** Live meter level in dB for a fixture strip id.
+   *
+   * Topology-driven (the Nth strip of the fixture id's family kind on the
+   * live driver — never the old sim-topology index map). Returns null
+   * ONLY while offline (callers fall back to the fixture sim); while
+   * online an unmapped or silent strip reads -90 (true silence), never
+   * the sim's animation. On X-Air only channels have a rig-verified blob
+   * index (0 = ch 1); bus/main/FX families read silence until a loud-rig
+   * session pins their blob positions — never a neighbor's level.
+   */
   liveLevelDb(fixtureId: string): number | null {
     const w = this.world;
     if (this.phase !== 'online' || !w || !w.capsReady) return null;
-    const ch = fixtureIdToEngineCh(fixtureId);
-    if (ch === null || ch >= w.meters.size) return null;
+    const ch = bridgeStrip(w, fixtureId);
+    if (ch === null || ch >= w.meters.size) return -90;
+    if (w.driver === 'xair' && w.kindOf(ch) !== 'in') return -90;
     return linearToDb(w.meters.level[ch] ?? 0);
   }
 }
