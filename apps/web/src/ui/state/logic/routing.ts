@@ -68,3 +68,26 @@ export function toggleRoute(w: World, id: string, label: string): World {
   if (cur === undefined) return w;
   return cur === label ? unpatchChannel(w, id) : patchChannelSrc(w, id, label);
 }
+
+/** Matrix preset: straight 1:1 patch of inputs 1..32 to the group's
+ * 01..32 sockets (the common stagebox reset). No bank jumping. */
+export function patchOneToOne(w: World, group: RouteGroup): World {
+  if (w.state.locked) return w;
+  let next = w;
+  for (let n = 1; n <= 32; n++) {
+    const id = 'in' + n;
+    const label = group + ' ' + String(n).padStart(2, '0');
+    next = withChannel(next, id, c => { c.src = label; });
+  }
+  return withState(next, { patchGroup: group });
+}
+
+/** Matrix preset: unpatch all 48 inputs. Lock-checked. */
+export function clearPatches(w: World): World {
+  if (w.state.locked) return w;
+  let next = w;
+  for (let n = 1; n <= 48; n++) {
+    next = withChannel(next, 'in' + n, c => { c.src = '—'; });
+  }
+  return next;
+}

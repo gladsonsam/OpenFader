@@ -139,7 +139,7 @@ export const SCREENS = {
       ...HEADER,
       ...BACK,
       { name: "sec-patchbay", match: { kind: "aria", value: "Patchbay" } },
-      { name: "route-bank", match: { kind: "text", value: "1–16" } },
+      { name: "route-preset", match: { kind: "text", value: "1:1" } },
     ],
   },
   connection: {
