@@ -154,7 +154,6 @@ for (const [name, tree] of Object.entries({ channel, ...tabs })) {
     'channel-stepper',
     'channel-pan-bar',
     'channel-mute',
-    'channel-fader',
     'channel-source-label',
   ]) {
     assert.ok(parts.includes(m), `master strip has ${m}: ` + parts.join(','));
