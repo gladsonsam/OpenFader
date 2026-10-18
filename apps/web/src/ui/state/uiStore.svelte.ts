@@ -7,8 +7,11 @@
 // times with the design's 2.5 s window (see tapUpdate).
 
 import {
+  applyPatch,
+  armPatch,
   backLabel,
   backTo,
+  cancelPatch,
   clearPatches,
   connectDevice,
   currentChannel,
@@ -615,6 +618,24 @@ export const ui = {
       update(clearPatches(world));
       forward(w => {
         for (let n = 1; n <= 48; n++) bridgeUnpatch(w, 'in' + n);
+      });
+    },
+    armPatch: (kind: 'oneToOne' | 'clear', group: RouteGroup) => {
+      update(armPatch(world, kind, group));
+    },
+    cancelPatch: () => {
+      update(cancelPatch(world));
+    },
+    applyPatch: () => {
+      const p = world.state.pendingPatch;
+      update(applyPatch(world));
+      if (!p) return;
+      forward(w => {
+        if (p.kind === 'oneToOne') {
+          for (let n = 1; n <= 32; n++) bridgePatch(w, 'in' + n, p.group + ' ' + String(n).padStart(2, '0'));
+        } else {
+          for (let n = 1; n <= 48; n++) bridgeUnpatch(w, 'in' + n);
+        }
       });
     },
     unpatch: () => {
