@@ -182,14 +182,14 @@
                 ? '#f0b429'
                 : st === 'preview'
                   ? 'var(--u4-text-1)'
-                  : '#2a3443'}"
+                  : 'var(--u4-line-ctl)'}"
           ></span>
         </button>
       {/each}
     {/each}
     <div
       role="status"
-      style="grid-column:1 / -1;position:sticky;bottom:0;z-index:3;background:var(--u4-route-bar);border-top:1px solid #2a3443;padding:7px 10px;font-size:13px;color:var(--u4-text-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+      style="grid-column:1 / -1;position:sticky;bottom:0;z-index:3;background:var(--u4-route-bar);border-top:1px solid var(--u4-line-faint);padding:7px 10px;font-size:13px;color:var(--u4-text-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
     >
       {readout || defaultLine}
     </div>
