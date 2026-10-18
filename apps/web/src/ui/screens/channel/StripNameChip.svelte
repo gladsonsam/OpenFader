@@ -19,7 +19,7 @@
 <NameBar
   name={props.name ?? ''}
   sub=""
-  color={props.color ?? '#2b3038'}
-  text={props.text ?? '#eef2f7'}
+  color={props.color ?? 'var(--u4-btn-bg)'}
+  text={props.text ?? 'var(--u4-text-2)'}
   variant="plate"
 />

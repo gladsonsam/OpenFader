@@ -3,7 +3,7 @@
      direction + amount, white pointer line with a top triangle, brighter
      centre detent when near-centre, hover title with the value.
      Channel strip: 34px, notch top/bottom 10, plus the readout text
-     variant at right (11px #8792a4, e.g. 'C', 'L28', 'R45').
+     variant at right (11px var(--u4-text-7), e.g. 'C', 'L28', 'R45').
      Null pan renders the design's empty placeholder well.
      touch-action pan-y (not none): vertical swipes scroll the page, the
      horizontal drag stays with the pan control. -->
@@ -154,38 +154,38 @@
   >
     <span
       aria-hidden="true"
-      style="position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#5b6678"
+      style="position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--u4-text-dim)"
       >L</span
     >
     {#if variant === 'strip'}
       <span
         aria-hidden="true"
-        style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:#5b6678"
+        style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--u4-text-dim)"
         >R</span
       >
     {/if}
     {#if fillW > 0.5}
       <span
         aria-hidden="true"
-        style="position:absolute;top:4px;bottom:4px;left:{fillLeft}%;width:{fillW}%;border-radius:2px;background:#3a4a63"
+        style="position:absolute;top:4px;bottom:4px;left:{fillLeft}%;width:{fillW}%;border-radius:2px;background:var(--u4-pan-fill)"
       ></span>
     {/if}
     <span
       aria-hidden="true"
       style="position:absolute;left:50%;top:{notchTB}px;bottom:{notchTB}px;width:{centred
         ? 2
-        : 1}px;background:{centred ? '#e8edf5' : '#3a4558'};box-shadow:{centred
+        : 1}px;background:{centred ? 'var(--u4-text-1)' : 'var(--u4-pan-notch)'};box-shadow:{centred
         ? '0 0 4px rgba(232,237,245,.6)'
         : 'none'}"
     ></span>
-    <!-- TODO token: pan centre-notch #3a4558 is not in tokens.css. -->
+    <!-- Pan centre notch uses the pan-notch token (themeable). -->
     <span
       aria-hidden="true"
-      style="position:absolute;top:4px;bottom:4px;width:3px;border-radius:1px;background:#ffffff;left:{markerLeft}%;transform:translateX(-50%);box-shadow:0 0 4px rgba(255,255,255,.45)"
+      style="position:absolute;top:4px;bottom:4px;width:3px;border-radius:1px;background:var(--u4-pan-marker);left:{markerLeft}%;transform:translateX(-50%);box-shadow:0 0 4px rgba(255,255,255,.45)"
     ></span>
     <span
       aria-hidden="true"
-      style="position:absolute;top:0;left:{markerLeft}%;transform:translateX(-50%);width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid #ffffff"
+      style="position:absolute;top:0;left:{markerLeft}%;transform:translateX(-50%);width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--u4-pan-marker)"
     ></span>
     {#if variant === 'aside'}
       <span

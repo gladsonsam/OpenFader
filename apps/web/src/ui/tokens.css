@@ -25,6 +25,8 @@
   --u4-tile-border: #2a323f;
   --u4-tile-bg-on: #232b37;
   --u4-tile-border-on: #5a6577;
+  /* Bank rail chip, inactive */
+  --u4-bank-off: #161c26;
 
   /* Line / hairline colours */
   --u4-line-header: #1a212c;   /* header bottom border */
@@ -141,4 +143,32 @@
   /* Selected chip (scene selected / bank tile selected in Settings/Routing grids) */
   --u4-chip-on-bg: #eef2f7;
   --u4-chip-on-fg: #0b0f14;
+
+  /* ---- User-themeable extras (defaults match the template above; the
+   * theme registry in ui/themes.ts overrides them per theme. Anything not
+   * listed here is intentionally fixed: functional accents (meters, dots,
+   * curve strokes, bank/tape colours) read the same on every theme, and
+   * rails stay black like hardware. */
+  /* Segmented option off-chip (settings rows) */
+  --u4-seg-opt-bg: #1b222d;
+  /* Pan control ink */
+  --u4-pan-marker: #ffffff;
+  --u4-pan-fill: #3a4a63;
+  --u4-pan-notch: #3a4558;
+  /* Transfer-curve unity diagonal */
+  --u4-graph-unity: #34445e;
+  /* Knob metal */
+  --u4-knob-track: #243042;
+  --u4-knob-hubline: #2f3b4f;
+  /* Patchbay matrix chrome */
+  --u4-route-head: #141c29;
+  --u4-route-alt: #0c1320;
+  --u4-route-trace: #182435;
+  --u4-route-div: #33415a;
+  --u4-route-bar: #101825;
+  --u4-route-preview: #141d33;
+  /* Staged-preset Apply button */
+  --u4-apply-bg: #0f2e1d;
+  --u4-apply-fg: #7dffa8;
+  --u4-apply-border: #1f7a3d;
 }

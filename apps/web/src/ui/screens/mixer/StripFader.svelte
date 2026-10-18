@@ -41,7 +41,7 @@
   ariaLabel={props.ariaLabel ?? 'Fader'}
   variant={props.variant ?? 'strip'}
   accent={props.accent ?? 'chan'}
-  readColor={props.readColor ?? '#c9d1dc'}
+  readColor={props.readColor ?? 'var(--u4-text-4)'}
   disabled={props.disabled ?? false}
   fine={props.fine ?? false}
   meter={props.meter ?? null}

@@ -1,7 +1,7 @@
 <!-- Signal scale labels, pixel-matched to the design's fader scale.
      Marks (pos,label): 1/10, .875/5, .75/0, .625/-5, .5/-10, .375/-20,
-     .25/-30, .125/-50. The '0' tick is #e8edf5, the rest #566175;
-     labels 10/11px #8792a4 right-aligned. Fills its parent (the fader
+     .25/-30, .125/-50. The '0' tick is var(--u4-text-1), the rest #566175;
+     labels 10/11px var(--u4-text-7) right-aligned. Fills its parent (the fader
      area); the parent sets the top/bottom insets per variant. -->
 <script lang="ts" module>
   export type { ScaleMark } from './signalGeometry.ts';

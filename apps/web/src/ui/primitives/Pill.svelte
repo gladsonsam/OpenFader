@@ -1,6 +1,6 @@
 <!-- Small label chip (Pre/Post send tap, On/Bypassed, Gate/Comp In, scene
-     Current tag). Template: Pre selected = #e8edf5 bg / #0b0f14 text;
-     Post = #2b3038 / #c9d1dc; On = #5cdb5c / #10240f; Bypassed text #f0b44a;
+     Current tag). Template: Pre selected = var(--u4-text-1) bg / #0b0f14 text;
+     Post = var(--u4-btn-bg) / var(--u4-text-4); On = #5cdb5c / #10240f; Bypassed text #f0b44a;
      font 11-13px w600 for status words. Non-interactive by default. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';

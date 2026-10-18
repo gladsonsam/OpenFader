@@ -204,13 +204,13 @@
       : 'ns-resize'}"
   >
     <svg width={size} height={size} viewBox="0 0 56 56" aria-hidden="true">
-      <!-- TODO token: knob track #243042 and hub stroke #2f3b4f are not in tokens.css. -->
+      <!-- Knob track + hub stroke come from theme tokens (knob-track, knob-hubline). -->
       <circle
         cx="28"
         cy="28"
         r="22"
         fill="none"
-        stroke="#243042"
+        stroke="var(--u4-knob-track)"
         stroke-width={ringW}
         stroke-linecap="round"
         stroke-dasharray="103.67 138.23"
@@ -227,7 +227,7 @@
         stroke-dasharray={dashOf(n)}
         transform="rotate(135 28 28)"
       ></circle>
-      <circle cx="28" cy="28" r={hubR} fill="var(--u4-io-tile)" stroke="#2f3b4f" stroke-width="1"
+      <circle cx="28" cy="28" r={hubR} fill="var(--u4-io-tile)" stroke="var(--u4-knob-hubline)" stroke-width="1"
       ></circle>
       <line
         x1="28"

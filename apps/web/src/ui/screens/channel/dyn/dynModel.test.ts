@@ -126,7 +126,7 @@ for (const x of [-80, -70, -60, -50, -47, -40, -30, -20, -10, 0]) {
   const on = dynToggle('comp', true);
   ok(on.bg === '#5cdb5c' && on.fg === '#10240f' && on.label === 'Compressor In' && on.pressed === 'true', 'comp toggle in');
   const off = dynToggle('gate', false);
-  ok(off.bg === '#2b3038' && off.label === 'Gate Bypassed', 'gate toggle bypassed');
+  ok(off.bg === 'var(--u4-btn-bg)' && off.label === 'Gate Bypassed', 'gate toggle bypassed');
   ok(dynSummary('comp', GATE, COMP) === 'Thr -13.0 dB · 3.0:1 · Makeup 0.0 dB', 'comp summary');
   ok(dynSummary('gate', GATE, COMP) === 'Thr -47.0 dB · Range 40 dB', 'gate summary');
   ok(dynAria('comp') === 'Compressor transfer curve' && dynAria('gate') === 'Gate transfer curve', 'aria');

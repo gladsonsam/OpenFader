@@ -25,14 +25,14 @@
 {#if vm.hasInput}
 <section
   aria-label="Delay"
-  style="box-sizing:content-box;display:flex;flex-direction:column;gap:14px;padding:14px;border-radius:3px;border:1px solid #1f2836;background:#0e1520"
+  style="box-sizing:content-box;display:flex;flex-direction:column;gap:14px;padding:14px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
 >
   <div style="box-sizing:content-box;display:flex;align-items:center;justify-content:space-between">
-    <span style="font-size:12px;color:#8f9bb0">Delay</span>
+    <span style="font-size:12px;color:var(--u4-text-6)">Delay</span>
     <button
       onclick={() => onEvent?.('toggle')}
       aria-pressed={vm.delayOn ? 'true' : 'false'}
-      style="box-sizing:border-box;font-variant-numeric:normal;height:34px;padding:0 14px;border-radius:3px;border:1px solid #3a414c;background:{vm.delayBg};color:{vm.delayFg};font-size:13px;cursor:pointer"
+      style="box-sizing:border-box;font-variant-numeric:normal;height:34px;padding:0 14px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:{vm.delayBg};color:{vm.delayFg};font-size:13px;cursor:pointer"
       >{vm.delayLabel}</button
     >
   </div>
@@ -48,6 +48,6 @@
       oninput={(v) => onEvent?.('knob', { key: 'delay', value: v })}
     />
   </div>
-  <div style="font-size:13px;color:#a7b1c0;text-align:center">{vm.delayDist}</div>
+  <div style="font-size:13px;color:var(--u4-text-5);text-align:center">{vm.delayDist}</div>
 </section>
 {/if}

@@ -31,12 +31,12 @@
   <button
     onclick={() => onEvent?.('toggle')}
     aria-pressed={props.pressed ?? 'false'}
-    style="box-sizing:border-box;font-variant-numeric:normal;height:40px;padding:0 16px;border-radius:3px;border:1px solid #3a414c;background:{props.bg ??
-      '#2b3038'};color:{props.fg ?? '#c9d1dc'};font-size:15px;cursor:pointer"
+    style="box-sizing:border-box;font-variant-numeric:normal;height:40px;padding:0 16px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:{props.bg ??
+      'var(--u4-btn-bg)'};color:{props.fg ?? 'var(--u4-text-4)'};font-size:15px;cursor:pointer"
     ><span>{props.label ?? ''}</span></button
   >
   <div
-    style="box-sizing:content-box;flex:1;min-width:160px;text-align:right;font-size:13px;color:#c9d1dc"
+    style="box-sizing:content-box;flex:1;min-width:160px;text-align:right;font-size:13px;color:var(--u4-text-4)"
   >
     {props.summary ?? ''}
   </div>

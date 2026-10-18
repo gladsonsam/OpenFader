@@ -125,7 +125,7 @@ export function stripVm(
     useSend,
     value,
     readout: fmtDb(value),
-    readColor: useSend ? '#22d3e6' : '#c9d1dc',
+    readColor: useSend ? 'var(--u4-cyan)' : 'var(--u4-text-4)',
     faderAria: st.faderAria,
     selectAria: st.selectAria,
     fine: state.fine,
@@ -151,8 +151,8 @@ export function masterVm(state: UiState, chans: Record<string, Channel>): Master
     ...base,
     sub: sof ? 'Aux bus' : 'Stereo out',
     readout: base.readout,
-    // The design hard-codes the master readout colour to #e8edf5.
-    readColor: '#e8edf5',
+    // The design hard-codes the master readout colour; the token keeps it readable on light themes.
+    readColor: 'var(--u4-text-1)',
     tag: sof ? 'SENDS MASTER' : 'MASTER',
     tagColor: sof ? '#5fe3f0' : '#ffd25a',
     kind: sof ? 'sof' : 'master',
