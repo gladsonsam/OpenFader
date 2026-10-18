@@ -21,6 +21,12 @@ free AND its files don't collide with the running worker.
   Returns, P16 sends; grouped ladders 0..-50) with an icon button in the
   topbar to open it.
 
+## Queued — server-side (later; venue PC on LAN + USB/ASIO)
+- Automixing (gain-sharing across channels on the server).
+- Feedback removal (auto-EQ driven by RTA).
+- MCP server (agents operate the mixer).
+- CLI scripting (openmix-cli exists — extend to full coverage for scripts).
+
 ## Done (this wave)
 - ui4 is the only UI; desktop diffs held; phone responsive layout.
 - Behringer spec match to XR18 FW 1.20 (65 live checks, docs rewritten).
