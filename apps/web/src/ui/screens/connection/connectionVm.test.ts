@@ -46,7 +46,7 @@ assert.equal(w0.state.connected, 'foh');
   assert.equal(mon.btnText, '#10240f');
   assert.equal(mon.canConnect, true);
   assert.equal(sb.status, 'I/O · in use');
-  assert.equal(sb.statusColor, '#8792a4');
+  assert.equal(sb.statusColor, 'var(--u4-text-7)');
   assert.equal(sb.canConnect, false);
 }
 

@@ -136,8 +136,8 @@
         "justify": "center",
         "padding": 24,
         "radius": 3,
-        "border": "1px solid #1f2836",
-        "background": "#0a0f17",
+        "border": "1px solid var(--u4-line-panel)",
+        "background": "var(--u4-well-bg)",
         "box": "content-box"
       },
       "when": "dynParams == null",
@@ -148,7 +148,7 @@
           "props": {
             "value": "No dynamics on this channel.",
             "size": 15,
-            "color": "#a7b1c0",
+            "color": "var(--u4-text-5)",
             "align": "center"
           }
         }

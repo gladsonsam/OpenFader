@@ -1,6 +1,6 @@
 <!-- Generic button, pixel-matched to the template's grey/green/danger buttons.
      Template values: radius 3px (tabs 5px via `radius` prop), border
-     #3a414c, bg #2b3038 / green #5cdb5c ink #10240f / danger #e5322b on,
+     var(--u4-line-ctl), bg var(--u4-btn-bg) / green #5cdb5c ink #10240f / danger #e5322b on,
      #4b0d0f off; heights 30/34/36/40/44/46/48; font 12/13/14/15px; w600 opt. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';

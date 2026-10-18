@@ -53,6 +53,7 @@ import {
   setFine,
   setFxParam,
   setFxSel,
+  setTheme,
   setFxType,
   setHpfSlope,
   setLocked,
@@ -101,6 +102,7 @@ import {
   type UiState,
   type World,
 } from './uiLogic.ts';
+import type { ThemePresetId } from '../modules/theme.ts';
 import { initialStateFromUrl, markReady } from './urlBridge.ts';
 import { live } from './live.svelte.ts';
 import type { EngineWorld } from '../world/engineWorld/engineWorld.ts';
@@ -713,6 +715,7 @@ export const ui = {
     setRelayHost: (host: string) => live.setHost(host),
     setSpp: (n: number) => update(setSpp(world, n)),
     setFine: (v: boolean) => update(setFine(world, v)),
+    setTheme: (t: ThemePresetId) => update(setTheme(world, t)),
     setSof: (v: boolean) => { update(setSof(world, v)); refreshMeterIds(); },
     setMix: (m: number) => { update(setMix(world, m)); refreshMeterIds(); },
     setPeakHold: (v: boolean) => update(setPeakHold(world, v)),

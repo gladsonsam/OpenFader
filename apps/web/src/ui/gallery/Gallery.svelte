@@ -95,7 +95,7 @@
         <Icon name="routing" size={22} />
         <Icon name="plug" size={22} />
         <Icon name="gear" size={22} />
-        <Icon name="chevronDown" size={16} stroke="#a7b1c0" />
+        <Icon name="chevronDown" size={16} stroke="var(--u4-text-5)" />
         <Icon name="console" size={24} />
         <Icon name="io" size={24} />
         <Icon name="chevronLeft" size={20} />

@@ -11,16 +11,18 @@ free AND its files don't collide with the running worker.
    scripts/verify-bidirectional.mjs matrix + root-caused gap list.
 
 ## Queued (in order)
-1. Mobile UI audit loop — kill excess vibration/haptics; topbar too big;
-   channel detail wastes space (not intuitive, not dense). Iterate
-   screenshot→fix→screenshot until genuinely usable on phone.
-   (Owner suggested a smarter/different model for the reviewer; no model
-   switched — no exact model specified.)
-2. Devices: scan shows ONLY real desks (owner's XR18, no sim/fake
+1. Frontend review loop (tonight's job) — subtractive only: no new
+   features/screens. Screenshot-driven rounds on phone + desktop:
+   slim the topbar, densify channel detail, remove/reduce/resize,
+   tone down haptics/vibration. Uses the frontend-design skill.
+   Iterate until genuinely usable. Starts when the merge lands.
+2. Mobile UI audit loop — FOLDS INTO #1 (same loop covers vibration,
+   topbar, channel density; no separate agent).
+3. Devices: scan shows ONLY real desks (owner's XR18, no sim/fake
    entries) + explicit work-offline mode.
-3. Push merged main (post-merge verification first).
+4. Push merged main (post-merge verification first).
 
-## Queued — server-side (later; venue PC on LAN + USB/ASIO)
+## Queued — server-side (NOT today; parked, do not dispatch)
 - Automixing (gain-sharing across channels on the server).
 - Feedback removal (auto-EQ driven by RTA).
 - MCP server (agents operate the mixer).

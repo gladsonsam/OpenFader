@@ -1,7 +1,7 @@
 <!-- Titled card (Display/Faders/Safety/About in Settings, Channels/Sources in
      Routing, Preamp/Source/Delay in Input, FX detail, Connection cards).
-     Template: radius 3px, border 1px #1f2836, bg #0e1520; section title
-     padding 12px 14px 4px, font 12px colour #8f9bb0. -->
+     Template: radius 3px, border 1px var(--u4-line-panel), bg var(--u4-panel-bg); section title
+     padding 12px 14px 4px, font 12px colour var(--u4-text-6). -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
 

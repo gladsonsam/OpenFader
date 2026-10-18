@@ -32,7 +32,7 @@
     <button
       onclick={() => onEvent?.('pickType', { type: t.label })}
       aria-pressed={t.pressed ? 'true' : 'false'}
-      style="box-sizing:border-box;font-variant-numeric:normal;height:44px;border-radius:3px;border:1px solid #3a414c;background:{t.bg};color:{t.fg};font-size:14px;cursor:pointer"
+      style="box-sizing:border-box;font-variant-numeric:normal;height:44px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:{t.bg};color:{t.fg};font-size:14px;cursor:pointer"
       >{t.label}</button
     >
   {/each}

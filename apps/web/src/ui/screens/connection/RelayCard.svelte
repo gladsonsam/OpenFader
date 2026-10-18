@@ -39,7 +39,7 @@
   });
 
   const dot = $derived(
-    online ? '#5fe060' : busy ? '#f0b44a' : phase === 'error' ? '#ff4a3d' : '#8792a4',
+    online ? '#5fe060' : busy ? '#f0b44a' : phase === 'error' ? '#ff4a3d' : 'var(--u4-text-7)',
   );
   const statusText = $derived(
     online
@@ -54,7 +54,7 @@
 </script>
 
 <div
-  style="box-sizing:content-box;display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:3px;border:1px solid #2c3442;background:#0a0f17"
+  style="box-sizing:content-box;display:flex;flex-direction:column;gap:10px;padding:12px 14px;border-radius:3px;border:1px solid #2c3442;background:var(--u4-well-bg)"
 >
   <div style="box-sizing:content-box;display:flex;align-items:center;gap:10px">
     <span
@@ -63,7 +63,7 @@
     <div style="box-sizing:content-box;flex:1;min-width:0">
       <div style="box-sizing:content-box;font-size:16px;font-weight:600">{statusText}</div>
       <div
-        style="box-sizing:content-box;font-size:12px;color:#8792a4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+        style="box-sizing:content-box;font-size:12px;color:var(--u4-text-7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
       >{message}</div>
     </div>
   </div>
@@ -78,13 +78,13 @@
       autocorrect="off"
       spellcheck={false}
       inputmode="url"
-      style="box-sizing:border-box;flex:1 1 160px;min-width:0;height:44px;padding:0 12px;border-radius:3px;border:1px solid #3a414c;background:#0e1520;color:#e8edf5;font-size:16px;font-family:inherit"
+      style="box-sizing:border-box;flex:1 1 160px;min-width:0;height:44px;padding:0 12px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-panel-bg);color:var(--u4-text-1);font-size:16px;font-family:inherit"
     />
     {#if online}
       <button
         onclick={() => onEvent?.('disconnect')}
         aria-label="Disconnect relay"
-        style="box-sizing:border-box;height:44px;min-width:104px;padding:0 14px;border-radius:3px;border:1px solid #3a414c;background:#2b3038;color:#e8edf5;font-size:14px;cursor:pointer;font-variant-numeric:normal"
+        style="box-sizing:border-box;height:44px;min-width:104px;padding:0 14px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-btn-bg);color:var(--u4-text-1);font-size:14px;cursor:pointer;font-variant-numeric:normal"
         >Disconnect</button
       >
     {:else}
@@ -92,7 +92,7 @@
         onclick={() => onEvent?.('connect', { host: draft })}
         disabled={busy}
         aria-label="Connect to relay"
-        style="box-sizing:border-box;height:44px;min-width:104px;padding:0 14px;border-radius:3px;border:1px solid #5cdb5c;background:{busy ? '#2b3038' : '#5cdb5c'};color:{busy ? '#8792a4' : '#10240f'};font-size:14px;font-weight:600;cursor:pointer;font-variant-numeric:normal"
+        style="box-sizing:border-box;height:44px;min-width:104px;padding:0 14px;border-radius:3px;border:1px solid #5cdb5c;background:{busy ? 'var(--u4-btn-bg)' : '#5cdb5c'};color:{busy ? 'var(--u4-text-7)' : '#10240f'};font-size:14px;font-weight:600;cursor:pointer;font-variant-numeric:normal"
         >{busy ? 'Connecting…' : 'Connect'}</button
       >
     {/if}

@@ -155,10 +155,10 @@
 
       <section id="sig-fader-master" aria-label="Master fader" style="display:flex;gap:16px;align-items:flex-end">
         <div id="sig-master-idle" style="width:108px;height:345px;background:#121a27">
-          <Fader variant="master" accent="master" value={faderMaster} dbText={fmtDb(faderMaster)} readColor="#e8edf5" ariaLabel={'Fader Main LR ' + fmtDb(faderMaster) + ' dB'} oninput={(v) => (faderMaster = v)} meterFrozen={still} meter={{ getLevel: (ch) => (ch === 0 ? lvl('mainlr') : lvl('mainlr') - 1.5) }} />
+          <Fader variant="master" accent="master" value={faderMaster} dbText={fmtDb(faderMaster)} readColor="var(--u4-text-1)" ariaLabel={'Fader Main LR ' + fmtDb(faderMaster) + ' dB'} oninput={(v) => (faderMaster = v)} meterFrozen={still} meter={{ getLevel: (ch) => (ch === 0 ? lvl('mainlr') : lvl('mainlr') - 1.5) }} />
         </div>
         <div id="sig-master-sof" style="width:108px;height:345px;background:#121a27">
-          <Fader variant="master" accent="sof" value={0.62} dbText={fmtDb(0.62)} readColor="#e8edf5" ariaLabel={'Send to Mix 1 from Mix 1 ' + fmtDb(0.62) + ' dB'} oninput={() => {}} meterFrozen={still} />
+          <Fader variant="master" accent="sof" value={0.62} dbText={fmtDb(0.62)} readColor="var(--u4-text-1)" ariaLabel={'Send to Mix 1 from Mix 1 ' + fmtDb(0.62) + ' dB'} oninput={() => {}} meterFrozen={still} />
         </div>
       </section>
 

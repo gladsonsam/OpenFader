@@ -15,7 +15,7 @@
 </script>
 
 <div
-  style="box-sizing:content-box;height:18px;flex:none;text-align:center;font-size:13px;color:#a7b1c0"
+  style="box-sizing:content-box;height:18px;flex:none;text-align:center;font-size:13px;color:var(--u4-text-5)"
 >
   {props.src ?? ''}
 </div>

@@ -94,8 +94,8 @@
                 "justify": "center",
                 "padding": 24,
                 "radius": 3,
-                "border": "1px solid #1f2836",
-                "background": "#0a0f17",
+                "border": "1px solid var(--u4-line-panel)",
+                "background": "var(--u4-well-bg)",
                 "box": "content-box"
               },
               "when": "!inputVm.hasInput",
@@ -106,7 +106,7 @@
                   "props": {
                     "value": "No preamp on this channel — its signal comes from inside the console.",
                     "size": 15,
-                    "color": "#a7b1c0",
+                    "color": "var(--u4-text-5)",
                     "align": "center"
                   }
                 }
@@ -237,8 +237,8 @@
                 "justify": "center",
                 "padding": 24,
                 "radius": 3,
-                "border": "1px solid #1f2836",
-                "background": "#0a0f17",
+                "border": "1px solid var(--u4-line-panel)",
+                "background": "var(--u4-well-bg)",
                 "box": "content-box"
               },
               "when": "count(sendRows) == 0",
@@ -249,7 +249,7 @@
                   "props": {
                     "value": "Buses and outputs don't send to mixes.",
                     "size": 15,
-                    "color": "#a7b1c0",
+                    "color": "var(--u4-text-5)",
                     "align": "center"
                   }
                 }
@@ -406,6 +406,9 @@
                 "columns": "repeat(auto-fit, minmax(180px, 1fr))",
                 "gap": 6,
                 "box": "content-box"
+              },
+              "variants": {
+                "phone": { "props": { "columns": "repeat(auto-fit, minmax(160px, 1fr))" } }
               },
               "children": [
                 {
@@ -588,6 +591,9 @@
                     "kind": "gate",
                     "color": "#3ed0e0"
                   },
+                  "variants": {
+                    "phone": { "props": { "minH": 220 } }
+                  },
                   "on": {
                     "thr": {
                       "do": "channel.dynKnob",
@@ -671,8 +677,8 @@
                 "justify": "center",
                 "padding": 24,
                 "radius": 3,
-                "border": "1px solid #1f2836",
-                "background": "#0a0f17",
+                "border": "1px solid var(--u4-line-panel)",
+                "background": "var(--u4-well-bg)",
                 "box": "content-box"
               },
               "when": "dynParams == null",
@@ -683,7 +689,7 @@
                   "props": {
                     "value": "No dynamics on this channel.",
                     "size": 15,
-                    "color": "#a7b1c0",
+                    "color": "var(--u4-text-5)",
                     "align": "center"
                   }
                 }
@@ -746,6 +752,9 @@
                   "props": {
                     "kind": "comp",
                     "color": "#ff9f43"
+                  },
+                  "variants": {
+                    "phone": { "props": { "minH": 220 } }
                   },
                   "on": {
                     "thr": {
@@ -850,8 +859,8 @@
                 "justify": "center",
                 "padding": 24,
                 "radius": 3,
-                "border": "1px solid #1f2836",
-                "background": "#0a0f17",
+                "border": "1px solid var(--u4-line-panel)",
+                "background": "var(--u4-well-bg)",
                 "box": "content-box"
               },
               "when": "dynParams == null",
@@ -862,7 +871,7 @@
                   "props": {
                     "value": "No dynamics on this channel.",
                     "size": 15,
-                    "color": "#a7b1c0",
+                    "color": "var(--u4-text-5)",
                     "align": "center"
                   }
                 }
@@ -882,7 +891,7 @@
         "gap": 5,
         "padding": 5,
         "radius": 0,
-        "background": "#0e1520",
+        "background": "var(--u4-panel-bg)",
         "flex": "none",
         "box": "content-box"
       },
@@ -895,6 +904,9 @@
               "id": "m-side",
               "module": "col",
               "props": { "gap": 5, "flex": "none", "width": 148, "box": "content-box" },
+              "variants": {
+                "phone": { "props": { "flex": "1 1 auto", "width": "auto", "minWidth": 0 } }
+              },
               "children": [
                 {
                   "id": "name",
@@ -1116,44 +1128,6 @@
               }
             }
           }
-        },
-        {
-          "id": "fader-wrap",
-          "module": "col",
-          "props": {
-            "flex": "1",
-            "minHeight": 180,
-            "box": "content-box"
-          },
-          "children": [
-            {
-              "id": "fader",
-              "module": "channel-fader",
-              "bind": {
-                "pos": "master.faderPos",
-                "readout": "master.readout",
-                "aria": "master.faderAria",
-                "accent": "master.accent",
-                "readColor": "master.readColor",
-                "fine": "store.fine",
-                "meter": "stripMeter",
-                "meterFrozen": "frozen"
-              },
-              "on": {
-                "input": {
-                  "do": "ui.setFader",
-                  "args": {
-                    "id": {
-                      "$expr": "selId"
-                    },
-                    "value": {
-                      "$expr": "payload.value"
-                    }
-                  }
-                }
-              }
-            }
-          ]
         },
         {
           "id": "src",

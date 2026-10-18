@@ -47,9 +47,9 @@
 <div
   style="box-sizing:content-box;width:48px;flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;margin-bottom:24px"
 >
-  <span style="font-size:12px;color:#8f9bb0">GR</span>
+  <span style="font-size:12px;color:var(--u4-text-6)">GR</span>
   <div
-    style="box-sizing:content-box;flex:1;width:18px;position:relative;overflow:hidden;border-radius:3px;background:#1a2332"
+    style="box-sizing:content-box;flex:1;width:18px;position:relative;overflow:hidden;border-radius:3px;background:var(--u4-io-tile)"
   >
     <span
       bind:this={fill}

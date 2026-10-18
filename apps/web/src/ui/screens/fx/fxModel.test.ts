@@ -45,8 +45,8 @@ function ok(cond: unknown, msg: string): void {
   ok(slots[7].state === 'Bypassed', slots[7].state);
   ok(slots[7].stateColor === '#f0b44a', slots[7].stateColor);
   ok(slots[0].pressed === true && slots[1].pressed === false, 'selection');
-  ok(slots[0].border === '#b28cff' && slots[1].border === '#222a36', 'borders');
-  ok(slots[0].bg === '#1b2330' && slots[1].bg === '#0e1520', 'backgrounds');
+  ok(slots[0].border === '#b28cff' && slots[1].border === 'var(--u4-line-faint)', 'borders');
+  ok(slots[0].bg === '#1b2330' && slots[1].bg === 'var(--u4-panel-bg)', 'backgrounds');
   ok(slots[0].meterPct === '0.0', 'silent meter with no source');
   // bypassed slot never meters, even with a hot level
   const hot = buildFxSlotVm(fx[7], 7, false, 0);
@@ -77,7 +77,7 @@ function ok(cond: unknown, msg: string): void {
   assert.deepEqual([...FX_TYPES], ['Hall', 'Plate', 'Room', 'Delay', 'Chorus', 'Flanger']);
   const btns = fxTypeButtons('Hall');
   ok(btns[0].pressed && btns[0].bg === '#b28cff' && btns[0].fg === '#1a0f2e', 'selected type');
-  ok(!btns[1].pressed && btns[1].bg === '#2b3038' && btns[1].fg === '#c9d1dc', 'idle type');
+  ok(!btns[1].pressed && btns[1].bg === 'var(--u4-btn-bg)' && btns[1].fg === 'var(--u4-text-4)', 'idle type');
   ok(FX_ACCENT === '#b28cff', 'purple accent');
 }
 

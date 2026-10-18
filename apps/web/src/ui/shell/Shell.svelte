@@ -121,8 +121,8 @@
         {/if}
       </div>
     {/key}
-    {#if showRail}
-      <BankRail banks={liveBanks} activeKey={ui.state.bank} onSelect={(k) => ui.do.setBank(k)} orientation={isPhone ? 'bottom' : 'side'} />
+    {#if showRail && !isPhone}
+      <BankRail banks={liveBanks} activeKey={ui.state.bank} onSelect={(k) => ui.do.setBank(k)} orientation="side" />
     {/if}
   </div>
   {#if meterBridge.open}

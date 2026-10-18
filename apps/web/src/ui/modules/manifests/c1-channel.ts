@@ -53,10 +53,10 @@ export const manifests: ModuleManifest[] = [
     component: as(StripNameChip),
     props: {
       name: { type: 'text', default: '' },
-      color: { type: 'color', default: '#2b3038' },
-      text: { type: 'color', default: '#eef2f7' },
+      color: { type: 'color', default: 'var(--u4-btn-bg)' },
+      text: { type: 'color', default: 'var(--u4-text-2)' },
     },
-    defaults: { name: '', color: '#2b3038', text: '#eef2f7' },
+    defaults: { name: '', color: 'var(--u4-btn-bg)', text: 'var(--u4-text-2)' },
     size: {},
   },
   {
@@ -107,7 +107,7 @@ export const manifests: ModuleManifest[] = [
       readout: { type: 'text', default: '' },
       aria: { type: 'text', default: 'Fader' },
       accent: { type: 'enum', options: ['chan', 'sof'], default: 'chan' },
-      readColor: { type: 'color', default: '#c9d1dc' },
+      readColor: { type: 'color', default: 'var(--u4-text-4)' },
       fine: { type: 'bool', default: false },
       meter: vmObject,
       meterFrozen: { type: 'bool', default: false },
@@ -123,9 +123,9 @@ export const manifests: ModuleManifest[] = [
     component: as(StripReadout),
     props: {
       text: { type: 'text', default: '' },
-      color: { type: 'color', default: '#c9d1dc' },
+      color: { type: 'color', default: 'var(--u4-text-4)' },
     },
-    defaults: { text: '', color: '#c9d1dc' },
+    defaults: { text: '', color: 'var(--u4-text-4)' },
     size: {},
   },
   {

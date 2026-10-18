@@ -54,8 +54,8 @@ export function tabListEntries(ch: Channel, tab: Tab): TabListEntry[] {
     title: t.label,
     note: t.note,
     current: t.key === tab,
-    border: t.key === tab ? ch.color : '#2b3038',
-    bg: t.key === tab ? '#363d48' : '#2b3038',
+    border: t.key === tab ? ch.color : 'var(--u4-btn-bg)',
+    bg: t.key === tab ? '#363d48' : 'var(--u4-btn-bg)',
   }));
 }
 
@@ -155,11 +155,11 @@ export function inputVm(w: World): InputVm | null {
     delayDist: delayDistanceText(inp.delay),
     delayOn: inp.delayOn,
     delayLabel: inp.delayOn ? 'On' : 'Off',
-    delayBg: inp.delayOn ? '#5cdb5c' : '#2b3038',
-    delayFg: inp.delayOn ? '#10240f' : '#c9d1dc',
+    delayBg: inp.delayOn ? '#5cdb5c' : 'var(--u4-btn-bg)',
+    delayFg: inp.delayOn ? '#10240f' : 'var(--u4-text-4)',
     invert: inp.invert,
-    invertBg: inp.invert ? '#e8edf5' : '#2b3038',
-    invertFg: inp.invert ? '#0b0f14' : '#c9d1dc',
+    invertBg: inp.invert ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
+    invertFg: inp.invert ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
     phantomOn: inp.phantom,
     armed,
     phantomLabel: armed
@@ -169,9 +169,9 @@ export function inputVm(w: World): InputVm | null {
       : inp.phantom
         ? '48V On'
         : '48V Off',
-    phantomBg: armed ? '#f0b44a' : inp.phantom ? '#d92d22' : '#2b3038',
-    phantomFg: armed ? '#241703' : inp.phantom ? '#ffffff' : '#c9d1dc',
-    phantomBorder: armed ? '#f6c76a' : inp.phantom ? '#ff6a60' : '#3a414c',
+    phantomBg: armed ? '#f0b44a' : inp.phantom ? '#d92d22' : 'var(--u4-btn-bg)',
+    phantomFg: armed ? '#241703' : inp.phantom ? '#ffffff' : 'var(--u4-text-4)',
+    phantomBorder: armed ? '#f6c76a' : inp.phantom ? '#ff6a60' : 'var(--u4-line-ctl)',
     srcName: ch.src,
     srcGroup:
       grp === 'Lcl'
@@ -212,12 +212,12 @@ export function sendRowsVm(ch: Channel): SendRowVm[] {
       pct: (v * 100).toFixed(1),
       text: fmtDb(v),
       aria: sendAria(k, v),
-      fill: pre ? '#e8edf5' : '#22d3e6',
+      fill: pre ? 'var(--u4-text-1)' : '#22d3e6',
       pre,
       preLabel: pre ? 'Pre' : 'Post',
       preAria: 'Mix ' + (k + 1) + ' pre-fader',
-      preBg: pre ? '#e8edf5' : '#2b3038',
-      preFg: pre ? '#0b0f14' : '#c9d1dc',
+      preBg: pre ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
+      preFg: pre ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
     };
   });
 }

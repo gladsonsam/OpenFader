@@ -48,7 +48,7 @@
 </script>
 
 <div
-  style="box-sizing:content-box;flex:1 1 300px;display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));align-content:center;gap:20px 8px;padding:18px;border-radius:3px;border:1px solid #1f2836;background:#0e1520"
+  style="box-sizing:content-box;flex:1 1 300px;display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));align-content:center;gap:20px 8px;padding:18px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
 >
   {#if gate && comp}
     {#each visible as k (k.prop)}
