@@ -19,8 +19,11 @@ import {
   clamp,
   compOut,
   compSummary,
+  fromN,
   gateOut,
   gateSummary,
+  spec,
+  toN,
   type Comp,
   type Gate,
 } from '../../../fixtures/designData.ts';
@@ -108,6 +111,75 @@ export function dynThreshold(p: { thr: number }, lo: number): DynThreshold {
     leftPct: clamp(dynMap(lo, p.thr) / 2, 8, 92).toFixed(1),
     text: p.thr.toFixed(1) + ' dB',
   };
+}
+
+/** Draggable graph handles (reference-hardware circles): T rides the knee
+ * for both kinds; comp also gets R (ratio) at the top-right curve end and
+ * G (makeup gain) at the bottom-left curve start. Positions ride the live
+ * curve exactly (makeup shifts the output) — centres are NOT clamped, so
+ * the circles always sit on the line; the plot allows overflow so edge
+ * handles stay fully visible and grabbable. */
+export interface DynHandle {
+  /** Param edited by this handle (event name + dyn prop). */
+  id: 'thr' | 'ratio' | 'makeup';
+  /** Letter painted in the circle (G / T / R). */
+  label: string;
+  /** Centre in % of plot width/height. */
+  left: number;
+  top: number;
+  /** Current raw value (spec units: dB, or ratio). */
+  value: number;
+  /** Accessible stem, e.g. 'Compressor threshold handle'. */
+  aria: string;
+}
+
+export function dynHandles(kind: DynKind, p: DynParams): DynHandle[] {
+  const lo = DYN_LO[kind];
+  const at = (x: number): { left: number; top: number } => ({
+    left: clamp(dynMap(lo, x) / 2, 0, 100),
+    top: clamp(100 - clamp(dynMap(lo, outOf(kind, p, x)), 0, DYN_SIZE) / 2, 0, 100),
+  });
+  const name = kind === 'gate' ? 'Gate' : 'Compressor';
+  if (kind === 'gate') {
+    const g = p as Gate;
+    const t = at(g.thr);
+    return [{ id: 'thr', label: 'T', ...t, value: g.thr, aria: name + ' threshold handle' }];
+  }
+  const c = p as Comp;
+  const t = at(c.thr);
+  const r = at(0);
+  const g = at(lo);
+  return [
+    { id: 'makeup', label: 'G', ...g, value: c.makeup, aria: name + ' makeup handle' },
+    { id: 'thr', label: 'T', ...t, value: c.thr, aria: name + ' threshold handle' },
+    { id: 'ratio', label: 'R', ...r, value: c.ratio, aria: name + ' ratio handle' },
+  ];
+}
+
+/** Raw threshold dB from a horizontal plot fraction (handle or plot drag). */
+export function dynThrRaw(kind: DynKind, fracX: number): number {
+  const f = clamp(fracX, 0, 1);
+  return Math.round((DYN_LO[kind] + f * -DYN_LO[kind]) * 2) / 2;
+}
+
+/** Raw ratio from a vertical plot fraction (0 = top): follow-the-line —
+ * the curve end tracks the finger, like G (makeup) and T (threshold)
+ * already do. Solves r from the end-point equation
+ * out(0) = thr + (0-thr)/r + makeup for the finger's output level and
+ * quantizes through the ratio spec. Below knee height there is nothing
+ * further to follow, so it pins at 20:1. (Absolute mapping — up = more
+ * ratio — would drive the line end opposite the finger.) */
+export function dynRatioRaw(fracY: number, thr: number, makeup: number): number {
+  const yOut = DYN_LO.comp + (1 - clamp(fracY, 0, 1)) * -DYN_LO.comp;
+  const denom = yOut - makeup - thr;
+  const r = denom <= 0 ? 20 : (0 - thr) / denom;
+  const s = spec('ratio');
+  return fromN(s, toN(s, clamp(r, s.min, s.max)));
+}
+
+/** Raw makeup dB from a vertical plot fraction (0 = top). */
+export function dynMakeupRaw(fracY: number): number {
+  return fromN(spec('makeup'), clamp(1 - fracY, 0, 1));
 }
 
 export interface DynDot {
