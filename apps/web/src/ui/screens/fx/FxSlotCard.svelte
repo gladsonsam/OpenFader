@@ -35,15 +35,17 @@
   onclick={() => onEvent?.('select', { index: props.index ?? 0 })}
   aria-pressed={props.pressed ? 'true' : 'false'}
   style="box-sizing:border-box;font-variant-numeric:normal;height:96px;display:flex;flex-direction:column;justify-content:space-between;gap:4px;padding:10px;border-radius:3px;border:2px solid {props.border ??
-    '#222a36'};background:{props.bg ?? '#0e1520'};color:#eef2f7;cursor:pointer;text-align:left"
+    'var(--u4-line-faint)'};background:{props.bg ?? 'var(--u4-panel-bg)'};color:{props.pressed
+    ? '#eef2f7'
+    : 'var(--u4-text-2)'};cursor:pointer;text-align:left"
 >
   <span style="display:flex;justify-content:space-between;align-items:center">
-    <span style="font-size:12px;color:#a7b1c0">{props.name ?? ''}</span>
+    <span style="font-size:12px;color:var(--u4-text-5)">{props.name ?? ''}</span>
     <span style="font-size:11px;font-weight:600;color:{props.stateColor ?? '#7be27b'}">{props.state ?? ''}</span>
   </span>
   <span style="font-size:18px;font-weight:600">{props.type ?? ''}</span>
   <span style="display:flex;align-items:center;gap:8px">
-    <span style="font-size:12px;color:#8792a4;white-space:nowrap">{props.ret ?? ''}</span>
+    <span style="font-size:12px;color:var(--u4-text-7);white-space:nowrap">{props.ret ?? ''}</span>
     <span
       style="flex:1;height:4px;position:relative;overflow:hidden;border-radius:1px;background:#1a2332"
       ><span

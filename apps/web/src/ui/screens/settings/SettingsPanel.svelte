@@ -26,8 +26,8 @@
 
 <section
   aria-label={props.title ?? ''}
-  style="box-sizing:content-box;display:flex;flex-direction:column;border-radius:3px;border:1px solid #1f2836;background:#0e1520"
+  style="box-sizing:content-box;display:flex;flex-direction:column;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
 >
-  <div style="box-sizing:content-box;padding:12px 14px 4px;font-size:12px;color:#8f9bb0">{props.title ?? ''}</div>
+  <div style="box-sizing:content-box;padding:12px 14px 4px;font-size:12px;color:var(--u4-text-6)">{props.title ?? ''}</div>
   {@render children?.()}
 </section>

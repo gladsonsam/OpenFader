@@ -61,6 +61,8 @@
       staticDotT?: string;
       /** Live level reader (dBFS). Ignored when frozen. */
       getLevel?: (() => number) | null;
+      /** Card min-height px (layouts shrink it on phones). */
+      minH?: number;
     };
     ctx: ModuleContext;
     nodeId: string;
@@ -81,6 +83,7 @@
   );
   const frozen = $derived(props.frozen ?? true);
   const getLevel = $derived(props.getLevel ?? null);
+  const minH = $derived(props.minH ?? 300);
 
   let dot: HTMLSpanElement | null = $state(null);
 
@@ -260,12 +263,12 @@
 </style>
 
 <div
-  style="box-sizing:content-box;flex:1 1 400px;min-height:300px;display:flex;gap:10px;padding:12px 12px 12px 6px;border-radius:3px;border:1px solid #1f2836;background:#0a0f17"
+  style="box-sizing:content-box;flex:1 1 400px;min-height:{minH}px;display:flex;gap:10px;padding:12px 12px 12px 6px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg)"
 >
   <div aria-hidden="true" style="box-sizing:content-box;width:34px;flex:none;position:relative;margin-bottom:24px">
     {#each axis as a (a.label)}
       <span
-        style="position:absolute;right:0;top:{a.top}%;transform:translateY(-50%);font-size:12px;color:#7d889b;font-variant-numeric:tabular-nums"
+        style="position:absolute;right:0;top:{a.top}%;transform:translateY(-50%);font-size:12px;color:var(--u4-text-8);font-variant-numeric:tabular-nums"
         >{a.label}</span
       >
     {/each}
@@ -278,13 +281,13 @@
       onpointerup={up}
       onpointercancel={up}
       title={kind === 'gate' ? 'Drag horizontally: threshold' : 'Drag: threshold (horizontal), ratio (vertical)'}
-      style="box-sizing:content-box;flex:1;position:relative;overflow:visible;border-radius:3px;border:1px solid #1f2836;background:#0b111b;touch-action:{kind ===
+      style="box-sizing:content-box;flex:1;position:relative;overflow:visible;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg-2);touch-action:{kind ===
       'gate'
         ? 'pan-y'
         : 'none'};cursor:{kind === 'gate' ? 'ew-resize' : 'move'}"
     >
-      <span aria-hidden="true" style="position:absolute;left:10px;bottom:8px;font-size:12px;color:#6c788c">Input →</span>
-      <span aria-hidden="true" style="position:absolute;left:10px;top:8px;font-size:12px;color:#6c788c">↑ Output</span>
+      <span aria-hidden="true" style="position:absolute;left:10px;bottom:8px;font-size:12px;color:var(--u4-text-10)">Input →</span>
+      <span aria-hidden="true" style="position:absolute;left:10px;top:8px;font-size:12px;color:var(--u4-text-10)">↑ Output</span>
       <svg
         viewBox="0 0 200 200"
         preserveAspectRatio="none"
@@ -298,7 +301,7 @@
             y1="0"
             x2={g.p}
             y2="200"
-            stroke="#18212f"
+            stroke="var(--u4-line-row)"
             stroke-width="1"
             vector-effect="non-scaling-stroke"
           ></line>
@@ -307,7 +310,7 @@
             y1={g.q}
             x2={200}
             y2={g.q}
-            stroke="#18212f"
+            stroke="var(--u4-line-row)"
             stroke-width="1"
             vector-effect="non-scaling-stroke"
           ></line>
@@ -317,7 +320,7 @@
           y1="200"
           x2="200"
           y2="0"
-          stroke="#34445e"
+          stroke="var(--u4-graph-unity)"
           stroke-width="1"
           stroke-dasharray="5 5"
           vector-effect="non-scaling-stroke"
@@ -369,7 +372,7 @@
     <div aria-hidden="true" style="box-sizing:content-box;height:18px;flex:none;position:relative">
       {#each axis as a (a.label)}
         <span
-          style="position:absolute;top:0;left:{a.left}%;transform:translateX({a.shift});font-size:12px;color:#7d889b;font-variant-numeric:tabular-nums"
+          style="position:absolute;top:0;left:{a.left}%;transform:translateX({a.shift});font-size:12px;color:var(--u4-text-8);font-variant-numeric:tabular-nums"
           >{a.label}</span
         >
       {/each}

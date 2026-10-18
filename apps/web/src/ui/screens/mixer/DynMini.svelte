@@ -44,5 +44,5 @@
       vector-effect="non-scaling-stroke"
     ></path>
   </svg>
-  <span style="position:absolute;left:4px;top:2px;font-size:11px;color:#6c788c">Dyn</span>
+  <span style="position:absolute;left:4px;top:2px;font-size:11px;color:var(--u4-text-10)">Dyn</span>
 </button>

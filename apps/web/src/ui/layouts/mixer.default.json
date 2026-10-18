@@ -51,6 +51,9 @@
               "props": {
                 "over": "bank:visible"
               },
+              "variants": {
+                "phone": { "props": { "over": "list:allBankItems" } }
+              },
               "children": [
                 {
                   "id": "strip",
@@ -93,8 +96,8 @@
         "flex": "none",
         "gap": 3,
         "padding": 3,
-        "background": "#121a27",
-        "border": "1px solid #2a3443",
+        "background": "var(--u4-panel-bg)",
+        "border": "1px solid var(--u4-line-panel)",
         "box": "content-box",
         "selectable": true
       },
@@ -143,10 +146,10 @@
           "props": {
             "flex": "1 1 140px",
             "minHeight": 80,
-            "border": "1px solid #1f2836",
+            "border": "1px solid var(--u4-line-panel)",
             "radius": 3,
             "overflow": "hidden",
-            "background": "#0b111b",
+            "background": "var(--u4-well-bg-2)",
             "box": "content-box"
           },
           "children": [
