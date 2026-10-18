@@ -55,7 +55,7 @@ assert.equal((scrollPhone.props as Record<string, unknown>)?.['snap'], 'x');
 assert.equal((applyVariant(node(mixer, 'strip-scroll'), 'desktop').props as Record<string, unknown>)?.['snap'], undefined);
 
 // The variant column expressions resolve against the screen scope.
-assert.equal(phoneGridCols(), 'repeat(16, 120px)');
+assert.equal(phoneGridCols(), 'repeat(48, 120px)');
 assert.equal(tabletGridCols(), 'repeat(16, 150px)');
 for (const [cls, cols] of [['phone', phoneGridCols()], ['tablet', tabletGridCols()]] as const) {
   const r = evalExpr(cls === 'phone' ? 'phoneCols' : 'tabletCols', { phoneCols: phoneGridCols(), tabletCols: tabletGridCols() });

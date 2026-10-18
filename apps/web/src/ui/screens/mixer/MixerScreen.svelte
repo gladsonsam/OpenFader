@@ -19,7 +19,7 @@
   import { bindUiActions } from '../../modules/actions.ts';
   import { useDeviceClass } from '../../modules/device.svelte.ts';
   import './actions.ts';
-  import { mixerCells, mixerMasterCell, phoneGridCols, SLOT_COUNT, tabletGridCols } from './mixerVm.ts';
+  import { mixerAllCells, mixerCells, mixerMasterCell, phoneGridCols, SLOT_COUNT, tabletGridCols } from './mixerVm.ts';
   import type { LayoutNode, RepeatScope } from '../../modules/schema.ts';
   import defaults from '../../layouts/mixer.default.json';
   import stripDefaults from '../../layouts/strip.default.json';
@@ -45,6 +45,7 @@
   // no reactive re-derivation is needed for drawing).
   const liveDb = (id: string): number | null => live.liveLevelDb(id);
   const cells = $derived(mixerCells(ui.state, ui.chans, ui.meter, frozen, liveDb));
+  const allCells = $derived(mixerAllCells(ui.state, ui.chans, ui.meter, frozen, liveDb));
   const master = $derived(mixerMasterCell(ui.state, ui.chans, ui.meter, frozen, liveDb));
   const emptyCount = $derived(Math.max(0, SLOT_COUNT - cells.length));
   const tree = $derived(store.tree(defaults as unknown as LayoutNode));
@@ -60,7 +61,10 @@
     bankItems: cells as unknown as string[],
     // Empty-slot keys must be unique (expandRepeat keys instances by item):
     // distinct placeholder ids, one per trailing slot.
-    lists: { emptySlots: Array.from({ length: emptyCount }, (_, i) => `empty-${i}`) },
+    lists: {
+      emptySlots: Array.from({ length: emptyCount }, (_, i) => `empty-${i}`),
+      allBankItems: allCells as unknown as string[],
+    },
     master,
     frozen,
     anatomy,

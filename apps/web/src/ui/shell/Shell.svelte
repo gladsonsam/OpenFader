@@ -93,8 +93,8 @@
         {/if}
       </div>
     {/key}
-    {#if showRail}
-      <BankRail {banks} activeKey={ui.state.bank} onSelect={(k) => ui.do.setBank(k)} orientation={isPhone ? 'bottom' : 'side'} />
+    {#if showRail && !isPhone}
+      <BankRail {banks} activeKey={ui.state.bank} onSelect={(k) => ui.do.setBank(k)} orientation="side" />
     {/if}
   </div>
 </AppFrame>
