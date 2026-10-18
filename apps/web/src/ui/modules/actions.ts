@@ -185,6 +185,25 @@ export interface DispatchResult {
  * handler with (args, ctx). Unknown ids warn once and are skipped; a handler
  * that throws warns and STOPS the sequence. Never throws.
  */
+import { tap } from '../primitives/feel.ts';
+
+/** Actions that must stay silent: they fire at pointermove/keystroke rates
+ *  (fader/pan/knob drags, name/host typing), where a tick per event would
+ *  buzz constantly. Everything else ticks on success — every tap anywhere
+ *  in the app gets haptic confirmation without per-action wiring. */
+const SILENT_ACTIONS = new Set([
+  'ui.setFader',
+  'ui.setStripFader',
+  'ui.setSend',
+  'ui.setPan',
+  'ui.setEqParam',
+  'ui.setDynParam',
+  'ui.setFxParam',
+  'ui.setInputKnob',
+  'ui.setChannelName',
+  'ui.setRelayHost',
+]);
+
 export function dispatchAction(
   target: ActionTarget | undefined,
   scope: Scope,
@@ -216,6 +235,7 @@ export function dispatchAction(
     }
     try {
       entry.handler(args, full);
+      if (!SILENT_ACTIONS.has(ref.do)) tap();
     } catch (e) {
       const msg = `${ref.do} threw: ${e instanceof Error ? e.message : String(e)}`;
       full.warn(msg);
@@ -283,6 +303,11 @@ export function registerBuiltins(): void {
   uiThrough('ui.setPan', a => [a['id'], a['value']], { args: { id: 'string', value: 'number' }, describe: 'Set pan (lock-checked)' });
   uiThrough('ui.resetPan', a => [a['id']], S('Reset pan (lock-checked)'));
   uiThrough('ui.toggleMute', a => [a['id']], S('Toggle mute (muteEnable + lock checked)'));
+  uiThrough('ui.toggleSolo', a => [a['id']], S('Toggle solo (muteEnable + lock checked, UI-only)'));
+  uiThrough('ui.openNameEditor', a => [a['id']], S('Open/close the name-bar editor (also selects)'));
+  uiThrough('ui.closeNameEditor', () => [], S('Close the name-bar editor'));
+  uiThrough('ui.setChannelName', a => [a['id'], a['value']], { args: { id: 'string', value: 'string' }, describe: 'Rename a channel (lock-checked)' });
+  uiThrough('ui.setChannelColor', a => [a['id'], a['color'], a['text']], { args: { id: 'string', color: 'string', text: 'string' }, describe: 'Recolour a channel (lock-checked)' });
 
   // EQ / dynamics / input (not lock-checked in the design)
   uiThrough('ui.setEqParam', a => [a['id'], a['band'], a['param'], a['value']], { args: { id: 'string', band: 'number', param: 'string', value: 'number' }, describe: 'Set EQ param' });
@@ -323,6 +348,10 @@ export function registerBuiltins(): void {
   }, { args: { clock: 'string' }, describe: 'Scan devices (clock defaults to HH:MM)' });
   uiThrough('ui.disconnect', () => [], A('Disconnect'));
   uiThrough('ui.connect', a => [a['key']], { args: { key: 'string' }, describe: 'Connect device' });
+  // Real relay link (connection screen relay card -> live singleton).
+  uiThrough('ui.connectRelay', a => [a['host'], a['driver']], { args: { host: 'string', driver: 'string' }, describe: 'Connect to the relay host (driver only when explicitly chosen)' });
+  uiThrough('ui.disconnectRelay', () => [], A('Disconnect the relay link'));
+  uiThrough('ui.setRelayHost', a => [a['host']], { args: { host: 'string' }, describe: 'Set the relay host (persisted)' });
 
   // behaviour settings
   uiThrough('ui.setSpp', a => [a['value']], N('Strips per screen'));

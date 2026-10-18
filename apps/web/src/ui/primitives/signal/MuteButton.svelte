@@ -27,6 +27,7 @@
   aria-disabled={enabled ? undefined : 'true'}
   disabled={enabled ? undefined : true}
   onclick={enabled && onpress ? onpress : undefined}
+  class="tpress"
   style="height:{height}px;flex:none;border-radius:var(--u4-r-3);border:1px solid {muted
     ? 'var(--u4-red-hi)'
     : 'var(--u4-red-line)'};background:{muted

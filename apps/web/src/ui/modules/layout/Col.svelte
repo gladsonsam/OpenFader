@@ -10,6 +10,7 @@
     ctx: _ctx,
     nodeId,
     children,
+    onEvent,
   }: {
     props: {
       gap?: number | string;
@@ -20,10 +21,16 @@
       height?: number | string;
       flex?: number | string;
       padding?: number | string;
+      /** When true, clicking anywhere on the column emits `select`
+          (mixer strip / master: the whole channel selects, not just the
+          name bar). Child controls still get their own events first;
+          scroll/selection drags suppress the click natively. */
+      selectable?: boolean;
     } & BoxProps;
     ctx: ModuleContext;
     nodeId: string;
     children?: Snippet;
+    onEvent?: (name: string, payload?: unknown) => void;
   } = $props();
 
   const style = $derived(
@@ -38,9 +45,14 @@
       sizeCss(props.height) ? `height:${sizeCss(props.height)}` : undefined,
       props.flex !== undefined ? `flex:${props.flex}` : undefined,
       sizeCss(props.padding) ? `padding:${sizeCss(props.padding)}` : undefined,
+      props.selectable ? 'cursor:pointer' : undefined,
       ...boxStyle(props),
     ]),
   );
+
+  function click(): void {
+    if (props.selectable) onEvent?.('select');
+  }
 </script>
 
 <svelte:element
@@ -48,5 +60,6 @@
   data-node={nodeId}
   data-l0="col"
   aria-label={props.label}
+  onclick={props.selectable ? click : undefined}
   {style}>{@render children?.()}</svelte:element
 >

@@ -28,7 +28,16 @@
 {#if selectAria}
   <button
     aria-label={selectAria}
-    onclick={onselect ?? undefined}
+    class="tpress"
+    onclick={onselect
+      ? (e) => {
+          // Don't bubble to a selectable ancestor (mixer strip): the name
+          // tap opens the editor, and the strip select firing after it
+          // would close the editor again immediately.
+          e.stopPropagation();
+          onselect();
+        }
+      : undefined}
     style="height:{h}px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border-radius:var(--u4-r-3);border:1px solid rgba(0,0,0,.35);background:{color};color:{text};cursor:pointer;padding:0 3px;min-width:0;overflow:hidden;width:100%"
   >
     <span

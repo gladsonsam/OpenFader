@@ -9,6 +9,7 @@
   import { panFromDrag } from '../../state/uiLogic.ts';
   import { panText } from '../../fixtures/designData.ts';
   import { panMarkerLeft } from './signalGeometry.ts';
+  import { tap } from '../feel.ts';
 
   let {
     value,
@@ -38,29 +39,57 @@
   const markerLeft = $derived(panMarkerLeft(value ?? 0));
 
   let el: HTMLElement | null = $state(null);
-  let drag: { x: number; start: number; w: number } | null = null;
+  // Tablet direction lock (mirror of Fader): touch/pen stays pending until
+  // horizontal intent locks the pan drag. Vertical intent aborts so the page
+  // can scroll natively (touch-action pan-y). Mouse drags immediately.
+  let drag: {
+    x0: number;
+    y0: number;
+    start: number;
+    w: number;
+    active: boolean;
+    el: HTMLElement | null;
+  } | null = null;
   // Touch fallback for double-tap reset (dblclick covers mouse).
   let lastTap = 0;
 
   function down(e: PointerEvent): void {
     if (disabled || value == null || !oninput) return;
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      /* noop */
-    }
     const w = el?.getBoundingClientRect().width ?? 1;
-    drag = { x: e.clientX, start: value, w };
+    const target = e.currentTarget as HTMLElement;
+    // All pointers start pending with NO capture: no value change until
+    // horizontal intent locks the pan drag (then we capture); vertical
+    // intent aborts so the page can scroll natively.
+    drag = { x0: e.clientX, y0: e.clientY, start: value, w, active: false, el: target };
   }
   function move(e: PointerEvent): void {
     if (!drag || disabled || !oninput) return;
-    oninput(panFromDrag(drag.start, e.clientX - drag.x, drag.w, fine));
+    if (!drag.active) {
+      const dx = e.clientX - drag.x0;
+      const dy = e.clientY - drag.y0;
+      const ax = Math.abs(dx);
+      const ay = Math.abs(dy);
+      // Clearly vertical -> let the page scroll, never touch the pan value.
+      if (ay > 12 && ay > ax) {
+        drag = null;
+        return;
+      }
+      if (ax <= 10 || ax <= ay) return;
+      try {
+        drag.el?.setPointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+      drag.active = true;
+    }
+    oninput(panFromDrag(drag.start, e.clientX - drag.x0, drag.w, fine));
   }
   function up(): void {
     drag = null;
   }
   function reset(): void {
     if (disabled || value == null || !oninput) return;
+    tap();
     oninput(0);
   }
   function ontap(): void {

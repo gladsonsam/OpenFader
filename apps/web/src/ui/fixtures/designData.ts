@@ -88,6 +88,8 @@ export interface Channel {
   ph: number;
   fader: number;
   mute: boolean;
+  /** Solo (UI-only; no desk/relay counterpart). */
+  solo: boolean;
   pan: number | null;
   sends: number[] | null;
   sendPre: boolean[] | null;
@@ -115,6 +117,24 @@ export interface Device {
 
 const BANK_GREEN = '#5cdb5c';
 const BANK_GREEN_TEXT = '#10240f';
+
+/**
+ * Console-tape palette for input channels + FX returns: one colour per
+ * channel position (mod 8), so a bank reads as grouped tape strips instead
+ * of a single block of green. Buses, groups, matrix and DCAs keep their
+ * family colours (functional meaning). Every entry pairs a muted tone with
+ * a contrast-safe label colour for the name bars.
+ */
+export const CHAN_TAPE: { color: string; text: string }[] = [
+  { color: '#d64545', text: '#ffffff' }, // red
+  { color: '#e8853d', text: '#331503' }, // orange
+  { color: '#e3c341', text: '#2e2503' }, // yellow
+  { color: '#5cdb5c', text: '#10240f' }, // green (bank colour)
+  { color: '#22d3e6', text: '#062a30' }, // cyan
+  { color: '#4f8ff7', text: '#ffffff' }, // blue
+  { color: '#8e4ec6', text: '#ffffff' }, // purple
+  { color: '#e93d82', text: '#ffffff' }, // pink
+];
 
 function range<T>(n: number, f: (i: number) => T): T[] {
   return Array.from({ length: n }, (_, i) => f(i));
@@ -153,14 +173,16 @@ export function buildChannels(): Record<string, Channel> {
   let seed = 7;
   const r = (): number => { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; };
   const out: Record<string, Channel> = {};
-  bankDefs().forEach(b => b.items.forEach(it => {
+  bankDefs().forEach(b => b.items.forEach((it, idx) => {
     const isIn = it.kind === 'in' || it.kind === 'ret';
+    const tape = isIn ? CHAN_TAPE[idx % CHAN_TAPE.length]! : null;
     out[it.id] = {
-      id: it.id, name: it.name, src: it.src, color: b.color, text: b.text, kind: it.kind,
+      id: it.id, name: it.name, src: it.src, color: tape?.color ?? b.color, text: tape?.text ?? b.text, kind: it.kind,
       act: it.kind === 'dca' ? 0.55 : (r() < 0.15 ? 0.05 : 0.35 + r() * 0.62),
       ph: r() * 6,
       fader: it.kind === 'dca' ? 0.75 : 0.6 + r() * 0.15,
       mute: false,
+      solo: false,
       pan: (it.kind === 'dca' || it.kind === 'out') ? null : (r() < 0.5 ? 0 : Math.round((r() * 2 - 1) * 60) / 100),
       sends: isIn ? Array.from({ length: 16 }, () => Math.round(r() * 70) / 100) : null,
       sendPre: isIn ? Array.from({ length: 16 }, (_, k) => k < 8) : null,

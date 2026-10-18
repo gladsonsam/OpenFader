@@ -62,7 +62,7 @@ function ok(cond: unknown, msg: string): void {
   const vm = masterStripVm(w);
   ok(vm.name === 'Ch 2', 'name ' + vm.name);
   ok(vm.src === 'Lcl 02', 'src ' + vm.src);
-  ok(vm.color === '#5cdb5c', 'green chip ' + vm.color);
+  ok(vm.color === '#e8853d', 'tape chip ' + vm.color);
   ok(vm.panText === 'R28', 'pan text ' + vm.panText);
   ok(vm.panAria === 'Pan Ch 2 R28', 'pan aria ' + vm.panAria);
   ok(vm.muteAria === 'Mute Ch 2', 'mute aria');

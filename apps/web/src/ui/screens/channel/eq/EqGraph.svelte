@@ -15,6 +15,8 @@
      Home/End jump to range ends. Focus ring is the design's
      2px #7cc4ff outline. -->
 <script lang="ts">
+  import { fade } from 'svelte/transition';
+  import { REDUCED_MOTION } from '../../../primitives/feel.ts';
   import { eqNodeApply, eqPointFromPos, type EqGraphVm } from './eqModel.ts';
   import type { ModuleContext } from '../../../modules/types.ts';
 
@@ -85,6 +87,7 @@
 <div
   bind:this={box}
   data-graph="1"
+  in:fade={{ duration: REDUCED_MOTION ? 0 : 120 }}
   style="box-sizing:content-box;flex:1 1 280px;min-height:220px;position:relative;border-radius:6px;border:1px solid #1f2836;background:#0a0f17;overflow:hidden;touch-action:none"
 >
   {#if graph}
