@@ -1,18 +1,39 @@
 <!-- W5b `dyn-transfer-graph` module: the gate/compressor transfer-curve
      card. Presentational: precomputed geometry (via layout `bind` from the
-     dynModel port of dynVals) + live params in, nothing out (the design
-     implements no graph drag; threshold "interaction" is the Threshold
-     knob). Verbatim from design-template.html (isDynTab graph card):
-     y-axis gutter, plot box (grid, unity diagonal, fill, threshold line,
-     gold curve, threshold tag, operating dot, Input/Output captions),
-     x-axis strip, GR column.
-     The curve/threshold paint reactively on param edits; the operating dot
+     dynModel port of dynVals) + live params in; handle/plot drags emit raw
+     spec values through `thr` / `ratio` / `makeup` for the layout `on`
+     action (channel.dynKnob, lock-checked there). Verbatim from
+     design-template.html (isDynTab graph card): y-axis gutter, plot box
+     (grid, unity diagonal, fill, threshold line, gold curve, threshold
+     tag, operating dot, Input/Output captions), x-axis strip, GR column.
+     The curve/handles paint reactively on param edits; the operating dot
      paints imperatively via rAF from getLevel (SPEC 2a); frozen fixture
-     mode paints the silent dot once from staticDotL/staticDotT. -->
+     mode paints the silent dot once from staticDotL/staticDotT.
+     Handles (reference-hardware G/T/R circles): T rides the knee and
+     drags horizontally (threshold); comp R sits at the top-right curve
+     end and G at the bottom-left start, both dragging vertically (ratio /
+     makeup gain). Each handle is a slider (pointer drag with immediate
+     capture like the EQ nodes + arrow/PageUp/PageDown/Home/End keys). Plot-background drag
+     still works as before (horizontal: threshold; comp vertical: ratio).
+     Direction lock with slop: gate ignores vertical (touch-action pan-y
+     scrolls the page natively); comp needs both axes, so it takes touch
+     (touch-action none) and the lock decides per gesture. -->
 <script lang="ts">
-  import { dynDotNums, type DynAxisTick, type DynGridLine, type DynKind, type DynParams } from './dynModel.ts';
+  import {
+    dynDotNums,
+    dynHandles,
+    dynMakeupRaw,
+    dynRatioRaw,
+    dynThrRaw,
+    type DynAxisTick,
+    type DynGridLine,
+    type DynHandle,
+    type DynKind,
+    type DynParams,
+  } from './dynModel.ts';
   import type { ModuleContext } from '../../../modules/types.ts';
-  import { fromN, spec } from '../../../fixtures/designData.ts';
+  import { clamp, fromN, spec, toN, type Comp } from '../../../fixtures/designData.ts';
+  import { dynSpecKey } from '../../../state/uiLogic.ts';
   import { tap } from '../../../primitives/feel.ts';
   import GrBar from './GrBar.svelte';
 
@@ -51,6 +72,13 @@
   const grid = $derived(props.grid ?? []);
   const axis = $derived(props.axis ?? []);
   const params = $derived(props.params ?? null);
+  // Ratio gestures solve from the comp threshold + makeup (follow-the-line
+  // mapping); gate never reaches a ratio branch, so the fallback is dead.
+  const compThrMakeup = $derived(
+    kind === 'comp' && params
+      ? { thr: (params as Comp).thr, makeup: (params as Comp).makeup }
+      : { thr: -60, makeup: 0 },
+  );
   const frozen = $derived(props.frozen ?? true);
   const getLevel = $derived(props.getLevel ?? null);
 
@@ -79,13 +107,14 @@
   });
 
   // Graph drag: horizontal moves the threshold (both kinds); on comp,
-  // vertical moves the ratio (log 1..20 through the spec). Emits RAW spec
+  // vertical moves the ratio with follow-the-line mapping (the curve end
+  // tracks the finger; below knee height it pins at 20:1). Emits RAW spec
   // values through `thr` / `ratio` for the layout `on` action
   // (channel.dynKnob, lock-checked there). Direction lock with slop:
-  // gate ignores vertical (touch-action pan-y scrolls the page natively);
-  // comp needs both axes, so it takes touch (touch-action none) and the
-  // lock decides threshold vs ratio per gesture.
-  const THR_LO: Record<DynKind, number> = { gate: -80, comp: -60 };
+  // gate ignores vertical (touch-action pan-y lets the page scroll
+  // natively on touch); comp needs both axes, so it takes touch
+  // (touch-action none) and the lock decides threshold vs ratio per
+  // gesture. Handle drags below reuse the same raw-value mapping.
   let plot: HTMLDivElement | null = $state(null);
   let drag: {
     x0: number;
@@ -139,19 +168,96 @@
       drag.mode = ax >= ay ? 'thr' : 'ratio';
     }
     if (drag.mode === 'thr') {
-      const frac = Math.max(0, Math.min(1, (e.clientX - drag.px) / drag.w));
-      const rawDb = THR_LO[kind] + frac * -THR_LO[kind];
-      onEvent('thr', { value: Math.round(rawDb * 2) / 2 });
+      onEvent('thr', { value: dynThrRaw(kind, (e.clientX - drag.px) / drag.w) });
     } else if (drag.mode === 'ratio') {
-      const n = Math.max(0, Math.min(1, 1 - (e.clientY - drag.py) / drag.h));
-      onEvent('ratio', { value: fromN(spec('ratio'), n) });
+      onEvent('ratio', {
+        value: dynRatioRaw((e.clientY - drag.py) / drag.h, compThrMakeup.thr, compThrMakeup.makeup),
+      });
     }
   }
   function up(): void {
     if (drag?.mode) tap();
     drag = null;
   }
+
+  // Handle drags (G/T/R circles): capture immediately on press like the
+  // EQ nodes (no direction lock — the pending phase starved the tiny
+  // buttons of moves before capture). Each handle maps one axis only
+  // (T: horizontal threshold; R: vertical ratio; G: vertical makeup), so
+  // off-axis movement is naturally ignored. Touch scrolling is preserved
+  // by touch-action (T: pan-y, R/G: pan-x; the comp plot takes none) via
+  // pointercancel, same as the EQ graph.
+  const handles = $derived(params ? dynHandles(kind, params) : []);
+  let hdrag: {
+    id: DynHandle['id'];
+    px: number;
+    py: number;
+    w: number;
+    h: number;
+    moved: boolean;
+  } | null = null;
+
+  function hdown(id: DynHandle['id'], e: PointerEvent): void {
+    if (!onEvent) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.stopPropagation();
+    const r = plot?.getBoundingClientRect();
+    if (!r || r.width < 1 || r.height < 1) return;
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* noop */
+    }
+    hdrag = { id, px: r.left, py: r.top, w: r.width, h: r.height, moved: false };
+  }
+  function hmove(e: PointerEvent): void {
+    if (!hdrag || !onEvent) return;
+    e.stopPropagation();
+    hdrag.moved = true;
+    if (hdrag.id === 'thr') {
+      onEvent('thr', { value: dynThrRaw(kind, (e.clientX - hdrag.px) / hdrag.w) });
+    } else if (hdrag.id === 'ratio') {
+      onEvent('ratio', {
+        value: dynRatioRaw((e.clientY - hdrag.py) / hdrag.h, compThrMakeup.thr, compThrMakeup.makeup),
+      });
+    } else {
+      onEvent('makeup', { value: dynMakeupRaw((e.clientY - hdrag.py) / hdrag.h) });
+    }
+  }
+  function hup(e: PointerEvent): void {
+    if (!hdrag) return;
+    e.stopPropagation();
+    if (hdrag.moved) tap();
+    hdrag = null;
+  }
+  function hkey(h: DynHandle, e: KeyboardEvent): void {
+    if (!onEvent) return;
+    const s = spec(dynSpecKey(kind, h.id));
+    const linStep = s.step && !s.log ? s.step / (s.max - s.min) : 0.02;
+    const cur = toN(s, h.value);
+    let n: number | null = null;
+    if (e.key === 'ArrowUp' || e.key === 'ArrowRight') n = cur + linStep;
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowLeft') n = cur - linStep;
+    else if (e.key === 'PageUp') n = cur + Math.max(linStep * 10, 0.1);
+    else if (e.key === 'PageDown') n = cur - Math.max(linStep * 10, 0.1);
+    else if (e.key === 'Home') n = 0;
+    else if (e.key === 'End') n = 1;
+    else return;
+    e.preventDefault();
+    e.stopPropagation();
+    onEvent(h.id, { value: fromN(s, clamp(n, 0, 1)) });
+  }
+  function htext(h: DynHandle): string {
+    return spec(dynSpecKey(kind, h.id)).fmt(h.value);
+  }
 </script>
+
+<style>
+  button.dyn-handle:focus-visible {
+    outline: 2px solid #7cc4ff;
+    outline-offset: 1px;
+  }
+</style>
 
 <div
   style="box-sizing:content-box;flex:1 1 400px;min-height:300px;display:flex;gap:10px;padding:12px 12px 12px 6px;border-radius:3px;border:1px solid #1f2836;background:#0a0f17"
@@ -172,16 +278,13 @@
       onpointerup={up}
       onpointercancel={up}
       title={kind === 'gate' ? 'Drag horizontally: threshold' : 'Drag: threshold (horizontal), ratio (vertical)'}
-      style="box-sizing:content-box;flex:1;position:relative;overflow:hidden;border-radius:3px;border:1px solid #1f2836;background:#0b111b;touch-action:{kind ===
+      style="box-sizing:content-box;flex:1;position:relative;overflow:visible;border-radius:3px;border:1px solid #1f2836;background:#0b111b;touch-action:{kind ===
       'gate'
         ? 'pan-y'
         : 'none'};cursor:{kind === 'gate' ? 'ew-resize' : 'move'}"
     >
-      <span
-        aria-hidden="true"
-        style="position:absolute;left:{props.thrLeft ??
-          '50'}%;top:34px;width:28px;height:28px;transform:translate(-50%, -50%);border-radius:50%;border:2px solid {color};background:rgba(11,15,20,.55);box-shadow:0 0 8px {color};pointer-events:none"
-      ></span>
+      <span aria-hidden="true" style="position:absolute;left:10px;bottom:8px;font-size:12px;color:#6c788c">Input →</span>
+      <span aria-hidden="true" style="position:absolute;left:10px;top:8px;font-size:12px;color:#6c788c">↑ Output</span>
       <svg
         viewBox="0 0 200 200"
         preserveAspectRatio="none"
@@ -220,16 +323,6 @@
           vector-effect="non-scaling-stroke"
         ></line>
         <path d={props.fill ?? ''} fill={props.fillColor ?? 'transparent'} stroke="none"></path>
-        <line
-          x1={props.thrX ?? '0'}
-          y1="0"
-          x2={props.thrX ?? '0'}
-          y2="200"
-          stroke={color}
-          stroke-width="1.5"
-          stroke-dasharray="4 4"
-          vector-effect="non-scaling-stroke"
-        ></line>
         <path
           d={props.path ?? ''}
           fill="none"
@@ -250,8 +343,28 @@
           '0'}%;top:{props.staticDotT ??
           '100'}%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:#ffffff;box-shadow:0 0 0 4px rgba(255,255,255,.16)"
       ></span>
-      <span style="position:absolute;left:10px;bottom:8px;font-size:12px;color:#6c788c">Input →</span>
-      <span style="position:absolute;left:10px;top:8px;font-size:12px;color:#6c788c">↑ Output</span>
+      {#each handles as h (h.id)}
+        <button
+          class="dyn-handle"
+          role="slider"
+          aria-label={h.aria}
+          aria-valuetext={htext(h)}
+          onpointerdown={(e) => hdown(h.id, e)}
+          onpointermove={hmove}
+          onpointerup={hup}
+          onpointercancel={hup}
+          onkeydown={(e) => hkey(h, e)}
+          title={h.aria + ' ' + htext(h)}
+          style="position:absolute;left:{h.left}%;top:{h.top}%;width:44px;height:44px;transform:translate(-50%, -50%);display:flex;align-items:center;justify-content:center;padding:0;border:0;background:transparent;touch-action:{h.id ===
+          'thr'
+            ? 'pan-y'
+            : 'pan-x'};cursor:grab"
+          ><span
+            style="width:36px;height:36px;border-radius:50%;border:2px solid {color};background:#f2f5f9;color:#0b0f14;font-size:15px;font-weight:700;display:flex;align-items:center;justify-content:center"
+            >{h.label}</span
+          ></button
+        >
+      {/each}
     </div>
     <div aria-hidden="true" style="box-sizing:content-box;height:18px;flex:none;position:relative">
       {#each axis as a (a.label)}
