@@ -5,17 +5,26 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  cmdBusFader,
+  cmdBusMute,
   cmdCaptureScene,
   cmdConnect,
   cmdDeleteScene,
   cmdFader,
+  cmdFileDownload,
+  cmdFileUpload,
   cmdFocus,
   cmdListShows,
   cmdLock,
   cmdMainFader,
   cmdMute,
+  cmdMuteGroup,
+  cmdMuteGroupAssign,
   cmdParam,
   cmdRecallScene,
+  cmdSubgroupAssign,
+  cmdSubgroupFader,
+  cmdSubgroupMute,
   cmdUnlock,
   parseBinary,
   parseEvent,
@@ -72,11 +81,13 @@ for (const f of frameFiles) {
 
 // Spot checks against the golden values.
 {
-  const caps = byKind['caps'] as { params: unknown[]; topology: unknown[]; unsupported: string[]; meter_taps: string[] };
+  const caps = byKind['caps'] as { params: unknown[]; topology: unknown[]; unsupported: string[]; meter_taps: string[]; groups: { buses: number; subgroups: number; mute_groups: number }; files: { supported: boolean } };
   ok(Array.isArray(caps?.params), 'caps params array');
   ok(Array.isArray(caps?.topology), 'caps topology array');
   ok(caps?.unsupported.includes('usbreturn'), 'caps unsupported has usbreturn');
   ok(caps?.meter_taps.includes('in'), 'caps meter_taps has in');
+  ok(caps?.groups.buses === 8 && caps?.groups.subgroups === 6 && caps?.groups.mute_groups === 6, 'caps groups counts');
+  ok(caps?.files.supported === true, 'caps files supported');
   const st = byKind['state'] as { strips: Array<{ ch: number; fader: number }> };
   ok(st?.strips.length === 2 && st.strips[0]!.ch === 0, 'state strips');
   const pr = byKind['param'] as { ch: number; field: string; value: unknown };
@@ -122,6 +133,18 @@ for (const f of r2Files) {
   ok(taps?.kind === 'taps' && taps.tap === 'in' && taps.levels.length === 4, 'taps frame');
   const ht = parseEvent(readFileSync(join(GOLDEN_R2, 'hello_taps.json'), 'utf8'));
   ok(ht?.kind === 'hello' && ht.taps === true, 'hello taps');
+  const bs = parseEvent(readFileSync(join(GOLDEN, 'bus.json'), 'utf8'));
+  ok(bs?.kind === 'bus' && bs.bus === 0 && bs.fader === 0.75, 'bus echo');
+  const sg = parseEvent(readFileSync(join(GOLDEN, 'subgroup.json'), 'utf8'));
+  ok(sg?.kind === 'subgroup' && sg.group === 1 && sg.muted === true, 'subgroup echo');
+  const sa = parseEvent(readFileSync(join(GOLDEN, 'subgroup_assign.json'), 'utf8'));
+  ok(sa?.kind === 'subgroup_assign' && sa.ch === 0 && sa.member === true, 'subgroup assign echo');
+  const mg = parseEvent(readFileSync(join(GOLDEN, 'mute_group.json'), 'utf8'));
+  ok(mg?.kind === 'mute_group' && mg.group === 0 && mg.muted === true, 'mute group echo');
+  const ma = parseEvent(readFileSync(join(GOLDEN, 'mute_group_assign.json'), 'utf8'));
+  ok(ma?.kind === 'mute_group_assign' && ma.group === 2 && ma.member === false, 'mute group assign echo');
+  const fi = parseEvent(readFileSync(join(GOLDEN, 'file.json'), 'utf8'));
+  ok(fi?.kind === 'file' && fi.filename === 'Show.zip' && fi.data === 'AAECAw==', 'file frame');
   const sc = parseEvent(readFileSync(join(GOLDEN_R2, 'scenes.json'), 'utf8'));
   ok(sc?.kind === 'scenes' && sc.scenes.length === 2, 'numbered scenes');
   const fx = parseEvent(readFileSync(join(GOLDEN_R2, 'fx.json'), 'utf8'));
@@ -155,6 +178,15 @@ const builders: Record<string, () => string> = {
   cmd_delete_scene: () => cmdDeleteScene('gig', 'verse'),
   cmd_lock: () => cmdLock(0),
   cmd_unlock: () => cmdUnlock(0),
+  cmd_bus_fader: () => cmdBusFader(0, 0.5),
+  cmd_bus_mute: () => cmdBusMute(0, true),
+  cmd_subgroup_fader: () => cmdSubgroupFader(1, 0.7),
+  cmd_subgroup_mute: () => cmdSubgroupMute(1, true),
+  cmd_subgroup_assign: () => cmdSubgroupAssign(0, 1, true),
+  cmd_mute_group: () => cmdMuteGroup(0, true),
+  cmd_mute_group_assign: () => cmdMuteGroupAssign(5, 2, false),
+  cmd_file_download: () => cmdFileDownload('Show.zip'),
+  cmd_file_upload: () => cmdFileUpload('Show.zip', 'AAECAw==', 0),
 };
 const cmdFiles = readdirSync(GOLDEN).filter((f) => f.startsWith('cmd_'));
 for (const f of cmdFiles) {

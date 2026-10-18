@@ -3,8 +3,14 @@
      rail, meter column and dB readout. Local-first drag: pointer capture,
      dy mapped through uiLogic.faderFromDrag (0.25 factor in fine mode);
      Arrow/PageUp/PageDown/Home/End keys; double-tap resets to unity.
-     touch-action pan-x (not none): horizontal swipes scroll an enclosing
-     bank pager, vertical drags stay with the fader.
+     bank pager, vertical drags stay with the fader. Only presses that start
+     on the metal cap grab the fader (rail/meter/track fall through to the
+     scroller). A direction lock (~10px slop) applies to all pointers:
+     horizontal intent aborts without touching the value so the pager
+     scrolls; vertical intent captures and drags. touch-action is split:
+     the track is `auto` so touches starting off the cap scroll freely;
+     the cap is `pan-x` so touches starting on it scroll the bank
+     horizontally while vertical drags stay with the fader.
      Variants: 'strip' (mixer, cap 36x50), 'aside' (channel strip,
      cap 46x60 + wider scale), 'master' (dual meter, lighter 40x52 cap,
      gold centre line). -->
@@ -14,6 +20,7 @@
   import { faderFromDrag } from '../../state/uiLogic.ts';
   import { dbToPos } from '../../fixtures/designData.ts';
   import { faderGeometry } from './signalGeometry.ts';
+  import { tap } from '../feel.ts';
 
   let {
     value,
@@ -92,35 +99,88 @@
   };
 
   let area: HTMLButtonElement | null = $state(null);
-  let drag: { y: number; start: number; h: number } | null = null;
+  let capEl: HTMLSpanElement | null = $state(null);
+  // Tablet direction lock: touch/pen starts pending (no capture, no value
+  // change) until the gesture declares itself. Vertical lock -> fader drag
+  // (capture then). Horizontal lock -> abort so the enclosing bank pager
+  // gets the native pan-x scroll. Mouse keeps the immediate drag.
+  let drag: {
+    x0: number;
+    y0: number;
+    start: number;
+    h: number;
+    active: boolean;
+    el: HTMLElement | null;
+  } | null = null;
+  // Whether the last press started on the cap. Track taps must never
+  // reset the fader: double-tap reset (mouse dblclick / touch tap-tap)
+  // is gated on this, since click/dblclick fire after pointerup cleared
+  // `drag`.
+  let downOnCap = false;
   let lastTap = 0;
 
   function down(e: PointerEvent): void {
     if (disabled || !oninput) return;
-    try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-    } catch {
-      /* noop */
+    // Cap-only grab: a drag must START on the metal cap to move the fader.
+    // Presses on the rail/meter/track fall through to the enclosing
+    // scroller instead. Small pad keeps the 36px cap grabbable on touch.
+    const cr = capEl?.getBoundingClientRect();
+    if (cr) {
+      const pad = 8;
+      if (
+        e.clientX < cr.left - pad ||
+        e.clientX > cr.right + pad ||
+        e.clientY < cr.top - pad ||
+        e.clientY > cr.bottom + pad
+      ) {
+        downOnCap = false;
+        return;
+      }
     }
+    downOnCap = true;
     const rect = area?.getBoundingClientRect();
     // Design's faderDown: h = max(80, rect.height - 60).
     const h = Math.max(80, (rect?.height ?? 140) - 60);
-    drag = { y: e.clientY, start: value, h };
+    const el = e.currentTarget as HTMLElement;
+    // All pointers start pending with NO capture: no value change until
+    // vertical intent locks the drag (then we capture); horizontal intent
+    // aborts so an enclosing scroller can steal the gesture for scrolling.
+    drag = { x0: e.clientX, y0: e.clientY, start: value, h, active: false, el };
   }
   function move(e: PointerEvent): void {
     if (!drag || disabled || !oninput) return;
-    oninput(faderFromDrag(drag.start, drag.y - e.clientY, drag.h, fine));
+    if (!drag.active) {
+      const dx = e.clientX - drag.x0;
+      const dy = drag.y0 - e.clientY;
+      const ax = Math.abs(dx);
+      const ay = Math.abs(dy);
+      // Clearly horizontal -> let the pager scroll, never touch the value.
+      if (ax > 12 && ax > ay) {
+        drag = null;
+        return;
+      }
+      // Still in slop, or not clearly vertical yet: no value change.
+      if (ay <= 10 || ay <= ax) return;
+      try {
+        drag.el?.setPointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+      drag.active = true;
+    }
+    oninput(faderFromDrag(drag.start, drag.y0 - e.clientY, drag.h, fine));
   }
   function up(): void {
     drag = null;
   }
   function reset(): void {
-    if (disabled || !oninput) return;
+    if (disabled || !oninput || !downOnCap) return;
+    tap();
     oninput(resetValue ?? dbToPos(0));
   }
   function ontap(): void {
     const now = Date.now();
-    if (now - lastTap < 350) reset();
+    if (now - lastTap < 350 && downOnCap) reset();
     lastTap = now;
   }
   function key(e: KeyboardEvent): void {
@@ -162,10 +222,7 @@
     ondblclick={reset}
     onclick={ontap}
     onkeydown={key}
-    style="flex:1;position:relative;display:block;width:100%;min-height:0;padding:0;border:0;background:transparent;touch-action:pan-x;cursor:{disabled ||
-    !oninput
-      ? 'default'
-      : 'ns-resize'}"
+    style="flex:1;position:relative;display:block;width:100%;min-height:0;padding:0;border:0;background:transparent;touch-action:auto;cursor:default}"
   >
     <span
       style="position:absolute;left:{insets.l}px;right:{insets.r}px;top:{insets.t}px;bottom:{insets.b}px;display:block"
@@ -180,7 +237,11 @@
         frozen={meterFrozen}
       />
       <span
-        style="position:absolute;left:{cap.left};bottom:{pct}%;width:{cap.w}px;height:{cap.h}px;transform:translate(-50%, 50%);border-radius:3px;background:{capBg};box-shadow:{capShadow}"
+        bind:this={capEl}
+        style="position:absolute;left:{cap.left};bottom:{pct}%;width:{cap.w}px;height:{cap.h}px;transform:translate(-50%, 50%);border-radius:3px;background:{capBg};box-shadow:{capShadow};touch-action:pan-x;cursor:{disabled ||
+        !oninput
+          ? 'default'
+          : 'ns-resize'}"
       >
         <span
           style="position:absolute;left:{cap.gripLR}px;right:{cap.gripLR}px;top:{cap.gripTB}px;height:{cap.gripH}px;border-radius:1px;background:repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px)"

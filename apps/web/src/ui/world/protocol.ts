@@ -105,11 +105,19 @@ export type EngineEvent =
       meter_taps: string[];
       fx: { slots: number; types: FxTypeCapsEvt[] };
       routing: { groups: Array<{ key: string; label: string; count: number }>; per_strip: boolean; supported: boolean };
+      groups: { buses: number; subgroups: number; mute_groups: number };
+      files: { supported: boolean };
     }
   | { kind: 'meters'; levels: number[] }
   | { kind: 'spectrum'; ch: number; bins: number[] }
   | { kind: 'gr'; ch: number; gate: number; comp: number }
   | { kind: 'taps'; tap: string; levels: number[] }
+  | { kind: 'bus'; bus: number; fader: number; muted: boolean }
+  | { kind: 'subgroup'; group: number; fader: number; muted: boolean }
+  | { kind: 'subgroup_assign'; ch: number; group: number; member: boolean }
+  | { kind: 'mute_group'; group: number; muted: boolean }
+  | { kind: 'mute_group_assign'; ch: number; group: number; member: boolean }
+  | { kind: 'file'; filename: string; size: number; file_type: number; data: string | null }
   | { kind: 'shows'; shows: Array<{ name: string; scenes: Array<{ name: string; main_fader: number | null; strips: StateStripEvt[] }> }> }
   | { kind: 'locks'; holds: Record<number, string> }
   | { kind: 'clients'; count: number; writers: string[] }
@@ -296,6 +304,8 @@ export function parseEvent(text: string): EngineEvent | null {
           groups.push({ key: g['key'], label: str(g['label'], g['key']), count: int(g['count']) ?? 0 });
         }
       }
+      const grpRaw = isRec(m['groups']) ? m['groups'] : {};
+      const filesRaw = isRec(m['files']) ? m['files'] : {};
       const topo: TopologyEvt[] = [];
       if (Array.isArray(m['topology'])) {
         for (const f of m['topology']) {
@@ -316,6 +326,12 @@ export function parseEvent(text: string): EngineEvent | null {
           per_strip: bool(rtRaw['per_strip'], false),
           supported: bool(rtRaw['supported'], false),
         },
+        groups: {
+          buses: int(grpRaw['buses']) ?? 0,
+          subgroups: int(grpRaw['subgroups']) ?? 0,
+          mute_groups: int(grpRaw['mute_groups']) ?? 0,
+        },
+        files: { supported: bool(filesRaw['supported'], false) },
       };
     }
     case 'meters':
@@ -497,6 +513,43 @@ export function parseEvent(text: string): EngineEvent | null {
       }
       return { kind: 'offline_diff', changes, count: int(m['count']) ?? changes.length };
     }
+    case 'bus': {
+      const bus = int(m['bus']);
+      if (bus === null || bus < 0) return null;
+      return { kind: 'bus', bus, fader: num(m['fader']), muted: bool(m['muted'], false) };
+    }
+    case 'subgroup': {
+      const group = int(m['group']);
+      if (group === null || group < 0) return null;
+      return { kind: 'subgroup', group, fader: num(m['fader']), muted: bool(m['muted'], false) };
+    }
+    case 'subgroup_assign': {
+      const ch = int(m['ch']);
+      const group = int(m['group']);
+      if (ch === null || ch < 0 || group === null || group < 0) return null;
+      return { kind: 'subgroup_assign', ch, group, member: bool(m['member'], false) };
+    }
+    case 'mute_group': {
+      const group = int(m['group']);
+      if (group === null || group < 0) return null;
+      return { kind: 'mute_group', group, muted: bool(m['muted'], false) };
+    }
+    case 'mute_group_assign': {
+      const ch = int(m['ch']);
+      const group = int(m['group']);
+      if (ch === null || ch < 0 || group === null || group < 0) return null;
+      return { kind: 'mute_group_assign', ch, group, member: bool(m['member'], false) };
+    }
+    case 'file': {
+      if (typeof m['filename'] !== 'string' || !m['filename']) return null;
+      return {
+        kind: 'file',
+        filename: m['filename'],
+        size: int(m['size']) ?? 0,
+        file_type: int(m['file_type']) ?? 0,
+        data: typeof m['data'] === 'string' ? m['data'] : null,
+      };
+    }
     default:
       // Lenient: newer-engine frames (or future R2 types) never break parsing.
       return { kind: 'unknown', eventType: t };
@@ -623,5 +676,17 @@ export const cmdPatchClear = (strip: number): string => cmd({ cmd: 'patch_clear'
 export const cmdOffline = (model: string): string => cmd({ cmd: 'offline', model });
 export const cmdOfflinePush = (confirm: boolean): string => cmd({ cmd: 'offline_push', confirm });
 export const cmdOfflineDiscard = (): string => cmd({ cmd: 'offline_discard' });
+export const cmdBusFader = (bus: number, value: number): string => cmd({ cmd: 'bus_fader', bus, value });
+export const cmdBusMute = (bus: number, muted: boolean): string => cmd({ cmd: 'bus_mute', bus, muted });
+export const cmdSubgroupFader = (group: number, value: number): string => cmd({ cmd: 'subgroup_fader', group, value });
+export const cmdSubgroupMute = (group: number, muted: boolean): string => cmd({ cmd: 'subgroup_mute', group, muted });
+export const cmdSubgroupAssign = (ch: number, group: number, member: boolean): string =>
+  cmd({ cmd: 'subgroup_assign', ch, group, member });
+export const cmdMuteGroup = (group: number, muted: boolean): string => cmd({ cmd: 'mute_group', group, muted });
+export const cmdMuteGroupAssign = (ch: number, group: number, member: boolean): string =>
+  cmd({ cmd: 'mute_group_assign', ch, group, member });
+export const cmdFileDownload = (filename: string): string => cmd({ cmd: 'file_download', filename });
+export const cmdFileUpload = (filename: string, data: string, file_type: number): string =>
+  cmd({ cmd: 'file_upload', filename, data, file_type });
 /** Adapter-level diagnostics (serve only; the engine answers `unknown cmd`). */
 export const cmdStats = (): string => cmd({ cmd: 'stats' });

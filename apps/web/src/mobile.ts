@@ -15,6 +15,14 @@ export async function initMobile(): Promise<void> {
   if (tauriBooted || !isTauri()) return;
   tauriBooted = true;
   try {
+    const { registerNativeTap } = await import('./ui/primitives/feel.ts');
+    registerNativeTap(() => {
+      void hapticSelection();
+    });
+  } catch {
+    /* feel bridge unavailable; vibrate fallback stays */
+  }
+  try {
     const { attachConsole } = await import('@tauri-apps/plugin-log');
     await attachConsole().catch(() => undefined);
   } catch {

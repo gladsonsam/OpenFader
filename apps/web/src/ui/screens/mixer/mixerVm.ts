@@ -51,6 +51,9 @@ export interface StripVm {
   muted: boolean;
   /** Design muteOpacity gate: muteEnable && !locked. */
   muteEnabled: boolean;
+  solo: boolean;
+  /** Same gate as mute (solo shares the muteEnable + lock rules). */
+  soloEnabled: boolean;
   /** SOF: fader shows/sets the send to the target mix. */
   useSend: boolean;
   value: number;
@@ -84,7 +87,7 @@ export function stripVm(
     sub: c.src,
     color: c.color,
     text: c.text,
-    ring: id === state.sel ? '0 0 0 2px ' + c.color : 'none',
+    ring: id === state.sel ? 'inset 0 0 0 2px ' + c.color : 'none',
     pan: c.pan,
     panLeft: 50 + (c.pan ?? 0) * 44,
     panText: st.panText,
@@ -97,6 +100,8 @@ export function stripVm(
     dynAria: st.dynAria,
     muted: c.mute,
     muteEnabled: state.muteEnable && !state.locked,
+    solo: c.solo,
+    soloEnabled: state.muteEnable && !state.locked,
     useSend,
     value,
     readout: fmtDb(value),
@@ -149,12 +154,13 @@ export function stripsPerScreen(spp: number | null): number {
 
 /**
  * Phone strip-grid columns (responsive `phone` variant in mixer.default.json).
- * Two full 132 px strips fill the ~282 px phone scrollport (390 px viewport
- * minus shell padding, the 96 px phone master and gaps); the 16 fixed columns
- * make the bank a horizontally snapping pager the user swipes through.
+ * Wider 215 px strips fit the side-by-side mute/solo row without cramping;
+ * ~1.7 fill the ~282 px phone scrollport (390 px viewport minus shell
+ * padding, the 96 px phone master and gaps); the 16 fixed columns keep
+ * the bank a horizontally snapping pager the user swipes through.
  */
 export function phoneGridCols(): string {
-  return 'repeat(16, 132px)';
+  return 'repeat(16, 300px)';
 }
 
 /**
@@ -188,7 +194,8 @@ export interface MasterCell extends MasterVm {
 /**
  * Imperative meter feed for one strip id. In fixture freeze mode the design
  * reference shows silent meters (levels unset -> -90, no peaks/clips/GR),
- * so frozen feeds report silence; live mode reads the shared sim.
+ * so frozen feeds report silence; live mode reads the shared sim. When a
+ * real relay link is up, `liveDb` (dB, like levelOf) wins over the sim.
  */
 export function stripMeterSource(
   chans: Record<string, Channel>,
@@ -196,9 +203,10 @@ export function stripMeterSource(
   frozen: boolean,
   peakHold: boolean,
   id: string,
+  liveDb?: (fixtureId: string) => number | null,
 ): MeterSource {
   return {
-    getLevel: () => (frozen ? -90 : (meter?.levelOf(id) ?? -90)),
+    getLevel: () => liveDb?.(id) ?? (frozen ? -90 : (meter?.levelOf(id) ?? -90)),
     getPeak: () => {
       if (frozen) return null;
       const v = meter?.peakOf(id) ?? null;
@@ -216,9 +224,17 @@ export function stripMeterSource(
 }
 
 /** Dual-channel master meter feed (right channel 1.5 dB down, like the design). */
-export function masterMeterSource(meter: MeterSim | null, frozen: boolean, id: string): MeterSource {
+export function masterMeterSource(
+  meter: MeterSim | null,
+  frozen: boolean,
+  id: string,
+  liveDb?: (fixtureId: string) => number | null,
+): MeterSource {
   return {
     getLevel: (ch: number) => {
+      const lv = liveDb?.(id);
+      if (lv != null) return ch === 0 ? lv : lv - 1.5;
+      // Frozen fixtures paint silence on both channels (design reference).
       if (frozen) return -90;
       const lvl = meter?.levelOf(id) ?? -90;
       return ch === 0 ? lvl : lvl - 1.5;
@@ -237,13 +253,14 @@ export function mixerCells(
   chans: Record<string, Channel>,
   meter: MeterSim | null,
   frozen: boolean,
+  liveDb?: (fixtureId: string) => number | null,
 ): StripCell[] {
   const out: StripCell[] = [];
   for (const id of mixerSlots(state.bank)) {
     if (id === '') continue;
     const vm = stripVm(state, chans, id);
     if (!vm) continue;
-    out.push({ ...vm, meter: stripMeterSource(chans, meter, frozen, state.peakHold, id) });
+    out.push({ ...vm, meter: stripMeterSource(chans, meter, frozen, state.peakHold, id, liveDb) });
   }
   return out;
 }
@@ -254,8 +271,9 @@ export function mixerMasterCell(
   chans: Record<string, Channel>,
   meter: MeterSim | null,
   frozen: boolean,
+  liveDb?: (fixtureId: string) => number | null,
 ): MasterCell | null {
   const vm = masterVm(state, chans);
   if (!vm) return null;
-  return { ...vm, meter: masterMeterSource(meter, frozen, vm.id) };
+  return { ...vm, meter: masterMeterSource(meter, frozen, vm.id, liveDb) };
 }

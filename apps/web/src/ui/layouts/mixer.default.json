@@ -4,6 +4,7 @@
   "props": {
     "flex": "1 1 auto",
     "minWidth": 0,
+    "minHeight": 0,
     "gap": 4
   },
   "children": [
@@ -13,7 +14,8 @@
       "props": {
         "direction": "row",
         "flex": "1 1 auto",
-        "minWidth": 0
+        "minWidth": 0,
+        "dragScroll": true
       },
       "variants": {
         "phone": { "props": { "snap": "x" } },
@@ -93,7 +95,8 @@
         "padding": 3,
         "background": "#121a27",
         "border": "1px solid #2a3443",
-        "box": "content-box"
+        "box": "content-box",
+        "selectable": true
       },
       "variants": {
         "phone": { "props": { "width": 96 } }
@@ -102,6 +105,16 @@
         "shadow": "master.ring"
       },
       "when": "master.id",
+      "on": {
+        "select": {
+          "do": "ui.select",
+          "args": {
+            "id": {
+              "$expr": "master.id"
+            }
+          }
+        }
+      },
       "children": [
         {
           "id": "master-proc",

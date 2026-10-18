@@ -21,6 +21,7 @@
     knobRot as rotOf,
   } from '../../fixtures/designData.ts';
   import { eqParamFromDrag, specFromDrag } from '../../state/uiLogic.ts';
+  import { tap } from '../feel.ts';
   import { EQ_RESET_F, EQ_RESET_Q } from './signalGeometry.ts';
 
   let {
@@ -136,6 +137,7 @@
   }
   function reset(): void {
     if (disabled || !oninput) return;
+    tap();
     if (mode === 'eq') {
       if (eqParam === 'f') oninput(eqBand === 0 ? 80 : EQ_RESET_F[eqBand]);
       else if (eqParam === 'g') oninput(0);
