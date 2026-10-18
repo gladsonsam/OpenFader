@@ -9,6 +9,7 @@
 import {
   backLabel,
   backTo,
+  clearPatches,
   connectDevice,
   currentChannel,
   disconnect,
@@ -32,6 +33,7 @@ import {
   closeNameEditor,
   openScenes,
   openPage,
+  patchOneToOne,
   patchSrc,
   pickScene,
   recallScene,
@@ -109,16 +111,21 @@ import {
   bridgeHpfSlope,
   bridgeInputBool,
   bridgeMute,
+  bridgeMuteGroupAssign,
+  bridgeMuteGroupMute,
   bridgeName,
   bridgePan,
   bridgePatch,
   bridgeSend,
   bridgeSendPre,
+  bridgeSubgroupAssign,
+  bridgeSubgroupMute,
   bridgeUnpatch,
   type EqBridgeParam,
 } from './engineBridge.ts';
 import { MeterSim, meterIdsFor } from '../fixtures/meterSim.ts';
 import { bankByKey, spec, toN, type Channel } from '../fixtures/designData.ts';
+import { COLOR_HEX, enginePanToDesign } from '../world/mapping/params.ts';
 
 let world: World = $state(initialWorld());
 let taps: number[] = [];
@@ -229,6 +236,44 @@ function syncWorldToFixture(w: EngineWorld): void {
           changed = true;
         }
       }
+      // Desk name/colour/source/pan ride the same confirmed-only path:
+      // pending local edits win, unsupported ids (xair source/link) stay
+      // fixture-local because the poller never confirms them.
+      if (w.status(ch, 'name') !== 'pending') {
+        const n = w.param(ch, 'name');
+        if (typeof n === 'string' && n && slot.name !== n) {
+          slot.name = n;
+          changed = true;
+        }
+      }
+      if (w.status(ch, 'color') !== 'pending') {
+        const c = w.param(ch, 'color');
+        if (typeof c === 'number' && Number.isFinite(c)) {
+          const hex = COLOR_HEX[Math.min(COLOR_HEX.length - 1, Math.max(0, Math.round(c)))] ?? slot.color;
+          if (slot.color !== hex) {
+            slot.color = hex;
+            slot.text = contrastText(hex);
+            changed = true;
+          }
+        }
+      }
+      if (w.status(ch, 'source') !== 'pending') {
+        const s = w.param(ch, 'source');
+        if (typeof s === 'string' && s && slot.src !== s) {
+          slot.src = s;
+          changed = true;
+        }
+      }
+      if (w.status(ch, 'pan') !== 'pending' && slot.pan !== null) {
+        const p = w.param(ch, 'pan');
+        if (typeof p === 'number' && Number.isFinite(p)) {
+          const d = enginePanToDesign(p);
+          if (Math.abs(slot.pan - d) > 1e-6) {
+            slot.pan = d;
+            changed = true;
+          }
+        }
+      }
     }
     if (changed) update(world);
   } finally {
@@ -252,6 +297,15 @@ try {
   };
 } catch {
   /* non-browser (node tests) */
+}
+
+/** Name-bar ink for a desk colour hex (mirrors EngineWorld.strip). */
+function contrastText(hex: string): string {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m) return '#ffffff';
+  const n = parseInt(m[1]!, 16);
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.6 ? '#10240f' : '#ffffff';
 }
 
 /**
@@ -415,6 +469,23 @@ export const ui = {
       const nv = world.chans[id]?.mute;
       if (typeof nv === 'boolean') forward(w => { bridgeMute(w, id, nv); });
     },
+    // Desk group membership + masters (desk-only: no fixture counterpart —
+    // the channel/mixer scopes read this state straight from the engine, so
+    // no fixture update is needed; the command echo re-renders the UI).
+    setGroupAssign: (kind: string, id: string, group: number, member: boolean) => {
+      if (world.state.locked) return;
+      forward(w => {
+        if (kind === 'mg') bridgeMuteGroupAssign(w, id, group, member);
+        else if (kind === 'sg') bridgeSubgroupAssign(w, id, group, member);
+      });
+    },
+    setGroupMute: (kind: string, group: number, muted: boolean) => {
+      if (world.state.locked) return;
+      forward(w => {
+        if (kind === 'mg') bridgeMuteGroupMute(w, group, muted);
+        else if (kind === 'sg') bridgeSubgroupMute(w, group, muted);
+      });
+    },
     toggleSolo: (id: string) => update(toggleSolo(world, id)),
     openNameEditor: (id: string) => update(openNameEditor(world, id)),
     closeNameEditor: () => update(closeNameEditor(world)),
@@ -532,6 +603,18 @@ export const ui = {
       forward(w => {
         if (cur === label) bridgePatch(w, id, label);
         else bridgeUnpatch(w, id);
+      });
+    },
+    patchOneToOne: (group: RouteGroup) => {
+      update(patchOneToOne(world, group));
+      forward(w => {
+        for (let n = 1; n <= 32; n++) bridgePatch(w, 'in' + n, group + ' ' + String(n).padStart(2, '0'));
+      });
+    },
+    clearPatches: () => {
+      update(clearPatches(world));
+      forward(w => {
+        for (let n = 1; n <= 48; n++) bridgeUnpatch(w, 'in' + n);
       });
     },
     unpatch: () => {
