@@ -126,7 +126,7 @@
   <div
     aria-hidden="true"
     data-ctl="pan-empty"
-    style="height:{h}px;flex:none;border:1px solid #1a2230;border-radius:var(--u4-r-3)"
+    style="height:{h}px;flex:none;border:1px solid var(--u4-rail-border);border-radius:var(--u4-r-3)"
   ></div>
 {:else}
   <button
