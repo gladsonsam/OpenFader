@@ -35,7 +35,9 @@
   onclick={() => onEvent?.('select', { index: props.index ?? 0 })}
   aria-pressed={props.pressed ? 'true' : 'false'}
   style="box-sizing:border-box;font-variant-numeric:normal;height:96px;display:flex;flex-direction:column;justify-content:space-between;gap:4px;padding:10px;border-radius:3px;border:2px solid {props.border ??
-    'var(--u4-line-faint)'};background:{props.bg ?? 'var(--u4-panel-bg)'};color:var(--u4-text-2);cursor:pointer;text-align:left"
+    'var(--u4-line-faint)'};background:{props.bg ?? 'var(--u4-panel-bg)'};color:{props.pressed
+    ? '#eef2f7'
+    : 'var(--u4-text-2)'};cursor:pointer;text-align:left"
 >
   <span style="display:flex;justify-content:space-between;align-items:center">
     <span style="font-size:12px;color:var(--u4-text-5)">{props.name ?? ''}</span>

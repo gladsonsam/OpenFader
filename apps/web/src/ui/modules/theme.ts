@@ -209,6 +209,7 @@ export const PRESETS: Record<ThemePresetId, Theme> = {
       '--u4-root-fg': '#f5d9d9',
       '--u4-panel-bg': '#160a0b',
       '--u4-panel-border': '#4a1d1d',
+      '--u4-bank-off': '#1f1010',
       '--u4-well-bg': '#100506',
       '--u4-well-bg-2': '#140708',
       '--u4-tile-bg': '#160a0b',

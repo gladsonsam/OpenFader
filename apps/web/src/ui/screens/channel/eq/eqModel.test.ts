@@ -177,7 +177,7 @@ const g: EqGraphVm = eqGraphVm(eq, 1);
   assert.equal(cards.length, 4);
   assert.equal(cards[0].name, 'Low');
   assert.equal(cards[0].border, EQ_BAND_COLORS[1], 'selected card takes the accent border');
-  assert.equal(cards[1].border, '#1f2836');
+  assert.equal(cards[1].border, 'var(--u4-line-panel)');
   assert.equal(cards[1].types.length, 1, 'Lo-Mid offers Bell only');
   assert.equal(cards[3].types.length, 2, 'High offers Bell/Shelf');
   assert.deepEqual([cards[2].freq, cards[2].gain, cards[2].q], [2940, 0, 1.84]);
