@@ -27,6 +27,8 @@
   --u4-tile-border-on: #5a6577;
   /* Bank rail chip, inactive */
   --u4-bank-off: #161c26;
+  /* Rail strip behind the bank pager */
+  --u4-rail-bg: #101722;
 
   /* Line / hairline colours */
   --u4-line-header: #1a212c;   /* header bottom border */
