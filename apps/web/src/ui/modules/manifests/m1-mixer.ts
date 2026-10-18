@@ -114,9 +114,9 @@ export const manifests: ModuleManifest[] = [
     component: as(DbReadout),
     props: {
       text: { type: 'text', default: '-4.3' },
-      color: { type: 'color', default: '#c9d1dc' },
+      color: { type: 'color', default: 'var(--u4-text-4)' },
     },
-    defaults: { text: '-4.3', color: '#c9d1dc' },
+    defaults: { text: '-4.3', color: 'var(--u4-text-4)' },
     size: { minW: 60, fixedH: 15 },
   },
   {
@@ -130,7 +130,7 @@ export const manifests: ModuleManifest[] = [
       ariaLabel: { type: 'text', default: 'Fader Ch 1 -4.3 dB' },
       variant: { type: 'enum', options: ['strip', 'aside', 'master'], default: 'strip' },
       accent: { type: 'enum', options: ['chan', 'sof', 'master'], default: 'chan' },
-      readColor: { type: 'color', default: '#c9d1dc' },
+      readColor: { type: 'color', default: 'var(--u4-text-4)' },
       disabled: { type: 'bool', default: false },
       fine: { type: 'bool', default: false },
       meter: { type: 'object' },

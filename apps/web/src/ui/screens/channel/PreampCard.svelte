@@ -25,9 +25,9 @@
 {#if vm.hasInput}
 <section
   aria-label="Preamp"
-  style="box-sizing:content-box;display:flex;flex-direction:column;gap:14px;padding:14px;border-radius:3px;border:1px solid #1f2836;background:#0e1520"
+  style="box-sizing:content-box;display:flex;flex-direction:column;gap:14px;padding:14px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
 >
-  <div style="font-size:12px;color:#8f9bb0">Preamp</div>
+  <div style="font-size:12px;color:var(--u4-text-6)">Preamp</div>
   <div style="box-sizing:content-box;display:flex;justify-content:space-around;gap:6px">
     <Knob
       specKey="gain"
@@ -60,7 +60,7 @@
     <button
       onclick={() => onEvent?.('invert')}
       aria-pressed={vm.invert ? 'true' : 'false'}
-      style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:48px;border-radius:3px;border:1px solid #3a414c;background:{vm.invertBg};color:{vm.invertFg};font-size:14px;font-weight:600;cursor:pointer"
+      style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:48px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:{vm.invertBg};color:{vm.invertFg};font-size:14px;font-weight:600;cursor:pointer"
       >Ø Polarity</button
     >
   </div>

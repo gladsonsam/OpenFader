@@ -65,7 +65,7 @@
     <button
       onclick={onBack}
       aria-label="Back"
-      style="height:46px;padding:0 14px 0 10px;display:flex;align-items:center;gap:4px;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:#161c26;color:var(--u4-text-1);font-size:14px;cursor:pointer;font-variant-numeric:normal"
+      style="height:46px;padding:0 14px 0 10px;display:flex;align-items:center;gap:4px;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);font-size:14px;cursor:pointer;font-variant-numeric:normal"
     >
       <Icon name="back" size={18} />
       {vm.backLabel}
@@ -117,7 +117,7 @@
     >
       <Icon name="plug" size={22} />
       <span
-        style="position:absolute;right:6px;top:6px;width:8px;height:8px;border-radius:50%;background:{vm.connDot};box-shadow:0 0 0 2px #0d1219"
+        style="position:absolute;right:6px;top:6px;width:8px;height:8px;border-radius:50%;background:{vm.connDot};box-shadow:0 0 0 2px var(--u4-tile-bg)"
       ></span>
     </button>
     <button

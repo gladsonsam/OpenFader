@@ -145,7 +145,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
   const dot0 = params ? dynDot(kind, params, -90) : { leftPct: '0', topPct: '100' };
   const tgl = params
     ? dynToggle(kind, (params as { on: boolean }).on)
-    : { bg: '#2b3038', fg: '#c9d1dc', label: '', pressed: 'false' };
+    : { bg: 'var(--u4-btn-bg)', fg: 'var(--u4-text-4)', label: '', pressed: 'false' };
   return {
     store: a.state,
     selId: ch.id,
@@ -154,7 +154,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     inputVm: inputVm(world),
     levelText: inputLevelText(a.levelDb),
     sendRows,
-    eqMaster: eq ? eqMasterToggle(eq) : { str: 'false', bg: '#2b3038', text: '#c9d1dc', label: 'EQ Bypassed' },
+    eqMaster: eq ? eqMasterToggle(eq) : { str: 'false', bg: 'var(--u4-btn-bg)', text: 'var(--u4-text-4)', label: 'EQ Bypassed' },
     eqGraph,
     eqSummary: eq ? eqSelInfoText(eq, selBand) : '',
     eqHpf: eq ? eqHpfCardVm(eq, selBand, EQ_BAND_COLORS) : null,

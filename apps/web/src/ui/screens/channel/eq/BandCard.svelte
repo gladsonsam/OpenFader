@@ -39,13 +39,13 @@
 
 {#if vm}
   <div
-    style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:6px;border:2px solid {vm.border};background:#0e1520"
+    style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:6px;border:2px solid {vm.border};background:var(--u4-panel-bg)"
   >
     <div style="box-sizing:content-box;display:flex;align-items:center;gap:6px">
       <button
         onclick={() => onEvent?.('select', { band: vm.band })}
         aria-label={'Select ' + vm.name + ' band'}
-        style="box-sizing:border-box;font-variant-numeric:normal;flex:1;min-width:0;height:32px;display:flex;align-items:center;gap:8px;padding:0;border:0;background:transparent;color:#eef2f7;font-size:15px;font-weight:600;text-align:left;cursor:pointer"
+        style="box-sizing:border-box;font-variant-numeric:normal;flex:1;min-width:0;height:32px;display:flex;align-items:center;gap:8px;padding:0;border:0;background:transparent;color:var(--u4-text-2);font-size:15px;font-weight:600;text-align:left;cursor:pointer"
       >
         <span style="width:12px;height:12px;flex:none;border-radius:50%;background:{vm.color}"></span>
         {vm.name}
@@ -54,7 +54,7 @@
         onclick={() => onEvent?.('toggle', { band: vm.band })}
         aria-pressed={vm.onStr}
         aria-label={vm.toggleAria}
-        style="box-sizing:border-box;font-variant-numeric:normal;height:32px;padding:0 10px;border-radius:4px;border:1px solid #3a414c;background:{vm.onBg};color:{vm.onText};font-size:13px;cursor:pointer"
+        style="box-sizing:border-box;font-variant-numeric:normal;height:32px;padding:0 10px;border-radius:4px;border:1px solid var(--u4-line-ctl);background:{vm.onBg};color:{vm.onText};font-size:13px;cursor:pointer"
         >{vm.onLabel}</button
       >
     </div>
@@ -65,7 +65,7 @@
             onclick={() => onEvent?.('type', { band: vm.band, type: vm.typeValues[i] })}
             aria-pressed={t.pressed}
             aria-label={vm.name + ' ' + t.label}
-            style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:30px;border-radius:4px;border:1px solid #3a414c;background:{t.bg};color:{t.fg};font-size:13px;cursor:pointer"
+            style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:30px;border-radius:4px;border:1px solid var(--u4-line-ctl);background:{t.bg};color:{t.fg};font-size:13px;cursor:pointer"
             >{t.label}</button
           >
         {/each}

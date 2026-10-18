@@ -137,7 +137,7 @@
   bind:this={box}
   data-graph="1"
   in:fade={{ duration: REDUCED_MOTION ? 0 : 120 }}
-  style="box-sizing:content-box;flex:1 1 280px;min-height:220px;position:relative;border-radius:6px;border:1px solid #1f2836;background:#0a0f17;overflow:hidden;touch-action:none"
+  style="box-sizing:content-box;flex:1 1 280px;min-height:220px;position:relative;border-radius:6px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg);overflow:hidden;touch-action:none"
 >
   {#if graph}
     <svg
@@ -184,13 +184,13 @@
     </svg>
     {#each graph.freqLabels as l (l.label)}
       <span
-        style="position:absolute;bottom:4px;left:{l.x}%;transform:translateX(-50%);font-size:12px;color:#6c788c"
+        style="position:absolute;bottom:4px;left:{l.x}%;transform:translateX(-50%);font-size:12px;color:var(--u4-text-10)"
         >{l.label}</span
       >
     {/each}
     {#each graph.gainLabels as l (l.label)}
       <span
-        style="position:absolute;left:6px;top:{l.y}%;transform:translateY(-50%);font-size:12px;color:#6c788c"
+        style="position:absolute;left:6px;top:{l.y}%;transform:translateY(-50%);font-size:12px;color:var(--u4-text-10)"
         >{l.label}</span
       >
     {/each}

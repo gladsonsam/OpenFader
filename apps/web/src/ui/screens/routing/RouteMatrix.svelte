@@ -104,7 +104,7 @@
   >
     <div
       aria-hidden="true"
-      style="box-sizing:border-box;width:{headW}px;height:{cell}px;display:flex;align-items:flex-end;padding:4px 10px;background:#141c29;color:#5b6678;font-size:{fCol}px;font-weight:700;position:sticky;top:0;left:0;z-index:4"
+      style="box-sizing:border-box;width:{headW}px;height:{cell}px;display:flex;align-items:flex-end;padding:4px 10px;background:var(--u4-route-head);color:var(--u4-text-dim);font-size:{fCol}px;font-weight:700;position:sticky;top:0;left:0;z-index:4"
     >
       CH \ SRC
     </div>
@@ -113,11 +113,11 @@
         role="columnheader"
         style="box-sizing:border-box;width:{cell}px;height:{cell}px;display:flex;align-items:flex-end;justify-content:center;padding:4px 2px;background:{hover.col ===
         col
-          ? '#22314b'
-          : '#141c29'};color:{hover.col === col ? '#ffffff' : '#8f9bb0'};font-size:{fCol}px;font-weight:700;white-space:nowrap;position:sticky;top:0;z-index:2;{j %
+          ? 'var(--u4-route-trace)'
+          : 'var(--u4-route-head)'};color:{hover.col === col ? 'var(--u4-text-1)' : 'var(--u4-text-6)'};font-size:{fCol}px;font-weight:700;white-space:nowrap;position:sticky;top:0;z-index:2;{j %
         8 ===
         0
-          ? 'border-left:2px solid #33415a;'
+          ? 'border-left:2px solid var(--u4-route-div);'
           : ''}"
       >
         {col}
@@ -132,16 +132,16 @@
         onmouseleave={leave}
         style="box-sizing:border-box;width:{headW}px;height:{cell}px;display:flex;flex-direction:column;justify-content:center;gap:1px;padding:2px 10px;background:{hover.row ===
         row.id
-          ? '#22314b'
-          : '#141c29'};position:sticky;left:0;z-index:1"
+          ? 'var(--u4-route-trace)'
+          : 'var(--u4-route-head)'};position:sticky;left:0;z-index:1"
       >
         <span
           style="font-size:{fName}px;font-weight:600;color:{hover.row === row.id
-            ? '#ffffff'
-            : '#eef2f7'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{row.name}</span
+            ? 'var(--u4-text-1)'
+            : 'var(--u4-text-2)'};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{row.name}</span
         >
         <span
-          style="font-size:{fSrc}px;color:#5fe3f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+          style="font-size:{fSrc}px;color:var(--u4-cyan-hi);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
           >{row.src}</span
         >
       </div>
@@ -161,12 +161,12 @@
           'current'
             ? '#0e2018'
             : st === 'preview'
-              ? '#141d33'
+              ? 'var(--u4-route-preview)'
               : hot
-                ? '#182435'
+                ? 'var(--u4-route-trace)'
                 : ri % 2 === 0
-                  ? '#0c1320'
-                  : '#0a0f17'};cursor:pointer;{j % 8 === 0 ? 'border-left:2px solid #33415a;' : ''}"
+                  ? 'var(--u4-route-alt)'
+                  : 'var(--u4-well-bg)'};cursor:pointer;{j % 8 === 0 ? 'border-left:2px solid var(--u4-route-div);' : ''}"
         >
           <span
             aria-hidden="true"
@@ -181,15 +181,15 @@
               : st === 'conflict'
                 ? '#f0b429'
                 : st === 'preview'
-                  ? '#ffffff'
-                  : '#2a3443'}"
+                  ? 'var(--u4-text-1)'
+                  : 'var(--u4-line-ctl)'}"
           ></span>
         </button>
       {/each}
     {/each}
     <div
       role="status"
-      style="grid-column:1 / -1;position:sticky;bottom:0;z-index:3;background:#101825;border-top:1px solid #2a3443;padding:7px 10px;font-size:13px;color:#c9d1dc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+      style="grid-column:1 / -1;position:sticky;bottom:0;z-index:3;background:var(--u4-route-bar);border-top:1px solid var(--u4-line-faint);padding:7px 10px;font-size:13px;color:var(--u4-text-4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
     >
       {readout || defaultLine}
     </div>

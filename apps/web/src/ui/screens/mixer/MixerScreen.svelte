@@ -22,9 +22,8 @@
   import { bindUiActions } from '../../modules/actions.ts';
   import { useDeviceClass } from '../../modules/device.svelte.ts';
   import './actions.ts';
-  import { mixerCells, mixerMasterCell, phoneGridCols, SLOT_COUNT, tabletGridCols } from './mixerVm.ts';
+  import { mixerAllCells, mixerCells, mixerMasterCell, mixerSlots, phoneGridCols, SLOT_COUNT, tabletGridCols } from './mixerVm.ts';
   import type { DeskGroups } from './mixerVm.ts';
-  import { mixerSlots } from './mixerVm.ts';
   import type { LayoutNode, RepeatScope } from '../../modules/schema.ts';
   import defaults from '../../layouts/mixer.default.json';
   import stripDefaults from '../../layouts/strip.default.json';
@@ -66,7 +65,6 @@
   // closure reads the engine arrays imperatively each animation frame, so
   // no reactive re-derivation is needed for drawing).
   const liveDb = (id: string): number | null => live.liveLevelDb(id);
-
   // Live desk groups/link overlay (names/colours arrive via the fixture
   // sync; membership + link have no fixture fields so they ride the scope
   // directly). Null offline: the badges' `when` hides them and fixture
@@ -157,6 +155,9 @@
     })(),
   );
   const emptyCount = $derived(Math.max(0, SLOT_COUNT - liveCells.length));
+  // All 48 inputs in order for the phone snap pager (no banks: the rail is
+  // hidden on phones). Desk badges ride along like the bank cells.
+  const allCells = $derived(mixerAllCells(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf));
   const tree = $derived(store.tree(defaults as unknown as LayoutNode));
   // The user-editable strip anatomy, derived through the same profile store
   // (user edits to strip parts apply); each repeat frame renders it with its
@@ -170,7 +171,10 @@
     bankItems: liveCells as unknown as string[],
     // Empty-slot keys must be unique (expandRepeat keys instances by item):
     // distinct placeholder ids, one per trailing slot.
-    lists: { emptySlots: Array.from({ length: emptyCount }, (_, i) => `empty-${i}`) },
+    lists: {
+      emptySlots: Array.from({ length: emptyCount }, (_, i) => `empty-${i}`),
+      allBankItems: allCells as unknown as string[],
+    },
     master,
     frozen,
     anatomy,
