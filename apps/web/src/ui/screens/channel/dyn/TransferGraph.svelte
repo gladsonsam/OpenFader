@@ -61,6 +61,8 @@
       staticDotT?: string;
       /** Live level reader (dBFS). Ignored when frozen. */
       getLevel?: (() => number) | null;
+      /** Card min-height px (layouts shrink it on phones). */
+      minH?: number;
     };
     ctx: ModuleContext;
     nodeId: string;
@@ -81,6 +83,7 @@
   );
   const frozen = $derived(props.frozen ?? true);
   const getLevel = $derived(props.getLevel ?? null);
+  const minH = $derived(props.minH ?? 300);
 
   let dot: HTMLSpanElement | null = $state(null);
 
@@ -260,7 +263,7 @@
 </style>
 
 <div
-  style="box-sizing:content-box;flex:1 1 400px;min-height:300px;display:flex;gap:10px;padding:12px 12px 12px 6px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg)"
+  style="box-sizing:content-box;flex:1 1 400px;min-height:{minH}px;display:flex;gap:10px;padding:12px 12px 12px 6px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg)"
 >
   <div aria-hidden="true" style="box-sizing:content-box;width:34px;flex:none;position:relative;margin-bottom:24px">
     {#each axis as a (a.label)}
