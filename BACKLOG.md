@@ -26,6 +26,10 @@ free AND its files don't collide with the running worker.
    channel switcher UI it replaces.
 6. Routing usable on mobile (currently unusable — rework for small
    screens: readable, tappable, no precision-dependent patching).
+7. Graph label collisions (comp/EQ graphs, phone): x-axis "-60" hides
+   behind the G node, "Input →" overlaps the curve, summary line
+   ("Makeup 0.0 dB") wraps mid-unit. Keep nodes clear of ticks,
+   no mid-unit wraps.
 
 ## Queued — server-side (NOT today; parked, do not dispatch)
 - Automixing (gain-sharing across channels on the server).
