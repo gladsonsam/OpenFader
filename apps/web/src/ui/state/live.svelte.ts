@@ -57,6 +57,26 @@ class LiveRelay {
     return this.world;
   }
 
+  /** EngineWorld observers (the fixture sync): called with the world on
+   * every world bump, plus immediately when the world already exists.
+   * Survives reconnects — each new world fans out to the same set. */
+  private worldSubs = new Set<(w: EngineWorld) => void>();
+
+  observeWorld(cb: (w: EngineWorld) => void): () => void {
+    this.worldSubs.add(cb);
+    const w = this.world;
+    if (w) {
+      try {
+        cb(w);
+      } catch {
+        /* ignore: observer-local failure */
+      }
+    }
+    return () => {
+      this.worldSubs.delete(cb);
+    };
+  }
+
   /** Apply `?server=` once at boot (called by the shell mount). */
   initFromUrl(search: string): void {
     const q = new URLSearchParams(search.startsWith('?') ? search : '?' + search);
@@ -131,6 +151,13 @@ class LiveRelay {
           this.latencyMs = Date.now() - this.helloAt;
           this.phase = 'online';
           this.message = 'Live · ' + world.driver + ' · ' + world.stripCount + ' strips';
+        }
+        for (const cb of [...this.worldSubs]) {
+          try {
+            cb(world);
+          } catch {
+            /* ignore: observer-local failure */
+          }
         }
       }),
     );
