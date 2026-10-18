@@ -31,6 +31,9 @@ function pwaAssets() {
 export default defineConfig({
   plugins: [svelte({ preprocess: vitePreprocess() }), pwaAssets()],
   base: './',
+  // Dev/preview behind the dev1-<port>.gladsonsam.com tunnel (host check would block it).
+  server: { allowedHosts: ['.gladsonsam.com'] },
+  preview: { allowedHosts: ['.gladsonsam.com'] },
   build: {
     outDir: 'dist',
     emptyOutDir: true,

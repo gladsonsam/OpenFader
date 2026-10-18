@@ -1,0 +1,9 @@
+{
+  "ch": 3,
+  "type": "params",
+  "values": {
+    "gain": 12.5,
+    "name": "Vox",
+    "phantom": false
+  }
+}

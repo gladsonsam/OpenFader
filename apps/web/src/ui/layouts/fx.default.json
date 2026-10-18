@@ -1,0 +1,84 @@
+{
+  "$doc": "F1 default layout for the FX screen (docs/design/shots/06-fx.png). Rendered by the generic LayoutRenderer. The slot row is a grid with a repeat over the slot vms (fxSlots in rack order); the detail area is one fx-detail-panel module reading the selected slot (slot + descriptor-driven knob list + header vms from scope). Type buttons are a repeat of buttons inside the panel (pickType -> ui.setFxType); knob drags stay local-first in the Knob primitive and commit knob/reset -> ui.setFxParam/ui.resetFxParam.",
+  "id": "fx",
+  "module": "col",
+  "props": { "gap": 6, "flex": "1 1 auto", "width": "100%", "box": "content-box" },
+  "children": [
+    {
+      "id": "slots",
+      "module": "grid",
+      "props": {
+        "columns": "repeat(auto-fit, minmax(140px, 1fr))",
+        "gap": 6,
+        "flex": "none",
+        "box": "content-box"
+      },
+      "children": [
+        {
+          "id": "slot-rep",
+          "module": "repeat",
+          "props": { "over": "list:fxSlots" },
+          "children": [
+            {
+              "id": "slot-card",
+              "module": "fx-slot-card",
+              "bind": {
+                "index": "item.index",
+                "name": "item.name",
+                "type": "item.type",
+                "state": "item.state",
+                "stateColor": "item.stateColor",
+                "ret": "item.ret",
+                "pressed": "item.pressed",
+                "border": "item.border",
+                "bg": "item.bg",
+                "meterPct": "item.meterPct"
+              },
+              "on": {
+                "select": {
+                  "do": "ui.setFxSel",
+                  "args": { "index": { "$expr": "payload.index" } }
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "detail",
+      "module": "fx-detail-panel",
+      "bind": {
+        "title": "fx.title",
+        "toggle": "fx.toggle",
+        "isDelay": "fx.isDelay",
+        "tapLabel": "fx.tapLabel",
+        "types": "fx.types",
+        "slot": "slot",
+        "knobs": "knobs",
+        "fine": "store.fine",
+        "locked": "store.locked"
+      },
+      "on": {
+        "toggle": { "do": "ui.toggleFxOn", "args": { "index": { "$expr": "store.fxSel" } } },
+        "tap": { "do": "ui.tapFx", "args": { "index": { "$expr": "store.fxSel" } } },
+        "pickType": {
+          "do": "ui.setFxType",
+          "args": { "index": { "$expr": "store.fxSel" }, "type": { "$expr": "payload.type" } }
+        },
+        "knob": {
+          "do": "ui.setFxParam",
+          "args": {
+            "index": { "$expr": "store.fxSel" },
+            "param": { "$expr": "payload.param" },
+            "value": { "$expr": "payload.value" }
+          }
+        },
+        "reset": {
+          "do": "ui.resetFxParam",
+          "args": { "index": { "$expr": "store.fxSel" }, "param": { "$expr": "payload.param" } }
+        }
+      }
+    }
+  ]
+}

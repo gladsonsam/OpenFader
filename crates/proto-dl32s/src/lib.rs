@@ -160,6 +160,25 @@ impl MixerDriver for Dl32sDriver {
         "dl32s"
     }
 
+    /// DL32S strip map: 32 input channels only (honest — the address table
+    /// covers inputs; mixes/LR are not mapped, so no topology is advertised
+    /// for them and `caps` stays fader/mute/name only).
+    fn topology(&self) -> Vec<openmix_core::StripFamily> {
+        vec![openmix_core::StripFamily {
+            key: "ch",
+            kind: openmix_core::StripKind::In,
+            label: "Ch 1-32",
+            first: 0,
+            count: INPUT_COUNT as usize,
+            name_prefix: "Ch",
+            color_default: 2,
+        }]
+    }
+
+    fn strip_count(&self) -> usize {
+        INPUT_COUNT as usize
+    }
+
     async fn connect(&self, addr: &str) -> anyhow::Result<()> {
         addrs::model_status("dl32s")?;
         let session = MackieSession::connect(addr).await?;
@@ -347,5 +366,13 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("Db"), "{err}");
+    }
+
+    #[test]
+    fn capabilities_are_fader_mute_name_only() {
+        // MS param plane: the DL32S relay advertises only the always-
+        // available triple (unchanged driver behaviour otherwise — `set_param`
+        // still passes other table fields through when connected).
+        assert_eq!(Dl32sDriver::new().capabilities(), &["fader", "mute", "name"]);
     }
 }

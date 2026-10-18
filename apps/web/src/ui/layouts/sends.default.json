@@ -1,0 +1,61 @@
+{
+  "id": "sends",
+  "module": "grid",
+  "props": { "columns": "repeat(auto-fill, minmax(320px, 1fr))", "gap": 6, "box": "content-box" },
+  "children": [
+    {
+      "id": "sends-empty",
+      "module": "col",
+      "props": {
+        "flex": "1",
+        "align": "center",
+        "justify": "center",
+        "padding": 24,
+        "radius": 3,
+        "border": "1px solid #1f2836",
+        "background": "#0a0f17",
+        "box": "content-box"
+      },
+      "when": "count(sendRows) == 0",
+      "children": [
+        {
+          "id": "sends-empty-text",
+          "module": "text",
+          "props": {
+            "value": "Buses and outputs don't send to mixes.",
+            "size": 15,
+            "color": "#a7b1c0",
+            "align": "center"
+          }
+        }
+      ]
+    },
+    {
+      "id": "rows",
+      "module": "repeat",
+      "props": { "over": "list:sends" },
+      "when": "count(sendRows) > 0",
+      "children": [
+        {
+          "id": "row",
+          "module": "send-row",
+          "bind": { "row": "item", "fine": "store.fine" },
+          "on": {
+            "input": {
+              "do": "ui.setSend",
+              "args": {
+                "id": { "$expr": "selId" },
+                "k": { "$expr": "index" },
+                "value": { "$expr": "payload.value" }
+              }
+            },
+            "togglePre": {
+              "do": "ui.toggleSendPre",
+              "args": { "id": { "$expr": "selId" }, "k": { "$expr": "index" } }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

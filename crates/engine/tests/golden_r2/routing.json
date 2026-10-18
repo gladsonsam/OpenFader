@@ -1,0 +1,11 @@
+{
+  "patches": [
+    {
+      "group": "Net",
+      "index": 5,
+      "label": "Net 05",
+      "strip": 0
+    }
+  ],
+  "type": "routing"
+}
