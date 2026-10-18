@@ -69,7 +69,7 @@ function chipOf(label: string, on: boolean): { label: string; pressed: boolean; 
     label,
     pressed: on,
     bg: on ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
-    fg: on ? '#0b0f14' : 'var(--u4-text-4)',
+    fg: on ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
   };
 }
 
