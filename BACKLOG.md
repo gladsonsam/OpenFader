@@ -11,9 +11,11 @@ free AND its files don't collide with the running worker.
    scripts/verify-bidirectional.mjs matrix + root-caused gap list.
 
 ## Queued (in order)
-1. Bidirectional verification matrix (running — `ses_eb0877d76dffeFIOsVr9lbo0kFj`):
+1. Bidirectional verification matrix (running):
    per-control both-directions proof + root-caused gap list.
-2. Scan/remote-access fix (running — `ses_eaebbc0f3ffeOulz3Vh5MTj0q4`).
+2. Scan/remote-access fix — DONE live-verified (XR18 row via linked desk,
+   manual add-by-IP, LAN host suggestion); relay restarted on fresh build.
+3. APK rebuild from current tree (running) → /mnt/gladson/temp/.
 3. Phone independence: embed the engine in-process in the Tauri app
    (Tauri IPC transport, no relay/server/LAN needed). Auto-select
    transport: IPC inside the app, WebSocket in the browser. The W2a
