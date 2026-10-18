@@ -22,6 +22,8 @@
     props: {
       kind?: DynKind;
       color?: string;
+      /** Knob diameter in px (desktop layouts widen it; phone narrows it). */
+      size?: number;
       /** Knob descriptor list (data: users add/remove knobs by editing it). */
       knobs?: DynKnobDef[] | null;
       gate?: Gate | null;
@@ -55,7 +57,7 @@
         value={dynKnobValue(kind, gate, comp, k.prop)}
         label={k.label}
         color={props.color ?? '#ff9f43'}
-        size={80}
+        size={props.size ?? 80}
         defaultValue={k.defaultValue}
         fine={props.fine ?? false}
         disabled={props.locked ?? false}
