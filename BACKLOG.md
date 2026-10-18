@@ -5,17 +5,15 @@ Queued with the owner's words. A worker is dispatched only when a slot is
 free AND its files don't collide with the running worker.
 
 ## In flight (2/2 slots full)
-1. Worktree merge (`ses_eb07b0b58ffevIdir5Y5YMhulo`) — phone/daylight UI
-   branch `fix/boot-crashes` into main (reconcile + rebuild + screenshots).
-2. Bidirectional verification loop (`ses_eb0877d76ffeFIOsVr9lbo0kFj`) —
-   scripts/verify-bidirectional.mjs matrix + root-caused gap list.
+1. Phone independence (`ses_eae8d639fffeO4LdSEJ8RE220z`) — engine
+   embedded in-process in the Tauri app (IPC transport, no relay).
+2. Verification loop completion (`ses_eae8d6395ffe6xukMszT5HS9vd`) —
+   finish + run scripts/verify-bidirectional.mjs, file the gap list.
 
 ## Queued (in order)
-1. Bidirectional verification matrix (running):
-   per-control both-directions proof + root-caused gap list.
-2. Scan/remote-access fix — DONE live-verified (XR18 row via linked desk,
-   manual add-by-IP, LAN host suggestion); relay restarted on fresh build.
-3. APK rebuild from current tree (running) → /mnt/gladson/temp/.
+1. Mobile master strip parity: Main LR renders like every other channel
+   strip (volume + mute only); tap to expand for more. No special-case
+   master layout on phone.
 3. Phone independence: embed the engine in-process in the Tauri app
    (Tauri IPC transport, no relay/server/LAN needed). Auto-select
    transport: IPC inside the app, WebSocket in the browser. The W2a
