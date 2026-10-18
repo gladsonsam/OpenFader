@@ -2,7 +2,7 @@
      docs/design/src/design-template.html (scene button block, lines 66-70).
      Props: padded scene number (e.g. '005'), scene name, aria label
      ('Scene 5 Changeover, open scene list'), highlighted state (Scenes page
-     open: bg #232b37 / border #5a6577, else #0d1219 / #2a323f), onOpen. -->
+     open: bg #232b37 / border #5a6577, else var(--u4-tile-bg) / var(--u4-divider)), onOpen. -->
 <script lang="ts">
   let {
     num,
@@ -52,7 +52,7 @@
     height="16"
     viewBox="0 0 24 24"
     fill="none"
-    stroke="#a7b1c0"
+    stroke="var(--u4-text-5)"
     stroke-width="2.2"
     stroke-linecap="round"
     stroke-linejoin="round"

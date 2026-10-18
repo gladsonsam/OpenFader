@@ -20,9 +20,9 @@ import {
     weight: 600,
   });
   assert.deepEqual(bankBtnStyle(bank, false), {
-    bg: '#161c26',
+    bg: 'var(--u4-bank-off)',
     fg: '#7be27b',
-    border: '#2a323f',
+    border: 'var(--u4-divider)',
     weight: 500,
   });
   // Every bank key has an unselected tint colour.
@@ -34,8 +34,8 @@ import {
 }
 
 // tileStyle mirrors tb() in the design's renderVals.
-assert.deepEqual(tileStyle(true), { bg: '#232b37', border: '#5a6577' });
-assert.deepEqual(tileStyle(false), { bg: '#0d1219', border: '#2a323f' });
+assert.deepEqual(tileStyle(true), { bg: 'var(--u4-tile-bg-on)', border: 'var(--u4-tile-border-on)' });
+assert.deepEqual(tileStyle(false), { bg: 'var(--u4-tile-bg)', border: 'var(--u4-divider)' });
 assert.equal(ariaCurrent(true), 'page');
 assert.equal(ariaCurrent(false), 'false');
 

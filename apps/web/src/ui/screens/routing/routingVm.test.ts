@@ -10,8 +10,8 @@ const w0 = initialWorld();
   const vm = buildRoutingVm(w0.state, w0.chans);
   assert.deepEqual(vm.banks.map(b => b.label), ['1–16', '17–32', '33–48']);
   assert.deepEqual(vm.banks.map(b => b.pressed), [true, false, false]);
-  assert.equal(vm.banks[0].bg, '#e8edf5');
-  assert.equal(vm.banks[1].bg, '#2b3038');
+  assert.equal(vm.banks[0].bg, 'var(--u4-text-1)');
+  assert.equal(vm.banks[1].bg, 'var(--u4-btn-bg)');
   assert.equal(vm.tiles.length, 16);
   assert.equal(vm.tiles[0].name, 'Ch 1');
   assert.equal(vm.tiles[0].src, 'Lcl 01');
@@ -19,7 +19,7 @@ const w0 = initialWorld();
   assert.equal(vm.tiles[0].border, '#ffffff');
   assert.equal(vm.tiles[0].bg, '#1b2330');
   assert.equal(vm.tiles[1].pressed, false);
-  assert.equal(vm.tiles[1].border, '#222a36');
+  assert.equal(vm.tiles[1].border, 'var(--u4-line-faint)');
   assert.equal(vm.tiles[0].srcColor, '#5fe3f0');
   assert.equal(vm.selName, 'Ch 1');
   assert.deepEqual(vm.groups.map(g => g.label), ['Local', 'Network', 'USB']);
@@ -35,7 +35,7 @@ const w0 = initialWorld();
   // Lcl 02 is used by Ch 2: dark tile with an arrow sub-label.
   assert.equal(vm.srcTiles[1].used, '→ Ch 2');
   assert.equal(vm.srcTiles[1].bg, '#141b26');
-  assert.equal(vm.srcTiles[1].fg, '#c9d1dc');
+  assert.equal(vm.srcTiles[1].fg, 'var(--u4-text-4)');
 }
 
 // Route bank switch changes the tile window.

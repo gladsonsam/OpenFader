@@ -35,13 +35,13 @@
 
 {#if vm}
   <div
-    style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:6px;border:2px solid {vm.border};background:#0e1520"
+    style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:8px;border-radius:6px;border:2px solid {vm.border};background:var(--u4-panel-bg)"
   >
     <div style="box-sizing:content-box;display:flex;align-items:center;gap:6px">
       <button
         onclick={() => onEvent?.('select', { band: 0 })}
         aria-label="Select HPF band"
-        style="box-sizing:border-box;font-variant-numeric:normal;flex:1;min-width:0;height:32px;display:flex;align-items:center;gap:8px;padding:0;border:0;background:transparent;color:#eef2f7;font-size:15px;font-weight:600;text-align:left;cursor:pointer"
+        style="box-sizing:border-box;font-variant-numeric:normal;flex:1;min-width:0;height:32px;display:flex;align-items:center;gap:8px;padding:0;border:0;background:transparent;color:var(--u4-text-2);font-size:15px;font-weight:600;text-align:left;cursor:pointer"
       >
         <span style="width:12px;height:12px;flex:none;border-radius:50%;background:{vm.color}"></span>
         HPF
@@ -50,7 +50,7 @@
         onclick={() => onEvent?.('toggle', { band: 0 })}
         aria-pressed={vm.onStr}
         aria-label={vm.toggleAria}
-        style="box-sizing:border-box;font-variant-numeric:normal;height:32px;padding:0 10px;border-radius:4px;border:1px solid #3a414c;background:{vm.onBg};color:{vm.onText};font-size:13px;cursor:pointer"
+        style="box-sizing:border-box;font-variant-numeric:normal;height:32px;padding:0 10px;border-radius:4px;border:1px solid var(--u4-line-ctl);background:{vm.onBg};color:{vm.onText};font-size:13px;cursor:pointer"
         >{vm.onLabel}</button
       >
     </div>
@@ -62,9 +62,9 @@
             onclick={() => onEvent?.('slope', { slope: s })}
             aria-pressed={active ? 'true' : 'false'}
             aria-label={'HPF slope ' + s + ' dB per octave'}
-            style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:30px;border-radius:4px;border:1px solid #3a414c;background:{active
-              ? '#e8edf5'
-              : '#2b3038'};color:{active ? '#0b0f14' : '#c9d1dc'};font-size:13px;cursor:pointer"
+            style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:30px;border-radius:4px;border:1px solid var(--u4-line-ctl);background:{active
+              ? 'var(--u4-text-1)'
+              : 'var(--u4-btn-bg)'};color:{active ? '#0b0f14' : 'var(--u4-text-4)'};font-size:13px;cursor:pointer"
             >{s} dB/oct</button
           >
         {/each}

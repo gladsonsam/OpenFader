@@ -33,10 +33,10 @@
   } = $props();
 </script>
 
-<div style="box-sizing:content-box;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid #18212f">
+<div style="box-sizing:content-box;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid var(--u4-line-row)">
   <div style="box-sizing:content-box;flex:1 1 180px;min-width:0">
     <div style="box-sizing:content-box;font-size:15px;font-weight:600">{props.label ?? ''}</div>
-    <div style="box-sizing:content-box;font-size:13px;color:#8792a4">{props.desc ?? ''}</div>
+    <div style="box-sizing:content-box;font-size:13px;color:var(--u4-text-7)">{props.desc ?? ''}</div>
   </div>
   <div role="group" aria-label={props.label ?? ''} style="box-sizing:content-box;display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">
     {#each props.options ?? [] as o (o.value)}

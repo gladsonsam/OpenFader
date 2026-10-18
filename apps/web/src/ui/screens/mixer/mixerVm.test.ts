@@ -42,7 +42,7 @@ const w0 = initialWorld();
   assert.equal(vm.useSend, false);
   assert.equal(vm.value, w0.chans['in1'].fader);
   assert.equal(vm.readout, fmtDb(w0.chans['in1'].fader));
-  assert.equal(vm.readColor, '#c9d1dc');
+  assert.equal(vm.readColor, 'var(--u4-text-4)');
   assert.equal(vm.faderAria, 'Fader Ch 1 ' + fmtDb(w0.chans['in1'].fader) + ' dB');
   const other = stripVm(w0.state, w0.chans, 'in2')!;
   assert.equal(other.ring, 'none');
@@ -64,7 +64,7 @@ const w0 = initialWorld();
   const vm = stripVm(w.state, w.chans, 'in1')!;
   assert.equal(vm.useSend, true);
   assert.equal(vm.value, w.chans['in1'].sends![0]);
-  assert.equal(vm.readColor, '#22d3e6');
+  assert.equal(vm.readColor, 'var(--u4-cyan)');
   assert.ok(vm.faderAria.startsWith('Send to Mix 1 from Ch 1 '));
   const dca = stripVm(w.state, w.chans, 'dca1')!;
   assert.equal(dca.useSend, false, 'DCA has no sends: shows fader');
@@ -75,7 +75,7 @@ const w0 = initialWorld();
   assert.equal(m.tag, 'SENDS MASTER');
   assert.equal(m.tagColor, '#5fe3f0');
   assert.equal(m.kind, 'sof');
-  assert.equal(m.readColor, '#e8edf5', 'master readout is always light');
+  assert.equal(m.readColor, 'var(--u4-text-1)', 'master readout is always light');
 }
 
 // --- master (no SOF): Main LR, stereo out, gold ---

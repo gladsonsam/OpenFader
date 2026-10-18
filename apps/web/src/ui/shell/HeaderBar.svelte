@@ -110,7 +110,7 @@
     >
       <Icon name="plug" size={22} />
       <span
-        style="position:absolute;right:6px;top:6px;width:8px;height:8px;border-radius:50%;background:{vm.connDot};box-shadow:0 0 0 2px #0d1219"
+        style="position:absolute;right:6px;top:6px;width:8px;height:8px;border-radius:50%;background:{vm.connDot};box-shadow:0 0 0 2px var(--u4-tile-bg)"
       ></span>
     </button>
     <button

@@ -26,7 +26,7 @@
 {#if orientation === 'bottom'}
   <nav
     aria-label="Layers"
-    style="height:56px;flex:none;display:flex;flex-direction:row;overflow-x:auto;background:#101722;border-top:1px solid #1f2836"
+    style="height:56px;flex:none;display:flex;flex-direction:row;overflow-x:auto;background:#101722;border-top:1px solid var(--u4-line-panel)"
   >
     {#each banks as b, i (b.key)}
       {@const s = bankBtnStyle(b, b.key === activeKey)}
@@ -38,7 +38,7 @@
         style="flex:1 0 68px;min-height:48px;align-self:stretch;border:0;border-radius:0;border-left:{i ===
         0
           ? '0'
-          : '1px solid #1f2836'};background:{s.bg};color:{s.fg};font-size:12px;font-weight:{s.weight};cursor:pointer;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:normal"
+          : '1px solid var(--u4-line-panel)'};background:{s.bg};color:{s.fg};font-size:12px;font-weight:{s.weight};cursor:pointer;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:normal"
         >{b.label}</button
       >
     {/each}
@@ -46,7 +46,7 @@
 {:else}
   <nav
     aria-label="Layers"
-    style="width:92px;flex:none;display:flex;flex-direction:column;background:#101722;border-left:1px solid #1f2836"
+    style="width:92px;flex:none;display:flex;flex-direction:column;background:#101722;border-left:1px solid var(--u4-line-panel)"
   >
     {#each banks as b, i (b.key)}
       {@const s = bankBtnStyle(b, b.key === activeKey)}
@@ -57,7 +57,7 @@
         style="flex:1 1 0;min-height:56px;border:0;border-radius:0;border-top:{i ===
         0
           ? '0'
-          : '1px solid #1f2836'};background:{s.bg};color:{s.fg};font-size:15px;font-weight:{s.weight};cursor:pointer;padding:0 4px;white-space:nowrap;font-variant-numeric:normal"
+          : '1px solid var(--u4-line-panel)'};background:{s.bg};color:{s.fg};font-size:15px;font-weight:{s.weight};cursor:pointer;padding:0 4px;white-space:nowrap;font-variant-numeric:normal"
         >{b.label}</button
       >
     {/each}

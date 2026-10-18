@@ -43,8 +43,8 @@
       `height:${props.height ?? 36}px;` +
       mw +
       `padding:${props.padding ?? '0 12px'};border-radius:3px;` +
-      `border:${props.border ?? '1px solid #3a414c'};` +
-      `background:${props.bg ?? '#2b3038'};color:${props.fg ?? '#e8edf5'};` +
+      `border:${props.border ?? '1px solid var(--u4-line-ctl)'};` +
+      `background:${props.bg ?? 'var(--u4-btn-bg)'};color:${props.fg ?? 'var(--u4-text-1)'};` +
       `font-size:${props.fontSize ?? 13}px;cursor:pointer`,
   );
 </script>

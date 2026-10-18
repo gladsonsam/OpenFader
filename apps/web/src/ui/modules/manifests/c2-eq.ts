@@ -51,8 +51,8 @@ export const manifests: ModuleManifest[] = [
     component: as(EqHead),
     props: {
       label: { type: 'text', default: '' },
-      bg: { type: 'color', default: '#2b3038' },
-      fg: { type: 'color', default: '#e8edf5' },
+      bg: { type: 'color', default: 'var(--u4-btn-bg)' },
+      fg: { type: 'color', default: 'var(--u4-text-1)' },
       pressed: { type: 'text', default: 'false' },
       ariaLabel: { type: 'text', default: 'EQ in' },
     },
