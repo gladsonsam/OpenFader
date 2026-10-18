@@ -148,13 +148,14 @@
     width: var(--kd);
     height: var(--kd);
     border-radius: 50%;
-    background: radial-gradient(circle at 35% 30%, #232a35, #10141a 70%);
-    border: 1px solid var(--line);
+    background: radial-gradient(circle at 35% 30%, #2a3240, #0d1117 72%);
+    border: 1px solid var(--line2);
     position: relative;
     cursor: ns-resize;
     touch-action: none;
+    box-shadow: var(--shadow-recess), 0 2px 4px rgba(0,0,0,0.5);
   }
-  .kring.grab { border-color: var(--acc); box-shadow: 0 0 10px var(--acc); }
+  .kring.grab { border-color: var(--acc); box-shadow: 0 0 14px var(--acc), inset 0 0 6px rgba(63,169,245,0.25); }
   .kptr {
     position: absolute;
     inset: 4px;
@@ -164,11 +165,12 @@
     content: '';
     position: absolute;
     left: calc(50% - 1.5px);
-    top: 1px;
+    top: 2px;
     width: 3px;
-    height: calc(var(--kd) / 2 - 8px);
+    height: calc(var(--kd) / 2 - 10px);
     background: var(--acc);
     border-radius: 2px;
+    box-shadow: 0 0 6px var(--acc);
   }
   .klabel { font-size: 10px; font-weight: 800; color: var(--dim); text-transform: uppercase; letter-spacing: 0.4px; }
   .kval { font-size: 11px; color: var(--txt); min-height: 15px; font-variant-numeric: tabular-nums; }
