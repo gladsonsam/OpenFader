@@ -65,7 +65,7 @@
           onEvent?.('recolor', { color: tape.color, text: tape.text });
         }}
         style="height:28px;padding:0;border-radius:3px;border:{props.selectedColor === tape.color
-          ? '2px solid #ffffff'
+          ? '2px solid var(--u4-seg-on-bg)'
           : '1px solid rgba(0,0,0,.5)'};background:{tape.color};cursor:pointer"
       ></button>
     {/each}
@@ -81,7 +81,7 @@
         onEvent?.('reicon', { icon: null });
       }}
       style="height:32px;padding:0;border-radius:3px;border:{selectedIcon == null
-        ? '2px solid #ffffff'
+        ? '2px solid var(--u4-seg-on-bg)'
         : '1px solid var(--u4-line-ctl)'};background:transparent;color:var(--u4-text-dim);font-size:11px;font-weight:600;cursor:pointer"
       >None</button
     >
@@ -98,7 +98,7 @@
         }}
         style="height:32px;padding:0;border-radius:3px;display:flex;align-items:center;justify-content:center;border:{selectedIcon ===
         iconName
-          ? '2px solid #ffffff'
+          ? '2px solid var(--u4-seg-on-bg)'
           : '1px solid var(--u4-line-ctl)'};background:transparent;color:var(--u4-text-1);cursor:pointer"
       >
         <svg

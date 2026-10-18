@@ -159,7 +159,7 @@ export function inputVm(w: World): InputVm | null {
     delayFg: inp.delayOn ? '#10240f' : 'var(--u4-text-4)',
     invert: inp.invert,
     invertBg: inp.invert ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
-    invertFg: inp.invert ? '#0b0f14' : 'var(--u4-text-4)',
+    invertFg: inp.invert ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
     phantomOn: inp.phantom,
     armed,
     phantomLabel: armed
@@ -217,7 +217,7 @@ export function sendRowsVm(ch: Channel): SendRowVm[] {
       preLabel: pre ? 'Pre' : 'Post',
       preAria: 'Mix ' + (k + 1) + ' pre-fader',
       preBg: pre ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
-      preFg: pre ? '#0b0f14' : 'var(--u4-text-4)',
+      preFg: pre ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
     };
   });
 }

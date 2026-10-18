@@ -175,13 +175,13 @@ export function stripsPerScreen(spp: number | null): number {
 
 /**
  * Phone strip-grid columns (responsive `phone` variant in mixer.default.json).
- * Wider 215 px strips fit the side-by-side mute/solo row without cramping;
- * ~1.7 fill the ~282 px phone scrollport (390 px viewport minus shell
- * padding, the 96 px phone master and gaps); the 16 fixed columns keep
- * the bank a horizontally snapping pager the user swipes through.
+ * Narrow 140px strips fit a side-by-side mute/solo pair with room to spare;
+ * ~2 fill the ~282px phone scrollport (390px viewport minus shell padding,
+ * the 96px phone master and gaps); the 16 fixed columns keep the bank a
+ * horizontally snapping pager the user swipes through.
  */
 export function phoneGridCols(): string {
-  return 'repeat(16, 300px)';
+  return 'repeat(16, 140px)';
 }
 
 /**
