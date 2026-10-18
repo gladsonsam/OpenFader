@@ -53,6 +53,38 @@
             "kind": "comp",
             "color": "#ff9f43"
           },
+          "on": {
+            "thr": {
+              "do": "channel.dynKnob",
+              "args": {
+                "id": { "$expr": "selId" },
+                "which": { "$expr": "dynKind" },
+                "prop": "thr",
+                "value": { "$expr": "payload.value" },
+                "locked": { "$expr": "store.locked" }
+              }
+            },
+            "ratio": {
+              "do": "channel.dynKnob",
+              "args": {
+                "id": { "$expr": "selId" },
+                "which": { "$expr": "dynKind" },
+                "prop": "ratio",
+                "value": { "$expr": "payload.value" },
+                "locked": { "$expr": "store.locked" }
+              }
+            },
+            "makeup": {
+              "do": "channel.dynKnob",
+              "args": {
+                "id": { "$expr": "selId" },
+                "which": { "$expr": "dynKind" },
+                "prop": "makeup",
+                "value": { "$expr": "payload.value" },
+                "locked": { "$expr": "store.locked" }
+              }
+            }
+          },
           "bind": {
             "aria": "dynAria",
             "path": "dynPath",
@@ -75,7 +107,12 @@
           "module": "dyn-knob-panel",
           "props": {
             "kind": "comp",
-            "color": "#ff9f43"
+            "color": "#ff9f43",
+            "size": 104
+          },
+          "variants": {
+            "tablet": { "props": { "size": 88 } },
+            "phone": { "props": { "size": 76 } }
           },
           "bind": {
             "knobs": "dynKnobs",
