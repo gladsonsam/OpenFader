@@ -474,7 +474,6 @@
   }
   .show { font-weight: 800; color: var(--acc); }
   .clock { font-variant-numeric: tabular-nums; color: var(--txt); }
-  .eng, .sr { color: var(--dim); font-variant-numeric: tabular-nums; }
   .sbadge { padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; }
   .sbadge.off { background: #3a1416; color: #ff8a8e; }
   .sbadge.on { background: #123a1e; color: #7dffa4; }
