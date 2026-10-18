@@ -80,6 +80,7 @@ import {
   toggleSolo,
   togglePhantom,
   toggleSendPre,
+  toggleRoute,
   resetPan,
   unpatch,
   unlock,
@@ -165,11 +166,102 @@ function liveEngine(): EngineWorld | null {
 }
 
 /**
+ * Engine -> fixture live sync (desk-side moves show in the fixture UI).
+ *
+ * The fixture store stays the display model, but fader/mute are now
+ * bidirectional: every engine ingest (write echo, poller diff, or the
+ * desk-broadcast fast path) re-runs this sync, copying confirmed engine
+ * values into the mapped fixture strips. Strips with an unconfirmed local
+ * edit (`pending`) are skipped so a user drag never fights the network;
+ * unmapped families (mtx, anything the desk lacks) stay fixture-local.
+ * While syncing, `forward` is muted so a desk move is never echoed back
+ * to the desk as a new write.
+ */
+let syncing = false;
+
+/** Engine strip -> fixture id (inverse of `bridgeStrip`; null = no strip). */
+function engineChToFixture(w: EngineWorld, ch: number): string | null {
+  const kind = w.kindOf(ch);
+  if (!kind) return null;
+  if (kind === 'main') return 'mainlr';
+  let n = 1;
+  for (let c = 0; c < ch; c++) {
+    if (w.kindOf(c) === kind) n++;
+  }
+  switch (kind) {
+    case 'in':
+      return `in${n}`;
+    case 'bus':
+      return `mix${n}`;
+    case 'fxsnd':
+      return `fxs${n}`;
+    case 'dca':
+      return `dca${n}`;
+    case 'ret':
+      return `fx${n}`;
+    default:
+      return null;
+  }
+}
+
+function syncWorldToFixture(w: EngineWorld): void {
+  if (live.phase !== 'online' || !w.capsReady) return;
+  syncing = true;
+  try {
+    let changed = false;
+    for (let ch = 0; ch < w.stripCount; ch++) {
+      const id = engineChToFixture(w, ch);
+      const slot = id ? world.chans[id] : undefined;
+      if (!id || !slot) continue;
+      // param() prefers optimistic values; pending strips are skipped, so
+      // this only ever copies confirmed desk truth.
+      if (w.status(ch, 'fader') !== 'pending') {
+        const f = w.param(ch, 'fader');
+        if (typeof f === 'number' && typeof slot.fader === 'number' && Math.abs(slot.fader - f) > 1e-6) {
+          slot.fader = f;
+          changed = true;
+        }
+      }
+      if (w.status(ch, 'mute') !== 'pending') {
+        const m = w.param(ch, 'mute');
+        if (typeof m === 'boolean' && slot.mute !== m) {
+          slot.mute = m;
+          changed = true;
+        }
+      }
+    }
+    if (changed) update(world);
+  } finally {
+    syncing = false;
+  }
+}
+
+// (Re)subscription now fans out through `live.observeWorld` (wired once
+// in `initFromUrl`), so no lazy per-world bookkeeping lives here.
+
+// Diagnostics hook (same pattern as live.svelte.ts `__live`): lets
+// verification scripts observe fixture fader/mute without touching the UI.
+try {
+  (
+    window as unknown as {
+      __fixture?: { fader: (id: string) => unknown; mute: (id: string) => unknown };
+    }
+  ).__fixture = {
+    fader: (id: string) => world.chans[id]?.fader,
+    mute: (id: string) => world.chans[id]?.mute,
+  };
+} catch {
+  /* non-browser (node tests) */
+}
+
+/**
  * Forward one edit to the desk over the live link. Silent no-op in fixture
  * mode (or when the engine refuses the id); the fixture model stays the
  * source of truth and engine denials surface as world error events.
+ * Muted while the engine->fixture sync applies desk moves (no echo-back).
  */
 function forward(fn: (w: EngineWorld) => void): void {
+  if (syncing) return;
   const w = liveEngine();
   if (!w) return;
   try {
@@ -251,6 +343,9 @@ export const ui = {
     const r = initialStateFromUrl(search, world.state, world.chans);
     update({ state: r.state, chans: world.chans, fx: world.fx });
     live.initFromUrl(search);
+    // Engine -> fixture live sync: desk-side fader/mute moves flow into the
+    // fixture display model (no-op offline; pending local edits win).
+    live.observeWorld((w) => syncWorldToFixture(w));
     frozen = r.freeze;
     refreshMeterIds();
     return { fixture: r.fixture, freeze: r.freeze };
@@ -430,6 +525,14 @@ export const ui = {
       const target = world.state.patchSel;
       update(patchSrc(world, label));
       forward(w => { bridgePatch(w, target, label); });
+    },
+    toggleRoute: (id: string, label: string) => {
+      update(toggleRoute(world, id, label));
+      const cur = world.chans[id]?.src;
+      forward(w => {
+        if (cur === label) bridgePatch(w, id, label);
+        else bridgeUnpatch(w, id);
+      });
     },
     unpatch: () => {
       const target = world.state.patchSel;

@@ -1,31 +1,32 @@
 {
   "id": "routing",
-  "module": "row",
+  "module": "col",
   "props": {
     "gap": 6,
-    "wrap": true,
     "flex": "1 1 auto",
-    "width": "100%"
+    "minWidth": 0,
+    "minHeight": 0
   },
   "children": [
     {
-      "id": "channels",
+      "id": "patchbay",
       "module": "col",
       "props": {
         "tag": "section",
-        "label": "Channels",
+        "label": "Patchbay",
         "gap": 10,
         "padding": 12,
         "radius": 3,
         "border": "1px solid #1f2836",
         "background": "#0e1520",
-        "flex": "1 1 400px",
+        "flex": "1 1 auto",
         "minWidth": 0,
+        "minHeight": 0,
         "box": "content-box"
       },
       "children": [
         {
-          "id": "ch-head",
+          "id": "mx-head",
           "module": "row",
           "props": {
             "align": "center",
@@ -35,25 +36,25 @@
           },
           "children": [
             {
-              "id": "ch-label",
+              "id": "mx-hint",
               "module": "text",
               "props": {
                 "tag": "span",
-                "value": "Pick a channel",
+                "value": "Tap a cell to patch · tap a lit cell to unpatch",
                 "size": 12,
                 "color": "#8f9bb0",
                 "margin": "0 auto 0 0"
               }
             },
             {
-              "id": "ch-banks",
+              "id": "mx-banks",
               "module": "repeat",
               "props": {
                 "over": "list:routeBanks"
               },
               "children": [
                 {
-                  "id": "ch-bank",
+                  "id": "mx-bank",
                   "module": "btn",
                   "props": {
                     "height": 36,
@@ -78,99 +79,16 @@
                   }
                 }
               ]
-            }
-          ]
-        },
-        {
-          "id": "ch-grid",
-          "module": "grid",
-          "props": {
-            "columns": "repeat(4,minmax(0,1fr))",
-            "gap": 6,
-            "box": "content-box"
-          },
-          "children": [
-            {
-              "id": "ch-tiles",
-              "module": "repeat",
-              "props": {
-                "over": "list:routeTiles"
-              },
-              "children": [
-                {
-                  "id": "ch-tile",
-                  "module": "route-tile",
-                  "bind": {
-                    "name": "item.name",
-                    "src": "item.src",
-                    "srcColor": "item.srcColor",
-                    "pressed": "item.pressed ? 'true' : 'false'",
-                    "border": "item.border",
-                    "bg": "item.bg"
-                  },
-                  "on": {
-                    "press": {
-                      "do": "ui.setPatchSel",
-                      "args": {
-                        "id": {
-                          "$expr": "item.id"
-                        }
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "id": "sources",
-      "module": "col",
-      "props": {
-        "tag": "section",
-        "label": "Sources",
-        "gap": 10,
-        "padding": 12,
-        "radius": 3,
-        "border": "1px solid #1f2836",
-        "background": "#0e1520",
-        "flex": "1 1 400px",
-        "minWidth": 0,
-        "box": "content-box"
-      },
-      "children": [
-        {
-          "id": "src-head",
-          "module": "row",
-          "props": {
-            "align": "center",
-            "wrap": true,
-            "gap": 8,
-            "box": "content-box"
-          },
-          "children": [
-            {
-              "id": "src-label",
-              "module": "text",
-              "props": {
-                "tag": "span",
-                "value": "Patch {{ routing.selName }} to",
-                "size": 12,
-                "color": "#8f9bb0",
-                "margin": "0 auto 0 0"
-              }
             },
             {
-              "id": "src-groups",
+              "id": "mx-groups",
               "module": "repeat",
               "props": {
                 "over": "list:routeGroups"
               },
               "children": [
                 {
-                  "id": "src-group",
+                  "id": "mx-group",
                   "module": "btn",
                   "props": {
                     "height": 36,
@@ -196,77 +114,51 @@
                   }
                 }
               ]
-            },
+            }
+          ]
+        },
+        {
+          "id": "mx-scroll",
+          "module": "scroll",
+          "props": {
+            "direction": "row",
+            "flex": "1 1 auto",
+            "minWidth": 0,
+            "minHeight": 0,
+            "dragScroll": true
+          },
+          "children": [
             {
-              "id": "src-unpatch",
-              "module": "btn",
+              "id": "mx-matrix",
+              "module": "route-matrix",
               "props": {
-                "label": "Unpatch",
-                "height": 36,
-                "fontSize": 13,
-                "bg": "#2a0d0e",
-                "fg": "#f2d6d6",
-                "border": "1px solid #6a1b1e",
-                "bare": true
+                "cell": 54,
+                "headW": 180
+              },
+              "variants": {
+                "tablet": { "props": { "cell": 46, "headW": 150 } },
+                "phone": { "props": { "cell": 42, "headW": 118 } }
+              },
+              "bind": {
+                "rows": "routing.matrix.rows",
+                "cols": "routing.matrix.cols",
+                "used": "routing.matrix.used"
               },
               "on": {
                 "press": {
-                  "do": "ui.unpatch"
+                  "do": "ui.toggleRoute",
+                  "args": {
+                    "id": {
+                      "$expr": "payload.rowId"
+                    },
+                    "label": {
+                      "$expr": "payload.col"
+                    }
+                  }
                 }
               }
             }
           ]
-        },
-        {
-          "id": "src-grid",
-          "module": "grid",
-          "props": {
-            "columns": "repeat(auto-fill,minmax(76px,1fr))",
-            "gap": 5,
-            "box": "content-box"
-          },
-          "children": [
-            {
-              "id": "src-tiles",
-              "module": "repeat",
-              "props": {
-                "over": "list:srcTiles"
-              },
-              "children": [
-                {
-                  "id": "src-tile",
-                  "module": "src-tile",
-                  "bind": {
-                    "label": "item.label",
-                    "used": "item.used",
-                    "pressed": "item.pressed ? 'true' : 'false'",
-                    "bg": "item.bg",
-                    "fg": "item.fg",
-                    "border": "item.border"
-                  },
-                  "on": {
-                    "press": {
-                      "do": "ui.patchSrc",
-                      "args": {
-                        "label": {
-                          "$expr": "item.label"
-                        }
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "id": "src-note",
-          "module": "text",
-          "props": {
-            "value": "After patching, the selection moves to the next channel.",
-            "size": 13,
-            "color": "#8792a4"
-          }
         }
       ]
     }

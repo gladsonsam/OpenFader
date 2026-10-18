@@ -12,7 +12,7 @@ const tree = JSON.parse(
   readFileSync(new URL('../../layouts/routing.default.json', import.meta.url), 'utf8'),
 ) as LayoutNode;
 
-const LEAVES = new Set(['btn', 'route-tile', 'src-tile', 'text']);
+const LEAVES = new Set(['btn', 'route-matrix', 'text']);
 const KNOWN_ON = new Set(['press']);
 
 function walk(n: LayoutNode, out: LayoutNode[]): LayoutNode[] {
@@ -29,16 +29,16 @@ function walk(n: LayoutNode, out: LayoutNode[]): LayoutNode[] {
 }
 
 {
-  assert.equal(tree.module, 'row');
+  assert.equal(tree.module, 'col');
   const nodes = walk(tree, []);
   for (const n of nodes) {
     assert.ok(CONTAINERS.has(n.module) || LEAVES.has(n.module), `unknown module "${n.module}" at ${n.id}`);
   }
   const ids = nodes.map(n => n.id);
-  assert.ok(ids.includes('channels') && ids.includes('sources'), ids.join(','));
+  assert.ok(ids.includes('patchbay') && ids.includes('mx-matrix') && ids.includes('mx-scroll'), ids.join(','));
   // repeats own exactly one template and read screen lists
   const reps = nodes.filter(n => n.module === 'repeat');
-  assert.deepEqual(reps.map(r => r.id).sort(), ['ch-banks', 'ch-tiles', 'src-groups', 'src-tiles']);
+  assert.deepEqual(reps.map(r => r.id).sort(), ['mx-banks', 'mx-groups']);
   for (const r of reps) {
     assert.equal(r.children?.length, 1, r.id);
     assert.ok(String((r.props as Record<string, unknown>)?.['over']).startsWith('list:'), r.id);
@@ -54,7 +54,11 @@ function walk(n: LayoutNode, out: LayoutNode[]): LayoutNode[] {
   }
   // sections keep landmark labels + content-box cards
   const secs = nodes.filter(n => (n.props as Record<string, unknown> | undefined)?.['tag'] === 'section');
-  assert.deepEqual(secs.map(s => (s.props as Record<string, unknown>)['label']).sort(), ['Channels', 'Sources']);
+  assert.deepEqual(secs.map(s => (s.props as Record<string, unknown>)['label']).sort(), ['Patchbay']);
+  // the matrix toggles the route for that channel+source (no bank jumping)
+  const matrix = nodes.find(n => n.id === 'mx-matrix');
+  assert.equal(matrix?.module, 'route-matrix');
+  assert.equal((matrix?.on?.['press'] as { do: string } | undefined)?.do, 'ui.toggleRoute');
   assert.ok(secs.every(s => (s.props as Record<string, unknown>)['box'] === 'content-box'));
 }
 
