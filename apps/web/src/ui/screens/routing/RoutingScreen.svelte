@@ -21,7 +21,12 @@
   const scope = $derived({
     store: ui.state,
     routing: vm,
-    lists: { routeBanks: vm.banks, routeTiles: vm.tiles, routeGroups: vm.groups, srcTiles: vm.srcTiles },
+    lists: {
+      routeBanks: vm.banks,
+      routeTiles: vm.tiles,
+      routeGroups: vm.groups,
+      srcTiles: vm.srcTiles,
+    },
   });
   const source = fixtureSource({});
 </script>

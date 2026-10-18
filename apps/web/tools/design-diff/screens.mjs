@@ -138,8 +138,7 @@ export const SCREENS = {
     boxes: [
       ...HEADER,
       ...BACK,
-      { name: "sec-channels", match: { kind: "aria", value: "Channels" } },
-      { name: "sec-sources", match: { kind: "aria", value: "Sources" } },
+      { name: "sec-patchbay", match: { kind: "aria", value: "Patchbay" } },
       { name: "route-bank", match: { kind: "text", value: "1–16" } },
     ],
   },
