@@ -12,6 +12,7 @@ import type { Component } from 'svelte';
 import type { ModuleManifest, ModuleProps } from '../types.ts';
 import Btn from '../generic/Btn.svelte';
 import RouteTile from '../../screens/routing/RouteTile.svelte';
+import RouteMatrix from '../../screens/routing/RouteMatrix.svelte';
 import SrcTile from '../../screens/routing/SrcTile.svelte';
 import StatusDot from '../../screens/connection/StatusDot.svelte';
 import DeviceRow from '../../screens/connection/DeviceRow.svelte';
@@ -77,6 +78,22 @@ export const manifests: ModuleManifest[] = [
     },
     defaults: { label: 'Lcl 01' },
     size: { minW: 76 },
+    events: pressEvent,
+  },
+  {
+    id: 'route-matrix',
+    title: 'Routing patchbay matrix',
+    category: 'screen',
+    component: as(RouteMatrix),
+    props: {
+      rows: { type: 'object', default: [] },
+      cols: { type: 'object', default: [] },
+      used: { type: 'object', default: {} },
+      cell: { type: 'number', min: 32, max: 72, step: 2, unit: 'px', default: 54 },
+      headW: { type: 'number', min: 80, max: 240, step: 2, unit: 'px', default: 180 },
+    },
+    defaults: {},
+    size: {},
     events: pressEvent,
   },
   {

@@ -47,3 +47,24 @@ export function unpatch(w: World): World {
   if (w.state.locked) return w;
   return withChannel(w, w.state.patchSel, c => { c.src = '—'; });
 }
+
+/** Matrix patch: set one channel's source without advancing the selection
+ * (the grid stays put so the user can keep patching). Lock-checked. */
+export function patchChannelSrc(w: World, id: string, label: string): World {
+  if (w.state.locked) return w;
+  return withChannel(w, id, c => { c.src = label; });
+}
+
+/** Matrix unpatch: clear one channel's source. Lock-checked. */
+export function unpatchChannel(w: World, id: string): World {
+  if (w.state.locked) return w;
+  return withChannel(w, id, c => { c.src = '—'; });
+}
+
+/** Matrix cell tap: tapping the channel's current source unpatches it,
+ * tapping anything else patches there. Unknown ids are ignored. */
+export function toggleRoute(w: World, id: string, label: string): World {
+  const cur = w.chans[id]?.src;
+  if (cur === undefined) return w;
+  return cur === label ? unpatchChannel(w, id) : patchChannelSrc(w, id, label);
+}
