@@ -8,6 +8,7 @@ import {
   type Channel,
   type FxSlot,
 } from '../../fixtures/designData.ts';
+import type { ThemePresetId } from '../../modules/theme.ts';
 
 export type Mode = 'mixer' | 'channel' | 'fx' | 'routing' | 'connect' | 'settings' | 'scenes';
 export type Tab = 'input' | 'eq' | 'gate' | 'comp' | 'sends';
@@ -40,6 +41,8 @@ export interface UiState {
   spp: number | null;
   peakHold: boolean;
   locked: boolean;
+  /** UI theme preset id (Settings > Display; design-dark is the default). */
+  theme: ThemePresetId;
   sceneConfirm: boolean;
   phantomArm: string | null;
   fxSel: number;
@@ -67,7 +70,7 @@ export function initialUiState(): UiState {
   return {
     mode: 'mixer', prevMode: 'mixer', tab: 'eq', bank: 'ch1', sel: 'in1', selBand: 1,
     fine: false, muteEnable: true, sof: false, mix: 0, scene: 4, scenePv: 4,
-    spp: null, peakHold: true, locked: false, sceneConfirm: true, phantomArm: null,
+    spp: null, peakHold: true, locked: false, theme: 'design-dark', sceneConfirm: true, phantomArm: null,
     fxSel: 0, patchSel: 'in1', patchGroup: 'Lcl', routeBank: 0, pendingPatch: null, nameEdit: null,
     connected: 'foh', lastScan: 'Scanned at start-up',
   };

@@ -1,7 +1,7 @@
 <!-- 46x46 header-style icon button (FX/Routing/Connect/Settings).
-     Template: width/height 46px, radius 3px, border #2a323f inactive /
-     #5a6577 active, bg #0d1219 / #232b37, colour #dfe6ef, optional 8px
-     status dot with `box-shadow: 0 0 0 2px #0d1219` ring (Connect button). -->
+     Template: width/height 46px, radius 3px, border var(--u4-divider) inactive /
+     #5a6577 active, bg var(--u4-tile-bg) / #232b37, colour var(--u4-text-3), optional 8px
+     status dot with `box-shadow: 0 0 0 2px var(--u4-tile-bg)` ring (Connect button). -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
 
@@ -34,7 +34,7 @@
   {@render children()}
   {#if dot !== null}
     <span
-      style="position:absolute;right:6px;top:6px;width:8px;height:8px;border-radius:50%;background:{dot};box-shadow:0 0 0 2px #0d1219"
+      style="position:absolute;right:6px;top:6px;width:8px;height:8px;border-radius:50%;background:{dot};box-shadow:0 0 0 2px var(--u4-tile-bg)"
     ></span>
   {/if}
 </button>

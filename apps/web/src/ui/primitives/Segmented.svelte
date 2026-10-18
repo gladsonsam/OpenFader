@@ -1,9 +1,9 @@
 <!-- Segmented option group (Settings Off/On rows, 8/12/16 strips, route
      bank chips, EQ type chips, send-target 1-16 pads, Confirm/Instant).
-     Template: selected = light bg (#e8edf5 / #eef2f7) with dark text #0b0f14,
-     unselected dark (#2b3038, settings #1b222d) with #c9d1dc text;
-     Settings rows: h40 min-w 52 radius 3, selected border #e8edf5,
-     unselected #343d4b; route chips h36 border #3a414c. -->
+     Template: selected = light bg (var(--u4-text-1) / var(--u4-text-2)) with dark text #0b0f14,
+     unselected dark (var(--u4-btn-bg), settings var(--u4-seg-opt-bg)) with var(--u4-text-4) text;
+     Settings rows: h40 min-w 52 radius 3, selected border var(--u4-text-1),
+     unselected var(--u4-seg-border); route chips h36 border var(--u4-line-ctl). -->
 <script lang="ts">
   export interface SegmentOption {
     value: string;
@@ -26,9 +26,9 @@
     height?: number;
     minWidth?: number;
     radius?: number;
-    /** override for unselected bg (settings rows use #1b222d) */
+    /** override for unselected bg (settings rows use var(--u4-seg-opt-bg)) */
     darkBg?: string | null;
-    /** override for unselected border (settings rows use #343d4b) */
+    /** override for unselected border (settings rows use var(--u4-seg-border)) */
     darkBorder?: string | null;
     onpick: (value: string) => void;
   } = $props();

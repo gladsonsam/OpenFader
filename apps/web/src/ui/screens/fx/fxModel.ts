@@ -9,20 +9,20 @@
 //
 // Design facts encoded:
 //   slot grid: repeat(auto-fit, minmax(140px, 1fr)), gap 6;
-//   slot card: button, h 96, border 2px (sel #b28cff else #222a36),
-//     bg (sel #1b2330 else #0e1520); name 12px #a7b1c0; state 11px/600
-//     (on #7be27b else #f0b44a); type 18px/600; ret 12px #8792a4;
+//   slot card: button, h 96, border 2px (sel #b28cff else var(--u4-line-faint)),
+//     bg (sel #1b2330 else var(--u4-panel-bg)); name 12px var(--u4-text-5); state 11px/600
+//     (on #7be27b else #f0b44a); type 18px/600; ret 12px var(--u4-text-7);
 //     meter bar h 4 bg #1a2332, fill #b28cff, width on ? dbToPos% : 0;
 //   detail panel: flex 1 1 auto, min-h 300, col, gap 16, padding 14,
-//     radius 3, border #1f2836, bg #0e1520;
+//     radius 3, border var(--u4-line-panel), bg var(--u4-panel-bg);
 //   title 20px/600 `FX n · Type`; tap button (Delay only) h 44
 //     `Tap · N BPM` | `Tap tempo`; on toggle h 44 (on #5cdb5c/#10240f +
 //     border #5cdb5c else #2a1f0a/#f6c76a + border #f0b44a);
 //   type grid: auto-fit minmax(96px, 1fr), gap 6, buttons h 44
-//     (sel #b28cff/#1a0f2e else #2b3038/#c9d1dc);
+//     (sel #b28cff/#1a0f2e else var(--u4-btn-bg)/var(--u4-text-4));
 //   knobs: flex wrap space-around center gap 16; 92px FX-style ring knobs
-//     (P1 Knob, norm mode, accent #b28cff), label 12px #8f9bb0,
-//     value 15px #e8edf5; Chorus/Flanger have 4 knobs, the rest 5.
+//     (P1 Knob, norm mode, accent #b28cff), label 12px var(--u4-text-6),
+//     value 15px var(--u4-text-1); Chorus/Flanger have 4 knobs, the rest 5.
 //
 // Run: node --experimental-strip-types apps/web/src/ui/screens/fx/fxModel.test.ts
 
@@ -154,8 +154,8 @@ export function buildFxSlotVm(
     state: fxStateLabel(slot),
     stateColor: slot.on ? '#7be27b' : '#f0b44a',
     pressed: selected,
-    border: selected ? '#b28cff' : '#222a36',
-    bg: selected ? '#1b2330' : '#0e1520',
+    border: selected ? '#b28cff' : 'var(--u4-line-faint)',
+    bg: selected ? '#1b2330' : 'var(--u4-panel-bg)',
     ret: fxRetLabel(index),
     meterPct: meterPctText(slot.on, levelDb),
   };
@@ -212,8 +212,8 @@ export function fxTypeButtons(curType: string): FxTypeVm[] {
   return FX_TYPES.map(t => ({
     label: t,
     pressed: t === curType,
-    bg: t === curType ? '#b28cff' : '#2b3038',
-    fg: t === curType ? '#1a0f2e' : '#c9d1dc',
+    bg: t === curType ? '#b28cff' : 'var(--u4-btn-bg)',
+    fg: t === curType ? '#1a0f2e' : 'var(--u4-text-4)',
   }));
 }
 

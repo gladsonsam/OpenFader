@@ -59,7 +59,7 @@ export const icons = {
     1.8,
     { linecap: 'round', linejoin: 'round' },
   ),
-  /** Chevron down (scene dropdown button, 16x16, stroke #a7b1c0 2.2) */
+  /** Chevron down (scene dropdown button, 16x16, stroke var(--u4-text-5) 2.2) */
   chevronDown: def(
     '0 0 24 24',
     '<path d="M6 9l6 6 6-6"></path>',

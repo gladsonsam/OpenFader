@@ -49,7 +49,7 @@ function ok(cond: unknown, msg: string): void {
   ok(entries[0].note === 'Lcl 02', 'input sub-label is the patch source, got ' + entries[0].note);
   ok(entries[0].current && entries[0].border === ch.color && entries[0].bg === '#363d48', 'selected tab has channel-colour border');
   for (const e of entries.slice(1)) {
-    ok(!e.current && e.border === '#2b3038' && e.bg === '#2b3038', 'unselected tab neutral: ' + e.id);
+    ok(!e.current && e.border === 'var(--u4-btn-bg)' && e.bg === 'var(--u4-btn-bg)', 'unselected tab neutral: ' + e.id);
   }
   const eq = tabListEntries(ch, 'eq');
   ok(eq[1].current && eq[1].border === ch.color, 'selection follows the store tab');
@@ -96,9 +96,9 @@ function ok(cond: unknown, msg: string): void {
   ok(vm.delayText === '0.00 ms', 'delay ' + vm.delayText);
   ok(vm.delayDist === '≈ 0.00 m of distance', 'dist ' + vm.delayDist);
   ok(vm.srcName === 'Lcl 02' && vm.srcGroup === 'Local input', 'source');
-  ok(vm.delayLabel === 'Off' && vm.delayBg === '#2b3038', 'delay off toggle');
+  ok(vm.delayLabel === 'Off' && vm.delayBg === 'var(--u4-btn-bg)', 'delay off toggle');
   ok(vm.delayKnobColor === '#4a5262', 'delay knob grey when off');
-  ok(vm.phantomLabel === '48V Off' && vm.phantomBg === '#2b3038', 'phantom off');
+  ok(vm.phantomLabel === '48V Off' && vm.phantomBg === 'var(--u4-btn-bg)', 'phantom off');
   const armed = togglePhantom(w, 'in2');
   const avm = inputVm(armed)!;
   ok(avm.phantomLabel === 'Tap again: 48V on', 'armed label ' + avm.phantomLabel);
@@ -117,12 +117,12 @@ function ok(cond: unknown, msg: string): void {
   const rows = sendRowsVm(w.chans['in2']);
   ok(rows.length === 16, '16 mixes');
   ok(rows[0].name === 'Mix 1' && rows[15].name === 'Mix 16', 'names');
-  ok(rows[0].pre && rows[0].preLabel === 'Pre' && rows[0].fill === '#e8edf5', 'first 8 pre/white');
+  ok(rows[0].pre && rows[0].preLabel === 'Pre' && rows[0].fill === 'var(--u4-text-1)', 'first 8 pre/white');
   ok(!rows[8].pre && rows[8].preLabel === 'Post' && rows[8].fill === '#22d3e6', 'rest post/cyan');
   ok(rows[0].aria === 'Send to Mix 1 ' + rows[0].text + ' dB', 'row aria ' + rows[0].aria);
   ok(rows[0].preAria === 'Mix 1 pre-fader', 'pre aria');
-  ok(rows[0].preBg === '#e8edf5' && rows[0].preFg === '#0b0f14', 'pre button white');
-  ok(rows[8].preBg === '#2b3038' && rows[8].preFg === '#c9d1dc', 'post button dark');
+  ok(rows[0].preBg === 'var(--u4-text-1)' && rows[0].preFg === '#0b0f14', 'pre button white');
+  ok(rows[8].preBg === 'var(--u4-btn-bg)' && rows[8].preFg === 'var(--u4-text-4)', 'post button dark');
   ok(rows[0].pct === (w.chans['in2'].sends![0] * 100).toFixed(1), 'pct');
   const toggled = toggleSendPre(w, 'in2', 0);
   ok(sendRowsVm(toggled.chans['in2'])[0].preLabel === 'Post', 'pre/post toggle');

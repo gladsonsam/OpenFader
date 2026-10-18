@@ -22,7 +22,7 @@
   <button
     onclick={() => onEvent?.('prev')}
     aria-label="Previous channel"
-    style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:44px;border-radius:3px;border:1px solid #3a414c;background:#2b3038;color:#e8edf5;cursor:pointer;display:flex;align-items:center;justify-content:center"
+    style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:44px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-btn-bg);color:var(--u4-text-1);cursor:pointer;display:flex;align-items:center;justify-content:center"
   >
     <svg
       width="20"
@@ -39,7 +39,7 @@
   <button
     onclick={() => onEvent?.('next')}
     aria-label="Next channel"
-    style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:44px;border-radius:3px;border:1px solid #3a414c;background:#2b3038;color:#e8edf5;cursor:pointer;display:flex;align-items:center;justify-content:center"
+    style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:44px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-btn-bg);color:var(--u4-text-1);cursor:pointer;display:flex;align-items:center;justify-content:center"
   >
     <svg
       width="20"

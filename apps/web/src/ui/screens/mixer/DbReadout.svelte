@@ -24,4 +24,4 @@
   } = $props();
 </script>
 
-<div style="height:15px;flex:none;text-align:center;font-size:12px;color:{props.color ?? '#c9d1dc'}">{props.text ?? ''}</div>
+<div style="height:15px;flex:none;text-align:center;font-size:12px;color:{props.color ?? 'var(--u4-text-4)'}">{props.text ?? ''}</div>

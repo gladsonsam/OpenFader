@@ -30,6 +30,7 @@ export function registerSettingsActions(): void {
       };
       switch (key) {
         case 'spp': call('setSpp', parseInt(raw, 10)); break;
+        case 'theme': call('setTheme', raw); break;
         case 'peakHold': call('setPeakHold', raw === 'on'); break;
         case 'fine': call('setFine', raw === 'on'); break;
         case 'sof': call('setSof', raw === 'on'); break;

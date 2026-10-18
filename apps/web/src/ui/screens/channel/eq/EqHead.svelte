@@ -30,14 +30,14 @@
     onclick={() => onEvent?.('toggle')}
     aria-pressed={props.pressed ?? 'false'}
     aria-label={props.ariaLabel ?? 'EQ in'}
-    style="box-sizing:border-box;font-variant-numeric:normal;height:40px;padding:0 16px;border-radius:5px;border:1px solid #3a414c;background:{props.bg ??
-      '#2b3038'};color:{props.fg ?? '#e8edf5'};font-size:15px;cursor:pointer"
+    style="box-sizing:border-box;font-variant-numeric:normal;height:40px;padding:0 16px;border-radius:5px;border:1px solid var(--u4-line-ctl);background:{props.bg ??
+      'var(--u4-btn-bg)'};color:{props.fg ?? 'var(--u4-text-1)'};font-size:15px;cursor:pointer"
     >{props.label ?? ''}</button
   >
   <button
     onclick={() => onEvent?.('flat')}
     aria-label="Flatten EQ gains"
-    style="box-sizing:border-box;font-variant-numeric:normal;height:40px;padding:0 16px;border-radius:5px;border:1px solid #3a414c;background:#2b3038;color:#e8edf5;font-size:15px;cursor:pointer"
+    style="box-sizing:border-box;font-variant-numeric:normal;height:40px;padding:0 16px;border-radius:5px;border:1px solid var(--u4-line-ctl);background:var(--u4-btn-bg);color:var(--u4-text-1);font-size:15px;cursor:pointer"
     >Flat</button
   >
 </div>

@@ -3,12 +3,19 @@
 // the logic lives here; uiLogic.ts re-exports it). DOM-free, node-testable.
 
 import { clamp } from '../../fixtures/designData.ts';
+import { PRESETS, type ThemePresetId } from '../../modules/theme.ts';
 import { type World, withState } from './types.ts';
 
 // ---------- settings ----------
 
 export function setSpp(w: World, spp: number): World {
   return withState(w, { spp });
+}
+
+/** Switch the UI theme (unknown ids are ignored; design-dark is default). */
+export function setTheme(w: World, theme: string): World {
+  const id = (Object.keys(PRESETS) as ThemePresetId[]).includes(theme as ThemePresetId) ? (theme as ThemePresetId) : 'design-dark';
+  return withState(w, { theme: id });
 }
 
 export function setFine(w: World, v: boolean): World { return withState(w, { fine: v }); }
