@@ -14,12 +14,9 @@ free AND its files don't collide with the running worker.
    live screen bindings.
 
 ## Queued
-- RTA overlay for EQ (live spectrum on the EQ graph).
-- Presets: inbuilt presets + user presets (create/save/recall).
-- Global meter bridge (X-Air Edit Meters pattern: Analog Inputs 1-16+17/18,
-  Effects Sends 1-4, FX Returns, Bus Outputs 1-6, Mon/Solo, Main L/R, USB
-  Returns, P16 sends; grouped ladders 0..-50) with an icon button in the
-  topbar to open it.
+- (verification loop running; APK rebuild running)
+
+## Queued — server-side (later; venue PC on LAN + USB/ASIO)
 
 ## Queued — server-side (later; venue PC on LAN + USB/ASIO)
 - Automixing (gain-sharing across channels on the server).
@@ -43,3 +40,6 @@ free AND its files don't collide with the running worker.
 - Engine write-through (fader/mute/pan/sends move the desk, restored).
 - Full desk-state surfacing (names/colors/groups badges, groups card).
 - Repo rules: AGENTS.md (no frontend tests till MVP).
+- RTA overlay for EQ (live engine spectrum; honest non-analyzer caveat).
+- Presets (8 built-in + user save/recall/rename/delete, live-proven).
+- Global meter bridge (grouped ladders + topbar icon, live XR18 verified).
