@@ -26,7 +26,7 @@ export interface BankBtnStyle {
 /**
  * Bank-rail button colours (port of the bankBtns mapper in renderVals):
  * selected = the bank's own colour + dark/light text; unselected =
- * #161c26 tile with the bank's tint colour and a var(--u4-divider) border.
+ * var(--u4-bank-off) tile with the bank's tint colour and a var(--u4-divider) border.
  */
 export function bankBtnStyle(
   bank: { key: string; color: string; text: string },
