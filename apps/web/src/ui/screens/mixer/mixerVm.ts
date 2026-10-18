@@ -173,15 +173,35 @@ export function stripsPerScreen(spp: number | null): number {
   return visibleCount(spp);
 }
 
+/** All 48 input channels in order, for the phone pager (no banks: the
+ *  rail is hidden on phones and the snap pager scrolls the whole desk). */
+export function mixerAllCells(
+  state: UiState,
+  chans: Record<string, Channel>,
+  meter: MeterSim | null,
+  frozen: boolean,
+  liveDb?: (fixtureId: string) => number | null,
+  deskOf?: (fixtureId: string) => DeskGroups | null,
+): StripCell[] {
+  const out: StripCell[] = [];
+  for (let n = 1; n <= 48; n++) {
+    const id = 'in' + n;
+    const vm = stripVm(state, chans, id);
+    if (!vm) continue;
+    const desk = deskOf?.(id) ?? null;
+    out.push({ ...vm, desk, meter: stripMeterSource(chans, meter, frozen, state.peakHold, id, liveDb) });
+  }
+  return out;
+}
+
 /**
  * Phone strip-grid columns (responsive `phone` variant in mixer.default.json).
- * Narrow 120px strips: fader cap, mute/solo and pan all fit; ~2.3 fill the
- * ~282px phone scrollport (390px viewport minus shell padding, the 96px
- * phone master and gaps); the 16 fixed columns keep the bank a
- * horizontally snapping pager the user swipes through.
+ * Narrow 120px strips: fader cap, mute/solo and pan all fit; the 48 fixed
+ * columns keep the whole desk a horizontally snapping pager the user swipes
+ * through (no bank rail on phones).
  */
 export function phoneGridCols(): string {
-  return 'repeat(16, 120px)';
+  return 'repeat(48, 120px)';
 }
 
 /**
