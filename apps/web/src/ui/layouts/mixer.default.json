@@ -122,10 +122,10 @@
           "props": {
             "flex": "1 1 140px",
             "minHeight": 80,
-            "border": "1px solid #1f2836",
+            "border": "1px solid var(--u4-line-panel)",
             "radius": 3,
             "overflow": "hidden",
-            "background": "#0b111b",
+            "background": "var(--u4-well-bg-2)",
             "box": "content-box"
           },
           "children": [

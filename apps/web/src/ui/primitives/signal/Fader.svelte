@@ -28,7 +28,7 @@
     ariaLabel,
     variant = 'strip',
     accent = 'chan',
-    readColor = '#c9d1dc',
+    readColor = 'var(--u4-text-4)',
     disabled = false,
     fine = false,
     resetValue = null,

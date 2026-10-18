@@ -190,7 +190,7 @@ export function stripText(w: World, id: string): StripText | null {
     panText: panText(c.pan),
     panAria: panAria(c.name, c.pan),
     readout: fmtDb(pos),
-    readColor: useSend ? '#22d3e6' : '#c9d1dc',
+    readColor: useSend ? 'var(--u4-cyan)' : 'var(--u4-text-4)',
     faderAria: faderAria(c.name, pos, useSend, w.state.mix),
     muted: c.mute,
   };

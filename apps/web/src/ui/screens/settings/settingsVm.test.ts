@@ -17,7 +17,7 @@ const w0 = initialWorld();
 {
   assert.deepEqual(validateSettingDescriptors(SETTING_DESCRIPTORS), []);
   assert.deepEqual(SETTING_DESCRIPTORS.map(d => d.panel), [
-    'Display', 'Display', 'Faders', 'Faders', 'Faders', 'Safety', 'Safety', 'Safety', 'About', 'About',
+    'Display', 'Display', 'Display', 'Faders', 'Faders', 'Faders', 'Safety', 'Safety', 'Safety', 'About', 'About',
   ]);
   assert.ok(SETTING_DESCRIPTORS.every(d => d.bind.startsWith('setting:')));
   const dup = [...SETTING_DESCRIPTORS, SETTING_DESCRIPTORS[0]];
@@ -33,7 +33,7 @@ const w0 = initialWorld();
 {
   const vm = buildSettingsVm(w0.state);
   assert.deepEqual(vm.map(s => s.title), ['Display', 'Faders', 'Safety', 'About']);
-  assert.deepEqual(vm[0].rows.map(r => r.label), ['Strips per screen', 'Meter peak hold']);
+  assert.deepEqual(vm[0].rows.map(r => r.label), ['Strips per screen', 'Meter peak hold', 'Theme']);
   assert.deepEqual(vm[1].rows.map(r => r.label), ['Fine control', 'Sends on faders', 'Send target']);
   assert.deepEqual(vm[2].rows.map(r => r.label), ['Mute Enable', 'Screen lock', 'Scene recall']);
   assert.deepEqual(vm[3].rows.map(r => r.label), ['App version', 'Console']);
@@ -57,13 +57,13 @@ const w0 = initialWorld();
   assert.deepEqual(spp.options.map(o => o.pressed), [false, true, false]);
   assert.deepEqual(spp.options.map(o => o.value), ['8', '12', '16']);
   const sel = spp.options[1];
-  assert.equal(sel.bg, '#e8edf5');
-  assert.equal(sel.fg, '#0b0f14');
-  assert.equal(sel.border, '#e8edf5');
+  assert.equal(sel.bg, 'var(--u4-seg-on-bg)');
+  assert.equal(sel.fg, 'var(--u4-seg-on-fg)');
+  assert.equal(sel.border, 'var(--u4-seg-on-bg)');
   const unsel = spp.options[0];
-  assert.equal(unsel.bg, '#1b222d');
-  assert.equal(unsel.fg, '#c9d1dc');
-  assert.equal(unsel.border, '#343d4b');
+  assert.equal(unsel.bg, 'var(--u4-seg-opt-bg)');
+  assert.equal(unsel.fg, 'var(--u4-text-4)');
+  assert.equal(unsel.border, 'var(--u4-seg-border)');
   // Default store: peakHold on, fine off, sof off, muteEnable on, unlocked, confirm mode.
   assert.deepEqual(vm[0].rows[1].options.map(o => o.pressed), [false, true]);
   assert.deepEqual(vm[1].rows[0].options.map(o => o.pressed), [true, false]);

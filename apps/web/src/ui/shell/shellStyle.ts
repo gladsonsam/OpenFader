@@ -26,14 +26,14 @@ export interface BankBtnStyle {
 /**
  * Bank-rail button colours (port of the bankBtns mapper in renderVals):
  * selected = the bank's own colour + dark/light text; unselected =
- * #161c26 tile with the bank's tint colour and a #2a323f border.
+ * #161c26 tile with the bank's tint colour and a var(--u4-divider) border.
  */
 export function bankBtnStyle(
   bank: { key: string; color: string; text: string },
   active: boolean,
 ): BankBtnStyle {
   if (active) return { bg: bank.color, fg: bank.text, border: bank.color, weight: 600 };
-  return { bg: '#161c26', fg: BANK_TINT[bank.key] ?? '#e8edf5', border: '#2a323f', weight: 500 };
+  return { bg: 'var(--u4-bank-off)', fg: BANK_TINT[bank.key] ?? 'var(--u4-text-1)', border: 'var(--u4-divider)', weight: 500 };
 }
 
 export interface TileStyle {
@@ -43,10 +43,12 @@ export interface TileStyle {
 
 /**
  * Header toolbar / scene-button tile colours: active page = #232b37 on
- * #5a6577, inactive = #0d1219 on #2a323f (tb() in the design's renderVals).
+ * #5a6577, inactive = var(--u4-tile-bg) on var(--u4-divider) (tb() in the design's renderVals).
  */
 export function tileStyle(active: boolean): TileStyle {
-  return active ? { bg: '#232b37', border: '#5a6577' } : { bg: '#0d1219', border: '#2a323f' };
+  return active
+    ? { bg: 'var(--u4-tile-bg-on)', border: 'var(--u4-tile-border-on)' }
+    : { bg: 'var(--u4-tile-bg)', border: 'var(--u4-divider)' };
 }
 
 /** aria-current value used by every header toolbar button. */

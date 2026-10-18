@@ -101,8 +101,8 @@ export const manifests: ModuleManifest[] = [
     props: {
       kind: kindProp,
       label: { type: 'text', default: '' },
-      bg: { type: 'color', default: '#2b3038' },
-      fg: { type: 'color', default: '#c9d1dc' },
+      bg: { type: 'color', default: 'var(--u4-btn-bg)' },
+      fg: { type: 'color', default: 'var(--u4-text-4)' },
       pressed: { type: 'text', default: 'false' },
       summary: { type: 'text', default: '' },
     },

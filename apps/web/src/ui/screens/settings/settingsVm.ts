@@ -13,6 +13,7 @@
 // Run: node --experimental-strip-types apps/web/src/ui/screens/settings/settingsVm.test.ts
 
 import { visibleCount, type UiState } from '../../state/uiLogic.ts';
+import { PRESETS, type ThemePresetId } from '../../modules/theme.ts';
 
 export type SettingPanelId = 'Display' | 'Faders' | 'Safety' | 'About';
 export type SettingControl = 'segmented' | 'toggle' | 'pads' | 'none';
@@ -30,6 +31,7 @@ export interface SettingDescriptor {
 
 export const SETTING_DESCRIPTORS: SettingDescriptor[] = [
   { key: 'spp', panel: 'Display', title: 'Strips per screen', description: 'Fewer strips are wider and easier to hit. Swipe to reach the rest.', control: 'segmented', bind: 'setting:spp' },
+  { key: 'theme', panel: 'Display', title: 'Theme', description: 'Console Blue, Graphite, Tungsten or Daylight. Meters and accent colours stay put.', control: 'segmented', bind: 'setting:theme' },
   { key: 'peakHold', panel: 'Display', title: 'Meter peak hold', description: 'Keeps a line at the highest level for 1.5 s.', control: 'toggle', bind: 'setting:peakHold' },
   { key: 'fine', panel: 'Faders', title: 'Fine control', description: 'Faders and knobs move a quarter as far per drag.', control: 'toggle', bind: 'setting:fine' },
   { key: 'sof', panel: 'Faders', title: 'Sends on faders', description: 'Strip faders set sends to the target mix. The master strip shows that mix.', control: 'toggle', bind: 'setting:sof' },
@@ -96,9 +98,9 @@ function opt(label: string, value: string, on: boolean): SettingOptionVm {
     label,
     value,
     pressed: on,
-    bg: on ? '#e8edf5' : '#1b222d',
-    fg: on ? '#0b0f14' : '#c9d1dc',
-    border: on ? '#e8edf5' : '#343d4b',
+    bg: on ? 'var(--u4-text-1)' : 'var(--u4-seg-opt-bg)',
+    fg: on ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
+    border: on ? 'var(--u4-text-1)' : 'var(--u4-seg-border)',
   };
 }
 
@@ -114,6 +116,7 @@ export function buildSettingsVm(state: UiState): SettingsSectionVm[] {
   const spp = visibleCount(state.spp);
   const byKey: Record<string, SettingOptionVm[]> = {
     spp: ['8', '12', '16'].map(s => opt(s, s, parseInt(s, 10) === spp)),
+    theme: (Object.keys(PRESETS) as ThemePresetId[]).map(k => opt(PRESETS[k].label, k, state.theme === k)),
     peakHold: boolOpts(state.peakHold),
     fine: boolOpts(state.fine),
     sof: boolOpts(state.sof),

@@ -15,6 +15,6 @@
   } = $props();
 </script>
 
-<div style="box-sizing:content-box;flex:1;min-width:160px;text-align:right;font-size:13px;color:#c9d1dc">
+<div style="box-sizing:content-box;flex:1;min-width:160px;text-align:right;font-size:13px;color:var(--u4-text-4)">
   {props.text ?? ''}
 </div>

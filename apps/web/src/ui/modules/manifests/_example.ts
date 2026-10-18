@@ -131,7 +131,7 @@ export const manifests: ModuleManifest[] = [
     props: {
       value: { type: 'text', default: '' },
       size: { type: 'number', min: 8, max: 64, step: 1, unit: 'px', default: 14 },
-      color: { type: 'color', default: '#e8edf5' },
+      color: { type: 'color', default: 'var(--u4-text-1)' },
       align: { type: 'enum', options: ['left', 'center', 'right'], default: 'left' },
       weight: { type: 'number', min: 100, max: 900, step: 100, default: 400 },
     },

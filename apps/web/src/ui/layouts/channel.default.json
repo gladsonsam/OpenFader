@@ -94,8 +94,8 @@
                 "justify": "center",
                 "padding": 24,
                 "radius": 3,
-                "border": "1px solid #1f2836",
-                "background": "#0a0f17",
+                "border": "1px solid var(--u4-line-panel)",
+                "background": "var(--u4-well-bg)",
                 "box": "content-box"
               },
               "when": "!inputVm.hasInput",
@@ -106,7 +106,7 @@
                   "props": {
                     "value": "No preamp on this channel — its signal comes from inside the console.",
                     "size": 15,
-                    "color": "#a7b1c0",
+                    "color": "var(--u4-text-5)",
                     "align": "center"
                   }
                 }
@@ -228,8 +228,8 @@
                 "justify": "center",
                 "padding": 24,
                 "radius": 3,
-                "border": "1px solid #1f2836",
-                "background": "#0a0f17",
+                "border": "1px solid var(--u4-line-panel)",
+                "background": "var(--u4-well-bg)",
                 "box": "content-box"
               },
               "when": "count(sendRows) == 0",
@@ -240,7 +240,7 @@
                   "props": {
                     "value": "Buses and outputs don't send to mixes.",
                     "size": 15,
-                    "color": "#a7b1c0",
+                    "color": "var(--u4-text-5)",
                     "align": "center"
                   }
                 }
@@ -662,8 +662,8 @@
                 "justify": "center",
                 "padding": 24,
                 "radius": 3,
-                "border": "1px solid #1f2836",
-                "background": "#0a0f17",
+                "border": "1px solid var(--u4-line-panel)",
+                "background": "var(--u4-well-bg)",
                 "box": "content-box"
               },
               "when": "dynParams == null",
@@ -674,7 +674,7 @@
                   "props": {
                     "value": "No dynamics on this channel.",
                     "size": 15,
-                    "color": "#a7b1c0",
+                    "color": "var(--u4-text-5)",
                     "align": "center"
                   }
                 }
@@ -841,8 +841,8 @@
                 "justify": "center",
                 "padding": 24,
                 "radius": 3,
-                "border": "1px solid #1f2836",
-                "background": "#0a0f17",
+                "border": "1px solid var(--u4-line-panel)",
+                "background": "var(--u4-well-bg)",
                 "box": "content-box"
               },
               "when": "dynParams == null",
@@ -853,7 +853,7 @@
                   "props": {
                     "value": "No dynamics on this channel.",
                     "size": 15,
-                    "color": "#a7b1c0",
+                    "color": "var(--u4-text-5)",
                     "align": "center"
                   }
                 }
@@ -873,7 +873,7 @@
         "gap": 5,
         "padding": 5,
         "radius": 0,
-        "background": "#0e1520",
+        "background": "var(--u4-panel-bg)",
         "flex": "none",
         "box": "content-box"
       },
