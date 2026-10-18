@@ -13,8 +13,11 @@ free AND its files don't collide with the running worker.
 ## Queued (in order)
 1. Bidirectional verification matrix (running — `ses_eb0877d76dffeFIOsVr9lbo0kFj`):
    per-control both-directions proof + root-caused gap list.
-2. Push merged main — DONE (merge `69964b9` verified + pushed; backlog
-   commits on top).
+2. Scan/remote-access fix (running — `ses_eaebbc0f3ffeOulz3Vh5MTj0q4`).
+3. Phone independence: embed the engine in-process in the Tauri app
+   (Tauri IPC transport, no relay/server/LAN needed). Auto-select
+   transport: IPC inside the app, WebSocket in the browser. The W2a
+   TauriBackend is currently a stub — this is the ME2 work to finish it.
 
 ## Queued — server-side (NOT today; parked, do not dispatch)
 - Automixing (gain-sharing across channels on the server).
