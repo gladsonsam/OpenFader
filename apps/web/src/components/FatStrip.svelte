@@ -60,7 +60,7 @@
     flex-direction: column;
     gap: 2px;
     padding: 3px 4px;
-    background: #0b0f14;
+    background: var(--chassis);
     border-radius: 5px;
     width: 128px;
   }
