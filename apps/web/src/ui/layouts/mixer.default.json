@@ -51,6 +51,9 @@
               "props": {
                 "over": "bank:visible"
               },
+              "variants": {
+                "phone": { "props": { "over": "list:allBankItems" } }
+              },
               "children": [
                 {
                   "id": "strip",
@@ -93,8 +96,8 @@
         "flex": "none",
         "gap": 3,
         "padding": 3,
-        "background": "#121a27",
-        "border": "1px solid #2a3443",
+        "background": "var(--u4-panel-bg)",
+        "border": "1px solid var(--u4-line-panel)",
         "box": "content-box",
         "selectable": true
       },
