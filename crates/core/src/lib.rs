@@ -151,6 +151,19 @@ impl From<String> for ParamValue {
     }
 }
 
+/// One desk-originated param change: the desk broadcast a new value for
+/// one strip param (another client moved it, or the desk echoes another
+/// client's query reply to every `/xremote` subscriber). Drivers that can
+/// observe the desk push these; the engine applies them to its param cache
+/// and fans them out like poller diffs. Engineering units, same as
+/// [`MixerDriver::get_param`].
+#[derive(Clone, Debug, PartialEq)]
+pub struct ParamUpdate {
+    pub strip: StripId,
+    pub param: String,
+    pub value: ParamValue,
+}
+
 impl From<&str> for ParamValue {
     fn from(v: &str) -> Self {
         ParamValue::Text(v.to_string())
@@ -308,12 +321,113 @@ pub trait MixerDriver: Send + Sync {
         let _ = bus;
         anyhow::bail!("{}: bus faders not supported", self.name())
     }
+    /// Set a mix-bus master mute (0-based bus, `0..bus_count()`). Default: unsupported.
+    async fn set_bus_mute(&self, bus: u8, muted: bool) -> anyhow::Result<()> {
+        let _ = (bus, muted);
+        anyhow::bail!("{}: bus mutes not supported", self.name())
+    }
+    /// Read a mix-bus master mute. Default: unsupported.
+    async fn get_bus_mute(&self, bus: u8) -> anyhow::Result<bool> {
+        let _ = bus;
+        anyhow::bail!("{}: bus mutes not supported", self.name())
+    }
+    /// Mix-bus master count (0-based range `0..bus_count()`). Default 0 =
+    /// no bus masters (honest `unsupported`, never faked).
+    fn bus_count(&self) -> u8 {
+        0
+    }
+    // ---- subgroups (default: unsupported) ----
+    /// Subgroup master count (0-based `0..subgroup_count()`). Default 0.
+    fn subgroup_count(&self) -> u8 {
+        0
+    }
+    async fn set_subgroup_fader(&self, group: u8, value: f32) -> anyhow::Result<()> {
+        let _ = (group, value);
+        anyhow::bail!("{}: subgroup faders not supported", self.name())
+    }
+    async fn get_subgroup_fader(&self, group: u8) -> anyhow::Result<f32> {
+        let _ = group;
+        anyhow::bail!("{}: subgroup faders not supported", self.name())
+    }
+    async fn set_subgroup_mute(&self, group: u8, muted: bool) -> anyhow::Result<()> {
+        let _ = (group, muted);
+        anyhow::bail!("{}: subgroup mutes not supported", self.name())
+    }
+    async fn get_subgroup_mute(&self, group: u8) -> anyhow::Result<bool> {
+        let _ = group;
+        anyhow::bail!("{}: subgroup mutes not supported", self.name())
+    }
+    /// Channel -> subgroup membership (DL32S `subN` leaf). Default: unsupported.
+    async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+        let _ = (ch, group, member);
+        anyhow::bail!("{}: subgroup assign not supported", self.name())
+    }
+    async fn get_subgroup_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        let _ = (ch, group);
+        anyhow::bail!("{}: subgroup assign not supported", self.name())
+    }
+    // ---- mute groups (default: unsupported) ----
+    /// Mute-group master count (0-based `0..mute_group_count()`). Default 0.
+    fn mute_group_count(&self) -> u8 {
+        0
+    }
+    async fn set_mute_group(&self, group: u8, muted: bool) -> anyhow::Result<()> {
+        let _ = (group, muted);
+        anyhow::bail!("{}: mute groups not supported", self.name())
+    }
+    async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool> {
+        let _ = group;
+        anyhow::bail!("{}: mute groups not supported", self.name())
+    }
+    /// Channel -> mute-group membership. Default: unsupported.
+    async fn set_mute_group_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+        let _ = (ch, group, member);
+        anyhow::bail!("{}: mute-group assign not supported", self.name())
+    }
+    async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        let _ = (ch, group);
+        anyhow::bail!("{}: mute-group assign not supported", self.name())
+    }
+    // ---- file transfer (default: unsupported) ----
+    /// Desk file transfer (DL32S `Show.zip` up/download). Default false =
+    /// honest `unsupported`, never faked.
+    fn file_transfer(&self) -> bool {
+        false
+    }
+    async fn download_file(&self, filename: &str) -> anyhow::Result<Vec<u8>> {
+        let _ = filename;
+        anyhow::bail!("{}: file transfer not supported", self.name())
+    }
+    async fn upload_file(&self, filename: &str, data: &[u8], file_type: u32) -> anyhow::Result<()> {
+        let _ = (filename, data, file_type);
+        anyhow::bail!("{}: file transfer not supported", self.name())
+    }
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
         let _ = value;
         anyhow::bail!("{}: main fader not supported", self.name())
     }
     async fn get_main_fader(&self) -> anyhow::Result<f32> {
         anyhow::bail!("{}: main fader not supported", self.name())
+    }
+    /// Set the Main LR master mute. Default: unsupported (never faked).
+    async fn set_main_mute(&self, muted: bool) -> anyhow::Result<()> {
+        let _ = muted;
+        anyhow::bail!("{}: main mute not supported", self.name())
+    }
+    /// Read the Main LR master mute. Default: unsupported.
+    async fn get_main_mute(&self) -> anyhow::Result<bool> {
+        anyhow::bail!("{}: main mute not supported", self.name())
+    }
+    /// Set per-strip solo (monitor bus; never touches the FOH mix).
+    /// Default: unsupported (never faked).
+    async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
+        let _ = (strip, soloed);
+        anyhow::bail!("{}: solo not supported", self.name())
+    }
+    /// Read per-strip solo. Default: unsupported.
+    async fn get_solo(&self, strip: StripId) -> anyhow::Result<bool> {
+        let _ = strip;
+        anyhow::bail!("{}: solo not supported", self.name())
     }
 
     // ---- generic params (default: thin dispatch to the above) ----
@@ -438,6 +552,17 @@ pub trait MixerDriver: Send + Sync {
         &self,
     ) -> anyhow::Result<tokio::sync::broadcast::Receiver<MeterFrame>> {
         anyhow::bail!("{}: subscribe_meters not supported", self.name())
+    }
+
+    /// Desk-originated param changes (broadcasts the desk sends to every
+    /// subscribed client when another client moves something). Default:
+    /// `None` (the driver learns desk-side changes by polling only).
+    /// Drivers that tap the transport update feed return a receiver here;
+    /// values are engineering units, same as `get_param`.
+    fn subscribe_updates(
+        &self,
+    ) -> Option<tokio::sync::broadcast::Receiver<ParamUpdate>> {
+        None
     }
 
     /// Non-blocking single-frame poll (fake meters, tests, headless use).

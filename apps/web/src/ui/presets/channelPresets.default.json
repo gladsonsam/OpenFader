@@ -1,0 +1,150 @@
+{
+  "_note": "Built-in channel-strip starting points (gain/EQ/dynamics only — no fader, mute, pan, sends, name or colour). 48V phantom is never stored in a preset and never recalled. Engineering units matching the fixture channel model: gain/trim dB, delay ms, EQ Hz/dB/Q, dynamics in desk units. All values inside the fixture spec ranges (see fixtures/designData.ts spec()).",
+  "version": 1,
+  "presets": [
+    {
+      "id": "vocal",
+      "label": "Vocal",
+      "blurb": "HPF 100 Hz, low-mid cut, presence + air, gentle 3:1",
+      "input": { "gain": 32, "trim": 0, "invert": false, "delayOn": false, "delay": 0 },
+      "eq": {
+        "on": true,
+        "hpf": { "on": true, "f": 100, "slope": 12 },
+        "bands": [
+          { "type": "LS", "f": 120, "g": -1, "q": 0.7, "on": true },
+          { "type": "PEQ", "f": 350, "g": -3, "q": 1.4, "on": true },
+          { "type": "PEQ", "f": 3000, "g": 2.5, "q": 1.2, "on": true },
+          { "type": "HS", "f": 10000, "g": 2, "q": 0.7, "on": true }
+        ]
+      },
+      "gate": { "on": false, "thr": -50, "range": 40, "att": 0.5, "hold": 50, "rel": 150 },
+      "comp": { "on": true, "thr": -18, "ratio": 3, "att": 10, "rel": 140, "knee": 3, "makeup": 3 }
+    },
+    {
+      "id": "guitar",
+      "label": "Guitar",
+      "blurb": "HPF 90 Hz, mud cut, bite at 2.5 kHz, light 3:1",
+      "input": { "gain": 22, "trim": 0, "invert": false, "delayOn": false, "delay": 0 },
+      "eq": {
+        "on": true,
+        "hpf": { "on": true, "f": 90, "slope": 12 },
+        "bands": [
+          { "type": "LS", "f": 120, "g": -1, "q": 0.7, "on": true },
+          { "type": "PEQ", "f": 300, "g": -2, "q": 1.4, "on": true },
+          { "type": "PEQ", "f": 2500, "g": 2, "q": 1.2, "on": true },
+          { "type": "HS", "f": 8000, "g": -2, "q": 0.7, "on": true }
+        ]
+      },
+      "gate": { "on": false, "thr": -48, "range": 40, "att": 0.5, "hold": 50, "rel": 150 },
+      "comp": { "on": true, "thr": -16, "ratio": 3, "att": 12, "rel": 160, "knee": 4, "makeup": 2 }
+    },
+    {
+      "id": "bass",
+      "label": "Bass",
+      "blurb": "HPF 45 Hz, lows + mud cut, 4:1 for DI consistency",
+      "input": { "gain": 25, "trim": 0, "invert": false, "delayOn": false, "delay": 0 },
+      "eq": {
+        "on": true,
+        "hpf": { "on": true, "f": 45, "slope": 12 },
+        "bands": [
+          { "type": "LS", "f": 90, "g": 2, "q": 0.7, "on": true },
+          { "type": "PEQ", "f": 280, "g": -3, "q": 1.4, "on": true },
+          { "type": "PEQ", "f": 900, "g": 2, "q": 1.2, "on": true },
+          { "type": "HS", "f": 6000, "g": 0, "q": 0.7, "on": true }
+        ]
+      },
+      "gate": { "on": false, "thr": -50, "range": 40, "att": 0.5, "hold": 50, "rel": 150 },
+      "comp": { "on": true, "thr": -16, "ratio": 4, "att": 10, "rel": 160, "knee": 4, "makeup": 2 }
+    },
+    {
+      "id": "kick",
+      "label": "Kick",
+      "blurb": "Click + sub, scooped box, gate + 4:1",
+      "input": { "gain": 28, "trim": 0, "invert": false, "delayOn": false, "delay": 0 },
+      "eq": {
+        "on": true,
+        "hpf": { "on": true, "f": 40, "slope": 24 },
+        "bands": [
+          { "type": "LS", "f": 70, "g": 3, "q": 0.7, "on": true },
+          { "type": "PEQ", "f": 350, "g": -4, "q": 1.4, "on": true },
+          { "type": "PEQ", "f": 4000, "g": 3, "q": 1.6, "on": true },
+          { "type": "HS", "f": 9000, "g": 0, "q": 0.7, "on": true }
+        ]
+      },
+      "gate": { "on": true, "thr": -30, "range": 40, "att": 0.5, "hold": 50, "rel": 120 },
+      "comp": { "on": true, "thr": -14, "ratio": 4, "att": 8, "rel": 140, "knee": 4, "makeup": 2 }
+    },
+    {
+      "id": "snare",
+      "label": "Snare",
+      "blurb": "Body + snap, box cut, gate + 4:1",
+      "input": { "gain": 24, "trim": 0, "invert": false, "delayOn": false, "delay": 0 },
+      "eq": {
+        "on": true,
+        "hpf": { "on": true, "f": 80, "slope": 12 },
+        "bands": [
+          { "type": "LS", "f": 150, "g": 0, "q": 0.7, "on": true },
+          { "type": "PEQ", "f": 220, "g": 2, "q": 1.2, "on": true },
+          { "type": "PEQ", "f": 550, "g": -2, "q": 1.4, "on": true },
+          { "type": "HS", "f": 5000, "g": 2, "q": 0.7, "on": true }
+        ]
+      },
+      "gate": { "on": true, "thr": -28, "range": 35, "att": 0.5, "hold": 40, "rel": 100 },
+      "comp": { "on": true, "thr": -16, "ratio": 4, "att": 8, "rel": 120, "knee": 3, "makeup": 2 }
+    },
+    {
+      "id": "drums",
+      "label": "Drums",
+      "blurb": "Toms / overheads: HPF 60 Hz, gentle 2:1 glue",
+      "input": { "gain": 26, "trim": 0, "invert": false, "delayOn": false, "delay": 0 },
+      "eq": {
+        "on": true,
+        "hpf": { "on": true, "f": 60, "slope": 12 },
+        "bands": [
+          { "type": "LS", "f": 100, "g": 0, "q": 0.7, "on": true },
+          { "type": "PEQ", "f": 400, "g": -2, "q": 1.4, "on": true },
+          { "type": "PEQ", "f": 3000, "g": 1.5, "q": 1.2, "on": true },
+          { "type": "HS", "f": 10000, "g": 2, "q": 0.7, "on": true }
+        ]
+      },
+      "gate": { "on": false, "thr": -40, "range": 40, "att": 0.5, "hold": 50, "rel": 150 },
+      "comp": { "on": true, "thr": -20, "ratio": 2, "att": 15, "rel": 200, "knee": 4, "makeup": 1 }
+    },
+    {
+      "id": "keys",
+      "label": "Keys",
+      "blurb": "HPF 60 Hz, near-flat, light 2:1",
+      "input": { "gain": 20, "trim": 0, "invert": false, "delayOn": false, "delay": 0 },
+      "eq": {
+        "on": true,
+        "hpf": { "on": true, "f": 60, "slope": 12 },
+        "bands": [
+          { "type": "LS", "f": 100, "g": 0, "q": 0.7, "on": true },
+          { "type": "PEQ", "f": 350, "g": -1, "q": 1.2, "on": true },
+          { "type": "PEQ", "f": 2500, "g": 1, "q": 1.2, "on": true },
+          { "type": "HS", "f": 9000, "g": 1, "q": 0.7, "on": true }
+        ]
+      },
+      "gate": { "on": false, "thr": -50, "range": 40, "att": 0.5, "hold": 50, "rel": 150 },
+      "comp": { "on": true, "thr": -20, "ratio": 2, "att": 15, "rel": 200, "knee": 4, "makeup": 1 }
+    },
+    {
+      "id": "playback",
+      "label": "Playback",
+      "blurb": "Flat + HPF 50 Hz, dynamics off",
+      "input": { "gain": 15, "trim": 0, "invert": false, "delayOn": false, "delay": 0 },
+      "eq": {
+        "on": true,
+        "hpf": { "on": true, "f": 50, "slope": 12 },
+        "bands": [
+          { "type": "LS", "f": 100, "g": 0, "q": 0.7, "on": true },
+          { "type": "PEQ", "f": 400, "g": 0, "q": 1.2, "on": true },
+          { "type": "PEQ", "f": 2500, "g": 0, "q": 1.2, "on": true },
+          { "type": "HS", "f": 8000, "g": 0, "q": 0.7, "on": true }
+        ]
+      },
+      "gate": { "on": false, "thr": -50, "range": 40, "att": 0.5, "hold": 50, "rel": 150 },
+      "comp": { "on": false, "thr": -20, "ratio": 2, "att": 15, "rel": 200, "knee": 4, "makeup": 0 }
+    }
+  ]
+}

@@ -2,9 +2,8 @@ const target = document.getElementById('app');
 if (!target) throw new Error('#app mount target not found');
 
 // ui4 is the only UI. `/` mounts it directly; `?ui=4` remains as an alias.
-// Fixture/golden query params (?fixture=1&freeze=1&screen=...&gallery=...)
-// are honoured by the ui4 mount for the design-diff harness in
-// apps/web/tools/design-diff/.
+// Fixture query params (?fixture=1&freeze=1&screen=...&gallery=...)
+// are honoured by the ui4 mount (current UI + screenshots are the baseline).
 const params = new URLSearchParams(window.location.search);
 
 async function boot(el: HTMLElement) {

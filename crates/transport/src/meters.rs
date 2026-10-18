@@ -24,6 +24,13 @@ pub const METER_INTERVAL: Duration = Duration::from_millis(50);
 pub const METER_CAPACITY: usize = 32;
 
 pub fn is_meter_addr(addr: &str) -> bool {
+    // Level streams only: `/meters/6` is the ALL DYN (GR) blob — signed
+    // 1/256 dB samples behind a 4-byte size word, not levels. It must not
+    // enter the level hub (it would decode as ~41 garbage levels and
+    // clobber the level cache); GR arrives via `ingest_dyn_message`.
+    if addr == "/meters/6" {
+        return false;
+    }
     addr == "/meters" || addr.starts_with("/meters/")
 }
 

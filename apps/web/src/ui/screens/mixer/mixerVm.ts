@@ -139,6 +139,8 @@ export interface MasterVm extends StripVm {
   tagColor: string;
   /** 'Aux bus' in SOF, else 'Stereo out'. */
   kind: 'sof' | 'master';
+  /** Bus selector button label (`MIX ▾ · <name>`). */
+  busLabel: string;
 }
 
 /** Master strip view-model: the SOF target mix, else Main LR. */
@@ -156,6 +158,7 @@ export function masterVm(state: UiState, chans: Record<string, Channel>): Master
     tag: sof ? 'SENDS MASTER' : 'MASTER',
     tagColor: sof ? '#5fe3f0' : '#ffd25a',
     kind: sof ? 'sof' : 'master',
+    busLabel: 'MIX ▾ · ' + base.name,
   };
 }
 

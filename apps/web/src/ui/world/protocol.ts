@@ -105,7 +105,7 @@ export type EngineEvent =
       meter_taps: string[];
       fx: { slots: number; types: FxTypeCapsEvt[] };
       routing: { groups: Array<{ key: string; label: string; count: number }>; per_strip: boolean; supported: boolean };
-      groups: { buses: number; subgroups: number; mute_groups: number };
+      groups: { buses: number; subgroups: number; mute_groups: number; mg_assign: boolean; sub_assign: boolean };
       files: { supported: boolean };
     }
   | { kind: 'meters'; levels: number[] }
@@ -117,6 +117,8 @@ export type EngineEvent =
   | { kind: 'subgroup_assign'; ch: number; group: number; member: boolean }
   | { kind: 'mute_group'; group: number; muted: boolean }
   | { kind: 'mute_group_assign'; ch: number; group: number; member: boolean }
+  | { kind: 'main'; fader: number | null; muted: boolean | null }
+  | { kind: 'solo'; ch: number; soloed: boolean }
   | { kind: 'file'; filename: string; size: number; file_type: number; data: string | null }
   | { kind: 'shows'; shows: Array<{ name: string; scenes: Array<{ name: string; main_fader: number | null; strips: StateStripEvt[] }> }> }
   | { kind: 'locks'; holds: Record<number, string> }
@@ -330,6 +332,8 @@ export function parseEvent(text: string): EngineEvent | null {
           buses: int(grpRaw['buses']) ?? 0,
           subgroups: int(grpRaw['subgroups']) ?? 0,
           mute_groups: int(grpRaw['mute_groups']) ?? 0,
+          mg_assign: grpRaw['mg_assign'] === undefined ? true : bool(grpRaw['mg_assign'], true),
+          sub_assign: grpRaw['sub_assign'] === undefined ? true : bool(grpRaw['sub_assign'], true),
         },
         files: { supported: bool(filesRaw['supported'], false) },
       };
@@ -540,6 +544,20 @@ export function parseEvent(text: string): EngineEvent | null {
       if (ch === null || ch < 0 || group === null || group < 0) return null;
       return { kind: 'mute_group_assign', ch, group, member: bool(m['member'], false) };
     }
+    case 'main': {
+      const f = m['fader'];
+      const mu = m['muted'];
+      return {
+        kind: 'main',
+        fader: typeof f === 'number' && Number.isFinite(f) ? f : null,
+        muted: typeof mu === 'boolean' ? mu : null,
+      };
+    }
+    case 'solo': {
+      const ch = int(m['ch']);
+      if (ch === null || ch < 0) return null;
+      return { kind: 'solo', ch, soloed: bool(m['soloed'], false) };
+    }
     case 'file': {
       if (typeof m['filename'] !== 'string' || !m['filename']) return null;
       return {
@@ -639,6 +657,8 @@ export const cmdConnect = (driver = 'sim', addr?: string): string =>
 export const cmdFader = (ch: number, value: number): string => cmd({ cmd: 'fader', ch, value });
 export const cmdMainFader = (value: number): string => cmd({ cmd: 'main_fader', value });
 export const cmdMute = (ch: number, muted: boolean): string => cmd({ cmd: 'mute', ch, muted });
+export const cmdMainMute = (muted: boolean): string => cmd({ cmd: 'main_mute', muted });
+export const cmdSolo = (ch: number, soloed: boolean): string => cmd({ cmd: 'solo', ch, soloed });
 export const cmdParam = (ch: number, field: string, value: ParamValue): string =>
   cmd({ cmd: 'param', ch, field, value });
 export const cmdFocus = (chs: number[]): string =>
@@ -661,8 +681,13 @@ export const cmdConnectDevice = (id: string): string => cmd({ cmd: 'connect_devi
 export const cmdDisconnect = (): string => cmd({ cmd: 'disconnect' });
 export const cmdInfo = (): string => cmd({ cmd: 'info' });
 export const cmdSceneSave = (n: number, name: string): string => cmd({ cmd: 'scene_save', n, name });
-export const cmdSceneRecall = (n: number, fade_ms?: number): string =>
-  cmd(fade_ms === undefined ? { cmd: 'scene_recall', n } : { cmd: 'scene_recall', n, fade_ms });
+export interface RecallScopeCmd { strips?: number[]; groups?: string[]; globals?: string[] }
+export const cmdSceneRecall = (n: number, fade_ms?: number, scope?: RecallScopeCmd | null): string => {
+  const o: Record<string, unknown> = { cmd: 'scene_recall', n };
+  if (fade_ms !== undefined) o['fade_ms'] = fade_ms;
+  if (scope !== undefined && scope !== null) o['scope'] = scope;
+  return cmd(o);
+};
 export const cmdSceneRename = (n: number, name: string): string => cmd({ cmd: 'scene_rename', n, name });
 export const cmdSceneDelete = (n: number): string => cmd({ cmd: 'scene_delete', n });
 export const cmdSceneClear = (): string => cmd({ cmd: 'scene_clear' });

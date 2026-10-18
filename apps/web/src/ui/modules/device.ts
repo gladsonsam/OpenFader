@@ -4,7 +4,7 @@
 // renderer picks the overlay by the `device` it is given. Screens feed this
 // module's value into LayoutRenderer so narrow viewports get the phone/tablet
 // structure. The 1280x720 desktop design always resolves to 'desktop', so the
-// design-diff baselines are untouched.
+// desktop baseline rendering is untouched.
 //
 // Breakpoints are on viewport width. The app is full-viewport (AppFrame fills
 // the window and Shell divides it without sidebars), so viewport width == the

@@ -207,9 +207,20 @@ async fn params_diff_broadcast() {
     let mut a = attach(&engine).await;
     drain_snapshot(&mut a).await;
 
-    // A fader move (outside the param-write path) surfaces as a params
-    // diff from the background poller.
+    // A fader move carries its confirmed value as a singular `param` echo
+    // (same as the param-write path), which also primes the poller cache;
+    // the follow-up `state` still carries the strip.
     a.send(Cmd::Fader { ch: 5, value: 0.6 }).await.unwrap();
+    let echo = wait_for(&mut a, |e| match e {
+        Event::Param { ch, field, value, .. } => {
+            *ch == 5
+                && field == "fader"
+                && value.as_f64().is_some_and(|f| (f - 0.6).abs() < 1e-6)
+        }
+        _ => false,
+    })
+    .await;
+    assert_eq!(ev_json(&echo).get("type"), Some(&json!("param")));
     wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -218,18 +229,6 @@ async fn params_diff_broadcast() {
         _ => false,
     })
     .await;
-    let diff = wait_for(&mut a, |e| match e {
-        Event::Params { ch, values } => {
-            *ch == 5
-                && values
-                    .get("fader")
-                    .and_then(Value::as_f64)
-                    .is_some_and(|f| (f - 0.6).abs() < 1e-6)
-        }
-        _ => false,
-    })
-    .await;
-    assert_eq!(ev_json(&diff).get("type"), Some(&json!("params")));
 }
 
 #[tokio::test]

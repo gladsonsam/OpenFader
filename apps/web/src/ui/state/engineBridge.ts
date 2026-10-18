@@ -19,7 +19,8 @@
 // refuse). Not bridged (no desk equivalent or no id mapping): per-band EQ
 // bypass (engine has a global switch only), FX type/params (engine param
 // ids need the FX type tables the world does not retain), fixture scenes
-// (a different library from numbered scenes), main mute (no engine cmd).
+// (a different library from numbered scenes), Main LR solo (no verified
+// desk leaf — the master solo control stays hidden).
 //
 // Run: node --experimental-strip-types apps/web/src/ui/state/engineBridge.test.ts
 
@@ -92,11 +93,19 @@ export function bridgeFader(world: World, id: string, v01: number): boolean {
   return ch === null ? false : world.setFader(ch, v01);
 }
 
-/** Mute write-through (main has no engine mute — fixture-only). */
+/** Mute write-through (main rides the Main LR master mute). */
 export function bridgeMute(world: World, id: string, muted: boolean): boolean {
-  if (id === 'mainlr') return false;
+  if (typeof muted !== 'boolean') return false;
+  if (id === 'mainlr') return world.setMainMute(muted);
   const ch = bridgeStrip(world, id);
   return ch === null ? false : world.setMute(ch, muted);
+}
+
+/** Solo write-through (monitor bus only; main LR has no desk leaf). */
+export function bridgeSolo(world: World, id: string, soloed: boolean): boolean {
+  if (typeof soloed !== 'boolean' || id === 'mainlr') return false;
+  const ch = bridgeStrip(world, id);
+  return ch === null ? false : world.setSolo(ch, soloed);
 }
 
 /** Pan write-through (design -1..1 -> engine -100..100). */
@@ -249,5 +258,74 @@ export function bridgeUnpatch(world: World, id: string): boolean {
   const ch = bridgeStrip(world, id);
   if (ch === null || !world.routingSupported) return false;
   world.patchClear(ch);
+  return true;
+}
+
+/** Mute-group membership write-through (desk-only; no fixture counterpart). */
+export function bridgeMuteGroupAssign(world: World, id: string, group: number, member: boolean): boolean {
+  const ch = bridgeStrip(world, id);
+  if (ch === null || !Number.isInteger(group) || group < 0 || typeof member !== 'boolean') return false;
+  if (world.groupCaps.muteGroups <= group) return false;
+  world.muteGroupAssign(ch, group, member);
+  return true;
+}
+
+/** Subgroup membership write-through (desk-only; no fixture counterpart). */
+export function bridgeSubgroupAssign(world: World, id: string, group: number, member: boolean): boolean {
+  const ch = bridgeStrip(world, id);
+  if (ch === null || !Number.isInteger(group) || group < 0 || typeof member !== 'boolean') return false;
+  if (world.groupCaps.subgroups <= group) return false;
+  world.subgroupAssign(ch, group, member);
+  return true;
+}
+
+/** Mute-group master mute write-through. */
+export function bridgeMuteGroupMute(world: World, group: number, muted: boolean): boolean {
+  if (!Number.isInteger(group) || group < 0 || typeof muted !== 'boolean') return false;
+  if (world.groupCaps.muteGroups <= group) return false;
+  world.muteGroup(group, muted);
+  return true;
+}
+
+/** FX rack write-through (slot 0-based; engine slots are 1-based). */
+export function bridgeFxType(world: World, slot: number, type: string): boolean {
+  if (!Number.isInteger(slot) || slot < 0 || typeof type !== 'string' || !type) return false;
+  world.fxSetType(slot + 1, type);
+  return true;
+}
+
+/** FX slot on write-through. */
+export function bridgeFxOn(world: World, slot: number, on: boolean): boolean {
+  if (!Number.isInteger(slot) || slot < 0 || typeof on !== 'boolean') return false;
+  world.fxOn(slot + 1, on);
+  return true;
+}
+
+/** FX slot bypass write-through. */
+export function bridgeFxBypass(world: World, slot: number, bypass: boolean): boolean {
+  if (!Number.isInteger(slot) || slot < 0 || typeof bypass !== 'boolean') return false;
+  world.fxBypass(slot + 1, bypass);
+  return true;
+}
+
+/** FX param write-through by knob index (resolves the param id from the
+ * live type table, so fixture and desk knob orders can never drift). */
+export function bridgeFxParamByIndex(world: World, slot: number, p: number, n: number): boolean {
+  if (!Number.isInteger(slot) || slot < 0 || !Number.isInteger(p) || p < 0) return false;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return false;
+  const live = world.fxSlots.find(s => s.slot === slot + 1);
+  if (!live) return false;
+  const def = world.fxCaps?.types.find(t => t.id === live.type || t.label === live.type);
+  const id = def?.params[p]?.id;
+  if (!id) return false;
+  world.fxParam(slot + 1, id, Math.min(1, Math.max(0, n)));
+  return true;
+}
+
+/** Subgroup master mute write-through. */
+export function bridgeSubgroupMute(world: World, group: number, muted: boolean): boolean {
+  if (!Number.isInteger(group) || group < 0 || typeof muted !== 'boolean') return false;
+  if (world.groupCaps.subgroups <= group) return false;
+  world.subgroupMute(group, muted);
   return true;
 }
