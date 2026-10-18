@@ -40,45 +40,52 @@
               "module": "text",
               "props": {
                 "tag": "span",
-                "value": "Tap a cell to patch · tap a lit cell to unpatch",
+                "value": "All 48 inputs · tap a cell to patch · tap a lit cell to unpatch",
                 "size": 12,
                 "color": "#8f9bb0",
                 "margin": "0 auto 0 0"
               }
             },
             {
-              "id": "mx-banks",
-              "module": "repeat",
+              "id": "mx-preset",
+              "module": "btn",
               "props": {
-                "over": "list:routeBanks"
+                "label": "1:1",
+                "height": 36,
+                "fontSize": 13,
+                "bg": "#2b3038",
+                "fg": "#e8edf5",
+                "border": "1px solid #3a414c",
+                "bare": true
               },
-              "children": [
-                {
-                  "id": "mx-bank",
-                  "module": "btn",
-                  "props": {
-                    "height": 36,
-                    "fontSize": 13,
-                    "border": "1px solid #3a414c"
-                  },
-                  "bind": {
-                    "label": "item.label",
-                    "bg": "item.bg",
-                    "fg": "item.fg",
-                    "pressed": "item.pressed ? 'true' : 'false'"
-                  },
-                  "on": {
-                    "press": {
-                      "do": "ui.setRouteBank",
-                      "args": {
-                        "bank": {
-                          "$expr": "index"
-                        }
-                      }
+              "on": {
+                "press": {
+                  "do": "ui.patchOneToOne",
+                  "args": {
+                    "group": {
+                      "$expr": "store.patchGroup"
                     }
                   }
                 }
-              ]
+              }
+            },
+            {
+              "id": "mx-clear",
+              "module": "btn",
+              "props": {
+                "label": "Clear",
+                "height": 36,
+                "fontSize": 13,
+                "bg": "#2a0d0e",
+                "fg": "#f2d6d6",
+                "border": "1px solid #6a1b1e",
+                "bare": true
+              },
+              "on": {
+                "press": {
+                  "do": "ui.clearPatches"
+                }
+              }
             },
             {
               "id": "mx-groups",
@@ -132,12 +139,12 @@
               "id": "mx-matrix",
               "module": "route-matrix",
               "props": {
-                "cell": 54,
-                "headW": 180
+                "cell": 68,
+                "headW": 220
               },
               "variants": {
-                "tablet": { "props": { "cell": 46, "headW": 150 } },
-                "phone": { "props": { "cell": 42, "headW": 118 } }
+                "tablet": { "props": { "cell": 54, "headW": 160 } },
+                "phone": { "props": { "cell": 44, "headW": 120 } }
               },
               "bind": {
                 "rows": "routing.matrix.rows",

@@ -124,11 +124,9 @@ export function usedSources(chans: Record<string, Channel>): Record<string, stri
   return used;
 }
 
-export interface RouteMatrixRow {
-  id: string;
-  name: string;
-  src: string;
-}
+export type RouteMatrixRow =
+  | { kind: 'row'; id: string; name: string; src: string }
+  | { kind: 'gap'; label: string };
 
 export interface RouteMatrix {
   rows: RouteMatrixRow[];
@@ -137,14 +135,21 @@ export interface RouteMatrix {
   used: Record<string, string>;
 }
 
-/** Dante-style patchbay grid: one row per banked channel, one column
- * per source of the selected group. The module derives per-cell state
- * (current / conflict / free) from row sources + the used map. */
+/** Dante-style patchbay grid: every input channel in one scroll (bank
+ * divider rows every 16), one column per source of the selected group.
+ * The module derives per-cell state (current / conflict / free) from row
+ * sources + the used map. */
 export function buildRouteMatrix(state: UiState, chans: Record<string, Channel>): RouteMatrix {
   const cols = srcTileLabels(state.patchGroup);
-  const rows: RouteMatrixRow[] = routeBankIds(state.routeBank).map((id) => {
-    const c = chans[id];
-    return { id, name: c?.name ?? id, src: c?.src ?? '—' };
-  });
+  const rows: RouteMatrixRow[] = [];
+  for (let b = 0; b < 3; b++) {
+    const from = b * 16 + 1;
+    rows.push({ kind: 'gap', label: 'INPUTS ' + from + '–' + (from + 15) });
+    for (let n = from; n < from + 16; n++) {
+      const id = 'in' + n;
+      const c = chans[id];
+      rows.push({ kind: 'row', id, name: c?.name ?? id, src: c?.src ?? '—' });
+    }
+  }
   return { rows, cols, used: usedSources(chans) };
 }

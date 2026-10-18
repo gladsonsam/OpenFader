@@ -338,7 +338,14 @@ export function registerBuiltins(): void {
   uiThrough('ui.setRouteBank', a => [a['bank']], { args: { bank: 'number' }, describe: 'Pick routing bank' });
   uiThrough('ui.patchSrc', a => [a['label']], { args: { label: 'string' }, describe: 'Patch source (advances; lock-checked)' });
   uiThrough('ui.toggleRoute', a => [a['id'], a['label']], { args: { id: 'string', label: 'string' }, describe: 'Matrix cell: patch there, or unpatch when current (lock-checked)' });
+  uiThrough('ui.patchOneToOne', a => [a['group']], { args: { group: 'string' }, describe: 'Preset: straight 1:1 patch of inputs 1..32 (lock-checked)' });
+  uiThrough('ui.clearPatches', () => [], A('Preset: unpatch all inputs (lock-checked)'));
   uiThrough('ui.unpatch', () => [], A('Unpatch channel (lock-checked)'));
+
+  // desk groups (live-only; fixture model untouched, the engine holds the
+  // state and command echoes re-render the scopes that read it)
+  uiThrough('ui.setGroupAssign', a => [a['kind'], a['id'], a['group'], a['member']], { args: { kind: 'string', id: 'string', group: 'number', member: 'boolean' }, describe: 'Set desk group membership (mg|sg; lock-checked)' });
+  uiThrough('ui.setGroupMute', a => [a['kind'], a['group'], a['muted']], { args: { kind: 'string', group: 'number', muted: 'boolean' }, describe: 'Set desk group master mute (mg|sg)' });
 
   // connection
   registerAction('ui.scan', (args, ctx) => {

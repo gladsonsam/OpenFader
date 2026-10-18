@@ -38,7 +38,7 @@ function walk(n: LayoutNode, out: LayoutNode[]): LayoutNode[] {
   assert.ok(ids.includes('patchbay') && ids.includes('mx-matrix') && ids.includes('mx-scroll'), ids.join(','));
   // repeats own exactly one template and read screen lists
   const reps = nodes.filter(n => n.module === 'repeat');
-  assert.deepEqual(reps.map(r => r.id).sort(), ['mx-banks', 'mx-groups']);
+  assert.deepEqual(reps.map(r => r.id).sort(), ['mx-groups']);
   for (const r of reps) {
     assert.equal(r.children?.length, 1, r.id);
     assert.ok(String((r.props as Record<string, unknown>)?.['over']).startsWith('list:'), r.id);
@@ -59,6 +59,11 @@ function walk(n: LayoutNode, out: LayoutNode[]): LayoutNode[] {
   const matrix = nodes.find(n => n.id === 'mx-matrix');
   assert.equal(matrix?.module, 'route-matrix');
   assert.equal((matrix?.on?.['press'] as { do: string } | undefined)?.do, 'ui.toggleRoute');
+  // presets: 1:1 straight patch + clear-all, both lock-checked store actions
+  const preset = nodes.find(n => n.id === 'mx-preset');
+  assert.equal((preset?.on?.['press'] as { do: string } | undefined)?.do, 'ui.patchOneToOne');
+  const clear = nodes.find(n => n.id === 'mx-clear');
+  assert.equal((clear?.on?.['press'] as { do: string } | undefined)?.do, 'ui.clearPatches');
   assert.ok(secs.every(s => (s.props as Record<string, unknown>)['box'] === 'content-box'));
 }
 
