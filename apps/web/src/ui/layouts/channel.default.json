@@ -398,6 +398,9 @@
                 "gap": 6,
                 "box": "content-box"
               },
+              "variants": {
+                "phone": { "props": { "columns": "repeat(auto-fit, minmax(160px, 1fr))" } }
+              },
               "children": [
                 {
                   "id": "hpf",
@@ -579,6 +582,9 @@
                     "kind": "gate",
                     "color": "#3ed0e0"
                   },
+                  "variants": {
+                    "phone": { "props": { "minH": 220 } }
+                  },
                   "on": {
                     "thr": {
                       "do": "channel.dynKnob",
@@ -738,6 +744,9 @@
                     "kind": "comp",
                     "color": "#ff9f43"
                   },
+                  "variants": {
+                    "phone": { "props": { "minH": 220 } }
+                  },
                   "on": {
                     "thr": {
                       "do": "channel.dynKnob",
@@ -886,6 +895,9 @@
               "id": "m-side",
               "module": "col",
               "props": { "gap": 5, "flex": "none", "width": 148, "box": "content-box" },
+              "variants": {
+                "phone": { "props": { "flex": "1 1 auto", "width": "auto", "minWidth": 0 } }
+              },
               "children": [
                 {
                   "id": "name",
