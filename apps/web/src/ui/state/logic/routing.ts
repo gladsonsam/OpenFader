@@ -69,7 +69,31 @@ export function toggleRoute(w: World, id: string, label: string): World {
   return cur === label ? unpatchChannel(w, id) : patchChannelSrc(w, id, label);
 }
 
-/** Matrix preset: straight 1:1 patch of inputs 1..32 to the group's
+/** Stage a mass-patch preset (1:1 straight patch or clear-all) without
+ * applying it. Tapping the same preset again disarms it. Lock-checked. */
+export function armPatch(w: World, kind: 'oneToOne' | 'clear', group: RouteGroup): World {
+  if (w.state.locked) return w;
+  const cur = w.state.pendingPatch;
+  if (cur && cur.kind === kind && (kind === 'clear' || cur.group === group)) {
+    return withState(w, { pendingPatch: null });
+  }
+  return withState(w, { pendingPatch: { kind, group } });
+}
+
+/** Drop the staged preset without applying it. */
+export function cancelPatch(w: World): World {
+  if (!w.state.pendingPatch) return w;
+  return withState(w, { pendingPatch: null });
+}
+
+/** Commit the staged preset, then clear it. Lock-checked. */
+export function applyPatch(w: World): World {
+  const p = w.state.pendingPatch;
+  if (!p || w.state.locked) return w;
+  const done = p.kind === 'oneToOne' ? patchOneToOne(w, p.group) : clearPatches(w);
+  return withState(done, { pendingPatch: null });
+}
+/** Commit helper: straight 1:1 patch of inputs 1..32 to the group's
  * 01..32 sockets (the common stagebox reset). No bank jumping. */
 export function patchOneToOne(w: World, group: RouteGroup): World {
   if (w.state.locked) return w;

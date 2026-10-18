@@ -46,6 +46,8 @@ export interface UiState {
   patchSel: string;
   patchGroup: RouteGroup;
   routeBank: number;
+  /** Staged mass-patch (1:1 / clear presets); Apply commits, tap-away cancels. Null = none staged. */
+  pendingPatch: { kind: 'oneToOne' | 'clear'; group: RouteGroup } | null;
   /** Name-bar editor target channel id (null = closed). */
   nameEdit: string | null;
   /** Connected device key, 'offline', or null. */
@@ -64,7 +66,7 @@ export function initialUiState(): UiState {
     mode: 'mixer', prevMode: 'mixer', tab: 'eq', bank: 'ch1', sel: 'in1', selBand: 1,
     fine: false, muteEnable: true, sof: false, mix: 0, scene: 4, scenePv: 4,
     spp: null, peakHold: true, locked: false, sceneConfirm: true, phantomArm: null,
-    fxSel: 0, patchSel: 'in1', patchGroup: 'Lcl', routeBank: 0, nameEdit: null,
+    fxSel: 0, patchSel: 'in1', patchGroup: 'Lcl', routeBank: 0, pendingPatch: null, nameEdit: null,
     connected: 'foh', lastScan: 'Scanned at start-up',
   };
 }
