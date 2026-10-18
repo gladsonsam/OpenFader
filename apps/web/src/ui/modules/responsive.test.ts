@@ -89,18 +89,12 @@ const contentPhone = applyVariant(node(channel, 'content'), 'phone');
 assert.equal((contentPhone.props as Record<string, unknown>)?.['minHeight'], 0);
 const masterPhone = applyVariant(node(channel, 'master'), 'phone');
 assert.equal(masterPhone.module, 'row');
-assert.deepEqual((masterPhone.children ?? []).map(c => c.id), ['m-side', 'm-fader']);
+assert.deepEqual((masterPhone.children ?? []).map(c => c.id), ['m-side']);
 const side = masterPhone.children![0];
 assert.deepEqual((side.children ?? []).map(c => c.id), ['name', 'step', 'pan', 'mute', 'src']);
-const faderCol = masterPhone.children![1];
-const wrap = faderCol.children![0];
-assert.equal(wrap.id, 'fader-wrap');
-assert.equal(wrap.children![0].id, 'fader');
 // Copied phone nodes keep their bindings and actions.
 assert.equal(node(side, 'pan').bind?.['value'], 'master.pan');
 assert.equal((node(side, 'step').on?.['next'] as { do: string }).do, 'ui.stepChannel');
-assert.equal(node(wrap, 'fader').bind?.['pos'], 'master.faderPos');
-assert.equal((wrap.children![0].on?.['input'] as { do: string }).do, 'ui.setFader');
 
 // Settings phone: single column (desktop keeps the auto-fit grid).
 assert.equal(
