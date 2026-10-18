@@ -1,0 +1,144 @@
+/* Design-faithful tokens, copied verbatim from docs/design/src/design-template.html.
+ * No invented values: every colour/px/radius below appears in the template's
+ * inline styles. Groups are named by usage; comments cite the screen/element. */
+
+:root {
+  /* Page + root frame (root div: bg #05070b, colour #e8edf5, Geist, tabular-nums) */
+  --u4-page-bg: #05070b;
+  --u4-root-fg: #e8edf5;
+
+  /* Header bar (Mixer/Channel/FX/Routing/Connection/Settings/Scenes header) */
+  --u4-header-bg: #000;
+  --u4-header-border: #1a212c;
+  --u4-header-h: 56px;
+
+  /* Panel / card surfaces (Settings sections, Routing panels, Connection cards,
+     Input tab Preamp/Source/Delay, FX detail, Scenes recall bar: bg #0e1520) */
+  --u4-panel-bg: #0e1520;
+  --u4-panel-border: #1f2836;
+  --u4-panel-radius: 3px;
+  /* Sunken wells / graph backgrounds (EQ graph, dyn graph, sends rows sit on these) */
+  --u4-well-bg: #0a0f17;
+  --u4-well-bg-2: #0b111b;
+  /* Toolbar tile (header FX/Routing/Connect/Settings/scene buttons, inactive) */
+  --u4-tile-bg: #0d1219;
+  --u4-tile-border: #2a323f;
+  --u4-tile-bg-on: #232b37;
+  --u4-tile-border-on: #5a6577;
+
+  /* Line / hairline colours */
+  --u4-line-header: #1a212c;   /* header bottom border */
+  --u4-line-panel: #1f2836;    /* panel borders, EQ graph border */
+  --u4-line-row: #18212f;      /* settings row separators, dyn graph bg lines */
+  --u4-line-faint: #222a36;    /* unselected route/fx slot borders */
+  --u4-line-ctl: #3a414c;      /* default button borders */
+  --u4-line-ctl-2: #3a4352;    /* header back button border */
+  --u4-rail-border: #2a3343; /* pan bar border */
+  --u4-divider: #2a323f;       /* header toolbar/scene divider + bank rail border */
+  --u4-seg-border: #343d4b;    /* settings segmented unselected border */
+
+  /* Text scale (template uses 10,11,12,13,14,15,16,17,18 and 34px; w600/w500) */
+  --u4-text-1: #e8edf5;  /* primary text, buttons, readouts */
+  --u4-text-2: #eef2f7;  /* selected segment text, scene names */
+  --u4-text-3: #dfe6ef;  /* header toolbar glyphs */
+  --u4-text-4: #c9d1dc;  /* secondary text, unselected segment text */
+  --u4-text-5: #a7b1c0;  /* descriptions, scene numbers */
+  --u4-text-6: #8f9bb0;  /* section titles (Display/Faders/Safety/About), knob labels */
+  --u4-text-7: #8792a4;  /* axis labels, hints ("After patching...") */
+  --u4-text-8: #7d889b;  /* dyn axis numbers */
+  --u4-text-9: #7f8a9c;  /* channel tab note text */
+  --u4-text-10: #6c788c; /* EQ/Dyn mini labels, graph frequency labels */
+  --u4-text-dim: #5d6878; /* disabled recall button text */
+  --u4-text-on-dark: #0b0f14; /* text on light selected chips */
+  --u4-text-on-green: #10240f; /* text on green buttons */
+
+  /* Greens (mute off is dark red; on-green buttons, EQ-in, connected dot) */
+  --u4-green: #5cdb5c;      /* primary green button bg, EQ In, Connect btn */
+  --u4-green-hi: #7be27b;   /* scene "Current" tag, connected status, meter-side */
+  --u4-meter-green: #5fe060; /* fader meter gradient base */
+  --u4-conn-dot: #5fe060;   /* header connection dot when online */
+  --u4-green-ink: #10240f;  /* text on green */
+  --u4-green-halo: rgba(95, 224, 96, 0.18); /* connection card halo */
+  --u4-meter-cover: #1c2416; /* meter unlit cover */
+
+  /* Amber / yellow (lock banner, scene pending, bypassed FX, meter mid band) */
+  --u4-amber: #f0b44a;      /* lock border, recall pending, Bypassed text */
+  --u4-amber-hi: #f6c76a;   /* lock text, phantom armed border */
+  --u4-amber-deep: #2a1f0a; /* lock banner bg, FX bypassed button bg */
+  --u4-amber-ink: #241703;  /* text on amber */
+  --u4-meter-amber: #e7c12f; /* meter gradient mid band */
+  --u4-curve-gold: #f0d36a; /* EQ curve stroke */
+  --u4-dyn-gold: #c8b43c;   /* mixer strip Dyn thumbnail stroke */
+
+  /* Reds (meter top band, mute-on, disconnect, offline card) */
+  --u4-red: #ff4a3d;        /* meter gradient top, offline dot */
+  --u4-red-btn: #e5322b;    /* MUTE on bg */
+  --u4-red-btn-bg-off: #4b0d0f; /* MUTE off bg */
+  --u4-red-btn-tx-off: #f2d6d6; /* MUTE off text */
+  --u4-red-line: #6a1b1e;   /* MUTE off border */
+  --u4-red-hi: #ff7a73;     /* MUTE on border */
+  --u4-clip: #ff3b30;       /* clip indicator lit */
+  --u4-clip-dark: #3a1214;  /* clip indicator unlit */
+  --u4-gr-lit: #ff6b4a;     /* gain-reduction block lit */
+  --u4-gr-dark: #3a1a14;    /* gain-reduction block unlit */
+
+  /* Accents (bank colours, sends-on-fader, FX purple, sends fill) */
+  --u4-cyan: #22d3e6;       /* Mix bank + sends-on-fader fader line/fill */
+  --u4-cyan-hi: #5fe3f0;    /* route tile src colour, Mix tint */
+  --u4-blue: #2563eb;       /* Grp/FxSnd bank */
+  --u4-purple: #c026d3;     /* Mtx/Main bank */
+  --u4-fx: #b28cff;         /* FX rack accent (slots, knobs, type selected) */
+  --u4-fx-ink: #1a0f2e;     /* text on FX purple */
+  --u4-ch-green: #5cdb5c;   /* Ch/FxRet bank colour */
+  --u4-dca: #dc2626;        /* DCA bank colour */
+  --u4-tab-blue: #8fb4ff;   /* Grp tint, delay knob when on */
+  --u4-tab-pink: #ea8cf2;   /* Mtx tint */
+  --u4-tab-red: #ff8a80;    /* DCA tint, unpatched src */
+  --u4-eq-orange: #ff9f43;  /* compressor knobs + EQ Lo band */
+  --u4-eq-yellow: #f6d743;  /* EQ Lo-Mid band */
+  --u4-eq-cyan: #3ed0e0;    /* EQ Hi-Mid band + gate knobs */
+  --u4-eq-grey: #d7dde8;    /* HPF node colour */
+  --u4-master-line: #ffd25a; /* master strip fader cap line */
+  --u4-phantom-on: #d92d22; /* 48V On bg */
+  --u4-unpatch-bg: #2a0d0e; /* Unpatch button bg */
+  --u4-offline-card: #5a4420; /* offline connection card border */
+  --u4-offline-dot: #f0b44a;  /* offline dot */
+  --u4-conn-card-on: #2c4a2e; /* connected card border / connect btn border */
+  --u4-conn-card-off: #5a2420; /* not-connected card border */
+  --u4-io-tile: #1a2332;    /* device icon tile bg */
+
+  /* Focus + links (template <style>) */
+  --u4-focus: #7cc4ff;
+  --u4-link: #7cc4ff;
+  --u4-link-hover: #a9d8ff;
+
+  /* Radii (design is 3px almost everywhere; tabs 5px, EQ cards 6px, bank rail 8px) */
+  --u4-r-1: 1px;
+  --u4-r-2: 2px;
+  --u4-r-3: 3px;
+  --u4-r-4: 4px;
+  --u4-r-5: 5px;
+  --u4-r-6: 6px;
+  --u4-r-8: 8px;
+
+  /* Icon buttons (header FX/Routing/Connect/Settings): 46x46, radius 3 */
+  --u4-iconbtn: 46px;
+
+  /* Segmented options (Settings rows h40; route bank chips h36; EQ type chips h30) */
+  --u4-seg-h: 40px;
+  --u4-seg-h-sm: 36px;
+  --u4-seg-h-xs: 30px;
+  --u4-seg-on-bg: #e8edf5;
+  --u4-seg-on-fg: #0b0f14;
+  --u4-seg-off-bg: #2b3038;
+  --u4-seg-off-fg: #c9d1dc;
+
+  /* Default grey button (Flat, Cancel, Scan, Disconnect, Tap: h40/44/46/48) */
+  --u4-btn-bg: #2b3038;
+  --u4-btn-fg: #e8edf5;
+  --u4-btn-border: #3a414c;
+
+  /* Selected chip (scene selected / bank tile selected in Settings/Routing grids) */
+  --u4-chip-on-bg: #eef2f7;
+  --u4-chip-on-fg: #0b0f14;
+}

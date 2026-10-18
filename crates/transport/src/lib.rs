@@ -7,13 +7,10 @@
 pub mod backoff;
 pub mod discovery;
 pub mod mackie;
-pub mod meter;
 pub mod meters;
 pub mod osc;
-pub mod reconnect;
 pub mod session;
 pub mod tcp;
-pub mod udp;
 
 pub use backoff::{backoff_delays, connect_with_backoff, Backoff};
 pub use discovery::{

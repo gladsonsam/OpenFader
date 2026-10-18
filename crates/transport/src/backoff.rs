@@ -77,8 +77,7 @@ where
 }
 
 /// Backoff delays for attempts 0..`max_attempts`: 250ms doubling to an 8s cap.
-/// Pure iterator so drivers never hand-roll sleep loops. (Merged here from the
-/// old `reconnect` module; `crate::reconnect::backoff_delays` still resolves.)
+/// Pure iterator so drivers never hand-roll sleep loops.
 pub fn backoff_delays(max_attempts: usize) -> impl Iterator<Item = Duration> {
     (0..max_attempts).map(|n| Duration::from_millis(250 << n.min(5)))
 }

@@ -43,7 +43,11 @@
 //!   Channel-strip scope only here, so no arm.
 //! - `preamp/on`: xair-api README claims it but `shared.py` defines no such
 //!   leaf, and `/ch/16/preamp/on` is silent. No arm.
-//! - `config/color`: silent on `/ch/16`. Out of scope, no arm.
+//! - `config/color` on `/ch/16`: an earlier probe round logged this as
+//!   silent, but a 2026-10-18 driver-path re-read answers (`,i` 0) and a
+//!   same-value write-back on ch2 ACKs with zero state change — consistent
+//!   with `look.rs` (`/ch/01`, `/ch/16`, `/lr` color all answer). The old
+//!   silence note was wrong; struck, not trusted.
 
 use openmix_transport::osc;
 use rosc::{OscMessage, OscType};
@@ -195,18 +199,6 @@ pub fn usbreturn_from_msg(msg: &OscMessage) -> anyhow::Result<i32> {
     Ok(i)
 }
 
-/// Encode a plain (non-inverted) preamp bool switch (`invert`, `hpon`) the
-/// way xair-api writes it: int `1`/`0`. (Unlike `/mix/on`, these are NOT
-/// inverted — `osc::on_arg` must not be used here.)
-pub fn input_bool_arg(on: bool) -> OscType {
-    OscType::Int(if on { 1 } else { 0 })
-}
-
-/// Decode a preamp bool reply (`wire == 1` means on).
-pub fn input_bool_is_on(msg: &OscMessage) -> anyhow::Result<bool> {
-    Ok(osc::int_arg(msg)? != 0)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -310,21 +302,5 @@ mod tests {
             args: vec![OscType::String("U18".into())],
         };
         assert!(usbreturn_from_msg(&wrong_kind).is_err());
-    }
-
-    #[test]
-    fn input_bool_codec_shapes() {
-        assert_eq!(input_bool_arg(true), OscType::Int(1));
-        assert_eq!(input_bool_arg(false), OscType::Int(0));
-        let on = OscMessage {
-            addr: "/ch/01/preamp/invert".into(),
-            args: vec![OscType::Int(1)],
-        };
-        let off = OscMessage {
-            addr: "/ch/01/preamp/invert".into(),
-            args: vec![OscType::Int(0)],
-        };
-        assert!(input_bool_is_on(&on).unwrap());
-        assert!(!input_bool_is_on(&off).unwrap());
     }
 }

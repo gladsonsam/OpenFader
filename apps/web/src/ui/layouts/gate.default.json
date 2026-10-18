@@ -1,0 +1,141 @@
+{
+  "id": "gate",
+  "module": "col",
+  "props": {
+    "gap": 6,
+    "flex": "1 1 auto",
+    "box": "content-box"
+  },
+  "children": [
+    {
+      "id": "head",
+      "module": "dyn-summary",
+      "props": {
+        "kind": "gate"
+      },
+      "bind": {
+        "label": "dynLabel",
+        "bg": "dynBg",
+        "fg": "dynFg",
+        "pressed": "dynPressed",
+        "summary": "dynSummary"
+      },
+      "on": {
+        "toggle": {
+          "do": "ui.toggleDyn",
+          "args": {
+            "id": {
+              "$expr": "selId"
+            },
+            "which": {
+              "$expr": "dynKind"
+            }
+          }
+        }
+      },
+      "when": "dynParams != null"
+    },
+    {
+      "id": "body",
+      "module": "row",
+      "props": {
+        "gap": 6,
+        "wrap": true,
+        "flex": "1 1 auto",
+        "minHeight": 0,
+        "box": "content-box"
+      },
+      "children": [
+        {
+          "id": "graph",
+          "module": "dyn-transfer-graph",
+          "props": {
+            "kind": "gate",
+            "color": "#3ed0e0"
+          },
+          "bind": {
+            "aria": "dynAria",
+            "path": "dynPath",
+            "fill": "dynFill",
+            "fillColor": "dynFillColor",
+            "thrX": "dynThrX",
+            "thrLeft": "dynThrLeft",
+            "thrText": "dynThrText",
+            "grid": "dynGrid",
+            "axis": "dynAxis",
+            "params": "dynParams",
+            "frozen": "frozen",
+            "staticDotL": "dynDotL",
+            "staticDotT": "dynDotT",
+            "getLevel": "dynGetLevel"
+          }
+        },
+        {
+          "id": "knobs",
+          "module": "dyn-knob-panel",
+          "props": {
+            "kind": "gate",
+            "color": "#3ed0e0"
+          },
+          "bind": {
+            "knobs": "dynKnobs",
+            "gate": "dynGate",
+            "comp": "dynComp",
+            "fine": "store.fine",
+            "locked": "store.locked"
+          },
+          "on": {
+            "knob": {
+              "do": "channel.dynKnob",
+              "args": {
+                "id": {
+                  "$expr": "selId"
+                },
+                "which": {
+                  "$expr": "dynKind"
+                },
+                "prop": {
+                  "$expr": "payload.prop"
+                },
+                "value": {
+                  "$expr": "payload.value"
+                },
+                "locked": {
+                  "$expr": "store.locked"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "when": "dynParams != null"
+    },
+    {
+      "id": "dyn-empty",
+      "module": "col",
+      "props": {
+        "flex": "1 1 auto",
+        "align": "center",
+        "justify": "center",
+        "padding": 24,
+        "radius": 3,
+        "border": "1px solid #1f2836",
+        "background": "#0a0f17",
+        "box": "content-box"
+      },
+      "when": "dynParams == null",
+      "children": [
+        {
+          "id": "dyn-empty-text",
+          "module": "text",
+          "props": {
+            "value": "No dynamics on this channel.",
+            "size": 15,
+            "color": "#a7b1c0",
+            "align": "center"
+          }
+        }
+      ]
+    }
+  ]
+}

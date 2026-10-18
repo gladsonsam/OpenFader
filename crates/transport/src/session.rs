@@ -210,9 +210,9 @@ impl Drop for OscSession {
 }
 
 // ---------------------------------------------------------------------------
-// UDP peer: bound socket with send/recv + timeouts.
-// Merged here from the old `udp` module so all socket setup lives next to the
-// session that wraps it; `crate::udp::UdpPeer` still resolves via the shim.
+// UDP peer: bound socket with send/recv + timeouts. All socket setup lives
+// next to the session that wraps it; import via `crate::session::UdpPeer`
+// (or the crate root).
 //
 
 /// A bound UDP socket with convenience send/recv helpers.

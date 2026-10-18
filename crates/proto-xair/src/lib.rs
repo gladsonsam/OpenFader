@@ -6,13 +6,18 @@
 use openmix_core::{MixerDriver, MixerInfo, ParamValue, StripId};
 use openmix_transport::{KeepaliveConfig, OscSession, osc};
 use rosc::{OscMessage, OscType};
-use std::sync::OnceLock;
 use tokio::sync::{Mutex, broadcast};
 
 pub mod dyn_gr;
+pub mod codec;
+pub mod comp;
+pub mod eq;
 pub mod fx;
+pub mod gate;
 pub mod headamp;
 pub mod input;
+pub mod look;
+pub mod mix;
 
 pub mod addrs {
     //! X-Air address table. The wire is 1-based with zero-padded two-digit
@@ -192,6 +197,322 @@ pub mod addrs {
             assert!(bus(6).is_err());
         }
     }
+}
+
+/// XR18 strip index map (global, 35 strips). Channels 0..16 keep their
+/// historic meaning; buses stay single-digit on the wire (T2); the FX-return
+/// family lives at `/rtn/N` (the firmware map has no `/fxrtn` root —
+/// `/fxrtn/N/*` is silent on FW 1.20); DCA strips address fader/on directly
+/// under `/dca/N` (no `/mix` segment — `/dca/N/mix/fader` is silent).
+/// Every family below is live-verified on the owner rig except `/rtn/N`
+/// fader/on (verified present 2026-10-18: fader + on answer) — see
+/// `docs/xr18-baseline.md`:
+/// | indices | family | kind  | root       |
+/// |---------|--------|-------|------------|
+/// | 0..16   | ch     | in    | `/ch/NN`   |
+/// | 16..20  | fxret  | ret   | `/rtn/N`   |
+/// | 20..26  | bus    | bus   | `/bus/N`   |
+/// | 26..30  | fxsnd  | fxsnd | `/fxsend/N`|
+/// | 30..31  | main   | main  | `/lr`      |
+/// | 31..35  | dca    | dca   | `/dca/N`   |
+pub const XAIR_TOPOLOGY: [openmix_core::StripFamily; 6] = [
+    openmix_core::StripFamily { key: "ch", kind: openmix_core::StripKind::In, label: "Ch 1-16", first: 0, count: 16, name_prefix: "Ch", color_default: 2 },
+    openmix_core::StripFamily { key: "fxret", kind: openmix_core::StripKind::Ret, label: "FxRet 1-4", first: 16, count: 4, name_prefix: "FxRet", color_default: 6 },
+    openmix_core::StripFamily { key: "bus", kind: openmix_core::StripKind::Bus, label: "Bus 1-6", first: 20, count: 6, name_prefix: "Mix", color_default: 6 },
+    openmix_core::StripFamily { key: "fxsnd", kind: openmix_core::StripKind::FxSnd, label: "FxSnd 1-4", first: 26, count: 4, name_prefix: "FxSnd", color_default: 4 },
+    openmix_core::StripFamily { key: "main", kind: openmix_core::StripKind::Main, label: "Main LR", first: 30, count: 1, name_prefix: "Main", color_default: 11 },
+    openmix_core::StripFamily { key: "dca", kind: openmix_core::StripKind::Dca, label: "DCA 1-4", first: 31, count: 4, name_prefix: "DCA", color_default: 0 },
+];
+
+/// Total addressable strips on the XR18 map (16 + 4 + 6 + 4 + 1 + 4).
+pub const XAIR_STRIPS: usize = 35;
+
+/// Loopback-tested param-plane capabilities: the ids this driver implements
+/// with `get_param`/`set_param` (each covered by a strict fake-desk loopback
+/// test below, and every address confirmed against the owner XR18 FW 1.20 —
+/// see `docs/xr18-baseline.md`). Everything else in
+/// [`openmix_core::params::CATALOGUE`] is reported in `caps.unsupported`
+/// so the UI hides it. Honest exclusions: `delay_on`/`delay_ms`
+/// (X32-only), `hpf_slope` (X32-only), `source` (`insrc` live-silent on FW
+/// 1.20), `icon` (no such leaf in the firmware map), `link` (stereo link is
+/// the global `/config/chlink/1-2…`, not a per-channel leaf — silent),
+/// `send1..10_on` + all `auxN_mute`/`fxN_mute` (the firmware send block has
+/// no on/off leaf and `/ch/NN/mix/MM/on` is live-silent — baseline T7),
+/// `send11..16_*` (only 6+4 send slots), per-channel `eq5_*` (channels and
+/// aux returns carry 4 bands; `eq5/6_*` ride buses + main only).
+pub const XAIR_CAPABILITIES: &[&str] = &[
+    "fader",
+    "mute",
+    "name",
+    "gain",
+    "phantom",
+    "usbreturn",
+    "trim",
+    "polarity",
+    "pan",
+    "hpf_on",
+    "hpf_freq",
+    "color",
+    "gate_on",
+    "gate_thr",
+    "gate_range",
+    "gate_att",
+    "gate_hold",
+    "gate_rel",
+    "gate_mode",
+    "gate_key_src",
+    "gate_filter_on",
+    "gate_filter_type",
+    "gate_filter_freq",
+    "comp_on",
+    "comp_thr",
+    "comp_ratio",
+    "comp_knee",
+    "comp_makeup",
+    "comp_att",
+    "comp_hold",
+    "comp_rel",
+    "comp_mode",
+    "comp_det",
+    "comp_env",
+    "comp_mix",
+    "comp_auto",
+    "comp_key_src",
+    "comp_filter_on",
+    "comp_filter_type",
+    "comp_filter_freq",
+    "eq_on",
+    "eq1_gain",
+    "eq1_freq",
+    "eq1_q",
+    "eq1_type",
+    "eq2_gain",
+    "eq2_freq",
+    "eq2_q",
+    "eq2_type",
+    "eq3_gain",
+    "eq3_freq",
+    "eq3_q",
+    "eq3_type",
+    "eq4_gain",
+    "eq4_freq",
+    "eq4_q",
+    "eq4_type",
+    "eq5_gain",
+    "eq5_freq",
+    "eq5_q",
+    "eq5_type",
+    "eq6_gain",
+    "eq6_freq",
+    "eq6_q",
+    "eq6_type",
+    "aux1_level",
+    "aux2_level",
+    "aux3_level",
+    "aux4_level",
+    "aux5_level",
+    "aux6_level",
+    "fx1_level",
+    "fx2_level",
+    "fx3_level",
+    "fx4_level",
+    "send1_level",
+    "send1_tap",
+    "send1_pan",
+    "send2_level",
+    "send2_tap",
+    "send2_pan",
+    "send3_level",
+    "send3_tap",
+    "send3_pan",
+    "send4_level",
+    "send4_tap",
+    "send4_pan",
+    "send5_level",
+    "send5_tap",
+    "send5_pan",
+    "send6_level",
+    "send6_tap",
+    "send6_pan",
+    "send7_level",
+    "send7_tap",
+    "send7_pan",
+    "send8_level",
+    "send8_tap",
+    "send8_pan",
+    "send9_level",
+    "send9_tap",
+    "send9_pan",
+    "send10_level",
+    "send10_tap",
+    "send10_pan",
+];
+
+/// Parse an `eq{b}_{leaf}` param id into its 1-based band and leaf.
+/// Bands 1..=6 parse here; the per-kind band cap (4 on channels/returns,
+/// 6 on buses/main) is enforced by [`check_eq_band`] after the kind is
+/// known, so out-of-range bands on a desk family error instead of
+/// hitting a silent address.
+fn eq_leaf(param: &str) -> anyhow::Result<(u8, &str)> {
+    let rest = param
+        .strip_prefix("eq")
+        .ok_or_else(|| anyhow::anyhow!("xair: not an eq param {param:?}"))?;
+    let (band, leaf) = rest
+        .split_once('_')
+        .ok_or_else(|| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    let band: u8 = band
+        .parse()
+        .map_err(|_| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    eq::check_band_wide(band)?;
+    Ok((band, leaf))
+}
+
+/// Enforce the firmware band count for one strip kind: channels and aux
+/// returns carry 4 bands, buses and main LR 6 (`1..n: 4 4 6 6`).
+fn check_eq_band(kind: openmix_core::StripKind, band: u8) -> anyhow::Result<()> {
+    use openmix_core::StripKind as K;
+    let max = match kind {
+        K::In | K::Ret => 4,
+        _ => 6,
+    };
+    if band < 1 || band > max {
+        anyhow::bail!("xair: eq band {band} out of range 1..={max} for {kind:?} strips");
+    }
+    Ok(())
+}
+
+/// Parse an `aux{n}_level` param id into its 1-based send number.
+fn aux_send(param: &str) -> anyhow::Result<u8> {
+    let rest = param
+        .strip_prefix("aux")
+        .ok_or_else(|| anyhow::anyhow!("xair: not an aux param {param:?}"))?;
+    let (n, leaf) = rest
+        .split_once('_')
+        .ok_or_else(|| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    if leaf != "level" {
+        anyhow::bail!("xair: unknown param {param:?}");
+    }
+    let n: u8 = n
+        .parse()
+        .map_err(|_| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    if !(1..=mix::AUX_SENDS).contains(&n) {
+        anyhow::bail!("xair: unknown param {param:?}");
+    }
+    Ok(n)
+}
+
+/// Parse a generic `send{N}_{leaf}` param id into its send number (1..=10)
+/// and leaf (`level|tap|pan|on`).
+fn generic_send(param: &str) -> anyhow::Result<(u8, &str)> {
+    let rest = param
+        .strip_prefix("send")
+        .ok_or_else(|| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    let (n, leaf) = rest
+        .split_once('_')
+        .ok_or_else(|| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    let n: u8 = n
+        .parse()
+        .map_err(|_| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    if !(1..=mix::AUX_SENDS + mix::FX_SENDS).contains(&n) {
+        anyhow::bail!("xair: unknown param {param:?}");
+    }
+    if !matches!(leaf, "level" | "tap" | "pan" | "on") {
+        anyhow::bail!("xair: unknown param {param:?}");
+    }
+    Ok((n, leaf))
+}
+
+/// Global strip index to (family kind, OSC root). Channels keep the
+/// `/ch/NN` root (T3); FX returns live at `/rtn/N` (NOT `/fxrtn/N` — the
+/// desk is silent there); buses are single-digit `/bus/N` (T2); DCA strips
+/// are `/dca/N` with fader/on directly underneath (no `/mix` segment).
+/// Every root below is live-verified on the owner rig (FW 1.20).
+fn strip_root(strip: u16) -> anyhow::Result<(openmix_core::StripKind, String)> {
+    use openmix_core::StripKind as K;
+    let s = strip as usize;
+    if s < 16 {
+        return Ok((K::In, format!("/ch/{:02}", s + 1)));
+    }
+    if (16..20).contains(&s) {
+        return Ok((K::Ret, format!("/rtn/{}", s - 16 + 1)));
+    }
+    if (20..26).contains(&s) {
+        return Ok((K::Bus, format!("/bus/{}", s - 20 + 1)));
+    }
+    if (26..30).contains(&s) {
+        return Ok((K::FxSnd, format!("/fxsend/{}", s - 26 + 1)));
+    }
+    if s == 30 {
+        return Ok((K::Main, "/lr".to_string()));
+    }
+    if (31..35).contains(&s) {
+        return Ok((K::Dca, format!("/dca/{}", s - 31 + 1)));
+    }
+    anyhow::bail!("channel strip {strip} out of range 0..=34 (0-based)")
+}
+
+/// Scope-check one catalogue id against a strip kind: out-of-scope is a
+/// NON-drop-class error (the engine pre-filters its poll set by scopes, so
+/// this only fires on direct misuse and must never shrink `caps`).
+fn check_scope(param: &str, kind: openmix_core::StripKind) -> anyhow::Result<()> {
+    let def = openmix_core::params::find(param)
+        .ok_or_else(|| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    if !openmix_core::params::supports_kind(def, kind) {
+        anyhow::bail!("xair: {param} out of scope for {kind:?} strips");
+    }
+    Ok(())
+}
+
+/// Mix fader address for one strip root (`/lr` keeps its dedicated leaf;
+/// DCA strips address `/dca/N/fader` directly — there is no `/mix`
+/// segment there and the desk stays silent on it).
+fn strip_mix_fader(root: &str) -> String {
+    if root == "/lr" {
+        return addrs::MAIN_FADER.to_string();
+    }
+    if root.starts_with("/dca/") {
+        return format!("{root}/fader");
+    }
+    format!("{root}/mix/fader")
+}
+
+/// Mix on/mute address for one strip root (DCA: `/dca/N/on` directly).
+fn strip_mix_on(root: &str) -> String {
+    if root == "/lr" {
+        return addrs::MAIN_ON.to_string();
+    }
+    if root.starts_with("/dca/") {
+        return format!("{root}/on");
+    }
+    format!("{root}/mix/on")
+}
+
+/// Config name address for one strip root.
+fn strip_config_name(root: &str) -> String {
+    if root == "/lr" {
+        return addrs::MAIN_NAME.to_string();
+    }
+    format!("{root}/config/name")
+}
+
+/// Parse an `fx{n}_level` param id into its 1-based send number.
+fn fx_send(param: &str) -> anyhow::Result<u8> {
+    let rest = param
+        .strip_prefix("fx")
+        .ok_or_else(|| anyhow::anyhow!("xair: not an fx param {param:?}"))?;
+    let (n, leaf) = rest
+        .split_once('_')
+        .ok_or_else(|| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    if leaf != "level" {
+        anyhow::bail!("xair: unknown param {param:?}");
+    }
+    let n: u8 = n
+        .parse()
+        .map_err(|_| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    if !(1..=mix::FX_SENDS).contains(&n) {
+        anyhow::bail!("xair: unknown param {param:?}");
+    }
+    Ok(n)
 }
 
 /// Live XR18-class mixer on UDP 10024.
@@ -452,6 +773,21 @@ impl MixerDriver for XAirDriver {
         "xair"
     }
 
+    /// Loopback-tested param-plane set (see [`XAIR_CAPABILITIES`]).
+    fn capabilities(&self) -> &'static [&'static str] {
+        XAIR_CAPABILITIES
+    }
+
+    /// XR18 strip map (16 in + 4 FX ret + 6 bus + 4 FX send + LR + 4 DCA).
+    fn topology(&self) -> Vec<openmix_core::StripFamily> {
+        XAIR_TOPOLOGY.to_vec()
+    }
+
+    /// Total addressable strips (35 on the XR18 map).
+    fn strip_count(&self) -> usize {
+        XAIR_STRIPS
+    }
+
     /// Addressable channel strips for this model (XR18: 16; `/rtn/aux` and
     /// buses/main are separate methods, not strips). Keeps `list`/sweeps
     /// off the phantom `/ch/17+` range the desk never answers (T3).
@@ -472,9 +808,9 @@ impl MixerDriver for XAirDriver {
     }
 
     async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
-        let ch = self.check_channel(strip.0)?;
+        let (_, root) = strip_root(strip.0)?;
         let guard = self.session().await?;
-        let addr = addrs::ch_fader(ch);
+        let addr = strip_mix_fader(&root);
         guard
             .as_ref()
             .unwrap()
@@ -483,17 +819,17 @@ impl MixerDriver for XAirDriver {
     }
 
     async fn get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
-        let ch = self.check_channel(strip.0)?;
+        let (_, root) = strip_root(strip.0)?;
         let guard = self.session().await?;
-        let addr = addrs::ch_fader(ch);
+        let addr = strip_mix_fader(&root);
         let reply = guard.as_ref().unwrap().query(&addr).await?;
         osc::fader_value(&reply)
     }
 
     async fn set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
-        let ch = self.check_channel(strip.0)?;
+        let (_, root) = strip_root(strip.0)?;
         let guard = self.session().await?;
-        let addr = addrs::ch_on(ch);
+        let addr = strip_mix_on(&root);
         guard
             .as_ref()
             .unwrap()
@@ -502,17 +838,17 @@ impl MixerDriver for XAirDriver {
     }
 
     async fn get_mute(&self, strip: StripId) -> anyhow::Result<bool> {
-        let ch = self.check_channel(strip.0)?;
+        let (_, root) = strip_root(strip.0)?;
         let guard = self.session().await?;
-        let addr = addrs::ch_on(ch);
+        let addr = strip_mix_on(&root);
         let reply = guard.as_ref().unwrap().query(&addr).await?;
         osc::mute_is_muted(&reply)
     }
 
     async fn set_name(&self, strip: StripId, name: &str) -> anyhow::Result<()> {
-        let ch = self.check_channel(strip.0)?;
+        let (_, root) = strip_root(strip.0)?;
         let guard = self.session().await?;
-        let addr = addrs::ch_name(ch);
+        let addr = strip_config_name(&root);
         guard
             .as_ref()
             .unwrap()
@@ -521,9 +857,9 @@ impl MixerDriver for XAirDriver {
     }
 
     async fn get_name(&self, strip: StripId) -> anyhow::Result<String> {
-        let ch = self.check_channel(strip.0)?;
+        let (_, root) = strip_root(strip.0)?;
         let guard = self.session().await?;
-        let addr = addrs::ch_name(ch);
+        let addr = strip_config_name(&root);
         let reply = guard.as_ref().unwrap().query(&addr).await?;
         Ok(osc::string_args(&reply).first().cloned().unwrap_or_default())
     }
@@ -613,38 +949,248 @@ impl MixerDriver for XAirDriver {
             .await
     }
 
-    /// GR reads ride the param path (least invention: no trait change, no
-    /// relay change). `fader`/`mute`/`name` arms repeat the trait default
-    /// verbatim (defaults are not inheritable); `gate_gr`/`comp_gr` serve
-    /// dB reduction `>= 0` from the last `/meters/6` blob and error when no
-    /// blob has arrived yet. No GR query address exists (see
-    /// [`crate::dyn_gr`]), so `set_param` for these ids stays unsupported.
+    /// Full param plane (see [`XAIR_CAPABILITIES`]). Strip roots come from
+    /// [`strip_root`]: channels (`/ch/NN`) carry the whole set; FX returns
+    /// (`/rtn/N`), buses and LR carry fader/mute/name/color plus the
+    /// kind-scoped gate/comp/EQ sets; FX-send masters and DCAs carry
+    /// fader/mute/name/color only (catalogue scopes). Every address/codec is
+    /// confirmed against the owner XR18 (FW 1.20) — see
+    /// `docs/xr18-baseline.md` for the readback table.
     ///
-    /// `gain` (dB) and `phantom` (bool) drive the channel preamps
-    /// (`/headamp/NN/…`, community-documented via xair-api-python — see
-    /// [`crate::headamp`]; NOT owner-rig verified). `set_param` mirrors
-    /// these plus the trait-default arms (defaults are not inheritable).
-    ///
-    /// Channel input routing (`crate::input`, owner-rig verified
-    /// 2026-10-18 on XR18 FW 1.20): `usbreturn` (whole-number float
-    /// `0..=17`, `/ch/NN/config/rtnsrc`), `trim` (dB `−18..=18`,
-    /// `/ch/NN/preamp/rtntrim`), `polarity` (bool, `/ch/NN/preamp/invert`),
-    /// `hpf_on` (bool, `/ch/NN/preamp/hpon`) and `hpf_freq` (Hz `20..=400`,
-    /// `/ch/NN/preamp/hpf`). `inputsource` (`/ch/NN/config/insrc`) and
-    /// channel `usbinput` (`/ch/NN/preamp/rtnsw`) stay unsupported — both
-    /// are live-silent on this rig (see [`crate::input`).
+    /// GR reads ride the param path (`gate_gr`/`comp_gr` serve dB reduction
+    /// `>= 0` from the last `/meters/6` blob; no GR query address exists).
+    /// `delay_on`/`delay_ms` (X32-only), `hpf_slope` (X32-only), `source`
+    /// (`insrc` live-silent, FW 1.20), `icon` (no firmware leaf), `link`
+    /// (global `/config/chlink`, no per-channel leaf), per-channel `eq5_*`
+    /// (channels/returns carry 4 bands; `eq5/6_*` ride buses + main),
+    /// `aux7/8_*`, `send11..16_*` and all legacy `auxN_mute`/`fxN_mute` plus
+    /// the v2 `send1..10_on` (the send block has no on/off leaf and
+    /// `/ch/NN/mix/MM/on` is live-silent — baseline T7) stay unsupported.
     async fn set_param(
         &self,
         strip: StripId,
         param: &str,
         value: ParamValue,
     ) -> anyhow::Result<()> {
+        let (kind, root) = strip_root(strip.0)?;
+        if openmix_core::params::find(param).is_some() {
+            check_scope(param, kind)?;
+        }
+        // Channel wire number for channel-only leaves (headamp/input: the
+        // scope check above already rejected non-input strips).
+        let ch = || self.check_channel(strip.0);
         match (param, value) {
             ("fader", ParamValue::Float(v)) => self.set_fader(strip, v).await,
             ("mute", ParamValue::Bool(m)) => self.set_mute(strip, m).await,
             ("name", ParamValue::Text(n)) => self.set_name(strip, &n).await,
-            ("pan", ParamValue::Float(_)) => {
-                anyhow::bail!("{}: pan not supported", self.name())
+            ("pan", ParamValue::Float(pan)) => {
+                let wire = mix::pan_to_wire(pan)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&format!("{root}/mix/pan"), vec![OscType::Float(wire)])
+                    .await
+            }
+            ("color", ParamValue::Float(v)) => {
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&look::strip_color(&root), vec![look::color_to_arg(v)?])
+                    .await
+            }
+            ("icon", ParamValue::Float(v)) => {
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&look::strip_icon(&root), vec![look::icon_to_arg(v)?])
+                    .await
+            }
+            ("link", ParamValue::Bool(on)) => {
+                let _ = ch()?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&look::strip_link(&root), vec![codec::bool_arg(on)])
+                    .await
+            }
+            ("gate_on", ParamValue::Bool(on)) => {
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&format!("{root}/gate/on"), vec![codec::bool_arg(on)])
+                    .await
+            }
+            ("comp_on", ParamValue::Bool(on)) => {
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&format!("{root}/dyn/on"), vec![codec::bool_arg(on)])
+                    .await
+            }
+            ("eq_on", ParamValue::Bool(on)) => {
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&eq::eq_on_r(&root), vec![codec::bool_arg(on)])
+                    .await
+            }
+            (p, ParamValue::Float(v)) if p.starts_with("eq") => {
+                let (band, leaf) = eq_leaf(p)?;
+                check_eq_band(kind, band)?;
+                let (addr, arg) = match leaf {
+                    "gain" => (eq::eq_gain_r(&root, band)?, OscType::Float(eq::gain_db_to_wire(v)?)),
+                    "freq" => (eq::eq_freq_r(&root, band)?, OscType::Float(eq::freq_hz_to_wire(v)?)),
+                    "q" => (eq::eq_q_r(&root, band)?, OscType::Float(eq::q_to_wire(v)?)),
+                    "type" => (eq::eq_type_r(&root, band)?, eq::eqtype_to_arg(v)?),
+                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
+                };
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&addr, vec![arg]).await
+            }
+            (p, ParamValue::Float(v))
+                if matches!(p, "gate_mode" | "gate_key_src" | "gate_filter_type") =>
+            {
+                let (addr, arg) = match p {
+                    "gate_mode" => (gate::gate_mode(&root), gate::int_leaf_to_arg(v, gate::GATE_MODE_MIN, gate::GATE_MODE_MAX, "mode")?),
+                    "gate_key_src" => (gate::gate_key_src(&root), gate::int_leaf_to_arg(v, gate::GATE_KEY_SRC_MIN, gate::GATE_KEY_SRC_MAX, "keysrc")?),
+                    _ => (gate::gate_filter_type(&root), gate::int_leaf_to_arg(v, gate::GATE_FILTER_TYPE_MIN, gate::GATE_FILTER_TYPE_MAX, "filter type")?),
+                };
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&addr, vec![arg]).await
+            }
+            ("gate_filter_on", ParamValue::Bool(on)) => {
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&gate::gate_filter_on(&root), vec![codec::bool_arg(on)]).await
+            }
+            ("gate_filter_freq", ParamValue::Float(v)) => {
+                let wire = gate::filter_hz_to_wire(v)?;
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&gate::gate_filter_freq(&root), vec![OscType::Float(wire)]).await
+            }
+            (p, ParamValue::Float(v)) if p.starts_with("gate_") => {
+                let addr = match p {
+                    "gate_thr" => (gate::gate_thr(&root), gate::lin_to_wire(v, gate::GATE_THR_MIN_DB, gate::GATE_THR_MAX_DB, "thr")?),
+                    "gate_range" => (gate::gate_range(&root), gate::lin_to_wire(v, gate::GATE_RANGE_MIN_DB, gate::GATE_RANGE_MAX_DB, "range")?),
+                    "gate_att" => (gate::gate_attack(&root), gate::lin_to_wire(v, gate::GATE_ATT_MIN_MS, gate::GATE_ATT_MAX_MS, "attack")?),
+                    "gate_hold" => (gate::gate_hold(&root), gate::log_to_wire(v, gate::GATE_HOLD_MIN_MS, gate::GATE_HOLD_MAX_MS, "hold")?),
+                    "gate_rel" => (gate::gate_release(&root), gate::log_to_wire(v, gate::GATE_REL_MIN_MS, gate::GATE_REL_MAX_MS, "release")?),
+                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
+                };
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&addr.0, vec![OscType::Float(addr.1)]).await
+            }
+            (p, ParamValue::Float(v))
+                if matches!(p, "comp_thr" | "comp_knee" | "comp_makeup" | "comp_att" | "comp_hold" | "comp_rel" | "comp_mix") =>
+            {
+                let (addr, wire) = match p {
+                    "comp_thr" => (comp::comp_thr(&root), comp::lin_to_wire(v, comp::COMP_THR_MIN_DB, comp::COMP_THR_MAX_DB, "thr")?),
+                    "comp_knee" => (comp::comp_knee(&root), comp::lin_to_wire(v, comp::COMP_KNEE_MIN, comp::COMP_KNEE_MAX, "knee")?),
+                    "comp_makeup" => (comp::comp_makeup(&root), comp::lin_to_wire(v, comp::COMP_MAKEUP_MIN_DB, comp::COMP_MAKEUP_MAX_DB, "makeup")?),
+                    "comp_att" => (comp::comp_attack(&root), comp::lin_to_wire(v, comp::COMP_ATT_MIN_MS, comp::COMP_ATT_MAX_MS, "attack")?),
+                    "comp_hold" => (comp::comp_hold(&root), comp::log_to_wire(v, comp::COMP_HOLD_MIN_MS, comp::COMP_HOLD_MAX_MS, "hold")?),
+                    "comp_rel" => (comp::comp_release(&root), comp::log_to_wire(v, comp::COMP_REL_MIN_MS, comp::COMP_REL_MAX_MS, "release")?),
+                    _ => (comp::comp_mix(&root), comp::lin_to_wire(v, comp::COMP_MIX_MIN, comp::COMP_MIX_MAX, "mix")?),
+                };
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&addr, vec![OscType::Float(wire)]).await
+            }
+            ("comp_ratio", ParamValue::Float(v)) => {
+                // Firmware step table: the UI ratio number must be an exact
+                // table entry; the wire is the INT index.
+                let idx = comp::ratio_to_index(v)?;
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&comp::comp_ratio(&root), vec![OscType::Int(idx)]).await
+            }
+            (p, ParamValue::Float(v))
+                if matches!(p, "comp_mode" | "comp_det" | "comp_env" | "comp_key_src" | "comp_filter_type") =>
+            {
+                let (addr, arg) = match p {
+                    "comp_mode" => (comp::comp_mode(&root), comp::int_leaf_to_arg(v, comp::COMP_MODE_MIN, comp::COMP_MODE_MAX, "mode")?),
+                    "comp_det" => (comp::comp_det(&root), comp::int_leaf_to_arg(v, comp::COMP_DET_MIN, comp::COMP_DET_MAX, "det")?),
+                    "comp_env" => (comp::comp_env(&root), comp::int_leaf_to_arg(v, comp::COMP_ENV_MIN, comp::COMP_ENV_MAX, "env")?),
+                    "comp_key_src" => (comp::comp_key_src(&root), comp::int_leaf_to_arg(v, 0, 22, "keysrc")?),
+                    _ => (comp::comp_filter_type(&root), comp::int_leaf_to_arg(v, 0, 8, "filter type")?),
+                };
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&addr, vec![arg]).await
+            }
+            ("comp_auto", ParamValue::Bool(on)) => {
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&comp::comp_auto(&root), vec![codec::bool_arg(on)]).await
+            }
+            ("comp_filter_on", ParamValue::Bool(on)) => {
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&comp::comp_filter_on(&root), vec![codec::bool_arg(on)]).await
+            }
+            ("comp_filter_freq", ParamValue::Float(v)) => {
+                let wire = gate::filter_hz_to_wire(v)?;
+                let guard = self.session().await?;
+                guard.as_ref().unwrap().send(&comp::comp_filter_freq(&root), vec![OscType::Float(wire)]).await
+            }
+            (p, ParamValue::Float(v)) if p.starts_with("aux") => {
+                let n = aux_send(p)?;
+                let ch = ch()?;
+                let wire = mix::send_db_to_wire(v)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&mix::send_level(ch, mix::aux_slot(n)?)?, vec![OscType::Float(wire)])
+                    .await
+            }
+            (p, ParamValue::Float(v)) if p.starts_with("fx") => {
+                let n = fx_send(p)?;
+                let ch = ch()?;
+                let wire = mix::send_db_to_wire(v)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&mix::send_level(ch, mix::fx_slot(n)?)?, vec![OscType::Float(wire)])
+                    .await
+            }
+            (p, ParamValue::Float(v)) if p.starts_with("send") => {
+                let (n, leaf) = generic_send(p)?;
+                let ch = ch()?;
+                let slot = mix::generic_send_slot(n)?;
+                let guard = self.session().await?;
+                let session = guard.as_ref().unwrap();
+                match leaf {
+                    "level" => {
+                        let wire = mix::send_db_to_wire(v)?;
+                        session.send(&mix::send_level(ch, slot)?, vec![OscType::Float(wire)]).await
+                    }
+                    "tap" => session.send(&mix::send_tap(&root, slot)?, vec![mix::tap_to_arg(v)?]).await,
+                    "pan" => {
+                        let wire = mix::pan_to_wire(v)?;
+                        session.send(&mix::send_pan(&root, slot)?, vec![OscType::Float(wire)]).await
+                    }
+                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
+                }
+            }
+            (p, ParamValue::Bool(on)) if p.starts_with("send") => {
+                // `sendN_on` only (level/tap/pan are floats): wrong-leaf bools
+                // fall through to the unknown-param error below. The address
+                // is root-based; the scope check above already confined this
+                // to input strips.
+                let (n, leaf) = generic_send(p)?;
+                if leaf != "on" {
+                    anyhow::bail!("{}: unknown param {p:?}", self.name());
+                }
+                let slot = mix::generic_send_slot(n)?;
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&mix::send_on(&root, slot)?, vec![codec::bool_arg(on)])
+                    .await
             }
             ("gain", ParamValue::Float(db)) => {
                 let ch = self.check_channel(strip.0)?;
@@ -664,7 +1210,7 @@ impl MixerDriver for XAirDriver {
                     .unwrap()
                     .send(
                         &headamp::headamp_phantom(ch),
-                        vec![headamp::phantom_arg(on)],
+                        vec![codec::bool_arg(on)],
                     )
                     .await
             }
@@ -693,7 +1239,7 @@ impl MixerDriver for XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&input::preamp_invert(ch), vec![input::input_bool_arg(on)])
+                    .send(&input::preamp_invert(ch), vec![codec::bool_arg(on)])
                     .await
             }
             ("hpf_on", ParamValue::Bool(on)) => {
@@ -702,7 +1248,7 @@ impl MixerDriver for XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&input::preamp_hpf_on(ch), vec![input::input_bool_arg(on)])
+                    .send(&input::preamp_hpf_on(ch), vec![codec::bool_arg(on)])
                     .await
             }
             ("hpf_freq", ParamValue::Float(hz)) => {
@@ -720,12 +1266,34 @@ impl MixerDriver for XAirDriver {
     }
 
     async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
+        let (kind, root) = strip_root(strip.0)?;
+        if openmix_core::params::find(param).is_some() {
+            check_scope(param, kind)?;
+        }
+        let ch = || self.check_channel(strip.0);
         match param {
             "fader" => self.get_fader(strip).await.map(ParamValue::Float),
             "mute" => self.get_mute(strip).await.map(ParamValue::Bool),
             "name" => self.get_name(strip).await.map(ParamValue::Text),
+            "color" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&look::strip_color(&root)).await?;
+                look::int_from_msg(&reply, look::COLOR_MIN, look::COLOR_MAX, "color")
+                    .map(|i| ParamValue::Float(i as f32))
+            }
+            "icon" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&look::strip_icon(&root)).await?;
+                look::int_from_msg(&reply, look::ICON_MIN, look::ICON_MAX, "icon")
+                    .map(|i| ParamValue::Float(i as f32))
+            }
+            "link" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&look::strip_link(&root)).await?;
+                osc::is_on(&reply).map(ParamValue::Bool)
+            }
             "gain" => {
-                let ch = self.check_channel(strip.0)?;
+                let ch = ch()?;
                 let guard = self.session().await?;
                 let reply = guard
                     .as_ref()
@@ -735,17 +1303,17 @@ impl MixerDriver for XAirDriver {
                 headamp::wire_to_db(osc::fader_value(&reply)?).map(ParamValue::Float)
             }
             "phantom" => {
-                let ch = self.check_channel(strip.0)?;
+                let ch = ch()?;
                 let guard = self.session().await?;
                 let reply = guard
                     .as_ref()
                     .unwrap()
                     .query(&headamp::headamp_phantom(ch))
                     .await?;
-                headamp::phantom_is_on(&reply).map(ParamValue::Bool)
+                osc::is_on(&reply).map(ParamValue::Bool)
             }
             "usbreturn" => {
-                let ch = self.check_channel(strip.0)?;
+                let ch = ch()?;
                 let guard = self.session().await?;
                 let reply = guard
                     .as_ref()
@@ -755,7 +1323,7 @@ impl MixerDriver for XAirDriver {
                 input::usbreturn_from_msg(&reply).map(|i| ParamValue::Float(i as f32))
             }
             "trim" => {
-                let ch = self.check_channel(strip.0)?;
+                let ch = ch()?;
                 let guard = self.session().await?;
                 let reply = guard
                     .as_ref()
@@ -765,27 +1333,27 @@ impl MixerDriver for XAirDriver {
                 input::rtntrim_wire_to_db(osc::fader_value(&reply)?).map(ParamValue::Float)
             }
             "polarity" => {
-                let ch = self.check_channel(strip.0)?;
+                let ch = ch()?;
                 let guard = self.session().await?;
                 let reply = guard
                     .as_ref()
                     .unwrap()
                     .query(&input::preamp_invert(ch))
                     .await?;
-                input::input_bool_is_on(&reply).map(ParamValue::Bool)
+                osc::is_on(&reply).map(ParamValue::Bool)
             }
             "hpf_on" => {
-                let ch = self.check_channel(strip.0)?;
+                let ch = ch()?;
                 let guard = self.session().await?;
                 let reply = guard
                     .as_ref()
                     .unwrap()
                     .query(&input::preamp_hpf_on(ch))
                     .await?;
-                input::input_bool_is_on(&reply).map(ParamValue::Bool)
+                osc::is_on(&reply).map(ParamValue::Bool)
             }
             "hpf_freq" => {
-                let ch = self.check_channel(strip.0)?;
+                let ch = ch()?;
                 let guard = self.session().await?;
                 let reply = guard
                     .as_ref()
@@ -794,53 +1362,187 @@ impl MixerDriver for XAirDriver {
                     .await?;
                 input::hpf_wire_to_hz(osc::fader_value(&reply)?).map(ParamValue::Float)
             }
+            "pan" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&format!("{root}/mix/pan")).await?;
+                mix::wire_to_pan(osc::fader_value(&reply)?).map(ParamValue::Float)
+            }
+            "gate_on" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&format!("{root}/gate/on")).await?;
+                osc::is_on(&reply).map(ParamValue::Bool)
+            }
+            "comp_on" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&format!("{root}/dyn/on")).await?;
+                osc::is_on(&reply).map(ParamValue::Bool)
+            }
+            "eq_on" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&eq::eq_on_r(&root)).await?;
+                osc::is_on(&reply).map(ParamValue::Bool)
+            }
+            // GR reads ride the param path (DYN blob cache; no desk query
+            // address). Placed before the `gate_`/`comp_` prefix arms.
             "gate_gr" => self.cached_gr(strip, true).await.map(ParamValue::Float),
             "comp_gr" => self.cached_gr(strip, false).await.map(ParamValue::Float),
+            p if p.starts_with("eq") => {
+                let (band, leaf) = eq_leaf(p)?;
+                check_eq_band(kind, band)?;
+                let guard = self.session().await?;
+                let session = guard.as_ref().unwrap();
+                match leaf {
+                    "gain" => {
+                        let reply = session.query(&eq::eq_gain_r(&root, band)?).await?;
+                        eq::wire_to_gain_db(osc::fader_value(&reply)?).map(ParamValue::Float)
+                    }
+                    "freq" => {
+                        let reply = session.query(&eq::eq_freq_r(&root, band)?).await?;
+                        eq::wire_to_freq_hz(osc::fader_value(&reply)?).map(ParamValue::Float)
+                    }
+                    "q" => {
+                        let reply = session.query(&eq::eq_q_r(&root, band)?).await?;
+                        eq::wire_to_q(osc::fader_value(&reply)?).map(ParamValue::Float)
+                    }
+                    "type" => {
+                        let reply = session.query(&eq::eq_type_r(&root, band)?).await?;
+                        eq::eqtype_from_msg(&reply).map(|i| ParamValue::Float(i as f32))
+                    }
+                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
+                }
+            }
+            p if p.starts_with("gate_") => {
+                let guard = self.session().await?;
+                let qaddr = match p {
+                    "gate_thr" => gate::gate_thr(&root),
+                    "gate_range" => gate::gate_range(&root),
+                    "gate_att" => gate::gate_attack(&root),
+                    "gate_hold" => gate::gate_hold(&root),
+                    "gate_rel" => gate::gate_release(&root),
+                    "gate_mode" => gate::gate_mode(&root),
+                    "gate_key_src" => gate::gate_key_src(&root),
+                    "gate_filter_on" => gate::gate_filter_on(&root),
+                    "gate_filter_type" => gate::gate_filter_type(&root),
+                    "gate_filter_freq" => gate::gate_filter_freq(&root),
+                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
+                };
+                let reply = guard.as_ref().unwrap().query(&qaddr).await?;
+                match p {
+                    "gate_thr" => gate::wire_to_lin(osc::fader_value(&reply)?, gate::GATE_THR_MIN_DB, gate::GATE_THR_MAX_DB, "thr"),
+                    "gate_range" => gate::wire_to_lin(osc::fader_value(&reply)?, gate::GATE_RANGE_MIN_DB, gate::GATE_RANGE_MAX_DB, "range"),
+                    "gate_att" => gate::wire_to_lin(osc::fader_value(&reply)?, gate::GATE_ATT_MIN_MS, gate::GATE_ATT_MAX_MS, "attack"),
+                    "gate_hold" => gate::wire_to_log(osc::fader_value(&reply)?, gate::GATE_HOLD_MIN_MS, gate::GATE_HOLD_MAX_MS, "hold"),
+                    "gate_rel" => gate::wire_to_log(osc::fader_value(&reply)?, gate::GATE_REL_MIN_MS, gate::GATE_REL_MAX_MS, "release"),
+                    "gate_mode" => gate::int_leaf_from_msg(&reply, gate::GATE_MODE_MIN, gate::GATE_MODE_MAX, "mode").map(|i| i as f32),
+                    "gate_key_src" => gate::int_leaf_from_msg(&reply, gate::GATE_KEY_SRC_MIN, gate::GATE_KEY_SRC_MAX, "keysrc").map(|i| i as f32),
+                    "gate_filter_on" => return osc::is_on(&reply).map(ParamValue::Bool),
+                    "gate_filter_type" => gate::int_leaf_from_msg(&reply, gate::GATE_FILTER_TYPE_MIN, gate::GATE_FILTER_TYPE_MAX, "filter type").map(|i| i as f32),
+                    "gate_filter_freq" => gate::wire_to_filter_hz(osc::fader_value(&reply)?),
+                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
+                }.map(ParamValue::Float)
+            }
+            p if p.starts_with("comp_") => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&match p {
+                    "comp_thr" => comp::comp_thr(&root),
+                    "comp_ratio" => comp::comp_ratio(&root),
+                    "comp_knee" => comp::comp_knee(&root),
+                    "comp_makeup" => comp::comp_makeup(&root),
+                    "comp_att" => comp::comp_attack(&root),
+                    "comp_hold" => comp::comp_hold(&root),
+                    "comp_rel" => comp::comp_release(&root),
+                    "comp_mode" => comp::comp_mode(&root),
+                    "comp_det" => comp::comp_det(&root),
+                    "comp_env" => comp::comp_env(&root),
+                    "comp_mix" => comp::comp_mix(&root),
+                    "comp_auto" => comp::comp_auto(&root),
+                    "comp_key_src" => comp::comp_key_src(&root),
+                    "comp_filter_on" => comp::comp_filter_on(&root),
+                    "comp_filter_type" => comp::comp_filter_type(&root),
+                    "comp_filter_freq" => comp::comp_filter_freq(&root),
+                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
+                }).await?;
+                match p {
+                    "comp_thr" => comp::wire_to_lin(osc::fader_value(&reply)?, comp::COMP_THR_MIN_DB, comp::COMP_THR_MAX_DB, "thr"),
+                    "comp_ratio" => comp::wire_to_ratio(&reply),
+                    "comp_knee" => comp::wire_to_lin(osc::fader_value(&reply)?, comp::COMP_KNEE_MIN, comp::COMP_KNEE_MAX, "knee"),
+                    "comp_makeup" => comp::wire_to_lin(osc::fader_value(&reply)?, comp::COMP_MAKEUP_MIN_DB, comp::COMP_MAKEUP_MAX_DB, "makeup"),
+                    "comp_att" => comp::wire_to_lin(osc::fader_value(&reply)?, comp::COMP_ATT_MIN_MS, comp::COMP_ATT_MAX_MS, "attack"),
+                    "comp_hold" => comp::wire_to_log(osc::fader_value(&reply)?, comp::COMP_HOLD_MIN_MS, comp::COMP_HOLD_MAX_MS, "hold"),
+                    "comp_rel" => comp::wire_to_log(osc::fader_value(&reply)?, comp::COMP_REL_MIN_MS, comp::COMP_REL_MAX_MS, "release"),
+                    "comp_mode" => comp::int_leaf_from_msg(&reply, comp::COMP_MODE_MIN, comp::COMP_MODE_MAX, "mode").map(|i| i as f32),
+                    "comp_det" => comp::int_leaf_from_msg(&reply, comp::COMP_DET_MIN, comp::COMP_DET_MAX, "det").map(|i| i as f32),
+                    "comp_env" => comp::int_leaf_from_msg(&reply, comp::COMP_ENV_MIN, comp::COMP_ENV_MAX, "env").map(|i| i as f32),
+                    "comp_mix" => comp::wire_to_lin(osc::fader_value(&reply)?, comp::COMP_MIX_MIN, comp::COMP_MIX_MAX, "mix"),
+                    "comp_auto" => return osc::is_on(&reply).map(ParamValue::Bool),
+                    "comp_key_src" => comp::int_leaf_from_msg(&reply, 0, 22, "keysrc").map(|i| i as f32),
+                    "comp_filter_on" => return osc::is_on(&reply).map(ParamValue::Bool),
+                    "comp_filter_type" => comp::int_leaf_from_msg(&reply, 0, 8, "filter type").map(|i| i as f32),
+                    "comp_filter_freq" => gate::wire_to_filter_hz(osc::fader_value(&reply)?),
+                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
+                }.map(ParamValue::Float)
+            }
+            p if p.starts_with("aux") => {
+                let n = aux_send(p)?;
+                let ch = ch()?;
+                let guard = self.session().await?;
+                let reply = guard
+                    .as_ref()
+                    .unwrap()
+                    .query(&mix::send_level(ch, mix::aux_slot(n)?)?)
+                    .await?;
+                mix::wire_to_send_db(mix::send_level_value(&reply)?).map(ParamValue::Float)
+            }
+            p if p.starts_with("fx") => {
+                let n = fx_send(p)?;
+                let ch = ch()?;
+                let guard = self.session().await?;
+                let reply = guard
+                    .as_ref()
+                    .unwrap()
+                    .query(&mix::send_level(ch, mix::fx_slot(n)?)?)
+                    .await?;
+                mix::wire_to_send_db(mix::send_level_value(&reply)?).map(ParamValue::Float)
+            }
+            p if p.starts_with("send") => {
+                let (n, leaf) = generic_send(p)?;
+                let ch = ch()?;
+                let slot = mix::generic_send_slot(n)?;
+                let guard = self.session().await?;
+                let session = guard.as_ref().unwrap();
+                match leaf {
+                    "level" => {
+                        let reply = session.query(&mix::send_level(ch, slot)?).await?;
+                        mix::wire_to_send_db(mix::send_level_value(&reply)?).map(ParamValue::Float)
+                    }
+                    "tap" => {
+                        let reply = session.query(&mix::send_tap(&root, slot)?).await?;
+                        mix::tap_from_msg(&reply).map(|i| ParamValue::Float(i as f32))
+                    }
+                    "pan" => {
+                        let reply = session.query(&mix::send_pan(&root, slot)?).await?;
+                        mix::wire_to_pan(osc::fader_value(&reply)?).map(ParamValue::Float)
+                    }
+                    _ => {
+                        let reply = session.query(&mix::send_on(&root, slot)?).await?;
+                        osc::is_on(&reply).map(ParamValue::Bool)
+                    }
+                }
+            }
             _ => anyhow::bail!("{}: unknown param {param:?}", self.name()),
         }
     }
 }
 
-/// Codec-level fader helpers re-exported for tests (wire logic lives in transport).
-pub fn encode_fader(addr: &str, value: f32) -> anyhow::Result<Vec<u8>> {
-    osc::encode_message(addr, vec![OscType::Float(osc::clamp01(value))])
-}
-
-pub fn keepalive_packet() -> anyhow::Result<Vec<u8>> {
-    static CACHED: OnceLock<Vec<u8>> = OnceLock::new();
-    let bytes = CACHED
-        .get_or_init(|| osc::query_message(addrs::XREMOTE).expect("keepalive encodes"))
-        .clone();
-    Ok(bytes)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openmix_transport::meter::build_meter_blob;
+    use openmix_transport::meters::build_meter_blob;
     use rosc::OscType;
     use std::collections::HashMap;
     use std::net::SocketAddr;
     use std::sync::{Arc, Mutex as StdMutex};
     use tokio::net::UdpSocket;
-
-    #[test]
-    fn fader_encode_decode_roundtrip() {
-        let bytes = encode_fader("/ch/01/mix/fader", 0.75).unwrap();
-        let packet = osc::decode_packet(&bytes).unwrap();
-        let msgs = osc::flatten(packet);
-        assert_eq!(msgs[0].addr, "/ch/01/mix/fader");
-        assert!((osc::fader_value(&msgs[0]).unwrap() - 0.75).abs() < 1e-6);
-    }
-
-    #[test]
-    fn keepalive_shape() {
-        let bytes = keepalive_packet().unwrap();
-        let msgs = osc::flatten(osc::decode_packet(&bytes).unwrap());
-        assert_eq!(msgs.len(), 1);
-        assert_eq!(msgs[0].addr, "/xremote");
-        assert!(msgs[0].args.is_empty());
-    }
 
     /// In-process fake XR18: UDP loopback socket speaking real OSC via transport codecs.
     /// Fader stores quantize writes to 10-bit steps like the real desk
@@ -872,6 +1574,15 @@ mod tests {
         /// Input-routing float leaves (`/preamp/rtntrim`, `/preamp/hpf`):
         /// verbatim wire floats.
         input_floats: StdMutex<HashMap<String, f32>>,
+        /// Param-plane int leaves (`/eq/on`, `/gate/on`, `/dyn/on`,
+        /// `/eq/N/type`): verbatim ints, defaulting to 0 (off / first
+        /// filter type) like an untouched desk strip.
+        plane_ints: StdMutex<HashMap<String, i32>>,
+        /// Param-plane float leaves (`/eq/N/{g,f,q}`, `/mix/pan`,
+        /// `/mix/MM/level`): verbatim wire floats. Untouched defaults:
+        /// eq `g`/`f`/`q` 0.5, `pan` 0.5 (centre), send `level` 0.0
+        /// (−90 dB floor).
+        plane_floats: StdMutex<HashMap<String, f32>>,
         meter_subscribe: StdMutex<Option<rosc::OscMessage>>,
         dyn_subscribe: StdMutex<Option<rosc::OscMessage>>,
         /// Resubscribe tolerance counters: the renewal loop re-sends
@@ -900,6 +1611,8 @@ mod tests {
                 phantoms: StdMutex::new(HashMap::new()),
                 input_ints: StdMutex::new(HashMap::new()),
                 input_floats: StdMutex::new(HashMap::new()),
+                plane_ints: StdMutex::new(HashMap::new()),
+                plane_floats: StdMutex::new(HashMap::new()),
                 meter_subscribe: StdMutex::new(None),
                 dyn_subscribe: StdMutex::new(None),
                 meter_count: StdMutex::new(0),
@@ -999,7 +1712,11 @@ mod tests {
                                 .unwrap(),
                             ),
                             // Faders quantize like hardware (T8); on/name are exact.
-                            (a, Some(OscType::Float(f))) if a.ends_with("/mix/fader") => {
+                            // DCA faders ride the same 1023-step law on the
+                            // desk (uncharacterized — same treatment here).
+                            (a, Some(OscType::Float(f)))
+                                if a.ends_with("/mix/fader") || a.starts_with("/dca/") && a.ends_with("/fader") =>
+                            {
                                 let q = (*f * 1023.0).floor() / 1023.0;
                                 worker.faders.lock().unwrap().insert(a.to_string(), q);
                                 None
@@ -1066,7 +1783,39 @@ mod tests {
                                 worker.input_floats.lock().unwrap().insert(a.to_string(), *f);
                                 None
                             }
-                            (a, Some(OscType::Int(i))) if a.ends_with("/mix/on") => {
+                            // Param-plane int leaves store verbatim
+                            // (`/eq/on`, `/gate/on`, `/dyn/on`, `/eq/N/type`
+                            // all int 1/0 or 0..5). Deliberately NO arms for
+                            // send mutes (`/ch/NN/mix/MM/on`): the fake stays
+                            // silent there exactly like the live desk (T7).
+                            (a, Some(OscType::Int(i)))
+                                if a.ends_with("/eq/on")
+                                    || a.ends_with("/gate/on")
+                                    || a.ends_with("/dyn/on")
+                                    || (a.contains("/eq/") && a.ends_with("/type")) =>
+                            {
+                                worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
+                            // Param-plane float leaves store the verbatim
+                            // wire float (`/eq/N/{g,f,q}`, `/mix/pan`,
+                            // `/mix/MM/level`; desk quantization of these is
+                            // uncharacterized — no fader-style rounding here).
+                            (a, Some(OscType::Float(f)))
+                                if (a.contains("/eq/")
+                                    && (a.ends_with("/g")
+                                        || a.ends_with("/f")
+                                        || a.ends_with("/q")))
+                                    || a.ends_with("/mix/pan")
+                                    || (a.contains("/mix/") && a.ends_with("/level")) =>
+                            {
+                                worker.plane_floats.lock().unwrap().insert(a.to_string(), *f);
+                                None
+                            }
+                            (a, Some(OscType::Int(i)))
+                                if a.ends_with("/mix/on")
+                                    || a.starts_with("/dca/") && a.ends_with("/on") =>
+                            {
                                 worker.ons.lock().unwrap().insert(a.to_string(), *i);
                                 None
                             }
@@ -1074,7 +1823,10 @@ mod tests {
                                 worker.names.lock().unwrap().insert(a.to_string(), s.clone());
                                 None
                             }
-                            (a, None) if a.ends_with("/mix/fader") => {
+                            (a, None)
+                                if a.ends_with("/mix/fader")
+                                    || a.starts_with("/dca/") && a.ends_with("/fader") =>
+                            {
                                 let v = worker
                                     .faders
                                     .lock()
@@ -1084,7 +1836,10 @@ mod tests {
                                     .unwrap_or(0.75);
                                 Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
                             }
-                            (a, None) if a.ends_with("/mix/on") => {
+                            (a, None)
+                                if a.ends_with("/mix/on")
+                                    || a.starts_with("/dca/") && a.ends_with("/on") =>
+                            {
                                 let v =
                                     worker.ons.lock().unwrap().get(a).copied().unwrap_or(1);
                                 Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
@@ -1185,6 +1940,169 @@ mod tests {
                                     .get(a)
                                     .copied()
                                     .unwrap_or(0.0);
+                                Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
+                            }
+                            // Untouched param-plane switches read back 0
+                            // (eq/gate/dyn off, first filter type).
+                            (a, None)
+                                if a.ends_with("/eq/on")
+                                    || a.ends_with("/gate/on")
+                                    || a.ends_with("/dyn/on")
+                                    || (a.contains("/eq/") && a.ends_with("/type")) =>
+                            {
+                                let v = worker
+                                    .plane_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0);
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            // Untouched param-plane floats: eq `g`/`f`/`q`
+                            // read back mid-wire 0.5, pan centre 0.5, send
+                            // levels the −90 dB floor (wire 0.0).
+                            (a, None)
+                                if (a.contains("/eq/")
+                                    && (a.ends_with("/g")
+                                        || a.ends_with("/f")
+                                        || a.ends_with("/q")))
+                                    || a.ends_with("/mix/pan")
+                                    || (a.contains("/mix/") && a.ends_with("/level")) =>
+                            {
+                                let fallback = if a.ends_with("/level") { 0.0 } else { 0.5 };
+                                let v = worker
+                                    .plane_floats
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(fallback);
+                                Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
+                            }
+                            // v2 int leaves (firmware-truth 2026-10-18): strip look
+                            // (`/config/color`; `/config/icon` and
+                            // `/config/link` have NO desk leaf — silent —
+                            // but the fake answers them so the retained
+                            // driver arms stay loopback-tested), gate/dyn
+                            // int leaves (incl. the `filter/` sub-leaves and
+                            // `dyn/ratio` step index), send tap and
+                            // per-send on/off. NOTE the send-on conflict:
+                            // this fake answers `/ch/NN/mix/MM/on` while the
+                            // live desk is silent (T7); `sendN_on` is out of
+                            // caps. Guards list int leaves EXACTLY: a broad
+                            // `contains("/gate/")` here would shadow the
+                            // float leaves' queries below (same `None`
+                            // shape). Untouched reads answer 0.
+                            (a, Some(OscType::Int(i)))
+                                if a.ends_with("/config/color")
+                                    || a.ends_with("/config/icon")
+                                    || a.ends_with("/config/link")
+                                    || a.ends_with("/gate/mode")
+                                    || a.ends_with("/gate/keysrc")
+                                    || a.ends_with("/gate/filter/on")
+                                    || a.ends_with("/gate/filter/type")
+                                    || a.ends_with("/dyn/ratio")
+                                    || a.ends_with("/dyn/keysrc")
+                                    || a.ends_with("/dyn/filter/on")
+                                    || a.ends_with("/dyn/filter/type")
+                                    || a.ends_with("/dyn/mode")
+                                    || a.ends_with("/dyn/det")
+                                    || a.ends_with("/dyn/env")
+                                    || a.ends_with("/dyn/auto")
+                                    || (a.contains("/mix/") && a.ends_with("/tap"))
+                                    || (a.contains("/mix/")
+                                        && a.ends_with("/on")
+                                        && !a.ends_with("/mix/on")) =>
+                            {
+                                worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
+                            // v2 float leaves: gate/dyn block (minus the int
+                            // leaves above, which match first), key-filter
+                            // corners (`filter/f`, log wire) + per-send pan
+                            // (`/mix/MM/pan`; channel pan keeps its own arm).
+                            // Untouched gate/dyn reads answer 0.0 wire, send
+                            // pan centre 0.5.
+                            (a, Some(OscType::Float(f)))
+                                if (a.contains("/gate/")
+                                    && !a.ends_with("/gate/mode")
+                                    && !a.ends_with("/gate/keysrc")
+                                    && !a.ends_with("/gate/filter/on")
+                                    && !a.ends_with("/gate/filter/type"))
+                                    || (a.contains("/dyn/")
+                                        && !a.ends_with("/dyn/mode")
+                                        && !a.ends_with("/dyn/det")
+                                        && !a.ends_with("/dyn/env")
+                                        && !a.ends_with("/dyn/auto")
+                                        && !a.ends_with("/dyn/ratio")
+                                        && !a.ends_with("/dyn/keysrc")
+                                        && !a.ends_with("/dyn/filter/on")
+                                        && !a.ends_with("/dyn/filter/type"))
+                                    || (a.contains("/mix/")
+                                        && a.ends_with("/pan")
+                                        && !a.ends_with("/mix/pan")) =>
+                            {
+                                worker.plane_floats.lock().unwrap().insert(a.to_string(), *f);
+                                None
+                            }
+                            (a, None)
+                                if a.ends_with("/config/color")
+                                    || a.ends_with("/config/icon")
+                                    || a.ends_with("/config/link")
+                                    || a.ends_with("/gate/mode")
+                                    || a.ends_with("/gate/keysrc")
+                                    || a.ends_with("/gate/filter/on")
+                                    || a.ends_with("/gate/filter/type")
+                                    || a.ends_with("/dyn/ratio")
+                                    || a.ends_with("/dyn/keysrc")
+                                    || a.ends_with("/dyn/filter/on")
+                                    || a.ends_with("/dyn/filter/type")
+                                    || a.ends_with("/dyn/mode")
+                                    || a.ends_with("/dyn/det")
+                                    || a.ends_with("/dyn/env")
+                                    || a.ends_with("/dyn/auto")
+                                    || (a.contains("/mix/") && a.ends_with("/tap"))
+                                    || (a.contains("/mix/")
+                                        && a.ends_with("/on")
+                                        && !a.ends_with("/mix/on")) =>
+                            {
+                                let v = worker
+                                    .plane_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0);
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            (a, None)
+                                if (a.contains("/gate/")
+                                    && !a.ends_with("/gate/mode")
+                                    && !a.ends_with("/gate/keysrc")
+                                    && !a.ends_with("/gate/filter/on")
+                                    && !a.ends_with("/gate/filter/type"))
+                                    || (a.contains("/dyn/")
+                                        && !a.ends_with("/dyn/mode")
+                                        && !a.ends_with("/dyn/det")
+                                        && !a.ends_with("/dyn/env")
+                                        && !a.ends_with("/dyn/auto")
+                                        && !a.ends_with("/dyn/ratio")
+                                        && !a.ends_with("/dyn/keysrc")
+                                        && !a.ends_with("/dyn/filter/on")
+                                        && !a.ends_with("/dyn/filter/type"))
+                                    || (a.contains("/mix/")
+                                        && a.ends_with("/pan")
+                                        && !a.ends_with("/mix/pan")) =>
+                            {
+                                let fallback = if a.ends_with("/pan") { 0.5 } else { 0.0 };
+                                let v = worker
+                                    .plane_floats
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(fallback);
                                 Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
                             }
                             ("/info", _) => None,
@@ -1415,10 +2333,14 @@ mod tests {
         assert_eq!(x32kind.channel_count(), 32);
 
         let (driver, _) = connected_driver().await;
-        // `/ch/17+` (strips 16+) are phantom on the XR18: reject locally
-        // instead of querying addresses the desk never answers (T3).
+        // v2 topology (35 strips): strips 0..16 stay channels (`/ch/01..16`,
+        // rig T3); strips 16..35 are the FX-return (`/rtn/N`)/bus/FX-send/
+        // LR/DCA roots, all live-verified. The strip space now
+        // ends at 34 — not 15.
         assert!(driver.set_fader(StripId(15), 0.5).await.is_ok());
-        assert!(driver.set_fader(StripId(16), 0.5).await.is_err());
+        assert!(driver.set_fader(StripId(16), 0.5).await.is_ok());
+        assert!(driver.set_fader(StripId(34), 0.5).await.is_ok());
+        assert!(driver.set_fader(StripId(35), 0.5).await.is_err());
         assert!(driver.get_mute(StripId(99)).await.is_err());
         assert!(driver.set_bus_fader(6, 0.5).await.is_err());
         assert!(driver.get_bus_fader(6).await.is_err());
@@ -1427,7 +2349,10 @@ mod tests {
     #[tokio::test]
     async fn driver_rejects_out_of_range_strips() {
         let (driver, _) = connected_driver().await;
-        assert!(driver.set_fader(StripId(32), 0.5).await.is_err());
+        // v2: the strip space ends at 34 (16 ch + 4 ret + 6 bus + 4 fxsnd +
+        // LR + 4 DCA); 32 is a DCA strip, 35+ is out of range.
+        assert!(driver.set_fader(StripId(32), 0.5).await.is_ok());
+        assert!(driver.set_fader(StripId(35), 0.5).await.is_err());
         assert!(driver.get_mute(StripId(99)).await.is_err());
         assert!(driver.set_bus_fader(6, 0.5).await.is_err());
         assert!(driver.get_bus_fader(6).await.is_err());
@@ -1520,7 +2445,19 @@ mod tests {
         // (see `crate::input`), and `usbinput` (`/ch/NN/preamp/rtnsw`).
         assert!(driver.get_param(StripId(0), "inputsource").await.is_err());
         assert!(driver.get_param(StripId(0), "usbinput").await.is_err());
-        assert!(driver.get_param(StripId(0), "pan").await.is_err());
+        // Send mutes + aux7/8 stay unsupported: the firmware map has no
+        // send-mute leaf and `/ch/NN/mix/MM/on` is live-silent (T7), and
+        // only 6 bus sends exist — so these fail as unknown params.
+        assert!(driver.get_param(StripId(0), "aux1_mute").await.is_err());
+        assert!(driver.get_param(StripId(0), "fx1_mute").await.is_err());
+        assert!(driver.get_param(StripId(0), "aux7_level").await.is_err());
+        assert!(driver.get_param(StripId(0), "aux8_level").await.is_err());
+        assert!(
+            driver
+                .set_param(StripId(0), "aux1_mute", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
     }
 
     /// Input routing loopback over UDP (`crate::input`, owner-rig verified
@@ -1661,7 +2598,8 @@ mod tests {
                 .is_err()
         );
 
-        // Phantom strips stay local (T3); live-silent leaves stay errors.
+        // v2: strip 16 is an FX return (input-scoped leaves like trim stay
+        // out-of-scope errors there); the strip space ends at 34.
         assert!(
             driver
                 .set_param(StripId(16), "trim", ParamValue::Float(0.0))
@@ -1974,5 +2912,597 @@ mod tests {
         };
         driver.ingest_dyn_message(&valid).await.unwrap();
         assert_eq!(driver.last_dyn().await.unwrap().gate[0], 6.0);
+    }
+
+    #[test]
+    fn capabilities_match_loopback_tested_set() {
+        use openmix_core::params;
+        // Every advertised id exists in the canonical catalogue…
+        for id in XAIR_CAPABILITIES {
+            assert!(
+                params::find(id).is_some(),
+                "xair capability {id} not in the catalogue"
+            );
+        }
+        // …and the unsupported remainder is exactly the honest-no-address
+        // set: delay + hpf_slope (X32-only), source (insrc live-silent),
+        // icon (no firmware leaf), link (global chlink, no per-channel
+        // leaf), aux7/8 (only 6 bus sends), send11..16 (only 6+4 send
+        // slots), all twelve legacy aux/fx send mutes plus the ten v2
+        // sendN_on (no send on/off leaf, T7), per-channel eq5 stays out
+        // (channels carry 4 bands; eq5/6 ride buses + main and ARE in caps).
+        let mut unsupported: Vec<&str> = params::CATALOGUE
+            .iter()
+            .map(|d| d.id)
+            .filter(|id| !XAIR_CAPABILITIES.contains(id))
+            .collect();
+        unsupported.sort_unstable();
+        let mut expected = vec![
+            "aux1_mute",
+            "aux2_mute",
+            "aux3_mute",
+            "aux4_mute",
+            "aux5_mute",
+            "aux6_mute",
+            "aux7_level",
+            "aux7_mute",
+            "aux8_level",
+            "aux8_mute",
+            "delay_ms",
+            "delay_on",
+            "fx1_mute",
+            "fx2_mute",
+            "fx3_mute",
+            "fx4_mute",
+            "hpf_slope",
+            "icon",
+            "link",
+            "send10_on",
+            "send11_level",
+            "send11_on",
+            "send11_pan",
+            "send11_tap",
+            "send12_level",
+            "send12_on",
+            "send12_pan",
+            "send12_tap",
+            "send13_level",
+            "send13_on",
+            "send13_pan",
+            "send13_tap",
+            "send14_level",
+            "send14_on",
+            "send14_pan",
+            "send14_tap",
+            "send15_level",
+            "send15_on",
+            "send15_pan",
+            "send15_tap",
+            "send16_level",
+            "send16_on",
+            "send16_pan",
+            "send16_tap",
+            "send1_on",
+            "send2_on",
+            "send3_on",
+            "send4_on",
+            "send5_on",
+            "send6_on",
+            "send7_on",
+            "send8_on",
+            "send9_on",
+            "source",
+        ];
+        expected.sort_unstable();
+        assert_eq!(unsupported, expected);
+        assert_eq!(XAirDriver::new().capabilities(), XAIR_CAPABILITIES);
+    }
+
+    /// Pan loopback over UDP (`crate::mix`, UNVERIFIED-ON-RIG): engineering
+    /// `-100..=+100` maps linearly onto the wire float, centre 0.5.
+    #[tokio::test]
+    async fn driver_pan_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // StripId is 0-based: strip 0 drives wire `/ch/01/mix/pan`.
+        for (eng, wire) in [(-100.0, 0.0), (0.0, 0.5), (100.0, 1.0), (25.0, 0.625)] {
+            driver
+                .set_param(StripId(0), "pan", ParamValue::Float(eng))
+                .await
+                .unwrap();
+            let ParamValue::Float(back) = driver.get_param(StripId(0), "pan").await.unwrap()
+            else {
+                panic!("pan read back non-float");
+            };
+            assert!((back - eng).abs() < 1e-4, "pan {eng} -> {back}");
+            let _ = wire;
+        }
+        // Range and kind enforced locally, never sent.
+        assert!(
+            driver
+                .set_param(StripId(0), "pan", ParamValue::Float(100.1))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "pan", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+        // v2: strip 16 is an FX return (pan applies there); the strip space
+        // ends at 34, so 40 is out of range.
+        assert!(
+            driver
+                .set_param(StripId(40), "pan", ParamValue::Float(0.0))
+                .await
+                .is_err()
+        );
+    }
+
+    /// EQ loopback over UDP (`crate::eq`, UNVERIFIED-ON-RIG): on/off plus
+    /// all four bands of gain/freq/q/type, with the inverted Q wire.
+    #[tokio::test]
+    async fn driver_eq_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // eq_on is a plain bool switch.
+        driver
+            .set_param(StripId(1), "eq_on", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(1), "eq_on").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        driver
+            .set_param(StripId(1), "eq_on", ParamValue::Bool(false))
+            .await
+            .unwrap();
+        assert!(
+            driver
+                .set_param(StripId(1), "eq_on", ParamValue::Float(1.0))
+                .await
+                .is_err()
+        );
+
+        // Band 2: gain dB, freq Hz, Q and type round-trip.
+        driver
+            .set_param(StripId(1), "eq2_gain", ParamValue::Float(6.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(g) = driver.get_param(StripId(1), "eq2_gain").await.unwrap()
+        else {
+            panic!("eq2_gain read back non-float");
+        };
+        assert!((g - 6.0).abs() < 1e-4, "eq2_gain {g}");
+
+        driver
+            .set_param(StripId(1), "eq2_freq", ParamValue::Float(1000.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(f) = driver.get_param(StripId(1), "eq2_freq").await.unwrap()
+        else {
+            panic!("eq2_freq read back non-float");
+        };
+        // Desk log quantization is 201 steps: 1 Hz epsilon, like hpf.
+        assert!((f - 1000.0).abs() < 1.0, "eq2_freq {f}");
+
+        driver
+            .set_param(StripId(1), "eq2_q", ParamValue::Float(1.4))
+            .await
+            .unwrap();
+        let ParamValue::Float(q) = driver.get_param(StripId(1), "eq2_q").await.unwrap()
+        else {
+            panic!("eq2_q read back non-float");
+        };
+        assert!((q - 1.4).abs() / 1.4 < 0.06, "eq2_q {q}");
+
+        driver
+            .set_param(StripId(1), "eq2_type", ParamValue::Float(2.0))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(1), "eq2_type").await.unwrap(),
+            ParamValue::Float(2.0)
+        );
+
+        // Band 1 carries a type on X-Air (unlike the DL32S layout).
+        driver
+            .set_param(StripId(1), "eq1_type", ParamValue::Float(1.0))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(1), "eq1_type").await.unwrap(),
+            ParamValue::Float(1.0)
+        );
+
+        // Range and kind enforced locally, never sent.
+        assert!(
+            driver
+                .set_param(StripId(1), "eq2_gain", ParamValue::Float(15.1))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(1), "eq2_freq", ParamValue::Float(19.9))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(1), "eq2_q", ParamValue::Float(0.29))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(1), "eq2_type", ParamValue::Float(6.0))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(1), "eq5_gain", ParamValue::Float(0.0))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(1), "eq2_gain", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(40), "eq1_gain", ParamValue::Float(0.0))
+                .await
+                .is_err()
+        );
+    }
+
+    /// Gate/comp on/off loopback over UDP (`crate::dynamics`,
+    /// UNVERIFIED-ON-RIG): plain int `1`/`0` switches.
+    #[tokio::test]
+    async fn driver_gate_comp_on_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        for id in ["gate_on", "comp_on"] {
+            driver
+                .set_param(StripId(2), id, ParamValue::Bool(true))
+                .await
+                .unwrap();
+            assert_eq!(
+                driver.get_param(StripId(2), id).await.unwrap(),
+                ParamValue::Bool(true),
+                "{id}"
+            );
+            driver
+                .set_param(StripId(2), id, ParamValue::Bool(false))
+                .await
+                .unwrap();
+            assert_eq!(
+                driver.get_param(StripId(2), id).await.unwrap(),
+                ParamValue::Bool(false),
+                "{id}"
+            );
+            assert!(
+                driver
+                    .set_param(StripId(2), id, ParamValue::Float(1.0))
+                    .await
+                    .is_err(),
+                "{id} wrong kind accepted"
+            );
+        }
+        assert!(
+            driver
+                .set_param(StripId(40), "gate_on", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+    }
+
+    /// Send-level loopback over UDP (`crate::mix`, UNVERIFIED-ON-RIG):
+    /// `aux1..6` → slots `01..06`, `fx1..4` → slots `07..10`, dB via the
+    /// X-Air fader law. Send mutes stay errors (no wire leaf, T7).
+    #[tokio::test]
+    async fn driver_send_level_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // StripId is 0-based: strip 0 drives wire `/ch/01/mix/MM/level`.
+        driver
+            .set_param(StripId(0), "aux1_level", ParamValue::Float(-10.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(db) =
+            driver.get_param(StripId(0), "aux1_level").await.unwrap()
+        else {
+            panic!("aux1_level read back non-float");
+        };
+        assert!((db + 10.0).abs() < 1e-4, "aux1_level {db}");
+
+        // FX slot: fx1 → wire slot 07.
+        driver
+            .set_param(StripId(0), "fx1_level", ParamValue::Float(0.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(fx) = driver.get_param(StripId(0), "fx1_level").await.unwrap()
+        else {
+            panic!("fx1_level read back non-float");
+        };
+        assert!(fx.abs() < 1e-4, "fx1_level {fx}");
+
+        // Floor: wire 0 reads back the −90 dB −inf convention.
+        driver
+            .set_param(StripId(0), "aux6_level", ParamValue::Float(-90.0))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "aux6_level").await.unwrap(),
+            ParamValue::Float(-90.0)
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "aux1_level", ParamValue::Float(10.1))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "aux7_level", ParamValue::Float(0.0))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "fx5_level", ParamValue::Float(0.0))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "aux1_level", ParamValue::Bool(false))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(16), "aux1_level", ParamValue::Float(0.0))
+                .await
+                .is_err()
+        );
+    }
+
+    /// Gate full-set loopback over UDP (`crate::gate`, firmware-truth):
+    /// thr/range/att ride lin wires, hold/rel ride log wires, mode/keysrc/
+    /// filter leaves ride ints. Live values from the owner rig (XR18 FW
+    /// 1.20) decode through the same codecs.
+    #[tokio::test]
+    async fn driver_gate_full_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        let s = StripId(2);
+        for (id, v) in [
+            ("gate_thr", -30.0f32),
+            ("gate_range", 40.0),
+            ("gate_att", 5.0),
+            ("gate_hold", 120.0),
+            ("gate_rel", 250.0),
+            ("gate_filter_freq", 1000.0),
+        ] {
+            driver.set_param(s, id, ParamValue::Float(v)).await.unwrap();
+            let ParamValue::Float(back) = driver.get_param(s, id).await.unwrap() else {
+                panic!("{id} read back non-float");
+            };
+            assert!((back - v).abs() / v.abs().max(1.0) < 1e-2, "{id} {v} -> {back}");
+        }
+        for (id, v) in [("gate_mode", 4.0f32), ("gate_key_src", 22.0), ("gate_filter_type", 8.0)] {
+            driver.set_param(s, id, ParamValue::Float(v)).await.unwrap();
+            assert_eq!(driver.get_param(s, id).await.unwrap(), ParamValue::Float(v), "{id}");
+        }
+        driver.set_param(s, "gate_filter_on", ParamValue::Bool(true)).await.unwrap();
+        assert_eq!(driver.get_param(s, "gate_filter_on").await.unwrap(), ParamValue::Bool(true));
+        // Range and out-of-scope enforced locally, never sent.
+        assert!(driver.set_param(s, "gate_thr", ParamValue::Float(-80.1)).await.is_err());
+        assert!(driver.set_param(s, "gate_range", ParamValue::Float(2.9)).await.is_err());
+        assert!(driver.set_param(s, "gate_mode", ParamValue::Float(5.0)).await.is_err());
+        assert!(driver.set_param(s, "gate_key_src", ParamValue::Float(23.0)).await.is_err());
+        assert!(driver.set_param(s, "gate_thr", ParamValue::Bool(true)).await.is_err());
+        // DCA strips carry no gate block (catalogue scopes).
+        assert!(driver.set_param(StripId(31), "gate_thr", ParamValue::Float(-30.0)).await.is_err());
+        assert!(driver.get_param(StripId(31), "gate_mode").await.is_err());
+        // Channels carry 4 EQ bands (bus/main carry 6).
+        assert!(driver.get_param(s, "eq5_gain").await.is_err());
+        assert!(driver.get_param(StripId(20), "eq5_gain").await.is_ok());
+    }
+
+    /// Comp full-set loopback over UDP (`crate::comp`, firmware-truth):
+    /// ratio rides the INT step-table index (4.0 ↔ index 6), knee/att/makeup
+    /// ride lin wires, hold/rel ride log wires. Live rig values (ratio
+    /// `Int(5)` = 3.0 on ch01) decode through the same table.
+    #[tokio::test]
+    async fn driver_comp_full_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        let s = StripId(2);
+        for (id, v) in [
+            ("comp_thr", -20.0f32),
+            ("comp_ratio", 4.0),
+            ("comp_knee", 3.0),
+            ("comp_makeup", 6.0),
+            ("comp_att", 10.0),
+            ("comp_hold", 20.0),
+            ("comp_rel", 100.0),
+            ("comp_mix", 80.0),
+            ("comp_filter_freq", 2000.0),
+        ] {
+            driver.set_param(s, id, ParamValue::Float(v)).await.unwrap();
+            let ParamValue::Float(back) = driver.get_param(s, id).await.unwrap() else {
+                panic!("{id} read back non-float");
+            };
+            assert!((back - v).abs() / v.abs().max(1.0) < 1e-2, "{id} {v} -> {back}");
+        }
+        for (id, v) in [("comp_mode", 1.0f32), ("comp_det", 1.0), ("comp_env", 0.0), ("comp_key_src", 22.0), ("comp_filter_type", 8.0)] {
+            driver.set_param(s, id, ParamValue::Float(v)).await.unwrap();
+            assert_eq!(driver.get_param(s, id).await.unwrap(), ParamValue::Float(v), "{id}");
+        }
+        driver.set_param(s, "comp_auto", ParamValue::Bool(true)).await.unwrap();
+        assert_eq!(driver.get_param(s, "comp_auto").await.unwrap(), ParamValue::Bool(true));
+        driver.set_param(s, "comp_filter_on", ParamValue::Bool(false)).await.unwrap();
+        assert_eq!(driver.get_param(s, "comp_filter_on").await.unwrap(), ParamValue::Bool(false));
+        assert!(driver.set_param(s, "comp_ratio", ParamValue::Float(3.5)).await.is_err());
+        assert!(driver.set_param(s, "comp_ratio", ParamValue::Float(101.0)).await.is_err());
+        assert!(driver.set_param(s, "comp_att", ParamValue::Float(121.0)).await.is_err());
+        assert!(driver.set_param(s, "comp_auto", ParamValue::Float(1.0)).await.is_err());
+        // FX-send masters carry no comp block (catalogue scopes).
+        assert!(driver.get_param(StripId(26), "comp_thr").await.is_err());
+    }
+
+    /// Strip look loopback over UDP (`crate::look`): colour `0..=15` is a
+    /// live desk leaf; `icon`/`link` have NO desk leaf (firmware map has
+    /// neither; both silent on FW 1.20) and are out of caps — the fake
+    /// still answers them so the retained driver arms stay loopback-tested.
+    /// Note the resolved colour conflict: `/ch/16/config/color` answers on
+    /// this rig (the old input-module silence note was a probe artifact).
+    #[tokio::test]
+    async fn driver_look_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        driver.set_param(StripId(0), "color", ParamValue::Float(5.0)).await.unwrap();
+        assert_eq!(driver.get_param(StripId(0), "color").await.unwrap(), ParamValue::Float(5.0));
+        driver.set_param(StripId(0), "icon", ParamValue::Float(7.0)).await.unwrap();
+        assert_eq!(driver.get_param(StripId(0), "icon").await.unwrap(), ParamValue::Float(7.0));
+        driver.set_param(StripId(0), "link", ParamValue::Bool(true)).await.unwrap();
+        assert_eq!(driver.get_param(StripId(0), "link").await.unwrap(), ParamValue::Bool(true));
+        assert!(driver.set_param(StripId(0), "color", ParamValue::Float(16.0)).await.is_err());
+        assert!(driver.set_param(StripId(0), "icon", ParamValue::Float(32.0)).await.is_err());
+        // DCA strips carry colour (basics) but no link (input-only).
+        driver.set_param(StripId(31), "color", ParamValue::Float(0.0)).await.unwrap();
+        assert_eq!(driver.get_param(StripId(31), "color").await.unwrap(), ParamValue::Float(0.0));
+        assert!(driver.get_param(StripId(20), "link").await.is_err());
+    }
+
+    /// Generic-send loopback over UDP (`crate::mix`, firmware-truth): `send1..6`
+    /// alias the bus-send slots (same as `aux1..6`), `send7..10` the FX slots
+    /// (same as `fx1..4`); tap rides the six-point enum
+    /// (`0..=5 // IN, PREEQ, POSTEQ, PRE, POST, GRP`), pan rides floats.
+    /// The `sendN_on` leaf has NO desk leaf (firmware send block lists no
+    /// on/off; `/ch/NN/mix/MM/on` live-silent, T7) and is out of caps — the
+    /// fake still answers it so the retained driver arm stays loopback-tested.
+    #[tokio::test]
+    async fn driver_send_tap_pan_on_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        let s = StripId(0);
+        // Alias check: same wire slot as the legacy id.
+        driver.set_param(s, "send1_level", ParamValue::Float(-10.0)).await.unwrap();
+        let ParamValue::Float(db) = driver.get_param(s, "aux1_level").await.unwrap() else {
+            panic!("aux1_level read back non-float");
+        };
+        assert!((db + 10.0).abs() < 1e-4, "send1->aux1 alias {db}");
+        driver.set_param(s, "send7_level", ParamValue::Float(-12.0)).await.unwrap();
+        let ParamValue::Float(fx) = driver.get_param(s, "fx1_level").await.unwrap() else {
+            panic!("fx1_level read back non-float");
+        };
+        assert!((fx + 12.0).abs() < 1e-4, "send7->fx1 alias {fx}");
+
+        driver.set_param(s, "send1_tap", ParamValue::Float(4.0)).await.unwrap();
+        assert_eq!(driver.get_param(s, "send1_tap").await.unwrap(), ParamValue::Float(4.0));
+        assert!(driver.set_param(s, "send1_tap", ParamValue::Float(6.0)).await.is_err());
+        driver.set_param(s, "send1_pan", ParamValue::Float(-20.0)).await.unwrap();
+        let ParamValue::Float(pan) = driver.get_param(s, "send1_pan").await.unwrap() else {
+            panic!("send1_pan read back non-float");
+        };
+        assert!((pan + 20.0).abs() < 1e-3, "send1_pan {pan}");
+        driver.set_param(s, "send1_on", ParamValue::Bool(false)).await.unwrap();
+        assert_eq!(driver.get_param(s, "send1_on").await.unwrap(), ParamValue::Bool(false));
+
+        // Slots 11..16 have no wire; legacy send mutes stay errors (T7).
+        assert!(driver.set_param(s, "send11_level", ParamValue::Float(0.0)).await.is_err());
+        assert!(driver.set_param(s, "send2_level", ParamValue::Bool(true)).await.is_err());
+        assert!(driver.get_param(s, "aux1_mute").await.is_err());
+        assert!(driver.get_param(s, "fx1_mute").await.is_err());
+    }
+
+    /// Non-channel strip loopback over UDP (firmware-truth): buses carry
+    /// fader/mute/name/colour/EQ/dynamics, FX returns (`/rtn/N`) carry
+    /// fader/mute/name/colour/EQ, FX-send masters and DCAs carry basics only.
+    /// Gate stays channel-only (out of scope elsewhere); buses + main carry
+    /// 6 EQ bands.
+    #[tokio::test]
+    async fn driver_bus_ret_fxsnd_main_dca_strips_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // Bus 1 (strip 20): fader/mute/name/colour/EQ/dynamics, no gate.
+        let b = StripId(20);
+        driver.set_fader(b, 0.6).await.unwrap();
+        assert!((driver.get_fader(b).await.unwrap() - 0.6).abs() < addrs::FADER_READBACK_EPSILON);
+        driver.set_mute(b, true).await.unwrap();
+        assert!(driver.get_mute(b).await.unwrap());
+        driver.set_name(b, "MON").await.unwrap();
+        assert_eq!(driver.get_name(b).await.unwrap(), "MON");
+        driver.set_param(b, "color", ParamValue::Float(6.0)).await.unwrap();
+        driver.set_param(b, "eq_on", ParamValue::Bool(true)).await.unwrap();
+        driver.set_param(b, "eq2_gain", ParamValue::Float(2.0)).await.unwrap();
+        driver.set_param(b, "eq5_gain", ParamValue::Float(1.5)).await.unwrap();
+        driver.set_param(b, "comp_ratio", ParamValue::Float(3.0)).await.unwrap();
+        driver.set_param(b, "pan", ParamValue::Float(10.0)).await.unwrap();
+        let ParamValue::Float(g) = driver.get_param(b, "eq2_gain").await.unwrap() else {
+            panic!("bus eq2_gain non-float");
+        };
+        assert!((g - 2.0).abs() < 1e-3, "bus eq2_gain {g}");
+        let ParamValue::Float(r) = driver.get_param(b, "comp_ratio").await.unwrap() else {
+            panic!("bus comp_ratio non-float");
+        };
+        assert!((r - 3.0).abs() < 1e-6, "bus comp_ratio {r}");
+        // Channel-only leaves stay out of scope on buses.
+        assert!(driver.get_param(b, "gain").await.is_err());
+        assert!(driver.get_param(b, "gate_thr").await.is_err());
+        assert!(driver.get_param(b, "aux1_level").await.is_err());
+
+        // FX return 1 (strip 16, `/rtn/1`): fader + EQ answer.
+        let r = StripId(16);
+        driver.set_fader(r, 0.7).await.unwrap();
+        assert!((driver.get_fader(r).await.unwrap() - 0.7).abs() < addrs::FADER_READBACK_EPSILON);
+        driver.set_param(r, "eq_on", ParamValue::Bool(true)).await.unwrap();
+        assert_eq!(driver.get_param(r, "eq_on").await.unwrap(), ParamValue::Bool(true));
+
+        // FX send master 1 (strip 26): basics only.
+        let f = StripId(26);
+        driver.set_fader(f, 0.5).await.unwrap();
+        driver.set_param(f, "color", ParamValue::Float(4.0)).await.unwrap();
+        assert!(driver.get_param(f, "eq_on").await.is_err());
+        assert!(driver.get_param(f, "pan").await.is_err());
+
+        // Main LR (strip 30): fader + EQ answer; pan does not exist.
+        let m = StripId(30);
+        driver.set_fader(m, 0.8).await.unwrap();
+        driver.set_param(m, "eq2_gain", ParamValue::Float(1.0)).await.unwrap();
+        assert!(driver.get_param(m, "pan").await.is_err());
+
+        // DCA 1 (strip 31): basics only.
+        let d = StripId(31);
+        driver.set_fader(d, 0.75).await.unwrap();
+        driver.set_mute(d, false).await.unwrap();
+        assert!(driver.get_param(d, "gate_thr").await.is_err());
+    }
+
+    /// XR18 strip map shape: ordered, contiguous, 35 strips; roots resolve
+    /// per family; out-of-range stays a local error.
+    #[test]
+    fn topology_matches_strip_roots() {
+        assert_eq!(XAIR_STRIPS, 35);
+        let mut next = 0usize;
+        for fam in XAIR_TOPOLOGY {
+            assert_eq!(fam.first, next, "gap/overlap before {}", fam.key);
+            next = fam.end();
+        }
+        assert_eq!(next, XAIR_STRIPS);
+        let (k, r) = strip_root(0).unwrap();
+        assert_eq!((k, r.as_str()), (openmix_core::StripKind::In, "/ch/01"));
+        let (k, r) = strip_root(15).unwrap();
+        assert_eq!((k, r.as_str()), (openmix_core::StripKind::In, "/ch/16"));
+        assert_eq!(strip_root(16).unwrap().1, "/rtn/1");
+        assert_eq!(strip_root(19).unwrap().1, "/rtn/4");
+        assert_eq!(strip_root(20).unwrap().1, "/bus/1");
+        assert_eq!(strip_root(25).unwrap().1, "/bus/6");
+        assert_eq!(strip_root(26).unwrap().1, "/fxsend/1");
+        assert_eq!(strip_root(30).unwrap().1, "/lr");
+        assert_eq!(strip_root(31).unwrap().1, "/dca/1");
+        assert_eq!(strip_root(34).unwrap().1, "/dca/4");
+        assert!(strip_root(35).is_err());
+        assert!(strip_root(99).is_err());
     }
 }

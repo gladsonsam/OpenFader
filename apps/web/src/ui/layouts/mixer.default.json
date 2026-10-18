@@ -1,0 +1,257 @@
+{
+  "id": "mixer",
+  "module": "row",
+  "props": {
+    "flex": "1 1 auto",
+    "minWidth": 0,
+    "gap": 4
+  },
+  "children": [
+    {
+      "id": "strip-scroll",
+      "module": "scroll",
+      "props": {
+        "direction": "row",
+        "flex": "1 1 auto",
+        "minWidth": 0
+      },
+      "variants": {
+        "phone": { "props": { "snap": "x" } },
+        "tablet": { "props": { "snap": "x" } }
+      },
+      "children": [
+        {
+          "id": "strip-grid",
+          "module": "grid",
+          "props": {
+            "gap": 3,
+            "height": "100%",
+            "minWidth": 0,
+            "width": "100%"
+          },
+          "bind": {
+            "columns": "setting:gridCols"
+          },
+          "variants": {
+            "phone": {
+              "bind": { "columns": "phoneCols" },
+              "props": { "snapItems": true }
+            },
+            "tablet": {
+              "bind": { "columns": "tabletCols" },
+              "props": { "snapItems": true }
+            }
+          },
+          "children": [
+            {
+              "id": "strips",
+              "module": "repeat",
+              "props": {
+                "over": "bank:visible"
+              },
+              "children": [
+                {
+                  "id": "strip",
+                  "module": "strip-frame",
+                  "bind": {
+                    "cell": "item",
+                    "index": "index",
+                    "store": "store",
+                    "frozen": "frozen",
+                    "tree": "anatomy",
+                    "device": "device"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "empties",
+              "module": "repeat",
+              "props": {
+                "over": "list:emptySlots"
+              },
+              "children": [
+                {
+                  "id": "empty",
+                  "module": "strip-empty"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "master",
+      "module": "col",
+      "props": {
+        "tag": "section",
+        "label": "Master strip",
+        "width": 112,
+        "flex": "none",
+        "gap": 3,
+        "padding": 3,
+        "background": "#121a27",
+        "border": "1px solid #2a3443",
+        "box": "content-box"
+      },
+      "variants": {
+        "phone": { "props": { "width": 96 } }
+      },
+      "bind": {
+        "shadow": "master.ring"
+      },
+      "when": "master.id",
+      "children": [
+        {
+          "id": "master-proc",
+          "module": "col",
+          "props": {
+            "flex": "1 1 140px",
+            "minHeight": 80,
+            "border": "1px solid #1f2836",
+            "radius": 3,
+            "overflow": "hidden",
+            "background": "#0b111b",
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "master-eq-mini",
+              "module": "strip-eq-mini",
+              "bind": {
+                "path": "master.eqPath",
+                "stroke": "master.eqStroke",
+                "ariaLabel": "master.eqAria"
+              },
+              "on": {
+                "open": {
+                  "do": "ui.openEq",
+                  "args": {
+                    "id": {
+                      "$expr": "master.id"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "master-dyn-mini",
+              "module": "strip-dyn-mini",
+              "bind": {
+                "path": "master.dynPath",
+                "ariaLabel": "master.dynAria"
+              },
+              "on": {
+                "open": {
+                  "do": "ui.openDyn",
+                  "args": {
+                    "id": {
+                      "$expr": "master.id"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "master-mute",
+          "module": "strip-mute",
+          "props": {
+            "height": 40
+          },
+          "variants": {
+            "phone": { "props": { "height": 48 } },
+            "tablet": { "props": { "height": 48 } }
+          },
+          "bind": {
+            "muted": "master.muted",
+            "enabled": "master.muteEnabled",
+            "label": "concat('Mute ', master.name)"
+          },
+          "on": {
+            "press": {
+              "do": "ui.toggleMute",
+              "args": {
+                "id": {
+                  "$expr": "master.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "id": "master-fader-area",
+          "module": "col",
+          "props": {
+            "flex": "3 1 240px",
+            "minHeight": 180
+          },
+          "children": [
+            {
+              "id": "master-fader",
+              "module": "strip-fader",
+              "props": {
+                "variant": "master"
+              },
+              "bind": {
+                "value": "master.value",
+                "dbText": "master.readout",
+                "ariaLabel": "master.faderAria",
+                "accent": "master.kind == 'sof' ? 'sof' : 'master'",
+                "readColor": "master.readColor",
+                "fine": "master.fine",
+                "meter": "master.meter",
+                "meterFrozen": "frozen"
+              },
+              "on": {
+                "input": {
+                  "do": "ui.setStripFader",
+                  "args": {
+                    "id": {
+                      "$expr": "master.id"
+                    },
+                    "value": {
+                      "$expr": "payload.value"
+                    },
+                    "useSend": {
+                      "$expr": "false"
+                    },
+                    "mix": {
+                      "$expr": "store.mix"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "master-name",
+          "module": "strip-name",
+          "props": {
+            "variant": "strip"
+          },
+          "bind": {
+            "name": "master.name",
+            "sub": "master.sub",
+            "color": "master.color",
+            "text": "master.text",
+            "selectAria": "master.selectAria"
+          },
+          "on": {
+            "select": {
+              "do": "ui.select",
+              "args": {
+                "id": {
+                  "$expr": "master.id"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

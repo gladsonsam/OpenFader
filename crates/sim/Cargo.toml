@@ -6,7 +6,6 @@ license.workspace = true
 
 [dependencies]
 openmix-core = { path = "../core" }
-tokio = { version = "1", features = ["sync"] }
 anyhow = "1"
 
 [dev-dependencies]
