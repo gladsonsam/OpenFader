@@ -29,6 +29,21 @@ import {
 /** Fixed slot count: the design always renders 16 grid cells. */
 export const SLOT_COUNT = 16;
 
+/** Live desk group/link state for one fixture strip (null = no live link:
+ *  the layout `when` hides the badges and fixture mode is untouched). */
+export interface DeskGroups {
+  /** 0-based mute-group indices with a confirmed membership echo. */
+  mg: number[];
+  /** 0-based subgroup indices with a confirmed membership echo. */
+  sg: number[];
+  /** Master mute per listed group (parallel to mg/sg; null = not yet echoed). */
+  mgMuted: Array<boolean | null>;
+  sgMuted: Array<boolean | null>;
+  /** Stereo-link leaf: true/false when confirmed, null when unknown or
+   *  unsupported on the desk (xair: global chlink, no per-channel leaf). */
+  link: boolean | null;
+}
+
 export interface StripVm {
   id: string;
   name: string;
@@ -36,6 +51,8 @@ export interface StripVm {
   sub: string;
   color: string;
   text: string;
+  /** Strip icon name (null = none). Rendered in the name bar. */
+  icon: string | null;
   /** Selection ring: `0 0 0 2px <color>` on the selected strip, else 'none'. */
   ring: string;
   pan: number | null;
@@ -62,6 +79,8 @@ export interface StripVm {
   faderAria: string;
   selectAria: string;
   fine: boolean;
+  /** Live desk groups/link (null offline: badges hidden, fixtures untouched). */
+  desk: DeskGroups | null;
 }
 
 function stubWorld(state: UiState, chans: Record<string, Channel>): World {
@@ -87,6 +106,7 @@ export function stripVm(
     sub: c.src,
     color: c.color,
     text: c.text,
+    icon: c.icon ?? null,
     ring: id === state.sel ? 'inset 0 0 0 2px ' + c.color : 'none',
     pan: c.pan,
     panLeft: 50 + (c.pan ?? 0) * 44,
@@ -109,6 +129,7 @@ export function stripVm(
     faderAria: st.faderAria,
     selectAria: st.selectAria,
     fine: state.fine,
+    desk: null,
   };
 }
 
@@ -254,13 +275,15 @@ export function mixerCells(
   meter: MeterSim | null,
   frozen: boolean,
   liveDb?: (fixtureId: string) => number | null,
+  deskOf?: (fixtureId: string) => DeskGroups | null,
 ): StripCell[] {
   const out: StripCell[] = [];
   for (const id of mixerSlots(state.bank)) {
     if (id === '') continue;
     const vm = stripVm(state, chans, id);
     if (!vm) continue;
-    out.push({ ...vm, meter: stripMeterSource(chans, meter, frozen, state.peakHold, id, liveDb) });
+    const desk = deskOf?.(id) ?? null;
+    out.push({ ...vm, desk, meter: stripMeterSource(chans, meter, frozen, state.peakHold, id, liveDb) });
   }
   return out;
 }
@@ -272,8 +295,9 @@ export function mixerMasterCell(
   meter: MeterSim | null,
   frozen: boolean,
   liveDb?: (fixtureId: string) => number | null,
+  deskOf?: (fixtureId: string) => DeskGroups | null,
 ): MasterCell | null {
   const vm = masterVm(state, chans);
   if (!vm) return null;
-  return { ...vm, meter: masterMeterSource(meter, frozen, vm.id, liveDb) };
+  return { ...vm, desk: deskOf?.(vm.id) ?? null, meter: masterMeterSource(meter, frozen, vm.id, liveDb) };
 }
