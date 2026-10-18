@@ -59,11 +59,14 @@ function walk(n: LayoutNode, out: LayoutNode[]): LayoutNode[] {
   const matrix = nodes.find(n => n.id === 'mx-matrix');
   assert.equal(matrix?.module, 'route-matrix');
   assert.equal((matrix?.on?.['press'] as { do: string } | undefined)?.do, 'ui.toggleRoute');
-  // presets: 1:1 straight patch + clear-all, both lock-checked store actions
+  // presets stage (arm) instead of patching directly; Apply commits
   const preset = nodes.find(n => n.id === 'mx-preset');
-  assert.equal((preset?.on?.['press'] as { do: string } | undefined)?.do, 'ui.patchOneToOne');
-  const clear = nodes.find(n => n.id === 'mx-clear');
-  assert.equal((clear?.on?.['press'] as { do: string } | undefined)?.do, 'ui.clearPatches');
+  assert.equal((preset?.on?.['press'] as { do: string } | undefined)?.do, 'ui.armPatch');
+  const apply = nodes.find(n => n.id === 'mx-apply');
+  assert.equal((apply?.on?.['press'] as { do: string } | undefined)?.do, 'ui.applyPatch');
+  assert.ok(typeof apply?.when === 'string' && apply.when.length > 0, 'apply gated on staged preset');
+  const cancel = nodes.find(n => n.id === 'mx-cancel');
+  assert.equal((cancel?.on?.['press'] as { do: string } | undefined)?.do, 'ui.cancelPatch');
   assert.ok(secs.every(s => (s.props as Record<string, unknown>)['box'] === 'content-box'));
 }
 

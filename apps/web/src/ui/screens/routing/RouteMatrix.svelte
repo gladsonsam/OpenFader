@@ -25,6 +25,7 @@
       rows?: MatrixRow[];
       cols?: string[];
       used?: Record<string, string>;
+      pending?: { kind: 'oneToOne' | 'clear'; group: string } | null;
       /** Body cell px (fonts derive from it). Layouts widen per device. */
       cell?: number;
       /** Row header width px. */
@@ -38,23 +39,39 @@
   const rows = $derived(props.rows ?? []);
   const cols = $derived(props.cols ?? []);
   const used = $derived(props.used ?? {});
+  const pending = $derived(props.pending ?? null);
   const cell = $derived(props.cell ?? 68);
   const headW = $derived(props.headW ?? 220);
   const fCol = $derived(Math.max(9, Math.round(cell * 0.2)));
   const fName = $derived(Math.round(cell * 0.26));
   const fSrc = $derived(Math.round(cell * 0.22));
 
-  type CellState = 'current' | 'conflict' | 'free';
+  type CellState = 'current' | 'conflict' | 'free' | 'preview';
   function stateOf(row: MatrixCellRow, col: string): CellState {
+    if (isPreview(row, col)) return 'preview';
     if (row.src === col) return 'current';
     return used[col] ? 'conflict' : 'free';
   }
+  /** Staged-preset preview: the cells Apply would change. 1:1 previews
+   * inputs 1..32 at their same-numbered sockets; clear previews every
+   * currently patched cell. */
+  function isPreview(row: MatrixCellRow, col: string): boolean {
+    if (!pending) return false;
+    if (pending.kind === 'clear') return row.src !== '—' && row.src === col;
+    const m = /^in(\d+)$/.exec(row.id);
+    const n = m ? parseInt(m[1], 10) : NaN;
+    if (!Number.isFinite(n) || n < 1 || n > 32) return false;
+    const label = pending.group + ' ' + String(n).padStart(2, '0');
+    return col === label && row.src !== label;
+  }
   function ariaOf(row: MatrixCellRow, col: string, st: CellState): string {
+    if (st === 'preview') return row.name + ' staged to ' + col + ', activate Apply to confirm';
     if (st === 'current') return row.name + ' patched to ' + col + ', activate to unpatch';
     return 'Patch ' + row.name + ' to ' + col + (st === 'conflict' ? ', now on ' + used[col] : '');
   }
   function tipOf(row: MatrixCellRow, col: string, st: CellState): string {
     const base = row.name + ' → ' + col;
+    if (st === 'preview') return base + ' (staged — Apply to confirm)';
     if (st === 'current') return base + ' (patched — click to unpatch)';
     if (st === 'conflict') return base + ' (now on ' + used[col] + ' — click to steal)';
     return base;
@@ -62,6 +79,15 @@
 
   let hover = $state({ row: '', col: '' });
   let readout = $state('');
+  const rowCount = $derived(rows.filter((r) => r.kind === 'row').length);
+  const patchedCount = $derived(rows.filter((r) => r.kind === 'row' && r.src !== '—').length);
+  const defaultLine = $derived(
+    pending
+      ? pending.kind === 'clear'
+        ? 'Staged: unpatch ' + patchedCount + ' inputs — Apply to confirm'
+        : 'Staged: 1:1 ' + pending.group + ' — Apply to confirm'
+      : patchedCount + ' patched · ' + (rowCount - patchedCount) + ' open',
+  );
   function enter(row: MatrixCellRow, col: string): void {
     hover = { row: row.id, col };
     const st = stateOf(row, col);
@@ -146,11 +172,13 @@
           style="box-sizing:border-box;width:{cell}px;height:{cell}px;display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:0;background:{st ===
           'current'
             ? '#0e2018'
-            : hot
-              ? '#182435'
-              : ri % 2 === 0
-                ? '#0c1320'
-                : '#0a0f17'};cursor:pointer;{j % 8 === 0 ? 'border-left:2px solid #33415a;' : ''}"
+            : st === 'preview'
+              ? '#141d33'
+              : hot
+                ? '#182435'
+                : ri % 2 === 0
+                  ? '#0c1320'
+                  : '#0a0f17'};cursor:pointer;{j % 8 === 0 ? 'border-left:2px solid #33415a;' : ''}"
         >
           <span
             aria-hidden="true"
@@ -160,7 +188,13 @@
               ? '#5cdb5c'
               : st === 'conflict'
                 ? '#f0b429'
-                : '#26303e'}"
+                : 'transparent'};border:2px solid {st === 'current'
+              ? '#5cdb5c'
+              : st === 'conflict'
+                ? '#f0b429'
+                : st === 'preview'
+                  ? '#ffffff'
+                  : '#2a3443'}"
           ></span>
         </button>
       {/each}
@@ -170,7 +204,7 @@
       role="status"
       style="grid-column:1 / -1;position:sticky;bottom:0;z-index:3;background:#101825;border-top:1px solid #2a3443;padding:7px 10px;font-size:13px;color:#c9d1dc;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
     >
-      {readout || 'Hover a crosspoint to trace it · click to patch · click a lit one to unpatch'}
+      {readout || defaultLine}
     </div>
   </div>
 </div>
