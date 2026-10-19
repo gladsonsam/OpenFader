@@ -694,7 +694,7 @@ mod tests {
         let stream = accepted.await.unwrap();
         configure_accepted(&stream).unwrap();
         assert!(
-            socket2::SockRef::from(&stream).nodelay().unwrap(),
+            socket2::SockRef::from(&stream).tcp_nodelay().unwrap(),
             "TCP_NODELAY must be set on accepted sockets"
         );
     }
