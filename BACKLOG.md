@@ -5,16 +5,14 @@ Queued with the owner's words. A worker is dispatched only when a slot is
 free AND its files don't collide with the running worker.
 
 ## In flight (2/2 slots full)
-1. G5 solo path (`ses_eae7325eaffemYwXeSzZ7nDKA9`) — solosw bank into
-   poll set + parse_inbound, UI solos view reads engine state.
+1. Verification re-run, FULL permission (`ses_eae6850eeffeenyNkk61cNdmL9`) —
+   fixed matrix end to end on the live desk.
 2. Android network + sim removal (running) — real LAN access on-device
    (multicast lock etc.), sims out of device lists (offline == sim).
 
 ## Queued (in order)
-1. Verification re-run, FULL permission (owner granted desk writes) —
-   run the fixed matrix end to end, file remaining gaps.
-2. Mobile routing rework (usable on mobile).
-3. Graph label collisions (comp/EQ axis + summary wraps).
+1. Mobile routing rework (usable on mobile).
+2. Graph label collisions (comp/EQ axis + summary wraps).
 
 ## Queued (in order)
 1. Channel view topbar simplification (running as #2 in flight — listed
