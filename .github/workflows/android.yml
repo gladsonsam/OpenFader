@@ -24,6 +24,8 @@ jobs:
       - name: install sdk packages
         run: |
           export SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" --install "cmdline-tools;latest" > /dev/null
+          export SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses > /dev/null
           "$SDKMANAGER" "platform-tools" "platforms;android-37" "platforms;android-34" "build-tools;36.0.0" "ndk;26.1.10909125"
       - uses: dtolnay/rust-toolchain@stable
@@ -65,6 +67,8 @@ jobs:
           java-version: 21
       - name: install sdk packages
         run: |
+          export SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$SDKMANAGER" --install "cmdline-tools;latest" > /dev/null
           export SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses > /dev/null
           "$SDKMANAGER" "platform-tools" "platforms;android-37" "platforms;android-34" "build-tools;36.0.0" "ndk;26.1.10909125"
