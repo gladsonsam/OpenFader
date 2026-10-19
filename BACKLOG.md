@@ -4,30 +4,12 @@ Rules: one worker per file-area (no overlapping paths). New items go to
 Queued with the owner's words. A worker is dispatched only when a slot is
 free AND its files don't collide with the running worker.
 
-## In flight (2/2 slots full)
-1. Optimistic-write mask fix (`ses_eae50819bffePYXGPM9jcoEVOe`) — sweep
-   on live tick or epsilon to desk quantum.
-2. EQ ingest arms (`ses_eae50818fffe6N96RP7ivCub3t`) — parse_inbound EQ
-   gain (+freq/Q/type if trivial).
+## In flight (0/2 slots — both free, no active subagents)
+- (none)
 
 ## Queued (in order)
-- (empty — send more)
-
-## Queued (in order)
-1. Mobile routing rework (usable on mobile).
-2. Graph label collisions (comp/EQ axis + summary wraps).
-
-## Queued (in order)
-1. Channel view topbar simplification (running as #2 in flight — listed
-   here so it isn't lost): back-to-mixer + name + prev/next, switcher
-   removed.
-2. G5 fix (REAL product gap from verification): solo has no desk→app
-   path — solosw bank not in poll set, UI solos view echo-only. Wire
-   parse_inbound + poll set.
-3. Verification re-run, FULL permission (owner granted desk writes) —
-   run the fixed matrix end to end, file remaining gaps.
-4. Mobile routing rework (usable on mobile).
-5. Graph label collisions (comp/EQ axis + summary wraps).
+- (empty — verification matrix 17/19 landed, all gap fixes landed;
+  send the next round)
 
 ## Queued — server-side (NOT today; parked, do not dispatch)
 - Automixing (gain-sharing across channels on the server).
