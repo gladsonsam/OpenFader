@@ -165,20 +165,31 @@ async fn engine_attach(eslot: EngineState<'_>, label: Option<String>) -> Result<
 /// the same batch as an `openmix-event` (and ignore this return value).
 #[tauri::command]
 async fn engine_cmd(eslot: EngineState<'_>, cmd: String) -> Result<Vec<String>, String> {
-    let mut slot = eslot.lock().await;
-    ensure_engine_client(&mut slot).await?;
-    let engine = slot.engine.clone().expect("engine just ensured");
-    let id = slot
-        .client
-        .as_ref()
-        .expect("client just ensured")
-        .id
-        .clone();
+    // Ensure + identify under the lock, then RELEASE it across the engine
+    // call: scans/probes/connects block on the LAN (seconds), and holding
+    // the slot mutex that long starves the 50 ms push ticker — its backlog
+    // then buries the very devices/link frames the command produced.
+    // The engine is internally synchronized (the WS relay already drives
+    // it from many concurrent sockets), so concurrent commands are safe.
+    let (engine, id) = {
+        let mut slot = eslot.lock().await;
+        let id = ensure_engine_client(&mut slot).await?;
+        (
+            slot.engine.clone().expect("engine just ensured"),
+            id,
+        )
+    };
     // `handle_json` never fails the call itself (rejections arrive as
     // unicast `error` Events); it only skips unknown writers, and the
     // stored handle detaches solely via `engine_detach`.
     engine.handle_json(&id, &cmd).await;
-    Ok(drain_and_push(&mut slot))
+    let mut slot = eslot.lock().await;
+    // A concurrent `engine_detach` drops the client: nothing to drain.
+    if slot.client.as_ref().is_some_and(|c| c.id == id) {
+        Ok(drain_and_push(&mut slot))
+    } else {
+        Ok(Vec::new())
+    }
 }
 
 /// Drain background Event frames (meter ticker, param poller, discovery)

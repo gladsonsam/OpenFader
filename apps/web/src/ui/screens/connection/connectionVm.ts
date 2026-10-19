@@ -37,17 +37,23 @@ export interface ConnectionVm {
   sub: string;
   isConnected: boolean;
   lastScan: string;
+  /** Scan button state: busy shows a disabled "Scanning…" label. */
+  scanLabel: string;
+  scanBusy: boolean;
+  /** Loading row under the device list while a sweep is in flight. */
+  scanHint: string | null;
+  /** Retry hint when the last scan never reported back (else null). */
+  scanError: string | null;
   devices: DeviceVm[];
   /** Hint shown under the device list when it is honestly empty (null =
-   *  rows present, or the connecting phase owns the status card). */
+   *  rows present). The relay link is automatic and never shown here, so
+   *  there is no fix button: desks either answer Scan or they don't. */
   emptyText: string | null;
-  /** One-tap LAN fix for the status card: relay unreachable from this
-   *  device while the page is LAN-served (never on fixture/localhost —
-   *  those baselines keep no suggestion button). */
+  /** Always false now (the relay link is automatic — no manual host UI).
+   *  Kept so layout bindings and existing tests keep their shape. */
   showFix: boolean;
-  fixLabel: string;
-  /** Manual add-by-IP card: only while a relay link is up or failed (never
-   *  on fixture/localhost pages, whose baselines stay design-exact). */
+  /** Always false now (desks come from Scan only — no add-by-IP card).
+   *  Kept so layout bindings and existing tests keep their shape. */
   showManualDesk: boolean;
 }
 
@@ -64,6 +70,10 @@ export interface LiveStatus {
   linkName?: string | null;
   /** Engine scan epoch (0/absent = never scanned this session). */
   scannedAt?: number;
+  /** Client-side scan-busy flag (no engine scan-started event exists). */
+  scanning?: boolean;
+  /** Honest scan failure hint (pressed with no link, or sweep timed out). */
+  scanError?: string | null;
   /** Engine driver behind the relay (informational only — the device
    *  list never carries sim rows). */
   driver?: string;
@@ -115,41 +125,68 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
   const offline = state.connected === 'offline';
   // headerView owns the dot contract; reuse it instead of duplicating.
   const dot = headerView({ state, chans: {}, fx: [] } as World).connDot;
-  // A live relay link owns the status card: it is the real connection.
-  // Scan results are the ONLY device source here: real discovered desks,
-  // an honest empty state, or a press-Scan hint — fixtures never leak in.
+  // A live relay link owns the socket but is NEVER shown: the frontend<>
+  // backend link auto-connects at boot (Tauri IPC in-process, WS relay
+  // default) and the connection screen is only about DESKS. Scan results
+  // are the ONLY device source here: real discovered desks, an honest
+  // empty state, or a press-Scan hint — fixtures never leak in, and no
+  // "Live · relay link" / host / 127.0.0.1 chrome ever renders.
   if (live && (live.phase === 'online' || live.phase === 'connecting' || live.phase === 'error')) {
     const on = live.phase === 'online';
-    const busy = live.phase === 'connecting';
     const scanned = (live.scannedAt ?? 0) > 0;
     const found =
       on && scanned && live.devices ? liveDeviceVms(live.devices, live.linkName) : [];
-    // One-tap LAN fix: the stored host is unreachable from this device
-    // while the page itself is LAN-served. Localhost pages keep no button.
-    const showFix = !on && !busy && !!live.suggestion;
-    return {
-      dot: on ? '#5fe060' : busy ? '#f0b44a' : '#ff4a3d',
-      halo: on ? 'rgba(95,224,96,.18)' : busy ? 'rgba(240,180,74,.18)' : 'rgba(255,74,61,.18)',
-      cardBorder: on ? '#2c4a2e' : busy ? '#5a4420' : '#5a2420',
-      title: on ? 'Live · relay link' : busy ? 'Connecting to relay …' : 'Relay connection failed',
-      sub: live.message + (on ? ` · ${live.host}` : ''),
-      isConnected: false,
-      lastScan: state.lastScan,
-      devices: found,
-      emptyText: busy
+    const scanBusy = live.scanning === true;
+    const scanLabel = scanBusy ? 'Scanning…' : 'Scan';
+    const scanHint = scanBusy ? 'Scanning for desks…' : null;
+    const scanError = live.scanError ?? null;
+    const lastScan = scanBusy ? 'Scanning for desks…' : state.lastScan;
+    const emptyFor = (): string | null =>
+      found.length
         ? null
-        : !on
-          ? 'Relay unreachable — check the relay host and retry, or work offline below.'
+        : scanError
+          ? null
           : !scanned
-            ? 'Relay is live — press Scan to list the desks on this network.'
-            : found.length
-              ? null
-              : 'No desks found — the desk may be off, on another network, or unreachable by broadcast. Retry Scan, or work offline below.',
-      showFix,
-      fixLabel: showFix ? `Use ${live.suggestion} instead` : '',
-      // Manual add-by-IP lives next to the rows it feeds: visible while
-      // the relay link is up or failed (never on fixture/localhost pages).
-      showManualDesk: on || live.phase === 'error',
+            ? 'Press Scan to list the desks on this network.'
+            : 'No desks found — the desk may be off, on another network, or unreachable by broadcast. Retry Scan, or work offline below.';
+    const linked = on && live.linkName
+      ? live.devices?.find(d => d.name === live.linkName || d.ip === live.linkName) ?? null
+      : null;
+    if (linked) {
+      return {
+        dot: '#5fe060',
+        halo: 'rgba(95,224,96,.18)',
+        cardBorder: '#2c4a2e',
+        title: 'Connected to ' + linked.name,
+        sub: linked.model + ' · ' + linked.ip,
+        isConnected: false,
+        lastScan,
+        scanLabel,
+        scanBusy,
+        scanHint,
+        scanError,
+        devices: found,
+        emptyText: null,
+        showFix: false,
+        showManualDesk: false,
+      };
+    }
+    return {
+      dot: '#ff4a3d',
+      halo: 'rgba(255,74,61,.18)',
+      cardBorder: '#5a2420',
+      title: 'Not connected',
+      sub: 'Pick a console below',
+      isConnected: false,
+      lastScan,
+      scanLabel,
+      scanBusy,
+      scanHint,
+      scanError,
+      devices: found,
+      emptyText: emptyFor(),
+      showFix: false,
+      showManualDesk: false,
     };
   }
   // No relay link was ever picked and no fixture console is selected: say
@@ -163,11 +200,14 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
       sub: 'Pick a console below',
       isConnected: false,
       lastScan: state.lastScan,
+      scanLabel: 'Scan',
+      scanBusy: false,
+      scanHint: null,
+      scanError: null,
       devices: [],
       emptyText:
-        'No relay link yet — connect the relay, then press Scan. Only real desks on this network are listed here.',
+        'No desk linked yet — press Scan. Only real desks on this network are listed here.',
       showFix: false,
-      fixLabel: '',
       showManualDesk: false,
     };
   }
@@ -185,11 +225,14 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
       sub: 'Changes sync when you connect',
       isConnected: false,
       lastScan: state.lastScan,
+      scanLabel: 'Scan',
+      scanBusy: false,
+      scanHint: null,
+      scanError: null,
       devices: [],
       emptyText:
-        'Offline demo — the full sim desk runs on this device. No network is used; press Scan after connecting to list real desks.',
+        'Offline demo — the full sim desk runs on this device. No network is used; press Scan to list real desks.',
       showFix: false,
-      fixLabel: '',
       showManualDesk: false,
     };
   }
@@ -201,10 +244,13 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
     sub: cur!.ip + ' · 48 kHz · latency 1.2 ms',
     isConnected: true,
     lastScan: state.lastScan,
+    scanLabel: 'Scan',
+    scanBusy: false,
+    scanHint: null,
+    scanError: null,
     devices: deviceVms(devs, state.connected),
     emptyText: null,
     showFix: false,
-    fixLabel: '',
     showManualDesk: false,
   };
 }

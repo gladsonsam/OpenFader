@@ -368,8 +368,10 @@ block. Only changed values broadcast (diff); after a `param` write the
 value is re-read and the confirmed value broadcast (`by` = writer). A
 read failing as unsupported/unknown/timed-out drops that (driver, param)
 pair from the poll set (skipped in place — one tick — never rebuilt) and
-rebroadcasts `caps` once with it in `unsupported` (no spam); out-of-scope
-reads (`... out of scope for ... strips`) and no-data errors (empty sim
+rebroadcasts `caps` once with it in `unsupported` (no spam). Timeouts are
+tolerant: a pair drops only after 3 consecutive timeouts with no success
+in between (`POLL_TIMEOUT_STRIKES`), so one lost datagram on venue wifi
+never evicts a live param; out-of-scope reads (`... out of scope for ... strips`) and no-data errors (empty sim
 slots, unpushed caches, not-connected) never drop — the poller
 pre-filters by scopes, so an out-of-scope error only fires on direct
 misuse. Transient I/O keeps polling silently.
@@ -389,30 +391,37 @@ client's flood never starves the next focus. Flood-then-focus ordering is
 covered by `focus_flood_superseded` (engine) and `ws_focus_flood_superseded`
 (serve WS).
 
-Cold full-sweep times at 20 q/s (static list sizes; why focus matters):
+Cold full-sweep times (static list sizes; why focus matters — background
+keeps 20 q/s at xair/sim defaults, `max_inflight` 4):
 
 | driver | strips | pairs | full sweep |
 |--------|--------|-------|------------|
 | sim    | 77     | 8212  | ~7 min |
 | xair   | 35     | 2218  | ~2 min |
-| dl32s  | 32     | 96    | ~5 s |
+| dl32s  | 32     | 96    | ~10 s (lanes alternate whole ticks at `max_inflight` 1) |
 
-Visible/focused strips drain first; the sweep above is the slow
+The essentials lane (~150 pairs on xair: every strip's
+fader/mute/name/pan/color + xair `solo`) rides ~60 q/s alongside the
+background at xair/sim defaults, so faders/mutes/names converge in ~3 s
+even though the deep sweep above still takes minutes. Visible/focused
+strips drain first; the sweep above is the slow
 background. Per-family pair counts are reported by the v2 verification
 script (see the R1 report).
 
 ## Poller pipelining (R2: first-view latency)
 
-The poller issues up to `max_inflight` driver queries concurrently per
-tick (`EngineConfig::poll_inflight`, `--poll-inflight`; per-driver
-default: sim 4, xair 1 until the rig measures a sustainable query rate,
-dl32s 1; clamped 1..=16). Strict lanes per tick: writes (the tick is
-skipped while any command is in flight, counting `poll_skips`) >
+The poller issues up to `max_inflight` driver queries per tick
+(`EngineConfig::poll_inflight`, `--poll-inflight`; per-driver default:
+sim/xair 4, dl32s 1; clamped 1..=16). Strict lanes per tick: writes (the
+tick is skipped while any command is in flight, counting `poll_skips`) >
 `focus` backlog > visible-group lane (the most-recently focused strips,
 capped at 16 — one full sweep of their EQ/dyn/sends ids per focus, then
-the lane disarms so the background can never starve) > background sweep,
-with a fairness reservation (even ticks keep `max(1, n/4)` slots for the
-background) while the boost is armed. The
+the lane disarms so the background can never starve) > essentials lane
+(every strip's fader/mute/name/pan/color + the xair `solo` backstop,
+~150 pairs on xair — perpetual, so a reconnected app is desk-fresh in
+seconds) > background sweep, with a fairness reservation (the background
+keeps one slot every `max(2, n)` ticks) so the perpetual essentials lane
+can never starve it. The
 effective inflight adapts down (halves) while the batch-RTT EMA exceeds
 the poll tick, so a saturated desk is not piled on further.
 
@@ -421,19 +430,19 @@ WS end-to-end on a quiet box, production 50 ms tick):
 
 | inflight | first-view |
 |----------|------------|
-| 1 (xair default) | ~84 s |
-| 4 (sim default) | ~21 s |
+| 1 | ~84 s |
+| 4 (sim/xair default) | ~21 s |
 | 8 (`--poll-inflight 8`) | ~11 s |
 | 4 at `--poll-ms 5` (test tick) | ~2.1 s |
 
 Pipelining scales ~linearly while reads are in-process (4.0×/7.9× for
 4/8); on hardware the ceiling is the desk RTT, not the tick — hence the
-adaptive backoff and P19 (measure, don't guess).
+adaptive backoff. The xair default of 4 was rig-measured 2026-10-19
+(XR18 @ 192.168.40.123, routed LAN: 48 sequential queries in 29 ms,
+~1600 q/s burst — 80 q/s average runs with ~20x headroom).
 `poll_tick` is public so tests and diagnostics can drive (and time) the
 poller deterministically; `poll_once` stays as the exact legacy
-one-query-per-call path. LIVE-RIG P19+ carries the checklist item to
-measure the XR18's sustainable query rate before raising its default —
-the rate is not guessed here.
+one-query-per-call path.
 
 ## Devices, link, info (R2)
 
