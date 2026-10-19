@@ -24,10 +24,8 @@ jobs:
       - name: install sdk packages
         run: |
           export SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          "$SDKMANAGER" --install "cmdline-tools;latest" > /dev/null
-          export SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses > /dev/null
-          "$SDKMANAGER" "platform-tools" "platforms;android-37" "platforms;android-34" "build-tools;36.0.0" "ndk;26.1.10909125"
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "platforms;android-34" "build-tools;36.0.0" "ndk;26.1.10909125"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
@@ -45,12 +43,15 @@ jobs:
         working-directory: apps/web
       - name: init android project
         working-directory: src-tauri
-        run: npx -y @tauri-apps/cli@2 android init
+        run: npx -y @tauri-apps/cli@2.12.3 android init
+      - name: pin compileSdk 36 (37.0 is a preview, not in the public repo)
+        working-directory: src-tauri
+        run: sed -i 's/compileSdk = 37/compileSdk = 36/; s/targetSdk = 37/targetSdk = 36/' gen/android/app/build.gradle.kts && grep -n "Sdk = 36" gen/android/app/build.gradle.kts
       - name: build debug apk
         working-directory: src-tauri
         run: |
           export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
-          npx -y @tauri-apps/cli@2 android build --debug
+          npx -y @tauri-apps/cli@2.12.3 android build --debug --target aarch64
       - uses: actions/upload-artifact@v4
         with:
           name: openmix-debug-apk
@@ -68,10 +69,8 @@ jobs:
       - name: install sdk packages
         run: |
           export SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          "$SDKMANAGER" --install "cmdline-tools;latest" > /dev/null
-          export SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses > /dev/null
-          "$SDKMANAGER" "platform-tools" "platforms;android-37" "platforms;android-34" "build-tools;36.0.0" "ndk;26.1.10909125"
+          "$SDKMANAGER" "platform-tools" "platforms;android-36" "platforms;android-34" "build-tools;36.0.0" "ndk;26.1.10909125"
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
@@ -89,7 +88,10 @@ jobs:
         working-directory: apps/web
       - name: init android project
         working-directory: src-tauri
-        run: npx -y @tauri-apps/cli@2 android init
+        run: npx -y @tauri-apps/cli@2.12.3 android init
+      - name: pin compileSdk 36 (37.0 is a preview, not in the public repo)
+        working-directory: src-tauri
+        run: sed -i 's/compileSdk = 37/compileSdk = 36/; s/targetSdk = 37/targetSdk = 36/' gen/android/app/build.gradle.kts && grep -n "Sdk = 36" gen/android/app/build.gradle.kts
       - name: restore keystore
         run: echo "$ANDROID_KEYSTORE_B64" | base64 -d > /tmp/openmix-upload.jks
         env:
