@@ -18,6 +18,8 @@
   import { useDeviceClass } from '../../modules/device.svelte.ts';
   import './actions.ts';
   import { buildChannelScope } from './channelScope.ts';
+  import { stripStateOf } from '../mixer/stripState.ts';
+  import type { DeskGroups } from '../mixer/mixerVm.ts';
   import type { MeterSource } from '../../primitives/signal/Meter.svelte';
   import type { LayoutNode } from '../../modules/schema.ts';
   import defaults from '../../layouts/channel.default.json';
@@ -84,6 +86,18 @@
     };
   }
 
+  // Glanceable status icons for the selected channel's master strip
+  // (phantom, groups, link, invert, delay — echo-confirmed only, null
+  // offline: the icons' `when` hides them and fixture mode is untouched).
+  function selStateOf(): DeskGroups | null {
+    void live.version; // re-read on every engine ingest (control frames only)
+    const w = live.engine;
+    if (live.phase !== 'online' || !w || !w.capsReady) return null;
+    const ch = bridgeStrip(w, ui.sel.id);
+    if (ch === null) return null;
+    return stripStateOf(w, ch);
+  }
+
   const scope = $derived(
     buildChannelScope({
       state: ui.state,
@@ -98,7 +112,8 @@
       liveGroups: liveGroupsSource(),
     }),
   );
+  const scopeWithState = $derived({ ...scope, selState: selStateOf() });
   const source = fixtureSource({});
 </script>
 
-<LayoutRenderer layout={tree} {source} {scope} device={device.now} />
+<LayoutRenderer layout={tree} source={source} scope={scopeWithState} device={device.now} />

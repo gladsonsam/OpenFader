@@ -44,8 +44,8 @@
       <span
         title="Mute group {g + 1}{d.mgMuted[i] ? ' (master muted)' : ''}"
         style="box-sizing:border-box;height:18px;display:inline-flex;align-items:center;padding:0 5px;border-radius:3px;border:1px solid {d.mgMuted[i]
-          ? '#ff6a60'
-          : '#3a414c'};background:#161d29;color:{d.mgMuted[i] ? '#ff6a60' : '#a7b1c0'};font-size:11px;font-weight:600;line-height:1"
+          ? 'var(--u4-red-hi)'
+          : 'var(--u4-line-ctl)'};background:var(--u4-bank-off);color:{d.mgMuted[i] ? 'var(--u4-red-hi)' : 'var(--u4-text-5)'};font-size:11px;font-weight:600;line-height:1"
         >M{g + 1}</span
       >
     {/each}
@@ -53,8 +53,8 @@
       <span
         title="Subgroup {g + 1}{d.sgMuted[i] ? ' (master muted)' : ''}"
         style="box-sizing:border-box;height:18px;display:inline-flex;align-items:center;padding:0 5px;border-radius:3px;border:1px solid {d.sgMuted[i]
-          ? '#ff6a60'
-          : '#3a414c'};background:#161d29;color:{d.sgMuted[i] ? '#ff6a60' : '#a7b1c0'};font-size:11px;font-weight:600;line-height:1"
+          ? 'var(--u4-red-hi)'
+          : 'var(--u4-line-ctl)'};background:var(--u4-bank-off);color:{d.sgMuted[i] ? 'var(--u4-red-hi)' : 'var(--u4-text-5)'};font-size:11px;font-weight:600;line-height:1"
         >S{g + 1}</span
       >
     {/each}
@@ -62,8 +62,8 @@
       <span
         title={d.link ? 'Stereo linked' : 'Stereo link off'}
         style="box-sizing:border-box;height:18px;display:inline-flex;align-items:center;padding:0 5px;border-radius:3px;border:1px solid {d.link
-          ? '#5fe3e0'
-          : '#3a414c'};background:#161d29;color:{d.link ? '#5fe3e0' : '#a7b1c0'};font-size:11px;font-weight:600;line-height:1"
+          ? 'var(--u4-cyan-hi)'
+          : 'var(--u4-line-ctl)'};background:var(--u4-bank-off);color:{d.link ? 'var(--u4-cyan-hi)' : 'var(--u4-text-5)'};font-size:11px;font-weight:600;line-height:1"
         >LINK</span
       >
     {/if}

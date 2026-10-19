@@ -139,7 +139,7 @@ export type EngineEvent =
     }
   | {
       kind: 'devices';
-      list: Array<{ id: string; name: string; model: string; ip: string; kind: string; state: string; fw: string | null }>;
+      list: Array<{ id: string; name: string; model: string; ip: string; kind: string; state: string; fw: string | null; via: string | null }>;
       scanned_at: number;
     }
   | { kind: 'link'; state: string; name: string; ip: string; fs: number; latency_ms: number }
@@ -419,7 +419,7 @@ export function parseEvent(text: string): EngineEvent | null {
       };
     case 'devices': {
       if (!Array.isArray(m['list'])) return null;
-      const list: Array<{ id: string; name: string; model: string; ip: string; kind: string; state: string; fw: string | null }> = [];
+      const list: Array<{ id: string; name: string; model: string; ip: string; kind: string; state: string; fw: string | null; via: string | null }> = [];
       for (const d of m['list']) {
         if (!isRec(d) || typeof d['id'] !== 'string') continue;
         list.push({
@@ -430,6 +430,7 @@ export function parseEvent(text: string): EngineEvent | null {
           kind: str(d['kind']),
           state: str(d['state']),
           fw: typeof d['fw'] === 'string' ? d['fw'] : null,
+          via: typeof d['via'] === 'string' ? d['via'] : null,
         });
       }
       return { kind: 'devices', list, scanned_at: int(m['scanned_at']) ?? 0 };
@@ -677,6 +678,7 @@ export const cmdRecallScene = (show: string, name: string, fade_ms?: number | nu
   cmd({ cmd: 'recall_scene', show, name, fade_ms: fade_ms === undefined ? null : fade_ms });
 export const cmdDeleteScene = (show: string, name: string): string => cmd({ cmd: 'delete_scene', show, name });
 export const cmdScan = (): string => cmd({ cmd: 'scan' });
+export const cmdProbeDesk = (addr: string): string => cmd({ cmd: 'probe', addr });
 export const cmdConnectDevice = (id: string): string => cmd({ cmd: 'connect_device', id });
 export const cmdDisconnect = (): string => cmd({ cmd: 'disconnect' });
 export const cmdInfo = (): string => cmd({ cmd: 'info' });

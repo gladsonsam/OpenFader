@@ -40,8 +40,16 @@ export interface DeskGroups {
   mgMuted: Array<boolean | null>;
   sgMuted: Array<boolean | null>;
   /** Stereo-link leaf: true/false when confirmed, null when unknown or
-   *  unsupported on the desk (xair: global chlink, no per-channel leaf). */
+   *  unsupported on the desk (xair: global chlink, no per-channel leaf).
+   *  The icon row shows LINK only when true; false stays hidden. */
   link: boolean | null;
+  /** Confirmed 48V phantom power: true/false when the desk reports it
+   *  (unsupported scope or nothing echoed yet -> null, glyph hidden). */
+  phantom: boolean | null;
+  /** Confirmed polarity invert (null = unknown: hidden; shown only when on). */
+  polarity: boolean | null;
+  /** Confirmed input delay on (null = unsupported/unknown: hidden). */
+  delayOn: boolean | null;
 }
 
 export interface StripVm {

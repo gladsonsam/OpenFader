@@ -22,6 +22,10 @@ openmix-core = { path = "../crates/core" }
 openmix-sim = { path = "../crates/sim" }
 openmix-proto-xair = { path = "../crates/proto-xair" }
 openmix-proto-dl32s = { path = "../crates/proto-dl32s" }
+openmix-engine = { path = "../crates/engine" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
 
 [features]
 default = ["custom-protocol"]

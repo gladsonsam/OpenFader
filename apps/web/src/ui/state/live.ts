@@ -84,6 +84,85 @@ export function relayHostFromSearch(search: string, fallback: string): { host: s
   return { host: noScheme.replace(/\/ws\/?$/, '').replace(/\/$/, ''), fromUrl: true };
 }
 
+/** Host part of a `host:port` relay value (brackets stripped). */
+export function relayHostPart(host: string): string {
+  const s = host.trim();
+  const m = s.match(/^\[([^\]]+)\](?::\d+)?$/);
+  if (m) return m[1]!;
+  const idx = s.lastIndexOf(':');
+  if (idx > 0 && /^\d+$/.test(s.slice(idx + 1))) return s.slice(0, idx);
+  return s;
+}
+
+/** Port part of a `host:port` relay value (default relay port when bare). */
+export function relayPortPart(host: string): string {
+  const s = host.trim();
+  const m = s.match(/^\[([^\]]+)\](?::(\d+))?$/);
+  if (m) return m[2] ?? relayPortPart(DEFAULT_RELAY_HOST);
+  const idx = s.lastIndexOf(':');
+  if (idx > 0 && /^\d+$/.test(s.slice(idx + 1))) return s.slice(idx + 1);
+  return relayPortPart(DEFAULT_RELAY_HOST);
+}
+
+/** Loopback relay hosts: 127/8, localhost, ::1 — this device itself. */
+export function isLoopbackHost(host: string): boolean {
+  const h = host.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  return (
+    h === 'localhost' ||
+    h === '::1' ||
+    h === '0.0.0.0' ||
+    /^127(\.\d{1,3}){3}$/.test(h)
+  );
+}
+
+/**
+ * One-tap fix when the relay is unreachable from THIS device: the relay
+ * usually runs on the machine serving this page, so suggest
+ * `<page-host>:<relay-port>`. Returns null when the page itself is local
+ * (localhost default stays) or when there is nothing better to suggest —
+ * and NEVER suggests 127.0.0.1 to a remote client.
+ */
+export function pageHostSuggestion(configuredHost: string, pageHostname: string): string | null {
+  const page = pageHostname.trim().replace(/^\[|\]$/g, '');
+  if (!page || isLoopbackHost(page)) return null;
+  const cur = relayHostPart(configuredHost);
+  const suggestion = `${page}:${relayPortPart(configuredHost)}`;
+  if (cur.toLowerCase() === page.toLowerCase()) return null;
+  if (suggestion === configuredHost.trim()) return null;
+  return suggestion;
+}
+
+/** Recent manual-desk hosts (add-by-IP): most recent first, max 5. */
+const RECENT_DESKS_KEY = 'openmix.recent-desks';
+const MAX_RECENT_DESKS = 5;
+
+export function loadRecentDesks(): string[] {
+  try {
+    const raw = storage()?.getItem(RECENT_DESKS_KEY);
+    if (!raw) return [];
+    const arr: unknown = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr.filter((v): v is string => typeof v === 'string' && v.trim().length > 0).slice(0, MAX_RECENT_DESKS);
+  } catch {
+    return [];
+  }
+}
+
+/** Remember a manually probed desk host (dedupe, most-recent-first). */
+export function saveRecentDesk(host: string): string[] {
+  const h = host.trim();
+  const next = [h, ...loadRecentDesks().filter(d => d.toLowerCase() !== h.toLowerCase())].slice(
+    0,
+    MAX_RECENT_DESKS,
+  );
+  try {
+    storage()?.setItem(RECENT_DESKS_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+  return next;
+}
+
 /**
  * REMOVED (owner order, item 5): the old sim-topology fixture id -> engine
  * strip index map (`in1` -> 0 … `mainlr` -> 72). It fed every live meter
