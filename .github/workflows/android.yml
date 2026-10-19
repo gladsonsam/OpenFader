@@ -52,7 +52,7 @@ jobs:
         run: |
           export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
           npx -y @tauri-apps/cli@2.12.3 android build --debug --target aarch64
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: openmix-debug-apk
           path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
@@ -101,7 +101,7 @@ jobs:
         run: |
           export NDK_HOME="$ANDROID_HOME/ndk/26.1.10909125"
           npx -y @tauri-apps/cli@2 android build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: openmix-release-android
           path: src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
