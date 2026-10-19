@@ -4,9 +4,11 @@ Rules: one worker per file-area (no overlapping paths). New items go to
 Queued with the owner's words. A worker is dispatched only when a slot is
 free AND its files don't collide with the running worker.
 
-## In flight (1/2 slots — 1 free)
-1. Verification re-run, FULL permission (`ses_eae6850eeffeenyNkk61cNdmL9`) —
-   fixed matrix end to end on the live desk.
+## In flight (2/2 slots full)
+1. Optimistic-write mask fix (`ses_eae50819bffePYXGPM9jcoEVOe`) — sweep
+   on live tick or epsilon to desk quantum.
+2. EQ ingest arms (`ses_eae50818fffe6N96RP7ivCub3t`) — parse_inbound EQ
+   gain (+freq/Q/type if trivial).
 
 ## Queued (in order)
 - (empty — send more)
