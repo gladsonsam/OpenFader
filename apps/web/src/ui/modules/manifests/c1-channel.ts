@@ -18,7 +18,6 @@ import type { ModuleManifest, ModuleProps } from '../types.ts';
 import ChannelTabButton from '../../screens/channel/ChannelTabButton.svelte';
 import GroupsCard from '../../screens/channel/GroupsCard.svelte';
 import StripNameChip from '../../screens/channel/StripNameChip.svelte';
-import StripStepper from '../../screens/channel/StripStepper.svelte';
 import StripPanBar from '../../screens/channel/StripPanBar.svelte';
 import StripMute from '../../screens/channel/StripMute.svelte';
 import StripFader from '../../screens/channel/StripFader.svelte';
@@ -58,16 +57,6 @@ export const manifests: ModuleManifest[] = [
     },
     defaults: { name: '', color: 'var(--u4-btn-bg)', text: 'var(--u4-text-2)' },
     size: {},
-  },
-  {
-    id: 'channel-stepper',
-    title: 'Channel prev/next stepper',
-    category: 'channel',
-    component: as(StripStepper),
-    props: {},
-    defaults: {},
-    size: {},
-    events: [{ name: 'prev' }, { name: 'next' }],
   },
   {
     id: 'channel-pan-bar',

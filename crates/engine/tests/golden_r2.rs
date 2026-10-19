@@ -36,6 +36,7 @@ fn examples() -> Vec<(String, Value)> {
                         kind: "console".to_string(),
                         state: "connected".to_string(),
                         fw: Some("0.1.0".to_string()),
+                        via: None,
                     },
                     openmix_engine::protocol::DeviceDesc {
                         id: "sb1".to_string(),
@@ -45,6 +46,7 @@ fn examples() -> Vec<(String, Value)> {
                         kind: "io".to_string(),
                         state: "in_use".to_string(),
                         fw: None,
+                        via: None,
                     },
                 ],
                 scanned_at: 1700000000,

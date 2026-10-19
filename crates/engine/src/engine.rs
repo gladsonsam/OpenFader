@@ -5,6 +5,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     future::Future,
+    net::IpAddr,
     path::PathBuf,
     pin::Pin,
     sync::{
@@ -293,6 +294,7 @@ impl DeviceScanner for RealScanner {
                             kind: "console".to_string(),
                             state: "available".to_string(),
                             fw: None,
+                            via: Some("broadcast".to_string()),
                         });
                     }
                 }
@@ -524,6 +526,10 @@ pub struct Engine {
     /// stays alive for the process lifetime (the driver's cache drain
     /// holds its own resubscribed clone).
     meter_guard: RwLock<Option<tokio::sync::broadcast::Receiver<openmix_core::MeterFrame>>>,
+    /// Last connected address per driver (the `addr` of [`Engine::connect`]):
+    /// broadcast discovery never crosses subnets, so a hardware `scan` also
+    /// verifies this address and lists the linked desk when it answers.
+    desk_addrs: RwLock<HashMap<String, String>>,
 }
 
 impl Engine {
@@ -557,16 +563,9 @@ impl Engine {
             lock_ttl: config.lock_ttl,
             poll_interval: config.poll_interval,
             tasks_started: AtomicBool::new(false),
-            devices: RwLock::new(sim_devices()),
+            devices: RwLock::new(Vec::new()),
             scanned_at: AtomicU64::new(0),
-            link: RwLock::new(LinkState {
-                state: "connected".to_string(),
-                name: "FOH Console".to_string(),
-                ip: "192.168.1.120".to_string(),
-                fs: DESK_SAMPLE_RATE,
-                latency_ms: 1.2,
-                device_id: Some("foh".to_string()),
-            }),
+            link: RwLock::new(LinkState::default()),
             scenes_lib: RwLock::new(scenes_lib),
             scenes_current: RwLock::new(None),
             data_dir,
@@ -585,6 +584,7 @@ impl Engine {
                 .unwrap_or_else(|| Arc::new(RealScanner)),
             meter_driver: RwLock::new(None),
             meter_guard: RwLock::new(None),
+            desk_addrs: RwLock::new(HashMap::new()),
         });
         // FX cache for the default driver (sim): seeded synchronously so
         // the first attach already carries the rack.
@@ -618,6 +618,12 @@ impl Engine {
         let target = addr
             .map(str::to_string)
             .unwrap_or_else(|| Self::default_addr(driver).to_string());
+        // Remember the desk address: hardware scans verify it (broadcast
+        // discovery never crosses subnets).
+        self.desk_addrs
+            .write()
+            .unwrap()
+            .insert(driver.to_string(), target.clone());
         match driver {
             "xair" => self.xair.connect(&target).await?,
             "dl32s" => self.dl32s.connect(&target).await?,
@@ -1336,6 +1342,7 @@ impl Engine {
                     kind: d.kind.clone(),
                     state,
                     fw: d.fw.clone(),
+                    via: d.via.clone(),
                 }
             })
             .collect();
@@ -1343,6 +1350,93 @@ impl Engine {
             list,
             scanned_at: self.scanned_at.load(Ordering::Relaxed),
         }
+    }
+
+    /// Verified device entry for the relay's linked desk (hardware drivers
+    /// only): the stored connect address answers the driver's own info
+    /// query. `None` when never connected, unconfigured, or unreachable —
+    /// a scan then honestly reports only what broadcast discovery found.
+    async fn linked_desk_device(&self, driver: &str) -> Option<DeviceDesc> {
+        if driver != "xair" && driver != "dl32s" {
+            return None;
+        }
+        let ip = self.desk_addrs.read().unwrap().get(driver).cloned()?;
+        let info = match driver {
+            "xair" => self.xair.query_info().await.ok()?,
+            _ => self.dl32s.query_info().await.ok()?,
+        };
+        if info.model.trim().is_empty() {
+            return None;
+        }
+        let name = if info.name.trim().is_empty() {
+            info.model.clone()
+        } else {
+            info.name.clone()
+        };
+        Some(DeviceDesc {
+            id: format!("{driver}-{ip}"),
+            name,
+            model: info.model,
+            ip,
+            kind: "console".to_string(),
+            state: "available".to_string(),
+            fw: if info.firmware.trim().is_empty() {
+                None
+            } else {
+                Some(info.firmware)
+            },
+            via: Some("linked".to_string()),
+        })
+    }
+
+    /// Directed verify of one desk address WITHOUT switching the link:
+    /// unicast `/xinfo` (+ legacy `/info` fallback) at `addr`. Returns the
+    /// device row (`via: "manual"`) when the desk answers, `None` on
+    /// silence. Broadcast discovery never crosses subnets; this is the
+    /// manual-add and cross-subnet path (read-only on the desk).
+    async fn probe_desk(&self, driver: &str, addr: &str) -> Option<DeviceDesc> {
+        use openmix_transport::discovery::{probe_addr, PROBE_TABLE};
+        let raw = addr.trim().to_string();
+        // Accept `ip`, `ip:port`, or a hostname; resolve to one IP.
+        let ip: IpAddr = raw
+            .parse()
+            .ok()
+            .or_else(|| {
+                raw.rsplit_once(':')
+                    .and_then(|(h, _)| h.trim_matches(|c| c == '[' || c == ']').parse().ok())
+            })
+            .or_else(|| {
+                std::net::ToSocketAddrs::to_socket_addrs(
+                    format!("{raw}:{}", openmix_transport::discovery::XAIR_PORT).as_str(),
+                )
+                .ok()?
+                .next()
+                .map(|s| s.ip())
+            })?;
+        let mut answered_model: Option<String> = None;
+        for spec in PROBE_TABLE.iter().filter(|s| s.driver == driver) {
+            match probe_addr(spec, ip, Duration::from_millis(900)).await {
+                Ok(devs) => {
+                    if let Some(d) = devs.into_iter().next() {
+                        answered_model = Some(d.model);
+                        break;
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+        let model = answered_model?;
+        let ip_s = ip.to_string();
+        Some(DeviceDesc {
+            id: format!("{driver}-{ip_s}"),
+            name: format!("X-Air {model}"),
+            model,
+            ip: ip_s,
+            kind: "console".to_string(),
+            state: "available".to_string(),
+            fw: None,
+            via: Some("manual".to_string()),
+        })
     }
 
     /// Cached `link` event (no measurement; the snapshot + change paths).
@@ -1977,11 +2071,11 @@ impl Engine {
     /// (sparse — members only), Main LR, and sparse solos. Fresh pages
     /// learn existing assignments without a write (gap: the engine used to
     /// broadcast these only as write echoes). Assign/solo reads are
-    /// driver-gated: sim/dl32s serve them from memory/cache; xair has no
-    /// assign leaf (unsupported) and its solo bank costs a live query per
-    /// strip for momentary monitor state, so xair solos ride write echoes
-    /// only. All reads are best-effort: a failed re-read drops that frame
-    /// instead of failing the snapshot.
+    /// driver-gated: sim/dl32s serve assigns from memory/cache (xair has
+    /// no assign leaf at all); sim solos come from memory while xair
+    /// re-reads the live solo bank per channel strip. All reads are
+    /// best-effort: a failed re-read drops that frame instead of failing
+    /// the snapshot.
     async fn masters_snapshot(&self) -> Vec<Event> {
         let mut out = Vec::new();
         let driver = self.active_driver();
@@ -2059,12 +2153,28 @@ impl Engine {
                     }
                 }
             }
-            // Sparse solos (sim in-memory; dl32s/xair solos ride echoes).
+            // Sparse solos (sim in-memory; dl32s solos ride echoes).
             if driver.as_str() == "sim" {
                 for ch in 0..strips as u16 {
                     if self.sim.get_solo(StripId(ch)).await.unwrap_or(false) {
                         out.push(Event::Solo { ch, soloed: true });
                     }
+                }
+            }
+        }
+        // Sparse xair solos: best-effort live bank re-read so a fresh
+        // attach (or driver switch) learns desk-side solos without
+        // waiting for the poll sweep. Cached alongside (the poll diff
+        // then stays quiet); a silent desk yields no frames, never fails
+        // the snapshot.
+        if driver.as_str() == "xair" {
+            for ch in 0..self.driver_channels("xair") as u16 {
+                if self.xair.get_solo(StripId(ch)).await.unwrap_or(false) {
+                    {
+                        let mut cache = self.param_cache.write().unwrap();
+                        cache_store(&mut cache, ch, "solo", json!(true));
+                    }
+                    out.push(Event::Solo { ch, soloed: true });
                 }
             }
         }
@@ -2360,6 +2470,25 @@ impl Engine {
     /// Apply one desk-originated update (broadcast ingest): same
     /// compare-and-broadcast as a poll read, minus the I/O.
     fn apply_inbound(&self, ch: u16, param: &str, pv: &ParamValue) {
+        // Solo bypasses the param plane: desk broadcasts (the `solo`
+        // id decoded by `parse_inbound`), poll reads (the `read_param`
+        // bank route), and the `Solo` command echo all converge on
+        // `Event::Solo` — the channel the UI solos view renders. The
+        // param cache still diffs (polls stay quiet, attach snapshots
+        // carry solo state) but no `Params` frame goes out for it.
+        if param == "solo" {
+            if let ParamValue::Bool(soloed) = pv {
+                let v = param_value_json(pv);
+                let changed = {
+                    let mut cache = self.param_cache.write().unwrap();
+                    cache_store(&mut cache, ch, param, v.clone())
+                };
+                if changed {
+                    self.broadcast(&Event::Solo { ch, soloed: *soloed });
+                }
+            }
+            return;
+        }
         let v = param_value_json(pv);
         let changed = {
             let mut cache = self.param_cache.write().unwrap();
@@ -2686,6 +2815,17 @@ impl Engine {
                     }
                     out.push((s as u16, *id));
                 }
+                // Solo rides the poll set as its own id (never a catalogue
+                // param — the solosw bank has no per-strip query address,
+                // so it can never enter `caps`): xair channel strips
+                // re-read the bank via `get_solo` (`read_param` routes
+                // it). Appended to the strip's own block, so the list
+                // stays strip-major. This is the desk→app backstop for
+                // solos the live ingest never saw (attach gaps, dropped
+                // broadcasts); the ingest is the fast path.
+                if driver == "xair" && fam.kind == openmix_core::StripKind::In {
+                    out.push((s as u16, "solo"));
+                }
             }
         }
         self.poll_static.write().unwrap().insert(driver.to_string(), out.clone());
@@ -2845,6 +2985,16 @@ impl Engine {
         ch: StripId,
         param: &str,
     ) -> anyhow::Result<ParamValue> {
+        // Solo is a poll-set id, not a catalogue param (no `get_param`
+        // arm serves it): drivers with solo state answer the bank read
+        // directly; the rest stay honestly unsupported.
+        if param == "solo" {
+            return match driver {
+                "xair" => self.xair.get_solo(ch).await.map(ParamValue::Bool),
+                "sim" => self.sim.get_solo(ch).await.map(ParamValue::Bool),
+                _ => anyhow::bail!("{driver}: solo not supported"),
+            };
+        }
         match driver {
             "xair" => self.xair.get_param(ch, param).await,
             "dl32s" => self.dl32s.get_param(ch, param).await,
@@ -3249,6 +3399,13 @@ impl Engine {
                 // a phantom unsoloed. The write path itself is rig-verified:
                 // `/-stat/solosw/NN` 1-based sets the bank bit, `/-action/
                 // clearsolo` clears it — XR18 FW 1.20, 2026-10-18.)
+                //
+                // Cache alongside the echo (see `apply_inbound`): the poll
+                // diff then stays quiet instead of re-emitting this state.
+                {
+                    let mut cache = self.param_cache.write().unwrap();
+                    cache_store(&mut cache, ch, "solo", json!(soloed));
+                }
                 out.push(Event::Solo { ch, soloed });
                 Ok(None)
             }
@@ -3506,17 +3663,23 @@ impl Engine {
             }
             // ================= R2 =================
             Cmd::Scan => {
+                // Real LAN discovery behind the trait (fake in tests),
+                // on EVERY driver: a sim-backed relay has no desks of its
+                // own, so scanning from sim must run the same broadcast
+                // discovery the phone uses — never the design seed rows.
+                // Broadcast never crosses subnets, so the relay's linked
+                // desk address is verified too (unicast round-trip via
+                // the driver's own info query). The list is REPLACED:
+                // an empty result updates scanned_at and honestly
+                // reports no desks — stale entries are never kept.
+                let mut merged = self.scanner.scan(Duration::from_secs(2)).await;
                 let driver = self.active_driver();
-                if driver == "sim" {
-                    *self.devices.write().unwrap() = sim_devices();
-                } else {
-                    // Hardware: real LAN discovery behind the trait (fake
-                    // in tests). An empty result still updates scanned_at.
-                    let found = self.scanner.scan(Duration::from_secs(2)).await;
-                    if !found.is_empty() {
-                        *self.devices.write().unwrap() = found;
+                if let Some(linked) = self.linked_desk_device(&driver).await {
+                    if !merged.iter().any(|d| d.ip == linked.ip) {
+                        merged.push(linked);
                     }
                 }
+                *self.devices.write().unwrap() = merged;
                 self.scanned_at.store(now_unix(), Ordering::Relaxed);
                 out.push(self.devices_message());
                 Ok(None)
@@ -3534,8 +3697,8 @@ impl Engine {
                     anyhow::bail!("{:?} is I/O (in use) — connect a console", entry.name);
                 }
                 // Discovered xair/dl32s devices dial hardware
-                // (UNVERIFIED-ON-RIG for dl32s); the design's sim devices
-                // re-link the local model.
+                // (UNVERIFIED-ON-RIG for dl32s); anything else re-links
+                // the local sim model (dev fixture ids, old rows).
                 if id.starts_with("xair-")
                     || entry.model.to_lowercase().contains("x-air")
                     || entry.model.to_lowercase().contains("xr18")
@@ -3554,6 +3717,42 @@ impl Engine {
                 Ok(Some(Event::You {
                     id: writer.to_string(),
                 }))
+            }
+            Cmd::Probe { addr } => {
+                // Manual add-by-IP: verify WITHOUT switching the link.
+                // The embedded app boots on sim and the user has never
+                // switched drivers, so sim probes with the xair table (the
+                // only table with a broadcast probe yet); xair probes
+                // natively. dl32s has no probe table — an honest error,
+                // never a blind row.
+                let driver = self.active_driver();
+                if driver != "xair" && driver != "sim" {
+                    anyhow::bail!(
+                        "probe needs the xair driver (relay runs {driver}) — switch drivers first"
+                    );
+                }
+                let table_driver = if driver == "sim" {
+                    "xair"
+                } else {
+                    driver.as_str()
+                };
+                match self.probe_desk(table_driver, &addr).await {
+                    Some(found) => {
+                        {
+                            let mut devs = self.devices.write().unwrap();
+                            // Never duplicate: a row for this IP already
+                            // answers from broadcast or a prior probe.
+                            if !devs.iter().any(|d| d.ip == found.ip) {
+                                devs.push(found);
+                            }
+                        }
+                        out.push(self.devices_message());
+                        Ok(None)
+                    }
+                    None => anyhow::bail!(
+                        "no reply from {addr} — check the IP (desks on another subnet never answer broadcast; unicast to this address got nothing back)"
+                    ),
+                }
             }
             Cmd::Disconnect => {
                 {
@@ -4012,12 +4211,30 @@ impl Engine {
                 Ok(None)
             }
             // R2 desk fire-and-forget action: clear all solos (X-Air
-            // `/-action/clearsolo`; monitoring-side only). No echo — the
-            // desk ACKs by silence.
+            // `/-action/clearsolo`; monitoring-side only). No desk echo —
+            // the desk ACKs by silence — so fan out explicit unsoloed
+            // frames for every known-soloed strip and drop them from the
+            // cache; otherwise the UI would stick on soloed. (A surface
+            // clear arrives the same way, via `apply_inbound` solosw
+            // broadcasts.)
             Cmd::ClearSolo => {
                 match self.active_driver().as_str() {
                     "xair" => self.xair.clear_solo().await?,
                     other => anyhow::bail!("{other}: clear solo not supported"),
+                }
+                let cleared: Vec<u16> = {
+                    let mut cache = self.param_cache.write().unwrap();
+                    let mut cleared = Vec::new();
+                    for (ch, map) in cache.iter_mut() {
+                        if map.get("solo") == Some(&json!(true)) {
+                            cleared.push(*ch);
+                            map.remove("solo");
+                        }
+                    }
+                    cleared
+                };
+                for ch in cleared {
+                    out.push(Event::Solo { ch, soloed: false });
                 }
                 self.note_write(writer);
                 Ok(None)
@@ -4196,24 +4413,6 @@ fn refresh_agrees(read: &Value, written: &Value) -> bool {
         }
         _ => read == written,
     }
-}
-
-/// R2 seed devices: the design's connection screen (FOH .20, Monitor .21,
-/// Stage Box A .40). States here are the scan-time base; the `devices`
-/// event overrides the linked console with `connected`.
-fn sim_devices() -> Vec<DeviceDesc> {
-    openmix_sim::SIM_DEVICES
-        .iter()
-        .map(|d| DeviceDesc {
-            id: d.id.to_string(),
-            name: d.name.to_string(),
-            model: d.model.to_string(),
-            ip: d.ip.to_string(),
-            kind: d.kind.to_string(),
-            state: d.state.to_string(),
-            fw: Some("0.1.0".to_string()),
-        })
-        .collect()
 }
 
 /// Map a sim slot's positional param vector onto design param ids.
@@ -4534,6 +4733,50 @@ mod tests {
         serde_json::to_value(event).unwrap()
     }
 
+    #[test]
+    fn probe_cmd_parses() {
+        let cmd: Cmd =
+            serde_json::from_value(json!({"cmd": "probe", "addr": "192.168.50.123"})).unwrap();
+        assert!(matches!(cmd, Cmd::Probe { .. }));
+        assert!(Cmd::known_tags().contains(&"probe"));
+    }
+
+    #[test]
+    fn device_via_omitted_when_absent() {
+        // Additive wire change: rows without a source serialize exactly
+        // like before (golden devices.json keeps passing unmodified).
+        let d = DeviceDesc {
+            id: "x".to_string(),
+            name: "X".to_string(),
+            model: "M".to_string(),
+            ip: "1.2.3.4".to_string(),
+            kind: "console".to_string(),
+            state: "available".to_string(),
+            fw: None,
+            via: None,
+        };
+        let v = serde_json::to_value(&d).unwrap();
+        assert!(v.get("via").is_none());
+        assert!(v.get("fw").is_none());
+    }
+
+    #[tokio::test]
+    async fn probe_rejects_unresolvable_addr() {
+        let engine = Engine::new(EngineConfig::default());
+        // Garbage never resolves: silence, never a blind row, and the
+        // stored device list is untouched.
+        let before = engine.devices.read().unwrap().len();
+        assert!(engine.probe_desk("xair", "not-a-desk!!!").await.is_none());
+        assert_eq!(engine.devices.read().unwrap().len(), before);
+    }
+
+    #[tokio::test]
+    async fn probe_silent_loopback_answers_nothing() {
+        let engine = Engine::new(EngineConfig::default());
+        // Nothing listens on UDP 10024 here: no reply, no row.
+        assert!(engine.probe_desk("xair", "127.0.0.1").await.is_none());
+    }
+
     #[tokio::test]
     async fn caps_sim_lists_full_catalogue() {
         let engine = Engine::new(EngineConfig::default());
@@ -4704,6 +4947,13 @@ mod tests {
                             .unwrap_or(true)
                     })
                     .count();
+                // Solo rides the poll set as its own id on xair channel
+                // strips (see `static_poll_list`): one extra entry per
+                // strip of the In family.
+                let n = n
+                    + usize::from(
+                        driver == "xair" && fam.kind == openmix_core::StripKind::In,
+                    );
                 expect += fam.count * n;
                 for s in fam.first..fam.first + fam.count {
                     let ids: Vec<&str> = list
@@ -4711,7 +4961,7 @@ mod tests {
                         .filter(|(c, _)| *c == s as u16)
                         .map(|(_, id)| id.as_str())
                         .collect();
-                    let want: Vec<&str> = engine
+                    let mut want: Vec<&str> = engine
                         .driver_capabilities(driver)
                         .iter()
                         .filter(|id| {
@@ -4721,6 +4971,9 @@ mod tests {
                         })
                         .copied()
                         .collect();
+                    if driver == "xair" && fam.kind == openmix_core::StripKind::In {
+                        want.push("solo");
+                    }
                     assert_eq!(ids, want, "strip {s} carries the scoped set for {driver}");
                 }
             }
@@ -4728,6 +4981,106 @@ mod tests {
             let max_strip = list.iter().map(|(c, _)| *c).max().unwrap() as usize;
             assert_eq!(max_strip + 1, total, "poll list covers the topology for {driver}");
         }
+    }
+
+    #[tokio::test]
+    async fn poll_list_carries_xair_solo_bank() {
+        // Desk→app solo backstop: xair channel strips carry the `solo`
+        // poll id (bank re-read via `read_param`); nothing else does —
+        // solo is not a catalogue param and never enters `caps`.
+        let engine = Engine::new(EngineConfig::default());
+        let list = engine.poll_list("xair").await;
+        let nch = engine.driver_channels("xair");
+        assert!(nch > 0, "xair has channel strips");
+        for ch in 0..nch as u16 {
+            assert!(
+                list.contains(&(ch, "solo".to_string())),
+                "xair ch{ch} misses the solo poll id"
+            );
+        }
+        for (ch, id) in &list {
+            if id == "solo" {
+                assert!(
+                    (*ch as usize) < nch,
+                    "solo poll id off-channel: ch{ch} (channels 0..{nch})"
+                );
+            }
+        }
+        for driver in ["sim", "dl32s"] {
+            let list = engine.poll_list(driver).await;
+            assert!(
+                !list.iter().any(|(_, id)| id == "solo"),
+                "{driver} must not poll solo"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn inbound_solo_fans_out_solo_event() {
+        // Desk-originated solo (ingest `solo` id, poll bank read) reaches
+        // clients as `Event::Solo` — the channel the UI solos view
+        // renders — while other params still ride `Params` frames.
+        // Parked poller: after the settle only `apply_inbound` moves the
+        // mailbox, so the sequence below is exact.
+        use tokio::sync::mpsc::error::TryRecvError;
+        let engine = parked_engine();
+        let mut handle = engine.attach(None).await;
+        settle_parked_poller(&engine, &mut handle).await;
+        engine.apply_inbound(2, "solo", &ParamValue::Bool(true));
+        let mut found = None;
+        for _ in 0..64 {
+            match handle.events.try_recv() {
+                Ok(Event::Solo { ch, soloed }) => {
+                    found = Some((ch, soloed));
+                    break;
+                }
+                Ok(_) => continue,
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+            }
+        }
+        assert_eq!(found, Some((2, true)), "solo-in must fan out Solo");
+        // A repeat of the same state stays quiet (poll diff semantics —
+        // no Solo echo storm every sweep).
+        engine.apply_inbound(2, "solo", &ParamValue::Bool(true));
+        let mut dup = false;
+        for _ in 0..64 {
+            match handle.events.try_recv() {
+                Ok(Event::Solo { .. }) => {
+                    dup = true;
+                    break;
+                }
+                Ok(_) => continue,
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+            }
+        }
+        assert!(!dup, "duplicate solo state must stay quiet");
+        // Unsolo fans out, and the param plane is untouched by solos.
+        engine.apply_inbound(2, "solo", &ParamValue::Bool(false));
+        let mut found = None;
+        for _ in 0..64 {
+            match handle.events.try_recv() {
+                Ok(Event::Solo { ch, soloed }) => {
+                    found = Some((ch, soloed));
+                    break;
+                }
+                Ok(_) => continue,
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+            }
+        }
+        assert_eq!(found, Some((2, false)), "solo-out must fan out Solo");
+        engine.apply_inbound(2, "fader", &ParamValue::Float(0.5));
+        let mut saw_params = false;
+        for _ in 0..64 {
+            match handle.events.try_recv() {
+                Ok(Event::Params { ch, .. }) if ch == 2 => {
+                    saw_params = true;
+                    break;
+                }
+                Ok(_) => continue,
+                Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
+            }
+        }
+        assert!(saw_params, "non-solo params still ride Params frames");
     }
 
     /// Engine with the background poller parked for exact-sequence

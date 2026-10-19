@@ -38,6 +38,17 @@ export interface ConnectionVm {
   isConnected: boolean;
   lastScan: string;
   devices: DeviceVm[];
+  /** Hint shown under the device list when it is honestly empty (null =
+   *  rows present, or the connecting phase owns the status card). */
+  emptyText: string | null;
+  /** One-tap LAN fix for the status card: relay unreachable from this
+   *  device while the page is LAN-served (never on fixture/localhost —
+   *  those baselines keep no suggestion button). */
+  showFix: boolean;
+  fixLabel: string;
+  /** Manual add-by-IP card: only while a relay link is up or failed (never
+   *  on fixture/localhost pages, whose baselines stay design-exact). */
+  showManualDesk: boolean;
 }
 
 /** Live relay state the status card prefers over the fixture picker. */
@@ -47,33 +58,55 @@ export interface LiveStatus {
   host: string;
   latencyMs: number | null;
   strips: number;
-  /** Engine devices (scan results) when online; absent = fixture list. */
-  devices?: Array<{ id: string; name: string; model: string; ip: string; kind: string; state: string; fw?: string }>;
+  /** Engine devices (scan results) when online; undefined = never scanned. */
+  devices?: Array<{ id: string; name: string; model: string; ip: string; kind: string; state: string; fw?: string | null; via?: string | null }>;
   /** Engine link console name (the desk we are actually on). */
   linkName?: string | null;
+  /** Engine scan epoch (0/absent = never scanned this session). */
+  scannedAt?: number;
+  /** Engine driver behind the relay (informational only — the device
+   *  list never carries sim rows). */
+  driver?: string;
+  /** One-tap relay fix for this device (`<page-host>:<relay-port>`), or
+   *  null when the page itself is local (localhost default stays). */
+  suggestion?: string | null;
 }
 
 function liveDeviceVms(
   devs: NonNullable<LiveStatus['devices']>,
   linkName: string | null | undefined,
 ): DeviceVm[] {
-  return devs.map(d => {
-    const on = !!linkName && (d.name === linkName || d.ip === linkName);
-    return {
-      key: d.id,
-      name: d.name,
-      sub: d.model + ' · ' + d.ip + (d.fw ? ' · FW ' + d.fw : ''),
-      icon: CONN_ICONS[d.kind] ?? CONN_ICONS['console']!,
-      status: on ? 'Connected' : d.state === 'connected' ? 'Reachable' : d.state,
-      statusColor: on ? '#7be27b' : '#c9d1dc',
-      border: on ? '#2c4a2e' : '#1f2836',
-      canConnect: d.kind === 'console',
-      btnLabel: on ? 'Connected' : 'Connect',
-      btnBg: on ? '#1a2a1b' : '#5cdb5c',
-      btnText: on ? '#7be27b' : '#10240f',
-      btnBorder: on ? '#2c4a2e' : '#5cdb5c',
-    };
-  });
+  // Only real desks ever reach this list (the engine never emits sim
+  // seeds; the filter below drops any legacy/foreign via-less row).
+  // Cross-subnet rows carry their source: the relay's linked desk
+  // (unicast verified) or a manual add-by-IP probe — broadcast needs
+  // no badge.
+  return devs
+    .filter(d => d.via !== null && d.via !== undefined)
+    .map(d => {
+      const on = !!linkName && (d.name === linkName || d.ip === linkName);
+      const via = !on && (d.via === 'linked' || d.via === 'manual')
+        ? d.via === 'linked'
+          ? ' · linked desk'
+          : ' · added by IP'
+        : '';
+      return {
+        key: d.id,
+        name: d.name,
+        sub: d.model + ' · ' + d.ip + (d.fw ? ' · FW ' + d.fw : '') + via,
+        icon: CONN_ICONS[d.kind] ?? CONN_ICONS['console']!,
+        status: on ? 'Connected' : d.state === 'connected' ? 'Reachable' : d.state,
+        statusColor: on ? '#7be27b' : '#c9d1dc',
+        border: on ? '#2c4a2e' : '#1f2836',
+        // The connected row states it in text; the status card owns Disconnect.
+        // A "Connected" button next to a "Connected" label is dead chrome.
+        canConnect: d.kind === 'console' && !on,
+        btnLabel: on ? 'Connected' : 'Connect',
+        btnBg: on ? '#1a2a1b' : '#5cdb5c',
+        btnText: on ? '#7be27b' : '#10240f',
+        btnBorder: on ? '#2c4a2e' : '#5cdb5c',
+      };
+    });
 }
 
 export function buildConnectionVm(state: UiState, live?: LiveStatus): ConnectionVm {
@@ -83,9 +116,17 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
   // headerView owns the dot contract; reuse it instead of duplicating.
   const dot = headerView({ state, chans: {}, fx: [] } as World).connDot;
   // A live relay link owns the status card: it is the real connection.
+  // Scan results are the ONLY device source here: real discovered desks,
+  // an honest empty state, or a press-Scan hint — fixtures never leak in.
   if (live && (live.phase === 'online' || live.phase === 'connecting' || live.phase === 'error')) {
     const on = live.phase === 'online';
     const busy = live.phase === 'connecting';
+    const scanned = (live.scannedAt ?? 0) > 0;
+    const found =
+      on && scanned && live.devices ? liveDeviceVms(live.devices, live.linkName) : [];
+    // One-tap LAN fix: the stored host is unreachable from this device
+    // while the page itself is LAN-served. Localhost pages keep no button.
+    const showFix = !on && !busy && !!live.suggestion;
     return {
       dot: on ? '#5fe060' : busy ? '#f0b44a' : '#ff4a3d',
       halo: on ? 'rgba(95,224,96,.18)' : busy ? 'rgba(240,180,74,.18)' : 'rgba(255,74,61,.18)',
@@ -94,28 +135,84 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
       sub: live.message + (on ? ` · ${live.host}` : ''),
       isConnected: false,
       lastScan: state.lastScan,
-      // Live desk scan results replace the fixture console list online;
-      // connecting state (or never-scanned) keeps the fixture list.
-      devices: on && live.devices ? liveDeviceVms(live.devices, live.linkName) : deviceVms(devs, state.connected),
+      devices: found,
+      emptyText: busy
+        ? null
+        : !on
+          ? 'Relay unreachable — check the relay host and retry, or work offline below.'
+          : !scanned
+            ? 'Relay is live — press Scan to list the desks on this network.'
+            : found.length
+              ? null
+              : 'No desks found — the desk may be off, on another network, or unreachable by broadcast. Retry Scan, or work offline below.',
+      showFix,
+      fixLabel: showFix ? `Use ${live.suggestion} instead` : '',
+      // Manual add-by-IP lives next to the rows it feeds: visible while
+      // the relay link is up or failed (never on fixture/localhost pages).
+      showManualDesk: on || live.phase === 'error',
+    };
+  }
+  // No relay link was ever picked and no fixture console is selected: say
+  // so instead of inventing desks (boot / disconnected state).
+  if (!cur && !offline) {
+    return {
+      dot,
+      halo: 'rgba(255,74,61,.18)',
+      cardBorder: '#5a2420',
+      title: 'Not connected',
+      sub: 'Pick a console below',
+      isConnected: false,
+      lastScan: state.lastScan,
+      devices: [],
+      emptyText:
+        'No relay link yet — connect the relay, then press Scan. Only real desks on this network are listed here.',
+      showFix: false,
+      fixLabel: '',
+      showManualDesk: false,
+    };
+  }
+  // The design fixture itself (`?fixture=1` dev route only): fixture
+  // consoles render here, never mixed into scan results. Explicit
+  // offline mode is the sim (full local demo desk, zero network), so its
+  // device list stays honestly empty — seed rows are never shown as
+  // hardware in the live app.
+  if (offline) {
+    return {
+      dot,
+      halo: 'rgba(240,180,74,.18)',
+      cardBorder: '#5a4420',
+      title: 'Working offline',
+      sub: 'Changes sync when you connect',
+      isConnected: false,
+      lastScan: state.lastScan,
+      devices: [],
+      emptyText:
+        'Offline demo — the full sim desk runs on this device. No network is used; press Scan after connecting to list real desks.',
+      showFix: false,
+      fixLabel: '',
+      showManualDesk: false,
     };
   }
   return {
     dot,
-    halo: cur ? 'rgba(95,224,96,.18)' : offline ? 'rgba(240,180,74,.18)' : 'rgba(255,74,61,.18)',
-    cardBorder: cur ? '#2c4a2e' : offline ? '#5a4420' : '#5a2420',
-    title: cur ? 'Connected to ' + cur.name : offline ? 'Working offline' : 'Not connected',
-    sub: cur
-      ? cur.ip + ' · 48 kHz · latency 1.2 ms'
-      : offline
-        ? 'Changes sync when you connect'
-        : 'Pick a console below',
-    isConnected: !!cur,
+    halo: 'rgba(95,224,96,.18)',
+    cardBorder: '#2c4a2e',
+    title: 'Connected to ' + cur!.name,
+    sub: cur!.ip + ' · 48 kHz · latency 1.2 ms',
+    isConnected: true,
     lastScan: state.lastScan,
     devices: deviceVms(devs, state.connected),
+    emptyText: null,
+    showFix: false,
+    fixLabel: '',
+    showManualDesk: false,
   };
 }
 
-function deviceVms(devs: ReturnType<typeof devices>, connected: string | null): DeviceVm[] {
+function deviceVms(
+  devs: ReturnType<typeof devices>,
+  connected: string | null,
+): DeviceVm[] {
   return devs.map(d => {
     const on = d.key === connected;
     return {
@@ -126,7 +223,9 @@ function deviceVms(devs: ReturnType<typeof devices>, connected: string | null): 
       status: on ? 'Connected' : d.kind === 'io' ? 'I/O · in use' : 'Available',
       statusColor: on ? '#7be27b' : d.kind === 'io' ? 'var(--u4-text-7)' : 'var(--u4-text-4)',
       border: on ? '#2c4a2e' : 'var(--u4-line-panel)',
-      canConnect: d.kind === 'console',
+      // The connected row states it in text; the status card owns Disconnect.
+      // A "Connected" button next to a "Connected" label is dead chrome.
+      canConnect: d.kind === 'console' && !on,
       btnLabel: on ? 'Connected' : 'Connect',
       btnBg: on ? '#1a2a1b' : '#5cdb5c',
       btnText: on ? '#7be27b' : '#10240f',

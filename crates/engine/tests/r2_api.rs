@@ -72,68 +72,192 @@ fn is_error_containing(e: &Event, needle: &str) -> bool {
     matches!(e, Event::Error { message, .. } if message.contains(needle))
 }
 
+// ---------- devices: honest discovery, no sim rows ----------
+
+/// Fake LAN scanner: the phone's broadcast discovery never touches the
+/// network in tests. Returns the canned rows with `via: "broadcast"`,
+/// exactly like [`openmix_engine::RealScanner`](RealScanner) maps replies.
+struct FakeScanner {
+    rows: Vec<(String, String, String, String, String)>,
+}
+
+impl FakeScanner {
+    fn empty() -> Arc<Self> {
+        Arc::new(Self { rows: Vec::new() })
+    }
+    fn one_desk() -> Arc<Self> {
+        Arc::new(Self {
+            rows: vec![(
+                "xair-192.168.50.123".to_string(),
+                "X-Air XR18".to_string(),
+                "XR18".to_string(),
+                "192.168.50.123".to_string(),
+                "console".to_string(),
+            )],
+        })
+    }
+}
+
+impl openmix_engine::engine::DeviceScanner for FakeScanner {
+    fn scan(
+        &self,
+        _timeout: Duration,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Vec<openmix_engine::protocol::DeviceDesc>> + Send + '_,
+        >,
+    > {
+        let rows = self.rows.clone();
+        Box::pin(async move {
+            rows.into_iter()
+                .map(
+                    |(id, name, model, ip, kind)| openmix_engine::protocol::DeviceDesc {
+                        id,
+                        name,
+                        model,
+                        ip,
+                        kind,
+                        state: "available".to_string(),
+                        fw: None,
+                        via: Some("broadcast".to_string()),
+                    },
+                )
+                .collect()
+        })
+    }
+}
+
+async fn new_engine_with(scanner: Arc<FakeScanner>) -> Arc<Engine> {
+    let engine = Engine::new(EngineConfig {
+        scanner: Some(scanner),
+        ..EngineConfig::default()
+    });
+    engine.connect("sim", None).await.unwrap();
+    engine
+}
+
 // ---------- devices / link / info ----------
 
 #[tokio::test]
-async fn scan_lists_design_devices() {
-    let engine = new_engine().await;
+async fn scan_lists_only_real_discovery() {
+    // A scan from the sim driver runs real (faked) LAN discovery: the
+    // design seed desks never appear, only what broadcast found.
+    let engine = new_engine_with(FakeScanner::one_desk()).await;
     let mut client = engine.attach(None).await;
     drain_snapshot(&mut client).await;
     client.send(Cmd::Scan).await.unwrap();
     let event = wait_for(&mut client, |e| matches!(e, Event::Devices { .. })).await;
     let v = ev_json(&event);
     let list = v.get("list").and_then(Value::as_array).unwrap();
-    assert_eq!(list.len(), 3);
-    assert_eq!(list[0].get("name"), Some(&json!("FOH Console")));
-    assert_eq!(list[0].get("ip"), Some(&json!("192.168.1.120")));
-    assert_eq!(list[0].get("kind"), Some(&json!("console")));
-    assert_eq!(list[0].get("state"), Some(&json!("connected")));
-    assert_eq!(list[1].get("ip"), Some(&json!("192.168.1.21")));
-    assert_eq!(list[1].get("state"), Some(&json!("available")));
-    assert_eq!(list[2].get("name"), Some(&json!("Stage Box A")));
-    assert_eq!(list[2].get("kind"), Some(&json!("io")));
-    assert_eq!(list[2].get("state"), Some(&json!("in_use")));
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].get("name"), Some(&json!("X-Air XR18")));
+    assert_eq!(list[0].get("ip"), Some(&json!("192.168.50.123")));
+    assert_eq!(list[0].get("via"), Some(&json!("broadcast")));
+    assert!(v.get("scanned_at").and_then(Value::as_u64).unwrap_or(0) > 0);
+}
+
+#[tokio::test]
+async fn scan_empty_is_honest_empty() {
+    // Nothing on the LAN: the list is REPLACED with empty (stale rows are
+    // never kept), scanned_at still advances. No sim rows, ever.
+    let engine = new_engine_with(FakeScanner::empty()).await;
+    let mut client = engine.attach(None).await;
+    let snap = drain_snapshot(&mut client).await;
+    // Boot is honest too: no devices, link disconnected.
+    let boot_devices = snap
+        .iter()
+        .find(|e| matches!(e, Event::Devices { .. }))
+        .unwrap();
+    assert_eq!(
+        ev_json(boot_devices)
+            .get("list")
+            .and_then(Value::as_array)
+            .unwrap()
+            .len(),
+        0
+    );
+    let boot_link = snap
+        .iter()
+        .find(|e| matches!(e, Event::Link { .. }))
+        .unwrap();
+    assert_eq!(
+        ev_json(boot_link).get("state"),
+        Some(&json!("disconnected"))
+    );
+    client.send(Cmd::Scan).await.unwrap();
+    let event = wait_for(&mut client, |e| matches!(e, Event::Devices { .. })).await;
+    let v = ev_json(&event);
+    assert_eq!(v.get("list").and_then(Value::as_array).unwrap().len(), 0);
     assert!(v.get("scanned_at").and_then(Value::as_u64).unwrap_or(0) > 0);
 }
 
 #[tokio::test]
 async fn connect_device_moves_link() {
-    let engine = new_engine().await;
+    // One I/O box (unconnectable) + one sim-model console row: the
+    // fake broadcast list drives the whole flow with zero network (a
+    // real xair model id would dial hardware).
+    let scanner = Arc::new(FakeScanner {
+        rows: vec![
+            (
+                "sim-192.168.50.99".to_string(),
+                "Rehearsal Desk".to_string(),
+                "SimConsole 48".to_string(),
+                "192.168.50.99".to_string(),
+                "console".to_string(),
+            ),
+            (
+                "sim-192.168.50.124".to_string(),
+                "Stage Box".to_string(),
+                "SimIO 32".to_string(),
+                "192.168.50.124".to_string(),
+                "io".to_string(),
+            ),
+        ],
+    });
+    let engine = new_engine_with(scanner).await;
     let mut client = engine.attach(None).await;
     drain_snapshot(&mut client).await;
+    client.send(Cmd::Scan).await.unwrap();
+    let devices = wait_for(&mut client, |e| matches!(e, Event::Devices { .. })).await;
+    let list = ev_json(&devices)
+        .get("list")
+        .and_then(Value::as_array)
+        .unwrap()
+        .clone();
+    assert_eq!(list.len(), 2);
     // I/O boxes cannot be mixing consoles.
     client
-        .send(Cmd::ConnectDevice { id: "sb1".to_string() })
+        .send(Cmd::ConnectDevice {
+            id: "sim-192.168.50.124".to_string(),
+        })
         .await
         .unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "I/O"));
     // Unknown ids error without dropping the session.
     client
-        .send(Cmd::ConnectDevice { id: "nope".to_string() })
+        .send(Cmd::ConnectDevice {
+            id: "nope".to_string(),
+        })
         .await
         .unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "unknown device"));
-    // Monitor console links.
+    // The discovered console links (sim model re-links locally; the
+    // link frame still moves and names the desk).
     client
-        .send(Cmd::ConnectDevice { id: "mon".to_string() })
+        .send(Cmd::ConnectDevice {
+            id: "sim-192.168.50.99".to_string(),
+        })
         .await
         .unwrap();
     let link = wait_for(&mut client, |e| matches!(e, Event::Link { .. })).await;
     let v = ev_json(&link);
     assert_eq!(v.get("state"), Some(&json!("connected")));
-    assert_eq!(v.get("name"), Some(&json!("Monitor Console")));
-    assert_eq!(v.get("ip"), Some(&json!("192.168.1.21")));
+    assert_eq!(v.get("name"), Some(&json!("Rehearsal Desk")));
+    assert_eq!(v.get("ip"), Some(&json!("192.168.50.99")));
     assert_eq!(v.get("fs"), Some(&json!(48000)));
     assert!(v.get("latency_ms").and_then(Value::as_f64).unwrap_or(0.0) > 0.0);
-    // Devices now show mon connected, foh available (re-scan to see it).
-    client.send(Cmd::Scan).await.unwrap();
-    let devices = wait_for(&mut client, |e| matches!(e, Event::Devices { .. })).await;
-    let v = ev_json(&devices);
-    let list = v.get("list").and_then(Value::as_array).unwrap();
-    assert_eq!(list[0].get("state"), Some(&json!("available")));
-    assert_eq!(list[1].get("state"), Some(&json!("connected")));
     // Disconnect flips the link; the session survives.
     client.send(Cmd::Disconnect).await.unwrap();
     let link = wait_for(
@@ -841,4 +965,44 @@ async fn masters_reject_out_of_range_and_bad_input() {
         .unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "blocked"));
+}
+
+// ---------- manual add-by-IP (cross-subnet desks) ----------
+
+#[tokio::test]
+async fn probe_from_sim_attempts_unicast() {
+    // The embedded app boots on sim with no driver switch: probe must
+    // ATTEMPT the unicast verify (xair table) instead of refusing.
+    // 192.0.2.1 is TEST-NET-1 (unroutable): the datagram goes out, no
+    // reply ever comes back — an honest "no reply" naming the address,
+    // the list untouched, the session alive.
+    let engine = new_engine_with(FakeScanner::empty()).await;
+    let mut client = engine.attach(None).await;
+    drain_snapshot(&mut client).await;
+    client
+        .send(Cmd::Probe { addr: "192.0.2.1".to_string() })
+        .await
+        .unwrap();
+    let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
+    assert!(is_error_containing(&err, "no reply from 192.0.2.1"));
+    // The session survives: a scan still honestly reports nothing.
+    client.send(Cmd::Scan).await.unwrap();
+    let event = wait_for(&mut client, |e| matches!(e, Event::Devices { .. })).await;
+    let list = ev_json(&event).get("list").and_then(Value::as_array).unwrap().clone();
+    assert_eq!(list.len(), 0);
+}
+
+#[tokio::test]
+async fn probe_garbage_addr_errors_without_listing() {
+    let engine = new_engine_with(FakeScanner::empty()).await;
+    let mut client = engine.attach(None).await;
+    drain_snapshot(&mut client).await;
+    client.send(Cmd::Probe { addr: "not-a-desk!!!".to_string() }).await.unwrap();
+    let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
+    assert!(is_error_containing(&err, "no reply"));
+    // Nothing was listed: a scan still honestly reports nothing.
+    client.send(Cmd::Scan).await.unwrap();
+    let event = wait_for(&mut client, |e| matches!(e, Event::Devices { .. })).await;
+    let list = ev_json(&event).get("list").and_then(Value::as_array).unwrap().clone();
+    assert_eq!(list.len(), 0);
 }

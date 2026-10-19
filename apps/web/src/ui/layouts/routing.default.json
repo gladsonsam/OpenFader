@@ -173,6 +173,7 @@
         {
           "id": "mx-scroll",
           "module": "scroll",
+          "when": "device != 'phone'",
           "props": {
             "direction": "row",
             "flex": "1 1 auto",
@@ -211,6 +212,220 @@
                   }
                 }
               }
+            }
+          ]
+        },
+        {
+          "id": "mx-phone",
+          "module": "scroll",
+          "when": "device == 'phone'",
+          "props": {
+            "flex": "1 1 auto",
+            "minWidth": 0,
+            "minHeight": 0,
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "mx-phone-col",
+              "module": "col",
+              "props": {
+                "gap": 10,
+                "box": "content-box"
+              },
+              "children": [
+                {
+                  "id": "mxp-bank-label",
+                  "module": "text",
+                  "props": {
+                    "value": "Channels",
+                    "size": 13,
+                    "weight": 700,
+                    "color": "var(--u4-text-6)"
+                  }
+                },
+                {
+                  "id": "mxp-banks",
+                  "module": "grid",
+                  "props": {
+                    "columns": "repeat(3, 1fr)",
+                    "gap": 8,
+                    "box": "content-box"
+                  },
+                  "children": [
+                    {
+                      "id": "mxp-bank-rep",
+                      "module": "repeat",
+                      "props": {
+                        "over": "list:routeBanks"
+                      },
+                      "children": [
+                        {
+                          "id": "mxp-bank",
+                          "module": "btn",
+                          "props": {
+                            "height": 48,
+                            "fontSize": 15,
+                            "border": "1px solid var(--u4-line-ctl)",
+                            "bare": true
+                          },
+                          "bind": {
+                            "label": "item.label",
+                            "bg": "item.bg",
+                            "fg": "item.fg",
+                            "pressed": "item.pressed ? 'true' : 'false'"
+                          },
+                          "on": {
+                            "press": {
+                              "do": "ui.setRouteBank",
+                              "args": {
+                                "bank": {
+                                  "$expr": "item.index"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "mxp-tiles",
+                  "module": "grid",
+                  "props": {
+                    "columns": "repeat(auto-fill, minmax(104px, 1fr))",
+                    "gap": 6,
+                    "box": "content-box"
+                  },
+                  "children": [
+                    {
+                      "id": "mxp-tile-rep",
+                      "module": "repeat",
+                      "props": {
+                        "over": "list:routeTiles"
+                      },
+                      "children": [
+                        {
+                          "id": "mxp-tile",
+                          "module": "route-tile",
+                          "bind": {
+                            "name": "item.name",
+                            "src": "item.src",
+                            "srcColor": "item.srcColor",
+                            "pressed": "item.pressed ? 'true' : 'false'",
+                            "border": "item.border",
+                            "bg": "item.bg"
+                          },
+                          "on": {
+                            "press": {
+                              "do": "ui.setPatchSel",
+                              "args": {
+                                "id": {
+                                  "$expr": "item.id"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                {
+                  "id": "mxp-selrow",
+                  "module": "row",
+                  "props": {
+                    "align": "center",
+                    "gap": 8,
+                    "box": "content-box"
+                  },
+                  "children": [
+                    {
+                      "id": "mxp-sel",
+                      "module": "text",
+                      "props": {
+                        "size": 15,
+                        "weight": 600,
+                        "color": "var(--u4-text-1)"
+                      },
+                      "bind": {
+                        "value": "'Patching ' + routing.selName"
+                      }
+                    },
+                    {
+                      "id": "mxp-unpatch",
+                      "module": "btn",
+                      "props": {
+                        "label": "Unpatch",
+                        "height": 48,
+                        "fontSize": 15,
+                        "bg": "#2a0d0e",
+                        "fg": "#f2d6d6",
+                        "border": "1px solid #6a1b1e",
+                        "bare": true
+                      },
+                      "on": {
+                        "press": {
+                          "do": "ui.unpatch"
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "mxp-src-label",
+                  "module": "text",
+                  "props": {
+                    "value": "Sources — tap to patch",
+                    "size": 13,
+                    "weight": 700,
+                    "color": "var(--u4-text-6)"
+                  }
+                },
+                {
+                  "id": "mxp-srcs",
+                  "module": "grid",
+                  "props": {
+                    "columns": "repeat(auto-fill, minmax(88px, 1fr))",
+                    "gap": 6,
+                    "box": "content-box"
+                  },
+                  "children": [
+                    {
+                      "id": "mxp-src-rep",
+                      "module": "repeat",
+                      "props": {
+                        "over": "list:srcTiles"
+                      },
+                      "children": [
+                        {
+                          "id": "mxp-src",
+                          "module": "src-tile",
+                          "bind": {
+                            "label": "item.label",
+                            "used": "item.used",
+                            "pressed": "item.pressed ? 'true' : 'false'",
+                            "bg": "item.bg",
+                            "fg": "item.fg",
+                            "border": "item.border"
+                          },
+                          "on": {
+                            "press": {
+                              "do": "ui.patchSrc",
+                              "args": {
+                                "label": {
+                                  "$expr": "item.label"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
             }
           ]
         }

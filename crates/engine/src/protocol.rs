@@ -91,6 +91,16 @@ pub enum Cmd {
     ConnectDevice {
         id: String,
     },
+    /// R2: verify one desk by IP without switching the link
+    /// (`{"cmd":"probe","addr":"192.168.50.123"}`): directed unicast
+    /// `/xinfo` (cross-subnet desks never answer broadcast discovery, but
+    /// they DO answer unicast). On a reply the desk is upserted into the
+    /// device list (`via: "manual"`) and a fresh [`Event::Devices`] frame
+    /// goes out; silence is an honest error naming the address. Never
+    /// touches the current link. Additive: older clients never send it.
+    Probe {
+        addr: String,
+    },
     /// R2: drop the desk link (`{"cmd":"disconnect"}`); the engine keeps
     /// serving the last model read-only until the next connect.
     Disconnect,
@@ -275,6 +285,7 @@ impl Cmd {
             "hello",
             "scan",
             "connect_device",
+            "probe",
             "disconnect",
             "info",
             "scene_save",
@@ -465,6 +476,12 @@ pub struct DeviceDesc {
     pub state: String,
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub fw: Option<String>,
+    /// Where the row came from: `broadcast` (LAN discovery), `linked`
+    /// (the relay's configured `--addr`, verified by direct query), or
+    /// `manual` (a UI manual-add probe). Absent on older frames; the UI
+    /// treats a missing source as undisclosed, never as broadcast.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub via: Option<String>,
 }
 
 /// One `scenes` library entry (R2): a numbered slot (`001..` display).

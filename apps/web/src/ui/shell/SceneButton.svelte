@@ -26,7 +26,7 @@
 <button
   onclick={onOpen}
   aria-label={label}
-  style="height:46px;flex:none;max-width:{narrow ? 132 : 280}px;display:flex;align-items:center;gap:10px;padding:0 12px;border-radius:var(--u4-r-3);border:1px solid {active
+  style="height:{narrow ? 36 : 46}px;flex:none;max-width:{narrow ? 132 : 280}px;display:flex;align-items:center;gap:{narrow ? 6 : 10}px;padding:0 {narrow ? 8 : 12}px;border-radius:var(--u4-r-3);border:1px solid {active
     ? 'var(--u4-tile-border-on)'
     : 'var(--u4-tile-border)'};background:{active
     ? 'var(--u4-tile-bg-on)'

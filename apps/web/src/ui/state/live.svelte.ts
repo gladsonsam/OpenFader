@@ -16,13 +16,19 @@
 // still edit the fixture model (engine write-through is wave 3).
 
 import { EngineWorld } from '../world/engineWorld/engineWorld.ts';
-import { WsTransport } from '../world/transport.ts';
+import { TauriTransport, WsTransport, isTauriRuntime, type Transport } from '../world/transport.ts';
 import {
   CONNECT_TIMEOUT_MS,
   DEFAULT_RELAY_HOST,
+  isLoopbackHost,
+  loadRecentDesks,
   loadRelayAuto,
   loadRelayHost,
+  pageHostSuggestion,
   relayHostFromSearch,
+  relayHostPart,
+  relayPortPart,
+  saveRecentDesk,
   saveRelayAuto,
   saveRelayHost,
   linearToDb,
@@ -32,6 +38,28 @@ import {
 import { bridgeStrip } from './engineBridge.ts';
 
 export type { LivePhase };
+
+/** Explicit offline mode persists across reloads (set by the connection
+ * screen's Work-offline action). While set, the app never auto-links the
+ * relay: offline means zero network. An explicit user connect (relay card
+ * or `?server=`) clears it — that intent wins over the stored flag. */
+const OFFLINE_LS_KEY = 'openmix-offline';
+
+function loadOfflineMode(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(OFFLINE_LS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function clearOfflineMode(): void {
+  try {
+    localStorage?.removeItem(OFFLINE_LS_KEY);
+  } catch {
+    /* ignore */
+  }
+}
 
 class LiveRelay {
   phase: LivePhase = $state('idle');
@@ -43,14 +71,20 @@ class LiveRelay {
   /** Bumped on every engine ingest so screens re-read meters/version. */
   version = $state(0);
 
-  private transport: WsTransport | null = null;
+  private transport: Transport | null = null;
   private world: EngineWorld | null = null;
   private unsubs: Array<() => void> = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
   private helloAt = 0;
 
+  /** True inside the Tauri shell (desktop/mobile): the engine is embedded
+   * in the app process and reached over IPC — no relay host involved. */
+  get embedded(): boolean {
+    return isTauriRuntime();
+  }
+
   get url(): string {
-    return relayUrlFromHost(this.host);
+    return this.embedded ? 'tauri://engine' : relayUrlFromHost(this.host);
   }
 
   get engine(): EngineWorld | null {
@@ -77,8 +111,13 @@ class LiveRelay {
     };
   }
 
-  /** Apply `?server=` once at boot (called by the shell mount). */
+  /** Apply `?server=` once at boot (browser only — ignored when embedded:
+   * the Tauri shell always links the in-process engine, never a relay). */
   initFromUrl(search: string): void {
+    if (this.embedded) {
+      if (typeof window !== 'undefined' && !loadOfflineMode() && this.phase === 'idle') this.connect();
+      return;
+    }
     const q = new URLSearchParams(search.startsWith('?') ? search : '?' + search);
     const isFixture = q.get('fixture') === '1' || q.get('fixture') === 'true';
     const { host, fromUrl } = relayHostFromSearch(search, this.host);
@@ -92,12 +131,14 @@ class LiveRelay {
       return;
     }
     if (typeof window !== 'undefined' && !isFixture) {
-      // No ?server=: when the page itself is served from the relay's
-      // :8080 origin (sim doubles as the static host), default to it so a
-      // phone on LAN needs no typing.
+      // No ?server=: when the page itself is served over LAN, default the
+      // relay to the page's host (same machine usually serves both): a
+      // phone on LAN needs no typing. Loopback pages keep the localhost
+      // default — 127.0.0.1 is only correct on the relay's own machine.
       try {
-        if (window.location.port === '8080' && window.location.hostname) {
-          const h = window.location.hostname + ':8080';
+        const hn = window.location.hostname;
+        if (hn && !isLoopbackHost(hn) && isLoopbackHost(relayHostPart(this.host))) {
+          const h = hn + ':' + relayPortPart(this.host);
           if (h !== this.host) {
             this.disconnect();
             this.host = h;
@@ -109,7 +150,8 @@ class LiveRelay {
       }
       // Native feel: reopen the app with the link up when the user left it
       // up. Fixture/diff pages never auto-link (deterministic screenshots).
-      if (loadRelayAuto() && this.phase === 'idle') this.connect();
+      // Explicit offline mode suppresses the rejoin (zero network).
+      if (!loadOfflineMode() && loadRelayAuto() && this.phase === 'idle') this.connect();
     }
   }
 
@@ -121,16 +163,54 @@ class LiveRelay {
     saveRelayHost(h);
   }
 
+  /** This page's hostname ('' outside a browser). */
+  pageHostname(): string {
+    try {
+      return typeof window === 'undefined' ? '' : window.location.hostname || '';
+    } catch {
+      return '';
+    }
+  }
+
+  /**
+   * One-tap relay fix for remote clients: `<page-host>:<relay-port>` when
+   * the page is LAN-served and the configured host isn't already it.
+   * Null on localhost pages (the localhost default stays) — and never
+   * 127.0.0.1 for a remote client.
+   */
+  suggestedHost(): string | null {
+    return pageHostSuggestion(this.host, this.pageHostname());
+  }
+
+  /** Apply the one-tap fix: point at this page's host and link up. */
+  usePageHost(): boolean {
+    const s = this.suggestedHost();
+    if (!s) return false;
+    this.connect(s);
+    return true;
+  }
+
+  /** Recent manual-desk hosts for the add-by-IP field. */
+  recentDesks(): string[] {
+    return loadRecentDesks();
+  }
+
+  rememberDesk(host: string): string[] {
+    return saveRecentDesk(host);
+  }
+
   connect(host?: string, driver?: string, addr?: string): void {
-    if (host !== undefined) {
+    if (!this.embedded && host !== undefined) {
       const h = host.trim() || DEFAULT_RELAY_HOST;
       this.host = h;
       saveRelayHost(h);
     }
     if (this.phase === 'online' || this.phase === 'connecting') return;
+    // An explicit link-up is a real-desk intent: leave offline mode.
+    clearOfflineMode();
     this.teardown();
     this.phase = 'connecting';
-    this.message = 'Connecting to ' + this.host + ' …';
+    this.message = this.embedded ? 'Connecting to embedded engine …' : 'Connecting to ' + this.host + ' …';
     this.online = false;
     this.capsReady = false;
     this.latencyMs = null;
@@ -138,7 +218,12 @@ class LiveRelay {
     // Remember the intent: reopening the app rejoins the link. A failed
     // handshake clears it again (fail) so a bad host doesn't nag on boot.
     saveRelayAuto(true);
-    const transport = new WsTransport(relayUrlFromHost(this.host));
+    // Embedded (Tauri shell): the engine runs in-process — no relay host.
+    // Browser: the relay at the configured host (the relay host field is
+    // only used on this path).
+    const transport: Transport = this.embedded
+      ? new TauriTransport()
+      : new WsTransport(relayUrlFromHost(this.host));
     const world = new EngineWorld(transport);
     this.transport = transport;
     this.world = world;
@@ -176,21 +261,44 @@ class LiveRelay {
       this.timer = null;
       if (this.phase === 'connecting' && !this.capsReady) {
         this.fail(
-          'No response from relay at ' + this.host + ' — is the relay running and reachable from this device?',
+          this.embedded
+            ? 'No response from the embedded engine — restart the app and retry.'
+            : this.unreachableText(),
         );
       }
     }, CONNECT_TIMEOUT_MS);
+  }
+
+  /** Unreachable-relay error that says WHAT to use instead. A stored
+   * 127.0.0.1 is only correct on the relay's own machine: from any other
+   * device it points at itself. When this page is LAN-served, name the
+   * page's host (one tap away via the relay card's use-page-host button);
+   * localhost pages keep the short default text. */
+  private unreachableText(): string {
+    const base =
+      'No response from relay at ' + this.host + ' — is the relay running and reachable from this device?';
+    const s = this.suggestedHost();
+    if (!s) return base;
+    if (isLoopbackHost(relayHostPart(this.host))) {
+      return (
+        base +
+        ` ${this.host} points at this device itself — the relay is usually on the machine serving this page. Try ${s} instead.`
+      );
+    }
+    return base + ` If the relay runs on the machine serving this page, try ${s} instead.`;
   }
 
   private onStatus(up: boolean): void {
     this.online = up;
     if (!up && this.phase === 'online') {
       this.phase = 'error';
-      this.message = 'Connection lost — retrying ' + this.host + ' …';
+      this.message = this.embedded
+        ? 'Embedded engine link lost — retrying …'
+        : 'Connection lost — retrying ' + this.host + ' …';
     } else if (!up && this.phase === 'connecting') {
-      this.message = 'No route to ' + this.host + ' — retrying …';
+      this.message = this.embedded ? 'Starting embedded engine — retrying …' : 'No route to ' + this.host + ' — retrying …';
     } else if (up && this.phase === 'connecting' && !this.capsReady) {
-      this.message = 'Handshake with ' + this.host + ' …';
+      this.message = this.embedded ? 'Handshake with embedded engine …' : 'Handshake with ' + this.host + ' …';
     }
   }
 

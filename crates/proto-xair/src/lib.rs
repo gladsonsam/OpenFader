@@ -36,6 +36,12 @@ pub mod addrs {
     /// Clear-solo action leaf (fire-and-forget). Rig-verified answering
     /// (int) on XR18 FW 1.20; no undo leaf answers (probed 2026-10-18).
     pub const CLEAR_SOLO: &str = "/-action/clearsolo";
+    /// Solo switch bank: the desk answers queries here with one int per
+    /// channel (1 = soloed), and 1-based `/-stat/solosw/NN` leaves take
+    /// fire-and-forget sets. The desk broadcasts leaf updates to
+    /// `/xremote` subscribers on solo changes (surface or mixer control software —
+    /// decoded by [`parse_inbound`]). Rig-verified XR18 FW 1.20.
+    pub const SOLO_SW: &str = "/-stat/solosw";
     /// Meter stream id requested from the mixer (`/meters/1` carries the
     /// 16-ch + aux + FX + bus + main + monitor blob; see xr-meters).
     pub const METER_SUBSCRIBE: &str = "/meters/1";
@@ -603,16 +609,44 @@ const AUX_LEVEL_IDS: [&str; 6] = [
 ];
 const FX_LEVEL_IDS: [&str; 4] = ["fx1_level", "fx2_level", "fx3_level", "fx4_level"];
 
+/// Canonical catalogue ids per EQ band leaf (bands 1..=6 index 0..=5) —
+/// the same ids `get_param`'s eq arms decode, for `parse_inbound`.
+const EQ_GAIN_IDS: [&str; 6] = [
+    "eq1_gain",
+    "eq2_gain",
+    "eq3_gain",
+    "eq4_gain",
+    "eq5_gain",
+    "eq6_gain",
+];
+const EQ_FREQ_IDS: [&str; 6] = [
+    "eq1_freq",
+    "eq2_freq",
+    "eq3_freq",
+    "eq4_freq",
+    "eq5_freq",
+    "eq6_freq",
+];
+const EQ_Q_IDS: [&str; 6] = ["eq1_q", "eq2_q", "eq3_q", "eq4_q", "eq5_q", "eq6_q"];
+const EQ_TYPE_IDS: [&str; 6] = [
+    "eq1_type",
+    "eq2_type",
+    "eq3_type",
+    "eq4_type",
+    "eq5_type",
+    "eq6_type",
+];
+
 /// Parse one desk-originated OSC message into a mix-surface param update.
 ///
 /// The desk broadcasts every param change to all `/xremote` subscribers
 /// (owner-rig verified: a fader set from a second client arrives here in
 /// ~250 ms), and it also echoes every client's query replies to everyone.
 /// This covers the mixer surface the desk actually moves under operators'
-/// hands — fader/mute/name/pan/send-level/headamp-gain/color (+ the DCA
+/// hands — fader/mute/name/pan/send-level/headamp-gain/color/EQ (+ the DCA
 /// direct `fader`/`on` forms, which carry no `/mix` segment) — so desk-side
 /// moves apply live instead of waiting for the background poll sweep.
-/// Everything deeper (EQ/dyn/tap) keeps riding the poller; add leaves here
+/// Everything deeper (dyn/tap) keeps riding the poller; add leaves here
 /// (mirroring `get_param`'s decode arms) to extend live coverage.
 ///
 /// Returns the global strip index, the catalogue id and the value in
@@ -620,6 +654,19 @@ const FX_LEVEL_IDS: [&str; 4] = ["fx1_level", "fx2_level", "fx3_level", "fx4_lev
 /// the mix surface (other clients' poll traffic, meter streams, `/info`).
 pub fn parse_inbound(msg: &OscMessage) -> Option<(u16, &'static str, ParamValue)> {
     let addr = msg.addr.strip_prefix('/')?;
+    // Solo switches (`/-stat/solosw/NN`, 1-based channel bank): the desk
+    // broadcasts these on solo changes (surface, mixer control software, or our own
+    // `set_solo` — all drive the same bank). Decoded to the `solo` poll
+    // id so the engine can fan them out as `Solo` events; out-of-range
+    // leaves stay silent (XR18: channels 1..=16 only).
+    if let Some(rest) = addr.strip_prefix("-stat/solosw/") {
+        let n: u16 = rest.parse().ok()?;
+        if !(1..=addrs::XR18_CHANNELS).contains(&n) {
+            return None;
+        }
+        let on = osc::int_arg(msg).ok()? != 0;
+        return Some((n - 1, "solo", ParamValue::Bool(on)));
+    }
     // Headamp gain (`/headamp/NN/gain`, 1-based wire channel): the only
     // non-strip-root leaf covered here, decoded like `get_param`'s `gain`
     // arm (linear wire `0..1` <-> `-12..=+60` dB).
@@ -684,6 +731,65 @@ pub fn parse_inbound(msg: &OscMessage) -> Option<(u16, &'static str, ParamValue)
         };
         let db = mix::wire_to_send_db(mix::send_level_value(msg).ok()?).ok()?;
         return Some((ch - 1, id, ParamValue::Float(db)));
+    }
+    // EQ on/off (`{root}/eq/on`): channels, FX returns, buses and main LR
+    // — decoded like the `get_param` `eq_on` arm. FX-send/DCA roots carry
+    // no EQ and stay silent.
+    if let Some(eq_root) = addr.strip_suffix("/eq/on") {
+        if eq_root != "lr"
+            && !eq_root.starts_with("ch/")
+            && !eq_root.starts_with("rtn/")
+            && !eq_root.starts_with("bus/")
+        {
+            return None;
+        }
+        let strip = if eq_root == "lr" {
+            LR_STRIP
+        } else {
+            strip_of_root(&format!("/{eq_root}"))?
+        };
+        return Some((strip, "eq_on", ParamValue::Bool(osc::is_on(msg).ok()?)));
+    }
+    // EQ band leaves (`{root}/eq/{band}/{g|f|q|type}`): decoded like the
+    // matching `get_param` eq arms (same codecs, engineering units).
+    // Channels and FX returns carry 4 bands, buses and main LR 6
+    // (mirroring `check_eq_band`); FX-send/DCA roots carry no EQ and stay
+    // silent, as do out-of-range bands on a 4-band strip.
+    if matches!(leaf, "g" | "f" | "q" | "type") {
+        let (eq_parent, band_s) = head.rsplit_once('/')?;
+        let eq_root = eq_parent.strip_suffix("/eq")?;
+        let max_band = if eq_root == "lr" {
+            6
+        } else if eq_root.starts_with("ch/") || eq_root.starts_with("rtn/") {
+            4
+        } else if eq_root.starts_with("bus/") {
+            6
+        } else {
+            return None;
+        };
+        let band: u8 = band_s.parse().ok()?;
+        if !(1..=max_band).contains(&band) {
+            return None;
+        }
+        let strip = if eq_root == "lr" {
+            LR_STRIP
+        } else {
+            strip_of_root(&format!("/{eq_root}"))?
+        };
+        let idx = band as usize - 1;
+        let id = match leaf {
+            "g" => EQ_GAIN_IDS[idx],
+            "f" => EQ_FREQ_IDS[idx],
+            "q" => EQ_Q_IDS[idx],
+            _ => EQ_TYPE_IDS[idx],
+        };
+        let value = match leaf {
+            "g" => ParamValue::Float(eq::wire_to_gain_db(osc::fader_value(msg).ok()?).ok()?),
+            "f" => ParamValue::Float(eq::wire_to_freq_hz(osc::fader_value(msg).ok()?).ok()?),
+            "q" => ParamValue::Float(eq::wire_to_q(osc::fader_value(msg).ok()?).ok()?),
+            _ => ParamValue::Float(eq::eqtype_from_msg(msg).ok()? as f32),
+        };
+        return Some((strip, id, value));
     }
     let (root, leaf) = match leaf {
         "fader" | "on" | "pan" => {
@@ -1278,7 +1384,7 @@ impl MixerDriver for XAirDriver {
     /// verified solo leaf and bail out (never faked).
     async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
         let ch = self.check_channel(strip.0)?;
-        let addr = format!("/-stat/solosw/{ch:02}");
+        let addr = format!("{}/{ch:02}", addrs::SOLO_SW);
         let guard = self.session().await?;
         guard
             .as_ref()
@@ -1293,7 +1399,7 @@ impl MixerDriver for XAirDriver {
         let reply = guard
             .as_ref()
             .unwrap()
-            .query("/-stat/solosw")
+            .query(addrs::SOLO_SW)
             .await?;
         let idx = ch as usize - 1;
         match reply.args.get(idx) {
@@ -2033,6 +2139,10 @@ mod tests {
         meter_count: StdMutex<u64>,
         dyn_count: StdMutex<u64>,
         xremote_count: StdMutex<u64>,
+        /// Most recently seen peer (any incoming datagram refreshes it):
+        /// `broadcast` fires unsolicited datagrams there, simulating a
+        /// desk-side change broadcast to `/xremote` subscribers.
+        last_peer: StdMutex<Option<SocketAddr>>,
     }
 
     impl FakeMixer {
@@ -2060,6 +2170,7 @@ mod tests {
                 meter_count: StdMutex::new(0),
                 dyn_count: StdMutex::new(0),
                 xremote_count: StdMutex::new(0),
+                last_peer: StdMutex::new(None),
             });
             let worker = fake.clone();
             tokio::spawn(async move {
@@ -2073,6 +2184,7 @@ mod tests {
                     let Ok((n, peer)) = worker.socket.recv_from(&mut buf).await else {
                         break;
                     };
+                    *worker.last_peer.lock().unwrap() = Some(peer);
                     let Ok(packet) = osc::decode_packet(&buf[..n]) else {
                         continue;
                     };
@@ -2617,6 +2729,19 @@ mod tests {
             });
             (addr, fake)
         }
+
+        /// Fire an unsolicited datagram at the most recently seen peer,
+        /// simulating a desk-side change broadcast to `/xremote`
+        /// subscribers (no query asked for it — the driver's ingest task
+        /// must route it to the update channel via `parse_inbound`).
+        /// No-op until any datagram has arrived (the peer is unknown).
+        async fn broadcast(&self, addr: &str, args: Vec<OscType>) {
+            let peer = *self.last_peer.lock().unwrap();
+            if let Some(peer) = peer {
+                let bytes = osc::encode_message(addr, args).unwrap();
+                let _ = self.socket.send_to(&bytes, peer).await;
+            }
+        }
     }
 
     async fn connected_driver() -> (XAirDriver, Arc<FakeMixer>) {
@@ -2905,6 +3030,170 @@ mod tests {
         assert!(parse_inbound(&msg("/headamp/17/gain", vec![OscType::Float(0.5)])).is_none());
         assert!(parse_inbound(&msg("/ch/01/mix/11/level", vec![OscType::Float(0.5)])).is_none());
         assert!(parse_inbound(&msg("/ch/01/config/icon", vec![OscType::Int(1)])).is_none());
+    }
+
+    /// Desk-originated solo updates ride `/-stat/solosw/NN` (the same
+    /// 1-based bank `set_solo`/`get_solo` drive): soloed ch1 decodes to
+    /// strip 0 `solo` true, cleared ch16 to strip 15 false. Out-of-range
+    /// leaves and the bare bank-query shape stay silent (XR18: channels
+    /// 1..=16 only); the clear-solo action leaf is not a state frame.
+    #[test]
+    fn inbound_covers_solosw_bank() {
+        let msg = |addr: &str, args: Vec<OscType>| OscMessage {
+            addr: addr.to_string(),
+            args,
+        };
+        let (strip, param, value) = parse_inbound(&msg(
+            "/-stat/solosw/01",
+            vec![OscType::Int(1)],
+        ))
+        .expect("solosw on parses");
+        assert_eq!((strip, param), (0, "solo"));
+        assert!(matches!(value, ParamValue::Bool(true)));
+        let (strip, param, value) = parse_inbound(&msg(
+            "/-stat/solosw/16",
+            vec![OscType::Int(0)],
+        ))
+        .expect("solosw off parses");
+        assert_eq!((strip, param), (15, "solo"));
+        assert!(matches!(value, ParamValue::Bool(false)));
+        assert!(parse_inbound(&msg("/-stat/solosw/17", vec![OscType::Int(1)])).is_none());
+        assert!(parse_inbound(&msg("/-stat/solosw/00", vec![OscType::Int(1)])).is_none());
+        assert!(parse_inbound(&msg("/-stat/solosw", vec![OscType::Int(1)])).is_none());
+        assert!(parse_inbound(&msg("/-action/clearsolo", vec![OscType::Int(1)])).is_none());
+    }
+
+    /// Desk-originated EQ updates (`{root}/eq/on`, `{root}/eq/{band}/{g|f|q/type}`):
+    /// decoded like the `get_param` eq arms (same codecs, engineering
+    /// units). Channels/FX returns cap at 4 bands, buses/main LR at 6
+    /// (mirroring `check_eq_band`); FX-send/DCA roots and out-of-range
+    /// bands stay silent. Pure unit test (no sockets): the messages below
+    /// are the wire shapes the desk broadcasts to `/xremote` subscribers.
+    #[test]
+    fn inbound_covers_eq_band_leaves() {
+        let msg = |addr: &str, args: Vec<OscType>| OscMessage {
+            addr: addr.to_string(),
+            args,
+        };
+        // Channel band gain -> dB like the `eq{b}_gain` arm.
+        let (strip, param, value) = parse_inbound(&msg(
+            "/ch/01/eq/1/g",
+            vec![OscType::Float(0.75)],
+        ))
+        .expect("eq gain parses");
+        assert_eq!((strip, param), (0, "eq1_gain"));
+        assert!(matches!(value, ParamValue::Float(v) if (v - eq::wire_to_gain_db(0.75).unwrap()).abs() < 1e-6));
+        // Channel band freq/q/type ride their own codecs.
+        let (strip, param, value) = parse_inbound(&msg(
+            "/ch/02/eq/2/f",
+            vec![OscType::Float(0.5)],
+        ))
+        .expect("eq freq parses");
+        assert_eq!((strip, param), (1, "eq2_freq"));
+        assert!(matches!(value, ParamValue::Float(v) if (v - eq::wire_to_freq_hz(0.5).unwrap()).abs() < 1e-6));
+        let (strip, param, value) = parse_inbound(&msg(
+            "/ch/03/eq/3/q",
+            vec![OscType::Float(0.5)],
+        ))
+        .expect("eq q parses");
+        assert_eq!((strip, param), (2, "eq3_q"));
+        assert!(matches!(value, ParamValue::Float(v) if (v - eq::wire_to_q(0.5).unwrap()).abs() < 1e-6));
+        let (strip, param, value) = parse_inbound(&msg(
+            "/ch/04/eq/4/type",
+            vec![OscType::Int(2)],
+        ))
+        .expect("eq type parses");
+        assert_eq!((strip, param), (3, "eq4_type"));
+        assert!(matches!(value, ParamValue::Float(v) if v == 2.0));
+        // FX-return band gain (strip 16 = `/rtn/1`, 4-band family).
+        let (strip, param, _) = parse_inbound(&msg(
+            "/rtn/1/eq/1/g",
+            vec![OscType::Float(0.5)],
+        ))
+        .expect("fxret eq gain parses");
+        assert_eq!((strip, param), (16, "eq1_gain"));
+        // Bus bands 5+6 answer (strip 20 = `/bus/1`, 6-band family).
+        let (strip, param, _) = parse_inbound(&msg(
+            "/bus/1/eq/5/g",
+            vec![OscType::Float(0.5)],
+        ))
+        .expect("bus eq5 gain parses");
+        assert_eq!((strip, param), (20, "eq5_gain"));
+        let (strip, param, _) = parse_inbound(&msg(
+            "/bus/1/eq/6/type",
+            vec![OscType::Int(5)],
+        ))
+        .expect("bus eq6 type parses");
+        assert_eq!((strip, param), (20, "eq6_type"));
+        // Main LR EQ (strip 30 = `/lr`).
+        let (strip, param, _) = parse_inbound(&msg(
+            "/lr/eq/2/g",
+            vec![OscType::Float(0.25)],
+        ))
+        .expect("lr eq gain parses");
+        assert_eq!((strip, param), (LR_STRIP, "eq2_gain"));
+        // EQ on/off decodes like the `eq_on` arm.
+        let (strip, param, value) = parse_inbound(&msg(
+            "/ch/01/eq/on",
+            vec![OscType::Int(1)],
+        ))
+        .expect("eq on parses");
+        assert_eq!((strip, param), (0, "eq_on"));
+        assert!(matches!(value, ParamValue::Bool(true)));
+        let (strip, param, _) = parse_inbound(&msg(
+            "/lr/eq/on",
+            vec![OscType::Int(0)],
+        ))
+        .expect("lr eq on parses");
+        assert_eq!((strip, param), (LR_STRIP, "eq_on"));
+        // Out-of-scope shapes stay silent: band 5+ on a 4-band channel,
+        // band 0/7+, FX-send/DCA roots (no EQ there), non-EQ `/type`
+        // leaves (FX type select), and garbage roots.
+        assert!(parse_inbound(&msg("/ch/01/eq/5/g", vec![OscType::Float(0.5)])).is_none());
+        assert!(parse_inbound(&msg("/ch/01/eq/0/g", vec![OscType::Float(0.5)])).is_none());
+        assert!(parse_inbound(&msg("/ch/01/eq/7/g", vec![OscType::Float(0.5)])).is_none());
+        assert!(parse_inbound(&msg("/fxsend/1/eq/1/g", vec![OscType::Float(0.5)])).is_none());
+        assert!(parse_inbound(&msg("/dca/1/eq/1/g", vec![OscType::Float(0.5)])).is_none());
+        assert!(parse_inbound(&msg("/dca/1/eq/on", vec![OscType::Int(1)])).is_none());
+        assert!(parse_inbound(&msg("/fx/1/type", vec![OscType::Int(3)])).is_none());
+        assert!(parse_inbound(&msg("/ch/01/gate/filter/type", vec![OscType::Int(1)])).is_none());
+        assert!(parse_inbound(&msg("/ch/99/eq/1/g", vec![OscType::Float(0.5)])).is_none());
+    }
+
+    /// Desk-broadcast ingest for EQ over the real `connect()` path: an
+    /// unsolicited `/ch/01/eq/1/g` datagram from the fake (no query asked
+    /// for it — the desk-broadcast shape) must surface on the driver's
+    /// update channel as `eq1_gain` in engineering units, like the polled
+    /// `get_param` arm. Covers the connect-spawned ingest wiring, not just
+    /// the pure `parse_inbound` decode above.
+    #[tokio::test]
+    async fn inbound_eq_gain_reaches_update_channel() {
+        let (addr, fake) = FakeMixer::spawn().await;
+        let driver = XAirDriver::new();
+        driver.connect(&addr.to_string()).await.unwrap();
+        let mut rx = driver.subscribe_updates().expect("driver has update channel");
+        // One query so the fake learns our peer (connect's best-effort
+        // /info ping already did, but be explicit), then fire the
+        // unsolicited broadcast the desk would emit on a surface move.
+        let _ = driver.get_fader(StripId(0)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        fake.broadcast("/ch/01/eq/1/g", vec![OscType::Float(0.75)]).await;
+        let deadline = std::time::Duration::from_secs(2);
+        let t0 = std::time::Instant::now();
+        loop {
+            let update = tokio::time::timeout(deadline - t0.elapsed(), rx.recv())
+                .await
+                .expect("eq broadcast not ingested in time")
+                .expect("update channel closed");
+            if update.strip.0 == 0 && update.param == "eq1_gain" {
+                assert!(
+                    matches!(update.value, ParamValue::Float(v) if (v - 7.5).abs() < 1e-5),
+                    "eq1_gain decoded off-codec: {:?}",
+                    update.value
+                );
+                return;
+            }
+        }
     }
 
     /// Main LR must go through `/lr/mix/fader`: the strict fake below answers

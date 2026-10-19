@@ -15,6 +15,7 @@
   import { live } from '../../state/live.svelte.ts';
   import { bridgeStrip } from '../../state/engineBridge.ts';
   import { dbToPos } from '../../fixtures/designData.ts';
+  import { stripStateOf } from './stripState.ts';
   import BusPopup, { type BusRowVm } from './BusPopup.svelte';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
   import { fixtureSource } from '../../modules/context.ts';
@@ -65,44 +66,19 @@
   // closure reads the engine arrays imperatively each animation frame, so
   // no reactive re-derivation is needed for drawing).
   const liveDb = (id: string): number | null => live.liveLevelDb(id);
-  // Live desk groups/link overlay (names/colours arrive via the fixture
-  // sync; membership + link have no fixture fields so they ride the scope
-  // directly). Null offline: the badges' `when` hides them and fixture
-  // mode is untouched. Membership/master values start from the attach
-  // snapshot and update on every echo, so a strip with nothing
-  // confirmed yet shows no badges — never faked.
+  // Live desk status overlay (names/colours arrive via the fixture
+  // sync; membership + link + preamp leaves ride the scope directly).
+  // Null offline: the badges/icons hide and fixture mode is untouched.
+  // Every leaf is echo-confirmed (stripStateOf: supports() + 'known'
+  // status gates) — a strip with nothing confirmed yet shows nothing,
+  // never faked.
   const deskOf = (id: string): DeskGroups | null => {
     void live.version; // re-read on every engine ingest (control frames only)
     const w = live.engine;
     if (live.phase !== 'online' || !w || !w.capsReady) return null;
     const ch = bridgeStrip(w, id);
     if (ch === null) return null;
-    const caps = w.groupCaps;
-    const mg: number[] = [];
-    const mgMuted: Array<boolean | null> = [];
-    for (let g = 0; g < caps.muteGroups; g++) {
-      if (w.muteGroupAssigned(ch, g) === true) {
-        mg.push(g);
-        mgMuted.push(w.muteGroupMaster(g));
-      }
-    }
-    const sg: number[] = [];
-    const sgMuted: Array<boolean | null> = [];
-    for (let g = 0; g < caps.subgroups; g++) {
-      if (w.subgroupAssigned(ch, g) === true) {
-        sg.push(g);
-        sgMuted.push(w.subgroupMaster(g)?.muted ?? null);
-      }
-    }
-    // `link` is a real per-strip leaf on sim (unsupported on xair, where
-    // stereo link is the global /config/chlink switch): null hides the chip.
-    let link: boolean | null = null;
-    if (w.supports('link', ch)) {
-      const lv = w.param(ch, 'link');
-      if (typeof lv === 'boolean') link = lv;
-    }
-    if (mg.length === 0 && sg.length === 0 && link === null) return null;
-    return { mg, sg, mgMuted, sgMuted, link };
+    return stripStateOf(w, ch);
   };
 
   const cells = $derived(mixerCells(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf));

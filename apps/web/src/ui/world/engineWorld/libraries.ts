@@ -29,6 +29,7 @@ import {
   cmdOfflinePush,
   cmdPatchClear,
   cmdPatchSet,
+  cmdProbeDesk,
   cmdRecallScene,
   cmdScan,
   cmdSceneClear,
@@ -269,6 +270,9 @@ export class LibraryStore {
   }
   scan(): void {
     this.send(cmdScan());
+  }
+  probeDesk(addr: string): void {
+    this.send(cmdProbeDesk(addr));
   }
   connectDevice(id: string): void {
     this.send(cmdConnectDevice(id));

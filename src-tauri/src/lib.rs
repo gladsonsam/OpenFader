@@ -28,6 +28,7 @@
 //! `Send` and may be held across `.await` — Tauri commands require `Send`
 //! futures, which `std::sync::MutexGuard` is not.
 use tauri::async_runtime::Mutex;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use openmix_core::rta::RtaProcessor;
@@ -519,6 +520,213 @@ async fn get_gr(state: State<'_>, ch: u16) -> Result<serde_json::Value, String> 
     Ok(json!({"ch": ch, "gate": gate, "comp": comp}))
 }
 
+// ---------------------------------------------------------------------------
+// Embedded engine (phone independence): the full `openmix-engine` session
+// runs in this process, so the app needs no relay/server/LAN box — the
+// desk is reached by the engine's own discovery (broadcast + unicast on
+// the phone's WiFi) and UDP drivers, same as `openmix-serve` does on a
+// relay host. These commands carry the SAME Cmd/Event JSON the WS relay
+// speaks (`openmix_engine::protocol` serialization — no new protocol):
+// the UI's `TauriTransport` sends one Cmd JSON per `engine_cmd` and
+// receives the resulting Event JSON frames; `engine_poll` drains
+// background frames (meters/spectrum/GR ticker, poller) between writes.
+// The WS path in `crates/serve` is untouched (byte-identical for browsers).
+// ---------------------------------------------------------------------------
+
+/// Max Event frames returned per `engine_cmd`/`engine_poll` call: bounds
+/// one IPC payload (the phone polls at ~10 Hz; the meter ticker alone can
+/// queue dozens of frames per interval at 20 Hz + GR + spectrum fan-out).
+/// Overflow stays queued for the next poll — control frames are never
+/// dropped, only deferred by one interval.
+const ENGINE_DRAIN_CAP: usize = 512;
+
+/// In-process engine session behind the IPC commands: one shared `Engine`
+/// (booted on sim so the app works with no desk) plus the single UI
+/// client's handle. `ClientHandle.events` needs `&mut` for `try_recv`,
+/// hence the async mutex.
+struct EngineSlot {
+    engine: Option<Arc<openmix_engine::Engine>>,
+    client: Option<openmix_engine::ClientHandle>,
+}
+
+impl Default for EngineSlot {
+    fn default() -> Self {
+        Self {
+            engine: None,
+            client: None,
+        }
+    }
+}
+
+type EngineState<'r> = tauri::State<'r, Mutex<EngineSlot>>;
+
+/// Ensure the embedded engine exists (booted on `sim`, like `serve`
+/// with default options) and the UI client is attached. Idempotent:
+/// repeat calls reuse the session.
+async fn ensure_engine_client(slot: &mut EngineSlot) -> Result<String, String> {
+    if slot.engine.is_none() {
+        let engine = openmix_engine::Engine::new(openmix_engine::EngineConfig::default());
+        // Sim boot must succeed; a failure here means the engine itself is
+        // broken (sim is in-process, no network). Propagate loudly.
+        engine
+            .connect("sim", None)
+            .await
+            .map_err(|e| format!("embedded engine sim boot failed: {e:#}"))?;
+        slot.engine = Some(engine);
+    }
+    let engine = slot.engine.clone().expect("engine just ensured");
+    if slot.client.is_none() {
+        let handle = engine.attach(Some("tauri-ui".to_string())).await;
+        let id = handle.id.clone();
+        slot.client = Some(handle);
+        return Ok(id);
+    }
+    Ok(slot.client.as_ref().expect("client just ensured").id.clone())
+}
+
+/// Drain all currently-queued Event frames for the UI client as wire JSON
+/// (`Event::to_json` — the exact strings the WS relay puts on the socket).
+fn drain_client_events(client: &mut openmix_engine::ClientHandle) -> Vec<String> {
+    let mut out = Vec::new();
+    while out.len() < ENGINE_DRAIN_CAP {
+        match client.events.try_recv() {
+            Ok(ev) => out.push(ev.to_json()),
+            Err(_) => break,
+        }
+    }
+    out
+}
+
+/// Attach the UI client to the embedded engine (idempotent) and return its
+/// client id. The attach snapshot (`you`, `state`, `caps`, …) is already
+/// queued — call `engine_poll` (or any `engine_cmd`) to collect it.
+#[tauri::command]
+async fn engine_attach(eslot: EngineState<'_>, label: Option<String>) -> Result<String, String> {
+    let _ = label;
+    let mut slot = eslot.lock().await;
+    ensure_engine_client(&mut slot).await
+}
+
+/// Send one engine Cmd JSON (same `{"cmd":…}` the WS relay accepts;
+/// parse failures come back as unicast `error` Events, never as a failed
+/// call) and return all Event JSON frames it produced, plus any queued
+/// background frames, in socket order.
+#[tauri::command]
+async fn engine_cmd(eslot: EngineState<'_>, cmd: String) -> Result<Vec<String>, String> {
+    let mut slot = eslot.lock().await;
+    ensure_engine_client(&mut slot).await?;
+    let engine = slot.engine.clone().expect("engine just ensured");
+    let client = slot.client.as_mut().expect("client just ensured");
+    let id = client.id.clone();
+    // `handle_json` never fails the call itself (rejections arrive as
+    // unicast `error` Events); it only skips unknown writers, and the
+    // stored handle detaches solely via `engine_detach`.
+    engine.handle_json(&id, &cmd).await;
+    Ok(drain_client_events(client))
+}
+
+/// Drain background Event frames (meter ticker, param poller, discovery)
+/// queued since the last `engine_cmd`/`engine_poll`. The UI polls this at
+/// ~10 Hz; control writes go through `engine_cmd`.
+#[tauri::command]
+async fn engine_poll(eslot: EngineState<'_>) -> Result<Vec<String>, String> {
+    let mut slot = eslot.lock().await;
+    ensure_engine_client(&mut slot).await?;
+    let client = slot.client.as_mut().expect("client just ensured");
+    Ok(drain_client_events(client))
+}
+
+/// Detach the UI client (engine keeps running; next `engine_cmd` /
+/// `engine_poll` / `engine_attach` re-attaches with a fresh snapshot).
+#[tauri::command]
+async fn engine_detach(eslot: EngineState<'_>) -> Result<(), String> {
+    let mut slot = eslot.lock().await;
+    if let Some(client) = slot.client.take() {
+        client.detach().await;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod engine_ipc_tests {
+    use super::*;
+
+    /// Drive the REAL embedded stack (Engine + sim, no network): attach,
+    /// snapshot prefix, one write round-trip, one rejection. Guards the
+    /// exact path the Tauri commands wrap (`ensure` + `handle_json` +
+    /// `drain`), minus the Tauri `State` shell.
+    #[tokio::test]
+    async fn embedded_engine_cmd_event_round_trip() {
+        let engine = openmix_engine::Engine::new(openmix_engine::EngineConfig::default());
+        engine.connect("sim", None).await.expect("sim boot");
+        let mut client = engine.attach(Some("test-ui".to_string())).await;
+
+        // Attach snapshot: `you` first, then the world (state/caps/...).
+        let snap = drain_client_events(&mut client);
+        assert!(!snap.is_empty(), "attach must queue a snapshot");
+        let types: Vec<String> = snap
+            .iter()
+            .filter_map(|s| {
+                serde_json::from_str::<serde_json::Value>(s)
+                    .ok()
+                    .and_then(|v| v.get("type")?.as_str().map(str::to_string))
+            })
+            .collect();
+        assert_eq!(types[0], "you", "snapshot opens with `you`");
+        for want in ["state", "caps", "devices", "link"] {
+            assert!(
+                types.contains(&want.to_string()),
+                "snapshot carries `{want}` (got {types:?})"
+            );
+        }
+
+        // Write round-trip through the WS command spelling.
+        engine
+            .handle_json(&client.id, r#"{"cmd":"fader","ch":0,"value":0.5}"#)
+            .await;
+        let after_write = drain_client_events(&mut client);
+        assert!(
+            !after_write.is_empty(),
+            "fader write must produce broadcast frame(s)"
+        );
+
+        // Unknown command spelling: unicast `error`, connection stays up.
+        engine
+            .handle_json(&client.id, r#"{"cmd":"bogus_command"}"#)
+            .await;
+        let errs = drain_client_events(&mut client);
+        let err_json = errs.join("\n");
+        assert!(
+            err_json.contains(r#""type":"error""#) && err_json.contains("unknown cmd"),
+            "unknown cmd must unicast an error event (got {err_json:?})"
+        );
+
+        // Client still live: a follow-up write still produces frames.
+        engine
+            .handle_json(&client.id, r#"{"cmd":"mute","ch":1,"muted":true}"#)
+            .await;
+        assert!(
+            !drain_client_events(&mut client).is_empty(),
+            "client survives the rejected command"
+        );
+    }
+
+    /// The drain helper never errors and stays capped on an idle client.
+    #[tokio::test]
+    async fn embedded_engine_drain_stays_capped() {
+        let engine = openmix_engine::Engine::new(openmix_engine::EngineConfig::default());
+        engine.connect("sim", None).await.expect("sim boot");
+        let mut client = engine.attach(Some("idle-ui".to_string())).await;
+        let _ = drain_client_events(&mut client);
+        // Poller/meter ticks may queue frames at any moment; drain thrice
+        // and only assert the bound (freshness, not emptiness).
+        for _ in 0..3 {
+            let frames = drain_client_events(&mut client);
+            assert!(frames.len() <= ENGINE_DRAIN_CAP, "drain is capped");
+        }
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -529,6 +737,7 @@ pub fn run() {
         .plugin(tauri_plugin_edge_to_edge::init())
         .plugin(tauri_plugin_keep_screen_on::init())
         .manage(Mutex::new(Inner::default()))
+        .manage(Mutex::new(EngineSlot::default()))
         .invoke_handler(tauri::generate_handler![
             connect,
             set_fader,
@@ -544,7 +753,11 @@ pub fn run() {
             delete_scene,
             get_meters,
             get_spectrum,
-            get_gr
+            get_gr,
+            engine_attach,
+            engine_cmd,
+            engine_poll,
+            engine_detach
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

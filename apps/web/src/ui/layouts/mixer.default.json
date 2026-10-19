@@ -102,7 +102,7 @@
         "selectable": true
       },
       "variants": {
-        "phone": { "props": { "width": 96 } }
+        "phone": { "props": { "width": 120 } }
       },
       "bind": {
         "shadow": "master.ring"
@@ -130,6 +130,7 @@
             "fg": "#e8edf5",
             "border": "1px solid #3a414c"
           },
+          "when": "device != 'phone' || store.sel == master.id",
           "bind": {
             "label": "master.busLabel",
             "ariaLabel": "concat('Select master bus, current ', master.name)"
@@ -143,6 +144,7 @@
         {
           "id": "master-proc",
           "module": "col",
+          "when": "device != 'phone' || store.sel == master.id",
           "props": {
             "flex": "1 1 140px",
             "minHeight": 80,
@@ -219,6 +221,14 @@
           }
         },
         {
+          "id": "master-state-icons",
+          "module": "strip-state-icons",
+          "bind": {
+            "desk": "master.desk"
+          },
+          "when": "master.desk != null"
+        },
+        {
           "id": "master-fader-area",
           "module": "col",
           "props": {
@@ -231,6 +241,15 @@
               "module": "strip-fader",
               "props": {
                 "variant": "master"
+              },
+              "variants": {
+                "phone": {
+                  "props": { "variant": "strip" },
+                  "bind": {
+                    "accent": "master.kind == 'sof' ? 'sof' : 'chan'",
+                    "readColor": "master.kind == 'sof' ? 'var(--u4-cyan)' : 'var(--u4-text-4)'"
+                  }
+                }
               },
               "bind": {
                 "value": "master.value",

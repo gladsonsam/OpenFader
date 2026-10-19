@@ -202,6 +202,9 @@ const SILENT_ACTIONS = new Set([
   'ui.setInputKnob',
   'ui.setChannelName',
   'ui.setRelayHost',
+  // Tempo tapping fires in a rhythm the user sets (120 taps/min at 120bpm);
+  // a buzz per tap is noise, and the flashing button already confirms it.
+  'ui.tapFx',
 ]);
 
 export function dispatchAction(
@@ -366,6 +369,8 @@ export function registerBuiltins(): void {
   // Real relay link (connection screen relay card -> live singleton).
   uiThrough('ui.connectRelay', a => [a['host'], a['driver']], { args: { host: 'string', driver: 'string' }, describe: 'Connect to the relay host (driver only when explicitly chosen)' });
   uiThrough('ui.disconnectRelay', () => [], A('Disconnect the relay link'));
+  uiThrough('ui.usePageHost', () => [], A("Point the relay at this page's host (LAN one-tap fix)"));
+  uiThrough('ui.probeDesk', a => [a['ip']], { args: { ip: 'string' }, describe: 'Ping a desk IP via the relay (manual add)' });
   uiThrough('ui.setRelayHost', a => [a['host']], { args: { host: 'string' }, describe: 'Set the relay host (persisted)' });
 
   // behaviour settings
