@@ -46,5 +46,11 @@ free AND its files don't collide with the running worker.
 - Graph label collisions fixed (nodes clear of ticks, no mid-unit wraps).
 - Android network + sim removal (scan/probe from sim, honest boot,
   fresh APK in /mnt/gladson/temp).
-- Fresh APK from current tree (/mnt/gladson/temp, badging verified).
-- Worktree phone/daylight UI (merged or in merge — see In flight).
+- Worktree phone/daylight UI merged (main reviewed + verified).
+- Channel topbar simplification (back+name+prev/next, switcher deleted).
+- G5 solo desk→app path wired (25 ms, verified both ways).
+- Optimistic-write epsilon + main-fader twin (no more stuck edits).
+- EQ ingest arms (desk→app EQ in seconds, not a minute).
+- Verification matrix 17/19 PASS, desk left as found.
+- Orphan cleanup (7 stale test relays + stray chrome reaped; :8080,
+  :8081, :5291 untouched).
