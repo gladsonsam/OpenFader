@@ -6,14 +6,20 @@ import type { ProfileOp } from './ops.ts';
 import { validateOp } from './ops.ts';
 import { migrateProfile } from './migrate.ts';
 
-export const PROFILE_V = 2;
-export const PROFILE_LS_PREFIX = 'openmix.profile.v2';
+export const PROFILE_V = 3;
+export const PROFILE_LS_PREFIX = 'openmix.profile.v3';
+/** Previous localStorage prefix (v2 docs): read as a fallback so stored
+ * v2 profiles migrate forward instead of being orphaned. */
+export const PROFILE_LS_PREFIX_V2 = 'openmix.profile.v2';
 
 export type TokenOverrides = Record<string, string>;
 
 export interface BankDef {
   id: string;
   name: string;
+  /** Stable strip keys (`ch/01`, `bus/01`, …, `main` — never positional
+   * indices, which mean different strips on sim/xair/dl32s). v2 documents
+   * carrying numeric indices migrate through `migrateV2toV3`. */
   items: string[];
   color?: string;
 }
@@ -156,12 +162,14 @@ export function profileKey(id: string): string {
   return `${PROFILE_LS_PREFIX}.${id}`;
 }
 
-/** Load a stored profile (migrated + validated); null when absent/unreadable. */
+/** Load a stored profile (migrated + validated); null when absent/unreadable.
+ * Reads the v3 key first, then the legacy v2 key (migrated on import). */
 export function loadStoredProfile(id: string): UserProfile | null {
   const s = storage();
   if (!s) return null;
   try {
-    const raw = s.getItem(profileKey(id));
+    const raw =
+      s.getItem(profileKey(id)) ?? s.getItem(`${PROFILE_LS_PREFIX_V2}.${id}`);
     if (!raw) return null;
     const r = importProfile(raw);
     return r.ok ? r.profile : null;

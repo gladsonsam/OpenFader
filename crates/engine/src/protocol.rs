@@ -28,6 +28,12 @@ pub enum Cmd {
     Fader {
         ch: u16,
         value: f32,
+        /// Stable strip key (`ch/01`, `bus/01`, …, `main`): accepted on
+        /// every strip-targeted command and authoritative when it resolves
+        /// against the active desk topology (desk-switch survival). `ch`
+        /// stays required for wire compat; old clients never send `key`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     #[serde(alias = "set_main_fader")]
     MainFader {
@@ -42,6 +48,10 @@ pub enum Cmd {
     Mute {
         ch: u16,
         muted: bool,
+        /// Stable strip key (see [`Cmd::Fader`]): authoritative when it
+        /// resolves; `ch` stays required for wire compat.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2 per-strip solo (`{"cmd":"solo","ch":0,"soloed":true}`, monitor
     /// bus only — never touches the FOH mix). Sim in-memory; X-Air
@@ -51,11 +61,17 @@ pub enum Cmd {
     Solo {
         ch: u16,
         soloed: bool,
+        /// Stable strip key (see [`Cmd::Fader`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     Param {
         ch: u16,
         field: String,
         value: serde_json::Value,
+        /// Stable strip key (see [`Cmd::Fader`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     Focus {
         ch: Option<u16>,
@@ -63,9 +79,15 @@ pub enum Cmd {
     },
     Lock {
         ch: u16,
+        /// Stable strip key (see [`Cmd::Fader`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     Unlock {
         ch: u16,
+        /// Stable strip key (see [`Cmd::Fader`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     ListShows,
     CaptureScene {
@@ -168,10 +190,16 @@ pub enum Cmd {
         strip: u16,
         group: String,
         index: u8,
+        /// Stable strip key (see [`Cmd::Fader`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2: clear one strip's patch (source reads back unpatched).
     PatchClear {
         strip: u16,
+        /// Stable strip key (see [`Cmd::Fader`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2: switch to offline editing on the named driver model
     /// (`{"cmd":"offline","model":"xair"}`): the engine runs the sim model
@@ -228,6 +256,9 @@ pub enum Cmd {
         ch: u16,
         group: u8,
         member: bool,
+        /// Stable strip key (see [`Cmd::Fader`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2 mute-group master mute (`{"cmd":"mute_group","group":0,
     /// "muted":true}`): 0-based over `0..mute_group_count()` (sim
@@ -242,6 +273,9 @@ pub enum Cmd {
         ch: u16,
         group: u8,
         member: bool,
+        /// Stable strip key (see [`Cmd::Fader`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2 desk file download (`{"cmd":"file_download",
     /// "filename":"Show.zip"}`): replies with [`Event::File`] carrying
@@ -320,6 +354,10 @@ impl Cmd {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateStrip {
     pub ch: u16,
+    /// Stable strip key (`ch/01`, …, `main`): `None` on old frames; the
+    /// engine populates it from the active topology on every emit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub name: String,
     pub fader: f32,
     pub muted: bool,
@@ -329,6 +367,9 @@ pub struct StateStrip {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SceneStrip {
     pub ch: u16,
+    /// Stable strip key (see [`StateStrip::key`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub name: String,
     pub fader: f32,
     pub muted: bool,
@@ -367,7 +408,8 @@ pub struct ParamDef {
 
 /// One `caps.topology` family: an ordered strip family in the global strip
 /// index space. `params_scope` lists the strip kinds whose catalogue ids
-/// apply here (today always `[kind]`).
+/// apply here (today always `[kind]`). `strip_keys` lists the stable
+/// per-strip keys in index order (`ch/01`, …, `main`); empty on old frames.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopologyFamily {
     pub key: String,
@@ -378,6 +420,10 @@ pub struct TopologyFamily {
     pub name_prefix: String,
     pub color_default: u8,
     pub params_scope: Vec<String>,
+    /// Stable per-strip keys in index order (see [`StateStrip::key`]).
+    /// `#[serde(default)]` so old `caps` fixtures still parse.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub strip_keys: Vec<String>,
 }
 
 /// One `caps.fx` param row (R2): a design FX type's param table entry.
@@ -514,6 +560,9 @@ pub struct FxSlotState {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchEntry {
     pub strip: u16,
+    /// Stable strip key (see [`StateStrip::key`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub group: String,
     pub index: u8,
     pub label: String,
@@ -524,6 +573,9 @@ pub struct PatchEntry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OfflineChange {
     pub strip: u16,
+    /// Stable strip key (see [`StateStrip::key`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
     pub id: String,
     pub from: serde_json::Value,
     pub to: serde_json::Value,
@@ -551,6 +603,9 @@ pub enum Event {
         ch: u16,
         field: String,
         value: serde_json::Value,
+        /// Stable strip key (see [`StateStrip::key`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none", default)]
         by: Option<String>,
     },
@@ -595,6 +650,9 @@ pub enum Event {
     Params {
         ch: u16,
         values: BTreeMap<String, serde_json::Value>,
+        /// Stable strip key (see [`StateStrip::key`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     Locks {
         holds: BTreeMap<String, String>,
@@ -679,29 +737,44 @@ pub enum Event {
         bus: u8,
         fader: f32,
         muted: bool,
+        /// Stable master key (`bus/01`): `None` on old frames.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2 subgroup master echo (`subgroup_fader`/`subgroup_mute`).
     Subgroup {
         group: u8,
         fader: f32,
         muted: bool,
+        /// Stable master key (`subgroup/1`): `None` on old frames.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2 subgroup-membership echo (`subgroup_assign`).
     SubgroupAssign {
         ch: u16,
         group: u8,
         member: bool,
+        /// Stable strip key (see [`StateStrip::key`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2 mute-group master echo (`mute_group`).
     MuteGroup {
         group: u8,
         muted: bool,
+        /// Stable master key (`mgroup/1`): `None` on old frames.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2 mute-group-membership echo (`mute_group_assign`).
     MuteGroupAssign {
         ch: u16,
         group: u8,
         member: bool,
+        /// Stable strip key (see [`StateStrip::key`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2 Main LR master echo (`main_mute`): full master state after the
     /// write (fader + mute re-read from the driver). Also unicast in the
@@ -715,6 +788,9 @@ pub enum Event {
     Solo {
         ch: u16,
         soloed: bool,
+        /// Stable strip key (see [`StateStrip::key`]).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        key: Option<String>,
     },
     /// R2 file frame: `file_download` replies carry base64 `data` (`size`
     /// = decoded bytes); `file_upload` replies are acks (`data` absent,
