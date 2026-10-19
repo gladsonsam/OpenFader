@@ -138,7 +138,7 @@ mod tests {
         assert_eq!(log_to_wire(0.02, 0.02, 2000.0, "gate", "hold").unwrap(), 0.0);
         assert_eq!(log_to_wire(2000.0, 0.02, 2000.0, "gate", "hold").unwrap(), 1.0);
         assert_eq!(wire_to_log(0.0, 0.02, 2000.0, "gate", "hold").unwrap(), 0.02);
-        // Live rig wire 0.76 -> ~126 ms (was 380 ms under the old linear map).
+        // Live rig wire 0.76 -> ~126 ms.
         let live = wire_to_log(0.76, 0.02, 2000.0, "gate", "hold").unwrap();
         assert!((live - 126.0).abs() < 3.0, "live hold {live}");
         assert!(log_to_wire(0.019, 0.02, 2000.0, "gate", "hold").is_err());

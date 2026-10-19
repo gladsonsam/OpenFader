@@ -43,28 +43,25 @@
 //!   Channel-strip scope only here, so no arm.
 //! - `preamp/on`: xair-api README claims it but `shared.py` defines no such
 //!   leaf, and `/ch/16/preamp/on` is silent. No arm.
-//! - `config/color` on `/ch/16`: an earlier probe round logged this as
-//!   silent, but a 2026-10-18 driver-path re-read answers (`,i` 0) and a
-//!   same-value write-back on ch2 ACKs with zero state change — consistent
-//!   with `look.rs` (`/ch/01`, `/ch/16`, `/lr` color all answer). The old
-//!   silence note was wrong; struck, not trusted.
+//! - `config/color` answers (`,i` 0 on `/ch/16`, 2026-10-18 driver-path
+//!   re-read; same-value write-back on ch2 ACKs with zero state change).
 
 use openmix_transport::osc;
 use rosc::{OscMessage, OscType};
 
 /// USB-return source index bounds (firmware map: `rtnsrc [0,17] // U01..U18`).
 pub const RTNSRC_MIN: i32 = 0;
-/// USB-return source index bounds (firmware map: `rtnsrc [0,17] // U01..U18`).
+/// USB-return source index upper bound (see [`RTNSRC_MIN`]).
 pub const RTNSRC_MAX: i32 = 17;
 
 /// USB-return trim bounds in dB (firmware map + xair-api `usbtrim`).
 pub const RTNTRIM_MIN_DB: f32 = -18.0;
-/// USB-return trim bounds in dB (firmware map + xair-api `usbtrim`).
+/// USB-return trim upper bound (see [`RTNTRIM_MIN_DB`]).
 pub const RTNTRIM_MAX_DB: f32 = 18.0;
 
 /// HPF corner bounds in Hz (firmware map + xair-api `highpassfilter`).
 pub const HPF_MIN_HZ: f32 = 20.0;
-/// HPF corner bounds in Hz (firmware map + xair-api `highpassfilter`).
+/// HPF corner upper bound (see [`HPF_MIN_HZ`]).
 pub const HPF_MAX_HZ: f32 = 400.0;
 
 /// OSC address of the USB-return source selector (firmware `rtnsrc`, xair-api
