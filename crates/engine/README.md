@@ -178,7 +178,7 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   `min`,`max`,`default`,`scale`}]}]},"routing":{`groups`:[{`key`,
   `label`,`count`}],`per_strip`,`supported`},"groups":{`buses`,
   `subgroups`,`mute_groups`},"files":{`supported`}}`
-  — supported catalogue entries (v2: 159 ids) plus the rest in catalogue
+  — supported catalogue entries (v2: 176 ids) plus the rest in catalogue
   order; `scope` is the legacy single-scope tag (kept for back-compat),
   `scopes` the v2 strip-kind set the id applies to (the poller filters on
   it: DCA strips get fader/mute/name/color only). `topology` is the
@@ -344,7 +344,7 @@ per-connection counters only exist where the socket is.
 
 ## Catalogue (v2)
 
-159 ids (`openmix_core::params::CATALOGUE`): the v1 set (fader/mute/name,
+176 ids (`openmix_core::params::CATALOGUE`): the v1 set (fader/mute/name,
 gain/phantom/usbreturn/trim/polarity/pan/hpf, gate/comp/eq on, 4-band EQ,
 legacy `aux1..8`/`fx1..4` sends — kept verbatim for the v3 UI) plus strip
 look (`color` 0..15, `icon`, `link`, `source`), `delay_on`/`delay_ms`
@@ -354,7 +354,7 @@ knee/makeup/att/hold/rel/mode/det/env/mix/auto`, ratio as number
 `1.1..=100`), EQ band 5, and generic `send1..16_level/tap/pan/on`
 (`send1..6` alias the bus sends, `send7..10` the FX sends on X-Air;
 `send11..16` are sim-only). Drivers advertise honest subsets
-(sim 159, xair 105, dl32s 3); unsupported ids land in
+(sim 176, xair 117, dl32s 3); unsupported ids land in
 `caps.unsupported` and the UI collapses them. Ranges come from the
 catalogue via `caps` — never invented.
 

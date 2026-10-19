@@ -13,6 +13,8 @@ Commands:
   fader <ch> <0-100>         set channel fader (1-based channel number)
   mute <ch> <on|off>         set channel mute
   name <ch> <name>           set channel name (sim only)
+  param <ch> <id> [value]    get/set any catalogue param in engineering units
+                             (e.g. `param 2 pan 25`); with no value, reads back
   meters                     print one fake meter frame
   discover [--timeout MS]    X-Air LAN discovery (/xinfo broadcast)
 
@@ -31,6 +33,40 @@ fn parse_ch(s: &str, count: usize) -> anyhow::Result<StripId> {
         anyhow::bail!("channel must be 1..={count}, got {ch}");
     }
     Ok(StripId((ch - 1) as u16))
+}
+
+fn parse_bool_word(raw: &str) -> anyhow::Result<bool> {
+    match raw.to_lowercase().as_str() {
+        "on" | "1" | "true" => Ok(true),
+        "off" | "0" | "false" => Ok(false),
+        _ => anyhow::bail!("boolean needs on|off, got {raw:?}"),
+    }
+}
+
+/// Build a `ParamValue` for `id` from one CLI word, typed by the canonical
+/// catalogue (`float`/`enum` → number, `bool` → on/off words, `text` → raw
+/// string). Unknown ids (desk leaves this catalogue does not name yet)
+/// fall back to number → bool-word → string, so the CLI can already drive
+/// them on hardware that answers without a per-id subcommand.
+fn parse_param_value(id: &str, raw: &str) -> anyhow::Result<ParamValue> {
+    use openmix_core::params::{find, ParamKind};
+    match find(id).map(|d| d.kind) {
+        Some(ParamKind::Bool) => parse_bool_word(raw).map(ParamValue::Bool),
+        Some(ParamKind::Text) => Ok(ParamValue::Text(raw.to_string())),
+        Some(ParamKind::Float | ParamKind::Enum) => raw
+            .parse::<f32>()
+            .map(ParamValue::Float)
+            .map_err(|_| anyhow::anyhow!("{id} needs a number, got {raw:?}")),
+        None => {
+            if let Ok(v) = raw.parse::<f32>() {
+                return Ok(ParamValue::Float(v));
+            }
+            if let Ok(b) = parse_bool_word(raw) {
+                return Ok(ParamValue::Bool(b));
+            }
+            Ok(ParamValue::Text(raw.to_string()))
+        }
+    }
 }
 
 /// Static dispatch over drivers (`MixerDriver` is not dyn-compatible due to
@@ -333,6 +369,32 @@ async fn main() -> anyhow::Result<()> {
             drv.set_name(strip, name).await?;
             println!("ch{} name -> {name}", strip.0 + 1);
         }
+        "param" => {
+            let strip = parse_ch(
+                rest.get(1)
+                    .ok_or_else(|| anyhow::anyhow!("usage: param <ch> <id> [value]"))?,
+                count,
+            )?;
+            let id = rest
+                .get(2)
+                .ok_or_else(|| anyhow::anyhow!("usage: param <ch> <id> [value]"))?;
+            match rest.get(3) {
+                None => match drv.get_param(strip, id).await? {
+                    ParamValue::Float(v) => println!("ch{} {id} = {v}", strip.0 + 1),
+                    ParamValue::Bool(b) => println!(
+                        "ch{} {id} = {}",
+                        strip.0 + 1,
+                        if b { "on" } else { "off" }
+                    ),
+                    ParamValue::Text(s) => println!("ch{} {id} = {s:?}", strip.0 + 1),
+                },
+                Some(raw) => {
+                    let value = parse_param_value(id, raw)?;
+                    drv.set_param(strip, id, value).await?;
+                    println!("ch{} {id} -> {raw}", strip.0 + 1);
+                }
+            }
+        }
         "meters" => {
             let frame = drv.poll_meters();
             let shown: Vec<String> =
@@ -345,4 +407,81 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn param_value_typing_follows_catalogue() {
+        // Float/enum ids take numbers (send tap is an enum → float).
+        assert!(matches!(
+            parse_param_value("pan", "25").unwrap(),
+            ParamValue::Float(_)
+        ));
+        assert!(matches!(
+            parse_param_value("send1_tap", "2").unwrap(),
+            ParamValue::Float(_)
+        ));
+        // Bool ids take on/off words.
+        assert_eq!(
+            parse_param_value("mute", "on").unwrap(),
+            ParamValue::Bool(true)
+        );
+        assert_eq!(
+            parse_param_value("phantom", "off").unwrap(),
+            ParamValue::Bool(false)
+        );
+        // Text ids keep the raw string.
+        assert_eq!(
+            parse_param_value("name", "TEST").unwrap(),
+            ParamValue::Text("TEST".to_string())
+        );
+        // Wrong shapes fail before touching the desk.
+        assert!(parse_param_value("pan", "abc").is_err());
+        assert!(parse_param_value("mute", "maybe").is_err());
+    }
+
+    #[test]
+    fn param_value_unknown_id_falls_back() {
+        // Ids this catalogue does not name (future desk leaves) still
+        // parse: number → bool-word → string, so the CLI can drive them on
+        // hardware that answers without a per-id subcommand.
+        assert!(matches!(
+            parse_param_value("not_a_real_param", "1").unwrap(),
+            ParamValue::Float(_)
+        ));
+        assert_eq!(
+            parse_param_value("not_a_real_param", "on").unwrap(),
+            ParamValue::Bool(true)
+        );
+        assert_eq!(
+            parse_param_value("not_a_real_param", "OffX").unwrap(),
+            ParamValue::Text("OffX".to_string())
+        );
+    }
+
+    #[test]
+    fn param_value_new_xair_ids_follow_catalogue() {
+        // v2b ids (lr_assign, sendN_grpon, automix_weight, fx_insert):
+        // typed by the catalogue, so the generic `param` command drives
+        // them with no per-id CLI work.
+        assert_eq!(
+            parse_param_value("lr_assign", "1").unwrap(),
+            ParamValue::Bool(true)
+        );
+        assert_eq!(
+            parse_param_value("send1_grpon", "off").unwrap(),
+            ParamValue::Bool(false)
+        );
+        assert!(matches!(
+            parse_param_value("automix_weight", "0.5").unwrap(),
+            ParamValue::Float(_)
+        ));
+        assert_eq!(
+            parse_param_value("fx_insert", "on").unwrap(),
+            ParamValue::Bool(true)
+        );
+    }
 }

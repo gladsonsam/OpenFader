@@ -108,6 +108,33 @@ pub fn fx_type(slot: u8) -> anyhow::Result<String> {
     Ok(format!("/fx/{slot}/type"))
 }
 
+/// OSC address of the FX slot insert switch (`/fx/N/insert`, int `1`/`0`).
+///
+/// Doc sources: the community X-Air OSC table gives `/fx/1/insert` int
+/// `0..=1` (OFF/ON). Owner-rig verified 2026-10-19 (XR18 FW 1.20):
+/// `/fx/4/insert` = 1 matches the `/fx/4 ,ii` = (type, insert) container,
+/// slots 1–3 read 0.
+///
+/// ```
+/// # use openmix_proto_xair::fx::fx_insert;
+/// assert_eq!(fx_insert(1).unwrap(), "/fx/1/insert");
+/// assert_eq!(fx_insert(4).unwrap(), "/fx/4/insert");
+/// ```
+pub fn fx_insert(slot: u8) -> anyhow::Result<String> {
+    check_slot(slot)?;
+    Ok(format!("/fx/{slot}/insert"))
+}
+
+/// Encode an effect-type index (`0..=60`, [`FX_TYPE_MIN`]..=[`FX_TYPE_MAX`])
+/// to the wire int. Validated BEFORE any I/O so out-of-range never hits
+/// the desk.
+pub fn fx_type_to_arg(effect: u8) -> anyhow::Result<rosc::OscType> {
+    if !(FX_TYPE_MIN..=FX_TYPE_MAX).contains(&effect) {
+        anyhow::bail!("fx type {effect} out of range {FX_TYPE_MIN}..={FX_TYPE_MAX}");
+    }
+    Ok(rosc::OscType::Int(effect as i32))
+}
+
 /// Lowest/highest slot, re-exported for driver bounds checks.
 pub use openmix_core::fx::FX_SLOT_MAX as SLOT_MAX;
 pub use openmix_core::fx::FX_SLOT_MIN as SLOT_MIN;
@@ -1395,6 +1422,13 @@ mod tests {
         assert_eq!(fx_field(4, 63).unwrap(), "fx4_par64");
         assert_eq!(fx_type(1).unwrap(), "/fx/1/type");
         assert_eq!(fx_type(4).unwrap(), "/fx/4/type");
+        assert_eq!(fx_insert(1).unwrap(), "/fx/1/insert");
+        assert_eq!(fx_insert(4).unwrap(), "/fx/4/insert");
+        assert!(fx_insert(0).is_err());
+        assert!(fx_insert(5).is_err());
+        assert_eq!(fx_type_to_arg(0).unwrap(), OscType::Int(0));
+        assert_eq!(fx_type_to_arg(60).unwrap(), OscType::Int(60));
+        assert!(fx_type_to_arg(61).is_err());
     }
 
     #[test]
