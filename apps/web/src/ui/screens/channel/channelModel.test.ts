@@ -72,7 +72,7 @@ function ok(cond: unknown, msg: string): void {
   ok(vm.faderAria === 'Fader Ch 2 ' + vm.readout + ' dB', 'fader aria ' + vm.faderAria);
 }
 
-// --- channel prev/next wraps (store action the strip buttons call) ---
+// --- channel prev/next wraps (store action the topbar buttons call) ---
 
 {
   const w0 = initialWorld(); // sel in1

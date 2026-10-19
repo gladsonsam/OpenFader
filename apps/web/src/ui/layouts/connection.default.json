@@ -88,6 +88,28 @@
               "do": "ui.disconnect"
             }
           }
+        },
+        {
+          "id": "use-page-host",
+          "module": "btn",
+          "props": {
+            "height": 46,
+            "fontSize": 14,
+            "padding": "0 18px",
+            "bg": "transparent",
+            "fg": "var(--u4-text-1)",
+            "border": "1px dashed var(--u4-green)",
+            "bare": true
+          },
+          "bind": {
+            "label": "conn.fixLabel"
+          },
+          "when": "conn.showFix",
+          "on": {
+            "press": {
+              "do": "ui.usePageHost"
+            }
+          }
         }
       ]
     },
@@ -171,6 +193,33 @@
       ]
     },
     {
+      "id": "dev-empty",
+      "module": "text",
+      "props": {
+        "size": 13,
+        "color": "var(--u4-text-7)"
+      },
+      "bind": {
+        "value": "conn.emptyText"
+      },
+      "when": "conn.emptyText"
+    },
+    {
+      "id": "manual-desk",
+      "module": "manual-desk",
+      "when": "conn.showManualDesk",
+      "on": {
+        "probe-desk": {
+          "do": "ui.probeDesk",
+          "args": {
+            "ip": {
+              "$expr": "payload.ip"
+            }
+          }
+        }
+      }
+    },
+    {
       "id": "relay",
       "module": "relay-card",
       "when": { "device": ["phone", "tablet"] },
@@ -179,7 +228,8 @@
         "phase": "relay.phase",
         "message": "relay.message",
         "latencyMs": "relay.latencyMs",
-        "strips": "relay.strips"
+        "strips": "relay.strips",
+        "suggestion": "relay.suggestion"
       },
       "on": {
         "connect": {
@@ -189,6 +239,9 @@
               "$expr": "payload.host"
             }
           }
+        },
+        "use-page-host": {
+          "do": "ui.usePageHost"
         },
         "disconnect": {
           "do": "ui.disconnectRelay"

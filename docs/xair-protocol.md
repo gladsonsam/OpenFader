@@ -66,7 +66,7 @@ Notes:
 
 ## Address table: param plane (rig-verified 2026-10-18 unless noted)
 
-Implemented in `proto-xair` (`eq.rs`, `dynamics.rs`, `mix.rs`), covered by
+Implemented in `proto-xair` (`eq.rs`, `gate.rs`, `comp.rs`, `mix.rs`), covered by
 strict fake-desk loopback tests. Rows marked VERIFIED were read back from
 the owner XR18 (FW 1.20) through the driver param path (readbacks in
 `docs/xr18-baseline.md` §7); the rest are community-documented and say so

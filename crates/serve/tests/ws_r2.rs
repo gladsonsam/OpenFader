@@ -86,22 +86,40 @@ async fn drain_snapshot(rx: &mut WsRx) {
 
 #[tokio::test]
 async fn ws_r2_devices_link_info() {
+    // Honest boot over WS: no sim rows in the snapshot, link disconnected.
     let url = serve().await;
     let (mut tx, mut rx) = connect(&url).await;
     drain_snapshot(&mut rx).await;
     send(&mut tx, json!({"cmd":"scan"})).await;
     let devices = next_typed(&mut rx, "devices").await;
     let list = devices.get("list").and_then(Value::as_array).unwrap();
-    assert_eq!(list.len(), 3);
-    assert_eq!(list[0].get("ip"), Some(&json!("192.168.1.20")));
-    assert_eq!(list[1].get("state"), Some(&json!("available")));
-    assert_eq!(list[2].get("kind"), Some(&json!("io")));
+    // Whatever the LAN holds, NOTHING is ever sim: every row carries its
+    // source (broadcast/linked/manual); the seed rows had none.
+    assert!(
+        list.iter()
+            .all(|d| d.get("via").and_then(Value::as_str).is_some()),
+        "scan rows are all sourced, never sim seeds (got {list:?})"
+    );
+    assert!(
+        devices
+            .get("scanned_at")
+            .and_then(Value::as_u64)
+            .unwrap_or(0)
+            > 0
+    );
 
+    // Unknown device ids error without dropping the session.
     send(&mut tx, json!({"cmd":"connect_device","id":"mon"})).await;
-    let link = next_typed(&mut rx, "link").await;
-    assert_eq!(link.get("state"), Some(&json!("connected")));
-    assert_eq!(link.get("name"), Some(&json!("Monitor Console")));
-    assert_eq!(link.get("fs"), Some(&json!(48000)));
+    let err = next_typed(&mut rx, "error").await;
+    assert!(err
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .contains("unknown device"));
+    // The session survives: fader + info still work.
+    send(&mut tx, json!({"cmd":"fader","ch":0,"value":0.5})).await;
+    next_typed(&mut rx, "state").await;
+    send(&mut tx, json!({"cmd":"info"})).await;
     let info = next_typed(&mut rx, "info").await;
     assert_eq!(info.get("sample_rate"), Some(&json!(48000)));
     assert_eq!(info.get("driver"), Some(&json!("sim")));

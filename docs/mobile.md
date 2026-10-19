@@ -130,8 +130,11 @@ Verify (add if missing) inside `<manifest>`:
   socket, including Rust UDP, fails.
 - `ACCESS_NETWORK_STATE` (normal) is recommended so the app can detect
   LAN loss vs. mixer silence.
-- Do **not** need: `CHANGE_WIFI_MULTICAST_STATE` (multicast lock — we use
-  unicast to a known IP, no discovery multicast), `ACCESS_FINE_LOCATION`
+- Do **not** need: `CHANGE_WIFI_MULTICAST_STATE` (multicast lock — device
+  discovery is UDP *broadcast* (`/xinfo` to 255.255.255.255 + subnet
+  directed broadcast) with *unicast* replies, plus unicast manual
+  add-by-IP; no 224.0.0.251 multicast traffic is sent or awaited, so no
+  lock is needed to receive), `ACCESS_FINE_LOCATION`
   (only for Wi-Fi SSID/BSSID scans, which we do not do).
 - Cleartext HTTP (`usesCleartextTraffic`) only matters for the dev-server
   URL during `android dev`; release builds load bundled assets. If `dev`
