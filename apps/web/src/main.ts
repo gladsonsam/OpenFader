@@ -26,7 +26,7 @@ async function boot(el: HTMLElement) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     });
   }
-  // Native mobile bridge (edge-to-edge, wake-lock, logging). No-op in
+  // Native mobile bridge (wake-lock, logging). No-op in
   // browser/PWA; never blocks first paint.
   import('./mobile.ts').then((m) => m.initMobile()).catch(() => undefined);
   const m = await import('./ui/mount.ts');

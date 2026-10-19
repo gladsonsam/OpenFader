@@ -72,7 +72,9 @@ body {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   margin: 0;
-  /* Edge-to-edge (Tauri mobile plugin injects --safe-area-*, PWA falls
+  /* Safe-area padding (env() fallback; was fed by the edge-to-edge
+     plugin, dropped 2026-10-19 until upstream ships perms in the crate).
+     PWA falls
    * back to env() via viewport-fit=cover). Content clears the status
    * bar / notch up top and the Home indicator / nav bar down low. */
   padding-top: var(--safe-area-top, env(safe-area-inset-top, 0px));

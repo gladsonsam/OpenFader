@@ -17,7 +17,6 @@ tauri-plugin-store = "2"
 tauri-plugin-log = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-haptics = "2"
-tauri-plugin-edge-to-edge = "0.3"
 tauri-plugin-keep-screen-on = "0.1"
 openmix-engine = { path = "../crates/engine" }
 
