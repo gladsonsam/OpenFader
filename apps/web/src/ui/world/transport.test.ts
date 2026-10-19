@@ -147,19 +147,32 @@ function manualTimers(timers: Timer[]): {
   ok(st[st.length - 1] === false, 'replay status');
 }
 
-// ---- TauriTransport stub ----
+// ---- TauriTransport (embedded engine IPC; invoke is injected) ----
 
 {
-  const t = new TauriTransport();
-  let threw = 0;
-  for (const fn of [() => t.connect(), () => t.send('x'), () => t.onMessage(() => {}), () => t.onStatus(() => {})]) {
-    try {
-      fn();
-    } catch (e) {
-      if (String(e).includes('ME2')) threw++;
-    }
+  // Constructing + wiring callbacks never throws, with or without a shell.
+  const seen: string[] = [];
+  const t = new TauriTransport({
+    invoke: async (cmd) => {
+      seen.push(cmd);
+      return [];
+    },
+    pollMs: 100000,
+    setTimer: () => null,
+    clearTimer: () => {},
+  });
+  ok(t.url === 'tauri://engine', 'tauri url');
+  let threw = false;
+  try {
+    t.connect();
+    t.send('{"cmd":"hello"}');
+    t.onMessage(() => {});
+    t.onStatus(() => {});
+    t.close();
+  } catch {
+    threw = true;
   }
-  ok(threw === 4, 'tauri stub throws with ME2 pointer');
+  ok(!threw, 'tauri methods do not throw without a shell');
 }
 
 console.log(`transport: ${passed} passed, ${failed} failed`);

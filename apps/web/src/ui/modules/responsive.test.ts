@@ -91,10 +91,10 @@ const masterPhone = applyVariant(node(channel, 'master'), 'phone');
 assert.equal(masterPhone.module, 'row');
 assert.deepEqual((masterPhone.children ?? []).map(c => c.id), ['m-side']);
 const side = masterPhone.children![0];
-assert.deepEqual((side.children ?? []).map(c => c.id), ['name', 'step', 'pan', 'mute', 'src']);
+assert.deepEqual((side.children ?? []).map(c => c.id), ['name', 'pan', 'mute', 'state-icons', 'src', 'm-groups']);
 // Copied phone nodes keep their bindings and actions.
 assert.equal(node(side, 'pan').bind?.['value'], 'master.pan');
-assert.equal((node(side, 'step').on?.['next'] as { do: string }).do, 'ui.stepChannel');
+assert.equal((node(side, 'mute').on?.['press'] as { do: string }).do, 'ui.toggleMute');
 
 // Settings phone: single column (desktop keeps the auto-fit grid).
 assert.equal(

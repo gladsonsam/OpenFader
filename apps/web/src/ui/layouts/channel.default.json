@@ -918,24 +918,6 @@
                   }
                 },
                 {
-                  "id": "step",
-                  "module": "channel-stepper",
-                  "on": {
-                    "prev": {
-                      "do": "ui.stepChannel",
-                      "args": {
-                        "delta": -1
-                      }
-                    },
-                    "next": {
-                      "do": "ui.stepChannel",
-                      "args": {
-                        "delta": 1
-                      }
-                    }
-                  }
-                },
-                {
                   "id": "pan",
                   "module": "channel-pan-bar",
                   "bind": {
@@ -977,56 +959,19 @@
                   }
                 },
                 {
+                  "id": "state-icons",
+                  "module": "strip-state-icons",
+                  "bind": {
+                    "desk": "selState"
+                  },
+                  "when": "selState != null"
+                },
+                {
                   "id": "src",
                   "module": "channel-source-label",
                   "bind": {
                     "src": "master.src"
                   }
-                }
-              ]
-            },
-            {
-              "id": "m-fader",
-              "module": "col",
-              "props": { "flex": "1", "minWidth": 0, "box": "content-box" },
-              "children": [
-                {
-                  "id": "fader-wrap",
-                  "module": "col",
-                  "props": {
-                    "flex": "1",
-                    "minHeight": 180,
-                    "box": "content-box"
-                  },
-                  "children": [
-                    {
-                      "id": "fader",
-                      "module": "channel-fader",
-                      "bind": {
-                        "pos": "master.faderPos",
-                        "readout": "master.readout",
-                        "aria": "master.faderAria",
-                        "accent": "master.accent",
-                        "readColor": "master.readColor",
-                        "fine": "store.fine",
-                        "meter": "stripMeter",
-                        "meterFrozen": "frozen"
-                      },
-                      "on": {
-                        "input": {
-                          "do": "ui.setFader",
-                          "args": {
-                            "id": {
-                              "$expr": "selId"
-                            },
-                            "value": {
-                              "$expr": "payload.value"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
                 },
                 {
                   "id": "m-groups",
@@ -1071,24 +1016,6 @@
           }
         },
         {
-          "id": "step",
-          "module": "channel-stepper",
-          "on": {
-            "prev": {
-              "do": "ui.stepChannel",
-              "args": {
-                "delta": -1
-              }
-            },
-            "next": {
-              "do": "ui.stepChannel",
-              "args": {
-                "delta": 1
-              }
-            }
-          }
-        },
-        {
           "id": "pan",
           "module": "channel-pan-bar",
           "bind": {
@@ -1128,6 +1055,14 @@
               }
             }
           }
+        },
+        {
+          "id": "state-icons",
+          "module": "strip-state-icons",
+          "bind": {
+            "desk": "selState"
+          },
+          "when": "selState != null"
         },
         {
           "id": "src",

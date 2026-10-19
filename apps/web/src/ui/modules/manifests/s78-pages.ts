@@ -17,6 +17,7 @@ import SrcTile from '../../screens/routing/SrcTile.svelte';
 import StatusDot from '../../screens/connection/StatusDot.svelte';
 import DeviceRow from '../../screens/connection/DeviceRow.svelte';
 import RelayCard from '../../screens/connection/RelayCard.svelte';
+import ManualDesk from '../../screens/connection/ManualDesk.svelte';
 
 function as<P>(c: unknown): Component<ModuleProps<P>> {
   return c as Component<ModuleProps<P>>;
@@ -131,10 +132,21 @@ export const manifests: ModuleManifest[] = [
       message: { type: 'text', default: 'Not connected' },
       latencyMs: { type: 'number' },
       strips: { type: 'number', default: 0 },
+      suggestion: { type: 'text' },
     },
     defaults: { host: '127.0.0.1:8080', phase: 'idle', message: 'Not connected' },
     size: { flex: true },
-    events: [{ name: 'connect', args: ['host'] }, { name: 'disconnect' }],
+    events: [{ name: 'connect', args: ['host'] }, { name: 'use-page-host' }, { name: 'disconnect' }],
+  },
+  {
+    id: 'manual-desk',
+    title: 'Manual desk add (add-by-IP)',
+    category: 'screen',
+    component: as(ManualDesk),
+    props: {},
+    defaults: {},
+    size: { flex: true },
+    events: [{ name: 'probe-desk', args: ['ip'] }],
   },
 ];
 

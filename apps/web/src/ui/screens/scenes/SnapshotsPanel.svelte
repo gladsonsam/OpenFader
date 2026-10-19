@@ -97,18 +97,20 @@
   }
 
   const cellBtn =
-    'box-sizing:border-box;min-width:0;height:36px;padding:0 10px;border-radius:3px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #3a414c;';
+    'box-sizing:border-box;min-width:0;height:36px;padding:0 10px;border-radius:3px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--u4-line-ctl);';
   function tog(on: boolean): string {
-    return on ? 'background:#e8edf5;color:#0b0f14;' : 'background:#0e1520;color:#7f8a9c;';
+    return on
+      ? 'background:var(--u4-chip-on-bg);color:var(--u4-chip-on-fg);'
+      : 'background:var(--u4-panel-bg);color:var(--u4-text-9);';
   }
 </script>
 
 <div
-  style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:3px;border:1px solid #2a3443;background:#0b111b"
+  style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg-2)"
 >
   <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-    <span style="font-size:15px;font-weight:700;color:#eef2f5;margin-right:auto">Snapshots · engine library</span>
-    <span style="font-size:11px;color:#8792a4">{deskName} has no desk-native snapshots</span>
+    <span style="font-size:15px;font-weight:700;color:var(--u4-text-2);margin-right:auto">Snapshots · engine library</span>
+    <span style="font-size:11px;color:var(--u4-text-7)">{deskName} has no desk-native snapshots</span>
   </div>
   <div style="display:flex;gap:6px;flex-wrap:wrap">
     <input
@@ -116,32 +118,32 @@
       placeholder="Snapshot name"
       aria-label="Snapshot name"
       maxlength="24"
-      style="box-sizing:border-box;flex:1 1 140px;min-width:0;height:36px;padding:0 10px;border-radius:3px;border:1px solid #3a414c;background:#0e1520;color:#e8edf5;font-size:13px"
+      style="box-sizing:border-box;flex:1 1 140px;min-width:0;height:36px;padding:0 10px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-panel-bg);color:var(--u4-text-1);font-size:13px"
     />
-    <button onclick={save} aria-label="Save snapshot" style="{cellBtn}background:#5cdb5c;color:#10240f;border-color:#5cdb5c">Save</button>
-    <button onclick={() => onClear?.()} aria-label="Delete all snapshots" style="{cellBtn}background:#2b3038;color:#e8edf5;">Clear</button>
+    <button onclick={save} aria-label="Save snapshot" style="{cellBtn}background:var(--u4-green);color:var(--u4-green-ink);border-color:var(--u4-green)">Save</button>
+    <button onclick={() => onClear?.()} aria-label="Delete all snapshots" style="{cellBtn}background:var(--u4-btn-bg);color:var(--u4-text-1);">Clear</button>
     <button onclick={() => setAll(true)} aria-label="Select all scope" style="{cellBtn}{tog(isFull)}">All</button>
   </div>
   {#if entries.length === 0}
-    <div style="font-size:12px;color:#7f8a9c">No snapshots saved yet — name one and press Save.</div>
+    <div style="font-size:12px;color:var(--u4-text-9)">No snapshots saved yet — name one and press Save.</div>
   {:else}
     <div style="display:flex;flex-direction:column;gap:4px;max-height:220px;overflow-y:auto">
       {#each entries as e (e.number)}
         <div
           style="box-sizing:border-box;display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:3px;border:1px solid {e.current
-            ? '#7be27b'
-            : '#222a36'};background:#0e1520"
+            ? 'var(--u4-green-hi)'
+            : 'var(--u4-line-faint)'};background:var(--u4-panel-bg)"
         >
-          <span style="font-size:13px;font-weight:700;color:#eef2f5;min-width:36px">{String(e.number).padStart(3, '0')}</span>
-          <span style="font-size:13px;color:#c9d1dc;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{e.name}</span>
-          {#if e.current}<span style="font-size:10px;font-weight:700;color:#7be27b">CURRENT</span>{/if}
-          <button onclick={() => onLoad?.(e.number, scopeForLoad())} aria-label={'Load snapshot ' + e.number} style="{cellBtn}background:#5cdb5c;color:#10240f;border-color:#5cdb5c">Load</button>
-          <button onclick={() => onDelete?.(e.number)} aria-label={'Delete snapshot ' + e.number} style="{cellBtn}background:#2b3038;color:#f0b44a;">Del</button>
+          <span style="font-size:13px;font-weight:700;color:var(--u4-text-2);min-width:36px">{String(e.number).padStart(3, '0')}</span>
+          <span style="font-size:13px;color:var(--u4-text-4);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{e.name}</span>
+          {#if e.current}<span style="font-size:10px;font-weight:700;color:var(--u4-green-hi)">CURRENT</span>{/if}
+          <button onclick={() => onLoad?.(e.number, scopeForLoad())} aria-label={'Load snapshot ' + e.number} style="{cellBtn}background:var(--u4-green);color:var(--u4-green-ink);border-color:var(--u4-green)">Load</button>
+          <button onclick={() => onDelete?.(e.number)} aria-label={'Delete snapshot ' + e.number} style="{cellBtn}background:var(--u4-btn-bg);color:var(--u4-amber);">Del</button>
         </div>
       {/each}
     </div>
   {/if}
-  <div style="font-size:12px;font-weight:700;color:#7f8a9c">Recall scope {isFull ? '(full plane)' : '(partial)'}</div>
+  <div style="font-size:12px;font-weight:700;color:var(--u4-text-9)">Recall scope {isFull ? '(full plane)' : '(partial)'}</div>
   <div style="display:flex;gap:4px;flex-wrap:wrap" role="group" aria-label="Channel banks">
     {#each banks as b (b.key)}
       <button

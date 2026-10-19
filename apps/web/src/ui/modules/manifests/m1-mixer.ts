@@ -19,6 +19,7 @@ import StripMute from '../../screens/mixer/StripMute.svelte';
 import StripFader from '../../screens/mixer/StripFader.svelte';
 import StripName from '../../screens/mixer/StripName.svelte';
 import StripGroupBadges from '../../screens/mixer/StripGroupBadges.svelte';
+import StripStateIcons from '../../screens/mixer/StripStateIcons.svelte';
 import StripNameEditor from '../../screens/mixer/StripNameEditor.svelte';
 import StripSolo from '../../screens/mixer/StripSolo.svelte';
 import StripEmpty from '../../screens/mixer/StripEmpty.svelte';
@@ -176,6 +177,17 @@ export const manifests: ModuleManifest[] = [
     title: 'Strip desk-group badges',
     category: 'strip',
     component: as(StripGroupBadges),
+    props: {
+      desk: { type: 'object' },
+    },
+    defaults: {},
+    size: { minW: 60 },
+  },
+  {
+    id: 'strip-state-icons',
+    title: 'Strip status icons',
+    category: 'strip',
+    component: as(StripStateIcons),
     props: {
       desk: { type: 'object' },
     },

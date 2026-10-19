@@ -247,6 +247,8 @@ export interface DeviceView {
   kind: string;
   state: string;
   fw: string | null;
+  /** Row source: broadcast/linked/manual (older engines omit it). */
+  via: string | null;
 }
 export interface LinkView {
   state: string;

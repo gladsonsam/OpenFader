@@ -6,6 +6,7 @@
 <script lang="ts">
   import { ui } from '../../state/uiStore.svelte.ts';
   import { live } from '../../state/live.svelte.ts';
+  import { useDeviceClass } from '../../modules/device.svelte.ts';
   import { bridgeStrip } from '../../state/engineBridge.ts';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
   import { fixtureSource } from '../../modules/context.ts';
@@ -17,6 +18,11 @@
 
   const store = createProfileStore('routing');
   bindUiActions(ui.do, { profile: store });
+
+  // Phone rework: the layout gates the matrix (`device != 'phone'`) and the
+  // list/picker patcher (`device == 'phone'`) on the live device class, so it
+  // has to reach the renderer (desktop default keeps fixture baselines exact).
+  const device = useDeviceClass();
 
   // Live patch overlay (item 9): online with a supporting driver, engine
   // patches replace the fixture source labels (desk truth wins); xair
@@ -59,4 +65,4 @@
   const source = fixtureSource({});
 </script>
 
-<LayoutRenderer layout={tree} {source} {scope} />
+<LayoutRenderer layout={tree} {source} {scope} device={device.now} />

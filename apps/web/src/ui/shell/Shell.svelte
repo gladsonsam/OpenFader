@@ -106,6 +106,8 @@
     onSettings={() => ui.do.goSettings()}
     onScene={() => ui.do.openScenes()}
     onMeters={() => meterBridge.toggle()}
+    onPrevChannel={() => ui.do.stepChannel(-1)}
+    onNextChannel={() => ui.do.stepChannel(1)}
     metersActive={meterBridge.open}
   />
   <div style={bodyStyle}>
