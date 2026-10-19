@@ -211,6 +211,21 @@
       "when": "conn.emptyText"
     },
     {
+      "id": "manual-desk",
+      "module": "manual-desk",
+      "when": "conn.showManualDesk",
+      "on": {
+        "probe-desk": {
+          "do": "ui.probeDesk",
+          "args": {
+            "ip": {
+              "$expr": "payload.ip"
+            }
+          }
+        }
+      }
+    },
+    {
       "id": "offline",
       "module": "row",
       "props": {
