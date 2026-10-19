@@ -4,9 +4,11 @@ Rules: one worker per file-area (no overlapping paths). New items go to
 Queued with the owner's words. A worker is dispatched only when a slot is
 free AND its files don't collide with the running worker.
 
-## In flight (1/2 slots — 1 free)
+## In flight (2/2 slots full)
 1. Channel topbar simplification (running) — back-to-mixer + name +
    prev/next only, switcher removed.
+2. Android network + sim removal (running) — real LAN access on-device
+   (multicast lock etc.), sims out of device lists (offline == sim).
 
 ## Queued (in order)
 1. G5 fix (REAL product gap from verification): solo has no desk→app
