@@ -1,0 +1,101 @@
+name: android
+
+# Debug APK for sideloading on every push; signed release AAB/APK on version tags.
+# Release signing needs these repo secrets (see docs/mobile.md §6):
+#   ANDROID_KEYSTORE_B64 - base64 of the upload .jks
+#   ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  debug-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: install sdk packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+        working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
+      - name: init android project
+        working-directory: src-tauri
+        run: npx -y @tauri-apps/cli@2 android init
+      - name: build debug apk
+        working-directory: src-tauri
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+        run: npx -y @tauri-apps/cli@2 android build --debug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openmix-debug-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+
+  release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: install sdk packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+        working-directory: apps/web
+      - run: npm run build
+        working-directory: apps/web
+      - name: init android project
+        working-directory: src-tauri
+        run: npx -y @tauri-apps/cli@2 android init
+      - name: restore keystore
+        run: echo "$ANDROID_KEYSTORE_B64" | base64 -d > /tmp/openmix-upload.jks
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+      - name: build signed bundle + apk
+        working-directory: src-tauri
+        env:
+          ANDROID_HOME: ${{ env.ANDROID_HOME }}
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/26.1.10909125
+        run: npx -y @tauri-apps/cli@2 android build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openmix-release-android
+          path: src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
