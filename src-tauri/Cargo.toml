@@ -30,3 +30,10 @@ custom-protocol = ["tauri/custom-protocol"]
 [lib]
 name = "openmix_app"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[patch.crates-io]
+# Vendored 2026-10-19: published 0.1.4 android/build.gradle.kts uses the old
+# AGP DSL (targetSdk/kotlinOptions) which AGP 9 rejects. Local registry was
+# hand-patched before; this makes the fix committed and reproducible (CI +
+# fresh machines). Drop when upstream ships fixed packaging.
+tauri-plugin-keep-screen-on = { path = "vendor/tauri-plugin-keep-screen-on" }
