@@ -198,13 +198,29 @@ export interface SendRowVm {
   preAria: string;
   preBg: string;
   preFg: string;
+  /** Desk send group-on (null = unknown; row hidden unless supported). */
+  grpon: boolean | null;
+  grponSupported: boolean;
+  grponAria: string;
+  grponBg: string;
+  grponFg: string;
 }
 
-/** Sends tab rows (port of sendVals rows). */
-export function sendRowsVm(ch: Channel): SendRowVm[] {
+/** Live desk overlay for the sends tab (null = offline: GRP hides). */
+export interface DeskSendsOverlay {
+  grpon(n: number): boolean | null;
+  grponSupported(n: number): boolean;
+}
+
+/** Sends tab rows (port of sendVals rows). The desk group-on toggle rides
+ *  an optional live overlay: offline (or a desk without the leaf) the GRP
+ *  button hides and fixture baselines are untouched. */
+export function sendRowsVm(ch: Channel, desk?: DeskSendsOverlay | null): SendRowVm[] {
   if (!ch.sends) return [];
   return ch.sends.map((v, k) => {
     const pre = ch.sendPre![k];
+    const gSupported = desk?.grponSupported(k + 1) ?? false;
+    const g = gSupported ? (desk?.grpon(k + 1) ?? null) : null;
     return {
       index: k,
       name: 'Mix ' + (k + 1),
@@ -218,6 +234,11 @@ export function sendRowsVm(ch: Channel): SendRowVm[] {
       preAria: 'Mix ' + (k + 1) + ' pre-fader',
       preBg: pre ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
       preFg: pre ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
+      grpon: g,
+      grponSupported: gSupported,
+      grponAria: 'Mix ' + (k + 1) + ' group on' + (g === null ? ', state unknown' : g ? ', grouped' : ', ungrouped'),
+      grponBg: g === true ? '#e8edf5' : 'var(--u4-btn-bg)',
+      grponFg: g === true ? '#0b0f14' : 'var(--u4-text-4)',
     };
   });
 }

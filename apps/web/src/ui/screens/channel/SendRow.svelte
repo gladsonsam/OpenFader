@@ -37,6 +37,11 @@
       preAria: '',
       preBg: 'var(--u4-btn-bg)',
       preFg: 'var(--u4-text-4)',
+      grpon: null,
+      grponSupported: false,
+      grponAria: '',
+      grponBg: 'var(--u4-btn-bg)',
+      grponFg: 'var(--u4-text-4)',
     },
   );
   const fine = $derived(props.fine ?? false);
@@ -138,6 +143,16 @@
     </span>
   </button>
   <span style="width:50px;flex:none;text-align:right;font-size:13px">{row.text}</span>
+  {#if row.grponSupported}
+    <button
+      onclick={() => onEvent?.('toggleGrpon')}
+      aria-pressed={row.grpon === true ? 'true' : 'false'}
+      aria-label={row.grponAria}
+      title={row.grpon === null ? 'Group-on state unknown — tap to set' : undefined}
+      style="box-sizing:border-box;font-variant-numeric:normal;width:56px;height:40px;flex:none;border-radius:3px;border:1px solid var(--u4-line-ctl);background:{row.grponBg};color:{row.grponFg};font-size:12px;font-weight:600;cursor:pointer"
+      >{row.grpon === true ? 'GRP' : row.grpon === false ? 'grp' : 'GRP ?'}</button
+    >
+  {/if}
   <button
     onclick={() => onEvent?.('togglePre')}
     aria-pressed={row.pre ? 'true' : 'false'}

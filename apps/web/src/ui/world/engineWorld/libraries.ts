@@ -10,6 +10,7 @@ import {
   cmdBusMute,
   cmdCaptureScene,
   cmdConnectDevice,
+  cmdClearSolo,
   cmdDeleteScene,
   cmdDisconnect,
   cmdFileDownload,
@@ -367,6 +368,10 @@ export class LibraryStore {
   }
   setSolo(ch: number, soloed: boolean): void {
     this.send(cmdSolo(ch, soloed));
+  }
+  /** Fire-and-forget clear-solo (X-Air `/-action/clearsolo`; honest `unsupported` elsewhere). */
+  clearSolo(): void {
+    this.send(cmdClearSolo());
   }
   fileDownload(filename: string): void {
     this.send(cmdFileDownload(filename));

@@ -359,6 +359,11 @@ export function registerBuiltins(): void {
   uiThrough('ui.setGroupAssign', a => [a['kind'], a['id'], a['group'], a['member']], { args: { kind: 'string', id: 'string', group: 'number', member: 'boolean' }, describe: 'Set desk group membership (mg|sg; lock-checked)' });
   uiThrough('ui.setGroupMute', a => [a['kind'], a['group'], a['muted']], { args: { kind: 'string', group: 'number', muted: 'boolean' }, describe: 'Set desk group master mute (mg|sg)' });
 
+  // desk mix config + sends (live-only, caps-gated; same echo pattern)
+  uiThrough('ui.setLrAssign', a => [a['id'], a['assigned']], { args: { id: 'string', assigned: 'boolean' }, describe: 'Set desk LR assign (lock-checked)' });
+  uiThrough('ui.setAutomixWeight', a => [a['id'], a['value']], { args: { id: 'string', value: 'number' }, describe: 'Set desk automix weight 0..1 (lock-checked)' });
+  uiThrough('ui.toggleSendGrpon', a => [a['id'], a['k']], { args: { id: 'string', k: 'number' }, describe: 'Toggle desk send group-on (lock-checked)' });
+
   // connection
   registerAction('ui.scan', (args, ctx) => {
     const fn = ctx.ui['scan'];

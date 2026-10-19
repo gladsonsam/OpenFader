@@ -112,11 +112,21 @@ export function buildChannelSends(src: ViewSource, ch: number): SendView[] {
     for (let n = 1; n <= 16; n++) {
       const db = numOrNull(src.param(ch, `send${n}_level`));
       const tap = numOrNull(src.param(ch, `send${n}_tap`));
-      const on = boolOrNull(src.param(ch, `send${n}_on`));
+      // Group-on is the desk send-mute leaf (`sendN_grpon` on X-Air; the
+      // legacy `sendN_on` id on older sim caps). Prefer grpon, fall back
+      // to on so both drivers report honestly.
+      const grpon = boolOrNull(src.param(ch, `send${n}_grpon`));
+      const legacyOn = boolOrNull(src.param(ch, `send${n}_on`));
+      // Prefer the desk leaf where the driver has it (xair grpon), else
+      // the legacy id — status follows the same pick so an unconfirmed
+      // grpon reads "unknown", never the legacy "unsupported".
+      const useGrpon = src.supports(`send${n}_grpon`, ch);
+      const onVal = useGrpon ? grpon : (legacyOn ?? grpon);
+      const onStatus = useGrpon ? src.status(ch, `send${n}_grpon`) : src.status(ch, `send${n}_on`);
       out.push({
         value: field(db === null ? null : sendDbToDesign01(db, lawForDriver(src.driver)), src.status(ch, `send${n}_level`)),
         pre: field(tap === null ? null : tapToPre(tap), src.status(ch, `send${n}_tap`)),
-        on: field(on, src.status(ch, `send${n}_on`)),
+        on: field(onVal, onStatus),
       });
     }
     return out;

@@ -129,6 +129,27 @@ export function bridgeSendPre(world: World, id: string, k: number, pre: boolean)
   return world.setParam(ch, `send${k + 1}_tap`, preToTap(pre));
 }
 
+/** Send group-on write-through (desk send-mute leaf; fixture has no counterpart). */
+export function bridgeSendGrpon(world: World, id: string, k: number, grouped: boolean): boolean {
+  const ch = bridgeStrip(world, id);
+  if (ch === null || !Number.isInteger(k) || k < 0 || typeof grouped !== 'boolean') return false;
+  return world.setParam(ch, `send${k + 1}_grpon`, grouped);
+}
+
+/** LR assign write-through (`{root}/mix/lr`; fixture has no counterpart). */
+export function bridgeLrAssign(world: World, id: string, assigned: boolean): boolean {
+  const ch = bridgeStrip(world, id);
+  if (ch === null || typeof assigned !== 'boolean') return false;
+  return world.setParam(ch, 'lr_assign', assigned);
+}
+
+/** Automix weight write-through (0..1; fixture has no counterpart). */
+export function bridgeAutomixWeight(world: World, id: string, weight: number): boolean {
+  const ch = bridgeStrip(world, id);
+  if (ch === null || !Number.isFinite(weight)) return false;
+  return world.setParam(ch, 'automix_weight', Math.min(1, Math.max(0, weight)));
+}
+
 export type EqBridgeParam = 'f' | 'g' | 'q';
 
 /** EQ write-through (band 0 = HPF freq; 1..4 = eqN_{freq,gain,q}). */

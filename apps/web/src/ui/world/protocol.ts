@@ -660,6 +660,7 @@ export const cmdMainFader = (value: number): string => cmd({ cmd: 'main_fader', 
 export const cmdMute = (ch: number, muted: boolean): string => cmd({ cmd: 'mute', ch, muted });
 export const cmdMainMute = (muted: boolean): string => cmd({ cmd: 'main_mute', muted });
 export const cmdSolo = (ch: number, soloed: boolean): string => cmd({ cmd: 'solo', ch, soloed });
+export const cmdClearSolo = (): string => cmd({ cmd: 'clear_solo' });
 export const cmdParam = (ch: number, field: string, value: ParamValue): string =>
   cmd({ cmd: 'param', ch, field, value });
 export const cmdFocus = (chs: number[]): string =>

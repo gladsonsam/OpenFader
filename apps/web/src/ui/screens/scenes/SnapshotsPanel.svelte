@@ -49,6 +49,7 @@
     onLoad,
     onDelete,
     onClear,
+    onRename,
   }: {
     entries: SnapshotEntry[];
     banks: SnapshotBank[];
@@ -57,9 +58,12 @@
     onLoad?: (n: number, scope: SnapshotScope | undefined) => void;
     onDelete?: (n: number) => void;
     onClear?: () => void;
+    onRename?: (n: number, name: string) => void;
   } = $props();
 
   let name = $state('');
+  let renaming: number | null = $state(null);
+  let renameText = $state('');
   let bankOn: Record<string, boolean> = $state({});
   let groupOn: Record<string, boolean> = $state({});
   let globalOn: Record<string, boolean> = $state({});
@@ -135,9 +139,36 @@
             : 'var(--u4-line-faint)'};background:var(--u4-panel-bg)"
         >
           <span style="font-size:13px;font-weight:700;color:var(--u4-text-2);min-width:36px">{String(e.number).padStart(3, '0')}</span>
-          <span style="font-size:13px;color:var(--u4-text-4);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{e.name}</span>
+          {#if renaming === e.number}
+            <input
+              bind:value={renameText}
+              aria-label={'Rename snapshot ' + e.number}
+              maxlength="24"
+              style="box-sizing:border-box;flex:1;min-width:0;height:44px;padding:0 10px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-panel-bg);color:var(--u4-text-1);font-size:13px"
+            />
+            <button
+              onclick={() => {
+                const t = renameText.trim();
+                if (t) onRename?.(e.number, t);
+                renaming = null;
+              }}
+              aria-label={'Confirm rename snapshot ' + e.number}
+              style="{cellBtn}background:var(--u4-green);color:var(--u4-green-ink);border-color:var(--u4-green)">OK</button>
+          {:else}
+            <span style="font-size:13px;color:var(--u4-text-4);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{e.name}</span>
+          {/if}
           {#if e.current}<span style="font-size:10px;font-weight:700;color:var(--u4-green-hi)">CURRENT</span>{/if}
           <button onclick={() => onLoad?.(e.number, scopeForLoad())} aria-label={'Load snapshot ' + e.number} style="{cellBtn}background:var(--u4-green);color:var(--u4-green-ink);border-color:var(--u4-green)">Load</button>
+          {#if onRename}
+            <button
+              onclick={() => {
+                renaming = renaming === e.number ? null : e.number;
+                renameText = e.name;
+              }}
+              aria-label={'Rename snapshot ' + e.number}
+              style="{cellBtn}background:var(--u4-btn-bg);color:var(--u4-text-1);">Ren</button
+            >
+          {/if}
           <button onclick={() => onDelete?.(e.number)} aria-label={'Delete snapshot ' + e.number} style="{cellBtn}background:var(--u4-btn-bg);color:var(--u4-amber);">Del</button>
         </div>
       {/each}

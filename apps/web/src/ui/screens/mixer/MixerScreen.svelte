@@ -189,8 +189,25 @@
   } as unknown as RepeatScope);
   const settings = $derived({ gridCols: ui.gridCols });
   const source = fixtureSource({});
+  // Desk fire-and-forget clear-solo (X-Air `/-action/clearsolo`; honest
+  // `unsupported` elsewhere — the engine errors honestly and the button
+  // just reports no change). Online-only so fixture baselines are
+  // untouched; lock-checked like every other desk write.
+  const showClearSolo = $derived(live.phase === 'online' && !!live.engine?.capsReady);
 </script>
 
+{#if showClearSolo}
+  <div style="display:flex;justify-content:flex-end;margin-bottom:6px">
+    <button
+      onclick={() => ui.do.clearSolos()}
+      disabled={ui.state.locked}
+      aria-label="Clear all solos on the desk"
+      title={ui.state.locked ? 'Locked' : 'Clear all desk solos (monitor bus only)'}
+      style="box-sizing:border-box;height:40px;padding:0 12px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-btn-bg);color:var(--u4-amber);font-size:12px;font-weight:600;cursor:pointer;opacity:{ui.state.locked ? 0.5 : 1}"
+      >Clear solos</button
+    >
+  </div>
+{/if}
 <LayoutRenderer layout={tree} {source} {scope} {settings} device={device.now} />
 {#if ui.state.busPopup}
   <BusPopup rows={busRows} onPick={id => ui.do.selectBusMaster(id)} onClose={() => ui.do.closeBusPopup()} />
