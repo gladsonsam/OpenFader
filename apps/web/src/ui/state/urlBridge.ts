@@ -1,19 +1,22 @@
 // D2 State package: fixture URL contract (PLAN decision 2).
 // Fixture mode: `?ui=4&fixture=1&freeze=1&screen=<id>(&ch=2&bank=ch1&locked=1&sof=1&fine=1)`
 // Screen ids: mixer | ch-input | ch-eq | ch-gate | ch-comp | ch-sends |
-//             fx | routing | connection | settings | scenes
-// `ch-eq | ch-gate | ch-comp | ch-sends | ch-input` map to mode `channel`
-// with the matching tab. `connection` maps to mode `connect`.
+//             ch-groups | fx | routing | connection | settings | scenes
+// `ch-eq | ch-gate | ch-comp | ch-sends | ch-input | ch-groups` map to mode
+// `channel` with the matching tab (`ch-groups` is phone-only: the desktop
+// rail never selects it, but Shell routing must resolve it or the phone
+// Groups tab would fall back to the mixer screen). `connection` maps to
+// mode `connect`.
 
 import { bankDefs, type Channel } from '../fixtures/designData.ts';
 import type { Mode, Tab, UiState } from './uiLogic.ts';
 
 export type ScreenId =
-  | 'mixer' | 'ch-input' | 'ch-eq' | 'ch-gate' | 'ch-comp' | 'ch-sends'
+  | 'mixer' | 'ch-input' | 'ch-eq' | 'ch-gate' | 'ch-comp' | 'ch-sends' | 'ch-groups'
   | 'fx' | 'routing' | 'connection' | 'settings' | 'scenes';
 
 export const SCREEN_IDS: ScreenId[] = [
-  'mixer', 'ch-input', 'ch-eq', 'ch-gate', 'ch-comp', 'ch-sends',
+  'mixer', 'ch-input', 'ch-eq', 'ch-gate', 'ch-comp', 'ch-sends', 'ch-groups',
   'fx', 'routing', 'connection', 'settings', 'scenes',
 ];
 
@@ -35,6 +38,7 @@ const SCREEN_MODE_TAB: Record<ScreenId, { mode: Mode; tab: Tab | null }> = {
   'ch-gate': { mode: 'channel', tab: 'gate' },
   'ch-comp': { mode: 'channel', tab: 'comp' },
   'ch-sends': { mode: 'channel', tab: 'sends' },
+  'ch-groups': { mode: 'channel', tab: 'groups' },
   fx: { mode: 'fx', tab: null },
   routing: { mode: 'routing', tab: null },
   connection: { mode: 'connect', tab: null },
@@ -124,7 +128,7 @@ export function stateToSearch(state: UiState): string {
 
 export function modeTabToScreen(mode: Mode, tab: Tab): ScreenId | null {
   if (mode === 'channel') {
-    return ({ input: 'ch-input', eq: 'ch-eq', gate: 'ch-gate', comp: 'ch-comp', sends: 'ch-sends' } as const)[tab] ?? null;
+    return ({ input: 'ch-input', eq: 'ch-eq', gate: 'ch-gate', comp: 'ch-comp', sends: 'ch-sends', groups: 'ch-groups' } as const)[tab] ?? null;
   }
   if (mode === 'connect') return 'connection';
   if (mode === 'mixer' || mode === 'fx' || mode === 'routing' || mode === 'settings' || mode === 'scenes') return mode;

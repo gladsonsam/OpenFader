@@ -24,6 +24,7 @@ import {
 import {
   DYN_COLOR,
   DYN_KNOBS,
+  DYN_LO,
   dynAria,
   dynAxis,
   dynCurvePath,
@@ -107,11 +108,43 @@ export interface ChannelScope {
   dynDotT: string;
   dynGrid: ReturnType<typeof dynGrid>;
   dynAxis: ReturnType<typeof dynAxis>;
+  /** Tab-independent gate transfer geometry for the read-only preview minis
+   *  (bound regardless of tab so every tab can show the full chain). */
+  gateAria: string;
+  gatePath: string;
+  gateFill: string;
+  gateFillColor: string;
+  gateThrX: string;
+  gateThrLeft: string;
+  gateThrText: string;
+  gateDotL: string;
+  gateDotT: string;
+  gateGrid: ReturnType<typeof dynGrid>;
+  gateAxis: ReturnType<typeof dynAxis>;
+  /** Tab-independent comp transfer geometry (same preview purpose). */
+  compAria: string;
+  compPath: string;
+  compFill: string;
+  compFillColor: string;
+  compThrX: string;
+  compThrLeft: string;
+  compThrText: string;
+  compDotL: string;
+  compDotT: string;
+  compGrid: ReturnType<typeof dynGrid>;
+  compAxis: ReturnType<typeof dynAxis>;
   dynParams: unknown;
   dynGate: unknown;
   dynComp: unknown;
   dynKnobs: (typeof DYN_KNOBS)[DynKind];
-  lists: { tabs: TabListEntry[]; sends: SendRowVm[]; eqBands: EqBandCardVm[] };
+  lists: {
+    tabs: TabListEntry[];
+    sends: SendRowVm[];
+    eqBands: EqBandCardVm[];
+    /** Phone rail: the 5 desktop tabs plus the Groups tab (desktop and
+     *  tablet keep `tabs`, so their rails stay pixel-identical). */
+    phoneTabs: TabListEntry[];
+  };
   stripMeter: unknown;
   hbarMeter: unknown;
   dynGetLevel: (() => number) | null;
@@ -123,6 +156,22 @@ export interface ChannelScope {
 /** Tab the dyn modules render for (gate tab -> gate, everything else -> comp). */
 export function dynKindForTab(tab: Tab): DynKind {
   return tab === 'gate' ? 'gate' : 'comp';
+}
+
+/**
+ * Phone rail note for the Groups tab (mute-master count, echo-honest).
+ * The fixture channel carries no desk-group data, so this reads the live
+ * groups vm: null (offline/unmapped) reports Offline, matching the tab
+ * body which hides the card offline.
+ */
+export function groupsTabNote(groupsVm: GroupsVm | null): string {
+  if (!groupsVm) return 'Offline';
+  const rows = [...groupsVm.mg, ...groupsVm.sg];
+  if (rows.length === 0) return 'No groups';
+  const muted = rows.filter(r => r.masterMuted === true).length;
+  if (muted > 0) return muted === 1 ? '1 muted' : `${muted} muted`;
+  if (rows.some(r => r.masterMuted === null)) return 'Not confirmed';
+  return 'All open';
 }
 
 export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
@@ -146,6 +195,25 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
   const tgl = params
     ? dynToggle(kind, (params as { on: boolean }).on)
     : { bg: 'var(--u4-btn-bg)', fg: 'var(--u4-text-4)', label: '', pressed: 'false' };
+  // Per-kind geometry for the preview minis: computed for BOTH kinds on
+  // every tab (unlike the dyn* singles above, which follow dynKindForTab),
+  // so the layouts can bind gate + comp minis without a tab switch.
+  const gateThr = gate ? dynThreshold(gate, DYN_LO.gate) : { x: '0', leftPct: '50', text: '' };
+  const compThr = comp ? dynThreshold(comp, DYN_LO.comp) : { x: '0', leftPct: '50', text: '' };
+  const gateDot0 = gate ? dynDot('gate', gate, -90) : { leftPct: '0', topPct: '100' };
+  const compDot0 = comp ? dynDot('comp', comp, -90) : { leftPct: '0', topPct: '100' };
+  const groups = groupsVmFor(a.liveGroups);
+  // Phone-only 6th rail entry (desktop/tablet render `tabs`, untouched).
+  // Selected visuals copy tabListEntries; the note is the mute-master
+  // count so the rail is glanceable without opening the tab.
+  const groupsEntry: TabListEntry = {
+    id: 'groups',
+    title: 'Groups',
+    note: groupsTabNote(groups),
+    current: tab === 'groups',
+    border: tab === 'groups' ? ch.color : 'var(--u4-btn-bg)',
+    bg: tab === 'groups' ? '#363d48' : 'var(--u4-btn-bg)',
+  };
   return {
     store: a.state,
     selId: ch.id,
@@ -177,15 +245,37 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     dynDotT: dot0.topPct,
     dynGrid: dynGrid(lo),
     dynAxis: dynAxis(kind),
+    gateAria: dynAria('gate'),
+    gatePath: gate ? dynCurvePath('gate', gate) : '',
+    gateFill: gate ? dynFillPath('gate', gate) : '',
+    gateFillColor: dynFillColor('gate'),
+    gateThrX: gateThr.x,
+    gateThrLeft: gateThr.leftPct,
+    gateThrText: gateThr.text,
+    gateDotL: gateDot0.leftPct,
+    gateDotT: gateDot0.topPct,
+    gateGrid: dynGrid(DYN_LO.gate),
+    gateAxis: dynAxis('gate'),
+    compAria: dynAria('comp'),
+    compPath: comp ? dynCurvePath('comp', comp) : '',
+    compFill: comp ? dynFillPath('comp', comp) : '',
+    compFillColor: dynFillColor('comp'),
+    compThrX: compThr.x,
+    compThrLeft: compThr.leftPct,
+    compThrText: compThr.text,
+    compDotL: compDot0.leftPct,
+    compDotT: compDot0.topPct,
+    compGrid: dynGrid(DYN_LO.comp),
+    compAxis: dynAxis('comp'),
     dynParams: params,
     dynGate: gate,
     dynComp: comp,
     dynKnobs: DYN_KNOBS[kind],
-    lists: { tabs, sends: sendRows, eqBands: cards },
+    lists: { tabs, sends: sendRows, eqBands: cards, phoneTabs: [...tabs, groupsEntry] },
     stripMeter: a.stripMeter,
     hbarMeter: a.hbarMeter,
     dynGetLevel: a.dynGetLevel,
     frozen: a.frozen,
-    groupsVm: groupsVmFor(a.liveGroups),
+    groupsVm: groups,
   };
 }

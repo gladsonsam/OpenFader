@@ -155,7 +155,7 @@ function ok(cond: unknown, msg: string): void {
   ok(channel.children.map((c: { id: string }) => c.id).join(',') === 'tab-list,content,master', 'channel layout order');
   ok(channel.children[0].module === 'col' && channel.children[2].module === 'col', 'tab list + master strip are layout containers');
   const tabIds = (channel.children[1].children as { id: string }[]).map(c => c.id).join(',');
-  ok(tabIds === 'tab-input,tab-sends,tab-eq,tab-gate,tab-comp', 'when-switched tab layouts: ' + tabIds);
+  ok(tabIds === 'tab-input,tab-sends,tab-eq,tab-gate,tab-comp,tab-groups', 'when-switched tab layouts: ' + tabIds);
   const input = JSON.parse(readFileSync(join(HERE, '..', '..', 'layouts', 'input.default.json'), 'utf8'));
   ok(input.children.map((c: { id: string }) => c.id).join(',') === 'input-empty,preamp,source,delay', 'input cards');
   const sends = JSON.parse(readFileSync(join(HERE, '..', '..', 'layouts', 'sends.default.json'), 'utf8'));

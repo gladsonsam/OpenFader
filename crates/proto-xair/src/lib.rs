@@ -1012,6 +1012,17 @@ impl XAirDriver {
         self.dyn_cache.lock().await.clone()
     }
 
+    /// Loaded effect-type index for one FX slot (`/fx/N/type`, int
+    /// `0..=60`; see [`crate::fx`]). Read-only: the desk answers queries
+    /// here (the type-select write path stays unimplemented — no verified
+    /// mapping). Out-of-range slots bail locally, never hitting the desk.
+    pub async fn get_fx_type(&self, slot: u8) -> anyhow::Result<u8> {
+        let addr = fx::fx_type(slot)?;
+        let guard = self.session().await?;
+        let reply = guard.as_ref().unwrap().query(&addr).await?;
+        fx::parse_fx_type(&reply.args)
+    }
+
     /// Meter subscribe with an explicit renewal interval (tests pass a short
     /// interval; production uses [`addrs::METER_RENEW_INTERVAL`]).
     pub async fn subscribe_meters_with_interval(

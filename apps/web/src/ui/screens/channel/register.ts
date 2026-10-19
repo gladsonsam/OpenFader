@@ -7,8 +7,9 @@ import { registerChannelTab } from './tabRegistry.ts';
 import ChannelScreen from './ChannelScreen.svelte';
 import ChannelTabFallback from './ChannelTabFallback.svelte';
 
-for (const id of ['ch-input', 'ch-eq', 'ch-gate', 'ch-comp', 'ch-sends']) {
+for (const id of ['ch-input', 'ch-eq', 'ch-gate', 'ch-comp', 'ch-sends', 'ch-groups']) {
   registerShellScreen(id, ChannelScreen);
 }
 registerChannelTab('input', ChannelTabFallback);
 registerChannelTab('sends', ChannelTabFallback);
+registerChannelTab('groups', ChannelTabFallback);

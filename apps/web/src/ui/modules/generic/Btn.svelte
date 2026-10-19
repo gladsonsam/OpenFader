@@ -7,6 +7,8 @@
      label as a bare text node like the design's action buttons. -->
 <script lang="ts">
   import type { ModuleContext } from '../types.ts';
+  import Icon from '../../primitives/Icon.svelte';
+  import type { IconName } from '../../icons.ts';
 
   let {
     props = {},
@@ -16,6 +18,8 @@
   }: {
     props: {
       label?: string;
+      icon?: IconName;
+      iconSize?: number;
       bg?: string;
       fg?: string;
       border?: string;
@@ -45,7 +49,8 @@
       `padding:${props.padding ?? '0 12px'};border-radius:3px;` +
       `border:${props.border ?? '1px solid var(--u4-line-ctl)'};` +
       `background:${props.bg ?? 'var(--u4-btn-bg)'};color:${props.fg ?? 'var(--u4-text-1)'};` +
-      `font-size:${props.fontSize ?? 13}px;cursor:pointer`,
+      `font-size:${props.fontSize ?? 13}px;cursor:pointer` +
+      (props.icon ? ';display:inline-flex;align-items:center;justify-content:center' : ''),
   );
 </script>
 
@@ -53,5 +58,5 @@
   onclick={() => onEvent?.('press', { node: nodeId })}
   aria-pressed={props.pressed}
   aria-label={props.ariaLabel}
-  {style}>{#if props.bare}{props.label ?? ''}{:else}<span>{props.label ?? ''}</span>{/if}</button
+  {style}>{#if props.icon}<Icon name={props.icon} size={props.iconSize ?? 16} />{:else if props.bare}{props.label ?? ''}{:else}<span>{props.label ?? ''}</span>{/if}</button
 >

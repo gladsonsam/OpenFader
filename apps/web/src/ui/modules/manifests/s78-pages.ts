@@ -33,6 +33,8 @@ export const manifests: ModuleManifest[] = [
     component: as(Btn),
     props: {
       label: { type: 'text', default: 'Button' },
+      icon: { type: 'text' },
+      iconSize: { type: 'number', min: 12, max: 32, step: 1, unit: 'px', default: 16 },
       bg: { type: 'color', default: 'var(--u4-btn-bg)' },      fg: { type: 'color', default: 'var(--u4-text-1)' },
       border: { type: 'text', default: '1px solid var(--u4-line-ctl)' },
       height: { type: 'number', min: 24, max: 64, step: 2, unit: 'px', default: 36 },

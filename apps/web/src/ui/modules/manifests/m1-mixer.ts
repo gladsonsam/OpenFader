@@ -18,6 +18,7 @@ import StripFrame from '../../screens/mixer/StripFrame.svelte';
 import StripMute from '../../screens/mixer/StripMute.svelte';
 import StripFader from '../../screens/mixer/StripFader.svelte';
 import StripName from '../../screens/mixer/StripName.svelte';
+import StripTag from '../../screens/mixer/StripTag.svelte';
 import StripGroupBadges from '../../screens/mixer/StripGroupBadges.svelte';
 import StripStateIcons from '../../screens/mixer/StripStateIcons.svelte';
 import StripNameEditor from '../../screens/mixer/StripNameEditor.svelte';
@@ -156,6 +157,22 @@ export const manifests: ModuleManifest[] = [
     },
     defaults: { variant: 'strip' },
     size: { minW: 60, fixedH: 52 },
+    events: [{ name: 'select' }],
+  },
+  {
+    id: 'strip-tag',
+    title: 'Strip phone tag',
+    category: 'strip',
+    component: as(StripTag),
+    props: {
+      name: { type: 'text', default: 'Ch 1' },
+      sub: { type: 'text', default: 'Lcl 01' },
+      color: { type: 'color', default: '#5cdb5c' },
+      text: { type: 'color', default: '#10240f' },
+      selectAria: { type: 'text', default: 'Select Ch 1, source Lcl 01' },
+    },
+    defaults: {},
+    size: { minW: 60, fixedH: 28 },
     events: [{ name: 'select' }],
   },
   {

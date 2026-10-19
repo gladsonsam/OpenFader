@@ -126,7 +126,7 @@
 
 <section
   aria-label="Channel presets"
-  style="box-sizing:content-box;display:flex;flex-direction:column;gap:10px;padding:14px;border-radius:3px;border:1px solid #1f2836;background:#0e1520;min-width:0"
+  style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:3px;border:1px solid #1f2836;background:#0e1520;min-width:0"
 >
   <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
     <span style="font-size:15px;font-weight:700;color:#eef2f5;margin-right:auto">Presets</span>

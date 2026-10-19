@@ -55,10 +55,11 @@ export const manifests: ModuleManifest[] = [
       fg: { type: 'color', default: 'var(--u4-text-1)' },
       pressed: { type: 'text', default: 'false' },
       ariaLabel: { type: 'text', default: 'EQ in' },
+      locked: { type: 'bool', default: false },
     },
     defaults: { label: '', pressed: 'false' },
     size: {},
-    events: [{ name: 'toggle' }, { name: 'flat' }],
+    events: [{ name: 'toggle' }, { name: 'flat' }, { name: 'reset' }],
   },
   {
     id: 'eq-band-card',

@@ -25,7 +25,7 @@
 {#if vm.hasInput}
 <section
   aria-label="Preamp"
-  style="box-sizing:content-box;display:flex;flex-direction:column;gap:14px;padding:14px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
+  style="box-sizing:content-box;display:flex;flex-direction:column;gap:10px;padding:10px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
 >
   <div style="font-size:12px;color:var(--u4-text-6)">Preamp</div>
   <div style="box-sizing:content-box;display:flex;justify-content:space-around;gap:6px">
@@ -51,12 +51,16 @@
     />
   </div>
   <div style="box-sizing:content-box;display:flex;gap:6px">
-    <button
-      onclick={() => onEvent?.('phantom')}
-      aria-pressed={vm.phantomOn ? 'true' : 'false'}
-      style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:48px;border-radius:3px;border:1px solid {vm.phantomBorder};background:{vm.phantomBg};color:{vm.phantomFg};font-size:14px;font-weight:600;cursor:pointer"
-      >{vm.phantomLabel}</button
-    >
+    {#if vm.phantomOn || vm.armed}
+      <button
+        onclick={() => onEvent?.('phantom')}
+        aria-pressed={vm.phantomOn ? 'true' : 'false'}
+        style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:48px;border-radius:3px;border:1px solid {vm.phantomBorder};background:{vm.phantomBg};color:{vm.phantomFg};font-size:14px;font-weight:600;cursor:pointer"
+        >{vm.phantomLabel}</button
+      >
+    {:else}
+      <span aria-hidden="true" style="box-sizing:border-box;flex:1;height:48px;visibility:hidden"></span>
+    {/if}
     <button
       onclick={() => onEvent?.('invert')}
       aria-pressed={vm.invert ? 'true' : 'false'}

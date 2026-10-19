@@ -83,6 +83,16 @@ export interface EqNodeVm {
   op: number;
 }
 
+export interface EqBandGhost {
+  band: number;
+  name: string;
+  d: string;
+  fill: string;
+  stroke: string;
+  on: boolean;
+  color: string;
+}
+
 export interface EqGraphVm {
   curvePath: string;
   fillPath: string;
@@ -91,6 +101,7 @@ export interface EqGraphVm {
   bandFill: string;
   bandFillColor: string;
   bandStroke: string;
+  bandGhosts: EqBandGhost[];
   gridV: EqGridLine[];
   gridH: EqGridLineH[];
   freqLabels: EqAxisLabel[];
@@ -275,6 +286,41 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
   }
   const bandFill = own.length ? pathFor(own) + ' L' + W + ' ' + zeroY + ' L0 ' + zeroY + ' Z' : '';
 
+  // Per-band ghosts: forced-on single-band shape so the curve exists even
+  // when the band (or the whole EQ) is off/bypassed. Audible ghosts reuse
+  // the band colour; off/bypassed ghosts fall back to dim grey.
+  const OFF_GHOST_FILL = 'rgba(90,98,114,0.14)';
+  const OFF_GHOST_STROKE = '#5a6272';
+  const bandGhosts: EqBandGhost[] = [];
+  const ghostCount = bands.length + 1;
+  for (let bIdx = 0; bIdx < ghostCount; bIdx++) {
+    const bandOn = bIdx === 0 ? eq.hpf.on : (bands[bIdx - 1]?.on ?? false);
+    const audible = eq.on && bandOn;
+    let fl: ReturnType<typeof filters> = [];
+    if (bIdx === 0) {
+      fl = filters({ on: true, hpf: { ...eq.hpf, on: true }, bands: [] });
+    } else {
+      const b = bands[bIdx - 1];
+      if (b) {
+        fl = filters({
+          on: true,
+          hpf: { on: false, f: 80, slope: 12 } as Hpf,
+          bands: [{ ...b, on: true }],
+        });
+      }
+    }
+    const color = bandColor(bIdx, colors);
+    bandGhosts.push({
+      band: bIdx,
+      name: bandName(bIdx),
+      d: fl.length ? pathFor(fl) + ' L' + W + ' ' + zeroY + ' L0 ' + zeroY + ' Z' : '',
+      fill: audible ? color + '2e' : OFF_GHOST_FILL,
+      stroke: audible ? color : OFF_GHOST_STROKE,
+      on: audible,
+      color,
+    });
+  }
+
   const gridV: EqGridLine[] = [];
   [10, 100, 1000, 10000].forEach(dd => {
     for (let m = 1; m <= 9; m++) {
@@ -303,10 +349,16 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
   const mkNode = (band: number, f: number, g: number, on: boolean): void => {
     const active = sb === band;
     const yN = clamp((dbTop - g) / (dbTop - dbBottom), 0.03, 0.97);
+    const audible = on && eq.on;
     nodes.push({
       band,
       label: band === 0 ? 'H' : String(band),
-      aria: bandName(band) + ' node, ' + fmtF(f) + (band ? ', ' + fmtG(g) : ''),
+      aria:
+        bandName(band) +
+        ' node, ' +
+        fmtF(f) +
+        (band ? ', ' + fmtG(g) : '') +
+        (audible ? '' : ' · off'),
       valueText: band === 0 ? fmtF(f) : fmtF(f) + ', ' + fmtG(g),
       freq: f,
       gain: g,
@@ -329,6 +381,7 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
     bandFill,
     bandFillColor: own.length ? bandColor(sb, colors) + '2e' : 'none',
     bandStroke: own.length ? bandColor(sb, colors) : 'none',
+    bandGhosts,
     gridV,
     gridH,
     freqLabels,

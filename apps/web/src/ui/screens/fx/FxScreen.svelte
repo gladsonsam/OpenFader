@@ -33,14 +33,41 @@
   const store = createProfileStore('fx');
   bindUiActions(ui.do, { profile: store });
 
-  /** Live FX rack (null offline: fixture slots render instead). */
+  /** Desk-native tap-tempo types (proto-xair tap targets): DLY/3TAP/4TAP
+      plus the D/RV, D/CR, D/FL and MODD combos. Design Delay handled
+      separately via fxIsDelay. */
+  const XAIR_TAP_TYPES = ['DLY', '3TAP', '4TAP', 'D/RV', 'D/CR', 'D/FL', 'MODD'];
+
+  /** Desk-native param key order per live slot (parNN ids from caps.fx,
+      aligned with the p vector; empty for design/fixture slots). */
+  function liveKeys(): string[][] {
+    void live.version;
+    const w = live.engine;
+    if (live.phase !== 'online' || !w || !w.capsReady) return [];
+    const capsTypes = w.fxCaps?.types ?? [];
+    return w.fxSlots.map((s: FxSlotView) => {
+      const capsDef = capsTypes.find(t => t.id === s.type || t.label === s.type);
+      return capsDef ? capsDef.params.map(p => p.id) : [];
+    });
+  }
+
+  /** Live FX rack (null offline: fixture slots render instead). Desk-native
+      racks (xair) resolve knob order from caps.fx type tables (parNN ids);
+      design racks (sim) use the fixture catalogue keyed by param id. */
   function liveFx(): FxSlot[] | null {
     void live.version;
     const w = live.engine;
     if (live.phase !== 'online' || !w || !w.capsReady) return null;
     const rows = w.fxSlots;
     if (!rows.length) return null;
+    const capsTypes = w.fxCaps?.types ?? [];
     return rows.map((s: FxSlotView) => {
+      const capsDef = capsTypes.find(t => t.id === s.type || t.label === s.type);
+      if (capsDef) {
+        const keys = capsDef.params.map(p => p.id);
+        const p = keys.map(k => (typeof s.params[k] === 'number' ? s.params[k]! : 0.5));
+        return { type: s.type, on: s.on && !s.bypass, p, bpm: null };
+      }
       const defs = FX_PARAM_DEFS[s.type] ?? [];
       return {
         type: s.type,
@@ -78,30 +105,50 @@
       return src && src.type === '—' ? { ...vm, state: '?', stateColor: '#7f8a9c' } : vm;
     }),
   );
+  const isXair = $derived(online && live.engine?.driver === 'xair');
+  const keys = $derived(liveKeys());
   const fx = $derived(
     slot
       ? {
           title: fxTitle(liveSel, slot),
-          // Unknown desk state (xair placeholders read "—") hides the
-          // toggle honestly instead of showing a fake On.
-          toggle: slot.type === '—' ? undefined : fxToggleVm(slot),
-          isDelay: fxIsDelay(slot),
+          // Unknown desk state ("—") hides the toggle honestly instead of
+          // a fake On; xair has no verified on/bypass leaf so its toggle
+          // stays hidden even once types/params read live.
+          toggle: slot.type === '—' || isXair ? undefined : fxToggleVm(slot),
+          isDelay: isXair
+            ? XAIR_TAP_TYPES.includes(slot.type)
+            : fxIsDelay(slot),
           tapLabel: fxTapLabel(slot),
-          types: online
-            ? (live.engine?.fxCaps?.types.map(t => ({ label: t.label, pressed: t.label === slot.type, bg: t.label === slot.type ? '#b28cff' : '#2b3038', fg: t.label === slot.type ? '#1a0f2e' : '#c9d1dc' })) ?? [])
-            : fxTypeButtons(slot.type),
+          // xair type-select has no verified mapping (engine rejects
+          // writes): show the loaded type in the title but keep the grid
+          // read-only-empty rather than forwarding failing writes.
+          types: isXair
+            ? []
+            : online
+              ? (live.engine?.fxCaps?.types.map(t => ({ label: t.label, pressed: t.label === slot.type, bg: t.label === slot.type ? '#b28cff' : '#2b3038', fg: t.label === slot.type ? '#1a0f2e' : '#c9d1dc' })) ?? [])
+              : fxTypeButtons(slot.type),
         }
       : { title: '', toggle: undefined, isDelay: false, tapLabel: '', types: [] },
   );
-  // Knobs: live type tables filter the row online (xair has no tables —
-  // the row collapses honestly); fixture catalogue offline. Unknown desk
-  // types ("—" placeholders) yield no knobs instead of throwing.
+  // Knobs: desk-native racks (xair) build the row from caps.fx (labeled
+  // parNN params); design racks filter the fixture catalogue by caps;
+  // fixture catalogue offline. Unknown desk types ("—") yield no knobs.
   const knobCaps = $derived(
     online
       ? (live.engine?.fxCaps?.types.find(t => t.label === slot?.type || t.id === slot?.type)?.params.map(p => 'fx:param:' + p.id) ?? [])
       : null,
   );
-  const knobs = $derived(slot && FX_PARAM_DEFS[slot.type] ? fxKnobList(slot.type, knobCaps) : []);
+  const knobs = $derived.by(() => {
+    if (!slot) return [];
+    if (isXair) {
+      const def = live.engine?.fxCaps?.types.find(t => t.label === slot.type || t.id === slot.type);
+      if (!def) return [];
+      const rowKeys = keys[liveSel] ?? def.params.map(p => p.id);
+      return def.params.map((p, i) => ({ key: rowKeys[i] ?? p.id, label: p.label, bind: 'fx:param:' + p.id }));
+    }
+    if (!FX_PARAM_DEFS[slot.type]) return [];
+    return fxKnobList(slot.type, knobCaps);
+  });
   // The fixture desk has an FX rack exactly when the world carries slots;
   // the fx-* modules declare requires:['fx'] so a desk without FX honestly
   // removes them (wave 3 binds real caps here).

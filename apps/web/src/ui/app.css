@@ -138,8 +138,18 @@ body {
 /* Grid items snap to the scrollport start under a `snapItems` grid (the
  * mixer phone/tablet strip pager). Attribute-gated, no media query needed:
  * the attribute is only set by the phone/tablet variants. */
+[data-snap-items] {
+  scroll-padding-inline: 8px;
+}
 [data-snap-items] > * {
   scroll-snap-align: start;
+  scroll-margin-inline: 4px;
+  scroll-snap-stop: normal;
+  /* Off-screen pager cells skip rendering/paint until scrolled near.
+   * Wrapper-layer only (no Fader/Meter body changes): the placeholder keeps
+   * the 48-cell track stable while a cell is skipped. */
+  content-visibility: auto;
+  contain-intrinsic-size: 132px 400px;
 }
 
 /* Inner scroll regions: shrink inside flex parents (never force the page
@@ -157,6 +167,32 @@ body {
 .u4-frame [data-node='content'] {
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Phone/tablet 48-strip pager (node `strip-scroll`, snap from the layout
+ * variant): mandatory snap parks a strip under the finger on release;
+ * inline padding + item margins soften the stop. Scoped to <=1099px so the
+ * 1280x720 desktop design is byte-identical. The channel tab rail keeps
+ * proximity snap (see Scroll.svelte). */
+@media (max-width: 1099px) {
+  .u4-frame [data-node='strip-scroll'] {
+    scroll-padding: 0 8px;
+    overscroll-behavior-x: contain;
+    overscroll-behavior-y: none;
+    scrollbar-width: none;
+    touch-action: pan-x pan-y;
+  }
+  .u4-frame [data-node='strip-scroll']::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .u4-frame [data-node='strip-scroll'] {
+    /* !important: beats the inline snap-type Scroll.svelte sets. */
+    scroll-snap-type: none !important;
+    scroll-behavior: auto;
+  }
 }
 
 @media (max-width: 1099px) {
