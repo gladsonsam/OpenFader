@@ -339,26 +339,23 @@ impl DeviceScanner for RealScanner {
     ) -> Pin<Box<dyn Future<Output = Vec<DeviceDesc>> + Send + '_>> {
         Box::pin(async move {
             let mut out = Vec::new();
-            match openmix_transport::discovery::discover_all(timeout).await {
-                Ok(devs) => {
-                    for d in devs {
-                        let ip = d.addr.ip().to_string();
-                        out.push(DeviceDesc {
-                            id: format!("{}-{ip}", d.driver),
-                            name: match d.driver {
-                                "xair" => format!("X-Air {}", d.model),
-                                _ => format!("{} {}", d.driver, d.model),
-                            },
-                            model: d.model,
-                            ip,
-                            kind: "console".to_string(),
-                            state: "available".to_string(),
-                            fw: None,
-                            via: Some("broadcast".to_string()),
-                        });
-                    }
+            if let Ok(devs) = openmix_transport::discovery::discover_all(timeout).await {
+                for d in devs {
+                    let ip = d.addr.ip().to_string();
+                    out.push(DeviceDesc {
+                        id: format!("{}-{ip}", d.driver),
+                        name: match d.driver {
+                            "xair" => format!("X-Air {}", d.model),
+                            _ => format!("{} {}", d.driver, d.model),
+                        },
+                        model: d.model,
+                        ip,
+                        kind: "console".to_string(),
+                        state: "available".to_string(),
+                        fw: None,
+                        via: Some("broadcast".to_string()),
+                    });
                 }
-                Err(_) => {}
             }
             out
         })
@@ -446,6 +443,10 @@ struct ClientEntry {
     taps: bool,
 }
 
+/// Cached visible-group lane lists: (driver, visible set, pairs).
+/// Rebuilt when the visible set changes (focus is infrequent).
+type PollVisibleCache = Option<(String, Vec<u16>, Vec<(u16, &'static str)>)>;
+
 /// One strip lock: holder id + expiry.
 #[derive(Clone, Debug)]
 struct StripLock {
@@ -529,7 +530,7 @@ pub struct Engine {
     registries: HashMap<String, ParamRegistry>,
     /// Cached visible-group lane lists: (driver, visible set, pairs).
     /// Rebuilt when the visible set changes (focus is infrequent).
-    poll_visible: RwLock<Option<(String, Vec<u16>, Vec<(u16, &'static str)>)>>,    /// Engine construction time: source of the monotonic `t_ms` clock in
+    poll_visible: RwLock<PollVisibleCache>,    /// Engine construction time: source of the monotonic `t_ms` clock in
     /// binary meter frames ([`now_ms`](Engine::now_ms)).
     boot: Instant,
     /// Focus queue: `(driver, ch, param, owner)` tuples pushed by the `focus`
@@ -1577,14 +1578,11 @@ impl Engine {
             })?;
         let mut answered_model: Option<String> = None;
         for spec in PROBE_TABLE.iter().filter(|s| s.driver == driver) {
-            match probe_addr(spec, ip, Duration::from_millis(900)).await {
-                Ok(devs) => {
-                    if let Some(d) = devs.into_iter().next() {
-                        answered_model = Some(d.model);
-                        break;
-                    }
+            if let Ok(devs) = probe_addr(spec, ip, Duration::from_millis(900)).await {
+                if let Some(d) = devs.into_iter().next() {
+                    answered_model = Some(d.model);
+                    break;
                 }
-                Err(_) => {}
             }
         }
         let model = answered_model?;
@@ -2719,7 +2717,7 @@ impl Engine {
             // forever (the visible cursor round-robins without end).
             let remaining = n - batch.len();
             let t = self.lane_tick.fetch_add(1, Ordering::Relaxed);
-            let bg_share = if t % 2 == 0 { (n / 4).max(1).min(remaining) } else { 0 };
+            let bg_share = if t.is_multiple_of(2) { (n / 4).max(1).min(remaining) } else { 0 };
             batch.extend(self.pop_visible_batch(&driver, remaining - bg_share));
         }
         if batch.len() < n {
@@ -2762,10 +2760,7 @@ impl Engine {
             v
         };
         while let Some(joined) = set.join_next().await {
-            match joined {
-                Ok((i, ch, param, r)) => ordered[i] = Some((ch, param, r)),
-                Err(_) => {}
-            }
+            if let Ok((i, ch, param, r)) = joined { ordered[i] = Some((ch, param, r)) }
         }
         for slot in ordered.into_iter().flatten() {
             let (ch, param, r) = slot;
@@ -2795,7 +2790,7 @@ impl Engine {
         let prev = self.rtt_ema_us.load(Ordering::Relaxed);
         let ema = if prev == 0 { dt_us } else { (prev * 3 + dt_us) / 4 };
         self.rtt_ema_us.store(ema, Ordering::Relaxed);
-        if self.fx_cursor.fetch_add(1, Ordering::Relaxed) % FX_POLL_EVERY == 0 {
+        if self.fx_cursor.fetch_add(1, Ordering::Relaxed).is_multiple_of(FX_POLL_EVERY) {
             self.fx_refresh_one().await;
         }
     }
@@ -5346,7 +5341,7 @@ mod tests {
         let mut saw_params = false;
         for _ in 0..64 {
             match handle.events.try_recv() {
-                Ok(Event::Params { ch, .. }) if ch == 2 => {
+                Ok(Event::Params { ch: 2, .. }) => {
                     saw_params = true;
                     break;
                 }

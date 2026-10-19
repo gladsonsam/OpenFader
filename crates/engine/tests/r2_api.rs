@@ -335,10 +335,10 @@ async fn scene_save_recall_roundtrip_restores_plane() {
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     while !got.contains_key("eq1_gain") || !got.contains_key("comp_thr") || !got.contains_key("send1_level") {
         assert!(std::time::Instant::now() < deadline, "recall echoes arrive: {got:?}");
-        if let Ok(Some(e)) = tokio::time::timeout(Duration::from_millis(500), client.events.recv()).await {
-            if let Event::Param { ch: 0, field, value, .. } = e {
-                got.insert(field, value);
-            }
+        if let Ok(Some(Event::Param { ch: 0, field, value, .. })) =
+            tokio::time::timeout(Duration::from_millis(500), client.events.recv()).await
+        {
+            got.insert(field, value);
         }
     }
     assert_eq!(got.get("fader"), Some(&json!(0.9f32)));
@@ -735,7 +735,7 @@ async fn poller_inflight_defaults_and_focus_order() {
     let nparams = chs.iter().filter(|&&c| c == 5).count();
     assert!(nparams > 100, "focus block lands first ({nparams} ch5 frames)");
     assert!(
-        first_other.map_or(true, |i| i >= nparams),
+        first_other.is_none_or(|i| i >= nparams),
         "no background strip interleaves the focus block"
     );
 }

@@ -26,8 +26,10 @@ async fn serve() -> String {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let mut opts = openmix_serve::ServeOptions::default();
-    opts.driver = "sim".to_string();
+    let opts = openmix_serve::ServeOptions {
+        driver: "sim".to_string(),
+        ..openmix_serve::ServeOptions::default()
+    };
     tokio::spawn(openmix_serve::run(listener, opts));
     format!("ws://{addr}/ws")
 }
