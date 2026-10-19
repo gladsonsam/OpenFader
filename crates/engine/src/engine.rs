@@ -2950,7 +2950,7 @@ impl Engine {
             // end, like the visible lane's did).
             let remaining = n - batch.len();
             let t = self.lane_tick.fetch_add(1, Ordering::Relaxed);
-            let bg_share = if t % (n.max(2) as u64) == 0 { 1.min(remaining) } else { 0 };
+            let bg_share = if t.is_multiple_of(n.max(2) as u64) { 1.min(remaining) } else { 0 };
             let mut rest = remaining - bg_share;
             let vis = self.pop_visible_batch(&driver, rest);
             rest -= vis.len();
