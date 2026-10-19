@@ -230,7 +230,7 @@ impl Outbox {
         engine: &openmix_engine::Engine,
     ) -> Option<(Message, StreamKind)> {
         if let Some(event) = self.control.pop_front() {
-            return Some((Message::Text(event.to_json()), StreamKind::Control));
+            return Some((Message::Text(event.to_json().into()), StreamKind::Control));
         }
         let t_ms = engine.now_ms();
         if let Some(event) = self.meters.take() {
@@ -273,10 +273,10 @@ fn encode_stream(
     if binary {
         if let Some(bytes) = event.to_binary(*seq, t_ms) {
             *seq = seq.wrapping_add(1);
-            return Message::Binary(bytes);
+            return Message::Binary(bytes.into());
         }
     }
-    Message::Text(event.to_json())
+    Message::Text(event.to_json().into())
 }
 
 /// Per-connection realtime counters behind the `stats` event.
@@ -413,7 +413,7 @@ async fn handle_socket(
             loop {
                 while job_rx.try_recv().is_ok() {
                     let text = stats_json(&outbox.lock().await.snapshot());
-                    if tx.send(Message::Text(text)).await.is_err() {
+                    if tx.send(Message::Text(text.into())).await.is_err() {
                         engine.detach_client(&id).await;
                         return;
                     }
@@ -451,7 +451,7 @@ async fn handle_socket(
                         };
                         if job.is_some() {
                             let text = stats_json(&outbox.lock().await.snapshot());
-                            if tx.send(Message::Text(text)).await.is_err() {
+                            if tx.send(Message::Text(text.into())).await.is_err() {
                                 engine.detach_client(&id).await;
                                 return;
                             }
@@ -669,7 +669,7 @@ pub async fn run_with_full(
         .route("/ws", get(ws_handler))
         .route("/healthz", get(health))
         .route("/", get(static_root))
-        .route("/*path", get(static_file))
+        .route("/{*path}", get(static_file))
         .with_state(AppState { engine, static_dir });
 
     eprintln!("openmix-serve: listening on http://{local} (ws://{local}/ws)");
@@ -694,7 +694,7 @@ mod tests {
         let stream = accepted.await.unwrap();
         configure_accepted(&stream).unwrap();
         assert!(
-            socket2::SockRef::from(&stream).nodelay().unwrap(),
+            socket2::SockRef::from(&stream).tcp_nodelay().unwrap(),
             "TCP_NODELAY must be set on accepted sockets"
         );
     }
