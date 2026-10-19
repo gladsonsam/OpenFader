@@ -319,7 +319,8 @@
       "props": {
         "width": 52,
         "flex": "none",
-        "gap": 3
+        "gap": 3,
+        "justify": "space-between"
       },
       "children": [
         {
