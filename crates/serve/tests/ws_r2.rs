@@ -40,7 +40,7 @@ async fn connect(url: &str) -> (WsTx, WsRx) {
 }
 
 async fn send(tx: &mut WsTx, v: Value) {
-    tx.send(Message::Text(v.to_string())).await.unwrap();
+    tx.send(Message::text(v.to_string())).await.unwrap();
 }
 
 /// Next TEXT frame parsed as JSON (binary meter frames skipped).
