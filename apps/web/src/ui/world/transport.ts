@@ -6,8 +6,11 @@
 // {binary_meters:true}` on every connect). `ReplayTransport` feeds scripted
 // golden frames for node tests. `TauriTransport` is the app-shell
 // implementation: same Cmd/Event JSON over the embedded engine's IPC
-// commands (`engine_attach`/`engine_cmd`/`engine_poll`), polled at 10 Hz,
-// with `hello {binary_meters:false}` (IPC has no binary channel).
+// commands (`engine_attach`/`engine_cmd`/`engine_subscribe_push`/
+// `engine_detach` in `src-tauri/src/lib.rs`), pushed as `openmix-event`
+// frames the UI listens for, with `hello {binary_meters:false}` (IPC has
+// no binary channel). `engine_poll` remains only as the fallback drain for
+// clients that cannot listen (node tests, foreign shells).
 
 import { cmdHello } from './protocol.ts';
 
@@ -367,30 +370,51 @@ export class ReplayTransport implements Transport {
 /**
  * Tauri IPC transport: speaks the same engine Cmd/Event JSON as
  * `WsTransport`, but against the engine embedded in the app process
- * (`engine_attach`/`engine_cmd`/`engine_poll`/`engine_detach` in
- * `src-tauri/src/lib.rs`) instead of a WS relay. No host, no port, no
+ * (`engine_attach`/`engine_cmd`/`engine_subscribe_push`/`engine_detach`
+ * in `src-tauri/src/lib.rs`) instead of a WS relay. No host, no port, no
  * LAN server: discovery/scan runs in-process on the phone's WiFi.
  *
- * Framing: `send(json)` invokes `engine_cmd` and feeds the returned Event
- * frames; a poll loop (`engine_poll`, default 100 ms) collects background
- * frames (meter ticker, param poller, discovery). Binary IPC is never
- * used — hello opts out of binary meters, so every frame arrives as the
- * same JSON text the relay would send (byte-identical command spellings,
- * text-only event path).
+ * Framing is push-based: after attach the transport listens for the
+ * backend's `openmix-event` frames (every `engine_cmd` reply inline plus
+ * ticker frames from the shell's 50 ms background task) and feeds them
+ * straight through — no JS poll timer, so an idle phone holds no 10 Hz
+ * IPC wakeup. `send(json)` invokes `engine_cmd`; its return value is
+ * ignored in push mode (the same frames already arrived as events).
  *
- * The `invoke` function is injectable so node tests (and the debug
- * fixture) can drive the transport without a Tauri shell; by default it
- * lazy-imports `@tauri-apps/api/core` on first use, so merely importing
- * this module in a browser never touches the Tauri runtime.
+ * Fallback: when the event API is unavailable (node tests driving the
+ * transport with an injected `invoke`, foreign shells), the transport
+ * reverts to the old `engine_poll` loop (`pollMs`, default 100 ms) and
+ * feeds `engine_cmd` return values — the exact pre-push behaviour.
+ * Binary IPC is never used — hello opts out of binary meters, so every
+ * frame arrives as the same JSON text the relay would send
+ * (byte-identical command spellings, text-only event path).
+ *
+ * The `invoke`/`listen` functions are injectable so node tests (and the
+ * debug fixture) can drive the transport without a Tauri shell; by
+ * default they lazy-import `@tauri-apps/api/core` / `@tauri-apps/api/event`
+ * on first use, so merely importing this module in a browser never
+ * touches the Tauri runtime.
  */
 export interface TauriInvokeFn {
   (cmd: string, args?: Record<string, unknown>): Promise<unknown>;
 }
 
+/** Event-listen shape (matches `@tauri-apps/api/event` `listen`). */
+export interface TauriListenFn {
+  (event: string, handler: (e: { payload: unknown }) => void): Promise<Unsub> | Unsub;
+}
+
+/** Backend event carrying engine Event JSON frames (see `OPENMIX_EVENT`). */
+export const OPENMIX_EVENT = 'openmix-event';
+
 export interface TauriTransportOptions {
   /** IPC function (default: lazy `@tauri-apps/api/core` invoke). */
   invoke?: TauriInvokeFn;
-  /** Background poll interval in ms (default 100). */
+  /** Event-listen function (default: lazy `@tauri-apps/api/event` listen).
+   * `null` forces the `engine_poll` fallback loop (node tests that only
+   * inject `invoke` rely on the default auto-detect, not on this). */
+  listen?: TauriListenFn | null;
+  /** Background poll interval in ms for the fallback loop (default 100). */
   pollMs?: number;
   /** Timer injection for tests (default setInterval/clearInterval). */
   setTimer?: (fn: () => void, ms: number) => unknown;
@@ -402,6 +426,7 @@ const TAURI_POLL_MS = 100;
 export class TauriTransport implements Transport {
   readonly url = 'tauri://engine';
   private readonly invokeOpt: TauriInvokeFn | null;
+  private readonly listenOpt: TauriListenFn | null | undefined;
   private readonly pollMs: number;
   private readonly setTimer: (fn: () => void, ms: number) => unknown;
   private readonly clearTimer: (t: unknown) => void;
@@ -412,11 +437,17 @@ export class TauriTransport implements Transport {
   private attached = false;
   private closed = false;
   private polling = false;
+  /** True once `openmix-event` push is live: `engine_cmd` returns are
+   * ignored (the same frames already arrived as events). */
+  private pushMode = false;
+  private unlisten: Unsub | null = null;
+  private pushSetup: Promise<void> | null = null;
   private timer: unknown = null;
   private attachPromise: Promise<void> | null = null;
 
   constructor(opts: TauriTransportOptions = {}) {
     this.invokeOpt = opts.invoke ?? null;
+    this.listenOpt = opts.listen;
     this.pollMs = opts.pollMs ?? TAURI_POLL_MS;
     this.setTimer = opts.setTimer ?? ((fn, ms) => setInterval(fn, ms));
     this.clearTimer = opts.clearTimer ?? ((t) => clearInterval(t as ReturnType<typeof setInterval>));
@@ -458,7 +489,13 @@ export class TauriTransport implements Transport {
     if (this.attached) return Promise.resolve();
     if (!this.attachPromise) {
       this.attachPromise = this.invoke('engine_attach', { label: 'ui' }).then(
-        () => {
+        async () => {
+          if (this.closed) return;
+          // Push first, hello second: every frame sent after this point is
+          // either pushed (and its `engine_cmd` return ignored) or, on
+          // fallback shells, returned (and fed). Subscribing before the
+          // first `send` keeps the two paths from ever double-feeding.
+          await this.setupPush();
           if (this.closed) return;
           this.attached = true;
           // Same hello the WS path sends on every (re)connect, minus
@@ -473,6 +510,7 @@ export class TauriTransport implements Transport {
           // Attach failed (shell without the engine commands, e.g. a
           // browser that spoofed detection): allow a later retry.
           this.attachPromise = null;
+          this.pushSetup = null;
           this.setOnline(false);
         },
       );
@@ -480,23 +518,97 @@ export class TauriTransport implements Transport {
     return this.attachPromise;
   }
 
+  /** Bring up push fan-out (listen + `engine_subscribe_push`); on any
+   * failure start the `engine_poll` fallback loop instead. Resolves in
+   * both cases — push is best-effort, connectivity is not. */
+  private setupPush(): Promise<void> {
+    if (this.pushSetup) return this.pushSetup;
+    this.pushSetup = (async () => {
+      if (this.closed || this.unlisten) return;
+      let listenFn: TauriListenFn | null = null;
+      if (this.listenOpt !== undefined) {
+        listenFn = this.listenOpt;
+      } else {
+        try {
+          const m = await import('@tauri-apps/api/event');
+          listenFn = m.listen as TauriListenFn;
+        } catch {
+          listenFn = null;
+        }
+      }
+      if (!listenFn || this.closed) {
+        this.startPollLoop();
+        return;
+      }
+      try {
+        const un = await listenFn(OPENMIX_EVENT, (e) => this.feed(e.payload));
+        if (this.closed) {
+          try {
+            un();
+          } catch {
+            /* ignore */
+          }
+          return;
+        }
+        this.unlisten = un;
+        await this.invoke('engine_subscribe_push');
+        this.pushMode = true;
+        this.stopPollLoop();
+      } catch {
+        this.unlisten = null;
+        this.pushMode = false;
+        this.startPollLoop();
+      }
+    })();
+    return this.pushSetup;
+  }
+
+  private startPollLoop(): void {
+    if (this.timer === null && !this.closed) {
+      this.timer = this.setTimer(() => {
+        if (this.closed) return;
+        if (!this.attached) {
+          this.ensureAttached().catch(() => {});
+          return;
+        }
+        this.pollOnce();
+      }, this.pollMs);
+    }
+  }
+
+  private stopPollLoop(): void {
+    if (this.timer !== null) {
+      try {
+        this.clearTimer(this.timer);
+      } catch {
+        /* ignore */
+      }
+      this.timer = null;
+    }
+  }
+
   private sendNow(json: string): void {
     this.invoke('engine_cmd', { cmd: json }).then(
       (frames) => {
-        if (!this.closed) this.feed(frames);
+        // Push mode: the same batch already arrived as `openmix-event` —
+        // feeding the return too would duplicate every frame. Fallback
+        // mode: the return value is the only copy.
+        if (!this.closed && !this.pushMode) this.feed(frames);
       },
       () => {
         // The engine is gone or the call failed: drop back offline; the
         // next poll re-attaches and the WS-style hello re-runs there.
         this.attached = false;
         this.attachPromise = null;
+        this.pushSetup = null;
+        this.pushMode = false;
         this.setOnline(false);
       },
     );
   }
 
   private pollOnce(): void {
-    if (this.polling || !this.attached || this.closed) return;
+    if (this.polling || this.pushMode || !this.attached || this.closed) return;
     this.polling = true;
     this.invoke('engine_poll').then(
       (frames) => {
@@ -508,6 +620,7 @@ export class TauriTransport implements Transport {
         if (this.closed) return;
         this.attached = false;
         this.attachPromise = null;
+        this.pushSetup = null;
         this.setOnline(false);
       },
     );
@@ -515,19 +628,11 @@ export class TauriTransport implements Transport {
 
   connect(): void {
     this.closed = false;
-    // Swallow: failures surface as offline status + retries on the poll
-    // loop, exactly like the WS transport's reconnect behaviour.
+    // Swallow: failures surface as offline status + retries on the
+    // fallback poll loop, exactly like the WS transport's reconnect
+    // behaviour. The loop itself starts in setupPush (fallback path);
+    // push shells hold no timer at all.
     this.ensureAttached().catch(() => {});
-    if (this.timer === null) {
-      this.timer = this.setTimer(() => {
-        if (this.closed) return;
-        if (!this.attached) {
-          this.ensureAttached().catch(() => {});
-          return;
-        }
-        this.pollOnce();
-      }, this.pollMs);
-    }
   }
 
   send(json: string): void {
@@ -561,13 +666,16 @@ export class TauriTransport implements Transport {
 
   close(): void {
     this.closed = true;
-    if (this.timer !== null) {
+    this.stopPollLoop();
+    this.pushSetup = null;
+    this.pushMode = false;
+    if (this.unlisten) {
       try {
-        this.clearTimer(this.timer);
+        this.unlisten();
       } catch {
         /* ignore */
       }
-      this.timer = null;
+      this.unlisten = null;
     }
     this.queue.length = 0;
     this.attachPromise = null;

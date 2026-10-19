@@ -112,7 +112,7 @@ const defaults = (): LayoutNode => ({
   assert.equal(r.skipped.length, 1);
 }
 
-// --- migrate v1 -> v2 ---
+// --- migrate v1 -> v3 (via v2): ops become set/hide, banks become keys ---
 {
   const v1 = {
     v: 1,
@@ -128,11 +128,28 @@ const defaults = (): LayoutNode => ({
   const m = migrateProfile(v1);
   assert.equal(m.ok, true);
   const doc = (m as { profile: Record<string, unknown> }).profile;
-  assert.equal(doc['v'], 2);
+  assert.equal(doc['v'], 3);
   assert.ok(!(doc['hidden'] !== undefined && Array.isArray(doc['ops']) === false));
   const ops = doc['ops'] as Array<Record<string, unknown>>;
   assert.ok(ops.some(o => o['op'] === 'set' && o['path'] === 'props.gap'));
   assert.ok(ops.some(o => o['op'] === 'hide' && o['id'] === 'b'));
+  // v2 banks with raw indices become stable strip keys through the sim map.
+  const v2 = {
+    v: 2,
+    id: 'banks',
+    ops: [],
+    theme: {},
+    banks: [{ id: 'main', name: 'Main', items: [0, '1', 32, 72, 'mix/01', 'ch/1', 'main/1', 'nope'] }],
+    settings: {},
+    pages: [],
+    locked: false,
+  };
+  const m2 = migrateProfile(v2);
+  assert.equal(m2.ok, true);
+  const doc2 = (m2 as { profile: Record<string, unknown> }).profile;
+  assert.equal(doc2['v'], 3);
+  const items = (doc2['banks'] as Array<Record<string, unknown>>)[0]!['items'];
+  assert.deepEqual(items, ['ch/01', 'ch/02', 'bus/01', 'main', 'bus/01', 'ch/01', 'main', 'nope']);
   // newer-than-supported rejected; garbage rejected, never throws
   assert.equal(migrateProfile({ v: 99 }).ok, false);
   assert.equal(migrateProfile(null).ok, false);

@@ -446,15 +446,97 @@ pub const CATALOGUE: &[ParamDef] = &[
     b("send16_on", "send16 on", SCOPES_SEND, ParamScope::Channel, true),
 ];
 
-/// Look up one catalogue entry by id.
+/// Look up one catalogue entry by id (canonical table only; the engine
+/// resolves through its per-driver [`ParamRegistry`] so provider
+/// contributions merge in — see [`register_catalogue`]).
 pub fn find(id: &str) -> Option<&'static ParamDef> {
     CATALOGUE.iter().find(|d| d.id == id)
+}
+
+/// Merged param-definition table: the canonical [`CATALOGUE`] plus one
+/// provider's contributed rows (see
+/// [`MixerDriver::param_defs`](crate::MixerDriver::param_defs)).
+/// The engine builds one per registered driver at boot; every caps / poll
+/// / snapshot / recall path resolves through it instead of the global
+/// static, so a mixer with unique DSP arrives without editing core.
+///
+/// Merge rule: canonical rows are stable and always win — a provider row
+/// whose id collides with a canonical id is ignored. Provider rows keep
+/// their table order after the canonical rows, so `caps` output is
+/// byte-identical while no provider contributes extra rows.
+#[derive(Clone, Debug)]
+pub struct ParamRegistry {
+    defs: Vec<ParamDef>,
+}
+
+impl ParamRegistry {
+    /// The canonical table alone ([`CATALOGUE`], same order).
+    pub fn canonical() -> Self {
+        Self {
+            defs: CATALOGUE.to_vec(),
+        }
+    }
+
+    /// Merge one provider-owned table (no-op for `&[]`). Canonical ids
+    /// win on collision; new ids (conventionally `vendor:param`) append in
+    /// table order.
+    pub fn register(&mut self, extra: &[ParamDef]) {
+        for def in extra {
+            if !self.defs.iter().any(|d| d.id == def.id) {
+                self.defs.push(*def);
+            }
+        }
+    }
+
+    /// Look up one entry by id (canonical + contributed).
+    pub fn find(&self, id: &str) -> Option<&ParamDef> {
+        self.defs.iter().find(|d| d.id == id)
+    }
+
+    /// All entries in merge order (canonical first, then provider rows).
+    pub fn iter(&self) -> impl Iterator<Item = &ParamDef> {
+        self.defs.iter()
+    }
+
+    /// Entry count (canonical size while no provider contributes).
+    pub fn len(&self) -> usize {
+        self.defs.len()
+    }
+
+    /// Whether the registry holds no entries (never true for a merged
+    /// registry — the canonical table is always present).
+    pub fn is_empty(&self) -> bool {
+        self.defs.is_empty()
+    }
+
+    /// Validate a value against one registry entry: right kind, finite, in
+    /// range (enums additionally whole-numbered). Unknown ids fail.
+    pub fn validate(&self, id: &str, value: &ParamValue) -> anyhow::Result<()> {
+        let def = self
+            .find(id)
+            .ok_or_else(|| anyhow::anyhow!("unknown param {id:?}"))?;
+        validate_def(def, id, value)
+    }
+}
+
+/// Build a merged registry: canonical [`CATALOGUE`] plus one provider's
+/// contributed table ([`crate::MixerDriver::param_defs`](crate::MixerDriver::param_defs)).
+/// This is the engine-boot merge; canonical rows are stable and win on id
+/// collision.
+pub fn register_catalogue(provider: &[ParamDef]) -> ParamRegistry {
+    let mut reg = ParamRegistry::canonical();
+    reg.register(provider);
+    reg
 }
 
 /// Validate a value against one catalogue entry: right kind, finite, in
 /// range (enums additionally whole-numbered). Unknown ids fail.
 pub fn validate(id: &str, value: &ParamValue) -> anyhow::Result<()> {
     let def = find(id).ok_or_else(|| anyhow::anyhow!("unknown param {id:?}"))?;
+    validate_def(def, id, value)
+}
+
+fn validate_def(def: &ParamDef, id: &str, value: &ParamValue) -> anyhow::Result<()> {
     match (def.kind, value) {
         (ParamKind::Float, ParamValue::Float(v)) => {
             if !v.is_finite() {
@@ -594,5 +676,121 @@ mod tests {
         assert!(validate("comp_ratio", &ParamValue::Float(2.0)).is_ok());
         assert!(validate("comp_ratio", &ParamValue::Float(1.0)).is_err());
         assert!(validate("nope", &ParamValue::Float(0.0)).is_err());
+    }
+
+    // Provider-contributed DSP rows for registry tests (never merged into
+    // CATALOGUE itself — the canonical table stays X-Air-shaped).
+    const PROVIDER_TABLE: &[ParamDef] = &[
+        ParamDef {
+            id: "wing:stagebox_gain",
+            kind: ParamKind::Float,
+            scope: ParamScope::Channel,
+            scopes: SCOPES_INPUT,
+            min: -12.0,
+            max: 60.0,
+            unit: "dB",
+            default: ParamDefault::Float(0.0),
+            label: "stagebox gain",
+        },
+        // A colliding row: the merge must keep the canonical `gain`
+        // (stable range/label) and ignore this one.
+        ParamDef {
+            id: "gain",
+            kind: ParamKind::Float,
+            scope: ParamScope::Channel,
+            scopes: SCOPES_INPUT,
+            min: 0.0,
+            max: 1.0,
+            unit: "",
+            default: ParamDefault::Float(0.0),
+            label: "shadowed",
+        },
+    ];
+
+    #[test]
+    fn registry_canonical_matches_static() {
+        let reg = ParamRegistry::canonical();
+        assert_eq!(reg.len(), CATALOGUE.len());
+        for def in CATALOGUE {
+            assert_eq!(reg.find(def.id).map(|d| d.id), Some(def.id));
+        }
+        // Free `find` and the registry agree on the canonical table.
+        assert_eq!(find("fader").unwrap().id, reg.find("fader").unwrap().id);
+    }
+
+    #[test]
+    fn registry_merges_provider_rows_canonical_wins() {
+        let reg = register_catalogue(PROVIDER_TABLE);
+        assert_eq!(reg.len(), CATALOGUE.len() + 1);
+        // Namespaced provider id resolves with its own range.
+        let extra = reg.find("wing:stagebox_gain").expect("provider row merges");
+        assert_eq!((extra.min, extra.max), (-12.0, 60.0));
+        assert!(reg.validate("wing:stagebox_gain", &ParamValue::Float(0.0)).is_ok());
+        assert!(reg.validate("wing:stagebox_gain", &ParamValue::Float(61.0)).is_err());
+        assert!(reg.validate("wing:stagebox_gain", &ParamValue::Bool(true)).is_err());
+        // Canonical `gain` is untouched by the colliding provider row.
+        let gain = reg.find("gain").unwrap();
+        assert_eq!((gain.min, gain.max), (-12.0, 60.0));
+        assert_eq!(gain.label, "gain");
+        // Canonical fader/mute/name/pan stay stable through any merge.
+        for id in ["fader", "mute", "name", "pan"] {
+            assert_eq!(reg.find(id).map(|d| d.id), Some(id));
+            assert_eq!(find(id).unwrap().id, reg.find(id).unwrap().id);
+        }
+        // Unknown ids still fail.
+        assert!(reg.validate("nope", &ParamValue::Float(0.0)).is_err());
+    }
+
+    #[test]
+    fn registry_register_is_idempotent_and_ordered() {
+        let mut reg = ParamRegistry::canonical();
+        reg.register(PROVIDER_TABLE);
+        let n = reg.len();
+        // Re-registering (or registering canonical ids) changes nothing.
+        reg.register(PROVIDER_TABLE);
+        reg.register(CATALOGUE);
+        assert_eq!(reg.len(), n);
+        // Canonical rows keep catalogue order; provider rows append after.
+        let ids: Vec<&str> = reg.iter().map(|d| d.id).collect();
+        assert_eq!(&ids[..CATALOGUE.len()], CATALOGUE.iter().map(|d| d.id).collect::<Vec<_>>());
+        assert_eq!(ids[CATALOGUE.len()], "wing:stagebox_gain");
+    }
+
+    #[test]
+    fn strip_kind_wire_names_stable_and_extensible() {
+        use crate::StripKind as K;
+        // The seven historical wire names are byte-identical.
+        for (kind, wire) in [
+            (K::In, "in"),
+            (K::Ret, "ret"),
+            (K::Bus, "bus"),
+            (K::FxSnd, "fxsnd"),
+            (K::Mtx, "mtx"),
+            (K::Main, "main"),
+            (K::Dca, "dca"),
+        ] {
+            assert_eq!(kind.as_str(), wire);
+            assert_eq!(K::parse(wire), Some(kind));
+            assert_eq!(K::kind_from_str(wire), kind);
+        }
+        // Unknown wire names fail strict parse but resolve extensibly.
+        assert_eq!(K::parse("grp"), None);
+        let custom = K::kind_from_str("grp");
+        assert_eq!(custom.as_str(), "grp");
+        assert!(matches!(custom, K::Custom("grp")));
+        // Custom kinds participate in scopes like any other kind.
+        let def = ParamDef {
+            id: "wing:stagebox_gain",
+            kind: ParamKind::Float,
+            scope: ParamScope::Channel,
+            scopes: &[K::Custom("grp")],
+            min: 0.0,
+            max: 1.0,
+            unit: "",
+            default: ParamDefault::Float(0.0),
+            label: "x",
+        };
+        assert!(supports_kind(&def, K::kind_from_str("grp")));
+        assert!(!supports_kind(&def, K::In));
     }
 }
