@@ -260,6 +260,38 @@
               }
             },
             {
+              "id": "desk",
+              "module": "channel-desk-card",
+              "bind": {
+                "vm": "deskVm"
+              },
+              "when": "deskVm != null",
+              "on": {
+                "lr": {
+                  "do": "ui.setLrAssign",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "assigned": {
+                      "$expr": "payload.assigned"
+                    }
+                  }
+                },
+                "automix": {
+                  "do": "ui.setAutomixWeight",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "value": {
+                      "$expr": "payload.value"
+                    }
+                  }
+                }
+              }
+            },
+            {
               "id": "presets",
               "module": "channel-presets-card",
               "bind": {
@@ -750,6 +782,17 @@
                     },
                     "togglePre": {
                       "do": "ui.toggleSendPre",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "k": {
+                          "$expr": "index"
+                        }
+                      }
+                    },
+                    "toggleGrpon": {
+                      "do": "ui.toggleSendGrpon",
                       "args": {
                         "id": {
                           "$expr": "selId"

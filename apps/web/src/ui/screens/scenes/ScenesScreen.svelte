@@ -68,8 +68,9 @@
       deskName={live.engine?.driver ?? 'desk'}
       onSave={snapSave}
       onLoad={(n, s) => live.engine?.sceneRecall(n, undefined, s)}
-      onDelete={n => live.engine?.sceneDelete(n)}
+      onDelete={(n) => live.engine?.sceneDelete(n)}
       onClear={() => live.engine?.sceneClear()}
+      onRename={(n, name) => live.engine?.sceneRename(n, name)}
     />
   </div>
 {/if}

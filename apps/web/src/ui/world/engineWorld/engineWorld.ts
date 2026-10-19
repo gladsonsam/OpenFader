@@ -998,6 +998,11 @@ export class EngineWorld implements World {
     this.lib.setSolo(ch, soloed);
     this.bump();
   }
+  /** Desk fire-and-forget clear-solo (monitor bus only; no echo to wait for). */
+  clearSolo(): void {
+    this.lib.clearSolo();
+    this.bump();
+  }
   fileDownload(filename: string): void {
     this.lib.fileDownload(filename);
   }

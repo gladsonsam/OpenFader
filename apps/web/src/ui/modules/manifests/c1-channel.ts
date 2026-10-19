@@ -17,6 +17,7 @@ import type { Component } from 'svelte';
 import type { ModuleManifest, ModuleProps } from '../types.ts';
 import ChannelTabButton from '../../screens/channel/ChannelTabButton.svelte';
 import GroupsCard from '../../screens/channel/GroupsCard.svelte';
+import DeskCard from '../../screens/channel/DeskCard.svelte';
 import StripNameChip from '../../screens/channel/StripNameChip.svelte';
 import StripPanBar from '../../screens/channel/StripPanBar.svelte';
 import StripMute from '../../screens/channel/StripMute.svelte';
@@ -164,7 +165,7 @@ export const manifests: ModuleManifest[] = [
     props: { row: vmObject, fine: { type: 'bool', default: false } },
     defaults: { fine: false },
     size: { minW: 320, fixedH: 58 },
-    events: [{ name: 'input', args: ['value'] }, { name: 'togglePre' }],
+    events: [{ name: 'input', args: ['value'] }, { name: 'togglePre' }, { name: 'toggleGrpon' }],
   },
   {
     id: 'channel-groups-card',
@@ -175,6 +176,16 @@ export const manifests: ModuleManifest[] = [
     defaults: {},
     size: { flex: true, minW: 270 },
     events: [{ name: 'assign', args: ['kind', 'group', 'member'] }, { name: 'master', args: ['kind', 'group', 'muted'] }],
+  },
+  {
+    id: 'channel-desk-card',
+    title: 'Channel desk-config card',
+    category: 'channel',
+    component: as(DeskCard),
+    props: { vm: vmObject },
+    defaults: {},
+    size: { flex: true, minW: 270 },
+    events: [{ name: 'lr', args: ['assigned'] }, { name: 'automix', args: ['value'] }],
   },
 ];
 
