@@ -111,16 +111,19 @@ assert.equal(w0.state.connected, 'foh');
   assert.equal(on.devices.length, 1);
   assert.equal(on.devices[0]!.name, 'XR18');
   assert.equal(on.emptyText, null);
+  assert.equal(on.showManualDesk, true);
 
   const linked = buildConnectionVm(w0.state, { ...base, phase: 'online', message: 'Live', latencyMs: 12, strips: 77, devices: desks, scannedAt: 1, linkName: 'XR18' });
   assert.equal(linked.title, 'Connected to XR18');
   assert.equal(linked.sub, 'X-Air XR18 · 192.168.40.123');
   assert.equal(linked.dot, '#5fe060');
+  assert.equal(linked.showManualDesk, true);
 
   const err = buildConnectionVm(w0.state, { ...base, phase: 'error', message: 'No response from relay at h' });
   assert.equal(err.title, 'Not connected');
   assert.equal(err.sub, 'Pick a console below');
   assert.equal(err.dot, '#ff4a3d');
+  assert.equal(err.showManualDesk, true);
 
   const unscanned = buildConnectionVm(w0.state, { ...base, phase: 'online', message: 'Live', latencyMs: 1, strips: 0, devices: [], scannedAt: 0 });
   assert.equal(unscanned.emptyText, 'Press Scan to list the desks on this network.');
