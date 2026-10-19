@@ -4,11 +4,17 @@ Rules: one worker per file-area (no overlapping paths). New items go to
 Queued with the owner's words. A worker is dispatched only when a slot is
 free AND its files don't collide with the running worker.
 
-## In flight (2/2 slots full)
-1. Channel topbar simplification (`ses_eae7cc976ffeCL5M38Z7uc3cKZ`) —
-   back-to-mixer + name + prev/next only, switcher removed.
-2. Verification loop completion (`ses_eae8d6395ffe6xukMszT5HS9vd`) —
-   finish + run scripts/verify-bidirectional.mjs, file the gap list.
+## In flight (1/2 slots — 1 free)
+1. Channel topbar simplification (running) — back-to-mixer + name +
+   prev/next only, switcher removed.
+
+## Queued (in order)
+1. G5 fix (REAL product gap from verification): solo has no desk→app
+   path — solosw bank not in poll set, UI solos view echo-only. Wire
+   parse_inbound + poll set. (Needs re-run approval: harness fixed but
+   re-run touches the desk ~40 min.)
+2. Mobile routing rework (usable on mobile).
+3. Graph label collisions (comp/EQ axis + summary wraps).
 
 ## Queued (in order)
 1. Channel view topbar simplification: back-to-mixer button + channel
