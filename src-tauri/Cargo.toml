@@ -11,17 +11,14 @@ tauri-build = { version = "2", features = [] }
 tauri = { version = "2", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-anyhow = "1"
+tokio = { version = "1", features = ["time"] }
 tauri-plugin-os = "2"
 tauri-plugin-store = "2"
 tauri-plugin-log = "2"
+tauri-plugin-updater = "2"
 tauri-plugin-haptics = "2"
 tauri-plugin-edge-to-edge = "0.3"
 tauri-plugin-keep-screen-on = "0.1"
-openmix-core = { path = "../crates/core" }
-openmix-sim = { path = "../crates/sim" }
-openmix-proto-xair = { path = "../crates/proto-xair" }
-openmix-proto-dl32s = { path = "../crates/proto-dl32s" }
 openmix-engine = { path = "../crates/engine" }
 
 [dev-dependencies]

@@ -30,7 +30,15 @@ pub struct StripId(pub u16);
 /// Strip family kind, as carried in `caps.topology[].kind`
 /// (`in|ret|bus|fxsnd|mtx|main|dca`). Catalogue entries declare which kinds
 /// they apply to via [`params::ParamDef::scopes`].
+///
+/// The enum is [`non_exhaustive`](https://doc.rust-lang.org/reference/attributes/type_system.html#the-non_exhaustive-attribute):
+/// future desks (Wing/X32/M32, …) contribute new families through
+/// [`StripKind::Custom`] instead of editing core. Downstream matches must
+/// carry a wildcard arm. The seven historical wire names are byte-identical
+/// in the `caps` JSON; [`StripKind::as_str`] returns the inner name for
+/// [`StripKind::Custom`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum StripKind {
     In,
     Ret,
@@ -39,11 +47,16 @@ pub enum StripKind {
     Mtx,
     Main,
     Dca,
+    /// Provider-extended family kind. The inner value is the wire name
+    /// (convention: lowercase, e.g. `"grp"`); it renders verbatim in
+    /// `caps.topology[].kind` and `scopes`.
+    Custom(&'static str),
 }
 
 impl StripKind {
-    /// Wire name used in the `caps` frame (`in|ret|bus|fxsnd|mtx|main|dca`).
-    pub const fn as_str(self) -> &'static str {
+    /// Wire name used in the `caps` frame (`in|ret|bus|fxsnd|mtx|main|dca`,
+    /// or the provider name for [`StripKind::Custom`]).
+    pub fn as_str(self) -> &'static str {
         match self {
             StripKind::In => "in",
             StripKind::Ret => "ret",
@@ -52,10 +65,13 @@ impl StripKind {
             StripKind::Mtx => "mtx",
             StripKind::Main => "main",
             StripKind::Dca => "dca",
+            StripKind::Custom(name) => name,
         }
     }
 
-    /// Parse a wire kind name back (caps round-trip / tests).
+    /// Parse a wire kind name back (caps round-trip / tests). Unknown names
+    /// return `None` — use [`StripKind::kind_from_str`] when provider kinds
+    /// must resolve instead of failing.
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "in" => Some(StripKind::In),
@@ -67,6 +83,16 @@ impl StripKind {
             "dca" => Some(StripKind::Dca),
             _ => None,
         }
+    }
+
+    /// Extensible kind resolution: the seven canonical wire names map to
+    /// their variants, anything else becomes [`StripKind::Custom`] carrying
+    /// the name verbatim (so a future desk's `"grp"` family round-trips
+    /// through caps without a core edit). The input must be `'static`
+    /// because [`StripKind::Custom`] stores it by reference — string
+    /// literals from provider topology tables qualify.
+    pub fn kind_from_str(s: &'static str) -> Self {
+        Self::parse(s).unwrap_or(StripKind::Custom(s))
     }
 }
 
@@ -100,6 +126,120 @@ impl StripFamily {
     pub const fn contains(self, i: usize) -> bool {
         i >= self.first && i < self.first + self.count
     }
+}
+
+/// Opaque stable strip key for one strip in a family (`family_key/index`).
+///
+/// Keys survive desk switching where positional [`StripId`]s do not (sim 77
+/// strips, xair 35, dl32s 32): profiles, banks and scenes store keys, and
+/// the engine resolves them against the active desk's topology.
+///
+/// Format: `{family_key}/{nn}` with the 1-based index in the family padded
+/// to 2 digits (`ch/01`, `bus/01`, `fxret/01`, `dca/02`). The single-strip
+/// `main` family is the bare key (`main`). `idx` is 1-based; `0` yields
+/// `"{family_key}/00"` (callers should reject it via [`parse_strip_key`]).
+/// The `mix` legacy alias is normalised to `bus` (the sim bus family key)
+/// so sim-captured banks resolve on xair/dl32s surfaces.
+pub fn strip_key(family_key: &str, idx: u16) -> String {
+    let fam = strip_family_alias(family_key);
+    if fam == "main" {
+        return "main".to_string();
+    }
+    format!("{fam}/{:02}", idx.min(99))
+}
+
+/// Legacy family-key alias normalisation for strip keys: the sim bus family
+/// is keyed `mix` while xair keys it `bus` — both are kind `Bus` and the
+/// same masters. Keys always use the canonical `bus` spelling; the parser
+/// accepts both.
+pub fn strip_family_alias(family_key: &str) -> &str {
+    match family_key.trim() {
+        "mix" => "bus",
+        other => other,
+    }
+}
+
+/// Parse a stable strip key back into (family key, 1-based index).
+///
+/// Accepts `main` (single-strip family → `("main", 1)`), `main/1`,
+/// `ch/01` / `ch/1`, and the legacy `mix/01` alias (normalised to `bus`).
+/// Returns `None` for empty families, index `0`, or malformed keys
+/// (empty input, extra slashes, non-numeric index).
+pub fn parse_strip_key(key: &str) -> Option<(String, u16)> {
+    let key = key.trim();
+    if key.is_empty() {
+        return None;
+    }
+    if key == "main" {
+        return Some(("main".to_string(), 1));
+    }
+    let (fam, num) = key.split_once('/')?;
+    let fam = strip_family_alias(fam.trim());
+    if fam.is_empty() || fam.contains('/') || fam.contains(char::is_whitespace) {
+        return None;
+    }
+    if num.trim().is_empty() {
+        return None;
+    }
+    // Reject anything past a single `fam/nn` shape.
+    if num.contains('/') {
+        return None;
+    }
+    let idx: u16 = num.trim().parse().ok()?;
+    if idx == 0 {
+        return None;
+    }
+    Some((fam.to_string(), idx))
+}
+
+/// Canonical family key behind [`strip_key_for_index`]: bus-kind families
+/// always key as `bus` (sim `mix` vs xair `bus`); every other family keys
+/// as its topology key.
+pub fn canonical_family_key(fam: &StripFamily) -> &str {
+    if fam.kind == StripKind::Bus {
+        "bus"
+    } else {
+        strip_family_alias(fam.key)
+    }
+}
+
+/// Stable key for a global strip index under `topology` (`None` when the
+/// index belongs to no family). Single-strip families key as the bare
+/// family key (`main`); the rest key as `family/nn` (see [`strip_key`]).
+/// Bus-kind families normalise to `bus` (see [`canonical_family_key`]).
+pub fn strip_key_for_index(topology: &[StripFamily], index: usize) -> Option<String> {
+    let fam = topology.iter().find(|f| f.contains(index))?;
+    let canon = canonical_family_key(fam);
+    if fam.count == 1 {
+        return Some(canon.to_string());
+    }
+    let local = (index - fam.first + 1).min(99);
+    Some(strip_key(canon, local as u16))
+}
+
+/// Global strip index for a stable key under `topology` (`None` when the
+/// key names no strip here). Accepts the `mix/..` legacy alias and bare
+/// `main`; single-strip families also accept `key/1`.
+pub fn strip_index_for_key(topology: &[StripFamily], key: &str) -> Option<usize> {
+    let (fam_key, idx) = parse_strip_key(key)?;
+    // Exact family-key match first (covers `ch2/01`, `fxsnd/..`, …), then
+    // the canonical bus fallback (`bus/01` on the sim `mix` family).
+    let fam = topology
+        .iter()
+        .find(|f| strip_family_alias(f.key) == fam_key.as_str())
+        .or_else(|| {
+            topology
+                .iter()
+                .find(|f| canonical_family_key(f) == fam_key.as_str())
+        })?;
+    if fam.count == 1 {
+        return if idx == 1 { Some(fam.first) } else { None };
+    }
+    let n = idx as usize;
+    if n == 0 || n > fam.count {
+        return None;
+    }
+    Some(fam.first + n - 1)
 }
 
 /// Per-tick meter levels, one entry per strip (linear 0.0..=1.0).
@@ -473,6 +613,21 @@ pub trait MixerDriver: Send + Sync {
         &["fader", "mute", "name"]
     }
 
+    /// Provider-contributed param definitions merged with the canonical
+    /// [`crate::params::CATALOGUE`] at engine boot (see
+    /// [`crate::params::ParamRegistry`]): rows for desk-specific DSP that
+    /// has no canonical id. Default is empty (the driver serves canonical
+    /// ids only); a driver that adds DSP returns its table here AND lists
+    /// every served id (canonical + contributed) in
+    /// [`capabilities`](MixerDriver::capabilities) so the engine polls and
+    /// advertises it. Convention for contributed ids is
+    /// `vendor:param` namespacing (e.g. `"wing:stagebox_gain"`) so tables
+    /// never collide; on an id clash the canonical row wins and the
+    /// provider row is ignored.
+    fn param_defs(&self) -> &'static [crate::params::ParamDef] {
+        &[]
+    }
+
     /// Ordered strip families in the global strip index space
     /// (`caps.topology`). Default is one `in` family covering
     /// [`MixerDriver::channel_count`] so drivers that have not grown
@@ -604,5 +759,60 @@ mod tests {
             let back = SYNTH.inverse(SYNTH.forward(level));
             assert!((back - level).abs() < 1e-5, "level {level}");
         }
+    }
+
+    #[test]
+    fn strip_key_format_and_parse() {
+        // Examples from the workstream brief.
+        assert_eq!(super::strip_key("ch", 1), "ch/01");
+        assert_eq!(super::strip_key("bus", 1), "bus/01");
+        assert_eq!(super::strip_key("dca", 2), "dca/02");
+        assert_eq!(super::strip_key("fxret", 1), "fxret/01");
+        assert_eq!(super::strip_key("main", 1), "main");
+        // Unpadded singles parse to the same identity.
+        assert_eq!(super::parse_strip_key("ch/01"), Some(("ch".to_string(), 1)));
+        assert_eq!(super::parse_strip_key("bus/1"), Some(("bus".to_string(), 1)));
+        assert_eq!(super::parse_strip_key("dca/2"), Some(("dca".to_string(), 2)));
+        assert_eq!(super::parse_strip_key("main"), Some(("main".to_string(), 1)));
+        assert_eq!(super::parse_strip_key("main/1"), Some(("main".to_string(), 1)));
+        // Legacy sim alias normalises.
+        assert_eq!(super::strip_key("mix", 1), "bus/01");
+        assert_eq!(super::parse_strip_key("mix/01"), Some(("bus".to_string(), 1)));
+        // Malformed keys fail.
+        for bad in ["", " ", "ch/", "ch/0", "/01", "ch/01/x", "ch/x", "main/2x"] {
+            assert_eq!(super::parse_strip_key(bad), None, "key {bad:?}");
+        }
+        // Round-trip across the padded range.
+        for n in 1..=48u16 {
+            let k = super::strip_key("ch", n);
+            assert_eq!(super::parse_strip_key(&k), Some(("ch".to_string(), n.min(99))), "key {k}");
+        }
+    }
+
+    #[test]
+    fn strip_key_index_roundtrip_bus_alias() {
+        use super::{strip_index_for_key, strip_key_for_index, StripFamily, StripKind};
+        // sim-shaped bus family keyed `mix`, xair-shaped keyed `bus`.
+        let sim = [
+            StripFamily { key: "ch", kind: StripKind::In, label: "Ch", first: 0, count: 2, name_prefix: "Ch", color_default: 2 },
+            StripFamily { key: "mix", kind: StripKind::Bus, label: "Mix", first: 2, count: 2, name_prefix: "Mix", color_default: 6 },
+            StripFamily { key: "main", kind: StripKind::Main, label: "Main", first: 4, count: 1, name_prefix: "Main", color_default: 11 },
+        ];
+        let xair = [
+            StripFamily { key: "ch", kind: StripKind::In, label: "Ch", first: 0, count: 2, name_prefix: "Ch", color_default: 2 },
+            StripFamily { key: "bus", kind: StripKind::Bus, label: "Bus", first: 2, count: 2, name_prefix: "Mix", color_default: 6 },
+        ];
+        // Canonical bus spelling on both desks.
+        assert_eq!(strip_key_for_index(&sim, 2), Some("bus/01".to_string()));
+        assert_eq!(strip_key_for_index(&xair, 2), Some("bus/01".to_string()));
+        assert_eq!(strip_key_for_index(&sim, 4), Some("main".to_string()));
+        // Cross-desk resolve: a sim-captured bus key lands on the xair bus.
+        assert_eq!(strip_index_for_key(&xair, "bus/01"), Some(2));
+        assert_eq!(strip_index_for_key(&xair, "mix/01"), Some(2));
+        assert_eq!(strip_index_for_key(&sim, "bus/02"), Some(3));
+        // Out-of-range / unknown families miss.
+        assert_eq!(strip_index_for_key(&xair, "bus/03"), None);
+        assert_eq!(strip_index_for_key(&xair, "dca/01"), None);
+        assert_eq!(strip_key_for_index(&xair, 99), None);
     }
 }

@@ -266,7 +266,7 @@ async fn connect_device_moves_link() {
     )
     .await;
     assert_eq!(ev_json(&link).get("state"), Some(&json!("disconnected")));
-    client.send(Cmd::Fader { ch: 0, value: 0.5 }).await.unwrap();
+    client.send(Cmd::Fader { ch: 0, value: 0.5, key: None}).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::State { .. })).await;
 }
 
@@ -298,14 +298,14 @@ async fn scene_save_recall_roundtrip_restores_plane() {
     let mut client = engine.attach(None).await;
     drain_snapshot(&mut client).await;
     // Live values to capture: fader + EQ gain + comp threshold + send.
-    client.send(Cmd::Fader { ch: 0, value: 0.9 }).await.unwrap();
+    client.send(Cmd::Fader { ch: 0, value: 0.9, key: None}).await.unwrap();
     for (field, value) in [
         ("eq1_gain", json!(5.0)),
         ("comp_thr", json!(-25.0)),
         ("send1_level", json!(-10.0)),
     ] {
         client
-            .send(Cmd::Param { ch: 0, field: field.to_string(), value })
+            .send(Cmd::Param { ch: 0, field: field.to_string(), value, key: None})
             .await
             .unwrap();
     }
@@ -323,9 +323,9 @@ async fn scene_save_recall_roundtrip_restores_plane() {
     assert_eq!(list[0].get("name"), Some(&json!("Set 1")));
     assert_eq!(list[0].get("current"), Some(&json!(false)));
     // Move away, then recall with no fade.
-    client.send(Cmd::Fader { ch: 0, value: 0.1 }).await.unwrap();
+    client.send(Cmd::Fader { ch: 0, value: 0.1, key: None}).await.unwrap();
     client
-        .send(Cmd::Param { ch: 0, field: "eq1_gain".to_string(), value: json!(-5.0) })
+        .send(Cmd::Param { ch: 0, field: "eq1_gain".to_string(), value: json!(-5.0), key: None})
         .await
         .unwrap();
     while client.events.try_recv().is_ok() {}
@@ -381,24 +381,24 @@ async fn scene_recall_scope_filters_axes() {
     let mut client = engine.attach(None).await;
     let _snap = drain_snapshot(&mut client).await;
     // Seed known state, then save as scene 5.
-    client.send(Cmd::Fader { ch: 0, value: 0.9 }).await.unwrap();
-    client.send(Cmd::Mute { ch: 0, muted: true }).await.unwrap();
+    client.send(Cmd::Fader { ch: 0, value: 0.9, key: None}).await.unwrap();
+    client.send(Cmd::Mute { ch: 0, muted: true, key: None}).await.unwrap();
     client
-        .send(Cmd::Param { ch: 0, field: "eq1_gain".to_string(), value: json!(5.0) })
+        .send(Cmd::Param { ch: 0, field: "eq1_gain".to_string(), value: json!(5.0), key: None})
         .await
         .unwrap();
-    client.send(Cmd::Fader { ch: 1, value: 0.2 }).await.unwrap();
+    client.send(Cmd::Fader { ch: 1, value: 0.2, key: None}).await.unwrap();
     while client.events.try_recv().is_ok() {}
     client.send(Cmd::SceneSave { n: 5, name: "Scoped".to_string() }).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::Scenes { .. })).await;
     // Move away everywhere.
-    client.send(Cmd::Fader { ch: 0, value: 0.1 }).await.unwrap();
-    client.send(Cmd::Mute { ch: 0, muted: false }).await.unwrap();
+    client.send(Cmd::Fader { ch: 0, value: 0.1, key: None}).await.unwrap();
+    client.send(Cmd::Mute { ch: 0, muted: false, key: None}).await.unwrap();
     client
-        .send(Cmd::Param { ch: 0, field: "eq1_gain".to_string(), value: json!(-5.0) })
+        .send(Cmd::Param { ch: 0, field: "eq1_gain".to_string(), value: json!(-5.0), key: None})
         .await
         .unwrap();
-    client.send(Cmd::Fader { ch: 1, value: 0.8 }).await.unwrap();
+    client.send(Cmd::Fader { ch: 1, value: 0.8, key: None}).await.unwrap();
     while client.events.try_recv().is_ok() {}
     // Scoped recall: mute group only, strip 0 only.
     client
@@ -407,6 +407,7 @@ async fn scene_recall_scope_filters_axes() {
             fade_ms: Some(0),
             scope: Some(RecallScope {
                 strips: Some(vec![0]),
+                strip_keys: None,
                 groups: Some(vec!["mute".to_string()]),
                 globals: Some(vec![]),
             }),
@@ -452,7 +453,7 @@ async fn scenes_persist_across_restart() {
     engine.connect("sim", None).await.unwrap();
     let mut client = engine.attach(None).await;
     drain_snapshot(&mut client).await;
-    client.send(Cmd::Fader { ch: 2, value: 0.77 }).await.unwrap();
+    client.send(Cmd::Fader { ch: 2, value: 0.77, key: None}).await.unwrap();
     while client.events.try_recv().is_ok() {}
     client.send(Cmd::SceneSave { n: 7, name: "Persist".to_string() }).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::Scenes { .. })).await;
@@ -577,27 +578,27 @@ async fn routing_patch_roundtrip() {
     assert!(!patches.is_empty());
     assert!(patches.iter().any(|p| p.get("strip") == Some(&json!(0)) && p.get("label") == Some(&json!("Lcl 01"))));
     // Patch + clear round-trip.
-    client.send(Cmd::PatchSet { strip: 0, group: "Net".to_string(), index: 5 }).await.unwrap();
+    client.send(Cmd::PatchSet { strip: 0, group: "Net".to_string(), index: 5, key: None}).await.unwrap();
     let routing = wait_for(
         &mut client,
         |e| matches!(e, Event::Routing { patches } if patches.iter().any(|p| p.strip == 0 && p.label == "Net 05")),
     )
     .await;
     let _ = routing;
-    client.send(Cmd::PatchClear { strip: 0 }).await.unwrap();
+    client.send(Cmd::PatchClear { strip: 0, key: None}).await.unwrap();
     wait_for(
         &mut client,
         |e| matches!(e, Event::Routing { patches } if patches.iter().all(|p| p.strip != 0)),
     )
     .await;
     // Errors: unknown group, bad index, non-input strip.
-    client.send(Cmd::PatchSet { strip: 0, group: "AES".to_string(), index: 1 }).await.unwrap();
+    client.send(Cmd::PatchSet { strip: 0, group: "AES".to_string(), index: 1, key: None}).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "unknown patch group"));
-    client.send(Cmd::PatchSet { strip: 0, group: "Lcl".to_string(), index: 33 }).await.unwrap();
+    client.send(Cmd::PatchSet { strip: 0, group: "Lcl".to_string(), index: 33, key: None}).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "out of range"));
-    client.send(Cmd::PatchSet { strip: 32, group: "Lcl".to_string(), index: 1 }).await.unwrap();
+    client.send(Cmd::PatchSet { strip: 32, group: "Lcl".to_string(), index: 1, key: None}).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "input strips"));
 }
@@ -618,9 +619,9 @@ async fn offline_diff_push_flow() {
     .await;
     assert_eq!(ev_json(&link).get("name"), Some(&json!("Offline (xair)")));
     // Edit while offline: fader + param.
-    client.send(Cmd::Fader { ch: 1, value: 0.55 }).await.unwrap();
+    client.send(Cmd::Fader { ch: 1, value: 0.55, key: None}).await.unwrap();
     client
-        .send(Cmd::Param { ch: 1, field: "gain".to_string(), value: json!(33.0) })
+        .send(Cmd::Param { ch: 1, field: "gain".to_string(), value: json!(33.0), key: None})
         .await
         .unwrap();
     while client.events.try_recv().is_ok() {}
@@ -657,7 +658,7 @@ async fn offline_diff_push_flow() {
     // Discard path: offline, edit, connect, discard.
     client.send(Cmd::Offline { model: "dl32s".to_string() }).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::Link { state, .. } if state == "offline")).await;
-    client.send(Cmd::Fader { ch: 2, value: 0.11 }).await.unwrap();
+    client.send(Cmd::Fader { ch: 2, value: 0.11, key: None}).await.unwrap();
     while client.events.try_recv().is_ok() {}
     client.send(Cmd::Connect { driver: "sim".to_string(), addr: None }).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::OfflineDiff { count, .. } if *count == 1)).await;
@@ -801,7 +802,7 @@ async fn pipelined_writes_still_preempt() {
     let mut me = engine.attach(Some("writer".to_string())).await;
     drain_snapshot(&mut me).await;
     for i in 0..20u16 {
-        me.send(Cmd::Fader { ch: i % 32, value: 0.5 }).await.unwrap();
+        me.send(Cmd::Fader { ch: i % 32, value: 0.5, key: None}).await.unwrap();
     }
     while me.events.try_recv().is_ok() {}
     let n = 500usize;
@@ -811,13 +812,12 @@ async fn pipelined_writes_still_preempt() {
         let v = 0.1 + 0.8 * ((i % 100) as f32 / 100.0);
         let t = std::time::Instant::now();
         if i % 2 == 0 {
-            me.send(Cmd::Fader { ch, value: v }).await.unwrap();
+            me.send(Cmd::Fader { ch, value: v, key: None}).await.unwrap();
         } else {
             me.send(Cmd::Param {
                 ch,
                 field: "gain".to_string(),
-                value: json!(20.0),
-            })
+                value: json!(20.0), key: None})
             .await
             .unwrap();
         }
@@ -828,7 +828,7 @@ async fn pipelined_writes_still_preempt() {
     println!("pipelined_write p99={p99:?} poll_skips={}", engine.poll_skips());
     assert!(p99 <= Duration::from_millis(5), "pipelined write p99 {p99:?} exceeds 5 ms");
     // Every write landed (last write wins on ch 19... check final state).
-    me.send(Cmd::Fader { ch: 7, value: 0.77 }).await.unwrap();
+    me.send(Cmd::Fader { ch: 7, value: 0.77, key: None}).await.unwrap();
     let state = wait_for(&mut me, |e| {
         matches!(e, Event::State { strips, .. } if strips.iter().any(|s| s.ch == 7 && (s.fader - 0.77).abs() < 1e-6))
     })
@@ -870,18 +870,18 @@ async fn masters_groups_files_roundtrip() {
     wait_for(&mut client, |e| matches!(e, Event::Subgroup { group: 1, muted: true, .. })).await;
 
     // Membership round-trips.
-    client.send(Cmd::SubgroupAssign { ch: 0, group: 1, member: true }).await.unwrap();
+    client.send(Cmd::SubgroupAssign { ch: 0, group: 1, member: true, key: None}).await.unwrap();
     wait_for(
         &mut client,
-        |e| matches!(e, Event::SubgroupAssign { ch: 0, group: 1, member: true }),
+        |e| matches!(e, Event::SubgroupAssign { ch: 0, group: 1, member: true, ..}),
     )
     .await;
     client.send(Cmd::MuteGroup { group: 0, muted: true }).await.unwrap();
-    wait_for(&mut client, |e| matches!(e, Event::MuteGroup { group: 0, muted: true })).await;
-    client.send(Cmd::MuteGroupAssign { ch: 5, group: 2, member: false }).await.unwrap();
+    wait_for(&mut client, |e| matches!(e, Event::MuteGroup { group: 0, muted: true, ..})).await;
+    client.send(Cmd::MuteGroupAssign { ch: 5, group: 2, member: false, key: None}).await.unwrap();
     wait_for(
         &mut client,
-        |e| matches!(e, Event::MuteGroupAssign { ch: 5, group: 2, member: false }),
+        |e| matches!(e, Event::MuteGroupAssign { ch: 5, group: 2, member: false, ..}),
     )
     .await;
 
@@ -893,10 +893,10 @@ async fn masters_groups_files_roundtrip() {
     wait_for(&mut client, |e| matches!(e, Event::Main { muted: Some(false), .. })).await;
 
     // Per-strip solo round-trip (sim in-memory; monitor bus only).
-    client.send(Cmd::Solo { ch: 3, soloed: true }).await.unwrap();
-    wait_for(&mut client, |e| matches!(e, Event::Solo { ch: 3, soloed: true })).await;
-    client.send(Cmd::Solo { ch: 3, soloed: false }).await.unwrap();
-    wait_for(&mut client, |e| matches!(e, Event::Solo { ch: 3, soloed: false })).await;
+    client.send(Cmd::Solo { ch: 3, soloed: true, key: None}).await.unwrap();
+    wait_for(&mut client, |e| matches!(e, Event::Solo { ch: 3, soloed: true, ..})).await;
+    client.send(Cmd::Solo { ch: 3, soloed: false, key: None}).await.unwrap();
+    wait_for(&mut client, |e| matches!(e, Event::Solo { ch: 3, soloed: false, ..})).await;
 
     // File upload then download round-trip (base64 `AAECAw==` == [0,1,2,3]).
     client

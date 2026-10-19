@@ -3,7 +3,7 @@
 // undo/redo over the op list. Locked profiles reject mutations.
 
 import { applyOp, applyProfile, type ProfileOp } from './ops.ts';
-import { emptyProfile, loadStoredProfile, saveStoredProfile, type UserProfile } from './io.ts';
+import { emptyProfile, loadStoredProfile, saveStoredProfile, type BankDef, type PageDef, type UserProfile } from './io.ts';
 import { createHistory, pushHistory, redoHistory, undoHistory } from './history.ts';
 import { cloneNode } from '../schema.ts';
 import type { LayoutNode } from '../schema.ts';
@@ -23,6 +23,11 @@ export interface ProfileStore {
   setLocked(locked: boolean): void;
   setThemeVar(name: string, value: string): void;
   setCustomCss(css: string): void;
+  /** Replace the whole op list (editor reset-node path). Rejected when locked. */
+  setOps(ops: ProfileOp[]): boolean;
+  /** Replace banks / pages (share panel editors). Rejected when locked. */
+  setBanks(banks: BankDef[]): boolean;
+  setPages(pages: PageDef[]): boolean;
 }
 
 export function createProfileStore(id: string, fallback?: UserProfile): ProfileStore {
@@ -107,6 +112,24 @@ export function createProfileStore(id: string, fallback?: UserProfile): ProfileS
       if (profile.locked) return;
       profile.customCss = css;
       saveStoredProfile(profile);
+    },
+    setOps(ops: ProfileOp[]): boolean {
+      if (profile.locked) return false;
+      hist = pushHistory(hist, [...ops]);
+      persist();
+      return true;
+    },
+    setBanks(banks: BankDef[]): boolean {
+      if (profile.locked) return false;
+      profile.banks = cloneNode(banks);
+      saveStoredProfile(profile);
+      return true;
+    },
+    setPages(pages: PageDef[]): boolean {
+      if (profile.locked) return false;
+      profile.pages = cloneNode(pages);
+      saveStoredProfile(profile);
+      return true;
     },
   };
 }

@@ -21,7 +21,7 @@
 //! let engine = Engine::new(EngineConfig::default());
 //! engine.connect("sim", None).await.unwrap();
 //! let mut client = engine.attach(Some("ui".to_string())).await;
-//! client.send(Cmd::Fader { ch: 0, value: 0.5 }).await.unwrap();
+//! client.send(Cmd::Fader { ch: 0, key: None, value: 0.5 }).await.unwrap();
 //! // `client.events` yields `Event`s: the initial snapshot first
 //! // (`you`, `state`, `shows`, `clients`, `locks`, `caps`, `devices`,
 //! // `link`, `info`?, `scenes`, `fx`, `routing`, `params`…),
@@ -29,6 +29,7 @@
 //! # }
 //! ```
 
+pub mod drivers;
 pub mod engine;
 pub mod protocol;
 

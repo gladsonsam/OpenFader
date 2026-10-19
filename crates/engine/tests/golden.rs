@@ -36,12 +36,14 @@ fn examples() -> Vec<(String, Value)> {
                 strips: vec![
                     openmix_engine::protocol::StateStrip {
                         ch: 0,
+                        key: None,
                         name: "CH01".to_string(),
                         fader: 0.5,
                         muted: false,
                     },
                     openmix_engine::protocol::StateStrip {
                         ch: 1,
+                        key: None,
                         name: "Vox".to_string(),
                         fader: 0.25,
                         muted: true,
@@ -55,6 +57,7 @@ fn examples() -> Vec<(String, Value)> {
             "param",
             Event::Param {
                 ch: 2,
+                key: None,
                 field: "gain".to_string(),
                 value: json!(12.5),
                 by: Some("client-2".to_string()),
@@ -71,12 +74,14 @@ fn examples() -> Vec<(String, Value)> {
                         strips: vec![
                             openmix_engine::protocol::SceneStrip {
                                 ch: 0,
+                                key: None,
                                 name: "CH01".to_string(),
                                 fader: 0.5,
                                 muted: false,
                             },
                             openmix_engine::protocol::SceneStrip {
                                 ch: 1,
+                                key: None,
                                 name: "Vox".to_string(),
                                 fader: 0.25,
                                 muted: true,
@@ -145,6 +150,7 @@ fn examples() -> Vec<(String, Value)> {
                     name_prefix: "Ch".to_string(),
                     color_default: 2,
                     params_scope: vec!["in".to_string()],
+                    strip_keys: vec![],
                 }],
                 meter_taps: vec![
                     "in".to_string(),
@@ -193,6 +199,7 @@ fn examples() -> Vec<(String, Value)> {
             "params",
             Event::Params {
                 ch: 3,
+                key: None,
                 values: [
                     ("gain".to_string(), json!(12.5)),
                     ("phantom".to_string(), json!(false)),
@@ -237,6 +244,7 @@ fn examples() -> Vec<(String, Value)> {
                 bus: 0,
                 fader: 0.75,
                 muted: false,
+                key: None,
             },
         ),
         (
@@ -245,6 +253,7 @@ fn examples() -> Vec<(String, Value)> {
                 group: 1,
                 fader: 0.7,
                 muted: true,
+                key: None,
             },
         ),
         (
@@ -253,6 +262,7 @@ fn examples() -> Vec<(String, Value)> {
                 ch: 0,
                 group: 1,
                 member: true,
+                key: None,
             },
         ),
         (
@@ -260,6 +270,7 @@ fn examples() -> Vec<(String, Value)> {
             Event::MuteGroup {
                 group: 0,
                 muted: true,
+                key: None,
             },
         ),
         (
@@ -268,6 +279,7 @@ fn examples() -> Vec<(String, Value)> {
                 ch: 5,
                 group: 2,
                 member: false,
+                key: None,
             },
         ),
         (
