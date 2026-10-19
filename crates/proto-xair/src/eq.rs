@@ -28,12 +28,12 @@ use rosc::{OscMessage, OscType};
 
 /// EQ gain bounds in dB (firmware map `g lin(121) // -15..15`).
 pub const EQ_GAIN_MIN_DB: f32 = -15.0;
-/// EQ gain bounds in dB (firmware map `g lin(121) // -15..15`).
+/// EQ gain upper bound (see [`EQ_GAIN_MIN_DB`]).
 pub const EQ_GAIN_MAX_DB: f32 = 15.0;
 
 /// EQ corner bounds in Hz (firmware map `f log(201) // 20..20000`).
 pub const EQ_FREQ_MIN_HZ: f32 = 20.0;
-/// EQ corner bounds in Hz (firmware map `f log(201) // 20..20000`).
+/// EQ corner upper bound (see [`EQ_FREQ_MIN_HZ`]).
 pub const EQ_FREQ_MAX_HZ: f32 = 20000.0;
 
 /// EQ Q bounds (firmware map `q log(72) // 10..0.3`; xair-api validates
