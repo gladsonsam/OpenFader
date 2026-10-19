@@ -19,15 +19,16 @@ free AND its files don't collide with the running worker.
 3. Graph label collisions (comp/EQ axis + summary wraps).
 
 ## Queued (in order)
-1. Channel view topbar simplification: back-to-mixer button + channel
-   name + prev/next channel buttons only; then remove the separate
-   channel switcher UI it replaces.
-6. Routing usable on mobile (currently unusable — rework for small
-   screens: readable, tappable, no precision-dependent patching).
-7. Graph label collisions (comp/EQ graphs, phone): x-axis "-60" hides
-   behind the G node, "Input →" overlaps the curve, summary line
-   ("Makeup 0.0 dB") wraps mid-unit. Keep nodes clear of ticks,
-   no mid-unit wraps.
+1. Channel view topbar simplification (running as #2 in flight — listed
+   here so it isn't lost): back-to-mixer + name + prev/next, switcher
+   removed.
+2. G5 fix (REAL product gap from verification): solo has no desk→app
+   path — solosw bank not in poll set, UI solos view echo-only. Wire
+   parse_inbound + poll set.
+3. Verification re-run, FULL permission (owner granted desk writes) —
+   run the fixed matrix end to end, file remaining gaps.
+4. Mobile routing rework (usable on mobile).
+5. Graph label collisions (comp/EQ axis + summary wraps).
 
 ## Queued — server-side (NOT today; parked, do not dispatch)
 - Automixing (gain-sharing across channels on the server).
