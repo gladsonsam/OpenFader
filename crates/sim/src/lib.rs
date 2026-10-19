@@ -677,7 +677,7 @@ impl SimDriver {
         // catalogue id reads back a plausible live-desk value from the
         // first poll (no "unset optionals skipped"); writes overwrite.
         // Input strips 0..32 get the role scene; every other strip gets
-        // the family scene (buses included — previously unseeded).
+        // the family scene (buses included).
         let params: Vec<HashMap<String, ParamValue>> = strips
             .iter()
             .enumerate()
