@@ -4019,15 +4019,23 @@ impl Engine {
                     anyhow::bail!("fx slot {slot} out of range 1..={max} on {driver}");
                 }
                 let fx_type = fx_type.trim().to_string();
-                openmix_core::fx::fx_type_meta(&fx_type)
-                    .ok_or_else(|| anyhow::anyhow!("unknown fx type {fx_type:?}"))?;
-                if drv.fx_flavor() != FxFlavor::Design {
+                if drv.fx_flavor() == FxFlavor::Design {
+                    openmix_core::fx::fx_type_meta(&fx_type)
+                        .ok_or_else(|| anyhow::anyhow!("unknown fx type {fx_type:?}"))?;
+                } else if drv.fx_flavor() == FxFlavor::Numbered {
+                    // Desk-native rack (xair): names come from the desk type
+                    // table behind `caps.fx` (short codes like `HALL`), not
+                    // the design list — unknown here means unknown there.
+                    if xair_type_index_of(&fx_type).is_none() {
+                        anyhow::bail!("unknown fx type {fx_type:?}");
+                    }
+                } else {
                     anyhow::bail!(
-                        "{driver}: fx type select not supported (desk-native types are read-only here; UNVERIFIED-ON-RIG)"
+                        "{driver}: fx type select not supported (no verified mapping; UNVERIFIED-ON-RIG)"
                     );
                 }
                 let from = drv.fx_get_type(slot).unwrap_or_default();
-                drv.fx_set_type(slot, &fx_type)?;
+                drv.fx_set_type(slot, &fx_type).await?;
                 self.offline_note(slot as u16, "fx/type", json!(from), json!(fx_type.clone())).await;
                 self.refresh_fx_cache().await;
                 self.note_write(writer);
@@ -4911,6 +4919,47 @@ mod tests {
         assert!(!is_unsupported_error(&anyhow::anyhow!("sim: gain has no value yet")));
         assert!(!is_unsupported_error(&anyhow::anyhow!("fader: no value pushed yet")));
         assert!(!is_unsupported_error(&anyhow::anyhow!("not connected: call connect() first")));
+    }
+
+    #[test]
+    fn new_param_id_shapes_need_no_allowlist() {
+        // New CATALOGUE ids (lr_assign, solo_*, sendN_grpon, automix_weight,
+        // fx_insert, snap/scope, routing src) flow through the generic strip
+        // param path (`Cmd::Param` passes `field` straight to the driver —
+        // no match-list gates it). These pure helpers must already classify
+        // the new id shapes correctly so zero engine changes are needed:
+        // `sendN_grpon` rides the send slot-number rule into the bus/FX
+        // send recall groups; desk-global ids fall back to `config` (never
+        // silently dropped from a partial recall).
+        assert_eq!(send_slot_number("send1_grpon"), Some(1));
+        assert_eq!(send_slot_number("send10_grpon"), Some(10));
+        assert_eq!(send_slot_number("aux3_grpon"), Some(3));
+        assert_eq!(send_slot_number("fx2_grpon"), Some(2));
+        assert_eq!(send_slot_number("lr_assign"), None);
+        assert_eq!(param_scope_group("send1_grpon"), "sends_bus");
+        assert_eq!(param_scope_group("send1_tap"), "sends_bus");
+        assert_eq!(param_scope_group("send7_grpon"), "sends_fx");
+        assert_eq!(param_scope_group("send10_grpon"), "sends_fx");
+        assert_eq!(param_scope_group("lr_assign"), "config");
+        assert_eq!(param_scope_group("automix_weight"), "config");
+        assert!(is_priority_id("send1_grpon"));
+        assert!(!is_priority_id("lr_assign"));
+        assert!(!is_priority_id("automix_weight"));
+        assert_eq!(safe_order_key("send1_grpon").0, 7);
+        assert_eq!(safe_order_key("lr_assign").0, 9);
+    }
+
+    #[test]
+    fn xair_type_names_resolve_like_caps() {
+        // `FxSetType` on the desk-native rack validates against the same
+        // short-code table `caps.fx` advertises (proto-xair effect names),
+        // not the design list: design names are unknown there.
+        assert_eq!(xair_type_index_of("HALL"), Some(0));
+        assert_eq!(xair_type_index_of("VRM"), Some(7));
+        assert_eq!(xair_type_index_of("PIT"), Some(60));
+        assert_eq!(xair_type_index_of("Nope"), None);
+        assert_eq!(xair_type_index_of("Hall"), None);
+        assert_eq!(xair_type_index_of(""), None);
     }
 
     fn event_json(event: Event) -> Value {

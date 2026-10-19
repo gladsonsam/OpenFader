@@ -149,7 +149,7 @@ pub trait DynDriver: Send + Sync {
         anyhow::bail!("{}: fx type select not supported", self.name())
     }
     /// Design-rack type select (Design only).
-    fn fx_set_type(&self, slot: u8, fx_type: &str) -> anyhow::Result<()> {
+    async fn fx_set_type(&self, slot: u8, fx_type: &str) -> anyhow::Result<()> {
         let _ = (slot, fx_type);
         anyhow::bail!("{}: fx type select not supported", self.name())
     }
@@ -478,7 +478,7 @@ impl_dyn_driver!(openmix_sim::SimDriver {
     fn fx_get_type(&self, slot: u8) -> anyhow::Result<String> {
         self.get_fx_type(slot)
     }
-    fn fx_set_type(&self, slot: u8, fx_type: &str) -> anyhow::Result<()> {
+    async fn fx_set_type(&self, slot: u8, fx_type: &str) -> anyhow::Result<()> {
         self.set_fx_type(slot, fx_type)
     }
     fn fx_set_on(&self, slot: u8, on: bool) -> anyhow::Result<()> {
@@ -610,6 +610,16 @@ impl_dyn_driver!(openmix_proto_xair::XAirDriver {
     /// placeholders, never guessed).
     async fn fx_type_index(&self, slot: u8) -> Option<u8> {
         self.get_fx_type(slot).await.ok()
+    }
+    /// Desk-native type select (`/fx/N/type`, rig-verified 2026-10-19):
+    /// resolve the caps-advertised short name (`HALL`, `VRM`, … — the same
+    /// `proto-xair` effect table behind `caps.fx`) to the firmware index,
+    /// then write it. Unknown names bail locally, never hitting the desk.
+    async fn fx_set_type(&self, slot: u8, fx_type: &str) -> anyhow::Result<()> {
+        let index = (0..=openmix_proto_xair::fx::FX_TYPE_MAX)
+            .find(|&i| openmix_proto_xair::fx::fx_effect_name(i) == Some(fx_type))
+            .ok_or_else(|| anyhow::anyhow!("unknown fx type {fx_type:?}"))?;
+        openmix_proto_xair::XAirDriver::set_fx_type(self, slot, index).await
     }
     async fn fx_set_param(&self, slot: u8, id: &str, value: f32) -> anyhow::Result<()> {
         // Numbered pars only (design ids have no verified mapping).

@@ -16,10 +16,42 @@ pub fn query_message(addr: &str) -> anyhow::Result<Vec<u8>> {
 }
 
 /// Decode one UDP datagram into a packet.
+///
+/// Slashless fallback (rig-verified 2026-10-19, XR18 FW 1.20 — see
+/// `docs/mixer control software-protocol-map.md` §4): the desk addresses
+/// `/batchsubscribe` meter blobs as `meters/N` with NO leading slash,
+/// which the strict decoder rejects. When strict decode fails AND the
+/// datagram's leading address string is a slashless `meters` addr, retry
+/// with a `/` prepended (re-padded); the retried bytes must themselves
+/// strictly decode or the datagram still errors. All other malformed
+/// input returns `Err` unchanged.
 pub fn decode_packet(buf: &[u8]) -> anyhow::Result<OscPacket> {
-    decoder::decode_udp(buf)
-        .map(|(_, p)| p)
-        .map_err(|e| anyhow::anyhow!("osc decode: {e:?}"))
+    match decoder::decode_udp(buf) {
+        Ok((_, p)) => Ok(p),
+        Err(e) => decode_slashless_meters(buf)
+            .ok_or_else(|| anyhow::anyhow!("osc decode: {e:?}")),
+    }
+}
+
+/// Repair a slashless `meters/N` datagram (`None` for anything else).
+fn decode_slashless_meters(buf: &[u8]) -> Option<OscPacket> {
+    let end = buf.iter().position(|&b| b == 0)?;
+    let addr = std::str::from_utf8(&buf[..end]).ok()?;
+    if !(addr == "meters" || addr.starts_with("meters/")) {
+        return None;
+    }
+    // Splice a leading slash, preserving 4-byte OSC-string padding: the
+    // original address field occupies `(end + 4) & !3` bytes.
+    let mut fixed = Vec::with_capacity(buf.len() + 4);
+    fixed.push(b'/');
+    fixed.extend_from_slice(&buf[..end]);
+    fixed.push(0);
+    while fixed.len() % 4 != 0 {
+        fixed.push(0);
+    }
+    let rest = (end + 4) & !3;
+    fixed.extend_from_slice(buf.get(rest..)?);
+    decoder::decode_udp(&fixed).ok().map(|(_, p)| p)
 }
 
 /// Flatten a packet into its messages (bundles expand to N messages).
@@ -220,5 +252,28 @@ mod tests {
             args: vec![OscType::Float(1.0)],
         };
         assert!(is_on(&floaty).unwrap());
+    }
+
+    /// Slashless `meters/N` datagrams (the desk's `/batchsubscribe` reply
+    /// form, rig-verified 2026-10-19) decode with the slash restored so
+    /// they route into the meter path; slashless non-meter traffic still
+    /// errors (no misrouting).
+    #[test]
+    fn slashless_meter_blob_decodes_with_slash_restored() {
+        let blob = crate::meters::build_meter_blob(&[0.2, 0.8]);
+        let bytes = encode_message("meters/1", vec![OscType::Blob(blob)]).unwrap();
+        // Strict rosc decode rejects it (address must start with '/')...
+        assert!(decoder::decode_udp(&bytes).is_err());
+        // ...but the shared decoder repairs slashless `meters` addrs.
+        let msgs = flatten(decode_packet(&bytes).unwrap());
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].addr, "/meters/1");
+        // Slashless non-meter traffic still errors.
+        let other = encode_message("ch/01/mix/fader", vec![OscType::Float(0.5)]).unwrap();
+        assert!(decode_packet(&other).is_err());
+        // Truncated slashless datagrams still error, never panic.
+        for len in 0..bytes.len() {
+            let _ = decode_packet(&bytes[..len]);
+        }
     }
 }

@@ -10,6 +10,7 @@ use std::net::SocketAddr;
 use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, broadcast};
 
+pub mod automix;
 pub mod dyn_gr;
 pub mod codec;
 pub mod comp;
@@ -20,6 +21,7 @@ pub mod headamp;
 pub mod input;
 pub mod look;
 pub mod mix;
+pub mod solo;
 
 pub mod addrs {
     //! X-Air address table. The wire is 1-based with zero-padded two-digit
@@ -277,7 +279,10 @@ pub const XAIR_STRIPS: usize = 35;
 /// `send1..10_on` + all `auxN_mute`/`fxN_mute` (the firmware send block has
 /// no on/off leaf and `/ch/NN/mix/MM/on` is live-silent — baseline T7),
 /// `send11..16_*` (only 6+4 send slots), per-channel `eq5_*` (channels and
-/// aux returns carry 4 bands; `eq5/6_*` ride buses + main only).
+/// aux returns carry 4 bands; `eq5/6_*` ride buses + main only),
+/// `solo_dim`/`solo_mute`/`solo_level`/`solo_source` (global
+/// `/config/solo/*`, driven via driver methods, not strip params) and
+/// `fx_insert` (slot-addressed `/fx/N/insert`, likewise a driver method).
 pub const XAIR_CAPABILITIES: &[&str] = &[
     "fader",
     "mute",
@@ -288,8 +293,10 @@ pub const XAIR_CAPABILITIES: &[&str] = &[
     "trim",
     "polarity",
     "pan",
+    "lr_assign",
     "hpf_on",
     "hpf_freq",
+    "automix_weight",
     "color",
     "gate_on",
     "gate_thr",
@@ -357,33 +364,43 @@ pub const XAIR_CAPABILITIES: &[&str] = &[
     "send1_level",
     "send1_tap",
     "send1_pan",
+    "send1_grpon",
     "send2_level",
     "send2_tap",
     "send2_pan",
+    "send2_grpon",
     "send3_level",
     "send3_tap",
     "send3_pan",
+    "send3_grpon",
     "send4_level",
     "send4_tap",
     "send4_pan",
+    "send4_grpon",
     "send5_level",
     "send5_tap",
     "send5_pan",
+    "send5_grpon",
     "send6_level",
     "send6_tap",
     "send6_pan",
+    "send6_grpon",
     "send7_level",
     "send7_tap",
     "send7_pan",
+    "send7_grpon",
     "send8_level",
     "send8_tap",
     "send8_pan",
+    "send8_grpon",
     "send9_level",
     "send9_tap",
     "send9_pan",
+    "send9_grpon",
     "send10_level",
     "send10_tap",
     "send10_pan",
+    "send10_grpon",
 ];
 
 /// Parse an `eq{b}_{leaf}` param id into its 1-based band and leaf.
@@ -440,7 +457,7 @@ fn aux_send(param: &str) -> anyhow::Result<u8> {
 }
 
 /// Parse a generic `send{N}_{leaf}` param id into its send number (1..=10)
-/// and leaf (`level|tap|pan|on`).
+/// and leaf (`level|tap|pan|grpon|on`).
 fn generic_send(param: &str) -> anyhow::Result<(u8, &str)> {
     let rest = param
         .strip_prefix("send")
@@ -454,7 +471,7 @@ fn generic_send(param: &str) -> anyhow::Result<(u8, &str)> {
     if !(1..=mix::AUX_SENDS + mix::FX_SENDS).contains(&n) {
         anyhow::bail!("xair: unknown param {param:?}");
     }
-    if !matches!(leaf, "level" | "tap" | "pan" | "on") {
+    if !matches!(leaf, "level" | "tap" | "pan" | "grpon" | "on") {
         anyhow::bail!("xair: unknown param {param:?}");
     }
     Ok((n, leaf))
@@ -1013,14 +1030,124 @@ impl XAirDriver {
     }
 
     /// Loaded effect-type index for one FX slot (`/fx/N/type`, int
-    /// `0..=60`; see [`crate::fx`]). Read-only: the desk answers queries
-    /// here (the type-select write path stays unimplemented — no verified
-    /// mapping). Out-of-range slots bail locally, never hitting the desk.
+    /// `0..=60`; see [`crate::fx`]). The type-select write path is
+    /// rig-verified (owner XR18 FW 1.20, 2026-10-19: slot 4 swept
+    /// 60→0/7/26/59/30/56→60 round-trip) — see [`Self::set_fx_type`].
+    /// Out-of-range slots bail locally, never hitting the desk.
     pub async fn get_fx_type(&self, slot: u8) -> anyhow::Result<u8> {
         let addr = fx::fx_type(slot)?;
         let guard = self.session().await?;
         let reply = guard.as_ref().unwrap().query(&addr).await?;
         fx::parse_fx_type(&reply.args)
+    }
+
+    /// Select the loaded effect for one FX slot (`/fx/N/type`, int
+    /// `0..=60`): 61 firmware types, one more than the app table's 0..=59.
+    /// Rig-verified on the owner XR18 (FW 1.20, 2026-10-19 — slot-4 sweep,
+    /// restored bit-exact). Type swaps are state-changing on a live desk;
+    /// loopback-only callers treat this like any other verified write.
+    /// Out-of-range slots/types bail locally, never hitting the desk.
+    pub async fn set_fx_type(&self, slot: u8, effect: u8) -> anyhow::Result<()> {
+        let addr = fx::fx_type(slot)?;
+        let arg = fx::fx_type_to_arg(effect)?;
+        let guard = self.session().await?;
+        guard.as_ref().unwrap().send(&addr, vec![arg]).await
+    }
+
+    /// FX slot insert switch (`/fx/N/insert`, int `1` = inserted).
+    /// Rig-verified answering on the owner XR18 (FW 1.20, 2026-10-19:
+    /// `/fx/4/insert` = 1 matches its container). Out-of-range slots bail
+    /// locally, never hitting the desk.
+    pub async fn get_fx_insert(&self, slot: u8) -> anyhow::Result<bool> {
+        let addr = fx::fx_insert(slot)?;
+        let guard = self.session().await?;
+        let reply = guard.as_ref().unwrap().query(&addr).await?;
+        osc::is_on(&reply)
+    }
+
+    /// Insert/bypass one FX slot. Same verified leaf as
+    /// [`Self::get_fx_insert`]; out-of-range slots bail locally.
+    pub async fn set_fx_insert(&self, slot: u8, inserted: bool) -> anyhow::Result<()> {
+        let addr = fx::fx_insert(slot)?;
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(&addr, vec![codec::bool_arg(inserted)])
+            .await
+    }
+
+    /// Solo monitoring globals (`/config/solo/*`, see [`crate::solo`]).
+    /// Rig-verified on the owner XR18 (FW 1.20, 2026-10-19 — dim/mute/level
+    /// flips round-trip bit-exact, source reads 3). Monitoring-side only:
+    /// main LR untouched. These are globals, not strip params (out of
+    /// strip caps, never polled).
+    pub async fn get_solo_dim(&self) -> anyhow::Result<bool> {
+        let guard = self.session().await?;
+        let reply = guard.as_ref().unwrap().query(solo::SOLO_DIM).await?;
+        osc::is_on(&reply)
+    }
+
+    /// Solo dim switch. Same verified leaf as [`Self::get_solo_dim`].
+    pub async fn set_solo_dim(&self, dim: bool) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(solo::SOLO_DIM, vec![codec::bool_arg(dim)])
+            .await
+    }
+
+    /// Solo mute switch (`/config/solo/mute`). Same verification as
+    /// [`Self::get_solo_dim`].
+    pub async fn get_solo_mute(&self) -> anyhow::Result<bool> {
+        let guard = self.session().await?;
+        let reply = guard.as_ref().unwrap().query(solo::SOLO_MUTE).await?;
+        osc::is_on(&reply)
+    }
+
+    /// Solo mute switch. Same verified leaf as [`Self::get_solo_mute`].
+    pub async fn set_solo_mute(&self, mute: bool) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(solo::SOLO_MUTE, vec![codec::bool_arg(mute)])
+            .await
+    }
+
+    /// Solo headphone level (`/config/solo/level`, wire float `0..1`).
+    /// Same verification as [`Self::get_solo_dim`].
+    pub async fn get_solo_level(&self) -> anyhow::Result<f32> {
+        let guard = self.session().await?;
+        let reply = guard.as_ref().unwrap().query(solo::SOLO_LEVEL).await?;
+        solo::wire_to_level(osc::fader_value(&reply)?)
+    }
+
+    /// Solo headphone level. Validated locally (`0..=1`) before any I/O.
+    pub async fn set_solo_level(&self, level: f32) -> anyhow::Result<()> {
+        let wire = solo::level_to_wire(level)?;
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(solo::SOLO_LEVEL, vec![OscType::Float(wire)])
+            .await
+    }
+
+    /// Solo headphone source (`/config/solo/source`, int `0..=14`).
+    /// Same verification as [`Self::get_solo_dim`].
+    pub async fn get_solo_source(&self) -> anyhow::Result<u8> {
+        let guard = self.session().await?;
+        let reply = guard.as_ref().unwrap().query(solo::SOLO_SOURCE).await?;
+        solo::source_from_msg(&reply)
+    }
+
+    /// Solo headphone source. Validated locally (`0..=14`) before any I/O.
+    pub async fn set_solo_source(&self, source: u8) -> anyhow::Result<()> {
+        let arg = solo::source_to_arg(source)?;
+        let guard = self.session().await?;
+        guard.as_ref().unwrap().send(solo::SOLO_SOURCE, vec![arg]).await
     }
 
     /// Meter subscribe with an explicit renewal interval (tests pass a short
@@ -1551,6 +1678,17 @@ impl MixerDriver for XAirDriver {
                     .send(&format!("{root}/mix/pan"), vec![OscType::Float(wire)])
                     .await
             }
+            ("lr_assign", ParamValue::Bool(assigned)) => {
+                // No leaf on `/lr` (the `/lr/mix` container has no `lr`
+                // field) — the scope check above already confines this to
+                // channel/FX-return/bus strips.
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&mix::mix_lr(&root), vec![codec::bool_arg(assigned)])
+                    .await
+            }
             ("color", ParamValue::Float(v)) => {
                 let guard = self.session().await?;
                 guard
@@ -1735,20 +1873,22 @@ impl MixerDriver for XAirDriver {
                 }
             }
             (p, ParamValue::Bool(on)) if p.starts_with("send") => {
-                // `sendN_on` only (level/tap/pan are floats): wrong-leaf bools
-                // fall through to the unknown-param error below. The address
-                // is root-based; the scope check above already confined this
-                // to input strips.
+                // `sendN_on` and `sendN_grpon` (level/tap/pan are floats):
+                // wrong-leaf bools fall through to the unknown-param error
+                // below. The addresses are root-based; the scope check above
+                // already confined this to input strips.
                 let (n, leaf) = generic_send(p)?;
-                if leaf != "on" {
-                    anyhow::bail!("{}: unknown param {p:?}", self.name());
-                }
                 let slot = mix::generic_send_slot(n)?;
                 let guard = self.session().await?;
+                let addr = match leaf {
+                    "on" => mix::send_on(&root, slot)?,
+                    "grpon" => mix::send_grpon(&root, slot)?,
+                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
+                };
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&mix::send_on(&root, slot)?, vec![codec::bool_arg(on)])
+                    .send(&addr, vec![codec::bool_arg(on)])
                     .await
             }
             ("gain", ParamValue::Float(db)) => {
@@ -1818,6 +1958,17 @@ impl MixerDriver for XAirDriver {
                     .as_ref()
                     .unwrap()
                     .send(&input::preamp_hpf(ch), vec![OscType::Float(wire)])
+                    .await
+            }
+            ("automix_weight", ParamValue::Float(w)) => {
+                // Channels only (the scope check above already rejected
+                // buses/returns/mains); no engineering curve is verified,
+                // so the wire float rides verbatim.
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&automix::automix_weight(&root), vec![OscType::Float(automix::weight_to_wire(w)?)])
                     .await
             }
             (p, _) => anyhow::bail!("{}: unknown param {p:?}", self.name()),
@@ -1921,10 +2072,20 @@ impl MixerDriver for XAirDriver {
                     .await?;
                 input::hpf_wire_to_hz(osc::fader_value(&reply)?).map(ParamValue::Float)
             }
+            "automix_weight" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&automix::automix_weight(&root)).await?;
+                automix::wire_to_weight(osc::fader_value(&reply)?).map(ParamValue::Float)
+            }
             "pan" => {
                 let guard = self.session().await?;
                 let reply = guard.as_ref().unwrap().query(&format!("{root}/mix/pan")).await?;
                 mix::wire_to_pan(osc::fader_value(&reply)?).map(ParamValue::Float)
+            }
+            "lr_assign" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&mix::mix_lr(&root)).await?;
+                osc::is_on(&reply).map(ParamValue::Bool)
             }
             "gate_on" => {
                 let guard = self.session().await?;
@@ -2077,6 +2238,10 @@ impl MixerDriver for XAirDriver {
                     "tap" => {
                         let reply = session.query(&mix::send_tap(&root, slot)?).await?;
                         mix::tap_from_msg(&reply).map(|i| ParamValue::Float(i as f32))
+                    }
+                    "grpon" => {
+                        let reply = session.query(&mix::send_grpon(&root, slot)?).await?;
+                        osc::is_on(&reply).map(ParamValue::Bool)
                     }
                     "pan" => {
                         let reply = session.query(&mix::send_pan(&root, slot)?).await?;
@@ -2551,7 +2716,7 @@ mod tests {
                             // but the fake answers them so the retained
                             // driver arms stay loopback-tested), gate/dyn
                             // int leaves (incl. the `filter/` sub-leaves and
-                            // `dyn/ratio` step index), send tap and
+                            // `dyn/ratio` step index), send tap + grpon and
                             // per-send on/off. NOTE the send-on conflict:
                             // this fake answers `/ch/NN/mix/MM/on` while the
                             // live desk is silent (T7); `sendN_on` is out of
@@ -2576,6 +2741,7 @@ mod tests {
                                     || a.ends_with("/dyn/env")
                                     || a.ends_with("/dyn/auto")
                                     || (a.contains("/mix/") && a.ends_with("/tap"))
+                                    || (a.contains("/mix/") && a.ends_with("/grpon"))
                                     || (a.contains("/mix/")
                                         && a.ends_with("/on")
                                         && !a.ends_with("/mix/on")) =>
@@ -2583,12 +2749,50 @@ mod tests {
                                 worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
                                 None
                             }
+                            // v2b: LR assign (`{root}/mix/lr`, ch/bus/rtn —
+                            // the `/lr` root has no leaf and the driver
+                            // never asks): verbatim ints, untouched reads
+                            // default per rig (ch/rtn 1, bus 0).
+                            (a, Some(OscType::Int(i)))
+                                if a.ends_with("/mix/lr") =>
+                            {
+                                worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
+                            // v2b: solo monitoring globals (`/config/solo/*`):
+                            // verbatim ints/float, untouched reads default
+                            // per rig (dim 0, mute 0, level 0.75, source 3).
+                            (a, Some(OscType::Int(i)))
+                                if a == crate::solo::SOLO_DIM
+                                    || a == crate::solo::SOLO_MUTE
+                                    || a == crate::solo::SOLO_SOURCE =>
+                            {
+                                worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
+                            (a, Some(OscType::Float(f)))
+                                if a == crate::solo::SOLO_LEVEL =>
+                            {
+                                worker.plane_floats.lock().unwrap().insert(a.to_string(), *f);
+                                None
+                            }
+                            // v2b: FX slot insert (`/fx/N/insert`): verbatim
+                            // ints, untouched reads default 0 (bypassed).
+                            // (Strip insert containers like `/ch/01/insert`
+                            // stay silent — no driver arm addresses them.)
+                            (a, Some(OscType::Int(i)))
+                                if a.starts_with("/fx/") && a.ends_with("/insert") =>
+                            {
+                                worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
                             // v2 float leaves: gate/dyn block (minus the int
                             // leaves above, which match first), key-filter
-                            // corners (`filter/f`, log wire) + per-send pan
-                            // (`/mix/MM/pan`; channel pan keeps its own arm).
-                            // Untouched gate/dyn reads answer 0.0 wire, send
-                            // pan centre 0.5.
+                            // corners (`filter/f`, log wire), per-send pan
+                            // (`/mix/MM/pan`; channel pan keeps its own arm)
+                            // and automix weight (`/automix/weight`, ch
+                            // only). Untouched gate/dyn reads answer 0.0
+                            // wire, send pan centre 0.5, automix 0.5.
                             (a, Some(OscType::Float(f)))
                                 if (a.contains("/gate/")
                                     && !a.ends_with("/gate/mode")
@@ -2606,7 +2810,8 @@ mod tests {
                                         && !a.ends_with("/dyn/filter/type"))
                                     || (a.contains("/mix/")
                                         && a.ends_with("/pan")
-                                        && !a.ends_with("/mix/pan")) =>
+                                        && !a.ends_with("/mix/pan"))
+                                    || a.ends_with("/automix/weight") =>
                             {
                                 worker.plane_floats.lock().unwrap().insert(a.to_string(), *f);
                                 None
@@ -2628,9 +2833,65 @@ mod tests {
                                     || a.ends_with("/dyn/env")
                                     || a.ends_with("/dyn/auto")
                                     || (a.contains("/mix/") && a.ends_with("/tap"))
+                                    || (a.contains("/mix/") && a.ends_with("/grpon"))
                                     || (a.contains("/mix/")
                                         && a.ends_with("/on")
                                         && !a.ends_with("/mix/on")) =>
+                            {
+                                let v = worker
+                                    .plane_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0);
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            // v2b: LR assign reads back the stored int, else
+                            // the rig default (ch/rtn 1, bus 0).
+                            (a, None) if a.ends_with("/mix/lr") => {
+                                let v = worker
+                                    .plane_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or_else(|| {
+                                        if a.starts_with("/bus/") { 0 } else { 1 }
+                                    });
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            // v2b: solo globals read back stored values, else
+                            // rig defaults (dim 0, mute 0, source 3).
+                            (a, None)
+                                if a == crate::solo::SOLO_DIM
+                                    || a == crate::solo::SOLO_MUTE
+                                    || a == crate::solo::SOLO_SOURCE =>
+                            {
+                                let fallback = if a == crate::solo::SOLO_SOURCE { 3 } else { 0 };
+                                let v = worker
+                                    .plane_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(fallback);
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            // v2b: solo level reads back stored, else rig 0.75.
+                            (a, None) if a == crate::solo::SOLO_LEVEL => {
+                                let v = worker
+                                    .plane_floats
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0.75);
+                                Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
+                            }
+                            // v2b: FX slot insert reads back stored, else 0.
+                            (a, None)
+                                if a.starts_with("/fx/") && a.ends_with("/insert") =>
                             {
                                 let v = worker
                                     .plane_ints
@@ -2668,6 +2929,17 @@ mod tests {
                                     .get(a)
                                     .copied()
                                     .unwrap_or(fallback);
+                                Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
+                            }
+                            // v2b: automix weight reads back stored, else 0.5.
+                            (a, None) if a.ends_with("/automix/weight") => {
+                                let v = worker
+                                    .plane_floats
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0.5);
                                 Some(osc::encode_message(a, vec![OscType::Float(v)]).unwrap())
                             }
                             // Mute-group masters (`/config/mute/1..4`): verbatim
@@ -3957,7 +4229,10 @@ mod tests {
         // leaf), aux7/8 (only 6 bus sends), send11..16 (only 6+4 send
         // slots), all twelve legacy aux/fx send mutes plus the ten v2
         // sendN_on (no send on/off leaf, T7), per-channel eq5 stays out
-        // (channels carry 4 bands; eq5/6 ride buses + main and ARE in caps).
+        // (channels carry 4 bands; eq5/6 ride buses + main and ARE in caps),
+        // plus the non-strip v2b ids: solo dim/mute/level/source (global
+        // `/config/solo/*`, driver methods) and fx_insert (slot-addressed
+        // `/fx/N/insert`, driver method).
         let mut unsupported: Vec<&str> = params::CATALOGUE
             .iter()
             .map(|d| d.id)
@@ -3981,6 +4256,7 @@ mod tests {
             "fx2_mute",
             "fx3_mute",
             "fx4_mute",
+            "fx_insert",
             "hpf_slope",
             "icon",
             "link",
@@ -4018,6 +4294,10 @@ mod tests {
             "send7_on",
             "send8_on",
             "send9_on",
+            "solo_dim",
+            "solo_level",
+            "solo_mute",
+            "solo_source",
             "source",
         ];
         expected.sort_unstable();
@@ -4442,6 +4722,236 @@ mod tests {
         assert!(driver.set_param(s, "send2_level", ParamValue::Bool(true)).await.is_err());
         assert!(driver.get_param(s, "aux1_mute").await.is_err());
         assert!(driver.get_param(s, "fx1_mute").await.is_err());
+    }
+
+    /// LR-assign loopback over UDP (`crate::mix`, rig-verified 2026-10-19):
+    /// `{root}/mix/lr` rides int `1`/`0` on channel/FX-return/bus strips;
+    /// main LR has no `lr` leaf (its `/lr/mix` container is `(on, fader,
+    /// pan)`), so main/DCA/FX-send strips stay out-of-scope errors.
+    #[tokio::test]
+    async fn driver_lr_assign_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // Rig defaults: channels and FX returns assigned (1), buses not (0).
+        assert_eq!(
+            driver.get_param(StripId(0), "lr_assign").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        assert_eq!(
+            driver.get_param(StripId(16), "lr_assign").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        assert_eq!(
+            driver.get_param(StripId(20), "lr_assign").await.unwrap(),
+            ParamValue::Bool(false)
+        );
+        driver
+            .set_param(StripId(0), "lr_assign", ParamValue::Bool(false))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "lr_assign").await.unwrap(),
+            ParamValue::Bool(false)
+        );
+        driver
+            .set_param(StripId(20), "lr_assign", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(20), "lr_assign").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        // Wrong kind and out-of-scope strips error locally, never sent.
+        assert!(
+            driver
+                .set_param(StripId(0), "lr_assign", ParamValue::Float(1.0))
+                .await
+                .is_err()
+        );
+        assert!(driver.get_param(StripId(30), "lr_assign").await.is_err());
+        assert!(
+            driver
+                .set_param(StripId(30), "lr_assign", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+        assert!(driver.get_param(StripId(26), "lr_assign").await.is_err());
+        assert!(driver.get_param(StripId(31), "lr_assign").await.is_err());
+    }
+
+    /// Send group-on loopback over UDP (`crate::mix`, rig-verified
+    /// 2026-10-19): `{root}/mix/MM/grpon` rides int `1`/`0` next to tap;
+    /// all slots read `0` on the owner rig. Slots 11+ have no wire.
+    #[tokio::test]
+    async fn driver_send_grpon_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        let s = StripId(0);
+        assert_eq!(
+            driver.get_param(s, "send1_grpon").await.unwrap(),
+            ParamValue::Bool(false)
+        );
+        driver
+            .set_param(s, "send1_grpon", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(s, "send1_grpon").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        // FX slot (slot 10) rides the same leaf shape.
+        driver
+            .set_param(s, "send10_grpon", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(s, "send10_grpon").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        // Wrong kind and unknown slots error locally, never sent.
+        assert!(
+            driver
+                .set_param(s, "send1_grpon", ParamValue::Float(1.0))
+                .await
+                .is_err()
+        );
+        assert!(driver.get_param(s, "send11_grpon").await.is_err());
+        assert!(
+            driver
+                .set_param(s, "send11_grpon", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+        // Sends originate from inputs only (catalogue scopes).
+        assert!(
+            driver
+                .set_param(StripId(20), "send1_grpon", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+    }
+
+    /// Automix weight loopback over UDP (`crate::automix`, rig-verified
+    /// 2026-10-19): `/ch/NN/automix/weight` rides the wire float verbatim
+    /// (`0..1`, no verified engineering curve); channels only.
+    #[tokio::test]
+    async fn driver_automix_weight_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        let s = StripId(2);
+        // Rig default reads back 0.5.
+        let ParamValue::Float(w) = driver.get_param(s, "automix_weight").await.unwrap()
+        else {
+            panic!("automix_weight read back non-float");
+        };
+        assert!((w - 0.5).abs() < 1e-6, "automix_weight default {w}");
+        driver
+            .set_param(s, "automix_weight", ParamValue::Float(0.7))
+            .await
+            .unwrap();
+        let ParamValue::Float(back) = driver.get_param(s, "automix_weight").await.unwrap()
+        else {
+            panic!("automix_weight read back non-float");
+        };
+        assert!((back - 0.7).abs() < 1e-6, "automix_weight {back}");
+        // Range and kind enforced locally, never sent.
+        assert!(
+            driver
+                .set_param(s, "automix_weight", ParamValue::Float(1.1))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(s, "automix_weight", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+        // Buses/returns carry no automix leaf (catalogue scopes).
+        assert!(driver.get_param(StripId(20), "automix_weight").await.is_err());
+        assert!(driver.get_param(StripId(16), "automix_weight").await.is_err());
+    }
+
+    /// Solo monitoring globals loopback over UDP (`crate::solo`,
+    /// rig-verified 2026-10-19): dim/mute/level/source round-trip through
+    /// the global driver methods; untouched reads match the rig (dim 0,
+    /// mute 0, level 0.75, source 3).
+    #[tokio::test]
+    async fn driver_solo_globals_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        assert!(!driver.get_solo_dim().await.unwrap());
+        assert!(!driver.get_solo_mute().await.unwrap());
+        assert!((driver.get_solo_level().await.unwrap() - 0.75).abs() < 1e-6);
+        assert_eq!(driver.get_solo_source().await.unwrap(), 3);
+        driver.set_solo_dim(true).await.unwrap();
+        assert!(driver.get_solo_dim().await.unwrap());
+        driver.set_solo_dim(false).await.unwrap();
+        assert!(!driver.get_solo_dim().await.unwrap());
+        driver.set_solo_mute(true).await.unwrap();
+        assert!(driver.get_solo_mute().await.unwrap());
+        driver.set_solo_mute(false).await.unwrap();
+        assert!(!driver.get_solo_mute().await.unwrap());
+        driver.set_solo_level(0.5).await.unwrap();
+        assert!((driver.get_solo_level().await.unwrap() - 0.5).abs() < 1e-6);
+        // Range enforced locally, never sent.
+        assert!(driver.set_solo_level(1.1).await.is_err());
+        assert!(driver.set_solo_level(f32::NAN).await.is_err());
+        driver.set_solo_source(0).await.unwrap();
+        assert_eq!(driver.get_solo_source().await.unwrap(), 0);
+        driver.set_solo_source(14).await.unwrap();
+        assert_eq!(driver.get_solo_source().await.unwrap(), 14);
+        assert!(driver.set_solo_source(15).await.is_err());
+        // Globals are not strip params (out of strip caps, never polled).
+        assert!(!XAIR_CAPABILITIES.contains(&"solo_dim"));
+        assert!(!XAIR_CAPABILITIES.contains(&"solo_mute"));
+        assert!(!XAIR_CAPABILITIES.contains(&"solo_level"));
+        assert!(!XAIR_CAPABILITIES.contains(&"solo_source"));
+        assert!(driver.get_param(StripId(0), "solo_dim").await.is_err());
+        assert!(driver.get_param(StripId(30), "solo_dim").await.is_err());
+    }
+
+    /// FX slot insert loopback over UDP (`crate::fx`, rig-verified
+    /// 2026-10-19): `/fx/N/insert` rides int `1`/`0` (slot 4 inserted on
+    /// the rig, the rest bypassed). Out-of-range slots bail locally.
+    #[tokio::test]
+    async fn driver_fx_insert_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        assert!(!driver.get_fx_insert(1).await.unwrap());
+        driver.set_fx_insert(1, true).await.unwrap();
+        assert!(driver.get_fx_insert(1).await.unwrap());
+        driver.set_fx_insert(1, false).await.unwrap();
+        assert!(!driver.get_fx_insert(1).await.unwrap());
+        assert!(driver.set_fx_insert(0, true).await.is_err());
+        assert!(driver.set_fx_insert(5, true).await.is_err());
+        assert!(driver.get_fx_insert(0).await.is_err());
+        assert!(driver.get_fx_insert(5).await.is_err());
+        // Slot-addressed, not a strip param (out of strip caps).
+        assert!(!XAIR_CAPABILITIES.contains(&"fx_insert"));
+        assert!(driver.get_param(StripId(0), "fx_insert").await.is_err());
+    }
+
+    /// FX type-select write loopback over UDP (`crate::fx`, rig-verified
+    /// 2026-10-19 — slot-4 sweep 60→0/7/26/59/30/56→60): `set_fx_type`
+    /// drives the same `/fx/N/type` leaf `get_fx_type` reads. Range
+    /// `0..=60` enforced locally (firmware holds 61 types, one more than
+    /// the app table's 0..=59); out-of-range slots/types bail locally.
+    #[tokio::test]
+    async fn driver_fx_type_write_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // Untouched slots read back 0 (HALL), like a freshly-booted desk.
+        assert_eq!(driver.get_fx_type(1).await.unwrap(), 0);
+        driver.set_fx_type(4, 60).await.unwrap();
+        assert_eq!(driver.get_fx_type(4).await.unwrap(), 60);
+        // The rig-verified sweep shape: every written type reads back.
+        for t in [0u8, 7, 26, 30, 56, 59, 60] {
+            driver.set_fx_type(4, t).await.unwrap();
+            assert_eq!(driver.get_fx_type(4).await.unwrap(), t, "type {t}");
+        }
+        assert!(driver.set_fx_type(1, 61).await.is_err());
+        assert!(driver.set_fx_type(0, 7).await.is_err());
+        assert!(driver.set_fx_type(5, 7).await.is_err());
+        assert!(driver.get_fx_type(0).await.is_err());
+        assert!(driver.get_fx_type(5).await.is_err());
+        // FX params keep working after a type swap (slot-4 par write+read).
+        driver.set_fx_param(4, 0, 0.25).await.unwrap();
+        assert_eq!(driver.get_fx_param(4, 0).await.unwrap(), 0.25);
     }
 
     /// Non-channel strip loopback over UDP (firmware-truth): buses carry
