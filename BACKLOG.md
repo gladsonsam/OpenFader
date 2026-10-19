@@ -4,11 +4,12 @@ Rules: one worker per file-area (no overlapping paths). New items go to
 Queued with the owner's words. A worker is dispatched only when a slot is
 free AND its files don't collide with the running worker.
 
-## In flight (2/2 slots full)
+## In flight (1/2 slots — 1 free)
 1. Verification re-run, FULL permission (`ses_eae6850eeffeenyNkk61cNdmL9`) —
    fixed matrix end to end on the live desk.
-2. Graph label collisions (`ses_eae5dcd59ffetsEjLG2KqRQtqz`) — comp/EQ
-   axis + summary wraps on phone.
+
+## Queued (in order)
+- (empty — send more)
 
 ## Queued (in order)
 1. Mobile routing rework (usable on mobile).
@@ -58,6 +59,7 @@ free AND its files don't collide with the running worker.
 - Strip mini-icons (phantom/groups/link/polarity, live-verified).
 - Mobile master strip parity (Main LR = channel strip on phone).
 - Mobile routing rework (picker UI on phone, matrix intact on desktop).
+- Graph label collisions fixed (nodes clear of ticks, no mid-unit wraps).
 - Android network + sim removal (scan/probe from sim, honest boot,
   fresh APK in /mnt/gladson/temp).
 - Fresh APK from current tree (/mnt/gladson/temp, badging verified).
