@@ -4614,12 +4614,8 @@ fn xair_type_name(index: u8) -> Option<&'static str> {
 /// Reverse lookup: effect name back to its `/fx/N/type` index (`None`
 /// for placeholders like `—` or unknown names).
 fn xair_type_index_of(name: &str) -> Option<u8> {
-    for index in 0..=openmix_proto_xair::fx::FX_TYPE_MAX {
-        if openmix_proto_xair::fx::fx_effect_name(index) == Some(name) {
-            return Some(index);
-        }
-    }
-    None
+    (0..=openmix_proto_xair::fx::FX_TYPE_MAX)
+        .find(|&index| openmix_proto_xair::fx::fx_effect_name(index) == Some(name))
 }
 
 /// Parse a patch label (`Lcl 01`, `Net 12`, `USB 03`) into (group, 1-based
