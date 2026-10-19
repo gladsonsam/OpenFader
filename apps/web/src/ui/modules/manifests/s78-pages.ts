@@ -16,8 +16,6 @@ import RouteMatrix from '../../screens/routing/RouteMatrix.svelte';
 import SrcTile from '../../screens/routing/SrcTile.svelte';
 import StatusDot from '../../screens/connection/StatusDot.svelte';
 import DeviceRow from '../../screens/connection/DeviceRow.svelte';
-import RelayCard from '../../screens/connection/RelayCard.svelte';
-import ManualDesk from '../../screens/connection/ManualDesk.svelte';
 
 function as<P>(c: unknown): Component<ModuleProps<P>> {
   return c as Component<ModuleProps<P>>;
@@ -43,6 +41,7 @@ export const manifests: ModuleManifest[] = [
       fontSize: { type: 'number', min: 10, max: 20, step: 1, unit: 'px', default: 13 },
       pressed: { type: 'text' },
       ariaLabel: { type: 'text' },
+      disabled: { type: 'bool', default: false },
       bare: { type: 'bool', default: false },
     },
     defaults: { label: 'Button' },
@@ -122,33 +121,6 @@ export const manifests: ModuleManifest[] = [
     defaults: {},
     size: { flex: true },
     events: [{ name: 'connect', args: ['key'] }],
-  },
-  {
-    id: 'relay-card',
-    title: 'Relay connection card',
-    category: 'screen',
-    component: as(RelayCard),
-    props: {
-      host: { type: 'text', default: '127.0.0.1:8080' },
-      phase: { type: 'text', default: 'idle' },
-      message: { type: 'text', default: 'Not connected' },
-      latencyMs: { type: 'number' },
-      strips: { type: 'number', default: 0 },
-      suggestion: { type: 'text' },
-    },
-    defaults: { host: '127.0.0.1:8080', phase: 'idle', message: 'Not connected' },
-    size: { flex: true },
-    events: [{ name: 'connect', args: ['host'] }, { name: 'use-page-host' }, { name: 'disconnect' }],
-  },
-  {
-    id: 'manual-desk',
-    title: 'Manual desk add (add-by-IP)',
-    category: 'screen',
-    component: as(ManualDesk),
-    props: {},
-    defaults: {},
-    size: { flex: true },
-    events: [{ name: 'probe-desk', args: ['ip'] }],
   },
 ];
 

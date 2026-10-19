@@ -26,9 +26,14 @@ pub struct KeepaliveConfig {
 
 impl KeepaliveConfig {
     pub fn xremote() -> Self {
+        // ~10 s desk-side expiry is inferred (meters dribble without
+        // renewals); 5 s gives two lost datagrams of margin before the
+        // desk stops broadcasting change notifications to this session.
+        // One extra tiny packet per 5 s is negligible next to the meter
+        // stream.
         Self {
             addr: "/xremote".into(),
-            interval: Duration::from_secs(8),
+            interval: Duration::from_secs(5),
         }
     }
 }
@@ -403,7 +408,7 @@ mod tests {
     async fn keepalive_config_shape() {
         let cfg = KeepaliveConfig::xremote();
         assert_eq!(cfg.addr, "/xremote");
-        assert_eq!(cfg.interval, Duration::from_secs(8));
+        assert_eq!(cfg.interval, Duration::from_secs(5));
         // Wire shape of the keepalive packet itself.
         let bytes = osc::query_message(&cfg.addr).unwrap();
         let msgs = osc::flatten(osc::decode_packet(&bytes).unwrap());

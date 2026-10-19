@@ -29,6 +29,8 @@
       fontSize?: number;
       pressed?: string;
       ariaLabel?: string;
+      /** Disabled (e.g. Scan while a sweep is in flight): non-interactive + dimmed. */
+      disabled?: boolean;
       /** Render the label as a bare text node (design's action buttons). */
       bare?: boolean;
     };
@@ -49,7 +51,8 @@
       `padding:${props.padding ?? '0 12px'};border-radius:3px;` +
       `border:${props.border ?? '1px solid var(--u4-line-ctl)'};` +
       `background:${props.bg ?? 'var(--u4-btn-bg)'};color:${props.fg ?? 'var(--u4-text-1)'};` +
-      `font-size:${props.fontSize ?? 13}px;cursor:pointer` +
+      `font-size:${props.fontSize ?? 13}px;cursor:${props.disabled ? 'default' : 'pointer'}` +
+      (props.disabled ? ';opacity:.55' : '') +
       (props.icon ? ';display:inline-flex;align-items:center;justify-content:center' : ''),
   );
 </script>
@@ -58,5 +61,7 @@
   onclick={() => onEvent?.('press', { node: nodeId })}
   aria-pressed={props.pressed}
   aria-label={props.ariaLabel}
+  aria-disabled={props.disabled}
+  disabled={props.disabled}
   {style}>{#if props.icon}<Icon name={props.icon} size={props.iconSize ?? 16} />{:else if props.bare}{props.label ?? ''}{:else}<span>{props.label ?? ''}</span>{/if}</button
 >
