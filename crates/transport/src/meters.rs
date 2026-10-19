@@ -4,6 +4,18 @@
 //! little-endian i16 samples normalized by 32767. The parser below also accepts
 //! float/int arg lists so future providers reuse it without bespoke code.
 //!
+//! Address forms: driver-subscribes get blobs addressed `/meters/N`, while
+//! app-style `/batchsubscribe` gets the SAME blobs addressed `meters/N`
+//! (no leading slash — rig-verified 2026-10-19, XR18 FW 1.20; see
+//! `docs/xair-edit-protocol-map.md` §4). Both forms route into the parse path.
+//!
+//! Blob census (silent rig, stable lengths): m0:20B m1:84B m2:76B m3:116B
+//! m4:204B m5:92B m6:82B m7:36B m8:12B m9:12B; first le16 sample =
+//! sample-count − 2 (probable length header — parsed as an ordinary sample,
+//! kept, not stripped). Per-strip index mapping beyond `/meters/1` idx0
+//! (ch1 mic floor) is UNKNOWN (needs desk-side signal); this parser makes
+//! no per-strip claims.
+//!
 //! Two consumers share this module: [`MeterRing`] keeps the latest N frames in
 //! memory (sync polled UIs, tests); [`MeterHub`] broadcasts frames every
 //! [`METER_INTERVAL`] over [`tokio::sync::broadcast`] (async push UIs;
@@ -28,10 +40,19 @@ pub fn is_meter_addr(addr: &str) -> bool {
     // 1/256 dB samples behind a 4-byte size word, not levels. It must not
     // enter the level hub (it would decode as ~41 garbage levels and
     // clobber the level cache); GR arrives via `ingest_dyn_message`.
-    if addr == "/meters/6" {
+    // The desk-addressed no-slash `meters/6` form is excluded too.
+    if addr == "/meters/6" || addr == "meters/6" {
         return false;
     }
-    addr == "/meters" || addr.starts_with("/meters/")
+    addr == "/meters"
+        || addr.starts_with("/meters/")
+        // Desk-addressed meter blobs arrive WITHOUT the leading slash
+        // (`meters/N`, rig-verified 2026-10-19 — the `/batchsubscribe`
+        // reply form). No-slash traffic has no other known source, and the
+        // payload gate in `parse_meter_message` (blob/float args required)
+        // keeps stray messages out anyway.
+        || addr == "meters"
+        || addr.starts_with("meters/")
 }
 
 /// Normalize one LE i16 sample to 0.0..1.0.
@@ -302,6 +323,72 @@ mod tests {
         assert!(!is_meter_addr(""));
         assert!(!is_meter_addr("/meter"));
         assert!(is_meter_addr("/meters"));
+    }
+
+    /// Blob census from docs/xair-edit-protocol-map.md §4 (silent rig, stable
+    /// lengths, rig-verified 2026-10-19): every census length parses
+    /// whole-packet as LE i16 with no length-specific rejection, the first
+    /// sample carries count − 2, and both the slashed and the desk
+    /// no-slash address forms route into the parser — except the DYN
+    /// `/meters/6` blob, which must stay out of the level path in both forms.
+    #[test]
+    fn census_lengths_parse_whole_packet() {
+        const CENSUS: [(u8, usize); 10] = [
+            (0, 20),
+            (1, 84),
+            (2, 76),
+            (3, 116),
+            (4, 204),
+            (5, 92),
+            (6, 82),
+            (7, 36),
+            (8, 12),
+            (9, 12),
+        ];
+        for (n, bytes) in CENSUS {
+            let count = bytes / 2;
+            let mut blob = Vec::with_capacity(bytes);
+            // First sample = count − 2 (observed s0 invariant, probable header).
+            blob.extend_from_slice(&((count as i16) - 2).to_le_bytes());
+            for _ in 1..count {
+                blob.extend_from_slice(&0i16.to_le_bytes());
+            }
+            let levels = parse_meter_blob(&blob);
+            assert_eq!(levels.len(), count, "meters/{n}");
+            // Whole-packet parse: the header sample is kept as an ordinary level.
+            assert!((((count as f32) - 2.0) / 32767.0 - levels[0]).abs() < 1e-6);
+            for addr in [format!("/meters/{n}"), format!("meters/{n}")] {
+                let msg = OscMessage {
+                    addr,
+                    args: vec![OscType::Blob(blob.clone())],
+                };
+                if n == 6 {
+                    assert!(
+                        parse_meter_message(&msg).is_none(),
+                        "meters/6 must not enter the level hub"
+                    );
+                } else {
+                    assert_eq!(
+                        parse_meter_message(&msg).unwrap().levels.len(),
+                        count
+                    );
+                }
+            }
+        }
+    }
+
+    /// No-slash address matching: the desk's `meters/N` form (and bare
+    /// `meters`) counts as a meter addr; anything else without a slash does not.
+    #[test]
+    fn no_slash_addr_matching() {
+        assert!(is_meter_addr("meters"));
+        assert!(is_meter_addr("meters/0"));
+        assert!(is_meter_addr("meters/9"));
+        assert!(!is_meter_addr("meters/6"));
+        assert!(!is_meter_addr("meter"));
+        assert!(!is_meter_addr(""));
+        assert!(!is_meter_addr("ch/01/mix/fader"));
+        assert!(!is_meter_addr("xremote"));
     }
 
     /// Broadcast lag: a subscriber that never reads must not kill the
