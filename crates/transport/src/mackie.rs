@@ -1148,9 +1148,9 @@ impl MackieSession {
         let max = count.min((body.len().saturating_sub(8)) / 44);
         for i in 0..max {
             let mut entry = [0u32; 11];
-            for j in 0..11 {
+            for (j, slot) in entry.iter_mut().enumerate() {
                 let off = 8 + i * 44 + j * 4;
-                entry[j] = u32::from_be_bytes(body[off..off + 4].try_into().unwrap());
+                *slot = u32::from_be_bytes(body[off..off + 4].try_into().unwrap());
             }
             out.push(entry);
         }
@@ -1301,7 +1301,7 @@ impl MackieSession {
             padded_name.push(0);
         }
         let mut open_body = Vec::with_capacity(4 + padded_name.len());
-        open_body.extend_from_slice(&(file_type & 0xFFFFFFFF).to_be_bytes());
+        open_body.extend_from_slice(&file_type.to_be_bytes());
         open_body.extend_from_slice(&word_swap(&padded_name));
         let resp = self.send_request(Command::FileOpen, open_body, timeout).await?;
         if resp.body.len() < 8 || u32::from_be_bytes(resp.body[0..4].try_into().unwrap()) == 0 {

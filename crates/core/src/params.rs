@@ -187,6 +187,7 @@ pub fn supports_kind(def: &ParamDef, kind: StripKind) -> bool {
     def.scopes.contains(&kind)
 }
 
+#[allow(clippy::too_many_arguments)]
 const fn f(
     id: &'static str,
     min: f32,

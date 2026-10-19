@@ -241,7 +241,7 @@ fn r2_golden_frames_validate() {
 /// plus one tap-id byte, then `n × u16`. Mirrors `to_binary`; the node
 /// transcript re-implements it in JS.
 fn decode_taps(bytes: &[u8]) -> (u8, u16, u32, u32, u8, Vec<u16>) {
-    assert!(bytes.len() >= BIN_HEADER_LEN + 1, "taps frame shorter than header+tap");
+    assert!(bytes.len() > BIN_HEADER_LEN, "taps frame shorter than header+tap");
     assert_eq!(bytes[0], BIN_TYPE_TAPS);
     assert_eq!(bytes[1], BIN_VERSION);
     let n = u16::from_le_bytes([bytes[2], bytes[3]]);
@@ -251,7 +251,7 @@ fn decode_taps(bytes: &[u8]) -> (u8, u16, u32, u32, u8, Vec<u16>) {
     let body = &bytes[13..];
     assert_eq!(body.len(), n as usize * 2, "taps payload is n × u16");
     let qs = body
-        .chunks_exact(2)
+        .as_chunks::<2>().0.iter()
         .map(|c| u16::from_le_bytes([c[0], c[1]]))
         .collect();
     (bytes[0], n, seq, t_ms, tap, qs)
@@ -269,7 +269,7 @@ fn hex_of(bytes: &[u8]) -> String {
 
 fn bytes_of(hex: &str) -> Vec<u8> {
     let h = hex.trim();
-    assert!(h.len() % 2 == 0, "odd hex length");
+    assert!(h.len().is_multiple_of(2), "odd hex length");
     (0..h.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&h[i..i + 2], 16).expect("hex"))
