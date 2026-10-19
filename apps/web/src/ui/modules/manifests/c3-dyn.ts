@@ -105,10 +105,11 @@ export const manifests: ModuleManifest[] = [
       fg: { type: 'color', default: 'var(--u4-text-4)' },
       pressed: { type: 'text', default: 'false' },
       summary: { type: 'text', default: '' },
+      locked: { type: 'bool', default: false },
     },
     defaults: { kind: 'comp' },
     size: { minW: 270, fixedH: 40 },
-    events: [{ name: 'toggle' }],
+    events: [{ name: 'toggle' }, { name: 'reset' }],
   },
 ];
 

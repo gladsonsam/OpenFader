@@ -110,6 +110,9 @@ export function tabNote(ch: Channel, key: Tab): string {
 }
 
 export function tabLabel(tab: Tab): string {
+  // 'groups' is a phone-only rail entry (built in channelScope, not
+  // TAB_LABELS, so the desktop rail data stays 5 tabs pixel-identical).
+  if (tab === 'groups') return 'Groups';
   return TAB_LABELS.find(t => t[0] === tab)?.[1] ?? tab;
 }
 

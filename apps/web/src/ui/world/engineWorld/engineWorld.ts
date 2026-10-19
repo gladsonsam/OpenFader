@@ -104,6 +104,13 @@ interface StateStrip {
   muted: boolean;
 }
 
+/** Topology identity for change detection: driver switches and family
+ * relayouts must invalidate per-strip state (see the `caps` handler);
+ * rebroadcasts of the same layout must not. */
+function topoFingerprint(topo: readonly TopologyEvt[]): string {
+  return topo.map((f) => `${f.kind}:${f.first}:${f.count}`).join(',');
+}
+
 export class EngineWorld implements World {
   readonly kind = 'engine';
   version = 0;
@@ -362,11 +369,32 @@ export class EngineWorld implements World {
         break;
       case 'caps': {
         this.caps = capsFromInput({ driver: evt.driver, params: evt.params, unsupported: evt.unsupported });
-        this._driver = evt.driver || this._driver;
+        // Same-socket driver switch (sim -> xair via ConnectDevice) swaps
+        // the topology under this world while per-strip confirmed/pending
+        // values persist: raw strip 30 is sim in31 ("CH31") but xair Main
+        // LR, so the stale sim values would reinterpret as the master
+        // (and the empty xair LR scribble never heals the name). Drop all
+        // per-strip -- and per-strip-timed -- state when the driver or the
+        // family layout actually changed. Pure caps rebroadcasts (param
+        // drops) keep an identical topology and must NOT wipe pending edits.
+        const nextDriver = evt.driver || this._driver;
+        // First attach carries state before caps (empty topology): that is
+        // fresh truth, not a switch -- only invalidate once a layout was
+        // actually established.
+        if (
+          this.topology.length > 0 &&
+          (nextDriver !== this._driver || topoFingerprint(this.topology) !== topoFingerprint(evt.topology))
+        ) {
+          this.maps = emptyMaps();
+          this.states.clear();
+          this.firstSeenAt.clear();
+          this.mainPending = null;
+        }
+        this._driver = nextDriver;
         this.topology = evt.topology;
         this._banks = deriveBanks(this.topology);
         this.lib.setCaps(
-          { slots: evt.fx.slots, types: evt.fx.types.map((t) => ({ id: t.id, label: t.label, params: t.params.map((q) => ({ id: q.id, label: q.label })) })) },
+          { slots: evt.fx.slots, types: evt.fx.types.map((t) => ({ id: t.id, label: t.label, params: t.params.map((q) => ({ id: q.id, label: q.label, unit: (q as { unit?: string }).unit })) })) },
           evt.routing.supported,
           evt.groups,
           evt.files.supported,
@@ -832,7 +860,7 @@ export class EngineWorld implements World {
   get fxSlots(): FxSlotView[] {
     return this.lib.fxSlots;
   }
-  get fxCaps(): { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string }> }> } | null {
+  get fxCaps(): { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string; unit?: string }> }> } | null {
     return this.lib.fxCaps;
   }
   fxSetType(slot: number, type: string): void {

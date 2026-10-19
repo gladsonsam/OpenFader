@@ -160,7 +160,7 @@ covered by the earlier meter findings, not that probe.)
 | Info (`info`) | `/info` query → `info_from_strings` (name/model/firmware) + assumed 48 kHz | `/info` order `[proto-rev, name, model, firmware]` rig-verified (T5); 48 kHz assumed, never read from the desk |
 | Numbered scenes | engine-side full-plane capture/recall over the param plane (faders ride the legacy fade) | no desk-native snapshot used; capture walks the poll list (~2k pairs — slow on hardware, prefer short `fade_ms` tests) |
 | FX `fx_param parNN` | `/fx/N/par/MM` float writes (1-based both axes) | param write path loopback-tested; live FX par shapes verified 2026-10-18 (baseline "Live FX par shapes") but the engine `fx_param` command never ran them |
-| FX type/on/bypass | NOT implemented (error) — no verified mapping | `/fx/N/type` int `0..=60` reads exist in `proto-xair::fx`; writes/type-select never attempted live |
+| FX type/on/bypass | type READS live (engine polls `/fx/N/type` into `Event Fx` + `caps.fx` tables); type-select/on/bypass writes NOT implemented (error) — no verified mapping | `/fx/N/type` int `0..=60` reads VERIFIED 2026-10-19 (slots VRM/HALL/D/FL/PIT = 7/0/26/60 on the owner rig, query-only); writes/type-select never attempted live |
 | Routing patch | `supported:false` — `insrc` live-silent on FW 1.20 (baseline T7) | `/ch/NN/config/insrc` stays out of `caps` until a rig hears a reply (P22) |
 | Offline push target | normal `set_param` path per id | per-id verification = its own P-row; push itself is engine-side |
 | Taps `post` | `/meters/1` blob cache (same source as `poll_meters`) | blob endianness/rate rig-verified; per-strip index mapping assumed from the blob order |

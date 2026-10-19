@@ -34,7 +34,17 @@
 
   const slot = $derived(props.slot);
   const knobs = $derived(props.knobs ?? []);
-  const defs = $derived(slot ? fxKnobDefs(slot.type) : []);
+  // Design types format via fxKnobDefs; desk-native types (xair parNN)
+  // have no design entry — fall back to percent instead of throwing.
+  const defs = $derived.by(() => {
+    if (!slot) return [];
+    try {
+      return fxKnobDefs(slot.type);
+    } catch {
+      return knobs.map(() => ({ label: '', fmt: (v: number) => Math.round(v * 100) + '%' }));
+    }
+  });
+  const fmtFor = $derived((pi: number) => defs[pi]?.fmt ?? ((v: number) => Math.round(v * 100) + '%'));
 </script>
 
 <div
@@ -53,7 +63,7 @@
         defaultValue={0.5}
         fine={props.fine ?? false}
         disabled={props.locked ?? false}
-        fmt={(v) => defs[pi].fmt(v)}
+        fmt={(v) => fmtFor(pi)(v)}
         oninput={(v) => onEvent?.('knob', { param: pi, value: v })}
       />
     {/each}

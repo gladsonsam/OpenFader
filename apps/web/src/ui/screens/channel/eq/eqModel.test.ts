@@ -81,9 +81,24 @@ const g: EqGraphVm = eqGraphVm(eq, 1);
   assert.equal(g.bandStroke, EQ_BAND_COLORS[1]);
   const off = eqGraphVm({ ...eq, bands: eq.bands.map((b, i) => (i === 0 ? { ...b, on: false } : b)) }, 1);
   assert.equal(off.bandFill, '', 'band fill empty when the selected band is off');
+  assert.equal(off.bandGhosts.length, 5, 'ghost per band even when off');
+  assert.ok(off.bandGhosts[1].d.length > 0, 'off band keeps a non-empty grey ghost shape');
+  assert.equal(off.bandGhosts[1].stroke, '#5a6272', 'off ghost strokes grey');
+  assert.equal(off.bandGhosts[1].fill, 'rgba(90,98,114,0.14)', 'off ghost fills grey');
+  assert.equal(off.bandGhosts[1].on, false, 'off ghost flagged Off');
+  assert.equal(off.bandGhosts[2].on, true, 'sibling ghost stays On with band colour');
+  assert.equal(off.bandGhosts[2].stroke, EQ_BAND_COLORS[2]);
   const bypassed = eqGraphVm({ ...eq, on: false }, 1);
   assert.equal(bypassed.curveStroke, '#5a6272');
   assert.equal(bypassed.bandFill, '', 'no band fill when EQ bypassed');
+  assert.ok(
+    bypassed.bandGhosts.every(gh => gh.d.length > 0),
+    'bypassed EQ keeps all ghost shapes',
+  );
+  assert.ok(
+    bypassed.bandGhosts.every(gh => gh.stroke === '#5a6272' && gh.fill === 'rgba(90,98,114,0.14)'),
+    'bypassed ghosts all grey',
+  );
 }
 
 // --- 3. grid + labels (design counts) ---

@@ -14,7 +14,7 @@
   import { ui } from '../../state/uiStore.svelte.ts';
   import { live } from '../../state/live.svelte.ts';
   import { bridgeStrip } from '../../state/engineBridge.ts';
-  import { dbToPos } from '../../fixtures/designData.ts';
+  import { dbToPos, bankDefs } from '../../fixtures/designData.ts';
   import { stripStateOf } from './stripState.ts';
   import BusPopup, { type BusRowVm } from './BusPopup.svelte';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
@@ -132,9 +132,35 @@
   );
   const emptyCount = $derived(Math.max(0, SLOT_COUNT - liveCells.length));
   // All 48 inputs in order for the phone snap pager (no banks: the rail is
-  // hidden on phones). Desk badges ride along like the bank cells.
-  const allCells = $derived(mixerAllCells(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf));
+  // hidden on phones). Desk badges ride along like the bank cells. Online,
+  // the same topology filter as the desktop grid applies (XR18: 16 in, not
+  // 48) -- unmapped strips have no desk counterpart (writes no-op, meters
+  // -90) and must not page as phantom strips.
+  const allCells = $derived(
+    (() => {
+      const cells = mixerAllCells(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf);
+      const w = live.engine;
+      if (live.phase !== 'online' || !w || !w.capsReady) return cells;
+      return cells.filter(c => bridgeStrip(w, c.id) !== null);
+    })(),
+  );
   const tree = $derived(store.tree(defaults as unknown as LayoutNode));
+  // Phone layer rail (the shell rail stays desktop-only): bank descriptors
+  // for `over: 'list:banks'`, with the same live availability filter as the
+  // shell rail (XR18: banks with no strip on the desk hide). Offline/fixture
+  // keeps every bank. Labels are compact: the rail is 52px wide.
+  const liveBanks = $derived(
+    (() => {
+      const w = live.engine;
+      const all = bankDefs();
+      if (live.phase !== 'online' || !w || !w.capsReady) return all;
+      void live.version;
+      return all.filter(b => b.items.some(it => bridgeStrip(w, it.id) !== null));
+    })(),
+  );
+  const RAIL_SHORT: Record<string, string> = {
+    ch1: '1-16', ch17: '17-32', ch33: '33-48', fx: 'FX', mix: 'Mix', grp: 'Grp', mtx: 'Mtx', dca: 'DCA',
+  };
   // The user-editable strip anatomy, derived through the same profile store
   // (user edits to strip parts apply); each repeat frame renders it with its
   // own cell scope.
@@ -150,6 +176,7 @@
     lists: {
       emptySlots: Array.from({ length: emptyCount }, (_, i) => `empty-${i}`),
       allBankItems: allCells as unknown as string[],
+      banks: liveBanks.map(b => ({ key: b.key, label: RAIL_SHORT[b.key] ?? b.label, color: b.color, text: b.text })),
     },
     master,
     frozen,

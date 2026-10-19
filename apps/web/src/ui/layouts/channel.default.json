@@ -10,7 +10,10 @@
   "variants": {
     "phone": {
       "module": "col",
-      "props": { "gap": 8, "minHeight": 0 }
+      "props": {
+        "gap": 8,
+        "minHeight": 0
+      }
     }
   },
   "children": [
@@ -27,8 +30,15 @@
       },
       "variants": {
         "phone": {
-          "module": "row",
-          "props": { "width": "100%", "flex": "none", "overflow": "auto" }
+          "module": "scroll",
+          "props": {
+            "direction": "row",
+            "width": "100%",
+            "flex": "none",
+            "gap": 5,
+            "snap": "x",
+            "box": "content-box"
+          }
         }
       },
       "children": [
@@ -37,6 +47,13 @@
           "module": "repeat",
           "props": {
             "over": "list:tabs"
+          },
+          "variants": {
+            "phone": {
+              "props": {
+                "over": "list:phoneTabs"
+              }
+            }
           },
           "children": [
             {
@@ -72,24 +89,40 @@
         "overflow": "auto"
       },
       "variants": {
-        "phone": { "props": { "minHeight": 0 } }
+        "phone": {
+          "props": {
+            "minHeight": 0,
+            "flex": "1 1 auto",
+            "height": "100%"
+          }
+        }
       },
       "children": [
         {
           "id": "tab-input",
-          "module": "grid",
+          "module": "col",
           "props": {
-            "columns": "repeat(auto-fit, minmax(270px, 1fr))",
             "gap": 6,
+            "flex": "1 1 auto",
+            "minHeight": 0,
             "box": "content-box"
           },
           "when": "store.tab == 'input'",
+          "variants": {
+            "phone": {
+              "props": {
+                "flex": "1 1 auto",
+                "minHeight": 0,
+                "width": "100%"
+              }
+            }
+          },
           "children": [
             {
               "id": "input-empty",
               "module": "col",
               "props": {
-                "flex": "1",
+                "flex": "none",
                 "align": "center",
                 "justify": "center",
                 "padding": 24,
@@ -104,7 +137,7 @@
                   "id": "input-empty-text",
                   "module": "text",
                   "props": {
-                    "value": "No preamp on this channel — its signal comes from inside the console.",
+                    "value": "No preamp on this channel \u2014 its signal comes from inside the console.",
                     "size": 15,
                     "color": "var(--u4-text-5)",
                     "align": "center"
@@ -112,6 +145,25 @@
                 }
               ]
             },
+            {
+              "id": "input-top",
+              "module": "grid",
+              "props": {
+                "columns": "repeat(auto-fit, minmax(270px, 1fr))",
+                "gap": 8,
+                "align": "stretch",
+                "flex": "none",
+                "box": "content-box"
+              },
+              "variants": {
+                "phone": {
+                  "props": {
+                    "flex": "none",
+                    "width": "100%"
+                  }
+                }
+              },
+              "children": [
             {
               "id": "preamp",
               "module": "input-preamp-card",
@@ -216,6 +268,408 @@
                 }
               }
             }
+              ]
+            },
+            {
+              "id": "input-previews",
+              "module": "row",
+              "props": {
+                "gap": 8,
+                "align": "stretch",
+                "wrap": true,
+                "flex": "1 1 auto",
+                "minHeight": 0,
+                "box": "content-box"
+              },
+              "variants": {
+                "phone": {
+                  "module": "col",
+                  "props": {
+                    "gap": 8,
+                    "flex": "none",
+                    "width": "100%",
+                    "box": "content-box"
+                  }
+                }
+              },
+              "children": [
+                {
+                  "id": "in-pv-eqw",
+                  "module": "col",
+                  "props": {
+                    "flex": "1 1 280px",
+                    "minWidth": 0,
+                    "gap": 6,
+                    "padding": 8,
+                    "radius": 3,
+                    "border": "1px solid var(--u4-line-panel)",
+                    "background": "var(--u4-well-bg)",
+                    "box": "content-box"
+                  },
+                  "variants": {
+                    "phone": {
+                      "props": {
+                        "flex": "none",
+                        "width": "100%"
+                      }
+                    }
+                  },
+                  "when": "eqGraph != null",
+                  "children": [
+                    {
+                      "id": "in-pv-eq-head",
+                      "module": "row",
+                      "props": {
+                        "gap": 8,
+                        "align": "center",
+                        "justify": "space-between",
+                        "box": "content-box"
+                      },
+                      "children": [
+                        {
+                          "id": "in-pv-eq-title",
+                          "module": "text",
+                          "props": {
+                            "value": "EQ",
+                            "size": 15
+                          }
+                        },
+                        {
+                          "id": "in-pv-eq-go",
+                          "module": "btn",
+                          "props": {
+                            "label": "",
+                            "icon": "chevronRight",
+                            "iconSize": 16,
+                            "height": 32,
+                            "bare": true,
+                            "ariaLabel": "Go to EQ tab"
+                          },
+                          "on": {
+                            "press": {
+                              "do": "ui.setTab",
+                              "args": {
+                                "tab": "eq"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "id": "in-pv-eq",
+                      "module": "eq-graph",
+                      "props": {
+                        "minH": 180
+                      },
+                      "bind": {
+                        "graph": "eqGraph",
+                        "locked": "store.locked",
+                        "fine": "store.fine"
+                      },
+                      "on": {
+                        "select": {
+                          "do": "ui.setSelBand",
+                          "args": {
+                            "band": {
+                              "$expr": "payload.band"
+                            }
+                          }
+                        },
+                        "node": {
+                          "do": "channel.eqNode",
+                          "args": {
+                            "id": {
+                              "$expr": "selId"
+                            },
+                            "band": {
+                              "$expr": "payload.band"
+                            },
+                            "f": {
+                              "$expr": "payload.f"
+                            },
+                            "g": {
+                              "$expr": "payload.g"
+                            },
+                            "locked": {
+                              "$expr": "store.locked"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "in-pv-gate",
+                  "module": "col",
+                  "props": {
+                    "flex": "1 1 240px",
+                    "minWidth": 0,
+                    "gap": 6,
+                    "padding": 8,
+                    "radius": 3,
+                    "border": "1px solid var(--u4-line-panel)",
+                    "background": "var(--u4-well-bg)",
+                    "box": "content-box"
+                  },
+                  "variants": {
+                    "phone": {
+                      "props": {
+                        "flex": "none",
+                        "width": "100%"
+                      }
+                    }
+                  },
+                  "when": "dynGate != null",
+                  "children": [
+                    {
+                      "id": "in-pv-gate-head",
+                      "module": "row",
+                      "props": {
+                        "gap": 8,
+                        "align": "center",
+                        "justify": "space-between",
+                        "box": "content-box"
+                      },
+                      "children": [
+                        {
+                          "id": "in-pv-gate-title",
+                          "module": "text",
+                          "props": {
+                            "value": "Gate",
+                            "size": 15
+                          }
+                        },
+                        {
+                          "id": "in-pv-gate-go",
+                          "module": "btn",
+                          "props": {
+                            "label": "",
+                            "icon": "chevronRight",
+                            "iconSize": 16,
+                            "height": 32,
+                            "bare": true,
+                            "ariaLabel": "Go to Gate tab"
+                          },
+                          "on": {
+                            "press": {
+                              "do": "ui.setTab",
+                              "args": {
+                                "tab": "gate"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "id": "in-pv-gate-graph",
+                      "module": "dyn-transfer-graph",
+                      "props": {
+                        "kind": "gate",
+                        "color": "#3ed0e0",
+                        "minH": 180
+                      },
+                      "variants": {
+                        "phone": {
+                          "props": {
+                            "minH": 180,
+                            "flex": "none",
+                            "width": "100%",
+                            "plotMR": 24
+                          }
+                        }
+                      },
+                      "bind": {
+                        "aria": "gateAria",
+                        "path": "gatePath",
+                        "fill": "gateFill",
+                        "fillColor": "gateFillColor",
+                        "thrX": "gateThrX",
+                        "thrLeft": "gateThrLeft",
+                        "thrText": "gateThrText",
+                        "grid": "gateGrid",
+                        "axis": "gateAxis",
+                        "params": "dynGate",
+                        "frozen": "frozen",
+                        "staticDotL": "gateDotL",
+                        "staticDotT": "gateDotT",
+                        "getLevel": "dynGetLevel"
+                      },
+                      "on": {
+                        "thr": {
+                          "do": "channel.dynKnob",
+                          "args": {
+                            "id": {
+                              "$expr": "selId"
+                            },
+                            "which": "gate",
+                            "prop": "thr",
+                            "value": {
+                              "$expr": "payload.value"
+                            },
+                            "locked": {
+                              "$expr": "store.locked"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                {
+                  "id": "in-pv-comp",
+                  "module": "col",
+                  "props": {
+                    "flex": "1 1 240px",
+                    "minWidth": 0,
+                    "gap": 6,
+                    "padding": 8,
+                    "radius": 3,
+                    "border": "1px solid var(--u4-line-panel)",
+                    "background": "var(--u4-well-bg)",
+                    "box": "content-box"
+                  },
+                  "variants": {
+                    "phone": {
+                      "props": {
+                        "flex": "none",
+                        "width": "100%"
+                      }
+                    }
+                  },
+                  "when": "dynComp != null",
+                  "children": [
+                    {
+                      "id": "in-pv-comp-head",
+                      "module": "row",
+                      "props": {
+                        "gap": 8,
+                        "align": "center",
+                        "justify": "space-between",
+                        "box": "content-box"
+                      },
+                      "children": [
+                        {
+                          "id": "in-pv-comp-title",
+                          "module": "text",
+                          "props": {
+                            "value": "Compressor",
+                            "size": 15
+                          }
+                        },
+                        {
+                          "id": "in-pv-comp-go",
+                          "module": "btn",
+                          "props": {
+                            "label": "",
+                            "icon": "chevronRight",
+                            "iconSize": 16,
+                            "height": 32,
+                            "bare": true,
+                            "ariaLabel": "Go to Compressor tab"
+                          },
+                          "on": {
+                            "press": {
+                              "do": "ui.setTab",
+                              "args": {
+                                "tab": "comp"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "id": "in-pv-comp-graph",
+                      "module": "dyn-transfer-graph",
+                      "props": {
+                        "kind": "comp",
+                        "color": "#ff9f43",
+                        "minH": 180
+                      },
+                      "variants": {
+                        "phone": {
+                          "props": {
+                            "minH": 180,
+                            "flex": "none",
+                            "width": "100%",
+                            "plotMR": 24
+                          }
+                        }
+                      },
+                      "bind": {
+                        "aria": "compAria",
+                        "path": "compPath",
+                        "fill": "compFill",
+                        "fillColor": "compFillColor",
+                        "thrX": "compThrX",
+                        "thrLeft": "compThrLeft",
+                        "thrText": "compThrText",
+                        "grid": "compGrid",
+                        "axis": "compAxis",
+                        "params": "dynComp",
+                        "frozen": "frozen",
+                        "staticDotL": "compDotL",
+                        "staticDotT": "compDotT",
+                        "getLevel": "dynGetLevel"
+                      },
+                      "on": {
+                        "thr": {
+                          "do": "channel.dynKnob",
+                          "args": {
+                            "id": {
+                              "$expr": "selId"
+                            },
+                            "which": "comp",
+                            "prop": "thr",
+                            "value": {
+                              "$expr": "payload.value"
+                            },
+                            "locked": {
+                              "$expr": "store.locked"
+                            }
+                          }
+                        },
+                        "ratio": {
+                          "do": "channel.dynKnob",
+                          "args": {
+                            "id": {
+                              "$expr": "selId"
+                            },
+                            "which": "comp",
+                            "prop": "ratio",
+                            "value": {
+                              "$expr": "payload.value"
+                            },
+                            "locked": {
+                              "$expr": "store.locked"
+                            }
+                          }
+                        },
+                        "makeup": {
+                          "do": "channel.dynKnob",
+                          "args": {
+                            "id": {
+                              "$expr": "selId"
+                            },
+                            "which": "comp",
+                            "prop": "makeup",
+                            "value": {
+                              "$expr": "payload.value"
+                            },
+                            "locked": {
+                              "$expr": "store.locked"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            }
           ]
         },
         {
@@ -227,6 +681,15 @@
             "box": "content-box"
           },
           "when": "store.tab == 'sends'",
+          "variants": {
+            "phone": {
+              "props": {
+                "flex": "1 1 auto",
+                "minHeight": 0,
+                "width": "100%"
+              }
+            }
+          },
           "children": [
             {
               "id": "sends-empty",
@@ -311,6 +774,15 @@
             "box": "content-box"
           },
           "when": "store.tab == 'eq' && eqGraph != null",
+          "variants": {
+            "phone": {
+              "props": {
+                "flex": "1 1 auto",
+                "minHeight": 0,
+                "width": "100%"
+              }
+            }
+          },
           "children": [
             {
               "id": "top",
@@ -330,7 +802,8 @@
                     "bg": "eqMaster.bg",
                     "fg": "eqMaster.text",
                     "pressed": "eqMaster.str",
-                    "ariaLabel": "eqMaster.label == 'EQ In' ? 'EQ in' : 'EQ bypassed'"
+                    "ariaLabel": "eqMaster.label == 'EQ In' ? 'EQ in' : 'EQ bypassed'",
+                    "locked": "store.locked"
                   },
                   "on": {
                     "toggle": {
@@ -343,6 +816,14 @@
                     },
                     "flat": {
                       "do": "ui.flatEq",
+                      "args": {
+                        "id": {
+                          "$expr": "selId"
+                        }
+                      }
+                    },
+                    "reset": {
+                      "do": "ui.resetEq",
                       "args": {
                         "id": {
                           "$expr": "selId"
@@ -367,6 +848,13 @@
                 "graph": "eqGraph",
                 "locked": "store.locked",
                 "fine": "store.fine"
+              },
+              "variants": {
+                "phone": {
+                  "props": {
+                    "minH": 220
+                  }
+                }
               },
               "on": {
                 "select": {
@@ -408,7 +896,11 @@
                 "box": "content-box"
               },
               "variants": {
-                "phone": { "props": { "columns": "repeat(auto-fit, minmax(160px, 1fr))" } }
+                "phone": {
+                  "props": {
+                    "columns": "repeat(auto-fit, minmax(160px, 1fr))"
+                  }
+                }
               },
               "children": [
                 {
@@ -544,6 +1036,15 @@
             "box": "content-box"
           },
           "when": "store.tab == 'gate'",
+          "variants": {
+            "phone": {
+              "props": {
+                "flex": "1 1 auto",
+                "minHeight": 0,
+                "width": "100%"
+              }
+            }
+          },
           "children": [
             {
               "id": "head",
@@ -551,16 +1052,35 @@
               "props": {
                 "kind": "gate"
               },
+              "variants": {
+                "phone": {
+                  "props": {
+                    "compact": true
+                  }
+                }
+              },
               "bind": {
                 "label": "dynLabel",
                 "bg": "dynBg",
                 "fg": "dynFg",
                 "pressed": "dynPressed",
-                "summary": "dynSummary"
+                "summary": "dynSummary",
+                "locked": "store.locked"
               },
               "on": {
                 "toggle": {
                   "do": "ui.toggleDyn",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "which": {
+                      "$expr": "dynKind"
+                    }
+                  }
+                },
+                "reset": {
+                  "do": "ui.resetDyn",
                   "args": {
                     "id": {
                       "$expr": "selId"
@@ -583,6 +1103,18 @@
                 "minHeight": 0,
                 "box": "content-box"
               },
+              "variants": {
+                "phone": {
+                  "module": "col",
+                  "props": {
+                    "gap": 6,
+                    "flex": "1 1 auto",
+                    "minHeight": 0,
+                    "width": "100%",
+                    "box": "content-box"
+                  }
+                }
+              },
               "children": [
                 {
                   "id": "graph",
@@ -592,17 +1124,32 @@
                     "color": "#3ed0e0"
                   },
                   "variants": {
-                    "phone": { "props": { "minH": 220 } }
+                    "phone": {
+                      "props": {
+                        "minH": 220,
+                        "flex": "none",
+                        "width": "100%",
+                        "plotMR": 24
+                      }
+                    }
                   },
                   "on": {
                     "thr": {
                       "do": "channel.dynKnob",
                       "args": {
-                        "id": { "$expr": "selId" },
-                        "which": { "$expr": "dynKind" },
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "which": {
+                          "$expr": "dynKind"
+                        },
                         "prop": "thr",
-                        "value": { "$expr": "payload.value" },
-                        "locked": { "$expr": "store.locked" }
+                        "value": {
+                          "$expr": "payload.value"
+                        },
+                        "locked": {
+                          "$expr": "store.locked"
+                        }
                       }
                     }
                   },
@@ -632,8 +1179,16 @@
                     "size": 104
                   },
                   "variants": {
-                    "tablet": { "props": { "size": 88 } },
-                    "phone": { "props": { "size": 76 } }
+                    "tablet": {
+                      "props": {
+                        "size": 88
+                      }
+                    },
+                    "phone": {
+                      "props": {
+                        "size": 76
+                      }
+                    }
                   },
                   "bind": {
                     "knobs": "dynKnobs",
@@ -706,6 +1261,15 @@
             "box": "content-box"
           },
           "when": "store.tab == 'comp'",
+          "variants": {
+            "phone": {
+              "props": {
+                "flex": "1 1 auto",
+                "minHeight": 0,
+                "width": "100%"
+              }
+            }
+          },
           "children": [
             {
               "id": "head",
@@ -713,16 +1277,35 @@
               "props": {
                 "kind": "comp"
               },
+              "variants": {
+                "phone": {
+                  "props": {
+                    "compact": true
+                  }
+                }
+              },
               "bind": {
                 "label": "dynLabel",
                 "bg": "dynBg",
                 "fg": "dynFg",
                 "pressed": "dynPressed",
-                "summary": "dynSummary"
+                "summary": "dynSummary",
+                "locked": "store.locked"
               },
               "on": {
                 "toggle": {
                   "do": "ui.toggleDyn",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "which": {
+                      "$expr": "dynKind"
+                    }
+                  }
+                },
+                "reset": {
+                  "do": "ui.resetDyn",
                   "args": {
                     "id": {
                       "$expr": "selId"
@@ -745,6 +1328,18 @@
                 "minHeight": 0,
                 "box": "content-box"
               },
+              "variants": {
+                "phone": {
+                  "module": "col",
+                  "props": {
+                    "gap": 6,
+                    "flex": "1 1 auto",
+                    "minHeight": 0,
+                    "width": "100%",
+                    "box": "content-box"
+                  }
+                }
+              },
               "children": [
                 {
                   "id": "graph",
@@ -754,37 +1349,68 @@
                     "color": "#ff9f43"
                   },
                   "variants": {
-                    "phone": { "props": { "minH": 220 } }
+                    "phone": {
+                      "props": {
+                        "minH": 220,
+                        "flex": "none",
+                        "width": "100%",
+                        "plotMR": 24
+                      }
+                    }
                   },
                   "on": {
                     "thr": {
                       "do": "channel.dynKnob",
                       "args": {
-                        "id": { "$expr": "selId" },
-                        "which": { "$expr": "dynKind" },
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "which": {
+                          "$expr": "dynKind"
+                        },
                         "prop": "thr",
-                        "value": { "$expr": "payload.value" },
-                        "locked": { "$expr": "store.locked" }
+                        "value": {
+                          "$expr": "payload.value"
+                        },
+                        "locked": {
+                          "$expr": "store.locked"
+                        }
                       }
                     },
                     "ratio": {
                       "do": "channel.dynKnob",
                       "args": {
-                        "id": { "$expr": "selId" },
-                        "which": { "$expr": "dynKind" },
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "which": {
+                          "$expr": "dynKind"
+                        },
                         "prop": "ratio",
-                        "value": { "$expr": "payload.value" },
-                        "locked": { "$expr": "store.locked" }
+                        "value": {
+                          "$expr": "payload.value"
+                        },
+                        "locked": {
+                          "$expr": "store.locked"
+                        }
                       }
                     },
                     "makeup": {
                       "do": "channel.dynKnob",
                       "args": {
-                        "id": { "$expr": "selId" },
-                        "which": { "$expr": "dynKind" },
+                        "id": {
+                          "$expr": "selId"
+                        },
+                        "which": {
+                          "$expr": "dynKind"
+                        },
                         "prop": "makeup",
-                        "value": { "$expr": "payload.value" },
-                        "locked": { "$expr": "store.locked" }
+                        "value": {
+                          "$expr": "payload.value"
+                        },
+                        "locked": {
+                          "$expr": "store.locked"
+                        }
                       }
                     }
                   },
@@ -814,8 +1440,16 @@
                     "size": 104
                   },
                   "variants": {
-                    "tablet": { "props": { "size": 88 } },
-                    "phone": { "props": { "size": 76 } }
+                    "tablet": {
+                      "props": {
+                        "size": 88
+                      }
+                    },
+                    "phone": {
+                      "props": {
+                        "size": 76
+                      }
+                    }
                   },
                   "bind": {
                     "knobs": "dynKnobs",
@@ -878,6 +1512,83 @@
               ]
             }
           ]
+        },
+        {
+          "id": "tab-groups",
+          "module": "col",
+          "props": {
+            "gap": 6,
+            "flex": "1 1 auto",
+            "box": "content-box"
+          },
+          "when": "store.tab == 'groups'",
+          "variants": {
+            "phone": {
+              "props": {
+                "flex": "1 1 auto",
+                "minHeight": 0,
+                "width": "100%"
+              }
+            }
+          },
+          "children": [
+            {
+              "id": "g-src",
+              "module": "channel-source-label",
+              "bind": {
+                "src": "master.src"
+              }
+            },
+            {
+              "id": "g-state",
+              "module": "strip-state-icons",
+              "bind": {
+                "desk": "selState"
+              },
+              "when": "selState != null"
+            },
+            {
+              "id": "g-groups",
+              "module": "channel-groups-card",
+              "bind": {
+                "vm": "groupsVm"
+              },
+              "when": "groupsVm != null",
+              "on": {
+                "assign": {
+                  "do": "ui.setGroupAssign",
+                  "args": {
+                    "kind": {
+                      "$expr": "payload.kind"
+                    },
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "group": {
+                      "$expr": "payload.group"
+                    },
+                    "member": {
+                      "$expr": "payload.member"
+                    }
+                  }
+                },
+                "master": {
+                  "do": "ui.setGroupMute",
+                  "args": {
+                    "kind": {
+                      "$expr": "payload.kind"
+                    },
+                    "group": {
+                      "$expr": "payload.group"
+                    },
+                    "muted": {
+                      "$expr": "payload.muted"
+                    }
+                  }
+                }
+              }
+            }
+          ]
         }
       ]
     },
@@ -897,112 +1608,7 @@
       },
       "variants": {
         "phone": {
-          "module": "row",
-          "props": { "width": "100%", "flex": "none", "align": "stretch", "box": "border-box" },
-          "children": [
-            {
-              "id": "m-side",
-              "module": "col",
-              "props": { "gap": 5, "flex": "none", "width": 148, "box": "content-box" },
-              "variants": {
-                "phone": { "props": { "flex": "1 1 auto", "width": "auto", "minWidth": 0 } }
-              },
-              "children": [
-                {
-                  "id": "name",
-                  "module": "channel-name-chip",
-                  "bind": {
-                    "name": "master.name",
-                    "color": "master.color",
-                    "text": "master.text"
-                  }
-                },
-                {
-                  "id": "pan",
-                  "module": "channel-pan-bar",
-                  "bind": {
-                    "value": "master.pan",
-                    "name": "master.name",
-                    "fine": "store.fine"
-                  },
-                  "on": {
-                    "input": {
-                      "do": "ui.setPan",
-                      "args": {
-                        "id": {
-                          "$expr": "selId"
-                        },
-                        "value": {
-                          "$expr": "payload.value"
-                        }
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "mute",
-                  "module": "channel-mute",
-                  "bind": {
-                    "muted": "master.muted",
-                    "enabled": "master.muteEnabled",
-                    "label": "master.muteAria"
-                  },
-                  "on": {
-                    "press": {
-                      "do": "ui.toggleMute",
-                      "args": {
-                        "id": {
-                          "$expr": "selId"
-                        }
-                      }
-                    }
-                  }
-                },
-                {
-                  "id": "state-icons",
-                  "module": "strip-state-icons",
-                  "bind": {
-                    "desk": "selState"
-                  },
-                  "when": "selState != null"
-                },
-                {
-                  "id": "src",
-                  "module": "channel-source-label",
-                  "bind": {
-                    "src": "master.src"
-                  }
-                },
-                {
-                  "id": "m-groups",
-                  "module": "channel-groups-card",
-                  "bind": {
-                    "vm": "groupsVm"
-                  },
-                  "when": "groupsVm != null",
-                  "on": {
-                    "assign": {
-                      "do": "ui.setGroupAssign",
-                      "args": {
-                        "kind": { "$expr": "payload.kind" },
-                        "id": { "$expr": "selId" },
-                        "group": { "$expr": "payload.group" },
-                        "member": { "$expr": "payload.member" }
-                      }
-                    },
-                    "master": {
-                      "do": "ui.setGroupMute",
-                      "args": {
-                        "kind": { "$expr": "payload.kind" },
-                        "group": { "$expr": "payload.group" },
-                        "muted": { "$expr": "payload.muted" }
-                      }
-                    }
-                  }
-                }
-              ]
-            }
-          ]
+          "hidden": true
         }
       },
       "children": [
@@ -1036,6 +1642,44 @@
               }
             }
           }
+        },
+        {
+          "id": "fader-area",
+          "module": "col",
+          "props": {
+            "flex": "1 1 200px",
+            "minHeight": 180,
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "fader",
+              "module": "channel-fader",
+              "bind": {
+                "pos": "master.faderPos",
+                "readout": "master.readout",
+                "aria": "master.faderAria",
+                "accent": "master.accent",
+                "readColor": "master.readColor",
+                "fine": "master.fine",
+                "meter": "stripMeter",
+                "meterFrozen": "frozen"
+              },
+              "on": {
+                "input": {
+                  "do": "ui.setFader",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "value": {
+                      "$expr": "payload.value"
+                    }
+                  }
+                }
+              }
+            }
+          ]
         },
         {
           "id": "mute",
@@ -1082,18 +1726,32 @@
             "assign": {
               "do": "ui.setGroupAssign",
               "args": {
-                "kind": { "$expr": "payload.kind" },
-                "id": { "$expr": "selId" },
-                "group": { "$expr": "payload.group" },
-                "member": { "$expr": "payload.member" }
+                "kind": {
+                  "$expr": "payload.kind"
+                },
+                "id": {
+                  "$expr": "selId"
+                },
+                "group": {
+                  "$expr": "payload.group"
+                },
+                "member": {
+                  "$expr": "payload.member"
+                }
               }
             },
             "master": {
               "do": "ui.setGroupMute",
               "args": {
-                "kind": { "$expr": "payload.kind" },
-                "group": { "$expr": "payload.group" },
-                "muted": { "$expr": "payload.muted" }
+                "kind": {
+                  "$expr": "payload.kind"
+                },
+                "group": {
+                  "$expr": "payload.group"
+                },
+                "muted": {
+                  "$expr": "payload.muted"
+                }
               }
             }
           }

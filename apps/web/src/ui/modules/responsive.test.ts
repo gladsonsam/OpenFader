@@ -55,7 +55,7 @@ assert.equal((scrollPhone.props as Record<string, unknown>)?.['snap'], 'x');
 assert.equal((applyVariant(node(mixer, 'strip-scroll'), 'desktop').props as Record<string, unknown>)?.['snap'], undefined);
 
 // The variant column expressions resolve against the screen scope.
-assert.equal(phoneGridCols(), 'repeat(48, 120px)');
+assert.equal(phoneGridCols(), 'repeat(48, 96px)');
 assert.equal(tabletGridCols(), 'repeat(16, 150px)');
 for (const [cls, cols] of [['phone', phoneGridCols()], ['tablet', tabletGridCols()]] as const) {
   const r = evalExpr(cls === 'phone' ? 'phoneCols' : 'tabletCols', { phoneCols: phoneGridCols(), tabletCols: tabletGridCols() });
@@ -74,27 +74,42 @@ assert.equal((applyVariant(node(strip, 'mute'), 'phone').props as Record<string,
 assert.equal((applyVariant(node(strip, 'mute'), 'tablet').props as Record<string, unknown>)?.['height'], 48);
 assert.equal((node(strip, 'mute').props as Record<string, unknown>)?.['height'], 40);
 assert.equal((applyVariant(node(mixer, 'master-mute'), 'phone').props as Record<string, unknown>)?.['height'], 48);
-// Phone master strip narrows so two full strips stay visible.
+// Phone master strip narrows so three-plus strips stay visible.
 assert.equal((node(mixer, 'master').props as Record<string, unknown>)?.['width'], 112);
-assert.equal((applyVariant(node(mixer, 'master'), 'phone').props as Record<string, unknown>)?.['width'], 96);
+assert.equal((applyVariant(node(mixer, 'master'), 'phone').props as Record<string, unknown>)?.['width'], 76);
 
-// Channel phone: the row stacks vertically (rail / content / master).
+// Channel phone: the row stacks vertically (rail / content); the bottom
+// master strip is hidden (Groups is its own tab now).
 const chRoot = applyVariant(channel, 'phone');
 assert.equal(chRoot.module, 'col');
 assert.equal(channel.module, 'row');
+// The tab rail becomes a snapping horizontal scroller (desktop rail + data untouched).
 const tabsPhone = applyVariant(node(channel, 'tab-list'), 'phone');
-assert.equal(tabsPhone.module, 'row');
-assert.equal((tabsPhone.props as Record<string, unknown>)?.['overflow'], 'auto');
+assert.equal(tabsPhone.module, 'scroll');
+assert.equal((tabsPhone.props as Record<string, unknown>)?.['snap'], 'x');
+assert.equal((tabsPhone.props as Record<string, unknown>)?.['direction'], 'row');
+assert.equal(node(channel, 'tab-list').module, 'col');
+// The phone tab-buttons repeat reads the phone rail (desktop: 5 tabs).
+const tabButtonsPhone = applyVariant(node(channel, 'tab-buttons'), 'phone');
+assert.equal((tabButtonsPhone.props as Record<string, unknown>)?.['over'], 'list:phoneTabs');
+assert.equal((node(channel, 'tab-buttons').props as Record<string, unknown>)?.['over'], 'list:tabs');
+// Content fills the viewport so the active tab scrolls, not the page.
 const contentPhone = applyVariant(node(channel, 'content'), 'phone');
 assert.equal((contentPhone.props as Record<string, unknown>)?.['minHeight'], 0);
+assert.equal((contentPhone.props as Record<string, unknown>)?.['flex'], '1 1 auto');
+assert.equal((contentPhone.props as Record<string, unknown>)?.['height'], '100%');
 const masterPhone = applyVariant(node(channel, 'master'), 'phone');
-assert.equal(masterPhone.module, 'row');
-assert.deepEqual((masterPhone.children ?? []).map(c => c.id), ['m-side']);
-const side = masterPhone.children![0];
-assert.deepEqual((side.children ?? []).map(c => c.id), ['name', 'pan', 'mute', 'state-icons', 'src', 'm-groups']);
-// Copied phone nodes keep their bindings and actions.
-assert.equal(node(side, 'pan').bind?.['value'], 'master.pan');
-assert.equal((node(side, 'mute').on?.['press'] as { do: string }).do, 'ui.toggleMute');
+assert.equal(masterPhone.hidden, true);
+// Desktop/tablet master strip untouched (side column with the groups card).
+assert.equal((node(channel, 'master').props as Record<string, unknown>)?.['width'], 136);
+assert.deepEqual((node(channel, 'master').children ?? []).map(c => c.id), ['name', 'pan', 'mute', 'state-icons', 'src', 'groups']);
+assert.equal(node(channel, 'groups').bind?.['vm'], 'groupsVm');
+assert.equal((node(channel, 'groups').on?.['assign'] as { do: string }).do, 'ui.setGroupAssign');
+// The phone Groups tab keeps the same groups bindings + actions.
+assert.equal(node(channel, 'g-groups').bind?.['vm'], 'groupsVm');
+assert.equal((node(channel, 'g-groups').on?.['assign'] as { do: string }).do, 'ui.setGroupAssign');
+assert.equal((node(channel, 'g-groups').on?.['master'] as { do: string }).do, 'ui.setGroupMute');
+assert.equal(node(channel, 'tab-groups').when, "store.tab == 'groups'");
 
 // Settings phone: single column (desktop keeps the auto-fit grid).
 assert.equal(
