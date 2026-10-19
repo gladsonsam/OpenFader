@@ -8,11 +8,13 @@
      bank pager, vertical drags stay with the fader. Only presses that start
      on the metal cap grab the fader (rail/meter/track fall through to the
      scroller). A direction lock (~10px slop) applies to all pointers:
-     horizontal intent aborts without touching the value so the pager
-     scrolls; vertical intent captures and drags. touch-action is split:
-     the track is `auto` so touches starting off the cap scroll freely;
-     the cap is `pan-x` so touches starting on it scroll the bank
-     horizontally while vertical drags stay with the fader.
+     horizontal intent aborts without touching the value; vertical intent
+     drags. touch-action is split: the track is `auto` so touches starting
+     off the cap scroll freely; the cap is `none` so a touch starting on
+     it can never be stolen mid-gesture by the pager (pan-x let the pager
+     win the scroll race on finger jitter and kill the drag via
+     pointercancel after a few px). The cap tracks the finger 1:1 from a
+     local live value during the drag, not just the echoed store value.
      Variants: 'strip' (mixer, cap 36x50), 'aside' (channel strip,
      cap 46x60 + wider scale), 'master' (dual meter, lighter 40x52 cap,
      gold centre line). -->
@@ -105,10 +107,12 @@
   // Travel height of the cap track (px), measured for the
   // compositor-friendly cap position (fixed bottom:0 anchor + translateY).
   let trackH = $state(0);
-  // Tablet direction lock: touch/pen starts pending (no capture, no value
+  // Direction lock: touch/pen starts pending (no capture, no value
   // change) until the gesture declares itself. Vertical lock -> fader drag
-  // (capture then). Horizontal lock -> abort so the enclosing bank pager
-  // gets the native pan-x scroll. Mouse keeps the immediate drag.
+  // (capture then). Horizontal lock -> abort without touching the value
+  // (the cap is touch-action:none, so this just no-ops; the pager still
+  // scrolls from any touch that starts off the cap). Mouse drags use the
+  // same gate.
   let drag: {
     x0: number;
     y0: number;
@@ -119,7 +123,10 @@
   } | null = null;
   // Drag commit coalescing: pointermove can fire faster than frames on
   // mobile; store the latest value and flush one oninput per rAF.
+  // liveV mirrors pendingV for the cap so it tracks the finger 1:1 even
+  // before the store echo comes back through the module/layout hops.
   let pendingV: number | null = null;
+  let liveV: number | null = $state(null);
   let dragRaf = 0;
 
   function flushDrag(): void {
@@ -139,7 +146,9 @@
   // Compositor-friendly cap offset: fixed bottom:0 anchor, travel via
   // translateY(-capY px). capY == value-fraction * measured track height,
   // so the centre line lands exactly where bottom:{pct}% put it.
-  const capY = $derived(Math.max(0, Math.min(1, value)) * trackH);
+  // What the cap shows: the live finger value mid-drag, else the echo.
+  const shown = $derived(Math.max(0, Math.min(1, liveV ?? value)));
+  const capY = $derived(shown * trackH);
   // Gated unity reset: double-tap snaps to resetValue (0 dB) only when
   // the fader is already within this normalised window of it (~±3 dB
   // around unity on the design taper: 40 dB per unit near 0 dB).
@@ -190,7 +199,7 @@
     const el = e.currentTarget as HTMLElement;
     // All pointers start pending with NO capture: no value change until
     // vertical intent locks the drag (then we capture); horizontal intent
-    // aborts so an enclosing scroller can steal the gesture for scrolling.
+    // aborts without touching the value.
     drag = { x0: e.clientX, y0: e.clientY, start: value, h, active: false, el };
   }
   function move(e: PointerEvent): void {
@@ -200,7 +209,7 @@
       const dy = drag.y0 - e.clientY;
       const ax = Math.abs(dx);
       const ay = Math.abs(dy);
-      // Clearly horizontal -> let the pager scroll, never touch the value.
+      // Clearly horizontal -> abort, never touch the value.
       if (ax > 12 && ax > ay) {
         drag = null;
         return;
@@ -215,6 +224,7 @@
       drag.active = true;
     }
     pendingV = faderFromDrag(drag.start, drag.y0 - e.clientY, drag.h, fine);
+    liveV = pendingV;
     if (!dragRaf) dragRaf = requestAnimationFrame(flushDrag);
   }
   function up(e?: PointerEvent): void {
@@ -225,6 +235,10 @@
       pendingV = null;
       if (!disabled) oninput?.(v);
     }
+    // Drop the live value: the echoed store value (now flushed) is truth.
+    // (Kept through the drag even if the echo lags; cleared here so a
+    // rejected commit, e.g. a locked strip, can never stick the cap.)
+    liveV = null;
     if (e && drag?.active && drag.el) {
       try {
         if (drag.el.hasPointerCapture?.(e.pointerId)) drag.el.releasePointerCapture(e.pointerId);
@@ -276,7 +290,7 @@
     aria-label={ariaLabel}
     aria-valuemin={0}
     aria-valuemax={100}
-    aria-valuenow={Math.round(value * 100)}
+    aria-valuenow={Math.round(shown * 100)}
     aria-valuetext={dbText + ' dB'}
     aria-disabled={disabled || !oninput ? 'true' : undefined}
     disabled={disabled || !oninput ? true : undefined}
@@ -305,7 +319,7 @@
       />
       <span
         bind:this={capEl}
-        style="position:absolute;left:{cap.left};bottom:0;width:{cap.w}px;height:{cap.h}px;transform:translate(-50%, 50%) translateY(-{capY.toFixed(1)}px);will-change:transform;border-radius:3px;background:{capBg};box-shadow:{capShadow};touch-action:pan-x;cursor:{disabled ||
+        style="position:absolute;left:{cap.left};bottom:0;width:{cap.w}px;height:{cap.h}px;transform:translate(-50%, 50%) translateY(-{capY.toFixed(1)}px);will-change:transform;border-radius:3px;background:{capBg};box-shadow:{capShadow};touch-action:none;cursor:{disabled ||
         !oninput
           ? 'default'
           : 'ns-resize'}"

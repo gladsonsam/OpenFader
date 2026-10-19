@@ -1176,7 +1176,7 @@ impl XAirDriver {
         //
         // INFERRED, not owner-rig verified: the subscription reportedly
         // expires after ~10 s (xr-meters re-issues every 9 s) and needs the
-        // `/xremote` keepalive (every ~8 s, already running via `connect`)
+        // `/xremote` keepalive (every ~5 s, already running via `connect`)
         // alongside. Rig-verified 2026-10-18: the /meters/1 blob is 84 B
         // = 42 LE-i16 samples with NO header (transport parses from offset
         // 0 — correct). The xr-meters 4-header-byte note applies to a
@@ -1318,10 +1318,28 @@ impl MixerDriver for XAirDriver {
             Self::sweep_peer(addr).await?
         };
         let session = OscSession::connect(peer, Some(KeepaliveConfig::xremote())).await?;
-        // Best-effort discovery ping; failure still leaves the session usable.
-        let _ = session
-            .query_timeout(addrs::INFO, std::time::Duration::from_millis(800))
-            .await;
+        // Authoritative discovery ping: a UDP "connect" always succeeds, so
+        // without this a silent desk would link as connected and then time
+        // out every query (phantom link, tap-to-connect looks dead with no
+        // message). Two attempts absorb one lost datagram on flaky venue
+        // wifi; a desk that answers nothing fails fast with the address in
+        // the message so the UI can offer a retry.
+        let mut verified = false;
+        for _ in 0..2 {
+            if session
+                .query_timeout(addrs::INFO, std::time::Duration::from_millis(800))
+                .await
+                .is_ok()
+            {
+                verified = true;
+                break;
+            }
+        }
+        if !verified {
+            anyhow::bail!(
+                "no reply from {peer} — check the desk is powered, on this network, and the IP is correct"
+            );
+        }
         // Desk-broadcast ingest: parse every unmatched inbound message into
         // the stable update channel (one task per connection; it exits when
         // the next connect drops this session).
@@ -4029,7 +4047,7 @@ mod tests {
             "production renewal stays ~8s (INFERRED until rig confirms)"
         );
         let (driver, fake) = connected_driver().await;
-        // Session keepalive (`/xremote` every 8 s) fires immediately too —
+        // Session keepalive (`/xremote` every 5 s) fires immediately too —
         // reset its counter so only the renewal loop is measured below.
         tokio::time::sleep(Duration::from_millis(50)).await;
         *fake.xremote_count.lock().unwrap() = 0;

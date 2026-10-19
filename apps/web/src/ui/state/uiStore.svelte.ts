@@ -457,20 +457,9 @@ export const ui = {
     return masterId(world);
   },
   get header() {
-    const h = headerView(world);
-    // The header dot is the one place that must tell the truth about the
-    // real socket (fixture `connected` is a console picker until wave 3
-    // binds desks to discovery). Live phases override the fixture dot.
-    if (live.phase === 'online') {
-      return { ...h, connDot: '#5fe060', connAria: `Connection: live via ${live.host}, select device` };
-    }
-    if (live.phase === 'connecting') {
-      return { ...h, connDot: '#f0b44a', connAria: `Connection: connecting to ${live.host}, select device` };
-    }
-    if (live.phase === 'error') {
-      return { ...h, connDot: '#ff4a3d', connAria: `Connection: ${live.message}, select device` };
-    }
-    return h;
+    // The header dot names the DESK link only (fixture `connected` state):
+    // the frontend<->backend link auto-connects at boot and is never shown.
+    return headerView(world);
   },
   get backTo(): Mode {
     return backTo(world);
@@ -845,6 +834,10 @@ export const ui = {
     },
     scan: (clock: string) => {
       update(scanDevices(world, clock));
+      // Client-side busy state: the engine sends no scan-started event, so
+      // the button would otherwise look dead for the ~3 s sweep. `forward`
+      // still owns the actual send (no-op with no link).
+      live.noteScanRequested(liveEngine() !== null);
       forward(w => { w.scan(); });
     },
     disconnect: () => {
@@ -880,8 +873,9 @@ export const ui = {
     /** One-tap LAN fix: point the relay at the machine serving this page. */
     usePageHost: () => live.usePageHost(),
     /** Manual add-by-IP: the relay pings the address; a verified desk
-     * appears as a connectable row (silence stays an honest inline hint
-     * in ManualDesk — never a blind row). Recent hosts persist. */
+     * appears as a connectable row (silence stays an honest inline hint —
+     * never a blind row). Recent hosts persist. No UI exposes this now
+     * (connection screen is Scan-only); the engine path stays intact. */
     probeDesk: (ip: string) => {
       const v = (ip || '').trim();
       if (!v) return;

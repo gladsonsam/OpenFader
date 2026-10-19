@@ -705,7 +705,11 @@ async fn taps_negotiation_and_frames() {
 async fn poller_inflight_defaults_and_focus_order() {
     let engine = new_engine().await;
     assert_eq!(engine.max_inflight("sim"), 4, "sim pipelines by default");
-    assert_eq!(engine.max_inflight("xair"), 1, "xair stays sequential until rig-verified");
+    // Rig-measured 2026-10-19 (XR18 @ 192.168.50.123, routed LAN): 48
+    // sequential queries in 29 ms (~1600 q/s burst), so 4 sequential reads
+    // per 50 ms tick (80 q/s) runs with wide headroom; the adaptive EMA
+    // still backs off on saturated links.
+    assert_eq!(engine.max_inflight("xair"), 4, "xair pipelines after rig measurement");
     assert_eq!(engine.max_inflight("dl32s"), 1);
     assert_eq!(engine.effective_inflight("sim"), 4, "no saturation yet");
     let capped = Engine::new(EngineConfig {
@@ -1059,4 +1063,31 @@ async fn new_xair_strip_ids_roundtrip_on_sim() {
     })
     .await;
     assert_eq!(ev_json(&e).get("value"), Some(&json!(true)));
+}
+
+#[tokio::test]
+async fn connect_silent_desk_fails_without_planting_addr() {
+    // Tap-to-connect on a silent desk must FAIL with the address in the
+    // message (never a phantom link that times out every query), and must
+    // not plant the unreachable address: a later scan stays honest-empty
+    // instead of unicast-probing a dead host on every scan.
+    // 192.0.2.1 is TEST-NET-1 (unroutable): the datagrams go out, nothing
+    // ever answers — sweep (2x400ms) + verify (2x800ms) bound the wait.
+    let engine = new_engine_with(FakeScanner::empty()).await;
+    let mut client = engine.attach(None).await;
+    drain_snapshot(&mut client).await;
+    let err = engine.connect("xair", Some("192.0.2.1")).await.unwrap_err();
+    assert!(
+        err.to_string().contains("no reply from 192.0.2.1:10024"),
+        "connect names the silent desk (got {err:#})"
+    );
+    // The failed connect leaves the old driver active (retry-safe).
+    assert_eq!(engine.active_driver(), "sim");
+    // No phantom row: a scan still honestly reports nothing (and stays
+    // fast — no dead address to re-verify).
+    client.send(Cmd::Scan).await.unwrap();
+    let event = wait_for(&mut client, |e| matches!(e, Event::Devices { .. })).await;
+    let v = ev_json(&event);
+    assert_eq!(v.get("list").and_then(Value::as_array).unwrap().len(), 0);
+    assert!(v.get("scanned_at").and_then(Value::as_u64).unwrap_or(0) > 0);
 }

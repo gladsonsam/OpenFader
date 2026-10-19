@@ -66,14 +66,18 @@ pub const FX_POLL_EVERY: u64 = 32;
 pub const DESK_SAMPLE_RATE: u32 = 48000;
 
 /// Per-driver default poller pipelining (`max_inflight`): concurrent
-/// driver queries per poll tick. `xair` stays at 1 until the rig measures
-/// a sustainable query rate (LIVE-RIG P19+); `sim` pipelines higher (its
-/// reads are in-process); `dl32s` is small enough that 1 suffices.
+/// driver queries per poll tick. Rig-measured 2026-10-19 (XR18 @
+/// 192.168.50.123, routed LAN): 48 sequential queries in 29 ms (~1600 q/s
+/// burst), so 4 sequential reads per 50 ms tick (80 q/s average) runs with
+/// ~20x headroom; the adaptive EMA (`effective_inflight`) still halves the
+/// batch while the desk is saturated, so slow venue wifi backs off on its
+/// own. `dl32s` stays at 1 (Mackie correlated request/response, no rig
+/// measurement for concurrency).
 pub fn default_inflight(driver: &str) -> usize {
     match driver {
         "sim" => 4,
         "dl32s" => 1,
-        _ => 1,
+        _ => 4,
     }
 }
 
@@ -381,10 +385,17 @@ pub const GR_CHANNELS: usize = 16;
 /// activity, auto-released on disconnect/expiry.
 pub const LOCK_TTL: Duration = Duration::from_secs(60);
 
-/// Param-plane poller tick: one driver query per tick, so the production
-/// budget is exactly 20 queries/s total. The poller runs on its own task
-/// and never blocks fader/meter traffic.
+/// Param-plane poller tick: one pipelined batch per tick (`max_inflight`
+/// driver queries per tick; production xair/sim budget is 4 queries per
+/// 50 ms tick = 80 q/s). The poller runs on its own task and never blocks
+/// fader/meter traffic.
 pub const PARAM_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+/// Consecutive-timeout tolerance before a poll pair drops: a single lost
+/// datagram on venue wifi must not evict a live param (eviction also flips
+/// `caps.unsupported`, hiding the control until reconnect). Unknown/
+/// unsupported params still drop on the first failure.
+pub const POLL_TIMEOUT_STRIKES: u8 = 3;
 
 /// Startup options for [`Engine::new`].
 #[derive(Clone)]
@@ -400,9 +411,9 @@ pub struct EngineConfig {
     /// `None` = in-memory only (tests default here and pass a temp dir
     /// when they want persistence).
     pub data_dir: Option<PathBuf>,
-    /// R2 poller pipelining: max concurrent driver queries per poll tick.
-    /// `None` = per-driver default ([`default_inflight`]: sim 4, xair 1
-    /// until rig-verified, dl32s 1). `--poll-inflight` sets this.
+    /// R2 poller pipelining: max concurrent driver queries per tick.
+    /// `None` in config = [`default_inflight`] per driver (sim/xair 4,
+    /// dl32s 1). `--poll-inflight` sets this.
     pub poll_inflight: Option<usize>,
     /// R2 LAN scanner (default: [`RealScanner`]). Tests inject a fake so
     /// discovery never touches the network.
@@ -530,7 +541,16 @@ pub struct Engine {
     registries: HashMap<String, ParamRegistry>,
     /// Cached visible-group lane lists: (driver, visible set, pairs).
     /// Rebuilt when the visible set changes (focus is infrequent).
-    poll_visible: RwLock<PollVisibleCache>,    /// Engine construction time: source of the monotonic `t_ms` clock in
+    poll_visible: RwLock<PollVisibleCache>,
+    /// Cached essentials-lane lists per driver: every strip's
+    /// fader/mute/name/pan/color (+ the `solo` backstop on xair channel
+    /// strips). Built once per driver (topology × caps × scopes never
+    /// change at runtime, like `poll_static`); drop-class errors only SKIP
+    /// entries at drain time.
+    poll_core: RwLock<HashMap<String, Vec<(u16, &'static str)>>>,
+    /// Round-robin cursor into the essentials lane.
+    core_cursor: AtomicU64,
+    /// Engine construction time: source of the monotonic `t_ms` clock in
     /// binary meter frames ([`now_ms`](Engine::now_ms)).
     boot: Instant,
     /// Focus queue: `(driver, ch, param, owner)` tuples pushed by the `focus`
@@ -585,6 +605,12 @@ pub struct Engine {
     /// (adaptive pipelining: the effective inflight halves while the EMA
     /// exceeds the poll tick).
     rtt_ema_us: AtomicU64,
+    /// Consecutive per-(driver, param) query timeouts (transient-loss
+    /// tolerance: a param drops from the poll set only after
+    /// [`POLL_TIMEOUT_STRIKES`] timeouts in a row; unknown/unsupported
+    /// drops immediately, successes clear the count — see
+    /// [`Engine::note_poll_error`]).
+    poll_timeouts: RwLock<HashMap<(String, String), u8>>,
     /// R2 LAN scanner (real discovery or an injected fake).
     scanner: Arc<dyn DeviceScanner>,
     /// Which driver holds an active hardware meter subscription (`None`
@@ -638,6 +664,9 @@ impl Engine {
             poll_skips: AtomicU64::new(0),
             poll_static: RwLock::new(HashMap::new()),
             poll_visible: RwLock::new(None),
+            poll_core: RwLock::new(HashMap::new()),
+            core_cursor: AtomicU64::new(0),
+            poll_timeouts: RwLock::new(HashMap::new()),
             registries,
             boot: Instant::now(),
             focus_queue: RwLock::new(VecDeque::new()),
@@ -724,14 +753,16 @@ impl Engine {
         let target = addr
             .map(str::to_string)
             .unwrap_or_else(|| self.default_addr(driver).to_string());
-        // Remember the desk address: hardware scans verify it (broadcast
-        // discovery never crosses subnets).
+        let drv = self.drv(driver);
+        drv.connect(&target).await?;
+        // Remember the desk address only on success: a failed connect must
+        // not plant an unreachable address that every later scan unicast-
+        // probes (slow scans, phantom rows). Hardware scans verify the
+        // remembered addresses (broadcast discovery never crosses subnets).
         self.desk_addrs
             .write()
             .unwrap()
             .insert(driver.to_string(), target.clone());
-        let drv = self.drv(driver);
-        drv.connect(&target).await?;
         *self.active.write().unwrap() = driver.to_string();
         // The FX cache mirrors the active driver (sim rows / xair
         // placeholders); refresh it on every switch, including the boot
@@ -2801,18 +2832,94 @@ impl Engine {
         out
     }
 
+    /// Cached essentials poll list: every strip × fader/mute/name/pan/
+    /// color (caps + scopes filtered, like the static list) plus the `solo`
+    /// backstop id on xair channel strips (same rule as
+    /// [`Engine::static_poll_list`]). ~150 pairs on xair (vs ~2.2k
+    /// background): the always-fresh lane for the values every bank
+    /// renders, so a reconnected app is desk-fresh in seconds without
+    /// waiting out the background sweep. Built once per driver (topology ×
+    /// caps × scopes never change at runtime); drop-class errors only SKIP
+    /// entries at drain time.
+    fn core_poll_list(&self, driver: &str) -> Vec<(u16, &'static str)> {
+        {
+            let cache = self.poll_core.read().unwrap();
+            if let Some(v) = cache.get(driver) {
+                return v.clone();
+            }
+        }
+        let topo = self.driver_topology(driver);
+        let caps = self.driver_capabilities(driver);
+        let reg = self.registry(driver);
+        let mut out = Vec::new();
+        for fam in &topo {
+            for s in fam.first..fam.first + fam.count {
+                for id in &caps {
+                    if !is_essentials_id(id) {
+                        continue;
+                    }
+                    let scoped = reg
+                        .find(id)
+                        .map(|def| params::supports_kind(def, fam.kind))
+                        .unwrap_or(true);
+                    if !scoped {
+                        continue;
+                    }
+                    out.push((s as u16, *id));
+                }
+                // Solo rides the essentials lane as its own id (same rule
+                // as the static list — see `static_poll_list`).
+                if driver == "xair" && fam.kind == openmix_core::StripKind::In {
+                    out.push((s as u16, "solo"));
+                }
+            }
+        }
+        self.poll_core.write().unwrap().insert(driver.to_string(), out.clone());
+        out
+    }
+
+    /// Next `k` essentials entries (round-robin; drop-class pairs skipped in
+    /// place). The lane never disarms — it is the perpetual fast path for
+    /// fader/mute/name/pan/color/solo — so the background reservation in
+    /// [`Engine::poll_tick`] is what keeps the background sweep alive.
+    fn pop_core_batch(&self, driver: &str, k: usize) -> Vec<(u16, String)> {
+        if k == 0 {
+            return Vec::new();
+        }
+        let list = self.core_poll_list(driver);
+        if list.is_empty() {
+            return Vec::new();
+        }
+        let dropped = self.param_dropped.read().unwrap();
+        let mut out = Vec::new();
+        let mut skips = 0usize;
+        while out.len() < k && skips <= list.len() {
+            let i = self.core_cursor.fetch_add(1, Ordering::Relaxed) as usize % list.len();
+            let (ch, id) = &list[i];
+            if dropped.contains(&(driver.to_string(), id.to_string())) {
+                skips += 1;
+                continue;
+            }
+            skips = 0;
+            out.push((*ch, id.to_string()));
+        }
+        out
+    }
+
     /// One pipelined poller tick (R2): up to `effective_inflight` driver
-    /// queries in flight, strict lanes (focus > visible-group >
-    /// background), results applied in batch order. At default inflight 1
-    /// this is exactly [`Engine::poll_once`]'s budget with the visible
-    /// lane interleaved; [`Engine::poll_once`] itself is untouched (exact
+    /// queries per tick, strict lanes (focus > visible-group one-shot >
+    /// essentials > background), results applied in batch order. At default
+    /// inflight 1 this is exactly [`Engine::poll_once`]'s budget with the
+    /// lanes interleaved; [`Engine::poll_once`] itself is untouched (exact
     /// legacy single-step for tests).
     ///
-    /// Fairness: the visible cursor round-robins without end, so a
-    /// non-empty visible set would starve the background sweep forever.
-    /// Even lane ticks therefore reserve `max(1, n/4)` batch slots for
-    /// the background (at n=1 whole ticks alternate); the visible lane
-    /// takes everything else, first in batch order.
+    /// Fairness: the essentials cursor round-robins without end, so a
+    /// perpetual essentials lane would starve the background sweep forever.
+    /// The background therefore keeps one slot every `max(2, n)` ticks — at
+    /// xair/sim n=4 that is 20 q/s, exactly the pre-lane steady-state
+    /// background rate, while the essentials lane takes the other ~60 q/s
+    /// (≈2–3 s per sweep of the ~150 fader/mute/name/pan/color/solo pairs).
+    /// At n=1 whole ticks alternate (lanes one tick, background the next).
     ///
     /// Public so integration tests and diagnostics can drive (and time)
     /// the poller deterministically; the background task calls this every
@@ -2832,17 +2939,23 @@ impl Engine {
             }
         }
         if batch.len() < n {
-            // Visible bias with guaranteed background progress: on even
-            // lane ticks the background reserves max(1, n/4) slots, on odd
-            // ticks the visible lane takes everything left. At n=1 this
-            // alternates whole ticks (visible, background, …); at n=4 the
-            // background keeps ~1 slot in 8. Without the reservation a
-            // non-empty visible set would starve the background sweep
-            // forever (the visible cursor round-robins without end).
+            // Lanes with guaranteed background progress: the background
+            // keeps one slot every max(2, n) ticks; the visible one-shot
+            // boost takes the next share, the perpetual essentials lane the
+            // rest. At n=1 this alternates whole ticks (lanes, background,
+            // …); at n=4 the background keeps 1 slot in 4 (20 q/s, the
+            // pre-lane steady-state rate) while the lanes take ~60 q/s.
+            // Without the reservation the perpetual essentials lane would
+            // starve the background sweep forever (its cursor wraps without
+            // end, like the visible lane's did).
             let remaining = n - batch.len();
             let t = self.lane_tick.fetch_add(1, Ordering::Relaxed);
-            let bg_share = if t.is_multiple_of(2) { (n / 4).max(1).min(remaining) } else { 0 };
-            batch.extend(self.pop_visible_batch(&driver, remaining - bg_share));
+            let bg_share = if t % (n.max(2) as u64) == 0 { 1.min(remaining) } else { 0 };
+            let mut rest = remaining - bg_share;
+            let vis = self.pop_visible_batch(&driver, rest);
+            rest -= vis.len();
+            batch.extend(vis);
+            batch.extend(self.pop_core_batch(&driver, rest));
         }
         if batch.len() < n {
             let list = self.static_poll_list(&driver);
@@ -2890,6 +3003,7 @@ impl Engine {
             let (ch, param, r) = slot;
             match r {
                 Ok(pv) => {
+                    self.note_poll_ok(&driver, &param);
                     let v = param_value_json(&pv);
                     let key = self.strip_key(&driver, ch);
                     let changed = {
@@ -3260,19 +3374,43 @@ impl Engine {
     /// Read one (channel, param) and broadcast the diff frame on change.
     async fn poll_read(&self, driver: &str, ch: u16, param: &str) {
         match self.read_param(driver, StripId(ch), param).await {
-            Ok(pv) => self.apply_inbound(ch, param, &pv),
+            Ok(pv) => {
+                self.note_poll_ok(driver, param);
+                self.apply_inbound(ch, param, &pv);
+            }
             Err(e) => {
                 self.note_poll_error(driver, param, &e).await;
             }
         }
     }
 
-    /// Handle one poll-read error: drop-class errors remove the param from
-    /// the poll set and rebroadcast `caps` once; everything else keeps
-    /// polling silently. Returns true when the param was dropped.
+    /// Handle one poll-read error: unknown/unsupported params drop from the
+    /// poll set at once (rebroadcasting `caps` once); QUERY TIMEOUTS drop
+    /// only after [`POLL_TIMEOUT_STRIKES`] consecutive timeouts with no
+    /// success in between — one lost datagram on venue wifi must not evict
+    /// a live param (eviction also flips `caps.unsupported`, hiding the
+    /// control until reconnect). Everything else keeps polling silently.
+    /// Returns true when the param was dropped.
     async fn note_poll_error(&self, driver: &str, param: &str, e: &anyhow::Error) -> bool {
         if !is_unsupported_error(e) {
             return false;
+        }
+        if is_timeout_error(e) {
+            let strikes = {
+                let mut pending = self.poll_timeouts.write().unwrap();
+                let c = pending
+                    .entry((driver.to_string(), param.to_string()))
+                    .or_insert(0);
+                *c = c.saturating_add(1);
+                *c
+            };
+            if strikes < POLL_TIMEOUT_STRIKES {
+                return false;
+            }
+            self.poll_timeouts
+                .write()
+                .unwrap()
+                .remove(&(driver.to_string(), param.to_string()));
         }
         let fresh = {
             let mut dropped = self.param_dropped.write().unwrap();
@@ -3282,6 +3420,15 @@ impl Engine {
             self.broadcast(&self.caps_message());
         }
         fresh
+    }
+
+    /// Clear consecutive-timeout strikes after a successful read: a desk
+    /// that answers again is alive and must never be evicted.
+    fn note_poll_ok(&self, driver: &str, param: &str) {
+        self.poll_timeouts
+            .write()
+            .unwrap()
+            .remove(&(driver.to_string(), param.to_string()));
     }
 
     /// Re-read one param after a client write, caching the confirmed value.
@@ -3852,16 +3999,49 @@ impl Engine {
                 // on EVERY driver: a sim-backed relay has no desks of its
                 // own, so scanning from sim must run the same broadcast
                 // discovery the phone uses — never the design seed rows.
-                // Broadcast never crosses subnets, so the relay's linked
-                // desk address is verified too (unicast round-trip via
-                // the driver's own info query). The list is REPLACED:
-                // an empty result updates scanned_at and honestly
-                // reports no desks — stale entries are never kept.
+                // Broadcast never crosses subnets, so every REMEMBERED desk
+                // address (previous connects + manual probes) is verified
+                // too (live session, else directed unicast) and upserted —
+                // otherwise a cross-subnet desk vanishes on the next scan.
+                // The list is still REPLACED: an address that verifies
+                // nothing (or was never successfully probed/connected)
+                // adds no row — stale entries are never kept.
                 let mut merged = self.scanner.scan(Duration::from_secs(2)).await;
                 let driver = self.active_driver();
                 if let Some(linked) = self.linked_desk_device(&driver).await {
                     if !merged.iter().any(|d| d.ip == linked.ip) {
                         merged.push(linked);
+                    }
+                }
+                let remembered: Vec<(String, String)> = self
+                    .desk_addrs
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .map(|(d, a)| (d.clone(), a.clone()))
+                    .collect();
+                for (drv_name, ip) in remembered {
+                    if merged.iter().any(|d| d.ip == ip) {
+                        continue;
+                    }
+                    // Hardware desks only: a sim "address" is not a desk
+                    // (sim ignores it), so there is nothing to verify.
+                    if !self.drv(&drv_name).is_hardware() {
+                        continue;
+                    }
+                    if let Some(linked) = self.linked_desk_device(&drv_name).await {
+                        if !merged.iter().any(|d| d.ip == linked.ip) {
+                            merged.push(linked);
+                        }
+                        continue;
+                    }
+                    let Some(table) = self.drv(&drv_name).probe_table() else {
+                        continue;
+                    };
+                    if let Some(found) = self.probe_desk(table, &ip).await {
+                        if !merged.iter().any(|d| d.ip == found.ip) {
+                            merged.push(found);
+                        }
                     }
                 }
                 *self.devices.write().unwrap() = merged;
@@ -3918,9 +4098,18 @@ impl Engine {
                             // Never duplicate: a row for this IP already
                             // answers from broadcast or a prior probe.
                             if !devs.iter().any(|d| d.ip == found.ip) {
-                                devs.push(found);
+                                devs.push(found.clone());
                             }
                         }
+                        // Remember the verified address under the table's
+                        // driver so later scans re-verify it (directed
+                        // unicast) instead of dropping the row — broadcast
+                        // never crosses subnets, so without this a manual
+                        // row vanishes on the next scan.
+                        self.desk_addrs
+                            .write()
+                            .unwrap()
+                            .insert(table_driver.to_string(), found.ip.clone());
                         out.push(self.devices_message());
                         Ok(None)
                     }
@@ -4503,6 +4692,20 @@ fn param_def_frame(def: &params::ParamDef) -> ParamDef {
 fn is_unsupported_error(e: &anyhow::Error) -> bool {
     let m = format!("{e:#}");
     m.contains("not supported") || m.contains("unknown param") || m.contains("timed out")
+}
+
+/// Timeout-class poll errors (a subset of [`is_unsupported_error`]): the
+/// desk never answered. Transient on wifi — [`Engine::note_poll_error`]
+/// evicts only after [`POLL_TIMEOUT_STRIKES`] in a row.
+fn is_timeout_error(e: &anyhow::Error) -> bool {
+    format!("{e:#}").contains("timed out")
+}
+
+/// R2 essentials-lane ids: strip basics + pan + look. Everything deeper
+/// rides focus (visible strips) or the background sweep — see
+/// [`Engine::core_poll_list`].
+fn is_essentials_id(id: &str) -> bool {
+    matches!(id, "fader" | "mute" | "name" | "pan" | "color")
 }
 
 fn param_value_json(pv: &ParamValue) -> Value {
@@ -5147,8 +5350,12 @@ mod tests {
             "attach carries all sim mute-group masters"
         );
         assert_eq!(&tags[32..], ["main"], "attach ends masters with Main LR");
-        // Timeout-class read: dropped from the poll set and reported.
+        // Timeout-class read: tolerated twice (one lost datagram on venue
+        // wifi must not evict a live param), dropped on the third
+        // consecutive strike and reported.
         let err = anyhow::anyhow!("/ch/01/eq/on: timed out after 2s");
+        assert!(!engine.note_poll_error("xair", "eq_on", &err).await);
+        assert!(!engine.note_poll_error("xair", "eq_on", &err).await);
         assert!(engine.note_poll_error("xair", "eq_on", &err).await);
         assert!(
             engine
@@ -5157,8 +5364,27 @@ mod tests {
                 .unwrap()
                 .contains(&("xair".to_string(), "eq_on".to_string()))
         );
-        // Re-report is suppressed (no log/caps spam): second call is a no-op.
+        // A post-drop timeout starts a fresh count (strikes cleared on
+        // eviction): no caps re-broadcast, no double report.
         assert!(!engine.note_poll_error("xair", "eq_on", &err).await);
+        // A success between strikes resets the count: two strikes, one ok,
+        // two more strikes must NOT drop.
+        assert!(!engine.note_poll_error("xair", "gain", &err).await);
+        assert!(!engine.note_poll_error("xair", "gain", &err).await);
+        engine.note_poll_ok("xair", "gain");
+        assert!(!engine.note_poll_error("xair", "gain", &err).await);
+        assert!(!engine.note_poll_error("xair", "gain", &err).await);
+        assert!(
+            !engine
+                .param_dropped
+                .read()
+                .unwrap()
+                .contains(&("xair".to_string(), "gain".to_string()))
+        );
+        // Unknown params still drop on the first failure (no tolerance for
+        // addresses the desk can never answer).
+        let unknown = anyhow::anyhow!("xair: unknown param \"nope\"");
+        assert!(engine.note_poll_error("xair", "nope", &unknown).await);
         // Other drivers are unaffected.
         assert!(
             !engine
@@ -5167,16 +5393,18 @@ mod tests {
                 .unwrap()
                 .contains(&("sim".to_string(), "eq_on".to_string()))
         );
-        // One caps update went out on the fanout.
-        let msg = tokio::time::timeout(Duration::from_secs(2), client.events.recv())
-            .await
-            .expect("caps update in time")
-            .expect("mailbox open");
-        assert_eq!(event_json(msg).get("type"), Some(&json!("caps")));
+        // Two caps updates went out on the fanout (one per eviction).
+        for _ in 0..2 {
+            let msg = tokio::time::timeout(Duration::from_secs(2), client.events.recv())
+                .await
+                .expect("caps update in time")
+                .expect("mailbox open");
+            assert_eq!(event_json(msg).get("type"), Some(&json!("caps")));
+        }
         // No-data errors never drop.
         let nodata = anyhow::anyhow!("sim: gain has no value yet");
         assert!(!engine.note_poll_error("sim", "gain", &nodata).await);
-        assert!(engine.param_dropped.read().unwrap().len() == 1);
+        assert!(engine.param_dropped.read().unwrap().len() == 2);
     }
 
     #[tokio::test]
@@ -5601,10 +5829,16 @@ mod tests {
     /// Wait out the parked poller's single immediate tick, then drain the
     /// mailbox: after this returns `poll_once` is the only thing moving
     /// the cursor/queue/cache, so exact broadcast-sequence assertions are
-    /// deterministic even under workspace-parallel load.
+    /// deterministic even under workspace-parallel load. The immediate tick
+    /// issues one full batch across the lanes (focus/visible/essentials/
+    /// background), so the total of the lane cursors — not the background
+    /// cursor alone — marks the fired tick.
     async fn settle_parked_poller(engine: &Engine, client: &mut ClientHandle) {
+        let want = engine.effective_inflight(&engine.active_driver());
         let deadline = Instant::now() + Duration::from_secs(10);
-        while engine.poll_cursor.load(Ordering::Relaxed) < 4 {
+        while engine.poll_cursor.load(Ordering::Relaxed) + engine.core_cursor.load(Ordering::Relaxed)
+            < want as u64
+        {
             if Instant::now() > deadline {
                 panic!("parked poller never ran its first tick");
             }
@@ -5628,7 +5862,10 @@ mod tests {
             client.events.recv().await.expect("snapshot");
         }
         settle_parked_poller(&engine, &mut client).await;
-        // Advance partway into channel 0's block.
+        // Advance partway into channel 0's block. The parked tick already
+        // warmed ch0's essentials through the core lane (fader/mute/name),
+        // so 2 of these 10 round-robin reads are cache hits and stay
+        // quiet — 8 frames land.
         for _ in 0..10 {
             engine.poll_once().await;
         }
@@ -5646,17 +5883,18 @@ mod tests {
         for _ in 0..nparams {
             engine.poll_once().await;
         }
-        // Diff frames land in the mailbox in poll order: 10 round-robin
-        // reads, then the whole focus block on ch5.
+        // Diff frames land in the mailbox in poll order: 8 round-robin
+        // reads (10 minus the 2 core-warmed dups), then the whole focus
+        // block on ch5.
         let mut chs: Vec<u16> = Vec::new();
         while let Ok(event) = client.events.try_recv() {
             if let Event::Params { ch, .. } = event {
                 chs.push(ch);
             }
         }
-        assert_eq!(chs.len(), 10 + nparams, "10 round-robin + {nparams} focus reads");
+        assert_eq!(chs.len(), 8 + nparams, "8 round-robin + {nparams} focus reads");
         assert!(
-            chs[10..].iter().all(|&c| c == 5),
+            chs[8..].iter().all(|&c| c == 5),
             "focus block is all ch5, got {chs:?}"
         );
         // Channel 5's cache is complete while channel 0's is still partial.

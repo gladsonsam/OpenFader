@@ -221,11 +221,21 @@ pub fn subnet_broadcasts() -> Vec<std::net::IpAddr> {
     out
 }
 
-/// X-Air discovery: run every X-Air row of [`PROBE_TABLE`], dedupe by addr.
+/// X-Air discovery: run every X-Air row of [`PROBE_TABLE`] concurrently,
+/// dedupe by addr. Rows run in parallel (one task each) so a two-row table
+/// costs one timeout, not two — a phone scan budget is seconds, and a slow
+/// row must not double it. Row errors propagate (bind failure); a row that
+/// answers nothing simply contributes nothing.
 pub async fn discover_xair(timeout: Duration) -> anyhow::Result<Vec<DiscoveredDevice>> {
     let mut out: Vec<DiscoveredDevice> = Vec::new();
+    let mut set = tokio::task::JoinSet::new();
     for spec in PROBE_TABLE.iter().filter(|s| s.driver == "xair") {
-        for dev in probe(spec, timeout).await? {
+        set.spawn(probe(spec, timeout));
+    }
+    while let Some(joined) = set.join_next().await {
+        let devs = joined
+            .map_err(|e| anyhow::anyhow!("discovery probe task failed: {e}"))??;
+        for dev in devs {
             if !out.iter().any(|d| d.addr == dev.addr) {
                 out.push(dev);
             }
@@ -234,12 +244,19 @@ pub async fn discover_xair(timeout: Duration) -> anyhow::Result<Vec<DiscoveredDe
     Ok(out)
 }
 
-/// Generic discovery: run every row of [`PROBE_TABLE`], dedupe by addr.
+/// Generic discovery: run every row of [`PROBE_TABLE`] concurrently,
+/// dedupe by addr.
 /// A new provider adds its rows to the table; this loop needs no edits.
 pub async fn discover_all(timeout: Duration) -> anyhow::Result<Vec<DiscoveredDevice>> {
     let mut out: Vec<DiscoveredDevice> = Vec::new();
+    let mut set = tokio::task::JoinSet::new();
     for spec in PROBE_TABLE {
-        for dev in probe(spec, timeout).await? {
+        set.spawn(probe(spec, timeout));
+    }
+    while let Some(joined) = set.join_next().await {
+        let devs = joined
+            .map_err(|e| anyhow::anyhow!("discovery probe task failed: {e}"))??;
+        for dev in devs {
             if !out.iter().any(|d| d.addr == dev.addr) {
                 out.push(dev);
             }

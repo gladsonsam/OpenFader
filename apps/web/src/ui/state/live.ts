@@ -13,6 +13,10 @@ export const RELAY_AUTO_KEY = 'openmix.relay-auto';
 export const DEFAULT_RELAY_HOST = '127.0.0.1:8080';
 /** Handshake budget: caps must arrive this soon after connect. */
 export const CONNECT_TIMEOUT_MS = 6000;
+/** Scan busy budget: the engine sends no scan-started event (devices only
+ *  lands when the sweep finishes), so the UI clears its busy state on the
+ *  next devices frame or after this long, whichever comes first. */
+export const SCAN_TIMEOUT_MS = 10000;
 
 function storage(): Storage | null {
   try {

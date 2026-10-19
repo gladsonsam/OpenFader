@@ -88,28 +88,6 @@
               "do": "ui.disconnect"
             }
           }
-        },
-        {
-          "id": "use-page-host",
-          "module": "btn",
-          "props": {
-            "height": 46,
-            "fontSize": 14,
-            "padding": "0 18px",
-            "bg": "transparent",
-            "fg": "var(--u4-text-1)",
-            "border": "1px dashed var(--u4-green)",
-            "bare": true
-          },
-          "bind": {
-            "label": "conn.fixLabel"
-          },
-          "when": "conn.showFix",
-          "on": {
-            "press": {
-              "do": "ui.usePageHost"
-            }
-          }
         }
       ]
     },
@@ -158,6 +136,10 @@
             "border": "1px solid var(--u4-line-ctl)",
             "bare": true
           },
+          "bind": {
+            "label": "conn.scanLabel",
+            "disabled": "conn.scanBusy"
+          },
           "on": {
             "press": {
               "do": "ui.scan"
@@ -193,6 +175,30 @@
       ]
     },
     {
+      "id": "dev-scanning",
+      "module": "text",
+      "props": {
+        "size": 13,
+        "color": "var(--u4-text-7)"
+      },
+      "bind": {
+        "value": "conn.scanHint"
+      },
+      "when": "conn.scanHint"
+    },
+    {
+      "id": "dev-scan-err",
+      "module": "text",
+      "props": {
+        "size": 13,
+        "color": "#ff9a8a"
+      },
+      "bind": {
+        "value": "conn.scanError"
+      },
+      "when": "conn.scanError"
+    },
+    {
       "id": "dev-empty",
       "module": "text",
       "props": {
@@ -203,50 +209,6 @@
         "value": "conn.emptyText"
       },
       "when": "conn.emptyText"
-    },
-    {
-      "id": "manual-desk",
-      "module": "manual-desk",
-      "when": "conn.showManualDesk",
-      "on": {
-        "probe-desk": {
-          "do": "ui.probeDesk",
-          "args": {
-            "ip": {
-              "$expr": "payload.ip"
-            }
-          }
-        }
-      }
-    },
-    {
-      "id": "relay",
-      "module": "relay-card",
-      "when": { "device": ["phone", "tablet"] },
-      "bind": {
-        "host": "relay.host",
-        "phase": "relay.phase",
-        "message": "relay.message",
-        "latencyMs": "relay.latencyMs",
-        "strips": "relay.strips",
-        "suggestion": "relay.suggestion"
-      },
-      "on": {
-        "connect": {
-          "do": "ui.connectRelay",
-          "args": {
-            "host": {
-              "$expr": "payload.host"
-            }
-          }
-        },
-        "use-page-host": {
-          "do": "ui.usePageHost"
-        },
-        "disconnect": {
-          "do": "ui.disconnectRelay"
-        }
-      }
     },
     {
       "id": "offline",
