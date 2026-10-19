@@ -171,7 +171,7 @@ async fn ws_sim_connect_fader_mute() {
     );
 
     // Explicit connect command re-selects sim.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"connect","driver":"sim"}).to_string(),
     ))
     .await
@@ -180,7 +180,7 @@ async fn ws_sim_connect_fader_mute() {
     assert_eq!(state.get("driver"), Some(&json!("sim")));
 
     // Fader: ch0 (0-based) -> 0.5.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"fader","ch":0,"value":0.5}).to_string(),
     ))
     .await
@@ -194,7 +194,7 @@ async fn ws_sim_connect_fader_mute() {
     .await;
 
     // Mute on.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"mute","ch":0,"muted":true}).to_string(),
     ))
     .await
@@ -202,7 +202,7 @@ async fn ws_sim_connect_fader_mute() {
     let _state = wait_state(&mut rx, |s| strip(s, 0).get("muted") == Some(&json!(true))).await;
 
     // Mute off again (keeps the shared sim clean for other tests).
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"mute","ch":0,"muted":false}).to_string(),
     ))
     .await
@@ -213,7 +213,7 @@ async fn ws_sim_connect_fader_mute() {
     // Generic param: fader (float) maps through set_param; the server
     // echoes {"type":"param","ch":1,"field":"fader","value":0.25} so
     // sibling UIs learn about the change without re-polling.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"param","ch":1,"field":"fader","value":0.25}).to_string(),
     ))
     .await
@@ -257,14 +257,14 @@ async fn ws_sim_connect_fader_mute() {
     }
 
     // Bool + string params echo with identical ch/field/value.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"param","ch":2,"field":"mute","value":true}).to_string(),
     ))
     .await
     .unwrap();
     let echo = wait_param(&mut rx, 2, "mute", &json!(true)).await;
     assert_eq!(echo.get("value"), Some(&json!(true)));
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"param","ch":2,"field":"mute","value":false}).to_string(),
     ))
     .await
@@ -272,7 +272,7 @@ async fn ws_sim_connect_fader_mute() {
     let echo = wait_param(&mut rx, 2, "mute", &json!(false)).await;
     assert_eq!(echo.get("value"), Some(&json!(false)));
 
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"param","ch":3,"field":"name","value":"Vox"}).to_string(),
     ))
     .await
@@ -331,7 +331,7 @@ async fn ws_sim_connect_fader_mute() {
         );
     }
     // Bad command gets an error frame, connection stays alive.
-    tx.send(Message::Text(json!({"cmd":"bogus"}).to_string()))
+    tx.send(Message::text(json!({"cmd":"bogus"}).to_string()))
         .await
         .unwrap();
     let err = next_typed(&mut rx, "error").await;
@@ -403,7 +403,7 @@ async fn ws_scenes_capture_recall_delete() {
     }
 
     // Pin ch0 to a known value, then capture it as gig/verse.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"fader","ch":0,"value":0.5}).to_string(),
     ))
     .await
@@ -415,7 +415,7 @@ async fn ws_scenes_capture_recall_delete() {
             .is_some_and(|f| (f - 0.5).abs() < 1e-6)
     })
     .await;
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"capture_scene","show":"gig","name":"verse"}).to_string(),
     ))
     .await
@@ -444,7 +444,7 @@ async fn ws_scenes_capture_recall_delete() {
     );
 
     // Explicit pull also returns the library.
-    tx.send(Message::Text(json!({"cmd":"list_shows"}).to_string()))
+    tx.send(Message::text(json!({"cmd":"list_shows"}).to_string()))
         .await
         .unwrap();
     let listed = wait_shows(&mut rx, |s| find_scene(s, "gig", "verse").is_some()).await;
@@ -453,7 +453,7 @@ async fn ws_scenes_capture_recall_delete() {
     // Move ch0 away, then recall with fade 0 (jump) and verify the snap-back.
     let moved = (cap_fader + 0.3).min(1.0);
     assert!((moved - cap_fader).abs() > 0.05, "moved value differs");
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"fader","ch":0,"value":moved}).to_string(),
     ))
     .await
@@ -465,7 +465,7 @@ async fn ws_scenes_capture_recall_delete() {
             .is_some_and(|f| (f - moved).abs() < 1e-6)
     })
     .await;
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"recall_scene","show":"gig","name":"verse","fade_ms":0}).to_string(),
     ))
     .await
@@ -511,7 +511,7 @@ async fn ws_scenes_capture_recall_delete() {
     }
 
     // Unknown scene errors; connection stays alive.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"recall_scene","show":"gig","name":"nope","fade_ms":0}).to_string(),
     ))
     .await
@@ -520,13 +520,13 @@ async fn ws_scenes_capture_recall_delete() {
     assert!(err.get("message").is_some());
 
     // Delete the scene; the show stays with an empty scene list.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"delete_scene","show":"gig","name":"verse"}).to_string(),
     ))
     .await
     .unwrap();
     let _ = wait_shows(&mut rx, |s| find_scene(s, "gig", "verse").is_none()).await;
-    tx.send(Message::Text(json!({"cmd":"list_shows"}).to_string()))
+    tx.send(Message::text(json!({"cmd":"list_shows"}).to_string()))
         .await
         .unwrap();
     let listed = wait_shows(&mut rx, |_| true).await;
@@ -612,7 +612,7 @@ async fn ws_client_presence_and_writer_tag() {
     assert_eq!(joined.get("count"), Some(&json!(2)));
 
     // Fader mutation from c1 arrives at c2 tagged with the writer id.
-    tx1.send(Message::Text(
+    tx1.send(Message::text(
         json!({"cmd":"fader","ch":0,"value":0.5}).to_string(),
     ))
     .await
@@ -631,7 +631,7 @@ async fn ws_client_presence_and_writer_tag() {
     assert!(!by_fader.is_empty());
 
     // Mute mutation is tagged too.
-    tx1.send(Message::Text(
+    tx1.send(Message::text(
         json!({"cmd":"mute","ch":0,"muted":true}).to_string(),
     ))
     .await
@@ -640,7 +640,7 @@ async fn ws_client_presence_and_writer_tag() {
     assert_eq!(st.get("by"), Some(&json!(by_fader)));
 
     // Param echo carries the same writer.
-    tx1.send(Message::Text(
+    tx1.send(Message::text(
         json!({"cmd":"param","ch":1,"field":"fader","value":0.25}).to_string(),
     ))
     .await
@@ -824,7 +824,7 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
     }
 
     // c1 locks ch0; both sides observe holds {"0": holder}.
-    tx1.send(Message::Text(json!({"cmd":"lock","ch":0}).to_string()))
+    tx1.send(Message::text(json!({"cmd":"lock","ch":0}).to_string()))
         .await
         .unwrap();
     let l1 = wait_locks(&mut rx1, |v| holds_ch(v, 0).is_some()).await;
@@ -833,7 +833,7 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
     assert_eq!(holds_ch(&l2, 0).as_deref(), Some(holder.as_str()));
 
     // Locked strip rejects other writers' fader/mute/param with locked_by.
-    tx2.send(Message::Text(
+    tx2.send(Message::text(
         json!({"cmd":"fader","ch":0,"value":0.9}).to_string(),
     ))
     .await
@@ -841,7 +841,7 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
     let err = wait_error_locked(&mut rx2, &holder).await;
     assert_eq!(err.get("locked_by"), Some(&json!(holder)));
 
-    tx2.send(Message::Text(
+    tx2.send(Message::text(
         json!({"cmd":"mute","ch":0,"muted":true}).to_string(),
     ))
     .await
@@ -849,7 +849,7 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
     let err = wait_error_locked(&mut rx2, &holder).await;
     assert_eq!(err.get("locked_by"), Some(&json!(holder)));
 
-    tx2.send(Message::Text(
+    tx2.send(Message::text(
         json!({"cmd":"param","ch":0,"field":"gain","value":0.5}).to_string(),
     ))
     .await
@@ -858,19 +858,19 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
     assert_eq!(err.get("locked_by"), Some(&json!(holder)));
 
     // Contending lock + foreign unlock are denied the same way.
-    tx2.send(Message::Text(json!({"cmd":"lock","ch":0}).to_string()))
+    tx2.send(Message::text(json!({"cmd":"lock","ch":0}).to_string()))
         .await
         .unwrap();
     let err = wait_error_locked(&mut rx2, &holder).await;
     assert_eq!(err.get("locked_by"), Some(&json!(holder)));
-    tx2.send(Message::Text(json!({"cmd":"unlock","ch":0}).to_string()))
+    tx2.send(Message::text(json!({"cmd":"unlock","ch":0}).to_string()))
         .await
         .unwrap();
     let err = wait_error_locked(&mut rx2, &holder).await;
     assert_eq!(err.get("locked_by"), Some(&json!(holder)));
 
     // Holder writes through on the pinned strip.
-    tx1.send(Message::Text(
+    tx1.send(Message::text(
         json!({"cmd":"fader","ch":0,"value":0.6}).to_string(),
     ))
     .await
@@ -884,12 +884,12 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
     .await;
 
     // Holder unlocks; both sides see the empty table; c2 writes freely.
-    tx1.send(Message::Text(json!({"cmd":"unlock","ch":0}).to_string()))
+    tx1.send(Message::text(json!({"cmd":"unlock","ch":0}).to_string()))
         .await
         .unwrap();
     let _ = wait_locks(&mut rx1, |v| holds_ch(v, 0).is_none()).await;
     let _ = wait_locks(&mut rx2, |v| holds_ch(v, 0).is_none()).await;
-    tx2.send(Message::Text(
+    tx2.send(Message::text(
         json!({"cmd":"fader","ch":0,"value":0.1}).to_string(),
     ))
     .await
@@ -904,7 +904,7 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
 
     // recall_scene bypasses locks but reports overrides. Capture ch1=0.3
     // while unlocked, pin it, move it as the holder, recall as the other.
-    tx2.send(Message::Text(
+    tx2.send(Message::text(
         json!({"cmd":"fader","ch":1,"value":0.3}).to_string(),
     ))
     .await
@@ -916,19 +916,19 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
             .is_some_and(|f| (f - 0.3).abs() < 1e-6)
     })
     .await;
-    tx2.send(Message::Text(
+    tx2.send(Message::text(
         json!({"cmd":"capture_scene","show":"gig","name":"verse"}).to_string(),
     ))
     .await
     .unwrap();
     let _ = wait_shows_with(&mut rx2, |_| true).await;
-    tx1.send(Message::Text(json!({"cmd":"lock","ch":1}).to_string()))
+    tx1.send(Message::text(json!({"cmd":"lock","ch":1}).to_string()))
         .await
         .unwrap();
     let locked = wait_locks(&mut rx2, |v| holds_ch(v, 1).is_some()).await;
     let holder1 = holds_ch(&locked, 1).expect("ch1 holder");
     assert_eq!(holder1, holder, "same allocator order: c1 still holder");
-    tx1.send(Message::Text(
+    tx1.send(Message::text(
         json!({"cmd":"fader","ch":1,"value":0.8}).to_string(),
     ))
     .await
@@ -940,7 +940,7 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
             .is_some_and(|f| (f - 0.8).abs() < 1e-6)
     })
     .await;
-    tx2.send(Message::Text(
+    tx2.send(Message::text(
         json!({"cmd":"recall_scene","show":"gig","name":"verse","fade_ms":0}).to_string(),
     ))
     .await
@@ -963,7 +963,7 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
     // pin vanish and can write the strip.
     tx1.send(Message::Close(None)).await.ok();
     let _ = wait_locks(&mut rx2, |v| holds_ch(v, 1).is_none()).await;
-    tx2.send(Message::Text(
+    tx2.send(Message::text(
         json!({"cmd":"fader","ch":1,"value":0.5}).to_string(),
     ))
     .await
@@ -1035,7 +1035,7 @@ async fn ws_strip_locks_expiry() {
         }
     }
 
-    tx1.send(Message::Text(json!({"cmd":"lock","ch":2}).to_string()))
+    tx1.send(Message::text(json!({"cmd":"lock","ch":2}).to_string()))
         .await
         .unwrap();
     let pinned = wait_locks(&mut rx1, |v| {
@@ -1060,7 +1060,7 @@ async fn ws_strip_locks_expiry() {
     .await;
 
     // Still pinned: c2 is denied.
-    tx2.send(Message::Text(
+    tx2.send(Message::text(
         json!({"cmd":"fader","ch":2,"value":0.9}).to_string(),
     ))
     .await
@@ -1091,7 +1091,7 @@ async fn ws_strip_locks_expiry() {
             .is_none()
     })
     .await;
-    tx2.send(Message::Text(
+    tx2.send(Message::text(
         json!({"cmd":"fader","ch":2,"value":0.4}).to_string(),
     ))
     .await
@@ -1140,7 +1140,7 @@ async fn ws_main_fader_set_and_state() {
     );
 
     // Drive the main fader; the broadcast is writer-tagged like strips.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"main_fader","value":0.5}).to_string(),
     ))
     .await
@@ -1155,7 +1155,7 @@ async fn ws_main_fader_set_and_state() {
     );
 
     // `set_main_fader` alias (the Tauri command name) works the same.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"set_main_fader","value":0.3}).to_string(),
     ))
     .await
@@ -1166,14 +1166,14 @@ async fn ws_main_fader_set_and_state() {
     .await;
 
     // Out-of-range is rejected and the fader does not move.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"main_fader","value":1.5}).to_string(),
     ))
     .await
     .unwrap();
     let err = next_typed(&mut rx, "error").await;
     assert!(err.get("message").is_some(), "range error explains itself");
-    tx.send(Message::Text(json!({"cmd":"list_shows"}).to_string()))
+    tx.send(Message::text(json!({"cmd":"list_shows"}).to_string()))
         .await
         .unwrap();
     // Drain to a fresh shows frame, then confirm main is still 0.3 via
@@ -1193,7 +1193,7 @@ async fn ws_main_fader_set_and_state() {
             break;
         }
     }
-    tx.send(Message::Text(json!({"cmd":"connect","driver":"sim"}).to_string()))
+    tx.send(Message::text(json!({"cmd":"connect","driver":"sim"}).to_string()))
         .await
         .unwrap();
     let state = wait_state(&mut rx, |s| {
@@ -1206,7 +1206,7 @@ async fn ws_main_fader_set_and_state() {
     );
 
     // Missing value errors too; connection stays alive.
-    tx.send(Message::Text(json!({"cmd":"main_fader"}).to_string()))
+    tx.send(Message::text(json!({"cmd":"main_fader"}).to_string()))
         .await
         .unwrap();
     let err = next_typed(&mut rx, "error").await;
@@ -1251,7 +1251,7 @@ async fn ws_you_self_id_precedes_state_and_tags_writes() {
     assert_eq!(state.get("driver"), Some(&serde_json::json!("sim")));
 
     // Our own mutation comes back tagged with the `you` id.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         serde_json::json!({"cmd":"fader","ch":0,"value":0.5}).to_string(),
     ))
     .await
@@ -1270,7 +1270,7 @@ async fn ws_you_self_id_precedes_state_and_tags_writes() {
     );
 
     // `connect` re-unicasts the same self id (plus a state broadcast).
-    tx.send(Message::Text(
+    tx.send(Message::text(
         serde_json::json!({"cmd":"connect","driver":"sim"}).to_string(),
     ))
     .await
@@ -1385,7 +1385,7 @@ async fn ws_caps_and_params_snapshot() {
     // would starve the drain below).
     {
         use tokio_tungstenite::tungstenite::Message;
-        tx.send(Message::Text(
+        tx.send(Message::text(
             json!({"cmd":"connect","driver":"sim"}).to_string(),
         ))
         .await
@@ -1424,7 +1424,7 @@ async fn ws_caps_and_params_snapshot() {
     // `param` write: the echo carries the confirmed (re-read) value.
     {
         use tokio_tungstenite::tungstenite::Message;
-        tx.send(Message::Text(
+        tx.send(Message::text(
             json!({"cmd":"param","ch":0,"field":"gain","value":12.5}).to_string(),
         ))
         .await
@@ -1476,7 +1476,7 @@ async fn ws_params_diff_broadcast() {
     let (mut tx, mut rx) = stream.split();
     let _ = next_typed(&mut rx, "caps").await;
 
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"fader","ch":5,"value":0.6}).to_string(),
     ))
     .await
@@ -1602,7 +1602,7 @@ async fn ws_focus_prioritizes_channel() {
     }
 
     // Jump the queue to channel 5 before its round-robin slot.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"focus","ch":5}).to_string(),
     ))
     .await
@@ -1616,7 +1616,7 @@ async fn ws_focus_prioritizes_channel() {
     );
 
     // The `chs` array form focuses channel 7 the same way.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"focus","chs":[7]}).to_string(),
     ))
     .await
@@ -1624,12 +1624,12 @@ async fn ws_focus_prioritizes_channel() {
     wait_channel_complete(&mut rx, &mut keys, 7, nchan, "focus chs [7]").await;
 
     // Out-of-range focus: error frame, socket stays open.
-    tx.send(Message::Text(json!({"cmd":"focus","ch":999}).to_string()))
+    tx.send(Message::text(json!({"cmd":"focus","ch":999}).to_string()))
         .await
         .unwrap();
     let err = next_typed(&mut rx, "error").await;
     assert!(err.get("message").is_some(), "focus error explains itself");
-    tx.send(Message::Text(json!({"cmd":"list_shows"}).to_string()))
+    tx.send(Message::text(json!({"cmd":"list_shows"}).to_string()))
         .await
         .unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -1649,7 +1649,7 @@ async fn ws_focus_prioritizes_channel() {
 
     // Mixed valid + out-of-range: error for the ignored one, the valid
     // channel still jumps the queue.
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"focus","chs":[3, 999]}).to_string(),
     ))
     .await
@@ -1701,11 +1701,11 @@ async fn ws_focus_flood_superseded() {
         })
         .count();
     for i in 0..30u64 {
-        tx.send(Message::Text(json!({"cmd":"focus","ch": i % 32}).to_string()))
+        tx.send(Message::text(json!({"cmd":"focus","ch": i % 32}).to_string()))
             .await
             .unwrap();
     }
-    tx.send(Message::Text(json!({"cmd":"focus","ch":40}).to_string()))
+    tx.send(Message::text(json!({"cmd":"focus","ch":40}).to_string()))
         .await
         .unwrap();
     let mut keys: HashMap<u64, HashSet<String>> = HashMap::new();
@@ -1751,11 +1751,11 @@ async fn ws_focus_flood_superseded() {
     let (mut tx, mut rx) = stream.split();
     let _ = next_typed(&mut rx, "caps").await;
     for i in 0..30u64 {
-        tx.send(Message::Text(json!({"cmd":"focus","ch": i % 32}).to_string()))
+        tx.send(Message::text(json!({"cmd":"focus","ch": i % 32}).to_string()))
             .await
             .unwrap();
     }
-    tx.send(Message::Text(json!({"cmd":"focus","ch":40}).to_string()))
+    tx.send(Message::text(json!({"cmd":"focus","ch":40}).to_string()))
         .await
         .unwrap();
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
