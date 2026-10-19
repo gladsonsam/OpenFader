@@ -1,0 +1,8 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "desktop",
+  "description": "Desktop-only scope for the main window. The updater has no mobile backend (stores handle updates there), so its frontend commands are granted here instead of in default.json.",
+  "platforms": ["linux", "macOS", "windows"],
+  "windows": ["main"],
+  "permissions": ["updater:default"]
+}

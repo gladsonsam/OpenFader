@@ -18,7 +18,13 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' customprotocol: asset:; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: data: blob:; font-src 'self' data:; media-src 'self' blob: data:; connect-src 'self' ipc: ws: wss: http://localhost:* https://localhost:* http://127.0.0.1:*; object-src 'none'; frame-src 'none'; base-uri 'self'; form-action 'none'"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [],
+      "pubkey": "TODO: paste the `tauri signer generate` public key here before the first release build"
     }
   },
   "bundle": {

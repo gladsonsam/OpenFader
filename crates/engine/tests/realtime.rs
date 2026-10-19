@@ -327,8 +327,7 @@ async fn write_latency_p99_under_saturation() {
     for i in 0..50u16 {
         me.send(Cmd::Fader {
             ch: i % 32,
-            value: 0.5,
-        })
+            value: 0.5, key: None})
         .await
         .unwrap();
     }
@@ -342,12 +341,11 @@ async fn write_latency_p99_under_saturation() {
         let v = 0.1 + 0.8 * ((i % 100) as f32 / 100.0);
         let t = Instant::now();
         match i % 4 {
-            0 => me.send(Cmd::Fader { ch, value: v }).await.unwrap(),
+            0 => me.send(Cmd::Fader { ch, value: v, key: None}).await.unwrap(),
             1 => {
                 me.send(Cmd::Mute {
                     ch,
-                    muted: i % 8 < 4,
-                })
+                    muted: i % 8 < 4, key: None})
                 .await
                 .unwrap()
             }
@@ -355,8 +353,7 @@ async fn write_latency_p99_under_saturation() {
                 me.send(Cmd::Param {
                     ch,
                     field: "gain".to_string(),
-                    value: serde_json::json!(20.0 + (i % 10) as f64),
-                })
+                    value: serde_json::json!(20.0 + (i % 10) as f64), key: None})
                 .await
                 .unwrap()
             }

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Local-network prompt shown on first UDP use (iOS 14+). Without
+	this key local sockets fail silently. openmix connects to the mixer
+	(X-Air / DL32S) over unicast UDP on the venue LAN; no multicast
+	entitlement is needed (see docs/direct-connect.md). Auto-merged by
+	Tauri: `bundle.iOS.infoPlist` defaults to this file when present. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>openmix connects to your mixer (X-Air / DL32S) on the local network.</string>
+</dict>
+</plist>

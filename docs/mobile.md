@@ -111,6 +111,12 @@ Notes:
 
 ## 5. LAN permission notes (mixer UDP)
 
+> Audit 2026-10-19: the full workstream-4 audit (capabilities table,
+> generated-manifest deltas, iOS plist, subnet broadcast + unicast probe,
+> cross-subnet UI flow, AP isolation handling, updater, CSP) lives in
+> `docs/direct-connect.md` §§1–3. This section keeps the owner-side
+> snippets next to the init instructions.
+
 The app talks to the desk over **unicast UDP to an explicit IP**
 (X-Air OSC on 10032/10024-style ports; DL32S Master Fader protocol). The
 sockets are opened in Rust, so the Tauri ACL is not involved — but the OS
@@ -124,12 +130,17 @@ Verify (add if missing) inside `<manifest>`:
 ```xml
 <uses-permission android:name="android.permission.INTERNET" />
 <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+<uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
 ```
 
 - `INTERNET` (normal, auto-granted) is **mandatory** — without it every
   socket, including Rust UDP, fails.
 - `ACCESS_NETWORK_STATE` (normal) is recommended so the app can detect
   LAN loss vs. mixer silence.
+- `ACCESS_WIFI_STATE` (normal) covers reading the WiFi state behind the
+  subnet-broadcast fan-out (added 2026-10-19; also applied to the
+  generated manifest on this machine — re-apply after `android init`,
+  `gen/` is git-ignored).
 - Do **not** need: `CHANGE_WIFI_MULTICAST_STATE` (multicast lock — device
   discovery is UDP *broadcast* (`/xinfo` to 255.255.255.255 + subnet
   directed broadcast) with *unicast* replies, plus unicast manual
@@ -143,7 +154,9 @@ Verify (add if missing) inside `<manifest>`:
 
 ### iOS — `Info.plist` + entitlement
 
-After `ios init`, merge via `bundle.iOS.infoPlist` (or `src-tauri/Info.ios.plist`):
+Committed as `src-tauri/Info.ios.plist` (auto-merged by the bundler, no
+`tauri.conf.json` change needed); after `ios init` verify it lands in
+the generated project, or merge explicitly via `bundle.iOS.infoPlist`:
 
 ```xml
 <key>NSLocalNetworkUsageDescription</key>
