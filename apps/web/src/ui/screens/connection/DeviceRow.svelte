@@ -40,7 +40,7 @@
   style="box-sizing:content-box;display:flex;align-items:center;gap:14px;padding:12px 14px;border-radius:3px;border:1px solid {d.border};background:var(--u4-panel-bg)"
 >
   <div
-    style="box-sizing:content-box;width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:3px;background:#1a2332;color:var(--u4-text-4)"
+    style="box-sizing:content-box;width:44px;height:44px;flex:none;display:flex;align-items:center;justify-content:center;border-radius:3px;background:var(--u4-io-tile);color:var(--u4-text-4)"
   >
     <svg
       width="24"

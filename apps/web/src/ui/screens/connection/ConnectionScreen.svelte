@@ -36,6 +36,9 @@
         strips: live.engine?.stripCount ?? 0,
         devices: live.engine ? live.engine.devices.map(d => ({ ...d })) : undefined,
         linkName: live.engine?.link?.name ?? null,
+        scannedAt: live.engine?.scannedAt ?? 0,
+        driver: live.engine?.driver ?? '',
+        suggestion: live.suggestedHost(),
       });
     })(),
   );
@@ -49,6 +52,7 @@
       message: live.message,
       latencyMs: live.latencyMs,
       strips: live.engine?.stripCount ?? 0,
+      suggestion: live.suggestedHost(),
     },
     lists: { devices: vm.devices },
   });

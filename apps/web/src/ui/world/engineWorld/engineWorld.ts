@@ -72,6 +72,7 @@ import {
   sameList,
   splitKey,
   sweepPending,
+  valuesEqual,
   type CapsSnapshot,
   type StoreMaps,
 } from './paramStore.ts';
@@ -331,13 +332,18 @@ export class EngineWorld implements World {
             const pend = this.maps.pending[`${s.ch}:${id}`];
             if (pend) {
               const cur = id === 'fader' ? s.fader : id === 'mute' ? s.muted : s.name;
-              if (pend.value === cur) delete this.maps.pending[`${s.ch}:${id}`];
+              // Desk-quantized fader echoes (cf. valuesEqual) must clear the
+              // edit like params frames do; strict equality strands it.
+              // Mute/name still compare exactly via valuesEqual's fallback.
+              if (valuesEqual(pend.value, cur)) delete this.maps.pending[`${s.ch}:${id}`];
             }
           }
         }
         if (evt.main_fader !== null) {
           this._mainFader = evt.main_fader;
-          if (this.mainPending && Math.abs(this.mainPending.value - evt.main_fader) < 1e-6) {
+          // Same desk-quantization agreement as valuesEqual (cf. GAP A):
+          // a quantized echo must clear the optimistic MAIN edit.
+          if (this.mainPending && valuesEqual(this.mainPending.value, evt.main_fader)) {
             this.mainPending = null;
           }
         }
@@ -867,6 +873,9 @@ export class EngineWorld implements World {
   }
   scan(): void {
     this.lib.scan();
+  }
+  probeDesk(addr: string): void {
+    this.lib.probeDesk(addr);
   }
   connectDevice(id: string): void {
     this.lib.connectDevice(id);

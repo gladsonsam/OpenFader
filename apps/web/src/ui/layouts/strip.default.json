@@ -122,6 +122,14 @@
       }
     },
     {
+      "id": "state-icons",
+      "module": "strip-state-icons",
+      "bind": {
+        "desk": "item.desk"
+      },
+      "when": "item.desk != null"
+    },
+    {
       "id": "fader-area",
       "module": "col",
       "props": {

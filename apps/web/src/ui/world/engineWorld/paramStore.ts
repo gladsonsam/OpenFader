@@ -147,9 +147,13 @@ export function applyParams(maps: StoreMaps, ch: number, values: Record<string, 
   return changed;
 }
 
-/** Numbers compare with a small epsilon (JSON round-trips of floats). */
+/** Numbers compare within the desk's quantization step. The engine's
+ * write-path re-read agreement (engine.rs `refresh_agrees`) treats floats as
+ * agreeing within ~2e-3 (~10-bit fader steps: a 0.1 write reads back
+ * ~0.0997), so the confirm epsilon must cover the same quantum — otherwise a
+ * confirmed echo can never clear its optimistic edit. */
 export function valuesEqual(a: ParamValue | undefined, b: ParamValue): boolean {
-  if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 1e-6;
+  if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) < 2e-3;
   return a === b;
 }
 

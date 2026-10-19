@@ -94,6 +94,7 @@ import {
   resetPan,
   unpatch,
   unlock,
+  withState,
   visibleCount,
   type EqParam,
   type Mode,
@@ -137,6 +138,7 @@ import {
   bridgeUnpatch,
   type EqBridgeParam,
 } from './engineBridge.ts';
+import { fixturePartnerId, livePartnerId } from './stereoPairs.ts';
 import { MeterSim, meterIdsFor } from '../fixtures/meterSim.ts';
 import { bankByKey, spec, toN, type Channel } from '../fixtures/designData.ts';
 import { COLOR_HEX, enginePanToDesign } from '../world/mapping/params.ts';
@@ -177,6 +179,28 @@ function bankItemIds(key: string): string[] {
     return bankByKey(key).items.map(i => i.id);
   } catch {
     return [];
+  }
+}
+
+/** Explicit offline mode persists across reloads (localStorage). Set when
+ * the user picks Work offline; cleared on any real connect/disconnect. */
+const OFFLINE_LS_KEY = 'openmix-offline';
+
+function loadOfflineMode(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(OFFLINE_LS_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveOfflineMode(v: boolean): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    if (v) localStorage.setItem(OFFLINE_LS_KEY, '1');
+    else localStorage.removeItem(OFFLINE_LS_KEY);
+  } catch {
+    /* ignore */
   }
 }
 
@@ -356,6 +380,19 @@ function forward(fn: (w: EngineWorld) => void): void {
   }
 }
 
+/**
+ * Stereo partner for a paired move (linked-fader pairing). A live world
+ * with a per-strip `link` leaf (sim) is authoritative; fixture mode falls
+ * back to the fixture src convention (FxRet `FX kL`/`FX kR`). Live but
+ * link-unknown (xair: global chlink unsurfaced) resolves null — the link
+ * IS the state, never guessed from names.
+ */
+function stereoPartner(id: string): string | null {
+  const w = liveEngine();
+  if (w) return livePartnerId(w, world.chans, id);
+  return fixturePartnerId(world.chans, id);
+}
+
 /** Read back one EQ band value from the fixture model for forwarding. */
 function eqBandVal(id: string, band: number, param: EqParam): number | null {
   const eq = world.chans[id]?.eq;
@@ -428,6 +465,12 @@ export const ui = {
     const r = initialStateFromUrl(search, world.state, world.chans);
     update({ state: r.state, chans: world.chans, fx: world.fx });
     live.initFromUrl(search);
+    // Non-fixture boots never claim a desk: the connection screen stays
+    // honestly empty until the relay links and a real scan lands (or the
+    // user explicitly restores persisted offline mode).
+    if (!r.fixture) {
+      update(withState(world, { connected: loadOfflineMode() ? 'offline' : null }));
+    }
     // Engine -> fixture live sync: desk-side fader/mute moves flow into the
     // fixture display model (no-op offline; pending local edits win).
     live.observeWorld((w) => syncWorldToFixture(w));
@@ -452,7 +495,13 @@ export const ui = {
     goRouting: () => update(goRouting(world)),
     goConnect: () => update(goConnect(world)),
     goSettings: () => update(goSettings(world)),
-    goOffline: () => update(goOffline(world)),
+    goOffline: () => {
+      saveOfflineMode(true);
+      // Offline means zero network: drop any live relay link so the
+      // offline/demo model owns every screen until the user reconnects.
+      live.disconnect();
+      update(goOffline(world));
+    },
     goBack: () => update(goBack(world)),
     openScenes: () => update(openScenes(world)),
     goPatch: (id: string) => update(goPatch(world, id)),
@@ -470,9 +519,20 @@ export const ui = {
     setTab: (t: Tab) => update(setTab(world, t)),
     setSelBand: (b: number) => update(setSelBand(world, b)),
     setFader: (id: string, v: number) => {
+      const before = world.chans[id]?.fader;
       update(setFader(world, id, v));
       const nv = world.chans[id]?.fader;
-      if (typeof nv === 'number') forward(w => { bridgeFader(w, id, nv); });
+      if (typeof nv !== 'number') return;
+      // Linked-fader pairing: the partner takes the same value locally and
+      // both writes ride the existing live path (no re-read, no wait).
+      let partner: string | null = null;
+      if (nv !== before) {
+        partner = stereoPartner(id);
+        if (partner && world.chans[partner]?.fader !== nv) {
+          update(setFader(world, partner, nv));
+        }
+      }
+      forward(w => { bridgeFader(w, id, nv); if (partner) bridgeFader(w, partner, nv); });
     },
     setSend: (id: string, k: number, v: number) => {
       update(setSend(world, id, k, v));
@@ -502,9 +562,20 @@ export const ui = {
       else forward(w => { bridgeDelayMs(w, id, input.delay); });
     },
     toggleMute: (id: string) => {
+      const before = world.chans[id]?.mute;
       update(toggleMute(world, id));
       const nv = world.chans[id]?.mute;
-      if (typeof nv === 'boolean') forward(w => { bridgeMute(w, id, nv); });
+      if (typeof nv !== 'boolean') return;
+      // Stereo links gang mute too: the partner ends at the same state
+      // locally and both writes ride the existing live path.
+      let partner: string | null = null;
+      if (nv !== before) {
+        partner = stereoPartner(id);
+        if (partner && world.chans[partner]?.mute !== nv) {
+          update(toggleMute(world, partner));
+        }
+      }
+      forward(w => { bridgeMute(w, id, nv); if (partner) bridgeMute(w, partner, nv); });
     },
     // Desk group membership + masters (desk-only: no fixture counterpart —
     // the channel/mixer scopes read this state straight from the engine, so
@@ -699,6 +770,7 @@ export const ui = {
     },
     disconnect: () => {
       const was = world.state.connected;
+      saveOfflineMode(false);
       update(disconnect(world));
       if (was) forward(w => { w.disconnectDesk(); });
     },
@@ -706,13 +778,37 @@ export const ui = {
       const before = world.state.connected;
       update(connectDevice(world, key));
       if (world.state.connected !== before && world.state.connected) {
+        saveOfflineMode(false);
         forward(w => { w.connectDevice(world.state.connected as string); });
+        return;
+      }
+      // Engine-discovered desk id (xair-…): not a fixture key, so the pure
+      // fixture transition above is a no-op — link it directly instead of
+      // silently ignoring the tap. Only while the relay actually lists it.
+      if (key !== before) {
+        const w = liveEngine();
+        if (w && w.devices.some(d => d.id === key)) {
+          saveOfflineMode(false);
+          forward(ww => { ww.connectDevice(key); });
+          update(withState(world, { connected: key }));
+        }
       }
     },
     /** Real relay link (connection screen relay card; driver only when explicitly chosen). */
     connectRelay: (host?: string, driver?: string) => live.connect(host, driver),
     disconnectRelay: () => live.disconnect(),
     setRelayHost: (host: string) => live.setHost(host),
+    /** One-tap LAN fix: point the relay at the machine serving this page. */
+    usePageHost: () => live.usePageHost(),
+    /** Manual add-by-IP: the relay pings the address; a verified desk
+     * appears as a connectable row (silence stays an honest inline hint
+     * in ManualDesk — never a blind row). Recent hosts persist. */
+    probeDesk: (ip: string) => {
+      const v = (ip || '').trim();
+      if (!v) return;
+      live.rememberDesk(v);
+      forward(w => { w.probeDesk(v); });
+    },
     setSpp: (n: number) => update(setSpp(world, n)),
     setFine: (v: boolean) => update(setFine(world, v)),
     setTheme: (t: ThemePresetId) => update(setTheme(world, t)),
