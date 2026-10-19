@@ -5,23 +5,13 @@ Queued with the owner's words. A worker is dispatched only when a slot is
 free AND its files don't collide with the running worker.
 
 ## In flight (2/2 slots full)
-1. Phone independence (`ses_eae8d639fffeO4LdSEJ8RE220z`) — engine
-   embedded in-process in the Tauri app (IPC transport, no relay).
+1. Mobile master strip parity (`ses_eae84069bffeGDc9dXCRGWs9dC`) — Main LR
+   like every other channel strip on phone, tap to expand.
 2. Verification loop completion (`ses_eae8d6395ffe6xukMszT5HS9vd`) —
    finish + run scripts/verify-bidirectional.mjs, file the gap list.
 
 ## Queued (in order)
-1. Mobile master strip parity: Main LR renders like every other channel
-   strip (volume + mute only); tap to expand for more. No special-case
-   master layout on phone.
-3. Phone independence: embed the engine in-process in the Tauri app
-   (Tauri IPC transport, no relay/server/LAN needed). Auto-select
-   transport: IPC inside the app, WebSocket in the browser. The W2a
-   TauriBackend is currently a stub — this is the ME2 work to finish it.
-4. Mobile master strip parity: Main LR renders like every other channel
-   strip (volume + mute only); tap to expand for more. No special-case
-   master layout on phone.
-5. Channel view topbar simplification: back-to-mixer button + channel
+1. Channel view topbar simplification: back-to-mixer button + channel
    name + prev/next channel buttons only; then remove the separate
    channel switcher UI it replaces.
 6. Routing usable on mobile (currently unusable — rework for small
@@ -56,6 +46,7 @@ free AND its files don't collide with the running worker.
 - RTA overlay for EQ (live engine spectrum; honest non-analyzer caveat).
 - Presets (8 built-in + user save/recall/rename/delete, live-proven).
 - Global meter bridge (grouped ladders + topbar icon, live XR18 verified).
+- Phone independence (engine embedded, IPC transport, fresh APK).
 - Subtractive review loop (6 rounds, net −17 lines, topbar/haptics/dedup).
 - Real-only device scan + offline mode (honest empty states).
 - Linked-fader pairing (sim + fixture proven, xair honestly scoped).
