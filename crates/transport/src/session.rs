@@ -214,6 +214,80 @@ impl OscSession {
         self.update_tx.subscribe()
     }
 
+    /// App-style per-param push subscribe (VERIFIED live 2026-10-19, XR18
+    /// FW 1.20 — `docs/xair-edit-protocol-map.md` §4): sends `/subscribe`
+    /// sends `/subscribe` with `sub_slot` (string, e.g. `"meters/9"`),
+    /// `path` (string) and `long(1)`. The desk then streams that param's
+    /// value at ~20/s addressed as the param itself; other-param changes
+    /// do not leak in. Stop the stream with
+    /// [`unsubscribe`](Self::unsubscribe).
+    ///
+    /// NOTE: `/subscribe` with one string arg, or with a `/meters/N` path,
+    /// elicits NO meter flow — meter blobs need [`batchsubscribe`](Self::batchsubscribe).
+    pub async fn subscribe_param(&self, sub_slot: &str, path: &str) -> anyhow::Result<()> {
+        self.send(
+            "/subscribe",
+            vec![
+                OscType::String(sub_slot.to_string()),
+                OscType::String(path.to_string()),
+                OscType::Long(1),
+            ],
+        )
+        .await
+    }
+
+    /// App-style meter blob subscribe (VERIFIED live 2026-10-19, XR18 FW
+    /// 1.20 — `docs/xair-edit-protocol-map.md` §4): sends `/batchsubscribe`
+    /// sends `/batchsubscribe` with `sub_slot` (string, e.g.
+    /// `"meters/1"`), `meter_path` (string, e.g. `"/meters/1"`) and `long`
+    /// ×3 (zeros; trailing values do not gate the flow, their meaning is
+    /// unknown). The desk streams blobs addressed `meters/N` (**no leading
+    /// slash**) at ~20/s for ~10 s. Extend a live subscription with
+    /// [`renew`](Self::renew); stopping is
+    /// [`unsubscribe`](Self::unsubscribe). The no-slash blobs route into
+    /// the existing meter parse path (`meters::parse_meter_message`).
+    ///
+    /// NOT implemented (static-only shapes, live-untested): the multi-path
+    /// `/batchsubscribe` variant (n ≤ 64 paths + 3 longs in one message)
+    /// and `/formatsubscribe` (several messages per packet).
+    pub async fn batchsubscribe(&self, sub_slot: &str, meter_path: &str) -> anyhow::Result<()> {
+        self.send(
+            "/batchsubscribe",
+            vec![
+                OscType::String(sub_slot.to_string()),
+                OscType::String(meter_path.to_string()),
+                OscType::Long(0),
+                OscType::Long(0),
+                OscType::Long(0),
+            ],
+        )
+        .await
+    }
+
+    /// App-style subscription renewal (VERIFIED live 2026-10-19, XR18 FW
+    /// 1.20 — `docs/xair-edit-protocol-map.md` §4): sends `/renew` +
+    /// `sub_slot` (string). Sent while the subscription is live it EXTENDS
+    /// the stream (alive at t+14 s); sent after death it does NOT
+    /// resurrect — resubscribe instead.
+    pub async fn renew(&self, sub_slot: &str) -> anyhow::Result<()> {
+        self.send(
+            "/renew",
+            vec![OscType::String(sub_slot.to_string())],
+        )
+        .await
+    }
+
+    /// App-style subscription stop (VERIFIED live 2026-10-19, XR18 FW 1.20 —
+    /// `docs/xair-edit-protocol-map.md` §4): sends `/unsubscribe` +
+    /// `sub_slot` (string). Expect a few in-flight residuals after the stop.
+    pub async fn unsubscribe(&self, sub_slot: &str) -> anyhow::Result<()> {
+        self.send(
+            "/unsubscribe",
+            vec![OscType::String(sub_slot.to_string())],
+        )
+        .await
+    }
+
     /// Raw socket access for driver-specific fire-and-forget flows.
     pub fn socket(&self) -> &Arc<UdpSocket> {
         &self.socket
@@ -588,6 +662,98 @@ mod tests {
         match meters.try_recv() {
             Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => {}
             other => panic!("expected lagged meter backlog, got {other:?}"),
+        }
+    }
+
+    /// Read one datagram off the fake mixer and flatten it to a single message.
+    async fn capture_one(mixer: &Arc<UdpSocket>) -> OscMessage {
+        let mut buf = vec![0u8; 65535];
+        let (n, _) = tokio::time::timeout(Duration::from_secs(2), mixer.recv_from(&mut buf))
+            .await
+            .expect("desk datagram must arrive")
+            .unwrap();
+        let mut msgs = osc::flatten(osc::decode_packet(&buf[..n]).unwrap());
+        assert_eq!(msgs.len(), 1);
+        msgs.pop().unwrap()
+    }
+
+    /// §4 VERIFIED wire form: `/subscribe meters/9 /ch/14/mix/fader 1`
+    /// (sub + path strings, `long` count).
+    #[tokio::test]
+    async fn subscribe_param_wire_shape() {
+        let (session, mixer) = loopback_pair().await;
+        session
+            .subscribe_param("meters/9", "/ch/14/mix/fader")
+            .await
+            .unwrap();
+        let msg = capture_one(&mixer).await;
+        assert_eq!(msg.addr, "/subscribe");
+        assert_eq!(
+            msg.args,
+            vec![
+                OscType::String("meters/9".into()),
+                OscType::String("/ch/14/mix/fader".into()),
+                OscType::Long(1),
+            ]
+        );
+    }
+
+    /// §4 VERIFIED wire form: `/batchsubscribe meters/1 /meters/1 0 0 0`
+    /// (sub + path strings, three `long` zeros).
+    #[tokio::test]
+    async fn batchsubscribe_wire_shape() {
+        let (session, mixer) = loopback_pair().await;
+        session
+            .batchsubscribe("meters/1", "/meters/1")
+            .await
+            .unwrap();
+        let msg = capture_one(&mixer).await;
+        assert_eq!(msg.addr, "/batchsubscribe");
+        assert_eq!(
+            msg.args,
+            vec![
+                OscType::String("meters/1".into()),
+                OscType::String("/meters/1".into()),
+                OscType::Long(0),
+                OscType::Long(0),
+                OscType::Long(0),
+            ]
+        );
+    }
+
+    /// §4 VERIFIED wire forms: `/renew` + sub, `/unsubscribe` + sub
+    /// (single string arg each).
+    #[tokio::test]
+    async fn renew_and_unsubscribe_wire_shapes() {
+        let (session, mixer) = loopback_pair().await;
+        session.renew("meters/1").await.unwrap();
+        let msg = capture_one(&mixer).await;
+        assert_eq!(msg.addr, "/renew");
+        assert_eq!(msg.args, vec![OscType::String("meters/1".into())]);
+        session.unsubscribe("meters/9").await.unwrap();
+        let msg = capture_one(&mixer).await;
+        assert_eq!(msg.addr, "/unsubscribe");
+        assert_eq!(msg.args, vec![OscType::String("meters/9".into())]);
+    }
+
+    /// Desk-addressed blobs WITHOUT the leading slash (`meters/1`, the
+    /// `/batchsubscribe` reply form) must reach the meter channel exactly
+    /// like the slashed form — both through the session recv loop.
+    #[tokio::test]
+    async fn no_slash_meter_blob_reaches_meter_channel() {
+        let (session, mixer) = loopback_pair().await;
+        let mut meters = session.subscribe_meters();
+        let client = session.socket().local_addr().unwrap();
+        for addr in ["meters/1", "/meters/1"] {
+            let blob = crate::meters::build_meter_blob(&[0.1, 0.5]);
+            let bytes =
+                osc::encode_message(addr, vec![rosc::OscType::Blob(blob)]).unwrap();
+            mixer.send_to(&bytes, client).await.unwrap();
+            let frame = tokio::time::timeout(Duration::from_secs(2), meters.recv())
+                .await
+                .expect("meter frame must arrive")
+                .unwrap();
+            assert_eq!(frame.levels.len(), 2, "{addr}");
         }
     }
 }
