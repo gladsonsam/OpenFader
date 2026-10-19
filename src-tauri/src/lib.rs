@@ -373,7 +373,6 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_haptics::init())
-        .plugin(tauri_plugin_edge_to_edge::init())
         .plugin(tauri_plugin_keep_screen_on::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Mutex::new(EngineSlot::default()))
