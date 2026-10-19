@@ -1366,7 +1366,7 @@ async fn ws_caps_and_params_snapshot() {
     let caps = next_typed(&mut rx, "caps").await;
     assert_eq!(caps.get("driver"), Some(&json!("sim")));
     let params = caps.get("params").and_then(Value::as_array).unwrap();
-    assert_eq!(params.len(), 159, "sim caps list the full catalogue (v2)");
+    assert_eq!(params.len(), 176, "sim caps list the full catalogue (v2)");
     for p in params {
         for key in ["id", "kind", "scope", "scopes", "min", "max", "unit", "default", "label"] {
             assert!(p.get(key).is_some(), "caps entry misses {key}: {p}");
@@ -1409,7 +1409,7 @@ async fn ws_caps_and_params_snapshot() {
                     assert_eq!(v.get("driver"), Some(&json!("sim")));
                     assert_eq!(
                         v.get("params").and_then(Value::as_array).map(Vec::len),
-                        Some(159)
+                        Some(176)
                     );
                     saw_caps = true;
                 }
@@ -1552,7 +1552,7 @@ async fn ws_focus_prioritizes_channel() {
         .expect("caps carries params");
     let nparams = params.len();
     // v2 catalogue size (was 54 in v1).
-    assert_eq!(nparams, 159, "sim caps list the full catalogue");
+    assert_eq!(nparams, 176, "sim caps list the full catalogue");
     // Channel strips (ch5/ch7 below) only ever receive the In-scoped
     // subset — bus/main-only EQ bands 5..6 never land on a channel
     // (firmware band counts).
