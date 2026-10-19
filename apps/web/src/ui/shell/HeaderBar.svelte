@@ -4,7 +4,7 @@
      toolbar/scene active states, and callbacks (no store import: presentational).
      Layout: [Mixer title | Back + channel chip / page title | lock banner]
      spacer [FX Routing Connect Settings] divider [scene button].
-     Channel mode strips to [Back + channel name + prev/next]: the toolbar,
+     Channel mode strips to [Back | centered channel name | prev/next]: the toolbar,
      scene button and lock banner stay one Back tap away on the mixer. -->
 <!-- NOTE: buttons carry font-variant-numeric:normal because the design's
      buttons compute normal (UA `font:` shorthand reset; the template only
@@ -75,34 +75,16 @@
     <button
       onclick={onBack}
       aria-label="Back"
-      style="height:{compact ? 36 : 46}px;padding:0 {compact ? '10px 0 8px' : '14px 0 10px'};display:flex;align-items:center;gap:4px;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);font-size:14px;cursor:pointer;font-variant-numeric:normal"
+      style="box-sizing:border-box;height:{compact ? 36 : 46}px;padding:0 {compact ? '10px 0 8px' : '14px 0 10px'};display:flex;align-items:center;gap:4px;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);font-size:14px;cursor:pointer;font-variant-numeric:normal"
     >
       <Icon name="back" size={18} />
       {vm.backLabel}
     </button>
   {/if}
   {#if vm.isChannel}
-    <div style="display:flex;align-items:center;gap:8px;white-space:nowrap;min-width:0">
+    <div style="flex:1 1 0;display:flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;min-width:0;text-align:center">
       <span style="width:10px;height:10px;flex:none;border-radius:var(--u4-r-2);background:{vm.channelColor}"></span>
-      <span style="font-size:17px;font-weight:600">{vm.channelName}</span>
-      {#if onPrevChannel && onNextChannel}
-        <div role="group" aria-label="Channel" style="display:flex;gap:4px;flex:none">
-          <button
-            onclick={onPrevChannel}
-            aria-label="Previous channel"
-            style="height:{compact ? 36 : 46}px;width:{compact ? 36 : 46}px;display:flex;align-items:center;justify-content:center;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);cursor:pointer;font-variant-numeric:normal"
-          >
-            <Icon name="chevronLeft" size={18} />
-          </button>
-          <button
-            onclick={onNextChannel}
-            aria-label="Next channel"
-            style="height:{compact ? 36 : 46}px;width:{compact ? 36 : 46}px;display:flex;align-items:center;justify-content:center;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);cursor:pointer;font-variant-numeric:normal"
-          >
-            <Icon name="chevronRight" size={18} />
-          </button>
-        </div>
-      {/if}
+      <span style="font-size:17px;font-weight:600;overflow:hidden;text-overflow:ellipsis">{vm.channelName}</span>
     </div>
   {/if}
   {#if vm.showPageTitle && !compact}
@@ -111,14 +93,35 @@
   {#if vm.locked && !vm.isChannel}
     <button
       onclick={onUnlock}
-      style="height:{compact ? 36 : 40}px;display:flex;align-items:center;gap:6px;padding:0 12px;border-radius:var(--u4-r-3);border:1px solid var(--u4-amber);background:var(--u4-amber-deep);color:var(--u4-amber-hi);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;font-variant-numeric:normal"
+      style="box-sizing:border-box;height:{compact ? 36 : 46}px;display:flex;align-items:center;gap:6px;padding:0 12px;border-radius:var(--u4-r-3);border:1px solid var(--u4-amber);background:var(--u4-amber-deep);color:var(--u4-amber-hi);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;font-variant-numeric:normal"
     >
       <Icon name="lock" size={16} />
       Locked · tap to unlock
     </button>
   {/if}
 
-  <div style="flex:1 1 0;min-width:4px"></div>
+  {#if !vm.isChannel}
+    <div style="flex:1 1 0;min-width:4px"></div>
+  {/if}
+
+  {#if vm.isChannel && onPrevChannel && onNextChannel}
+    <div role="group" aria-label="Channel" style="display:flex;gap:4px;flex:none">
+      <button
+        onclick={onPrevChannel}
+        aria-label="Previous channel"
+        style="box-sizing:border-box;height:{compact ? 36 : 46}px;width:{compact ? 36 : 46}px;display:flex;align-items:center;justify-content:center;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);cursor:pointer;font-variant-numeric:normal"
+      >
+        <Icon name="chevronLeft" size={18} />
+      </button>
+      <button
+        onclick={onNextChannel}
+        aria-label="Next channel"
+        style="box-sizing:border-box;height:{compact ? 36 : 46}px;width:{compact ? 36 : 46}px;display:flex;align-items:center;justify-content:center;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);cursor:pointer;font-variant-numeric:normal"
+      >
+        <Icon name="chevronRight" size={18} />
+      </button>
+    </div>
+  {/if}
 
   {#if !vm.isChannel}
   <div role="toolbar" aria-label="Console tools" style="display:flex;gap:{compact ? 2 : 4}px;flex:none">
@@ -126,14 +129,14 @@
       onclick={onFx}
       aria-label="Effects"
       aria-current={ariaCurrent(mode === 'fx')}
-      style="width:{ibtn}px;height:{ibtn}px;border-radius:var(--u4-r-3);border:1px solid {fx.border};background:{fx.bg};color:var(--u4-text-3);cursor:pointer;font-size:16px;font-weight:600;padding:0;font-variant-numeric:normal"
+      style="box-sizing:border-box;width:{ibtn}px;height:{ibtn}px;border-radius:var(--u4-r-3);border:1px solid {fx.border};background:{fx.bg};color:var(--u4-text-3);cursor:pointer;font-size:16px;font-weight:600;padding:0;font-variant-numeric:normal"
       >FX</button
     >
     <button
       onclick={onRouting}
       aria-label="Routing"
       aria-current={ariaCurrent(mode === 'routing')}
-      style="width:{ibtn}px;height:{ibtn}px;border-radius:var(--u4-r-3);border:1px solid {rt.border};background:{rt.bg};color:var(--u4-text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
+      style="box-sizing:border-box;width:{ibtn}px;height:{ibtn}px;border-radius:var(--u4-r-3);border:1px solid {rt.border};background:{rt.bg};color:var(--u4-text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
     >
       <Icon name="routing" size={compact ? 18 : 22} />
     </button>
@@ -141,7 +144,7 @@
       onclick={onConnect}
       aria-label={vm.connAria}
       aria-current={ariaCurrent(mode === 'connect')}
-      style="width:{ibtn}px;height:{ibtn}px;position:relative;border-radius:var(--u4-r-3);border:1px solid {cn.border};background:{cn.bg};color:var(--u4-text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
+      style="box-sizing:border-box;width:{ibtn}px;height:{ibtn}px;position:relative;border-radius:var(--u4-r-3);border:1px solid {cn.border};background:{cn.bg};color:var(--u4-text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
     >
       <Icon name="plug" size={compact ? 18 : 22} />
       <span
@@ -152,7 +155,7 @@
       onclick={onSettings}
       aria-label="Settings"
       aria-current={ariaCurrent(mode === 'settings')}
-      style="width:{ibtn}px;height:{ibtn}px;border-radius:var(--u4-r-3);border:1px solid {st.border};background:{st.bg};color:var(--u4-text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
+      style="box-sizing:border-box;width:{ibtn}px;height:{ibtn}px;border-radius:var(--u4-r-3);border:1px solid {st.border};background:{st.bg};color:var(--u4-text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
     >
       <Icon name="gear" size={compact ? 18 : 22} />
     </button>
@@ -161,7 +164,7 @@
         onclick={onMeters}
         aria-label="Meter bridge"
         aria-current={ariaCurrent(metersActive)}
-        style="width:{ibtn}px;height:{ibtn}px;border-radius:var(--u4-r-3);border:1px solid {mb.border};background:{mb.bg};color:var(--u4-text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
+        style="box-sizing:border-box;width:{ibtn}px;height:{ibtn}px;border-radius:var(--u4-r-3);border:1px solid {mb.border};background:{mb.bg};color:var(--u4-text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
       >
         <Icon name="meters" size={compact ? 18 : 22} />
       </button>

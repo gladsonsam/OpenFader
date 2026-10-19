@@ -17,6 +17,7 @@ import {
   disconnect,
   expirePhantom,
   flatEq,
+  resetEq,
   goBack,
   goConnect,
   goFx,
@@ -74,6 +75,8 @@ import {
   setSpp,
   setTab,
   setDynParam,
+  resetDyn,
+  dynResetDefaults,
   setEqBandType,
   setEqParam,
   stepChannel,
@@ -140,11 +143,13 @@ import {
 } from './engineBridge.ts';
 import { fixturePartnerId, livePartnerId } from './stereoPairs.ts';
 import { MeterSim, meterIdsFor } from '../fixtures/meterSim.ts';
-import { bankByKey, spec, toN, type Channel } from '../fixtures/designData.ts';
+import { bankByKey, buildChannels, spec, toN, type Channel } from '../fixtures/designData.ts';
 import { COLOR_HEX, enginePanToDesign } from '../world/mapping/params.ts';
 
 let world: World = $state(initialWorld());
 let taps: number[] = [];
+/** Desk-native tap-tempo types (proto-xair tap targets; mirrors FxScreen). */
+const XAIR_TAP_TYPES = ['DLY', '3TAP', '4TAP', 'D/RV', 'D/CR', 'D/FL', 'MODD'];
 let armTimer: ReturnType<typeof setTimeout> | null = null;
 
 function update(next: World): void {
@@ -249,11 +254,37 @@ function engineChToFixture(w: EngineWorld, ch: number): string | null {
   }
 }
 
+/** Live topology fingerprint for the fixture reseed below: driver plus
+ * the derived bank shape (EngineWorld never shrinks stripCount, so the
+ * bank layout -- not the count -- tells sim-77 apart from xair-35). */
+let liveTopoKey: string | null = null;
+
+function liveTopologyKey(w: EngineWorld): string {
+  return w.driver + '|' + w.banks.map((b) => b.key + ':' + b.strips.length).join(',');
+}
+
 function syncWorldToFixture(w: EngineWorld): void {
   if (live.phase !== 'online' || !w.capsReady) return;
+  // Same-socket driver switch (sim -> xair): strips the new topology never
+  // maps (sim in17..48, and any stale master residue) would otherwise keep
+  // the old driver's display values forever -- nothing on the new driver
+  // overwrites them (the xair LR scribble is empty, so the falsy-name guard
+  // below never heals a stale "CH31" master). Reseed the display channels
+  // from the design defaults on a topology change; live values flow back in
+  // through the confirmed-only sync below on the same pass.
+  const key = liveTopologyKey(w);
+  let reseeded = false;
+  if (liveTopoKey !== key) {
+    liveTopoKey = key;
+    const fresh = buildChannels();
+    for (const id of Object.keys(world.chans)) {
+      if (fresh[id]) world.chans[id] = fresh[id];
+    }
+    reseeded = true;
+  }
   syncing = true;
   try {
-    let changed = false;
+    let changed = reseeded;
     for (let ch = 0; ch < w.stripCount; ch++) {
       const id = engineChToFixture(w, ch);
       const slot = id ? world.chans[id] : undefined;
@@ -644,6 +675,20 @@ export const ui = {
         bands.forEach((b, i) => { bridgeEq(w, id, i + 1, 'g', b.g); });
       });
     },
+    resetEq: (id: string) => {
+      update(resetEq(world, id));
+      const eq = world.chans[id]?.eq;
+      if (!eq) return;
+      forward(w => {
+        bridgeEq(w, id, 0, 'f', eq.hpf.f);
+        eq.bands.forEach((b, i) => {
+          bridgeEq(w, id, i + 1, 'f', b.f);
+          bridgeEq(w, id, i + 1, 'g', b.g);
+          bridgeEq(w, id, i + 1, 'q', b.q);
+        });
+        bridgeEqOn(w, id, eq.on);
+      });
+    },
     setHpfSlope: (id: string, s: 12 | 24) => {
       update(setHpfSlope(world, id, s));
       forward(w => { bridgeHpfSlope(w, id, s); });
@@ -689,6 +734,19 @@ export const ui = {
       const nv = world.chans[id]?.dyn?.[which]?.on;
       if (typeof nv === 'boolean') forward(w => { bridgeDynOn(w, id, which, nv); });
     },
+    resetDyn: (id: string, which: 'gate' | 'comp') => {
+      update(resetDyn(world, id, which));
+      const d = world.chans[id]?.dyn?.[which] as unknown as Record<string, unknown> | undefined;
+      if (!d) return;
+      const defaults = dynResetDefaults(which);
+      forward(w => {
+        for (const prop of Object.keys(defaults)) {
+          const nv = d[prop];
+          if (typeof nv === 'number') bridgeDyn(w, id, which, prop, nv);
+        }
+        if (typeof d['on'] === 'boolean') bridgeDynOn(w, id, which, d['on'] as boolean);
+      });
+    },
     toggleSendPre: (id: string, k: number) => {
       update(toggleSendPre(world, id, k));
       const nv = world.chans[id]?.sendPre?.[k];
@@ -716,6 +774,27 @@ export const ui = {
       const r = tapFx(world, i, taps, Date.now());
       taps = r.taps;
       update(r.world);
+      // Write-through: the tapped BPM drives the live Time param (design
+      // Delay `time` id; xair DLY `par02`, other tap types `par01` over
+      // the assumed-linear 1..3000 ms map). Missing/unknown live slots
+      // stay fixture-local.
+      if (r.world.fx[i]?.bpm == null) return;
+      const bpm = r.world.fx[i]!.bpm!;
+      forward(w => {
+        const live = w.fxSlots.find(s => s.slot === i + 1);
+        if (!live) return;
+        const def = w.fxCaps?.types.find(t => t.id === live.type || t.label === live.type);
+        if (def?.params.some(p => p.id === 'time')) {
+          const p0 = r.world.fx[i]?.p[0];
+          if (typeof p0 === 'number') w.fxParam(i + 1, 'time', p0);
+          return;
+        }
+        if (!def || !XAIR_TAP_TYPES.includes(live.type)) return;
+        const id = live.type === 'DLY' ? 'par02' : 'par01';
+        if (!def.params.some(p => p.id === id)) return;
+        const ms = Math.min(3000, Math.max(1, 60000 / bpm));
+        w.fxParam(i + 1, id, (ms - 1) / 2999);
+      });
     },
     setPatchSel: (id: string) => update(setPatchSel(world, id)),
     setPatchGroup: (g: RouteGroup) => update(setPatchGroup(world, g)),

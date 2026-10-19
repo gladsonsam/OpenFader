@@ -102,7 +102,7 @@
         "selectable": true
       },
       "variants": {
-        "phone": { "props": { "width": 120 } }
+        "phone": { "props": { "width": 76 } }
       },
       "bind": {
         "shadow": "master.ring"
@@ -123,7 +123,7 @@
           "id": "master-bus",
           "module": "btn",
           "props": {
-            "height": 30,
+            "height": 40,
             "fontSize": 12,
             "padding": "0 8px",
             "bg": "#1b2330",
@@ -235,6 +235,9 @@
             "flex": "3 1 240px",
             "minHeight": 180
           },
+          "variants": {
+            "phone": { "props": { "flex": "5 1 320px", "minHeight": 240 } }
+          },
           "children": [
             {
               "id": "master-fader",
@@ -306,6 +309,77 @@
               }
             }
           }
+        }
+      ]
+    },
+    {
+      "id": "phone-layer-rail",
+      "module": "col",
+      "when": "device == 'phone'",
+      "props": {
+        "width": 52,
+        "flex": "none",
+        "gap": 3
+      },
+      "children": [
+        {
+          "id": "phone-layer-lr",
+          "module": "btn",
+          "props": {
+            "label": "LR",
+            "height": 44,
+            "fontSize": 12,
+            "padding": "0 2px",
+            "bg": "#1b2330",
+            "fg": "#e8edf5",
+            "border": "1px solid #3a414c"
+          },
+          "bind": {
+            "pressed": "store.sel == master.id ? 'true' : 'false'",
+            "ariaLabel": "concat('Select master, current ', master.name)"
+          },
+          "on": {
+            "press": {
+              "do": "ui.select",
+              "args": {
+                "id": { "$expr": "master.id" }
+              }
+            }
+          }
+        },
+        {
+          "id": "phone-layer-banks",
+          "module": "repeat",
+          "props": {
+            "over": "list:banks"
+          },
+          "children": [
+            {
+              "id": "phone-layer-bank",
+              "module": "btn",
+              "props": {
+                "height": 44,
+                "fontSize": 10,
+                "padding": "0 2px"
+              },
+              "bind": {
+                "label": "item.label",
+                "bg": "item.key == store.bank ? item.color : 'var(--u4-bank-off)'",
+                "fg": "item.key == store.bank ? item.text : 'var(--u4-text-1)'",
+                "border": "'1px solid var(--u4-line-panel)'",
+                "pressed": "item.key == store.bank ? 'true' : 'false'",
+                "ariaLabel": "concat('Layers ', item.label)"
+              },
+              "on": {
+                "press": {
+                  "do": "ui.setBank",
+                  "args": {
+                    "bank": { "$expr": "item.key" }
+                  }
+                }
+              }
+            }
+          ]
         }
       ]
     }

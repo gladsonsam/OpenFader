@@ -44,7 +44,7 @@
     nodeId: _nodeId,
     onEvent,
   }: {
-    props: { graph?: EqGraphVm | null; locked?: boolean; fine?: boolean };
+    props: { graph?: EqGraphVm | null; locked?: boolean; fine?: boolean; minH?: number };
     ctx: ModuleContext;
     nodeId: string;
     onEvent?: (name: string, payload?: unknown) => void;
@@ -53,6 +53,9 @@
   const graph = $derived(props.graph);
   const locked = $derived(props.locked ?? false);
   const fine = $derived(props.fine ?? false);
+  // Layout phone variants pass minH: 220 (the desktop value); the prop
+  // exists so the layout owns the number without forking this component.
+  const minH = $derived(props.minH ?? 220);
 
   let box: HTMLDivElement | null = null;
   let dragBand: number | null = null;
@@ -137,7 +140,7 @@
   bind:this={box}
   data-graph="1"
   in:fade={{ duration: REDUCED_MOTION ? 0 : 120 }}
-  style="box-sizing:content-box;flex:1 1 280px;min-height:220px;position:relative;border-radius:6px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg);overflow:hidden;touch-action:none"
+  style="box-sizing:content-box;flex:1 1 280px;min-height:{minH}px;position:relative;border-radius:6px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg);overflow:hidden;touch-action:none"
 >
   {#if graph}
     <svg
@@ -165,6 +168,21 @@
           aria-hidden="true"
         ></path>
       {/if}
+      {#each graph.bandGhosts as ghost (ghost.band)}
+        <path
+          d={ghost.d}
+          fill={ghost.fill}
+          fill-opacity="0.55"
+          stroke={ghost.stroke}
+          stroke-width="1.2"
+          stroke-dasharray="4 3"
+          vector-effect="non-scaling-stroke"
+          opacity={ghost.on ? 1 : 0.8}
+          pointer-events="none"
+        >
+          <title>{ghost.name} {ghost.on ? 'On' : 'Off'}</title>
+        </path>
+      {/each}
       <path
         d={graph.bandFill}
         fill={graph.bandFillColor}
@@ -199,6 +217,7 @@
         class="eq-node"
         aria-label={n.aria}
         aria-valuetext={n.valueText}
+        title={n.aria}
         onpointerdown={(e) => down(e, n.band)}
         onpointermove={(e) => move(e, n.band)}
         onpointerup={up}

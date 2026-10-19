@@ -207,12 +207,14 @@ export function mixerAllCells(
 
 /**
  * Phone strip-grid columns (responsive `phone` variant in mixer.default.json).
- * Narrow 120px strips: fader cap, mute/solo and pan all fit; the 48 fixed
- * columns keep the whole desk a horizontally snapping pager the user swipes
- * through (no bank rail on phones).
+ * Dense 96px strips: cap 36 + scale 17 + meter 14 + gaps (~70 min) still
+ * fit; the 48 fixed columns keep the whole desk a horizontally snapping
+ * pager the user swipes through (the layer rail lives in the mixer layout
+ * now, not the shell). At 440px: 440 - 76 (master) - 52 (rail) = 312px
+ * scrollport / 96 = 3.25 strips visible (3 + a bit).
  */
 export function phoneGridCols(): string {
-  return 'repeat(48, 120px)';
+  return 'repeat(48, 96px)';
 }
 
 /**

@@ -25,7 +25,8 @@
             "bg": "eqMaster.bg",
             "fg": "eqMaster.text",
             "pressed": "eqMaster.str",
-            "ariaLabel": "eqMaster.label == 'EQ In' ? 'EQ in' : 'EQ bypassed'"
+            "ariaLabel": "eqMaster.label == 'EQ In' ? 'EQ in' : 'EQ bypassed'",
+            "locked": "store.locked"
           },
           "on": {
             "toggle": {
@@ -38,6 +39,14 @@
             },
             "flat": {
               "do": "ui.flatEq",
+              "args": {
+                "id": {
+                  "$expr": "selId"
+                }
+              }
+            },
+            "reset": {
+              "do": "ui.resetEq",
               "args": {
                 "id": {
                   "$expr": "selId"

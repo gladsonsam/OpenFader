@@ -58,7 +58,7 @@ export class LibraryStore {
   private _shows: ShowLib[] = [];
   private _scenes: SceneEntry[] = [];
   private _fxSlots: FxSlotView[] = [];
-  private _fxCaps: { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string }> }> } | null = null;
+  private _fxCaps: { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string; unit?: string }> }> } | null = null;
   private _patches: PatchView[] = [];
   private _routingSupported = false;
   private _devices: DeviceView[] = [];
@@ -163,7 +163,7 @@ export class LibraryStore {
 
   /** caps addendum: FX type tables + routing support (additive, R2). */
   setCaps(
-    fx: { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string }> }> },
+    fx: { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string; unit?: string }> }> },
     routingSupported: boolean,
     groups?: { buses: number; subgroups: number; mute_groups: number; mg_assign?: boolean; sub_assign?: boolean },
     filesSupported?: boolean,
@@ -229,7 +229,7 @@ export class LibraryStore {
   get fxSlots(): FxSlotView[] {
     return this._fxSlots.map((s) => ({ ...s, params: { ...s.params } }));
   }
-  get fxCaps(): { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string }> }> } | null {
+  get fxCaps(): { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string; unit?: string }> }> } | null {
     return this._fxCaps ? { slots: this._fxCaps.slots, types: this._fxCaps.types.map((t) => ({ id: t.id, label: t.label, params: t.params.map((q) => ({ ...q })) })) } : null;
   }
   fxSetType(slot: number, type: string): void {

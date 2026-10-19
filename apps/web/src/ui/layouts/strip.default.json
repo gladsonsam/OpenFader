@@ -25,7 +25,6 @@
     {
       "id": "pan",
       "module": "strip-pan",
-      "variants": { "phone": { "hidden": true } },
       "bind": {
         "value": "item.pan",
         "name": "item.name",
@@ -136,6 +135,9 @@
         "flex": "3 1 240px",
         "minHeight": 180
       },
+      "variants": {
+        "phone": { "props": { "flex": "5 1 320px", "minHeight": 240 } }
+      },
       "children": [
         {
           "id": "fader",
@@ -237,6 +239,7 @@
           "id": "name",
           "module": "strip-name",
           "when": "device != 'phone'",
+          "variants": { "phone": { "hidden": true } },
           "props": {
             "variant": "strip"
           },
@@ -261,6 +264,7 @@
           "id": "name-open",
           "module": "strip-name",
           "when": "device == 'phone'",
+          "variants": { "phone": { "hidden": true } },
           "props": {
             "variant": "strip"
           },
@@ -270,6 +274,36 @@
             "color": "item.color",
             "text": "item.text",
             "icon": "item.icon",
+            "selectAria": "item.selectAria"
+          },
+          "on": {
+            "select": [
+              {
+                "do": "ui.select",
+                "args": {
+                  "id": { "$expr": "item.id" }
+                }
+              },
+              {
+                "do": "ui.openPage",
+                "args": { "mode": "channel" }
+              }
+            ]
+          }
+        },
+        {
+          "id": "strip-tag",
+          "module": "strip-tag",
+          "variants": {
+            "desktop": { "hidden": true },
+            "tablet": { "hidden": true },
+            "phone": { "hidden": false }
+          },
+          "bind": {
+            "name": "item.name",
+            "sub": "item.sub",
+            "color": "item.color",
+            "text": "item.text",
             "selectAria": "item.selectAria"
           },
           "on": {

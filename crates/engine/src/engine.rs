@@ -1904,8 +1904,10 @@ impl Engine {
     // ================= R2: FX =================
 
     /// `caps.fx` for the named driver: slot count + type tables (design
-    /// racks carry the six design tables from `core::fx`; numbered /
-    /// rack-less drivers carry none — see README matrix).
+    /// racks carry the six design tables from `core::fx`; the X-Air
+    /// desk-native rack carries the 60 documented algorithms from
+    /// `proto-xair::fx` with labeled `parNN` params; rack-less drivers
+    /// carry none — see README matrix).
     fn fx_caps(&self, driver: &str) -> crate::protocol::FxCaps {
         let drv = self.drv(driver);
         let types = if drv.fx_flavor() == FxFlavor::Design {
@@ -1929,6 +1931,8 @@ impl Engine {
                         .collect(),
                 })
                 .collect()
+        } else if driver == "xair" {
+            xair_fx_caps()
         } else {
             Vec::new()
         };
@@ -1995,7 +1999,10 @@ impl Engine {
     }
 
     /// Read FX rows from the active driver (design racks fully mirrored;
-    /// elsewhere honest placeholder rows — type unknown, no params).
+    /// the X-Air desk-native rack reads the live type + used params per
+    /// slot over the verified `/fx/N/type` + `/fx/N/par/MM` path —
+    /// best-effort, unreadable slots stay honest placeholders; rack-less
+    /// drivers keep placeholders).
     async fn read_fx_rows(&self) -> Vec<FxSlotRt> {
         let drv = self.active_drv();
         if drv.fx_flavor() == FxFlavor::Design {
@@ -2012,7 +2019,14 @@ impl Engine {
                 })
                 .collect();
         }
-        // Numbered/rack-less drivers are not polled (no verified state
+        if drv.fx_flavor() == FxFlavor::Numbered && self.active_driver() == "xair" {
+            let mut rows = Vec::new();
+            for slot in 1..=drv.fx_slot_count() as u8 {
+                rows.push(self.read_xair_slot(slot).await);
+            }
+            return rows;
+        }
+        // Rack-less drivers are not polled (no verified state
         // path — writes are fire-and-forget there). Placeholder rows stay
         // placeholders: never inherit sim-seeded rows (or any unverified
         // state) as `prev` — the UI renders "—" honestly.
@@ -2027,11 +2041,46 @@ impl Engine {
             .collect()
     }
 
-    /// One FX poll read (round-robin over the design rack; silent unless a
-    /// value changed). Other racks are not polled (no verified state path
-    /// — writes are fire-and-forget there).
+    /// Best-effort live read of one X-Air FX slot: type first (unknown on
+    /// error), then each used param of the loaded effect (`parNN` keys).
+    /// On/off has no verified leaf and stays at the honest placeholder
+    /// (`on: true`, `bypass: false`) so the UI keeps the toggle hidden.
+    async fn read_xair_slot(&self, slot: u8) -> FxSlotRt {
+        let drv = self.active_drv();
+        let name = drv
+            .fx_type_index(slot)
+            .await
+            .and_then(xair_type_name)
+            .unwrap_or("—")
+            .to_string();
+        let mut params = BTreeMap::new();
+        if let Some(index) = xair_type_index_of(&name) {
+            let used = openmix_proto_xair::fx::fx_param_count(index).unwrap_or(0);
+            for i in 0..used {
+                if let Ok(v) = drv.get_fx_param(slot, i).await {
+                    params.insert(format!("par{:02}", i + 1), v);
+                }
+            }
+        }
+        FxSlotRt {
+            slot,
+            fx_type: name,
+            on: true,
+            bypass: false,
+            params,
+        }
+    }
+
+    /// One FX poll read (round-robin over the design rack, or one live
+    /// X-Air slot param per tick; silent unless a value changed). Other
+    /// numbered/rack-less racks are not polled (no verified state path —
+    /// writes are fire-and-forget there).
     async fn fx_refresh_one(&self) {
         let drv = self.active_drv();
+        if drv.fx_flavor() == FxFlavor::Numbered && self.active_driver() == "xair" {
+            self.fx_refresh_one_xair().await;
+            return;
+        }
         if drv.fx_flavor() != FxFlavor::Design {
             return;
         }
@@ -2058,6 +2107,81 @@ impl Engine {
                 row.params = fresh;
             }
             diff
+        };
+        if changed {
+            self.broadcast(&self.fx_message().await);
+        }
+    }
+
+    /// One X-Air poll tick: a single live read (type when the cached row
+    /// is still a placeholder, else one rotating param of the loaded
+    /// effect). One query per tick keeps LAN load flat; desk-side moves
+    /// converge within a few ticks and broadcasts only on change.
+    async fn fx_refresh_one_xair(&self) {
+        let count = self.active_drv().fx_slot_count();
+        if count == 0 {
+            return;
+        }
+        let n = self.fx_cursor.fetch_add(1, Ordering::Relaxed) as usize;
+        let slot = (n % count) as u8 + 1;
+        let drv = self.active_drv();
+        // Placeholder row: read the type (one query); params fill in on
+        // later ticks once the effect (and its used count) is known.
+        let cached_type = self
+            .fx_cache
+            .read()
+            .unwrap()
+            .iter()
+            .find(|r| r.slot == slot)
+            .map(|r| r.fx_type.clone())
+            .unwrap_or_default();
+        if xair_type_index_of(&cached_type).is_none() {
+            let fresh = self.read_xair_slot(slot).await;
+            let changed = {
+                let mut cache = self.fx_cache.write().unwrap();
+                match cache.iter_mut().find(|r| r.slot == slot) {
+                    Some(row) => {
+                        let diff =
+                            row.fx_type != fresh.fx_type || row.params != fresh.params;
+                        if diff {
+                            row.fx_type = fresh.fx_type.clone();
+                            row.params = fresh.params.clone();
+                        }
+                        diff
+                    }
+                    None => false,
+                }
+            };
+            if changed {
+                self.broadcast(&self.fx_message().await);
+            }
+            return;
+        }
+        let index = match xair_type_index_of(&cached_type) {
+            Some(i) => i,
+            None => return,
+        };
+        let used = openmix_proto_xair::fx::fx_param_count(index).unwrap_or(0);
+        if used == 0 {
+            return;
+        }
+        let idx = ((n / count) % used as usize) as u8;
+        let Ok(v) = drv.get_fx_param(slot, idx).await else {
+            return;
+        };
+        let key = format!("par{:02}", idx + 1);
+        let changed = {
+            let mut cache = self.fx_cache.write().unwrap();
+            match cache.iter_mut().find(|r| r.slot == slot) {
+                Some(row) => {
+                    let diff = row.params.get(&key).copied() != Some(v);
+                    if diff {
+                        row.params.insert(key, v);
+                    }
+                    diff
+                }
+                None => false,
+            }
         };
         if changed {
             self.broadcast(&self.fx_message().await);
@@ -4430,6 +4554,72 @@ fn param_vec_to_map(fx_type: &str, values: &[f32]) -> BTreeMap<String, f32> {
             .map(|(i, v)| (format!("p{i}"), *v))
             .collect(),
     }
+}
+
+/// Desk-native FX type tables for `caps.fx` on `xair`: the 60 documented
+/// algorithms from `proto-xair::fx` (index 15 is an undocumented gap in
+/// the wire order and stays out, like the `None` fallback there).
+///
+/// Param ids are the verified wire numbers (`par01..par64`); labels are
+/// the X-Air display names with the dual-block bank (`A`/`B`) appended
+/// and a `?` suffix on research-low-confidence (`inferred`) rows. Ranges
+/// are normalized (`0..1`, the desk's wire domain for FX pars —
+/// bit-exact, no fader epsilon); the display ranges in the notes are
+/// strings (`1k`, `20k`) that do not fit the numeric caps shape, so the
+/// UI formats normalized values as percent and shows `unit` alongside.
+fn xair_fx_caps() -> Vec<crate::protocol::FxTypeCaps> {
+    use openmix_proto_xair::fx as xfx;
+    let mut out = Vec::new();
+    for index in 0..=xfx::FX_TYPE_MAX {
+        let Some(name) = xfx::fx_effect_name(index) else {
+            continue;
+        };
+        let mut params = Vec::new();
+        for par in 1..=xfx::PARAM_COUNT as u8 {
+            let Some(def) = xfx::fx_param_def(index, par) else {
+                continue;
+            };
+            let mut label = def.label.to_string();
+            if let Some(bank) = def.bank {
+                label.push(' ');
+                label.push_str(bank);
+            }
+            if def.inferred {
+                label.push('?');
+            }
+            params.push(crate::protocol::FxParamCaps {
+                id: format!("par{par:02}"),
+                label,
+                unit: def.unit.to_string(),
+                min: 0.0,
+                max: 1.0,
+                default: 0.5,
+                scale: "lin".to_string(),
+            });
+        }
+        out.push(crate::protocol::FxTypeCaps {
+            id: name.to_string(),
+            label: name.to_string(),
+            params,
+        });
+    }
+    out
+}
+
+/// Desk-native effect name for a `/fx/N/type` index (`None` = gap/unknown).
+fn xair_type_name(index: u8) -> Option<&'static str> {
+    openmix_proto_xair::fx::fx_effect_name(index)
+}
+
+/// Reverse lookup: effect name back to its `/fx/N/type` index (`None`
+/// for placeholders like `—` or unknown names).
+fn xair_type_index_of(name: &str) -> Option<u8> {
+    for index in 0..=openmix_proto_xair::fx::FX_TYPE_MAX {
+        if openmix_proto_xair::fx::fx_effect_name(index) == Some(name) {
+            return Some(index);
+        }
+    }
+    None
 }
 
 /// Parse a patch label (`Lcl 01`, `Net 12`, `USB 03`) into (group, 1-based

@@ -44,7 +44,10 @@
       // momentum scrolling on iOS. No-op when content fits (desktop).
       'min-width:0',
       'min-height:0',
-      props.snap ? `scroll-snap-type:${props.snap} proximity` : undefined,
+      // The 48-strip pager parks a strip under the finger (mandatory);
+      // every other snap scroller (channel tab rail) stays proximity so
+      // it never fights the user mid-swipe.
+      props.snap ? `scroll-snap-type:${props.snap} ${nodeId === 'strip-scroll' ? 'mandatory' : 'proximity'}` : undefined,
       gapCss(props.gap),
       sizeCss(props.width) ? `width:${sizeCss(props.width)}` : undefined,
       sizeCss(props.height) ? `height:${sizeCss(props.height)}` : undefined,
@@ -58,12 +61,34 @@
   let el: HTMLDivElement | null = $state(null);
   let gest: { id: number; x0: number; y0: number; sl: number } | null = null;
   let scrolling = $state(false);
+  // Mouse-fling momentum: smoothed release velocity (px/frame at 60fps),
+  // decayed per frame until it drops below the stop threshold. Touch/pen
+  // keep native momentum; mouse has none, so the container emulates it.
+  let flingV = 0;
+  let flingRaf = 0;
+  let lastX = 0;
+  let lastT = 0;
+
+  function cancelFling(): void {
+    flingV = 0;
+    if (flingRaf) {
+      cancelAnimationFrame(flingRaf);
+      flingRaf = 0;
+    }
+  }
 
   function down(e: PointerEvent): void {
+    if (!e.isPrimary) return;
+    // Any new press (mouse, touch, pen) or wheel kills a running fling:
+    // the user owns the scroll position again.
+    cancelFling();
     if (!props.dragScroll) return;
-    if (e.pointerType !== 'mouse' || !e.isPrimary || e.button !== 0) return;
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
     // Record only: never capture here, or child controls could not drag.
     gest = { id: e.pointerId, x0: e.clientX, y0: e.clientY, sl: el?.scrollLeft ?? 0 };
+    lastX = e.clientX;
+    lastT = e.timeStamp;
+    flingV = 0;
   }
   function move(e: PointerEvent): void {
     if (!props.dragScroll || !gest || e.pointerId !== gest.id) return;
@@ -74,6 +99,13 @@
     }
     if (scrolling) {
       if (el) el.scrollLeft = gest.sl - (e.clientX - gest.x0);
+      // Smoothed per-frame velocity for the release fling.
+      const now = e.timeStamp;
+      const dt = Math.max(1, now - lastT);
+      const inst = ((e.clientX - lastX) / dt) * 16;
+      flingV = flingV * 0.7 + inst * 0.3;
+      lastX = e.clientX;
+      lastT = now;
       return;
     }
     // A child that already captured (fader locked vertical, pan locked
@@ -116,8 +148,38 @@
   }
   function end(e: PointerEvent): void {
     if (e.pointerId !== gest?.id) return;
+    // Explicit release: the horizontal lock stole this pointer via
+    // setPointerCapture; hand it back so later gestures start clean.
+    try {
+      if (el?.hasPointerCapture(e.pointerId)) el.releasePointerCapture(e.pointerId);
+    } catch {
+      /* noop */
+    }
+    const wasScrolling = scrolling;
+    const v = flingV;
     gest = null;
     scrolling = false;
+    flingV = 0;
+    // Release fling: keep gliding along the drag direction, decaying until
+    // the snap — or the next press/wheel/touch — stops us.
+    if (wasScrolling && Math.abs(v) > 1 && el) {
+      const target = el;
+      flingV = v;
+      const step = (): void => {
+        if (!target.isConnected) {
+          flingRaf = 0;
+          return;
+        }
+        target.scrollLeft -= flingV;
+        flingV *= 0.95;
+        if (Math.abs(flingV) < 0.5) {
+          flingRaf = 0;
+          return;
+        }
+        flingRaf = requestAnimationFrame(step);
+      };
+      flingRaf = requestAnimationFrame(step);
+    }
   }
 </script>
 
@@ -130,6 +192,8 @@
   onpointermove={move}
   onpointerup={end}
   onpointercancel={end}
+  onwheel={cancelFling}
+  ontouchstart={cancelFling}
 >
   {@render children?.()}
 </div>
