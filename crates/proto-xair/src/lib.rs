@@ -909,12 +909,12 @@ impl XAirDriver {
     async fn sweep_peer(host: &str) -> anyhow::Result<SocketAddr> {
         use openmix_transport::session::resolve_peer;
         if probe_port(host, addrs::PORT).await {
-            return Ok(resolve_peer(host, addrs::PORT)?);
+            return resolve_peer(host, addrs::PORT);
         }
         if probe_port(host, addrs::FALLBACK_PORT).await {
-            return Ok(resolve_peer(host, addrs::FALLBACK_PORT)?);
+            return resolve_peer(host, addrs::FALLBACK_PORT);
         }
-        Ok(resolve_peer(host, addrs::PORT)?)
+        resolve_peer(host, addrs::PORT)
     }
 
     async fn session(&self) -> anyhow::Result<tokio::sync::MutexGuard<'_, Option<OscSession>>> {

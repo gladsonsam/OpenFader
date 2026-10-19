@@ -536,7 +536,7 @@ fn seed_params_for_family(idx: usize, name: &str, kind: StripKind) -> HashMap<St
     let pos_in_family = (idx % 8) as u8;
     m.insert("eq_on".into(), b(idx % 4 != 3));
     let compressed = matches!(kind, StripKind::Bus | StripKind::Mtx | StripKind::Main)
-        && pos_in_family % 2 == 0;
+        && pos_in_family.is_multiple_of(2);
     m.insert("comp_on".into(), b(compressed));
     m.insert("comp_thr".into(), f(if compressed { -20.0 } else { -10.0 }));
     m.insert("comp_ratio".into(), f(if compressed { 4.0 } else { 2.0 }));
@@ -1199,7 +1199,7 @@ impl MixerDriver for SimDriver {
             ("name", ParamValue::Text(n)) => return self.set_name(strip, n).await,
             ("pan", ParamValue::Float(v)) => {
                 if !openmix_core::params::supports_kind(
-                    &openmix_core::params::find("pan").expect("catalogue has pan"),
+                    openmix_core::params::find("pan").expect("catalogue has pan"),
                     kind,
                 ) {
                     anyhow::bail!("sim: pan out of scope for {kind:?} strips");
@@ -1237,7 +1237,7 @@ impl MixerDriver for SimDriver {
             "name" => return self.get_name(strip).await.map(ParamValue::Text),
             "pan" => {
                 if !openmix_core::params::supports_kind(
-                    &openmix_core::params::find("pan").expect("catalogue has pan"),
+                    openmix_core::params::find("pan").expect("catalogue has pan"),
                     kind,
                 ) {
                     anyhow::bail!("sim: pan out of scope for {kind:?} strips");
