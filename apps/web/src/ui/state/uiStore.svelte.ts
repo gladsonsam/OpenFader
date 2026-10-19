@@ -119,6 +119,7 @@ import {
   bridgeEqOn,
   bridgeEqType,
   bridgeFader,
+  bridgeStrip,
   bridgeFxBypass,
   bridgeFxOn,
   bridgeFxParamByIndex,
@@ -127,6 +128,8 @@ import {
   bridgeHpfOn,
   bridgeHpfSlope,
   bridgeInputBool,
+  bridgeLrAssign,
+  bridgeAutomixWeight,
   bridgeMute,
   bridgeMuteGroupAssign,
   bridgeMuteGroupMute,
@@ -135,6 +138,7 @@ import {
   bridgePatch,
   bridgeSend,
   bridgeSendPre,
+  bridgeSendGrpon,
   bridgeSolo,
   bridgeSubgroupAssign,
   bridgeSubgroupMute,
@@ -740,6 +744,33 @@ export const ui = {
       update(toggleSendPre(world, id, k));
       const nv = world.chans[id]?.sendPre?.[k];
       if (typeof nv === 'boolean') forward(w => { bridgeSendPre(w, id, k, nv); });
+    },
+    // Desk send group-on (desk-only: no fixture counterpart — the send
+    // rows read this state straight from the engine; the echo re-renders).
+    // Inverts the current echo-confirmed value (null = unknown -> group on).
+    toggleSendGrpon: (id: string, k: number) => {
+      if (world.state.locked) return;
+      forward(w => {
+        const ch = bridgeStrip(w, id);
+        if (ch === null) return;
+        const cur = w.param(ch, `send${k + 1}_grpon`);
+        bridgeSendGrpon(w, id, k, !(cur === true));
+      });
+    },
+    // Desk mix config (desk-only: LR assign + automix weight ride the
+    // engine params; the echo re-renders the card).
+    setLrAssign: (id: string, assigned: boolean) => {
+      if (world.state.locked || typeof assigned !== 'boolean') return;
+      forward(w => { bridgeLrAssign(w, id, assigned); });
+    },
+    setAutomixWeight: (id: string, value: number) => {
+      if (world.state.locked || !Number.isFinite(value)) return;
+      forward(w => { bridgeAutomixWeight(w, id, Math.min(1, Math.max(0, value))); });
+    },
+    // Desk fire-and-forget clear-solo (monitor bus only).
+    clearSolos: () => {
+      if (world.state.locked) return;
+      forward(w => { w.clearSolo(); });
     },
     setFxSel: (i: number) => update(setFxSel(world, i)),
     setFxType: (i: number, t: string) => {

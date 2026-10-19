@@ -16,6 +16,7 @@ import {
   masterStripVm,
   sendRowsVm,
   tabListEntries,
+  type DeskSendsOverlay,
   type InputVm,
   type MasterStripVm,
   type SendRowVm,
@@ -53,6 +54,8 @@ import type { Channel } from '../fixtures/designData.ts';
 import type { Tab, UiState, World } from '../state/uiLogic.ts';
 import type { GroupsVm, LiveGroupsSource } from './groupsModel.ts';
 import { groupsVmFor } from './groupsModel.ts';
+import type { DeskVm, LiveDeskSource } from './deskModel.ts';
+import { deskVmFor } from './deskModel.ts';
 
 export interface ChannelScopeFeeds {
   /** Live meter feed for the master strip fader (reads ui.meter). */
@@ -74,7 +77,11 @@ export interface ChannelScopeArgs extends ChannelScopeFeeds {
   fx: import('../state/uiLogic.ts').World['fx'];
   sel: Channel;
   /** Live desk groups source (null offline: the card hides). */
-  liveGroups: LiveGroupsSource | null;
+  liveGroups?: LiveGroupsSource | null;
+  /** Live desk-config source (null offline: the card hides). */
+  liveDesk?: LiveDeskSource | null;
+  /** Live desk send overlay (null offline: GRP buttons hide). */
+  deskSends?: DeskSendsOverlay | null;
 }
 
 export interface ChannelScope {
@@ -151,6 +158,8 @@ export interface ChannelScope {
   frozen: boolean;
   /** Desk groups card vm (null offline: the layout `when` hides the card). */
   groupsVm: GroupsVm | null;
+  /** Desk-config card vm (null offline: the layout `when` hides the card). */
+  deskVm: DeskVm | null;
 }
 
 /** Tab the dyn modules render for (gate tab -> gate, everything else -> comp). */
@@ -179,7 +188,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
   const ch = a.sel;
   const tab: Tab = a.state.tab;
   const tabs = tabListEntries(ch, tab);
-  const sendRows = sendRowsVm(ch);
+  const sendRows = sendRowsVm(ch, a.deskSends ?? null);
   const eq = ch.eq ?? null;
   const selBand = a.state.selBand;
   const eqGraph = eq ? eqGraphVm(eq, selBand) : null;
@@ -202,7 +211,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
   const compThr = comp ? dynThreshold(comp, DYN_LO.comp) : { x: '0', leftPct: '50', text: '' };
   const gateDot0 = gate ? dynDot('gate', gate, -90) : { leftPct: '0', topPct: '100' };
   const compDot0 = comp ? dynDot('comp', comp, -90) : { leftPct: '0', topPct: '100' };
-  const groups = groupsVmFor(a.liveGroups);
+  const groups = groupsVmFor(a.liveGroups ?? null);
   // Phone-only 6th rail entry (desktop/tablet render `tabs`, untouched).
   // Selected visuals copy tabListEntries; the note is the mute-master
   // count so the rail is glanceable without opening the tab.
@@ -277,5 +286,6 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     dynGetLevel: a.dynGetLevel,
     frozen: a.frozen,
     groupsVm: groups,
+    deskVm: deskVmFor(a.liveDesk ?? null),
   };
 }

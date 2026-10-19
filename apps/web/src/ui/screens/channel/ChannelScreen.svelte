@@ -11,6 +11,8 @@
   import { live } from '../../state/live.svelte.ts';
   import { bridgeStrip } from '../../state/engineBridge.ts';
   import type { LiveGroupsSource } from './groupsModel.ts';
+  import type { LiveDeskSource } from './deskModel.ts';
+  import type { DeskSendsOverlay } from './channelModel.ts';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
   import { fixtureSource } from '../../modules/context.ts';
   import { createProfileStore } from '../../modules/profile/store.svelte.ts';
@@ -86,6 +88,50 @@
     };
   }
 
+  // Live desk-config source for the selected channel (LR assign +
+  // automix weight, both caps-gated). Null offline/unmapped/unsupported:
+  // the card hides and fixture mode is untouched.
+  function liveDeskSource(): LiveDeskSource | null {
+    void live.version; // re-read on every engine ingest (control frames only)
+    const w = live.engine;
+    if (live.phase !== 'online' || !w || !w.capsReady) return null;
+    const ch = bridgeStrip(w, ui.sel.id);
+    if (ch === null) return null;
+    const lr = w.supports('lr_assign', ch);
+    const automix = w.supports('automix_weight', ch);
+    if (!lr && !automix) return null;
+    return {
+      engineCh: ch,
+      driver: w.driver,
+      lrSupported: lr,
+      lrAssign: () => {
+        const v = w.param(ch, 'lr_assign');
+        return typeof v === 'boolean' ? v : null;
+      },
+      automixSupported: automix,
+      automixWeight: () => {
+        const v = w.param(ch, 'automix_weight');
+        return typeof v === 'number' ? v : null;
+      },
+    };
+  }
+
+  // Live desk send overlay (group-on per send slot, caps-gated per slot).
+  function deskSendsSource(): DeskSendsOverlay | null {
+    void live.version; // re-read on every engine ingest (control frames only)
+    const w = live.engine;
+    if (live.phase !== 'online' || !w || !w.capsReady) return null;
+    const ch = bridgeStrip(w, ui.sel.id);
+    if (ch === null) return null;
+    return {
+      grpon: (n: number) => {
+        const v = w.param(ch, `send${n}_grpon`);
+        return typeof v === 'boolean' ? v : null;
+      },
+      grponSupported: (n: number) => w.supports(`send${n}_grpon`, ch),
+    };
+  }
+
   // Glanceable status icons for the selected channel's master strip
   // (phantom, groups, link, invert, delay — echo-confirmed only, null
   // offline: the icons' `when` hides them and fixture mode is untouched).
@@ -110,6 +156,8 @@
       levelDb,
       dynGetLevel,
       liveGroups: liveGroupsSource(),
+      liveDesk: liveDeskSource(),
+      deskSends: deskSendsSource(),
     }),
   );
   const scopeWithState = $derived({ ...scope, selState: selStateOf() });
