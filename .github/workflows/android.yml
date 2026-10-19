@@ -21,9 +21,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
       - name: install sdk packages
         run: |
+          yes | sdkmanager --licenses > /dev/null
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -63,9 +63,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - uses: android-actions/setup-android@v3
       - name: install sdk packages
         run: |
+          yes | sdkmanager --licenses > /dev/null
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
       - uses: dtolnay/rust-toolchain@stable
         with:
