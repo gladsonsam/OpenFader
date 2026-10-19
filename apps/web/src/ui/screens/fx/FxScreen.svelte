@@ -6,8 +6,9 @@
       This file only provides the layout: scope + profile + action binding.
       Live link (item 6/9): slots/types/params/meters come from the engine
       library online (writes go through the store forwards); fixture slots
-      render offline. X-Air serves 4 placeholder slots with no type tables,
-      so type grid + knobs collapse and the toggle hides. -->
+      render offline. X-Air serves 4 desk-native slots with caps.fx type
+      tables (short codes) + parNN knobs live; the on/bypass toggle stays
+      hidden there (no verified leaf — the engine rejects those writes). -->
 <script lang="ts">
   import { ui } from '../../state/uiStore.svelte.ts';
   import { live } from '../../state/live.svelte.ts';
@@ -112,17 +113,19 @@
       ? {
           title: fxTitle(liveSel, slot),
           // Unknown desk state ("—") hides the toggle honestly instead of
-          // a fake On; xair has no verified on/bypass leaf so its toggle
-          // stays hidden even once types/params read live.
+          // a fake On; xair has no verified on/bypass leaf (the engine
+          // rejects FxOn/FxBypass there) so its toggle stays hidden even
+          // though types + params read/write live.
           toggle: slot.type === '—' || isXair ? undefined : fxToggleVm(slot),
           isDelay: isXair
             ? XAIR_TAP_TYPES.includes(slot.type)
             : fxIsDelay(slot),
           tapLabel: fxTapLabel(slot),
-          // xair type-select has no verified mapping (engine rejects
-          // writes): show the loaded type in the title but keep the grid
-          // read-only-empty rather than forwarding failing writes.
-          types: isXair
+          // Type-select is engine-verified on xair (Numbered rack: desk
+          // short codes from caps.fx, e.g. HALL) and on design racks
+          // alike; fixture catalogue offline. Unknown desk types ("—")
+          // yield no grid (honest placeholder, never a faked write).
+          types: slot.type === '—'
             ? []
             : online
               ? (live.engine?.fxCaps?.types.map(t => ({ label: t.label, pressed: t.label === slot.type, bg: t.label === slot.type ? '#b28cff' : '#2b3038', fg: t.label === slot.type ? '#1a0f2e' : '#c9d1dc' })) ?? [])
