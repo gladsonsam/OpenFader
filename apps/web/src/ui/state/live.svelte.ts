@@ -20,9 +20,9 @@ import { TauriTransport, WsTransport, isTauriRuntime, type Transport } from '../
 import {
   CONNECT_TIMEOUT_MS,
   DEFAULT_RELAY_HOST,
+  SCAN_TIMEOUT_MS,
   isLoopbackHost,
   loadRecentDesks,
-  loadRelayAuto,
   loadRelayHost,
   pageHostSuggestion,
   relayHostFromSearch,
@@ -68,6 +68,15 @@ class LiveRelay {
   online = $state(false);
   capsReady = $state(false);
   latencyMs: number | null = $state(null);
+  /** Client-side scan-busy flag: the engine emits no scan-started event
+   *  (a `devices` frame only lands when the ~3 s sweep finishes), so the
+   *  connection screen tracks the press itself. Set by noteScanRequested,
+   *  cleared on the next devices frame (scannedAt moves) or after
+   *  SCAN_TIMEOUT_MS — never a fake device, just the button + list state. */
+  scanning = $state(false);
+  /** Honest scan failure hint (scan pressed with no link, or the sweep
+   *  timed out). Null = no failure to report. */
+  scanError: string | null = $state(null);
   /** Bumped on every engine ingest so screens re-read meters/version. */
   version = $state(0);
 
@@ -75,6 +84,8 @@ class LiveRelay {
   private world: EngineWorld | null = null;
   private unsubs: Array<() => void> = [];
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private scanTimer: ReturnType<typeof setTimeout> | null = null;
+  private scanBaseline = 0;
   private helloAt = 0;
 
   /** True inside the Tauri shell (desktop/mobile): the engine is embedded
@@ -148,10 +159,11 @@ class LiveRelay {
       } catch {
         /* ignore */
       }
-      // Native feel: reopen the app with the link up when the user left it
-      // up. Fixture/diff pages never auto-link (deterministic screenshots).
-      // Explicit offline mode suppresses the rejoin (zero network).
-      if (!loadOfflineMode() && loadRelayAuto() && this.phase === 'idle') this.connect();
+      // Native feel: the frontend<->backend link is automatic — the app
+      // always boots attached with zero user action. Fixture/diff pages
+      // never auto-link (deterministic screenshots). Explicit offline mode
+      // suppresses the link (zero network).
+      if (!loadOfflineMode() && this.phase === 'idle') this.connect();
     }
   }
 
@@ -190,13 +202,44 @@ class LiveRelay {
     return true;
   }
 
-  /** Recent manual-desk hosts for the add-by-IP field. */
+  /** Recent manual-desk hosts (retained for the engine probe path). */
   recentDesks(): string[] {
     return loadRecentDesks();
   }
 
   rememberDesk(host: string): string[] {
     return saveRecentDesk(host);
+  }
+
+  /**
+   * Track one Scan press client-side (`sent` = whether the command actually
+   * reached an engine — false when there is no link to send on). The busy
+   * flag clears on the next devices frame (see the world subscriber above)
+   * or after SCAN_TIMEOUT_MS, which reports an honest timeout hint.
+   */
+  noteScanRequested(sent: boolean): void {
+    this.clearScanTimer();
+    if (!sent) {
+      this.scanning = false;
+      this.scanError = 'Scan needs the relay link — retry once online.';
+      return;
+    }
+    this.scanError = null;
+    this.scanning = true;
+    this.scanBaseline = this.world?.scannedAt ?? 0;
+    this.scanTimer = setTimeout(() => {
+      this.scanTimer = null;
+      if (!this.scanning) return;
+      this.scanning = false;
+      this.scanError = 'Scan timed out — no response. Retry Scan, or work offline below.';
+    }, SCAN_TIMEOUT_MS);
+  }
+
+  private clearScanTimer(): void {
+    if (this.scanTimer !== null) {
+      clearTimeout(this.scanTimer);
+      this.scanTimer = null;
+    }
   }
 
   connect(host?: string, driver?: string, addr?: string): void {
@@ -231,6 +274,13 @@ class LiveRelay {
     this.unsubs.push(
       world.subscribe(() => {
         this.version++;
+        // The sweep finished: a devices frame moved scannedAt past the
+        // press-time baseline — drop the busy state (the timeout below is
+        // only the fallback for a sweep that never reports back).
+        if (this.scanning && world.scannedAt !== this.scanBaseline) {
+          this.scanning = false;
+          this.clearScanTimer();
+        }
         if (!this.capsReady && world.capsReady) {
           this.capsReady = true;
           this.latencyMs = Date.now() - this.helloAt;
@@ -304,6 +354,8 @@ class LiveRelay {
 
   private fail(msg: string): void {
     this.clearTimer();
+    this.clearScanTimer();
+    this.scanning = false;
     this.teardown();
     this.phase = 'error';
     this.message = msg;
@@ -312,6 +364,9 @@ class LiveRelay {
 
   disconnect(): void {
     this.clearTimer();
+    this.clearScanTimer();
+    this.scanning = false;
+    this.scanError = null;
     this.teardown();
     this.phase = 'idle';
     this.message = 'Not connected';

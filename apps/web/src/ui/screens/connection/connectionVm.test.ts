@@ -92,23 +92,38 @@ assert.equal(w0.state.connected, 'foh');
   assert.equal(vm.isConnected, false);
 }
 
-// Live relay state owns the status card when a link is active.
+// Live relay state never owns the status card: the frontend<->backend link
+// is automatic and unshown — only DESK state renders (rows + honest hints).
 {
   const base = { phase: 'connecting' as const, message: 'Connecting to h …', host: 'h', latencyMs: null, strips: 0 };
   const busy = buildConnectionVm(w0.state, base);
-  assert.equal(busy.title, 'Connecting to relay …');
-  assert.equal(busy.dot, '#f0b44a');
+  assert.equal(busy.title, 'Not connected');
+  assert.equal(busy.dot, '#ff4a3d');
   assert.equal(busy.isConnected, false);
+  assert.equal(busy.showFix, false);
+  assert.equal(busy.showManualDesk, false);
 
-  const on = buildConnectionVm(w0.state, { ...base, phase: 'online', message: 'Live · sim · 77 strips', latencyMs: 12, strips: 77 });
-  assert.equal(on.title, 'Live · relay link');
-  assert.equal(on.sub, 'Live · sim · 77 strips · h');
-  assert.equal(on.dot, '#5fe060');
+  const desks = [
+    { id: 'xair-1', name: 'XR18', model: 'X-Air XR18', ip: '192.168.40.123', kind: 'console', state: 'reachable', fw: null, via: 'broadcast' },
+  ];
+  const on = buildConnectionVm(w0.state, { ...base, phase: 'online', message: 'Live · sim · 77 strips', latencyMs: 12, strips: 77, devices: desks, scannedAt: 1 });
+  assert.equal(on.title, 'Not connected');
+  assert.equal(on.devices.length, 1);
+  assert.equal(on.devices[0]!.name, 'XR18');
+  assert.equal(on.emptyText, null);
+
+  const linked = buildConnectionVm(w0.state, { ...base, phase: 'online', message: 'Live', latencyMs: 12, strips: 77, devices: desks, scannedAt: 1, linkName: 'XR18' });
+  assert.equal(linked.title, 'Connected to XR18');
+  assert.equal(linked.sub, 'X-Air XR18 · 192.168.40.123');
+  assert.equal(linked.dot, '#5fe060');
 
   const err = buildConnectionVm(w0.state, { ...base, phase: 'error', message: 'No response from relay at h' });
-  assert.equal(err.title, 'Relay connection failed');
-  assert.equal(err.sub, 'No response from relay at h');
+  assert.equal(err.title, 'Not connected');
+  assert.equal(err.sub, 'Pick a console below');
   assert.equal(err.dot, '#ff4a3d');
+
+  const unscanned = buildConnectionVm(w0.state, { ...base, phase: 'online', message: 'Live', latencyMs: 1, strips: 0, devices: [], scannedAt: 0 });
+  assert.equal(unscanned.emptyText, 'Press Scan to list the desks on this network.');
 }
 
 console.log('connectionVm.test.ts: ok');
