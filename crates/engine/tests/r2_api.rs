@@ -1006,3 +1006,57 @@ async fn probe_garbage_addr_errors_without_listing() {
     let list = ev_json(&event).get("list").and_then(Value::as_array).unwrap().clone();
     assert_eq!(list.len(), 0);
 }
+
+// ---------- v2b param ids (map milestone): generic strip path, sim-backed ----------
+
+/// The newly-verified X-Air strip ids (`lr_assign`, `automix_weight`,
+/// `send1_grpon`) flow through the generic engine strip-param path with
+/// zero per-id work: they ride `caps`, write via `Cmd::Param`, and echo
+/// the confirmed value. Desk behaviour itself stays UNVERIFIED-ON-RIG
+/// (LIVE-RIG §10); this locks the relay side on sim.
+#[tokio::test]
+async fn new_xair_strip_ids_roundtrip_on_sim() {
+    let engine = new_engine().await;
+    let mut client = engine.attach(None).await;
+    let snap = drain_snapshot(&mut client).await;
+    let caps = snap.iter().find(|e| matches!(e, Event::Caps { .. })).unwrap();
+    let params = ev_json(caps).get("params").and_then(Value::as_array).unwrap().clone();
+    let ids: Vec<&str> = params
+        .iter()
+        .filter_map(|p| p.get("id").and_then(Value::as_str))
+        .collect();
+    for id in ["lr_assign", "automix_weight", "send1_grpon", "send10_grpon"] {
+        assert!(ids.contains(&id), "sim caps carries {id}");
+    }
+    // lr_assign is a bool (default true on sim): false round-trips.
+    client
+        .send(Cmd::Param { ch: 0, field: "lr_assign".to_string(), value: json!(false), key: None })
+        .await
+        .unwrap();
+    let e = wait_for(&mut client, |e| {
+        matches!(e, Event::Param { field, .. } if field == "lr_assign")
+    })
+    .await;
+    assert_eq!(ev_json(&e).get("value"), Some(&json!(false)));
+    // automix_weight is a float: a test value round-trips bit-exact on sim
+    // (0.25 is binary-exact, so no f32 Hoare noise in the assert).
+    client
+        .send(Cmd::Param { ch: 0, field: "automix_weight".to_string(), value: json!(0.25), key: None })
+        .await
+        .unwrap();
+    let e = wait_for(&mut client, |e| {
+        matches!(e, Event::Param { field, .. } if field == "automix_weight")
+    })
+    .await;
+    assert_eq!(ev_json(&e).get("value"), Some(&json!(0.25)));
+    // send1_grpon is a bool send leaf (default false): true round-trips.
+    client
+        .send(Cmd::Param { ch: 0, field: "send1_grpon".to_string(), value: json!(true), key: None })
+        .await
+        .unwrap();
+    let e = wait_for(&mut client, |e| {
+        matches!(e, Event::Param { field, .. } if field == "send1_grpon")
+    })
+    .await;
+    assert_eq!(ev_json(&e).get("value"), Some(&json!(true)));
+}
