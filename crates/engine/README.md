@@ -20,7 +20,7 @@ use openmix_engine::{Cmd, Engine, EngineConfig};
 let engine: Arc<Engine> = Engine::new(EngineConfig::default());
 engine.connect("sim", None).await?;        // initial driver (adapters stay up on failure)
 let mut client = engine.attach(Some("ui".to_string())).await;
-client.send(Cmd::Fader { ch: 0, value: 0.5 }).await?;
+client.send(Cmd::Fader { ch: 0, key: None, value: 0.5 }).await?;
 // or raw off the socket: client.send_json(r#"{"cmd":"fader","ch":0,"value":0.5}"#).await?;
 while let Some(event) = client.events.recv().await {
     socket.send(event.to_json()).await?;
@@ -53,12 +53,12 @@ client.detach().await; // also runs on drop
 | cmd | fields | reply |
 |-----|--------|-------|
 | `connect` | `driver` (`sim` default), `addr?` | unicast `you` + broadcast `state`, `caps` (cache cleared) |
-| `fader` | `ch`, `value` 0.0..=1.0 | broadcast `state` (`by` = writer) |
+| `fader` | `ch`, `value` 0.0..=1.0, `key?` (stable strip key, wins over `ch`) | broadcast `state` (`by` = writer) |
 | `main_fader` / `set_main_fader` (alias) | `value` 0.0..=1.0 (validated) | broadcast `state` (`by`); not strip-locked |
-| `mute` | `ch`, `muted` | broadcast `state` (`by`) |
-| `param` | `ch`, `field`, `value` (number\|bool\|string) | broadcast confirmed `param` (`by`) + `state` |
-| `focus` | `ch` **or** `chs:[...]` | none on success; `error` when all out of range (partial: valid focus + `error` naming the ignored) |
-| `lock` / `unlock` | `ch` | broadcast `locks`; contending/foreign ops denied with `locked_by` |
+| `mute` | `ch`, `muted`, `key?` | broadcast `state` (`by`) |
+| `param` | `ch`, `field`, `value` (number\|bool\|string), `key?` | broadcast confirmed `param` (`by`) + `state` |
+| `focus` | `ch` **or** `chs:[...]` (indices or stable keys) | none on success; `error` when all out of range (partial: valid focus + `error` naming the ignored) |
+| `lock` / `unlock` | `ch`, `key?` | broadcast `locks`; contending/foreign ops denied with `locked_by` |
 | `hello` | `binary_meters?` (bool), `taps?` (bool) | unicast `hello` ack with the current preferences (never broadcast) |
 | `list_shows` | — | unicast `shows` |
 | `capture_scene` | `show`, `name` (trimmed, non-empty) | broadcast `shows` |
@@ -69,7 +69,7 @@ client.detach().await; // also runs on drop
 | `disconnect` (R2) | — | broadcast `link` (`disconnected`); the session survives |
 | `info` (R2) | — | unicast `info` |
 | `scene_save` (R2) | `n` (1..=999), `name` | broadcast `scenes` |
-| `scene_recall` (R2) | `n`, `fade_ms?` (default 400, 0 jumps) | broadcast `param` (every applied value) + `state` + `scenes`; unicast `recalled` when foreign pins were overridden |
+| `scene_recall` (R2) | `n`, `fade_ms?` (default 400, 0 jumps), `scope?` (`strips?`, `strip_keys?`, `groups?`, `globals?`) | broadcast `param` (every applied value) + `state` + `scenes`; unicast `recalled` when foreign pins were overridden |
 | `scene_rename` (R2) | `n`, `name` | broadcast `scenes` |
 | `scene_delete` (R2) | `n` | broadcast `scenes` |
 | `scene_clear` (R2) | — | broadcast `scenes` (library emptied) |
@@ -77,8 +77,8 @@ client.detach().await; // also runs on drop
 | `fx_param` (R2) | `slot`, `id`, `value` 0.0..=1.0 | broadcast `fx` |
 | `fx_bypass` (R2) | `slot`, `bypass` | broadcast `fx` |
 | `fx_on` (R2) | `slot`, `on` | broadcast `fx` |
-| `patch_set` (R2) | `strip`, `group` (`Lcl`\|`Net`\|`USB`), `index` (1..=32) | broadcast `routing` |
-| `patch_clear` (R2) | `strip` | broadcast `routing` |
+| `patch_set` (R2) | `strip`, `group` (`Lcl`\|`Net`\|`USB`), `index` (1..=32), `key?` | broadcast `routing` |
+| `patch_clear` (R2) | `strip`, `key?` | broadcast `routing` |
 | `offline` (R2) | `model` (`sim`\|`xair`\|`dl32s`) | broadcast `state`, `caps`, `link` (`offline`), `fx`, `routing` |
 | `offline_push` (R2) | `confirm` (must be `true`) | broadcast `param` (every pushed value) + `state`; errors without a pending diff or without confirm |
 | `offline_discard` (R2) | — | broadcast `offline_diff` (`count: 0`) |
@@ -86,9 +86,9 @@ client.detach().await; // also runs on drop
 | `bus_mute` (R2) | `bus` (0-based), `muted` | broadcast full-state `bus` |
 | `subgroup_fader` (R2) | `group` (0-based), `value` 0.0..=1.0 | broadcast full-state `subgroup` |
 | `subgroup_mute` (R2) | `group` (0-based), `muted` | broadcast full-state `subgroup` |
-| `subgroup_assign` (R2) | `ch`, `group` (0-based), `member` | broadcast `subgroup_assign` echo; channel-lock checked |
+| `subgroup_assign` (R2) | `ch`, `group` (0-based), `member`, `key?` | broadcast `subgroup_assign` echo; channel-lock checked |
 | `mute_group` (R2) | `group` (0-based), `muted` | broadcast `mute_group` (re-read) |
-| `mute_group_assign` (R2) | `ch`, `group` (0-based), `member` | broadcast `mute_group_assign` echo; channel-lock checked |
+| `mute_group_assign` (R2) | `ch`, `group` (0-based), `member`, `key?` | broadcast `mute_group_assign` echo; channel-lock checked |
 | `file_download` (R2) | `filename` | unicast `file` with base64 `data` |
 | `file_upload` (R2) | `filename`, `data` (base64, ≤16 MiB), `file_type` | broadcast `file` ack (`data` absent, `size` = bytes written) |
 
@@ -109,12 +109,12 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
 - `you`: `{"type":"you","id":"client-1"}` — unicast on attach and as the
   `connect` reply, before `state`, so the client learns the id its later
   `by` tags carry. Distinct per client.
-- `state`: `{"type":"state","driver":"sim","strips":[{"ch","name","fader",
-  "muted"}],"main_fader":0.8|null,"by":"client-1"?}` — full snapshot on
+- `state`: `{"type":"state","driver":"sim","strips":[{"ch","key"?,"name",
+  "fader","muted"}],"main_fader":0.8|null,"by":"client-1"?}` — full snapshot on
   attach/connect and after every mutation. `main_fader` is `null` when the
   driver has none; `by` is absent on snapshots. LR main mirrors the Tauri
   `get_state` shape.
-- `param`: `{"type":"param","ch":1,"field":"gain","value":12.5,
+- `param`: `{"type":"param","ch":1,"key"?,"field":"gain","value":12.5,
   "by":"client-1"?}` — the confirmed (re-read) value after a `param`
   write, and once per applied value on `recall_scene`.
 - `shows`: `{"type":"shows","shows":[{"name":"gig","scenes":[{"name":
@@ -154,11 +154,11 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   ride the same frame). `params` maps design param ids to normalized
   0.0..=1.0 values; `ret_label` is the design return label (`Ret 1/2` …);
   `level` is the return meter 0..1 (sim-measured, 0.0 elsewhere).
-- `routing` (R2): `{"type":"routing","patches":[{strip,group,index,
+- `routing` (R2): `{"type":"routing","patches":[{strip,key?,group,index,
   label}...]}` — one row per patched input strip (`Lcl 01` style labels;
   empty where patching is unsupported).
-- `offline_diff` (R2): `{"type":"offline_diff","changes":[{strip,id,from,
-  to}...],"count":N}` — the recorded offline change list, emitted on
+- `offline_diff` (R2): `{"type":"offline_diff","changes":[{strip,key?,id,
+  from,to}...],"count":N}` — the recorded offline change list, emitted on
   connect while changes are pending (nothing pushes without
   `offline_push {"confirm":true}`) and after `offline_discard`
   (`count: 0`). Namespaced ids: `fx/<param>` (FX writes, strip = slot),
@@ -173,7 +173,7 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   (`float`|`bool`|`enum`|`text`),`scope`,`scopes`,`min`,`max`,`unit`,`default`,
   `label"}...],"unsupported":[...],"topology":[{`key`,`kind`
   (`in`|`ret`|`bus`|`fxsnd`|`mtx`|`main`|`dca`),`label`,`first`,`count`,
-  `name_prefix`,`color_default`,`params_scope`}],"meter_taps":[...],
+  `name_prefix`,`color_default`,`params_scope`,`strip_keys`}],"meter_taps":[...],
   "fx":{`slots`,`types`:[{`id`,`label`,`params`:[{`id`,`label`,`unit`,
   `min`,`max`,`default`,`scale`}]}]},"routing":{`groups`:[{`key`,
   `label`,`count`}],`per_strip`,`supported`},"groups":{`buses`,
@@ -183,7 +183,10 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   `scopes` the v2 strip-kind set the id applies to (the poller filters on
   it: DCA strips get fader/mute/name/color only). `topology` is the
   ordered strip-family map (global strip indices; the first 32 sim inputs
-  and 8 buses keep their historic indices); `meter_taps` declares the
+  and 8 buses keep their historic indices) plus `strip_keys`: the stable
+  per-strip keys in index order (`ch/01`, …, `bus/01`, …, `main`), which
+  survive desk switching where positional indices do not (sim 77 strips,
+  xair 35, dl32s 32; sim `mix` normalises to `bus`). `meter_taps` declares the
   meter taps (`in`, `post`, `gr_gate`, `gr_comp`). `fx` is the FX slot
   family (sim: 8 slots + the six design type tables from `core::fx`;
   xair: 4 slots, desk-native types not projected yet; dl32s: 0 slots).
@@ -195,7 +198,7 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   `min`/`max` are `null` for bool/text. Broadcast on `connect` and when
   a param drops out (below); unicast to every newly attached client.
   Additive: old fields are byte-identical.
-- `params`: `{"type":"params","ch":3,"values":{"gain":12.5,...}}` —
+- `params`: `{"type":"params","ch":3,"key"?,"values":{"gain":12.5,...}}` —
   engineering units (dB, Hz, whole-number enums), diff-only after the
   attach snapshot (one frame per cached channel).
 - `locks`: `{"type":"locks","holds":{"0":"client-1"}}` — channel keys are

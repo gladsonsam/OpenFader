@@ -234,6 +234,20 @@ pub async fn discover_xair(timeout: Duration) -> anyhow::Result<Vec<DiscoveredDe
     Ok(out)
 }
 
+/// Generic discovery: run every row of [`PROBE_TABLE`], dedupe by addr.
+/// A new provider adds its rows to the table; this loop needs no edits.
+pub async fn discover_all(timeout: Duration) -> anyhow::Result<Vec<DiscoveredDevice>> {
+    let mut out: Vec<DiscoveredDevice> = Vec::new();
+    for spec in PROBE_TABLE {
+        for dev in probe(spec, timeout).await? {
+            if !out.iter().any(|d| d.addr == dev.addr) {
+                out.push(dev);
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Build a minimal mDNS (DNS-SD) PTR query for `service`
 /// (e.g. `"_xairstage._udp.local."`). Shared helper; providers only pass
 /// their service string.

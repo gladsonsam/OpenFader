@@ -525,6 +525,9 @@ fn seed_params_for_family(idx: usize, name: &str, kind: StripKind) -> HashMap<St
         StripKind::Mtx => 11.0,
         StripKind::Main => 11.0,
         StripKind::Dca => 0.0,
+        // Provider-extended kinds (no sim family uses one): default strip
+        // colour until the provider seeds its own look.
+        _ => 2.0,
     };
     m.insert("color".into(), f(color));
     m.insert("icon".into(), f(0.0));

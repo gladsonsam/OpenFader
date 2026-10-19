@@ -86,6 +86,37 @@ export async function hapticWarn(): Promise<void> {
   }
 }
 
+// ---- App-update notice (Tauri updater scaffold) ----
+
+/** Payload of the backend's one-shot `openmix-updater` event (see
+ * `src-tauri/src/lib.rs`): a newer signed release exists. The shell
+ * never installs automatically — download/install UI is future work. */
+export interface UpdaterNotice {
+  version: string;
+  current_version: string;
+}
+
+/**
+ * Listen for the backend's update notice. No-op outside the Tauri
+ * runtime (browser/PWA); resolves to an unsubscribe function. Never
+ * throws: a missing event plugin just yields a dead subscription.
+ */
+export async function onUpdaterAvailable(cb: (n: UpdaterNotice) => void): Promise<() => void> {
+  if (!isTauri()) return () => {};
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    return await listen<UpdaterNotice>('openmix-updater', (e) => {
+      try {
+        cb(e.payload);
+      } catch {
+        /* ignore */
+      }
+    });
+  } catch {
+    return () => {};
+  }
+}
+
 // ---- Persistent store (Tauri) with localStorage fallback ----
 
 export interface AppSettings {

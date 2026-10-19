@@ -96,7 +96,7 @@ async fn connect_fader_mute_param_roundtrip() {
     assert_eq!(ev_json(&you).get("id"), Some(&json!(a.id)));
 
     // Fader: ch0 -> 0.5, writer-tagged.
-    a.send(Cmd::Fader { ch: 0, value: 0.5 }).await.unwrap();
+    a.send(Cmd::Fader { ch: 0, value: 0.5, key: None}).await.unwrap();
     let st = wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -109,7 +109,7 @@ async fn connect_fader_mute_param_roundtrip() {
     assert_eq!(stv.get("by"), Some(&json!(a.id)));
 
     // Mute on/off.
-    a.send(Cmd::Mute { ch: 0, muted: true }).await.unwrap();
+    a.send(Cmd::Mute { ch: 0, muted: true, key: None}).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -118,7 +118,7 @@ async fn connect_fader_mute_param_roundtrip() {
         _ => false,
     })
     .await;
-    a.send(Cmd::Mute { ch: 0, muted: false }).await.unwrap();
+    a.send(Cmd::Mute { ch: 0, muted: false, key: None}).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -132,8 +132,7 @@ async fn connect_fader_mute_param_roundtrip() {
     a.send(Cmd::Param {
         ch: 1,
         field: "gain".to_string(),
-        value: json!(12.5),
-    })
+        value: json!(12.5), key: None})
     .await
     .unwrap();
     let echo = wait_for(&mut a, |e| match e {
@@ -175,8 +174,7 @@ async fn caps_and_params_snapshot() {
     a.send(Cmd::Param {
         ch: 0,
         field: "gain".to_string(),
-        value: json!(12.5),
-    })
+        value: json!(12.5), key: None})
     .await
     .unwrap();
     wait_for(&mut a, |e| matches!(e, Event::Param { .. })).await;
@@ -184,7 +182,7 @@ async fn caps_and_params_snapshot() {
     let mut b = attach(&engine).await;
     drain_snapshot(&mut b).await;
     let seen = wait_for(&mut b, |e| match e {
-        Event::Params { ch, values } => {
+        Event::Params { ch, values, ..} => {
             *ch == 0
                 && values
                     .get("gain")
@@ -210,7 +208,7 @@ async fn params_diff_broadcast() {
     // A fader move carries its confirmed value as a singular `param` echo
     // (same as the param-write path), which also primes the poller cache;
     // the follow-up `state` still carries the strip.
-    a.send(Cmd::Fader { ch: 5, value: 0.6 }).await.unwrap();
+    a.send(Cmd::Fader { ch: 5, value: 0.6, key: None}).await.unwrap();
     let echo = wait_for(&mut a, |e| match e {
         Event::Param { ch, field, value, .. } => {
             *ch == 5
@@ -264,7 +262,7 @@ async fn focus_prioritizes_channel() {
             panic!("timed out waiting for ch5 full set; progress: {seen:?}");
         }
         let next = tokio::time::timeout(Duration::from_millis(500), a.events.recv()).await;
-        let Ok(Some(Event::Params { ch, values })) = next else {
+        let Ok(Some(Event::Params { ch, values, ..})) = next else {
             continue;
         };
         seen.entry(ch).or_default().extend(values.keys().cloned());
@@ -285,7 +283,7 @@ async fn focus_prioritizes_channel() {
             panic!("timed out waiting for ch7 full set");
         }
         let next = tokio::time::timeout(Duration::from_millis(500), a.events.recv()).await;
-        let Ok(Some(Event::Params { ch, values })) = next else {
+        let Ok(Some(Event::Params { ch, values, ..})) = next else {
             continue;
         };
         seen.entry(ch).or_default().extend(values.keys().cloned());
@@ -325,7 +323,7 @@ async fn focus_prioritizes_channel() {
             panic!("timed out waiting for ch3 full set");
         }
         let next = tokio::time::timeout(Duration::from_millis(500), a.events.recv()).await;
-        let Ok(Some(Event::Params { ch, values })) = next else {
+        let Ok(Some(Event::Params { ch, values, ..})) = next else {
             continue;
         };
         seen.entry(ch).or_default().extend(values.keys().cloned());
@@ -349,7 +347,7 @@ async fn locks_deny_allow_recall_disconnect() {
     let holder = a.id.clone();
 
     // a locks ch0; both sides observe holds {"0": holder}.
-    a.send(Cmd::Lock { ch: 0 }).await.unwrap();
+    a.send(Cmd::Lock { ch: 0, key: None}).await.unwrap();
     let l1 = wait_for(&mut a, |e| match e {
         Event::Locks { holds } => holds.get("0") == Some(&holder),
         _ => false,
@@ -367,15 +365,14 @@ async fn locks_deny_allow_recall_disconnect() {
 
     // Locked strip rejects other writers with locked_by.
     for cmd in [
-        Cmd::Fader { ch: 0, value: 0.9 },
-        Cmd::Mute { ch: 0, muted: true },
+        Cmd::Fader { ch: 0, value: 0.9, key: None},
+        Cmd::Mute { ch: 0, muted: true, key: None},
         Cmd::Param {
             ch: 0,
             field: "gain".to_string(),
-            value: json!(0.5),
-        },
-        Cmd::Lock { ch: 0 },
-        Cmd::Unlock { ch: 0 },
+            value: json!(0.5), key: None},
+        Cmd::Lock { ch: 0, key: None},
+        Cmd::Unlock { ch: 0, key: None},
     ] {
         b.send(cmd).await.unwrap();
         let err = wait_for(&mut b, |e| match e {
@@ -391,7 +388,7 @@ async fn locks_deny_allow_recall_disconnect() {
     }
 
     // Holder writes through; sibling sees it.
-    a.send(Cmd::Fader { ch: 0, value: 0.6 }).await.unwrap();
+    a.send(Cmd::Fader { ch: 0, value: 0.6, key: None}).await.unwrap();
     wait_for(&mut b, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -402,10 +399,10 @@ async fn locks_deny_allow_recall_disconnect() {
     .await;
 
     // Holder unlocks; both see the empty table; b writes freely.
-    a.send(Cmd::Unlock { ch: 0 }).await.unwrap();
+    a.send(Cmd::Unlock { ch: 0, key: None}).await.unwrap();
     wait_for(&mut a, |e| matches!(e, Event::Locks { holds } if holds.is_empty())).await;
     wait_for(&mut b, |e| matches!(e, Event::Locks { holds } if holds.is_empty())).await;
-    b.send(Cmd::Fader { ch: 0, value: 0.1 }).await.unwrap();
+    b.send(Cmd::Fader { ch: 0, value: 0.1, key: None}).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -416,7 +413,7 @@ async fn locks_deny_allow_recall_disconnect() {
     .await;
 
     // recall_scene bypasses locks but reports overrides.
-    b.send(Cmd::Fader { ch: 1, value: 0.3 }).await.unwrap();
+    b.send(Cmd::Fader { ch: 1, value: 0.3, key: None}).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -432,13 +429,13 @@ async fn locks_deny_allow_recall_disconnect() {
     .await
     .unwrap();
     wait_for(&mut b, |e| matches!(e, Event::Shows { .. })).await;
-    a.send(Cmd::Lock { ch: 1 }).await.unwrap();
+    a.send(Cmd::Lock { ch: 1, key: None}).await.unwrap();
     wait_for(&mut b, |e| match e {
         Event::Locks { holds } => holds.get("1") == Some(&holder),
         _ => false,
     })
     .await;
-    a.send(Cmd::Fader { ch: 1, value: 0.8 }).await.unwrap();
+    a.send(Cmd::Fader { ch: 1, value: 0.8, key: None}).await.unwrap();
     wait_for(&mut b, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -477,7 +474,7 @@ async fn locks_deny_allow_recall_disconnect() {
         _ => false,
     })
     .await;
-    b.send(Cmd::Fader { ch: 1, value: 0.5 }).await.unwrap();
+    b.send(Cmd::Fader { ch: 1, value: 0.5, key: None}).await.unwrap();
     wait_for(&mut b, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -500,7 +497,7 @@ async fn locks_expire() {
     let mut b = attach(&engine).await;
     drain_snapshot(&mut b).await;
 
-    a.send(Cmd::Lock { ch: 2 }).await.unwrap();
+    a.send(Cmd::Lock { ch: 2, key: None}).await.unwrap();
     let pinned = wait_for(&mut a, |e| match e {
         Event::Locks { holds } => holds.get("2").is_some(),
         _ => false,
@@ -519,7 +516,7 @@ async fn locks_expire() {
     .await;
 
     // Still pinned: b is denied.
-    b.send(Cmd::Fader { ch: 2, value: 0.9 }).await.unwrap();
+    b.send(Cmd::Fader { ch: 2, value: 0.9, key: None}).await.unwrap();
     wait_for(&mut b, |e| match e {
         Event::Error { locked_by, .. } => locked_by.as_deref() == Some(holder.as_str()),
         _ => false,
@@ -532,7 +529,7 @@ async fn locks_expire() {
         _ => false,
     })
     .await;
-    b.send(Cmd::Fader { ch: 2, value: 0.4 }).await.unwrap();
+    b.send(Cmd::Fader { ch: 2, value: 0.4, key: None}).await.unwrap();
     wait_for(&mut b, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -549,7 +546,7 @@ async fn shows_capture_recall_delete() {
     let mut a = attach(&engine).await;
     drain_snapshot(&mut a).await;
 
-    a.send(Cmd::Fader { ch: 0, value: 0.5 }).await.unwrap();
+    a.send(Cmd::Fader { ch: 0, value: 0.5, key: None}).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -615,7 +612,7 @@ async fn shows_capture_recall_delete() {
 
     // Move away, recall with fade 0: state snap-back + per-param echo.
     let moved = ((cap_fader + 0.3).min(1.0)) as f32;
-    a.send(Cmd::Fader { ch: 0, value: moved }).await.unwrap();
+    a.send(Cmd::Fader { ch: 0, value: moved, key: None}).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -774,7 +771,7 @@ async fn presence_writer_tag_and_unicast() {
     assert_eq!(ev_json(&joined).get("count"), Some(&json!(2)));
 
     // Mutation from a arrives at b tagged with the writer id.
-    a.send(Cmd::Fader { ch: 0, value: 0.5 }).await.unwrap();
+    a.send(Cmd::Fader { ch: 0, value: 0.5, key: None}).await.unwrap();
     let st = wait_for(&mut b, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -789,8 +786,7 @@ async fn presence_writer_tag_and_unicast() {
     a.send(Cmd::Param {
         ch: 1,
         field: "fader".to_string(),
-        value: json!(0.25),
-    })
+        value: json!(0.25), key: None})
     .await
     .unwrap();
     let echo = wait_for(&mut b, |e| match e {
@@ -846,14 +842,14 @@ async fn access_policy_musician_restrictions() {
     assert!(!engine.set_client_policy("client-999", Policy::musician([0])));
 
     // Disallowed strip: fader + mute + param all denied.
-    mus.send(Cmd::Fader { ch: 1, value: 0.5 }).await.unwrap();
+    mus.send(Cmd::Fader { ch: 1, value: 0.5, key: None}).await.unwrap();
     let err = wait_for(&mut mus, |e| matches!(e, Event::Error { .. })).await;
     assert!(
         ev_json(&err).get("message").and_then(Value::as_str).is_some_and(|m| m.contains("not allowed")),
         "musician strip denial explains itself"
     );
     // Admin on the same strip is unaffected.
-    admin.send(Cmd::Fader { ch: 1, value: 0.5 }).await.unwrap();
+    admin.send(Cmd::Fader { ch: 1, value: 0.5, key: None}).await.unwrap();
     wait_for(&mut admin, |e| match e {
         Event::State { strips, .. } => strips
             .iter()
@@ -864,14 +860,14 @@ async fn access_policy_musician_restrictions() {
     .await;
 
     // Fader cap: 0.9 exceeds the musician ceiling.
-    mus.send(Cmd::Fader { ch: 0, value: 0.9 }).await.unwrap();
+    mus.send(Cmd::Fader { ch: 0, value: 0.9, key: None}).await.unwrap();
     let err = wait_for(&mut mus, |e| matches!(e, Event::Error { .. })).await;
     assert!(
         ev_json(&err).get("message").and_then(Value::as_str).is_some_and(|m| m.contains("exceeds cap")),
         "musician cap denial explains itself"
     );
     // Under the cap: allowed.
-    mus.send(Cmd::Fader { ch: 0, value: 0.5 }).await.unwrap();
+    mus.send(Cmd::Fader { ch: 0, value: 0.5, key: None}).await.unwrap();
     wait_for(&mut mus, |e| match e {
         Event::State { strips, .. } => strips
             .iter()

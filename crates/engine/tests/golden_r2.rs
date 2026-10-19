@@ -112,6 +112,7 @@ fn examples() -> Vec<(String, Value)> {
             Event::Routing {
                 patches: vec![openmix_engine::protocol::PatchEntry {
                     strip: 0,
+                    key: None,
                     group: "Net".to_string(),
                     index: 5,
                     label: "Net 05".to_string(),
@@ -123,6 +124,7 @@ fn examples() -> Vec<(String, Value)> {
             Event::OfflineDiff {
                 changes: vec![openmix_engine::protocol::OfflineChange {
                     strip: 0,
+                    key: None,
                     id: "gain".to_string(),
                     from: json!(20.0),
                     to: json!(25.0),

@@ -1,537 +1,48 @@
-//! Tauri 2 shell over the openmix drivers. Sim by default; xair/dl32s attach
-//! when an address is given.
+//! Tauri 2 shell over the embedded `openmix-engine` session.
 //!
-//! Command parity with the `openmix-serve` WebSocket API
-//! (`crates/serve/src/lib.rs`) so the Svelte UI (`apps/web`) gets identical
-//! capability over Tauri invoke:
+//! The full `openmix-engine` mixer session runs in this process, so the app
+//! needs no relay/server/LAN box — the desk is reached by the engine's own
+//! discovery (broadcast + unicast on the phone's WiFi) and UDP drivers, same
+//! as `openmix-serve` does on a relay host. These commands carry the SAME
+//! Cmd/Event JSON the WS relay speaks (`openmix_engine::protocol`
+//! serialization — no new protocol): the UI's `TauriTransport` sends one
+//! Cmd JSON per `engine_cmd` and receives the resulting Event JSON frames;
+//! `engine_poll` drains background frames (meters/spectrum/GR ticker,
+//! poller) between writes. The WS path in `crates/serve` is untouched
+//! (byte-identical for browsers).
 //!
-//! WS `connect`/`fader`/`mute`/`param` map to `connect`/`set_fader`/
-//! `set_mute`/`set_param` with the same value encoding (number|bool|string).
-//! The WS `state` push becomes a pull `get_state` returning the same shape
-//! (`driver` + `strips` of `{ch,name,fader,muted}`), plus `connected` and
-//! `main_fader` (`null` when the driver has none). The WS `meters` tick
-//! becomes a pull `get_meters` returning live driver meters; the WS
-//! per-tick `spectrum`/`gr` frames become pull `get_spectrum`/`get_gr`
-//! (same 64 bins, same first-16-channel cap, same `RtaProcessor` approach
-//! and `gate_gr`/`comp_gr` reads — but poll-based, so the UI polls at 5 Hz
-//! instead of receiving the WS push).
+//! There is exactly one session stack here: the embedded engine. All mixer
+//! logic lives in `openmix-engine`; this shell only moves Cmd/Event JSON.
 //!
-//! Beyond the WS API, the shell owns a server-side scene/show library
-//! (`capture_scene`, `recall_scene`, `list_scenes`, `get_scene`,
-//! `delete_scene`) and the main fader (`set_main_fader`, `get_main_fader`),
-//! so desktop scenes survive UI reloads (no localStorage round-trip).
-//!
-//! Static dispatch (`AnyDriver` enum, like `openmix-cli`): `MixerDriver` has
-//! async methods and is not dyn-safe, so `Box<dyn MixerDriver>` does not
-//! compile. Commands are `async` and `.await` the driver; state lives in a
-//! `tokio::sync::Mutex` (via `tauri::async_runtime::Mutex`) so the guard is
-//! `Send` and may be held across `.await` — Tauri commands require `Send`
-//! futures, which `std::sync::MutexGuard` is not.
+//! Event fan-out is push-based: after `engine_subscribe_push` the backend
+//! emits every Event batch as an `openmix-event` Tauri event (JSON string
+//! array payload) — once inline in `engine_cmd`/`engine_poll` for the frames
+//! the call itself produced, and every 50 ms from a background task for
+//! ticker frames (meters/spectrum/GR/poller) that no command produced. The
+//! UI listens instead of polling, so an idle phone holds no 10 Hz IPC timer.
+//! `engine_poll` stays as the fallback drain for tests and for clients that
+//! never subscribed (it returns the same frames it would emit).
 use tauri::async_runtime::Mutex;
+use tauri::{AppHandle, Emitter, Manager};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
-use openmix_core::rta::RtaProcessor;
-use openmix_core::show::{Scene, Show, DEFAULT_FADE_MS};
-use openmix_core::{MixerDriver, ParamValue, StripId};
-use openmix_proto_dl32s::Dl32sDriver;
-use openmix_proto_xair::XAirDriver;
-use openmix_sim::SimDriver;
-use serde_json::json;
+/// Tauri event carrying engine Event JSON frames (backend -> UI).
+/// Payload: array of JSON strings, the exact `Event::to_json` texts the WS
+/// relay would put on the socket (text-only; binary meters stay WS-only).
+pub const OPENMIX_EVENT: &str = "openmix-event";
 
-/// Minimum interval between fresh meter frames; faster polls get the cached frame.
-const METER_THROTTLE: Duration = Duration::from_millis(50);
+/// Tauri event announcing an available app update (backend -> UI).
+/// Payload: `{ version, current_version }`. Emitted at most once per
+/// process, after the startup check finds a newer signed release. No
+/// frontend listener is required; without one the event is a no-op.
+pub const UPDATER_EVENT: &str = "openmix-updater";
 
-/// Max channels with spectrum output (first N channels only).
-///
-/// Mirrors `SPECTRUM_CHANNELS` in `crates/serve/src/lib.rs`: 16 covers a
-/// full drum/band layer while keeping the per-tick fanout bounded. Channels
-/// at/above this cap are rejected (serve simply never sends them).
-const SPECTRUM_CHANNELS: usize = 16;
+/// How often the background task forwards ticker frames to push clients.
+const PUSH_TICK: std::time::Duration = std::time::Duration::from_millis(50);
 
-/// Max channels with GR output (first N channels only).
-///
-/// Mirrors `GR_CHANNELS` in `crates/serve/src/lib.rs`. Ticks at ~5 Hz over
-/// WS (every second 10 Hz `meters` tick); over invoke the UI polls at 5 Hz
-/// instead — same staleness contract, pull-based.
-const GR_CHANNELS: usize = 16;
-
-/// Static dispatch over drivers (`MixerDriver` is not dyn-compatible due to
-/// async methods). New providers add one variant + one delegation arm.
-enum AnyDriver {
-    Sim(SimDriver),
-    XAir(XAirDriver),
-    Dl32s(Dl32sDriver),
-}
-
-impl MixerDriver for AnyDriver {
-    fn name(&self) -> &'static str {
-        match self {
-            AnyDriver::Sim(d) => d.name(),
-            AnyDriver::XAir(d) => d.name(),
-            AnyDriver::Dl32s(d) => d.name(),
-        }
-    }
-    fn channel_count(&self) -> usize {
-        match self {
-            AnyDriver::Sim(d) => d.channel_count(),
-            AnyDriver::XAir(d) => d.channel_count(),
-            AnyDriver::Dl32s(d) => d.channel_count(),
-        }
-    }
-    async fn connect(&self, addr: &str) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.connect(addr).await,
-            AnyDriver::XAir(d) => d.connect(addr).await,
-            AnyDriver::Dl32s(d) => d.connect(addr).await,
-        }
-    }
-    async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.set_fader(strip, value).await,
-            AnyDriver::XAir(d) => d.set_fader(strip, value).await,
-            AnyDriver::Dl32s(d) => d.set_fader(strip, value).await,
-        }
-    }
-    async fn get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
-        match self {
-            AnyDriver::Sim(d) => d.get_fader(strip).await,
-            AnyDriver::XAir(d) => d.get_fader(strip).await,
-            AnyDriver::Dl32s(d) => d.get_fader(strip).await,
-        }
-    }
-    async fn set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.set_mute(strip, muted).await,
-            AnyDriver::XAir(d) => d.set_mute(strip, muted).await,
-            AnyDriver::Dl32s(d) => d.set_mute(strip, muted).await,
-        }
-    }
-    async fn get_mute(&self, strip: StripId) -> anyhow::Result<bool> {
-        match self {
-            AnyDriver::Sim(d) => d.get_mute(strip).await,
-            AnyDriver::XAir(d) => d.get_mute(strip).await,
-            AnyDriver::Dl32s(d) => d.get_mute(strip).await,
-        }
-    }
-    async fn set_name(&self, strip: StripId, name: &str) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.set_name(strip, name).await,
-            AnyDriver::XAir(d) => d.set_name(strip, name).await,
-            AnyDriver::Dl32s(d) => d.set_name(strip, name).await,
-        }
-    }
-    async fn get_name(&self, strip: StripId) -> anyhow::Result<String> {
-        match self {
-            AnyDriver::Sim(d) => d.get_name(strip).await,
-            AnyDriver::XAir(d) => d.get_name(strip).await,
-            AnyDriver::Dl32s(d) => d.get_name(strip).await,
-        }
-    }
-    async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.set_main_fader(value).await,
-            AnyDriver::XAir(d) => d.set_main_fader(value).await,
-            AnyDriver::Dl32s(d) => d.set_main_fader(value).await,
-        }
-    }
-    async fn get_main_fader(&self) -> anyhow::Result<f32> {
-        match self {
-            AnyDriver::Sim(d) => d.get_main_fader().await,
-            AnyDriver::XAir(d) => d.get_main_fader().await,
-            AnyDriver::Dl32s(d) => d.get_main_fader().await,
-        }
-    }
-    async fn set_param(
-        &self,
-        strip: StripId,
-        param: &str,
-        value: ParamValue,
-    ) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.set_param(strip, param, value).await,
-            AnyDriver::XAir(d) => d.set_param(strip, param, value).await,
-            AnyDriver::Dl32s(d) => d.set_param(strip, param, value).await,
-        }
-    }
-    async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
-        match self {
-            AnyDriver::Sim(d) => d.get_param(strip, param).await,
-            AnyDriver::XAir(d) => d.get_param(strip, param).await,
-            AnyDriver::Dl32s(d) => d.get_param(strip, param).await,
-        }
-    }
-    async fn snapshot(&self) -> anyhow::Result<openmix_core::MixerSnapshot> {
-        match self {
-            AnyDriver::Sim(d) => d.snapshot().await,
-            AnyDriver::XAir(d) => d.snapshot().await,
-            AnyDriver::Dl32s(d) => d.snapshot().await,
-        }
-    }
-    async fn recall(&self, snapshot: &openmix_core::MixerSnapshot) -> anyhow::Result<()> {
-        match self {
-            AnyDriver::Sim(d) => d.recall(snapshot).await,
-            AnyDriver::XAir(d) => d.recall(snapshot).await,
-            AnyDriver::Dl32s(d) => d.recall(snapshot).await,
-        }
-    }
-    async fn query_info(&self) -> anyhow::Result<openmix_core::MixerInfo> {
-        match self {
-            AnyDriver::Sim(d) => d.query_info().await,
-            AnyDriver::XAir(d) => d.query_info().await,
-            AnyDriver::Dl32s(d) => d.query_info().await,
-        }
-    }
-    fn poll_meters(&self) -> openmix_core::MeterFrame {
-        match self {
-            AnyDriver::Sim(d) => d.poll_meters(),
-            AnyDriver::XAir(d) => d.poll_meters(),
-            AnyDriver::Dl32s(d) => d.poll_meters(),
-        }
-    }
-}
-
-struct Inner {
-    kind: String,
-    connected: bool,
-    driver: AnyDriver,
-    /// Server-side scene library; survives driver switches and UI reloads.
-    show: Show,
-    last_meters: Vec<f32>,
-    last_emit: Option<Instant>,
-    /// Trailing meter history feeding `get_spectrum`, mirroring serve's
-    /// per-connection `RtaProcessor` (fed by its ~10 Hz tick there; fed by
-    /// `get_meters`/`get_spectrum` polls here). Reset on `connect`.
-    rta: RtaProcessor,
-}
-
-impl Default for Inner {
-    fn default() -> Self {
-        Self {
-            kind: "sim".into(),
-            connected: false,
-            driver: AnyDriver::Sim(SimDriver::new()),
-            show: Show::new("openmix"),
-            last_meters: Vec::new(),
-            last_emit: None,
-            rta: RtaProcessor::new(0),
-        }
-    }
-}
-
-type State<'r> = tauri::State<'r, Mutex<Inner>>;
-
-#[tauri::command]
-async fn connect(state: State<'_>, driver: String, addr: String) -> Result<String, String> {
-    let kind = driver.to_lowercase();
-    let mut inner = state.lock().await;
-    match kind.as_str() {
-        "sim" => {
-            let d = AnyDriver::Sim(SimDriver::new());
-            d.connect(&addr).await.map_err(|e| e.to_string())?;
-            inner.driver = d;
-        }
-        "xair" => {
-            if addr.trim().is_empty() {
-                return Err("xair needs a mixer address, e.g. 192.168.1.10".into());
-            }
-            let d = AnyDriver::XAir(XAirDriver::new());
-            d.connect(&addr).await.map_err(|e| e.to_string())?;
-            inner.driver = d;
-        }
-        "dl32s" => {
-            if addr.trim().is_empty() {
-                return Err("dl32s needs a mixer address, e.g. 192.168.1.20".into());
-            }
-            let d = AnyDriver::Dl32s(Dl32sDriver::new());
-            d.connect(&addr).await.map_err(|e| e.to_string())?;
-            inner.driver = d;
-        }
-        other => return Err(format!("unknown driver '{other}' (sim|xair|dl32s)")),
-    }
-    inner.kind = kind.clone();
-    inner.connected = true;
-    // Fresh driver, fresh meters and RTA; the scene library carries over.
-    inner.last_meters.clear();
-    inner.last_emit = None;
-    inner.rta = RtaProcessor::new(0);
-    Ok(format!("connected via {kind}"))
-}
-
-#[tauri::command]
-async fn set_fader(state: State<'_>, ch: u16, value: f32) -> Result<(), String> {
-    openmix_core::validate_fader(value).map_err(|e| e.to_string())?;
-    let inner = state.lock().await;
-    inner
-        .driver
-        .set_fader(StripId(ch), value)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-async fn set_mute(state: State<'_>, ch: u16, muted: bool) -> Result<(), String> {
-    let inner = state.lock().await;
-    inner
-        .driver
-        .set_mute(StripId(ch), muted)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Generic param, mirroring the WS `param` command: JSON
-/// number|boolean|string maps to `ParamValue::Float|Bool|Text`
-/// (`"fader"`/`"mute"`/`"name"` dispatch to the strip setters).
-#[tauri::command]
-async fn set_param(
-    state: State<'_>,
-    ch: u16,
-    field: String,
-    value: serde_json::Value,
-) -> Result<(), String> {
-    let pv = match &value {
-        serde_json::Value::Number(n) => ParamValue::Float(n.as_f64().unwrap_or(0.0) as f32),
-        serde_json::Value::Bool(b) => ParamValue::Bool(*b),
-        serde_json::Value::String(s) => ParamValue::Text(s.clone()),
-        _ => return Err("param value must be number|boolean|string".into()),
-    };
-    let inner = state.lock().await;
-    inner
-        .driver
-        .set_param(StripId(ch), &field, pv)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-/// Full mixer state for the active driver: the WS `state` message shape
-/// (`driver` + `strips` of `{ch,name,fader,muted}`), plus `connected` and
-/// `main_fader` (`null` when the driver has none). Snapshot failure yields
-/// empty strips, like `serve`.
-#[tauri::command]
-async fn get_state(state: State<'_>) -> Result<serde_json::Value, String> {
-    let inner = state.lock().await;
-    let strips = match inner.driver.snapshot().await {
-        Ok(snap) => snap
-            .strips
-            .iter()
-            .map(|s| {
-                json!({
-                    "ch": s.id.0,
-                    "name": s.name,
-                    "fader": s.fader,
-                    "muted": s.mute,
-                })
-            })
-            .collect::<Vec<_>>(),
-        Err(_) => Vec::new(),
-    };
-    let main_fader = inner.driver.get_main_fader().await.ok();
-    Ok(json!({
-        "driver": inner.kind,
-        "connected": inner.connected,
-        "strips": strips,
-        "main_fader": main_fader,
-    }))
-}
-
-#[tauri::command]
-async fn set_main_fader(state: State<'_>, value: f32) -> Result<(), String> {
-    openmix_core::validate_fader(value).map_err(|e| e.to_string())?;
-    let inner = state.lock().await;
-    inner
-        .driver
-        .set_main_fader(value)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[tauri::command]
-async fn get_main_fader(state: State<'_>) -> Result<f32, String> {
-    let inner = state.lock().await;
-    inner
-        .driver
-        .get_main_fader()
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// Capture the live mixer state as a named scene (upsert) in the
-/// server-side show library, including the main fader when the driver has one.
-#[tauri::command]
-async fn capture_scene(state: State<'_>, name: String) -> Result<serde_json::Value, String> {
-    let name = name.trim().to_string();
-    if name.is_empty() {
-        return Err("scene name must not be empty".into());
-    }
-    let mut inner = state.lock().await;
-    let snap = inner.driver.snapshot().await.map_err(|e| e.to_string())?;
-    let mut scene = Scene::capture(&name, &snap);
-    scene.main_fader = inner.driver.get_main_fader().await.ok();
-    let summary = json!({
-        "name": scene.name,
-        "strips": scene.strips.len(),
-        "main_fader": scene.main_fader,
-    });
-    inner.show.add_scene(scene);
-    Ok(summary)
-}
-
-/// Recall a captured scene with a fader fade (`fade_ms == 0` jumps;
-/// default [`DEFAULT_FADE_MS`]). Pre-unmutes scene-unmuted strips so the
-/// fade is audible, snaps to exact targets, then applies mutes and main.
-#[tauri::command]
-async fn recall_scene(
-    state: State<'_>,
-    name: String,
-    fade_ms: Option<u64>,
-) -> Result<String, String> {
-    let fade_ms = fade_ms.unwrap_or(DEFAULT_FADE_MS);
-    let inner = state.lock().await;
-    let scene = inner
-        .show
-        .get(&name)
-        .cloned()
-        .ok_or_else(|| format!("unknown scene {name:?}"))?;
-    inner
-        .driver
-        .recall_scene(&scene, fade_ms)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(format!("recalled scene {name:?} (fade {fade_ms}ms)"))
-}
-
-/// Names of the captured scenes, in library order.
-#[tauri::command]
-async fn list_scenes(state: State<'_>) -> Result<Vec<String>, String> {
-    let inner = state.lock().await;
-    Ok(inner.show.names().into_iter().map(str::to_string).collect())
-}
-
-/// One captured scene with per-strip fader/mute, for slot display.
-#[tauri::command]
-async fn get_scene(state: State<'_>, name: String) -> Result<serde_json::Value, String> {
-    let inner = state.lock().await;
-    let scene = inner
-        .show
-        .get(&name)
-        .ok_or_else(|| format!("unknown scene {name:?}"))?;
-    Ok(json!({
-        "name": scene.name,
-        "main_fader": scene.main_fader,
-        "strips": scene.strips.iter().map(|s| json!({
-            "ch": s.strip.0,
-            "name": s.name,
-            "fader": s.fader,
-            "muted": s.mute,
-        })).collect::<Vec<_>>(),
-    }))
-}
-
-/// Remove a scene from the library; `true` when something was removed.
-#[tauri::command]
-async fn delete_scene(state: State<'_>, name: String) -> Result<bool, String> {
-    let mut inner = state.lock().await;
-    Ok(inner.show.remove(&name))
-}
-
-/// Live meter frame from the active driver, throttled: polls faster than
-/// 50 ms get the cached frame. Fresh frames also feed the shared RTA
-/// history behind `get_spectrum` (return shape unchanged).
-#[tauri::command]
-async fn get_meters(state: State<'_>) -> Result<Vec<f32>, String> {
-    let mut inner = state.lock().await;
-    let now = Instant::now();
-    if let Some(t) = inner.last_emit {
-        if now.duration_since(t) < METER_THROTTLE {
-            return Ok(inner.last_meters.clone());
-        }
-    }
-    let frame = inner.driver.poll_meters();
-    inner.rta.push_frame(&frame);
-    let levels = frame.levels;
-    inner.last_meters = levels.clone();
-    inner.last_emit = Some(now);
-    Ok(levels)
-}
-
-/// Live 64-bin spectrum for one channel: the pull-based mirror of serve's
-/// WS `spectrum` tick (`{"type":"spectrum","ch":N,"bins":[...64 floats...]}`).
-///
-/// Same cap (`SPECTRUM_CHANNELS`) and same `RtaProcessor` approach as serve:
-/// the trailing 100 ms of meter history (fed by `get_meters` polls plus the
-/// fresh frame pushed here) is mean-removed, zero-padded to 128, and
-/// returned peak-normalized (`spectrum` is empty for channels past the live
-/// strip count, mirroring serve's per-tick bound).
-///
-/// Poll-based staleness contract: unlike the WS push (one message per
-/// channel per ~10 Hz tick), invoke has no push — the UI polls this at 5 Hz
-/// (200 ms), the same rate serve emits `gr` frames.
-#[tauri::command]
-async fn get_spectrum(state: State<'_>, ch: u16) -> Result<serde_json::Value, String> {
-    if usize::from(ch) >= SPECTRUM_CHANNELS {
-        return Err(format!(
-            "spectrum capped at first {SPECTRUM_CHANNELS} channels, got ch{ch}"
-        ));
-    }
-    let mut inner = state.lock().await;
-    let frame = inner.driver.poll_meters();
-    inner.rta.push_frame(&frame);
-    let bins = inner.rta.spectrum(usize::from(ch));
-    Ok(json!({"ch": ch, "bins": bins}))
-}
-
-/// Gate/comp gain reduction for one channel (dB reduction `>= 0`): the
-/// pull-based mirror of serve's WS `gr` tick
-/// (`{"type":"gr","ch":N,"gate":db,"comp":db}`).
-///
-/// Same semantics as serve's `gr_db`: xair reads the DYN blob cache
-/// (`gate_gr`/`comp_gr` param path); no data yet (or out of range) falls
-/// back to 0.0 so the poll never drops a frame — the UI treats 0.0 as "no
-/// reduction", same as an idle gate. sim/dl32s have no GR source and always
-/// read (0.0, 0.0). Same 16-channel cap as serve.
-///
-/// Poll-based staleness contract: serve pushes `gr` every second `meters`
-/// tick (~5 Hz); invoke has no push, so the UI polls this at 5 Hz (200 ms)
-/// for the same freshness.
-#[tauri::command]
-async fn get_gr(state: State<'_>, ch: u16) -> Result<serde_json::Value, String> {
-    if usize::from(ch) >= GR_CHANNELS {
-        return Err(format!(
-            "gr capped at first {GR_CHANNELS} channels, got ch{ch}"
-        ));
-    }
-    let inner = state.lock().await;
-    if inner.kind != "xair" {
-        return Ok(json!({"ch": ch, "gate": 0.0, "comp": 0.0}));
-    }
-    let id = StripId(ch);
-    let gate = match inner.driver.get_param(id, "gate_gr").await {
-        Ok(ParamValue::Float(v)) => v.max(0.0),
-        _ => 0.0,
-    };
-    let comp = match inner.driver.get_param(id, "comp_gr").await {
-        Ok(ParamValue::Float(v)) => v.max(0.0),
-        _ => 0.0,
-    };
-    Ok(json!({"ch": ch, "gate": gate, "comp": comp}))
-}
-
-// ---------------------------------------------------------------------------
-// Embedded engine (phone independence): the full `openmix-engine` session
-// runs in this process, so the app needs no relay/server/LAN box — the
-// desk is reached by the engine's own discovery (broadcast + unicast on
-// the phone's WiFi) and UDP drivers, same as `openmix-serve` does on a
-// relay host. These commands carry the SAME Cmd/Event JSON the WS relay
-// speaks (`openmix_engine::protocol` serialization — no new protocol):
-// the UI's `TauriTransport` sends one Cmd JSON per `engine_cmd` and
-// receives the resulting Event JSON frames; `engine_poll` drains
-// background frames (meters/spectrum/GR ticker, poller) between writes.
-// The WS path in `crates/serve` is untouched (byte-identical for browsers).
-// ---------------------------------------------------------------------------
+/// Delay before the one-shot startup update check (lets the UI attach and
+/// the desk link settle before spending a TLS round-trip).
+const UPDATE_CHECK_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// Max Event frames returned per `engine_cmd`/`engine_poll` call: bounds
 /// one IPC payload (the phone polls at ~10 Hz; the meter ticker alone can
@@ -547,6 +58,17 @@ const ENGINE_DRAIN_CAP: usize = 512;
 struct EngineSlot {
     engine: Option<Arc<openmix_engine::Engine>>,
     client: Option<openmix_engine::ClientHandle>,
+    /// Push fan-out target. Set by `engine_subscribe_push`; `None` until
+    /// then, in which case this shell behaves exactly as before (every
+    /// `engine_cmd`/`engine_poll` returns its frames, nothing is emitted).
+    app: Option<AppHandle>,
+    /// True once a UI client subscribed: drained frames are emitted as
+    /// `openmix-event` in addition to being returned (push clients ignore
+    /// the return value; poll-only clients never set this flag, so they
+    /// can never observe a frame twice).
+    push: bool,
+    /// Whether the background ticker task is running (spawned once).
+    push_task: bool,
 }
 
 impl Default for EngineSlot {
@@ -554,6 +76,9 @@ impl Default for EngineSlot {
         Self {
             engine: None,
             client: None,
+            app: None,
+            push: false,
+            push_task: false,
         }
     }
 }
@@ -597,9 +122,35 @@ fn drain_client_events(client: &mut openmix_engine::ClientHandle) -> Vec<String>
     out
 }
 
+/// Best-effort push of one drained batch to subscribed UI clients.
+/// Empty batches send nothing; a missing listener (cold start) just drops
+/// the batch — the frames were also returned to the caller, so nothing is
+/// lost for clients that read return values.
+fn emit_push(app: &AppHandle, frames: &[String]) {
+    if frames.is_empty() {
+        return;
+    }
+    let _ = app.emit(OPENMIX_EVENT, frames);
+}
+
+/// Drain plus conditional push: returns the frames (poll-fallback reads
+/// the return value) and emits them when a push client subscribed.
+fn drain_and_push(slot: &mut EngineSlot) -> Vec<String> {
+    let frames = match slot.client.as_mut() {
+        Some(client) => drain_client_events(client),
+        None => Vec::new(),
+    };
+    if slot.push {
+        if let Some(app) = slot.app.clone() {
+            emit_push(&app, &frames);
+        }
+    }
+    frames
+}
 /// Attach the UI client to the embedded engine (idempotent) and return its
 /// client id. The attach snapshot (`you`, `state`, `caps`, …) is already
-/// queued — call `engine_poll` (or any `engine_cmd`) to collect it.
+/// queued — push subscribers get it on the next tick, others call
+/// `engine_poll` (or any `engine_cmd`) to collect it.
 #[tauri::command]
 async fn engine_attach(eslot: EngineState<'_>, label: Option<String>) -> Result<String, String> {
     let _ = label;
@@ -610,30 +161,75 @@ async fn engine_attach(eslot: EngineState<'_>, label: Option<String>) -> Result<
 /// Send one engine Cmd JSON (same `{"cmd":…}` the WS relay accepts;
 /// parse failures come back as unicast `error` Events, never as a failed
 /// call) and return all Event JSON frames it produced, plus any queued
-/// background frames, in socket order.
+/// background frames, in socket order. Push subscribers additionally get
+/// the same batch as an `openmix-event` (and ignore this return value).
 #[tauri::command]
 async fn engine_cmd(eslot: EngineState<'_>, cmd: String) -> Result<Vec<String>, String> {
     let mut slot = eslot.lock().await;
     ensure_engine_client(&mut slot).await?;
     let engine = slot.engine.clone().expect("engine just ensured");
-    let client = slot.client.as_mut().expect("client just ensured");
-    let id = client.id.clone();
+    let id = slot
+        .client
+        .as_ref()
+        .expect("client just ensured")
+        .id
+        .clone();
     // `handle_json` never fails the call itself (rejections arrive as
     // unicast `error` Events); it only skips unknown writers, and the
     // stored handle detaches solely via `engine_detach`.
     engine.handle_json(&id, &cmd).await;
-    Ok(drain_client_events(client))
+    Ok(drain_and_push(&mut slot))
 }
 
 /// Drain background Event frames (meter ticker, param poller, discovery)
-/// queued since the last `engine_cmd`/`engine_poll`. The UI polls this at
-/// ~10 Hz; control writes go through `engine_cmd`.
+/// queued since the last `engine_cmd`/`engine_poll`. Poll fallback for
+/// clients that never called `engine_subscribe_push` (and for tests);
+/// push subscribers get background frames from the ticker task instead.
 #[tauri::command]
 async fn engine_poll(eslot: EngineState<'_>) -> Result<Vec<String>, String> {
     let mut slot = eslot.lock().await;
     ensure_engine_client(&mut slot).await?;
-    let client = slot.client.as_mut().expect("client just ensured");
-    Ok(drain_client_events(client))
+    Ok(drain_and_push(&mut slot))
+}
+
+/// Subscribe this shell to push fan-out: from now on every drained batch
+/// (command replies inline, ticker frames from the background task) is
+/// emitted as `openmix-event`. Starts the 50 ms ticker task once.
+/// Idempotent — repeat calls just refresh the stored handle.
+#[tauri::command]
+async fn engine_subscribe_push(app: AppHandle, eslot: EngineState<'_>) -> Result<(), String> {
+    let mut slot = eslot.lock().await;
+    ensure_engine_client(&mut slot).await?;
+    slot.app = Some(app.clone());
+    slot.push = true;
+    if !slot.push_task {
+        slot.push_task = true;
+        tauri::async_runtime::spawn(push_task(app));
+    }
+    Ok(())
+}
+
+/// Background ticker: every [`PUSH_TICK`] drain frames the commands did
+/// not produce (meter/spectrum/GR ticker, poller, discovery) and push them
+/// to subscribed clients. Poll-only shells never set `push`, so this task
+/// never runs for them (and the command only exists to start it).
+async fn push_task(app: AppHandle) {
+    let mut tick = tokio::time::interval(PUSH_TICK);
+    loop {
+        tick.tick().await;
+        let frames = {
+            let state = app.state::<Mutex<EngineSlot>>();
+            let mut slot = state.lock().await;
+            if !slot.push {
+                continue;
+            }
+            match slot.client.as_mut() {
+                Some(client) => drain_client_events(client),
+                None => Vec::new(),
+            }
+        };
+        emit_push(&app, &frames);
+    }
 }
 
 /// Detach the UI client (engine keeps running; next `engine_cmd` /
@@ -725,6 +321,49 @@ mod engine_ipc_tests {
             assert!(frames.len() <= ENGINE_DRAIN_CAP, "drain is capped");
         }
     }
+
+    /// `drain_and_push` on a fresh slot (no engine, no client, push off)
+    /// returns empty without emitting — the flag-off path that keeps
+    /// poll-only clients on the exact pre-push behaviour.
+    #[tokio::test]
+    async fn drain_and_push_empty_slot_is_empty() {
+        let mut slot = EngineSlot::default();
+        assert!(!slot.push);
+        assert!(drain_and_push(&mut slot).is_empty());
+    }
+}
+
+/// One-shot startup update check (best-effort, desktop only in practice —
+/// the updater has no mobile backend). Unconfigured builds (empty
+/// endpoints, the committed scaffold state) log once and skip; a found
+/// update is logged and announced as [`UPDATER_EVENT`], never installed
+/// automatically — mid-gig restarts are the operator's decision.
+async fn check_for_updates(app: &AppHandle) {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = match app.updater_builder().build() {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("openmix: updater unavailable ({e:#}); skipping update check");
+            return;
+        }
+    };
+    match updater.check().await {
+        Ok(Some(update)) => {
+            eprintln!(
+                "openmix: update available: {} (running {})",
+                update.version, update.current_version
+            );
+            let _ = app.emit(
+                UPDATER_EVENT,
+                serde_json::json!({
+                    "version": update.version,
+                    "current_version": update.current_version,
+                }),
+            );
+        }
+        Ok(None) => eprintln!("openmix: up to date"),
+        Err(e) => eprintln!("openmix: update check failed ({e:#})"),
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -736,27 +375,23 @@ pub fn run() {
         .plugin(tauri_plugin_haptics::init())
         .plugin(tauri_plugin_edge_to_edge::init())
         .plugin(tauri_plugin_keep_screen_on::init())
-        .manage(Mutex::new(Inner::default()))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Mutex::new(EngineSlot::default()))
+        .setup(|app| {
+            // The update check is deliberately delayed and fire-and-forget:
+            // boot latency and the first desk link matter more.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(UPDATE_CHECK_DELAY).await;
+                check_for_updates(&handle).await;
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
-            connect,
-            set_fader,
-            set_mute,
-            set_param,
-            get_state,
-            set_main_fader,
-            get_main_fader,
-            capture_scene,
-            recall_scene,
-            list_scenes,
-            get_scene,
-            delete_scene,
-            get_meters,
-            get_spectrum,
-            get_gr,
             engine_attach,
             engine_cmd,
             engine_poll,
+            engine_subscribe_push,
             engine_detach
         ])
         .run(tauri::generate_context!())

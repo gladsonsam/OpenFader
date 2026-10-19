@@ -525,6 +525,7 @@ name = "openmix-engine"
 version = "0.3.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "base64",
  "openmix-core",
  "openmix-proto-dl32s",
