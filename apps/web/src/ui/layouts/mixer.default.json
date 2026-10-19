@@ -300,14 +300,20 @@
             "selectAria": "master.selectAria"
           },
           "on": {
-            "select": {
-              "do": "ui.select",
-              "args": {
-                "id": {
-                  "$expr": "master.id"
+            "select": [
+              {
+                "do": "ui.select",
+                "args": {
+                  "id": {
+                    "$expr": "master.id"
+                  }
                 }
+              },
+              {
+                "do": "ui.openPage",
+                "args": { "mode": "channel" }
               }
-            }
+            ]
           }
         }
       ]
