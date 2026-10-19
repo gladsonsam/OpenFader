@@ -14,7 +14,10 @@
      it can never be stolen mid-gesture by the pager (pan-x let the pager
      win the scroll race on finger jitter and kill the drag via
      pointercancel after a few px). The cap tracks the finger 1:1 from a
-     local live value during the drag, not just the echoed store value.
+     local live value during the drag, not just the echoed store value —
+     painted synchronously to the cap transform (never via rAF/Svelte
+     flush, which per-strip Meter loops can starve on phone GPUs) while
+     commits throttle by wall clock with an exact flush on release.
      Variants: 'strip' (mixer, cap 36x50), 'aside' (channel strip,
      cap 46x60 + wider scale), 'master' (dual meter, lighter 40x52 cap,
      gold centre line). -->
@@ -120,27 +123,58 @@
     h: number;
     active: boolean;
     el: HTMLElement | null;
+    pid: number;
   } | null = null;
-  // Drag commit coalescing: pointermove can fire faster than frames on
-  // mobile; store the latest value and flush one oninput per rAF.
-  // liveV mirrors pendingV for the cap so it tracks the finger 1:1 even
-  // before the store echo comes back through the module/layout hops.
+  // Drag commit throttle: pointermove can fire faster than a phone webview
+  // can commit (each oninput walks dispatchAction + store + layout
+  // re-render). Leading edge commits immediately; the rest collapse to the
+  // latest value, flushed at most every COMMIT_MS with an exact flush on
+  // release. Time-based, never rAF-based: every strip runs its own Meter
+  // canvas rAF loop, which can starve rAF on the phone GPU, and neither
+  // the pixels nor the commits may wait for it.
+  // liveV mirrors the latest value so Svelte's eventual flush converges;
+  // the pixels themselves are painted synchronously in move() (paintCap)
+  // so the cap tracks the finger at touch rate even when commits and
+  // Svelte flushes crawl.
   let pendingV: number | null = null;
   let liveV: number | null = $state(null);
-  let dragRaf = 0;
+  let lastCommit = 0;
+  let commitTimer = 0;
+  const COMMIT_MS = 100;
 
-  function flushDrag(): void {
-    dragRaf = 0;
-    if (pendingV == null) return;
-    const v = pendingV;
+  function nowMs(): number {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
+  }
+
+  /** Synchronous cap paint: bypasses Svelte flush + rAF starvation. */
+  function paintCap(v: number): void {
+    const el = capEl;
+    const track = trackEl;
+    if (!el || !track) return;
+    const h = trackH || track.clientHeight || 0;
+    if (!h) return;
+    const y = Math.max(0, Math.min(1, v)) * h;
+    el.style.transform = `translate(-50%, 50%) translateY(-${y.toFixed(1)}px)`;
+  }
+
+  function commitNow(v: number): void {
     pendingV = null;
+    lastCommit = nowMs();
     oninput?.(v);
   }
 
-  function cancelDragFrame(): void {
-    if (dragRaf) {
-      cancelAnimationFrame(dragRaf);
-      dragRaf = 0;
+  function scheduleTrailing(): void {
+    if (commitTimer) return;
+    commitTimer = setTimeout(() => {
+      commitTimer = 0;
+      if (pendingV != null && !disabled) commitNow(pendingV);
+    }, COMMIT_MS);
+  }
+
+  function clearTrailing(): void {
+    if (commitTimer) {
+      clearTimeout(commitTimer);
+      commitTimer = 0;
     }
   }
   // Compositor-friendly cap offset: fixed bottom:0 anchor, travel via
@@ -176,6 +210,9 @@
 
   function down(e: PointerEvent): void {
     if (disabled || !oninput) return;
+    // A second finger must never steal an active drag: overwriting start
+    // mid-gesture would jump the value and confuse the pointerId tracking.
+    if (drag?.active) return;
     // Cap-only grab: a drag must START on the metal cap to move the fader.
     // Presses on the rail/meter/track fall through to the enclosing
     // scroller instead. Small pad keeps the 36px cap grabbable on touch.
@@ -200,10 +237,13 @@
     // All pointers start pending with NO capture: no value change until
     // vertical intent locks the drag (then we capture); horizontal intent
     // aborts without touching the value.
-    drag = { x0: e.clientX, y0: e.clientY, start: value, h, active: false, el };
+    drag = { x0: e.clientX, y0: e.clientY, start: value, h, active: false, el, pid: e.pointerId };
   }
   function move(e: PointerEvent): void {
     if (!drag || disabled || !oninput) return;
+    // Multi-touch: only the pointer that started the drag drives it. A
+    // second finger's moves must never reset start or overwrite the value.
+    if (e.pointerId !== drag.pid) return;
     if (!drag.active) {
       const dx = e.clientX - drag.x0;
       const dy = drag.y0 - e.clientY;
@@ -223,18 +263,38 @@
       }
       drag.active = true;
     }
-    pendingV = faderFromDrag(drag.start, drag.y0 - e.clientY, drag.h, fine);
-    liveV = pendingV;
-    if (!dragRaf) dragRaf = requestAnimationFrame(flushDrag);
+    const v = faderFromDrag(drag.start, drag.y0 - e.clientY, drag.h, fine);
+    // Pixels first, synchronously: the cap tracks the finger at touch
+    // rate regardless of Svelte flush / rAF / commit-backpressure state.
+    liveV = v;
+    paintCap(v);
+    // Commits throttle by wall clock, never by rAF (starved on phone).
+    if (nowMs() - lastCommit >= COMMIT_MS) {
+      clearTrailing();
+      commitNow(v);
+    } else {
+      pendingV = v;
+      scheduleTrailing();
+    }
   }
   function up(e?: PointerEvent): void {
-    // Flush the last coalesced value so the final pixel is never lost.
-    cancelDragFrame();
+    // A second finger lifting (or its capture loss) must not kill the drag.
+    if (e && drag && e.pointerId !== drag.pid) return;
+    // Flush the last throttled value so the final pixel is never lost.
+    clearTrailing();
+    let finalV: number | null = null;
     if (pendingV != null) {
-      const v = pendingV;
+      finalV = pendingV;
       pendingV = null;
-      if (!disabled) oninput?.(v);
+      if (!disabled) {
+        lastCommit = nowMs();
+        oninput?.(finalV);
+      }
     }
+    // Hold the pixels at the final value: the echoed store value (just
+    // flushed) is truth, but under load Svelte may flush before the new
+    // value prop arrives — without this the cap snaps back on release.
+    if (finalV != null) paintCap(finalV);
     // Drop the live value: the echoed store value (now flushed) is truth.
     // (Kept through the drag even if the echo lags; cleared here so a
     // rejected commit, e.g. a locked strip, can never stick the cap.)
