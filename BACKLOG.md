@@ -7,8 +7,8 @@ free AND its files don't collide with the running worker.
 ## In flight (2/2 slots full)
 1. Verification re-run, FULL permission (`ses_eae6850eeffeenyNkk61cNdmL9`) —
    fixed matrix end to end on the live desk.
-2. Android network + sim removal (running) — real LAN access on-device
-   (multicast lock etc.), sims out of device lists (offline == sim).
+2. Mobile routing rework (`ses_eae6542dbffeuK7WHoCGMTNm5V`) — readable,
+   tappable, no precision patching on small screens.
 
 ## Queued (in order)
 1. Mobile routing rework (usable on mobile).
@@ -57,5 +57,7 @@ free AND its files don't collide with the running worker.
 - Linked-fader pairing (sim + fixture proven, xair honestly scoped).
 - Strip mini-icons (phantom/groups/link/polarity, live-verified).
 - Mobile master strip parity (Main LR = channel strip on phone).
+- Android network + sim removal (scan/probe from sim, honest boot,
+  fresh APK in /mnt/gladson/temp).
 - Fresh APK from current tree (/mnt/gladson/temp, badging verified).
 - Worktree phone/daylight UI (merged or in merge — see In flight).
