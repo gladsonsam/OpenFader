@@ -98,6 +98,7 @@
     vm={ui.header}
     mode={ui.state.mode}
     compact={isPhone}
+    connected={live.phase === 'online' || (ui.state.connected !== null && ui.state.connected !== 'offline')}
     onBack={() => ui.do.goBack()}
     onUnlock={() => ui.do.unlock()}
     onFx={() => ui.do.goFx()}

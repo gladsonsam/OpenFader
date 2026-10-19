@@ -16,6 +16,7 @@ import RouteMatrix from '../../screens/routing/RouteMatrix.svelte';
 import SrcTile from '../../screens/routing/SrcTile.svelte';
 import StatusDot from '../../screens/connection/StatusDot.svelte';
 import DeviceRow from '../../screens/connection/DeviceRow.svelte';
+import ManualDesk from '../../screens/connection/ManualDesk.svelte';
 
 function as<P>(c: unknown): Component<ModuleProps<P>> {
   return c as Component<ModuleProps<P>>;
@@ -121,6 +122,16 @@ export const manifests: ModuleManifest[] = [
     defaults: {},
     size: { flex: true },
     events: [{ name: 'connect', args: ['key'] }],
+  },
+  {
+    id: 'manual-desk',
+    title: 'Manual desk add (add-by-IP)',
+    category: 'screen',
+    component: as(ManualDesk),
+    props: {},
+    defaults: {},
+    size: { flex: true },
+    events: [{ name: 'probe-desk', args: ['ip'] }],
   },
 ];
 
