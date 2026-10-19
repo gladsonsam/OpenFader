@@ -210,6 +210,43 @@ pub fn send_pan(root: &str, send: u8) -> anyhow::Result<String> {
     Ok(format!("{root}/mix/{send:02}/pan"))
 }
 
+/// OSC address of one strip LR assign (`mix/lr`, int `1`/`0`).
+///
+/// Doc sources: the XR18 firmware OSC map send block lists `lr` alongside
+/// `level`/`grpon`/`tap`/`pan`; the community X-Air OSC table gives int
+/// `0..=1` (OFF/ON) for `/ch/01/mix/lr` and `/bus/1/mix/lr`. Owner-rig
+/// verified 2026-10-19 (XR18 FW 1.20): `/ch/01/mix/lr` → 1, `/bus/1/mix/lr`
+/// → 0, `/rtn/1/mix/lr` → 1. Main LR (`/lr/mix`) carries NO `lr` field —
+/// never address this builder with the `/lr` root.
+///
+/// ```
+/// # use openmix_proto_xair::mix::mix_lr;
+/// assert_eq!(mix_lr("/ch/01"), "/ch/01/mix/lr");
+/// assert_eq!(mix_lr("/bus/1"), "/bus/1/mix/lr");
+/// ```
+pub fn mix_lr(root: &str) -> String {
+    format!("{root}/mix/lr")
+}
+
+/// OSC address of one channel send group-on (`mix/MM/grpon`, int `1`/`0`).
+///
+/// Doc sources: the XR18 firmware OSC map send block lists `grpon`
+/// alongside `level`/`tap`/`pan`; the community X-Air OSC table gives int
+/// `0..=1` (OFF/ON). Owner-rig verified 2026-10-19 (XR18 FW 1.20): all
+/// `/ch/01/mix/MM/grpon` slots read `0`.
+///
+/// ```
+/// # use openmix_proto_xair::mix::send_grpon;
+/// assert_eq!(send_grpon("/ch/01", 1).unwrap(), "/ch/01/mix/01/grpon");
+/// assert_eq!(send_grpon("/bus/1", 10).unwrap(), "/bus/1/mix/10/grpon");
+/// ```
+pub fn send_grpon(root: &str, send: u8) -> anyhow::Result<String> {
+    if !(1..=AUX_SENDS + FX_SENDS).contains(&send) {
+        anyhow::bail!("send slot {send} out of range 1..={}", AUX_SENDS + FX_SENDS);
+    }
+    Ok(format!("{root}/mix/{send:02}/grpon"))
+}
+
 /// OSC address of one channel send on/off (`mix/MM/on`, int `1`/`0`).
 ///
 /// NO desk leaf: the firmware send block lists `level`, `grpon`, `tap` and
@@ -279,6 +316,13 @@ mod tests {
     #[test]
     fn address_shapes() {
         assert_eq!(mix_pan(1), "/ch/01/mix/pan");
+        assert_eq!(mix_lr("/ch/01"), "/ch/01/mix/lr");
+        assert_eq!(mix_lr("/bus/1"), "/bus/1/mix/lr");
+        assert_eq!(mix_lr("/rtn/1"), "/rtn/1/mix/lr");
+        assert_eq!(send_grpon("/ch/01", 1).unwrap(), "/ch/01/mix/01/grpon");
+        assert_eq!(send_grpon("/ch/01", 10).unwrap(), "/ch/01/mix/10/grpon");
+        assert!(send_grpon("/ch/01", 0).is_err());
+        assert!(send_grpon("/ch/01", 11).is_err());
         assert_eq!(send_level(1, 1).unwrap(), "/ch/01/mix/01/level");
         assert_eq!(send_level(1, 6).unwrap(), "/ch/01/mix/06/level");
         assert_eq!(send_level(16, 7).unwrap(), "/ch/16/mix/07/level");

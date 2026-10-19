@@ -6,7 +6,7 @@
 // Sections (each independent — a failure prints `FAIL [<section>]` and the
 // run continues; exit code is non-zero when any section fails):
 //   open/connect/fader/mute/param      — basic mixer mutations
-//   caps                                — param-plane catalogue (sim: 159 v2 ids, none unsupported)
+//   caps                                — param-plane catalogue (sim: 176 v2 ids, none unsupported)
 //   params                              — confirmed param echo + snapshot-on-connect + live diff
 //   main_fader                          — set/get via state + alias + range check
 //   locks                               — lock→denied→unlock→allowed (2 connections)
@@ -249,8 +249,8 @@ async function main() {
     const caps = await c.waitFor((m) => m?.type === "caps" && m?.driver === "sim");
     const params = caps.params;
     if (!Array.isArray(params)) throw new Error("caps has no params array");
-    // sim implements the whole v2 catalogue: 159 ids, nothing unsupported.
-    if (params.length !== 159) throw new Error(`caps params = ${params.length}, expected 159`);
+    // sim implements the whole v2 catalogue: 176 ids, nothing unsupported.
+    if (params.length !== 176) throw new Error(`caps params = ${params.length}, expected 176`);
     for (const key of ["id", "kind", "scope", "scopes", "min", "max", "unit", "default", "label"]) {
       for (const p of params) {
         if (!(key in p)) throw new Error(`caps entry misses ${key}: ${JSON.stringify(p)}`);
@@ -342,7 +342,7 @@ async function main() {
       if (!(await peer2.waitOpen())) throw new Error("peer2 connection failed to open");
       const caps = await peer2.waitFor((m) => m?.type === "caps" && m?.driver === "sim");
       const allIds = (caps.params || []).map((p) => p?.id).filter(Boolean);
-      if (allIds.length !== 159) throw new Error(`caps params = ${allIds.length}, expected 159`);
+      if (allIds.length !== 176) throw new Error(`caps params = ${allIds.length}, expected 176`);
       const expected = (caps.params || [])
         .filter((p) => (p?.scopes || []).includes("in"))
         .map((p) => p?.id)

@@ -138,6 +138,16 @@ pub const SCOPES_PAN: &[StripKind] = &[
 ];
 /// Generic sends originate from input channels (sim seeds them there).
 pub const SCOPES_SEND: &[StripKind] = &[StripKind::In];
+/// LR assignment: strips with a `{root}/mix/lr` leaf (channels, FX returns
+/// and buses — main LR carries no `lr` field and masters have none).
+pub const SCOPES_LRASSIGN: &[StripKind] = &[
+    StripKind::In,
+    StripKind::Ret,
+    StripKind::Bus,
+];
+/// Monitoring globals: nominally main-scoped, driven via driver methods
+/// (not strip params) and out of strip caps, so never polled.
+pub const SCOPES_MAIN: &[StripKind] = &[StripKind::Main];
 
 /// Reset/unknown-look value of one catalogue entry. Const-friendly
 /// (unlike [`ParamValue`], whose `Text` owns a `String`); convert with
@@ -296,9 +306,11 @@ pub const CATALOGUE: &[ParamDef] = &[
     b("delay_on", "delay on", SCOPES_INPUT, ParamScope::Channel, false),
     f("delay_ms", 0.0, 100.0, "ms", 0.0, "delay", SCOPES_INPUT, ParamScope::Channel),
     f("pan", -100.0, 100.0, "L/R", 0.0, "pan", SCOPES_PAN, ParamScope::Channel),
+    b("lr_assign", "lr assign", SCOPES_LRASSIGN, ParamScope::Channel, true),
     b("hpf_on", "hpf on", SCOPES_INPUT, ParamScope::Channel, false),
     f("hpf_freq", 20.0, 400.0, "Hz", 80.0, "hpf", SCOPES_INPUT, ParamScope::Channel),
     e("hpf_slope", 0.0, 2.0, 0.0, "hpf slope", SCOPES_INPUT, ParamScope::Channel),
+    f("automix_weight", 0.0, 1.0, "", 0.5, "automix", SCOPES_INPUT, ParamScope::Channel),
     // ---- gate (channel strips only; firmware availability is ch-only) ----
     b("gate_on", "gate on", SCOPES_GATE, ParamScope::Channel, false),
     f("gate_thr", -80.0, 0.0, "dB", -50.0, "gate thr", SCOPES_GATE, ParamScope::Channel),
@@ -384,42 +396,52 @@ pub const CATALOGUE: &[ParamDef] = &[
     f("send1_level", -90.0, 10.0, "dB", -90.0, "send1", SCOPES_SEND, ParamScope::Channel),
     e("send1_tap", 0.0, 5.0, 1.0, "send1 tap", SCOPES_SEND, ParamScope::Channel),
     f("send1_pan", -100.0, 100.0, "L/R", 0.0, "send1 pan", SCOPES_SEND, ParamScope::Channel),
+    b("send1_grpon", "send1 grpon", SCOPES_SEND, ParamScope::Channel, false),
     b("send1_on", "send1 on", SCOPES_SEND, ParamScope::Channel, true),
     f("send2_level", -90.0, 10.0, "dB", -90.0, "send2", SCOPES_SEND, ParamScope::Channel),
     e("send2_tap", 0.0, 5.0, 1.0, "send2 tap", SCOPES_SEND, ParamScope::Channel),
     f("send2_pan", -100.0, 100.0, "L/R", 0.0, "send2 pan", SCOPES_SEND, ParamScope::Channel),
+    b("send2_grpon", "send2 grpon", SCOPES_SEND, ParamScope::Channel, false),
     b("send2_on", "send2 on", SCOPES_SEND, ParamScope::Channel, true),
     f("send3_level", -90.0, 10.0, "dB", -90.0, "send3", SCOPES_SEND, ParamScope::Channel),
     e("send3_tap", 0.0, 5.0, 1.0, "send3 tap", SCOPES_SEND, ParamScope::Channel),
     f("send3_pan", -100.0, 100.0, "L/R", 0.0, "send3 pan", SCOPES_SEND, ParamScope::Channel),
+    b("send3_grpon", "send3 grpon", SCOPES_SEND, ParamScope::Channel, false),
     b("send3_on", "send3 on", SCOPES_SEND, ParamScope::Channel, true),
     f("send4_level", -90.0, 10.0, "dB", -90.0, "send4", SCOPES_SEND, ParamScope::Channel),
     e("send4_tap", 0.0, 5.0, 1.0, "send4 tap", SCOPES_SEND, ParamScope::Channel),
     f("send4_pan", -100.0, 100.0, "L/R", 0.0, "send4 pan", SCOPES_SEND, ParamScope::Channel),
+    b("send4_grpon", "send4 grpon", SCOPES_SEND, ParamScope::Channel, false),
     b("send4_on", "send4 on", SCOPES_SEND, ParamScope::Channel, true),
     f("send5_level", -90.0, 10.0, "dB", -90.0, "send5", SCOPES_SEND, ParamScope::Channel),
     e("send5_tap", 0.0, 5.0, 1.0, "send5 tap", SCOPES_SEND, ParamScope::Channel),
     f("send5_pan", -100.0, 100.0, "L/R", 0.0, "send5 pan", SCOPES_SEND, ParamScope::Channel),
+    b("send5_grpon", "send5 grpon", SCOPES_SEND, ParamScope::Channel, false),
     b("send5_on", "send5 on", SCOPES_SEND, ParamScope::Channel, true),
     f("send6_level", -90.0, 10.0, "dB", -90.0, "send6", SCOPES_SEND, ParamScope::Channel),
     e("send6_tap", 0.0, 5.0, 1.0, "send6 tap", SCOPES_SEND, ParamScope::Channel),
     f("send6_pan", -100.0, 100.0, "L/R", 0.0, "send6 pan", SCOPES_SEND, ParamScope::Channel),
+    b("send6_grpon", "send6 grpon", SCOPES_SEND, ParamScope::Channel, false),
     b("send6_on", "send6 on", SCOPES_SEND, ParamScope::Channel, true),
     f("send7_level", -90.0, 10.0, "dB", -90.0, "send7", SCOPES_SEND, ParamScope::Channel),
     e("send7_tap", 0.0, 5.0, 1.0, "send7 tap", SCOPES_SEND, ParamScope::Channel),
     f("send7_pan", -100.0, 100.0, "L/R", 0.0, "send7 pan", SCOPES_SEND, ParamScope::Channel),
+    b("send7_grpon", "send7 grpon", SCOPES_SEND, ParamScope::Channel, false),
     b("send7_on", "send7 on", SCOPES_SEND, ParamScope::Channel, true),
     f("send8_level", -90.0, 10.0, "dB", -90.0, "send8", SCOPES_SEND, ParamScope::Channel),
     e("send8_tap", 0.0, 5.0, 1.0, "send8 tap", SCOPES_SEND, ParamScope::Channel),
     f("send8_pan", -100.0, 100.0, "L/R", 0.0, "send8 pan", SCOPES_SEND, ParamScope::Channel),
+    b("send8_grpon", "send8 grpon", SCOPES_SEND, ParamScope::Channel, false),
     b("send8_on", "send8 on", SCOPES_SEND, ParamScope::Channel, true),
     f("send9_level", -90.0, 10.0, "dB", -90.0, "send9", SCOPES_SEND, ParamScope::Channel),
     e("send9_tap", 0.0, 5.0, 1.0, "send9 tap", SCOPES_SEND, ParamScope::Channel),
     f("send9_pan", -100.0, 100.0, "L/R", 0.0, "send9 pan", SCOPES_SEND, ParamScope::Channel),
+    b("send9_grpon", "send9 grpon", SCOPES_SEND, ParamScope::Channel, false),
     b("send9_on", "send9 on", SCOPES_SEND, ParamScope::Channel, true),
     f("send10_level", -90.0, 10.0, "dB", -90.0, "send10", SCOPES_SEND, ParamScope::Channel),
     e("send10_tap", 0.0, 5.0, 1.0, "send10 tap", SCOPES_SEND, ParamScope::Channel),
     f("send10_pan", -100.0, 100.0, "L/R", 0.0, "send10 pan", SCOPES_SEND, ParamScope::Channel),
+    b("send10_grpon", "send10 grpon", SCOPES_SEND, ParamScope::Channel, false),
     b("send10_on", "send10 on", SCOPES_SEND, ParamScope::Channel, true),
     f("send11_level", -90.0, 10.0, "dB", -90.0, "send11", SCOPES_SEND, ParamScope::Channel),
     e("send11_tap", 0.0, 5.0, 1.0, "send11 tap", SCOPES_SEND, ParamScope::Channel),
@@ -445,6 +467,17 @@ pub const CATALOGUE: &[ParamDef] = &[
     e("send16_tap", 0.0, 5.0, 1.0, "send16 tap", SCOPES_SEND, ParamScope::Channel),
     f("send16_pan", -100.0, 100.0, "L/R", 0.0, "send16 pan", SCOPES_SEND, ParamScope::Channel),
     b("send16_on", "send16 on", SCOPES_SEND, ParamScope::Channel, true),
+    // ---- monitoring globals (rig-verified `/config/solo/*`; nominally
+    // main-scoped, driven via driver methods rather than strip params, and
+    // out of strip caps so the poller never queries them) ----
+    b("solo_dim", "solo dim", SCOPES_MAIN, ParamScope::Main, false),
+    b("solo_mute", "solo mute", SCOPES_MAIN, ParamScope::Main, false),
+    f("solo_level", 0.0, 1.0, "", 0.75, "solo level", SCOPES_MAIN, ParamScope::Main),
+    e("solo_source", 0.0, 14.0, 3.0, "solo source", SCOPES_MAIN, ParamScope::Main),
+    // ---- FX slot insert (rig-verified `/fx/N/insert`; slot-addressed via
+    // driver methods, not a strip send — SCOPES_SEND only satisfies the
+    // send-family scope invariant below; out of strip caps, never polled) ----
+    b("fx_insert", "fx insert", SCOPES_SEND, ParamScope::Channel, false),
 ];
 
 /// Look up one catalogue entry by id (canonical table only; the engine
@@ -585,8 +618,10 @@ mod tests {
         // v2 catalogue size: 54 v1 ids + 95 new (colour/icon/link/source,
         // delay x2, hpf_slope, gate x8, comp x12, eq5 x4, send16 x64) = 149,
         // then +11 firmware-truth ids (gate filter x3, comp key/filter x5,
-        // eq6 x4) − 1 removed id (gate_key_filter) = 159.
-        assert_eq!(CATALOGUE.len(), 159, "catalogue grew/shrank unexpectedly");
+        // eq6 x4) − 1 removed id (gate_key_filter) = 159, then +17 v2b ids
+        // (lr_assign, solo dim/mute/level/source, send grpon x10, automix
+        // weight, fx insert) = 176.
+        assert_eq!(CATALOGUE.len(), 176, "catalogue grew/shrank unexpectedly");
     }
 
     #[test]
