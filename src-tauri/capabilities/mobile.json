@@ -10,12 +10,6 @@
     "haptics:allow-notification-feedback",
     "haptics:allow-selection-feedback",
     "haptics:allow-vibrate",
-    "keep-screen-on:allow-keep-screen-on",
-    "edge-to-edge:allow-enable",
-    "edge-to-edge:allow-disable",
-    "edge-to-edge:allow-get-keyboard-info",
-    "edge-to-edge:allow-get-safe-area-insets",
-    "edge-to-edge:allow-show-keyboard",
-    "edge-to-edge:allow-hide-keyboard"
+    "keep-screen-on:allow-keep-screen-on"
   ]
 }
