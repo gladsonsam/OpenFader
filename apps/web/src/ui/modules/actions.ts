@@ -322,10 +322,12 @@ export function registerBuiltins(): void {
   uiThrough('ui.toggleEqOn', a => [a['id']], S('Toggle EQ on'));
   uiThrough('ui.toggleEqBand', a => [a['id'], a['band']], { args: { id: 'string', band: 'number' }, describe: 'Toggle EQ band on' });
   uiThrough('ui.flatEq', a => [a['id']], S('Flatten EQ gains'));
+  uiThrough('ui.resetEq', a => [a['id']], S('Reset full EQ to defaults, switched in (lock-checked)'));
   uiThrough('ui.setHpfSlope', a => [a['id'], a['slope']], { args: { id: 'string', slope: 'number' }, describe: 'Set HPF slope' });
   uiThrough('ui.setEqBandType', a => [a['id'], a['band'], a['type']], { args: { id: 'string', band: 'number', type: 'string' }, describe: 'Set EQ band type' });
   uiThrough('ui.setDynParam', a => [a['id'], a['which'], a['prop'], a['value']], { args: { id: 'string', which: 'string', prop: 'string', value: 'number' }, describe: 'Set dynamics param' });
   uiThrough('ui.toggleDyn', a => [a['id'], a['which']], { args: { id: 'string', which: 'string' }, describe: 'Toggle gate/comp' });
+  uiThrough('ui.resetDyn', a => [a['id'], a['which']], { args: { id: 'string', which: 'string' }, describe: 'Reset gate/comp to defaults, switched in (lock-checked)' });
   uiThrough('ui.toggleDelayOn', a => [a['id']], S('Toggle input delay on'));
   uiThrough('ui.toggleInvert', a => [a['id']], S('Toggle polarity invert'));
   uiThrough('ui.togglePhantom', a => [a['id']], S('Toggle 48V phantom'));

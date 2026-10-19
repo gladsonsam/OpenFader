@@ -97,7 +97,7 @@
   }
 
   const cellBtn =
-    'box-sizing:border-box;min-width:0;height:36px;padding:0 10px;border-radius:3px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--u4-line-ctl);';
+    'box-sizing:border-box;min-width:0;height:44px;padding:0 10px;border-radius:3px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid var(--u4-line-ctl);';
   function tog(on: boolean): string {
     return on
       ? 'background:var(--u4-chip-on-bg);color:var(--u4-chip-on-fg);'
@@ -118,7 +118,7 @@
       placeholder="Snapshot name"
       aria-label="Snapshot name"
       maxlength="24"
-      style="box-sizing:border-box;flex:1 1 140px;min-width:0;height:36px;padding:0 10px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-panel-bg);color:var(--u4-text-1);font-size:13px"
+      style="box-sizing:border-box;flex:1 1 140px;min-width:0;height:44px;padding:0 10px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-panel-bg);color:var(--u4-text-1);font-size:13px"
     />
     <button onclick={save} aria-label="Save snapshot" style="{cellBtn}background:var(--u4-green);color:var(--u4-green-ink);border-color:var(--u4-green)">Save</button>
     <button onclick={() => onClear?.()} aria-label="Delete all snapshots" style="{cellBtn}background:var(--u4-btn-bg);color:var(--u4-text-1);">Clear</button>

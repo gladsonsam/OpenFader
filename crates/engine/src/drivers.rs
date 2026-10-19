@@ -173,6 +173,12 @@ pub trait DynDriver: Send + Sync {
         let _ = (slot, id, value);
         anyhow::bail!("{}: fx params not supported", self.name())
     }
+    /// Loaded desk-native effect-type index for one FX slot (Numbered
+    /// racks query the desk; Design racks resolve their in-memory type).
+    /// `None` = unknown/unreadable (placeholder rows stay honest).
+    async fn fx_type_index(&self, _slot: u8) -> Option<u8> {
+        None
+    }
     /// `FxParam` write by string id: Design writes the design id,
     /// Numbered parses `parNN`, the rest honestly bail.
     async fn fx_set_param(&self, slot: u8, id: &str, value: f32) -> anyhow::Result<()> {
@@ -598,6 +604,12 @@ impl_dyn_driver!(openmix_proto_xair::XAirDriver {
     }
     fn fx_slot_count(&self) -> usize {
         4
+    }
+    /// Live effect-type read (`/fx/N/type`): the desk answers queries
+    /// here with an int `0..=60`; unreadable slots stay `None` (honest
+    /// placeholders, never guessed).
+    async fn fx_type_index(&self, slot: u8) -> Option<u8> {
+        self.get_fx_type(slot).await.ok()
     }
     async fn fx_set_param(&self, slot: u8, id: &str, value: f32) -> anyhow::Result<()> {
         // Numbered pars only (design ids have no verified mapping).

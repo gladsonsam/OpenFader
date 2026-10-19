@@ -25,7 +25,7 @@
 {#if vm.hasInput}
 <section
   aria-label="Delay"
-  style="box-sizing:content-box;display:flex;flex-direction:column;gap:14px;padding:14px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
+  style="box-sizing:content-box;display:flex;flex-direction:column;gap:10px;padding:10px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
 >
   <div style="box-sizing:content-box;display:flex;align-items:center;justify-content:space-between">
     <span style="font-size:12px;color:var(--u4-text-6)">Delay</span>

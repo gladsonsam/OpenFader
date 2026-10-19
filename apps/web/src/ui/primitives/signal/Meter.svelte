@@ -57,22 +57,9 @@
     grOff: string;
   }
 
-  function draw(): void {
-    const cv = canvas;
-    if (!cv) return;
-    const w = cv.clientWidth || 1;
-    const h = cv.clientHeight || 1;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const bw = Math.max(1, Math.round(w * dpr));
-    const bh = Math.max(1, Math.round(h * dpr));
-    if (cv.width !== bw || cv.height !== bh) {
-      cv.width = bw;
-      cv.height = bh;
-    }
-    const g = cv.getContext('2d');
-    if (!g) return;
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const pal: Palette = {
+  /** Resolved once per mount (plus theme changes), not per frame. */
+  function resolvePalette(): Palette {
+    return {
       green: cssVar('--u4-meter-green', '#5fe060'),
       amber: cssVar('--u4-meter-amber', '#e7c12f'),
       red: cssVar('--u4-red', '#ff4a3d'),
@@ -84,6 +71,38 @@
       grOn: cssVar('--u4-gr-lit', '#ff6b4a'),
       grOff: cssVar('--u4-gr-dark', '#3a1a14'),
     };
+  }
+
+  let pal: Palette = $state({
+    green: '#5fe060',
+    amber: '#e7c12f',
+    red: '#ff4a3d',
+    cover: '#1c2416',
+    peak: '#f2f5f9',
+    clipOn: '#ff3b30',
+    clipOff: '#3a1214',
+    grOn: '#ff6b4a',
+    grOff: '#3a1a14',
+  });
+
+  function draw(pal: Palette): void {
+    const cv = canvas;
+    if (!cv) return;
+    // Off-screen pager cells (clientWidth == 0) skip all canvas work but
+    // keep the loop alive so they resume when paged back in.
+    const w = cv.clientWidth;
+    const h = cv.clientHeight;
+    if (!w || !h) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const bw = Math.max(1, Math.round(w * dpr));
+    const bh = Math.max(1, Math.round(h * dpr));
+    if (cv.width !== bw || cv.height !== bh) {
+      cv.width = bw;
+      cv.height = bh;
+    }
+    const g = cv.getContext('2d');
+    if (!g) return;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
     const showPeak = source.showPeak !== false;
     if (variant === 'hbar') {
       drawHBar(g, w, h, pal);
@@ -186,11 +205,28 @@
   }
 
   $effect(() => {
-    draw();
+    const update = (): void => {
+      pal = resolvePalette();
+    };
+    update();
+    const mo = new MutationObserver(update);
+    try {
+      mo.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['class', 'style'],
+      });
+    } catch {
+      /* noop */
+    }
+    return () => mo.disconnect();
+  });
+
+  $effect(() => {
+    draw(pal);
     if (frozen) return;
     let raf = 0;
     const loop = (): void => {
-      draw();
+      draw(pal);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);

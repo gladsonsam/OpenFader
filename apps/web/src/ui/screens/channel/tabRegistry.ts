@@ -3,9 +3,12 @@
 // middle region. Tab packages register their CONTENT component only:
 //   registerChannelTab('eq', EqTab)   // from ui/screens/channel/eq/register.ts
 // Tab ids follow the design: input | eq | gate | comp | sends  (screen ids ch-input, ch-eq, ch-gate, ch-comp, ch-sends).
+// `groups` is the phone-only desk-groups tab (screen id ch-groups): it has
+// no design-screen equivalent and renders from the channel layout JSON like
+// every other tab; the registry stays wired as a thin fallback.
 import type { Component } from 'svelte';
 
-export type ChannelTabId = 'input' | 'eq' | 'gate' | 'comp' | 'sends';
+export type ChannelTabId = 'input' | 'eq' | 'gate' | 'comp' | 'sends' | 'groups';
 
 const tabs = new Map<ChannelTabId, Component>();
 

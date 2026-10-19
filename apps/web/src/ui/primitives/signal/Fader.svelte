@@ -2,7 +2,9 @@
      Exact metal cap (gradient + grip lines + centre line), scale labels,
      rail, meter column and dB readout. Local-first drag: pointer capture,
      dy mapped through uiLogic.faderFromDrag (0.25 factor in fine mode);
-     Arrow/PageUp/PageDown/Home/End keys; double-tap resets to unity.
+     Arrow/PageUp/PageDown/Home/End keys; double-tap resets to unity
+5:      (0 dB) but ONLY when already near unity (gated window, so a stray
+6:      double-tap far from 0 dB never jumps the fader).
      bank pager, vertical drags stay with the fader. Only presses that start
      on the metal cap grab the fader (rail/meter/track fall through to the
      scroller). A direction lock (~10px slop) applies to all pointers:
@@ -31,7 +33,7 @@
     readColor = 'var(--u4-text-4)',
     disabled = false,
     fine = false,
-    resetValue = null,
+    resetValue = dbToPos(0),
     meter = null,
     meterFrozen = false,
     oninput = null,
@@ -49,7 +51,7 @@
     disabled?: boolean;
     /** Fine mode: drag/keyboard move a quarter as far. */
     fine?: boolean;
-    /** Double-tap reset target (default: unity, dbToPos(0) = 0.75). */
+    /** Unity reset target (default 0 dB); double-tap only fires near it. */
     resetValue?: number | null;
     /** Meter feed; null renders the silent (fully covered) meter. */
     meter?: MeterSource | null;
@@ -89,7 +91,6 @@
   );
   const readH = geo.readH;
   const readFont = geo.readFont;
-  const pct = $derived((Math.max(0, Math.min(1, value)) * 100).toFixed(2));
 
   const silent: MeterSource = {
     getLevel: () => -90,
@@ -100,6 +101,10 @@
 
   let area: HTMLButtonElement | null = $state(null);
   let capEl: HTMLSpanElement | null = $state(null);
+  let trackEl: HTMLSpanElement | null = $state(null);
+  // Travel height of the cap track (px), measured for the
+  // compositor-friendly cap position (fixed bottom:0 anchor + translateY).
+  let trackH = $state(0);
   // Tablet direction lock: touch/pen starts pending (no capture, no value
   // change) until the gesture declares itself. Vertical lock -> fader drag
   // (capture then). Horizontal lock -> abort so the enclosing bank pager
@@ -112,12 +117,53 @@
     active: boolean;
     el: HTMLElement | null;
   } | null = null;
+  // Drag commit coalescing: pointermove can fire faster than frames on
+  // mobile; store the latest value and flush one oninput per rAF.
+  let pendingV: number | null = null;
+  let dragRaf = 0;
+
+  function flushDrag(): void {
+    dragRaf = 0;
+    if (pendingV == null) return;
+    const v = pendingV;
+    pendingV = null;
+    oninput?.(v);
+  }
+
+  function cancelDragFrame(): void {
+    if (dragRaf) {
+      cancelAnimationFrame(dragRaf);
+      dragRaf = 0;
+    }
+  }
+  // Compositor-friendly cap offset: fixed bottom:0 anchor, travel via
+  // translateY(-capY px). capY == value-fraction * measured track height,
+  // so the centre line lands exactly where bottom:{pct}% put it.
+  const capY = $derived(Math.max(0, Math.min(1, value)) * trackH);
+  // Gated unity reset: double-tap snaps to resetValue (0 dB) only when
+  // the fader is already within this normalised window of it (~±3 dB
+  // around unity on the design taper: 40 dB per unit near 0 dB).
+  // no-op so a stray double-tap never jumps the fader.
+  const RESET_RANGE = 0.08;
   // Whether the last press started on the cap. Track taps must never
   // reset the fader: double-tap reset (mouse dblclick / touch tap-tap)
   // is gated on this, since click/dblclick fire after pointerup cleared
   // `drag`.
   let downOnCap = false;
   let lastTap = 0;
+
+  $effect(() => {
+    const el = trackEl;
+    if (!el) return;
+    const measure = (): void => {
+      trackH = el.clientHeight || 0;
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
 
   function down(e: PointerEvent): void {
     if (disabled || !oninput) return;
@@ -168,18 +214,37 @@
       }
       drag.active = true;
     }
-    oninput(faderFromDrag(drag.start, drag.y0 - e.clientY, drag.h, fine));
+    pendingV = faderFromDrag(drag.start, drag.y0 - e.clientY, drag.h, fine);
+    if (!dragRaf) dragRaf = requestAnimationFrame(flushDrag);
   }
-  function up(): void {
+  function up(e?: PointerEvent): void {
+    // Flush the last coalesced value so the final pixel is never lost.
+    cancelDragFrame();
+    if (pendingV != null) {
+      const v = pendingV;
+      pendingV = null;
+      if (!disabled) oninput?.(v);
+    }
+    if (e && drag?.active && drag.el) {
+      try {
+        if (drag.el.hasPointerCapture?.(e.pointerId)) drag.el.releasePointerCapture(e.pointerId);
+      } catch {
+        /* noop */
+      }
+    }
     drag = null;
   }
   function reset(): void {
     if (disabled || !oninput || !downOnCap) return;
+    const target = resetValue ?? dbToPos(0);
+    // Gate: only snap when already near unity; far away, no-op.
+    if (Math.abs(value - target) > RESET_RANGE) return;
     tap();
-    oninput(resetValue ?? dbToPos(0));
+    oninput(target);
   }
   function ontap(): void {
     const now = Date.now();
+    // Same gate as reset(): tap-tap only counts on the cap and near unity.
     if (now - lastTap < 350 && downOnCap) reset();
     lastTap = now;
   }
@@ -219,12 +284,14 @@
     onpointermove={move}
     onpointerup={up}
     onpointercancel={up}
+    onlostpointercapture={up}
     ondblclick={reset}
     onclick={ontap}
     onkeydown={key}
     style="flex:1;position:relative;display:block;width:100%;min-height:0;padding:0;border:0;background:transparent;touch-action:auto;cursor:default}"
   >
     <span
+      bind:this={trackEl}
       style="position:absolute;left:{insets.l}px;right:{insets.r}px;top:{insets.t}px;bottom:{insets.b}px;display:block"
     >
       <ScaleLabels variant={geo.scale} />
@@ -238,7 +305,7 @@
       />
       <span
         bind:this={capEl}
-        style="position:absolute;left:{cap.left};bottom:{pct}%;width:{cap.w}px;height:{cap.h}px;transform:translate(-50%, 50%);border-radius:3px;background:{capBg};box-shadow:{capShadow};touch-action:pan-x;cursor:{disabled ||
+        style="position:absolute;left:{cap.left};bottom:0;width:{cap.w}px;height:{cap.h}px;transform:translate(-50%, 50%) translateY(-{capY.toFixed(1)}px);will-change:transform;border-radius:3px;background:{capBg};box-shadow:{capShadow};touch-action:pan-x;cursor:{disabled ||
         !oninput
           ? 'default'
           : 'ns-resize'}"

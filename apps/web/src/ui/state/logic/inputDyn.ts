@@ -82,3 +82,31 @@ export function toggleDyn(w: World, id: string, which: 'gate' | 'comp'): World {
     if (d) d.on = !d.on;
   });
 }
+
+/**
+ * Reset defaults (design K() tables, mirrored by DYN_KNOBS defaultValue in
+ * screens/channel/dyn/dynModel.ts — kept local so state/logic never imports
+ * from screens). Restoring values also switches the section in so the reset
+ * is audible. Lock-checked like toggleDyn.
+ */
+const DYN_RESET: Record<'gate' | 'comp', Record<string, number>> = {
+  gate: { thr: -50, range: 40, att: 0.5, hold: 50, rel: 150 },
+  comp: { thr: -20, ratio: 3, knee: 3, att: 10, rel: 120, makeup: 0 },
+};
+
+/** Default table a reset writes (copy; the store forwards these to the desk). */
+export function dynResetDefaults(which: 'gate' | 'comp'): Record<string, number> {
+  return { ...(DYN_RESET[which] ?? {}) };
+}
+
+export function resetDyn(w: World, id: string, which: 'gate' | 'comp'): World {
+  if (w.state.locked) return w;
+  const defaults = DYN_RESET[which];
+  if (!defaults) return w;
+  return withChannel(w, id, c => {
+    const d = c.dyn?.[which] as unknown as Record<string, number | boolean> | undefined;
+    if (!d) return;
+    for (const [prop, v] of Object.entries(defaults)) d[prop] = v;
+    d['on'] = true;
+  });
+}
