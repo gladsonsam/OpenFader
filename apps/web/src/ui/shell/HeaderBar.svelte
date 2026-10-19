@@ -5,7 +5,11 @@
      Layout: [Mixer title | Back + channel chip / page title | lock banner]
      spacer [FX Routing Connect Settings] divider [scene button].
      Channel mode strips to [Back | centered channel name | prev/next]: the toolbar,
-     scene button and lock banner stay one Back tap away on the mixer. -->
+     scene button and lock banner stay one Back tap away on the mixer.
+     Snapshot visibility: phone (compact) renders the scene button ONLY on
+     the mixer with a desk link up (connected); every other phone screen
+     hides it so the 36px bar stays one row (nowrap + overflow hidden).
+     Desktop keeps the design's button on all non-channel screens. -->
 <!-- NOTE: buttons carry font-variant-numeric:normal because the design's
      buttons compute normal (UA `font:` shorthand reset; the template only
      re-inherits font-family), while app.css forces tabular on buttons. The
@@ -30,6 +34,7 @@
     onMeters = null,
     metersActive = false,
     compact = false,
+    connected = true,
     onPrevChannel = null,
     onNextChannel = null,
   }: {
@@ -48,6 +53,9 @@
     metersActive?: boolean;
     /** Phone density: hide redundant titles, narrow the scene button. */
     compact?: boolean;
+    /** Desk link up (live relay online or a fixture desk selected — not
+        explicit offline). The snapshot button only renders when true. */
+    connected?: boolean;
     /** Channel prev/next (rendered only in channel mode when both set). */
     onPrevChannel?: (() => void) | null;
     onNextChannel?: (() => void) | null;
@@ -58,14 +66,21 @@
   const cn = $derived(tileStyle(mode === 'connect'));
   const st = $derived(tileStyle(mode === 'settings'));
   const mb = $derived(tileStyle(metersActive));
+  // Snapshot (scene) button visibility: phone shows it ONLY on the mixer
+  // with a desk link up (everywhere else it wrapped the 36px bar to two
+  // rows). Desktop has room so it keeps the design's button on every
+  // non-channel screen, but still hides it with no desk link.
+  const showScene = $derived(
+    compact ? mode === 'mixer' && connected : !vm.isChannel && connected,
+  );
   // Phone density: 36px touch rows so Back + title + toolbar share one
-  // wrapped row instead of stacking three 46px rows. Desktop untouched.
+  // row instead of stacking. Desktop untouched.
   const ibtn = compact ? 36 : 46;
 </script>
 
 <header
   style={compact
-    ? 'min-height:36px;height:auto;box-sizing:content-box;flex:none;display:flex;align-items:center;flex-wrap:wrap;gap:2px 6px;padding:2px 6px 2px 8px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)'
+    ? 'min-height:36px;height:auto;box-sizing:content-box;flex:none;display:flex;align-items:center;flex-wrap:nowrap;overflow:hidden;gap:2px 6px;padding:2px 6px 2px 8px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)'
     : 'height:var(--u4-header-h);box-sizing:content-box;flex:none;display:flex;align-items:center;gap:8px;padding:0 8px 0 12px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)'}
 >
   {#if !vm.showBack && !compact}
@@ -172,11 +187,11 @@
   </div>
   {/if}
 
-  {#if !compact && !vm.isChannel}
+  {#if !compact && showScene}
     <div aria-hidden="true" style="width:1px;height:30px;flex:none;background:var(--u4-divider)"></div>
   {/if}
 
-  {#if !vm.isChannel}
+  {#if showScene}
     <SceneButton num={vm.curSceneNum} name={vm.curSceneName} label={vm.sceneAria} active={vm.isScenes} narrow={compact} onOpen={onScene} />
   {/if}
 </header>

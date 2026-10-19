@@ -52,8 +52,11 @@ export interface ConnectionVm {
   /** Always false now (the relay link is automatic — no manual host UI).
    *  Kept so layout bindings and existing tests keep their shape. */
   showFix: boolean;
-  /** Always false now (desks come from Scan only — no add-by-IP card).
-   *  Kept so layout bindings and existing tests keep their shape. */
+  /** Manual add-by-IP card: visible while a relay link can probe (online,
+   *  or errored — the probe still needs the link, so the card explains
+   *  itself while down). Verified desks join the device list above with
+   *  `via: manual`, tap-to-connect like any discovered desk. Never any
+   *  127.0.0.1/relay-link UI here (that stays deleted). */
   showManualDesk: boolean;
 }
 
@@ -141,6 +144,10 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
     const scanHint = scanBusy ? 'Scanning for desks…' : null;
     const scanError = live.scanError ?? null;
     const lastScan = scanBusy ? 'Scanning for desks…' : state.lastScan;
+    // Manual add-by-IP lives next to the rows it feeds: the probe needs a
+    // relay link, so the card shows while online, or while errored (where
+    // it explains the link is down instead of probing blind).
+    const showManualDesk = on || live.phase === 'error';
     const emptyFor = (): string | null =>
       found.length
         ? null
@@ -168,7 +175,7 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
         devices: found,
         emptyText: null,
         showFix: false,
-        showManualDesk: false,
+        showManualDesk,
       };
     }
     return {
@@ -186,7 +193,7 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
       devices: found,
       emptyText: emptyFor(),
       showFix: false,
-      showManualDesk: false,
+      showManualDesk,
     };
   }
   // No relay link was ever picked and no fixture console is selected: say
