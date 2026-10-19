@@ -1016,7 +1016,7 @@ pub fn u16_to_level(q: u16) -> f32 {
 /// GR dB reduction (>= 0) → `u8` binary sample at 1/4 dB
 /// (clamped to `0..=GR_DB_MAX`, rounded).
 pub fn db_to_u8(v: f32) -> u8 {
-    (v.max(0.0).min(GR_DB_MAX) * 4.0).round() as u8
+    (v.clamp(0.0, GR_DB_MAX) * 4.0).round() as u8
 }
 
 /// `u8` binary GR sample → dB reduction.

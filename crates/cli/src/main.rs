@@ -36,9 +36,9 @@ fn parse_ch(s: &str, count: usize) -> anyhow::Result<StripId> {
 /// Static dispatch over drivers (`MixerDriver` is not dyn-compatible due to
 /// async methods). New providers add one variant + one delegation arm.
 enum AnyDriver {
-    Sim(openmix_sim::SimDriver),
+    Sim(Box<openmix_sim::SimDriver>),
     XAir(Box<openmix_proto_xair::XAirDriver>),
-    Dl32s(openmix_proto_dl32s::Dl32sDriver),
+    Dl32s(Box<openmix_proto_dl32s::Dl32sDriver>),
 }
 
 impl MixerDriver for AnyDriver {
@@ -157,8 +157,8 @@ impl MixerDriver for AnyDriver {
 fn make_driver(kind: &str, preset: openmix_sim::SimPreset) -> AnyDriver {
     match kind {
         "xair" => AnyDriver::XAir(Box::new(openmix_proto_xair::XAirDriver::new())),
-        "dl32s" => AnyDriver::Dl32s(openmix_proto_dl32s::Dl32sDriver::new()),
-        _ => AnyDriver::Sim(openmix_sim::SimDriver::with_preset(preset)),
+        "dl32s" => AnyDriver::Dl32s(Box::new(openmix_proto_dl32s::Dl32sDriver::new())),
+        _ => AnyDriver::Sim(Box::new(openmix_sim::SimDriver::with_preset(preset))),
     }
 }
 

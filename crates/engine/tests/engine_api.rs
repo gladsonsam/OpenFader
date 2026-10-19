@@ -646,15 +646,14 @@ async fn shows_capture_recall_delete() {
                     saw_param = true;
                 }
             }
-            Event::State { strips, .. } => {
+            Event::State { strips, .. }
                 if strips
                     .iter()
                     .find(|s| s.ch == 0)
                     .is_some_and(|s| (s.fader as f64 - cap_fader).abs() < 1e-6)
-                {
+                => {
                     saw_state = true;
                 }
-            }
             _ => {}
         }
     }

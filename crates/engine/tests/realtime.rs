@@ -175,7 +175,7 @@ fn decode_levels(f: &BinFrame) -> Vec<f32> {
     assert_eq!(f.version, BIN_VERSION);
     assert_eq!(f.payload.len(), f.n as usize * 2);
     f.payload
-        .chunks_exact(2)
+        .as_chunks::<2>().0.iter()
         .map(|c| u16_to_level(u16::from_le_bytes([c[0], c[1]])))
         .collect()
 }
@@ -185,7 +185,7 @@ fn decode_gr(f: &BinFrame) -> Vec<(u8, f32, f32)> {
     assert_eq!(f.version, BIN_VERSION);
     assert_eq!(f.payload.len(), f.n as usize * 3);
     f.payload
-        .chunks_exact(3)
+        .as_chunks::<3>().0.iter()
         .map(|c| (c[0], u8_to_db(c[1]), u8_to_db(c[2])))
         .collect()
 }
@@ -202,7 +202,7 @@ fn hex_of(bytes: &[u8]) -> String {
 
 fn bytes_of(hex: &str) -> Vec<u8> {
     let h = hex.trim();
-    assert!(h.len() % 2 == 0, "odd hex length");
+    assert!(h.len().is_multiple_of(2), "odd hex length");
     (0..h.len())
         .step_by(2)
         .map(|i| u8::from_str_radix(&h[i..i + 2], 16).expect("hex"))
