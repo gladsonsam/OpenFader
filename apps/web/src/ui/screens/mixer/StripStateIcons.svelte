@@ -3,8 +3,7 @@
 
      Display-only, echo-confirmed only: every glyph renders solely from
      engine-confirmed state (null/unsupported -> hidden, never faked).
-     48V shows whenever the desk reports phantom (amber when on, dim when
-     off — confirmed-off is itself safety information); M1.. membership,
+     48V shows only when the desk confirms phantom on (amber); M1.. membership,
      S1.. membership, LINK, Ø (polarity invert) and D (delay on) are
      presence flags shown only when active (master-muted groups read red,
      matching the name-bar badge idiom at a smaller 14px size). Renders
@@ -44,12 +43,12 @@
   const glyphs = $derived.by<Glyph[]>(() => {
     if (!d) return [];
     const out: Glyph[] = [];
-    if (d.phantom !== null) {
+    if (d.phantom === true) {
       out.push({
         key: 'phantom',
         label: '48V',
-        tone: d.phantom ? 'amber' : 'dim',
-        title: d.phantom ? 'Phantom power on (desk-confirmed)' : 'Phantom power off (desk-confirmed)',
+        tone: 'amber',
+        title: 'Phantom power on (desk-confirmed)',
       });
     }
     d.mg.forEach((g, i) =>
@@ -82,7 +81,7 @@
   const label = $derived(() => {
     if (!d || glyphs.length === 0) return 'Strip status: nothing reported';
     const parts: string[] = [];
-    if (d.phantom !== null) parts.push(d.phantom ? 'phantom on' : 'phantom off');
+    if (d.phantom === true) parts.push('phantom on');
     d.mg.forEach((g, i) => parts.push(`mute group ${g + 1}${d.mgMuted[i] ? ', master muted' : ''}`));
     d.sg.forEach((g, i) => parts.push(`subgroup ${g + 1}${d.sgMuted[i] ? ', master muted' : ''}`));
     if (d.link === true) parts.push('stereo linked');
@@ -96,7 +95,7 @@
   <div
     role="group"
     aria-label={label()}
-    style="box-sizing:content-box;flex:none;display:flex;flex-wrap:wrap;justify-content:center;gap:3px;padding:1px 0;min-width:0"
+    style="box-sizing:content-box;flex:none;display:flex;flex-wrap:wrap;justify-content:center;gap:3px;padding:1px 0;min-width:0;min-height:16px"
   >
     {#each glyphs as g (g.key)}
       <span

@@ -63,6 +63,16 @@
       getLevel?: (() => number) | null;
       /** Card min-height px (layouts shrink it on phones). */
       minH?: number;
+      /** Flex shorthand override (phone stacks the graph full-width). */
+      flex?: string;
+      /** Width override (phone: 100% to fill the stacked column). */
+      width?: number | string;
+      /** Right margin on the plot px (phone layouts pass 24: keeps the
+       *  44px R handle inside the scrollport so the ancestor scroller
+       *  never clips it or grows a horizontal scrollbar; desktop
+       *  defaults to 0 and relies on the structural column padding
+       *  below for the same 22px of breathing room). */
+      plotMR?: number;
     };
     ctx: ModuleContext;
     nodeId: string;
@@ -84,6 +94,17 @@
   const frozen = $derived(props.frozen ?? true);
   const getLevel = $derived(props.getLevel ?? null);
   const minH = $derived(props.minH ?? 300);
+  const flexCss = $derived(props.flex ?? '1 1 400px');
+  const widthCss = $derived(
+    props.width == null ? '' : `;width:${typeof props.width === 'number' ? props.width + 'px' : props.width}`,
+  );
+  // Explicit layout inset only (phone layouts pass 24); desktop defaults
+  // to 0 and relies on the structural 22px column padding below — half
+  // the 44px R circle (22px) overhangs the plot at 100% width, and the
+  // column reserves that breathing room instead of shifting the handle.
+  // Handle centres stay unclamped on the curve (see dynModel); touch
+  // target + drag math untouched.
+  const plotMR = $derived(props.plotMR ?? 0);
   // Bottom-left label crowding: the comp G handle rides the curve start, so
   // with a low threshold it parks at (0%, 100%) on top of both "-60" axis
   // ticks; the gate operating dot parks there too whenever silent/frozen.
@@ -278,7 +299,7 @@
 </style>
 
 <div
-  style="box-sizing:content-box;flex:1 1 400px;min-height:{minH}px;display:flex;gap:10px;padding:12px 12px 12px 6px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg)"
+  style="box-sizing:content-box;flex:{flexCss}{widthCss};min-height:{minH}px;display:flex;gap:10px;overflow:visible;padding:16px 16px 12px 6px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg)"
 >
   <div aria-hidden="true" style="box-sizing:content-box;width:34px;flex:none;position:relative;margin-bottom:24px">
     {#each axis as a, i (a.label)}
@@ -291,7 +312,9 @@
       >
     {/each}
   </div>
-  <div style="box-sizing:content-box;flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
+  <div style="box-sizing:content-box;flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;overflow:visible{plotMR
+    ? ''
+    : ';padding-right:22px'}">
     <div
       bind:this={plot}
       onpointerdown={down}
@@ -302,7 +325,7 @@
       style="box-sizing:content-box;flex:1;position:relative;overflow:visible;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg-2);touch-action:{kind ===
       'gate'
         ? 'pan-y'
-        : 'none'};cursor:{kind === 'gate' ? 'ew-resize' : 'move'}"
+        : 'none'};cursor:{kind === 'gate' ? 'ew-resize' : 'move'}{plotMR ? `;margin-right:${plotMR}px` : ''}"
     >
       <span aria-hidden="true" style="position:absolute;right:10px;bottom:8px;font-size:12px;color:var(--u4-text-10)">Input →</span>
       <span aria-hidden="true" style="position:absolute;left:10px;top:8px;font-size:12px;color:var(--u4-text-10)">↑ Output</span>

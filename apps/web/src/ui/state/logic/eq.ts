@@ -72,6 +72,29 @@ export function flatEq(w: World, id: string): World {
   return withChannel(w, id, c => { c.eq?.bands.forEach(b => { b.g = 0; }); });
 }
 
+/**
+ * Full EQ reset (head-menu Reset row): every band back to the RESET_F/Q
+ * tables with gains at 0, HPF at 80 Hz, and EQ switched in so the reset is
+ * audible. Band types, per-band bypass states and HPF slope are left alone.
+ * Lock-checked: the head menu disables its rows while locked.
+ */
+export function resetEq(w: World, id: string): World {
+  if (w.state.locked) return w;
+  return withChannel(w, id, c => {
+    if (!c.eq) return;
+    c.eq.on = true;
+    c.eq.hpf.f = 80;
+    c.eq.bands.forEach((b, i) => {
+      const band = i + 1;
+      const f = RESET_F[band];
+      if (f !== undefined) b.f = f;
+      b.g = 0;
+      const q = RESET_Q[band];
+      if (q !== undefined) b.q = q;
+    });
+  });
+}
+
 export function setHpfSlope(w: World, id: string, slope: 12 | 24): World {
   return withChannel(w, id, c => { if (c.eq) c.eq.hpf.slope = slope; });
 }

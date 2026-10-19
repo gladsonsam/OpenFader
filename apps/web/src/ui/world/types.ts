@@ -383,7 +383,7 @@ export interface World {
 
   // ---- fx (R2; empty rows / null caps until the engine sends them) ----
   readonly fxSlots: FxSlotView[];
-  readonly fxCaps: { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string }> }> } | null;
+  readonly fxCaps: { slots: number; types: Array<{ id: string; label: string; params: Array<{ id: string; label: string; unit?: string }> }> } | null;
   fxSetType(slot: number, type: string): void;
   fxParam(slot: number, id: string, v01: number): void;
   fxBypass(slot: number, bypass: boolean): void;

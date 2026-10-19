@@ -11,7 +11,7 @@ import {
 import type { ThemePresetId } from '../../modules/theme.ts';
 
 export type Mode = 'mixer' | 'channel' | 'fx' | 'routing' | 'connect' | 'settings' | 'scenes';
-export type Tab = 'input' | 'eq' | 'gate' | 'comp' | 'sends';
+export type Tab = 'input' | 'eq' | 'gate' | 'comp' | 'sends' | 'groups';
 export type RouteGroup = 'Lcl' | 'Net' | 'USB';
 
 export const PAGE_MODES: Mode[] = ['fx', 'routing', 'connect', 'settings', 'scenes'];

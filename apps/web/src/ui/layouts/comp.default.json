@@ -18,11 +18,23 @@
         "bg": "dynBg",
         "fg": "dynFg",
         "pressed": "dynPressed",
-        "summary": "dynSummary"
+        "summary": "dynSummary",
+        "locked": "store.locked"
       },
       "on": {
         "toggle": {
           "do": "ui.toggleDyn",
+          "args": {
+            "id": {
+              "$expr": "selId"
+            },
+            "which": {
+              "$expr": "dynKind"
+            }
+          }
+        },
+        "reset": {
+          "do": "ui.resetDyn",
           "args": {
             "id": {
               "$expr": "selId"
