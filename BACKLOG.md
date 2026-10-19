@@ -5,8 +5,8 @@ Queued with the owner's words. A worker is dispatched only when a slot is
 free AND its files don't collide with the running worker.
 
 ## In flight (2/2 slots full)
-1. Mobile master strip parity (`ses_eae84069bffeGDc9dXCRGWs9dC`) — Main LR
-   like every other channel strip on phone, tap to expand.
+1. Channel topbar simplification (`ses_eae7cc976ffeCL5M38Z7uc3cKZ`) —
+   back-to-mixer + name + prev/next only, switcher removed.
 2. Verification loop completion (`ses_eae8d6395ffe6xukMszT5HS9vd`) —
    finish + run scripts/verify-bidirectional.mjs, file the gap list.
 
@@ -51,5 +51,6 @@ free AND its files don't collide with the running worker.
 - Real-only device scan + offline mode (honest empty states).
 - Linked-fader pairing (sim + fixture proven, xair honestly scoped).
 - Strip mini-icons (phantom/groups/link/polarity, live-verified).
+- Mobile master strip parity (Main LR = channel strip on phone).
 - Fresh APK from current tree (/mnt/gladson/temp, badging verified).
 - Worktree phone/daylight UI (merged or in merge — see In flight).
