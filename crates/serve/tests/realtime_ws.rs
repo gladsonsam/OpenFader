@@ -101,7 +101,7 @@ async fn hello_binary_meters_flow() {
     // Drain the attach snapshot (state/shows arrive before any binary).
     let _ = next_typed(&mut rx, "state").await;
 
-    tx.send(Message::Text(
+    tx.send(Message::text(
         json!({"cmd":"hello","binary_meters":true}).to_string(),
     ))
     .await
@@ -199,7 +199,7 @@ async fn stats_reports_counters() {
     let (mut tx, mut rx) = connect(&addr).await;
     let _ = next_typed(&mut rx, "state").await;
 
-    tx.send(Message::Text(json!({"cmd":"stats"}).to_string()))
+    tx.send(Message::text(json!({"cmd":"stats"}).to_string()))
         .await
         .unwrap();
     let st = next_typed(&mut rx, "stats").await;
@@ -221,7 +221,7 @@ async fn stats_reports_counters() {
     // Let meter traffic flow, then re-query: sends advance, drops stay 0
     // on a fast client, queue stays drained.
     tokio::time::sleep(Duration::from_millis(300)).await;
-    tx.send(Message::Text(json!({"cmd":"stats"}).to_string()))
+    tx.send(Message::text(json!({"cmd":"stats"}).to_string()))
         .await
         .unwrap();
     let st = next_typed(&mut rx, "stats").await;
