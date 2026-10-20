@@ -29,7 +29,9 @@
   const scope = $derived({
     store: ui.state,
     lists: {
-      displayRows: rows('Display'),
+      displayRows: rows('Display').map(row => row.key === 'spp' && device.now !== 'desktop'
+        ? { ...row, label: 'Strip layout', desc: 'Touch screens use swipeable strips sized for fingers. The 8 / 12 / 16 setting applies on desktop.', control: 'none', options: [] }
+        : row),
       faderRows: rows('Faders'),
       safetyRows: rows('Safety'),
       aboutRows: rows('About'),

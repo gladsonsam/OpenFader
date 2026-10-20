@@ -3,6 +3,7 @@
      Geist, tabular-nums, hidden overflow. Screens render via children. -->
 <script lang="ts">
   import type { Snippet } from 'svelte';
+  import { onMount } from 'svelte';
   import { ui } from './state/uiStore.svelte.ts';
   import { PRESETS, applyTheme, clearTheme } from './modules/theme.ts';
 
@@ -13,6 +14,21 @@
   // clears the previous set first so maps never leak into each other.
   let frame: HTMLElement | null = $state(null);
   let applied: string[] = [];
+  onMount(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const resize = (): void => {
+      frame?.style.setProperty('--app-height', `${viewport.height}px`);
+      frame?.style.setProperty('--app-offset-top', `${viewport.offsetTop}px`);
+    };
+    resize();
+    viewport.addEventListener('resize', resize);
+    viewport.addEventListener('scroll', resize);
+    return () => {
+      viewport.removeEventListener('resize', resize);
+      viewport.removeEventListener('scroll', resize);
+    };
+  });
   $effect(() => {
     const name = ui.state.theme;
     if (frame) {

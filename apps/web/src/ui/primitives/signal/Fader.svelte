@@ -478,6 +478,7 @@
 
 <div style="display:flex;flex-direction:column;width:100%;height:100%;opacity:{disabled ? 0.45 : 1}">
   <div
+    data-readout="fader"
     style="height:{readH}px;flex:none;text-align:center;font-size:{readFont}px;color:{readColor}"
   >
     {dbText}

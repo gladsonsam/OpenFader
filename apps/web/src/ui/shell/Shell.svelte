@@ -24,6 +24,7 @@
   import type { Mode } from '../state/uiLogic.ts';
 
   const banks = bankDefs();
+  const fixtureMode = typeof window !== 'undefined' && ['1', 'true'].includes(new URLSearchParams(window.location.search).get('fixture') ?? '');
 
   // Live availability filter (item 4): online, banks with no strip on the
   // desk topology hide (XR18: Ch 17-32/33-48/Mtx/Grp/DCA banks vanish).
@@ -89,19 +90,19 @@
       const m: Mode = ui.state.mode;
       if (m === 'mixer')
         return isPhone
-          ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;padding:4px'
-          : 'flex:1;min-height:0;display:flex;gap:4px;padding:4px';
+          ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;--shell-padding:4px'
+          : 'flex:1;min-height:0;display:flex;gap:4px;--shell-padding:4px';
       if (m === 'channel')
         return isPhone
-          ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;padding:6px'
-          : 'flex:1;min-height:0;display:flex;gap:6px;padding:6px';
+          ? 'flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;--shell-padding:6px'
+          : 'flex:1;min-height:0;display:flex;gap:6px;--shell-padding:6px';
       if (m === 'scenes')
-        return 'flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;padding:8px';
+        return 'flex:1;min-height:0;display:flex;flex-direction:column;gap:8px;--shell-padding:8px';
       if (m === 'fx')
-        return 'flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;padding:6px;overflow-y:auto';
+        return 'flex:1;min-height:0;display:flex;flex-direction:column;gap:6px;--shell-padding:6px;overflow-y:auto';
       if (m === 'routing')
-        return 'flex:1;min-height:0;display:flex;flex-wrap:wrap;gap:6px;padding:6px;overflow-y:auto;align-content:flex-start';
-      return 'flex:1;min-height:0;overflow-y:auto;padding:12px';
+        return 'flex:1;min-height:0;display:flex;flex-wrap:wrap;gap:6px;--shell-padding:6px;overflow-y:auto;align-content:flex-start';
+      return 'flex:1;min-height:0;overflow-y:auto;--shell-padding:12px';
     })(),
   );
   const placeholderStyle = $derived(
@@ -113,10 +114,11 @@
 
 <AppFrame>
   <HeaderBar
-    vm={ui.header}
+    vm={{ ...ui.header, connDot: live.deskConnected ? 'var(--u4-green)' : 'var(--u4-red-hi)', connAria: live.deskConnected ? 'Connection: connected, select device' : 'Connection: not connected, select device' }}
     mode={ui.state.mode}
     compact={isPhone}
-    connected={live.phase === 'online' || (ui.state.connected !== null && ui.state.connected !== 'offline')}
+    connected={live.deskConnected || live.demo || ui.state.connected === 'offline' || (fixtureMode && ui.state.connected !== null && ui.state.connected !== 'offline')}
+    preview={!fixtureMode && !live.deskConnected}
     onBack={() => ui.do.goBack()}
     onUnlock={() => ui.do.unlock()}
     onFx={() => ui.do.goFx()}
@@ -129,7 +131,7 @@
     onNextChannel={() => ui.do.stepChannel(1)}
     metersActive={meterBridge.open}
   />
-  <div style={bodyStyle}>
+  <div class="u4-shell-body" class:u4-mixer-body={ui.state.mode === 'mixer'} class:u4-edge-dock={showRail && !isPhone} style={bodyStyle}>
     {#key ui.state.mode}
       <div
         style="flex:1;min-height:0;min-width:0;display:flex;flex-direction:column"

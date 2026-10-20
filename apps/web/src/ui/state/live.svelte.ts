@@ -103,6 +103,17 @@ class LiveRelay {
     return this.world;
   }
 
+  get deskConnected(): boolean {
+    void this.version;
+    const w = this.world;
+    return this.phase === 'online' && !!w?.capsReady && w.driver !== 'sim' && w.link?.state === 'connected';
+  }
+
+  get demo(): boolean {
+    void this.version;
+    return this.phase === 'online' && !!this.world?.capsReady && this.world.driver === 'sim';
+  }
+
   /** EngineWorld observers (the fixture sync): called with the world on
    * every world bump, plus immediately when the world already exists.
    * Survives reconnects — each new world fans out to the same set. */
@@ -448,6 +459,7 @@ class LiveRelay {
   liveLevelDb(fixtureId: string): number | null {
     const w = this.world;
     if (this.phase !== 'online' || !w || !w.capsReady) return null;
+    if (w.driver !== 'sim' && !this.deskConnected) return -90;
     const ch = bridgeStrip(w, fixtureId);
     if (ch === null || ch >= w.meters.size) return -90;
     if (w.driver === 'xair' && w.kindOf(ch) !== 'in') return -90;
