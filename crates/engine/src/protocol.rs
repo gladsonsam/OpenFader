@@ -618,6 +618,8 @@ pub enum Event {
     Shows {
         shows: Vec<Show>,
     },
+    /// Additive connection-generation barrier. Never a parameter reset in steady state.
+    SyncEpoch { epoch: u64 },
     Meters {
         levels: Vec<f32>,
     },
@@ -837,6 +839,7 @@ impl Event {
             Event::State { .. } => "state",
             Event::Param { .. } => "param",
             Event::Shows { .. } => "shows",
+            Event::SyncEpoch { .. } => "sync_epoch",
             Event::Meters { .. } => "meters",
             Event::Spectrum { .. } => "spectrum",
             Event::AudioSpectrum { .. } => "audio_spectrum",

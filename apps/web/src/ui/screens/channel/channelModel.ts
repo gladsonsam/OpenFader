@@ -101,13 +101,15 @@ export function masterStripVm(w: World): MasterStripVm {
     readout: t.readout,
     readColor: t.readColor,
     faderPos: pos,
-    faderAria: faderAria(ch.name, pos, useSend, st.mix),
+    faderAria: faderAria(ch.name, pos, useSend, st.mix, ch.live?.driver),
     accent: useSend ? 'sof' : 'chan',
     fine: st.fine,
   };
 }
 
 export interface InputVm {
+  live?: import('../../fixtures/designData.ts').LiveFields;
+  delaySupported?: boolean;
   hasInput: boolean;
   gain: number;
   trim: number;
@@ -146,15 +148,17 @@ export function inputVm(w: World): InputVm | null {
   const grp = ch.src.slice(0, 3);
   return {
     hasInput: true,
+    live: inp.live,
+    delaySupported: !inp.live || inp.live.supported.delay || inp.live.supported.delayOn,
     gain: inp.gain,
     trim: inp.trim,
     delayMs: inp.delay,
     gainText: gainT.value,
     trimText: trimT.value,
     delayText: delayT.value,
-    delayDist: delayDistanceText(inp.delay),
+    delayDist: Number.isFinite(inp.delay) ? delayDistanceText(inp.delay) : 'Unknown',
     delayOn: inp.delayOn,
-    delayLabel: inp.delayOn ? 'On' : 'Off',
+    delayLabel: inp.live && !inp.live.known.delayOn ? 'Unknown' : inp.delayOn ? 'On' : 'Off',
     delayBg: inp.delayOn ? '#5cdb5c' : 'var(--u4-btn-bg)',
     delayFg: inp.delayOn ? '#10240f' : 'var(--u4-text-4)',
     invert: inp.invert,
@@ -162,7 +166,7 @@ export function inputVm(w: World): InputVm | null {
     invertFg: inp.invert ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
     phantomOn: inp.phantom,
     armed,
-    phantomLabel: armed
+    phantomLabel: inp.live && !inp.live.known.phantom ? '48V Unknown' : armed
       ? inp.phantom
         ? 'Tap again: 48V off'
         : 'Tap again: 48V on'
@@ -174,7 +178,7 @@ export function inputVm(w: World): InputVm | null {
     phantomBorder: armed ? '#f6c76a' : inp.phantom ? '#ff6a60' : 'var(--u4-line-ctl)',
     srcName: ch.src,
     srcGroup:
-      grp === 'Lcl'
+      grp === 'Lcl' || grp === 'Loc'
         ? 'Local input'
         : grp === 'Net'
           ? 'Network input'
@@ -253,6 +257,7 @@ export function sendRowsVm(ch: Channel, desk?: DeskSendsOverlay | null): SendRow
     const k = n - 1;
     if (!Number.isInteger(n) || k < 0 || k >= ch.sends.length) continue;
     const v = ch.sends[k];
+    const known = Number.isFinite(v);
     if (typeof v !== 'number') continue;
     const pre = ch.sendPre![k];
     const name = desk?.destName(n) ?? 'Mix ' + n;
@@ -266,9 +271,9 @@ export function sendRowsVm(ch: Channel, desk?: DeskSendsOverlay | null): SendRow
       index: k,
       name,
       value: v,
-      pct: (v * 100).toFixed(1),
-      text: fmtDb(v),
-      aria: 'Send to ' + name + ' ' + fmtDb(v) + ' dB',
+      pct: known ? (v * 100).toFixed(1) : '0',
+      text: fmtDb(v, ch.live?.driver),
+      aria: 'Send to ' + name + ' ' + fmtDb(v, ch.live?.driver) + ' dB',
       fill: pre ? 'var(--u4-text-1)' : '#22d3e6',
       pre,
       preLabel: pre ? 'Pre' : 'Post',

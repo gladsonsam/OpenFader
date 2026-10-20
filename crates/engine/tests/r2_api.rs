@@ -1030,18 +1030,18 @@ async fn masters_reject_out_of_range_and_bad_input() {
 async fn probe_from_sim_attempts_unicast() {
     // The embedded app boots on sim with no driver switch: probe must
     // ATTEMPT the unicast verify (xair table) instead of refusing.
-    // 192.0.2.1 is TEST-NET-1 (unroutable): the datagram goes out, no
+    // 127.0.0.1 is the silent local UDP fixture: the datagram goes out, no
     // reply ever comes back — an honest "no reply" naming the address,
     // the list untouched, the session alive.
     let engine = new_engine_with(FakeScanner::empty()).await;
     let mut client = engine.attach(None).await;
     drain_snapshot(&mut client).await;
     client
-        .send(Cmd::Probe { addr: "192.0.2.1".to_string() })
+        .send(Cmd::Probe { addr: "127.0.0.1".to_string() })
         .await
         .unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
-    assert!(is_error_containing(&err, "no reply from 192.0.2.1"));
+    assert!(is_error_containing(&err, "no reply from 127.0.0.1"));
     // The session survives: a scan still honestly reports nothing.
     client.send(Cmd::Scan).await.unwrap();
     let event = wait_for(&mut client, |e| matches!(e, Event::Devices { .. })).await;
@@ -1131,14 +1131,14 @@ async fn connect_silent_desk_fails_without_planting_addr() {
     // message (never a phantom link that times out every query), and must
     // not plant the unreachable address: a later scan stays honest-empty
     // instead of unicast-probing a dead host on every scan.
-    // 192.0.2.1 is TEST-NET-1 (unroutable): the datagrams go out, nothing
+    // 127.0.0.1 is the silent local UDP fixture: the datagrams go out, nothing
     // ever answers — sweep (2x400ms) + verify (2x800ms) bound the wait.
     let engine = new_engine_with(FakeScanner::empty()).await;
     let mut client = engine.attach(None).await;
     drain_snapshot(&mut client).await;
-    let err = engine.connect("xair", Some("192.0.2.1")).await.unwrap_err();
+    let err = engine.connect("xair", Some("127.0.0.1")).await.unwrap_err();
     assert!(
-        err.to_string().contains("no reply from 192.0.2.1:10024"),
+        err.to_string().contains("no reply from 127.0.0.1:10024"),
         "connect names the silent desk (got {err:#})"
     );
     // The failed connect leaves the old driver active (retry-safe).

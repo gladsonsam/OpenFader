@@ -11,7 +11,7 @@
   import Knob from '../../../primitives/signal/Knob.svelte';
   import { DYN_KNOBS, dynKnobValue, type DynKind, type DynKnobDef } from './dynModel.ts';
   import type { ModuleContext } from '../../../modules/types.ts';
-  import type { Comp, Gate } from '../../../fixtures/designData.ts';
+  import { spec, type Comp, type Gate } from '../../../fixtures/designData.ts';
 
   let {
     props = {},
@@ -50,11 +50,13 @@
 <div
   style="box-sizing:content-box;flex:1 1 300px;display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));align-content:center;gap:20px 8px;padding:18px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
 >
-  {#if gate && comp}
+  {#if (kind === 'gate' ? gate : comp)}
     {#each visible as k (k.prop)}
       <Knob
         specKey={k.specKey}
-        value={dynKnobValue(kind, gate, comp, k.prop)}
+        value={dynKnobValue(kind, gate!, comp!, k.prop)}
+        specOverride={k.range ? { ...spec(k.specKey), min: k.range[0], max: k.range[1], log: k.range[0] > 0 && spec(k.specKey).log, step: k.choices ? undefined : spec(k.specKey).step } : undefined}
+        choices={k.choices}
         label={k.label}
         color={props.color ?? '#ff9f43'}
         size={props.size ?? 80}

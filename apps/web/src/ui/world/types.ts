@@ -98,9 +98,10 @@ export interface FieldView<T> {
   status: ParamStatus;
 }
 
-/** Design EQ band (LS/PEQ/HS; engine 0..5 types fold onto these, see mapping). */
+/** EQ band with an exact, reversible engine filter type. */
 export interface EqBandView {
-  type: 'LS' | 'PEQ' | 'HS';
+  type: import('../fixtures/designData.ts').EqBandType | null;
+  typeStatus: ParamStatus;
   /** Centre frequency Hz. */
   f: FieldView<number>;
   /** Gain dB. */
@@ -108,11 +109,11 @@ export interface EqBandView {
   /** Q. */
   q: FieldView<number>;
   on: FieldView<boolean>;
-  /** Raw engine enum 0..5 when known (lossy fold documented in mapping). */
+  /** Raw engine enum 0..5 when known. */
   rawType: number | null;
 }
 
-/** Design channel EQ: on + HPF + 4 mapped bands + the engine 5th band. */
+/** Channel EQ follows the per-strip capability topology (four or six bands). */
 export interface EqView {
   on: FieldView<boolean>;
   hpf: {
@@ -121,10 +122,11 @@ export interface EqView {
     /** Design slope 12 | 24 dB/oct (engine 0..2 folds onto these). */
     slope: FieldView<12 | 24>;
   };
-  /** Design bands 1..4 <-> engine eq1..eq4. */
-  bands: [EqBandView, EqBandView, EqBandView, EqBandView];
-  /** Engine eq5_* (air band; no design slot — exposed, never faked). */
+  /** Every supported engine eqN band, in wire order. */
+  bands: EqBandView[];
+  /** Compatibility aliases; these bands are also in bands[]. */
   band5: EqBandView | null;
+  band6: EqBandView | null;
 }
 
 /** Design gate (5 knobs) — engine carries 3 extra ids (mode/key_src/key_filter). */
@@ -155,6 +157,9 @@ export interface DynView {
 
 /** One generic send (design 0..15 <-> engine send1..16_*). */
 export interface SendView {
+  /** Group membership and tap are independent of send enable/mute. */
+  grpon?: FieldView<boolean>;
+  tap?: FieldView<number>;
   /** Design 0..1 send value (via the fader law; see mapping). */
   value: FieldView<number>;
   /** Pre (true) / post (false) tap. */

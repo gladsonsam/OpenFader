@@ -25,6 +25,7 @@ pub mod insert;
 pub mod look;
 pub mod mix;
 pub mod solo;
+mod sync_decode;
 
 pub mod addrs {
     //! X-Air address table. The wire is 1-based with zero-padded two-digit
@@ -698,33 +699,58 @@ const EQ_TYPE_IDS: [&str; 6] = [
     "eq6_type",
 ];
 
-/// Parse one desk-originated OSC message into a mix-surface param update.
-///
-/// The desk broadcasts every param change to all `/xremote` subscribers
-/// (owner-rig verified: a fader set from a second client arrives here in
-/// ~250 ms), and it also echoes every client's query replies to everyone.
-/// This covers the mixer surface the desk actually moves under operators'
-/// hands — fader/mute/name/pan/send-level/headamp-gain/color/EQ (+ the DCA
-/// direct `fader`/`on` forms, which carry no `/mix` segment) — so desk-side
-/// moves apply live instead of waiting for the background poll sweep.
-/// Everything deeper (dyn/tap) keeps riding the poller; add leaves here
-/// (mirroring `get_param`'s decode arms) to extend live coverage.
-///
-/// Returns the decoded updates — global strip index, catalogue id and value
-/// in engineering units (same as `get_param`); empty for anything outside
-/// the mix surface (other clients' poll traffic, meter streams, `/info`).
-/// Bitmask/container leaves fan out to one update per catalogue id:
-/// `grp/dca` fans out to four `dcaN_assign` updates, the `automix`
-/// container to `automix_on` + `automix_weight`. `grp/mute` stays out
-/// (mute-group membership has no catalogue ids — the engine tracks it
-/// through `MuteGroupAssign` events, so desk-side mute-group moves surface
-/// at the next attach snapshot).
+/// Decode advertised XR18 controls in engineering units, including query
+/// replies and captured typed containers. Dynamics/input/send leaves share
+/// their query codecs. One send level fans out to canonical and legacy IDs.
+/// Private group IDs are consumed by the engine's typed library fanout;
+/// FX is stateful (its type selects each parameter codec) and is decoded by
+/// the per-session receive actor. Unknown/unmapped paths remain absent.
 pub fn parse_inbound(msg: &OscMessage) -> Vec<(u16, &'static str, ParamValue)> {
-    parse_inbound_go(msg).unwrap_or_default()
+    let shared = sync_decode::inbound(msg);
+    if !shared.is_empty() {
+        let mut shared = shared;
+        if let Some((strip, id, value)) = shared.first().cloned() {
+            if let Ok((slot, "level")) = generic_send(id) {
+                let alias = if slot <= 6 { AUX_LEVEL_IDS[slot as usize - 1] } else { FX_LEVEL_IDS[slot as usize - 7] };
+                // Keep the legacy update first for existing consumers.
+                shared.insert(0, (strip, alias, value));
+            }
+        }
+        return shared;
+    }
+    let expanded = sync_decode::expand(msg);
+    if !expanded.is_empty() { return expanded.iter().flat_map(parse_inbound).collect(); }
+    let mut updates = parse_inbound_go(msg).unwrap_or_default();
+    // One wire level has both canonical and compatibility IDs.
+    if let Some((strip, id, value)) = updates.first().cloned() {
+        let slot = AUX_LEVEL_IDS.iter().position(|p| *p == id).map(|i| i + 1)
+            .or_else(|| FX_LEVEL_IDS.iter().position(|p| *p == id).map(|i| i + 7));
+        if let Some(slot) = slot {
+            const IDS: [&str; 10] = ["send1_level","send2_level","send3_level","send4_level","send5_level","send6_level","send7_level","send8_level","send9_level","send10_level"];
+            updates.push((strip, IDS[slot - 1], value));
+        }
+    }
+    updates
 }
 
 fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static str, ParamValue)>> {
     let addr = msg.addr.strip_prefix('/')?;
+    if let Some(group) = addr.strip_prefix("config/mute/").and_then(|s| s.parse::<u16>().ok()).filter(|n| (1..=4).contains(n)) {
+        return Some(vec![(group - 1, "_mute_group", ParamValue::Bool(osc::is_on(msg).ok()?))]);
+    }
+    if let Some(root) = addr.strip_suffix("/grp/mute") {
+        let strip = strip_of_root(&format!("/{root}"))?;
+        if !matches!(strip_root(strip).ok()?.0, openmix_core::StripKind::In | openmix_core::StripKind::Ret | openmix_core::StripKind::Bus | openmix_core::StripKind::FxSnd) { return None; }
+        let mask = groups::mask_from_msg(msg).ok()?;
+        const IDS: [&str; 4] = ["_mg1", "_mg2", "_mg3", "_mg4"];
+        return Some(IDS.iter().enumerate().map(|(i, id)| (strip, *id, ParamValue::Bool(mask & (1 << i) != 0))).collect());
+    }
+    if addr == "-stat/solosw" && msg.args.len() >= addrs::XR18_CHANNELS as usize {
+        return Some(msg.args.iter().take(16).enumerate().filter_map(|(i, arg)| match arg {
+            OscType::Int(v) => Some((i as u16, "solo", ParamValue::Bool(*v != 0))), _ => None,
+        }).collect());
+    }
+
     // Solo switches (`/-stat/solosw/NN`, 1-based channel bank): the desk
     // broadcasts these on solo changes (surface, mixer control software, or our own
     // `set_solo` — all drive the same bank). Decoded to the `solo` poll
@@ -761,6 +787,13 @@ fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static str, ParamVal
     if let Some(rest) = addr.strip_prefix("dca/") {
         let (n, leaf) = rest.split_once('/')?;
         let strip = strip_of_root(&format!("/dca/{n}"))?;
+        if leaf == "config/name" {
+            return Some(vec![(strip, "name", ParamValue::Text(osc::string_args(msg).into_iter().next()?))]);
+        }
+        if leaf == "config/color" {
+            let i = look::int_from_msg(msg, look::COLOR_MIN, look::COLOR_MAX, "color").ok()?;
+            return Some(vec![(strip, "color", ParamValue::Float(i as f32))]);
+        }
         return match leaf {
             "fader" => Some(vec![(strip, "fader", ParamValue::Float(osc::fader_value(msg).ok()?))]),
             "on" => Some(vec![(strip, "mute", ParamValue::Bool(osc::mute_is_muted(msg).ok()?))]),
@@ -806,6 +839,20 @@ fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static str, ParamVal
         };
         let db = mix::wire_to_send_db(mix::send_level_value(msg).ok()?).ok()?;
         return Some(vec![(ch - 1, id, ParamValue::Float(db))]);
+    }
+    // Input HPF leaves broadcast independently of EQ bypass. Decode with
+    // the same input codecs as get_param; do not wait for a cached poll.
+    if matches!(leaf, "hpon" | "hpf") {
+        let (root, block) = head.rsplit_once('/')?;
+        if block != "preamp" { return None; }
+        let ch: u16 = root.strip_prefix("ch/")?.parse().ok()?;
+        if !(1..=addrs::XR18_CHANNELS).contains(&ch) { return None; }
+        let (id, value) = if leaf == "hpon" {
+            ("hpf_on", ParamValue::Bool(osc::is_on(msg).ok()?))
+        } else {
+            ("hpf_freq", ParamValue::Float(input::hpf_wire_to_hz(osc::fader_value(msg).ok()?).ok()?))
+        };
+        return Some(vec![(ch - 1, id, value)]);
     }
     // EQ on/off (`{root}/eq/on`): channels, FX returns, buses and main LR
     // — decoded like the `get_param` `eq_on` arm. FX-send/DCA roots carry
@@ -997,8 +1044,12 @@ fn fx_send(param: &str) -> anyhow::Result<u8> {
     Ok(n)
 }
 
+type LevelSample = Option<(std::time::Instant, Vec<f32>)>;
+
 /// Live XR18-class mixer on UDP 10024.
 pub struct XAirDriver {
+    receive_since: std::sync::Arc<std::sync::Mutex<std::time::Instant>>,
+    tasks: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>> ,
     connection_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     rta: std::sync::Mutex<Option<std::sync::Arc<rta::RtaStream>>>,
     session: Mutex<Option<std::sync::Arc<OscSession>>>,
@@ -1010,7 +1061,7 @@ pub struct XAirDriver {
     /// Shared with the per-connection ingest task (see `connect`), which
     /// routes every streamed DYN blob here; the `/meters/6` subscribe in
     /// `subscribe_meters_once` starts that stream.
-    dyn_cache: std::sync::Arc<tokio::sync::Mutex<Option<dyn_gr::DynMeters>>>,
+    dyn_cache: std::sync::Arc<tokio::sync::Mutex<Option<(std::time::Instant, dyn_gr::DynMeters)>>>,
     /// Desk-originated mix-surface updates (see [`parse_inbound`]): stable
     /// across reconnects, fed by one ingest task per connection. The engine
     /// subscribes once and applies these to its param cache live.
@@ -1021,7 +1072,7 @@ pub struct XAirDriver {
     /// see [`XAirDriver::poll_meters`]). `None` until the first blob
     /// arrives. Filled by the cache-drain task that
     /// [`MixerDriver::subscribe_meters`] installs; read by `poll_meters`.
-    meter_latest: std::sync::Arc<std::sync::Mutex<Option<Vec<f32>>>>,
+    meter_latest: std::sync::Arc<std::sync::Mutex<LevelSample>>,
 }
 
 impl Default for XAirDriver {
@@ -1042,6 +1093,8 @@ impl XAirDriver {
     pub fn with_model(model: addrs::XAirModel) -> Self {
         let (update_tx, _) = broadcast::channel(256);
         Self {
+            receive_since: std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
+            tasks: std::sync::Mutex::new(Vec::new()),
             connection_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             rta: std::sync::Mutex::new(None),
             session: Mutex::new(None),
@@ -1219,7 +1272,7 @@ impl XAirDriver {
 
     /// Latest decoded ALL DYN frame, if any blob has been ingested yet.
     pub async fn last_dyn(&self) -> Option<dyn_gr::DynMeters> {
-        self.dyn_cache.lock().await.clone()
+        self.dyn_cache.lock().await.as_ref().filter(|(at, _)| at.elapsed() <= std::time::Duration::from_millis(500)).map(|(_, meters)| meters.clone())
     }
 
     /// Loaded effect-type index for one FX slot (`/fx/N/type`, int
@@ -1349,8 +1402,11 @@ impl XAirDriver {
         &self,
         interval: std::time::Duration,
     ) -> anyhow::Result<broadcast::Receiver<openmix_core::MeterFrame>> {
-        let rx = self.subscribe_meters_once().await?;
+        let rx = self.session().await?.as_ref().unwrap().subscribe_meters();
         self.spawn_meter_renewal(interval).await?;
+        // Keep the receiver/drain and watchdog installed even after an
+        // initial send failure; its same-session retry can then recover.
+        if let Err(error) = self.subscribe_meters_once().await { eprintln!("xair: initial stream subscribe failed: {error}; watchdog will retry"); }
         Ok(rx)
     }
 
@@ -1407,7 +1463,9 @@ impl XAirDriver {
     /// renewals never block queries and tolerate resubscribes.
     async fn spawn_meter_renewal(&self, interval: std::time::Duration) -> anyhow::Result<()> {
         let guard = self.session().await?;
-        let sock = std::sync::Arc::clone(guard.as_ref().unwrap().socket());
+        let session = guard.as_ref().unwrap().clone();
+        let sock = std::sync::Arc::clone(session.socket());
+        let dyn_cache = self.dyn_cache.clone();
         let generation = self.connection_generation.clone();
         let connection = generation.load(std::sync::atomic::Ordering::Acquire);
         drop(guard);
@@ -1420,20 +1478,26 @@ impl XAirDriver {
             addrs::METER_REQUEST,
             vec![OscType::String(addrs::METER_DYN_SUBSCRIBE.to_string())],
         )?;
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             let mut ticker =
-                openmix_transport::session::keepalive_ticker(interval);
+                openmix_transport::session::keepalive_ticker(interval.min(std::time::Duration::from_secs(1)));
+            let mut renewed = std::time::Instant::now();
             // `keepalive_ticker` fires immediately; consume it so the first
             // renewal lands one full `interval` after the initial subscribe.
             ticker.tick().await;
             loop {
                 ticker.tick().await;
                 if generation.load(std::sync::atomic::Ordering::Acquire) != connection { break; }
-                let _ = sock.send(&xremote).await;
-                let _ = sock.send(&sub_levels).await;
-                let _ = sock.send(&sub_dyn).await;
+                let stale_levels = session.latest_meter_sample().is_none_or(|(at, _)| at.elapsed() > std::time::Duration::from_millis(500));
+                let stale_dyn = dyn_cache.lock().await.as_ref().is_none_or(|(at, _)| at.elapsed() > std::time::Duration::from_millis(500));
+                if renewed.elapsed() < interval && !stale_levels && !stale_dyn { continue; }
+                renewed = std::time::Instant::now();
+                for bytes in [&xremote, &sub_levels, &sub_dyn] {
+                    if let Err(error) = sock.send(bytes).await { eprintln!("xair: subscription renewal failed: {error}"); }
+                }
             }
         });
+        self.tasks.lock().unwrap().push(task);
         Ok(())
     }
 
@@ -1464,7 +1528,7 @@ impl XAirDriver {
     /// live reduction once the desk streams (see `subscribe_meters_once`).
     pub async fn ingest_dyn_message(&self, msg: &OscMessage) -> anyhow::Result<()> {
         let dyn_meters = Self::decode_dyn_message(msg)?;
-        *self.dyn_cache.lock().await = Some(dyn_meters);
+        *self.dyn_cache.lock().await = Some((std::time::Instant::now(), dyn_meters));
         Ok(())
     }
 
@@ -1473,7 +1537,7 @@ impl XAirDriver {
     /// out of range — never a fabricated zero.
     async fn cached_gr(&self, strip: StripId, gate: bool) -> anyhow::Result<f32> {
         let cache = self.dyn_cache.lock().await;
-        let Some(dyn_meters) = cache.as_ref() else {
+        let Some((_, dyn_meters)) = cache.as_ref().filter(|(at, _)| at.elapsed() <= std::time::Duration::from_millis(500)) else {
             anyhow::bail!("xair: no DYN meter data yet (desk not streaming /meters/6)");
         };
         if gate {
@@ -1562,7 +1626,9 @@ impl MixerDriver for XAirDriver {
                 "no reply from {peer} — check the desk is powered, on this network, and the IP is correct"
             );
         }
+        for task in self.tasks.lock().unwrap().drain(..) { task.abort(); }
         let connection = self.connection_generation.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
+        *self.receive_since.lock().unwrap() = std::time::Instant::now();
         *self.meter_latest.lock().unwrap() = None;
         *self.dyn_cache.lock().await = None;
         // Desk-broadcast ingest: parse every unmatched inbound message into
@@ -1571,34 +1637,108 @@ impl MixerDriver for XAirDriver {
         // ride along here too (the transport hub only forwards levels, so
         // the session files DYN blobs as unmatched traffic): route them
         // into the GR cache backing the `gate_gr` / `comp_gr` param reads.
-        let mut rx = session.subscribe_updates();
+        let mut rx = session.subscribe_received_updates();
         let tx = self.update_tx.clone();
         let dyn_cache = self.dyn_cache.clone();
+        let receive_since = self.receive_since.clone();
         let generation = self.connection_generation.clone();
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
+            let mut fx_types = [None; 4];
             loop {
                 match rx.recv().await {
-                    Ok(msg) => {
+                    Ok((received_at, msg)) => {
+                        if received_at < *receive_since.lock().unwrap() { continue; }
                         if generation.load(std::sync::atomic::Ordering::Acquire) != connection { break; }
                         if msg.addr == addrs::METER_DYN_SUBSCRIBE {
                             if let Ok(dyn_m) = Self::decode_dyn_message(&msg) {
-                                *dyn_cache.lock().await = Some(dyn_m);
+                                *dyn_cache.lock().await = Some((received_at, dyn_m));
+                            }
+                            continue;
+                        }
+                        if let Some(rest) = msg.addr.strip_prefix("/fx/") {
+                            if let Some((slot, leaf)) = rest.split_once('/') {
+                                if let Ok(slot @ 1..=4) = slot.parse::<u16>() {
+                                    let type_args = if leaf == "type" { Some(msg.args.as_slice()) } else { None };
+                                    if let Some(args) = type_args {
+                                        if let Ok(index) = fx::parse_fx_type(args) {
+                                            fx_types[slot as usize - 1] = Some(index);
+                                            let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(slot), param: "_fx_type".into(), value: ParamValue::Float(index as f32) });
+                                        }
+                                    } else if let Some(index) = leaf.strip_prefix("par/").and_then(|n| n.parse::<u8>().ok()).filter(|n| (1..=64).contains(n)) {
+                                        if let Some(effect) = fx_types[slot as usize - 1] {
+                                            if let Some(def) = fx::fx_param_def(effect, index) {
+                                                if let Ok(value) = fx::parse_fx_param(&msg.args, Some(&def)) {
+                                                    let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(slot), param: format!("_fx_par{index:02}"), value: ParamValue::Float(value) });
+                                                }
+                                            }
+                                        } else {
+                                            let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(slot), param: "_fx_dirty".into(), value: ParamValue::Bool(true) });
+                                        }
+                                    } else if leaf == "par" {
+                                        if let Some(effect) = fx_types[slot as usize - 1] {
+                                            for (i, arg) in msg.args.iter().take(64).enumerate() {
+                                                if let Some(def) = fx::fx_param_def(effect, i as u8 + 1) {
+                                                    if let Ok(value) = fx::parse_fx_param(std::slice::from_ref(arg), Some(&def)) {
+                                                        let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(slot), param: format!("_fx_par{:02}", i + 1), value: ParamValue::Float(value) });
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    } else if leaf.is_empty() {
+                                        // No positional guessing for unknown FX containers.
+                                    }
+                                }
+                            } else if let Ok(slot @ 1..=4) = rest.parse::<u16>() {
+                                if let Ok(index) = fx::parse_fx_type(&msg.args) {
+                                    fx_types[slot as usize - 1] = Some(index);
+                                    let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(slot), param: "_fx_type".into(), value: ParamValue::Float(index as f32) });
+                                }
+                            }
+                            continue;
+                        }
+                        if msg.addr == "/node" {
+                            // Display-unit node text is never decoded as normalized
+                            // OSC. Re-read a captured typed container at normal budget.
+                            if let Some(OscType::String(text)) = msg.args.first() {
+                                for line in text.lines().take(256) {
+                                    let Some(path) = line.split_whitespace().next() else { continue; };
+                                    let route = XAIR_TOPOLOGY.iter().flat_map(|f| f.first..f.first + f.count).find_map(|i| {
+                                        let (_, root) = strip_root(i as u16).ok()?;
+                                        if path == root { return Some((i as u16, None)); }
+                                        path.strip_prefix(&(root + "/")).map(|suffix| (i as u16, Some(suffix.to_string())))
+                                    });
+                                    let (strip, value) = match route {
+                                        Some((strip, Some(suffix))) => (strip, ParamValue::Text(suffix)),
+                                        Some((strip, None)) => (strip, ParamValue::Bool(true)),
+                                        None if path.starts_with("/fx/") => {
+                                            let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(0), param: "_fx_dirty".into(), value: ParamValue::Bool(true) });
+                                            continue;
+                                        }
+                                        None => (u16::MAX, ParamValue::Bool(true)),
+                                    };
+                                    let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(strip), param: "_sync_dirty".into(), value });
+                                }
                             }
                             continue;
                         }
                         for (strip, param, value) in parse_inbound(&msg) {
                             let _ = tx.send(openmix_core::ParamUpdate {
+                                received_at,
                                 strip: StripId(strip),
                                 param: param.to_string(),
                                 value,
                             });
                         }
                     }
-                    Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Lagged(n)) => {
+                        eprintln!("xair: control receive lagged {n}; requesting bounded reconciliation");
+                        let _ = tx.send(openmix_core::ParamUpdate { received_at: std::time::Instant::now(), strip: StripId(u16::MAX), param: "_sync_dirty".into(), value: ParamValue::Bool(true) });
+                    },
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
         });
+        self.tasks.lock().unwrap().push(task);
         let old_rta = self.rta.lock().unwrap().take();
         if let Some(old) = old_rta { let _ = old.target("", None, true).await; }
         // Same OSC session as the selector: XR18 meter provenance is session-bound.
@@ -1607,6 +1747,37 @@ impl MixerDriver for XAirDriver {
         *self.rta.lock().unwrap() = Some(stream);
         *self.session.lock().await = Some(session);
         *self.peer.lock().await = peer.to_string();
+        Ok(())
+    }
+
+    fn telemetry_timestamps(&self) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> {
+        let levels = self.meter_latest.lock().unwrap().as_ref().map(|(at, _)| *at);
+        let gr = self.dyn_cache.try_lock().ok().and_then(|cache| cache.as_ref().map(|(at, _)| *at));
+        Some((levels, gr))
+    }
+
+    async fn refresh_streams(&self) -> anyhow::Result<()> {
+        let session = self.session().await?.as_ref().unwrap().clone();
+        // Drain pre-suspend socket traffic through a lightweight reply
+        // barrier, then require new samples. No cached replay becomes fresh.
+        let _ = session.query_timeout(addrs::INFO, openmix_transport::session::CONNECT_BURST_TIMEOUT).await;
+        *self.receive_since.lock().unwrap() = std::time::Instant::now();
+        *self.meter_latest.lock().unwrap() = None;
+        *self.dyn_cache.lock().await = None;
+        session.send(addrs::XREMOTE, Vec::new()).await?;
+        self.subscribe_meters_once().await?;
+        Ok(())
+    }
+
+    async fn disconnect(&self) -> anyhow::Result<()> {
+        self.connection_generation.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        let old_rta = self.rta.lock().unwrap().take();
+        if let Some(old) = old_rta { let _ = old.target("", None, true).await; }
+        for task in self.tasks.lock().unwrap().drain(..) { task.abort(); }
+        self.session.lock().await.take();
+        self.peer.lock().await.clear();
+        *self.meter_latest.lock().unwrap() = None;
+        *self.dyn_cache.lock().await = None;
         Ok(())
     }
 
@@ -1860,7 +2031,10 @@ impl MixerDriver for XAirDriver {
     /// level. `None` (no blob yet) reads back full-map silence, like the
     /// core default.
     fn poll_meters(&self) -> openmix_core::MeterFrame {
-        let latest = self.meter_latest.lock().unwrap().clone().unwrap_or_default();
+        let sample = self.meter_latest.lock().unwrap();
+        let Some((_, latest)) = sample.as_ref().filter(|(at, _)| at.elapsed() <= std::time::Duration::from_millis(500)) else {
+            return openmix_core::MeterFrame { levels: Vec::new() };
+        };
         let mut levels = vec![0.0f32; XAIR_STRIPS];
         for (i, v) in latest.iter().take(16).enumerate() {
             levels[i] = *v;
@@ -1924,15 +2098,17 @@ impl MixerDriver for XAirDriver {
         // clone sees every frame alongside the caller's receiver.
         let mut drain = rx.resubscribe();
         let cache = self.meter_latest.clone();
+        let receive_since = self.receive_since.clone();
+        let session = self.session().await?.as_ref().unwrap().clone();
         let generation = self.connection_generation.clone();
         let connection = generation.load(std::sync::atomic::Ordering::Acquire);
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             loop {
                 match drain.recv().await {
-                    Ok(frame) => {
+                    Ok(_frame) => {
                         if generation.load(std::sync::atomic::Ordering::Acquire) != connection { break; }
                         if let Ok(mut guard) = cache.lock() {
-                            *guard = Some(frame.levels);
+                            *guard = session.latest_meter_sample().filter(|(at, _)| *at >= *receive_since.lock().unwrap()).map(|(at, frame)| (at, frame.levels));
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
@@ -1940,6 +2116,7 @@ impl MixerDriver for XAirDriver {
                 }
             }
         });
+        self.tasks.lock().unwrap().push(task);
         Ok(rx)
     }
 
@@ -2348,6 +2525,21 @@ impl MixerDriver for XAirDriver {
             check_scope(param, kind)?;
         }
         let ch = || self.check_channel(strip.0);
+        if let Some(suffix) = param.strip_prefix("_node/") {
+            let allowed = matches!(suffix, "config" | "preamp" | "gate" | "gate/filter" | "dyn" | "dyn/filter" | "eq" | "mix" | "grp" | "insert" | "automix")
+                || suffix.strip_prefix("eq/").and_then(|s| s.parse::<u8>().ok()).is_some_and(|n| (1..=6).contains(&n))
+                || suffix.strip_prefix("mix/").and_then(|s| s.parse::<u8>().ok()).is_some_and(|n| (1..=10).contains(&n));
+            anyhow::ensure!(allowed, "unsupported node query");
+            let guard = self.session().await?;
+            guard.as_ref().unwrap().query(&format!("{root}/{suffix}")).await?;
+            // The ordered receive plane expands the complete typed reply.
+            return Ok(ParamValue::Bool(true));
+        }
+        if let Some(addr) = sync_decode::address(strip.0, param) {
+            let guard = self.session().await?;
+            let reply = guard.as_ref().unwrap().query(&addr).await?;
+            return sync_decode::decode(param, &reply);
+        }
         match param {
             "fader" => self.get_fader(strip).await.map(ParamValue::Float),
             "mute" => self.get_mute(strip).await.map(ParamValue::Bool),
@@ -2379,46 +2571,6 @@ impl MixerDriver for XAirDriver {
                     .await?;
                 headamp::wire_to_db(osc::fader_value(&reply)?).map(ParamValue::Float)
             }
-            "phantom" => {
-                let ch = ch()?;
-                let guard = self.session().await?;
-                let reply = guard
-                    .as_ref()
-                    .unwrap()
-                    .query(&headamp::headamp_phantom(ch))
-                    .await?;
-                osc::is_on(&reply).map(ParamValue::Bool)
-            }
-            "usbreturn" => {
-                let ch = ch()?;
-                let guard = self.session().await?;
-                let reply = guard
-                    .as_ref()
-                    .unwrap()
-                    .query(&input::config_rtnsrc(ch))
-                    .await?;
-                input::usbreturn_from_msg(&reply).map(|i| ParamValue::Float(i as f32))
-            }
-            "trim" => {
-                let ch = ch()?;
-                let guard = self.session().await?;
-                let reply = guard
-                    .as_ref()
-                    .unwrap()
-                    .query(&input::preamp_rtntrim(ch))
-                    .await?;
-                input::rtntrim_wire_to_db(osc::fader_value(&reply)?).map(ParamValue::Float)
-            }
-            "polarity" => {
-                let ch = ch()?;
-                let guard = self.session().await?;
-                let reply = guard
-                    .as_ref()
-                    .unwrap()
-                    .query(&input::preamp_invert(ch))
-                    .await?;
-                osc::is_on(&reply).map(ParamValue::Bool)
-            }
             "hpf_on" => {
                 let ch = ch()?;
                 let guard = self.session().await?;
@@ -2438,11 +2590,6 @@ impl MixerDriver for XAirDriver {
                     .query(&input::preamp_hpf(ch))
                     .await?;
                 input::hpf_wire_to_hz(osc::fader_value(&reply)?).map(ParamValue::Float)
-            }
-            "automix_weight" => {
-                let guard = self.session().await?;
-                let reply = guard.as_ref().unwrap().query(&automix::automix_weight(&root)).await?;
-                automix::wire_to_weight(osc::fader_value(&reply)?).map(ParamValue::Float)
             }
             "automix_on" => {
                 // No standalone leaf (the desk is silent on
@@ -2482,16 +2629,6 @@ impl MixerDriver for XAirDriver {
                 let reply = guard.as_ref().unwrap().query(&mix::mix_lr(&root)).await?;
                 osc::is_on(&reply).map(ParamValue::Bool)
             }
-            "gate_on" => {
-                let guard = self.session().await?;
-                let reply = guard.as_ref().unwrap().query(&format!("{root}/gate/on")).await?;
-                osc::is_on(&reply).map(ParamValue::Bool)
-            }
-            "comp_on" => {
-                let guard = self.session().await?;
-                let reply = guard.as_ref().unwrap().query(&format!("{root}/dyn/on")).await?;
-                osc::is_on(&reply).map(ParamValue::Bool)
-            }
             "eq_on" => {
                 let guard = self.session().await?;
                 let reply = guard.as_ref().unwrap().query(&eq::eq_on_r(&root)).await?;
@@ -2526,77 +2663,6 @@ impl MixerDriver for XAirDriver {
                     _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
                 }
             }
-            p if p.starts_with("gate_") => {
-                let guard = self.session().await?;
-                let qaddr = match p {
-                    "gate_thr" => gate::gate_thr(&root),
-                    "gate_range" => gate::gate_range(&root),
-                    "gate_att" => gate::gate_attack(&root),
-                    "gate_hold" => gate::gate_hold(&root),
-                    "gate_rel" => gate::gate_release(&root),
-                    "gate_mode" => gate::gate_mode(&root),
-                    "gate_key_src" => gate::gate_key_src(&root),
-                    "gate_filter_on" => gate::gate_filter_on(&root),
-                    "gate_filter_type" => gate::gate_filter_type(&root),
-                    "gate_filter_freq" => gate::gate_filter_freq(&root),
-                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
-                };
-                let reply = guard.as_ref().unwrap().query(&qaddr).await?;
-                match p {
-                    "gate_thr" => gate::wire_to_lin(osc::fader_value(&reply)?, gate::GATE_THR_MIN_DB, gate::GATE_THR_MAX_DB, "thr"),
-                    "gate_range" => gate::wire_to_lin(osc::fader_value(&reply)?, gate::GATE_RANGE_MIN_DB, gate::GATE_RANGE_MAX_DB, "range"),
-                    "gate_att" => gate::wire_to_lin(osc::fader_value(&reply)?, gate::GATE_ATT_MIN_MS, gate::GATE_ATT_MAX_MS, "attack"),
-                    "gate_hold" => gate::wire_to_log(osc::fader_value(&reply)?, gate::GATE_HOLD_MIN_MS, gate::GATE_HOLD_MAX_MS, "hold"),
-                    "gate_rel" => gate::wire_to_log(osc::fader_value(&reply)?, gate::GATE_REL_MIN_MS, gate::GATE_REL_MAX_MS, "release"),
-                    "gate_mode" => gate::int_leaf_from_msg(&reply, gate::GATE_MODE_MIN, gate::GATE_MODE_MAX, "mode").map(|i| i as f32),
-                    "gate_key_src" => gate::int_leaf_from_msg(&reply, gate::GATE_KEY_SRC_MIN, gate::GATE_KEY_SRC_MAX, "keysrc").map(|i| i as f32),
-                    "gate_filter_on" => return osc::is_on(&reply).map(ParamValue::Bool),
-                    "gate_filter_type" => gate::int_leaf_from_msg(&reply, gate::GATE_FILTER_TYPE_MIN, gate::GATE_FILTER_TYPE_MAX, "filter type").map(|i| i as f32),
-                    "gate_filter_freq" => gate::wire_to_filter_hz(osc::fader_value(&reply)?),
-                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
-                }.map(ParamValue::Float)
-            }
-            p if p.starts_with("comp_") => {
-                let guard = self.session().await?;
-                let reply = guard.as_ref().unwrap().query(&match p {
-                    "comp_thr" => comp::comp_thr(&root),
-                    "comp_ratio" => comp::comp_ratio(&root),
-                    "comp_knee" => comp::comp_knee(&root),
-                    "comp_makeup" => comp::comp_makeup(&root),
-                    "comp_att" => comp::comp_attack(&root),
-                    "comp_hold" => comp::comp_hold(&root),
-                    "comp_rel" => comp::comp_release(&root),
-                    "comp_mode" => comp::comp_mode(&root),
-                    "comp_det" => comp::comp_det(&root),
-                    "comp_env" => comp::comp_env(&root),
-                    "comp_mix" => comp::comp_mix(&root),
-                    "comp_auto" => comp::comp_auto(&root),
-                    "comp_key_src" => comp::comp_key_src(&root),
-                    "comp_filter_on" => comp::comp_filter_on(&root),
-                    "comp_filter_type" => comp::comp_filter_type(&root),
-                    "comp_filter_freq" => comp::comp_filter_freq(&root),
-                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
-                }).await?;
-                match p {
-                    "comp_thr" => comp::wire_to_lin(osc::fader_value(&reply)?, comp::COMP_THR_MIN_DB, comp::COMP_THR_MAX_DB, "thr"),
-                    "comp_ratio" => comp::wire_to_ratio(&reply),
-                    "comp_knee" => comp::wire_to_lin(osc::fader_value(&reply)?, comp::COMP_KNEE_MIN, comp::COMP_KNEE_MAX, "knee"),
-                    "comp_makeup" => comp::wire_to_lin(osc::fader_value(&reply)?, comp::COMP_MAKEUP_MIN_DB, comp::COMP_MAKEUP_MAX_DB, "makeup"),
-                    "comp_att" => comp::wire_to_lin(osc::fader_value(&reply)?, comp::COMP_ATT_MIN_MS, comp::COMP_ATT_MAX_MS, "attack"),
-                    "comp_hold" => comp::wire_to_log(osc::fader_value(&reply)?, comp::COMP_HOLD_MIN_MS, comp::COMP_HOLD_MAX_MS, "hold"),
-                    "comp_rel" => comp::wire_to_log(osc::fader_value(&reply)?, comp::COMP_REL_MIN_MS, comp::COMP_REL_MAX_MS, "release"),
-                    "comp_mode" => comp::int_leaf_from_msg(&reply, comp::COMP_MODE_MIN, comp::COMP_MODE_MAX, "mode").map(|i| i as f32),
-                    "comp_det" => comp::int_leaf_from_msg(&reply, comp::COMP_DET_MIN, comp::COMP_DET_MAX, "det").map(|i| i as f32),
-                    "comp_env" => comp::int_leaf_from_msg(&reply, comp::COMP_ENV_MIN, comp::COMP_ENV_MAX, "env").map(|i| i as f32),
-                    "comp_mix" => comp::wire_to_lin(osc::fader_value(&reply)?, comp::COMP_MIX_MIN, comp::COMP_MIX_MAX, "mix"),
-                    "comp_auto" => return osc::is_on(&reply).map(ParamValue::Bool),
-                    "comp_key_src" => comp::int_leaf_from_msg(&reply, 0, 22, "keysrc").map(|i| i as f32),
-                    "comp_filter_on" => return osc::is_on(&reply).map(ParamValue::Bool),
-                    "comp_filter_type" => comp::int_leaf_from_msg(&reply, 0, 8, "filter type").map(|i| i as f32),
-                    "comp_filter_freq" => gate::wire_to_filter_hz(osc::fader_value(&reply)?),
-                    _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
-                }.map(ParamValue::Float)
-            }
             p if p.starts_with("aux") => {
                 let n = aux_send(p)?;
                 let ch = ch()?;
@@ -2619,6 +2685,9 @@ impl MixerDriver for XAirDriver {
                     .await?;
                 mix::wire_to_send_db(mix::send_level_value(&reply)?).map(ParamValue::Float)
             }
+            // Preserve the pre-existing direct helper for callers using
+            // unadvertised leaves (loopback compatibility only). XR18 caps,
+            // push and polling deliberately exclude send on/mute/dest.
             p if p.starts_with("send") => {
                 let (n, leaf) = generic_send(p)?;
                 let ch = ch()?;
@@ -4000,7 +4069,7 @@ mod tests {
         assert_eq!((updates[1].0, updates[1].1), (0, "automix_weight"));
         assert!(matches!(updates[1].2, ParamValue::Float(w) if (w - 0.75).abs() < 1e-6));
         // Mute-group bitmask: no catalogue ids, stays silent here.
-        assert!(parse_inbound(&msg("/ch/01/grp/mute", vec![OscType::Int(3)])).is_empty());
+        assert_eq!(parse_inbound(&msg("/ch/01/grp/mute", vec![OscType::Int(3)])).len(), 4);
         // Silent roots stay silent (no `grp`/`lr` leaf on the desk).
         assert!(parse_inbound(&msg("/lr/grp/dca", vec![OscType::Int(1)])).is_empty());
         assert!(parse_inbound(&msg("/dca/1/grp/dca", vec![OscType::Int(1)])).is_empty());
@@ -4089,7 +4158,7 @@ mod tests {
         assert!(parse_inbound(&msg("/dca/1/eq/1/g", vec![OscType::Float(0.5)])).is_empty());
         assert!(parse_inbound(&msg("/dca/1/eq/on", vec![OscType::Int(1)])).is_empty());
         assert!(parse_inbound(&msg("/fx/1/type", vec![OscType::Int(3)])).is_empty());
-        assert!(parse_inbound(&msg("/ch/01/gate/filter/type", vec![OscType::Int(1)])).is_empty());
+        assert!(!parse_inbound(&msg("/ch/01/gate/filter/type", vec![OscType::Int(1)])).is_empty());
         assert!(parse_inbound(&msg("/ch/99/eq/1/g", vec![OscType::Float(0.5)])).is_empty());
     }
 

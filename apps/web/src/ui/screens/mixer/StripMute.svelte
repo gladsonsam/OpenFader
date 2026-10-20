@@ -12,7 +12,7 @@
     nodeId: _nodeId,
     onEvent,
   }: {
-    props: { muted?: boolean; enabled?: boolean; height?: number; label?: string };
+    props: { known?: boolean; muted?: boolean; enabled?: boolean; height?: number; label?: string };
     ctx: ModuleContext;
     nodeId: string;
     onEvent?: (name: string, payload?: unknown) => void;
@@ -20,7 +20,8 @@
 </script>
 
 <MuteButton
-  muted={props.muted ?? false}
+  known={props.known ?? true}
+  muted={props.known === false ? false : props.muted ?? false}
   enabled={props.enabled ?? true}
   height={props.height ?? 40}
   label={props.label ?? 'Mute'}

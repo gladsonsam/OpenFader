@@ -32,6 +32,7 @@ export class WriteCoalescer {
     const now = this.clock.now();
     const last = this.lastSentAt.get(key);
     if (last === undefined || now - last >= MIN_INTERVAL_MS) {
+      this.cancel(key);
       this.lastSentAt.set(key, now);
       send();
       return 'sent';
@@ -53,10 +54,25 @@ export class WriteCoalescer {
     return 'coalesced';
   }
 
+  flush(key: string): void {
+    const send = this.queued.get(key);
+    this.cancel(key);
+    send?.();
+  }
+
+  cancel(key: string): void {
+    const t = this.timers.get(key);
+    if (t !== undefined) this.clock.clearTimer(t);
+    this.timers.delete(key);
+    this.queued.delete(key);
+    this.lastSentAt.delete(key);
+  }
+
   /** Drop held writes (e.g. on disconnect). */
   clear(): void {
     for (const t of this.timers.values()) this.clock.clearTimer(t);
     this.timers.clear();
     this.queued.clear();
+    this.lastSentAt.clear();
   }
 }

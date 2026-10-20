@@ -99,6 +99,7 @@ export type ChannelValues = Record<number, Record<string, ParamValue>>;
 export interface PendingEdit {
   value: ParamValue;
   at: number;
+  held?: boolean;
 }
 
 /** Optimistic edits awaiting confirmation, keyed `${ch}:${id}`. */
@@ -161,7 +162,7 @@ export function valuesEqual(a: ParamValue | undefined, b: ParamValue): boolean {
 export function confirmInto(pending: PendingMap, key: string, value: ParamValue): boolean {
   const edit = pending[key];
   if (!edit) return false;
-  if (valuesEqual(edit.value, value)) {
+  if (!edit.held && valuesEqual(edit.value, value)) {
     delete pending[key];
     return true;
   }

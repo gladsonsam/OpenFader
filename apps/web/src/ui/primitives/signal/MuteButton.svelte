@@ -5,12 +5,14 @@
 <script lang="ts">
   let {
     muted = false,
+    known = true,
     enabled = true,
     height = 40,
     label = 'Mute',
     onpress = null,
   }: {
     muted?: boolean;
+    known?: boolean;
     /** False when muteEnable is off or the screen is locked (opacity 0.45, ignores taps). */
     enabled?: boolean;
     /** 40 (mixer/master strips) or 44 (channel strip). */
@@ -22,7 +24,7 @@
 </script>
 
 <button
-  aria-pressed={muted ? 'true' : 'false'}
+  aria-pressed={known ? muted ? 'true' : 'false' : undefined}
   aria-label={label}
   aria-disabled={enabled ? undefined : 'true'}
   disabled={enabled ? undefined : true}
@@ -37,5 +39,5 @@
     : 'var(--u4-red-btn-tx-off)'};opacity:{enabled
     ? 1
     : 0.45};font-size:15px;cursor:{enabled ? 'pointer' : 'default'};padding:0;width:100%"
-  >MUTE</button
+  >{known ? 'MUTE' : 'MUTE ?'}</button
 >

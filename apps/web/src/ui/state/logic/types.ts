@@ -87,6 +87,13 @@ export function initialWorld(): World {
 
 // ---------- immutable update helpers ----------
 
+/** Copy reactive display models without serializing unknown NaN to null. */
+function copyValue<T>(value: T): T {
+  if (Array.isArray(value)) return value.map(copyValue) as T;
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, v]) => [key, copyValue(v)])) as T;
+  return value;
+}
+
 export function withState(w: World, patch: Partial<UiState>): World {
   return { state: { ...w.state, ...patch }, chans: w.chans, fx: w.fx };
 }
@@ -94,14 +101,14 @@ export function withState(w: World, patch: Partial<UiState>): World {
 export function withChannel(w: World, id: string, fn: (c: Channel) => void): World {
   const prev = w.chans[id];
   if (!prev) return w;
-  const next: Channel = JSON.parse(JSON.stringify(prev));
+  const next: Channel = copyValue(prev);
   fn(next);
   return { state: w.state, chans: { ...w.chans, [id]: next }, fx: w.fx };
 }
 
 export function withFx(w: World, i: number, fn: (s: FxSlot) => void): World {
   if (i < 0 || i >= w.fx.length) return w;
-  const fx = w.fx.map((x, k) => (k === i ? JSON.parse(JSON.stringify(x)) : x));
+  const fx = w.fx.map((x, k) => (k === i ? copyValue(x) : x));
   fn(fx[i]);
   return { state: w.state, chans: w.chans, fx };
 }

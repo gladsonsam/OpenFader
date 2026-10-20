@@ -148,6 +148,7 @@ export function queryPalette(query: string, category?: ModuleManifest['category'
 /** Remove all registrations (tests only). */
 export function clearRegistry(): void {
   byId.clear();
+  manifestLoads.clear();
 }
 
 /**
@@ -164,37 +165,55 @@ export function clearRegistry(): void {
  * overlapping loads are safe. Never rejects — per-file failures land in
  * `errors`.
  */
-export async function loadManifestModules(
-  files?: string[],
-): Promise<Array<{ file: string; registered: string[]; errors: string[] }>> {
-  const loaders = import.meta.glob('./manifests/*.ts') as Record<string, () => Promise<unknown>>;
-  const wanted = Object.entries(loaders).filter(([file]) => !files || files.includes(file));
-  const out: Array<{ file: string; registered: string[]; errors: string[] }> = [];
-  for (const [file, load] of wanted) {
-    let mod: unknown;
+type ManifestLoad = { file: string; registered: string[]; errors: string[] };
+const manifestLoads = new Map<string, Promise<ManifestLoad>>();
+
+function manifestLoaders(): Record<string, () => Promise<unknown>> {
+  // Keep the Vite-only glob inside a function: importing this registry for
+  // plain-node consumers must not execute import.meta.glob.
+  return import.meta.glob('./manifests/*.ts');
+}
+
+export function manifestModuleFiles(): string[] {
+  return Object.keys(manifestLoaders());
+}
+
+/** Share import AND registration work across boot, navigation and preloading.
+ * Failed files are evicted so the outlet's retry can actually try again. */
+function loadManifestFile(file: string): Promise<ManifestLoad> {
+  const cached = manifestLoads.get(file);
+  if (cached) return cached;
+  const request = (async (): Promise<ManifestLoad> => {
     try {
-      mod = await load();
+      const mod = await manifestLoaders()[file]!();
+      const found: unknown[] = [];
+      if (isRecord(mod)) {
+        for (const key of ['default', 'manifest', 'manifests']) {
+          const value = mod[key];
+          if (value !== undefined) found.push(...(Array.isArray(value) ? value : [value]));
+        }
+      }
+      const registered: string[] = [];
+      const errors: string[] = [];
+      for (const m of found) {
+        const r = registerModule(m as ModuleManifest);
+        if (r.ok) registered.push((m as ModuleManifest).id);
+        else errors.push(...r.errors.map(e => `${file}: ${e}`));
+      }
+      return { file, registered, errors };
     } catch (e) {
-      out.push({ file, registered: [], errors: [`${file}: ${e instanceof Error ? e.message : String(e)}`] });
-      continue;
+      return { file, registered: [], errors: [`${file}: ${e instanceof Error ? e.message : String(e)}`] };
     }
-    const registered: string[] = [];
-    const errors: string[] = [];
-    const found: unknown[] = [];
-    if (isRecord(mod)) {
-      const def = (mod as Record<string, unknown>)['default'];
-      if (def !== undefined) found.push(...(Array.isArray(def) ? def : [def]));
-      const named = (mod as Record<string, unknown>)['manifest'];
-      if (named !== undefined) found.push(named);
-      const namedPl = (mod as Record<string, unknown>)['manifests'];
-      if (namedPl !== undefined) found.push(...(Array.isArray(namedPl) ? namedPl : [namedPl]));
-    }
-    for (const m of found) {
-      const r = registerModule(m as ModuleManifest);
-      if (r.ok) registered.push((m as ModuleManifest).id);
-      else errors.push(...r.errors.map(e => `${file}: ${e}`));
-    }
-    out.push({ file, registered, errors });
-  }
-  return out;
+  })().then(result => {
+    if (result.errors.length) manifestLoads.delete(file);
+    return result;
+  });
+  manifestLoads.set(file, request);
+  return request;
+}
+
+export async function loadManifestModules(files?: string[]): Promise<ManifestLoad[]> {
+  return Promise.all(manifestModuleFiles()
+    .filter(file => !files || files.includes(file))
+    .map(loadManifestFile));
 }

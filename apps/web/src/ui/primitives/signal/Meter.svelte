@@ -142,6 +142,7 @@
     showPeak: boolean,
   ): void {
     const target = source.getLevel(ch);
+    if (!Number.isFinite(target)) { displayedDb[ch] = NaN; g.fillStyle = pal.cover; g.fillRect(x, 0, w, h); return; }
     const previous = displayedDb[ch];
     const timeConstant = target > previous ? 55 : 320;
     const lvl = frozen || !Number.isFinite(previous)
@@ -180,6 +181,7 @@
     pal: Palette,
   ): void {
     const lvl = source.getLevel(0);
+    if (!Number.isFinite(lvl)) { g.fillStyle = pal.cover; g.fillRect(0, 0, w, h); return; }
     // Design: gradient to the right, 70/88; cover from the right.
     g.fillStyle = pal.green;
     g.fillRect(0, 0, w * 0.7, h);

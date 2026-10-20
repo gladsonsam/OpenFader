@@ -20,10 +20,12 @@ import {
   type EqBand,
   type EqBandType,
   type Hpf,
+  type EqRange,
+  type EqRanges,
 } from '../../../fixtures/designData.ts';
 
 /** Node colours, bands 0..4 (HPF, Low, Lo-Mid, Hi-Mid, High). */
-export const EQ_BAND_COLORS = ['#d7dde8', '#ff9f43', '#f6d743', '#3ed0e0', '#b28cff'];
+export const EQ_BAND_COLORS = ['#d7dde8', '#ff9f43', '#f6d743', '#3ed0e0', '#b28cff', '#ee7aa8', '#8ccb7c'];
 
 export const EQ_BAND_NAMES = ['HPF', 'Low', 'Lo-Mid', 'Hi-Mid', 'High'];
 
@@ -78,6 +80,7 @@ export interface EqNodeVm {
   /** Current Q (HPF node: 0 — HPF has no Q). Carried so gestures/keyboard
    *  can anchor relative Q edits without a second lookup. */
   q: number;
+  ranges: EqRanges;
   x: string;
   y: string;
   size: number;
@@ -97,6 +100,8 @@ export interface EqBandGhost {
 }
 
 export interface EqGraphVm {
+  selectedBand: number;
+  note: string;
   curvePath: string;
   fillPath: string;
   curveStroke: string;
@@ -142,18 +147,21 @@ export interface EqOnOff {
   toggleAria: string;
 }
 
-export function eqOnOff(on: boolean, name: string): EqOnOff {
+export function eqOnOff(on: boolean | null, name: string): EqOnOff {
   return {
     onStr: on ? 'true' : 'false',
     onBg: on ? '#5cdb5c' : 'var(--u4-btn-bg)',
     onText: on ? '#10240f' : 'var(--u4-text-5)',
-    onLabel: on ? 'On' : 'Off',
+    onLabel: on === null ? 'Unknown' : on ? 'On' : 'Off',
     toggleAria: name + ' on/off',
   };
 }
 
 export interface EqBandCardVm extends EqOnOff {
   kind: 'band';
+  toggleable: boolean;
+  ranges: EqRanges;
+  typeEditable: boolean;
   band: number;
   name: string;
   color: string;
@@ -173,16 +181,20 @@ export interface EqHpfCardVm extends EqOnOff {
   color: string;
   selected: boolean;
   border: string;
-  slope: 12 | 24;
+  slope: 12 | 24 | null;
+  range: EqRange | null;
+  toggleable: boolean;
+  slopeEditable: boolean;
   freq: number;
 }
 
 /** Type segmented options per band index (design typeSets table). */
-export function eqTypeOptions(bandIndex: number, type: EqBandType): { options: EqChip[]; values: EqBandType[] } {
+export function eqTypeOptions(bandIndex: number, type: EqBandType | null, supported?: EqBandType[]): { options: EqChip[]; values: EqBandType[] } {
   let defs: Array<[EqBandType, string]>;
   if (bandIndex === 0) defs = [['LS', 'Shelf'], ['PEQ', 'Bell']];
   else if (bandIndex === 3) defs = [['PEQ', 'Bell'], ['HS', 'Shelf']];
   else defs = [['PEQ', 'Bell']];
+  if (supported) defs = supported.map(t => [t, ({ LCut: 'Low cut', LS: 'Low shelf', PEQ: 'Bell', VEQ: 'VEQ', HS: 'High shelf', HCut: 'High cut' })[t]]);
   return {
     options: defs.map(([v, label]) => eqChip(label, type === v)),
     values: defs.map(([v]) => v),
@@ -199,6 +211,21 @@ function bandColor(band: number, colors: string[]): string {
 
 function visibleBands(eq: Eq, bandCount: number): EqBand[] {
   return eq.bands.slice(0, Math.max(0, bandCount));
+}
+
+/** Shared control ranges. Cuts have no gain control on the desk. */
+export function eqBandRanges(b: EqBand): EqRanges {
+  const ranges = b.ranges ?? { f: [20, 20000], g: [-15, 15], q: [0.3, 16] };
+  return { ...ranges, g: b.type === 'LCut' || b.type === 'HCut' ? null : ranges.g };
+}
+
+/** Do not draw a plausible but invented desk response for unknown/VEQ data. */
+export function eqCurveNote(eq: Eq): string {
+  if (eq.on === null || (eq.hpf.supported !== false && (eq.hpf.on === null || !Number.isFinite(eq.hpf.f)))) return 'EQ response · waiting for desk values';
+  if (eq.on && eq.bands.some(b => b.on === null || !b.type || ![b.f, b.g, b.q].every(Number.isFinite))) return 'EQ response · waiting for desk values';
+  if (eq.on && eq.bands.some(b => b.on && b.type === 'VEQ')) return 'VEQ · response preview unavailable';
+  if (eq.hpf.on && eq.hpf.slope === null) return 'HPF · response preview unavailable';
+  return '';
 }
 
 /** Summed magnitude response of the whole EQ at f (dB), for tests/overlays. */
@@ -230,12 +257,12 @@ export function eqNodeApply(band: number, f: number, g: number): { f: number; g:
 export function eqSelInfoText(eq: Eq, selBand: number): string {
   if (selBand === 0) {
     const h = eq.hpf;
-    return 'HPF · ' + fmtF(h.f) + ' · ' + h.slope + ' dB/oct' + (h.on ? '' : ' · off');
+    return 'HPF · ' + fmtF(h.f) + (h.slope === null ? '' : ' · ' + h.slope + ' dB/oct') + (h.on === null ? ' · unknown' : h.on ? '' : ' · off');
   }
   const b = eq.bands[selBand - 1];
   if (!b) return '';
   return (
-    bandName(selBand) + ' · ' + fmtF(b.f) + ' · ' + fmtG(b.g) + ' · Q ' + b.q.toFixed(2) + (b.on ? '' : ' · off')
+    bandName(selBand) + ' · ' + fmtF(b.f) + ' · ' + (b.type ?? 'Unknown type') + (b.type === 'LCut' || b.type === 'HCut' ? '' : ' · ' + fmtG(b.g)) + ' · Q ' + (Number.isFinite(b.q) ? b.q.toFixed(2) : '—') + (b.on === null ? ' · unknown' : b.on ? '' : ' · off')
   );
 }
 
@@ -248,6 +275,7 @@ export interface EqMasterToggle {
 
 /** Port of the EQ In / EQ Bypassed master toggle visuals in eqVals. */
 export function eqMasterToggle(eq: Eq): EqMasterToggle {
+  if (eq.on === null) return { str: 'false', bg: 'var(--u4-btn-bg)', text: 'var(--u4-text-4)', label: 'EQ unknown' };
   return eq.on
     ? { str: 'true', bg: '#5cdb5c', text: '#10240f', label: 'EQ In' }
     : { str: 'false', bg: 'var(--u4-btn-bg)', text: 'var(--u4-text-4)', label: 'EQ Bypassed' };
@@ -265,7 +293,8 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
 
   const xOf = (f: number): number => Math.log(f / fMin) / Math.log(fMax / fMin);
   const toY = (db: number): number => clamp(((dbTop - db) / (dbTop - dbBottom)) * H, -20, H + 20);
-  const scoped: Eq = { on: eq.on, hpf: eq.hpf, bands };
+  const scoped: Eq = { ...eq, bands };
+  const note = eqCurveNote(scoped);
   const pathFor = (fl: ReturnType<typeof filters>): string => {
     const pts: string[] = [];
     for (let i = 0; i <= N; i++) {
@@ -276,9 +305,9 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
   };
 
   const all = filters(scoped);
-  const curvePath = pathFor(all);
+  const curvePath = note ? '' : pathFor(all);
   const zeroY = H / 2;
-  const fillPath = curvePath + ' L' + W + ' ' + zeroY + ' L0 ' + zeroY + ' Z';
+  const fillPath = !curvePath ? '' : curvePath + ' L' + W + ' ' + zeroY + ' L0 ' + zeroY + ' Z';
 
   let own: ReturnType<typeof filters> = [];
   if (eq.on) {
@@ -298,13 +327,13 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
   const ghostCount = bands.length + 1;
   for (let bIdx = 0; bIdx < ghostCount; bIdx++) {
     const bandOn = bIdx === 0 ? eq.hpf.on : (bands[bIdx - 1]?.on ?? false);
-    const audible = eq.on && bandOn;
+    const audible = bIdx === 0 ? bandOn : eq.on && bandOn;
     let fl: ReturnType<typeof filters> = [];
-    if (bIdx === 0) {
+    if (bIdx === 0 && Number.isFinite(eq.hpf.f) && eq.hpf.supported !== false) {
       fl = filters({ on: true, hpf: { ...eq.hpf, on: true }, bands: [] });
     } else {
       const b = bands[bIdx - 1];
-      if (b) {
+      if (b && b.type !== 'VEQ') {
         fl = filters({
           on: true,
           hpf: { on: false, f: 80, slope: 12 } as Hpf,
@@ -319,7 +348,7 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
       d: fl.length ? pathFor(fl) + ' L' + W + ' ' + zeroY + ' L0 ' + zeroY + ' Z' : '',
       fill: audible ? color + '2e' : OFF_GHOST_FILL,
       stroke: audible ? color : OFF_GHOST_STROKE,
-      on: audible,
+      on: Boolean(audible),
       color,
     });
   }
@@ -349,35 +378,39 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
   }));
 
   const nodes: EqNodeVm[] = [];
-  const mkNode = (band: number, f: number, g: number, q: number, on: boolean): void => {
+  const mkNode = (band: number, f: number, g: number, q: number, on: boolean | null, ranges: EqRanges): void => {
+    if (!Number.isFinite(f) || !Number.isFinite(g) || on === null) return;
     const active = sb === band;
     const yN = clamp((dbTop - g) / (dbTop - dbBottom), 0.03, 0.97);
-    const audible = on && eq.on;
+    const audible = band === 0 ? on : on && eq.on;
     nodes.push({
       band,
       label: band === 0 ? 'H' : String(band),
       aria:
-        bandName(band) +
+        (bands.length > 4 && band > 0 ? 'Band ' + band : bandName(band)) +
         ' node, ' +
         fmtF(f) +
-        (band ? ', ' + fmtG(g) : '') +
+        (band && ranges.g ? ', ' + fmtG(g) : '') +
         (audible ? '' : ' · off'),
-      valueText: band === 0 ? fmtF(f) : fmtF(f) + ', ' + fmtG(g),
+      valueText: band === 0 || !ranges.g ? fmtF(f) : fmtF(f) + ', ' + fmtG(g),
       freq: f,
       gain: g,
       q,
+      ranges,
       x: (clamp(xOf(f), 0, 1) * 100).toFixed(2),
       y: (yN * 100).toFixed(2),
       size: active ? 36 : 30,
       ring: active ? '#ffffff' : 'rgba(0,0,0,.55)',
       color: bandColor(band, colors),
-      op: on && eq.on ? 1 : 0.4,
+      op: audible ? 1 : 0.4,
     });
   };
-  mkNode(0, eq.hpf.f, -3, 0, eq.hpf.on);
-  bands.forEach((b, i) => mkNode(i + 1, b.f, b.g, b.q, b.on));
+  if (eq.hpf.supported !== false) mkNode(0, eq.hpf.f, -3, 0, eq.hpf.on, { f: eq.hpf.range ?? [20, 1000], g: null, q: null });
+  bands.forEach((b, i) => { if (!b.type) return; mkNode(i + 1, b.f, b.type === 'LCut' || b.type === 'HCut' ? -3 : b.g, b.q, b.on, eqBandRanges(b)); });
 
   return {
+    selectedBand: sb,
+    note,
     curvePath,
     fillPath,
     curveStroke: eq.on ? 'var(--u4-detail-curve, #f0d36a)' : '#5a6272',
@@ -404,6 +437,9 @@ export function eqHpfCardVm(eq: Eq, selBand: number, colors: string[] = EQ_BAND_
     selected: selBand === 0,
     border: selBand === 0 ? (colors[0] ?? '#d7dde8') : 'var(--u4-line-panel)',
     slope: eq.hpf.slope,
+    range: eq.hpf.range === undefined ? [20, 1000] : eq.hpf.range,
+    toggleable: eq.hpf.on !== null,
+    slopeEditable: eq.hpf.slopeEditable ?? true,
     freq: eq.hpf.f,
     ...eqOnOff(eq.hpf.on, 'HPF'),
   };
@@ -418,11 +454,14 @@ export function eqBandCardsVm(
   const bands = visibleBands(eq, bandCount ?? eq.bands.length);
   return bands.map((b, i) => {
     const band = i + 1;
-    const { options, values } = eqTypeOptions(i, b.type);
+    const { options, values } = eqTypeOptions(i, b.type, b.types);
     return {
       kind: 'band',
+      toggleable: b.toggleable !== false && b.on !== null,
+      ranges: eqBandRanges(b),
+      typeEditable: b.type !== null && (!b.types || b.types.length > 0),
       band,
-      name: bandName(band),
+      name: bands.length > 4 ? 'Band ' + band : bandName(band),
       color: colors[band] ?? 'var(--u4-text-1)',
       selected: selBand === band,
       border: selBand === band ? (colors[band] ?? 'var(--u4-text-1)') : 'var(--u4-line-panel)',

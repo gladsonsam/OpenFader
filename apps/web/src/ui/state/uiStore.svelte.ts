@@ -1,3 +1,5 @@
+import { loadOfflineMode, saveOfflineMode } from './live.ts';
+import { clearAppStorage } from '../../appStorage.ts';
 // D2 State package: Svelte 5 runes store wrapping the pure uiLogic
 // transitions over the design's fixture data. Screens read `ui.state`,
 // `ui.chans`, `ui.fx` and call `ui.do.*`; binding to the engine happens in
@@ -108,6 +110,7 @@ import {
 import type { ThemePresetId } from '../modules/theme.ts';
 import { initialStateFromUrl, markReady } from './urlBridge.ts';
 import { live } from './live.svelte.ts';
+import { buildDisplayEq, buildDisplayDyn, buildDisplayInput, displayFields } from '../world/engineWorld/channelViews.ts';
 import type { EngineWorld } from '../world/engineWorld/engineWorld.ts';
 import {
   bridgeDelayMs,
@@ -149,7 +152,10 @@ import {
 import { fixturePartnerId, livePartnerId } from './stereoPairs.ts';
 import { MeterSim, meterIdsFor } from '../fixtures/meterSim.ts';
 import { bankByKey, buildChannels, spec, toN, type Channel } from '../fixtures/designData.ts';
-import { COLOR_HEX, enginePanToDesign } from '../world/mapping/params.ts';
+import { lawForDriver } from '../world/mapping/faderLaw.ts';
+import { fromN } from '../fixtures/designData.ts';
+import { dynSpecKey } from './logic/inputDyn.ts';
+import { COLOR_HEX, enginePanToDesign, sendDbToDesign01, tapToPre } from '../world/mapping/params.ts';
 
 let world: World = $state(initialWorld());
 let taps: number[] = [];
@@ -192,28 +198,6 @@ function bankItemIds(key: string): string[] {
   }
 }
 
-/** Explicit offline mode persists across reloads (localStorage). Set when
- * the user picks Work offline; cleared on any real connect/disconnect. */
-const OFFLINE_LS_KEY = 'openmix-offline';
-
-function loadOfflineMode(): boolean {
-  try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem(OFFLINE_LS_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function saveOfflineMode(v: boolean): void {
-  try {
-    if (typeof localStorage === 'undefined') return;
-    if (v) localStorage.setItem(OFFLINE_LS_KEY, '1');
-    else localStorage.removeItem(OFFLINE_LS_KEY);
-  } catch {
-    /* ignore */
-  }
-}
-
 /** Live engine when a relay link is up with caps (null in fixture mode). */
 function liveEngine(): EngineWorld | null {
   const w = live.engine;
@@ -226,9 +210,9 @@ function liveEngine(): EngineWorld | null {
  * The fixture store stays the display model, but fader/mute are now
  * bidirectional: every engine ingest (write echo, poller diff, or the
  * desk-broadcast fast path) re-runs this sync, copying confirmed engine
- * values into the mapped fixture strips. Strips with an unconfirmed local
- * edit (`pending`) are skipped so a user drag never fights the network;
- * unmapped families (mtx, anything the desk lacks) stay fixture-local.
+ * values into the mapped fixture strips. Bounded optimistic edits own their control during a gesture; release,
+ * denial and expiry reveal the latest confirmed desk value. Capability
+ * and unknown metadata travels with the actual displayed model.
  * While syncing, `forward` is muted so a desk move is never echoed back
  * to the desk as a new write.
  */
@@ -280,6 +264,42 @@ function liveTopologyKey(w: EngineWorld): string {
   return w.driver + '|' + w.banks.map((b) => b.key + ':' + b.strips.length).join(',');
 }
 
+// Display projections contain plain records/arrays and NaN for unknown
+// numbers. Compare those directly: stringify allocated two full JSON trees
+// per section/strip/ingest and also collapsed NaN and null together.
+function sameDisplayValue(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true;
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false;
+  if (Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
+  return keys.every(key => Object.prototype.hasOwnProperty.call(right, key) && sameDisplayValue(left[key], right[key]));
+}
+
+const stripDisplayFields = { fader: 'fader', mute: 'mute', name: 'name', source: 'source', pan: 'pan', color: 'color' };
+
+let projectionFrame: number | null = null;
+let projectionWorld: EngineWorld | null = null;
+
+/** Ingest keeps every confirmed/pending parameter in EngineWorld. Project
+ * its latest complete state at most once per paint, rather than scanning
+ * every strip once for every parameter in a hydration burst. */
+function scheduleWorldProjection(w: EngineWorld): void {
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    syncWorldToFixture(w);
+    return;
+  }
+  projectionWorld = w;
+  if (projectionFrame !== null) return;
+  projectionFrame = window.requestAnimationFrame(() => {
+    projectionFrame = null;
+    const latest = projectionWorld;
+    projectionWorld = null;
+    if (latest && latest === live.engine) syncWorldToFixture(latest);
+  });
+}
+
 function syncWorldToFixture(w: EngineWorld): void {
   if (live.phase !== 'online' || !w.capsReady) return;
   // Same-socket driver switch (sim -> xair): strips the new topology never
@@ -295,7 +315,7 @@ function syncWorldToFixture(w: EngineWorld): void {
     liveTopoKey = key;
     const fresh = buildChannels();
     for (const id of Object.keys(world.chans)) {
-      if (fresh[id]) world.chans[id] = fresh[id];
+      if (fresh[id]) world.chans[id] = { ...fresh[id], icon: world.chans[id]?.icon };
     }
     reseeded = true;
   }
@@ -306,16 +326,16 @@ function syncWorldToFixture(w: EngineWorld): void {
       const id = engineChToFixture(w, ch);
       const slot = id ? world.chans[id] : undefined;
       if (!id || !slot) continue;
-      // param() prefers optimistic values; pending strips are skipped, so
-      // this only ever copies confirmed desk truth.
-      if (w.status(ch, 'fader') !== 'pending') {
+      // param() is the shared display truth: bounded local ownership,
+      // otherwise the most recent confirmed desk value.
+      if (w.supports('fader', ch)) {
         const f = w.param(ch, 'fader');
-        if (typeof f === 'number' && typeof slot.fader === 'number' && Math.abs(slot.fader - f) > 1e-6) {
+        if (typeof f === 'number' && typeof slot.fader === 'number' && (!Number.isFinite(slot.fader) || Math.abs(slot.fader - f) > 1e-6)) {
           slot.fader = f;
           changed = true;
         }
       }
-      if (w.status(ch, 'mute') !== 'pending') {
+      if (w.supports('mute', ch)) {
         const m = w.param(ch, 'mute');
         if (typeof m === 'boolean' && slot.mute !== m) {
           slot.mute = m;
@@ -333,14 +353,14 @@ function syncWorldToFixture(w: EngineWorld): void {
       // Desk name/colour/source/pan ride the same confirmed-only path:
       // pending local edits win, unsupported ids (xair source/link) stay
       // fixture-local because the poller never confirms them.
-      if (w.status(ch, 'name') !== 'pending') {
+      if (w.supports('name', ch)) {
         const n = w.param(ch, 'name');
-        if (typeof n === 'string' && n && slot.name !== n) {
+        if (typeof n === 'string' && slot.name !== n) {
           slot.name = n;
           changed = true;
         }
       }
-      if (w.status(ch, 'color') !== 'pending') {
+      if (w.supports('color', ch)) {
         const c = w.param(ch, 'color');
         if (typeof c === 'number' && Number.isFinite(c)) {
           const hex = COLOR_HEX[Math.min(COLOR_HEX.length - 1, Math.max(0, Math.round(c)))] ?? slot.color;
@@ -351,9 +371,9 @@ function syncWorldToFixture(w: EngineWorld): void {
           }
         }
       }
-      if (w.status(ch, 'source') !== 'pending') {
+      if (w.supports('source', ch)) {
         const s = w.param(ch, 'source');
-        if (typeof s === 'string' && s && slot.src !== s) {
+        if (typeof s === 'string' && slot.src !== s) {
           slot.src = s;
           changed = true;
         }
@@ -364,7 +384,7 @@ function syncWorldToFixture(w: EngineWorld): void {
           slot.pan = null;
           changed = true;
         }
-      } else if (w.status(ch, panField) !== 'pending') {
+      } else if (w.supports(panField, ch)) {
         const p = w.param(ch, panField);
         if (typeof p === 'number' && Number.isFinite(p)) {
           const d = enginePanToDesign(p);
@@ -374,39 +394,39 @@ function syncWorldToFixture(w: EngineWorld): void {
           }
         }
       }
-      if (slot.input) {
-        for (const field of ['gain', 'trim'] as const) {
-          const value = w.param(ch, field);
-          if (w.status(ch, field) !== 'pending' && typeof value === 'number' && slot.input[field] !== value) {
-            slot.input[field] = value;
-            changed = true;
-          }
-        }
-        const phantom = w.param(ch, 'phantom');
-        if (w.status(ch, 'phantom') !== 'pending' && typeof phantom === 'boolean' && slot.input.phantom !== phantom) {
-          slot.input.phantom = phantom;
-          changed = true;
-        }
+      const eq = buildDisplayEq(w, ch, w.driver === 'sim' || w.link?.state === 'connected');
+      if (!sameDisplayValue(slot.eq, eq)) {
+        slot.eq = eq;
+        changed = true;
       }
-      if (slot.dyn) {
-        for (const kind of ['gate', 'comp'] as const) {
-          const field = `${kind}_on`;
-          const value = w.param(ch, field);
-          if (w.status(ch, field) !== 'pending' && typeof value === 'boolean' && slot.dyn[kind].on !== value) {
-            slot.dyn[kind].on = value;
-            changed = true;
-          }
-        }
+      const input = buildDisplayInput(w, ch);
+      const dyn = buildDisplayDyn(w, ch);
+      const fields = displayFields(w, ch, stripDisplayFields);
+      if (!sameDisplayValue(slot.live, fields)) { slot.live = fields; changed = true; }
+      if (!sameDisplayValue(slot.input, input)) { slot.input = input; changed = true; }
+      if (!sameDisplayValue(slot.dyn, dyn)) { slot.dyn = dyn; changed = true; }
+      const slots = Array.from({ length: 16 }, (_, k) => k + 1).filter(n => w.supports(`send${n}_level`, ch));
+      const sends = slots.length ? Array.from({ length: Math.max(...slots) }, (_, k) => {
+        const v = w.param(ch, `send${k + 1}_level`);
+        return w.supports(`send${k + 1}_level`, ch) && typeof v === 'number' ? sendDbToDesign01(v, lawForDriver(w.driver)) : NaN;
+      }) : null;
+      const pre = sends?.map((_, k) => {
+        const v = w.param(ch, `send${k + 1}_tap`);
+        return typeof v === 'number' && tapToPre(v, w.driver);
+      }) ?? null;
+      if (!sameDisplayValue(slot.sends, sends)) { slot.sends = sends; changed = true; }
+      if (!sameDisplayValue(slot.sendPre, pre)) { slot.sendPre = pre; changed = true; }
+      // XR18's observed return switch is read-only, never an invented source writer.
+      const rtn = w.param(ch, 'rtnsw');
+      const usb = w.param(ch, 'usbreturn');
+      if (!w.supports('source', ch)) {
+        const usbLabel = typeof usb === 'number' ? `USB ${usb + 1}` : 'USB return unknown';
+        const src = w.kindOf(ch) !== 'in' ? 'Source unavailable' : typeof rtn === 'boolean' ? (rtn ? usbLabel : `Local input · ${usbLabel}`) : `Source unknown · ${usbLabel}`;
+        if (slot.src !== src) { slot.src = src; changed = true; }
       }
-    }
-    // Main LR master mute: the attach `main` frame + `main_mute` echoes
-    // land in the library store; copy confirmed truth into the master
-    // strip the same way strip mutes flow above.
-    const mm = w.mainMuted;
-    const master = world.chans['mainlr'];
-    if (typeof mm === 'boolean' && master && master.mute !== mm) {
-      master.mute = mm;
-      changed = true;
+      // Do not retain previous-epoch/fixture readings while hydration is incomplete.
+      for (const f of ['fader'] as const) if (!slot.live.known[f] && Number.isFinite(slot[f])) { slot[f] = NaN; changed = true; }
+      if (!slot.live.known.name && slot.name !== '') { slot.name = ''; changed = true; }
     }
     if (changed) update(world);
   } finally {
@@ -454,6 +474,7 @@ function forward(fn: (w: EngineWorld) => void): void {
   if (w.driver !== 'sim' && w.link?.state === 'disconnected') return;
   try {
     fn(w);
+    syncWorldToFixture(w);
   } catch {
     /* ignore: fixture already updated */
   }
@@ -499,7 +520,14 @@ export const ui = {
     return frozen;
   },
   get sel(): Channel {
-    return currentChannel(world);
+    const channel = currentChannel(world);
+    if (frozen || world.state.connected === 'offline') return channel;
+    const w = live.engine;
+    const ch = w?.capsReady ? bridgeStrip(w, channel.id) : null;
+    if (w && ch !== null && live.phase === 'online' && (w.driver === 'sim' || w.link?.state === 'connected')) return channel;
+    if (w && ch !== null) return { ...channel, eq: buildDisplayEq(w, ch, false) };
+    // No live topology yet: never show a seeded EQ as a connected desk.
+    return { ...channel, eq: channel.eq ? { live: true, on: null, hpf: { on: null, f: NaN, slope: null, supported: false }, bands: [] } : null };
   },
   get masterId(): string {
     return masterId(world);
@@ -541,7 +569,7 @@ export const ui = {
     }
     // Engine -> fixture live sync: desk-side fader/mute moves flow into the
     // fixture display model (no-op offline; pending local edits win).
-    live.observeWorld((w) => syncWorldToFixture(w));
+    live.observeWorld(scheduleWorldProjection);
     frozen = r.freeze;
     refreshMeterIds();
     return { fixture: r.fixture, freeze: r.freeze };
@@ -563,11 +591,32 @@ export const ui = {
     goRouting: () => update(goRouting(world)),
     goConnect: () => update(goConnect(world)),
     goSettings: () => update(goSettings(world)),
+    goOnline: async () => {
+      saveOfflineMode(false);
+      update(withState(goConnect(world), { connected: null }));
+      await live.connect();
+    },
+    clearAppStorage: async () => {
+      clearArmTimer();
+      taps = [];
+      await live.disconnect();
+      await clearAppStorage();
+      liveTopoKey = null;
+      update(withState(initialWorld(), { mode: 'connect', connected: null }));
+      refreshMeterIds();
+      // Reload drops layout/profile/preset/module caches and URL overrides.
+      window.location.replace(window.location.pathname + '?screen=connection');
+    },
     goOffline: () => {
       saveOfflineMode(true);
       // Offline means zero network: drop any live relay link so the
       // offline/demo model owns every screen until the user reconnects.
       live.disconnect();
+      const demo = buildChannels();
+      for (const [id, channel] of Object.entries(world.chans)) {
+        if (channel.eq?.live && demo[id]) channel.eq = demo[id].eq;
+      }
+      liveTopoKey = null;
       update(goOffline(world));
     },
     goBack: () => update(goBack(world)),
@@ -617,6 +666,8 @@ export const ui = {
       forward(w => { bridgePan(w, id, 0); });
     },
     setInputKnob: (id: string, key: 'gain' | 'trim' | 'delay', v: number) => {
+      const w = liveEngine();
+      if (w) { const ch = bridgeStrip(w, id); if (ch !== null && !world.state.locked) w.setParam(ch, key === 'delay' ? 'delay_ms' : key, v); return; }
       update(setSpecValue(world, id, key, (c: Channel, nv: number) => {
         if (!c.input) return;
         if (key === 'gain') c.input.gain = nv;
@@ -723,23 +774,28 @@ export const ui = {
           bridgeEq(w, id, i + 1, 'g', b.g);
           bridgeEq(w, id, i + 1, 'q', b.q);
         });
-        bridgeEqOn(w, id, eq.on);
+        if (eq.on !== null) bridgeEqOn(w, id, eq.on);
       });
     },
     setHpfSlope: (id: string, s: 12 | 24) => {
       update(setHpfSlope(world, id, s));
       forward(w => { bridgeHpfSlope(w, id, s); });
     },
-    setEqBandType: (id: string, band: number, t: 'LS' | 'PEQ' | 'HS') => {
+    setEqBandType: (id: string, band: number, t: import('../fixtures/designData.ts').EqBandType) => {
       update(setEqBandType(world, id, band, t));
-      forward(w => { bridgeEqType(w, id, band, t); });
+      const type = world.chans[id]?.eq?.bands[band - 1]?.type;
+      if (type) forward(w => { bridgeEqType(w, id, band, type); });
     },
     toggleDelayOn: (id: string) => {
+      const w = liveEngine();
+      if (w) { const ch = bridgeStrip(w, id); if (ch !== null && !world.state.locked && typeof w.param(ch, 'delay_on') === 'boolean') w.setParam(ch, 'delay_on', !w.param(ch, 'delay_on')); return; }
       update(toggleDelayOn(world, id));
       const nv = world.chans[id]?.input?.delayOn;
       if (typeof nv === 'boolean') forward(w => { bridgeInputBool(w, id, 'delay_on', nv); });
     },
     toggleInvert: (id: string) => {
+      const w = liveEngine();
+      if (w) { const ch = bridgeStrip(w, id); if (ch !== null && !world.state.locked && typeof w.param(ch, 'polarity') === 'boolean') w.setParam(ch, 'polarity', !w.param(ch, 'polarity')); return; }
       update(toggleInvert(world, id));
       const nv = world.chans[id]?.input?.invert;
       if (typeof nv === 'boolean') forward(w => { bridgeInputBool(w, id, 'polarity', nv); });
@@ -761,6 +817,8 @@ export const ui = {
       }
     },
     setDynParam: (id: string, which: 'gate' | 'comp', prop: string, n: number) => {
+      const w = liveEngine();
+      if (w) { const ch = bridgeStrip(w, id); if (ch !== null && !world.state.locked) w.setParam(ch, `${which}_${prop}`, fromN(spec(dynSpecKey(which, prop)), n)); return; }
       update(setDynParam(world, id, which, prop, n));
       const d = world.chans[id]?.dyn?.[which] as unknown as Record<string, number> | undefined;
       const nv = d?.[prop];
@@ -974,7 +1032,11 @@ export const ui = {
       }
     },
     /** Real relay link (connection screen relay card; driver only when explicitly chosen). */
-    connectRelay: (host?: string, driver?: string) => live.connect(host, driver),
+    connectRelay: (host?: string, driver?: string) => {
+      saveOfflineMode(false);
+      if (world.state.connected === 'offline') update(withState(world, { connected: null }));
+      return live.connect(host, driver);
+    },
     disconnectRelay: () => live.disconnect(),
     setRelayHost: (host: string) => live.setHost(host),
     /** One-tap LAN fix: point the relay at the machine serving this page. */

@@ -47,6 +47,7 @@ function outOf(kind: DynKind, p: DynParams, x: number): number {
 
 /** 81-sample transfer curve path (design pts loop, i = 0..80). */
 export function dynCurvePath(kind: DynKind, p: DynParams): string {
+  if (!dynCurveKnown(kind, p)) return '';
   const lo = DYN_LO[kind];
   const pts: string[] = [];
   for (let i = 0; i <= 80; i++) {
@@ -60,7 +61,8 @@ export function dynCurvePath(kind: DynKind, p: DynParams): string {
 
 /** Curve path closed to the plot bottom (design dvFill). */
 export function dynFillPath(kind: DynKind, p: DynParams): string {
-  return dynCurvePath(kind, p) + ' L200 200 L0 200 Z';
+  const path = dynCurvePath(kind, p);
+  return path ? path + ' L200 200 L0 200 Z' : '';
 }
 
 export function dynFillColor(kind: DynKind): string {
@@ -106,6 +108,7 @@ export interface DynThreshold {
 }
 
 export function dynThreshold(p: { thr: number }, lo: number): DynThreshold {
+  if (!Number.isFinite(p.thr)) return { x: '0', leftPct: '50', text: 'Unknown' };
   return {
     x: dynMap(lo, p.thr).toFixed(1),
     leftPct: clamp(dynMap(lo, p.thr) / 2, 8, 92).toFixed(1),
@@ -134,6 +137,7 @@ export interface DynHandle {
 }
 
 export function dynHandles(kind: DynKind, p: DynParams): DynHandle[] {
+  if (!dynCurveKnown(kind, p)) return [];
   const lo = DYN_LO[kind];
   const at = (x: number): { left: number; top: number } => ({
     left: clamp(dynMap(lo, x) / 2, 0, 100),
@@ -169,11 +173,11 @@ export function dynThrRaw(kind: DynKind, fracX: number): number {
  * quantizes through the ratio spec. Below knee height there is nothing
  * further to follow, so it pins at 20:1. (Absolute mapping — up = more
  * ratio — would drive the line end opposite the finger.) */
-export function dynRatioRaw(fracY: number, thr: number, makeup: number): number {
+export function dynRatioRaw(fracY: number, thr: number, makeup: number, range?: readonly [number, number]): number {
   const yOut = DYN_LO.comp + (1 - clamp(fracY, 0, 1)) * -DYN_LO.comp;
   const denom = yOut - makeup - thr;
-  const r = denom <= 0 ? 20 : (0 - thr) / denom;
-  const s = spec('ratio');
+  const r = denom <= 0 ? range?.[1] ?? 20 : (0 - thr) / denom;
+  const s = { ...spec('ratio'), ...(range ? { min: range[0], max: range[1] } : {}) };
   return fromN(s, toN(s, clamp(r, s.min, s.max)));
 }
 
@@ -278,6 +282,8 @@ export interface DynKnobDef {
   bind: string;
   /** Double-tap reset target (design K() defaults). */
   defaultValue: number;
+  range?: readonly [number, number];
+  choices?: number[];
 }
 
 /** Knob grids as data (design K() tables); users add/remove by editing the list. */
@@ -303,4 +309,12 @@ export const DYN_KNOBS: Record<DynKind, DynKnobDef[]> = {
 export function dynKnobValue(kind: DynKind, g: Gate, c: Comp, prop: string): number {
   const src = (kind === 'gate' ? g : c) as unknown as Record<string, number>;
   return src[prop];
+}
+
+/** A transfer curve needs confirmed switches and its shaping leaves. */
+export function dynCurveKnown(kind: DynKind, p: DynParams): boolean {
+  if (p.live && (!p.live.supported.on || !p.live.known.on)) return false;
+  if (p.on && p.raw && ((typeof p.raw.mode === 'number' && p.raw.mode !== 0) || (kind === 'comp' && typeof p.raw.mix === 'number' && p.raw.mix !== 100))) return false;
+  const fields = kind === 'gate' ? ['thr', 'range'] : ['thr', 'ratio', 'knee', 'makeup'];
+  return fields.every(f => Number.isFinite((p as unknown as Record<string, number>)[f]));
 }

@@ -34,7 +34,7 @@ export interface WsSocket {
   binaryType: string;
   readonly readyState: number;
   send(data: string): void;
-  close(): void;
+  close(): void | Promise<void>;
   onopen: ((ev: unknown) => void) | null;
   onclose: ((ev: unknown) => void) | null;
   onerror: ((ev: unknown) => void) | null;
@@ -49,7 +49,7 @@ export interface Transport {
   send(json: string): void;
   onMessage(cb: (msg: TransportMessage) => void): Unsub;
   onStatus(cb: (online: boolean) => void): Unsub;
-  close(): void;
+  close(): void | Promise<void>;
 }
 
 /**
@@ -96,6 +96,13 @@ export interface WsTransportOptions {
   /** Timer injection for tests (default setTimeout/clearTimeout). */
   setTimer?: (fn: () => void, ms: number) => unknown;
   clearTimer?: (t: unknown) => void;
+}
+
+/** Only explicit connection/handshake intent survives an unopened link.
+ * Mixer writes belong to the old epoch and must never replay on reconnect. */
+function queueable(json: string): boolean {
+  try { return ['connect', 'connect_device', 'probe_desk', 'hello', 'offline'].includes(JSON.parse(json).cmd); }
+  catch { return false; }
 }
 
 const DEFAULT_BACKOFF = [1000, 2000, 5000, 10000];
@@ -179,6 +186,7 @@ export class WsTransport implements Transport {
       /* fake sockets may ignore */
     }
     ws.onopen = () => {
+      if (this.socket !== ws || this.manuallyClosed) return;
       this.failures = 0;
       this.setOnline(true);
       for (const m of this.queue.splice(0)) {
@@ -198,6 +206,7 @@ export class WsTransport implements Transport {
       }
     };
     ws.onmessage = (ev: { data: unknown }) => {
+      if (this.socket !== ws || this.manuallyClosed) return;
       const d = ev.data;
       if (typeof d === 'string') this.emit(d);
       else if (d instanceof ArrayBuffer) this.emit(d);
@@ -207,7 +216,9 @@ export class WsTransport implements Transport {
       }
     };
     const down = (): void => {
-      if (this.socket === ws) this.socket = null;
+      if (this.socket !== ws) return;
+      this.socket = null;
+      this.queue.length = 0;
       this.setOnline(false);
       this.failures++;
       this.scheduleRetry();
@@ -229,6 +240,7 @@ export class WsTransport implements Transport {
   }
 
   send(json: string): void {
+    if (this.manuallyClosed) return;
     const open = this.socket && (this.socket.readyState as number) === 1;
     if (open && this.socket) {
       try {
@@ -239,7 +251,7 @@ export class WsTransport implements Transport {
         this.setOnline(false);
       }
     }
-    this.queue.push(json);
+    if (queueable(json)) this.queue.push(json);
     if (this.wantOpen && !this.manuallyClosed && !this.socket) this.open();
   }
 
@@ -266,6 +278,7 @@ export class WsTransport implements Transport {
     this.manuallyClosed = true;
     this.wantOpen = false;
     this.clearRetry();
+    this.queue.length = 0;
     try {
       this.socket?.close();
     } catch {
@@ -473,6 +486,8 @@ export class TauriTransport implements Transport {
   private pushSetup: Promise<void> | null = null;
   private timer: unknown = null;
   private attachPromise: Promise<void> | null = null;
+  private closePromise: Promise<void> | null = null;
+  private pending = new Set<Promise<unknown>>();
 
   constructor(opts: TauriTransportOptions = {}) {
     this.invokeOpt = opts.invoke ?? null;
@@ -484,8 +499,12 @@ export class TauriTransport implements Transport {
   }
 
   private invoke(cmd: string, args?: Record<string, unknown>): Promise<unknown> {
-    if (this.invokeOpt) return this.invokeOpt(cmd, args);
-    return import('@tauri-apps/api/core').then((m) => m.invoke(cmd, args));
+    const call = this.invokeOpt
+      ? Promise.resolve().then(() => this.invokeOpt!(cmd, args))
+      : import('@tauri-apps/api/core').then((m) => m.invoke(cmd, args));
+    this.pending.add(call);
+    void call.then(() => this.pending.delete(call), () => this.pending.delete(call));
+    return call;
   }
 
   private setOnline(v: boolean): void {
@@ -511,6 +530,7 @@ export class TauriTransport implements Transport {
   }
 
   private feed(frames: unknown): void {
+    if (this.closed) return;
     // Channel messages are one of: a JSON batch (array of `Event::to_json`
     // strings), a single binary meter frame (`ArrayBuffer` from a `Raw`
     // send, or a `Uint8Array` view over one), or — on Android, where Raw
@@ -541,6 +561,7 @@ export class TauriTransport implements Transport {
   }
 
   private ensureAttached(): Promise<void> {
+    if (this.closed) return Promise.resolve();
     if (this.attached) return Promise.resolve();
     if (!this.attachPromise) {
       this.attachPromise = this.invoke('engine_attach', { label: 'ui' }).then(
@@ -656,7 +677,7 @@ export class TauriTransport implements Transport {
     } catch {
       return false;
     }
-    if (this.closed) return false;
+    if (this.closed) { ch.onmessage = null; return false; }
     this.channel = ch;
     this.pushMode = true;
     this.stopPollLoop();
@@ -688,6 +709,7 @@ export class TauriTransport implements Transport {
   }
 
   private sendNow(json: string): void {
+    if (this.closed) return;
     this.invoke('engine_cmd', { cmd: json }).then(
       (frames) => {
         // Push mode: the same batch already arrived on the push path
@@ -697,6 +719,7 @@ export class TauriTransport implements Transport {
         if (!this.closed && !this.pushMode) this.feed(frames);
       },
       () => {
+        if (this.closed) return;
         // The engine is gone or the call failed: drop back offline; the
         // next poll re-attaches and the WS-style hello re-runs there.
         this.attached = false;
@@ -729,7 +752,7 @@ export class TauriTransport implements Transport {
   }
 
   connect(): void {
-    this.closed = false;
+    if (this.closed) return;
     // Swallow: failures surface as offline status + retries on the
     // fallback poll loop, exactly like the WS transport's reconnect
     // behaviour. The loop itself starts in setupPush (fallback path);
@@ -740,7 +763,7 @@ export class TauriTransport implements Transport {
   send(json: string): void {
     if (this.closed) return;
     if (!this.attached) {
-      this.queue.push(json);
+      if (queueable(json)) this.queue.push(json);
       this.ensureAttached().catch(() => {});
       return;
     }
@@ -766,36 +789,32 @@ export class TauriTransport implements Transport {
     };
   }
 
-  close(): void {
+  close(): Promise<void> {
+    if (this.closePromise) return this.closePromise;
+    // Gate sends immediately, then drain IPC already in flight before
+    // detaching. A pending attach/subscribe must not resurrect the client.
     this.closed = true;
     this.stopPollLoop();
-    this.pushSetup = null;
-    this.pushMode = false;
-    // Dropping our side stops delivery; the `engine_detach` below drops
-    // the client the backend drains, so its stored clone goes quiet, and
-    // the next subscribe replaces it.
+    if (this.channel) this.channel.onmessage = null;
     this.channel = null;
-    if (this.unlisten) {
-      try {
-        this.unlisten();
-      } catch {
-        /* ignore */
-      }
-      this.unlisten = null;
-    }
+    this.unlisten?.();
+    this.unlisten = null;
     this.queue.length = 0;
-    this.attachPromise = null;
-    const wasAttached = this.attached;
     this.attached = false;
     this.setOnline(false);
-    if (wasAttached) {
-      // Best-effort server-side detach; the engine sweeps stale clients
-      // anyway, so a failure here is harmless.
-      try {
-        this.invoke('engine_detach').catch(() => {});
-      } catch {
-        /* sync throw (no shell): ignore */
-      }
-    }
+    this.closePromise = (async () => {
+      await Promise.allSettled([this.attachPromise, this.pushSetup]);
+      while (this.pending.size) await Promise.allSettled([...this.pending]);
+      // Native detach also releases its private engine/session. Browser
+      // sockets only detach themselves from the shared relay.
+      await this.invoke('engine_detach');
+      this.pushSetup = null;
+      this.attachPromise = null;
+      this.pushMode = false;
+    })().catch((error) => {
+      this.closePromise = null;
+      throw error;
+    });
+    return this.closePromise;
   }
 }

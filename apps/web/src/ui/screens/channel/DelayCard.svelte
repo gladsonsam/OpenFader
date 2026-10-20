@@ -3,6 +3,7 @@
      `knob` ({key:'delay',value}) / `toggle` out. Verbatim from
      design-template.html (isInputTab). -->
 <script lang="ts">
+  import { spec } from '../../fixtures/designData.ts';
   import Knob from '../../primitives/signal/Knob.svelte';
   import type { ModuleContext } from '../../modules/types.ts';
   import type { InputVm } from './channelModel.ts';
@@ -22,7 +23,7 @@
   const vm = $derived(props.vm ?? ({ hasInput: false } as InputVm));
 </script>
 
-{#if vm.hasInput}
+{#if vm.hasInput && vm.delaySupported !== false}
 <section
   aria-label="Delay"
   style="box-sizing:content-box;display:flex;flex-direction:column;gap:10px;padding:10px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
@@ -30,6 +31,7 @@
   <div style="box-sizing:content-box;display:flex;align-items:center;justify-content:space-between">
     <span style="font-size:12px;color:var(--u4-text-6)">Delay</span>
     <button
+      disabled={vm.live && !vm.live.known.delayOn}
       onclick={() => onEvent?.('toggle')}
       aria-pressed={vm.delayOn ? 'true' : 'false'}
       style="box-sizing:border-box;font-variant-numeric:normal;height:34px;padding:0 14px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:{vm.delayBg};color:{vm.delayFg};font-size:13px;cursor:pointer"
@@ -39,6 +41,7 @@
   <div style="box-sizing:content-box;display:flex;justify-content:space-around;gap:6px">
     <Knob
       specKey="delay"
+      specOverride={vm.live?.ranges.delay ? { ...spec('delay'), min: vm.live.ranges.delay[0], max: vm.live.ranges.delay[1] } : undefined}
       value={vm.delayMs}
       label="Time"
       color={vm.delayKnobColor}

@@ -1,3 +1,4 @@
+import { lawForDriver } from '../world/mapping/faderLaw.ts';
 // D2 Data package: exact TypeScript port of the design's seeded data model.
 // Source: docs/design/src/design-logic.js.txt (class Component: bankDefs,
 // buildChannels with seeded PRNG seed=7, buildFx, scenes, devices) plus the
@@ -6,7 +7,9 @@
 // identical to the design or every value drifts. Do not reorder calls to r().
 
 export type ChannelKind = 'in' | 'ret' | 'bus' | 'out' | 'dca';
-export type EqBandType = 'LS' | 'PEQ' | 'HS';
+export type EqBandType = import('../world/mapping/params.ts').DesignEqType;
+export type EqRange = readonly [number, number];
+export type EqRanges = Record<'f' | 'g' | 'q', EqRange | null>;
 
 export interface BankItem {
   id: string;
@@ -25,26 +28,45 @@ export interface Bank {
 }
 
 export interface Hpf {
-  on: boolean;
+  on: boolean | null;
+  /** NaN is an unreceived numeric value, rendered as — and never editable. */
   f: number;
-  slope: 12 | 24;
+  slope: 12 | 24 | null;
+  supported?: boolean;
+  range?: EqRange | null;
+  slopeEditable?: boolean;
 }
 
 export interface EqBand {
-  type: EqBandType;
+  type: EqBandType | null;
   f: number;
   g: number;
   q: number;
-  on: boolean;
+  on: boolean | null;
+  ranges?: EqRanges;
+  types?: EqBandType[];
+  /** XR18 has a global EQ switch, no per-band bypass. */
+  toggleable?: boolean;
 }
 
 export interface Eq {
-  on: boolean;
+  on: boolean | null;
+  live?: boolean;
   hpf: Hpf;
   bands: EqBand[]; // [Low, Lo-Mid, Hi-Mid, High]
 }
 
+export interface LiveFields {
+  driver?: string;
+  supported: Record<string, boolean>;
+  known: Record<string, boolean>;
+  ranges: Record<string, EqRange>;
+  choices?: Record<string, number[]>;
+}
+
 export interface Gate {
+  live?: LiveFields;
+  raw?: Record<string, import('../world/types.ts').ParamValue | null>;
   on: boolean;
   thr: number;
   range: number;
@@ -54,6 +76,8 @@ export interface Gate {
 }
 
 export interface Comp {
+  live?: LiveFields;
+  raw?: Record<string, import('../world/types.ts').ParamValue | null>;
   on: boolean;
   thr: number;
   ratio: number;
@@ -69,6 +93,7 @@ export interface Dyn {
 }
 
 export interface ChannelInput {
+  live?: LiveFields;
   gain: number;
   trim: number;
   phantom: boolean;
@@ -94,6 +119,8 @@ export interface Channel {
   solo: boolean;
   pan: number | null;
   sends: number[] | null;
+  /** Connected desk values; NaN means supported but not received. */
+  live?: LiveFields;
   sendPre: boolean[] | null;
   input: ChannelInput | null;
   eq: Eq | null;
@@ -299,17 +326,20 @@ export function dbToPos(db: number): number {
 }
 
 /** dB readout with one decimal, e.g. `-4.3`, `+2.0`; `-∞` below -89. */
-export function fmtDb(p: number): string {
-  const d = posToDb(p);
+export function fmtDb(p: number, driver?: string): string {
+  if (!Number.isFinite(p)) return '—';
+  const d = driver ? lawForDriver(driver).toDb(p) : posToDb(p);
   if (!isFinite(d) || d < -89) return '-∞';
   return (d > 0.04 ? '+' : '') + d.toFixed(1);
 }
 
 export function fmtF(f: number): string {
+  if (!Number.isFinite(f)) return '—';
   return f < 1000 ? Math.round(f) + ' Hz' : (f / 1000).toFixed(f < 10000 ? 2 : 1) + ' kHz';
 }
 
 export function fmtG(g: number): string {
+  if (!Number.isFinite(g)) return '—';
   return (g > 0 ? '+' : '') + g.toFixed(1) + ' dB';
 }
 
@@ -332,12 +362,12 @@ export function panAria(name: string, pan: number | null): string {
   return 'Pan ' + name + ' ' + panText(pan);
 }
 
-export function faderAria(name: string, pos: number, useSend: boolean, mix: number): string {
-  return (useSend ? 'Send to Mix ' + (mix + 1) + ' from ' : 'Fader ') + name + ' ' + fmtDb(pos) + ' dB';
+export function faderAria(name: string, pos: number, useSend: boolean, mix: number, driver?: string): string {
+  return (useSend ? 'Send to Mix ' + (mix + 1) + ' from ' : 'Fader ') + name + ' ' + fmtDb(pos, driver) + ' dB';
 }
 
-export function sendAria(mixIndex: number, v: number): string {
-  return 'Send to Mix ' + (mixIndex + 1) + ' ' + fmtDb(v) + ' dB';
+export function sendAria(mixIndex: number, v: number, driver?: string): string {
+  return 'Send to Mix ' + (mixIndex + 1) + ' ' + fmtDb(v, driver) + ' dB';
 }
 
 /** Ratio readout, e.g. `3.0:1`. */
@@ -353,7 +383,12 @@ export function coefs(type: string, f: number, g: number, q: number): Biquad {
   const fs = 48000, A = Math.pow(10, g / 40), w = 2 * Math.PI * f / fs;
   const cs = Math.cos(w), sn = Math.sin(w), al = sn / (2 * q);
   let b0: number, b1: number, b2: number, a0: number, a1: number, a2: number;
-  if (type === 'PEQ') { b0 = 1 + al * A; b1 = -2 * cs; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * cs; a2 = 1 - al / A; }
+  if (type === 'LCut' || type === 'HCut') {
+    const low = type === 'HCut';
+    b0 = (1 + (low ? -cs : cs)) / 2; b1 = low ? 1 - cs : -(1 + cs); b2 = b0;
+    a0 = 1 + al; a1 = -2 * cs; a2 = 1 - al;
+  }
+  else if (type === 'PEQ') { b0 = 1 + al * A; b1 = -2 * cs; b2 = 1 - al * A; a0 = 1 + al / A; a1 = -2 * cs; a2 = 1 - al / A; }
   else if (type === 'LS') { const s = 2 * Math.sqrt(A) * al; b0 = A * ((A + 1) - (A - 1) * cs + s); b1 = 2 * A * ((A - 1) - (A + 1) * cs); b2 = A * ((A + 1) - (A - 1) * cs - s); a0 = (A + 1) + (A - 1) * cs + s; a1 = -2 * ((A - 1) + (A + 1) * cs); a2 = (A + 1) + (A - 1) * cs - s; }
   else if (type === 'HS') { const s = 2 * Math.sqrt(A) * al; b0 = A * ((A + 1) + (A - 1) * cs + s); b1 = -2 * A * ((A - 1) + (A + 1) * cs); b2 = A * ((A + 1) + (A - 1) * cs - s); a0 = (A + 1) - (A - 1) * cs + s; a1 = 2 * ((A - 1) - (A + 1) * cs); a2 = (A + 1) - (A - 1) * cs - s; }
   else { b0 = (1 + cs) / 2; b1 = -(1 + cs); b2 = (1 + cs) / 2; a0 = 1 + al; a1 = -2 * cs; a2 = 1 - al; }
@@ -370,13 +405,17 @@ export function magDb(c: Biquad, f: number): number {
 
 export function filters(eq: Eq | null): Biquad[] {
   const out: Biquad[] = [];
-  if (!eq || !eq.on) return out;
-  if (eq.hpf && eq.hpf.on) {
+  if (!eq) return out;
+  // The input HPF is independent of the parametric EQ bypass.
+  if (eq.hpf?.on && eq.hpf.slope !== null && Number.isFinite(eq.hpf.f)) {
     const c = coefs('HP', eq.hpf.f, 0, 0.7071);
     out.push(c);
     if (eq.hpf.slope === 24) out.push(c);
   }
-  (eq.bands || []).forEach(b => { if (b.on) out.push(coefs(b.type, b.f, b.g, b.q)); });
+  if (eq.on) (eq.bands || []).forEach(b => {
+    if (b.on && b.type && b.type !== 'VEQ' && [b.f, b.g, b.q].every(Number.isFinite))
+      out.push(coefs(b.type, b.f, b.g, b.q));
+  });
   return out;
 }
 
@@ -388,7 +427,7 @@ export function resp(fl: Biquad[], f: number): number {
 
 /** Strip EQ thumbnail path (40 segments over 20 Hz..20 kHz). Pure; no cache. */
 export function eqThumbPath(ch: Channel): string {
-  if (!ch.eq) return '';
+  if (!ch.eq || ch.eq.on === null || ch.eq.bands.some(b => !b.type || b.type === 'VEQ' || ![b.f, b.g, b.q].every(Number.isFinite)) || (ch.eq.hpf.on && ch.eq.hpf.slope === null)) return '';
   const fl = filters(ch.eq);
   const pts: string[] = [];
   for (let i = 0; i <= 40; i++) {
@@ -417,6 +456,8 @@ export function compOut(c: Comp, x: number): number {
 
 export function dynThumbPath(ch: Channel, which?: 'gate' | 'comp'): string {
   if (!ch.dyn) return '';
+  const kinds = which ? [which] : ['gate', 'comp'] as const;
+  if (kinds.some(k => { const p = ch.dyn![k]; return (p.on && p.raw && ((typeof p.raw.mode === 'number' && p.raw.mode !== 0) || (k === 'comp' && typeof p.raw.mix === 'number' && p.raw.mix !== 100))) || p.live && (!p.live.supported.on || !p.live.known.on || !Object.values(p).filter(v => typeof v === 'number').every(Number.isFinite)); })) return '';
   const pts: string[] = [];
   const floor = which === 'gate' ? -80 : -60;
   for (let i = 0; i <= 24; i++) {
@@ -549,10 +590,12 @@ export function delayDistanceText(delayMs: number): string {
 
 /** Compressor summary line on the dyn tab, e.g. `Thr -13.0 dB · 3.0:1 · Makeup +0.0 dB`. */
 export function compSummary(c: Comp): string {
+  if (!c || (c.live && !c.live.known.on) || ![c.thr, c.ratio, c.att, c.rel, c.makeup, c.knee].every(Number.isFinite)) return 'Waiting for desk';
   return 'Thr ' + c.thr.toFixed(1) + ' dB · ' + c.ratio.toFixed(1) + ':1 · Makeup ' + fmtG(c.makeup);
 }
 
 export function gateSummary(g: Gate): string {
+  if (!g || (g.live && !g.live.known.on) || ![g.thr, g.range, g.att, g.hold, g.rel].every(Number.isFinite)) return 'Waiting for desk';
   return 'Thr ' + g.thr.toFixed(1) + ' dB · Range ' + g.range + ' dB';
 }
 

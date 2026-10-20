@@ -62,7 +62,7 @@
     const bits: string[] = [];
     if (supportCtx.mapped === null) bits.push('strip has no desk equivalent — recall stays local');
     if (rep.fixtureOnly.length) bits.push(rep.fixtureOnly.length + ' fixture-only');
-    if (rep.deskRefused.length) bits.push(rep.deskRefused.length + ' local-only on ' + supportCtx.driver);
+    if (rep.deskRefused.length) bits.push(rep.deskRefused.length + ' unavailable on ' + supportCtx.driver);
     if (!bits.length) return { text: '', title: '' };
     const leaves = [...rep.fixtureOnly, ...rep.deskRefused].join(', ');
     return { text: '△ ' + bits.join(' · '), title: leaves };

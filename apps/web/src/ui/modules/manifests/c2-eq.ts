@@ -36,7 +36,7 @@ export const manifests: ModuleManifest[] = [
       graph: vmObject,
       locked: { type: 'bool', default: false },
       fine: { type: 'bool', default: false },
-      selBand: { type: 'number', min: 0, max: 4, step: 1, default: 1 },
+      selBand: { type: 'number', min: 0, max: 6, step: 1, default: 1 },
       selQ: { type: 'number', min: 0, max: 16, step: 0.01, default: 0 },
     },
     defaults: { locked: false, fine: false, selBand: 1, selQ: 0 },

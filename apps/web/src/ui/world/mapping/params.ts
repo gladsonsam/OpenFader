@@ -21,9 +21,7 @@
 //   comp_rel    engine 10..1000 vs design 5..2000ms  -> clamp both ends
 //   gain        engine -12..60  vs design 0..60dB    -> clamp bottom (-12..0 unreachable)
 //   delay_ms    engine 0..100ms vs design 0..500ms   -> clamp top
-//   eq types    engine 6 (LCut..HCut) vs design 3 (LS/PEQ/HS) -> lossy fold:
-//                LCut->LS, HCut->HS on read; LS->LShv, HS->HShv on write
-//                (a desk-side LCut/HCut reads back as a shelf after a write)
+//   eq types    all six engine types are preserved in both directions
 //   hpf_slope   engine 0..2 (meaning UNVERIFIED-ON-RIG; assumed 0=12,1=18,2=24)
 //                vs design 12|24 -> 18 folds to 12 on read
 //   send tap    engine 0..5 IN/PREEQ/POSTEQ/PRE/POST/GRP (desk-verified
@@ -35,22 +33,18 @@
 
 import { XAIR_LAW, type FaderLaw } from './faderLaw.ts';
 
-export type DesignEqType = 'LS' | 'PEQ' | 'HS';
+export type DesignEqType = 'LCut' | 'LS' | 'PEQ' | 'VEQ' | 'HS' | 'HCut';
 
 /** Engine eqN_type order (docs/xair-protocol.md:64). */
 export const EQ_TYPE_NAMES = ['LCut', 'LShv', 'PEQ', 'VEQ', 'HShv', 'HCut'] as const;
 
-/** Engine 0..5 -> design LS/PEQ/HS (cuts fold to the nearest shelf). */
-export function engineEqTypeToDesign(t: number): DesignEqType {
-  const r = Math.round(t);
-  if (r <= 1) return 'LS';
-  if (r >= 4) return 'HS';
-  return 'PEQ';
+/** Preserve all six wire types. An unknown enum is never a made-up bell. */
+export function engineEqTypeToDesign(t: number): DesignEqType | '' {
+  return (['LCut', 'LS', 'PEQ', 'VEQ', 'HS', 'HCut'] as const)[t] ?? '';
 }
 
-/** Design LS/PEQ/HS -> engine enum (shelves, never cuts: LS->LShv=1, HS->HShv=4). */
 export function designEqTypeToEngine(t: DesignEqType): number {
-  return t === 'LS' ? 1 : t === 'HS' ? 4 : 2;
+  return ['LCut', 'LS', 'PEQ', 'VEQ', 'HS', 'HCut'].indexOf(t);
 }
 
 /**
@@ -92,12 +86,12 @@ export function design01ToSendDb(v: number, law: FaderLaw = XAIR_LAW): number {
 /** Engine sendN_tap enum -> design pre flag (fixture/offline only: the live
  *  sends tab reads the desk tap through the overlay instead). Kept for the
  *  boolean fixture `sendPre` path; NOT the desk truth (see SEND_TAP_LABELS). */
-export function tapToPre(tap: number): boolean {
-  return Math.round(tap) === 0;
+export function tapToPre(tap: number, driver?: string): boolean {
+  return driver === 'xair' ? tap >= 0 && tap <= 3 : Math.round(tap) === 0;
 }
 
-export function preToTap(pre: boolean): number {
-  return pre ? 0 : 1;
+export function preToTap(pre: boolean, driver?: string): number {
+  return driver === 'xair' ? pre ? 3 : 4 : pre ? 0 : 1;
 }
 
 /**

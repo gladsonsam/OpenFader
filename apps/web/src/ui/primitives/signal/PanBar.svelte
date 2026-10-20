@@ -118,6 +118,12 @@
     oninput(Math.round(Math.max(-1, Math.min(1, v)) * 100) / 100);
   }
 
+  $effect(() => {
+    const cancel = (): void => { drag = null; };
+    window.addEventListener('openmix-control-epoch', cancel);
+    window.addEventListener('openmix-control-released', cancel);
+    return () => { window.removeEventListener('openmix-control-epoch', cancel); window.removeEventListener('openmix-control-released', cancel); };
+  });
 </script>
 
 {#if value == null}
