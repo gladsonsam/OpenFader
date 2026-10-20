@@ -1513,7 +1513,6 @@ mod tests {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut seq: u8 = 40;
             let mut cic = 0;
-            let mut fired = false;
             loop {
                 let req = match read_msg(&mut stream).await {
                     Ok(m) => m,
@@ -1527,10 +1526,13 @@ mod tests {
                 if req.command == Command::ChannelInfoControl {
                     cic += 1;
                 }
-                if fired || cic < 2 {
+                if cic < 2 {
                     continue;
                 }
-                fired = true;
+                // Init is done: repeat the desk's relay until the test ends.
+                // Repeating (not one-shot) keeps this race-free — pushes
+                // sent before the test subscribes are missed by broadcast
+                // semantics, so a later repetition must follow.
                 // Another client moved ch1 fader to -15 dB (addr 9).
                 let body = openmix_transport::mackie::build_single_set(
                     9,
@@ -1540,7 +1542,9 @@ mod tests {
                 seq = seq.wrapping_add(1);
                 let push = Message::new(seq, MessageType::Broadcast, Command::ChannelValues, body)
                     .unwrap();
-                stream.write_all(&push.encode()).await.unwrap();
+                if stream.write_all(&push.encode()).await.is_err() {
+                    break;
+                }
                 // ... and renamed slot 1 to "Vox".
                 let mut padded = b"Vox\x00".to_vec();
                 while !padded.len().is_multiple_of(4) {
@@ -1553,7 +1557,14 @@ mod tests {
                 seq = seq.wrapping_add(1);
                 let names = Message::new(seq, MessageType::Request, Command::ChannelNames, nbody)
                     .unwrap();
-                stream.write_all(&names.encode()).await.unwrap();
+                if stream.write_all(&names.encode()).await.is_err() {
+                    break;
+                }
+                // Pause before the next relay round (post-init the client
+                // only sends no-reply keepalives, so nothing needs an
+                // answer here; the write error above still exits promptly
+                // on a dropped client).
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
             }
         });
 
