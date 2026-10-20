@@ -315,6 +315,7 @@
   <div style="box-sizing:content-box;flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;overflow:visible{plotMR
     ? ''
     : ';padding-right:22px'}">
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       bind:this={plot}
       onpointerdown={down}
@@ -388,6 +389,7 @@
           '100'}%;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;background:#ffffff;box-shadow:0 0 0 4px rgba(255,255,255,.16)"
       ></span>
       {#each handles as h (h.id)}
+        <!-- svelte-ignore a11y_role_has_required_aria_props -->
         <button
           class="dyn-handle"
           role="slider"

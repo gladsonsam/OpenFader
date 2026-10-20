@@ -114,6 +114,7 @@
 </script>
 
 <div style="overflow-x:auto;max-width:100%">
+  <!-- svelte-ignore a11y_no_interactive_element_to_noninteractive_role -->
   <canvas
     bind:this={canvas}
     style="display:block;width:{cssW}px;height:{cssH}px"

@@ -75,7 +75,7 @@
   );
   // Phone density: 36px touch rows so Back + title + toolbar share one
   // row instead of stacking. Desktop untouched.
-  const ibtn = compact ? 36 : 46;
+  const ibtn = $derived(compact ? 36 : 46);
 </script>
 
 <header

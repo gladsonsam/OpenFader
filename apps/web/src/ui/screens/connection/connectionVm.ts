@@ -54,9 +54,10 @@ export interface ConnectionVm {
   showFix: boolean;
   /** Manual add-by-IP card: visible while a relay link can probe (online,
    *  or errored — the probe still needs the link, so the card explains
-   *  itself while down). Verified desks join the device list above with
-   *  `via: manual`, tap-to-connect like any discovered desk. Never any
-   *  127.0.0.1/relay-link UI here (that stays deleted). */
+   *  itself while down). Add probes AND connects: the verified desk joins
+   *  the device list above with `via: manual` and the link flips to
+   *  Connected without a second tap. Never any 127.0.0.1/relay-link UI
+   *  here (that stays deleted). */
   showManualDesk: boolean;
 }
 

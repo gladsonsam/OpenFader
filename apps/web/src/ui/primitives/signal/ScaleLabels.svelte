@@ -18,10 +18,10 @@
     variant?: 'strip' | 'aside';
   } = $props();
 
-  const labelW = variant === 'aside' ? 20 : 17;
-  const fontSize = variant === 'aside' ? 11 : 10;
-  const tickX = variant === 'aside' ? 23 : 19;
-  const tickW = variant === 'aside' ? 9 : 7;
+  const labelW = $derived(variant === 'aside' ? 20 : 17);
+  const fontSize = $derived(variant === 'aside' ? 11 : 10);
+  const tickX = $derived(variant === 'aside' ? 23 : 19);
+  const tickW = $derived(variant === 'aside' ? 9 : 7);
 </script>
 
 <div aria-hidden="true" style="position:absolute;inset:0;display:block;pointer-events:none">

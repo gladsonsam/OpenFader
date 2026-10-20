@@ -47,6 +47,18 @@
 //! (the frames already went over the Channel/event) to avoid a wasted
 //! clone + serialization; poll-only clients get the frames as the return
 //! value, exactly as before.
+//!
+//! Suspension (mobile background): pushes are gated on `EngineSlot.active`.
+//! While `false` — set by the frontend on `visibilitychange`/`pagehide`
+//! (`engine_set_active`) and by the native `WindowEvent::Suspended` run
+//! event — every push path still drains the client mailbox on each wake (so
+//! the engine's unbounded mailbox cannot grow) but discards the frames and
+//! clears the outbox instead of delivering them. On resume
+//! (`WindowEvent::Resumed`, or `engine_set_active(true)` + `engine_resync`
+//! from JS) push re-enables and the engine queues one fresh snapshot
+//! (`Engine::push_snapshot`), so a UI that was suspended for minutes
+//! catches up in a single batch instead of replaying a backlog of stale
+//! frames.
 use tauri::async_runtime::Mutex;
 use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Emitter, Manager};
@@ -201,6 +213,19 @@ impl IpcOutbox {
             + self.gr.len()
     }
 
+    /// Drop every queued frame (control FIFO + stream slots), keeping the
+    /// cumulative counters. The pause path uses this: a suspended WebView
+    /// must not inherit minutes of stale frames, and a fresh snapshot
+    /// (see [`engine_resync`]) rebuilds control state on resume while
+    /// meters restart from the live ticker.
+    fn clear(&mut self) {
+        self.control.clear();
+        self.meters = None;
+        self.taps.clear();
+        self.spectrum.clear();
+        self.gr.clear();
+    }
+
     fn stats_json(&self) -> String {
         serde_json::json!({
             "type": "ipc_stats",
@@ -252,6 +277,16 @@ struct EngineSlot {
     /// before encode/deliver, so push bursts carry the freshest meters,
     /// not stale catch-up. See [`IpcOutbox`].
     outbox: IpcOutbox,
+    /// Push gate: `false` while the app is suspended (mobile WebView
+    /// backgrounded / screen off). The mailbox is still drained on every
+    /// wake so the engine's unbounded channel cannot grow, but nothing is
+    /// sent over the Channel/legacy emit and the outbox is cleared instead
+    /// of accumulating — otherwise every 50 ms meter tick queues ~86 IPC
+    /// messages into a WebView that is not reading them, and resume chokes
+    /// on the backlog. Flipped by [`engine_set_active`] (frontend
+    /// `visibilitychange`) and by the mobile `WindowEvent::Suspended`/
+    /// `Resumed` run events.
+    active: bool,
 }
 
 impl Default for EngineSlot {
@@ -265,6 +300,7 @@ impl Default for EngineSlot {
             seq: Arc::new(AtomicU32::new(0)),
             push_task: false,
             outbox: IpcOutbox::default(),
+            active: true,
         }
     }
 }
@@ -426,24 +462,45 @@ fn deliver_push(
     }
 }
 
-/// Drain events under the slot lock, collapse meter-class frames through
-/// the latest-only [`IpcOutbox`], and snapshot push targets + engine
-/// handle for post-lock encoding. Returns `(batch, channel, app, engine,
-/// client_id, seq)` where `batch` is control FIFO + freshest stream
-/// snapshot (never a stale-burst catch-up). Callers encode AFTER the lock
-/// is released, then deliver and (when push is active) return empty to
-/// avoid a wasted clone/serialization.
-#[allow(clippy::type_complexity)]
-fn drain_for_push(
-    slot: &mut EngineSlot,
-) -> (
-    Vec<openmix_engine::Event>,
-    Option<Channel<InvokeResponseBody>>,
-    Option<AppHandle>,
-    Option<Arc<openmix_engine::Engine>>,
-    Option<String>,
-    Arc<AtomicU32>,
-) {
+/// Drop everything currently queued in the client's mailbox (pause path).
+/// Bounded so a pathological backlog cannot spin a wake forever: a few
+/// [`ENGINE_DRAIN_CAP`] rounds per call, the next notify/[`PUSH_TICK`]
+/// continues. Only reached while paused or on resume (frames are stale by
+/// definition there — a fresh snapshot replaces them).
+fn discard_client_events(client: &mut openmix_engine::ClientHandle) {
+    for _ in 0..4 {
+        if drain_client_events(client).is_empty() {
+            return;
+        }
+    }
+}
+
+/// One drained batch plus everything needed to encode/deliver it AFTER the
+/// slot lock is released (see [`drain_or_discard`] + [`deliver_drained`]).
+struct Drained {
+    events: Vec<openmix_engine::Event>,
+    channel: Option<Channel<InvokeResponseBody>>,
+    app: Option<AppHandle>,
+    engine: Option<Arc<openmix_engine::Engine>>,
+    client_id: Option<String>,
+    seq: Arc<AtomicU32>,
+}
+
+/// Shared drain for every push path (`engine_cmd`, `engine_poll`,
+/// `push_task`): while `slot.active` it drains events under the slot lock,
+/// collapses meter-class frames through the latest-only [`IpcOutbox`], and
+/// snapshots push targets + engine handle for post-lock encoding. Returns
+/// `None` while the app is suspended: the mailbox is drained and the outbox
+/// cleared (so nothing can pile up and nothing stale survives), but NO
+/// frame is deliverable — no Channel send, no legacy emit.
+fn drain_or_discard(slot: &mut EngineSlot) -> Option<Drained> {
+    if !slot.active {
+        slot.outbox.clear();
+        if let Some(client) = slot.client.as_mut() {
+            discard_client_events(client);
+        }
+        return None;
+    }
     let drained = match slot.client.as_mut() {
         Some(client) => drain_client_events(client),
         None => Vec::new(),
@@ -451,12 +508,55 @@ fn drain_for_push(
     for ev in drained {
         slot.outbox.store(ev);
     }
-    let batch = slot.outbox.take_batch();
+    let events = slot.outbox.take_batch();
     let (channel, app, seq) = push_targets(slot);
-    let engine = slot.engine.clone();
-    let id = slot.client.as_ref().map(|c| c.id.clone());
-    (batch, channel, app, engine, id, seq)
+    Some(Drained {
+        events,
+        channel,
+        app,
+        engine: slot.engine.clone(),
+        client_id: slot.client.as_ref().map(|c| c.id.clone()),
+        seq,
+    })
 }
+
+/// Encode + deliver one drained batch outside the slot lock. Push
+/// subscribers get it over their Channel (JSON batch + binary meter
+/// frames) or the legacy `openmix-event` emit and the return value stays
+/// empty; poll-only clients get the JSON frames back instead.
+fn deliver_drained(drain: Drained) -> Vec<String> {
+    let Drained {
+        events,
+        channel,
+        app,
+        engine,
+        client_id,
+        seq,
+    } = drain;
+    if events.is_empty() {
+        return Vec::new();
+    }
+    if let Some(ch) = channel {
+        let (binary_meters, taps, t_ms) = match (&engine, &client_id) {
+            (Some(engine), Some(id)) => (
+                engine.client_binary_meters(id),
+                engine.client_taps(id),
+                engine.now_ms(),
+            ),
+            _ => (false, false, 0),
+        };
+        let (json_batch, binaries) = encode_channel(&events, binary_meters, taps, &seq, t_ms);
+        deliver_push(Some(ch), None, &json_batch, binaries);
+        return Vec::new();
+    }
+    let frames = encode_legacy(&events);
+    if let Some(app) = app {
+        deliver_push(None, Some(app), &frames, Vec::new());
+        return Vec::new();
+    }
+    frames
+}
+
 /// Attach the UI client to the embedded engine (idempotent) and return its
 /// client id. The attach snapshot (`you`, `state`, `caps`, …) is already
 /// queued — push subscribers get it on the next tick, others call
@@ -497,44 +597,21 @@ async fn engine_cmd(eslot: EngineState<'_>, cmd: String) -> Result<Vec<String>, 
     // A concurrent `engine_detach` drops the client: nothing to drain.
     // Events are drained under the lock; encoding + delivery happen after
     // it is released (serialization must not block the next command).
-    // ENCODING HAPPENS OUTSIDE THE LOCK (P1): `drain_for_push` only moves
-    // `Event`s out of the mailbox and snapshots targets.
-    let (events, channel, app, _engine, _cid, seq) = {
+    // ENCODING HAPPENS OUTSIDE THE LOCK (P1): `drain_or_discard` only moves
+    // `Event`s out of the mailbox and snapshots targets. While the app is
+    // suspended it returns `None` (frames discarded, nothing delivered).
+    let drained = {
         let mut slot = eslot.lock().await;
         if slot.client.as_ref().is_some_and(|c| c.id == id) {
-            drain_for_push(&mut slot)
+            drain_or_discard(&mut slot)
         } else {
-            (
-                Vec::new(),
-                None,
-                None,
-                None,
-                None,
-                Arc::clone(&slot.seq),
-            )
+            None
         }
     };
-    let push_active = channel.is_some() || app.is_some();
-    if let Some(ch) = channel {
-        let binary_meters = engine.client_binary_meters(&id);
-        let taps = engine.client_taps(&id);
-        let t_ms = engine.now_ms();
-        let (json_batch, binaries) =
-            encode_channel(&events, binary_meters, taps, &seq, t_ms);
-        deliver_push(Some(ch), None, &json_batch, binaries);
-        // Push consumed the batch: return empty, skip the return-value
-        // clone/serialization entirely.
-        return Ok(Vec::new());
+    match drained {
+        Some(drain) => Ok(deliver_drained(drain)),
+        None => Ok(Vec::new()),
     }
-    // Legacy emit + poll fallback: JSON-only (legacy listeners cannot
-    // receive binary; poll returns `Vec<String>` by shape).
-    let frames = encode_legacy(&events);
-    if let Some(app) = app {
-        deliver_push(None, Some(app), &frames, Vec::new());
-        return Ok(Vec::new());
-    }
-    debug_assert!(!push_active, "push without a target");
-    Ok(frames)
 }
 
 /// Drain background Event frames (meter ticker, param poller, discovery)
@@ -544,31 +621,15 @@ async fn engine_cmd(eslot: EngineState<'_>, cmd: String) -> Result<Vec<String>, 
 /// binary) or legacy event instead, and this returns empty.
 #[tauri::command]
 async fn engine_poll(eslot: EngineState<'_>) -> Result<Vec<String>, String> {
-    let (events, channel, app, engine_opt, id_opt, seq) = {
+    let drained = {
         let mut slot = eslot.lock().await;
         ensure_engine_client(&mut slot).await?;
-        drain_for_push(&mut slot)
+        drain_or_discard(&mut slot)
     };
-    if let Some(ch) = channel {
-        let (binary_meters, taps, t_ms) = match (&engine_opt, &id_opt) {
-            (Some(engine), Some(id)) => (
-                engine.client_binary_meters(id),
-                engine.client_taps(id),
-                engine.now_ms(),
-            ),
-            _ => (false, false, 0),
-        };
-        let (json_batch, binaries) =
-            encode_channel(&events, binary_meters, taps, &seq, t_ms);
-        deliver_push(Some(ch), None, &json_batch, binaries);
-        return Ok(Vec::new());
+    match drained {
+        Some(drain) => Ok(deliver_drained(drain)),
+        None => Ok(Vec::new()),
     }
-    let frames = encode_legacy(&events);
-    if let Some(app) = app {
-        deliver_push(None, Some(app), &frames, Vec::new());
-        return Ok(Vec::new());
-    }
-    Ok(frames)
 }
 
 /// Subscribe this shell to push fan-out over the legacy `openmix-event`
@@ -659,34 +720,19 @@ async fn push_task(app: AppHandle) {
                 tick.tick().await;
             }
         }
-        let (events, channel, target, engine_opt, id_opt, seq) = {
+        let drained = {
             let state = app.state::<Mutex<EngineSlot>>();
             let mut slot = state.lock().await;
             if !slot.push {
                 continue;
             }
-            drain_for_push(&mut slot)
+            drain_or_discard(&mut slot)
         };
-        if events.is_empty() {
-            continue;
+        // `None` = app suspended: the batch was drained and discarded so
+        // the mailbox cannot grow while the WebView is not reading.
+        if let Some(drained) = drained {
+            let _ = deliver_drained(drained);
         }
-        if let Some(ch) = channel {
-            let (binary_meters, taps, t_ms) = match (&engine_opt, &id_opt) {
-                (Some(engine), Some(id)) => (
-                    engine.client_binary_meters(id),
-                    engine.client_taps(id),
-                    engine.now_ms(),
-                ),
-                _ => (false, false, 0),
-            };
-            let (json_batch, binaries) =
-                encode_channel(&events, binary_meters, taps, &seq, t_ms);
-            deliver_push(Some(ch), None, &json_batch, binaries);
-            continue;
-        }
-        // Legacy emit path: JSON-only.
-        let frames = encode_legacy(&events);
-        deliver_push(None, target, &frames, Vec::new());
     }
 }
 
@@ -698,6 +744,83 @@ async fn engine_detach(eslot: EngineState<'_>) -> Result<(), String> {
     if let Some(client) = slot.client.take() {
         client.detach().await;
     }
+    Ok(())
+}
+
+/// Flip the push gate (shared by [`engine_set_active`] and the
+/// `Suspended`/`Resumed` run events, so JS and native lifecycle signals
+/// agree). Pausing also drops everything already queued — mailbox and
+/// outbox — because a suspended WebView must not inherit stale frames;
+/// [`apply_engine_resync`] rebuilds control state from one snapshot on the
+/// way back. Always wakes the push task so the new state takes effect
+/// immediately instead of on the next [`PUSH_TICK`].
+async fn apply_engine_active(slot: &Mutex<EngineSlot>, active: bool) {
+    let notify = {
+        let mut slot = slot.lock().await;
+        slot.active = active;
+        if !active {
+            slot.outbox.clear();
+            if let Some(client) = slot.client.as_mut() {
+                discard_client_events(client);
+            }
+        }
+        slot.engine.as_ref().map(|e| e.tick_notify())
+    };
+    if let Some(notify) = notify {
+        notify.notify_one();
+    }
+}
+
+/// Resume path: replace whatever is still queued with one FRESH snapshot
+/// for the attached UI client, then wake the push task. No-op when nothing
+/// is connected; idempotent (it never re-attaches the client, never touches
+/// locks/roles, and never calls attach/detach — so it cannot loop with the
+/// commands that trigger it).
+async fn apply_engine_resync(slot: &Mutex<EngineSlot>) {
+    let target = {
+        let mut slot = slot.lock().await;
+        let target = match (&slot.engine, &slot.client) {
+            (Some(engine), Some(client)) => Some((Arc::clone(engine), client.id.clone())),
+            _ => None,
+        };
+        if target.is_some() {
+            // Anything queued here predates the snapshot (frames produced
+            // while hidden or before the pause arrived): drop it, the
+            // snapshot below is the whole truth.
+            slot.outbox.clear();
+            if let Some(client) = slot.client.as_mut() {
+                discard_client_events(client);
+            }
+        }
+        target
+    };
+    let Some((engine, id)) = target else {
+        return;
+    };
+    // Engine call OUTSIDE the slot lock (it reads drivers + queues frames;
+    // the push task must not wait behind it).
+    engine.push_snapshot(&id).await;
+    engine.tick_notify().notify_one();
+}
+
+/// Pause (`active: false`) or resume (`active: true`) push delivery. The
+/// mobile frontend calls this on `visibilitychange`/`pagehide`/
+/// `pageshow`; while paused the shell still drains the engine mailbox (so
+/// it cannot grow) but sends nothing over the Channel or the legacy emit,
+/// and drops the queued frames instead of accumulating them. Resume is
+/// `engine_set_active(true)` + [`engine_resync`] for the fresh snapshot.
+#[tauri::command]
+async fn engine_set_active(eslot: EngineState<'_>, active: bool) -> Result<(), String> {
+    apply_engine_active(&eslot, active).await;
+    Ok(())
+}
+
+/// Queue a fresh snapshot for the attached UI client and push it (resume
+/// catch-up: desk changes made while the WebView was suspended arrive in
+/// one batch). No-op with nothing connected.
+#[tauri::command]
+async fn engine_resync(eslot: EngineState<'_>) -> Result<(), String> {
+    apply_engine_resync(&eslot).await;
     Ok(())
 }
 
@@ -799,20 +922,77 @@ mod engine_ipc_tests {
         }
     }
 
-    /// `drain_for_push` on a fresh slot (no engine, no client, push off)
-    /// returns empty with no targets — the flag-off path that keeps
+    /// `drain_or_discard` on a fresh slot (no engine, no client, push off)
+    /// returns an empty batch with no targets — the flag-off path that keeps
     /// poll-only clients on the exact pre-push behaviour. Encoding is the
     /// caller's job (outside the lock), so this only asserts the drain.
     #[tokio::test]
     async fn drain_for_push_empty_slot_is_empty() {
         let mut slot = EngineSlot::default();
         assert!(!slot.push);
-        let (events, channel, app, engine, id, _seq) = drain_for_push(&mut slot);
-        assert!(events.is_empty());
-        assert!(channel.is_none());
-        assert!(app.is_none());
-        assert!(engine.is_none());
-        assert!(id.is_none());
+        let drained = drain_or_discard(&mut slot).expect("active slot drains");
+        assert!(drained.events.is_empty());
+        assert!(drained.channel.is_none());
+        assert!(drained.app.is_none());
+        assert!(drained.engine.is_none());
+        assert!(drained.client_id.is_none());
+    }
+
+    /// Pause path: while `active == false` the mailbox is drained (the
+    /// engine's unbounded channel cannot grow) but nothing is deliverable
+    /// and the outbox is left empty — the bug this guards is the suspended
+    /// WebView drowning in queued IPC messages after minutes in background.
+    #[tokio::test]
+    async fn paused_slot_drains_mailbox_but_discards_frames() {
+        let engine = openmix_engine::Engine::new(openmix_engine::EngineConfig::default());
+        engine.connect("sim", None).await.expect("sim boot");
+        let mut client = engine.attach(Some("pause-ui".to_string())).await;
+        let id = client.id.clone();
+        let _ = drain_client_events(&mut client);
+        let mut slot = EngineSlot {
+            client: Some(client),
+            engine: Some(engine.clone()),
+            push: true,
+            ..EngineSlot::default()
+        };
+        // Live frames + a stale outbox entry, exactly what a running push
+        // would hold when the app is backgrounded mid-tick.
+        engine
+            .handle_json(&id, r#"{"cmd":"fader","ch":0,"value":0.25}"#)
+            .await;
+        slot.outbox
+            .store(openmix_engine::Event::Meters { levels: vec![0.5] });
+        slot.outbox.store(openmix_engine::Event::Error {
+            message: "stale".into(),
+            locked_by: None,
+            ch: None,
+        });
+        assert!(slot.outbox.queue_depth() > 0);
+
+        slot.active = false;
+        let drained = drain_or_discard(&mut slot);
+        assert!(drained.is_none(), "paused push delivers nothing");
+        assert_eq!(slot.outbox.queue_depth(), 0, "outbox cleared while paused");
+        // The mailbox is empty too: the engine cannot accumulate events
+        // that nobody will ever read.
+        assert!(
+            slot.client.as_mut().unwrap().events.try_recv().is_err(),
+            "paused drain empties the client mailbox"
+        );
+
+        // Resume: the same helper delivers again (a fresh snapshot is the
+        // command layer's job).
+        engine.push_snapshot(&id).await;
+        slot.active = true;
+        let drained = drain_or_discard(&mut slot).expect("active slot drains");
+        assert!(
+            drained.events.iter().any(|e| e.tag() == "state"),
+            "resume drain carries the fresh snapshot"
+        );
+        assert!(
+            drained.channel.is_none(),
+            "no channel subscribed in this test"
+        );
     }
 
     /// Channel outranks the legacy emit target: `deliver_push` sends over
@@ -951,7 +1131,9 @@ mod engine_ipc_tests {
             .await
             .expect("tick_notify fires on broadcast");
         // The broadcast actually landed in the mailbox (drain finds it).
-        let batch = drain_for_push(&mut slot).0;
+        let batch = drain_or_discard(&mut slot)
+            .expect("active slot drains")
+            .events;
         assert!(
             batch.iter().any(|e| e.tag() == "params" || e.tag() == "state"),
             "write broadcast reaches the IPC drain (got {:?})",
@@ -995,7 +1177,7 @@ async fn check_for_updates(app: &AppHandle) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_log::Builder::new().build())
@@ -1020,9 +1202,60 @@ pub fn run() {
             engine_subscribe_push,
             engine_subscribe_channel,
             engine_stats,
+            engine_set_active,
+            engine_resync,
             engine_detach,
             app_version
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Native lifecycle (mobile): `WindowEvent::Suspended` means the process
+    // was backgrounded (screen off / another app), so stop pushing before
+    // the WebView stops reading; `WindowEvent::Resumed` re-enables push and
+    // immediately queues a fresh snapshot so nothing missed while hidden is
+    // replayed. Ordinary desktop focus loss is deliberately NOT handled —
+    // only real suspend/resume.
+    app.run(|_app, _event| {
+        #[cfg(mobile)]
+        handle_run_event(_app, _event);
+        #[cfg(not(mobile))]
+        {
+            let _ = (_app, _event);
+        }
+    });
+}
+
+/// Mobile suspend/resume hooks. In tauri 2.12 these arrive as
+/// [`WindowEvent::Suspended`]/[`WindowEvent::Resumed`] (mobile-only
+/// variants; the bare `RunEvent::Resumed` is an event-loop wakeup that also
+/// fires on desktop, so it is deliberately not used). The spawned tasks
+/// take the async slot lock so the event loop itself never blocks on it.
+#[cfg(mobile)]
+fn handle_run_event(app: &AppHandle, event: tauri::RunEvent) {
+    let tauri::RunEvent::WindowEvent {
+        event: window_event,
+        ..
+    } = event
+    else {
+        return;
+    };
+    match window_event {
+        tauri::WindowEvent::Suspended => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let slot = app.state::<Mutex<EngineSlot>>();
+                apply_engine_active(&slot, false).await;
+            });
+        }
+        tauri::WindowEvent::Resumed => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let slot = app.state::<Mutex<EngineSlot>>();
+                apply_engine_active(&slot, true).await;
+                apply_engine_resync(&slot).await;
+            });
+        }
+        _ => {}
+    }
 }

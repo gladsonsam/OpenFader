@@ -16,14 +16,20 @@
      (and its 8px grab pad) is `none` so a touch starting on it can never be
      stolen mid-gesture by the pager.
 
-     Capture: touch pointers must NOT call setPointerCapture. The platform
-     already captures them implicitly to the pointerdown target, and
-     WKWebView drops an explicit capture on a touch pointer within a frame
-     of granting it — gotpointercapture then lostpointercapture while the
-     finger is still down. Ending the drag on that bogus capture loss is
-     what made a fader stick after ~11px of travel (measured: an 80pt drag
-     moved the value ~1dB instead of ~7dB). Mouse/pen have no implicit
-     capture, so they take it explicitly on the cap.
+     Gesture ownership: a press that starts on the cap installs
+     window-level, capture-phase pointermove/pointerup/pointercancel
+     listeners keyed to that pointerId, and they drive the whole gesture
+     (removed on end/cancel and on unmount). Element-level moves plus the
+     platform's implicit capture are NOT reliable: on WKWebView and on
+     Android the element-level target can stop receiving moves — or emit a
+     spurious lostpointercapture — while the finger is still down and
+     window-level moves keep arriving. That is what made a fader stick after
+     ~11-20px of travel (measured: an 80pt drag moved the value ~1dB
+     instead of ~7dB). lostpointercapture never ends a drag; only
+     pointerup/pointercancel of the tracked pointerId do. Touch pointers
+     never call setPointerCapture (WKWebView drops the explicit capture
+     within a frame); mouse/pen still take it explicitly so a drag that
+     leaves the element keeps working, and release it on end.
 
      The cap tracks the finger 1:1 from a local live value during the drag,
      not just the echoed store value — painted synchronously to the cap
@@ -76,21 +82,23 @@
     oninput?: ((v: number) => void) | null;
   } = $props();
 
-  const geo = faderGeometry(variant);
-  const insets = geo.insets;
-  const railLeft = geo.railLeft;
-  const cap = geo.cap;
+  const geo = $derived(faderGeometry(variant));
+  const insets = $derived(geo.insets);
+  const railLeft = $derived(geo.railLeft);
+  const cap = $derived(geo.cap);
   // TODO tokens: fader cap metal gradients, grip-line pattern, rail black +
   // inset ring #1f2a3a, and the SOF glow rgba(34,211,230,.7) are not in
   // tokens.css; copied verbatim from the design template.
-  const capBg =
+  const capBg = $derived(
     variant === 'master'
       ? 'linear-gradient(to bottom, #8a909a 0%, #565b64 7%, #3a3e46 44%, #22252b 50%, #3a3e46 56%, #565b64 93%, #737983 100%)'
-      : 'linear-gradient(to bottom, #7a808a 0%, #4a4f58 7%, #30343b 44%, #1c1f24 50%, #30343b 56%, #4a4f58 93%, #646a73 100%)';
-  const capShadow =
+      : 'linear-gradient(to bottom, #7a808a 0%, #4a4f58 7%, #30343b 44%, #1c1f24 50%, #30343b 56%, #4a4f58 93%, #646a73 100%)',
+  );
+  const capShadow = $derived(
     variant === 'master'
       ? '0 8px 14px rgba(0,0,0,.75), 0 2px 3px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.3), inset 0 -1px 0 rgba(0,0,0,.7), inset 1px 0 0 rgba(255,255,255,.08), inset -1px 0 0 rgba(255,255,255,.08)'
-      : '0 8px 14px rgba(0,0,0,.75), 0 2px 3px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.7), inset 1px 0 0 rgba(255,255,255,.08), inset -1px 0 0 rgba(255,255,255,.08)';
+      : '0 8px 14px rgba(0,0,0,.75), 0 2px 3px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.7), inset 1px 0 0 rgba(255,255,255,.08), inset -1px 0 0 rgba(255,255,255,.08)',
+  );
   // $derived: the accent can change after mount (e.g. sends-on-fader mode), M1 found these went stale as plain consts.
   const capLine = $derived(
     accent === 'master'
@@ -106,15 +114,15 @@
         ? '0 0 6px rgba(34,211,230,.7)'
         : '0 0 6px rgba(255,255,255,.35)',
   );
-  const readH = geo.readH;
-  const readFont = geo.readFont;
+  const readH = $derived(geo.readH);
+  const readFont = $derived(geo.readFont);
 
-  const silent: MeterSource = {
+  const silent: MeterSource = $derived({
     getLevel: () => -90,
     getPeak: () => null,
     getClip: () => false,
     showPeak: variant !== 'master',
-  };
+  });
 
   let area: HTMLButtonElement | null = $state(null);
   let capEl: HTMLSpanElement | null = $state(null);
@@ -122,12 +130,15 @@
   // Travel height of the cap track (px), measured for the
   // compositor-friendly cap position (fixed bottom:0 anchor + translateY).
   let trackH = $state(0);
-  // Direction lock: touch/pen starts pending (no capture, no value
-  // change) until the gesture declares itself. Vertical lock -> fader drag
-  // (capture then). Horizontal lock -> abort without touching the value
-  // (the cap is touch-action:none, so this just no-ops; the pager still
-  // scrolls from any touch that starts off the cap). Mouse drags use the
-  // same gate.
+  // Direction lock: every pointer starts pending (no value change) until
+  // the gesture declares itself. Vertical lock -> fader drag. Horizontal
+  // lock -> abort without touching the value (the cap is touch-action:none,
+  // so this just no-ops; the pager still scrolls from any touch that starts
+  // off the cap). Mouse drags use the same gate.
+  //
+  // The gesture is driven by window capture-phase listeners installed in
+  // down() and keyed to `pid`, not by the button's own pointermove/up. This
+  // survives webview target retargeting and bogus lostpointercapture.
   let drag: {
     x0: number;
     y0: number;
@@ -147,12 +158,21 @@
   // liveV mirrors the latest value so Svelte's eventual flush converges;
   // the pixels themselves are painted synchronously in move() (paintCap)
   // so the cap tracks the finger at touch rate even when commits and
-  // Svelte flushes crawl.
+  // Svelte flushes crawl. It is also the drag origin for the next grab
+  // (down() uses `liveV ?? value`), so a quick re-grab before the store
+  // echo lands cannot jump the fader backwards. On release it is held
+  // until the echoed prop catches up (bounded by HOLD_MS for a rejected
+  // commit), so a late echo can never snap the cap back under the finger.
   let pendingV: number | null = null;
   let liveV: number | null = $state(null);
   let lastCommit = 0;
-  let commitTimer = 0;
+  let commitTimer: ReturnType<typeof setTimeout> | 0 = 0;
+  let holdTimer: ReturnType<typeof setTimeout> | 0 = 0;
   const COMMIT_MS = 100;
+  // How long a released value may outlive its store echo. Long enough for a
+  // loaded phone flush, short enough that a rejected commit (locked strip)
+  // still returns the cap to the real value.
+  const HOLD_MS = 600;
 
   function nowMs(): number {
     return typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -189,6 +209,43 @@
       commitTimer = 0;
     }
   }
+
+  function clearHold(): void {
+    if (holdTimer) {
+      clearTimeout(holdTimer);
+      holdTimer = 0;
+    }
+  }
+
+  /**
+   * Keep the painted value across the release until the store echo lands:
+   * under load Svelte can flush before the new `value` prop arrives, and
+   * dropping the live value there makes the cap snap back. The fallback
+   * timer clears it even if the commit was rejected (locked strip), so the
+   * cap still returns to the real value eventually.
+   */
+  function holdLive(v: number): void {
+    liveV = v;
+    paintCap(v);
+    clearHold();
+    holdTimer = setTimeout(() => {
+      holdTimer = 0;
+      // If a new gesture is running it owns the pixels and will hold again
+      // on its own release.
+      if (!drag) liveV = null;
+    }, HOLD_MS);
+  }
+
+  // Echo catch-up: once the value prop reflects the held live value, the
+  // prop is truth again and the override can go.
+  $effect(() => {
+    const lv = liveV;
+    if (lv == null || drag) return;
+    if (Math.abs(value - lv) <= 0.0005) {
+      clearHold();
+      liveV = null;
+    }
+  });
   // Compositor-friendly cap offset: fixed bottom:0 anchor, travel via
   // translateY(-capY px). capY == value-fraction * measured track height,
   // so the centre line lands exactly where bottom:{pct}% put it.
@@ -220,6 +277,43 @@
     return () => ro.disconnect();
   });
 
+  // Every move/up that belongs to the tracked gesture is seen on window in
+  // the capture phase, so it does not matter which element the webview
+  // retargets the pointer to (and lostpointercapture is never consulted).
+  function windowMove(e: PointerEvent): void {
+    if (!drag || e.pointerId !== drag.pid) return;
+    move(e);
+  }
+
+  function windowUp(e: PointerEvent): void {
+    if (!drag || e.pointerId !== drag.pid) return;
+    up(e);
+  }
+
+  function listenWindow(): void {
+    if (typeof window === 'undefined') return;
+    window.addEventListener('pointermove', windowMove, true);
+    window.addEventListener('pointerup', windowUp, true);
+    window.addEventListener('pointercancel', windowUp, true);
+  }
+
+  function unlistenWindow(): void {
+    if (typeof window === 'undefined') return;
+    window.removeEventListener('pointermove', windowMove, true);
+    window.removeEventListener('pointerup', windowUp, true);
+    window.removeEventListener('pointercancel', windowUp, true);
+  }
+
+  // Unmount: no gesture listeners, timers or pending paint overrides may
+  // outlive the component.
+  $effect(() => {
+    return () => {
+      unlistenWindow();
+      clearTrailing();
+      clearHold();
+    };
+  });
+
   function down(e: PointerEvent): void {
     if (disabled || !oninput) return;
     // A second finger must never steal an active drag: overwriting start
@@ -246,10 +340,23 @@
     // Design's faderDown: h = max(80, rect.height - 60).
     const h = Math.max(80, (rect?.height ?? 140) - 60);
     const el = e.currentTarget as HTMLElement;
-    // All pointers start pending with NO capture: no value change until
-    // vertical intent locks the drag (then we capture); horizontal intent
-    // aborts without touching the value.
-    drag = { x0: e.clientX, y0: e.clientY, start: value, h, active: false, el, pid: e.pointerId };
+    // All pointers start pending with NO capture and no value change:
+    // vertical intent locks the drag (mouse/pen then take an explicit
+    // capture); horizontal intent aborts without touching the value. The
+    // gesture itself is driven by the window capture listeners installed
+    // below, keyed to this pointerId.
+    drag = {
+      x0: e.clientX,
+      y0: e.clientY,
+      // Freshest value: a quick re-grab before the Svelte echo lands must
+      // start where the finger left the cap, not at the stale prop.
+      start: liveV ?? value,
+      h,
+      active: false,
+      el,
+      pid: e.pointerId,
+    };
+    listenWindow();
   }
   function move(e: PointerEvent): void {
     if (!drag || disabled || !oninput) return;
@@ -264,20 +371,19 @@
       // Clearly horizontal -> abort, never touch the value.
       if (ax > 12 && ax > ay) {
         drag = null;
+        unlistenWindow();
         return;
       }
       // Still in slop, or not clearly vertical yet: no value change.
       if (ay <= 10 || ay <= ax) return;
-      // Touch pointers are already implicitly captured to the hit target by
-      // the platform, and WKWebView throws away an explicit setPointerCapture
-      // on a touch pointer within a frame of granting it (measured in the
-      // simulator: gotpointercapture, then lostpointercapture while the
-      // pointer is still down and moves keep arriving). Taking capture was
-      // therefore worse than useless: it only fired the lostcapture handler
-      // and killed a healthy drag. Rely on the implicit capture — the target
-      // stays pinned to the cap subtree, so moves keep bubbling to the button
-      // for the whole gesture. Mouse/pen have no implicit capture, so they
-      // still need the explicit grab to keep the drag alive off the cap.
+      // Touch pointers are implicitly captured by the platform and
+      // WKWebView drops an explicit setPointerCapture on a touch pointer
+      // within a frame of granting it (measured in the simulator:
+      // gotpointercapture, then lostpointercapture while the finger is
+      // still down). Touch therefore never calls it; the window listeners
+      // are what keep the gesture alive. Mouse/pen have no implicit
+      // capture, so they still take the explicit grab so a drag that
+      // leaves the element keeps working (and release it on end).
       try {
         if (e.pointerType !== 'touch') (capEl ?? drag.el)?.setPointerCapture(e.pointerId);
       } catch {
@@ -300,10 +406,13 @@
     }
   }
   function up(e?: PointerEvent): void {
-    // A second finger lifting (or its capture loss) must not kill the drag.
+    // The window listener is already keyed to the tracked pointerId; this
+    // guard also protects direct/manual calls. A second finger lifting must
+    // never kill the drag.
     if (e && drag && e.pointerId !== drag.pid) return;
-    // Flush the last throttled value so the final pixel is never lost.
+    unlistenWindow();
     clearTrailing();
+    // Flush the last throttled value so the final pixel is never lost.
     let finalV: number | null = null;
     if (pendingV != null) {
       finalV = pendingV;
@@ -313,15 +422,20 @@
         oninput?.(finalV);
       }
     }
-    // Hold the pixels at the final value: the echoed store value (just
-    // flushed) is truth, but under load Svelte may flush before the new
-    // value prop arrives — without this the cap snaps back on release.
-    if (finalV != null) paintCap(finalV);
-    // Drop the live value: the echoed store value (now flushed) is truth.
-    // (Kept through the drag even if the echo lags; cleared here so a
-    // rejected commit, e.g. a locked strip, can never stick the cap.)
-    liveV = null;
-    if (e && drag?.active) {
+    const wasActive = drag?.active ?? false;
+    // Hold the pixels at the final value until the echoed store value
+    // arrives: under load Svelte may flush before the new prop lands, and
+    // without the hold the cap snaps back on release. liveV also stays
+    // available as the next drag's start in that window. A gesture that
+    // never left the slop changes nothing, so any existing hold is left
+    // alone (its timer/echo catch-up will clear it).
+    if (wasActive) {
+      if (finalV != null) holdLive(finalV);
+      else if (liveV != null) holdLive(liveV);
+    } else if (finalV != null) {
+      holdLive(finalV);
+    }
+    if (e && drag) {
       for (const n of [capEl, drag.el]) {
         try {
           if (n?.hasPointerCapture?.(e.pointerId)) n.releasePointerCapture(e.pointerId);
@@ -379,10 +493,6 @@
     aria-disabled={disabled || !oninput ? 'true' : undefined}
     disabled={disabled || !oninput ? true : undefined}
     onpointerdown={down}
-    onpointermove={move}
-    onpointerup={up}
-    onpointercancel={up}
-    onlostpointercapture={up}
     ondblclick={reset}
     onclick={ontap}
     onkeydown={key}

@@ -213,6 +213,7 @@
       >
     {/each}
     {#each graph.nodes as n (n.band)}
+      <!-- svelte-ignore a11y_role_supports_aria_props_implicit -->
       <button
         class="eq-node"
         aria-label={n.aria}

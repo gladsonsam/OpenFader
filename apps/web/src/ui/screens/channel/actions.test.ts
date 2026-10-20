@@ -34,7 +34,7 @@ function warns(): { list: string[]; fn: (m: string) => void } {
 function fakeStore(world: { w: World }): Record<string, (...a: never[]) => unknown> {
   return {
     setInputKnob: (...a: never[]) => {
-      const [id, key, v] = a as [string, 'gain' | 'trim' | 'delay', number];
+      const [id, key, v] = a as unknown as [string, 'gain' | 'trim' | 'delay', number];
       world.w = setSpecValue(world.w, id, key, (c, nv) => {
         if (!c.input) return;
         if (key === 'gain') c.input.gain = nv;

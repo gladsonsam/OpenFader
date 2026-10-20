@@ -98,7 +98,7 @@ function fmtPan(pan: unknown): string {
   return p === 0 ? 'C' : (p < 0 ? 'L' : 'R') + Math.round(Math.abs(p) * 100);
 }
 
-type Helper = (...args: unknown[]) => unknown;
+type Helper = (args: unknown[]) => unknown;
 
 const HELPERS: Record<string, { fn: Helper; min: number; max: number }> = {
   fmtDb: { fn: a => fmtDb(a[0]), min: 1, max: 1 },
@@ -264,13 +264,13 @@ class Parser {
   private ternary(depth: number): Ast | { error: string } {
     if (depth > EXPR_MAX_DEPTH) return { error: 'expression too deep' };
     const c = this.or(depth + 1);
-    if ('error' in (c as object)) return c;
+    if ('error' in c) return c;
     if (!this.eat('q')) return c as Ast;
     const yes = this.ternary(depth + 1);
-    if ('error' in (yes as object)) return yes;
+    if ('error' in yes) return yes;
     if (!this.eat('colon')) return { error: "expected ':' in ternary" };
     const no = this.ternary(depth + 1);
-    if ('error' in (no as object)) return no;
+    if ('error' in no) return no;
     return { t: 'tern', cond: c as Ast, yes: yes as Ast, no: no as Ast };
   }
 
@@ -278,13 +278,13 @@ class Parser {
     // Operator-chain levels share one depth budget; only real nesting
     // (branches, calls, parens, unary) increments it.
     let left = next(depth);
-    if ('error' in (left as object)) return left;
+    if ('error' in left) return left;
     for (;;) {
       const t = this.peek();
       if (!t || t.kind !== 'op' || !ops.includes(t.text)) return left;
       this.pos++;
       const right = next(depth);
-      if ('error' in (right as object)) return right;
+      if ('error' in right) return right;
       left = { t: 'bin', op: t.text, left: left as Ast, right: right as Ast };
     }
   }
@@ -302,7 +302,7 @@ class Parser {
     if (t && t.kind === 'op' && (t.text === '!' || t.text === '-')) {
       this.pos++;
       const arg = this.unary(depth + 1);
-      if ('error' in (arg as object)) return arg;
+      if ('error' in arg) return arg;
       return { t: 'un', op: t.text as '!' | '-', arg: arg as Ast };
     }
     return this.postfix(depth);
@@ -311,7 +311,7 @@ class Parser {
   private postfix(depth: number): Ast | { error: string } {
     if (depth > EXPR_MAX_DEPTH) return { error: 'expression too deep' };
     let node = this.primary(depth);
-    if ('error' in (node as object)) return node;
+    if ('error' in node) return node;
     for (;;) {
       if (!this.eat('dot')) return node;
       const name = this.eat('name');
@@ -321,7 +321,7 @@ class Parser {
         // method call: only .has(...) on a path value is allowed
         this.pos++;
         const args = this.argList(depth + 1);
-        if ('error' in (args as object)) return args;
+        if ('error' in args) return args;
         node = { t: 'method', obj: node as Ast, method: name.text, args: args as Ast[] };
       } else {
         if ((node as Ast).t !== 'path') return { error: `property access only on paths` };
@@ -335,7 +335,7 @@ class Parser {
     if (this.eat('rparen')) return args;
     for (;;) {
       const e = this.ternary(depth + 1);
-      if ('error' in (e as object)) return e;
+      if ('error' in e) return e;
       args.push(e as Ast);
       if (this.eat('comma')) continue;
       if (this.eat('rparen')) return args;
@@ -362,7 +362,7 @@ class Parser {
       if (this.peek()?.kind === 'lparen' && Object.hasOwn(HELPERS, t.text)) {
         this.pos++;
         const args = this.argList(depth + 1);
-        if ('error' in (args as object)) return args;
+        if ('error' in args) return args;
         return { t: 'call', name: t.text, args: args as Ast[] };
       }
       if (this.peek()?.kind === 'lparen') return { error: `unknown function ${JSON.stringify(t.text)}` };
@@ -371,7 +371,7 @@ class Parser {
     if (t.kind === 'lparen') {
       this.pos++;
       const e = this.ternary(depth + 1);
-      if ('error' in (e as object)) return e;
+      if ('error' in e) return e;
       if (!this.eat('rparen')) return { error: "expected ')'" };
       return e as Ast;
     }
