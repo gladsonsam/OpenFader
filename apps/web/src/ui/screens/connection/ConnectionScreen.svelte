@@ -1,8 +1,5 @@
-<!-- L1 Connection screen: rendered 100% from
-     ui/layouts/connection.default.json through LayoutRenderer + actions +
-     bindings (status card, device rows, offline card). The frontend-to-
-     backend link auto-connects at boot and is never shown here: this file
-     only registers the layout: scope + profile + action binding. -->
+<!-- Keep the connection flow in the module/profile system so Connect still
+     supports the app's layout editor, saved profiles and accessibility. -->
 <script lang="ts">
   import { ui } from '../../state/uiStore.svelte.ts';
   import { live } from '../../state/live.svelte.ts';
@@ -17,37 +14,18 @@
 
   const store = createProfileStore('connection');
   bindUiActions(ui.do, { profile: store });
-
   const device = useDeviceClass();
-
-  const vm = $derived(
-    // Re-read on every engine ingest (devices arrive after caps in the
-    // attach snapshot; without this the list stays empty until the next
-    // phase change).
-    ((): ReturnType<typeof buildConnectionVm> => {
-      void live.version;
-      return buildConnectionVm(ui.state, {
-        phase: live.phase,
-        message: live.message,
-        host: live.host,
-        latencyMs: live.latencyMs,
-        strips: live.engine?.stripCount ?? 0,
-        devices: live.engine ? live.engine.devices.map(d => ({ ...d })) : undefined,
-        linkName: live.engine?.link?.name ?? null,
-        scannedAt: live.engine?.scannedAt ?? 0,
-        scanning: live.scanning,
-        scanError: live.scanError,
-        driver: live.engine?.driver ?? '',
-        suggestion: live.suggestedHost(),
-      });
-    })(),
-  );
-  const tree = $derived(store.tree(defaults as unknown as LayoutNode));
-  const scope = $derived({
-    store: ui.state,
-    conn: vm,
-    lists: { devices: vm.devices },
+  // Retain legacy binding scope for user-added connection modules.
+  const vm = $derived.by(() => {
+    void live.version;
+    const w = live.engine;
+    return buildConnectionVm(ui.state, { phase: live.phase, message: live.message,
+      host: live.host, latencyMs: live.latencyMs, strips: w?.stripCount ?? 0,
+      capsReady: w?.capsReady ?? false, link: w?.link ?? null, devices: w?.devices,
+      scannedAt: w?.scannedAt ?? 0, scanning: live.scanning, scanError: live.scanError, driver: w?.driver ?? '' });
   });
+  const tree = $derived(store.tree(defaults as unknown as LayoutNode));
+  const scope = $derived({ store: ui.state, conn: vm, lists: { devices: vm.devices } });
   const source = fixtureSource({});
 </script>
 

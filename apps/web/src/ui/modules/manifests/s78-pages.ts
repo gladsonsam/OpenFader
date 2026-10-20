@@ -17,6 +17,7 @@ import RouteMatrix from '../../screens/routing/RouteMatrix.svelte';
 import SrcTile from '../../screens/routing/SrcTile.svelte';
 import StatusDot from '../../screens/connection/StatusDot.svelte';
 import DeviceRow from '../../screens/connection/DeviceRow.svelte';
+import ConnectionFlow from '../../screens/connection/ConnectionFlow.svelte';
 import ManualDesk from '../../screens/connection/ManualDesk.svelte';
 
 function as<P>(c: unknown): Component<ModuleProps<P>> {
@@ -26,6 +27,10 @@ function as<P>(c: unknown): Component<ModuleProps<P>> {
 const pressEvent = [{ name: 'press' }];
 
 export const manifests: ModuleManifest[] = [
+  {
+    id: 'connection-flow', title: 'Mixer connection flow', category: 'screen',
+    component: as(ConnectionFlow), props: {}, defaults: {}, size: { flex: true },
+  },
   {
     id: 'route-tile',
     title: 'Routing channel tile',

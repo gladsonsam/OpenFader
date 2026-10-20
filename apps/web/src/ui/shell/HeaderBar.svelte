@@ -1,20 +1,5 @@
-<!-- H1 HeaderBar: the 56px top header, copied verbatim from
-     docs/design/src/design-template.html (header block, lines 21-72).
-     Props: vm = the store's headerView selector (ui.header), mode for the
-     toolbar/scene active states, and callbacks (no store import: presentational).
-     Layout: [Mixer title | Back + channel chip / page title | lock banner]
-     spacer [FX Routing Connect Settings] divider [scene button].
-     Channel mode strips to [Back | centered channel name | prev/next]: the toolbar,
-     scene button and lock banner stay one Back tap away on the mixer.
-     Snapshot visibility: phone (compact) renders the scene button ONLY on
-     the mixer with a desk link up (connected); every other phone screen
-     hides it so the 36px bar stays one row (nowrap + overflow hidden).
-     Desktop keeps the design's button on all non-channel screens. -->
-<!-- NOTE: buttons carry font-variant-numeric:normal because the design's
-     buttons compute normal (UA `font:` shorthand reset; the template only
-     re-inherits font-family), while app.css forces tabular on buttons. The
-     header itself is content-box so its 56px height + 1px border = 57px,
-     exactly like the template (measured on the live design). -->
+<!-- Header controls share a 44px target with 6px of vertical breathing room.
+     Channel pages replace the console toolbar with channel navigation. -->
 <script lang="ts">
   import type { HeaderView, Mode } from '../state/uiLogic.ts';
   import Icon from '../primitives/Icon.svelte';
@@ -75,17 +60,15 @@
   const showScene = $derived(
     compact ? mode === 'mixer' && connected : !vm.isChannel && connected,
   );
-  const ibtn = $derived(compact ? 44 : 46);
+  const ibtn = 44;
 </script>
 
 <header
   class="u4-header"
-  style:padding-top="calc(var(--app-safe-top, 0px) + {compact ? 2 : 0}px)"
+  style:padding-top="calc(var(--app-safe-top, 0px) + 6px)"
   style:padding-left="calc(var(--app-safe-left, 0px) + {compact ? 8 : 12}px)"
   style:padding-right="calc(var(--app-safe-right, 0px) + {compact ? 6 : 8}px)"
-  style={compact
-    ? 'min-height:44px;height:auto;box-sizing:content-box;flex:none;display:flex;align-items:center;flex-wrap:nowrap;overflow:hidden;gap:2px 6px;padding:2px 6px 2px 8px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)'
-    : 'height:var(--u4-header-h);box-sizing:content-box;flex:none;display:flex;align-items:center;gap:8px;padding:0 8px 0 12px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)'}
+  style="--u4-header-button-size:{ibtn}px;min-height:var(--u4-header-h);height:auto;box-sizing:border-box;flex:none;display:flex;align-items:center;flex-wrap:nowrap;gap:{compact ? 6 : 8}px;padding:6px {compact ? 6 : 8}px 6px {compact ? 8 : 12}px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)"
 >
   {#if vm.showBack}
     <button

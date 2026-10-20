@@ -1,3 +1,4 @@
+import { physicalChannelName } from './channelName.ts';
 import { loadOfflineMode, saveOfflineMode } from './live.ts';
 import { clearAppStorage } from '../../appStorage.ts';
 // D2 State package: Svelte 5 runes store wrapping the pure uiLogic
@@ -16,7 +17,6 @@ import {
   clearPatches,
   connectDevice,
   currentChannel,
-  disconnect,
   expirePhantom,
   flatEq,
   resetEq,
@@ -108,7 +108,7 @@ import {
   type World,
 } from './uiLogic.ts';
 import type { ThemePresetId } from '../modules/theme.ts';
-import { initialStateFromUrl, markReady } from './urlBridge.ts';
+import { initialStateFromUrl, parseFixtureUrl, markReady } from './urlBridge.ts';
 import { live } from './live.svelte.ts';
 import { buildDisplayEq, buildDisplayDyn, buildDisplayInput, displayFields } from '../world/engineWorld/channelViews.ts';
 import type { EngineWorld } from '../world/engineWorld/engineWorld.ts';
@@ -164,6 +164,9 @@ const XAIR_TAP_TYPES = ['DLY', '3TAP', '4TAP', 'D/RV', 'D/CR', 'D/FL', 'MODD'];
 let armTimer: ReturnType<typeof setTimeout> | null = null;
 
 function update(next: World): void {
+  if (initialized && !fixtureSession && !enteredSession && !['connect', 'settings'].includes(next.state.mode)) {
+    next = withState(next, { mode: 'connect' });
+  }
   world = next;
 }
 
@@ -355,8 +358,9 @@ function syncWorldToFixture(w: EngineWorld): void {
       // fixture-local because the poller never confirms them.
       if (w.supports('name', ch)) {
         const n = w.param(ch, 'name');
-        if (typeof n === 'string' && slot.name !== n) {
-          slot.name = n;
+        if (typeof n === 'string' && (slot.rawName !== n || slot.name !== (n.trim() ? n : physicalChannelName(id)))) {
+          slot.rawName = n;
+          slot.name = n.trim() ? n : physicalChannelName(id);
           changed = true;
         }
       }
@@ -426,7 +430,10 @@ function syncWorldToFixture(w: EngineWorld): void {
       }
       // Do not retain previous-epoch/fixture readings while hydration is incomplete.
       for (const f of ['fader'] as const) if (!slot.live.known[f] && Number.isFinite(slot[f])) { slot[f] = NaN; changed = true; }
-      if (!slot.live.known.name && slot.name !== '') { slot.name = ''; changed = true; }
+      if (!slot.live.known.name) {
+        const fallback = physicalChannelName(id);
+        if (slot.name !== fallback || slot.rawName !== '') { slot.name = fallback; slot.rawName = ''; changed = true; }
+      }
     }
     if (changed) update(world);
   } finally {
@@ -503,7 +510,178 @@ function eqBandVal(id: string, band: number, param: EqParam): number | null {
   return b[param];
 }
 
+// Deliberate session entry is separate from service readiness and fixture data.
+let initialized = false;
+let fixtureSession = false;
+let enteredSession = false;
+let attemptGeneration = 0;
+let attemptTimer: ReturnType<typeof setTimeout> | null = null;
+let cancelReadyWait: (() => void) | null = null;
+let cleanup: Promise<void> | null = null;
+let cleanupRequired = false;
+type Attempt = {
+  generation: number; host: string; label: string; deviceId?: string;
+  phase: 'service' | 'connecting' | 'slow' | 'failed'; error: string | null;
+  engine: EngineWorld | null; capsBaseline: number; linkBaseline: number; devicesBaseline: number;
+  denyBaseline: number;
+  manualRows: Set<string>;
+};
+let attempt: Attempt | null = $state(null);
+let flowError: string | null = $state(null);
+let cancelling = $state(false);
+let addressDraft = $state('');
+let scanDenyBaseline = 0;
+let scanPending = $state(false);
+let scanWorld: EngineWorld | null = null;
+let scanDevicesBaseline = 0;
+
+function stopAttemptTimer(): void {
+  if (attemptTimer) clearTimeout(attemptTimer);
+  attemptTimer = null;
+}
+function invalidateAttempt(): void {
+  ++attemptGeneration;
+  stopAttemptTimer();
+  cancelReadyWait?.();
+  cancelReadyWait = null;
+  attempt = null;
+  scanPending = false;
+  scanWorld = null;
+}
+function enterSession(): void {
+  enteredSession = true;
+  update(withState(world, { mode: 'mixer' }));
+  refreshMeterIds();
+}
+function connectionProgress(w: EngineWorld): void {
+  if (scanPending && scanWorld === w && (w.devicesVersion > scanDevicesBaseline || w.denyVersion > scanDenyBaseline)) {
+    scanPending = false; scanWorld = null;
+  }
+  if (live.scanning && w.denyVersion > scanDenyBaseline && w.lastDeny)
+    live.noteScanFailed(w.lastDeny.message);
+  const a = attempt;
+  if (!a || a.generation !== attemptGeneration || a.engine !== w || !['connecting', 'slow'].includes(a.phase)) return;
+  if (w.denyVersion > a.denyBaseline && w.lastDeny) {
+    a.phase = 'failed'; a.error = w.lastDeny.message; stopAttemptTimer(); return;
+  }
+  const link = w.link;
+  const rawHost = a.host.split(':')[0]!.toLowerCase();
+  const host = /^[\d.]+$/.test(rawHost) ? rawHost.split('.').map(Number).join('.') : rawHost;
+  const row = w.devices.find(d => d.ip === link?.ip);
+  // Numeric endpoints match exactly. Hostnames require a newly verified
+  // manual row in this attempt; an unrelated changed link is insufficient.
+  const matches = /^[\d.]+$/.test(host) ? link?.ip === host :
+    w.devicesVersion > a.devicesBaseline && row?.via === 'manual' && !a.manualRows.has(row.id);
+  if (!live.deskConnected || !matches || w.linkVersion <= a.linkBaseline || w.capsVersion <= a.capsBaseline) return;
+  if (!a.deviceId && (w.devicesVersion <= a.devicesBaseline || !row)) return;
+  const confirmedHost = a.host;
+  // Consume before navigation/history; recovery or another frame cannot reenter.
+  invalidateAttempt();
+  cleanupRequired = false;
+  live.rememberDesk(confirmedHost, {
+    name: link?.name?.trim() || undefined, model: row?.model || undefined,
+    resolvedIp: link?.ip || undefined, connectedAt: Date.now(),
+  });
+  enterSession();
+}
+async function waitForService(generation: number): Promise<void> {
+  await live.connect();
+  if (generation !== attemptGeneration) throw new Error('Cancelled');
+  if (live.phase === 'online' && live.engine?.capsReady) return;
+  await new Promise<void>((resolve, reject) => {
+    let off = () => {};
+    const finish = (error?: Error) => { clearTimeout(timer); off(); cancelReadyWait = null; error ? reject(error) : resolve(); };
+    const timer = setTimeout(() => finish(new Error(live.message || 'Connection service did not become ready.')), 16000);
+    cancelReadyWait = () => finish(new Error('Cancelled'));
+    off = live.observeWorld(w => {
+      if (generation !== attemptGeneration) finish(new Error('Cancelled'));
+      else if (live.phase === 'online' && w.capsReady) finish();
+    });
+  });
+}
+async function cancelConnection(): Promise<void> {
+  if (cleanup) return cleanup;
+  const hadDeskOperation = !!attempt?.engine || cleanupRequired || scanPending || live.deskConnected || live.connectionStatus().reconnecting;
+  invalidateAttempt();
+  enteredSession = false;
+  cancelling = true; flowError = null;
+  update(withState(world, { mode: 'connect' }));
+  cleanup = (async () => {
+    if (live.embedded || !hadDeskOperation) {
+      // Native close gates writes, drains all pending IPC, then detaches its
+      // private engine. Never race a new attach against an in-flight probe.
+      await live.disconnect();
+    } else {
+      // A relay is shared. Keep this socket alive until the ordered disconnect
+      // reaches the engine AFTER its probe. Socket close alone is no barrier.
+      await live.disconnectDeskAndDrain();
+    }
+    cleanupRequired = false;
+  })().catch(error => {
+    cleanupRequired = hadDeskOperation;
+    flowError = error instanceof Error ? error.message : String(error);
+    throw error;
+  }).finally(() => { cancelling = false; cleanup = null; });
+  return cleanup;
+}
+async function startConnection(host: string, deviceId?: string): Promise<void> {
+  if (cancelling || scanPending || live.scanning || (attempt && attempt.phase !== 'failed')) return;
+  if (attempt || cleanupRequired) {
+    try { await cancelConnection(); } catch { return; }
+  }
+  flowError = null;
+  enteredSession = false;
+  saveOfflineMode(false);
+  update(withState(world, { connected: null, mode: 'connect' }));
+  const generation = ++attemptGeneration;
+  attempt = { generation, host, label: host, deviceId, phase: 'service', error: null,
+    engine: null, capsBaseline: 0, linkBaseline: 0, devicesBaseline: 0, denyBaseline: 0, manualRows: new Set() };
+  try {
+    await waitForService(generation);
+    if (generation !== attemptGeneration || !attempt) return;
+    const w = live.engine!;
+    const a = attempt;
+    a.engine = w; a.capsBaseline = w.capsVersion; a.linkBaseline = w.linkVersion; a.devicesBaseline = w.devicesVersion;
+    a.denyBaseline = w.denyVersion;
+    a.manualRows = new Set(w.devices.filter(d => d.via === 'manual').map(d => d.id));
+    a.phase = 'connecting';
+    cleanupRequired = true;
+    if (deviceId) {
+      if (!w.devices.some(d => d.id === deviceId)) throw new Error('This mixer is no longer in the results. Search again or use its address.');
+      w.connectDevice(deviceId);
+    } else {
+      live.rememberDesk(host);
+      w.probeDesk(host);
+    }
+    attemptTimer = setTimeout(() => {
+      if (attempt?.generation === generation && attempt.phase === 'connecting') {
+        attempt.phase = 'slow';
+        attempt.error = 'No response yet. Retry or cancel.';
+      }
+    }, 12000);
+  } catch (error) {
+    if (generation !== attemptGeneration || !attempt) return;
+    stopAttemptTimer(); attempt.phase = 'failed';
+    attempt.error = error instanceof Error ? error.message : String(error);
+  }
+}
+function manualConnection(raw: string): void {
+  const value = raw.trim();
+  const [host, port] = value.split(':');
+  if (!host || /[\s/]/.test(value) || value.split(':').length > 2 ||
+    (port !== undefined && (!/^\d+$/.test(port) || +port < 1 || +port > 65535)) ||
+    (/^[\d.]+$/.test(host) && (host.split('.').length !== 4 || host.split('.').some(n => !/^\d{1,3}$/.test(n) || +n > 255))) ||
+    !/^[a-z\d](?:[a-z\d.-]*[a-z\d])?$/i.test(host)) {
+    flowError = 'Enter a valid IP address or hostname.'; return;
+  }
+  addressDraft = value;
+  void startConnection(value);
+}
+
 export const ui = {
+  get connectionFlow() { return { attempt, error: flowError, cancelling, cleanupRequired, scanPending }; },
+  get connectionAddress() { return addressDraft; },
+  set connectionAddress(value: string) { addressDraft = value; },
   get state(): UiState {
     return world.state;
   },
@@ -558,18 +736,15 @@ export const ui = {
 
   /** Enter fixture mode from the URL (called once by mount). */
   initFromUrl(search: string): { fixture: boolean; freeze: boolean } {
+    if (initialized) return { fixture: fixtureSession, freeze: frozen };
     const r = initialStateFromUrl(search, world.state, world.chans);
-    update({ state: r.state, chans: world.chans, fx: world.fx });
+    const params = parseFixtureUrl(search);
+    fixtureSession = r.fixture;
+    initialized = true;
+    enteredSession = r.fixture;
+    update({ state: r.fixture ? r.state : { ...r.state, mode: params.screen === 'settings' ? 'settings' : 'connect', connected: loadOfflineMode() ? 'offline' : null }, chans: world.chans, fx: world.fx });
+    live.observeWorld(w => { connectionProgress(w); scheduleWorldProjection(w); });
     live.initFromUrl(search);
-    // Non-fixture boots never claim a desk: the connection screen stays
-    // honestly empty until the relay links and a real scan lands (or the
-    // user explicitly restores persisted offline mode).
-    if (!r.fixture) {
-      update(withState(world, { connected: loadOfflineMode() ? 'offline' : null }));
-    }
-    // Engine -> fixture live sync: desk-side fader/mute moves flow into the
-    // fixture display model (no-op offline; pending local edits win).
-    live.observeWorld(scheduleWorldProjection);
     frozen = r.freeze;
     refreshMeterIds();
     return { fixture: r.fixture, freeze: r.freeze };
@@ -586,12 +761,23 @@ export const ui = {
   markReady,
 
   do: {
-    openPage: (m: Mode) => update(openPage(world, m)),
+    openPage: (m: Mode) => {
+      if (m === 'mixer' && !attempt && !cancelling && !cleanupRequired && (live.deskConnected || world.state.connected === 'offline' || fixtureSession)) enterSession();
+      else update(openPage(world, m));
+    },
+    cancelConnection: () => { void cancelConnection().catch(() => undefined); },
+    retryConnection: async () => {
+      const a = attempt;
+      if (!a) return;
+      try { await cancelConnection(); } catch { return; }
+      await startConnection(a.host, a.deviceId);
+    },
     goFx: () => update(goFx(world)),
     goRouting: () => update(goRouting(world)),
     goConnect: () => update(goConnect(world)),
     goSettings: () => update(goSettings(world)),
     goOnline: async () => {
+      if (cancelling) return;
       saveOfflineMode(false);
       update(withState(goConnect(world), { connected: null }));
       await live.connect();
@@ -599,6 +785,7 @@ export const ui = {
     clearAppStorage: async () => {
       clearArmTimer();
       taps = [];
+      await cancelConnection();
       await live.disconnect();
       await clearAppStorage();
       liveTopoKey = null;
@@ -607,17 +794,19 @@ export const ui = {
       // Reload drops layout/profile/preset/module caches and URL overrides.
       window.location.replace(window.location.pathname + '?screen=connection');
     },
-    goOffline: () => {
+    goOffline: async () => {
+      try { await cancelConnection(); } catch {
+        // Offline remains a local escape, with an honest remote-cleanup warning.
+        await live.disconnect().catch(() => undefined);
+      }
       saveOfflineMode(true);
-      // Offline means zero network: drop any live relay link so the
-      // offline/demo model owns every screen until the user reconnects.
-      live.disconnect();
       const demo = buildChannels();
       for (const [id, channel] of Object.entries(world.chans)) {
         if (channel.eq?.live && demo[id]) channel.eq = demo[id].eq;
       }
       liveTopoKey = null;
       update(goOffline(world));
+      enterSession();
     },
     goBack: () => update(goBack(world)),
     openScenes: () => update(openScenes(world)),
@@ -721,9 +910,14 @@ export const ui = {
     openNameEditor: (id: string) => update(openNameEditor(world, id)),
     closeNameEditor: () => update(closeNameEditor(world)),
     setChannelName: (id: string, name: string) => {
-      update(setChannelName(world, id, name));
-      const nv = world.chans[id]?.name;
-      if (typeof nv === 'string' && nv) forward(w => { bridgeName(w, id, nv); });
+      const clean = name.trim().slice(0, 12);
+      // The physical display fallback is never a name command. Forward
+      // only the explicit, accepted rename, including when the old scribble is blank.
+      if (world.state.locked || !clean || !world.chans[id]) return;
+      const before = world.chans[id].rawName ?? world.chans[id].name;
+      update(setChannelName(world, id, clean));
+      if (world.chans[id].rawName !== undefined) world.chans[id].rawName = clean;
+      if (clean !== before) forward(w => { bridgeName(w, id, clean); });
     },
     setChannelColor: (id: string, color: string, text: string) => {
       update(setChannelColor(world, id, color, text));
@@ -998,38 +1192,23 @@ export const ui = {
       forward(w => { bridgeUnpatch(w, target); });
     },
     scan: (clock: string) => {
+      if (attempt || cancelling || cleanupRequired || scanPending || world.state.connected === 'offline') return;
+      const w = liveEngine();
+      scanDenyBaseline = w?.denyVersion ?? 0;
+      scanDevicesBaseline = w?.devicesVersion ?? 0;
+      scanWorld = w;
+      scanPending = !!w;
       update(scanDevices(world, clock));
-      // Client-side busy state: the engine sends no scan-started event, so
-      // the button would otherwise look dead for the ~3 s sweep. `forward`
-      // still owns the actual send (no-op with no link).
-      live.noteScanRequested(liveEngine() !== null);
-      forward(w => { w.scan(); });
+      live.noteScanRequested(!!w);
+      // Explicit read-only discovery must work even after a desk disconnect.
+      // Parameter write guards still go through forward/EngineWorld unchanged.
+      w?.scan();
     },
-    disconnect: () => {
-      const was = world.state.connected;
-      saveOfflineMode(false);
-      update(disconnect(world));
-      if (was) forward(w => { w.disconnectDesk(); });
-    },
+    disconnect: () => { saveOfflineMode(false); update(withState(world, { connected: null })); void cancelConnection().catch(() => undefined); },
     connect: (key: string) => {
-      const before = world.state.connected;
-      update(connectDevice(world, key));
-      if (world.state.connected !== before && world.state.connected) {
-        saveOfflineMode(false);
-        forward(w => { w.connectDevice(world.state.connected as string); });
-        return;
-      }
-      // Engine-discovered desk id (xair-…): not a fixture key, so the pure
-      // fixture transition above is a no-op — link it directly instead of
-      // silently ignoring the tap. Only while the relay actually lists it.
-      if (key !== before) {
-        const w = liveEngine();
-        if (w && w.devices.some(d => d.id === key)) {
-          saveOfflineMode(false);
-          forward(ww => { ww.connectDevice(key); });
-          update(withState(world, { connected: key }));
-        }
-      }
+      if (fixtureSession) { update(connectDevice(world, key)); return; }
+      const desk = live.engine?.devices.find(d => d.id === key);
+      if (desk) void startConnection(desk.ip, key);
     },
     /** Real relay link (connection screen relay card; driver only when explicitly chosen). */
     connectRelay: (host?: string, driver?: string) => {
@@ -1045,12 +1224,7 @@ export const ui = {
      * desk when it answers (the verified row appears as `via: manual`;
      * silence stays an honest inline hint — never a blind row). Recent
      * hosts persist. */
-    probeDesk: (ip: string) => {
-      const v = (ip || '').trim();
-      if (!v) return;
-      live.rememberDesk(v);
-      forward(w => { w.probeDesk(v); });
-    },
+    probeDesk: (ip: string) => manualConnection(ip),
     setSpp: (n: number) => update(setSpp(world, n)),
     setFine: (v: boolean) => update(setFine(world, v)),
     setTheme: (t: ThemePresetId) => update(setTheme(world, t)),
