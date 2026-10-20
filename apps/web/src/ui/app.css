@@ -57,6 +57,11 @@ body {
    * (see html/body above) so dvh is stable here. */
   height: 100vh;
   height: 100dvh;
+  height: var(--app-height, 100dvh);
+  position: fixed;
+  top: var(--app-offset-top, 0px);
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   background: var(--u4-page-bg);
@@ -72,15 +77,41 @@ body {
   -webkit-user-select: none;
   -webkit-touch-callout: none;
   margin: 0;
-  /* Safe-area padding (env() fallback; was fed by the edge-to-edge
-     plugin, dropped 2026-10-19 until upstream ships perms in the crate).
-     PWA falls
-   * back to env() via viewport-fit=cover). Content clears the status
-   * bar / notch up top and the Home indicator / nav bar down low. */
-  padding-top: var(--safe-area-top, env(safe-area-inset-top, 0px));
-  padding-bottom: var(--safe-area-bottom-computed, var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)));
-  padding-left: var(--safe-area-left, env(safe-area-inset-left, 0px));
-  padding-right: var(--safe-area-right, env(safe-area-inset-right, 0px));
+  --app-safe-top: var(--safe-area-top, env(safe-area-inset-top, 0px));
+  --app-safe-bottom: var(--safe-area-bottom-computed, var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)));
+  --app-safe-left: var(--safe-area-left, env(safe-area-inset-left, 0px));
+  --app-safe-right: var(--safe-area-right, env(safe-area-inset-right, 0px));
+}
+
+.u4-shell-body {
+  padding: var(--shell-padding, 0px);
+  padding-left: calc(var(--shell-padding, 0px) + var(--app-safe-left, 0px));
+  padding-right: calc(var(--shell-padding, 0px) + var(--app-safe-right, 0px));
+  padding-bottom: calc(var(--shell-padding, 0px) + var(--app-safe-bottom, 0px));
+}
+
+.u4-mixer-body {
+  background: var(--u4-panel-bg);
+}
+
+.u4-edge-dock {
+  padding-right: 0;
+}
+
+.u4-bank-rail-side {
+  background: var(--u4-rail-bg);
+  border-left: 1px solid var(--u4-line-panel);
+}
+
+.u4-edge-dock > .u4-bank-rail-side {
+  --dock-overlap: min(var(--app-safe-right, 0px), calc(var(--shell-padding, 0px) + 1px));
+  --dock-status-height: calc(var(--app-safe-right, 0px) + var(--dock-overlap));
+  margin-top: calc(0px - var(--dock-overlap));
+  padding-top: var(--dock-status-height);
+  min-height: 0;
+  overflow-y: auto;
+  border-left: 0;
+  background: linear-gradient(to bottom, var(--u4-header-bg) 0px, var(--u4-header-bg) var(--dock-status-height), var(--u4-rail-bg) var(--dock-status-height));
 }
 
 /* Desktop keeps the design's 600px minimum (diff canvas is 1280x720);
@@ -94,6 +125,14 @@ body {
 
 .u4-frame button {
   font-family: inherit;
+}
+
+@media (max-width: 599px) {
+  .u4-frame [data-readout='fader'] {
+    height: 20px !important;
+    font-size: 14px !important;
+    line-height: 20px;
+  }
 }
 
 /* Touch press feedback: discrete tap buttons shrink snappily while held.

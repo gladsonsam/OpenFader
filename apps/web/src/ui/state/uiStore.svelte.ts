@@ -421,6 +421,7 @@ function forward(fn: (w: EngineWorld) => void): void {
   if (syncing) return;
   const w = liveEngine();
   if (!w) return;
+  if (w.driver !== 'sim' && w.link?.state === 'disconnected') return;
   try {
     fn(w);
   } catch {

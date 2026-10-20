@@ -64,7 +64,7 @@
                     "store": "store",
                     "frozen": "frozen",
                     "tree": "anatomy",
-                    "device": "device"
+                    "device": "device == 'tablet' ? 'phone' : device"
                   }
                 }
               ]
@@ -144,6 +144,7 @@
         {
           "id": "master-proc",
           "module": "col",
+          "variants": { "tablet": { "hidden": true } },
           "when": "device != 'phone' || store.sel == master.id",
           "props": {
             "flex": "1 1 140px",
@@ -367,7 +368,7 @@
               "props": {
                 "height": 44,
                 "flex": "1 0 44px",
-                "fontSize": 10,
+                "fontSize": 12,
                 "padding": "0 2px"
               },
               "bind": {
