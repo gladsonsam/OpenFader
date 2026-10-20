@@ -144,7 +144,11 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
     const scanLabel = scanBusy ? 'Scanning…' : 'Scan';
     const scanHint = scanBusy ? 'Scanning for desks…' : null;
     const scanError = live.scanError ?? null;
-    const lastScan = scanBusy ? 'Scanning for desks…' : state.lastScan;
+    const lastScan = scanBusy
+      ? 'Scanning for desks…'
+      : scanned
+        ? 'Scanned at ' + new Date(live.scannedAt! * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : 'Not scanned yet';
     // Manual add-by-IP lives next to the rows it feeds: the probe needs a
     // relay link, so the card shows while online, or while errored (where
     // it explains the link is down instead of probing blind).
