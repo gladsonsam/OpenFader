@@ -9,7 +9,6 @@
   import Knob from '../../../primitives/signal/Knob.svelte';
   import type { ModuleContext } from '../../../modules/types.ts';
   import type { EqBandCardVm } from './eqModel.ts';
-  import type { EqBandType } from '../../../fixtures/designData.ts';
 
   let {
     props = {},

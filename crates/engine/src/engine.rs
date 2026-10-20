@@ -39,6 +39,11 @@ pub const LINK_INTERVAL: Duration = Duration::from_secs(2);
 /// payload so a bad client cannot blow the engine's memory.
 pub const FILE_MAX_BYTES: usize = 16 << 20;
 
+/// Per-desk verify cap inside [`Cmd::Scan`]: the linked-desk info query plus
+/// the unicast probe fallback. Keeps a connected-but-unresponsive driver from
+/// stretching a scan past the broadcast budget (the UI allows ~10 s).
+const SCAN_VERIFY_TIMEOUT: Duration = Duration::from_millis(2200);
+
 /// Validate a desk filename for `file_download` / `file_upload` (mirrors
 /// the driver-side rules so bad names fail before touching the desk).
 pub fn check_filename(name: &str) -> anyhow::Result<String> {
@@ -345,24 +350,39 @@ impl DeviceScanner for RealScanner {
             let mut out = Vec::new();
             if let Ok(devs) = openmix_transport::discovery::discover_all(timeout).await {
                 for d in devs {
-                    let ip = d.addr.ip().to_string();
-                    out.push(DeviceDesc {
-                        id: format!("{}-{ip}", d.driver),
-                        name: match d.driver {
-                            "xair" => format!("X-Air {}", d.model),
-                            _ => format!("{} {}", d.driver, d.model),
-                        },
-                        model: d.model,
-                        ip,
-                        kind: "console".to_string(),
-                        state: "available".to_string(),
-                        fw: None,
-                        via: Some("broadcast".to_string()),
-                    });
+                    push_row(&mut out, device_row(d, "broadcast"));
                 }
             }
             out
         })
+    }
+}
+
+/// One discovery reply as a device row. Same mapping for broadcast, the
+/// unicast verify (manual add), the linked desk and the /24 sweep; only
+/// `via` differs. No sim rows ever come from here.
+fn device_row(d: openmix_transport::discovery::DiscoveredDevice, via: &str) -> DeviceDesc {
+    let ip = d.addr.ip().to_string();
+    DeviceDesc {
+        id: format!("{}-{ip}", d.driver),
+        name: match d.driver {
+            "xair" => format!("X-Air {}", d.model),
+            _ => format!("{} {}", d.driver, d.model),
+        },
+        model: d.model,
+        ip,
+        kind: "console".to_string(),
+        state: "available".to_string(),
+        fw: None,
+        via: Some(via.to_string()),
+    }
+}
+
+/// Append `row` unless a row for the same IP is already listed (first row
+/// wins: broadcast beats linked beats manual beats sweep).
+fn push_row(out: &mut Vec<DeviceDesc>, row: DeviceDesc) {
+    if !out.iter().any(|d| d.ip == row.ip) {
+        out.push(row);
     }
 }
 
@@ -623,9 +643,11 @@ pub struct Engine {
     /// stays alive for the process lifetime (the driver's cache drain
     /// holds its own resubscribed clone).
     meter_guard: RwLock<Option<tokio::sync::broadcast::Receiver<openmix_core::MeterFrame>>>,
-    /// Last connected address per driver (the `addr` of [`Engine::connect`]):
-    /// broadcast discovery never crosses subnets, so a hardware `scan` also
-    /// verifies this address and lists the linked desk when it answers.
+    /// Last connected/probed address per driver (the `addr` of
+    /// [`Engine::connect`]): broadcast discovery never crosses subnets, so a
+    /// hardware `scan` also verifies these addresses and lists the linked
+    /// desk when it answers. Persisted as `desks.json` under `data_dir` so
+    /// a restart still re-finds a manually added desk.
     desk_addrs: RwLock<HashMap<String, String>>,
     /// Wakeups for edge adapters (P0): notified on every mailbox write
     /// ([`broadcast`](Engine::broadcast), `broadcast_except`, `unicast`,
@@ -643,6 +665,10 @@ impl Engine {
     pub fn new(config: EngineConfig) -> Arc<Self> {
         let data_dir = config.data_dir.clone();
         let scenes_lib = load_scenes(data_dir.as_deref());
+        // Remembered desk addresses survive a restart (scan re-verify +
+        // directed unicast sweep need them; broadcast never crosses
+        // subnets). In-memory only when no data dir is configured.
+        let desk_addrs = load_desks(data_dir.as_deref());
         // Registry definition order is the device-claim precedence
         // (sim fallback first, then hardware in priority order).
         let rows = crate::drivers::registered_drivers(config.preset);
@@ -701,7 +727,7 @@ impl Engine {
                 .unwrap_or_else(|| Arc::new(RealScanner)),
             meter_driver: RwLock::new(None),
             meter_guard: RwLock::new(None),
-            desk_addrs: RwLock::new(HashMap::new()),
+            desk_addrs: RwLock::new(desk_addrs),
             notify: Arc::new(Notify::new()),
         });
         // FX cache for the default driver (sim): seeded synchronously so
@@ -767,10 +793,7 @@ impl Engine {
         // not plant an unreachable address that every later scan unicast-
         // probes (slow scans, phantom rows). Hardware scans verify the
         // remembered addresses (broadcast discovery never crosses subnets).
-        self.desk_addrs
-            .write()
-            .unwrap()
-            .insert(driver.to_string(), target.clone());
+        self.remember_desk(driver, &target);
         *self.active.write().unwrap() = driver.to_string();
         // The FX cache mirrors the active driver (sim rows / xair
         // placeholders); refresh it on every switch, including the boot
@@ -796,6 +819,27 @@ impl Engine {
             }
         }
         Ok(())
+    }
+
+    /// Remember a verified desk address under `driver` and persist the map
+    /// (best-effort). Only successful connects/probes reach here, so a scan
+    /// never unicast-probes a dead host it invented. Sim addresses are not
+    /// desks (a scan skips them anyway), so they never touch `desks.json`.
+    fn remember_desk(&self, driver: &str, addr: &str) {
+        if !self.drv(driver).is_hardware() {
+            return;
+        }
+        {
+            let mut addrs = self.desk_addrs.write().unwrap();
+            addrs.insert(driver.to_string(), addr.to_string());
+        }
+        self.save_desks();
+    }
+
+    /// Persist remembered desk addresses (`desks.json`; in-memory when no
+    /// data dir). Best-effort, mirroring [`Engine::save_scenes`].
+    fn save_desks(&self) {
+        persist_desks(self.data_dir.as_deref(), &self.desk_addrs.read().unwrap());
     }
 
     /// Attach a client: allocate its id, register it, and queue the
@@ -886,6 +930,50 @@ impl Engine {
         // Siblings learn about the join; the newcomer already has it.
         self.broadcast_except(&self.clients_message(), &id);
         handle
+    }
+
+    /// Queue a FRESH snapshot into an already-attached client's mailbox —
+    /// the resume path for adapters whose transport was suspended (mobile
+    /// WebView backgrounded: the pushes stop, the world moves on). Same
+    /// frame set an [`attach`](Engine::attach) snapshot carries, minus
+    /// `you`: `state`, `shows`, `clients`, `locks`, `caps`, `devices`,
+    /// `link`, `info` (best-effort), `scenes`, `fx`, `routing`,
+    /// `masters_snapshot`, then one `params` frame per cached channel.
+    ///
+    /// Never re-inserts the client, never touches locks/roles, and no-ops
+    /// when the id is not attached. Cheap enough to be idempotent: adapters
+    /// call it on every foreground transition so a suspended UI catches up
+    /// in one batch instead of replaying frames queued while hidden.
+    pub async fn push_snapshot(&self, client_id: &str) {
+        let attached = self.clients.read().unwrap().contains_key(client_id);
+        if !attached {
+            return;
+        }
+        // Build everything before touching the mailbox: same order as
+        // `attach` (R1 prefix then R2), so a resumed client parses exactly
+        // what a fresh one does.
+        let state = self.state_message(None).await;
+        let shows = self.shows_message();
+        let roster = self.clients_message();
+        let locks = self.locks_message();
+        let caps = self.caps_message();
+        let devices = self.devices_message();
+        let link = self.link_message_cached();
+        let info = self.info_message().await.ok();
+        let scenes = self.scenes_message();
+        let fx = self.fx_message().await;
+        let routing = self.routing_message().await;
+        let masters = self.masters_snapshot().await;
+        let params = self.params_snapshot();
+        for event in [state, shows, roster, locks, caps, devices, link]
+            .into_iter()
+            .chain(info)
+            .chain([scenes, fx, routing])
+            .chain(masters)
+            .chain(params)
+        {
+            self.unicast(client_id, event);
+        }
     }
 
     /// Replace a connected client's access policy (default: admin).
@@ -4025,20 +4113,24 @@ impl Engine {
                 // on EVERY driver: a sim-backed relay has no desks of its
                 // own, so scanning from sim must run the same broadcast
                 // discovery the phone uses — never the design seed rows.
-                // Broadcast never crosses subnets, so every REMEMBERED desk
-                // address (previous connects + manual probes) is verified
-                // too (live session, else directed unicast) and upserted —
-                // otherwise a cross-subnet desk vanishes on the next scan.
+                //
+                // Broadcast discovery and remembered-address verification
+                // run CONCURRENTLY: the UI budget is ~10 s, and serialising
+                // them (2 s broadcast, then one ~1 s probe per remembered
+                // desk) runs out of budget with two desks.
+                //
+                // Remembered desks (previous connects + manual probes):
+                // (a) directed unicast verify of each address (broadcast
+                // never crosses subnets) with the linked-desk fast path,
+                // (b) ONE bounded /24 sweep per distinct remembered subnet
+                // so a desk whose DHCP lease moved — or a sibling desk on
+                // that subnet — is re-found across the router. Sweeps run
+                // in parallel and are capped, so they never delay the
+                // broadcast rows past the scan budget.
+                //
                 // The list is still REPLACED: an address that verifies
-                // nothing (or was never successfully probed/connected)
-                // adds no row — stale entries are never kept.
-                let mut merged = self.scanner.scan(Duration::from_secs(2)).await;
+                // nothing adds no row; stale entries are never kept.
                 let driver = self.active_driver();
-                if let Some(linked) = self.linked_desk_device(&driver).await {
-                    if !merged.iter().any(|d| d.ip == linked.ip) {
-                        merged.push(linked);
-                    }
-                }
                 let remembered: Vec<(String, String)> = self
                     .desk_addrs
                     .read()
@@ -4046,29 +4138,138 @@ impl Engine {
                     .iter()
                     .map(|(d, a)| (d.clone(), a.clone()))
                     .collect();
-                for (drv_name, ip) in remembered {
-                    if merged.iter().any(|d| d.ip == ip) {
-                        continue;
-                    }
-                    // Hardware desks only: a sim "address" is not a desk
-                    // (sim ignores it), so there is nothing to verify.
-                    if !self.drv(&drv_name).is_hardware() {
-                        continue;
-                    }
-                    if let Some(linked) = self.linked_desk_device(&drv_name).await {
-                        if !merged.iter().any(|d| d.ip == linked.ip) {
-                            merged.push(linked);
+
+                let scan_fut = self.scanner.scan(Duration::from_secs(2));
+                let verify_fut = async {
+                    // (a) Linked desk + directed verify, all in parallel.
+                    // Each item is capped: a connected-but-silent driver
+                    // answers nothing and must not stretch the scan.
+                    let active_linked = async {
+                        if self.drv(&driver).is_hardware() {
+                            tokio::time::timeout(
+                                SCAN_VERIFY_TIMEOUT,
+                                self.linked_desk_device(&driver),
+                            )
+                            .await
+                            .ok()
+                            .flatten()
+                        } else {
+                            None
                         }
-                        continue;
-                    }
-                    let Some(table) = self.drv(&drv_name).probe_table() else {
-                        continue;
                     };
-                    if let Some(found) = self.probe_desk(table, &ip).await {
-                        if !merged.iter().any(|d| d.ip == found.ip) {
-                            merged.push(found);
+                    let mut probes = Vec::new();
+                    for (drv_name, ip) in &remembered {
+                        // Hardware desks only: a sim "address" is not a
+                        // desk (sim ignores it), so nothing to verify.
+                        if !self.drv(drv_name).is_hardware() {
+                            continue;
                         }
+                        probes.push(async move {
+                            tokio::time::timeout(SCAN_VERIFY_TIMEOUT, async {
+                                if let Some(linked) = self.linked_desk_device(drv_name).await {
+                                    return Some(linked);
+                                }
+                                let table = self.drv(drv_name).probe_table()?;
+                                self.probe_desk(table, ip).await
+                            })
+                            .await
+                            .ok()
+                            .flatten()
+                        });
                     }
+
+                    // (b) Bounded /24 re-find sweep, one plan per distinct
+                    // remembered /24 (specs merged when two drivers share
+                    // it), all plans in parallel.
+                    let sweep_fut = async {
+                        use openmix_transport::discovery::{
+                            subnet24, sweep_known_subnet, ProbeSpec, PROBE_TABLE,
+                        };
+                        let mut plans: Vec<(std::net::Ipv4Addr, Vec<ProbeSpec>)> = Vec::new();
+                        for (drv_name, ip) in &remembered {
+                            if !self.drv(drv_name).is_hardware() {
+                                continue;
+                            }
+                            let Some(table) = self.drv(drv_name).probe_table() else {
+                                continue;
+                            };
+                            // Hostname addresses have no /24 to sweep; the
+                            // directed verify above still covers them.
+                            let Ok(seed) = ip.parse::<std::net::Ipv4Addr>() else {
+                                continue;
+                            };
+                            let specs: Vec<ProbeSpec> = PROBE_TABLE
+                                .iter()
+                                .filter(|s| s.driver == table)
+                                .copied()
+                                .collect();
+                            if specs.is_empty() {
+                                continue;
+                            }
+                            let prefix = subnet24(seed);
+                            match plans.iter_mut().find(|(p, _)| *p == prefix) {
+                                Some((_, existing)) => {
+                                    for s in specs {
+                                        if !existing.iter().any(|e| {
+                                            e.port == s.port && e.payload == s.payload
+                                        }) {
+                                            existing.push(s);
+                                        }
+                                    }
+                                }
+                                None => plans.push((prefix, specs)),
+                            }
+                        }
+                        let sweeps = plans.into_iter().map(|(prefix, specs)| async move {
+                            let budget = openmix_transport::discovery::SWEEP_TIMEOUT
+                                + Duration::from_millis(300);
+                            match tokio::time::timeout(
+                                budget,
+                                sweep_known_subnet(
+                                    &specs,
+                                    std::net::IpAddr::V4(prefix),
+                                    openmix_transport::discovery::SWEEP_TIMEOUT,
+                                ),
+                            )
+                            .await
+                            {
+                                Ok(Ok(devs)) => {
+                                    devs.into_iter().map(|d| device_row(d, "manual")).collect()
+                                }
+                                _ => Vec::new(), // a slow sweep is dropped, never blocks
+                            }
+                        });
+                        let mut rows: Vec<DeviceDesc> = Vec::new();
+                        for group in futures::future::join_all(sweeps).await {
+                            for row in group {
+                                push_row(&mut rows, row);
+                            }
+                        }
+                        rows
+                    };
+
+                    let (linked, probed, swept) = tokio::join!(
+                        active_linked,
+                        futures::future::join_all(probes),
+                        sweep_fut
+                    );
+                    let mut rows: Vec<DeviceDesc> = Vec::new();
+                    if let Some(row) = linked {
+                        push_row(&mut rows, row);
+                    }
+                    for row in probed.into_iter().flatten() {
+                        push_row(&mut rows, row);
+                    }
+                    for row in swept {
+                        push_row(&mut rows, row);
+                    }
+                    rows
+                };
+
+                let (broadcast_rows, verified_rows) = tokio::join!(scan_fut, verify_fut);
+                let mut merged = broadcast_rows;
+                for row in verified_rows {
+                    push_row(&mut merged, row);
                 }
                 *self.devices.write().unwrap() = merged;
                 self.scanned_at.store(now_unix(), Ordering::Relaxed);
@@ -4105,43 +4306,69 @@ impl Engine {
                 }))
             }
             Cmd::Probe { addr } => {
-                // Manual add-by-IP: verify WITHOUT switching the link.
-                // The embedded app boots on sim and the user has never
-                // switched drivers, so sim probes with the aliased probe
-                // table (the only broadcast table so far); drivers with
-                // their own table probe natively. A driver with no probe
-                // table is an honest error, never a blind row.
+                // Manual add-by-IP: verify, then CONNECT immediately — the
+                // user typed the address to use this desk, not to file it in
+                // a list and tap Connect again. The embedded app boots on
+                // sim and the user has never switched drivers, so sim probes
+                // with the aliased probe table (xair) and the verified row's
+                // id/name claims the hardware driver below. A driver with no
+                // probe table is an honest error, never a blind row.
                 let driver = self.active_driver();
                 let Some(table_driver) = self.drv(&driver).probe_table() else {
                     anyhow::bail!(
                         "probe needs the xair driver (relay runs {driver}) — switch drivers first"
                     );
                 };
-                match self.probe_desk(table_driver, &addr).await {
-                    Some(found) => {
-                        {
-                            let mut devs = self.devices.write().unwrap();
-                            // Never duplicate: a row for this IP already
-                            // answers from broadcast or a prior probe.
-                            if !devs.iter().any(|d| d.ip == found.ip) {
-                                devs.push(found.clone());
-                            }
-                        }
-                        // Remember the verified address under the table's
-                        // driver so later scans re-verify it (directed
-                        // unicast) instead of dropping the row — broadcast
-                        // never crosses subnets, so without this a manual
-                        // row vanishes on the next scan.
-                        self.desk_addrs
-                            .write()
-                            .unwrap()
-                            .insert(table_driver.to_string(), found.ip.clone());
+                let Some(found) = self.probe_desk(table_driver, &addr).await else {
+                    anyhow::bail!(
+                        "no reply from {addr} — check the IP (desks on another subnet never answer broadcast; unicast to this address got nothing back)"
+                    );
+                };
+                // The verified row is visible even if the connect fails.
+                {
+                    let mut devs = self.devices.write().unwrap();
+                    if !devs.iter().any(|d| d.ip == found.ip) {
+                        devs.push(found.clone());
+                    }
+                }
+                // Remember + persist the verified address under the table's
+                // driver so later scans (and a restart) re-verify it by
+                // directed unicast and re-find its /24 instead of dropping
+                // the row — broadcast never crosses subnets.
+                self.remember_desk(table_driver, &found.ip);
+                // Claim the driver exactly like Cmd::ConnectDevice.
+                let mut claimed = "sim";
+                for name in &self.driver_order {
+                    if self.drv(name).claims_device(&found.id, &found.model) {
+                        claimed = name.as_str();
+                        break;
+                    }
+                }
+                match self.connect(claimed, Some(&found.ip)).await {
+                    Ok(()) => {
+                        self.set_link_connected(Some(&found.id), &found.ip).await;
+                        self.post_switch(writer, out, false).await?;
                         out.push(self.devices_message());
                         Ok(None)
                     }
-                    None => anyhow::bail!(
-                        "no reply from {addr} — check the IP (desks on another subnet never answer broadcast; unicast to this address got nothing back)"
-                    ),
+                    Err(e) => {
+                        // Verified but unusable: keep the row, leave the old
+                        // link alone, and tell THIS client why (a plain `?`
+                        // would drop the devices frame we just queued).
+                        out.push(self.devices_message());
+                        self.unicast(
+                            writer,
+                            Event::Error {
+                                message: format!(
+                                    "{} answered but the connect failed: {e}",
+                                    found.ip
+                                ),
+                                locked_by: None,
+                                ch: None,
+                            },
+                        );
+                        Ok(None)
+                    }
                 }
             }
             Cmd::Disconnect => {
@@ -4933,6 +5160,55 @@ fn scene_file(data_dir: Option<&std::path::Path>) -> Option<PathBuf> {
     data_dir.map(|d| d.join("scenes.json"))
 }
 
+/// Known desk addresses file (`desks.json`) under the data dir.
+fn desk_file(data_dir: Option<&std::path::Path>) -> Option<PathBuf> {
+    data_dir.map(|d| d.join("desks.json"))
+}
+
+/// Load the remembered driver -> desk address map (best-effort: a missing
+/// or corrupt file reads back empty — persistence must never block start).
+/// Broadcast discovery never crosses subnets, so without this a manually
+/// added desk vanishes from Scan after an app restart.
+fn load_desks(data_dir: Option<&std::path::Path>) -> HashMap<String, String> {
+    let Some(path) = desk_file(data_dir) else {
+        return HashMap::new();
+    };
+    let raw = std::fs::read_to_string(&path).unwrap_or_default();
+    if raw.trim().is_empty() {
+        return HashMap::new();
+    }
+    let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+    let mut out = HashMap::new();
+    if let Some(obj) = v.get("desks").and_then(Value::as_object) {
+        for (driver, ip) in obj {
+            let Some(ip) = ip.as_str() else {
+                continue;
+            };
+            let ip = ip.trim();
+            if !ip.is_empty() {
+                out.insert(driver.clone(), ip.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// Persist the remembered driver -> desk address map (best-effort:
+/// failures are swallowed — a read-only data dir must never break
+/// connect/probe). Mirrors [`persist_scenes`].
+fn persist_desks(data_dir: Option<&std::path::Path>, addrs: &HashMap<String, String>) {
+    let Some(path) = desk_file(data_dir) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        if std::fs::create_dir_all(parent).is_err() {
+            return;
+        }
+    }
+    let doc = json!({ "version": 1, "desks": addrs });
+    let _ = std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap_or_default());
+}
+
 /// Load the persisted R2 scene library (best-effort: missing/corrupt
 /// files read back empty — a bad file must never block engine start).
 fn load_scenes(data_dir: Option<&std::path::Path>) -> HashMap<u16, StoredScene> {
@@ -5120,6 +5396,56 @@ mod tests {
         assert!(!Engine::poller_yields(0));
         assert!(Engine::poller_yields(1));
         assert!(Engine::poller_yields(u64::MAX));
+    }
+
+    /// Remembered desk addresses survive a restart: `desks.json` under
+    /// `data_dir` reloads into `desk_addrs` (scan re-verify + /24 sweep
+    /// need it — broadcast never crosses subnets). Missing/no data dir and
+    /// a corrupt file all degrade to empty, never to a boot failure.
+    #[test]
+    fn desks_persist_across_restart() {
+        let dir = std::env::temp_dir().join(format!(
+            "openmix-desks-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        {
+            let engine = Engine::new(EngineConfig {
+                data_dir: Some(dir.clone()),
+                ..EngineConfig::default()
+            });
+            assert!(engine.desk_addrs.read().unwrap().is_empty());
+            engine.remember_desk("xair", "192.168.40.123");
+            assert!(dir.join("desks.json").exists(), "desk file written");
+        }
+        let engine = Engine::new(EngineConfig {
+            data_dir: Some(dir.clone()),
+            ..EngineConfig::default()
+        });
+        assert_eq!(
+            engine
+                .desk_addrs
+                .read()
+                .unwrap()
+                .get("xair")
+                .map(String::as_str),
+            Some("192.168.40.123"),
+            "restart reloads the remembered address"
+        );
+        // No data dir: in-memory only, never panics.
+        let mem = Engine::new(EngineConfig::default());
+        assert!(mem.desk_addrs.read().unwrap().is_empty());
+        // Corrupt file: empty map, engine still boots.
+        std::fs::write(dir.join("desks.json"), "{ not json").unwrap();
+        let broken = Engine::new(EngineConfig {
+            data_dir: Some(dir.clone()),
+            ..EngineConfig::default()
+        });
+        assert!(broken.desk_addrs.read().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -5332,6 +5658,59 @@ mod tests {
         let mut reg = ParamRegistry::canonical();
         reg.register(engine.drv("xair").param_defs());
         assert_eq!(reg.len(), openmix_core::params::CATALOGUE.len());
+    }
+
+    /// Resume path: `push_snapshot` queues the attach frame set into an
+    /// already-attached client's mailbox (fresh state, no `you`, no roster
+    /// churn, no lock/role change). This is what the Tauri shell calls when
+    /// the WebView comes back from `Suspended`, so a UI that missed minutes
+    /// of frames catches up in one batch.
+    #[tokio::test]
+    async fn push_snapshot_refreshes_without_reattaching() {
+        let engine = Engine::new(EngineConfig::default());
+        let mut client = engine.attach(Some("resume-ui".to_string())).await;
+        let id = client.id.clone();
+        // Drain the attach snapshot, then warm the param cache (a fresh
+        // snapshot only carries `params` for cached channels).
+        while client.events.try_recv().is_ok() {}
+        for _ in 0..20 {
+            engine.poll_once().await;
+        }
+        while client.events.try_recv().is_ok() {}
+        engine.push_snapshot(&id).await;
+        let mut tags: Vec<String> = Vec::new();
+        while let Ok(event) = client.events.try_recv() {
+            tags.push(
+                event_json(event)
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("?")
+                    .to_string(),
+            );
+        }
+        for want in [
+            "state", "shows", "clients", "locks", "caps", "devices", "link", "scenes", "fx",
+            "routing", "params",
+        ] {
+            assert!(
+                tags.contains(&want.to_string()),
+                "resume snapshot carries `{want}` (got {tags:?})"
+            );
+        }
+        assert!(
+            !tags.contains(&"you".to_string()),
+            "resume snapshot must not re-identify the client (got {tags:?})"
+        );
+        // No re-attach: same id, exactly one roster entry.
+        assert_eq!(client.id, id);
+        {
+            let clients = engine.clients.read().unwrap();
+            assert_eq!(clients.len(), 1, "resume must not duplicate the client");
+            assert!(clients.contains_key(&id));
+        }
+        // Unknown id: no-op (no panic, no mailbox created).
+        engine.push_snapshot("client-does-not-exist").await;
+        assert_eq!(engine.clients.read().unwrap().len(), 1);
     }
 
     #[tokio::test]

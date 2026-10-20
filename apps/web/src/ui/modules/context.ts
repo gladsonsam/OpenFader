@@ -6,7 +6,7 @@
 // paramStore + caps. Modules only ever see ModuleContext, so they work on
 // fixtures, the sim and a real desk unchanged.
 
-import type { DeviceClass, ModuleContext, Role } from './types.ts';
+import type { Binding, DeviceClass, ModuleContext, Role } from './types.ts';
 
 export interface ContextSource {
   role?: Role;
@@ -27,7 +27,7 @@ function parseRef(binding: string): { kind: string; id: string } {
 /** Build a ModuleContext from a source. Pure assembly; reads are delegated. */
 export function makeContext(bindings: string[], source: ContextSource): ModuleContext {
   return {
-    bindings,
+    bindings: bindings as Binding[],
     caps: () => source.caps ?? [],
     role: () => source.role ?? 'engineer',
     device: () => source.device ?? 'desktop',

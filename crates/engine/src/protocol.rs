@@ -113,13 +113,16 @@ pub enum Cmd {
     ConnectDevice {
         id: String,
     },
-    /// R2: verify one desk by IP without switching the link
-    /// (`{"cmd":"probe","addr":"192.168.40.123"}`): directed unicast
-    /// `/xinfo` (cross-subnet desks never answer broadcast discovery, but
-    /// they DO answer unicast). On a reply the desk is upserted into the
-    /// device list (`via: "manual"`) and a fresh [`Event::Devices`] frame
-    /// goes out; silence is an honest error naming the address. Never
-    /// touches the current link. Additive: older clients never send it.
+    /// R2: add one desk by IP (`{"cmd":"probe","addr":"192.168.40.123"}`):
+    /// directed unicast `/xinfo` (cross-subnet desks never answer broadcast
+    /// discovery, but they DO answer unicast). On a reply the desk is
+    /// upserted into the device list (`via: "manual"`), remembered
+    /// (persisted for later scans) and the engine CONNECTS to it through
+    /// the same path as [`Cmd::ConnectDevice`] — Add-by-IP is a one-tap
+    /// connect, and the refresh frames (`link`/`state`/`caps`/…) plus a
+    /// [`Event::Devices`] frame go out. Silence is an honest error naming
+    /// the address; a verified desk whose connect fails stays listed with a
+    /// unicast [`Event::Error`]. Additive: older clients never send it.
     Probe {
         addr: String,
     },

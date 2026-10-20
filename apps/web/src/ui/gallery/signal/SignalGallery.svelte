@@ -49,7 +49,6 @@
     }, 80);
     return () => clearInterval(iv);
   });
-  void tick;
 
   const still = $derived(frozen || silent);
 

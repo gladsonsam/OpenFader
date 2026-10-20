@@ -93,7 +93,6 @@ import {
   toggleSolo,
   togglePhantom,
   toggleSendPre,
-  toggleRoute,
   resetPan,
   unpatch,
   unlock,
@@ -120,7 +119,6 @@ import {
   bridgeEqType,
   bridgeFader,
   bridgeStrip,
-  bridgeFxBypass,
   bridgeFxOn,
   bridgeFxParamByIndex,
   bridgeFxType,
@@ -903,10 +901,10 @@ export const ui = {
     setRelayHost: (host: string) => live.setHost(host),
     /** One-tap LAN fix: point the relay at the machine serving this page. */
     usePageHost: () => live.usePageHost(),
-    /** Manual add-by-IP: the relay pings the address; a verified desk
-     * appears as a connectable row (silence stays an honest inline hint —
-     * never a blind row). Recent hosts persist. No UI exposes this now
-     * (connection screen is Scan-only); the engine path stays intact. */
+    /** Manual add-by-IP: the relay pings the address and connects to the
+     * desk when it answers (the verified row appears as `via: manual`;
+     * silence stays an honest inline hint — never a blind row). Recent
+     * hosts persist. */
     probeDesk: (ip: string) => {
       const v = (ip || '').trim();
       if (!v) return;

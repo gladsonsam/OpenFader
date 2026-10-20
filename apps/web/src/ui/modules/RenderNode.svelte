@@ -23,6 +23,7 @@
   import { makeContext, type ContextSource } from './context.ts';
   import type { DeviceClass, Role } from './types.ts';
   import type { RepeatScope } from './schema.ts';
+  import RenderNode from './RenderNode.svelte';
 
   let {
     node,
@@ -187,7 +188,7 @@
 {:else if visible && Comp && !fallbackGone}
   {#if expanded !== null}
     {#each expanded as inst (inst.id)}
-      <svelte:self
+      <RenderNode
         node={inst}
         {source}
         {scope}
@@ -199,7 +200,7 @@
     {/each}
   {:else if withVariant.module === 'tabs'}
     {#snippet bodySnippet(n: LayoutNode)}
-      <svelte:self node={n} {source} {scope} {device} {role} {caps} {settings} />
+      <RenderNode node={n} {source} {scope} {device} {role} {caps} {settings} />
     {/snippet}
     <Comp
       props={finalProps}
@@ -212,7 +213,7 @@
   {:else}
     {#snippet kidsSnippet()}
       {#each withVariant.children ?? [] as child (child.id)}
-        <svelte:self node={child} {source} {scope} {device} {role} {caps} {settings} />
+        <RenderNode node={child} {source} {scope} {device} {role} {caps} {settings} />
       {/each}
     {/snippet}
     <Comp props={finalProps} {ctx} nodeId={withVariant.id} children={kidsSnippet as Snippet} {onEvent} />

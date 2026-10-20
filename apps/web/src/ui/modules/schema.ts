@@ -117,6 +117,12 @@ export interface RepeatScope {
    *  `item.id` work, and the instance id uses `item.id ?? index`. */
   lists?: Record<string, unknown[]>;
   settings?: Record<string, unknown>;
+  /** Nested-renderer instance fields (e.g. strip-frame re-rooting): carried
+   *  through for expression scope, ignored by repeat expansion. */
+  store?: unknown;
+  item?: unknown;
+  index?: number;
+  frozen?: boolean;
 }
 
 /**

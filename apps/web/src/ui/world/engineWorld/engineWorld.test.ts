@@ -26,6 +26,7 @@ function ok(cond: boolean, name: string, extra?: string): void {
 function approx(a: number, b: number, eps = 1e-4): boolean {
   return Math.abs(a - b) <= eps;
 }
+void approx;
 
 interface Ctl {
   now: number;

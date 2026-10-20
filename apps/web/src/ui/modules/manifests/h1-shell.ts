@@ -11,42 +11,45 @@ import HeaderBar from '../../shell/HeaderBar.svelte';
 import BankRail from '../../shell/BankRail.svelte';
 import SceneButton from '../../shell/SceneButton.svelte';
 
-function asModule<P>(c: Component): Component<ModuleProps<P>> {
+function asModule<P>(c: Component<any>): Component<ModuleProps<P>> {
   return c as unknown as Component<ModuleProps<P>>;
 }
 
-const headerBar: ModuleManifest<Record<string, never>> = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyProps = any;
+
+const headerBar: ModuleManifest<AnyProps> = {
   id: 'header-bar',
   title: 'Header bar',
   category: 'display',
-  component: asModule<Record<string, never>>(HeaderBar),
+  component: asModule<AnyProps>(HeaderBar),
   props: {},
   defaults: {},
   size: { fixedH: 56 },
   binds: ['scene', 'bank', 'setting:locked', 'setting:connected'],
 };
 
-const bankRail: ModuleManifest<Record<string, never>> = {
+const bankRail: ModuleManifest<AnyProps> = {
   id: 'bank-rail',
   title: 'Bank rail',
   category: 'display',
-  component: asModule<Record<string, never>>(BankRail),
+  component: asModule<AnyProps>(BankRail),
   props: {},
   defaults: {},
   size: { fixedW: 92 },
   binds: ['bank'],
 };
 
-const sceneDropdown: ModuleManifest<Record<string, never>> = {
+const sceneDropdown: ModuleManifest<AnyProps> = {
   id: 'scene-dropdown',
   title: 'Scene dropdown',
   category: 'display',
-  component: asModule<Record<string, never>>(SceneButton),
+  component: asModule<AnyProps>(SceneButton),
   props: {},
   defaults: {},
   size: { minW: 120, maxW: 280, fixedH: 46 },
   binds: ['scene'],
 };
 
-export const manifests: ModuleManifest[] = [headerBar, bankRail, sceneDropdown];
+export const manifests: ModuleManifest<AnyProps>[] = [headerBar, bankRail, sceneDropdown];
 export default manifests;

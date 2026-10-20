@@ -33,8 +33,8 @@
     oninput?: ((v: number) => void) | null;
   } = $props();
 
-  const h = variant === 'aside' ? 34 : 30;
-  const notchTB = variant === 'aside' ? 10 : 9;
+  const h = $derived(variant === 'aside' ? 34 : 30);
+  const notchTB = $derived(variant === 'aside' ? 10 : 9);
 
   const text = $derived(panText(value));
   const aria = $derived('Pan ' + name + (text ? ' ' + text : ''));

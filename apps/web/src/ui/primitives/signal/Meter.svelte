@@ -33,7 +33,6 @@
     frozen?: boolean;
   } = $props();
 
-  let root: HTMLDivElement | null = $state(null);
   let canvas: HTMLCanvasElement | null = $state(null);
 
   /** Colours resolve from ui/tokens.css at runtime, literals = design values. */
@@ -240,28 +239,24 @@
 
 {#if variant === 'hbar'}
   <div
-    bind:this={root}
     style="position:relative;width:100%;height:12px;overflow:hidden;border-radius:2px"
   >
     <canvas bind:this={canvas} style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
   </div>
 {:else if variant === 'master'}
   <div
-    bind:this={root}
     style="position:absolute;right:0;width:19px;top:0;bottom:0;display:block"
   >
     <canvas bind:this={canvas} style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
   </div>
 {:else if variant === 'aside'}
   <div
-    bind:this={root}
     style="position:absolute;right:0;width:18px;top:0;bottom:0;display:block"
   >
     <canvas bind:this={canvas} style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
   </div>
 {:else}
   <div
-    bind:this={root}
     style="position:absolute;right:1px;width:14px;top:0;bottom:0;display:block"
   >
     <canvas bind:this={canvas} style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>

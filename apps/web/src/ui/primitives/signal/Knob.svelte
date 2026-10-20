@@ -68,7 +68,7 @@
     oninput?: ((v: number) => void) | null;
   } = $props();
 
-  const s = spec(specKey);
+  const s = $derived(spec(specKey));
 
   /** Normalised 0..1 position, per mode (design's knobItem norms). */
   function normOf(v: number): number {
@@ -107,10 +107,10 @@
   const text = $derived(fmtOf(value));
   const aria = $derived(label + ' ' + text);
   const vSize = $derived(valueSize ?? (size >= 92 ? 15 : size <= 58 ? 12 : 13));
-  const ringW = fx ? 4 : 5;
-  const hubR = fx ? 16 : 15;
-  const tipY = fx ? 14 : 15;
-  const ptrW = fx ? 2.2 : 2.5;
+  const ringW = $derived(fx ? 4 : 5);
+  const hubR = $derived(fx ? 16 : 15);
+  const tipY = $derived(fx ? 14 : 15);
+  const ptrW = $derived(fx ? 2.2 : 2.5);
 
   let drag: { y: number; startN: number; startV: number } | null = null;
   let lastTap = 0;
@@ -188,6 +188,9 @@
   <button
     role="slider"
     aria-label={aria}
+    aria-valuemin={0}
+    aria-valuemax={100}
+    aria-valuenow={Math.round(n * 100)}
     aria-valuetext={text}
     aria-disabled={disabled || !oninput ? 'true' : undefined}
     disabled={disabled || !oninput ? true : undefined}

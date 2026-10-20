@@ -190,7 +190,7 @@ const known = (id: string): boolean => ['text', 'row', 'col'].includes(id);
     },
     (id) => id === 'btn',
   );
-  assert.equal(norm.tree.children?.[0].on?.['press']?.do ?? (norm.tree.children?.[0].on?.['press'] as { do: string }).do, 'nope.x');
+  assert.equal((norm.tree.children?.[0].on?.['press'] as unknown as { do: string }).do, 'nope.x');
   assert.equal(norm.tree.children?.[0].bind?.['l'], 'item.x');
   assert.equal(norm.tree.children?.[0].when, 'store.ok');
 }

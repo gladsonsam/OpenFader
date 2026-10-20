@@ -68,7 +68,7 @@ function checkOnRef(ref: unknown, path: string, errors: string[], warnings: stri
 }
 
 function checkActionArgs(
-  id: string,
+  _id: string,
   args: Record<string, unknown>,
   path: string,
   errors: string[],

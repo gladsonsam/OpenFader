@@ -1,13 +1,13 @@
 <!-- L1 module `manual-desk`: add-by-IP for desks broadcast discovery cannot
      see (cross-subnet: e.g. the app on 192.168.1.x while the XR18 sits on
-     192.168.40.x). The relay itself pings the typed address with a directed
-     unicast probe — verified rows appear in the device list as connectable
-     rows (`via: manual`, tap-to-connect like any discovered desk); silence
-     stays an honest inline hint, never a blind row. Recent hosts persist
-     (localStorage) as one-tap chips. Probe sending + persistence live in
-     `ui.probeDesk` (uiStore -> live.rememberDesk + engine probe); this card
-     only emits `probe-desk` (payload carries the typed host) and re-reads
-     recents after the (synchronous) dispatch. -->
+     192.168.40.x). Add does the whole job: the relay pings the typed address
+     with a directed unicast probe and, when the desk answers, CONNECTS to it
+     immediately (same path as tapping Connect on a scanned row) — the
+     verified row appears as `via: manual` and the link flips to Connected.
+     Silence stays an honest inline hint, never a blind row. Recent hosts
+     persist (localStorage) as one-tap chips. Probe + connect happen in the
+     engine; this card only emits `probe-desk` (payload carries the typed
+     host) and re-reads recents + the live link. -->
 <script lang="ts">
   import { live } from '../../state/live.svelte.ts';
 
@@ -36,25 +36,48 @@
     // Re-read on every engine ingest (the probe answer lands as a devices
     // frame; without this the found-row check stays stale until the next
     // local state change). Same pattern as ConnectionScreen's vm.
-    ((): Array<{ id: string; ip: string; via?: string | null }> => {
+    ((): Array<{ id: string; ip: string; name?: string | null; via?: string | null }> => {
       void live.version;
       return live.engine?.devices ?? [];
     })(),
   );
+  // Rows that appeared since the Add tap: the probe's verified desk (the
+  // engine lists it, then connects). Also covers hostname input, where the
+  // typed string is not the resolved IP the link reports.
+  const pendingIp = $derived(pending === null ? null : bareIp(pending));
+  const newManualRows = $derived(
+    devices.filter(d => d.via === 'manual' && !knownAtTap.has(d.id)),
+  );
   const found = $derived(
+    pending !== null && (devices.some(d => d.ip === pendingIp) || newManualRows.length > 0),
+  );
+  // The verified desk is connected by the engine right after the probe
+  // answers: match the live link against the pending address (ip, or the
+  // name of the manual row the probe just added).
+  const link = $derived((() => {
+    void live.version;
+    return live.engine?.link ?? null;
+  })());
+  const connectedName = $derived(
     pending !== null &&
-      devices.some(d => d.ip === bareIp(pending!) || (d.via === 'manual' && !knownAtTap.has(d.id))),
+      link !== null &&
+      link.state === 'connected' &&
+      (link.ip === pendingIp || newManualRows.some(d => !!link.name && d.name === link.name))
+      ? link.name || pending
+      : null,
   );
   const status = $derived(
     !online
       ? 'Relay link is down — it reconnects on its own; once online, Add pings the desk.'
       : pending === null
-        ? 'Desks on another subnet never answer broadcast. Type the desk IP — the relay pings it directly.'
-        : found
-          ? `${pending} answered — use Connect on its row above.`
-          : timedOut
-            ? `No reply from ${pending} — check the IP and that the desk is on.`
-            : `Pinging ${pending} via the relay …`,
+        ? 'Desks on another subnet never answer broadcast. Type the desk IP — the relay pings it directly and connects.'
+        : connectedName !== null
+          ? `${pending} answered — connected to ${connectedName || pending}.`
+          : found
+            ? `${pending} answered — connecting…`
+            : timedOut
+              ? `No reply from ${pending} — check the IP and that the desk is on.`
+              : `Pinging ${pending} via the relay, then connecting …`,
   );
 
   function clearTimer(): void {
@@ -105,8 +128,8 @@
     <button
       onclick={() => add(draft)}
       disabled={!online || !draft.trim()}
-      aria-label="Ping desk IP via relay"
-      title={online ? 'Ask the relay to ping this address' : 'Relay link is down'}
+      aria-label="Add desk by IP and connect"
+      title={online ? 'Ask the relay to ping this address, then connect' : 'Relay link is down'}
       style="box-sizing:border-box;height:44px;min-width:104px;padding:0 14px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-btn-bg);color:var(--u4-text-1);font-size:14px;cursor:pointer;font-variant-numeric:normal"
       >Add</button
     >
