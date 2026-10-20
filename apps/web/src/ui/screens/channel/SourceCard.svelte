@@ -18,6 +18,7 @@
       levelText?: string;
       meter?: MeterSource | null;
       meterFrozen?: boolean;
+      showMeter?: boolean;
     };
     ctx: ModuleContext;
     nodeId: string;
@@ -32,11 +33,18 @@
   aria-label="Source"
   style="box-sizing:content-box;display:flex;flex-direction:column;gap:10px;padding:10px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-panel-bg)"
 >
-  <div style="font-size:12px;color:var(--u4-text-6)">Source</div>
-  <div style="box-sizing:content-box;display:flex;align-items:baseline;gap:10px">
-    <span style="font-size:34px;font-weight:600;">{vm.srcName}</span>
-    <span style="font-size:14px;color:var(--u4-text-5)">{vm.srcGroup}</span>
+  <div style="display:flex;align-items:center;gap:12px;justify-content:space-between">
+    <div style="min-width:0;display:flex;flex-direction:column;gap:4px">
+      <span style="font-size:12px;color:var(--u4-text-6)">Input source</span>
+      <span style="font-size:16px;font-weight:600;color:var(--u4-text-1)">{vm.srcName} <span style="font-size:12px;font-weight:400;color:var(--u4-text-5)">{vm.srcGroup}</span></span>
+    </div>
+    <button
+      onclick={() => onEvent?.('patch')}
+      aria-label="Change input source in Routing"
+      style="flex:none;box-sizing:border-box;min-height:44px;padding:0 12px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-btn-bg);color:var(--u4-text-1);font-size:14px;cursor:pointer"
+    >Change</button>
   </div>
+  {#if props.showMeter !== false}
   <div style="box-sizing:content-box;display:flex;flex-direction:column;gap:6px">
     <div style="box-sizing:content-box;display:flex;justify-content:space-between;font-size:12px;color:var(--u4-text-6)">
       <span>Input level</span><span style="color:var(--u4-text-1)">{props.levelText ?? ''}</span>
@@ -47,10 +55,6 @@
       frozen={props.meterFrozen ?? false}
     />
   </div>
-  <button
-    onclick={() => onEvent?.('patch')}
-    style="box-sizing:border-box;font-variant-numeric:normal;height:48px;margin-top:auto;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-btn-bg);color:var(--u4-text-1);font-size:14px;cursor:pointer"
-    >Change patch in Routing</button
-  >
+  {/if}
 </section>
 {/if}

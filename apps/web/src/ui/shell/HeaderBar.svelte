@@ -79,6 +79,7 @@
 </script>
 
 <header
+  class="u4-header"
   style:padding-top="calc(var(--app-safe-top, 0px) + {compact ? 2 : 0}px)"
   style:padding-left="calc(var(--app-safe-left, 0px) + {compact ? 8 : 12}px)"
   style:padding-right="calc(var(--app-safe-right, 0px) + {compact ? 6 : 8}px)"
@@ -86,9 +87,6 @@
     ? 'min-height:44px;height:auto;box-sizing:content-box;flex:none;display:flex;align-items:center;flex-wrap:nowrap;overflow:hidden;gap:2px 6px;padding:2px 6px 2px 8px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)'
     : 'height:var(--u4-header-h);box-sizing:content-box;flex:none;display:flex;align-items:center;gap:8px;padding:0 8px 0 12px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)'}
 >
-  {#if !vm.showBack && !compact}
-    <div style="font-size:17px;font-weight:600;letter-spacing:.02em">Mixer</div>
-  {/if}
   {#if vm.showBack}
     <button
       onclick={onBack}
@@ -104,9 +102,6 @@
       <span style="width:10px;height:10px;flex:none;border-radius:var(--u4-r-2);background:{vm.channelColor}"></span>
       <span style="font-size:17px;font-weight:600;overflow:hidden;text-overflow:ellipsis">{vm.channelName}</span>
     </div>
-  {/if}
-  {#if vm.showPageTitle && !compact}
-    <div style="font-size:17px;font-weight:600;white-space:nowrap">{vm.pageTitle}</div>
   {/if}
   {#if vm.locked && !vm.isChannel}
     <button

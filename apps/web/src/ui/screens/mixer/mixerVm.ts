@@ -71,6 +71,12 @@ export interface StripVm {
   eqPath: string;
   eqStroke: string;
   dynPath: string;
+  hasDyn: boolean;
+  input: Channel['input'];
+  gateOn: boolean;
+  compOn: boolean;
+  gatePath: string;
+  compPath: string;
   eqAria: string;
   dynAria: string;
   muted: boolean;
@@ -124,6 +130,12 @@ export function stripVm(
     eqPath: hasEq ? eqThumbPath(c) : '',
     eqStroke: hasEq && c.eq!.on ? '#d9c24a' : '#4a5262',
     dynPath: hasEq ? dynThumbPath(c) : '',
+    hasDyn: !!c.dyn,
+    input: c.input,
+    gateOn: !!c.dyn?.gate.on,
+    compOn: !!c.dyn?.comp.on,
+    gatePath: dynThumbPath(c, 'gate'),
+    compPath: dynThumbPath(c, 'comp'),
     eqAria: st.eqAria,
     dynAria: st.dynAria,
     muted: c.mute,

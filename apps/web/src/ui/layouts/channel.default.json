@@ -5,6 +5,7 @@
     "gap": 6,
     "flex": "1",
     "minWidth": 0,
+    "minHeight": 0,
     "box": "content-box"
   },
   "variants": {
@@ -165,6 +166,79 @@
               },
               "children": [
             {
+              "id": "input-identity",
+              "module": "strip-name-editor",
+              "props": {
+                "inline": true
+              },
+              "bind": {
+                "name": "cell.name",
+                "selectedColor": "cell.color",
+                "selectedIcon": "cell.icon"
+              },
+              "when": "cell != null",
+              "on": {
+                "rename": {
+                  "do": "ui.setChannelName",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "value": {
+                      "$expr": "payload.value"
+                    }
+                  }
+                },
+                "recolor": {
+                  "do": "ui.setChannelColor",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "color": {
+                      "$expr": "payload.color"
+                    },
+                    "text": {
+                      "$expr": "payload.text"
+                    }
+                  }
+                },
+                "reicon": {
+                  "do": "ui.setChannelIcon",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "icon": {
+                      "$expr": "payload.icon"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "id": "source",
+              "module": "input-source-card",
+              "bind": {
+                "showMeter": "device == 'phone'",
+                "vm": "inputVm",
+                "levelText": "levelText",
+                "meter": "hbarMeter",
+                "meterFrozen": "frozen"
+              },
+              "when": "inputVm.hasInput",
+              "on": {
+                "patch": {
+                  "do": "ui.goPatch",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    }
+                  }
+                }
+              }
+            },
+            {
               "id": "preamp",
               "module": "input-preamp-card",
               "bind": {
@@ -197,27 +271,6 @@
                 },
                 "invert": {
                   "do": "ui.toggleInvert",
-                  "args": {
-                    "id": {
-                      "$expr": "selId"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "id": "source",
-              "module": "input-source-card",
-              "bind": {
-                "vm": "inputVm",
-                "levelText": "levelText",
-                "meter": "hbarMeter",
-                "meterFrozen": "frozen"
-              },
-              "when": "inputVm.hasInput",
-              "on": {
-                "patch": {
-                  "do": "ui.goPatch",
                   "args": {
                     "id": {
                       "$expr": "selId"
@@ -260,38 +313,6 @@
               }
             },
             {
-              "id": "desk",
-              "module": "channel-desk-card",
-              "bind": {
-                "vm": "deskVm"
-              },
-              "when": "deskVm != null",
-              "on": {
-                "lr": {
-                  "do": "ui.setLrAssign",
-                  "args": {
-                    "id": {
-                      "$expr": "selId"
-                    },
-                    "assigned": {
-                      "$expr": "payload.assigned"
-                    }
-                  }
-                },
-                "automix": {
-                  "do": "ui.setAutomixWeight",
-                  "args": {
-                    "id": {
-                      "$expr": "selId"
-                    },
-                    "value": {
-                      "$expr": "payload.value"
-                    }
-                  }
-                }
-              }
-            },
-            {
               "id": "presets",
               "module": "channel-presets-card",
               "bind": {
@@ -299,407 +320,33 @@
                   "$expr": "selId"
                 }
               }
-            }
-              ]
             },
             {
-              "id": "input-previews",
-              "module": "row",
+              "id": "input-solo",
+              "module": "btn",
               "props": {
-                "gap": 8,
-                "align": "stretch",
-                "wrap": true,
-                "flex": "1 1 auto",
-                "minHeight": 0,
-                "box": "content-box"
+                "height": 48,
+                "flex": "none",
+                "label": "Solo channel"
               },
-              "variants": {
-                "phone": {
-                  "module": "col",
-                  "props": {
-                    "gap": 8,
-                    "flex": "none",
-                    "width": "100%",
-                    "box": "content-box"
+              "bind": {
+                "pressed": "cell.solo ? 'true' : 'false'",
+                "disabled": "!cell.soloEnabled",
+                "bg": "cell.solo ? 'var(--u4-amber)' : 'var(--u4-btn-bg)'",
+                "fg": "cell.solo ? '#241703' : 'var(--u4-text-1)'"
+              },
+              "when": "cell != null",
+              "on": {
+                "press": {
+                  "do": "ui.toggleSolo",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    }
                   }
                 }
-              },
-              "children": [
-                {
-                  "id": "in-pv-eqw",
-                  "module": "col",
-                  "props": {
-                    "flex": "1 1 280px",
-                    "minWidth": 0,
-                    "gap": 6,
-                    "padding": 8,
-                    "radius": 3,
-                    "border": "1px solid var(--u4-line-panel)",
-                    "background": "var(--u4-well-bg)",
-                    "box": "content-box"
-                  },
-                  "variants": {
-                    "phone": {
-                      "props": {
-                        "flex": "none",
-                        "width": "100%"
-                      }
-                    }
-                  },
-                  "when": "eqGraph != null",
-                  "children": [
-                    {
-                      "id": "in-pv-eq-head",
-                      "module": "row",
-                      "props": {
-                        "gap": 8,
-                        "align": "center",
-                        "justify": "space-between",
-                        "box": "content-box"
-                      },
-                      "children": [
-                        {
-                          "id": "in-pv-eq-title",
-                          "module": "text",
-                          "props": {
-                            "value": "EQ",
-                            "size": 15
-                          }
-                        },
-                        {
-                          "id": "in-pv-eq-go",
-                          "module": "btn",
-                          "props": {
-                            "label": "",
-                            "icon": "chevronRight",
-                            "iconSize": 16,
-                            "height": 32,
-                            "bare": true,
-                            "ariaLabel": "Go to EQ tab"
-                          },
-                          "on": {
-                            "press": {
-                              "do": "ui.setTab",
-                              "args": {
-                                "tab": "eq"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "id": "in-pv-eq",
-                      "module": "eq-graph",
-                      "props": {
-                        "minH": 180
-                      },
-                      "bind": {
-                        "graph": "eqGraph",
-                        "locked": "store.locked",
-                        "fine": "store.fine"
-                      },
-                      "on": {
-                        "select": {
-                          "do": "ui.setSelBand",
-                          "args": {
-                            "band": {
-                              "$expr": "payload.band"
-                            }
-                          }
-                        },
-                        "node": {
-                          "do": "channel.eqNode",
-                          "args": {
-                            "id": {
-                              "$expr": "selId"
-                            },
-                            "band": {
-                              "$expr": "payload.band"
-                            },
-                            "f": {
-                              "$expr": "payload.f"
-                            },
-                            "g": {
-                              "$expr": "payload.g"
-                            },
-                            "locked": {
-                              "$expr": "store.locked"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                {
-                  "id": "in-pv-gate",
-                  "module": "col",
-                  "props": {
-                    "flex": "1 1 240px",
-                    "minWidth": 0,
-                    "gap": 6,
-                    "padding": 8,
-                    "radius": 3,
-                    "border": "1px solid var(--u4-line-panel)",
-                    "background": "var(--u4-well-bg)",
-                    "box": "content-box"
-                  },
-                  "variants": {
-                    "phone": {
-                      "props": {
-                        "flex": "none",
-                        "width": "100%"
-                      }
-                    }
-                  },
-                  "when": "dynGate != null",
-                  "children": [
-                    {
-                      "id": "in-pv-gate-head",
-                      "module": "row",
-                      "props": {
-                        "gap": 8,
-                        "align": "center",
-                        "justify": "space-between",
-                        "box": "content-box"
-                      },
-                      "children": [
-                        {
-                          "id": "in-pv-gate-title",
-                          "module": "text",
-                          "props": {
-                            "value": "Gate",
-                            "size": 15
-                          }
-                        },
-                        {
-                          "id": "in-pv-gate-go",
-                          "module": "btn",
-                          "props": {
-                            "label": "",
-                            "icon": "chevronRight",
-                            "iconSize": 16,
-                            "height": 32,
-                            "bare": true,
-                            "ariaLabel": "Go to Gate tab"
-                          },
-                          "on": {
-                            "press": {
-                              "do": "ui.setTab",
-                              "args": {
-                                "tab": "gate"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "id": "in-pv-gate-graph",
-                      "module": "dyn-transfer-graph",
-                      "props": {
-                        "kind": "gate",
-                        "color": "#3ed0e0",
-                        "minH": 180
-                      },
-                      "variants": {
-                        "phone": {
-                          "props": {
-                            "minH": 180,
-                            "flex": "none",
-                            "width": "100%",
-                            "plotMR": 24
-                          }
-                        }
-                      },
-                      "bind": {
-                        "aria": "gateAria",
-                        "path": "gatePath",
-                        "fill": "gateFill",
-                        "fillColor": "gateFillColor",
-                        "thrX": "gateThrX",
-                        "thrLeft": "gateThrLeft",
-                        "thrText": "gateThrText",
-                        "grid": "gateGrid",
-                        "axis": "gateAxis",
-                        "params": "dynGate",
-                        "frozen": "frozen",
-                        "staticDotL": "gateDotL",
-                        "staticDotT": "gateDotT",
-                        "getLevel": "dynGetLevel"
-                      },
-                      "on": {
-                        "thr": {
-                          "do": "channel.dynKnob",
-                          "args": {
-                            "id": {
-                              "$expr": "selId"
-                            },
-                            "which": "gate",
-                            "prop": "thr",
-                            "value": {
-                              "$expr": "payload.value"
-                            },
-                            "locked": {
-                              "$expr": "store.locked"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                {
-                  "id": "in-pv-comp",
-                  "module": "col",
-                  "props": {
-                    "flex": "1 1 240px",
-                    "minWidth": 0,
-                    "gap": 6,
-                    "padding": 8,
-                    "radius": 3,
-                    "border": "1px solid var(--u4-line-panel)",
-                    "background": "var(--u4-well-bg)",
-                    "box": "content-box"
-                  },
-                  "variants": {
-                    "phone": {
-                      "props": {
-                        "flex": "none",
-                        "width": "100%"
-                      }
-                    }
-                  },
-                  "when": "dynComp != null",
-                  "children": [
-                    {
-                      "id": "in-pv-comp-head",
-                      "module": "row",
-                      "props": {
-                        "gap": 8,
-                        "align": "center",
-                        "justify": "space-between",
-                        "box": "content-box"
-                      },
-                      "children": [
-                        {
-                          "id": "in-pv-comp-title",
-                          "module": "text",
-                          "props": {
-                            "value": "Compressor",
-                            "size": 15
-                          }
-                        },
-                        {
-                          "id": "in-pv-comp-go",
-                          "module": "btn",
-                          "props": {
-                            "label": "",
-                            "icon": "chevronRight",
-                            "iconSize": 16,
-                            "height": 32,
-                            "bare": true,
-                            "ariaLabel": "Go to Compressor tab"
-                          },
-                          "on": {
-                            "press": {
-                              "do": "ui.setTab",
-                              "args": {
-                                "tab": "comp"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    },
-                    {
-                      "id": "in-pv-comp-graph",
-                      "module": "dyn-transfer-graph",
-                      "props": {
-                        "kind": "comp",
-                        "color": "#ff9f43",
-                        "minH": 180
-                      },
-                      "variants": {
-                        "phone": {
-                          "props": {
-                            "minH": 180,
-                            "flex": "none",
-                            "width": "100%",
-                            "plotMR": 24
-                          }
-                        }
-                      },
-                      "bind": {
-                        "aria": "compAria",
-                        "path": "compPath",
-                        "fill": "compFill",
-                        "fillColor": "compFillColor",
-                        "thrX": "compThrX",
-                        "thrLeft": "compThrLeft",
-                        "thrText": "compThrText",
-                        "grid": "compGrid",
-                        "axis": "compAxis",
-                        "params": "dynComp",
-                        "frozen": "frozen",
-                        "staticDotL": "compDotL",
-                        "staticDotT": "compDotT",
-                        "getLevel": "dynGetLevel"
-                      },
-                      "on": {
-                        "thr": {
-                          "do": "channel.dynKnob",
-                          "args": {
-                            "id": {
-                              "$expr": "selId"
-                            },
-                            "which": "comp",
-                            "prop": "thr",
-                            "value": {
-                              "$expr": "payload.value"
-                            },
-                            "locked": {
-                              "$expr": "store.locked"
-                            }
-                          }
-                        },
-                        "ratio": {
-                          "do": "channel.dynKnob",
-                          "args": {
-                            "id": {
-                              "$expr": "selId"
-                            },
-                            "which": "comp",
-                            "prop": "ratio",
-                            "value": {
-                              "$expr": "payload.value"
-                            },
-                            "locked": {
-                              "$expr": "store.locked"
-                            }
-                          }
-                        },
-                        "makeup": {
-                          "do": "channel.dynKnob",
-                          "args": {
-                            "id": {
-                              "$expr": "selId"
-                            },
-                            "which": "comp",
-                            "prop": "makeup",
-                            "value": {
-                              "$expr": "payload.value"
-                            },
-                            "locked": {
-                              "$expr": "store.locked"
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                }
+              }
+            }
               ]
             }
           ]
@@ -1594,6 +1241,7 @@
               "id": "g-groups",
               "module": "channel-groups-card",
               "bind": {
+                "showPan": "device == 'phone'",
                 "vm": "groupsVm",
                 "getGr": "assignGr"
               },
@@ -1701,6 +1349,7 @@
       "props": {
         "tag": "aside",
         "label": "Channel strip",
+        "minHeight": 0,
         "width": 136,
         "gap": 5,
         "padding": 5,
@@ -1718,7 +1367,7 @@
             "store": "store",
             "frozen": "frozen",
             "tree": "anatomy",
-            "device": "device"
+            "device": "stripDevice"
           }
         }
       ]

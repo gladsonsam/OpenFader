@@ -456,6 +456,18 @@ class LiveRelay {
    * index (0 = ch 1); bus/main/FX families read silence until a loud-rig
    * session pins their blob positions — never a neighbor's level.
    */
+  liveReductionDb(ref: string): number | null {
+    const [kind, fixtureId] = ref.split('/');
+    if (kind !== 'gate' && kind !== 'comp') return null;
+    const w = this.world;
+    if (this.phase !== 'online' || !w || !w.capsReady) return null;
+    if (w.driver !== 'sim' && !this.deskConnected) return null;
+    const ch = bridgeStrip(w, fixtureId);
+    if (ch === null || ch >= w.meters.size) return null;
+    const value = (kind === 'gate' ? w.meters.grGate : w.meters.grComp)[ch];
+    return Number.isFinite(value) ? Math.max(0, value) : null;
+  }
+
   liveLevelDb(fixtureId: string): number | null {
     const w = this.world;
     if (this.phase !== 'online' || !w || !w.capsReady) return null;

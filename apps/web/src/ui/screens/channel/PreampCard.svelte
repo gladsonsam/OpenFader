@@ -51,16 +51,12 @@
     />
   </div>
   <div style="box-sizing:content-box;display:flex;gap:6px">
-    {#if vm.phantomOn || vm.armed}
       <button
         onclick={() => onEvent?.('phantom')}
         aria-pressed={vm.phantomOn ? 'true' : 'false'}
         style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:48px;border-radius:3px;border:1px solid {vm.phantomBorder};background:{vm.phantomBg};color:{vm.phantomFg};font-size:14px;font-weight:600;cursor:pointer"
         >{vm.phantomLabel}</button
       >
-    {:else}
-      <span aria-hidden="true" style="box-sizing:border-box;flex:1;height:48px;visibility:hidden"></span>
-    {/if}
     <button
       onclick={() => onEvent?.('invert')}
       aria-pressed={vm.invert ? 'true' : 'false'}
