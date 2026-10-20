@@ -41,6 +41,65 @@ export type FxTypeName = (typeof FX_TYPES)[number];
 /** Purple FX accent (design knobItem colour for the FX screen). */
 export const FX_ACCENT = '#b28cff';
 
+/** Visual identity for one effect family (clean-room CSS placeholder).
+ * There are no shippable per-effect images (the only known faceplates
+ * are Behringer-copyrighted X-AIR-Edit assets — reference-only, never
+ * vendored), so each module gets a family gradient + glyph instead.
+ */
+export interface FxArt {
+  /** Effect family, e.g. 'Reverb'. */
+  category: string;
+  /** CSS background for the swatch (gradient per family). */
+  gradient: string;
+  /** Glyph drawn on the swatch (basic geometric shape, not an emoji). */
+  glyph: string;
+}
+
+const FX_FAMILIES: Record<string, FxArt> = {
+  Reverb: { category: 'Reverb', gradient: 'linear-gradient(135deg,#3a2a7a,#7a4fd0)', glyph: '●' },
+  Delay: { category: 'Delay', gradient: 'linear-gradient(135deg,#0e4a5c,#1d9e8e)', glyph: '◆' },
+  Modulation: { category: 'Modulation', gradient: 'linear-gradient(135deg,#73264f,#d14d9c)', glyph: '▲' },
+  EQ: { category: 'EQ', gradient: 'linear-gradient(135deg,#1c4e89,#43a8d8)', glyph: '■' },
+  Dynamics: { category: 'Dynamics', gradient: 'linear-gradient(135deg,#7a3c00,#e08a00)', glyph: '▼' },
+  Amp: { category: 'Amp', gradient: 'linear-gradient(135deg,#6e1212,#d8492b)', glyph: '◉' },
+  Pitch: { category: 'Pitch', gradient: 'linear-gradient(135deg,#0b5e3b,#2ed47f)', glyph: '◎' },
+  Enhance: { category: 'Enhance', gradient: 'linear-gradient(135deg,#555500,#c9c93d)', glyph: '◇' },
+  Other: { category: 'Other', gradient: 'linear-gradient(135deg,#3a4356,#6b7a94)', glyph: '○' },
+};
+
+/** Effect code (desk short code or design name) → family. Desk codes are
+ * the `caps.fx` type ids; design names cover the offline fixture rack.
+ */
+const FX_TYPE_FAMILY: Record<string, string> = {
+  HALL: 'Reverb', AMBI: 'Reverb', RPLT: 'Reverb', ROOM: 'Reverb', CHAM: 'Reverb',
+  PLAT: 'Reverb', VREV: 'Reverb', VRM: 'Reverb', GATE: 'Reverb', RVRS: 'Reverb',
+  DLY: 'Delay', '3TAP': 'Delay', '4TAP': 'Delay', MODD: 'Delay',
+  'D/RV': 'Delay', 'D/CR': 'Delay', 'D/FL': 'Delay',
+  CRS: 'Modulation', FLNG: 'Modulation', PHAS: 'Modulation', DIMC: 'Modulation',
+  FILT: 'Modulation', ROTA: 'Modulation', PAN: 'Modulation',
+  'CR/R': 'Modulation', 'FL/R': 'Modulation',
+  GEQ2: 'EQ', GEQ: 'EQ', TEQ2: 'EQ', TEQ: 'EQ',
+  P1A: 'EQ', P1A2: 'EQ', PQ5: 'EQ', PQ5S: 'EQ',
+  DES2: 'Dynamics', DES: 'Dynamics', WAVD: 'Dynamics', LIM: 'Dynamics',
+  CMB: 'Dynamics', CMB2: 'Dynamics',
+  FAC: 'Dynamics', FAC1M: 'Dynamics', FAC2: 'Dynamics',
+  LEC: 'Dynamics', LEC2: 'Dynamics', ULC2: 'Dynamics',
+  AMP2: 'Amp', AMP: 'Amp', DRV2: 'Amp', DRV: 'Amp',
+  SUB: 'Pitch', PIT2: 'Pitch', PIT: 'Pitch',
+  ENH2: 'Enhance', ENH: 'Enhance', EXC2: 'Enhance', EXC: 'Enhance',
+  IMG: 'Enhance', EDI: 'Enhance', SON: 'Enhance',
+  Hall: 'Reverb', Plate: 'Reverb', Room: 'Reverb',
+  Delay: 'Delay', Chorus: 'Modulation', Flanger: 'Modulation',
+};
+
+/** Family art for an effect type (desk code or design name); unknown
+ * types fall back to the neutral Other tile (never throws — the UI
+ * renders honest placeholders for unknown desk state).
+ */
+export function fxArtFor(type: string): FxArt {
+  return FX_FAMILIES[FX_TYPE_FAMILY[type] ?? 'Other']!;
+}
+
 /** Number of FX slots on the design's desk (fixture catalogue). */
 export const FX_SLOT_COUNT = 8;
 
@@ -125,7 +184,12 @@ function assertLabelsMatch(fxType: string, ours: string[], spec: string[]): void
 export interface FxSlotVm {
   index: number;
   name: string;
+  /** Display name (full effect name online; design label offline). */
   type: string;
+  /** Desk short code (`caps.fx` id, e.g. 'DLY'); '' offline/design. */
+  code: string;
+  /** Family visual for the module tile. */
+  art: FxArt;
   state: string;
   stateColor: string;
   pressed: boolean;
@@ -151,6 +215,8 @@ export function buildFxSlotVm(
     index,
     name: 'FX ' + (index + 1),
     type: slot.type,
+    code: '',
+    art: fxArtFor(slot.type),
     state: fxStateLabel(slot),
     stateColor: slot.on ? '#7be27b' : '#f0b44a',
     pressed: selected,
@@ -202,7 +268,14 @@ export function fxToggleVm(slot: FxSlot): FxToggleVm {
 }
 
 export interface FxTypeVm {
+  /** Button text (full effect name online; design label offline). */
   label: string;
+  /** Wire key sent on pick (`caps.fx` id; design label offline). */
+  value: string;
+  /** Desk short code caption (`caps.fx` id); '' offline/design. */
+  code: string;
+  /** Family visual for the button dot. */
+  art: FxArt;
   pressed: boolean;
   bg: string;
   fg: string;
@@ -211,6 +284,9 @@ export interface FxTypeVm {
 export function fxTypeButtons(curType: string): FxTypeVm[] {
   return FX_TYPES.map(t => ({
     label: t,
+    value: t,
+    code: '',
+    art: fxArtFor(t),
     pressed: t === curType,
     bg: t === curType ? '#b28cff' : 'var(--u4-btn-bg)',
     fg: t === curType ? '#1a0f2e' : 'var(--u4-text-4)',

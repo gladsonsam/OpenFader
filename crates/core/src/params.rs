@@ -145,6 +145,19 @@ pub const SCOPES_LRASSIGN: &[StripKind] = &[
     StripKind::Ret,
     StripKind::Bus,
 ];
+/// DCA assignment: strips with a `{root}/grp/dca` bitmask leaf (channels,
+/// FX returns and buses — rig-verified XR18 FW 1.20; main LR, DCA masters
+/// and FX-send masters are silent there).
+pub const SCOPES_DCAASSIGN: &[StripKind] = &[
+    StripKind::In,
+    StripKind::Ret,
+    StripKind::Bus,
+];
+/// Channel insert: strips with a `{root}/insert` leaf (channels, buses and
+/// main LR — live-verified XR18 FW 1.20: `/ch/NN`, `/bus/N`, `/lr` answer
+/// `insert/on` + `insert/sel`; `/rtn/*`, `/rtn/aux`, `/fxsend/*` and
+/// `/dca/*` are silent, so returns/sends/masters stay out).
+pub const SCOPES_INSERT: &[StripKind] = &[StripKind::In, StripKind::Bus, StripKind::Main];
 /// Monitoring globals: nominally main-scoped, driven via driver methods
 /// (not strip params) and out of strip caps, so never polled.
 pub const SCOPES_MAIN: &[StripKind] = &[StripKind::Main];
@@ -311,6 +324,17 @@ pub const CATALOGUE: &[ParamDef] = &[
     f("hpf_freq", 20.0, 400.0, "Hz", 80.0, "hpf", SCOPES_INPUT, ParamScope::Channel),
     e("hpf_slope", 0.0, 2.0, 0.0, "hpf slope", SCOPES_INPUT, ParamScope::Channel),
     f("automix_weight", 0.0, 1.0, "", 0.5, "automix", SCOPES_INPUT, ParamScope::Channel),
+    // ---- assign plane (rig-verified XR18 FW 1.20, 2026-10-20) ----
+    // Automix enable: pos0 int of the `{root}/automix` (int, float)
+    // container (channel strips only — the desk is silent on
+    // `{root}/automix/on`, which does not exist).
+    b("automix_on", "automix on", SCOPES_INPUT, ParamScope::Channel, false),
+    // DCA membership: bit `n - 1` of the `{root}/grp/dca` int bitmask
+    // (bits 0..=3 = DCA 1..4; out-of-range bits do not stick on the desk).
+    b("dca1_assign", "dca1", SCOPES_DCAASSIGN, ParamScope::Channel, false),
+    b("dca2_assign", "dca2", SCOPES_DCAASSIGN, ParamScope::Channel, false),
+    b("dca3_assign", "dca3", SCOPES_DCAASSIGN, ParamScope::Channel, false),
+    b("dca4_assign", "dca4", SCOPES_DCAASSIGN, ParamScope::Channel, false),
     // ---- gate (channel strips only; firmware availability is ch-only) ----
     b("gate_on", "gate on", SCOPES_GATE, ParamScope::Channel, false),
     f("gate_thr", -80.0, 0.0, "dB", -50.0, "gate thr", SCOPES_GATE, ParamScope::Channel),
@@ -478,6 +502,13 @@ pub const CATALOGUE: &[ParamDef] = &[
     // driver methods, not a strip send — SCOPES_SEND only satisfies the
     // send-family scope invariant below; out of strip caps, never polled) ----
     b("fx_insert", "fx insert", SCOPES_SEND, ParamScope::Channel, false),
+    // ---- Channel insert (rig-verified `{root}/insert/on|sel` for
+    // `/ch/NN`, `/bus/N`, `/lr` on XR18 FW 1.20: on = bypass switch,
+    // sel = inserted slot select, raw `0..=8` — the desk accepts 0..8 and
+    // ignores 9+; the values are NOT 1..4 FX slots, so no slot mapping is
+    // asserted here) ----
+    b("insert_on", "insert on", SCOPES_INSERT, ParamScope::Channel, false),
+    e("insert_sel", 0.0, 8.0, 0.0, "insert select", SCOPES_INSERT, ParamScope::Channel),
 ];
 
 /// Look up one catalogue entry by id (canonical table only; the engine
@@ -620,8 +651,10 @@ mod tests {
         // then +11 firmware-truth ids (gate filter x3, comp key/filter x5,
         // eq6 x4) − 1 removed id (gate_key_filter) = 159, then +17 v2b ids
         // (lr_assign, solo dim/mute/level/source, send grpon x10, automix
-        // weight, fx insert) = 176.
-        assert_eq!(CATALOGUE.len(), 176, "catalogue grew/shrank unexpectedly");
+        // weight, fx insert) = 176, then +2 channel-insert ids (insert_on,
+        // insert_sel) = 178, then +5 assign-plane ids (automix_on,
+        // dca1..4_assign) = 183.
+        assert_eq!(CATALOGUE.len(), 183, "catalogue grew/shrank unexpectedly");
     }
 
     #[test]

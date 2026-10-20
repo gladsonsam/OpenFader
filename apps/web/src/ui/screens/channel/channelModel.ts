@@ -21,7 +21,6 @@ import {
   panAria,
   panText,
   faderAria,
-  sendAria,
   type Channel,
 } from '../../fixtures/designData.ts';
 import {
@@ -32,6 +31,7 @@ import {
   type Tab,
   type World,
 } from '../../state/uiLogic.ts';
+import { tapLabel } from '../../world/mapping/params.ts';
 
 export type { Tab };
 
@@ -198,6 +198,17 @@ export interface SendRowVm {
   preAria: string;
   preBg: string;
   preFg: string;
+  /** Desk send-tap enum (null = unknown; row hides the tap control). */
+  tap: number | null;
+  /** True when the desk exposes sendN_tap for this slot: the row offers
+   *  the desk's legal tap choices instead of the fixture Pre/Post toggle. */
+  tapSupported: boolean;
+  /** Legal tap choices for this slot in desk order (see tapOptionsForSlot). */
+  tapOptions: number[];
+  tapLabel: string;
+  tapAria: string;
+  tapBg: string;
+  tapFg: string;
   /** Desk send group-on (null = unknown; row hidden unless supported). */
   grpon: boolean | null;
   grponSupported: boolean;
@@ -206,41 +217,82 @@ export interface SendRowVm {
   grponFg: string;
 }
 
-/** Live desk overlay for the sends tab (null = offline: GRP hides). */
+/** Live desk overlay for the sends tab (null = offline: GRP + tap hide).
+ *
+ *  `sendSlots` lists the desk's generic send slots in desk order (1-based);
+ *  null means the desk has no `sendN_*` plane (e.g. DL32S, which addresses
+ *  `auxN_`/`fxN_` instead) and the fixture rows render untouched.
+ *  `destName` labels one 1-based slot (`Bus 1-6`, `FX 1-4` on xair); null
+ *  falls back to the generic `Mix N` row name.
+ *  `tap` reads the desk `sendN_tap` enum (`0..=5` IN/PREEQ/POSTEQ/PRE/POST/
+ *  GRP); `tapSupported` is the caps gate per slot; `tapOptions` lists the
+ *  slot's legal choices in desk order (bus slots take all six, FX slots
+ *  refuse GRP — see tapOptionsForSlot). */
 export interface DeskSendsOverlay {
   grpon(n: number): boolean | null;
   grponSupported(n: number): boolean;
+  tap(n: number): number | null;
+  tapSupported(n: number): boolean;
+  tapOptions(n: number): number[];
+  sendSlots(): number[] | null;
+  destName(n: number): string | null;
 }
 
 /** Sends tab rows (port of sendVals rows). The desk group-on toggle rides
  *  an optional live overlay: offline (or a desk without the leaf) the GRP
- *  button hides and fixture baselines are untouched. */
+ *  button hides and fixture baselines are untouched. Live on a desk with a
+ *  `sendN_*` plane (XR18: 10 slots), the rows narrow to the desk's slots in
+ *  desk order with the desk destination names — `index` stays the 0-based
+ *  fixture send slot so writes still target the right send. */
 export function sendRowsVm(ch: Channel, desk?: DeskSendsOverlay | null): SendRowVm[] {
   if (!ch.sends) return [];
-  return ch.sends.map((v, k) => {
+  const slots = desk?.sendSlots() ?? null;
+  const ns = slots ?? ch.sends.map((_, k) => k + 1);
+  const out: SendRowVm[] = [];
+  for (const n of ns) {
+    const k = n - 1;
+    if (!Number.isInteger(n) || k < 0 || k >= ch.sends.length) continue;
+    const v = ch.sends[k];
+    if (typeof v !== 'number') continue;
     const pre = ch.sendPre![k];
-    const gSupported = desk?.grponSupported(k + 1) ?? false;
-    const g = gSupported ? (desk?.grpon(k + 1) ?? null) : null;
-    return {
+    const name = desk?.destName(n) ?? 'Mix ' + n;
+    const gSupported = desk?.grponSupported(n) ?? false;
+    const g = gSupported ? (desk?.grpon(n) ?? null) : null;
+    const tapOk = desk?.tapSupported(n) ?? false;
+    const tap = tapOk ? (desk?.tap(n) ?? null) : null;
+    const tapOpts = tapOk ? (desk?.tapOptions(n) ?? []) : [];
+    const tapName = tap === null ? '?' : tapLabel(tap);
+    out.push({
       index: k,
-      name: 'Mix ' + (k + 1),
+      name,
       value: v,
       pct: (v * 100).toFixed(1),
       text: fmtDb(v),
-      aria: sendAria(k, v),
+      aria: 'Send to ' + name + ' ' + fmtDb(v) + ' dB',
       fill: pre ? 'var(--u4-text-1)' : '#22d3e6',
       pre,
       preLabel: pre ? 'Pre' : 'Post',
-      preAria: 'Mix ' + (k + 1) + ' pre-fader',
+      preAria: name + ' pre-fader',
       preBg: pre ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
       preFg: pre ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
+      tap,
+      tapSupported: tapOk,
+      tapOptions: tapOpts,
+      tapLabel: tapName,
+      tapAria:
+        tap === null
+          ? name + ' tap point, state unknown'
+          : name + ' tap point ' + tapName + ' — activate for the next tap point',
+      tapBg: tap === null ? 'var(--u4-btn-bg)' : '#e8edf5',
+      tapFg: tap === null ? 'var(--u4-text-4)' : '#0b0f14',
       grpon: g,
       grponSupported: gSupported,
-      grponAria: 'Mix ' + (k + 1) + ' group on' + (g === null ? ', state unknown' : g ? ', grouped' : ', ungrouped'),
+      grponAria: name + ' group on' + (g === null ? ', state unknown' : g ? ', grouped' : ', ungrouped'),
       grponBg: g === true ? '#e8edf5' : 'var(--u4-btn-bg)',
       grponFg: g === true ? '#0b0f14' : 'var(--u4-text-4)',
-    };
-  });
+    });
+  }
+  return out;
 }
 
 export { inputLevelText };

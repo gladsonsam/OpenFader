@@ -126,6 +126,8 @@ import {
   bridgeHpfOn,
   bridgeHpfSlope,
   bridgeInputBool,
+  bridgeInsertOn,
+  bridgeInsertSel,
   bridgeLrAssign,
   bridgeAutomixWeight,
   bridgeMute,
@@ -137,6 +139,7 @@ import {
   bridgeSend,
   bridgeSendPre,
   bridgeSendGrpon,
+  bridgeSendTap,
   bridgeSolo,
   bridgeSubgroupAssign,
   bridgeSubgroupMute,
@@ -231,11 +234,23 @@ function liveEngine(): EngineWorld | null {
  */
 let syncing = false;
 
-/** Engine strip -> fixture id (inverse of `bridgeStrip`; null = no strip). */
+/** Engine strip -> fixture id (inverse of `bridgeStrip`; null = no strip).
+ * `ret` strips resolve family-aware like `bridgeStrip`: the `aux`-family
+ * strip maps to `aux1`, `fxret`-family strips to `fxN`. */
 function engineChToFixture(w: EngineWorld, ch: number): string | null {
   const kind = w.kindOf(ch);
   if (!kind) return null;
   if (kind === 'main') return 'mainlr';
+  if (kind === 'ret') {
+    const auxBank = w.banks.find((b) => b.families.includes('aux'));
+    if (auxBank && auxBank.strips.includes(ch)) return 'aux1';
+    const fxBank = w.banks.find((b) => b.families.includes('fxret'));
+    if (fxBank) {
+      const n = fxBank.strips.indexOf(ch) + 1;
+      return n >= 1 ? `fx${n}` : null;
+    }
+    // No `fxret` family on this desk: fall through to the coarse ordinal.
+  }
   let n = 1;
   for (let c = 0; c < ch; c++) {
     if (w.kindOf(c) === kind) n++;
@@ -258,7 +273,7 @@ function engineChToFixture(w: EngineWorld, ch: number): string | null {
 
 /** Live topology fingerprint for the fixture reseed below: driver plus
  * the derived bank shape (EngineWorld never shrinks stripCount, so the
- * bank layout -- not the count -- tells sim-77 apart from xair-35). */
+ * bank layout -- not the count -- tells sim-77 apart from xair-36). */
 let liveTopoKey: string | null = null;
 
 function liveTopologyKey(w: EngineWorld): string {
@@ -755,15 +770,47 @@ export const ui = {
         bridgeSendGrpon(w, id, k, !(cur === true));
       });
     },
+    // Desk send tap point (desk-only: no fixture counterpart — the send
+    // rows read this state straight from the engine; the echo re-renders).
+    setSendTap: (id: string, k: number, value: number) => {
+      if (world.state.locked || !Number.isInteger(value)) return;
+      forward(w => { bridgeSendTap(w, id, k, value); });
+    },
     // Desk mix config (desk-only: LR assign + automix weight ride the
     // engine params; the echo re-renders the card).
     setLrAssign: (id: string, assigned: boolean) => {
       if (world.state.locked || typeof assigned !== 'boolean') return;
       forward(w => { bridgeLrAssign(w, id, assigned); });
     },
+    setDcaAssign: (id: string, group: number, member: boolean) => {
+      if (world.state.locked || !Number.isInteger(group) || typeof member !== 'boolean') return;
+      forward(w => {
+        const ch = bridgeStrip(w, id);
+        if (ch === null) return;
+        w.setParam(ch, `dca${group + 1}_assign`, member);
+      });
+    },
+    setAutomixOn: (id: string, on: boolean) => {
+      if (world.state.locked || typeof on !== 'boolean') return;
+      forward(w => {
+        const ch = bridgeStrip(w, id);
+        if (ch === null) return;
+        w.setParam(ch, 'automix_on', on);
+      });
+    },
     setAutomixWeight: (id: string, value: number) => {
       if (world.state.locked || !Number.isFinite(value)) return;
       forward(w => { bridgeAutomixWeight(w, id, Math.min(1, Math.max(0, value))); });
+    },
+    // Channel insert (desk-only: bypass + raw 0..8 select ride the engine
+    // params; the echo re-renders the card).
+    setInsertOn: (id: string, on: boolean) => {
+      if (world.state.locked || typeof on !== 'boolean') return;
+      forward(w => { bridgeInsertOn(w, id, on); });
+    },
+    setInsertSel: (id: string, value: number) => {
+      if (world.state.locked || !Number.isFinite(value)) return;
+      forward(w => { bridgeInsertSel(w, id, value); });
     },
     // Desk fire-and-forget clear-solo (monitor bus only).
     clearSolos: () => {

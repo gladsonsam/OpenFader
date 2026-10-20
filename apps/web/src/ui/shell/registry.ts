@@ -18,6 +18,7 @@ const shellScreens = new Map<string, Component>();
 /** Register one content screen for the shell outlet. Overwrites on re-register. */
 export function registerShellScreen(id: string, component: Component): void {
   shellScreens.set(id, component);
+  notifyShellScreens();
 }
 
 /**
@@ -34,7 +35,39 @@ export function getShellScreen(id: string): Component | null {
   return shellScreens.get(id) ?? null;
 }
 
+/**
+ * Revision bumped on every shell-screen registration. Boot mounts the Shell
+ * before all content packages finish (see ui/mount.ts); the Shell
+ * subscribes so a late registration re-resolves instead of sticking on the
+ * `screen not built yet` placeholder.
+ */
+let revision = 0;
+const listeners = new Set<() => void>();
+
+export function shellScreensRevision(): number {
+  return revision;
+}
+
+export function subscribeShellScreens(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => {
+    listeners.delete(fn);
+  };
+}
+
+function notifyShellScreens(): void {
+  revision++;
+  for (const fn of [...listeners]) {
+    try {
+      fn();
+    } catch {
+      /* ignore: listener-local failure */
+    }
+  }
+}
+
 /** Remove all registrations (node tests only). */
 export function clearShellScreens(): void {
   shellScreens.clear();
+  notifyShellScreens();
 }

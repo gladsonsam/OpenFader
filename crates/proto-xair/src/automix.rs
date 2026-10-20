@@ -1,4 +1,4 @@
-//! X-Air channel automix weight (`/ch/NN/automix/weight`, ch strips only).
+//! X-Air channel automix (`/ch/NN/automix`, `/ch/NN/automix/weight`).
 //!
 //! Doc sources (address shapes + wire codecs):
 //!
@@ -6,22 +6,50 @@
 //!   the channel block carries an `automix/` node with `weight`.
 //! - Community X-Air OSC table: `/ch/01/automix/weight` float `0.0..=1.0`.
 //! - X-Air Edit protocol map (`docs/xair-edit-protocol-map.md` §7):
-//!   `automix ,if` = (?, weight) — the weight leaf is verified, the pos0
-//!   int has no desk leaf.
+//!   `automix ,if` = (enable, weight).
 //!
-//! Owner-rig verified 2026-10-19 (XR18 FW 1.20): `/ch/01/automix/weight`
-//! reads `0.5`. No engineering-unit mapping is verified (the community
-//! table prints `-24..+24` beside the float without a curve tag), so the
-//! driver carries the normalized wire float `0..1` verbatim and the
-//! catalogue row is unitless — no invented dB law. The automix on-leaf has
-//! no desk leaf (pos0 residue), so there is no `automix_on` id.
+//! Owner-rig verified 2026-10-20 (XR18 FW 1.20, ch16 muted/unused,
+//! restored): the `/ch/NN/automix` container answers `(int, float)` and
+//! the pos0 int IS the enable — writing `(1, weight)` enables automix for
+//! the channel, `(0, weight)` disables it (weight preserved, read back
+//! bit-exact). There is no standalone `{root}/automix/on` leaf (silent),
+//! so the driver reads the container and rewrites it with the current
+//! weight to flip the enable without disturbing the mix.
 
 /// Automix weight bounds (normalized wire float, unitless).
 pub const AUTOMIX_WEIGHT_MIN: f32 = 0.0;
 /// Automix weight upper bound (see [`AUTOMIX_WEIGHT_MIN`]).
 pub const AUTOMIX_WEIGHT_MAX: f32 = 1.0;
 
-/// OSC address of one channel automix weight (`automix/weight`).
+/// OSC address of one channel automix container (`automix`, `(int, float)`
+/// = (enable, weight)).
+///
+/// ```
+/// # use openmix_proto_xair::automix::automix;
+/// assert_eq!(automix("/ch/01"), "/ch/01/automix");
+/// ```
+pub fn automix(root: &str) -> String {
+    format!("{root}/automix")
+}
+
+/// Decode an automix container reply into `(enable, weight)`.
+pub fn automix_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<(bool, f32)> {
+    match msg.args.as_slice() {
+        [rosc::OscType::Int(on), rosc::OscType::Float(w)] => {
+            Ok((*on != 0, wire_to_weight(*w)?))
+        }
+        other => anyhow::bail!("{}: automix needs (int, float), got {other:?}", msg.addr),
+    }
+}
+
+/// Encode an automix container write (enable int + verbatim weight float).
+pub fn automix_to_args(on: bool, weight: f32) -> anyhow::Result<Vec<rosc::OscType>> {
+    Ok(vec![
+        rosc::OscType::Int(i32::from(on)),
+        rosc::OscType::Float(weight_to_wire(weight)?),
+    ])
+}
+/// OSC address of one channel automix weight leaf (`automix/weight`).
 ///
 /// ```
 /// # use openmix_proto_xair::automix::automix_weight;
@@ -62,5 +90,29 @@ mod tests {
         assert!(weight_to_wire(1.1).is_err());
         assert!(weight_to_wire(f32::NAN).is_err());
         assert!(wire_to_weight(1.1).is_err());
+    }
+
+    #[test]
+    fn container_roundtrips_enable_and_weight() {
+        use rosc::OscMessage;
+        let msg = |on: i32, w: f32| OscMessage {
+            addr: "/ch/01/automix".to_string(),
+            args: vec![rosc::OscType::Int(on), rosc::OscType::Float(w)],
+        };
+        assert_eq!(automix_from_msg(&msg(0, 0.5)).unwrap(), (false, 0.5));
+        assert_eq!(automix_from_msg(&msg(1, 0.75)).unwrap(), (true, 0.75));
+        assert!(automix_from_msg(&msg(1, 1.5)).is_err());
+        // Nonzero ints enable (desk truth: the leaf is int-valued).
+        assert_eq!(automix_from_msg(&msg(7, 0.5)).unwrap(), (true, 0.5));
+        assert_eq!(
+            automix_to_args(true, 0.5).unwrap(),
+            vec![rosc::OscType::Int(1), rosc::OscType::Float(0.5)]
+        );
+        assert_eq!(
+            automix_to_args(false, 0.75).unwrap(),
+            vec![rosc::OscType::Int(0), rosc::OscType::Float(0.75)]
+        );
+        assert!(automix_to_args(true, 1.5).is_err());
+        assert!(automix_to_args(true, f32::NAN).is_err());
     }
 }

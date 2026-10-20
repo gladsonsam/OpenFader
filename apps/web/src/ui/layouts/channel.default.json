@@ -1594,7 +1594,8 @@
               "id": "g-groups",
               "module": "channel-groups-card",
               "bind": {
-                "vm": "groupsVm"
+                "vm": "groupsVm",
+                "getGr": "assignGr"
               },
               "when": "groupsVm != null",
               "on": {
@@ -1628,6 +1629,64 @@
                       "$expr": "payload.muted"
                     }
                   }
+                },
+                "dca": {
+                  "do": "ui.setDcaAssign",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "group": {
+                      "$expr": "payload.group"
+                    },
+                    "member": {
+                      "$expr": "payload.member"
+                    }
+                  }
+                },
+                "lr": {
+                  "do": "ui.setLrAssign",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "assigned": {
+                      "$expr": "payload.assigned"
+                    }
+                  }
+                },
+                "pan": {
+                  "do": "ui.setPan",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "value": {
+                      "$expr": "payload.value"
+                    }
+                  }
+                },
+                "automix": {
+                  "do": "ui.setAutomixWeight",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "value": {
+                      "$expr": "payload.value"
+                    }
+                  }
+                },
+                "automixOn": {
+                  "do": "ui.setAutomixOn",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "on": {
+                      "$expr": "payload.on"
+                    }
+                  }
                 }
               }
             }
@@ -1651,152 +1710,23 @@
       },
       "variants": {
         "phone": {
-          "hidden": true
+          "props": {
+            "flex": "none",
+            "width": "100%",
+            "height": 460
+          }
         }
       },
       "children": [
         {
-          "id": "name",
-          "module": "channel-name-chip",
+          "id": "strip",
+          "module": "strip-frame",
           "bind": {
-            "name": "master.name",
-            "color": "master.color",
-            "text": "master.text"
-          }
-        },
-        {
-          "id": "pan",
-          "module": "channel-pan-bar",
-          "bind": {
-            "value": "master.pan",
-            "name": "master.name",
-            "fine": "store.fine"
-          },
-          "on": {
-            "input": {
-              "do": "ui.setPan",
-              "args": {
-                "id": {
-                  "$expr": "selId"
-                },
-                "value": {
-                  "$expr": "payload.value"
-                }
-              }
-            }
-          }
-        },
-        {
-          "id": "fader-area",
-          "module": "col",
-          "props": {
-            "flex": "1 1 200px",
-            "minHeight": 180,
-            "box": "content-box"
-          },
-          "children": [
-            {
-              "id": "fader",
-              "module": "channel-fader",
-              "bind": {
-                "pos": "master.faderPos",
-                "readout": "master.readout",
-                "aria": "master.faderAria",
-                "accent": "master.accent",
-                "readColor": "master.readColor",
-                "fine": "master.fine",
-                "meter": "stripMeter",
-                "meterFrozen": "frozen"
-              },
-              "on": {
-                "input": {
-                  "do": "ui.setFader",
-                  "args": {
-                    "id": {
-                      "$expr": "selId"
-                    },
-                    "value": {
-                      "$expr": "payload.value"
-                    }
-                  }
-                }
-              }
-            }
-          ]
-        },
-        {
-          "id": "mute",
-          "module": "channel-mute",
-          "bind": {
-            "muted": "master.muted",
-            "enabled": "master.muteEnabled",
-            "label": "master.muteAria"
-          },
-          "on": {
-            "press": {
-              "do": "ui.toggleMute",
-              "args": {
-                "id": {
-                  "$expr": "selId"
-                }
-              }
-            }
-          }
-        },
-        {
-          "id": "state-icons",
-          "module": "strip-state-icons",
-          "bind": {
-            "desk": "selState"
-          },
-          "when": "selState != null"
-        },
-        {
-          "id": "src",
-          "module": "channel-source-label",
-          "bind": {
-            "src": "master.src"
-          }
-        },
-        {
-          "id": "groups",
-          "module": "channel-groups-card",
-          "bind": {
-            "vm": "groupsVm"
-          },
-          "when": "groupsVm != null",
-          "on": {
-            "assign": {
-              "do": "ui.setGroupAssign",
-              "args": {
-                "kind": {
-                  "$expr": "payload.kind"
-                },
-                "id": {
-                  "$expr": "selId"
-                },
-                "group": {
-                  "$expr": "payload.group"
-                },
-                "member": {
-                  "$expr": "payload.member"
-                }
-              }
-            },
-            "master": {
-              "do": "ui.setGroupMute",
-              "args": {
-                "kind": {
-                  "$expr": "payload.kind"
-                },
-                "group": {
-                  "$expr": "payload.group"
-                },
-                "muted": {
-                  "$expr": "payload.muted"
-                }
-              }
-            }
+            "cell": "cell",
+            "store": "store",
+            "frozen": "frozen",
+            "tree": "anatomy",
+            "device": "device"
           }
         }
       ]

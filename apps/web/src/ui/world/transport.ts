@@ -21,21 +21,10 @@
 
 import { cmdHello } from './protocol.ts';
 
-/** True when the page runs inside the Tauri shell (desktop or mobile):
- * the embedded engine is reachable over IPC and no relay is needed.
- * Tauri 2 exposes `__TAURI_INTERNALS__`; older shells exposed `__TAURI__`
- * (checked too so webviews on any shell version take the IPC path). */
-export function isTauriRuntime(): boolean {
-  try {
-    const w = globalThis as {
-      __TAURI_INTERNALS__?: unknown;
-      __TAURI__?: unknown;
-    };
-    return w.__TAURI_INTERNALS__ !== undefined || w.__TAURI__ !== undefined;
-  } catch {
-    return false;
-  }
-}
+// Canonical probe lives in ./tauriEnv.ts (imported directly by the live
+// singleton so it stays out of the boot chunk); re-exported here so
+// existing `from './transport.ts'` importers keep working.
+export { isTauriRuntime } from './tauriEnv.ts';
 
 export type TransportMessage = string | ArrayBuffer;
 export type Unsub = () => void;

@@ -7,7 +7,8 @@
       Live link (item 6/9): slots/types/params/meters come from the engine
       library online (writes go through the store forwards); fixture slots
       render offline. X-Air serves 4 desk-native slots with caps.fx type
-      tables (short codes) + parNN knobs live; the on/bypass toggle stays
+      tables (full display names; type-select writes the stable
+      short-code id) + parNN knobs live; the on/bypass toggle stays
       hidden there (no verified leaf — the engine rejects those writes). -->
 <script lang="ts">
   import { ui } from '../../state/uiStore.svelte.ts';
@@ -21,6 +22,7 @@
   import {
     FX_PARAM_DEFS,
     buildFxSlots,
+    fxArtFor,
     fxIsDelay,
     fxKnobList,
     fxTapLabel,
@@ -99,11 +101,25 @@
       : null,
   );
 
+  // Full display name for a slot type code (`caps.fx` label for the
+  // desk short code; design/fixture names pass through). Slot `type`
+  // stays the stable wire key everywhere else (pickType, tap types).
+  function displayNameOf(code: string): string {
+    void live.version;
+    const w = live.engine;
+    if (live.phase !== 'online' || !w || !w.capsReady) return code;
+    return w.fxCaps?.types.find(t => t.id === code || t.label === code)?.label ?? code;
+  }
+
   const slots = $derived(
     buildFxSlots(fxList, liveSel, levelOf, slotCount).map((vm, i) => {
       // Unknown desk state ("—" placeholders): "?" instead of a fake On.
       const src = fxList[i];
-      return src && src.type === '—' ? { ...vm, state: '?', stateColor: '#7f8a9c' } : vm;
+      if (src && src.type === '—') return { ...vm, state: '?', stateColor: '#7f8a9c' };
+      if (!online || !isXair || !src || src.type === '—') return vm;
+      // Desk-native slot: full name + code caption + family tile.
+      const code = src.type;
+      return { ...vm, type: displayNameOf(code), code, art: fxArtFor(code) };
     }),
   );
   const isXair = $derived(online && live.engine?.driver === 'xair');
@@ -111,7 +127,7 @@
   const fx = $derived(
     slot
       ? {
-          title: fxTitle(liveSel, slot),
+          title: fxTitle(liveSel, { ...slot, type: displayNameOf(slot.type) }),
           // Unknown desk state ("—") hides the toggle honestly instead of
           // a fake On; xair has no verified on/bypass leaf (the engine
           // rejects FxOn/FxBypass there) so its toggle stays hidden even
@@ -121,14 +137,15 @@
             ? XAIR_TAP_TYPES.includes(slot.type)
             : fxIsDelay(slot),
           tapLabel: fxTapLabel(slot),
-          // Type-select is engine-verified on xair (Numbered rack: desk
-          // short codes from caps.fx, e.g. HALL) and on design racks
-          // alike; fixture catalogue offline. Unknown desk types ("—")
-          // yield no grid (honest placeholder, never a faked write).
+          // Type-select is engine-verified on xair (Numbered rack: full
+          // display names from caps.fx labels, e.g. Hall Reverb, written
+          // back as the stable short-code id, e.g. HALL) and on design
+          // racks alike; fixture catalogue offline. Unknown desk types
+          // ("—") yield no grid (honest placeholder, never a faked write).
           types: slot.type === '—'
             ? []
             : online
-              ? (live.engine?.fxCaps?.types.map(t => ({ label: t.label, pressed: t.label === slot.type, bg: t.label === slot.type ? '#b28cff' : '#2b3038', fg: t.label === slot.type ? '#1a0f2e' : '#c9d1dc' })) ?? [])
+              ? (live.engine?.fxCaps?.types.map(t => ({ label: t.label, value: t.id, code: t.id === t.label ? '' : t.id, art: fxArtFor(t.id), pressed: t.id === slot.type || t.label === slot.type, bg: t.id === slot.type || t.label === slot.type ? '#b28cff' : '#2b3038', fg: t.id === slot.type || t.label === slot.type ? '#1a0f2e' : '#c9d1dc' })) ?? [])
               : fxTypeButtons(slot.type),
         }
       : { title: '', toggle: undefined, isDelay: false, tapLabel: '', types: [] },
