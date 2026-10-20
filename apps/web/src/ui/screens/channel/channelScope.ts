@@ -234,7 +234,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
   return {
     store: a.state,
     selId: ch.id,
-    tabs,
+    tabs: [...tabs, groupsEntry],
     master: masterStripVm(world),
     inputVm: inputVm(world),
     levelText: inputLevelText(a.levelDb),
@@ -288,7 +288,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     dynGate: gate,
     dynComp: comp,
     dynKnobs: DYN_KNOBS[kind],
-    lists: { tabs, sends: sendRows, eqBands: cards, phoneTabs: [...tabs, groupsEntry] },
+    lists: { tabs: [...tabs, groupsEntry], sends: sendRows, eqBands: cards, phoneTabs: [...tabs, groupsEntry] },
     stripMeter: a.stripMeter,
     hbarMeter: a.hbarMeter,
     dynGetLevel: a.dynGetLevel,

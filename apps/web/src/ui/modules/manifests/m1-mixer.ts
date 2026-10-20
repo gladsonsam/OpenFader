@@ -28,6 +28,7 @@ import StripWellEmpty from '../../screens/mixer/StripWellEmpty.svelte';
 import DbReadout from '../../screens/mixer/DbReadout.svelte';
 import EqMini from '../../screens/mixer/EqMini.svelte';
 import DynMini from '../../screens/mixer/DynMini.svelte';
+import StripPreamp from '../../screens/mixer/StripPreamp.svelte';
 
 function as<P>(c: unknown): Component<ModuleProps<P>> {
   return c as Component<ModuleProps<P>>;
@@ -87,11 +88,27 @@ export const manifests: ModuleManifest[] = [
     category: 'strip',
     component: as(DynMini),
     props: {
-      path: { type: 'text', default: '' },
+      label: { type: 'text', default: 'Dynamics' },
+      stripId: { type: 'text', default: '' },
+      kind: { type: 'enum', options: ['gate', 'comp'], default: 'comp' },
+      enabled: { type: 'bool', default: false },
       ariaLabel: { type: 'text', default: 'Open dynamics for Ch 1' },
     },
-    defaults: { path: '', ariaLabel: 'Open dynamics for Ch 1' },
+    defaults: { enabled: false, ariaLabel: 'Open dynamics for Ch 1' },
     size: { flex: true },
+    events: [{ name: 'open' }],
+  },
+  {
+    id: 'strip-preamp',
+    title: 'Strip gain and trim',
+    category: 'strip',
+    component: as(StripPreamp),
+    props: {
+      input: { type: 'object' },
+      name: { type: 'text', default: '' },
+    },
+    defaults: {},
+    size: { fixedH: 48 },
     events: [{ name: 'open' }],
   },
   {
@@ -182,6 +199,7 @@ export const manifests: ModuleManifest[] = [
     category: 'strip',
     component: as(StripNameEditor),
     props: {
+      inline: { type: 'bool', default: false },
       name: { type: 'text', default: 'Ch 1' },
       selectedColor: { type: 'color', default: '#5cdb5c' },
       selectedIcon: { type: 'text', default: '' },
