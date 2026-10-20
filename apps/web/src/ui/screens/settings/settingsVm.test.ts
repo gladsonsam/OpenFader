@@ -10,6 +10,7 @@ import {
   validateSettingDescriptors,
   type SettingDescriptor,
 } from './settingsVm.ts';
+import { APP_VERSION } from '../../../version.ts';
 
 const w0 = initialWorld();
 
@@ -46,7 +47,7 @@ const w0 = initialWorld();
   assert.equal(vm[2].rows[0].desc, 'When off, mute buttons ignore taps.');
   assert.equal(vm[2].rows[1].desc, 'Blocks faders, knobs, mutes and patching. Unlock from the top bar.');
   assert.equal(vm[2].rows[2].desc, 'Confirm needs a press on RECALL. Instant loads on tap.');
-  assert.equal(vm[3].rows[0].desc, '[VERSION]');
+  assert.equal(vm[3].rows[0].desc, APP_VERSION);
   assert.equal(vm[3].rows[1].desc, 'FOH / Monitor · 48 kHz');
 }
 

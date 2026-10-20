@@ -6,6 +6,7 @@
      below (crisp text, accessible); only the ladders are canvas. -->
 <script lang="ts">
   import type { EngineWorld } from '../../world/engineWorld/engineWorld.ts';
+  import { isAppHidden } from '../../../mobile.ts';
   import {
     BRIDGE_FLOOR_DB,
     liveClipOn,
@@ -101,7 +102,10 @@
     void group.ladders.length;
     let raf = 0;
     const loop = (): void => {
-      draw();
+      // Background battery: skip canvas painting while hidden (stream
+      // stays live, resume is instant). rAF itself is throttled by the
+      // browser; the guard covers WebViews that keep pumping frames.
+      if (!isAppHidden()) draw();
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
