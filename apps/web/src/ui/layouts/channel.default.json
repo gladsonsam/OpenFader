@@ -1697,6 +1697,7 @@
     {
       "id": "master",
       "module": "col",
+      "when": "device != 'phone'",
       "props": {
         "tag": "aside",
         "label": "Channel strip",
@@ -1707,15 +1708,6 @@
         "background": "var(--u4-panel-bg)",
         "flex": "none",
         "box": "content-box"
-      },
-      "variants": {
-        "phone": {
-          "props": {
-            "flex": "none",
-            "width": "100%",
-            "height": 460
-          }
-        }
       },
       "children": [
         {

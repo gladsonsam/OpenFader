@@ -35,6 +35,7 @@
     metersActive = false,
     compact = false,
     connected = true,
+    preview = false,
     onPrevChannel = null,
     onNextChannel = null,
   }: {
@@ -56,6 +57,7 @@
     /** Desk link up (live relay online or a fixture desk selected — not
         explicit offline). The snapshot button only renders when true. */
     connected?: boolean;
+    preview?: boolean;
     /** Channel prev/next (rendered only in channel mode when both set). */
     onPrevChannel?: (() => void) | null;
     onNextChannel?: (() => void) | null;
@@ -73,14 +75,15 @@
   const showScene = $derived(
     compact ? mode === 'mixer' && connected : !vm.isChannel && connected,
   );
-  // Phone density: 36px touch rows so Back + title + toolbar share one
-  // row instead of stacking. Desktop untouched.
-  const ibtn = $derived(compact ? 36 : 46);
+  const ibtn = $derived(compact ? 44 : 46);
 </script>
 
 <header
+  style:padding-top="calc(var(--app-safe-top, 0px) + {compact ? 2 : 0}px)"
+  style:padding-left="calc(var(--app-safe-left, 0px) + {compact ? 8 : 12}px)"
+  style:padding-right="calc(var(--app-safe-right, 0px) + {compact ? 6 : 8}px)"
   style={compact
-    ? 'min-height:36px;height:auto;box-sizing:content-box;flex:none;display:flex;align-items:center;flex-wrap:nowrap;overflow:hidden;gap:2px 6px;padding:2px 6px 2px 8px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)'
+    ? 'min-height:44px;height:auto;box-sizing:content-box;flex:none;display:flex;align-items:center;flex-wrap:nowrap;overflow:hidden;gap:2px 6px;padding:2px 6px 2px 8px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)'
     : 'height:var(--u4-header-h);box-sizing:content-box;flex:none;display:flex;align-items:center;gap:8px;padding:0 8px 0 12px;background:var(--u4-header-bg);border-bottom:1px solid var(--u4-header-border)'}
 >
   {#if !vm.showBack && !compact}
@@ -90,7 +93,7 @@
     <button
       onclick={onBack}
       aria-label="Back"
-      style="box-sizing:border-box;height:{compact ? 36 : 46}px;padding:0 {compact ? '10px 0 8px' : '14px 0 10px'};display:flex;align-items:center;gap:4px;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);font-size:14px;cursor:pointer;font-variant-numeric:normal"
+      style="box-sizing:border-box;height:{ibtn}px;flex:none;padding:0 {compact ? '10px 0 8px' : '14px 0 10px'};display:flex;align-items:center;gap:4px;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);font-size:14px;cursor:pointer;font-variant-numeric:normal"
     >
       <Icon name="back" size={18} />
       {vm.backLabel}
@@ -108,7 +111,7 @@
   {#if vm.locked && !vm.isChannel}
     <button
       onclick={onUnlock}
-      style="box-sizing:border-box;height:{compact ? 36 : 46}px;display:flex;align-items:center;gap:6px;padding:0 12px;border-radius:var(--u4-r-3);border:1px solid var(--u4-amber);background:var(--u4-amber-deep);color:var(--u4-amber-hi);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;font-variant-numeric:normal"
+      style="box-sizing:border-box;height:{ibtn}px;display:flex;align-items:center;gap:6px;padding:0 12px;border-radius:var(--u4-r-3);border:1px solid var(--u4-amber);background:var(--u4-amber-deep);color:var(--u4-amber-hi);font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;font-variant-numeric:normal"
     >
       <Icon name="lock" size={16} />
       Locked · tap to unlock
@@ -124,14 +127,14 @@
       <button
         onclick={onPrevChannel}
         aria-label="Previous channel"
-        style="box-sizing:border-box;height:{compact ? 36 : 46}px;width:{compact ? 36 : 46}px;display:flex;align-items:center;justify-content:center;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);cursor:pointer;font-variant-numeric:normal"
+        style="box-sizing:border-box;height:{ibtn}px;width:{ibtn}px;display:flex;align-items:center;justify-content:center;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);cursor:pointer;font-variant-numeric:normal"
       >
         <Icon name="chevronLeft" size={18} />
       </button>
       <button
         onclick={onNextChannel}
         aria-label="Next channel"
-        style="box-sizing:border-box;height:{compact ? 36 : 46}px;width:{compact ? 36 : 46}px;display:flex;align-items:center;justify-content:center;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);cursor:pointer;font-variant-numeric:normal"
+        style="box-sizing:border-box;height:{ibtn}px;width:{ibtn}px;display:flex;align-items:center;justify-content:center;border-radius:var(--u4-r-3);border:1px solid var(--u4-line-ctl-2);background:var(--u4-bank-off);color:var(--u4-text-1);cursor:pointer;font-variant-numeric:normal"
       >
         <Icon name="chevronRight" size={18} />
       </button>
@@ -159,12 +162,9 @@
       onclick={onConnect}
       aria-label={vm.connAria}
       aria-current={ariaCurrent(mode === 'connect')}
-      style="box-sizing:border-box;width:{ibtn}px;height:{ibtn}px;position:relative;border-radius:var(--u4-r-3);border:1px solid {cn.border};background:{cn.bg};color:var(--u4-text-3);cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
+      style="box-sizing:border-box;width:{ibtn}px;height:{ibtn}px;border-radius:var(--u4-r-3);border:1px solid {cn.border};background:{cn.bg};color:{vm.connDot};cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;font-variant-numeric:normal"
     >
       <Icon name="plug" size={compact ? 18 : 22} />
-      <span
-        style="position:absolute;right:6px;top:6px;width:8px;height:8px;border-radius:50%;background:{vm.connDot};box-shadow:0 0 0 2px var(--u4-tile-bg)"
-      ></span>
     </button>
     <button
       onclick={onSettings}
@@ -192,6 +192,6 @@
   {/if}
 
   {#if showScene}
-    <SceneButton num={vm.curSceneNum} name={vm.curSceneName} label={vm.sceneAria} active={vm.isScenes} narrow={compact} onOpen={onScene} />
+    <SceneButton num={preview ? '' : vm.curSceneNum} name={preview ? 'Scenes' : vm.curSceneName} label={preview ? 'Open offline scene library' : vm.sceneAria} active={vm.isScenes} narrow={compact} onOpen={onScene} />
   {/if}
 </header>

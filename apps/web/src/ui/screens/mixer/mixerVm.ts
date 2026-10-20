@@ -218,12 +218,11 @@ export function phoneGridCols(): string {
 }
 
 /**
- * Tablet strip-grid columns (responsive `tablet` variant). Four full 150 px
- * strips fill the ~618 px tablet-portrait scrollport (834 px viewport minus
- * shell padding, bank rail and master).
+ * Tablet strip-grid columns (responsive `tablet` variant). Six strips share
+ * the scrollport, with a touch-friendly minimum width on narrower screens.
  */
-export function tabletGridCols(): string {
-  return 'repeat(16, 150px)';
+export function tabletGridCols(count = SLOT_COUNT): string {
+  return `repeat(${Math.max(SLOT_COUNT, count)}, minmax(96px, calc((100% - 15px) / 6)))`;
 }
 
 // ---------- layout scope builders (W5c conversion) ----------

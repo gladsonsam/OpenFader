@@ -18,7 +18,8 @@
   const device = useDeviceClass();
   const isPhone = $derived(device.now === 'phone');
 
-  const online = $derived(live.phase === 'online' && !!live.engine?.capsReady);
+  const online = $derived(live.deskConnected || live.demo);
+  const demo = $derived(live.demo);
   const deskName = $derived(
     (() => {
       void live.version;
@@ -35,7 +36,7 @@
     (() => {
       void live.version;
       const w = live.engine;
-      const up = live.phase === 'online' && !!w?.capsReady;
+      const up = online;
       return buildMeterGroups(up ? w : null, up, deskName);
     })(),
   );
@@ -51,7 +52,7 @@
   role="dialog"
   aria-modal="true"
   aria-label="Meter bridge"
-  style="position:fixed;inset:0;z-index:60;display:flex;justify-content:flex-end;background:rgba(4,8,14,0.72);{isPhone ? 'padding:0' : 'padding:16px'}"
+  style="position:fixed;inset:0;top:var(--app-offset-top,0px);bottom:auto;height:var(--app-height,100dvh);box-sizing:border-box;z-index:60;display:flex;justify-content:flex-end;background:rgba(4,8,14,0.72);{isPhone ? 'padding:var(--safe-area-top,env(safe-area-inset-top,0px)) var(--safe-area-right,env(safe-area-inset-right,0px)) var(--safe-area-bottom,env(safe-area-inset-bottom,0px)) var(--safe-area-left,env(safe-area-inset-left,0px))' : 'padding:16px'}"
   onclick={e => {
     if (e.target === e.currentTarget) close();
   }}
@@ -68,8 +69,8 @@
       <span style="font-size:15px;font-weight:700;letter-spacing:.04em;color:#eef2f5;margin-right:auto">METERS</span>
       {#if online}
         <span
-          style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#0b111b;background:#5fe060;border-radius:3px;padding:3px 8px"
-          >LIVE · {deskName}</span
+          style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#0b111b;background:{demo ? '#f0b429' : '#5fe060'};border-radius:3px;padding:3px 8px"
+          >{demo ? 'DEMO' : 'LIVE · ' + deskName}</span
         >
       {:else}
         <span
@@ -83,7 +84,7 @@
         onclick={close}
         aria-label="Close meter bridge"
         autofocus
-        style="box-sizing:border-box;width:36px;height:36px;border-radius:3px;border:1px solid #3a414c;background:#2b3038;color:#e8edf5;font-size:16px;cursor:pointer"
+        style="box-sizing:border-box;width:44px;height:44px;flex:none;border-radius:3px;border:1px solid #3a414c;background:#2b3038;color:#e8edf5;font-size:16px;cursor:pointer"
         >✕</button
       >
     </div>

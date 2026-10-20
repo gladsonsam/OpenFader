@@ -45,8 +45,9 @@
   </nav>
 {:else}
   <nav
+    class="u4-bank-rail-side"
     aria-label="Layers"
-    style="width:92px;flex:none;display:flex;flex-direction:column;background:var(--u4-rail-bg);border-left:1px solid var(--u4-line-panel)"
+    style="width:92px;flex:none;display:flex;flex-direction:column"
   >
     {#each banks as b, i (b.key)}
       {@const s = bankBtnStyle(b, b.key === activeKey)}
