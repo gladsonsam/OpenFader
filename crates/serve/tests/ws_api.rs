@@ -43,6 +43,32 @@ async fn next_typed(
     }
 }
 
+/// Full `caps` catalogue over WS: attach ships the slim caps
+/// (essentials lane only), so send `hello` first, then skip the slim frame
+/// and take the unicast full catalogue the first hello triggers (queued
+/// before its ack).
+async fn next_full_caps(
+    tx: &mut futures::stream::SplitSink<
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tokio_tungstenite::tungstenite::Message,
+    >,
+    rx: &mut WsRx,
+) -> Value {
+    use futures::SinkExt;
+    use tokio_tungstenite::tungstenite::Message;
+    tx.send(Message::text(json!({"cmd":"hello"}).to_string()))
+        .await
+        .expect("hello send");
+    loop {
+        let v = next_typed(rx, "caps").await;
+        if v.get("params").and_then(Value::as_array).map(Vec::len) == Some(183) {
+            return v;
+        }
+    }
+}
+
 fn strip(state: &Value, ch: u64) -> &Value {
     state
         .get("strips")
@@ -1362,8 +1388,10 @@ async fn ws_caps_and_params_snapshot() {
         .expect("WS connect");
     let (mut tx, mut rx) = stream.split();
 
-    // Initial snapshot ends with caps (after you/state/shows/clients/locks).
-    let caps = next_typed(&mut rx, "caps").await;
+    // Initial snapshot ships the slim caps (essentials lane only —
+    // first paint never waits for the catalogue); hello completes the
+    // full catalogue (unicast, before the ack).
+    let caps = next_full_caps(&mut tx, &mut rx).await;
     assert_eq!(caps.get("driver"), Some(&json!("sim")));
     let params = caps.get("params").and_then(Value::as_array).unwrap();
     assert_eq!(params.len(), 183, "sim caps list the full catalogue (v2)");
@@ -1545,7 +1573,9 @@ async fn ws_focus_prioritizes_channel() {
         .await
         .expect("WS connect");
     let (mut tx, mut rx) = stream.split();
-    let caps = next_typed(&mut rx, "caps").await;
+    // Slim attach caps + hello-completed full catalogue (see
+    // `next_full_caps`).
+    let caps = next_full_caps(&mut tx, &mut rx).await;
     let params = caps
         .get("params")
         .and_then(Value::as_array)
@@ -1687,7 +1717,9 @@ async fn ws_focus_flood_superseded() {
         .await
         .expect("WS connect");
     let (mut tx, mut rx) = stream.split();
-    let caps = next_typed(&mut rx, "caps").await;
+    // Slim attach caps + hello-completed full catalogue (see
+    // `next_full_caps`).
+    let caps = next_full_caps(&mut tx, &mut rx).await;
     let params = caps.get("params").and_then(Value::as_array).unwrap();
     // Strip 40 is an extended input (Ch33): it supports the In-scoped
     // subset (bus/main-only EQ bands 5..6 never land on a channel).

@@ -12,6 +12,7 @@
   import AppFrame from '../AppFrame.svelte';
   import HeaderBar from './HeaderBar.svelte';
   import BankRail from './BankRail.svelte';
+  import BootOverlay from './BootOverlay.svelte';
   import { ui } from '../state/uiStore.svelte.ts';
   import { live } from '../state/live.svelte.ts';
   import { bankDefs } from '../fixtures/designData.ts';
@@ -131,6 +132,9 @@
     onNextChannel={() => ui.do.stepChannel(1)}
     metersActive={meterBridge.open}
   />
+  {#if live.phase === 'connecting'}
+    <BootOverlay message={live.message} />
+  {/if}
   <div class="u4-shell-body" class:u4-mixer-body={ui.state.mode === 'mixer'} class:u4-edge-dock={showRail && !isPhone} style={bodyStyle}>
     {#key ui.state.mode}
       <div

@@ -744,6 +744,43 @@ impl SimDriver {
         }
     }
 
+    /// Bulk subgroup-assign snapshot for the engine's attach fast path:
+    /// one lock acquisition instead of ~strips × groups awaits. Same
+    /// content `get_subgroup_assign` serves (absent entries read false —
+    /// callers filter or default identically).
+    pub fn bulk_sub_assign(&self) -> HashMap<(u16, u8), bool> {
+        self.sub_assign.read().expect("sim sub_assign poisoned").clone()
+    }
+
+    /// Bulk mute-group-assign snapshot, mirroring
+    /// [`bulk_sub_assign`](SimDriver::bulk_sub_assign).
+    pub fn bulk_mg_assign(&self) -> HashMap<(u16, u8), bool> {
+        self.mg_assign.read().expect("sim mg_assign poisoned").clone()
+    }
+
+    /// Bulk solo snapshot: strip -> soloed (only strips ever soloed
+    /// appear; callers default the rest to false, as `get_solo` does).
+    pub fn bulk_solos(&self) -> HashMap<u16, bool> {
+        self.solos.read().expect("sim solos poisoned").clone()
+    }
+
+    /// Bulk `source`-param snapshot: strip -> raw text. Mirrors what
+    /// `get_param(strip, "source")` serves (the seeded scene over
+    /// catalogue defaults); the engine still applies the `parse_source`
+    /// filter, so unpatched strips stay silent exactly as before.
+    pub fn bulk_sources(&self) -> HashMap<u16, String> {
+        let params = self.params.read().expect("sim params poisoned");
+        let mut out = HashMap::new();
+        for (i, strip) in params.iter().enumerate() {
+            if let Some(ParamValue::Text(label)) = strip.get("source") {
+                if let Ok(strip) = u16::try_from(i) {
+                    out.insert(strip, label.clone());
+                }
+            }
+        }
+        out
+    }
+
     /// Advance the fake-meter phase (1 tick == one 50ms frame).
     pub fn advance(&self, ticks: u64) {
         self.tick.fetch_add(ticks, Ordering::Relaxed);

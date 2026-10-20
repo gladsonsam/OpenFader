@@ -3,7 +3,8 @@
 // Extension API (for other packages): drop a manifest file in
 // `ui/modules/manifests/<yourpackage>.ts` that exports one manifest, an array
 // of manifests, or named `manifest`/`manifests` exports. `loadManifestModules()`
-// picks them up via `import.meta.glob` (eager) — no other wiring needed.
+// picks them up via `import.meta.glob` (lazy — paint-path callers select the
+// subset they need) — no other wiring needed.
 // See `manifests/_example.ts` for the exact shape.
 //
 // The registry itself never imports .svelte files statically, so it stays
@@ -87,12 +88,44 @@ export function registerModule(manifest: ModuleManifest): { ok: true } | { ok: f
     return { ok: false, errors: [`duplicate module id: "${manifest.id}"`] };
   }
   byId.set(manifest.id, Object.freeze({ ...manifest }));
+  notifyManifests();
   return { ok: true };
 }
 
 /** Look up a manifest by module id (undefined when unknown). */
 export function getModule(id: string): ModuleManifest | undefined {
   return byId.get(id);
+}
+
+/**
+ * Revision bumped on every successful registration. LayoutRenderer
+ * subscribes so a screen mounted before its manifests arrive (lazy boot:
+ * only the paint set loads before first paint) re-resolves instead of
+ * sticking on `missing-module` placeholders.
+ */
+let manifestRevision = 0;
+const manifestListeners = new Set<() => void>();
+
+export function manifestsRevision(): number {
+  return manifestRevision;
+}
+
+export function subscribeManifests(fn: () => void): () => void {
+  manifestListeners.add(fn);
+  return () => {
+    manifestListeners.delete(fn);
+  };
+}
+
+function notifyManifests(): void {
+  manifestRevision++;
+  for (const fn of [...manifestListeners]) {
+    try {
+      fn();
+    } catch {
+      /* ignore: listener-local failure */
+    }
+  }
 }
 
 /** All manifests, optionally filtered by category, in registration order. */
@@ -118,15 +151,33 @@ export function clearRegistry(): void {
 }
 
 /**
- * Load every manifest file under `ui/modules/manifests/*.ts` (eager glob).
- * Each file may `export default manifest | manifest[]`, or named `manifest` /
+ * Load manifest files under `ui/modules/manifests/*.ts` (LAZY glob — each
+ * file is its own chunk, fetched only when asked). Each file may
+ * `export default manifest | manifest[]`, or named `manifest` /
  * `manifests`. Call once at startup (browser only — never call from node
  * tests, since manifests import .svelte components). Returns per-file results.
+ *
+ * `files` selects a subset by glob key (e.g. `['./manifests/m1-mixer.ts']`):
+ * the boot path awaits only the paint set and leaves the rest for the
+ * background settle (see ui/mount.ts); omit it to load everything (editor /
+ * demo routes). Registration is idempotent (duplicates are rejected), so
+ * overlapping loads are safe. Never rejects — per-file failures land in
+ * `errors`.
  */
-export function loadManifestModules(): Array<{ file: string; registered: string[]; errors: string[] }> {
-  const files = import.meta.glob('./manifests/*.ts', { eager: true }) as Record<string, unknown>;
+export async function loadManifestModules(
+  files?: string[],
+): Promise<Array<{ file: string; registered: string[]; errors: string[] }>> {
+  const loaders = import.meta.glob('./manifests/*.ts') as Record<string, () => Promise<unknown>>;
+  const wanted = Object.entries(loaders).filter(([file]) => !files || files.includes(file));
   const out: Array<{ file: string; registered: string[]; errors: string[] }> = [];
-  for (const [file, mod] of Object.entries(files)) {
+  for (const [file, load] of wanted) {
+    let mod: unknown;
+    try {
+      mod = await load();
+    } catch (e) {
+      out.push({ file, registered: [], errors: [`${file}: ${e instanceof Error ? e.message : String(e)}`] });
+      continue;
+    }
     const registered: string[] = [];
     const errors: string[] = [];
     const found: unknown[] = [];

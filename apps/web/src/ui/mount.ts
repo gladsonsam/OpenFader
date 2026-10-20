@@ -90,9 +90,14 @@ function settleRemaining(): void {
   const run = () => {
     if (done) return;
     done = true;
-    import('./screens/index.ts')
-      .then((m) => m.registered)
-      .catch((e) => console.error('[ui4] background registration failed:', e));
+    Promise.all([
+      import('./screens/index.ts').then((m) => m.registered),
+      // Manifest packages deferred past paint (registration is idempotent;
+      // already-loaded paint files are rejected as duplicates). Screens that
+      // mount from this batch re-resolve via the shell revision; their
+      // layouts re-resolve via the manifest revision (see registry.ts).
+      loadManifestModules(),
+    ]).catch((e) => console.error('[ui4] background registration failed:', e));
   };
   const viaIdle = () => {
     try {
@@ -118,22 +123,65 @@ function settleRemaining(): void {
 }
 
 /**
- * Layout screens (mixer/channel/…) render through LayoutRenderer, which
- * reads the module manifest registry — a plain non-reactive Map populated
- * by loadManifestModules(). The old boot awaited full registration (which
- * runs it via the demo/editor packages) before mounting anything, so every
- * route could assume manifests were present at first render. The lazy boot
- * defers those packages, so restore the invariant explicitly — before
- * mounting, on every route. The manifest modules ride the boot graph (shared
- * with the screen components); registration itself is synchronous and
- * idempotent.
+ * Manifest packages needed for first paint, by mount id (glob keys relative
+ * to modules/registry.ts). The mixer paint needs only the layout primitives
+ * (`_example`, incl. the generic `btn` leaf) + the strip modules
+ * (`m1-mixer`); every other package settles in the background after mount
+ * (see settleRemaining) and LayoutRenderer re-resolves when it lands.
+ * Returns null for ids owned by debug/demo/editor routes, which fall
+ * through to full registration like before.
  */
-function ensureManifests(): void {
-  try {
-    loadManifestModules();
-  } catch (e) {
-    console.error('[ui4] manifest load failed:', e);
+function manifestsFor(screen: string | null): string[] | null {
+  switch (screen) {
+    case null: // default route boots the mixer content
+    case 'mixer':
+      return ['./manifests/_example.ts', './manifests/m1-mixer.ts'];
+    case 'ch-input':
+    case 'ch-eq':
+    case 'ch-gate':
+    case 'ch-comp':
+    case 'ch-sends':
+    case 'ch-groups':
+      return [
+        './manifests/_example.ts',
+        './manifests/c1-channel.ts',
+        './manifests/c2-eq.ts',
+        './manifests/c3-dyn.ts',
+        './manifests/p1-presets.ts',
+        './manifests/m1-mixer.ts',
+      ];
+    case 'fx':
+      return ['./manifests/_example.ts', './manifests/f1-fx.ts'];
+    case 'routing':
+    case 'connection':
+      return ['./manifests/_example.ts', './manifests/s78-pages.ts'];
+    case 'settings':
+    case 'scenes':
+      return ['./manifests/_example.ts', './manifests/s910-pages.ts'];
+    default:
+      return null;
   }
+}
+
+/**
+ * Prefetch the engine modules while the paint-path fetches are still in
+ * flight, so the first link-up's dynamic imports resolve from cache instead
+ * of stalling connect->attach on another custom-protocol round trip (J3).
+ * Fixture/gallery boots never link up, so they never pay for these chunks.
+ */
+function prefetchEngine(): void {
+  try {
+    void import('./world/engineWorld/engineWorld.ts').catch(() => undefined);
+    void import('./world/transport.ts').catch(() => undefined);
+    void import('@tauri-apps/api/core').catch(() => undefined);
+  } catch {
+    /* ignore */
+  }
+}
+
+function isFixtureParams(params: URLSearchParams): boolean {
+  const v = params.get('fixture');
+  return v === '1' || v === 'true';
 }
 
 /** Resolve the screen component for URL params. */
@@ -159,7 +207,11 @@ export async function mountUi(target: HTMLElement, params: URLSearchParams): Pro
       // all-settled path in screens/index.ts.
       console.error('[ui4] registration failed:', e);
     }
-    ensureManifests();
+    // Gallery routes render outside the shell; keep the old invariant (every
+    // manifest present before mount) — registration is idempotent.
+    await loadManifestModules().catch((e) => {
+      console.error('[ui4] manifest load failed:', e);
+    });
     const loader = galleries.get(id);
     const m = loader ? await loader() : await import('./gallery/Gallery.svelte');
     const app = mount(m.default, { target });
@@ -167,25 +219,34 @@ export async function mountUi(target: HTMLElement, params: URLSearchParams): Pro
     return app;
   }
   // The Shell (boot route) covers the default route and every design screen
-  // id; mount it without awaiting the full screen graph. Only the content
-  // package for the requested screen is awaited — the rest settles after
-  // first paint.
-  await import('./shell/shellRegister.ts');
+  // id; mount it without awaiting the full screen graph. The shell package,
+  // the content package for the requested screen, and its paint manifests
+  // all fetch in parallel — the old serial awaits stalled first paint on
+  // the slowest of the three. The rest settles after first paint.
+  if (!isFixtureParams(params)) prefetchEngine();
+  const shellP = import('./shell/shellRegister.ts');
   const screen = params.get('screen');
   const need = screen ? contentLoaderFor(screen) : contentLoaderFor(null);
-  if (need) {
-    try {
-      await need();
-    } catch (e) {
-      console.error('[ui4] registration failed:', screen, e);
-    }
-  } else {
-    // Non-design screen (world-debug, l0-demo, layout-editor, …): wait for
-    // every package, exactly like before, then resolve.
-    const index = await import('./screens/index');
-    await index.registered;
+  const contentP = need
+    ? need().then(() => true)
+    : import('./screens/index').then((index) => index.registered.then(() => false));
+  const paintFiles = manifestsFor(screen ?? null);
+  const manifestP = (paintFiles ? loadManifestModules(paintFiles) : loadManifestModules()).catch((e) => {
+    console.error('[ui4] manifest load failed:', e);
+  });
+  try {
+    await shellP;
+  } catch (e) {
+    console.error('[ui4] shell registration failed:', e);
   }
-  ensureManifests();
+  try {
+    await contentP;
+  } catch (e) {
+    // A broken package logs and the route falls back, exactly like the
+    // all-settled path in screens/index.ts.
+    console.error('[ui4] registration failed:', screen, e);
+  }
+  await manifestP;
   const Screen = screenFromParams(params) ?? screens.get('mixer') ?? null;
   if (Screen) {
     const app = mount(Screen, { target });
