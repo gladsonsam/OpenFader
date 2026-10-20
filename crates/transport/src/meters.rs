@@ -89,7 +89,7 @@ pub fn parse_xair_meter_blob(blob: &[u8]) -> Option<Vec<f32>> {
         return None;
     }
     let count = i32::from_le_bytes([blob[0], blob[1], blob[2], blob[3]]);
-    if count < 1 || count > 8192 {
+    if !(1..=8192).contains(&count) {
         return None;
     }
     if 4 + (count as usize) * 2 != blob.len() {
