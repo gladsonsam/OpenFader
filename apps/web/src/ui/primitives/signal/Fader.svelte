@@ -250,7 +250,7 @@
   // translateY(-capY px). capY == value-fraction * measured track height,
   // so the centre line lands exactly where bottom:{pct}% put it.
   // What the cap shows: the live finger value mid-drag, else the echo.
-  const shown = $derived(Math.max(0, Math.min(1, liveV ?? value)));
+  const shown = $derived(Number.isFinite(liveV ?? value) ? Math.max(0, Math.min(1, liveV ?? value)) : 0);
   const capY = $derived(shown * trackH);
   // Gated unity reset: double-tap snaps to resetValue (0 dB) only when
   // the fader is already within this normalised window of it (~±3 dB
@@ -315,7 +315,7 @@
   });
 
   function down(e: PointerEvent): void {
-    if (disabled || !oninput) return;
+    if (!Number.isFinite(value) || disabled || !oninput) return;
     // A second finger must never steal an active drag: overwriting start
     // mid-gesture would jump the value and confuse the pointerId tracking.
     if (drag?.active) return;
@@ -446,8 +446,15 @@
     }
     drag = null;
   }
+  $effect(() => {
+    const cancel = (): void => { clearTrailing(); clearHold(); pendingV = null; liveV = null; drag = null; };
+    window.addEventListener('openmix-control-epoch', cancel);
+    window.addEventListener('openmix-control-released', cancel);
+    return () => { window.removeEventListener('openmix-control-epoch', cancel); window.removeEventListener('openmix-control-released', cancel); };
+  });
+
   function reset(): void {
-    if (disabled || !oninput || !downOnCap) return;
+    if (!Number.isFinite(value) || disabled || !oninput || !downOnCap) return;
     const target = resetValue ?? dbToPos(0);
     // Gate: only snap when already near unity; far away, no-op.
     if (Math.abs(value - target) > RESET_RANGE) return;
@@ -461,7 +468,7 @@
     lastTap = now;
   }
   function key(e: KeyboardEvent): void {
-    if (disabled || !oninput) return;
+    if (!Number.isFinite(value) || disabled || !oninput) return;
     const k = fine ? 0.25 : 1;
     let v: number | null = null;
     if (e.key === 'ArrowUp' || e.key === 'ArrowRight') v = value + 0.01 * k;
@@ -489,7 +496,7 @@
     aria-label={ariaLabel}
     aria-valuemin={0}
     aria-valuemax={100}
-    aria-valuenow={Math.round(shown * 100)}
+    aria-valuenow={Number.isFinite(value) ? Math.round(shown * 100) : undefined}
     aria-valuetext={dbText + ' dB'}
     aria-disabled={disabled || !oninput ? 'true' : undefined}
     disabled={disabled || !oninput ? true : undefined}

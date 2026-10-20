@@ -213,6 +213,10 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.channel_count()
     }
 
+    async fn disconnect(&self) -> anyhow::Result<()> { self.inner.disconnect().await }
+    async fn refresh_streams(&self) -> anyhow::Result<()> { self.inner.refresh_streams().await }
+    fn telemetry_timestamps(&self) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> { self.inner.telemetry_timestamps() }
+
     async fn connect(&self, addr: &str) -> anyhow::Result<()> {
         self.inner.connect(addr).await
     }

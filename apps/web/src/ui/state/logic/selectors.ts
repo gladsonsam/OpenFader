@@ -103,10 +103,10 @@ export function tabDefs(ch: Channel): TabDef[] {
 
 export function tabNote(ch: Channel, key: Tab): string {
   if (key === 'input') return ch.input ? ch.src + (ch.input.phantom ? ' · 48V' : '') : 'Bus';
-  if (key === 'eq') return ch.eq && ch.eq.on ? 'In' : 'Bypassed';
-  if (key === 'gate') return ch.dyn && ch.dyn.gate.on ? 'In' : 'Off';
-  if (key === 'comp') return ch.dyn && ch.dyn.comp.on ? 'In' : 'Off';
-  return ch.sends ? '16 mixes' : 'None';
+  if (key === 'eq') return ch.eq?.on === null ? 'Unknown' : ch.eq?.on ? 'In' : 'Bypassed';
+  if (key === 'gate') return ch.dyn?.gate.live && !ch.dyn.gate.live.supported.on ? 'Unavailable' : ch.dyn?.gate.live && !ch.dyn.gate.live.known.on ? 'Unknown' : ch.dyn && ch.dyn.gate.on ? 'In' : 'Off';
+  if (key === 'comp') return ch.dyn?.comp.live && !ch.dyn.comp.live.supported.on ? 'Unavailable' : ch.dyn?.comp.live && !ch.dyn.comp.live.known.on ? 'Unknown' : ch.dyn && ch.dyn.comp.on ? 'In' : 'Off';
+  return ch.sends ? `${ch.sends.length} sends` : 'None';
 }
 
 export function tabLabel(tab: Tab): string {
@@ -192,9 +192,9 @@ export function stripText(w: World, id: string): StripText | null {
     hasPan: c.pan != null,
     panText: panText(c.pan),
     panAria: panAria(c.name, c.pan),
-    readout: fmtDb(pos),
+    readout: fmtDb(pos, c.live?.driver),
     readColor: useSend ? 'var(--u4-cyan)' : 'var(--u4-text-4)',
-    faderAria: faderAria(c.name, pos, useSend, w.state.mix),
+    faderAria: faderAria(c.name, pos, useSend, w.state.mix, c.live?.driver),
     muted: c.mute,
   };
 }
@@ -211,8 +211,8 @@ export function sendRowsText(ch: Channel): SendRowText[] {
   if (!ch.sends) return [];
   return ch.sends.map((v, k) => ({
     name: 'Mix ' + (k + 1),
-    text: fmtDb(v),
-    aria: sendAria(k, v),
+    text: fmtDb(v, ch.live?.driver),
+    aria: sendAria(k, v, ch.live?.driver),
     preLabel: ch.sendPre![k] ? 'Pre' : 'Post',
     pre: ch.sendPre![k],
   }));
@@ -286,5 +286,6 @@ export function fxKnobsText(slot: FxSlot): Array<{ label: string; value: string 
 }
 
 export function inputLevelText(levelDb: number): string {
+  if (!Number.isFinite(levelDb)) return 'Unavailable';
   return levelDb < -89 ? '-∞ dBFS' : levelDb.toFixed(1) + ' dBFS';
 }

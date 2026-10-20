@@ -600,6 +600,8 @@ async fn engine_cmd(eslot: EngineState<'_>, cmd: String) -> Result<Vec<String>, 
     // stored handle detaches solely via `engine_detach`.
     engine.handle_json(&id, &cmd).await;
     // A concurrent `engine_detach` drops the client: nothing to drain.
+    // A replacement engine starts its client ids over, so the id alone
+    // cannot distinguish a late old command from the new session.
     // Events are drained under the lock; encoding + delivery happen after
     // it is released (serialization must not block the next command).
     // ENCODING HAPPENS OUTSIDE THE LOCK (P1): `drain_or_discard` only moves
@@ -607,7 +609,9 @@ async fn engine_cmd(eslot: EngineState<'_>, cmd: String) -> Result<Vec<String>, 
     // suspended it returns `None` (frames discarded, nothing delivered).
     let drained = {
         let mut slot = eslot.lock().await;
-        if slot.client.as_ref().is_some_and(|c| c.id == id) {
+        if slot.engine.as_ref().is_some_and(|current| Arc::ptr_eq(current, &engine))
+            && slot.client.as_ref().is_some_and(|c| c.id == id)
+        {
             drain_or_discard(&mut slot)
         } else {
             None
@@ -741,14 +745,24 @@ async fn push_task(app: AppHandle) {
     }
 }
 
-/// Detach the UI client (engine keeps running; next `engine_cmd` /
-/// `engine_poll` / `engine_attach` re-attaches with a fresh snapshot).
+/// Release the app-owned session. The frontend first gates new writes and
+/// waits for pending IPC, so no old command can reattach after this call.
+/// Disconnect only releases transport/subscriptions; it never resets mixer
+/// parameters. Dropping the private engine clears cached targets/libraries.
 #[tauri::command]
 async fn engine_detach(eslot: EngineState<'_>) -> Result<(), String> {
     let mut slot = eslot.lock().await;
     if let Some(client) = slot.client.take() {
+        if let Some(engine) = slot.engine.take() {
+            engine.handle_json(&client.id, r#"{"cmd":"disconnect"}"#).await;
+        }
         client.detach().await;
     }
+    slot.engine = None;
+    slot.outbox.clear();
+    slot.channel = None;
+    slot.app = None;
+    slot.push = false;
     Ok(())
 }
 
@@ -847,6 +861,124 @@ fn app_version() -> String {
 async fn engine_stats(eslot: EngineState<'_>) -> Result<String, String> {
     let slot = eslot.lock().await;
     Ok(slot.outbox.stats_json())
+}
+
+/// One-shot startup update check (best-effort, desktop only in practice —
+/// the updater has no mobile backend). Unconfigured builds (empty
+/// endpoints, the committed scaffold state) log once and skip; a found
+/// update is logged and announced as [`UPDATER_EVENT`], never installed
+/// automatically — mid-gig restarts are the operator's decision.
+async fn check_for_updates(app: &AppHandle) {
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = match app.updater_builder().build() {
+        Ok(u) => u,
+        Err(e) => {
+            eprintln!("openmix: updater unavailable ({e:#}); skipping update check");
+            return;
+        }
+    };
+    match updater.check().await {
+        Ok(Some(update)) => {
+            eprintln!(
+                "openmix: update available: {} (running {})",
+                update.version, update.current_version
+            );
+            let _ = app.emit(
+                UPDATER_EVENT,
+                serde_json::json!({
+                    "version": update.version,
+                    "current_version": update.current_version,
+                }),
+            );
+        }
+        Ok(None) => eprintln!("openmix: up to date"),
+        Err(e) => eprintln!("openmix: update check failed ({e:#})"),
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_os::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(tauri_plugin_haptics::init())
+        .plugin(tauri_plugin_keep_screen_on::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(Mutex::new(EngineSlot::default()))
+        .setup(|app| {
+            // The update check is deliberately delayed and fire-and-forget:
+            // boot latency and the first desk link matter more.
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(UPDATE_CHECK_DELAY).await;
+                check_for_updates(&handle).await;
+            });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            engine_attach,
+            engine_cmd,
+            engine_poll,
+            engine_subscribe_push,
+            engine_subscribe_channel,
+            engine_stats,
+            engine_set_active,
+            engine_resync,
+            engine_detach,
+            app_version
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // Native lifecycle (mobile): `WindowEvent::Suspended` means the process
+    // was backgrounded (screen off / another app), so stop pushing before
+    // the WebView stops reading; `WindowEvent::Resumed` re-enables push and
+    // immediately queues a fresh snapshot so nothing missed while hidden is
+    // replayed. Ordinary desktop focus loss is deliberately NOT handled —
+    // only real suspend/resume.
+    app.run(|_app, _event| {
+        #[cfg(mobile)]
+        handle_run_event(_app, _event);
+        #[cfg(not(mobile))]
+        {
+            let _ = (_app, _event);
+        }
+    });
+}
+
+/// Mobile suspend/resume hooks. In tauri 2.12 these arrive as
+/// [`WindowEvent::Suspended`]/[`WindowEvent::Resumed`] (mobile-only
+/// variants; the bare `RunEvent::Resumed` is an event-loop wakeup that also
+/// fires on desktop, so it is deliberately not used). The spawned tasks
+/// take the async slot lock so the event loop itself never blocks on it.
+#[cfg(mobile)]
+fn handle_run_event(app: &AppHandle, event: tauri::RunEvent) {
+    let tauri::RunEvent::WindowEvent {
+        event: window_event,
+        ..
+    } = event
+    else {
+        return;
+    };
+    match window_event {
+        tauri::WindowEvent::Suspended => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let slot = app.state::<Mutex<EngineSlot>>();
+                apply_engine_active(&slot, false).await;
+            });
+        }
+        tauri::WindowEvent::Resumed => {
+            let app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let slot = app.state::<Mutex<EngineSlot>>();
+                apply_engine_active(&slot, true).await;
+                apply_engine_resync(&slot).await;
+            });
+        }
+        _ => {}
+    }
 }
 
 #[cfg(test)]
@@ -1118,13 +1250,14 @@ mod engine_ipc_tests {
         engine.connect("sim", None).await.expect("sim boot");
         let client = engine.attach(Some("notify-test".to_string())).await;
         let id = client.id.clone();
-        // Drain the attach snapshot so the mailbox is idle.
+        // Drain the whole attach snapshot so the mailbox is idle. The
+        // membership snapshot can span more than one capped IPC batch.
         let mut slot = EngineSlot {
             client: Some(client),
             engine: Some(engine.clone()),
             ..EngineSlot::default()
         };
-        let _ = drain_client_events(slot.client.as_mut().unwrap());
+        while !drain_client_events(slot.client.as_mut().unwrap()).is_empty() {}
         let notify = engine.tick_notify();
         engine
             .handle_json(&id, r#"{"cmd":"fader","ch":0,"value":0.5}"#)
@@ -1144,123 +1277,5 @@ mod engine_ipc_tests {
             "write broadcast reaches the IPC drain (got {:?})",
             batch.iter().map(|e| e.tag().to_string()).collect::<Vec<_>>()
         );
-    }
-}
-
-/// One-shot startup update check (best-effort, desktop only in practice —
-/// the updater has no mobile backend). Unconfigured builds (empty
-/// endpoints, the committed scaffold state) log once and skip; a found
-/// update is logged and announced as [`UPDATER_EVENT`], never installed
-/// automatically — mid-gig restarts are the operator's decision.
-async fn check_for_updates(app: &AppHandle) {
-    use tauri_plugin_updater::UpdaterExt;
-    let updater = match app.updater_builder().build() {
-        Ok(u) => u,
-        Err(e) => {
-            eprintln!("openmix: updater unavailable ({e:#}); skipping update check");
-            return;
-        }
-    };
-    match updater.check().await {
-        Ok(Some(update)) => {
-            eprintln!(
-                "openmix: update available: {} (running {})",
-                update.version, update.current_version
-            );
-            let _ = app.emit(
-                UPDATER_EVENT,
-                serde_json::json!({
-                    "version": update.version,
-                    "current_version": update.current_version,
-                }),
-            );
-        }
-        Ok(None) => eprintln!("openmix: up to date"),
-        Err(e) => eprintln!("openmix: update check failed ({e:#})"),
-    }
-}
-
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
-pub fn run() {
-    let app = tauri::Builder::default()
-        .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_store::Builder::default().build())
-        .plugin(tauri_plugin_log::Builder::new().build())
-        .plugin(tauri_plugin_haptics::init())
-        .plugin(tauri_plugin_keep_screen_on::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(Mutex::new(EngineSlot::default()))
-        .setup(|app| {
-            // The update check is deliberately delayed and fire-and-forget:
-            // boot latency and the first desk link matter more.
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(UPDATE_CHECK_DELAY).await;
-                check_for_updates(&handle).await;
-            });
-            Ok(())
-        })
-        .invoke_handler(tauri::generate_handler![
-            engine_attach,
-            engine_cmd,
-            engine_poll,
-            engine_subscribe_push,
-            engine_subscribe_channel,
-            engine_stats,
-            engine_set_active,
-            engine_resync,
-            engine_detach,
-            app_version
-        ])
-        .build(tauri::generate_context!())
-        .expect("error while building tauri application");
-
-    // Native lifecycle (mobile): `WindowEvent::Suspended` means the process
-    // was backgrounded (screen off / another app), so stop pushing before
-    // the WebView stops reading; `WindowEvent::Resumed` re-enables push and
-    // immediately queues a fresh snapshot so nothing missed while hidden is
-    // replayed. Ordinary desktop focus loss is deliberately NOT handled —
-    // only real suspend/resume.
-    app.run(|_app, _event| {
-        #[cfg(mobile)]
-        handle_run_event(_app, _event);
-        #[cfg(not(mobile))]
-        {
-            let _ = (_app, _event);
-        }
-    });
-}
-
-/// Mobile suspend/resume hooks. In tauri 2.12 these arrive as
-/// [`WindowEvent::Suspended`]/[`WindowEvent::Resumed`] (mobile-only
-/// variants; the bare `RunEvent::Resumed` is an event-loop wakeup that also
-/// fires on desktop, so it is deliberately not used). The spawned tasks
-/// take the async slot lock so the event loop itself never blocks on it.
-#[cfg(mobile)]
-fn handle_run_event(app: &AppHandle, event: tauri::RunEvent) {
-    let tauri::RunEvent::WindowEvent {
-        event: window_event,
-        ..
-    } = event
-    else {
-        return;
-    };
-    match window_event {
-        tauri::WindowEvent::Suspended => {
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let slot = app.state::<Mutex<EngineSlot>>();
-                apply_engine_active(&slot, false).await;
-            });
-        }
-        tauri::WindowEvent::Resumed => {
-            let app = app.clone();
-            tauri::async_runtime::spawn(async move {
-                let slot = app.state::<Mutex<EngineSlot>>();
-                apply_engine_active(&slot, true).await;
-                apply_engine_resync(&slot).await;
-            });
-        }
-        _ => {}
     }
 }

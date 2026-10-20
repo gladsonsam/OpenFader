@@ -50,6 +50,7 @@
       return over;
     })()),
   );
+  const unavailable = $derived.by(() => { void live.version; return live.phase === 'online' && !!live.engine?.capsReady && !live.engine.routingSupported; });
   const tree = $derived(store.tree(defaults as unknown as LayoutNode));
   const scope = $derived({
     store: ui.state,
@@ -64,4 +65,8 @@
   const source = fixtureSource({});
 </script>
 
-<LayoutRenderer layout={tree} {source} {scope} device={device.now} />
+{#if unavailable}
+  <div role="status" style="padding:24px;color:var(--u4-text-4)">Routing controls are unavailable for this driver.</div>
+{:else}
+  <LayoutRenderer layout={tree} {source} {scope} device={device.now} />
+{/if}

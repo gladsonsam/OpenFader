@@ -16,17 +16,17 @@ import { dynSpecKey } from '../state/logic/inputDyn.ts';
 import data from './channelPresets.default.json' with { type: 'json' };
 
 export interface PresetInput {
-  gain: number;
-  trim: number;
-  invert: boolean;
-  delayOn: boolean;
-  delay: number;
+  gain?: number;
+  trim?: number;
+  invert?: boolean;
+  delayOn?: boolean;
+  delay?: number;
 }
 
 export interface PresetHpf {
-  on: boolean;
-  f: number;
-  slope: 12 | 24;
+  on: boolean | null;
+  f: number | null;
+  slope: 12 | 24 | null;
 }
 
 export interface PresetBand {
@@ -40,7 +40,7 @@ export interface PresetBand {
 export interface PresetEq {
   on: boolean;
   hpf: PresetHpf;
-  bands: [PresetBand, PresetBand, PresetBand, PresetBand];
+  bands: PresetBand[];
 }
 
 export interface PresetGate {
@@ -102,7 +102,7 @@ function isBand(b: unknown): b is PresetBand {
   if (typeof b !== 'object' || b === null) return false;
   const r = b as Record<string, unknown>;
   return (
-    (r['type'] === 'LS' || r['type'] === 'PEQ' || r['type'] === 'HS') &&
+    ['LCut', 'LS', 'PEQ', 'VEQ', 'HS', 'HCut'].includes(r['type'] as string) &&
     [r['f'], r['g'], r['q']].every(v => typeof v === 'number' && Number.isFinite(v)) &&
     typeof r['on'] === 'boolean'
   );
@@ -117,34 +117,25 @@ export function sanitizePreset(raw: unknown, source: PresetSource): ChannelPrese
   if (typeof r['blurb'] === 'string' && r['blurb']) out.blurb = r['blurb'].slice(0, 120);
   const inp = r['input'] as Record<string, unknown> | undefined;
   if (inp && typeof inp === 'object') {
-    if (
-      [inp['gain'], inp['trim'], inp['delay']].every(v => typeof v === 'number' && Number.isFinite(v)) &&
-      typeof inp['invert'] === 'boolean' &&
-      typeof inp['delayOn'] === 'boolean'
-    ) {
-      out.input = {
-        gain: inp['gain'] as number,
-        trim: inp['trim'] as number,
-        invert: inp['invert'] as boolean,
-        delayOn: inp['delayOn'] as boolean,
-        delay: inp['delay'] as number,
-      };
-    }
+    const input: PresetInput = {};
+    for (const k of ['gain', 'trim', 'delay'] as const) if (typeof inp[k] === 'number' && Number.isFinite(inp[k])) input[k] = inp[k] as number;
+    for (const k of ['invert', 'delayOn'] as const) if (typeof inp[k] === 'boolean') input[k] = inp[k] as boolean;
+    if (Object.keys(input).length) out.input = input;
   }
   const eq = r['eq'] as Record<string, unknown> | undefined;
   if (eq && typeof eq === 'object' && typeof eq['on'] === 'boolean') {
     const hpf = eq['hpf'] as Record<string, unknown> | undefined;
     const bands = eq['bands'];
     if (
-      hpf && typeof hpf === 'object' && typeof hpf['on'] === 'boolean' &&
-      typeof hpf['f'] === 'number' && Number.isFinite(hpf['f']) &&
-      (hpf['slope'] === 12 || hpf['slope'] === 24) &&
-      Array.isArray(bands) && bands.length === 4 && bands.every(isBand)
+      hpf && typeof hpf === 'object' && (hpf['on'] === null || typeof hpf['on'] === 'boolean') &&
+      (hpf['f'] === null || (typeof hpf['f'] === 'number' && Number.isFinite(hpf['f']))) &&
+      (hpf['slope'] === null || hpf['slope'] === 12 || hpf['slope'] === 24) &&
+      Array.isArray(bands) && (bands.length === 4 || bands.length === 6) && bands.every(isBand)
     ) {
       out.eq = {
         on: eq['on'] as boolean,
-        hpf: { on: hpf['on'] as boolean, f: hpf['f'] as number, slope: hpf['slope'] as 12 | 24 },
-        bands: (bands as PresetBand[]).slice(0, 4) as [PresetBand, PresetBand, PresetBand, PresetBand],
+        hpf: { on: hpf['on'] as boolean | null, f: hpf['f'] as number | null, slope: hpf['slope'] as 12 | 24 | null },
+        bands: (bands as PresetBand[]).map(b => ({ ...b })),
       };
     }
   }
@@ -206,24 +197,22 @@ export function captureChannel(ch: Channel, label: string): ChannelPreset {
     source: 'user',
   };
   if (ch.input) {
-    preset.input = {
-      gain: ch.input.gain,
-      trim: ch.input.trim,
-      invert: ch.input.invert,
-      delayOn: ch.input.delayOn,
-      delay: ch.input.delay,
-    };
+    const input: PresetInput = {};
+    for (const key of ['gain', 'trim', 'delay'] as const) if ((!ch.input.live || ch.input.live.known[key]) && Number.isFinite(ch.input[key])) input[key] = ch.input[key];
+    for (const key of ['invert', 'delayOn'] as const) if (!ch.input.live || ch.input.live.known[key]) input[key] = ch.input[key];
+    if (Object.keys(input).length) preset.input = input;
   }
-  if (ch.eq) {
+  if (ch.eq && ch.eq.on !== null && ch.eq.bands.length > 0 && ch.eq.bands.every(isBand)) {
     preset.eq = {
       on: ch.eq.on,
-      hpf: { on: ch.eq.hpf.on, f: ch.eq.hpf.f, slope: ch.eq.hpf.slope },
-      bands: ch.eq.bands.slice(0, 4).map(b => ({ ...b })) as [PresetBand, PresetBand, PresetBand, PresetBand],
+      hpf: { on: ch.eq.hpf.on, f: Number.isFinite(ch.eq.hpf.f) ? ch.eq.hpf.f : null, slope: ch.eq.hpf.slope },
+      bands: ch.eq.bands.map(b => ({ type: b.type!, f: b.f, g: b.g, q: b.q, on: b.on! })),
     };
   }
   if (ch.dyn) {
-    preset.gate = { ...ch.dyn.gate };
-    preset.comp = { ...ch.dyn.comp };
+    const { live: gl, raw: _gr, ...gate } = ch.dyn.gate, { live: cl, raw: _cr, ...comp } = ch.dyn.comp;
+    if ((!gl || gl.known.on) && [gate.thr, gate.range, gate.att, gate.hold, gate.rel].every(Number.isFinite)) preset.gate = gate;
+    if ((!cl || cl.known.on) && [comp.thr, comp.ratio, comp.att, comp.rel, comp.knee, comp.makeup].every(Number.isFinite)) preset.comp = comp;
   }
   return preset;
 }
@@ -246,13 +235,7 @@ export interface PresetLeaf {
 export function presetLeaves(p: ChannelPreset): PresetLeaf[] {
   const out: PresetLeaf[] = [];
   if (p.input) {
-    out.push(
-      { leaf: 'input.gain', engine: 'gain' },
-      { leaf: 'input.trim', engine: 'trim' },
-      { leaf: 'input.invert', engine: 'polarity' },
-      { leaf: 'input.delayOn', engine: 'delay_on' },
-      { leaf: 'input.delay', engine: 'delay_ms' },
-    );
+    for (const [key, id] of Object.entries({ gain: 'gain', trim: 'trim', invert: 'polarity', delayOn: 'delay_on', delay: 'delay_ms' })) if (p.input[key as keyof PresetInput] !== undefined) out.push({ leaf: `input.${key}`, engine: id });
   }
   if (p.eq) {
     out.push({ leaf: 'eq.on', engine: 'eq_on' });
@@ -338,15 +321,17 @@ export function applyPreset(
   }
   if (p.input) {
     if (ch.input) {
-      ops.setInputKnob(id, 'gain', p.input.gain);
-      ops.setInputKnob(id, 'trim', p.input.trim);
-      ops.setInputKnob(id, 'delay', p.input.delay);
-      applied.push('input.gain', 'input.trim', 'input.delay');
-      if (ch.input.delayOn !== p.input.delayOn) {
+      for (const key of ['gain', 'trim', 'delay'] as const) {
+        const v = p.input[key];
+        if (v === undefined) continue;
+        if (ch.input.live && !ch.input.live.supported[key]) { skipped.push(`input.${key}`); continue; }
+        ops.setInputKnob(id, key, v); applied.push(`input.${key}`);
+      }
+      if (p.input.delayOn !== undefined && (!ch.input.live || ch.input.live.known.delayOn) && ch.input.delayOn !== p.input.delayOn) {
         ops.toggleDelayOn(id);
         applied.push('input.delayOn');
       }
-      if (ch.input.invert !== p.input.invert) {
+      if (p.input.invert !== undefined && (!ch.input.live || ch.input.live.known.invert) && ch.input.invert !== p.input.invert) {
         ops.toggleInvert(id);
         applied.push('input.invert');
       }
@@ -360,13 +345,15 @@ export function applyPreset(
         ops.toggleEqOn(id);
         applied.push('eq.on');
       }
-      if (ch.eq.hpf.on !== p.eq.hpf.on) {
+      if (p.eq.hpf.on !== null && ch.eq.hpf.on !== null && ch.eq.hpf.on !== p.eq.hpf.on) {
         ops.toggleEqBand(id, 0);
         applied.push('eq.hpf.on');
       }
-      ops.setEqParam(id, 0, 'f', p.eq.hpf.f);
-      applied.push('eq.hpf.f');
-      if (ch.eq.hpf.slope !== p.eq.hpf.slope) {
+      if (p.eq.hpf.f !== null) {
+        ops.setEqParam(id, 0, 'f', p.eq.hpf.f);
+        applied.push('eq.hpf.f');
+      }
+      if (p.eq.hpf.slope !== null && ch.eq.hpf.slope !== p.eq.hpf.slope) {
         ops.setHpfSlope(id, p.eq.hpf.slope);
         applied.push('eq.hpf.slope');
       }

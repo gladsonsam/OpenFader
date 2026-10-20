@@ -203,12 +203,12 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
   const tabs = tabListEntries(ch, tab);
   const sendRows = sendRowsVm(ch, a.deskSends ?? null);
   const eq = ch.eq ?? null;
-  const selBand = a.state.selBand;
+  const selBand = eq ? Math.max(eq.hpf.supported === false ? 1 : 0, Math.min(a.state.selBand, eq.bands.length)) : 0;
   const eqGraph = eq ? eqGraphVm(eq, selBand) : null;
   const selQ = selBand > 0 && eq ? (eq.bands[selBand - 1]?.q ?? 0) : 0;
   const cards = eq ? eqBandCardsVm(eq, selBand, undefined, EQ_BAND_COLORS) : [];
-  const gate = ch.dyn?.gate ?? null;
-  const comp = ch.dyn?.comp ?? null;
+  const gate = ch.dyn?.gate?.live?.supported.on === false ? null : ch.dyn?.gate ?? null;
+  const comp = ch.dyn?.comp?.live?.supported.on === false ? null : ch.dyn?.comp ?? null;
   const kind = dynKindForTab(tab);
   const color = DYN_COLOR[kind];
   const params = kind === 'gate' ? gate : comp;
@@ -249,7 +249,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     eqGraph,
     eqSummary: eq ? eqSelInfoText(eq, selBand) : '',
     eqSelQ: selQ,
-    eqHpf: eq ? eqHpfCardVm(eq, selBand, EQ_BAND_COLORS) : null,
+    eqHpf: eq && eq.hpf.supported !== false ? eqHpfCardVm(eq, selBand, EQ_BAND_COLORS) : null,
     eqBands: cards,
     dynKind: kind,
     dynColor: color,
@@ -258,7 +258,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     dynBg: tgl.bg,
     dynFg: tgl.fg,
     dynPressed: tgl.pressed,
-    dynSummary: gate && comp ? dynSummary(kind, gate, comp) : '',
+    dynSummary: params ? (params.live && !params.live.known.on ? 'Waiting for desk' : params.on && params.raw && ((typeof params.raw.mode === 'number' && params.raw.mode !== 0) || (kind === 'comp' && typeof params.raw.mix === 'number' && params.raw.mix !== 100)) ? 'Transfer curve unavailable for these desk settings' : dynSummary(kind, gate!, comp!)) : 'Unavailable',
     dynPath: params ? dynCurvePath(kind, params) : '',
     dynFill: params ? dynFillPath(kind, params) : '',
     dynFillColor: dynFillColor(kind),
@@ -294,7 +294,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     dynParams: params,
     dynGate: gate,
     dynComp: comp,
-    dynKnobs: DYN_KNOBS[kind],
+    dynKnobs: DYN_KNOBS[kind].filter(k => !params?.live || params.live.supported[k.prop]).map(k => ({ ...k, range: params?.live?.ranges[k.prop], choices: params?.live?.choices?.[k.prop] })),
     lists: { tabs: [...tabs, groupsEntry], sends: sendRows, eqBands: cards, phoneTabs: [...tabs, groupsEntry] },
     stripMeter: a.stripMeter,
     hbarMeter: a.hbarMeter,

@@ -311,6 +311,8 @@ impl From<String> for ParamValue {
 /// [`MixerDriver::get_param`].
 #[derive(Clone, Debug, PartialEq)]
 pub struct ParamUpdate {
+    /// Monotonic socket receive time; cache replay never advances this clock.
+    pub received_at: std::time::Instant,
     pub strip: StripId,
     pub param: String,
     pub value: ParamValue,
@@ -443,6 +445,13 @@ pub trait MixerDriver: Send + Sync {
 
     // ---- connection ----
     async fn connect(&self, addr: &str) -> anyhow::Result<()>;
+    /// Release the current transport and its subscription tasks.
+    async fn disconnect(&self) -> anyhow::Result<()> { Ok(()) }
+    /// Renew existing telemetry subscriptions after host suspension.
+    async fn refresh_streams(&self) -> anyhow::Result<()> { Ok(()) }
+    /// Socket receipt stamps for level and GR samples, when the provider
+    /// can prove their provenance. Replaying a cache does not advance them.
+    fn telemetry_timestamps(&self) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> { None }
 
     // ---- channel strips ----
     async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()>;

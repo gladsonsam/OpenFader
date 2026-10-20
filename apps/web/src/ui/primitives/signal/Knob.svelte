@@ -14,13 +14,12 @@
     toN,
     fromN,
     clamp,
-    eqXOf,
     fmtF,
     fmtG,
     knobDash as dashOf,
     knobRot as rotOf,
   } from '../../fixtures/designData.ts';
-  import { eqParamFromDrag, specFromDrag } from '../../state/uiLogic.ts';
+  import { eqParamFromDrag } from '../../state/uiLogic.ts';
   import { tap } from '../feel.ts';
   import { EQ_RESET_F, EQ_RESET_Q } from './signalGeometry.ts';
 
@@ -39,6 +38,9 @@
     eqBand = 1,
     eqParam = 'f',
     fmt = null,
+    range,
+    specOverride,
+    choices,
     oninput = null,
   }: {
     /** fixtures/designData spec key for mode 'spec' ('gain', 'cthr', 'ratio', ...). */
@@ -65,18 +67,22 @@
     eqParam?: 'f' | 'g' | 'q';
     /** Value formatter for mode 'norm' (default: percent). */
     fmt?: ((v: number) => string) | null;
+    range?: import('../../fixtures/designData.ts').EqRange | null;
+    specOverride?: import('../../fixtures/designData.ts').KnobSpec;
+    choices?: number[];
     oninput?: ((v: number) => void) | null;
   } = $props();
 
-  const s = $derived(spec(specKey));
+  const s = $derived(specOverride ?? spec(specKey));
+  const limits = $derived(range ?? (eqParam === 'f' ? [20, eqBand === 0 ? 1000 : 20000] : eqParam === 'g' ? [-15, 15] : [0.3, 16]));
+  const bound = (v: number): number => clamp(v, limits[0], limits[1]);
 
   /** Normalised 0..1 position, per mode (design's knobItem norms). */
   function normOf(v: number): number {
     if (mode === 'norm') return clamp(v, 0, 1);
     if (mode === 'eq') {
-      if (eqParam === 'f') return eqBand === 0 ? Math.log(v / 20) / Math.log(50) : eqXOf(v);
-      if (eqParam === 'g') return (v + 15) / 30;
-      return Math.log(v / 0.3) / Math.log(16 / 0.3);
+      if (eqParam === 'g') return (v - limits[0]) / (limits[1] - limits[0]);
+      return Math.log(v / limits[0]) / Math.log(limits[1] / limits[0]);
     }
     return toN(s, v);
   }
@@ -84,16 +90,14 @@
     const nrm = clamp(nd, 0, 1);
     if (mode === 'norm') return Math.round(nrm * 1000) / 1000;
     if (mode === 'eq') {
-      if (eqParam === 'f') {
-        const f = eqBand === 0 ? 20 * Math.pow(50, nrm) : 20 * Math.pow(1000, nrm);
-        return clamp(f, 20, eqBand === 0 ? 1000 : 20000);
-      }
-      if (eqParam === 'g') return Math.round(clamp(-15 + 30 * nrm, -15, 15) * 10) / 10;
-      return Math.round(clamp(0.3 * Math.pow(16 / 0.3, nrm), 0.3, 16) * 100) / 100;
+      const v = eqParam === 'g' ? limits[0] + (limits[1] - limits[0]) * nrm : limits[0] * Math.pow(limits[1] / limits[0], nrm);
+      return bound(eqParam === 'f' ? v : Math.round(v * (eqParam === 'g' ? 10 : 100)) / (eqParam === 'g' ? 10 : 100));
     }
-    return fromN(s, nrm);
+    const raw = fromN(s, nrm);
+    return choices?.length ? choices.reduce((best, v) => Math.abs(v - raw) < Math.abs(best - raw) ? v : best) : clamp(raw, s.min, s.max);
   }
   function fmtOf(v: number): string {
+    if (!Number.isFinite(v) || (mode === 'eq' && range === null)) return '—';
     if (mode === 'norm') return (fmt ?? ((x: number) => Math.round(x * 100) + '%'))(v);
     if (mode === 'eq') {
       if (eqParam === 'f') return fmtF(v);
@@ -103,7 +107,7 @@
     return s.fmt(v);
   }
 
-  const n = $derived(clamp(normOf(value), 0, 1));
+  const n = $derived(Number.isFinite(value) ? clamp(normOf(value), 0, 1) : 0);
   const text = $derived(fmtOf(value));
   const aria = $derived(label + ' ' + text);
   const vSize = $derived(valueSize ?? (size >= 92 ? 15 : size <= 58 ? 12 : 13));
@@ -116,9 +120,9 @@
   let lastTap = 0;
 
   function down(e: PointerEvent): void {
-    if (disabled || !oninput) return;
+    if (disabled || !oninput || !Number.isFinite(value)) return;
     try {
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      if (e.pointerType !== 'touch') (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     } catch {
       /* noop */
     }
@@ -127,24 +131,24 @@
   function move(e: PointerEvent): void {
     if (!drag || disabled || !oninput) return;
     const dy = drag.y - e.clientY;
-    if (mode === 'eq') oninput(eqParamFromDrag(eqParam, eqBand, drag.startV, dy, fine));
+    if (mode === 'eq') oninput(eqParamFromDrag(eqParam, eqBand, drag.startV, dy, fine, range));
     else if (mode === 'norm')
       oninput(valueOfNorm(drag.startN + (dy / 180) * (fine ? 0.25 : 1)));
-    else oninput(specFromDrag(specKey, drag.startN, dy, fine));
+    else oninput(valueOfNorm(drag.startN + (dy / 180) * (fine ? 0.25 : 1)));
   }
   function up(): void {
     drag = null;
   }
   function reset(): void {
-    if (disabled || !oninput) return;
+    if (disabled || !oninput || !Number.isFinite(value)) return;
     tap();
     if (mode === 'eq') {
-      if (eqParam === 'f') oninput(eqBand === 0 ? 80 : EQ_RESET_F[eqBand]);
-      else if (eqParam === 'g') oninput(0);
-      else oninput(EQ_RESET_Q[eqBand]);
+      if (eqParam === 'f') oninput(bound(eqBand === 0 ? 80 : EQ_RESET_F[eqBand] ?? defaultValue));
+      else if (eqParam === 'g') oninput(bound(0));
+      else oninput(bound(EQ_RESET_Q[eqBand] ?? 1));
       return;
     }
-    oninput(defaultValue);
+    oninput(mode === 'spec' ? valueOfNorm(normOf(defaultValue)) : defaultValue);
   }
   function ontap(): void {
     const now = Date.now();
@@ -152,7 +156,7 @@
     lastTap = now;
   }
   function key(e: KeyboardEvent): void {
-    if (disabled || !oninput) return;
+    if (disabled || !oninput || !Number.isFinite(value)) return;
     const k = fine ? 0.25 : 1;
     let v: number | null = null;
     if (e.key === 'ArrowUp' || e.key === 'ArrowRight') v = valueOfNorm(normOf(value) + 0.02 * k);
@@ -163,9 +167,7 @@
     else if (e.key === 'Home' || e.key === 'End') {
       e.preventDefault();
       if (mode === 'eq') {
-        if (eqParam === 'f') oninput(e.key === 'Home' ? 20 : eqBand === 0 ? 1000 : 20000);
-        else if (eqParam === 'g') oninput(e.key === 'Home' ? -15 : 15);
-        else oninput(e.key === 'Home' ? 0.3 : 16);
+        oninput(e.key === 'Home' ? limits[0] : limits[1]);
         return;
       }
       if (mode === 'norm') {
@@ -178,6 +180,12 @@
     e.preventDefault();
     if (v != null) oninput(v);
   }
+  $effect(() => {
+    const cancel = (): void => { drag = null; };
+    window.addEventListener('openmix-control-epoch', cancel);
+    window.addEventListener('openmix-control-released', cancel);
+    return () => { window.removeEventListener('openmix-control-epoch', cancel); window.removeEventListener('openmix-control-released', cancel); };
+  });
 </script>
 
 <div
@@ -188,12 +196,12 @@
   <button
     role="slider"
     aria-label={aria}
-    aria-valuemin={0}
-    aria-valuemax={100}
-    aria-valuenow={Math.round(n * 100)}
+    aria-valuemin={mode === 'eq' ? limits[0] : mode === 'spec' ? s.min : 0}
+    aria-valuemax={mode === 'eq' ? limits[1] : mode === 'spec' ? s.max : 100}
+    aria-valuenow={Number.isFinite(value) ? mode === 'norm' ? Math.round(n * 100) : value : undefined}
     aria-valuetext={text}
-    aria-disabled={disabled || !oninput ? 'true' : undefined}
-    disabled={disabled || !oninput ? true : undefined}
+    aria-disabled={disabled || !Number.isFinite(value) || !oninput ? 'true' : undefined}
+    disabled={disabled || !Number.isFinite(value) || !oninput ? true : undefined}
     onpointerdown={down}
     onpointermove={move}
     onpointerup={up}
@@ -206,7 +214,7 @@
       ? 'default'
       : 'ns-resize'}"
   >
-    <svg width={size} height={size} viewBox="0 0 56 56" aria-hidden="true">
+    <svg style="pointer-events:none" width={size} height={size} viewBox="0 0 56 56" aria-hidden="true">
       <!-- Knob track + hub stroke come from theme tokens (knob-track, knob-hubline). -->
       <circle
         cx="28"

@@ -155,10 +155,10 @@ export function bridgeSend(world: World, id: string, k: number, v01: number): bo
 export function bridgeSendPre(world: World, id: string, k: number, pre: boolean): boolean {
   const ch = bridgeStrip(world, id);
   if (ch === null || !Number.isInteger(k) || k < 0 || typeof pre !== 'boolean') return false;
-  return world.setParam(ch, `send${k + 1}_tap`, preToTap(pre));
+  return world.setParam(ch, `send${k + 1}_tap`, preToTap(pre, world.driver));
 }
 
-/** Send group-on write-through (desk send-mute leaf; fixture has no counterpart). */
+/** Send group membership switch; distinct from a per-send mute. */
 export function bridgeSendGrpon(world: World, id: string, k: number, grouped: boolean): boolean {
   const ch = bridgeStrip(world, id);
   if (ch === null || !Number.isInteger(k) || k < 0 || typeof grouped !== 'boolean') return false;
@@ -208,7 +208,7 @@ export function bridgeInsertSel(world: World, id: string, sel: number): boolean 
 
 export type EqBridgeParam = 'f' | 'g' | 'q';
 
-/** EQ write-through (band 0 = HPF freq; 1..4 = eqN_{freq,gain,q}). */
+/** EQ write-through (band 0 = HPF freq; 1..6 = eqN_{freq,gain,q}). */
 export function bridgeEq(world: World, id: string, band: number, param: EqBridgeParam, value: number): boolean {
   const ch = bridgeStrip(world, id);
   if (ch === null || !Number.isFinite(value)) return false;
@@ -216,15 +216,15 @@ export function bridgeEq(world: World, id: string, band: number, param: EqBridge
     if (param !== 'f') return false;
     return world.setParam(ch, 'hpf_freq', value);
   }
-  if (!Number.isInteger(band) || band < 1 || band > 4) return false;
+  if (!Number.isInteger(band) || band < 1 || band > 6) return false;
   const leaf = param === 'f' ? 'freq' : param === 'g' ? 'gain' : 'q';
   return world.setParam(ch, `eq${band}_${leaf}`, value);
 }
 
-/** EQ band type write-through (LS/PEQ/HS; bands 1..4). */
-export function bridgeEqType(world: World, id: string, band: number, t: 'LS' | 'PEQ' | 'HS'): boolean {
+/** EQ band type write-through (all six raw types; bands 1..6). */
+export function bridgeEqType(world: World, id: string, band: number, t: import('../fixtures/designData.ts').EqBandType): boolean {
   const ch = bridgeStrip(world, id);
-  if (ch === null || !Number.isInteger(band) || band < 1 || band > 4) return false;
+  if (ch === null || !Number.isInteger(band) || band < 1 || band > 6) return false;
   return world.setParam(ch, `eq${band}_type`, designEqTypeToEngine(t));
 }
 

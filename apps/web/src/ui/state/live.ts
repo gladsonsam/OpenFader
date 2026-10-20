@@ -22,6 +22,18 @@ export const CONNECT_TIMEOUT_MS = 15000;
  *  next devices frame or after this long, whichever comes first. */
 export const SCAN_TIMEOUT_MS = 10000;
 
+/** Shared offline intent for both the UI and transport lifecycle. */
+const OFFLINE_LS_KEY = 'openmix-offline';
+export function loadOfflineMode(): boolean {
+  try { return storage()?.getItem(OFFLINE_LS_KEY) === '1'; } catch { return false; }
+}
+export function saveOfflineMode(value: boolean): void {
+  try {
+    if (value) storage()?.setItem(OFFLINE_LS_KEY, '1');
+    else storage()?.removeItem(OFFLINE_LS_KEY);
+  } catch { /* Storage can be unavailable in private WebViews. */ }
+}
+
 function storage(): Storage | null {
   try {
     return typeof localStorage === 'undefined' ? null : localStorage;

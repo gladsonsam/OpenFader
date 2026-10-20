@@ -134,7 +134,7 @@
                 "enabled": "item.gateOn",
                 "ariaLabel": "concat('Open gate for ', item.name)"
               },
-              "when": "item.hasDyn",
+              "when": "item.hasGate",
               "on": {
                 "open": [
                   {
@@ -172,7 +172,7 @@
                 "enabled": "item.compOn",
                 "ariaLabel": "concat('Open compressor for ', item.name)"
               },
-              "when": "item.hasDyn",
+              "when": "item.hasComp",
               "on": {
                 "open": [
                   {
@@ -254,6 +254,7 @@
       },
       "bind": {
         "muted": "item.muted",
+        "known": "item.muteKnown",
         "enabled": "item.muteEnabled",
         "label": "concat('Mute ', item.name)"
       },

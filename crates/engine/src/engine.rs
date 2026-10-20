@@ -63,7 +63,7 @@ pub const SCENE_MAX: u16 = 999;
 
 /// R2 FX poll interleave: every Nth param-poller tick also refreshes one
 /// FX slot param (cache-only broadcast on change; silent on error).
-pub const FX_POLL_EVERY: u64 = 32;
+pub const FX_POLL_EVERY: u64 = 4;
 
 /// R2 default desk sample rate reported in `link`/`info` (all supported
 /// desks run 48 kHz; a desk reporting otherwise is a finding, not a const
@@ -276,6 +276,21 @@ pub struct StoredFx {
     pub on: bool,
     pub bypass: bool,
     pub params: BTreeMap<String, f32>,
+}
+
+fn pv_bool(value: &ParamValue) -> Option<bool> { if let ParamValue::Bool(v) = value { Some(*v) } else { None } }
+
+type ReadFailures = HashMap<(String, u16, String), (u8, Instant)>;
+
+/// Receive ordering and snapshot publication share one short, non-async lock.
+struct SyncState {
+    epoch: Instant,
+    revision: u64,
+    received: HashMap<(u16, String), (Instant, u64)>,
+    typed: BTreeMap<String, Event>,
+}
+impl Default for SyncState {
+    fn default() -> Self { Self { epoch: Instant::now(), revision: 0, received: HashMap::new(), typed: BTreeMap::new() } }
 }
 
 /// Engine-side FX rack row (runtime mirror of the driver's rack).
@@ -603,6 +618,11 @@ pub struct Engine {
     fx_cache: RwLock<Vec<FxSlotRt>>,
     /// R2 FX poll cursor (round-robin over the rack, [`FX_POLL_EVERY`]).
     fx_cursor: AtomicU64,
+    fx_tick: AtomicU64,
+    fx_refill_requested: AtomicBool,
+    sync_state: std::sync::Mutex<SyncState>,
+    repair_dirty: AtomicBool,
+    read_failures: RwLock<ReadFailures>,
     /// R2 offline-editing state.
     offline: RwLock<OfflineState>,
     /// R2 visible strips (most-recent `focus`, capped): the poller's
@@ -635,15 +655,19 @@ pub struct Engine {
     poll_timeouts: RwLock<HashMap<(String, String), u8>>,
     /// R2 LAN scanner (real discovery or an injected fake).
     scanner: Arc<dyn DeviceScanner>,
-    /// Which driver holds an active hardware meter subscription (`None`
-    /// until the first hardware connect kicks one). The xair
+    /// Which driver holds the current hardware meter subscription
+    /// (`None` until a hardware connect subscribes, and after a
+    /// disconnect/switch-away clears it). The xair
     /// `subscribe_meters` installs the blob-order cache behind
     /// `poll_meters`; without this kick the meter ticker would fan out
     /// silence on hardware (the sim synthesizes its own levels).
+    /// Resubscribed on every successful hardware connect (one per
+    /// connection generation).
     meter_driver: RwLock<Option<String>>,
-    /// Guard receiver for the hardware meter stream: held so the broadcast
-    /// stays alive for the process lifetime (the driver's cache drain
-    /// holds its own resubscribed clone).
+    /// Guard receiver for the current hardware meter stream: held so the
+    /// broadcast stays alive while subscribed (the driver's cache drain
+    /// holds its own resubscribed clone). Replaced on every hardware
+    /// connect, cleared on disconnect/switch-away.
     meter_guard: RwLock<Option<tokio::sync::broadcast::Receiver<openmix_core::MeterFrame>>>,
     /// Last connected/probed address per driver (the `addr` of
     /// [`Engine::connect`]): broadcast discovery never crosses subnets, so a
@@ -741,6 +765,11 @@ impl Engine {
             data_dir,
             fx_cache: RwLock::new(Vec::new()),
             fx_cursor: AtomicU64::new(0),
+            fx_tick: AtomicU64::new(0),
+            fx_refill_requested: AtomicBool::new(false),
+            sync_state: std::sync::Mutex::new(SyncState::default()),
+            repair_dirty: AtomicBool::new(false),
+            read_failures: RwLock::new(HashMap::new()),
             offline: RwLock::new(OfflineState::default()),
             visible: RwLock::new(Vec::new()),
             prio_cursor: AtomicU64::new(0),
@@ -833,8 +862,13 @@ impl Engine {
         if let Err(e) = drv.connect(&target).await {
             self.hydrating.store(0, Ordering::Release);
             self.reads_suspended.store(was_suspended, Ordering::Release);
+            // Updates suppressed during verification belong to a live old
+            // session. Repair it instead of silently losing that interval.
+            self.repair_dirty.store(true, Ordering::Release);
             return Err(e);
         }
+        let previous = self.active_driver();
+        if previous != driver { let _ = self.drv(&previous).disconnect().await; }
         // Remember the desk address only on success: a failed connect must
         // not plant an unreachable address that every later scan unicast-
         // probes (slow scans, phantom rows). Hardware scans verify the
@@ -851,14 +885,21 @@ impl Engine {
         // fill (`post_switch` -> fill worker) completes the params off the
         // command path so first paint never waits for them.
         self.seed_fx_cache().await;
-        // Hardware meter streams need an explicit subscribe (sim
-        // synthesizes its own levels via `poll_meters`). Best-effort:
-        // a failed subscribe leaves the ticker on silence, never fails
-        // the connect. One subscription per driver (the driver's renewal
-        // loop keeps it alive across reconnects of the same driver).
-        if drv.wants_meter_subscribe()
-            && self.meter_driver.read().unwrap().as_deref() != Some(driver)
-        {
+        // Hardware meter streams need an explicit subscribe per connection
+        // generation (sim synthesizes its own levels via `poll_meters`).
+        // Best-effort: a failed subscribe leaves the ticker on silence,
+        // never fails the connect. Every successful hardware connect
+        // resubscribes: the driver drops its old session (clearing
+        // `meter_latest`) and its old drain/renewal tasks exit on the
+        // generation bump, so skipping the resubscribe here would leave
+        // the ticker on silence forever (reconnect-same-driver,
+        // disconnect-reconnect, xair->sim->xair all hit this).
+        if drv.wants_meter_subscribe() {
+            // Drop the previous generation's guard before resubscribing so
+            // a failed subscribe cannot leave a stale receiver behind; the
+            // next connect retries from clean state.
+            *self.meter_guard.write().unwrap() = None;
+            *self.meter_driver.write().unwrap() = None;
             match drv.subscribe_meters().await {
                 Ok(rx) => {
                     *self.meter_guard.write().unwrap() = Some(rx);
@@ -868,6 +909,13 @@ impl Engine {
                     eprintln!("engine: {driver} meter subscribe failed (meters stay silent): {e:#}");
                 }
             }
+        } else {
+            // Leaving a hardware meter subscription: drop the guard so the
+            // old broadcast receiver is not held past the switch. The
+            // driver's own renewal/drain tasks are generation-gated and
+            // exit on the next hardware connect (no accumulation).
+            *self.meter_guard.write().unwrap() = None;
+            *self.meter_driver.write().unwrap() = None;
         }
         Ok(())
     }
@@ -913,87 +961,63 @@ impl Engine {
         self.ensure_tasks();
         let (id, clean) = self.alloc_client(label.as_deref());
         let (tx, rx) = mpsc::unbounded_channel();
+        // A connection can change while the async snapshot is being read.
+        // Retry before registering so no old rows follow the new epoch.
+        loop {
+            let generation = self.connection_gen.load(Ordering::Acquire);
 
-        // Snapshot the world before registering, so no live broadcast can
-        // overtake the initial frames in the newcomer's mailbox. The async
-        // pieces are independent reads — join them so the wall time is the
-        // slowest, not the sum (on hardware drivers these are desk
-        // queries); the sync pieces (shows/locks/caps/devices/link/params)
-        // are lock-local and stay serial.
-        let you = Event::You { id: id.clone() };
-        let shows = self.shows_message();
-        let locks = self.locks_message();
-        let caps = self.caps_slim_message();
-        let devices = self.devices_message();
-        let link = self.link_message_cached();
-        let params = self.params_snapshot();
-        let (state, info, scenes, fx, routing, masters) = tokio::join!(
-            self.state_message(None),
-            async { self.info_message().await.ok() },
-            async { self.scenes_message() },
-            self.fx_message(),
-            self.routing_message(),
-            self.masters_snapshot()
-        );
-
-        {
-            let mut clients = self.clients.write().unwrap();
-            clients.insert(
-                id.clone(),
-                ClientEntry {
-                    mailbox: tx,
-                    label: clean,
-                    connected_at: Instant::now(),
-                    last_write: None,
-                    policy: Policy::admin(),
-                    binary_meters: false,
-                    taps: false,
-                    caps_full: false,
-                },
+            // Snapshot the world before registering, so no live broadcast can
+            // overtake the initial frames in the newcomer's mailbox. The async
+            // pieces are independent reads — join them so the wall time is the
+            // slowest, not the sum (on hardware drivers these are desk
+            // queries); the sync pieces (shows/locks/caps/devices/link/params)
+            // are lock-local and stay serial.
+            let snapshot_started = Instant::now();
+            let you = Event::You { id: id.clone() };
+            let shows = self.shows_message();
+            let locks = self.locks_message();
+            let caps = self.caps_slim_message();
+            let devices = self.devices_message();
+            let link = self.link_message_cached();
+            let (state, info, scenes, _fx, routing, masters) = tokio::join!(
+                self.state_message(None),
+                async { self.info_message().await.ok() },
+                async { self.scenes_message() },
+                self.fx_message(),
+                self.routing_message(),
+                self.masters_snapshot()
             );
-        }
-        let roster = self.clients_message();
 
-        let handle = ClientHandle {
-            id: id.clone(),
-            engine: Arc::clone(self),
-            events: rx,
-        };
-        // The entry exists again (unless detached concurrently); push the
-        // snapshot in socket order. The R1 six-frame prefix (you, state,
-        // shows, clients, locks, caps) is unchanged; R2 frames follow
-        // (devices, link, info?, scenes, fx, routing, masters) before params.
-        if let Some(entry) = self.clients.read().unwrap().get(&id) {
-            let _ = entry.mailbox.send(you);
-            let _ = entry.mailbox.send(state);
-            let _ = entry.mailbox.send(shows);
-            let _ = entry.mailbox.send(roster);
-            let _ = entry.mailbox.send(locks);
-            let _ = entry.mailbox.send(caps);
-            let _ = entry.mailbox.send(devices);
-            let _ = entry.mailbox.send(link);
-            if let Some(info) = info {
-                let _ = entry.mailbox.send(info);
+            {
+                // No async work under these locks. Prefix, current cache replay
+                // and registration are indivisible with respect to live delivery.
+                let sync = self.sync_state.lock().unwrap();
+                if self.connection_gen.load(Ordering::Acquire) != generation { continue; }
+                let params = self.params_snapshot();
+                let fx = self.fx_message_cached();
+                let mut clients = self.clients.write().unwrap();
+                clients.insert(id.clone(), ClientEntry { mailbox: tx.clone(), label: clean.clone(),
+                    connected_at: Instant::now(), last_write: None, policy: Policy::admin(),
+                    binary_meters: false, taps: false, caps_full: false });
+                let mut writers: Vec<_> = clients.iter().filter(|(_, c)| c.last_write.is_some_and(|t| t.elapsed().as_secs() < 10)).map(|(id, _)| id.clone()).collect();
+                writers.sort();
+                let roster = Event::Clients { count: clients.len(), writers };
+                for frame in [you, state, shows, roster, locks, caps, devices, link].into_iter()
+                    .chain(info).chain([scenes, fx, routing]).chain(masters).chain(params)
+                    .chain(sync.typed.values().cloned()).chain(std::iter::once(Event::SyncEpoch { epoch: generation })) {
+                    let _ = tx.send(self.reconcile_event(frame, &sync, snapshot_started));
+                }
             }
-            let _ = entry.mailbox.send(scenes);
-            let _ = entry.mailbox.send(fx);
-            let _ = entry.mailbox.send(routing);
-            for frame in masters {
-                let _ = entry.mailbox.send(frame);
+            // Siblings learn about the join; the newcomer already has it.
+            self.broadcast_except(&self.clients_message(), &id);
+            // A fresh page on a seeded-but-incomplete FX cache (boot with a
+            // numbered rack) completes the params in the background instead of
+            // waiting out the one-param-per-tick poller trickle.
+            if self.hydrating.load(Ordering::Acquire) != 0 || !self.fx_cache_complete() {
+                self.kick_fill();
             }
-            for frame in params {
-                let _ = entry.mailbox.send(frame);
-            }
+            return ClientHandle { id: id.clone(), engine: Arc::clone(self), events: rx };
         }
-        // Siblings learn about the join; the newcomer already has it.
-        self.broadcast_except(&self.clients_message(), &id);
-        // A fresh page on a seeded-but-incomplete FX cache (boot with a
-        // numbered rack) completes the params in the background instead of
-        // waiting out the one-param-per-tick poller trickle.
-        if self.hydrating.load(Ordering::Acquire) != 0 || !self.fx_cache_complete() {
-            self.kick_fill();
-        }
-        handle
     }
 
     /// Queue a FRESH snapshot into an already-attached client's mailbox —
@@ -1015,9 +1039,25 @@ impl Engine {
         if !attached {
             return;
         }
+        if self.active_drv().is_hardware() && !self.reads_suspended.load(Ordering::Acquire) {
+            // Explicit native resync is a generation boundary, unlike
+            // ordinary push delivery. Hydrate within the existing 5s budget;
+            // unknowns remain absent if that budget is spent.
+            let generation = self.invalidate_connection();
+            self.param_cache.write().unwrap().clear();
+            for row in self.fx_cache.write().unwrap().iter_mut() { row.params.clear(); }
+            self.hydrating.store(generation, Ordering::Release);
+            if let Err(error) = self.active_drv().refresh_streams().await { eprintln!("engine: resume stream renewal failed: {error}"); }
+            self.hydrate_initial(generation).await;
+            let _ = self.hydrating.compare_exchange(generation, 0, Ordering::AcqRel, Ordering::Acquire);
+            if self.connection_gen.load(Ordering::Acquire) != generation { return; }
+            self.refresh_fx_cache().await;
+        }
         // Build everything before touching the mailbox: same order as
         // `attach` (R1 prefix then R2), so a resumed client parses exactly
         // what a fresh one does.
+        let generation = self.connection_gen.load(Ordering::Acquire);
+        let snapshot_started = Instant::now();
         let state = self.state_message(None).await;
         let shows = self.shows_message();
         let roster = self.clients_message();
@@ -1027,18 +1067,22 @@ impl Engine {
         let link = self.link_message_cached();
         let info = self.info_message().await.ok();
         let scenes = self.scenes_message();
-        let fx = self.fx_message().await;
         let routing = self.routing_message().await;
         let masters = self.masters_snapshot().await;
+        let sync = self.sync_state.lock().unwrap();
+        if self.connection_gen.load(Ordering::Acquire) != generation { return; }
         let params = self.params_snapshot();
+        let fx = self.fx_message_cached();
         for event in [state, shows, roster, locks, caps, devices, link]
             .into_iter()
             .chain(info)
             .chain([scenes, fx, routing])
             .chain(masters)
             .chain(params)
+            .chain(sync.typed.values().cloned())
+            .chain(std::iter::once(Event::SyncEpoch { epoch: generation }))
         {
-            self.unicast(client_id, event);
+            self.unicast(client_id, self.reconcile_event(event, &sync, snapshot_started));
         }
     }
 
@@ -1087,7 +1131,13 @@ impl Engine {
                 loop {
                     let update = match rx.recv().await {
                         Ok(u) => u,
-                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            if let Some(engine) = weak.upgrade() {
+                                eprintln!("engine: {name} control update lagged {n}; repair queued");
+                                engine.repair_dirty.store(true, Ordering::Release);
+                            }
+                            continue;
+                        },
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     };
                     let Some(engine) = weak.upgrade() else {
@@ -1096,7 +1146,7 @@ impl Engine {
                     if engine.active_driver() != name || engine.reads_suspended.load(Ordering::Acquire) {
                         continue;
                     }
-                    engine.apply_inbound(update.strip.0, &update.param, &update.value);
+                    engine.apply_received(update.strip.0, &update.param, &update.value, update.received_at, None);
                 }
             });
         }
@@ -1108,6 +1158,7 @@ impl Engine {
             let interval = self.poll_interval;
             tokio::spawn(async move {
                 let mut tick = tokio::time::interval(interval);
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 loop {
                     tick.tick().await;
                     match weak.upgrade() {
@@ -1152,8 +1203,11 @@ impl Engine {
             tokio::spawn(async move {
                 let mut rta = RtaProcessor::new(0);
                 let mut had_audio_spectrum = false;
+                let mut last_level_sample = None;
+                let mut last_gr_sample = None;
                 let mut tick =
                     tokio::time::interval(openmix_transport::METER_INTERVAL);
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 // Skip the immediate first tick so a fresh client gets
                 // state first.
                 tick.tick().await;
@@ -1162,15 +1216,20 @@ impl Engine {
                     let Some(engine) = weak.upgrade() else {
                         break;
                     };
+                    let stamps = engine.active_drv().telemetry_timestamps();
+                    let level_updated = stamps.is_none_or(|(at, _)| at.is_some() && at != last_level_sample);
+                    let gr_updated = stamps.is_none_or(|(_, at)| at.is_some() && at != last_gr_sample);
+                    if let Some((levels, gr)) = stamps { last_level_sample = levels; last_gr_sample = gr; }
                     let levels = engine.meter_levels().await;
                     rta.push_frame(&MeterFrame {
                         levels: levels.clone(),
                     });
-                    engine.broadcast(&Event::Meters {
-                        levels: levels.clone(),
-                    });
-                    if engine.any_taps_client() {
+                    if level_updated && !levels.is_empty() {
+                        engine.broadcast(&Event::Meters { levels: levels.clone() });
+                    }
+                    if engine.any_taps_client() && (level_updated || gr_updated) {
                         for (tap, tap_levels) in engine.tap_frames().await {
+                            if (tap == "post" && !level_updated) || (tap.starts_with("gr_") && !gr_updated) { continue; }
                             engine.broadcast(&Event::Taps {
                                 tap,
                                 levels: tap_levels,
@@ -1215,7 +1274,7 @@ impl Engine {
                     let gr_count = if drv.name() == "sim" {
                         drv.strip_count().min(GR_CHANNELS)
                     } else { drv.strip_count() };
-                    for ch in 0..gr_count {
+                    for ch in 0..if gr_updated { gr_count } else { 0 } {
                         if let Some((gate, comp)) = engine.gr_db(ch).await {
                             engine.broadcast(&Event::Gr { ch: ch as u16, gate, comp });
                         }
@@ -1238,6 +1297,30 @@ impl Engine {
                     };
                     let event = engine.link_message().await;
                     engine.broadcast(&event);
+                }
+            });
+        }
+        // Type pushes invalidate immediately; refill missing FX values
+        // separately from snapshots, yielding to control writes. No timer
+        // reads happen unless a type actually changed.
+        {
+            let weak: Weak<Self> = Arc::downgrade(self);
+            tokio::spawn(async move {
+                let mut tick = tokio::time::interval(Duration::from_millis(50));
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    tick.tick().await;
+                    let Some(engine) = weak.upgrade() else { break; };
+                    if engine.reads_suspended.load(Ordering::Acquire) || engine.hydrating.load(Ordering::Acquire) != 0 { continue; }
+                    if engine.active_driver() == "xair" && engine.fx_refill_requested.swap(false, Ordering::AcqRel) {
+                        let changed = engine.connection_changed.notified();
+                        tokio::pin!(changed);
+                        changed.as_mut().enable();
+                        tokio::select! {
+                            _ = &mut changed => {},
+                            _ = engine.refresh_fx_cache() => {},
+                        }
+                    }
                 }
             });
         }
@@ -1478,6 +1561,7 @@ impl Engine {
 
     /// Current meter levels for the active driver (one entry per strip).
     async fn meter_levels(&self) -> Vec<f32> {
+        if self.reads_suspended.load(Ordering::Acquire) { return Vec::new(); }
         self.active_drv().poll_meters().levels
     }
 
@@ -1485,6 +1569,7 @@ impl Engine {
     /// Sim taps are its explicit synthetic GR source; hardware reads
     /// its DYN cache across topology inputs, buses and main.
     async fn gr_db(&self, ch: usize) -> Option<(f32, f32)> {
+        if self.reads_suspended.load(Ordering::Acquire) { return None; }
         let drv = self.active_drv();
         if let Some(taps) = drv.poll_taps() {
             return taps.get(ch).map(|t| (t.gr_gate_db, t.gr_comp_db));
@@ -1921,12 +2006,23 @@ impl Engine {
     /// sim. Failures keep the last sample (never block the ticker).
     async fn measure_latency(&self) -> f32 {
         let last = self.link.read().unwrap().latency_ms;
+        if self.reads_suspended.load(Ordering::Acquire) { return last; }
         if self.active_drv().is_hardware() {
             let t0 = Instant::now();
             let target = self.active_drv().get_main_fader().await;
             match target {
-                Ok(_) => t0.elapsed().as_secs_f32() * 1000.0,
-                Err(_) => last,
+                Ok(_) => {
+                    let mut link = self.link.write().unwrap();
+                    if link.state == "reconnecting" { link.state = "connected".into(); }
+                    t0.elapsed().as_secs_f32() * 1000.0
+                }
+                Err(error) => {
+                    let mut link = self.link.write().unwrap();
+                    if !self.reads_suspended.load(Ordering::Acquire) { link.state = "reconnecting".into(); }
+                    self.repair_dirty.store(true, Ordering::Release);
+                    eprintln!("engine: control health query failed: {error}; link stale, bounded repair armed");
+                    last
+                },
             }
         } else {
             1.0 + ((self.now_ms() / 100) % 5) as f32 * 0.1
@@ -2238,8 +2334,10 @@ impl Engine {
     }
 
     /// Current `fx` event from the engine-side cache + return levels.
-    async fn fx_message(&self) -> Event {
-        let levels = self.meter_levels().await;
+    async fn fx_message(&self) -> Event { self.fx_message_cached() }
+
+    fn fx_message_cached(&self) -> Event {
+        let levels = self.active_drv().poll_meters().levels;
         let design = self.active_drv().fx_flavor() == FxFlavor::Design;
         let slots = self
             .fx_cache
@@ -2270,6 +2368,29 @@ impl Engine {
     /// Rebuild the FX cache from the active driver (sim: full rack;
     /// elsewhere: honest placeholder rows — type unknown, no params).
     async fn refresh_fx_cache(&self) {
+        if self.active_driver() == "xair" {
+            let generation = self.connection_gen.load(Ordering::Acquire);
+            let drv = self.active_drv();
+            for slot in 1..=drv.fx_slot_count() as u8 {
+                let started = Instant::now();
+                let Some(effect) = drv.fx_type_index(slot).await else { continue; };
+                if self.connection_gen.load(Ordering::Acquire) != generation { return; }
+                self.apply_received(slot as u16, "_fx_type", &ParamValue::Float(effect as f32), Instant::now(), Some(started));
+                for index in 0..openmix_proto_xair::fx::fx_param_count(effect).unwrap_or(0) {
+                    if self.fx_cache.read().unwrap().iter().find(|r| r.slot == slot).is_some_and(|r| r.params.contains_key(&format!("par{:02}", index + 1))) { continue; }
+                    if self.writes_in_flight.load(Ordering::Relaxed) != 0 {
+                        self.fx_refill_requested.store(true, Ordering::Release);
+                        return;
+                    }
+                    let started = Instant::now();
+                    let result = drv.get_fx_param_with_type(slot, index, Some(effect)).await;
+                    if self.connection_gen.load(Ordering::Acquire) != generation { return; }
+                    if !self.fx_cache.read().unwrap().iter().find(|r| r.slot == slot).is_some_and(|r| xair_type_index_of(&r.fx_type) == Some(effect)) { break; }
+                    if let Ok(value) = result { self.apply_received(slot as u16, &format!("_fx_par{:02}", index + 1), &ParamValue::Float(value), Instant::now(), Some(started)); }
+                }
+            }
+            return;
+        }
         let rows = self.read_fx_rows().await;
         *self.fx_cache.write().unwrap() = rows;
     }
@@ -2280,8 +2401,18 @@ impl Engine {
     /// per-slot param cost; the deferred fill + the FX poller complete the
     /// params off the command path.
     async fn seed_fx_cache(&self) {
+        let started = Instant::now();
+        let generation = self.connection_gen.load(Ordering::Acquire);
         let rows = self.read_fx_seed_rows().await;
-        *self.fx_cache.write().unwrap() = rows;
+        if self.connection_gen.load(Ordering::Acquire) != generation { return; }
+        let sync = self.sync_state.lock().unwrap();
+        let mut cache = self.fx_cache.write().unwrap();
+        if self.active_driver() != "xair" { *cache = rows; return; }
+        for row in rows {
+            if let Some(existing) = cache.iter_mut().find(|r| r.slot == row.slot) {
+                if !sync.received.get(&(row.slot as u16, "_fx_type".into())).is_some_and(|(at, _)| *at > started) { *existing = row; }
+            } else { cache.push(row); }
+        }
     }
 
     /// Seed rows for [`Engine::seed_fx_cache`]: Design racks read fully
@@ -2482,73 +2613,31 @@ impl Engine {
     /// converge within a few ticks and broadcasts only on change.
     async fn fx_refresh_one_xair(&self) {
         let count = self.active_drv().fx_slot_count();
-        if count == 0 {
-            return;
-        }
+        if count == 0 { return; }
+        let generation = self.connection_gen.load(Ordering::Acquire);
         let n = self.fx_cursor.fetch_add(1, Ordering::Relaxed) as usize;
         let slot = (n % count) as u8 + 1;
         let drv = self.active_drv();
-        // Placeholder row: read the type (one query); params fill in on
-        // later ticks once the effect (and its used count) is known.
-        let cached_type = self
-            .fx_cache
-            .read()
-            .unwrap()
-            .iter()
-            .find(|r| r.slot == slot)
-            .map(|r| r.fx_type.clone())
-            .unwrap_or_default();
-        if xair_type_index_of(&cached_type).is_none() {
-            let fresh = self.read_xair_slot(slot).await;
-            let changed = {
-                let mut cache = self.fx_cache.write().unwrap();
-                match cache.iter_mut().find(|r| r.slot == slot) {
-                    Some(row) => {
-                        let diff =
-                            row.fx_type != fresh.fx_type || row.params != fresh.params;
-                        if diff {
-                            row.fx_type = fresh.fx_type.clone();
-                            row.params = fresh.params.clone();
-                        }
-                        diff
-                    }
-                    None => false,
-                }
-            };
-            if changed {
-                self.broadcast(&self.fx_message().await);
+        let started = Instant::now();
+        let Some(effect) = drv.fx_type_index(slot).await else { return; };
+        if self.connection_gen.load(Ordering::Acquire) != generation { return; }
+        self.apply_received(slot as u16, "_fx_type", &ParamValue::Float(effect as f32), Instant::now(), Some(started));
+        let used = openmix_proto_xair::fx::fx_param_count(effect).unwrap_or(0);
+        if used == 0 { return; }
+        let index = {
+            let cache = self.fx_cache.read().unwrap();
+            let Some(row) = cache.iter().find(|r| r.slot == slot) else { return; };
+            (0..used).find(|i| !row.params.contains_key(&format!("par{:02}", i + 1)))
+                .unwrap_or(((n / count) % used as usize) as u8)
+        };
+        let started = Instant::now();
+        if let Ok(value) = drv.get_fx_param_with_type(slot, index, Some(effect)).await {
+            if self.connection_gen.load(Ordering::Acquire) == generation {
+                // A type push received during the query invalidates this decode.
+                let same_type = self.fx_cache.read().unwrap().iter().find(|r| r.slot == slot)
+                    .is_some_and(|r| xair_type_index_of(&r.fx_type) == Some(effect));
+                if same_type { self.apply_received(slot as u16, &format!("_fx_par{:02}", index + 1), &ParamValue::Float(value), Instant::now(), Some(started)); }
             }
-            return;
-        }
-        let index = match xair_type_index_of(&cached_type) {
-            Some(i) => i,
-            None => return,
-        };
-        let used = openmix_proto_xair::fx::fx_param_count(index).unwrap_or(0);
-        if used == 0 {
-            return;
-        }
-        let idx = ((n / count) % used as usize) as u8;
-        // Known effect index: single-query read (no per-param type re-query).
-        let Ok(v) = drv.get_fx_param_with_type(slot, idx, Some(index)).await else {
-            return;
-        };
-        let key = format!("par{:02}", idx + 1);
-        let changed = {
-            let mut cache = self.fx_cache.write().unwrap();
-            match cache.iter_mut().find(|r| r.slot == slot) {
-                Some(row) => {
-                    let diff = row.params.get(&key).copied() != Some(v);
-                    if diff {
-                        row.params.insert(key, v);
-                    }
-                    diff
-                }
-                None => false,
-            }
-        };
-        if changed {
-            self.broadcast(&self.fx_message().await);
         }
     }
 
@@ -2718,7 +2807,8 @@ impl Engine {
                 });
             }
         }
-        // Membership: sparse (members only). Reads are memory/cache-speed
+        out.push(self.main_message().await);
+        // Membership: every known true and false. Reads are memory/cache-speed
         // on drivers that serve the assign leaf; elsewhere the default
         // reads honestly fail and no members are reported. Drivers with a
         // bulk source (in-memory maps) serve the whole scan from one lock
@@ -2735,19 +2825,19 @@ impl Engine {
                 let key = openmix_core::strip_key_for_index(&topo, ch as usize);
                 for group in 0..subgroups {
                     let member = match &sub_bulk {
-                        Some(map) => map.get(&(ch, group)).copied().unwrap_or(false),
-                        None => drv.get_subgroup_assign(id, group).await.unwrap_or(false),
+                        Some(map) => Some(map.get(&(ch, group)).copied().unwrap_or(false)),
+                        None => drv.get_subgroup_assign(id, group).await.ok(),
                     };
-                    if member {
+                    if let Some(member) = member {
                         out.push(Event::SubgroupAssign { ch, group, member, key: key.clone() });
                     }
                 }
                 for group in 0..mute_groups {
                     let member = match &mg_bulk {
-                        Some(map) => map.get(&(ch, group)).copied().unwrap_or(false),
-                        None => drv.get_mute_group_assign(id, group).await.unwrap_or(false),
+                        Some(map) => Some(map.get(&(ch, group)).copied().unwrap_or(false)),
+                        None => drv.get_mute_group_assign(id, group).await.ok(),
                     };
-                    if member {
+                    if let Some(member) = member {
                         out.push(Event::MuteGroupAssign { ch, group, member, key: key.clone() });
                     }
                 }
@@ -2760,10 +2850,10 @@ impl Engine {
                         Some(map) => map.get(&ch).copied().unwrap_or(false),
                         None => drv.get_solo(StripId(ch)).await.unwrap_or(false),
                     };
-                    if soloed {
+                    {
                         out.push(Event::Solo {
                             ch,
-                            soloed: true,
+                            soloed,
                             key: openmix_core::strip_key_for_index(&topo, ch as usize),
                         });
                     }
@@ -2778,25 +2868,19 @@ impl Engine {
         // no frames, never fails the snapshot.
         if drv.live_solo_bank() {
             let topo = self.driver_topology(&driver);
+            let started = Instant::now();
             if let Ok(bank) = drv.solo_bank(drv.channel_count()).await {
                 for (ch, soloed) in bank.iter().enumerate() {
-                    if !soloed {
-                        continue;
-                    }
                     let ch = ch as u16;
-                    {
-                        let mut cache = self.param_cache.write().unwrap();
-                        cache_store(&mut cache, ch, "solo", json!(true));
-                    }
+                    self.apply_received(ch, "solo", &ParamValue::Bool(*soloed), Instant::now(), Some(started));
                     out.push(Event::Solo {
                         ch,
-                        soloed: true,
+                        soloed: *soloed,
                         key: openmix_core::strip_key_for_index(&topo, ch as usize),
                     });
                 }
             }
         }
-        out.push(self.main_message().await);
         out
     }
 
@@ -2903,6 +2987,7 @@ impl Engine {
     /// entry is best-effort: a tap with no source reads back silence,
     /// never an error.
     async fn tap_frames(&self) -> Vec<(String, Vec<f32>)> {
+        if self.reads_suspended.load(Ordering::Acquire) { return Vec::new(); }
         let drv = self.active_drv();
         if let Some(taps) = drv.poll_taps() {
             return vec![
@@ -2914,18 +2999,20 @@ impl Engine {
         }
         let post = drv.poll_meters().levels;
         if drv.meter_taps().is_empty() { return Vec::new(); }
-        let mut out = vec![("post".to_string(), post)];
+        let n = self.driver_strips(&self.active_driver());
+        let mut out = Vec::new();
+        if !post.is_empty() { out.push(("post".to_string(), post)); }
         if drv.dyn_gr() {
-            let n = out[0].1.len().max(1);
             let mut gr_gate = vec![0.0f32; n];
             let mut gr_comp = vec![0.0f32; n];
+            let mut available = false;
             for (i, (g, c)) in gr_gate.iter_mut().zip(gr_comp.iter_mut()).enumerate() {
-                let (gate, comp) = self.gr_db(i).await.unwrap_or((0.0, 0.0));
-                *g = gate;
-                *c = comp;
+                if let Some((gate, comp)) = self.gr_db(i).await { available = true; *g = gate; *c = comp; }
             }
-            out.push(("gr_gate".to_string(), gr_gate));
-            out.push(("gr_comp".to_string(), gr_comp));
+            if available {
+                out.push(("gr_gate".to_string(), gr_gate));
+                out.push(("gr_comp".to_string(), gr_comp));
+            }
         }
         out
     }
@@ -3089,40 +3176,148 @@ impl Engine {
     /// Apply one desk-originated update (broadcast ingest): same
     /// compare-and-broadcast as a poll read, minus the I/O.
     fn apply_inbound(&self, ch: u16, param: &str, pv: &ParamValue) {
-        // Solo bypasses the param plane: desk broadcasts (the `solo`
-        // id decoded by `parse_inbound`), poll reads (the `read_param`
-        // bank route), and the `Solo` command echo all converge on
-        // `Event::Solo` — the channel the UI solos view renders. The
-        // param cache still diffs (polls stay quiet, attach snapshots
-        // carry solo state) but no `Params` frame goes out for it.
-        if param == "solo" {
-            if let ParamValue::Bool(soloed) = pv {
-                let v = param_value_json(pv);
-                let changed = {
-                    let mut cache = self.param_cache.write().unwrap();
-                    cache_store(&mut cache, ch, param, v.clone())
-                };
-                if changed {
-                    self.broadcast(&Event::Solo {
-                        ch,
-                        soloed: *soloed,
-                        key: self.active_strip_key(ch),
-                    });
+        self.apply_received(ch, param, pv, Instant::now(), None);
+    }
+
+    fn apply_received(&self, ch: u16, param: &str, pv: &ParamValue, received: Instant, query_started: Option<Instant>) {
+        if param.starts_with("_node/") { return; }
+        if param == "_fx_dirty" { self.fx_tick.store(0, Ordering::Release); return; }
+        if param == "_sync_dirty" {
+            if let ParamValue::Text(suffix) = pv {
+                let container = suffix.rsplit_once('/').map(|(parent, _)| parent).unwrap_or(suffix);
+                let container = if ["config", "preamp", "gate", "dyn", "eq", "mix", "grp", "insert", "automix"].contains(&suffix.as_str()) || suffix.ends_with("/filter") || suffix.rsplit('/').next().is_some_and(|n| n.parse::<u8>().is_ok()) { suffix.as_str() } else { container };
+                let id = format!("_node/{container}");
+                let driver = self.active_driver();
+                let mut queue = self.focus_queue.write().unwrap();
+                if !queue.iter().any(|(d, s, p, _)| d == &driver && *s == ch && p == &id) {
+                    queue.push_front((driver, ch, id, String::new()));
                 }
+                return;
             }
+            if ch == u16::MAX { self.repair_dirty.store(true, Ordering::Release); }
+            else { self.queue_strip_repair(ch); }
+            return;
+        }
+        let mut sync = self.sync_state.lock().unwrap();
+        if received < sync.epoch { return; }
+        let key = (ch, param.to_string());
+        if let Some((last, _)) = sync.received.get(&key) {
+            if *last > query_started.unwrap_or(received) { return; }
+        }
+        sync.revision += 1;
+        let revision = sync.revision;
+        sync.received.insert(key, (received, revision));
+        // Internal provider IDs bridge already-existing typed library events.
+        if param == "_fx_type" || param.starts_with("_fx_par") {
+            let ParamValue::Float(value) = pv else { return; };
+            let slot = ch as u8;
+            let mut cache = self.fx_cache.write().unwrap();
+            let Some(row) = cache.iter_mut().find(|r| r.slot == slot) else { return; };
+            let changed = if param == "_fx_type" {
+                let name = xair_type_name(*value as u8).unwrap_or("—").to_string();
+                if row.fx_type != name {
+                    row.fx_type = name;
+                    row.params.clear();
+                    self.fx_refill_requested.store(true, Ordering::Release);
+                    true
+                } else { false }
+            } else {
+                let type_received = sync.received.get(&(ch, "_fx_type".to_string())).map(|(at, _)| *at);
+                if type_received.is_some_and(|at| at > received) { return; }
+                let name = param.trim_start_matches("_fx_").to_string();
+                if row.params.get(&name) == Some(value) { false } else { row.params.insert(name, *value); true }
+            };
+            drop(cache);
+            if changed { self.broadcast(&self.fx_message_cached()); }
             return;
         }
         let v = param_value_json(pv);
-        let changed = {
-            let mut cache = self.param_cache.write().unwrap();
-            cache_store(&mut cache, ch, param, v.clone())
-        };
+        let changed = cache_store(&mut self.param_cache.write().unwrap(), ch, param, v.clone());
+        let event = if param == "_mute_group" {
+            pv_bool(pv).map(|muted| Event::MuteGroup { group: ch as u8, muted, key: Some(format!("mgroup/{:02}", ch + 1)) })
+        } else if let Some(group) = param.strip_prefix("_mg").and_then(|s| s.parse::<u8>().ok()) {
+            pv_bool(pv).map(|member| Event::MuteGroupAssign { ch, group: group - 1, member, key: self.active_strip_key(ch) })
+        } else if param == "solo" {
+            pv_bool(pv).map(|soloed| Event::Solo { ch, soloed, key: self.active_strip_key(ch) })
+        } else { None };
+        if let Some(event) = event {
+            sync.typed.insert(format!("{ch}/{param}"), event.clone());
+            if changed { self.broadcast(&event); }
+            return;
+        }
         if changed {
-            self.broadcast(&Event::Params {
-                ch,
-                values: [(param.to_string(), v)].into_iter().collect(),
-                key: self.active_strip_key(ch),
-            });
+            self.broadcast(&Event::Params { ch, values: [(param.to_string(), v)].into_iter().collect(), key: self.active_strip_key(ch) });
+        }
+        // Main/bus library mirrors must follow exactly the same canonical cache.
+        if matches!(param, "fader" | "mute") {
+            let cache = self.param_cache.read().unwrap();
+            let values = cache.get(&ch);
+            let pair = values.and_then(|v| Some((v.get("fader")?.as_f64()? as f32, v.get("mute")?.as_bool()?)));
+            if let Some((fader, muted)) = pair {
+                let topo = self.driver_topology(&self.active_driver());
+                if let Some(fam) = topo.iter().find(|f| (f.first..f.first + f.count).contains(&(ch as usize))) {
+                    let event = match fam.kind {
+                        openmix_core::StripKind::Main => Some(Event::Main { fader: Some(fader), muted: Some(muted) }),
+                        openmix_core::StripKind::Bus => Some(Event::Bus { bus: (ch as usize - fam.first) as u8, fader, muted, key: self.active_strip_key(ch) }),
+                        _ => None,
+                    };
+                    if let Some(event) = event {
+                        sync.typed.insert(format!("master/{ch}"), event.clone());
+                        if changed { self.broadcast(&event); }
+                    }
+                }
+            }
+        }
+    }
+
+    fn reconcile_event(&self, mut event: Event, sync: &SyncState, started: Instant) -> Event {
+        let cache = self.param_cache.read().unwrap();
+        let fresh = |ch: u16, id: &str| {
+            sync.received.get(&(ch, id.to_string())).filter(|(at, _)| *at >= started)
+                .and_then(|_| cache.get(&ch)?.get(id)).cloned()
+        };
+        match &mut event {
+            Event::State { strips, main_fader, .. } => {
+                for row in strips {
+                    if let Some(v) = fresh(row.ch, "fader").and_then(|v| v.as_f64()) { row.fader = v as f32; }
+                    if let Some(v) = fresh(row.ch, "mute").and_then(|v| v.as_bool()) { row.muted = v; }
+                    if let Some(Value::String(v)) = fresh(row.ch, "name") { row.name = v; }
+                }
+                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openmix_core::StripKind::Main) {
+                    if let Some(v) = fresh(fam.first as u16, "fader").and_then(|v| v.as_f64()) { *main_fader = Some(v as f32); }
+                }
+            }
+            Event::Param { ch, field, value, .. } => { if let Some(v) = fresh(*ch, field) { *value = v; } }
+            Event::Solo { ch, soloed, .. } => { if let Some(v) = fresh(*ch, "solo").and_then(|v| v.as_bool()) { *soloed = v; } }
+            Event::Main { fader, muted } => {
+                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openmix_core::StripKind::Main) {
+                    if let Some(v) = fresh(fam.first as u16, "fader").and_then(|v| v.as_f64()) { *fader = Some(v as f32); }
+                    if let Some(v) = fresh(fam.first as u16, "mute").and_then(|v| v.as_bool()) { *muted = Some(v); }
+                }
+            }
+            Event::Bus { bus, fader, muted, .. } => {
+                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openmix_core::StripKind::Bus) {
+                    let ch = fam.first as u16 + *bus as u16;
+                    if let Some(v) = fresh(ch, "fader").and_then(|v| v.as_f64()) { *fader = v as f32; }
+                    if let Some(v) = fresh(ch, "mute").and_then(|v| v.as_bool()) { *muted = v; }
+                }
+            }
+            Event::MuteGroup { group, muted, .. } => { if let Some(v) = fresh(*group as u16, "_mute_group").and_then(|v| v.as_bool()) { *muted = v; } }
+            Event::MuteGroupAssign { ch, group, member, .. } => { if let Some(v) = fresh(*ch, &format!("_mg{}", *group + 1)).and_then(|v| v.as_bool()) { *member = v; } }
+            Event::Fx { .. } => { drop(cache); return self.fx_message_cached(); }
+            _ => {}
+        }
+        event
+    }
+
+    fn queue_strip_repair(&self, ch: u16) {
+        let driver = self.active_driver();
+        let list = self.static_poll_list(&driver);
+        let mut queue = self.focus_queue.write().unwrap();
+        for (strip, id) in list.into_iter().filter(|(strip, _)| *strip == ch) {
+            if !queue.iter().any(|(_, s, p, _)| *s == strip && p == id) {
+                queue.push_back((driver.clone(), strip, id.to_string(), String::new()));
+            }
         }
     }
 
@@ -3134,7 +3329,7 @@ impl Engine {
     /// `prio_armed`); `k` caps the take; the cursor round-robins within
     /// the sweep.
     fn pop_visible_batch(&self, driver: &str, k: usize) -> Vec<(u16, String)> {
-        if k == 0 || !self.prio_armed.load(Ordering::Relaxed) {
+        if k == 0 || (driver != "xair" && !self.prio_armed.load(Ordering::Relaxed)) {
             return Vec::new();
         }
         let vis = self.visible.read().unwrap().clone();
@@ -3155,7 +3350,7 @@ impl Engine {
             let taken = self.prio_taken.fetch_add(1, Ordering::Relaxed);
             if i == 0 && taken > 0 {
                 self.prio_armed.store(false, Ordering::Relaxed);
-                break;
+                if driver != "xair" { break; }
             }
             let (ch, id) = &list[i];
             if dropped.contains(&(driver.to_string(), id.to_string())) {
@@ -3316,8 +3511,19 @@ impl Engine {
         }
         let driver = self.active_driver();
         let n = self.effective_inflight(&driver);
+        if self.repair_dirty.swap(false, Ordering::AcqRel) {
+            let list = self.static_poll_list(&driver);
+            let mut queue = self.focus_queue.write().unwrap();
+            for (ch, id) in &list {
+                if !queue.iter().any(|(d, s, p, _)| d == &driver && s == ch && p == id) {
+                    queue.push_back((driver.clone(), *ch, id.to_string(), String::new()));
+                }
+            }
+            eprintln!("engine: {driver} reconciliation queued {} keys; regular query budget, no snapshot reset", list.len());
+        }
         let mut batch: Vec<(u16, String)> = Vec::with_capacity(n);
-        while batch.len() < n {
+        let focus_limit = if driver == "xair" { n.saturating_sub(1).min(1) } else { n };
+        while batch.len() < focus_limit {
             match self.pop_focus(&driver) {
                 Some(e) => batch.push(e),
                 None => break,
@@ -3335,9 +3541,9 @@ impl Engine {
             // end, like the visible lane's did).
             let remaining = n - batch.len();
             let t = self.lane_tick.fetch_add(1, Ordering::Relaxed);
-            let bg_share = if t.is_multiple_of(n.max(2) as u64) { 1.min(remaining) } else { 0 };
+            let bg_share = if (driver == "xair" && n > 1) || t.is_multiple_of(n.max(2) as u64) { 1.min(remaining) } else { 0 };
             let mut rest = remaining - bg_share;
-            let vis = self.pop_visible_batch(&driver, rest);
+            let vis = self.pop_visible_batch(&driver, if driver == "xair" { rest.min(1) } else { rest });
             rest -= vis.len();
             batch.extend(vis);
             batch.extend(self.pop_core_batch(&driver, rest));
@@ -3362,61 +3568,32 @@ impl Engine {
         if batch.is_empty() {
             return;
         }
-        // N queries in flight (pipelining); results re-ordered into batch
-        // order for cache/diff application.
         let t0 = Instant::now();
         let mut set = tokio::task::JoinSet::new();
-        for (i, (ch, param)) in batch.iter().enumerate() {
+        for (ch, param) in batch {
             let engine = Arc::clone(self);
             let driver = driver.clone();
-            let ch = *ch;
-            let param = param.clone();
             set.spawn(async move {
-                let r = engine.read_param(&driver, StripId(ch), &param).await;
-                (i, ch, param, r)
+                let started = Instant::now();
+                let result = engine.read_param(&driver, StripId(ch), &param).await;
+                if engine.connection_gen.load(Ordering::Acquire) != generation { return; }
+                match result {
+                    Ok(pv) => {
+                        engine.note_read_ok(&driver, ch, &param);
+                        engine.apply_received(ch, &param, &pv, Instant::now(), Some(started));
+                    }
+                    Err(e) => { engine.note_read_error(&driver, ch, &param, &e); }
+                }
             });
         }
-        let mut ordered: Vec<Option<(u16, String, anyhow::Result<ParamValue>)>> = {
-            let mut v = Vec::with_capacity(batch.len());
-            v.resize_with(batch.len(), || None);
-            v
-        };
-        while let Some(joined) = set.join_next().await {
-            if let Ok((i, ch, param, r)) = joined { ordered[i] = Some((ch, param, r)) }
-        }
-        if self.connection_gen.load(Ordering::Acquire) != generation {
-            return;
-        }
-        for slot in ordered.into_iter().flatten() {
-            let (ch, param, r) = slot;
-            match r {
-                Ok(pv) => {
-                    self.note_poll_ok(&driver, &param);
-                    let v = param_value_json(&pv);
-                    let key = self.strip_key(&driver, ch);
-                    let changed = {
-                        let mut cache = self.param_cache.write().unwrap();
-                        cache_store(&mut cache, ch, &param, v.clone())
-                    };
-                    if changed {
-                        self.broadcast(&Event::Params {
-                            ch,
-                            values: [(param, v)].into_iter().collect(),
-                            key,
-                        });
-                    }
-                }
-                Err(e) => {
-                    self.note_poll_error(&driver, &param, &e).await;
-                }
-            }
-        }
+        while set.join_next().await.is_some() {}
+        if self.connection_gen.load(Ordering::Acquire) != generation { return; }
         // Adaptive pipelining: EMA of the batch wall time.
         let dt_us = t0.elapsed().as_micros() as u64;
         let prev = self.rtt_ema_us.load(Ordering::Relaxed);
         let ema = if prev == 0 { dt_us } else { (prev * 3 + dt_us) / 4 };
         self.rtt_ema_us.store(ema, Ordering::Relaxed);
-        if self.fx_cursor.fetch_add(1, Ordering::Relaxed).is_multiple_of(FX_POLL_EVERY) {
+        if self.fx_tick.fetch_add(1, Ordering::Relaxed).is_multiple_of(FX_POLL_EVERY) {
             self.fx_refresh_one().await;
         }
     }
@@ -3524,7 +3701,13 @@ impl Engine {
             self.prio_armed.store(false, Ordering::Relaxed);
             let _ = self.hydrating.compare_exchange(generation, 0, Ordering::AcqRel, Ordering::Acquire);
         }
-        self.broadcast(&self.state_message(None).await);
+        let sampled = Instant::now();
+        let state = self.state_message(None).await;
+        if self.connection_gen.load(Ordering::Acquire) != generation { return; }
+        {
+            let sync = self.sync_state.lock().unwrap();
+            self.broadcast(&self.reconcile_event(state, &sync, sampled));
+        }
         if let Ok(info) = self.info_message().await {
             self.broadcast(&info);
         }
@@ -3532,14 +3715,22 @@ impl Engine {
         self.refresh_fx_cache().await;
         self.broadcast(&self.fx_message().await);
         self.broadcast(&self.routing_message().await);
-        for frame in self.masters_snapshot().await {
-            self.broadcast(&frame);
-        }
+        let sampled = Instant::now();
+        let masters = self.masters_snapshot().await;
+        if self.connection_gen.load(Ordering::Acquire) != generation { return; }
+        let sync = self.sync_state.lock().unwrap();
+        for frame in masters { self.broadcast(&self.reconcile_event(frame, &sync, sampled)); }
     }
 
     /// Stop old-session work before replacing a driver session.
     fn invalidate_connection(&self) -> u64 {
+        // Epoch publication and snapshot delivery share the same barrier.
+        let mut sync = self.sync_state.lock().unwrap();
         let generation = self.connection_gen.fetch_add(1, Ordering::AcqRel) + 1;
+        *sync = SyncState::default();
+        self.read_failures.write().unwrap().clear();
+        self.broadcast(&Event::SyncEpoch { epoch: generation });
+        drop(sync);
         self.connection_changed.notify_waiters();
         self.hydrating.store(0, Ordering::Release);
         self.focus_queue.write().unwrap().clear();
@@ -3582,6 +3773,7 @@ impl Engine {
                         return;
                     }
                 }
+                let started = Instant::now();
                 let remaining = Duration::from_secs(5).saturating_sub(start.elapsed());
                 let Ok(result) = tokio::time::timeout(
                     remaining, self.read_param(&driver, StripId(ch), id)
@@ -3593,10 +3785,10 @@ impl Engine {
                 }
                 match result {
                     Ok(value) => {
-                        self.note_poll_ok(&driver, id);
-                        self.apply_inbound(ch, id, &value);
+                        self.note_read_ok(&driver, ch, id);
+                        self.apply_received(ch, id, &value, Instant::now(), Some(started));
                     }
-                    Err(e) => { self.note_poll_error(&driver, id, &e).await; }
+                    Err(e) => { self.note_read_error(&driver, ch, id, &e); }
                 }
                 reads += 1;
             }
@@ -3650,7 +3842,7 @@ impl Engine {
                 }
                 Some(Event::Params {
                     ch,
-                    values: values.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                    values: values.iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, v)| (k.clone(), v.clone())).collect(),
                     key: openmix_core::strip_key_for_index(&topo, ch as usize),
                 })
             })
@@ -3669,7 +3861,7 @@ impl Engine {
         let dropped = self.param_dropped.read().unwrap();
         self.static_poll_list(driver)
             .into_iter()
-            .filter(|(_, id)| !dropped.contains(&(driver.to_string(), id.to_string())))
+            .filter(|(_, id)| !id.starts_with('_') && *id != "rtnsw" && !dropped.contains(&(driver.to_string(), id.to_string())))
             .map(|(ch, id)| (ch, id.to_string()))
             .collect()
     }
@@ -3712,6 +3904,20 @@ impl Engine {
                 }
             }
         }
+        if driver == "xair" {
+            for group in 0..4 { out.push((group, "_mute_group")); }
+            for fam in &topo {
+                if matches!(fam.kind, openmix_core::StripKind::In | openmix_core::StripKind::Ret | openmix_core::StripKind::Bus | openmix_core::StripKind::FxSnd) {
+                    for strip in fam.first..fam.first + fam.count {
+                        for id in ["_mg1", "_mg2", "_mg3", "_mg4"] { out.push((strip as u16, id)); }
+                    }
+                }
+                if fam.kind == openmix_core::StripKind::In {
+                    for strip in fam.first..fam.first + fam.count { out.push((strip as u16, "rtnsw")); }
+                }
+            }
+        }
+        out.sort_by_key(|(ch, _)| *ch);
         self.poll_static.write().unwrap().insert(driver.to_string(), out.clone());
         out
     }
@@ -3866,6 +4072,21 @@ impl Engine {
         None
     }
 
+    fn note_read_ok(&self, driver: &str, ch: u16, param: &str) {
+        self.read_failures.write().unwrap().remove(&(driver.to_string(), ch, param.to_string()));
+    }
+
+    fn note_read_error(&self, driver: &str, ch: u16, param: &str, error: &anyhow::Error) {
+        if !is_unsupported_error(error) { return; }
+        let mut failures = self.read_failures.write().unwrap();
+        let (strikes, retry) = failures.entry((driver.to_string(), ch, param.to_string())).or_insert((0, Instant::now()));
+        *strikes = strikes.saturating_add(1);
+        if !is_timeout_error(error) || *strikes >= POLL_TIMEOUT_STRIKES {
+            *retry = Instant::now() + Duration::from_secs(15);
+            eprintln!("engine: {driver} strip {ch} {param}: {error}; retry in 15s (capability retained)");
+        }
+    }
+
     /// Read one catalogue param from the named driver.
     async fn read_param(
         &self,
@@ -3876,7 +4097,14 @@ impl Engine {
         // Solo is a poll-set id, not a catalogue param (no `get_param`
         // arm serves it): drivers with solo state answer the bank read
         // directly; the rest stay honestly unsupported.
+        if self.read_failures.read().unwrap().get(&(driver.to_string(), ch.0, param.to_string())).is_some_and(|(_, retry)| *retry > Instant::now()) {
+            anyhow::bail!("read in scoped retry cooldown");
+        }
         let drv = self.drv(driver);
+        if param == "_mute_group" { return drv.get_mute_group(ch.0 as u8).await.map(ParamValue::Bool); }
+        if let Some(group) = param.strip_prefix("_mg").and_then(|g| g.parse::<u8>().ok()) {
+            return drv.get_mute_group_assign(ch, group - 1).await.map(ParamValue::Bool);
+        }
         if param == "solo" {
             return drv.get_solo(ch).await.map(ParamValue::Bool);
         }
@@ -3923,13 +4151,17 @@ impl Engine {
 
     /// Read one (channel, param) and broadcast the diff frame on change.
     async fn poll_read(&self, driver: &str, ch: u16, param: &str) {
+        let started = Instant::now();
+        let generation = self.connection_gen.load(Ordering::Acquire);
         match self.read_param(driver, StripId(ch), param).await {
             Ok(pv) => {
-                self.note_poll_ok(driver, param);
-                self.apply_inbound(ch, param, &pv);
+                self.note_read_ok(driver, ch, param);
+                if self.connection_gen.load(Ordering::Acquire) == generation {
+                    self.apply_received(ch, param, &pv, Instant::now(), Some(started));
+                }
             }
             Err(e) => {
-                self.note_poll_error(driver, param, &e).await;
+                self.note_read_error(driver, ch, param, &e);
             }
         }
     }
@@ -3941,6 +4173,7 @@ impl Engine {
     /// a live param (eviction also flips `caps.unsupported`, hiding the
     /// control until reconnect). Everything else keeps polling silently.
     /// Returns true when the param was dropped.
+    #[cfg(test)]
     async fn note_poll_error(&self, driver: &str, param: &str, e: &anyhow::Error) -> bool {
         if !is_unsupported_error(e) {
             return false;
@@ -3974,6 +4207,7 @@ impl Engine {
 
     /// Clear consecutive-timeout strikes after a successful read: a desk
     /// that answers again is alive and must never be evicted.
+    #[cfg(test)]
     fn note_poll_ok(&self, driver: &str, param: &str) {
         self.poll_timeouts
             .write()
@@ -3996,16 +4230,16 @@ impl Engine {
     /// step; bools/text must match exactly.
     async fn refresh_param(&self, ch: StripId, param: &str, written: &Value) -> Option<Value> {
         let driver = self.active_driver();
+        let started = Instant::now();
+        let generation = self.connection_gen.load(Ordering::Acquire);
         let pv = self.read_param(&driver, ch, param).await.ok()?;
+        if generation != self.connection_gen.load(Ordering::Acquire) { return None; }
         let v = param_value_json(&pv);
         if !refresh_agrees(&v, written) {
             return None;
         }
-        {
-            let mut cache = self.param_cache.write().unwrap();
-            cache_store(&mut cache, ch.0, param, v.clone());
-        }
-        Some(v)
+        self.apply_received(ch.0, param, &pv, Instant::now(), Some(started));
+        self.param_cache.read().unwrap().get(&ch.0).and_then(|values| values.get(param)).cloned()
     }
 
     /// Snapshot the active driver (used by `capture_scene`).
@@ -4108,6 +4342,9 @@ impl Engine {
     /// [`handle_json`](Engine::handle_json): run [`apply`](Engine::apply),
     /// unicast the direct reply (or error), then broadcast.
     async fn apply_cmd(&self, writer: &str, cmd: Cmd) {
+        let started = Instant::now();
+        let generation = self.connection_gen.load(Ordering::Acquire);
+        let connecting = matches!(cmd, Cmd::Connect { .. } | Cmd::ConnectDevice { .. } | Cmd::Disconnect | Cmd::Offline { .. });
         let mut out = Vec::new();
         match self.apply(cmd, writer, &mut out).await {
             Ok(Some(reply)) => self.unicast(writer, reply),
@@ -4121,9 +4358,9 @@ impl Engine {
                 },
             ),
         }
-        for event in out {
-            self.broadcast(&event);
-        }
+        let sync = self.sync_state.lock().unwrap();
+        if !connecting && generation != self.connection_gen.load(Ordering::Acquire) { return; }
+        for event in out { self.broadcast(&self.reconcile_event(event, &sync, started)); }
     }
 
     /// Apply one client command from `writer` (its client id).
@@ -4285,10 +4522,7 @@ impl Engine {
                 //
                 // Cache alongside the echo (see `apply_inbound`): the poll
                 // diff then stays quiet instead of re-emitting this state.
-                {
-                    let mut cache = self.param_cache.write().unwrap();
-                    cache_store(&mut cache, ch, "solo", json!(soloed));
-                }
+                if !self.active_drv().is_hardware() { self.apply_inbound(ch, "solo", &ParamValue::Bool(soloed)); }
                 out.push(Event::Solo {
                     ch,
                     soloed,
@@ -4847,6 +5081,13 @@ impl Engine {
                 let _ = self.active_drv().set_spectrum_target("", None).await;
                 self.invalidate_connection();
                 self.reads_suspended.store(true, Ordering::Release);
+                let _ = self.active_drv().disconnect().await;
+                self.param_cache.write().unwrap().clear();
+                self.fx_cache.write().unwrap().clear();
+                // Drop the meter subscription guard so the next connect
+                // resubscribes from clean state (see `connect`).
+                *self.meter_guard.write().unwrap() = None;
+                *self.meter_driver.write().unwrap() = None;
                 {
                     let mut link = self.link.write().unwrap();
                     link.state = "disconnected".to_string();
@@ -6297,6 +6538,7 @@ mod tests {
         // Timeout-class read: tolerated twice (one lost datagram on venue
         // wifi must not evict a live param), dropped on the third
         // consecutive strike and reported.
+        while client.events.try_recv().is_ok() {} // membership false rows follow the legacy prefix
         let err = anyhow::anyhow!("/ch/01/eq/on: timed out after 2s");
         assert!(!engine.note_poll_error("xair", "eq_on", &err).await);
         assert!(!engine.note_poll_error("xair", "eq_on", &err).await);
