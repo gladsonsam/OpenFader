@@ -70,16 +70,17 @@ export function designPanToEngine(p: number): number {
 }
 
 /**
- * Engine send level dB (-90..+10) <-> design 0..1 send value via the fader
+ * Engine send level dB <-> design 0..1 send value via the driver's fader
  * law (the design's sendAria reads the same curve, so dB text agrees).
+ * The floor is the law's own (`-90` X-Air, `-120` DL32S).
  */
 export function sendDbToDesign01(db: number, law: FaderLaw = XAIR_LAW): number {
   if (!Number.isFinite(db)) return 0;
-  return Math.min(1, Math.max(0, law.fromDb(Math.min(10, Math.max(-90, db)))));
+  return Math.min(1, Math.max(0, law.fromDb(Math.min(10, Math.max(law.floorDb, db)))));
 }
 
 export function design01ToSendDb(v: number, law: FaderLaw = XAIR_LAW): number {
-  if (!Number.isFinite(v) || v <= 0) return -90;
+  if (!Number.isFinite(v) || v <= 0) return law.floorDb;
   return law.toDb(Math.min(1, Math.max(0, v)));
 }
 
@@ -140,12 +141,18 @@ export function tapOptionsForSlot(driver: string, n: number): number[] {
  * bus masters, 7-10 the four FX send masters (firmware `mix/01..10`;
  * owner-rig verified 2026-10-20 that `/mix/11..16` leaves and containers
  * are silent on channel and bus roots, so slots past 10 never render on
- * xair). Every other driver keeps the generic design `Mix N` label.
+ * xair). The DL32S (`dl32s` driver) is 8+4: slots 1-8 feed aux masters
+ * 1-8, 9-12 the four FX sends (slots past 12 have no leaf). Every other
+ * driver keeps the generic design `Mix N` label.
  */
 export function sendDestName(driver: string, n: number): string {
   if (driver === 'xair' && Number.isInteger(n)) {
     if (n >= 1 && n <= 6) return `Bus ${n}`;
     if (n >= 7 && n <= 10) return `FX ${n - 6}`;
+  }
+  if (driver === 'dl32s' && Number.isInteger(n)) {
+    if (n >= 1 && n <= 8) return `Aux ${n}`;
+    if (n >= 9 && n <= 12) return `FX ${n - 8}`;
   }
   return `Mix ${n}`;
 }
