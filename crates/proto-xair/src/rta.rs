@@ -80,7 +80,9 @@ fn bins(msg: &OscMessage) -> Option<Vec<f32>> {
     }
     Some(
         blob[4..]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|v| i16::from_le_bytes([v[0], v[1]]) as f32 / 256.0)
             .collect(),
     )
