@@ -12,6 +12,7 @@
   import AppFrame from '../AppFrame.svelte';
   import HeaderBar from './HeaderBar.svelte';
   import BankRail from './BankRail.svelte';
+  import BootOverlay from './BootOverlay.svelte';
   import { ui } from '../state/uiStore.svelte.ts';
   import { live } from '../state/live.svelte.ts';
   import { bankDefs } from '../fixtures/designData.ts';
@@ -129,6 +130,9 @@
     onNextChannel={() => ui.do.stepChannel(1)}
     metersActive={meterBridge.open}
   />
+  {#if live.phase === 'connecting'}
+    <BootOverlay message={live.message} />
+  {/if}
   <div style={bodyStyle}>
     {#key ui.state.mode}
       <div
