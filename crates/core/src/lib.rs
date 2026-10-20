@@ -27,6 +27,18 @@ pub mod sync;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct StripId(pub u16);
 
+/// Audio-frequency data with provider provenance. Bins retain their measured
+/// dB values; explicit band edges avoid inventing/resampling a frequency axis.
+#[derive(Clone, Debug)]
+pub struct AudioSpectrum {
+    pub strip: Option<StripId>,
+    pub bins_db: Vec<f32>,
+    pub band_edges_hz: Vec<f32>,
+    pub source: String,
+    pub position: String,
+    pub epoch: u64,
+}
+
 /// Strip family kind, as carried in `caps.topology[].kind`
 /// (`in|ret|bus|fxsnd|mtx|main|dca`). Catalogue entries declare which kinds
 /// they apply to via [`params::ParamDef::scopes`].
@@ -718,6 +730,19 @@ pub trait MixerDriver: Send + Sync {
         &self,
     ) -> Option<tokio::sync::broadcast::Receiver<ParamUpdate>> {
         None
+    }
+
+    /// Cache-only audio spectra. Empty means unavailable/stale. A global desk
+    /// source without a verified strip association carries `strip: None`.
+    fn poll_spectrum(&self) -> Vec<AudioSpectrum> {
+        Vec::new()
+    }
+
+    /// Acquire/change/release the desk's shared RTA selector. An empty owner
+    /// releases the current lease (disconnect); a named release affects only
+    /// that client. Providers without a selector can ignore the hint.
+    async fn set_spectrum_target(&self, _owner: &str, _strip: Option<StripId>) -> anyhow::Result<()> {
+        Ok(())
     }
 
     /// Non-blocking single-frame poll (fake meters, tests, headless use).

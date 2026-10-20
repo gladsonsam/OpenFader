@@ -40,7 +40,8 @@ pub use protocol::{parse_cmd, Cmd, Event};
 pub use engine::LOCK_TTL;
 /// Default param-plane poll tick: one driver query per tick = 20 queries/s.
 pub use engine::PARAM_POLL_INTERVAL;
-/// Max channels with per-tick spectrum output (first N channels only).
+/// Legacy simulator envelope-activity budget (audio spectra are uncapped).
 pub use engine::SPECTRUM_CHANNELS;
-/// Max channels with per-tick GR output (first N channels only).
+
+/// Legacy simulator GR fanout budget (hardware uses its whole topology).
 pub use engine::GR_CHANNELS;

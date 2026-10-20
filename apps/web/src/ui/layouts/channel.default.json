@@ -537,7 +537,9 @@
               "bind": {
                 "graph": "eqGraph",
                 "locked": "store.locked",
-                "fine": "store.fine"
+                "fine": "store.fine",
+                "selBand": "store.selBand",
+                "selQ": "eqSelQ"
               },
               "variants": {
                 "phone": {
@@ -572,6 +574,21 @@
                     },
                     "locked": {
                       "$expr": "store.locked"
+                    }
+                  }
+                },
+                "q": {
+                  "do": "ui.setEqParam",
+                  "args": {
+                    "id": {
+                      "$expr": "selId"
+                    },
+                    "band": {
+                      "$expr": "payload.band"
+                    },
+                    "param": "q",
+                    "value": {
+                      "$expr": "payload.q"
                     }
                   }
                 }
@@ -857,7 +874,8 @@
                     "frozen": "frozen",
                     "staticDotL": "dynDotL",
                     "staticDotT": "dynDotT",
-                    "getLevel": "dynGetLevel"
+                    "getLevel": "dynGetLevel",
+                    "getReduction": "dynGetReduction"
                   }
                 },
                 {
@@ -1118,7 +1136,8 @@
                     "frozen": "frozen",
                     "staticDotL": "dynDotL",
                     "staticDotT": "dynDotT",
-                    "getLevel": "dynGetLevel"
+                    "getLevel": "dynGetLevel",
+                    "getReduction": "dynGetReduction"
                   }
                 },
                 {

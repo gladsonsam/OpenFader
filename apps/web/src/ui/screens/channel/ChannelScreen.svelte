@@ -42,8 +42,8 @@
 
   const stripMeter = $derived<MeterSource>({
     getLevel: () => live.liveLevelDb(ui.sel.id) ?? ui.meter?.levelOf(ui.sel.id) ?? -90,
-    getPeak: () => ui.meter?.peakOf(ui.sel.id) ?? null,
-    getClip: () => (ui.meter ? ui.meter.clipping(ui.sel.id, Date.now()) : false),
+    getPeak: () => live.livePeakDb(ui.sel.id) ?? ui.meter?.peakOf(ui.sel.id) ?? null,
+    getClip: () => live.liveClipOn(ui.sel.id) ?? (ui.meter ? ui.meter.clipping(ui.sel.id, Date.now()) : false),
     showPeak: ui.state.peakHold,
   });
   const hbarMeter = $derived<MeterSource>({
@@ -74,7 +74,6 @@
     if (live.phase !== 'online' || !w || !w.capsReady) return null;
     const ch = bridgeStrip(w, ui.sel.id);
     if (ch === null) return null;
-    const grCh = ch;
     return {
       engineCh: ch,
       driver: w.driver,
@@ -112,9 +111,7 @@
         return typeof v === 'number' ? v : null;
       },
       grComp: () => {
-        if (grCh >= w.meters.size) return null;
-        const v = w.meters.grComp[grCh];
-        return typeof v === 'number' && Number.isFinite(v) ? v : null;
+        return live.liveReductionDb(`comp/${ui.sel.id}`);
       },
       // `link` is a real per-strip leaf on sim; on xair stereo link is the
       // global /config/chlink switch (unsupported) — the card says so.
@@ -242,6 +239,7 @@
       hbarMeter,
       levelDb,
       dynGetLevel,
+      dynGetReduction: (kind) => live.liveReductionDb(`${kind}/${ui.sel.id}`),
       liveGroups: liveGroupsSource(),
       liveDesk: liveDeskSource(),
       liveInsert: liveInsertSource(),

@@ -61,6 +61,7 @@
       staticDotT?: string;
       /** Live level reader (dBFS). Ignored when frozen. */
       getLevel?: (() => number) | null;
+      getReduction?: ((kind: DynKind) => number | null) | null;
       /** Card min-height px (layouts shrink it on phones). */
       minH?: number;
       /** Flex shorthand override (phone stacks the graph full-width). */
@@ -93,6 +94,7 @@
   );
   const frozen = $derived(props.frozen ?? true);
   const getLevel = $derived(props.getLevel ?? null);
+  const getReduction = $derived(props.getReduction ?? null);
   const minH = $derived(props.minH ?? 300);
   const flexCss = $derived(props.flex ?? '1 1 400px');
   const widthCss = $derived(
@@ -126,7 +128,10 @@
   function paint(): void {
     const level = frozen || !getLevel || !params ? -90 : getLevel();
     if (!params) return;
-    const d = dynDotNums(kind, params, level);
+    const reduction = frozen ? null : getReduction?.(kind);
+    const d = dynDotNums(kind, params, level, reduction ?? undefined);
+    // No authoritative operating point without both a level and live GR.
+    if (dot) dot.style.visibility = getReduction && (reduction == null || level <= -90) ? 'hidden' : 'visible';
     if (dot) {
       dot.style.left = d.left.toFixed(1) + '%';
       dot.style.top = d.top.toFixed(1) + '%';
@@ -426,6 +431,6 @@
     </div>
   </div>
   {#if params}
-    <GrBar {kind} {color} {params} {frozen} {getLevel} />
+    <GrBar {kind} {color} {params} {frozen} {getLevel} {getReduction} />
   {/if}
 </div>

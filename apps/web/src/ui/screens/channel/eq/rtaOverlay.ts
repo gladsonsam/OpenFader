@@ -1,18 +1,6 @@
-// RTA overlay helpers for the EQ graph: turn the engine's per-channel
-// spectrum frames (64 bins, peak-normalised 0..1) into an SVG area path in
-// EQ_GRAPH_W x EQ_GRAPH_H coordinates, with peak-hold + decay smoothing.
-//
-// Honesty note: these bins are NOT audio frequencies. The desk (XR18)
-// streams ~20 Hz per-channel meter envelopes, and the engine FFTs the
-// trailing 100 ms of that envelope history (RtaProcessor::spectrum in
-// crates/core/src/rta.rs). So the overlay pumps with real signal dynamics
-// (silence reads flat, and the graph hides it) but the bin order is
-// envelope-modulation content spread across the log axis as a display
-// convention — a live activity backdrop, not a calibrated RTA. True
-// per-frequency RTA would need audio taps the desk does not stream.
-//
-// Rune-free and DOM-free: node-testable like the rest of this folder
-// (no test file: repo rule bans new frontend tests).
+// Simulator envelope helpers and provider audio-spectrum rendering.
+// Hardware bins preserve dB precision and explicit provider band edges. They
+// never pass through the legacy envelope's 64-bin normalization/smoothing.
 
 import { EQ_GRAPH_H, EQ_GRAPH_W } from './eqModel.ts';
 
@@ -91,5 +79,25 @@ export function rtaAreaPath(
   }
   const lastF = RTA_FMIN * Math.pow(RTA_FMAX / RTA_FMIN, 1);
   d += ' L' + xOf(lastF, w).toFixed(1) + ' ' + h + ' L0 ' + h + ' Z';
+  return d;
+}
+
+/** Measured audio bars, using provider frequency edges and a fixed dB scale.
+ * The height represents −90..0 dB; no peak normalization or invented bins.
+ */
+export function audioRtaAreaPath(
+  binsDb: ArrayLike<number>, edges: ArrayLike<number>,
+  w: number = EQ_GRAPH_W, h: number = EQ_GRAPH_H,
+): string {
+  if (!binsDb.length || edges.length !== binsDb.length + 1) return '';
+  let d = '';
+  for (let i = 0; i < binsDb.length; i++) {
+    const lo = Math.max(RTA_FMIN, edges[i]!);
+    const hi = Math.min(RTA_FMAX, edges[i + 1]!);
+    if (lo >= hi) continue;
+    const y = h - Math.max(0, Math.min(1, (binsDb[i]! + 90) / 90)) * RTA_PEAK_H;
+    const x0 = xOf(lo, w).toFixed(2), x1 = xOf(hi, w).toFixed(2);
+    d += `M${x0} ${h} L${x0} ${y.toFixed(2)} L${x1} ${y.toFixed(2)} L${x1} ${h} Z `;
+  }
   return d;
 }

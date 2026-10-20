@@ -414,6 +414,10 @@ impl Dl32sDriver {
 }
 
 impl MixerDriver for Dl32sDriver {
+    fn meter_taps(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     fn name(&self) -> &'static str {
         "dl32s"
     }

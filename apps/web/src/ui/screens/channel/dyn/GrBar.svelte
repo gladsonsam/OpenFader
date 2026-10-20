@@ -12,6 +12,7 @@
     params,
     frozen,
     getLevel,
+    getReduction = null,
   }: {
     kind: DynKind;
     color: string;
@@ -19,6 +20,7 @@
     frozen: boolean;
     /** Live level reader (dBFS). Ignored when frozen. */
     getLevel: (() => number) | null;
+    getReduction?: ((kind: DynKind) => number | null) | null;
   } = $props();
 
   let fill: HTMLSpanElement | null = $state(null);
@@ -26,14 +28,18 @@
 
   function paint(): void {
     const level = frozen || !getLevel ? -90 : getLevel();
-    const g = dynGrNums(kind, params, level);
+    const reduction = frozen ? null : getReduction?.(kind);
+    const g = getReduction
+      ? { pct: Math.min(100, (reduction ?? 0) / (kind === 'gate' ? 80 : 24) * 100),
+          text: reduction == null ? '—' : reduction > 0.05 ? '-' + reduction.toFixed(1) : '0.0' }
+      : dynGrNums(kind, params, level);
     if (fill) fill.style.height = g.pct.toFixed(1) + '%';
     if (text) text.textContent = g.text;
   }
 
   $effect(() => {
     paint();
-    if (frozen || !getLevel) return;
+    if (frozen || (!getLevel && !getReduction)) return;
     let raf = 0;
     const loop = (): void => {
       paint();
@@ -47,7 +53,7 @@
 <div
   style="box-sizing:content-box;width:48px;flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;margin-bottom:24px"
 >
-  <span style="font-size:12px;color:var(--u4-text-6)">GR</span>
+  <span style="font-size:12px;color:var(--u4-text-6)">{getReduction ? 'GR' : 'GR est.'}</span>
   <div
     style="box-sizing:content-box;flex:1;width:18px;position:relative;overflow:hidden;border-radius:3px;background:var(--u4-io-tile)"
   >

@@ -170,7 +170,7 @@
         {
           "id": "master-proc",
           "module": "col",
-          "when": "showProcessing && (master.hasEq || master.hasDyn)",
+          "when": "showProcessing",
           "props": {
             "flex": "none",
             "gap": 3,
@@ -198,9 +198,20 @@
               "when": "master.hasEq"
             },
             {
+              "id": "master-eq-mini-empty",
+              "module": "col",
+              "when": "!master.hasEq",
+              "props": {
+                "flex": "1 1 0",
+                "minHeight": 0,
+                "border": "1px solid var(--u4-line-faint)",
+                "radius": 3,
+                "background": "var(--u4-well-bg)"
+              }
+            },
+            {
               "id": "master-dynamics-well",
               "module": "col",
-              "when": "master.hasDyn",
               "props": {
                 "height": 51,
                 "flex": "none",
@@ -289,10 +300,7 @@
                 }
               ]
             }
-          ],
-          "bind": {
-            "height": "master.hasDyn ? (master.hasEq ? 102 : 51) : 48"
-          }
+          ]
         },
         {
           "id": "master-pan",

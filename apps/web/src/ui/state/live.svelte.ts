@@ -37,6 +37,7 @@ import {
   type LivePhase,
 } from './live.ts';
 import { bridgeStrip } from './engineBridge.ts';
+import { hasLiveLevel } from './meterCapabilities.ts';
 
 export type { LivePhase };
 
@@ -463,9 +464,8 @@ class LiveRelay {
    * live driver — never the old sim-topology index map). Returns null
    * ONLY while offline (callers fall back to the fixture sim); while
    * online an unmapped or silent strip reads -90 (true silence), never
-   * the sim's animation. On X-Air only channels have a rig-verified blob
-   * index (0 = ch 1); bus/main/FX families read silence until a loud-rig
-   * session pins their blob positions — never a neighbor's level.
+   * the sim's animation. On X-Air only inputs and the stereo aux input
+   * have verified level taps; bus/main/FX families read silence.
    */
   liveReductionDb(ref: string): number | null {
     const [kind, fixtureId] = ref.split('/');
@@ -475,12 +475,28 @@ class LiveRelay {
     if (w.driver !== 'sim' && !this.deskConnected) return null;
     const ch = bridgeStrip(w, fixtureId);
     if (ch === null || ch >= w.meters.size) return null;
+    if (!w.supports(`${kind}_on`, ch)) return null;
     if (w.param(ch, `${kind}_on`) === false) return 0;
-    // Negotiated taps cover every strip; legacy GR frames cover only
-    // the first channels and may be unavailable on the sim driver.
-    const tap = w.meters.taps[kind === 'gate' ? 'gr_gate' : 'gr_comp'];
-    const value = tap?.[ch] ?? (kind === 'gate' ? w.meters.grGate : w.meters.grComp)[ch];
-    return Number.isFinite(value) ? Math.max(0, value) : null;
+    return w.meters.reduction?.(ch, kind) ?? null;
+  }
+
+  /** Null allows fixture fallback only without an engine link. Online
+   * missing/unsupported sources return silence/false, like liveLevelDb. */
+  livePeakDb(fixtureId: string): number | null {
+    const level = this.liveLevelDb(fixtureId);
+    if (level === null) return null;
+    const w = this.world!;
+    const ch = bridgeStrip(w, fixtureId);
+    if (ch === null || !hasLiveLevel(w, ch) || (w.driver !== 'sim' && !this.deskConnected)) return -90;
+    return linearToDb(w.meters.peak[ch] ?? 0);
+  }
+
+  liveClipOn(fixtureId: string): boolean | null {
+    if (this.liveLevelDb(fixtureId) === null) return null;
+    const w = this.world!;
+    const ch = bridgeStrip(w, fixtureId);
+    if (ch === null || !hasLiveLevel(w, ch) || (w.driver !== 'sim' && !this.deskConnected)) return false;
+    return (w.meters.clipUntil[ch] ?? 0) > performance.now();
   }
 
   liveLevelDb(fixtureId: string): number | null {
@@ -489,7 +505,7 @@ class LiveRelay {
     if (w.driver !== 'sim' && !this.deskConnected) return -90;
     const ch = bridgeStrip(w, fixtureId);
     if (ch === null || ch >= w.meters.size) return -90;
-    if (w.driver === 'xair' && w.kindOf(ch) !== 'in') return -90;
+    if (!hasLiveLevel(w, ch)) return -90;
     return linearToDb(w.meters.level[ch] ?? 0);
   }
 }
