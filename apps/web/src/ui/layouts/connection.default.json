@@ -88,6 +88,25 @@
               "do": "ui.disconnect"
             }
           }
+        },
+        {
+          "id": "go-online",
+          "module": "btn",
+          "when": "store.connected == 'offline'",
+          "props": {
+            "label": "Go online",
+            "height": 46,
+            "fontSize": 14,
+            "padding": "0 18px",
+            "bg": "var(--u4-green)",
+            "fg": "#10240f",
+            "bare": true
+          },
+          "on": {
+            "press": {
+              "do": "ui.goOnline"
+            }
+          }
         }
       ]
     },
@@ -246,7 +265,8 @@
           },
           "when": "conn.emptyText"
         }
-      ]
+      ],
+      "when": "store.connected != 'offline'"
     },
     {
       "id": "manual-desk",
@@ -298,7 +318,7 @@
               "id": "off-sub",
               "module": "text",
               "props": {
-                "value": "Prepare a show without a console. Changes sync when you connect.",
+                "value": "Explore a local preview without a console. Offline changes stay on this device and are not sent when you connect.",
                 "size": 13,
                 "color": "var(--u4-text-7)"
               }
@@ -325,7 +345,8 @@
             }
           }
         }
-      ]
+      ],
+      "when": "store.connected != 'offline'"
     }
   ]
 }

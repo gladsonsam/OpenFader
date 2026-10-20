@@ -40,6 +40,17 @@
   // design-exact row, so fixture baselines are untouched.
   const device = useDeviceClass();
 
+  // Keep the selected channel in the engine's persistent detail lane.
+  // Read the selection ID alone so ordinary value updates do not keep
+  // restarting the focus debounce while the same channel is open.
+  $effect(() => {
+    const w = live.engine;
+    const id = ui.state.sel;
+    if (live.phase !== 'online' || !w?.capsReady) return;
+    w.setOpenChannel(bridgeStrip(w, id));
+    return () => w.setOpenChannel(null);
+  });
+
   const stripMeter = $derived<MeterSource>({
     getLevel: () => live.liveLevelDb(ui.sel.id) ?? ui.meter?.levelOf(ui.sel.id) ?? -90,
     getPeak: () => live.livePeakDb(ui.sel.id) ?? ui.meter?.peakOf(ui.sel.id) ?? null,

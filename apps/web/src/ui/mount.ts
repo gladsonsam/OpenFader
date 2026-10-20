@@ -5,7 +5,7 @@ import { mount } from 'svelte';
 import AppFrame from './AppFrame.svelte';
 import type { Component } from 'svelte';
 import { loadManifestModules } from './modules/registry.ts';
-import { contentLoaderFor, loadShellScreen } from './screens/loadScreen.ts';
+import { contentLoaderFor } from './screens/loadScreen.ts';
 
 const screens = new Map<string, Component>();
 const galleries = new Map<string, () => Promise<{ default: Component }>>();
@@ -33,54 +33,6 @@ function galleryLoaderFor(id: string): (() => Promise<unknown>) | null {
     default:
       return null;
   }
-}
-
-/**
- * Register every remaining package without blocking paint — and without
- * stealing the paint path's connections: the burst waits for a post-mount
- * floor (two frames + 2 s) and then an idle slot, so on slow links the
- * first paint's fetches finish first (dynamic import() has no priority
- * knob; starting the burst early measurably delayed FCP on HTTP/1.1).
- * Navigation requests its own screen and manifests immediately through
- * loadShellScreen, without waiting for this background batch.
- * A watchdog covers frames that never come (hidden tab). Each package still
- * loads in isolation (screens/index.ts per-module catch), so a broken
- * package can't take down the route.
- */
-function settleRemaining(): void {
-  let done = false;
-  const run = () => {
-    if (done) return;
-    done = true;
-    Promise.all([
-      import('./screens/index.ts').then((m) => m.registered),
-      // Manifest packages deferred past paint (registration is idempotent;
-      // already-loaded paint files are rejected as duplicates). Layouts
-      // re-resolve via the manifest revision (see registry.ts).
-      loadManifestModules(),
-    ]).catch((e) => console.error('[ui4] background registration failed:', e));
-  };
-  const viaIdle = () => {
-    try {
-      const w = window as unknown as {
-        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void;
-      };
-      if (typeof w.requestIdleCallback === 'function') w.requestIdleCallback(run, { timeout: 2000 });
-      else setTimeout(run, 0);
-    } catch {
-      setTimeout(run, 0);
-    }
-  };
-  const afterFloor = () => {
-    try {
-      requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(viaIdle, 2000)));
-      // Watchdog: frames/idle never come in a hidden tab.
-      setTimeout(run, 8000);
-    } catch {
-      setTimeout(run, 0);
-    }
-  };
-  afterFloor();
 }
 
 /**
@@ -135,41 +87,35 @@ export async function mountUi(target: HTMLElement, params: URLSearchParams): Pro
     const loader = galleries.get(id);
     const m = loader ? await loader() : await import('./gallery/Gallery.svelte');
     const app = mount(m.default, { target });
-    if (need) settleRemaining();
     return app;
   }
-  // The Shell (boot route) covers the default route and every design screen
-  // id; mount it without awaiting the full screen graph. The shell package,
-  // the content package for the requested screen, and its paint manifests
-  // all fetch in parallel — the old serial awaits stalled first paint on
-  // the slowest of the three. The rest settles after first paint.
+  // Mount navigation as soon as the shell is available. Its outlet owns
+  // the selected content/manifests and retry state; waiting for those here
+  // would also hold the header hostage to a slow content import/profile.
   if (!isFixtureParams(params)) prefetchEngine();
   const shellP = import('./shell/shellRegister.ts');
   const screen = params.get('screen');
   const need = screen ? contentLoaderFor(screen) : contentLoaderFor(null);
-  const contentP = need
-    ? Promise.resolve(loadShellScreen(screen ?? 'mixer')).then(() => true)
-    : import('./screens/index').then((index) => index.registered.then(() => false));
-  const manifestP = (need ? Promise.resolve() : loadManifestModules()).catch((e) => {
-    console.error('[ui4] manifest load failed:', e);
-  });
   try {
     await shellP;
   } catch (e) {
     console.error('[ui4] shell registration failed:', e);
   }
-  try {
-    await contentP;
-  } catch (e) {
-    // A broken package logs and the route falls back, exactly like the
-    // all-settled path in screens/index.ts.
-    console.error('[ui4] registration failed:', screen, e);
+  if (!need) {
+    // Debug/editor/extension routes retain their full registration path.
+    try {
+      const index = await import('./screens/index');
+      await index.registered;
+    } catch (e) {
+      console.error('[ui4] registration failed:', screen, e);
+    }
+    await loadManifestModules().catch((e) => {
+      console.error('[ui4] manifest load failed:', e);
+    });
   }
-  await manifestP;
   const Screen = screenFromParams(params) ?? screens.get('mixer') ?? null;
   if (Screen) {
     const app = mount(Screen, { target });
-    if (need) settleRemaining();
     return app;
   }
   // No screen resolved and no `mixer` registered (bare package set):

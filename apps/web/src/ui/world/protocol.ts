@@ -92,6 +92,7 @@ export interface FxTypeCapsEvt {
 }
 
 export type EngineEvent =
+  | { kind: 'sync_epoch'; epoch: number }
   | { kind: 'you'; id: string }
   | { kind: 'state'; driver: string; strips: StateStripEvt[]; main_fader: number | null; by?: string }
   | { kind: 'param'; ch: number; field: string; value: ParamValue; by?: string }
@@ -237,6 +238,8 @@ export function parseEvent(text: string): EngineEvent | null {
   const t = m['type'];
   if (typeof t !== 'string' || !t) return null;
   switch (t) {
+    case 'sync_epoch':
+      return Number.isSafeInteger(m['epoch']) && (m['epoch'] as number) >= 0 ? { kind: 'sync_epoch', epoch: m['epoch'] as number } : null;
     case 'you':
       return typeof m['id'] === 'string' && m['id'] ? { kind: 'you', id: m['id'] } : null;
     case 'state': {
@@ -253,6 +256,7 @@ export function parseEvent(text: string): EngineEvent | null {
     case 'param': {
       const ch = int(m['ch']);
       if (ch === null || ch < 0 || typeof m['field'] !== 'string' || !m['field']) return null;
+      if (!(typeof m['value'] === 'string' || typeof m['value'] === 'boolean' || (typeof m['value'] === 'number' && Number.isFinite(m['value'])))) return null;
       return {
         kind: 'param',
         ch,
@@ -266,7 +270,7 @@ export function parseEvent(text: string): EngineEvent | null {
       if (ch === null || ch < 0 || !isRec(m['values'])) return null;
       const values: Record<string, ParamValue> = {};
       for (const [k, v] of Object.entries(m['values'])) {
-        if (k) values[k] = normParamValue(v);
+        if (k && (typeof v === 'string' || typeof v === 'boolean' || (typeof v === 'number' && Number.isFinite(v)))) values[k] = v;
       }
       return { kind: 'params', ch, values };
     }
@@ -341,7 +345,7 @@ export function parseEvent(text: string): EngineEvent | null {
     }
     case 'meters':
       if (!Array.isArray(m['levels'])) return null;
-      return { kind: 'meters', levels: m['levels'].map((v: unknown) => num(v)) };
+      return { kind: 'meters', levels: m['levels'].map((v: unknown) => num(v, NaN)) };
     case 'audio_spectrum': {
       const bins = m['bins_db'], edges = m['band_edges_hz'];
       if (!Array.isArray(bins) || !Array.isArray(edges) || bins.length > 1024) return null;
@@ -360,11 +364,11 @@ export function parseEvent(text: string): EngineEvent | null {
     case 'gr': {
       const ch = int(m['ch']);
       if (ch === null) return null;
-      return { kind: 'gr', ch, gate: num(m['gate']), comp: num(m['comp']) };
+      return { kind: 'gr', ch, gate: num(m['gate'], NaN), comp: num(m['comp'], NaN) };
     }
     case 'taps': {
       if (typeof m['tap'] !== 'string' || !Array.isArray(m['levels'])) return null;
-      return { kind: 'taps', tap: m['tap'], levels: m['levels'].map((v: unknown) => num(v)) };
+      return { kind: 'taps', tap: m['tap'], levels: m['levels'].map((v: unknown) => num(v, NaN)) };
     }
     case 'shows': {
       if (!Array.isArray(m['shows'])) return null;
@@ -486,7 +490,7 @@ export function parseEvent(text: string): EngineEvent | null {
         const params: Record<string, number> = {};
         if (isRec(s['params'])) {
           for (const [k, v] of Object.entries(s['params'])) {
-            if (k) params[k] = num(v);
+            if (k && typeof v === 'number' && Number.isFinite(v)) params[k] = v;
           }
         }
         slots.push({

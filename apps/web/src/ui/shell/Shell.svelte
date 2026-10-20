@@ -12,13 +12,13 @@
   import AppFrame from '../AppFrame.svelte';
   import HeaderBar from './HeaderBar.svelte';
   import BankRail from './BankRail.svelte';
-  import BootOverlay from './BootOverlay.svelte';
   import { ui } from '../state/uiStore.svelte.ts';
   import { live } from '../state/live.svelte.ts';
   import { bankDefs } from '../fixtures/designData.ts';
   import { bridgeStrip } from '../state/engineBridge.ts';
-  import { modeTabToScreen } from '../state/urlBridge.ts';
+  import { modeTabToScreen, parseFixtureUrl } from '../state/urlBridge.ts';
   import { loadShellScreen } from '../screens/loadScreen.ts';
+  import { startScreenPreload } from '../screens/preloadScreens.ts';
   import type { Component } from 'svelte';
   import { meterBridge } from '../screens/meters/meterBridgeState.svelte.ts';
   import { useDeviceClass } from '../modules/device.svelte.ts';
@@ -26,6 +26,8 @@
 
   const banks = bankDefs();
   const fixtureMode = typeof window !== 'undefined' && ['1', 'true'].includes(new URLSearchParams(window.location.search).get('fixture') ?? '');
+  const initialScreen = typeof window !== 'undefined' ? parseFixtureUrl(window.location.search).screen : null;
+  let urlInitialized = $state(false);
 
   // Live availability filter (item 4): online, banks with no strip on the
   // desk topology hide (XR18: Ch 17-32/33-48/Mtx/Grp/DCA banks vanish).
@@ -57,10 +59,16 @@
 
   onMount(() => {
     ui.initFromUrl(window.location.search);
+    urlInitialized = true;
     ui.markReady();
+    return startScreenPreload(() => ({
+      screen: screenId,
+      connected: live.deskConnected || live.demo || ui.state.connected === 'offline' || fixtureMode,
+      connecting: live.phase === 'connecting',
+    }));
   });
 
-  const screenId = $derived(modeTabToScreen(ui.state.mode, ui.state.tab) ?? 'mixer');
+  const screenId = $derived((!urlInitialized && initialScreen) || modeTabToScreen(ui.state.mode, ui.state.tab) || 'mixer');
   // A selected route must not wait for the post-paint background batch.
   // Components and layout modules become available together; cached routes
   // resolve synchronously. The await block discards stale navigation loads.
@@ -107,11 +115,6 @@
       return 'flex:1;min-height:0;overflow-y:auto;--shell-padding:12px';
     })(),
   );
-  const placeholderStyle = $derived(
-    ui.state.mode === 'mixer'
-      ? 'flex:1 1 auto;min-width:0;display:flex;align-items:center;justify-content:center;color:var(--u4-text-5);font-size:15px'
-      : 'flex:1;display:flex;align-items:center;justify-content:center;color:var(--u4-text-5);font-size:15px',
-  );
 </script>
 
 <AppFrame>
@@ -133,8 +136,11 @@
     onNextChannel={() => ui.do.stepChannel(1)}
     metersActive={meterBridge.open}
   />
-  {#if live.phase === 'connecting'}
-    <BootOverlay message={live.message} />
+  {#if ui.state.connected === 'offline'}
+    <div class="offline-banner" role="status">
+      <span>Working offline · local preview</span>
+      <button onclick={() => ui.do.goOnline()}>Go online / Connect</button>
+    </div>
   {/if}
   <div class="u4-shell-body" class:u4-mixer-body={ui.state.mode === 'mixer'} class:u4-edge-dock={showRail && !isPhone} style={bodyStyle}>
     {#key ui.state.mode}
@@ -143,7 +149,7 @@
         in:fly={{ y: REDUCED_MOTION ? 0 : -16, duration: REDUCED_MOTION ? 0 : 120 }}
       >
         {#await screenRequest}
-          <div style={placeholderStyle} role="status" aria-busy="true">Loading {screenLabel}…</div>
+          <div class="screen-transition" role="progressbar" aria-label="Opening page" aria-busy="true"></div>
         {:then Content}
           <Content />
         {:catch}
@@ -158,13 +164,27 @@
       <BankRail banks={liveBanks} activeKey={ui.state.bank} onSelect={(k) => ui.do.setBank(k)} orientation="side" />
     {/if}
   </div>
-  <a href="https://icons8.com" target="_blank" rel="noopener noreferrer" style="align-self:flex-end;padding:2px 8px;font-size:10px;color:var(--u4-text-6)">Icons by Icons8</a>
   {#if meterBridge.open && MeterOverlay}
     <MeterOverlay />
   {/if}
 </AppFrame>
 
 <style>
+  .offline-banner { flex:none; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:6px 12px; background:#302615; color:#f0c77e; font-size:13px; }
+  .offline-banner button { min-height:44px; padding:8px 14px; border:1px solid #806435; border-radius:3px; background:#46351a; color:#ffe3ae; font:inherit; cursor:pointer; }
+
+  .screen-transition {
+    height: 2px;
+    background: var(--u4-line-ctl);
+    animation: screen-transition 800ms ease-in-out infinite alternate;
+  }
+  @keyframes screen-transition {
+    from { opacity: .3; }
+    to { opacity: .8; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .screen-transition { animation: none; }
+  }
   .screen-load-error {
     flex: 1;
     display: flex;

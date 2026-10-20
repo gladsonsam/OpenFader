@@ -122,6 +122,7 @@ interface StoreLike {
   get<T>(key: string): Promise<T | null | undefined>;
   set(key: string, value: unknown): Promise<void>;
   save(): Promise<void>;
+  clear(): Promise<void>;
 }
 
 /** Cached store handle: `load()` once, reuse across accesses (was one
@@ -135,7 +136,7 @@ async function getStore(): Promise<StoreLike | null> {
     storePromise = import('@tauri-apps/plugin-store').then(
       async (m) => {
         try {
-          return (await m.load('settings.json', { autoSave: 100 })) as StoreLike;
+          return (await m.load('settings.json', { autoSave: false })) as StoreLike;
         } catch {
           return null;
         }
@@ -165,7 +166,33 @@ export async function loadSettings(): Promise<AppSettings> {
   }
 }
 
-export async function saveSettings(patch: AppSettings): Promise<void> {
+let settingsWrites: Promise<void> = Promise.resolve();
+let settingsResetting = false;
+
+/** All saves share a queue so reset cannot be followed by an older save. */
+export function saveSettings(patch: AppSettings): Promise<void> {
+  if (settingsResetting) return Promise.resolve();
+  settingsWrites = settingsWrites.then(() => writeSettings(patch));
+  return settingsWrites;
+}
+
+/** Clear the native store even when this session has not loaded it yet. */
+export async function clearNativeSettings(): Promise<void> {
+  settingsResetting = true;
+  await settingsWrites;
+  if (!isTauri()) return;
+  const store = await getStore();
+  if (!store) throw new Error('Could not open the native settings store. Retry clearing storage.');
+  await store.clear();
+  await store.save();
+}
+
+/** A failed reset leaves the page open for retry/cancel and normal use. */
+export function resumeSettingsAfterFailedReset(): void {
+  settingsResetting = false;
+}
+
+async function writeSettings(patch: AppSettings): Promise<void> {
   if (!isTauri()) {
     try {
       const cur = JSON.parse(localStorage.getItem('openmix-settings') ?? '{}') as AppSettings;
@@ -279,6 +306,7 @@ async function resumeEngine(): Promise<void> {
     const { invoke } = await import('@tauri-apps/api/core');
     await invoke('engine_set_active', { active: true });
     await invoke('engine_resync');
+    window.dispatchEvent(new Event('openmix-engine-resumed'));
   } catch {
     /* older shell without the commands */
   }
@@ -305,6 +333,10 @@ export function initAppVisibility(): void {
   if (visibilityInit || typeof document === 'undefined') return;
   visibilityInit = true;
   appHidden = document.hidden;
+  // A full-page storage reset/reload runs pagehide in the old document,
+  // pausing native push. The new document starts visible, so it has no
+  // hidden -> visible transition to resume that shared native gate.
+  if (!appHidden) void resumeEngine();
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) handleHidden();
     else handleVisible();

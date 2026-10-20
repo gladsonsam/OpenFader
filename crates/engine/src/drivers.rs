@@ -93,6 +93,9 @@ pub trait DynDriver: Send + Sync {
     fn poll_spectrum(&self) -> Vec<openmix_core::AudioSpectrum>;
     async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()>;
     async fn connect(&self, addr: &str) -> anyhow::Result<()>;
+    async fn disconnect(&self) -> anyhow::Result<()> { Ok(()) }
+    async fn refresh_streams(&self) -> anyhow::Result<()> { Ok(()) }
+    fn telemetry_timestamps(&self) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> { None }
     async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()>;
     async fn get_fader(&self, strip: StripId) -> anyhow::Result<f32>;
     async fn set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()>;
@@ -368,6 +371,9 @@ macro_rules! impl_dyn_driver {
         fn poll_meters(&self) -> MeterFrame {
             MixerDriver::poll_meters(self)
         }
+        async fn disconnect(&self) -> anyhow::Result<()> { MixerDriver::disconnect(self).await }
+        async fn refresh_streams(&self) -> anyhow::Result<()> { MixerDriver::refresh_streams(self).await }
+        fn telemetry_timestamps(&self) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> { MixerDriver::telemetry_timestamps(self) }
         async fn connect(&self, addr: &str) -> anyhow::Result<()> {
             MixerDriver::connect(self, addr).await
         }

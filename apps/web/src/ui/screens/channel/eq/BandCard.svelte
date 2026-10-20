@@ -31,7 +31,7 @@
   const showType = $derived(props.showType ?? true);
 
   function param(param: 'f' | 'g' | 'q', v: number): void {
-    if (props.locked || !vm) return;
+    if (props.locked || !vm || !vm.ranges[param]) return;
     onEvent?.('param', { band: vm.band, param, value: v });
   }
 </script>
@@ -50,7 +50,8 @@
         {vm.name}
       </button>
       <button
-        onclick={() => onEvent?.('toggle', { band: vm.band })}
+        disabled={props.locked || !vm.toggleable}
+        onclick={() => { if (!props.locked && vm.toggleable) onEvent?.('toggle', { band: vm.band }); }}
         aria-pressed={vm.onStr}
         aria-label={vm.toggleAria}
         style="box-sizing:border-box;font-variant-numeric:normal;height:32px;padding:0 10px;border-radius:4px;border:1px solid var(--u4-line-ctl);background:{vm.onBg};color:{vm.onText};font-size:13px;cursor:pointer"
@@ -58,9 +59,11 @@
       >
     </div>
     {#if showType}
-      <div style="box-sizing:content-box;display:flex;gap:4px">
+      <div style="box-sizing:content-box;display:flex;flex-wrap:wrap;gap:4px">
+        {#if !vm.typeEditable}<span>Type unknown</span>{/if}
         {#each vm.types as t, i (t.label)}
           <button
+            disabled={props.locked || !vm.typeEditable}
             onclick={() => onEvent?.('type', { band: vm.band, type: vm.typeValues[i] })}
             aria-pressed={t.pressed}
             aria-label={vm.name + ' ' + t.label}
@@ -76,6 +79,8 @@
         mode="eq"
         eqBand={vm.band}
         eqParam="f"
+        range={vm.ranges.f}
+        disabled={props.locked || !vm.ranges.f || !Number.isFinite(vm.freq)}
         value={vm.freq}
         label="Freq"
         color={vm.color}
@@ -89,6 +94,8 @@
         mode="eq"
         eqBand={vm.band}
         eqParam="g"
+        range={vm.ranges.g}
+        disabled={props.locked || !vm.ranges.g || !Number.isFinite(vm.gain)}
         value={vm.gain}
         label="Gain"
         color={vm.color}
@@ -102,6 +109,8 @@
         mode="eq"
         eqBand={vm.band}
         eqParam="q"
+        range={vm.ranges.q}
+        disabled={props.locked || !vm.ranges.q || !Number.isFinite(vm.q)}
         value={vm.q}
         label="Q"
         color={vm.color}

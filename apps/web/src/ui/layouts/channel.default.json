@@ -493,7 +493,7 @@
                     "fg": "eqMaster.text",
                     "pressed": "eqMaster.str",
                     "ariaLabel": "eqMaster.label == 'EQ In' ? 'EQ in' : 'EQ bypassed'",
-                    "locked": "store.locked"
+                    "locked": "store.locked || eqMaster.label == 'EQ unknown'"
                   },
                   "on": {
                     "toggle": {

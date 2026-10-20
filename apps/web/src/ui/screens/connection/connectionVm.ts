@@ -135,7 +135,7 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
   // are the ONLY device source here: real discovered desks, an honest
   // empty state, or a press-Scan hint — fixtures never leak in, and no
   // "Live · relay link" / host / 127.0.0.1 chrome ever renders.
-  if (live && (live.phase === 'online' || live.phase === 'connecting' || live.phase === 'error')) {
+  if (!offline && live && (live.phase === 'online' || live.phase === 'connecting' || live.phase === 'error')) {
     const on = live.phase === 'online';
     const scanned = (live.scannedAt ?? 0) > 0;
     const found =
@@ -234,7 +234,7 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
       halo: 'rgba(240,180,74,.18)',
       cardBorder: '#5a4420',
       title: 'Working offline',
-      sub: 'Changes sync when you connect',
+      sub: 'Local preview only. Go online to choose a mixer.',
       isConnected: false,
       lastScan: state.lastScan,
       scanLabel: 'Scan devices on this network',
@@ -243,7 +243,7 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
       scanError: null,
       devices: [],
       emptyText:
-        'Working offline. Scan this network when you’re ready to find a mixer.',
+        'Go online to enable network discovery and connect by IP address. Offline changes are not sent to a mixer.',
       showFix: false,
       showManualDesk: false,
     };

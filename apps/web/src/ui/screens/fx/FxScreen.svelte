@@ -14,7 +14,6 @@
   import { ui } from '../../state/uiStore.svelte.ts';
   import { live } from '../../state/live.svelte.ts';
   import type { FxSlot } from '../../fixtures/designData.ts';
-  import type { FxSlotView } from '../../world/types.ts';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
   import { fixtureSource } from '../../modules/context.ts';
   import { createProfileStore } from '../../modules/profile/store.svelte.ts';
@@ -48,7 +47,9 @@
     const w = live.engine;
     if (live.phase !== 'online' || !w || !w.capsReady) return [];
     const capsTypes = w.fxCaps?.types ?? [];
-    return w.fxSlots.map((s: FxSlotView) => {
+    return Array.from({ length: w.fxCaps?.slots ?? w.fxSlots.length }, (_, i) => {
+      const s = w.fxSlots.find(s => s.slot === i + 1);
+      if (!s) return [];
       const capsDef = capsTypes.find(t => t.id === s.type || t.label === s.type);
       return capsDef ? capsDef.params.map(p => p.id) : [];
     });
@@ -62,20 +63,22 @@
     const w = live.engine;
     if (live.phase !== 'online' || !w || !w.capsReady) return null;
     const rows = w.fxSlots;
-    if (!rows.length) return null;
+    if (!rows.length) return Array.from({ length: w.fxCaps?.slots ?? 0 }, () => ({ type: '—', on: false, p: [], bpm: null }));
     const capsTypes = w.fxCaps?.types ?? [];
-    return rows.map((s: FxSlotView) => {
+    return Array.from({ length: w.fxCaps?.slots ?? rows.length }, (_, i) => {
+      const s = rows.find(s => s.slot === i + 1);
+      if (!s) return { type: '—', on: false, p: [], bpm: null };
       const capsDef = capsTypes.find(t => t.id === s.type || t.label === s.type);
       if (capsDef) {
         const keys = capsDef.params.map(p => p.id);
-        const p = keys.map(k => (typeof s.params[k] === 'number' ? s.params[k]! : 0.5));
+        const p = keys.map(k => (typeof s.params[k] === 'number' ? s.params[k]! : NaN));
         return { type: s.type, on: s.on && !s.bypass, p, bpm: null };
       }
       const defs = FX_PARAM_DEFS[s.type] ?? [];
       return {
         type: s.type,
         on: s.on && !s.bypass,
-        p: defs.map(d => (typeof s.params[d.key] === 'number' ? s.params[d.key]! : 0.5)),
+        p: defs.map(d => (typeof s.params[d.key] === 'number' ? s.params[d.key]! : NaN)),
         bpm: null,
       };
     });
@@ -119,7 +122,7 @@
       if (!online || !isXair || !src || src.type === '—') return vm;
       // Desk-native slot: full name + code caption + family tile.
       const code = src.type;
-      return { ...vm, type: displayNameOf(code), code, art: fxArtFor(code) };
+      return { ...vm, type: displayNameOf(code), code, art: fxArtFor(code), state: '—', stateColor: '#7f8a9c' };
     }),
   );
   const isXair = $derived(online && live.engine?.driver === 'xair');
@@ -172,7 +175,7 @@
   // The fixture desk has an FX rack exactly when the world carries slots;
   // the fx-* modules declare requires:['fx'] so a desk without FX honestly
   // removes them (wave 3 binds real caps here).
-  const caps = $derived((ui.fx?.length ?? 0) > 0 ? ['fx'] : []);
+  const caps = $derived((online ? (live.engine?.fxCaps?.slots ?? 0) : ui.fx.length) > 0 ? ['fx'] : []);
   const tree = $derived(store.tree(defaults as unknown as LayoutNode));
   const scope = $derived({
     store: ui.state,
