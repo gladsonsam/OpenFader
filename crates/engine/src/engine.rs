@@ -472,6 +472,11 @@ struct ClientEntry {
     /// WS BINARY type 3 in the adapter). Set by `hello {"taps":true}`;
     /// default off so old clients see no new traffic.
     taps: bool,
+    /// Whether this client already holds the full `caps` catalogue. Attach
+    /// queues the slim caps (essentials lane only — see
+    /// [`Engine::caps_slim_message`]); the first `hello` completes it with
+    /// a unicast full `caps` and flips this. Later hellos are pure re-acks.
+    caps_full: bool,
 }
 
 /// Cached visible-group lane lists: (driver, visible set, pairs).
@@ -857,7 +862,10 @@ impl Engine {
 
     /// Attach a client: allocate its id, register it, and queue the
     /// initial snapshot (`you`, `state`, `shows`, `clients`, `locks`,
-    /// `caps`, `devices`, `link`, `info`?, `scenes`, `fx`, `routing`,
+    /// slim `caps` (essentials lane — the full catalogue follows on the
+    /// client's first `hello`, see
+    /// [`caps_slim_message`](Engine::caps_slim_message)), `devices`,
+    /// `link`, `info`?, `scenes`, `fx`, `routing`,
     /// master-section frames (`bus`/`subgroup`/`mute_group` + sparse
     /// assigns + `main` + sparse `solo`), then one `params` frame per
     /// cached channel) into the new
@@ -874,23 +882,26 @@ impl Engine {
         let (tx, rx) = mpsc::unbounded_channel();
 
         // Snapshot the world before registering, so no live broadcast can
-        // overtake the initial frames in the newcomer's mailbox.
+        // overtake the initial frames in the newcomer's mailbox. The async
+        // pieces are independent reads — join them so the wall time is the
+        // slowest, not the sum (on hardware drivers these are desk
+        // queries); the sync pieces (shows/locks/caps/devices/link/params)
+        // are lock-local and stay serial.
         let you = Event::You { id: id.clone() };
-        let state = self.state_message(None).await;
         let shows = self.shows_message();
         let locks = self.locks_message();
-        let caps = self.caps_message();
+        let caps = self.caps_slim_message();
         let devices = self.devices_message();
         let link = self.link_message_cached();
-        let info = self.info_message().await.ok();
-        let scenes = self.scenes_message();
-        let fx = self.fx_message().await;
-        let routing = self.routing_message().await;
         let params = self.params_snapshot();
-        // Master-section snapshot: bus/subgroup/mute-group masters +
-        // memberships + Main LR (fresh pages learn existing assignments
-        // without a write; sparse solos where the driver serves them).
-        let masters = self.masters_snapshot().await;
+        let (state, info, scenes, fx, routing, masters) = tokio::join!(
+            self.state_message(None),
+            async { self.info_message().await.ok() },
+            async { self.scenes_message() },
+            self.fx_message(),
+            self.routing_message(),
+            self.masters_snapshot()
+        );
 
         {
             let mut clients = self.clients.write().unwrap();
@@ -904,6 +915,7 @@ impl Engine {
                     policy: Policy::admin(),
                     binary_meters: false,
                     taps: false,
+                    caps_full: false,
                 },
             );
         }
@@ -955,8 +967,10 @@ impl Engine {
     /// the resume path for adapters whose transport was suspended (mobile
     /// WebView backgrounded: the pushes stop, the world moves on). Same
     /// frame set an [`attach`](Engine::attach) snapshot carries, minus
-    /// `you`: `state`, `shows`, `clients`, `locks`, `caps`, `devices`,
-    /// `link`, `info` (best-effort), `scenes`, `fx`, `routing`,
+    /// `you` — but with the FULL `caps` catalogue (attach ships the slim
+    /// lane; a resumed UI already holds the catalogue and must never have
+    /// it downgraded): `state`, `shows`, `clients`, `locks`, `caps`,
+    /// `devices`, `link`, `info` (best-effort), `scenes`, `fx`, `routing`,
     /// `masters_snapshot`, then one `params` frame per cached channel.
     ///
     /// Never re-inserts the client, never touches locks/roles, and no-ops
@@ -1586,6 +1600,27 @@ impl Engine {
     /// provider-contributed rows ride `caps` once the driver lists them in
     /// its capabilities.
     fn caps_message(&self) -> Event {
+        self.caps_message_filtered(false)
+    }
+
+    /// Slim `caps` for the attach snapshot: identical to
+    /// [`caps_message`](Engine::caps_message) except `params` carries only
+    /// the essentials lane (`fader`/`mute`/`name`/`pan`/`color` — the ids
+    /// first paint and strip interaction resolve) instead of the ~180-row
+    /// catalogue (~30 KB, three quarters of the snapshot). The full
+    /// catalogue follows on the client's first `hello` (sent right after
+    /// subscribe on every transport) as a unicast `caps` rebroadcast — the
+    /// same frame shape as a param-drop caps update, which every consumer
+    /// already applies idempotently — and `push_snapshot` (resume) keeps
+    /// the full frame, so a resumed UI never downgrades its catalogue.
+    fn caps_slim_message(&self) -> Event {
+        self.caps_message_filtered(true)
+    }
+
+    /// Shared `caps` builder: `slim` selects the essentials-only `params`
+    /// (see [`caps_slim_message`](Engine::caps_slim_message)); every other
+    /// field is identical in both shapes.
+    fn caps_message_filtered(&self, slim: bool) -> Event {
         let driver = self.active_driver();
         let supported = self.driver_capabilities(&driver);
         let reg = self.registry(&driver);
@@ -1593,6 +1628,7 @@ impl Engine {
         let live: Vec<&&str> = supported
             .iter()
             .filter(|id| !dropped.contains(&(driver.clone(), id.to_string())))
+            .filter(|id| !slim || is_essentials_id(id))
             .collect();
         let params: Vec<ParamDef> = live
             .iter()
@@ -2617,21 +2653,33 @@ impl Engine {
         }
         // Membership: sparse (members only). Reads are memory/cache-speed
         // on drivers that serve the assign leaf; elsewhere the default
-        // reads honestly fail and no members are reported.
+        // reads honestly fail and no members are reported. Drivers with a
+        // bulk source (in-memory maps) serve the whole scan from one lock
+        // acquisition; the frame set and order match the per-strip reads
+        // exactly, so consumers see no difference.
         if drv.group_assign_caps() != (false, false) {
             let topo = self.driver_topology(&driver);
             let strips = self.driver_strips(&driver);
+            let sub_bulk = drv.sub_assign_bulk();
+            let mg_bulk = drv.mg_assign_bulk();
+            let solo_bulk = if !drv.is_hardware() { drv.solo_bulk() } else { None };
             for ch in 0..strips as u16 {
                 let id = StripId(ch);
                 let key = openmix_core::strip_key_for_index(&topo, ch as usize);
                 for group in 0..subgroups {
-                    let member = drv.get_subgroup_assign(id, group).await.unwrap_or(false);
+                    let member = match &sub_bulk {
+                        Some(map) => map.get(&(ch, group)).copied().unwrap_or(false),
+                        None => drv.get_subgroup_assign(id, group).await.unwrap_or(false),
+                    };
                     if member {
                         out.push(Event::SubgroupAssign { ch, group, member, key: key.clone() });
                     }
                 }
                 for group in 0..mute_groups {
-                    let member = drv.get_mute_group_assign(id, group).await.unwrap_or(false);
+                    let member = match &mg_bulk {
+                        Some(map) => map.get(&(ch, group)).copied().unwrap_or(false),
+                        None => drv.get_mute_group_assign(id, group).await.unwrap_or(false),
+                    };
                     if member {
                         out.push(Event::MuteGroupAssign { ch, group, member, key: key.clone() });
                     }
@@ -2641,7 +2689,11 @@ impl Engine {
             // dl32s solos ride echoes, so no rows here).
             if !drv.is_hardware() {
                 for ch in 0..strips as u16 {
-                    if drv.get_solo(StripId(ch)).await.unwrap_or(false) {
+                    let soloed = match &solo_bulk {
+                        Some(map) => map.get(&ch).copied().unwrap_or(false),
+                        None => drv.get_solo(StripId(ch)).await.unwrap_or(false),
+                    };
+                    if soloed {
                         out.push(Event::Solo {
                             ch,
                             soloed: true,
@@ -2722,24 +2774,30 @@ impl Engine {
             return Vec::new();
         }
         let topo = drv.topology();
+        // Bulk `source` plane when the driver serves it (one lock instead
+        // of a per-strip `get_param` await); same rows in the same order.
+        let bulk = drv.source_bulk();
         let mut out = Vec::new();
         for fam in &topo {
             if fam.kind != openmix_core::StripKind::In {
                 continue;
             }
             for s in fam.first..fam.first + fam.count {
-                let Ok(pv) = drv.get_param(StripId(s as u16), "source").await else {
-                    continue;
+                let label: Option<String> = match &bulk {
+                    Some(map) => map.get(&(s as u16)).cloned(),
+                    None => match drv.get_param(StripId(s as u16), "source").await {
+                        Ok(ParamValue::Text(label)) => Some(label),
+                        _ => None,
+                    },
                 };
-                if let ParamValue::Text(label) = pv {
-                    if let Some((group, index)) = parse_source(&label) {
-                        out.push(StoredRoute {
-                            strip: s as u16,
-                            key: openmix_core::strip_key_for_index(&topo, s),
-                            group,
-                            index,
-                        });
-                    }
+                let Some(label) = label else { continue };
+                if let Some((group, index)) = parse_source(&label) {
+                    out.push(StoredRoute {
+                        strip: s as u16,
+                        key: openmix_core::strip_key_for_index(&topo, s),
+                        group,
+                        index,
+                    });
                 }
             }
         }
@@ -4284,6 +4342,25 @@ impl Engine {
                 if let Some(v) = taps {
                     if let Some(entry) = self.clients.write().unwrap().get_mut(writer) {
                         entry.taps = v;
+                    }
+                }
+                // Slim-caps completion (see `caps_slim_message`): attach
+                // queues only the essentials lane so first paint never waits
+                // for the ~30 KB catalogue. Every transport sends hello
+                // right after subscribing, so the first hello unicasts the
+                // full catalogue ahead of any detail UI; later hellos are
+                // pure re-acks. Same frame shape as a param-drop caps
+                // rebroadcast (idempotent replace for every consumer).
+                if self
+                    .clients
+                    .read()
+                    .unwrap()
+                    .get(writer)
+                    .is_some_and(|e| !e.caps_full)
+                {
+                    self.unicast(writer, self.caps_message());
+                    if let Some(entry) = self.clients.write().unwrap().get_mut(writer) {
+                        entry.caps_full = true;
                     }
                 }
                 Ok(Some(Event::Hello {
