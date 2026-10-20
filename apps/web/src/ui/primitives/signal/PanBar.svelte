@@ -1,7 +1,5 @@
-<!-- Pan bar: balance-style control, readable at a glance.
-     Strip: 30px, centre notch, L/R end labels, center-out fill showing
-     direction + amount, white pointer line with a top triangle, brighter
-     centre detent when near-centre, hover title with the value.
+<!-- Pan bar: two triangles meet at centre, with centre-out fill showing
+     direction + amount and a white position marker.
      Channel strip: 34px, notch top/bottom 10, plus the readout text
      variant at right (11px var(--u4-text-7), e.g. 'C', 'L28', 'R45').
      Null pan renders the design's empty placeholder well.
@@ -41,8 +39,8 @@
   const markerLeft = $derived(panMarkerLeft(value ?? 0));
   // Center-out fill: from centre to the marker, so direction + amount read
   // instantly (nothing filled at centre).
-  const fillLeft = $derived(Math.min(50, markerLeft));
-  const fillW = $derived(Math.abs(markerLeft - 50));
+  const fillLeft = $derived(50 + Math.min(0, value ?? 0) * 50);
+  const fillW = $derived(Math.abs(value ?? 0) * 50);
   // Detent glow when effectively centred.
   const centred = $derived(value != null && Math.abs(value) < 0.04);
 
@@ -152,24 +150,21 @@
       ? 'default'
       : 'ew-resize'};width:100%"
   >
-    <span
+    <svg
+      viewBox="0 0 100 24"
+      preserveAspectRatio="none"
       aria-hidden="true"
-      style="position:absolute;left:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--u4-text-dim)"
-      >L</span
+      style="position:absolute;inset:5px 6px;width:calc(100% - 12px);height:calc(100% - 10px);pointer-events:none"
     >
-    {#if variant === 'strip'}
-      <span
-        aria-hidden="true"
-        style="position:absolute;right:6px;top:50%;transform:translateY(-50%);font-size:10px;font-weight:700;color:var(--u4-text-dim)"
-        >R</span
-      >
-    {/if}
-    {#if fillW > 0.5}
-      <span
-        aria-hidden="true"
-        style="position:absolute;top:4px;bottom:4px;left:{fillLeft}%;width:{fillW}%;border-radius:2px;background:var(--u4-pan-fill)"
-      ></span>
-    {/if}
+      <path d="M0 1L50 12L0 23ZM100 1L50 12L100 23Z" fill="var(--u4-pan-notch)" opacity="0.4" />
+      {#if fillW > 0.5}
+        <path
+          d="M0 1L50 12L0 23ZM100 1L50 12L100 23Z"
+          fill="var(--u4-pan-fill)"
+          style={`clip-path:inset(0 ${100 - fillLeft - fillW}% 0 ${fillLeft}%)`}
+        />
+      {/if}
+    </svg>
     <span
       aria-hidden="true"
       style="position:absolute;left:50%;top:{notchTB}px;bottom:{notchTB}px;width:{centred
@@ -182,10 +177,6 @@
     <span
       aria-hidden="true"
       style="position:absolute;top:4px;bottom:4px;width:3px;border-radius:1px;background:var(--u4-pan-marker);left:{markerLeft}%;transform:translateX(-50%);box-shadow:0 0 4px rgba(255,255,255,.45)"
-    ></span>
-    <span
-      aria-hidden="true"
-      style="position:absolute;top:0;left:{markerLeft}%;transform:translateX(-50%);width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid var(--u4-pan-marker)"
     ></span>
     {#if variant === 'aside'}
       <span

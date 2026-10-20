@@ -593,8 +593,9 @@ export class EngineWorld implements World {
     const fader = typeof faderV === 'number' ? faderV : (state?.fader ?? 0);
     const muteV = optimisticValue(this.maps, ch, 'mute');
     const muted = typeof muteV === 'boolean' ? muteV : (state?.muted ?? false);
-    const panV = optimisticValue(this.maps, ch, 'pan');
-    const pan = kind === 'main' || kind === 'dca' ? null : typeof panV === 'number' ? enginePanToDesign(panV) : null;
+    const panField = this.supports('balance', ch) ? 'balance' : 'pan';
+    const panV = optimisticValue(this.maps, ch, panField);
+    const pan = this.supports(panField, ch) && typeof panV === 'number' ? enginePanToDesign(panV) : null;
     const lockedBy = this.locks.get(ch) ?? null;
     return { ch, id, name, source, colour, text, kind, fader, muted, pan, locked: lockedBy !== null, lockedBy };
   }

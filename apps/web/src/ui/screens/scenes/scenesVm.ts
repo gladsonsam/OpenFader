@@ -50,7 +50,7 @@ export function buildScenesVm(state: UiState): ScenesVm {
       tag: i === state.scene ? 'Current' : '',
       pressed: pv,
       border: pv ? (i === state.scene ? '#7be27b' : '#f0b44a') : 'var(--u4-line-faint)',
-      bg: pv ? '#1b2330' : 'var(--u4-panel-bg)',
+      bg: pv ? 'var(--u4-selected-surface, #1b2330)' : 'var(--u4-panel-bg)',
     };
   });
   return {

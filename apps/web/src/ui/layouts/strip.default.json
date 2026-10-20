@@ -98,80 +98,96 @@
           "when": "item.hasEq"
         },
         {
-          "id": "gate-mini",
-          "module": "strip-dyn-mini",
-          "props": {
-            "label": "Gate",
-            "kind": "gate"
-          },
-          "bind": {
-            "stripId": "item.id",
-            "enabled": "item.gateOn",
-            "ariaLabel": "concat('Open gate for ', item.name)"
-          },
+          "id": "dynamics-well",
+          "module": "col",
           "when": "item.hasDyn",
-          "on": {
-            "open": [
-              {
-                "do": "ui.select",
-                "args": {
-                  "id": {
-                    "$expr": "item.id"
-                  }
-                }
-              },
-              {
-                "do": "ui.openPage",
-                "args": {
-                  "mode": "channel"
-                }
-              },
-              {
-                "do": "ui.setTab",
-                "args": {
-                  "tab": "gate"
-                }
-              }
-            ]
-          }
-        },
-        {
-          "id": "comp-mini",
-          "module": "strip-dyn-mini",
           "props": {
-            "label": "Compressor",
-            "kind": "comp"
+            "height": 51,
+            "flex": "none",
+            "gap": 3,
+            "padding": 4,
+            "background": "var(--u4-well-bg)",
+            "border": "1px solid var(--u4-line-panel)",
+            "radius": 5
           },
-          "bind": {
-            "stripId": "item.id",
-            "enabled": "item.compOn",
-            "ariaLabel": "concat('Open compressor for ', item.name)"
-          },
-          "when": "item.hasDyn",
-          "on": {
-            "open": [
-              {
-                "do": "ui.select",
-                "args": {
-                  "id": {
-                    "$expr": "item.id"
+          "children": [
+            {
+              "id": "gate-mini",
+              "module": "strip-dyn-mini",
+              "props": {
+                "label": "Gate",
+                "kind": "gate"
+              },
+              "bind": {
+                "stripId": "item.id",
+                "enabled": "item.gateOn",
+                "ariaLabel": "concat('Open gate for ', item.name)"
+              },
+              "when": "item.hasDyn",
+              "on": {
+                "open": [
+                  {
+                    "do": "ui.select",
+                    "args": {
+                      "id": {
+                        "$expr": "item.id"
+                      }
+                    }
+                  },
+                  {
+                    "do": "ui.openPage",
+                    "args": {
+                      "mode": "channel"
+                    }
+                  },
+                  {
+                    "do": "ui.setTab",
+                    "args": {
+                      "tab": "gate"
+                    }
                   }
-                }
-              },
-              {
-                "do": "ui.openPage",
-                "args": {
-                  "mode": "channel"
-                }
-              },
-              {
-                "do": "ui.setTab",
-                "args": {
-                  "tab": "comp"
-                }
+                ]
               }
-            ]
-          }
+            },
+            {
+              "id": "comp-mini",
+              "module": "strip-dyn-mini",
+              "props": {
+                "label": "Compressor",
+                "kind": "comp"
+              },
+              "bind": {
+                "stripId": "item.id",
+                "enabled": "item.compOn",
+                "ariaLabel": "concat('Open compressor for ', item.name)"
+              },
+              "when": "item.hasDyn",
+              "on": {
+                "open": [
+                  {
+                    "do": "ui.select",
+                    "args": {
+                      "id": {
+                        "$expr": "item.id"
+                      }
+                    }
+                  },
+                  {
+                    "do": "ui.openPage",
+                    "args": {
+                      "mode": "channel"
+                    }
+                  },
+                  {
+                    "do": "ui.setTab",
+                    "args": {
+                      "tab": "comp"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
         }
       ],
       "bind": {

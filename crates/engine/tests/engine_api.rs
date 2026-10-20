@@ -172,14 +172,14 @@ async fn caps_and_params_snapshot() {
     let params = caps.get("params").and_then(Value::as_array).unwrap();
     assert_eq!(
         params.len(),
-        5,
+        6,
         "attach caps carry the essentials lane only (got {params:?})"
     );
     let ids: Vec<&str> = params
         .iter()
         .filter_map(|p| p.get("id").and_then(Value::as_str))
         .collect();
-    for id in ["fader", "mute", "name", "pan", "color"] {
+    for id in ["fader", "mute", "name", "pan", "balance", "color"] {
         assert!(ids.contains(&id), "slim caps carry {id}");
     }
     assert_eq!(caps.get("unsupported"), Some(&json!([])));
@@ -191,7 +191,7 @@ async fn caps_and_params_snapshot() {
     let full = wait_for(&mut a, |e| matches!(e, Event::Caps { .. })).await;
     let full_json = ev_json(&full);
     let full_params = full_json.get("params").and_then(Value::as_array).unwrap();
-    assert_eq!(full_params.len(), openmix_core::params::CATALOGUE.len(), "hello completes the full catalogue");
+    assert_eq!(full_params.len(), openmix_core::params::CATALOGUE.len() + 1, "hello completes the catalogue plus stereo balance");
     // The ack still follows, and a second hello is a pure re-ack (no
     // second catalogue — the flag is per client).
     wait_for(&mut a, |e| matches!(e, Event::Hello { .. })).await;

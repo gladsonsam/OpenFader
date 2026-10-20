@@ -152,6 +152,7 @@
       <BankRail banks={liveBanks} activeKey={ui.state.bank} onSelect={(k) => ui.do.setBank(k)} orientation="side" />
     {/if}
   </div>
+  <a href="https://icons8.com" target="_blank" rel="noopener noreferrer" style="align-self:flex-end;padding:2px 8px;font-size:10px;color:var(--u4-text-6)">Icons by Icons8</a>
   {#if meterBridge.open && MeterOverlay}
     <MeterOverlay />
   {/if}

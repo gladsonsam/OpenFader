@@ -44,7 +44,7 @@
       y1="20"
       x2="100"
       y2="20"
-      stroke="#1d2737"
+      stroke="var(--u4-eq-mini-unity, #1d2737)"
       stroke-width="1"
       vector-effect="non-scaling-stroke"
     ></line>

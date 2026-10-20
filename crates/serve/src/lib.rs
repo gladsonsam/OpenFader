@@ -52,6 +52,8 @@ pub use openmix_engine::{LOCK_TTL, PARAM_POLL_INTERVAL};
 /// Startup options for [`run`].
 #[derive(Clone, Debug)]
 pub struct ServeOptions {
+    /// Restrict this relay to in-memory simulation; disable LAN discovery.
+    pub sim_only: bool,
     /// Initial driver: `sim` (default), `xair`, `dl32s`.
     pub driver: String,
     /// Initial mixer address (hardware drivers; sim ignores it).
@@ -71,6 +73,7 @@ pub struct ServeOptions {
 impl Default for ServeOptions {
     fn default() -> Self {
         Self {
+            sim_only: false,
             driver: "sim".to_string(),
             addr: None,
             preset: None,
@@ -95,7 +98,7 @@ async fn ws_handler(
     AxumState(app): AxumState<AppState>,
 ) -> impl IntoResponse {
     let name = params.get("name").cloned();
-    ws.on_upgrade(move |socket| handle_socket(socket, app.engine, name))
+    ws.on_upgrade(move |socket| handle_socket(socket, app.engine, name, app.sim_only))
 }
 
 /// Which meter stream a queued outbound frame belongs to (for drop/send
@@ -339,6 +342,7 @@ async fn handle_socket(
     socket: WebSocket,
     engine: Arc<openmix_engine::Engine>,
     name: Option<String>,
+    sim_only: bool,
 ) {
     let client = engine.attach(name).await;
     let id = client.id.clone();
@@ -353,12 +357,30 @@ async fn handle_socket(
     let inbound = {
         let engine = Arc::clone(&engine);
         let outbox = Arc::clone(&outbox);
+        let notify = Arc::clone(&notify);
         let id = id.clone();
         tokio::spawn(async move {
             let mut rx = ws_rx;
             while let Some(msg) = rx.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
+                        if sim_only {
+                            use openmix_engine::Cmd;
+                            let blocked = match openmix_engine::parse_cmd(&text) {
+                                Ok(Cmd::Connect { driver, .. }) => driver != "sim",
+                                Ok(Cmd::Scan | Cmd::Probe { .. } | Cmd::ConnectDevice { .. }) => true,
+                                _ => false,
+                            };
+                            if blocked {
+                                outbox.lock().await.control.push_back(openmix_engine::Event::Error {
+                                    message: "Simulation only: hardware connections and discovery are disabled".into(),
+                                    locked_by: None,
+                                    ch: None,
+                                });
+                                notify.notify_one();
+                                continue;
+                            }
+                        }
                         if is_stats_request(&text) {
                             if job_tx.send(SenderJob::Stats).await.is_err() {
                                 break;
@@ -546,6 +568,7 @@ pub fn resolve_static_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
 /// files read the (optional) UI directory.
 #[derive(Clone)]
 struct AppState {
+    sim_only: bool,
     engine: Arc<openmix_engine::Engine>,
     static_dir: Option<Arc<PathBuf>>,
 }
@@ -634,6 +657,9 @@ pub async fn run_with_full(
     use openmix_engine::{Engine, EngineConfig};
 
     let local = listener.local_addr()?;
+    if opts.sim_only && (opts.driver != "sim" || opts.addr.is_some() || opts.data_dir.is_some() || data_dir.is_some()) {
+        anyhow::bail!("--sim-only requires the sim driver, no mixer address, and an in-memory scene library");
+    }
     let preset = match opts.preset.as_deref() {
         None => None,
         Some(name) => Some(openmix_sim::SimPreset::parse(name).ok_or_else(|| {
@@ -670,7 +696,7 @@ pub async fn run_with_full(
         .route("/healthz", get(health))
         .route("/", get(static_root))
         .route("/{*path}", get(static_file))
-        .with_state(AppState { engine, static_dir });
+        .with_state(AppState { engine, static_dir, sim_only: opts.sim_only });
 
     eprintln!("openmix-serve: listening on http://{local} (ws://{local}/ws)");
     serve_loop(listener, app).await?;

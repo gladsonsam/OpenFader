@@ -91,7 +91,108 @@ body {
 }
 
 .u4-mixer-body {
-  background: var(--u4-panel-bg);
+  background: var(--u4-page-bg);
+}
+
+.u4-frame[data-theme] {
+  --u4-r-3: 6px;
+}
+
+.u4-frame[data-theme] .u4-mixer-body :is([data-node='strip'], [data-node='master']) {
+  /* Layouts supply inline radii; keep the compact strip geometry. */
+  border-radius: 8px !important;
+}
+
+.u4-frame[data-theme] .u4-mixer-body :is(.strip-preamp, [data-ctl='pan'], [data-ctl='pan-empty']),
+.u4-frame[data-theme] .u4-mixer-body :is([data-node='proc'], [data-node='master-proc']) > button {
+  border-radius: 5px !important;
+}
+
+.u4-frame [data-ctl='name'][data-variant='strip'] {
+  border-radius: var(--u4-r-3) var(--u4-r-3) 0 0 !important;
+}
+
+.u4-frame[data-theme='design-dark'] .u4-mixer-body :is([data-node='fader-area'], [data-node='master-fader-area']) {
+  background: #121212;
+  border-radius: 5px;
+}
+
+.u4-frame[data-theme='design-dark'] [data-readout='fader'] {
+  font-weight: 600;
+}
+
+.u4-frame[data-theme]:not([data-theme='design-dark']) .u4-mixer-body :is([data-node='fader-area'], [data-node='master-fader-area']) {
+  background: var(--u4-fader-well);
+  border-radius: 5px;
+}
+
+.u4-frame[data-theme]:not([data-theme='design-dark']) [data-readout='fader'] {
+  font-weight: 600;
+}
+
+.u4-frame[data-theme] [data-ctl='fader-cap'] {
+  border-radius: 6px !important;
+  background: var(--u4-fader-cap) !important;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 16%), 0 2px 4px rgb(0 0 0 / 22%) !important;
+}
+
+.u4-frame[data-theme] [data-ctl='fader-grip'] {
+  display: none;
+}
+
+/* Light chrome surrounds dark instrument surfaces, each with its own ink. */
+.u4-frame[data-theme='daylight'] :is(.strip-preamp, [data-node='proc'], [data-node='master-proc'], [data-ctl='pan'], [data-ctl='pan-empty']) {
+  --u4-well-bg: #15181c;
+  --u4-well-bg-2: #25282d;
+  --u4-line-panel: #535b65;
+  --u4-rail-border: #535b65;
+  --u4-text-1: #f4f6f8;
+  --u4-text-10: #c4cbd4;
+  --u4-pan-marker: #ffffff;
+  --u4-pan-notch: #bdc5d0;
+  --u4-pan-fill: #a6b3c5;
+  --u4-preamp-marker: #e4e9ef;
+  --u4-eq-mini-curve: #f0d36a;
+  --u4-eq-mini-bypass: #919dac;
+  --u4-eq-mini-unity: #4d5662;
+}
+
+.u4-frame[data-theme='daylight'] :is([data-node='fader-area'], [data-node='master-fader-area']) {
+  --u4-text-1: #f4f6f8;
+  --u4-text-4: #e1e6ec;
+  --u4-text-7: #c3cbd6;
+  background: var(--u4-fader-well);
+  border-radius: 5px;
+}
+
+.u4-frame[data-theme='daylight'] [data-signal-plot] {
+  --u4-well-bg: #25282d;
+  --u4-well-bg-2: #1b1e23;
+  --u4-line-panel: #535b65;
+  --u4-line-row: #414a56;
+  --u4-text-1: #f4f6f8;
+  --u4-text-2: #f4f6f8;
+  --u4-text-4: #e1e6ec;
+  --u4-text-6: #c3cbd6;
+  --u4-text-7: #c3cbd6;
+  --u4-text-8: #c3cbd6;
+  --u4-text-10: #c3cbd6;
+  --u4-graph-unity: #858e9b;
+  --u4-graph-major: #525b68;
+  --u4-graph-minor: #363d47;
+  --u4-detail-curve: #f0d36a;
+  --u4-io-tile: #353b43;
+  color: var(--u4-text-1);
+}
+
+.u4-frame[data-theme] nav[aria-label='Layers'] button {
+  background: var(--u4-rail-bg) !important;
+  color: var(--u4-text-5) !important;
+}
+
+.u4-frame[data-theme] nav[aria-label='Layers'] button[aria-pressed='true'] {
+  background: var(--u4-tile-bg-on) !important;
+  color: var(--u4-text-1) !important;
 }
 
 .u4-edge-dock {

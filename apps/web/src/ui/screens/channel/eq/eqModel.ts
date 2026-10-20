@@ -126,7 +126,7 @@ export function eqChip(label: string, active: boolean): EqChip {
   return {
     label,
     pressed: active ? 'true' : 'false',
-    bg: active ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
+    bg: active ? 'var(--u4-choice-on-bg, var(--u4-text-1))' : 'var(--u4-btn-bg)',
     fg: active ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
   };
 }
@@ -328,13 +328,13 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
       if (f < fMin || f > fMax) continue;
       gridV.push({
         x: (xOf(f) * W).toFixed(1),
-        stroke: m === 1 || m === 2 || m === 5 ? '#223047' : '#141c2a',
+        stroke: m === 1 || m === 2 || m === 5 ? 'var(--u4-graph-major, #223047)' : 'var(--u4-graph-minor, #141c2a)',
       });
     }
   });
   const gridH: EqGridLineH[] = [12, 6, 0, -6, -12].map(g => ({
     y: toY(g).toFixed(1),
-    stroke: g === 0 ? 'var(--u4-graph-unity)' : '#1b2536',
+    stroke: g === 0 ? 'var(--u4-graph-unity)' : 'var(--u4-graph-major, #1b2536)',
   }));
   const freqLabels: EqAxisLabel[] = [
     [50, '50'], [100, '100'], [200, '200'], [500, '500'],
@@ -376,7 +376,7 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
   return {
     curvePath,
     fillPath,
-    curveStroke: eq.on ? '#f0d36a' : '#5a6272',
+    curveStroke: eq.on ? 'var(--u4-detail-curve, #f0d36a)' : '#5a6272',
     curveFill: eq.on ? 'rgba(240,211,106,0.10)' : 'none',
     bandFill,
     bandFillColor: own.length ? bandColor(sb, colors) + '2e' : 'none',

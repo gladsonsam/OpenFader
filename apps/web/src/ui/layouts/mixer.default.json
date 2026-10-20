@@ -18,8 +18,16 @@
         "dragScroll": true
       },
       "variants": {
-        "phone": { "props": { "snap": "x" } },
-        "tablet": { "props": { "snap": "x" } }
+        "phone": {
+          "props": {
+            "snap": "x"
+          }
+        },
+        "tablet": {
+          "props": {
+            "snap": "x"
+          }
+        }
       },
       "children": [
         {
@@ -37,12 +45,20 @@
           },
           "variants": {
             "phone": {
-              "bind": { "columns": "phoneCols" },
-              "props": { "snapItems": true }
+              "bind": {
+                "columns": "phoneCols"
+              },
+              "props": {
+                "snapItems": true
+              }
             },
             "tablet": {
-              "bind": { "columns": "tabletCols" },
-              "props": { "snapItems": true }
+              "bind": {
+                "columns": "tabletCols"
+              },
+              "props": {
+                "snapItems": true
+              }
             }
           },
           "children": [
@@ -53,7 +69,11 @@
                 "over": "bank:visible"
               },
               "variants": {
-                "phone": { "props": { "over": "list:allBankItems" } }
+                "phone": {
+                  "props": {
+                    "over": "list:allBankItems"
+                  }
+                }
               },
               "children": [
                 {
@@ -103,7 +123,11 @@
         "selectable": true
       },
       "variants": {
-        "phone": { "props": { "width": 76 } }
+        "phone": {
+          "props": {
+            "width": 76
+          }
+        }
       },
       "bind": {
         "shadow": "master.ring"
@@ -127,9 +151,9 @@
             "height": 40,
             "fontSize": 12,
             "padding": "0 8px",
-            "bg": "#1b2330",
-            "fg": "#e8edf5",
-            "border": "1px solid #3a414c"
+            "bg": "var(--u4-master-bus-bg, #1b2330)",
+            "fg": "var(--u4-master-bus-fg, #e8edf5)",
+            "border": "1px solid var(--u4-master-bus-border, #3a414c)"
           },
           "when": "device != 'phone' || store.sel == master.id",
           "bind": {
@@ -174,80 +198,96 @@
               "when": "master.hasEq"
             },
             {
-              "id": "master-gate-mini",
-              "module": "strip-dyn-mini",
-              "props": {
-                "label": "Gate",
-                "kind": "gate"
-              },
-              "bind": {
-                "stripId": "master.id",
-                "enabled": "master.gateOn",
-                "ariaLabel": "concat('Open gate for ', master.name)"
-              },
+              "id": "master-dynamics-well",
+              "module": "col",
               "when": "master.hasDyn",
-              "on": {
-                "open": [
-                  {
-                    "do": "ui.select",
-                    "args": {
-                      "id": {
-                        "$expr": "master.id"
-                      }
-                    }
-                  },
-                  {
-                    "do": "ui.openPage",
-                    "args": {
-                      "mode": "channel"
-                    }
-                  },
-                  {
-                    "do": "ui.setTab",
-                    "args": {
-                      "tab": "gate"
-                    }
-                  }
-                ]
-              }
-            },
-            {
-              "id": "master-comp-mini",
-              "module": "strip-dyn-mini",
               "props": {
-                "label": "Compressor",
-                "kind": "comp"
+                "height": 51,
+                "flex": "none",
+                "gap": 3,
+                "padding": 4,
+                "background": "var(--u4-well-bg)",
+                "border": "1px solid var(--u4-line-panel)",
+                "radius": 5
               },
-              "bind": {
-                "stripId": "master.id",
-                "enabled": "master.compOn",
-                "ariaLabel": "concat('Open compressor for ', master.name)"
-              },
-              "when": "master.hasDyn",
-              "on": {
-                "open": [
-                  {
-                    "do": "ui.select",
-                    "args": {
-                      "id": {
-                        "$expr": "master.id"
+              "children": [
+                {
+                  "id": "master-gate-mini",
+                  "module": "strip-dyn-mini",
+                  "props": {
+                    "label": "Gate",
+                    "kind": "gate"
+                  },
+                  "bind": {
+                    "stripId": "master.id",
+                    "enabled": "master.gateOn",
+                    "ariaLabel": "concat('Open gate for ', master.name)"
+                  },
+                  "when": "master.hasDyn",
+                  "on": {
+                    "open": [
+                      {
+                        "do": "ui.select",
+                        "args": {
+                          "id": {
+                            "$expr": "master.id"
+                          }
+                        }
+                      },
+                      {
+                        "do": "ui.openPage",
+                        "args": {
+                          "mode": "channel"
+                        }
+                      },
+                      {
+                        "do": "ui.setTab",
+                        "args": {
+                          "tab": "gate"
+                        }
                       }
-                    }
-                  },
-                  {
-                    "do": "ui.openPage",
-                    "args": {
-                      "mode": "channel"
-                    }
-                  },
-                  {
-                    "do": "ui.setTab",
-                    "args": {
-                      "tab": "comp"
-                    }
+                    ]
                   }
-                ]
-              }
+                },
+                {
+                  "id": "master-comp-mini",
+                  "module": "strip-dyn-mini",
+                  "props": {
+                    "label": "Compressor",
+                    "kind": "comp"
+                  },
+                  "bind": {
+                    "stripId": "master.id",
+                    "enabled": "master.compOn",
+                    "ariaLabel": "concat('Open compressor for ', master.name)"
+                  },
+                  "when": "master.hasDyn",
+                  "on": {
+                    "open": [
+                      {
+                        "do": "ui.select",
+                        "args": {
+                          "id": {
+                            "$expr": "master.id"
+                          }
+                        }
+                      },
+                      {
+                        "do": "ui.openPage",
+                        "args": {
+                          "mode": "channel"
+                        }
+                      },
+                      {
+                        "do": "ui.setTab",
+                        "args": {
+                          "tab": "comp"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
             }
           ],
           "bind": {
@@ -267,8 +307,12 @@
             "input": {
               "do": "ui.setPan",
               "args": {
-                "id": { "$expr": "master.id" },
-                "value": { "$expr": "payload.value" }
+                "id": {
+                  "$expr": "master.id"
+                },
+                "value": {
+                  "$expr": "payload.value"
+                }
               }
             }
           }
@@ -280,8 +324,16 @@
             "height": 40
           },
           "variants": {
-            "phone": { "props": { "height": 48 } },
-            "tablet": { "props": { "height": 48 } }
+            "phone": {
+              "props": {
+                "height": 48
+              }
+            },
+            "tablet": {
+              "props": {
+                "height": 48
+              }
+            }
           },
           "bind": {
             "muted": "master.muted",
@@ -307,7 +359,12 @@
             "minHeight": 180
           },
           "variants": {
-            "phone": { "props": { "flex": "5 1 320px", "minHeight": 240 } }
+            "phone": {
+              "props": {
+                "flex": "5 1 320px",
+                "minHeight": 240
+              }
+            }
           },
           "children": [
             {
@@ -318,7 +375,9 @@
               },
               "variants": {
                 "phone": {
-                  "props": { "variant": "strip" },
+                  "props": {
+                    "variant": "strip"
+                  },
                   "bind": {
                     "accent": "master.kind == 'sof' ? 'sof' : 'chan'",
                     "readColor": "master.kind == 'sof' ? 'var(--u4-cyan)' : 'var(--u4-text-4)'"
@@ -364,6 +423,7 @@
             "variant": "strip"
           },
           "bind": {
+            "icon": "master.icon",
             "name": "master.name",
             "sub": "master.sub",
             "color": "master.color",
@@ -382,7 +442,9 @@
               },
               {
                 "do": "ui.openPage",
-                "args": { "mode": "channel" }
+                "args": {
+                  "mode": "channel"
+                }
               }
             ]
           }
@@ -408,9 +470,9 @@
             "flex": "1 0 44px",
             "fontSize": 12,
             "padding": "0 2px",
-            "bg": "#1b2330",
-            "fg": "#e8edf5",
-            "border": "1px solid #3a414c"
+            "bg": "var(--u4-master-bus-bg, #1b2330)",
+            "fg": "var(--u4-master-bus-fg, #e8edf5)",
+            "border": "1px solid var(--u4-master-bus-border, #3a414c)"
           },
           "bind": {
             "pressed": "store.sel == master.id ? 'true' : 'false'",
@@ -420,7 +482,9 @@
             "press": {
               "do": "ui.select",
               "args": {
-                "id": { "$expr": "master.id" }
+                "id": {
+                  "$expr": "master.id"
+                }
               }
             }
           }
@@ -453,7 +517,9 @@
                 "press": {
                   "do": "ui.setBank",
                   "args": {
-                    "bank": { "$expr": "item.key" }
+                    "bank": {
+                      "$expr": "item.key"
+                    }
                   }
                 }
               }

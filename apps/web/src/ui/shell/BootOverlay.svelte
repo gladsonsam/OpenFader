@@ -46,8 +46,6 @@
   .msg {
     color: rgba(255, 255, 255, 0.55);
     font: 13px/1.4 -apple-system, system-ui, sans-serif;
-    letter-spacing: 2px;
-    text-transform: uppercase;
   }
   @keyframes bootspin {
     to {
