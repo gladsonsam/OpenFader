@@ -39,9 +39,9 @@
       : ''}"
     ><span style="font-size:11px;color:var(--u4-text-7)"
       ><span
-        style="font-size:15px;white-space:nowrap;color:rgb(167, 177, 192);margin-right:6px">{num}</span
+        style="font-size:15px;white-space:nowrap;color:var(--u4-scene-num, rgb(167, 177, 192));margin-right:6px">{num}</span
       ><span
-        style="font-size:15px;font-weight:600;white-space:nowrap;color:rgb(238, 242, 247);font-family:inherit{narrow
+        style="font-size:15px;font-weight:600;white-space:nowrap;color:var(--u4-scene-name, rgb(238, 242, 247));font-family:inherit{narrow
           ? ';display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom'
           : ''}"
         >{name}</span

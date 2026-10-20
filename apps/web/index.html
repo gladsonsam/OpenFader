@@ -18,7 +18,7 @@
       .bootstatic { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #0b0e14; }
       .bootstatic-word { color: #fff; font: 700 40px/1 -apple-system, system-ui, sans-serif; }
       .bootstatic-spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255,255,255,.18); border-top-color: #fff; animation: bootstaticspin .9s linear infinite; }
-      .bootstatic-msg { color: rgba(255,255,255,.55); font: 13px/1.4 -apple-system, system-ui, sans-serif; letter-spacing: 2px; }
+      .bootstatic-msg { color: rgba(255,255,255,.55); font: 13px/1.4 -apple-system, system-ui, sans-serif; }
       @keyframes bootstaticspin { to { transform: rotate(360deg); } }
       @media (prefers-reduced-motion: reduce) { .bootstatic-spin { animation: none; } }
     </style>
@@ -36,7 +36,7 @@
       <div class="bootstatic">
         <div class="bootstatic-word">openmix</div>
         <div class="bootstatic-spin"></div>
-        <div class="bootstatic-msg">LOADING</div>
+        <div class="bootstatic-msg">Loading</div>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

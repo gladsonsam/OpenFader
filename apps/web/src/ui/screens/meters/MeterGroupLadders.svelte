@@ -71,7 +71,8 @@
       for (let s = 0; s < nSeg; s++) {
         const segTopDb = 0 - s * SEG_DB;
         const y = TOP_PAD + s * segH;
-        const on = s < lit;
+        // Segments are drawn top-down; illuminate the bottom `lit` rows.
+        const on = s >= nSeg - lit;
         ctx.fillStyle = on ? SEG_COLORS[segColor(segTopDb - SEG_DB / 2)] : SEG_DARK;
         ctx.fillRect(x, y + 0.5, LADDER_W, segH - 1);
       }

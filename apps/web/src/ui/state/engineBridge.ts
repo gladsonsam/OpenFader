@@ -140,7 +140,8 @@ export function bridgeSolo(world: World, id: string, soloed: boolean): boolean {
 export function bridgePan(world: World, id: string, p: number): boolean {
   const ch = bridgeStrip(world, id);
   if (ch === null || !Number.isFinite(p)) return false;
-  return world.setParam(ch, 'pan', designPanToEngine(p));
+  const field = world.supports('balance', ch) ? 'balance' : 'pan';
+  return world.setParam(ch, field, designPanToEngine(p));
 }
 
 /** Send write-through (fixture 0-based k -> engine send k+1, law inside). */

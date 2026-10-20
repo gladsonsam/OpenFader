@@ -63,7 +63,7 @@
             aria-pressed={active ? 'true' : 'false'}
             aria-label={'HPF slope ' + s + ' dB per octave'}
             style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:30px;border-radius:4px;border:1px solid var(--u4-line-ctl);background:{active
-              ? 'var(--u4-text-1)'
+              ? 'var(--u4-choice-on-bg, var(--u4-text-1))'
               : 'var(--u4-btn-bg)'};color:{active ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)'};font-size:13px;cursor:pointer"
             >{s} dB/oct</button
           >

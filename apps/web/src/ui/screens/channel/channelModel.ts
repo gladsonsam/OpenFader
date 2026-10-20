@@ -54,8 +54,8 @@ export function tabListEntries(ch: Channel, tab: Tab): TabListEntry[] {
     title: t.label,
     note: t.note,
     current: t.key === tab,
-    border: t.key === tab ? ch.color : 'var(--u4-btn-bg)',
-    bg: t.key === tab ? '#363d48' : 'var(--u4-btn-bg)',
+    border: t.key === tab ? `var(--u4-channel-tab-border, ${ch.color})` : 'var(--u4-btn-bg)',
+    bg: t.key === tab ? 'var(--u4-channel-tab-bg, #363d48)' : 'var(--u4-btn-bg)',
   }));
 }
 
@@ -158,7 +158,7 @@ export function inputVm(w: World): InputVm | null {
     delayBg: inp.delayOn ? '#5cdb5c' : 'var(--u4-btn-bg)',
     delayFg: inp.delayOn ? '#10240f' : 'var(--u4-text-4)',
     invert: inp.invert,
-    invertBg: inp.invert ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
+    invertBg: inp.invert ? 'var(--u4-choice-on-bg, var(--u4-text-1))' : 'var(--u4-btn-bg)',
     invertFg: inp.invert ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
     phantomOn: inp.phantom,
     armed,
@@ -273,7 +273,7 @@ export function sendRowsVm(ch: Channel, desk?: DeskSendsOverlay | null): SendRow
       pre,
       preLabel: pre ? 'Pre' : 'Post',
       preAria: name + ' pre-fader',
-      preBg: pre ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
+      preBg: pre ? 'var(--u4-choice-on-bg, var(--u4-text-1))' : 'var(--u4-btn-bg)',
       preFg: pre ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
       tap,
       tapSupported: tapOk,

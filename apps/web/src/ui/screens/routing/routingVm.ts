@@ -68,7 +68,7 @@ function chipOf(label: string, on: boolean): { label: string; pressed: boolean; 
   return {
     label,
     pressed: on,
-    bg: on ? 'var(--u4-text-1)' : 'var(--u4-btn-bg)',
+    bg: on ? 'var(--u4-choice-on-bg, var(--u4-text-1))' : 'var(--u4-btn-bg)',
     fg: on ? 'var(--u4-seg-on-fg)' : 'var(--u4-text-4)',
   };
 }
@@ -98,7 +98,7 @@ export function buildRoutingVm(
       srcColor: src === '—' ? '#ff8a80' : '#5fe3f0',
       pressed: on,
       border: on ? '#ffffff' : 'var(--u4-line-faint)',
-      bg: on ? '#1b2330' : 'var(--u4-well-bg)'
+      bg: on ? 'var(--u4-selected-surface, #1b2330)' : 'var(--u4-well-bg)'
     };
   });
   const groups: PatchGroupVm[] = PATCH_GROUPS.map(g => ({

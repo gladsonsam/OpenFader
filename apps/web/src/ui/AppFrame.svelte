@@ -11,7 +11,7 @@
   const handset = typeof navigator !== 'undefined' && /iPhone|iPod/.test(navigator.userAgent);
 
   // Theme presets are token overrides applied as inline variables on the
-  // frame (design-dark = no overrides: tokens.css is the truth). Switching
+  // frame. Switching
   // clears the previous set first so maps never leak into each other.
   let frame: HTMLElement | null = $state(null);
   let applied: string[] = [];

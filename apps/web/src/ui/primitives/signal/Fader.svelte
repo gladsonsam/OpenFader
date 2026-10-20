@@ -505,7 +505,7 @@
     >
       <ScaleLabels variant={geo.scale} />
       <span
-        style="position:absolute;left:{railLeft};width:4px;top:0;bottom:0;border-radius:2px;background:#000;box-shadow:inset 0 0 0 1px #1f2a3a"
+        style="position:absolute;left:{railLeft};width:4px;top:0;bottom:0;border-radius:2px;background:var(--u4-fader-rail, #000);box-shadow:inset 0 0 0 1px var(--u4-fader-rail-border, #1f2a3a)"
       ></span>
       <Meter
         variant={geo.meter}
@@ -514,15 +514,18 @@
       />
       <span
         bind:this={capEl}
+        data-ctl="fader-cap"
         style="position:absolute;left:{cap.left};bottom:0;width:{cap.w}px;height:{cap.h}px;transform:translate(-50%, 50%) translateY(-{capY.toFixed(1)}px);will-change:transform;border-radius:3px;background:{capBg};box-shadow:{capShadow};touch-action:none;cursor:{disabled ||
         !oninput
           ? 'default'
           : 'ns-resize'}"
       >
         <span
+          data-ctl="fader-grip"
           style="position:absolute;left:{cap.gripLR}px;right:{cap.gripLR}px;top:{cap.gripTB}px;height:{cap.gripH}px;border-radius:1px;background:repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px);pointer-events:none"
         ></span>
         <span
+          data-ctl="fader-grip"
           style="position:absolute;left:{cap.gripLR}px;right:{cap.gripLR}px;bottom:{cap.gripTB}px;height:{cap.gripH}px;border-radius:1px;background:repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px);pointer-events:none"
         ></span>
         <span

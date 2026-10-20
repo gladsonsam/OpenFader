@@ -30,47 +30,47 @@
 
 {#if vm}
   <div
-    style="box-sizing:content-box;flex:1 1 auto;min-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:3px;border:1px solid #1f2836;background:#0a0f17"
+    style="box-sizing:content-box;flex:1 1 auto;min-height:120px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:3px;border:1px solid var(--u4-detail-line, #1f2836);background:var(--u4-detail-well, #0a0f17)"
   >
-    <span style="font-size:15px;font-weight:600;color:#eef2f7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+    <span style="font-size:15px;font-weight:600;color:var(--u4-detail-heading, #eef2f7);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
       >{vm.title}</span
     >
     {#if vm.onSupported}
       <div style="display:flex;flex-direction:column;gap:4px">
-        <span style="font-size:12px;color:#7f8a9c">Bypass</span>
+        <span style="font-size:12px;color:var(--u4-detail-muted, #7f8a9c)">Bypass</span>
         <button
           onclick={() => onEvent?.('toggle', { on: !(vm.on === true) })}
           aria-pressed={vm.on === true ? 'true' : 'false'}
           aria-label={vm.onAria}
           title={vm.on === null ? 'Insert bypass not confirmed yet — tap to set' : undefined}
-          style="box-sizing:border-box;font-variant-numeric:normal;width:100%;height:40px;flex:none;border-radius:3px;border:1px solid #3a414c;background:{vm.onBg};color:{vm.onFg};font-size:12px;font-weight:600;cursor:pointer"
+          style="box-sizing:border-box;font-variant-numeric:normal;width:100%;height:40px;flex:none;border-radius:3px;border:1px solid var(--u4-detail-line, #3a414c);background:{vm.onBg};color:{vm.onFg};font-size:12px;font-weight:600;cursor:pointer"
           >{vm.onLabel}</button
         >
       </div>
     {/if}
     {#if vm.selSupported}
       <div style="display:flex;flex-direction:column;gap:4px">
-        <span style="font-size:12px;color:#7f8a9c">Select · {vm.selText}</span>
+        <span style="font-size:12px;color:var(--u4-detail-muted, #7f8a9c)">Select · {vm.selText}</span>
         <div style="display:flex;gap:6px">
           <button
             onclick={() => onEvent?.('sel', { value: (vm.sel ?? 0) - 1 })}
             aria-label={vm.selMinusAria}
             title={vm.sel === null ? 'Insert select not confirmed yet — tap to set' : undefined}
-            style="flex:1;height:40px;border-radius:3px;border:1px solid #3a414c;background:#2b3038;color:#c9d1dc;font-size:16px;font-weight:600;cursor:pointer"
+            style="flex:1;height:40px;border-radius:3px;border:1px solid var(--u4-detail-line, #3a414c);background:var(--u4-detail-button, #2b3038);color:var(--u4-detail-text, #c9d1dc);font-size:16px;font-weight:600;cursor:pointer"
             >−</button
           >
           <button
             onclick={() => onEvent?.('sel', { value: (vm.sel ?? 0) + 1 })}
             aria-label={vm.selPlusAria}
             title={vm.sel === null ? 'Insert select not confirmed yet — tap to set' : undefined}
-            style="flex:1;height:40px;border-radius:3px;border:1px solid #3a414c;background:#2b3038;color:#c9d1dc;font-size:16px;font-weight:600;cursor:pointer"
+            style="flex:1;height:40px;border-radius:3px;border:1px solid var(--u4-detail-line, #3a414c);background:var(--u4-detail-button, #2b3038);color:var(--u4-detail-text, #c9d1dc);font-size:16px;font-weight:600;cursor:pointer"
             >+</button
           >
         </div>
       </div>
     {/if}
     {#if vm.note}
-      <div style="font-size:12px;color:#7f8a9c">{vm.note}</div>
+      <div style="font-size:12px;color:var(--u4-detail-muted, #7f8a9c)">{vm.note}</div>
     {/if}
   </div>
 {/if}
