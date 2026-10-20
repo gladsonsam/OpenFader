@@ -17,6 +17,12 @@ use tokio::task::JoinHandle;
 pub const DEFAULT_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
 const RECV_BUF: usize = 65535;
 
+/// Connect-burst query budget (connect/verify + first-paint reads only):
+/// one lost datagram here must not cost the steady-state 2 s tail above.
+/// Steady-state poller traffic keeps `DEFAULT_QUERY_TIMEOUT` (venue-wifi
+/// safety: a slow gig reply must not drop a poll read).
+pub const CONNECT_BURST_TIMEOUT: Duration = Duration::from_millis(300);
+
 /// Keepalive config: re-send `addr` (usually `/xremote`) every `interval`.
 #[derive(Clone, Debug)]
 pub struct KeepaliveConfig {

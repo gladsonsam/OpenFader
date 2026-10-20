@@ -186,7 +186,7 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   and 8 buses keep their historic indices) plus `strip_keys`: the stable
   per-strip keys in index order (`ch/01`, …, `bus/01`, …, `main`), which
   survive desk switching where positional indices do not (sim 77 strips,
-  xair 35, dl32s 32; sim `mix` normalises to `bus`). `meter_taps` declares the
+  xair 36, dl32s 32; sim `mix` normalises to `bus`). `meter_taps` declares the
   meter taps (`in`, `post`, `gr_gate`, `gr_comp`). `fx` is the FX slot
   family (sim: 8 slots + the six design type tables from `core::fx`;
   xair: 4 slots, desk-native types not projected yet; dl32s: 0 slots).

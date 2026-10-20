@@ -1,9 +1,14 @@
 <!-- W5b `send-row`: one Mix row in the Sends tab. Presentational: the
      SendRowVm object in via layout `bind` (repeated over the scope send
-     list), `input` ({value}) + `togglePre` out. Horizontal fader verbatim
+     list), `input` ({value}) + `togglePre` out, `toggleGrpon` when the
+     desk exposes it, `setTap` ({value}) when the desk exposes the send
+     tap point. Horizontal fader verbatim
      from design-template.html (sendRows): 6px track, fill (white pre /
      cyan post), 75% unity tick, 18x36 metal thumb with fill-coloured centre
-     line; value text; 56x40 Pre/Post button. Drag maps through
+     line; value text; tap button (live: cycles the desk's legal tap
+     choices IN/Pre-EQ/Post-EQ/Pre/Post/Sub-GRP for the slot — bus slots
+     take all six, FX slots refuse Sub-GRP; offline: the fixture Pre/Post
+     toggle). Drag maps through
      uiLogic.sendFromDrag (design's 'h' branch); role=slider +
      arrows/PageUp/PageDown/Home/End make it keyboard operable. -->
 <script lang="ts">
@@ -37,6 +42,13 @@
       preAria: '',
       preBg: 'var(--u4-btn-bg)',
       preFg: 'var(--u4-text-4)',
+      tap: null,
+      tapSupported: false,
+      tapOptions: [],
+      tapLabel: '?',
+      tapAria: '',
+      tapBg: 'var(--u4-btn-bg)',
+      tapFg: 'var(--u4-text-4)',
       grpon: null,
       grponSupported: false,
       grponAria: '',
@@ -45,6 +57,15 @@
     },
   );
   const fine = $derived(props.fine ?? false);
+
+  // Live tap cycler: advance within the slot's legal options (desk order),
+  // wrapping around. Unknown current tap starts at the first option.
+  function nextTap(): number | null {
+    const opts = row.tapOptions ?? [];
+    if (opts.length === 0) return null;
+    const at = row.tap === null ? -1 : opts.indexOf(row.tap);
+    return opts[(at + 1) % opts.length] ?? null;
+  }
 
   let area: HTMLButtonElement | null = $state(null);
   // Tablet direction lock: touch/pen stays pending until horizontal intent
@@ -153,6 +174,16 @@
       >{row.grpon === true ? 'GRP' : row.grpon === false ? 'grp' : 'GRP ?'}</button
     >
   {/if}
+  {#if row.tapSupported}
+    <button
+      onclick={() => { const v = nextTap(); if (v !== null) onEvent?.('setTap', { value: v }); }}
+      aria-pressed={row.tap === null ? 'false' : 'true'}
+      aria-label={row.tapAria}
+      title={row.tap === null ? 'Tap state unknown — tap to set' : undefined}
+      style="box-sizing:border-box;font-variant-numeric:normal;min-width:64px;height:40px;flex:none;border-radius:3px;border:1px solid var(--u4-line-ctl);background:{row.tapBg};color:{row.tapFg};font-size:12px;font-weight:600;cursor:pointer"
+      >{row.tapLabel}</button
+    >
+  {:else}
   <button
     onclick={() => onEvent?.('togglePre')}
     aria-pressed={row.pre ? 'true' : 'false'}
@@ -160,4 +191,5 @@
     style="box-sizing:border-box;font-variant-numeric:normal;width:56px;height:40px;flex:none;border-radius:3px;border:1px solid var(--u4-line-ctl);background:{row.preBg};color:{row.preFg};font-size:12px;font-weight:600;cursor:pointer"
     >{row.preLabel}</button
   >
+  {/if}
 </div>

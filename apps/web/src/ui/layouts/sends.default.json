@@ -52,6 +52,10 @@
             "togglePre": {
               "do": "ui.toggleSendPre",
               "args": { "id": { "$expr": "selId" }, "k": { "$expr": "index" } }
+            },
+            "setTap": {
+              "do": "ui.setSendTap",
+              "args": { "id": { "$expr": "selId" }, "k": { "$expr": "index" }, "value": { "$expr": "payload.value" } }
             }
           }
         }

@@ -131,7 +131,7 @@ impl StripFamily {
 /// Opaque stable strip key for one strip in a family (`family_key/index`).
 ///
 /// Keys survive desk switching where positional [`StripId`]s do not (sim 77
-/// strips, xair 35, dl32s 32): profiles, banks and scenes store keys, and
+/// strips, xair 36, dl32s 32): profiles, banks and scenes store keys, and
 /// the engine resolves them against the active desk's topology.
 ///
 /// Format: `{family_key}/{nn}` with the 1-based index in the family padded

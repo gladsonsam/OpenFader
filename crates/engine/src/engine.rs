@@ -5,7 +5,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     future::Future,
-    net::IpAddr,
+    net::{IpAddr, SocketAddr},
     path::PathBuf,
     pin::Pin,
     sync::{
@@ -656,6 +656,14 @@ pub struct Engine {
     /// instead of up to 50 ms of phase-added age; the 50 ms interval stays
     /// as a fallback ceiling. Coalescing is fine — receivers always drain.
     notify: Arc<Notify>,
+    /// Connect-fill generation (fast-first `post_switch`): bumped on every
+    /// switch; the fill worker completes the deferred remainder (state +
+    /// info refresh, full FX fill, routing, masters) once per generation
+    /// and broadcasts each frame as it lands. A second switch while a fill
+    /// is in flight restarts it instead of piling up.
+    fill_gen: AtomicU64,
+    /// Wakeup for the connect-fill worker (see [`Engine::ensure_tasks`]).
+    fill_notify: Arc<Notify>,
 }
 
 impl Engine {
@@ -729,6 +737,8 @@ impl Engine {
             meter_guard: RwLock::new(None),
             desk_addrs: RwLock::new(desk_addrs),
             notify: Arc::new(Notify::new()),
+            fill_gen: AtomicU64::new(0),
+            fill_notify: Arc::new(Notify::new()),
         });
         // FX cache for the default driver (sim): seeded synchronously so
         // the first attach already carries the rack.
@@ -798,8 +808,11 @@ impl Engine {
         // The FX cache mirrors the active driver (sim rows / xair
         // placeholders); refresh it on every switch, including the boot
         // connect — otherwise a hardware boot keeps the sim-seeded rows
-        // and the UI shows a fake rack.
-        self.refresh_fx_cache().await;
+        // and the UI shows a fake rack. Connect-time seeding is type-only
+        // on numbered racks (4 queries, not ~1+N per slot): the deferred
+        // fill (`post_switch` -> fill worker) completes the params off the
+        // command path so first paint never waits for them.
+        self.seed_fx_cache().await;
         // Hardware meter streams need an explicit subscribe (sim
         // synthesizes its own levels via `poll_meters`). Best-effort:
         // a failed subscribe leaves the ticker on silence, never fails
@@ -929,6 +942,12 @@ impl Engine {
         }
         // Siblings learn about the join; the newcomer already has it.
         self.broadcast_except(&self.clients_message(), &id);
+        // A fresh page on a seeded-but-incomplete FX cache (boot with a
+        // numbered rack) completes the params in the background instead of
+        // waiting out the one-param-per-tick poller trickle.
+        if !self.fx_cache_complete() {
+            self.kick_fill();
+        }
         handle
     }
 
@@ -1144,6 +1163,34 @@ impl Engine {
                     };
                     let event = engine.link_message().await;
                     engine.broadcast(&event);
+                }
+            });
+        }
+        // R2 connect-fill worker: completes the deferred remainder of
+        // `post_switch` (state + info refresh, full FX fill, routing,
+        // masters) off the command path, one broadcast per frame as it
+        // lands. Woken per switch; coalesced by generation so a second
+        // switch while a fill is in flight restarts it once instead of
+        // piling fills up.
+        {
+            let weak: Weak<Self> = Arc::downgrade(self);
+            tokio::spawn(async move {
+                loop {
+                    let notified = match weak.upgrade() {
+                        Some(engine) => Arc::clone(&engine.fill_notify),
+                        None => break,
+                    };
+                    notified.notified().await;
+                    let Some(engine) = weak.upgrade() else {
+                        break;
+                    };
+                    loop {
+                        let gen = engine.fill_gen.load(Ordering::Acquire);
+                        engine.deferred_fill().await;
+                        if engine.fill_gen.load(Ordering::Acquire) == gen {
+                            break;
+                        }
+                    }
                 }
             });
         }
@@ -2124,6 +2171,53 @@ impl Engine {
         *self.fx_cache.write().unwrap() = rows;
     }
 
+    /// Connect-time FX seed: full rows for in-memory (Design) racks,
+    /// type-only rows for the numbered xair rack (4 queries), honest
+    /// placeholders elsewhere. The command path never pays the ~1+N
+    /// per-slot param cost; the deferred fill + the FX poller complete the
+    /// params off the command path.
+    async fn seed_fx_cache(&self) {
+        let rows = self.read_fx_seed_rows().await;
+        *self.fx_cache.write().unwrap() = rows;
+    }
+
+    /// Seed rows for [`Engine::seed_fx_cache`]: Design racks read fully
+    /// (in-memory, no I/O); the xair rack reads types only; rack-less
+    /// drivers keep placeholders.
+    async fn read_fx_seed_rows(&self) -> Vec<FxSlotRt> {
+        let drv = self.active_drv();
+        if drv.fx_flavor() == FxFlavor::Design {
+            return drv
+                .fx_snapshot()
+                .iter()
+                .enumerate()
+                .map(|(i, s)| FxSlotRt {
+                    slot: (i + 1) as u8,
+                    fx_type: s.fx_type.clone(),
+                    on: s.on,
+                    bypass: s.bypass,
+                    params: param_vec_to_map(&s.fx_type, &s.params),
+                })
+                .collect();
+        }
+        if drv.fx_flavor() == FxFlavor::Numbered && self.active_driver() == "xair" {
+            let mut rows = Vec::new();
+            for slot in 1..=drv.fx_slot_count() as u8 {
+                rows.push(self.read_xair_slot_type_only(slot).await);
+            }
+            return rows;
+        }
+        (1..=drv.fx_slot_count() as u8)
+            .map(|slot| FxSlotRt {
+                slot,
+                fx_type: "—".to_string(),
+                on: true,
+                bypass: false,
+                params: Default::default(),
+            })
+            .collect()
+    }
+
     /// Synchronous FX cache rebuild for construction (the default driver
     /// is always sim here).
     fn refresh_fx_cache_sync(&self) {
@@ -2190,19 +2284,20 @@ impl Engine {
     /// error), then each used param of the loaded effect (`parNN` keys).
     /// On/off has no verified leaf and stays at the honest placeholder
     /// (`on: true`, `bypass: false`) so the UI keeps the toggle hidden.
+    /// The type query runs once per slot: param reads reuse the known
+    /// effect index (single-query path), so a slot costs 1+N queries.
     async fn read_xair_slot(&self, slot: u8) -> FxSlotRt {
         let drv = self.active_drv();
-        let name = drv
-            .fx_type_index(slot)
-            .await
+        let index = drv.fx_type_index(slot).await;
+        let name = index
             .and_then(xair_type_name)
             .unwrap_or("—")
             .to_string();
         let mut params = BTreeMap::new();
-        if let Some(index) = xair_type_index_of(&name) {
-            let used = openmix_proto_xair::fx::fx_param_count(index).unwrap_or(0);
+        if let Some(type_idx) = index {
+            let used = openmix_proto_xair::fx::fx_param_count(type_idx).unwrap_or(0);
             for i in 0..used {
-                if let Ok(v) = drv.get_fx_param(slot, i).await {
+                if let Ok(v) = drv.get_fx_param_with_type(slot, i, Some(type_idx)).await {
                     params.insert(format!("par{:02}", i + 1), v);
                 }
             }
@@ -2213,6 +2308,26 @@ impl Engine {
             on: true,
             bypass: false,
             params,
+        }
+    }
+
+    /// Type-only read of one X-Air FX slot (connect-time seed: 1 query;
+    /// params stay empty until the deferred fill or the FX poller reads
+    /// them). Same honest placeholder when the type is unreadable.
+    async fn read_xair_slot_type_only(&self, slot: u8) -> FxSlotRt {
+        let name = self
+            .active_drv()
+            .fx_type_index(slot)
+            .await
+            .and_then(xair_type_name)
+            .unwrap_or("—")
+            .to_string();
+        FxSlotRt {
+            slot,
+            fx_type: name,
+            on: true,
+            bypass: false,
+            params: Default::default(),
         }
     }
 
@@ -2311,7 +2426,8 @@ impl Engine {
             return;
         }
         let idx = ((n / count) % used as usize) as u8;
-        let Ok(v) = drv.get_fx_param(slot, idx).await else {
+        // Known effect index: single-query read (no per-param type re-query).
+        let Ok(v) = drv.get_fx_param_with_type(slot, idx, Some(index)).await else {
             return;
         };
         let key = format!("par{:02}", idx + 1);
@@ -2537,13 +2653,18 @@ impl Engine {
         }
         // Sparse desk-side solos: best-effort live bank re-read (drivers
         // whose solos live in the desk) so a fresh attach (or driver
-        // switch) learns them without waiting for the poll sweep. Cached
+        // switch) learns them without waiting for the poll sweep. One bank
+        // query fanned out per channel (not one query per channel), cached
         // alongside (the poll diff then stays quiet); a silent desk yields
         // no frames, never fails the snapshot.
         if drv.live_solo_bank() {
             let topo = self.driver_topology(&driver);
-            for ch in 0..drv.channel_count() as u16 {
-                if drv.get_solo(StripId(ch)).await.unwrap_or(false) {
+            if let Ok(bank) = drv.solo_bank(drv.channel_count()).await {
+                for (ch, soloed) in bank.iter().enumerate() {
+                    if !soloed {
+                        continue;
+                    }
+                    let ch = ch as u16;
                     {
                         let mut cache = self.param_cache.write().unwrap();
                         cache_store(&mut cache, ch, "solo", json!(true));
@@ -2558,6 +2679,24 @@ impl Engine {
         }
         out.push(self.main_message().await);
         out
+    }
+
+    /// True when the FX cache needs no fill: design racks are in-memory
+    /// complete and rack-less rows are honest placeholders; only an xair
+    /// row with a known type but a short param set wants the worker.
+    fn fx_cache_complete(&self) -> bool {
+        if self.active_drv().fx_flavor() != FxFlavor::Numbered || self.active_driver() != "xair" {
+            return true;
+        }
+        self.fx_cache.read().unwrap().iter().all(|row| {
+            match xair_type_index_of(&row.fx_type) {
+                None => true,
+                Some(index) => {
+                    let used = openmix_proto_xair::fx::fx_param_count(index).unwrap_or(0) as usize;
+                    row.params.len() >= used
+                }
+            }
+        })
     }
 
     /// Current `routing` event: one row per patched input strip (sim reads
@@ -3148,12 +3287,18 @@ impl Engine {
     }
 
     /// Shared post-switch flow for `connect` / `connect_device` / `offline`:
-    /// invalidate caches, rebuild the FX mirror, and queue the full
-    /// state+caps+link+info+fx+routing broadcast set. When an offline
-    /// change list is pending, the `offline_diff` frame rides along and
-    /// the push gate opens (nothing is pushed without `offline_push`).
-    /// `entering_offline` keeps the just-armed offline session intact
-    /// (otherwise a fresh connect resolves any pending diff).
+    /// fast-first. Invalidate caches, seed the FX mirror (type-only on
+    /// numbered racks — 4 queries, not ~1+N per slot), and queue the
+    /// paint-critical `state` + `caps` + cached `link` + `info` set
+    /// immediately: caps needs no I/O at all, and state/info share one
+    /// connect-burst budget (300 ms, not N x 2 s tails). The remainder
+    /// (state + info refresh on timeout, full FX params, routing, masters)
+    /// lands via the fill worker ([`Engine::deferred_fill`]), one broadcast
+    /// per frame as it arrives. When an offline change list is pending, the
+    /// `offline_diff` frame rides along and the push gate opens (nothing is
+    /// pushed without `offline_push`). `entering_offline` keeps the
+    /// just-armed offline session intact (otherwise a fresh connect resolves
+    /// any pending diff).
     async fn post_switch(
         &self,
         writer: &str,
@@ -3161,21 +3306,34 @@ impl Engine {
         entering_offline: bool,
     ) -> anyhow::Result<()> {
         self.param_cache.write().unwrap().clear();
-        self.refresh_fx_cache().await;
+        self.seed_fx_cache().await;
         self.note_write(writer);
         self.touch_holder_locks(writer);
-        out.push(self.state_message(Some(writer)).await);
+        // Paint-critical frames first: caps + cached link need no I/O at
+        // all (the UI flips to online on caps); state + info share one
+        // burst budget off the command path.
         out.push(self.caps_message());
-        out.push(self.link_message().await);
-        if let Ok(info) = self.info_message().await {
-            out.push(info);
+        out.push(self.link_message_cached());
+        let burst = openmix_transport::session::CONNECT_BURST_TIMEOUT;
+        let fast = tokio::time::timeout(
+            burst,
+            async {
+                tokio::join!(self.state_message(Some(writer)), self.info_message())
+            },
+        )
+        .await;
+        if let Ok((state, info)) = fast {
+            out.push(state);
+            // `info` is `Result`: silent desks stay silent, as before.
+            if let Ok(info) = info {
+                out.push(info);
+            }
         }
-        out.push(self.fx_message().await);
-        out.push(self.routing_message().await);
-        // Master-section snapshot: fresh pages (and driver switches) learn
-        // existing masters/assignments without a write.
-        out.extend(self.masters_snapshot().await);
+        // Budget spent (slow venue wifi): the deferred fill re-emits
+        // both, so no frame is ever lost — first paint just waits for
+        // the fill instead of stalling the command on N x 2 s tails.
         if entering_offline {
+            self.kick_fill();
             return Ok(());
         }
         // A fresh connect ends any offline session: pending changes raise
@@ -3194,7 +3352,33 @@ impl Engine {
         if pending {
             out.push(self.offline_diff_message());
         }
+        self.kick_fill();
         Ok(())
+    }
+
+    /// Deferred remainder of [`Engine::post_switch`] (fill worker): state +
+    /// info refresh, full FX fill, routing, then masters — one broadcast
+    /// per frame as it lands. Idempotent (cache diffs keep repeats quiet);
+    /// every section is best-effort so a silent desk never fails the fill.
+    async fn deferred_fill(self: &Arc<Self>) {
+        self.broadcast(&self.state_message(None).await);
+        if let Ok(info) = self.info_message().await {
+            self.broadcast(&info);
+        }
+        // FX first (the rack the UI renders), then routing, then masters.
+        self.refresh_fx_cache().await;
+        self.broadcast(&self.fx_message().await);
+        self.broadcast(&self.routing_message().await);
+        for frame in self.masters_snapshot().await {
+            self.broadcast(&frame);
+        }
+    }
+
+    /// Wake the fill worker for one [`Engine::deferred_fill`] pass
+    /// (coalesced by generation — see [`Engine::ensure_tasks`]).
+    fn kick_fill(&self) {
+        self.fill_gen.fetch_add(1, Ordering::AcqRel);
+        self.fill_notify.notify_one();
     }
 
 
@@ -4298,7 +4482,13 @@ impl Engine {
                         break;
                     }
                 }
-                self.connect(claimed, Some(&entry.ip)).await?;
+                // Discovered-device dial carries an explicit :10024 on xair:
+                // the row already proved the desk answers there, so the
+                // bare-host sweep (probing 10024 then the 10023 fallback at
+                // 400 ms each) is skipped. Other drivers pass through
+                // untouched.
+                let dial = dial_addr(claimed, &entry.ip);
+                self.connect(claimed, Some(&dial)).await?;
                 self.set_link_connected(Some(&id), &entry.ip).await;
                 self.post_switch(writer, out, false).await?;
                 Ok(Some(Event::You {
@@ -4466,8 +4656,10 @@ impl Engine {
                         .ok_or_else(|| anyhow::anyhow!("unknown fx type {fx_type:?}"))?;
                 } else if drv.fx_flavor() == FxFlavor::Numbered {
                     // Desk-native rack (xair): names come from the desk type
-                    // table behind `caps.fx` (short codes like `HALL`), not
-                    // the design list — unknown here means unknown there.
+                    // table behind `caps.fx` — the short code (`id`, e.g.
+                    // `HALL`) or the full display name (`label`, e.g.
+                    // `Hall Reverb`); the UI sends the code. Unknown here
+                    // means unknown there.
                     if xair_type_index_of(&fx_type).is_none() {
                         anyhow::bail!("unknown fx type {fx_type:?}");
                     }
@@ -5024,6 +5216,10 @@ fn param_vec_to_map(fx_type: &str, values: &[f32]) -> BTreeMap<String, f32> {
 /// algorithms from `proto-xair::fx` (index 15 is an undocumented gap in
 /// the wire order and stays out, like the `None` fallback there).
 ///
+/// `id` is the desk short code (`HALL`, `DLY`, … — the stable wire key
+/// the UI writes back on type-select); `label` is the full display name
+/// (`Hall Reverb`, `Stereo Delay`, … from `fx_effect_full_name`).
+///
 /// Param ids are the verified wire numbers (`par01..par64`); labels are
 /// the X-Air display names with the dual-block bank (`A`/`B`) appended
 /// and a `?` suffix on research-low-confidence (`inferred`) rows. Ranges
@@ -5035,9 +5231,10 @@ fn xair_fx_caps() -> Vec<crate::protocol::FxTypeCaps> {
     use openmix_proto_xair::fx as xfx;
     let mut out = Vec::new();
     for index in 0..=xfx::FX_TYPE_MAX {
-        let Some(name) = xfx::fx_effect_name(index) else {
+        let Some(code) = xfx::fx_effect_name(index) else {
             continue;
         };
+        let label = xfx::fx_effect_full_name(index).unwrap_or(code);
         let mut params = Vec::new();
         for par in 1..=xfx::PARAM_COUNT as u8 {
             let Some(def) = xfx::fx_param_def(index, par) else {
@@ -5062,12 +5259,35 @@ fn xair_fx_caps() -> Vec<crate::protocol::FxTypeCaps> {
             });
         }
         out.push(crate::protocol::FxTypeCaps {
-            id: name.to_string(),
-            label: name.to_string(),
+            id: code.to_string(),
+            label: label.to_string(),
             params,
         });
     }
     out
+}
+
+/// Discovered-device dial address: bare IPs on xair gain an explicit
+/// `:10024` so [`XAirDriver::connect`](openmix_proto_xair::XAirDriver::connect)
+/// skips the bare-host port sweep (the discovery row already proved the
+/// desk answers there). Forms with an explicit port, hostnames and other
+/// drivers pass through untouched.
+fn dial_addr(driver: &str, ip: &str) -> String {
+    if driver != "xair" {
+        return ip.to_string();
+    }
+    if ip.parse::<SocketAddr>().is_ok() {
+        return ip.to_string();
+    }
+    if let Some((h, p)) = ip.rsplit_once(':') {
+        if p.parse::<u16>().is_ok() && h.trim_matches(['[', ']']).parse::<IpAddr>().is_ok() {
+            return ip.to_string();
+        }
+    }
+    if ip.parse::<IpAddr>().is_ok() && !ip.contains(':') {
+        return format!("{ip}:{}", openmix_proto_xair::addrs::PORT);
+    }
+    ip.to_string()
 }
 
 /// Desk-native effect name for a `/fx/N/type` index (`None` = gap/unknown).
@@ -5076,10 +5296,14 @@ fn xair_type_name(index: u8) -> Option<&'static str> {
 }
 
 /// Reverse lookup: effect name back to its `/fx/N/type` index (`None`
-/// for placeholders like `—` or unknown names).
+/// for placeholders like `—` or unknown names). Accepts the desk short
+/// code (`caps.fx` `id`, e.g. `DLY`) or the full display name
+/// (`caps.fx` `label`, e.g. `Stereo Delay`) so the UI can send either.
 fn xair_type_index_of(name: &str) -> Option<u8> {
-    (0..=openmix_proto_xair::fx::FX_TYPE_MAX)
-        .find(|&index| openmix_proto_xair::fx::fx_effect_name(index) == Some(name))
+    (0..=openmix_proto_xair::fx::FX_TYPE_MAX).find(|&index| {
+        openmix_proto_xair::fx::fx_effect_name(index) == Some(name)
+            || openmix_proto_xair::fx::fx_effect_full_name(index) == Some(name)
+    })
 }
 
 /// Parse a patch label (`Lcl 01`, `Net 12`, `USB 03`) into (group, 1-based
@@ -5390,6 +5614,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dial_addr_skips_sweep_only_for_bare_xair_ips() {
+        // Discovered-device dial: bare xair IPs gain :10024 (the sweep is
+        // skipped); everything else passes through untouched.
+        assert_eq!(dial_addr("xair", "192.168.40.123"), "192.168.40.123:10024");
+        assert_eq!(
+            dial_addr("xair", "192.168.40.123:10024"),
+            "192.168.40.123:10024"
+        );
+        assert_eq!(dial_addr("xair", "desk.local"), "desk.local");
+        assert_eq!(dial_addr("dl32s", "192.168.40.123"), "192.168.40.123");
+        assert_eq!(dial_addr("sim", "192.168.40.123"), "192.168.40.123");
+    }
+
+    #[test]
     fn poller_yield_rule() {
         // MR1 write priority: the poller skips its tick while ANY command
         // is inside apply (writes_in_flight > 0), and only then.
@@ -5502,16 +5740,31 @@ mod tests {
         assert!(!is_priority_id("automix_weight"));
         assert_eq!(safe_order_key("send1_grpon").0, 7);
         assert_eq!(safe_order_key("lr_assign").0, 9);
+        // Channel inserts (rig-verified 2026-10-20) need no allowlist either:
+        // they fall back to the config recall group, drain on the background
+        // lane (never the essentials/focus fast path — first paint stays
+        // faders/names), and sort last in the safe recall order.
+        assert_eq!(param_scope_group("insert_on"), "config");
+        assert_eq!(param_scope_group("insert_sel"), "config");
+        assert!(!is_priority_id("insert_on"));
+        assert!(!is_priority_id("insert_sel"));
+        assert!(!is_essentials_id("insert_on"));
+        assert!(!is_essentials_id("insert_sel"));
+        assert_eq!(safe_order_key("insert_on").0, 9);
+        assert_eq!(safe_order_key("insert_sel").0, 9);
     }
 
     #[test]
     fn xair_type_names_resolve_like_caps() {
         // `FxSetType` on the desk-native rack validates against the same
-        // short-code table `caps.fx` advertises (proto-xair effect names),
-        // not the design list: design names are unknown there.
+        // table `caps.fx` advertises (short code `id` or full display
+        // `label`), not the design list: design names are unknown there.
         assert_eq!(xair_type_index_of("HALL"), Some(0));
         assert_eq!(xair_type_index_of("VRM"), Some(7));
         assert_eq!(xair_type_index_of("PIT"), Some(60));
+        assert_eq!(xair_type_index_of("Hall Reverb"), Some(0));
+        assert_eq!(xair_type_index_of("Vintage Room"), Some(7));
+        assert_eq!(xair_type_index_of("Stereo Pitch Shifter"), Some(60));
         assert_eq!(xair_type_index_of("Nope"), None);
         assert_eq!(xair_type_index_of("Hall"), None);
         assert_eq!(xair_type_index_of(""), None);
@@ -5623,7 +5876,7 @@ mod tests {
         assert_eq!(engine.driver_capabilities("nope"), engine.driver_capabilities("sim"));
         assert_eq!(engine.driver_channels("xair"), 16);
         assert_eq!(engine.driver_channels("sim"), 32);
-        // Strip totals (topology): sim 77, xair 35, dl32s 32.
+        // Strip totals (topology): sim 77, xair 36, dl32s 32.
         assert_eq!(engine.driver_strips("sim"), openmix_sim::SIM_STRIPS);
         assert_eq!(engine.driver_strips("xair"), openmix_proto_xair::XAIR_STRIPS);
         assert_eq!(engine.driver_strips("dl32s"), 32);
