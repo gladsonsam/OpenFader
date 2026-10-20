@@ -6,11 +6,18 @@
 // {binary_meters:true}` on every connect). `ReplayTransport` feeds scripted
 // golden frames for node tests. `TauriTransport` is the app-shell
 // implementation: same Cmd/Event JSON over the embedded engine's IPC
-// commands (`engine_attach`/`engine_cmd`/`engine_subscribe_push`/
-// `engine_detach` in `src-tauri/src/lib.rs`), pushed as `openmix-event`
-// frames the UI listens for, with `hello {binary_meters:false}` (IPC has
-// no binary channel). `engine_poll` remains only as the fallback drain for
-// clients that cannot listen (node tests, foreign shells).
+// commands (`engine_attach`/`engine_cmd`/`engine_subscribe_channel`/
+// `engine_subscribe_push`/`engine_detach` in `src-tauri/src/lib.rs`),
+// pushed over an ordered Tauri `Channel` the transport creates and hands to
+// `engine_subscribe_channel`: JSON control frames arrive as one batch
+// (array of `Event::to_json` strings) plus hot meter frames as binary
+// (`Event::to_binary`: meters/GR/taps, each its own `ArrayBuffer` — the
+// same layout the WS relay uses; spectrum stays JSON, like WS), with
+// `hello {binary_meters:true, taps:true}` negotiating the binary path.
+// `engine_subscribe_push` + `openmix-event` listen remain only as the
+// JSON-only fallback for shells without Channel support, and
+// `engine_poll` as the final fallback drain for clients that cannot
+// listen (node tests, foreign shells).
 
 import { cmdHello } from './protocol.ts';
 
@@ -370,30 +377,35 @@ export class ReplayTransport implements Transport {
 /**
  * Tauri IPC transport: speaks the same engine Cmd/Event JSON as
  * `WsTransport`, but against the engine embedded in the app process
- * (`engine_attach`/`engine_cmd`/`engine_subscribe_push`/`engine_detach`
+ * (`engine_attach`/`engine_cmd`/`engine_subscribe_channel`/
+ * `engine_subscribe_push`/`engine_detach`
  * in `src-tauri/src/lib.rs`) instead of a WS relay. No host, no port, no
  * LAN server: discovery/scan runs in-process on the phone's WiFi.
  *
- * Framing is push-based: after attach the transport listens for the
- * backend's `openmix-event` frames (every `engine_cmd` reply inline plus
- * ticker frames from the shell's 50 ms background task) and feeds them
- * straight through — no JS poll timer, so an idle phone holds no 10 Hz
- * IPC wakeup. `send(json)` invokes `engine_cmd`; its return value is
- * ignored in push mode (the same frames already arrived as events).
+ * Framing is push-based: after attach the transport creates an ordered
+ * Tauri `Channel`, hands it to `engine_subscribe_channel`, and feeds every
+ * message straight through — no JS poll timer, so an idle phone holds no
+ * 10 Hz IPC wakeup, and no `openmix-event` JSON-string eval round-trip.
+ * The backend sends each JSON batch (array of `Event::to_json` strings,
+ * control frames + spectrum) as one message, and each hot meter frame
+ * (`Event::to_binary`: meters/GR/taps) as its own `ArrayBuffer` message
+ * (same layout the WS relay uses). Binary frames carry the SPEC 2a
+ * `seq`/`t_ms` header and are ingested via `parseBinary`, exactly like WS
+ * binary. `send(json)` invokes `engine_cmd`; its return value is empty in
+ * push mode (the same frames already arrived on the channel).
  *
- * Fallback: when the event API is unavailable (node tests driving the
- * transport with an injected `invoke`, foreign shells), the transport
- * reverts to the old `engine_poll` loop (`pollMs`, default 100 ms) and
- * feeds `engine_cmd` return values — the exact pre-push behaviour.
- * Binary IPC is never used — hello opts out of binary meters, so every
- * frame arrives as the same JSON text the relay would send
- * (byte-identical command spellings, text-only event path).
+ * Fallbacks, in order: the legacy `openmix-event` listen +
+ * `engine_subscribe_push` (shells without Channel support, JSON-only),
+ * then the old `engine_poll` loop (`pollMs`, default 100 ms) that feeds
+ * `engine_cmd` return values — the exact pre-push behaviour (JSON-only,
+ * never binary).
  *
- * The `invoke`/`listen` functions are injectable so node tests (and the
- * debug fixture) can drive the transport without a Tauri shell; by
- * default they lazy-import `@tauri-apps/api/core` / `@tauri-apps/api/event`
- * on first use, so merely importing this module in a browser never
- * touches the Tauri runtime.
+ * The `invoke`/`listen`/`createChannel` functions are injectable so node
+ * tests (and the debug fixture) can drive the transport without a Tauri
+ * shell; by default they lazy-import `@tauri-apps/api/core` /
+ * `@tauri-apps/api/event` on first use, so merely importing this module
+ * in a browser never touches the Tauri runtime. `createChannel: null`
+ * forces the legacy path (tests for the listen/poll fallbacks).
  */
 export interface TauriInvokeFn {
   (cmd: string, args?: Record<string, unknown>): Promise<unknown>;
@@ -403,6 +415,25 @@ export interface TauriInvokeFn {
 export interface TauriListenFn {
   (event: string, handler: (e: { payload: unknown }) => void): Promise<Unsub> | Unsub;
 }
+
+/**
+ * Ordered push-channel shape (matches `Channel` from
+ * `@tauri-apps/api/core`). The backend sends each JSON batch (array of
+ * `Event::to_json` strings) as one message and each binary meter frame
+ * (`Event::to_binary`) as one `ArrayBuffer` message; the transport feeds
+ * both straight through (binary via `parseBinary` in EngineWorld). Only
+ * `onmessage` is used — construction stays with the factory so tests can
+ * inject a fake without the Tauri runtime.
+ */
+export interface TauriChannel {
+  onmessage: ((msg: unknown) => void) | null;
+}
+
+/**
+ * Channel factory (default: lazy `new Channel()` from
+ * `@tauri-apps/api/core`). `null` forces the legacy listen/poll fallbacks.
+ */
+export type TauriChannelFactory = () => TauriChannel;
 
 /** Backend event carrying engine Event JSON frames (see `OPENMIX_EVENT`). */
 export const OPENMIX_EVENT = 'openmix-event';
@@ -414,6 +445,10 @@ export interface TauriTransportOptions {
    * `null` forces the `engine_poll` fallback loop (node tests that only
    * inject `invoke` rely on the default auto-detect, not on this). */
   listen?: TauriListenFn | null;
+  /** Channel factory (default: lazy `new Channel()` from
+   * `@tauri-apps/api/core`). `null` forces the legacy listen/poll
+   * fallbacks (tests for those paths). */
+  createChannel?: TauriChannelFactory | null;
   /** Background poll interval in ms for the fallback loop (default 100). */
   pollMs?: number;
   /** Timer injection for tests (default setInterval/clearInterval). */
@@ -427,6 +462,7 @@ export class TauriTransport implements Transport {
   readonly url = 'tauri://engine';
   private readonly invokeOpt: TauriInvokeFn | null;
   private readonly listenOpt: TauriListenFn | null | undefined;
+  private readonly channelFactory: TauriChannelFactory | null | undefined;
   private readonly pollMs: number;
   private readonly setTimer: (fn: () => void, ms: number) => unknown;
   private readonly clearTimer: (t: unknown) => void;
@@ -437,10 +473,12 @@ export class TauriTransport implements Transport {
   private attached = false;
   private closed = false;
   private polling = false;
-  /** True once `openmix-event` push is live: `engine_cmd` returns are
-   * ignored (the same frames already arrived as events). */
+  /** True once Channel (or legacy event) push is live: `engine_cmd`
+   * returns are ignored (the same frames already arrived on the push
+   * path). */
   private pushMode = false;
   private unlisten: Unsub | null = null;
+  private channel: TauriChannel | null = null;
   private pushSetup: Promise<void> | null = null;
   private timer: unknown = null;
   private attachPromise: Promise<void> | null = null;
@@ -448,6 +486,7 @@ export class TauriTransport implements Transport {
   constructor(opts: TauriTransportOptions = {}) {
     this.invokeOpt = opts.invoke ?? null;
     this.listenOpt = opts.listen;
+    this.channelFactory = opts.createChannel;
     this.pollMs = opts.pollMs ?? TAURI_POLL_MS;
     this.setTimer = opts.setTimer ?? ((fn, ms) => setInterval(fn, ms));
     this.clearTimer = opts.clearTimer ?? ((t) => clearInterval(t as ReturnType<typeof setInterval>));
@@ -470,18 +509,43 @@ export class TauriTransport implements Transport {
     });
   }
 
+  private emitMsg(msg: TransportMessage): void {
+    this.msgCbs.forEach((cb) => {
+      try {
+        cb(msg);
+      } catch {
+        /* ignore */
+      }
+    });
+  }
+
   private feed(frames: unknown): void {
+    // Channel messages are one of: a JSON batch (array of `Event::to_json`
+    // strings), a single binary meter frame (`ArrayBuffer` from a `Raw`
+    // send, or a `Uint8Array` view over one), or — on Android, where Raw
+    // IPC bodies are unsupported — a JSON number array carrying the same
+    // bytes (Tauri converts Raw to a number array on mobile). Strings and
+    // binary both flow to EngineWorld, which ingests text via `parseEvent`
+    // and binary via `parseBinary` (SPEC 2a `seq`/`t_ms` header intact).
+    if (frames instanceof ArrayBuffer) {
+      this.emitMsg(frames);
+      return;
+    }
+    if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(frames)) {
+      const v = frames as Uint8Array;
+      this.emitMsg(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
+      return;
+    }
     if (!Array.isArray(frames)) return;
+    if (frames.length > 0 && typeof frames[0] === 'number') {
+      const bytes = Uint8Array.from(frames as number[]);
+      this.emitMsg(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+      return;
+    }
     for (const f of frames) {
       if (typeof f !== 'string') continue;
       const msg: TransportMessage = f;
-      this.msgCbs.forEach((cb) => {
-        try {
-          cb(msg);
-        } catch {
-          /* ignore */
-        }
-      });
+      this.emitMsg(msg);
     }
   }
 
@@ -498,10 +562,11 @@ export class TauriTransport implements Transport {
           await this.setupPush();
           if (this.closed) return;
           this.attached = true;
-          // Same hello the WS path sends on every (re)connect, minus
-          // binary meters (IPC has no binary channel): opts the client
-          // into meter taps, so EngineWorld gets the full meter fan-out.
-          const hello = cmdHello(false, true);
+          // Same hello the WS path sends on every (re)connect: binary
+          // meters + taps now ride the ordered Channel (`Raw` binary
+          // frames, SPEC 2a `seq`/`t_ms` header), so EngineWorld gets the
+          // full meter fan-out as binary, exactly like WS.
+          const hello = cmdHello(true, true);
           for (const queued of this.queue.splice(0)) this.sendNow(queued);
           this.sendNow(hello);
           this.setOnline(true);
@@ -518,13 +583,18 @@ export class TauriTransport implements Transport {
     return this.attachPromise;
   }
 
-  /** Bring up push fan-out (listen + `engine_subscribe_push`); on any
-   * failure start the `engine_poll` fallback loop instead. Resolves in
-   * both cases — push is best-effort, connectivity is not. */
+  /** Bring up push fan-out: ordered Channel first
+   * (`engine_subscribe_channel`), then the legacy `openmix-event` listen
+   * (`engine_subscribe_push`), then the `engine_poll` fallback loop.
+   * Resolves in all cases — push is best-effort, connectivity is not. */
   private setupPush(): Promise<void> {
     if (this.pushSetup) return this.pushSetup;
     this.pushSetup = (async () => {
-      if (this.closed || this.unlisten) return;
+      if (this.closed || this.unlisten || this.channel) return;
+      // Fast path: ordered IPC Channel (no event eval, no poll timer).
+      if (await this.setupChannelPush()) return;
+      if (this.closed) return;
+      // Legacy path: `openmix-event` listen + subscribe.
       let listenFn: TauriListenFn | null = null;
       if (this.listenOpt !== undefined) {
         listenFn = this.listenOpt;
@@ -563,6 +633,45 @@ export class TauriTransport implements Transport {
     return this.pushSetup;
   }
 
+  /** Create the push Channel and hand it to `engine_subscribe_channel`.
+   * Returns true once push mode is live over the channel. Any failure
+   * (no Tauri runtime, factory threw, backend rejected) returns false so
+   * the caller falls through to the legacy paths. */
+  private async setupChannelPush(): Promise<boolean> {
+    let ch: TauriChannel | null = null;
+    if (this.channelFactory !== undefined) {
+      // Explicit injection: `null` forces the legacy paths (tests for the
+      // fallbacks); otherwise a throw means "no channel here".
+      if (this.channelFactory === null) return false;
+      try {
+        ch = this.channelFactory();
+      } catch {
+        return false;
+      }
+    } else {
+      try {
+        const m = await import('@tauri-apps/api/core');
+        const Ctor = (m as { Channel?: new () => TauriChannel }).Channel;
+        if (typeof Ctor !== 'function') return false;
+        ch = new Ctor();
+      } catch {
+        return false;
+      }
+    }
+    if (!ch || this.closed) return false;
+    ch.onmessage = (frames) => this.feed(frames);
+    try {
+      await this.invoke('engine_subscribe_channel', { onEvent: ch });
+    } catch {
+      return false;
+    }
+    if (this.closed) return false;
+    this.channel = ch;
+    this.pushMode = true;
+    this.stopPollLoop();
+    return true;
+  }
+
   private startPollLoop(): void {
     if (this.timer === null && !this.closed) {
       this.timer = this.setTimer(() => {
@@ -590,9 +699,10 @@ export class TauriTransport implements Transport {
   private sendNow(json: string): void {
     this.invoke('engine_cmd', { cmd: json }).then(
       (frames) => {
-        // Push mode: the same batch already arrived as `openmix-event` —
-        // feeding the return too would duplicate every frame. Fallback
-        // mode: the return value is the only copy.
+        // Push mode: the same batch already arrived on the push path
+        // (Channel or legacy event) — feeding the return too would
+        // duplicate every frame. Fallback mode: the return value is the
+        // only copy.
         if (!this.closed && !this.pushMode) this.feed(frames);
       },
       () => {
@@ -602,6 +712,7 @@ export class TauriTransport implements Transport {
         this.attachPromise = null;
         this.pushSetup = null;
         this.pushMode = false;
+        this.channel = null;
         this.setOnline(false);
       },
     );
@@ -669,6 +780,10 @@ export class TauriTransport implements Transport {
     this.stopPollLoop();
     this.pushSetup = null;
     this.pushMode = false;
+    // Dropping our side stops delivery; the `engine_detach` below drops
+    // the client the backend drains, so its stored clone goes quiet, and
+    // the next subscribe replaces it.
+    this.channel = null;
     if (this.unlisten) {
       try {
         this.unlisten();

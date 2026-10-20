@@ -1,6 +1,6 @@
 {
   "name": "openmix-src-tauri",
-  "version": "0.3.0",
+  "version": "0.1.0",
   "private": true,
   "description": "Android-build shim: exposes the Tauri CLI to the generated Gradle project (BuildTask.kt runs `npm run -- tauri android android-studio-script` with src-tauri as cwd). Desktop builds do not use npm (no beforeBuildCommand).",
   "scripts": {
