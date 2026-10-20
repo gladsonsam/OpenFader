@@ -24,7 +24,7 @@
   const tickW = variant === 'aside' ? 9 : 7;
 </script>
 
-<div aria-hidden="true" style="position:absolute;inset:0;display:block">
+<div aria-hidden="true" style="position:absolute;inset:0;display:block;pointer-events:none">
   {#each SCALE_MARKS as m (m.label)}
     <span
       style="position:absolute;left:0;width:{labelW}px;bottom:{m.pct}%;transform:translateY(50%);font-size:{fontSize}px;line-height:1;color:var(--u4-text-7);text-align:right"
