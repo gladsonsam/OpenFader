@@ -386,7 +386,8 @@ fn push_row(out: &mut Vec<DeviceDesc>, row: DeviceDesc) {
     }
 }
 
-/// Max channels with per-tick spectrum output (first N channels only).
+/// Legacy simulator envelope-activity budget (first N inputs only).
+/// Driver audio spectra use the full topology and never use this cap.
 ///
 /// 16 covers a full drum/band layer on typical 16/24/32ch surfaces while
 /// keeping the source-rate fanout bounded: 16 msgs x 64 floats/tick stays
@@ -394,11 +395,7 @@ fn push_row(out: &mut Vec<DeviceDesc>, row: DeviceDesc) {
 /// still stream `meters` levels.
 pub const SPECTRUM_CHANNELS: usize = 16;
 
-/// Max channels with per-tick GR output (first N channels only).
-///
-/// Same 16ch cap as [`SPECTRUM_CHANNELS`]. GR reads are cache-only (no extra
-/// wire traffic), so GR rides every 20 Hz meter tick. `gate` / `comp` read
-/// 0.0 until the DYN blob cache fills.
+/// Legacy simulator GR fanout budget. Hardware uses its full topology.
 pub const GR_CHANNELS: usize = 16;
 
 /// Default per-strip lock TTL: holder id + expiry, refreshed by holder
@@ -669,6 +666,13 @@ pub struct Engine {
     fill_gen: AtomicU64,
     /// Wakeup for the connect-fill worker (see [`Engine::ensure_tasks`]).
     fill_notify: Arc<Notify>,
+    /// Invalidates in-flight reads even when reconnecting the same driver.
+    connection_gen: AtomicU64,
+    fill_connection_gen: AtomicU64,
+    connection_changed: Notify,
+    /// Nonzero while the XR18 startup pass owns the read lane.
+    hydrating: AtomicU64,
+    reads_suspended: AtomicBool,
 }
 
 impl Engine {
@@ -691,7 +695,17 @@ impl Engine {
         // `Engine::registry`), which is always registered.
         let registries: HashMap<String, ParamRegistry> = rows
             .iter()
-            .map(|r| (r.name.to_string(), r.param_registry()))
+            .map(|r| {
+                let mut reg = r.param_registry();
+                // XR18 LR has dynamics but no external key-source leaf.
+                // Keep Main support on drivers that actually serve it.
+                if r.name == "xair" {
+                    reg.restrict_scopes("comp_key_src", &[
+                        openmix_core::StripKind::In, openmix_core::StripKind::Bus,
+                    ]);
+                }
+                (r.name.to_string(), reg)
+            })
             .collect();
         let drivers: HashMap<String, RegisteredDriver> =
             rows.into_iter().map(|r| (r.name.to_string(), r)).collect();
@@ -744,6 +758,11 @@ impl Engine {
             notify: Arc::new(Notify::new()),
             fill_gen: AtomicU64::new(0),
             fill_notify: Arc::new(Notify::new()),
+            connection_gen: AtomicU64::new(1),
+            fill_connection_gen: AtomicU64::new(1),
+            connection_changed: Notify::new(),
+            hydrating: AtomicU64::new(0),
+            reads_suspended: AtomicBool::new(false),
         });
         // FX cache for the default driver (sim): seeded synchronously so
         // the first attach already carries the rack.
@@ -802,14 +821,28 @@ impl Engine {
         let target = addr
             .map(str::to_string)
             .unwrap_or_else(|| self.default_addr(driver).to_string());
+        // Restoration is best-effort if the desk vanished; it must not
+        // prevent disconnecting or selecting another driver.
+        let _ = self.active_drv().set_spectrum_target("", None).await;
         let drv = self.drv(driver);
-        drv.connect(&target).await?;
+        let was_suspended = self.reads_suspended.swap(true, Ordering::AcqRel);
+        let generation = self.invalidate_connection();
+        if driver == "xair" {
+            self.hydrating.store(generation, Ordering::Release);
+        }
+        if let Err(e) = drv.connect(&target).await {
+            self.hydrating.store(0, Ordering::Release);
+            self.reads_suspended.store(was_suspended, Ordering::Release);
+            return Err(e);
+        }
         // Remember the desk address only on success: a failed connect must
         // not plant an unreachable address that every later scan unicast-
         // probes (slow scans, phantom rows). Hardware scans verify the
         // remembered addresses (broadcast discovery never crosses subnets).
         self.remember_desk(driver, &target);
         *self.active.write().unwrap() = driver.to_string();
+        self.param_cache.write().unwrap().clear();
+        self.reads_suspended.store(false, Ordering::Release);
         // The FX cache mirrors the active driver (sim rows / xair
         // placeholders); refresh it on every switch, including the boot
         // connect — otherwise a hardware boot keeps the sim-seeded rows
@@ -957,7 +990,7 @@ impl Engine {
         // A fresh page on a seeded-but-incomplete FX cache (boot with a
         // numbered rack) completes the params in the background instead of
         // waiting out the one-param-per-tick poller trickle.
-        if !self.fx_cache_complete() {
+        if self.hydrating.load(Ordering::Acquire) != 0 || !self.fx_cache_complete() {
             self.kick_fill();
         }
         handle
@@ -1060,7 +1093,7 @@ impl Engine {
                     let Some(engine) = weak.upgrade() else {
                         break;
                     };
-                    if engine.active_driver() != name {
+                    if engine.active_driver() != name || engine.reads_suspended.load(Ordering::Acquire) {
                         continue;
                     }
                     engine.apply_inbound(update.strip.0, &update.param, &update.value);
@@ -1118,6 +1151,7 @@ impl Engine {
             let weak: Weak<Self> = Arc::downgrade(self);
             tokio::spawn(async move {
                 let mut rta = RtaProcessor::new(0);
+                let mut had_audio_spectrum = false;
                 let mut tick =
                     tokio::time::interval(openmix_transport::METER_INTERVAL);
                 // Skip the immediate first tick so a fresh client gets
@@ -1143,21 +1177,48 @@ impl Engine {
                             });
                         }
                     }
-                    for (ch, _) in levels.iter().enumerate().take(SPECTRUM_CHANNELS) {
-                        let bins = rta.spectrum(ch);
-                        engine.broadcast(&Event::Spectrum {
-                            ch: ch as u16,
-                            bins,
-                        });
+                    let drv = engine.active_drv();
+                    let mut supplied = std::collections::HashSet::new();
+                    let frames = if engine.reads_suspended.load(Ordering::Acquire) { Vec::new() } else { drv.poll_spectrum() };
+                    if frames.is_empty() && had_audio_spectrum {
+                        engine.broadcast(&Event::AudioSpectrum { ch: None, bins_db: Vec::new(),
+                            band_edges_hz: Vec::new(), source: "unavailable".into(), position: String::new(), epoch: 0 });
                     }
-                    let m = levels.len().min(GR_CHANNELS);
-                    for ch in 0..m {
-                        let (gate, comp) = engine.gr_db(ch).await;
-                        engine.broadcast(&Event::Gr {
-                            ch: ch as u16,
-                            gate,
-                            comp,
-                        });
+                    had_audio_spectrum = !frames.is_empty();
+                    {
+                        for frame in frames {
+                            let n = frame.bins_db.len();
+                            if n == 0 || n > 1024 || frame.band_edges_hz.len() != n + 1
+                                || frame.strip.is_some_and(|s| usize::from(s.0) >= drv.strip_count())
+                                || frame.bins_db.iter().any(|v| !v.is_finite())
+                                || frame.band_edges_hz.iter().any(|v| !v.is_finite() || *v <= 0.0)
+                                || frame.band_edges_hz.windows(2).any(|w| w[0] >= w[1]) { continue; }
+                            if let Some(strip) = frame.strip { supplied.insert(usize::from(strip.0)); }
+                            engine.broadcast(&Event::AudioSpectrum {
+                                ch: frame.strip.map(|s| s.0), bins_db: frame.bins_db,
+                                band_edges_hz: frame.band_edges_hz, source: frame.source,
+                                position: frame.position, epoch: frame.epoch,
+                            });
+                        }
+                    }
+                    // Envelope activity is a sim visualization only. It never
+                    // substitutes for a provider's audio-frequency spectrum.
+                    if drv.name() == "sim" {
+                        for ch in 0..levels.len().min(SPECTRUM_CHANNELS) {
+                            if !supplied.contains(&ch) {
+                                engine.broadcast(&Event::Spectrum {
+                                    ch: ch as u16, bins: rta.spectrum(ch),
+                                });
+                            }
+                        }
+                    }
+                    let gr_count = if drv.name() == "sim" {
+                        drv.strip_count().min(GR_CHANNELS)
+                    } else { drv.strip_count() };
+                    for ch in 0..gr_count {
+                        if let Some((gate, comp)) = engine.gr_db(ch).await {
+                            engine.broadcast(&Event::Gr { ch: ch as u16, gate, comp });
+                        }
                     }
                 }
             });
@@ -1200,7 +1261,14 @@ impl Engine {
                     };
                     loop {
                         let gen = engine.fill_gen.load(Ordering::Acquire);
-                        engine.deferred_fill().await;
+                        let changed = engine.connection_changed.notified();
+                        tokio::pin!(changed);
+                        changed.as_mut().enable();
+                        let connection = engine.fill_connection_gen.load(Ordering::Acquire);
+                        tokio::select! {
+                            _ = &mut changed => {},
+                            _ = engine.deferred_fill(connection) => {},
+                        }
                         if engine.fill_gen.load(Ordering::Acquire) == gen {
                             break;
                         }
@@ -1272,6 +1340,9 @@ impl Engine {
         if !existed {
             return;
         }
+        let drv = self.active_drv();
+        let owner = id.to_string();
+        tokio::spawn(async move { let _ = drv.set_spectrum_target(&owner, None).await; });
         self.focus_queue
             .write()
             .unwrap()
@@ -1410,30 +1481,26 @@ impl Engine {
         self.active_drv().poll_meters().levels
     }
 
-    /// Gate/comp GR (dB reduction `>= 0`) for one 0-based channel.
-    ///
-    /// Drivers with a DYN blob cache read the `gate_gr`/`comp_gr` param
-    /// path; no data yet (or out of range) falls back to 0.0 so the tick
-    /// never drops a frame. Drivers without a GR source always read
-    /// (0.0, 0.0).
-    async fn gr_db(&self, ch: usize) -> (f32, f32) {
+    /// Cached GR in positive dB reduction. Absence is not a received zero.
+    /// Sim taps are its explicit synthetic GR source; hardware reads
+    /// its DYN cache across topology inputs, buses and main.
+    async fn gr_db(&self, ch: usize) -> Option<(f32, f32)> {
         let drv = self.active_drv();
-        if !drv.dyn_gr() {
-            return (0.0, 0.0);
+        if let Some(taps) = drv.poll_taps() {
+            return taps.get(ch).map(|t| (t.gr_gate_db, t.gr_comp_db));
         }
-        let Ok(strip) = u16::try_from(ch) else {
-            return (0.0, 0.0);
+        if !drv.dyn_gr() { return None; }
+        let id = StripId(u16::try_from(ch).ok()?);
+        let read = |v| match v {
+            Ok(ParamValue::Float(v)) if v.is_finite() => Some(v.max(0.0)),
+            _ => None,
         };
-        let id = StripId(strip);
-        let gate = match drv.get_param(id, "gate_gr").await {
-            Ok(ParamValue::Float(v)) => v.max(0.0),
-            _ => 0.0,
-        };
-        let comp = match drv.get_param(id, "comp_gr").await {
-            Ok(ParamValue::Float(v)) => v.max(0.0),
-            _ => 0.0,
-        };
-        (gate, comp)
+        let gate = read(drv.get_param(id, "gate_gr").await);
+        let comp = read(drv.get_param(id, "comp_gr").await);
+        if gate.is_none() && comp.is_none() { return None; }
+        // Bus/LR have no gate. The frontend checks per-strip parameter
+        // support before exposing either component.
+        Some((gate.unwrap_or(0.0), comp.unwrap_or(0.0)))
     }
 
     /// Full `shows` event: every show with its scenes.
@@ -2832,7 +2899,7 @@ impl Engine {
     /// `caps.meter_taps` order filtered to known taps. Drivers with a tap
     /// source serve all their taps; hardware serves `post` from the meter
     /// blob cache and GR from the DYN cache (`in` unavailable — no
-    /// `/meters/0` subscribe); tap-less drivers serve `post` only. Every
+    /// `/meters/0` subscribe); tap-less drivers emit no tap frames. Every
     /// entry is best-effort: a tap with no source reads back silence,
     /// never an error.
     async fn tap_frames(&self) -> Vec<(String, Vec<f32>)> {
@@ -2846,13 +2913,14 @@ impl Engine {
             ];
         }
         let post = drv.poll_meters().levels;
+        if drv.meter_taps().is_empty() { return Vec::new(); }
         let mut out = vec![("post".to_string(), post)];
         if drv.dyn_gr() {
             let n = out[0].1.len().max(1);
             let mut gr_gate = vec![0.0f32; n];
             let mut gr_comp = vec![0.0f32; n];
             for (i, (g, c)) in gr_gate.iter_mut().zip(gr_comp.iter_mut()).enumerate() {
-                let (gate, comp) = self.gr_db(i).await;
+                let (gate, comp) = self.gr_db(i).await.unwrap_or((0.0, 0.0));
                 *g = gate;
                 *c = comp;
             }
@@ -3236,6 +3304,12 @@ impl Engine {
     /// the poller deterministically; the background task calls this every
     /// `poll_interval`.
     pub async fn poll_tick(self: &Arc<Self>) {
+        if self.hydrating.load(Ordering::Acquire) != 0
+            || self.reads_suspended.load(Ordering::Acquire)
+        {
+            return;
+        }
+        let generation = self.connection_gen.load(Ordering::Acquire);
         if Self::poller_yields(self.writes_in_flight.load(Ordering::Relaxed)) {
             self.poll_skips.fetch_add(1, Ordering::Relaxed);
             return;
@@ -3310,6 +3384,9 @@ impl Engine {
         while let Some(joined) = set.join_next().await {
             if let Ok((i, ch, param, r)) = joined { ordered[i] = Some((ch, param, r)) }
         }
+        if self.connection_gen.load(Ordering::Acquire) != generation {
+            return;
+        }
         for slot in ordered.into_iter().flatten() {
             let (ch, param, r) = slot;
             match r {
@@ -3364,6 +3441,12 @@ impl Engine {
         entering_offline: bool,
     ) -> anyhow::Result<()> {
         self.param_cache.write().unwrap().clear();
+        let driver = self.active_driver();
+        self.param_dropped.write().unwrap().retain(|(d, _)| d != &driver);
+        self.poll_timeouts.write().unwrap().retain(|(d, _), _| d != &driver);
+        if self.active_driver() == "xair" {
+            self.hydrating.store(self.connection_gen.load(Ordering::Acquire), Ordering::Release);
+        }
         self.seed_fx_cache().await;
         self.note_write(writer);
         self.touch_holder_locks(writer);
@@ -3418,7 +3501,29 @@ impl Engine {
     /// info refresh, full FX fill, routing, then masters — one broadcast
     /// per frame as it lands. Idempotent (cache diffs keep repeats quiet);
     /// every section is best-effort so a silent desk never fails the fill.
-    async fn deferred_fill(self: &Arc<Self>) {
+    async fn deferred_fill(self: &Arc<Self>, generation: u64) {
+        if self.connection_gen.load(Ordering::Acquire) != generation
+            || self.reads_suspended.load(Ordering::Acquire)
+        {
+            return;
+        }
+        if self.hydrating.load(Ordering::Acquire) == generation {
+            self.hydrate_initial(generation).await;
+            if self.connection_gen.load(Ordering::Acquire) != generation {
+                return;
+            }
+            // The burst already served pending focus/visible entries.
+            // Keep failures queued for normal retry; do not re-read every
+            // successfully hydrated input before serving other banks.
+            {
+                let cache = self.param_cache.read().unwrap();
+                self.focus_queue.write().unwrap().retain(|(_, ch, id, _)| {
+                    !cache.get(ch).is_some_and(|values| values.contains_key(id))
+                });
+            }
+            self.prio_armed.store(false, Ordering::Relaxed);
+            let _ = self.hydrating.compare_exchange(generation, 0, Ordering::AcqRel, Ordering::Acquire);
+        }
         self.broadcast(&self.state_message(None).await);
         if let Ok(info) = self.info_message().await {
             self.broadcast(&info);
@@ -3432,9 +3537,98 @@ impl Engine {
         }
     }
 
+    /// Stop old-session work before replacing a driver session.
+    fn invalidate_connection(&self) -> u64 {
+        let generation = self.connection_gen.fetch_add(1, Ordering::AcqRel) + 1;
+        self.connection_changed.notify_waiters();
+        self.hydrating.store(0, Ordering::Release);
+        self.focus_queue.write().unwrap().clear();
+        generation
+    }
+
+    /// One bounded, sequential LAN burst. The driver's session serializes
+    /// OSC queries, so adding concurrent tasks does not improve throughput.
+    /// All strips' paint-critical values precede focused details and FX.
+    /// Confirmed false/zero/empty values count as present, too.
+    async fn hydrate_initial(&self, generation: u64) {
+        let driver = self.active_driver();
+        let start = Instant::now();
+        let mut reads = 0usize;
+        for (phase, list) in [self.core_poll_list(&driver), self.static_poll_list(&driver)]
+            .into_iter().enumerate()
+        {
+            for (ch, id) in list {
+                if self.connection_gen.load(Ordering::Acquire) != generation {
+                    return;
+                }
+                // Solo is fetched as one bank below, never 16 identical queries.
+                if id == "solo" || self.param_cache.read().unwrap()
+                    .get(&ch).is_some_and(|values| values.contains_key(id))
+                    || self.param_dropped.read().unwrap().contains(&(driver.clone(), id.to_string()))
+                {
+                    continue;
+                }
+                // Bound the burst on lossy wifi; normal polling keeps the
+                // existing two-second timeout and three-strike semantics.
+                if start.elapsed() >= Duration::from_secs(5) {
+                    eprintln!("engine: {driver} initial fill budget spent after {reads} reads");
+                    return;
+                }
+                while Self::poller_yields(self.writes_in_flight.load(Ordering::Relaxed)) {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                    if self.connection_gen.load(Ordering::Acquire) != generation
+                        || start.elapsed() >= Duration::from_secs(5)
+                    {
+                        return;
+                    }
+                }
+                let remaining = Duration::from_secs(5).saturating_sub(start.elapsed());
+                let Ok(result) = tokio::time::timeout(
+                    remaining, self.read_param(&driver, StripId(ch), id)
+                ).await else {
+                    return;
+                };
+                if self.connection_gen.load(Ordering::Acquire) != generation {
+                    return;
+                }
+                match result {
+                    Ok(value) => {
+                        self.note_poll_ok(&driver, id);
+                        self.apply_inbound(ch, id, &value);
+                    }
+                    Err(e) => { self.note_poll_error(&driver, id, &e).await; }
+                }
+                reads += 1;
+            }
+            if phase == 0 {
+                let drv = self.drv(&driver);
+                if let Ok(bank) = drv.solo_bank(drv.channel_count()).await {
+                    if self.connection_gen.load(Ordering::Acquire) != generation {
+                        return;
+                    }
+                    for (ch, on) in bank.into_iter().enumerate() {
+                        self.apply_inbound(ch as u16, "solo", &ParamValue::Bool(on));
+                    }
+                }
+                // A query reply can be ingested before the connect caps
+                // frame or before a newly attaching client is registered.
+                // Replay the confirmed cache without repeating wire reads.
+                for event in self.params_snapshot() {
+                    self.broadcast(&event);
+                }
+                eprintln!("engine: {driver} all-strip essentials ready in {:?}", start.elapsed());
+            }
+        }
+        for event in self.params_snapshot() {
+            self.broadcast(&event);
+        }
+        eprintln!("engine: {driver} initial strip fill ready in {:?} ({reads} reads)", start.elapsed());
+    }
+
     /// Wake the fill worker for one [`Engine::deferred_fill`] pass
     /// (coalesced by generation — see [`Engine::ensure_tasks`]).
     fn kick_fill(&self) {
+        self.fill_connection_gen.store(self.connection_gen.load(Ordering::Acquire), Ordering::Release);
         self.fill_gen.fetch_add(1, Ordering::AcqRel);
         self.fill_notify.notify_one();
     }
@@ -4152,6 +4346,16 @@ impl Engine {
                 self.push_state_with_by(writer, out).await;
                 Ok(None)
             }
+            Cmd::SpectrumTarget { ch } => {
+                if ch.is_some() && self.reads_suspended.load(Ordering::Acquire) {
+                    anyhow::bail!("RTA unavailable while disconnected");
+                }
+                if let Some(ch) = ch {
+                    anyhow::ensure!((ch as usize) < self.active_drv().strip_count(), "RTA strip out of range");
+                }
+                self.active_drv().set_spectrum_target(writer, ch.map(StripId)).await?;
+                Ok(None)
+            }
             Cmd::Focus { ch, chs } => {
                 // Poll-priority hint: either `{"cmd":"focus","ch":N}` or
                 // `{"cmd":"focus","chs":[...]}`. Entries may be indices or
@@ -4639,6 +4843,10 @@ impl Engine {
                 }
             }
             Cmd::Disconnect => {
+                // A missing readback cannot prevent local disconnect cleanup.
+                let _ = self.active_drv().set_spectrum_target("", None).await;
+                self.invalidate_connection();
+                self.reads_suspended.store(true, Ordering::Release);
                 {
                     let mut link = self.link.write().unwrap();
                     link.state = "disconnected".to_string();
@@ -4903,6 +5111,8 @@ impl Engine {
                     off.changes.clear();
                     off.pending_push = false;
                 }
+                self.invalidate_connection();
+                self.reads_suspended.store(false, Ordering::Release);
                 *self.active.write().unwrap() = "sim".to_string();
                 {
                     let mut link = self.link.write().unwrap();

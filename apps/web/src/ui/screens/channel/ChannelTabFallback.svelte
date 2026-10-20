@@ -4,6 +4,7 @@
      with the full channel scope. Prefer layout composition for new work:
      users build custom channel tabs from channel modules directly. -->
 <script lang="ts">
+  import { live } from '../../state/live.svelte.ts';
   import { ui } from '../../state/uiStore.svelte.ts';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
   import { fixtureSource } from '../../modules/context.ts';
@@ -31,17 +32,17 @@
   };
 
   const stripMeter = $derived<MeterSource>({
-    getLevel: () => ui.meter?.levelOf(ui.sel.id) ?? -90,
-    getPeak: () => ui.meter?.peakOf(ui.sel.id) ?? null,
-    getClip: () => (ui.meter ? ui.meter.clipping(ui.sel.id, Date.now()) : false),
+    getLevel: () => live.liveLevelDb(ui.sel.id) ?? ui.meter?.levelOf(ui.sel.id) ?? -90,
+    getPeak: () => live.livePeakDb(ui.sel.id) ?? ui.meter?.peakOf(ui.sel.id) ?? null,
+    getClip: () => live.liveClipOn(ui.sel.id) ?? (ui.meter ? ui.meter.clipping(ui.sel.id, Date.now()) : false),
     showPeak: ui.state.peakHold,
   });
   const hbarMeter = $derived<MeterSource>({
-    getLevel: () => ui.meter?.levelOf(ui.sel.id) ?? -90,
+    getLevel: () => live.liveLevelDb(ui.sel.id) ?? ui.meter?.levelOf(ui.sel.id) ?? -90,
   });
-  const levelDb = $derived(ui.meter?.levelOf(ui.sel.id) ?? -90);
+  const levelDb = $derived(live.liveLevelDb(ui.sel.id) ?? ui.meter?.levelOf(ui.sel.id) ?? -90);
   const dynGetLevel = $derived(
-    ui.frozen ? null : (() => ui.meter?.levelOf(ui.sel.id) ?? -90),
+    ui.frozen ? null : (() => live.liveLevelDb(ui.sel.id) ?? ui.meter?.levelOf(ui.sel.id) ?? -90),
   );
 
   const tree = $derived(store.tree(trees[ui.state.tab] ?? trees['input']));
@@ -56,9 +57,10 @@
       hbarMeter,
       levelDb,
       dynGetLevel,
+      dynGetReduction: (kind) => live.liveReductionDb(`${kind}/${ui.sel.id}`),
     }),
   );
-  const source = fixtureSource({});
+  const source = fixtureSource({ meter: ref => live.liveReductionDb(ref) });
 </script>
 
 <LayoutRenderer layout={tree} {source} {scope} />

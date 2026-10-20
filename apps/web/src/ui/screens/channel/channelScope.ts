@@ -68,6 +68,7 @@ export interface ChannelScopeFeeds {
   levelDb: number;
   /** Live level reader for the dyn dot/GR (null when frozen). */
   dynGetLevel: (() => number) | null;
+  dynGetReduction?: (kind: DynKind) => number | null;
   /** Fixture/live freeze flag (meters paint silence when true). */
   frozen: boolean;
 }
@@ -99,6 +100,9 @@ export interface ChannelScope {
   eqMaster: EqMasterToggle;
   eqGraph: EqGraphVm | null;
   eqSummary: string;
+  /** Q of the selected parametric band (1..4) for the graph pinch gesture;
+   *  0 when HPF (band 0) is selected or there is no EQ (HPF has no Q). */
+  eqSelQ: number;
   eqHpf: EqHpfCardVm | null;
   eqBands: EqBandCardVm[];
   dynKind: DynKind;
@@ -159,6 +163,7 @@ export interface ChannelScope {
   stripMeter: unknown;
   hbarMeter: unknown;
   dynGetLevel: (() => number) | null;
+  dynGetReduction?: (kind: DynKind) => number | null;
   frozen: boolean;
   /** Desk groups card vm (null offline: the layout `when` hides the card). */
   groupsVm: GroupsVm | null;
@@ -200,6 +205,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
   const eq = ch.eq ?? null;
   const selBand = a.state.selBand;
   const eqGraph = eq ? eqGraphVm(eq, selBand) : null;
+  const selQ = selBand > 0 && eq ? (eq.bands[selBand - 1]?.q ?? 0) : 0;
   const cards = eq ? eqBandCardsVm(eq, selBand, undefined, EQ_BAND_COLORS) : [];
   const gate = ch.dyn?.gate ?? null;
   const comp = ch.dyn?.comp ?? null;
@@ -242,6 +248,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     eqMaster: eq ? eqMasterToggle(eq) : { str: 'false', bg: 'var(--u4-btn-bg)', text: 'var(--u4-text-4)', label: 'EQ Bypassed' },
     eqGraph,
     eqSummary: eq ? eqSelInfoText(eq, selBand) : '',
+    eqSelQ: selQ,
     eqHpf: eq ? eqHpfCardVm(eq, selBand, EQ_BAND_COLORS) : null,
     eqBands: cards,
     dynKind: kind,
@@ -292,6 +299,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     stripMeter: a.stripMeter,
     hbarMeter: a.hbarMeter,
     dynGetLevel: a.dynGetLevel,
+    dynGetReduction: a.dynGetReduction,
     frozen: a.frozen,
     groupsVm: groups,
     assignGr: a.liveGroups?.grComp ?? null,

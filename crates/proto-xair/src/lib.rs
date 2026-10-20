@@ -11,6 +11,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::{Mutex, broadcast};
 
 pub mod automix;
+pub mod rta;
 pub mod dyn_gr;
 pub mod codec;
 pub mod comp;
@@ -380,7 +381,6 @@ pub const XAIR_CAPABILITIES: &[&str] = &[
     "send1_grpon",
     "send2_level",
     "send2_tap",
-    "send2_pan",
     "send2_grpon",
     "send3_level",
     "send3_tap",
@@ -388,7 +388,6 @@ pub const XAIR_CAPABILITIES: &[&str] = &[
     "send3_grpon",
     "send4_level",
     "send4_tap",
-    "send4_pan",
     "send4_grpon",
     "send5_level",
     "send5_tap",
@@ -396,23 +395,18 @@ pub const XAIR_CAPABILITIES: &[&str] = &[
     "send5_grpon",
     "send6_level",
     "send6_tap",
-    "send6_pan",
     "send6_grpon",
     "send7_level",
     "send7_tap",
-    "send7_pan",
     "send7_grpon",
     "send8_level",
     "send8_tap",
-    "send8_pan",
     "send8_grpon",
     "send9_level",
     "send9_tap",
-    "send9_pan",
     "send9_grpon",
     "send10_level",
     "send10_tap",
-    "send10_pan",
     "send10_grpon",
 ];
 
@@ -549,7 +543,9 @@ fn strip_root(strip: u16) -> anyhow::Result<(openmix_core::StripKind, String)> {
 fn check_scope(param: &str, kind: openmix_core::StripKind) -> anyhow::Result<()> {
     let def = openmix_core::params::find(param)
         .ok_or_else(|| anyhow::anyhow!("xair: unknown param {param:?}"))?;
-    if !openmix_core::params::supports_kind(def, kind) {
+    if !openmix_core::params::supports_kind(def, kind)
+        || (param == "comp_key_src" && kind == openmix_core::StripKind::Main)
+    {
         anyhow::bail!("xair: {param} out of scope for {kind:?} strips");
     }
     Ok(())
@@ -1003,7 +999,9 @@ fn fx_send(param: &str) -> anyhow::Result<u8> {
 
 /// Live XR18-class mixer on UDP 10024.
 pub struct XAirDriver {
-    session: Mutex<Option<OscSession>>,
+    connection_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    rta: std::sync::Mutex<Option<std::sync::Arc<rta::RtaStream>>>,
+    session: Mutex<Option<std::sync::Arc<OscSession>>>,
     peer: Mutex<String>,
     model: addrs::XAirModel,
     /// Last decoded `/meters/6` ALL DYN frame (`None` until the first blob
@@ -1017,10 +1015,11 @@ pub struct XAirDriver {
     /// across reconnects, fed by one ingest task per connection. The engine
     /// subscribes once and applies these to its param cache live.
     update_tx: broadcast::Sender<openmix_core::ParamUpdate>,
-    /// Latest `/meters/1` level blob in BLOB order (index 0 = ch 1,
-    /// rig-verified; families past the 16 channels are NOT mapped to
-    /// strips — see [`XAirDriver::poll_meters`]). `None` until the first
-    /// blob arrives. Filled by the cache-drain task that
+    /// Latest `/meters/1` levels in decoded blob order (40 linear levels:
+    /// input bank `0..16`, aux-return post at idx 26 — rig-verified
+    /// 2026-10-20; families past the channels are NOT mapped to strips —
+    /// see [`XAirDriver::poll_meters`]). `None` until the first blob
+    /// arrives. Filled by the cache-drain task that
     /// [`MixerDriver::subscribe_meters`] installs; read by `poll_meters`.
     meter_latest: std::sync::Arc<std::sync::Mutex<Option<Vec<f32>>>>,
 }
@@ -1043,6 +1042,8 @@ impl XAirDriver {
     pub fn with_model(model: addrs::XAirModel) -> Self {
         let (update_tx, _) = broadcast::channel(256);
         Self {
+            connection_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            rta: std::sync::Mutex::new(None),
             session: Mutex::new(None),
             peer: Mutex::new(String::new()),
             model,
@@ -1091,7 +1092,7 @@ impl XAirDriver {
         resolve_peer(host, addrs::PORT)
     }
 
-    async fn session(&self) -> anyhow::Result<tokio::sync::MutexGuard<'_, Option<OscSession>>> {
+    async fn session(&self) -> anyhow::Result<tokio::sync::MutexGuard<'_, Option<std::sync::Arc<OscSession>>>> {
         let guard = self.session.lock().await;
         if guard.is_none() {
             anyhow::bail!("not connected: call connect() first");
@@ -1369,10 +1370,12 @@ impl XAirDriver {
         // INFERRED, not owner-rig verified: the subscription reportedly
         // expires after ~10 s (xr-meters re-issues every 9 s) and needs the
         // `/xremote` keepalive (every ~5 s, already running via `connect`)
-        // alongside. Rig-verified 2026-10-18: the /meters/1 blob is 84 B
-        // = 42 LE-i16 samples with NO header (transport parses from offset
-        // 0 — correct). The xr-meters 4-header-byte note applies to a
-        // different stream shape, not this one.
+        // alongside. Rig-verified 2026-10-20: every `/meters/N` blob is a
+        // 4-byte LE i32 sample count + that many LE i16 dBFSx256 samples
+        // (`/meters/1` = 84 B = 40 samples); transport's
+        // `parse_xair_meter_blob` strips the count word and decodes
+        // dB→linear. The xr-meters 4-header-byte note describes this same
+        // count word, not a second header.
         session
             .send(
                 addrs::METER_REQUEST,
@@ -1405,6 +1408,8 @@ impl XAirDriver {
     async fn spawn_meter_renewal(&self, interval: std::time::Duration) -> anyhow::Result<()> {
         let guard = self.session().await?;
         let sock = std::sync::Arc::clone(guard.as_ref().unwrap().socket());
+        let generation = self.connection_generation.clone();
+        let connection = generation.load(std::sync::atomic::Ordering::Acquire);
         drop(guard);
         let xremote = osc::query_message(addrs::XREMOTE)?;
         let sub_levels = osc::encode_message(
@@ -1423,6 +1428,7 @@ impl XAirDriver {
             ticker.tick().await;
             loop {
                 ticker.tick().await;
+                if generation.load(std::sync::atomic::Ordering::Acquire) != connection { break; }
                 let _ = sock.send(&xremote).await;
                 let _ = sock.send(&sub_levels).await;
                 let _ = sock.send(&sub_dyn).await;
@@ -1473,12 +1479,25 @@ impl XAirDriver {
         if gate {
             dyn_meters.gate_gr(strip.0)
         } else {
-            dyn_meters.comp_gr(strip.0)
+            // Resolve family-local slots from topology; returns, FX sends,
+            // aux and DCAs have no slot in the ALL DYN payload.
+            let family = XAIR_TOPOLOGY.iter().find(|f|
+                usize::from(strip.0) >= f.first && usize::from(strip.0) < f.first + f.count);
+            match family.map(|f| (f.key, usize::from(strip.0) - f.first)) {
+                Some(("ch", i)) => Ok(dyn_meters.comp[i]),
+                Some(("bus", i)) => Ok(dyn_meters.bus[i]),
+                Some(("main", 0)) => Ok(dyn_meters.lr),
+                _ => anyhow::bail!("xair: no compressor GR slot for strip {}", strip.0),
+            }
         }
     }
 }
 
 impl MixerDriver for XAirDriver {
+    fn meter_taps(&self) -> &'static [&'static str] {
+        &["post", "gr_gate", "gr_comp"]
+    }
+
     fn name(&self) -> &'static str {
         "xair"
     }
@@ -1516,7 +1535,7 @@ impl MixerDriver for XAirDriver {
         } else {
             Self::sweep_peer(addr).await?
         };
-        let session = OscSession::connect(peer, Some(KeepaliveConfig::xremote())).await?;
+        let session = std::sync::Arc::new(OscSession::connect(peer, Some(KeepaliveConfig::xremote())).await?);
         // Authoritative discovery ping: a UDP "connect" always succeeds, so
         // without this a silent desk would link as connected and then time
         // out every query (phantom link, tap-to-connect looks dead with no
@@ -1543,6 +1562,9 @@ impl MixerDriver for XAirDriver {
                 "no reply from {peer} — check the desk is powered, on this network, and the IP is correct"
             );
         }
+        let connection = self.connection_generation.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
+        *self.meter_latest.lock().unwrap() = None;
+        *self.dyn_cache.lock().await = None;
         // Desk-broadcast ingest: parse every unmatched inbound message into
         // the stable update channel (one task per connection; it exits when
         // the next connect drops this session). `/meters/6` ALL DYN blobs
@@ -1552,10 +1574,12 @@ impl MixerDriver for XAirDriver {
         let mut rx = session.subscribe_updates();
         let tx = self.update_tx.clone();
         let dyn_cache = self.dyn_cache.clone();
+        let generation = self.connection_generation.clone();
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
                     Ok(msg) => {
+                        if generation.load(std::sync::atomic::Ordering::Acquire) != connection { break; }
                         if msg.addr == addrs::METER_DYN_SUBSCRIBE {
                             if let Ok(dyn_m) = Self::decode_dyn_message(&msg) {
                                 *dyn_cache.lock().await = Some(dyn_m);
@@ -1575,6 +1599,12 @@ impl MixerDriver for XAirDriver {
                 }
             }
         });
+        let old_rta = self.rta.lock().unwrap().take();
+        if let Some(old) = old_rta { let _ = old.target("", None, true).await; }
+        // Same OSC session as the selector: XR18 meter provenance is session-bound.
+        // The actor runs concurrently; no RTA round trip blocks hydration.
+        let stream = std::sync::Arc::new(rta::RtaStream::start(session.clone(), connection));
+        *self.rta.lock().unwrap() = Some(stream);
         *self.session.lock().await = Some(session);
         *self.peer.lock().await = peer.to_string();
         Ok(())
@@ -1818,17 +1848,27 @@ impl MixerDriver for XAirDriver {
         }
     }
 
-    /// Live meter levels in BLOB order (index 0 = ch 1, rig-verified). The
-    /// `/meters/1` blob carries 42 LE-i16 samples (84 B, no header —
-    /// rig-verified 2026-10-18: whole-packet parse); only the first 16
-    /// (channels) map to strips. Families past the channels (aux/FX/bus/
-    /// main/monitor) have no rig-verified index, so they are NOT mapped
-    /// here: consumers read channels `0..16` and treat the rest as
-    /// unknown (silence), never as another strip's level. `None` (no blob
-    /// yet) reads back channel-count silence, like the core default.
+    /// Strip-ordered meter levels (one entry per strip, [`XAIR_STRIPS`]).
+    /// The `/meters/1` blob (the only level stream subscribed) decodes in
+    /// transport to 40 linear levels: the input bank `0..16` feeds ch 1..16
+    /// (pre-mute taps — live-verified pattern 2026-10-20: hot while the
+    /// channels sit muted, ch15-anchored at idx 14, aux pre pair at 16/17),
+    /// and idx 26 feeds the aux-return strip 35 (`/rtn/aux` mute-gated,
+    /// live-verified 2026-10-20). Strips past the channels (FX/bus/main/
+    /// DCA) and the remaining blob slots have no rig-verified strip
+    /// mapping, so they read honest silence here — never a neighbor's
+    /// level. `None` (no blob yet) reads back full-map silence, like the
+    /// core default.
     fn poll_meters(&self) -> openmix_core::MeterFrame {
         let latest = self.meter_latest.lock().unwrap().clone().unwrap_or_default();
-        openmix_core::MeterFrame { levels: latest }
+        let mut levels = vec![0.0f32; XAIR_STRIPS];
+        for (i, v) in latest.iter().take(16).enumerate() {
+            levels[i] = *v;
+        }
+        if let Some(v) = latest.get(26) {
+            levels[35] = *v;
+        }
+        openmix_core::MeterFrame { levels }
     }
 
     async fn query_info(&self) -> anyhow::Result<MixerInfo> {
@@ -1864,6 +1904,16 @@ impl MixerDriver for XAirDriver {
         self.get_fx_param_with_type(slot, param, effect).await
     }
 
+    fn poll_spectrum(&self) -> Vec<openmix_core::AudioSpectrum> {
+        self.rta.lock().unwrap().as_ref().map_or_else(Vec::new, |rta| rta.poll())
+    }
+
+    async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()> {
+        let stream = self.rta.lock().unwrap().clone();
+        if let Some(stream) = stream { stream.target(owner, strip, false).await?; }
+        Ok(())
+    }
+
     async fn subscribe_meters(
         &self,
     ) -> anyhow::Result<broadcast::Receiver<openmix_core::MeterFrame>> {
@@ -1874,10 +1924,13 @@ impl MixerDriver for XAirDriver {
         // clone sees every frame alongside the caller's receiver.
         let mut drain = rx.resubscribe();
         let cache = self.meter_latest.clone();
+        let generation = self.connection_generation.clone();
+        let connection = generation.load(std::sync::atomic::Ordering::Acquire);
         tokio::spawn(async move {
             loop {
                 match drain.recv().await {
                     Ok(frame) => {
+                        if generation.load(std::sync::atomic::Ordering::Acquire) != connection { break; }
                         if let Ok(mut guard) = cache.lock() {
                             *guard = Some(frame.levels);
                         }
@@ -3489,7 +3542,7 @@ mod tests {
         let session =
             OscSession::from_connected_socket(sock, Some(KeepaliveConfig::xremote()));
         let driver = XAirDriver::new();
-        *driver.session.lock().await = Some(session);
+        *driver.session.lock().await = Some(std::sync::Arc::new(session));
         // Drain the fake's potential early datagrams by a tiny settle.
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         (driver, fake)
@@ -3769,26 +3822,31 @@ mod tests {
         assert!(driver.get_solo(StripId(20)).await.is_err());
     }
 
-    /// Meter subscription fills the blob-order cache that `poll_meters`
-    /// serves: the strict fake streams `[0.1, 0.5, 0.9]`, which must show
-    /// up verbatim (no header skip — the `/meters/1` blob has none).
+    /// Meter subscription fills the cache that `poll_meters` serves
+    /// strip-ordered: the strict fake streams `[0.1, 0.5, 0.9]` (a legacy
+    /// blob with no count word, so transport keeps the plain LE-i16 path),
+    /// which must land verbatim on strips 0..3 while the aux strip stays
+    /// silent (a 3-level frame has no idx 26).
     #[tokio::test]
     async fn driver_meter_cache_fills() {
         let (driver, _) = connected_driver().await;
-        assert!(driver.poll_meters().levels.is_empty());
+        assert!(driver.poll_meters().levels.iter().all(|l| *l == 0.0));
         let _rx = driver.subscribe_meters().await.unwrap();
         let t0 = std::time::Instant::now();
         loop {
-            if !driver.poll_meters().levels.is_empty() || t0.elapsed() > std::time::Duration::from_secs(3) {
+            if driver.poll_meters().levels.iter().any(|l| *l > 0.0)
+                || t0.elapsed() > std::time::Duration::from_secs(3)
+            {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(20)).await;
         }
         let levels = driver.poll_meters().levels;
-        assert_eq!(levels.len(), 3);
+        assert_eq!(levels.len(), XAIR_STRIPS);
         assert!((levels[0] - 0.1).abs() < 1e-4);
         assert!((levels[1] - 0.5).abs() < 1e-4);
         assert!((levels[2] - 0.9).abs() < 1e-4);
+        assert_eq!(levels[35], 0.0);
     }
 
     /// Connect-time port sweep stays sub-second and honors explicit ports:
@@ -4118,7 +4176,7 @@ mod tests {
         let session =
             OscSession::from_connected_socket(sock, Some(KeepaliveConfig::xremote()));
         let driver = XAirDriver::new();
-        *driver.session.lock().await = Some(session);
+        *driver.session.lock().await = Some(std::sync::Arc::new(session));
 
         driver.set_main_fader(0.66).await.unwrap();
         let v = tokio::time::timeout(std::time::Duration::from_secs(2), driver.get_main_fader())
@@ -4188,7 +4246,7 @@ mod tests {
         let session =
             OscSession::from_connected_socket(sock, Some(KeepaliveConfig::xremote()));
         let driver = XAirDriver::new();
-        *driver.session.lock().await = Some(session);
+        *driver.session.lock().await = Some(std::sync::Arc::new(session));
 
         driver.set_bus_fader(0, 0.33).await.unwrap();
         let v = tokio::time::timeout(
@@ -4932,7 +4990,8 @@ mod tests {
         // set: delay + hpf_slope (X32-only), source (insrc live-silent),
         // icon (no firmware leaf), link (global chlink, no per-channel
         // leaf), aux7/8 (only 6 bus sends), send11..16 (only 6+4 send
-        // slots), all twelve legacy aux/fx send mutes plus the ten v2
+        // slots), pan outside bus-pair slots 1/3/5, all twelve legacy
+        // aux/fx send mutes plus the ten v2
         // sendN_on (no send on/off leaf, T7), per-channel eq5 stays out
         // (channels carry 4 bands; eq5/6 ride buses + main and ARE in caps),
         // plus the non-strip v2b ids: solo dim/mute/level/source (global
@@ -4966,6 +5025,7 @@ mod tests {
             "icon",
             "link",
             "send10_on",
+            "send10_pan",
             "send11_level",
             "send11_on",
             "send11_pan",
@@ -4992,13 +5052,19 @@ mod tests {
             "send16_tap",
             "send1_on",
             "send2_on",
+            "send2_pan",
             "send3_on",
             "send4_on",
+            "send4_pan",
             "send5_on",
             "send6_on",
+            "send6_pan",
             "send7_on",
+            "send7_pan",
             "send8_on",
+            "send8_pan",
             "send9_on",
+            "send9_pan",
             "solo_dim",
             "solo_level",
             "solo_mute",

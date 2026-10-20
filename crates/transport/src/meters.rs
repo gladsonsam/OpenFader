@@ -1,20 +1,28 @@
 //! Meter parsing, ring buffer, and broadcast hub shared by all drivers.
 //!
-//! X-Air streams `/meters/0`..`/meters/3` blobs (~50ms). Each blob is a run of
-//! little-endian i16 samples normalized by 32767. The parser below also accepts
-//! float/int arg lists so future providers reuse it without bespoke code.
+//! X-Air level blobs (`/meters/0`..`/meters/3`, `/meters/5`, `/meters/7`
+//! ..`/meters/9`, ~20/s) share one layout (rig-verified 2026-10-20, XR18
+//! FW 1.20, all ten streams; corroborated by the Behringer X AIR OSC doc
+//! "signed integer 16 bit, resolution 1/256 dB" and the protocol reference
+//! mixer-simulator meter threads): a 4-byte LE i32 sample count followed by
+//! that many LE i16 samples, each dBFS x 256 (signed, `<= 0`;
+//! `i16::MIN` = -128 dB floor = silence). Levels decode to linear
+//! 0.0..1.0 via `10^(dB/20)`. [`parse_xair_meter_blob`] owns this form and
+//! matches ONLY on an exact count word (`4 + 2*count == len`); everything
+//! else (fake/sim desks, float/int arg lists) keeps flowing through the
+//! legacy plain LE-i16 run below untouched.
 //!
 //! Address forms: driver-subscribes get blobs addressed `/meters/N`, while
 //! app-style `/batchsubscribe` gets the SAME blobs addressed `meters/N`
 //! (no leading slash — rig-verified 2026-10-19, XR18 FW 1.20; see
 //! `docs/mixer control software-protocol-map.md` §4). Both forms route into the parse path.
 //!
-//! Blob census (silent rig, stable lengths): m0:20B m1:84B m2:76B m3:116B
-//! m4:204B m5:92B m6:82B m7:36B m8:12B m9:12B; first le16 sample =
-//! sample-count − 2 (probable length header — parsed as an ordinary sample,
-//! kept, not stripped). Per-strip index mapping beyond `/meters/1` idx0
-//! (ch1 mic floor) is UNKNOWN (needs desk-side signal); this parser makes
-//! no per-strip claims.
+//! Blob census (rig lengths): m0:20B m1:84B m2:76B m3:116B m4:204B
+//! m5:92B m6:82B m7:36B m8:12B m9:12B; the first 4 bytes are the LE i32
+//! sample count on all ten (the old "first le16 = sample-count − 2, no
+//! header" reading saw the count word's low half — corrected 2026-10-20).
+//! Per-strip index mapping is claimed ONLY where live-verified (see the
+//! xair driver's `poll_meters`); this parser makes no per-strip claims.
 //!
 //! Two consumers share this module: [`MeterRing`] keeps the latest N frames in
 //! memory (sync polled UIs, tests); [`MeterHub`] broadcasts frames every
@@ -36,12 +44,14 @@ pub const METER_INTERVAL: Duration = Duration::from_millis(50);
 pub const METER_CAPACITY: usize = 32;
 
 pub fn is_meter_addr(addr: &str) -> bool {
-    // Level streams only: `/meters/6` is the ALL DYN (GR) blob — signed
+    // Level streams only: `/meters/4` is RTA100 audio-frequency data;
+    // `/meters/6` is the ALL DYN (GR) blob — signed
     // 1/256 dB samples behind a 4-byte size word, not levels. It must not
     // enter the level hub (it would decode as ~41 garbage levels and
     // clobber the level cache); GR arrives via `ingest_dyn_message`.
     // The desk-addressed no-slash `meters/6` form is excluded too.
-    if addr == "/meters/6" || addr == "meters/6" {
+    // RTA100 is a frequency spectrum, never a strip-level frame.
+    if matches!(addr, "/meters/4" | "meters/4" | "/meters/6" | "meters/6") {
         return false;
     }
     addr == "/meters"
@@ -58,6 +68,38 @@ pub fn is_meter_addr(addr: &str) -> bool {
 /// Normalize one LE i16 sample to 0.0..1.0.
 fn sample_to_level(raw: i16) -> f32 {
     (raw as f32 / 32767.0).clamp(0.0, 1.0)
+}
+
+/// One X-Air dBFSx256 sample to linear 0.0..1.0.
+fn xair_sample_to_level(raw: i16) -> f32 {
+    if raw == i16::MIN {
+        return 0.0; // -128 dB floor sentinel = silence
+    }
+    let db = (raw as f32 / 256.0).min(0.0);
+    10f32.powf(db / 20.0)
+}
+
+/// Decode an X-Air meter blob (LE i32 sample count + that many LE i16
+/// dBFSx256 samples) to linear levels. Returns `None` unless the count
+/// word EXACTLY describes the payload (`4 + 2*count == len`,
+/// `1 <= count <= 8192`): fake/sim blobs and garbage keep the legacy
+/// path, never this one.
+pub fn parse_xair_meter_blob(blob: &[u8]) -> Option<Vec<f32>> {
+    if blob.len() < 6 {
+        return None;
+    }
+    let count = i32::from_le_bytes([blob[0], blob[1], blob[2], blob[3]]);
+    if count < 1 || count > 8192 {
+        return None;
+    }
+    if 4 + (count as usize) * 2 != blob.len() {
+        return None;
+    }
+    let mut out = Vec::with_capacity(count as usize);
+    for c in blob[4..].as_chunks::<2>().0 {
+        out.push(xair_sample_to_level(i16::from_le_bytes([c[0], c[1]])));
+    }
+    Some(out)
 }
 
 /// Parse a blob payload (LE i16 run) into levels.
@@ -83,10 +125,14 @@ pub fn parse_meter_message(msg: &OscMessage) -> Option<MeterFrame> {
     if !is_meter_addr(&msg.addr) {
         return None;
     }
-    // Blob form (X-Air).
+    // Blob form: X-Air count-word + dBFSx256 samples when the shape
+    // matches exactly, else the legacy plain LE-i16 run (fake/sim desks).
     for arg in &msg.args {
         if let OscType::Blob(b) = arg {
-            let levels = parse_meter_blob(b);
+            let levels = match parse_xair_meter_blob(b) {
+                Some(levels) => levels,
+                None => parse_meter_blob(b),
+            };
             if !levels.is_empty() {
                 return Some(MeterFrame { levels });
             }
@@ -325,14 +371,18 @@ mod tests {
         assert!(is_meter_addr("/meters"));
     }
 
-    /// Blob census from docs/mixer control software-protocol-map.md §4 (silent rig, stable
-    /// lengths, rig-verified 2026-10-19): every census length parses
-    /// whole-packet as LE i16 with no length-specific rejection, the first
-    /// sample carries count − 2, and both the slashed and the desk
-    /// no-slash address forms route into the parser — except the DYN
-    /// `/meters/6` blob, which must stay out of the level path in both forms.
+    /// Blob census from docs/mixer control software-protocol-map.md §4 (lengths
+    /// rig-verified 2026-10-19; FORMAT corrected 2026-10-20: the first 4
+    /// bytes are a LE i32 sample count, samples are dBFSx256 — the old
+    /// "first le16 = count − 2, no header" reading saw the count word's
+    /// low half). Census-shaped blobs take the X-Air path with exactly
+    /// `count` levels; a −256 raw sample reads −1 dB; the floor sentinel
+    /// reads silence; legacy/fake shapes must NOT match the X-Air form;
+    /// both the slashed and the desk no-slash address forms route into
+    /// the parser — except the DYN `/meters/6` blob, which must stay out
+    /// of the level path in both forms.
     #[test]
-    fn census_lengths_parse_whole_packet() {
+    fn census_lengths_parse_count_word_form() {
         const CENSUS: [(u8, usize); 10] = [
             (0, 20),
             (1, 84),
@@ -346,26 +396,33 @@ mod tests {
             (9, 12),
         ];
         for (n, bytes) in CENSUS {
-            let count = bytes / 2;
+            let count = (bytes - 4) / 2;
             let mut blob = Vec::with_capacity(bytes);
-            // First sample = count − 2 (observed s0 invariant, probable header).
-            blob.extend_from_slice(&((count as i16) - 2).to_le_bytes());
-            for _ in 1..count {
-                blob.extend_from_slice(&0i16.to_le_bytes());
+            blob.extend_from_slice(&(count as i32).to_le_bytes());
+            for i in 0..count {
+                // −1 dB at slot 0, floor sentinel at slot 1, 0 dBFS else.
+                let raw: i16 = if i == 0 {
+                    -256
+                } else if i == 1 {
+                    i16::MIN
+                } else {
+                    0
+                };
+                blob.extend_from_slice(&raw.to_le_bytes());
             }
-            let levels = parse_meter_blob(&blob);
+            let levels = parse_xair_meter_blob(&blob).expect("census shape");
             assert_eq!(levels.len(), count, "meters/{n}");
-            // Whole-packet parse: the header sample is kept as an ordinary level.
-            assert!((((count as f32) - 2.0) / 32767.0 - levels[0]).abs() < 1e-6);
+            assert!((levels[0] - 10f32.powf(-1.0 / 20.0)).abs() < 1e-6);
+            assert_eq!(levels[1], 0.0, "floor sentinel is silence");
             for addr in [format!("/meters/{n}"), format!("meters/{n}")] {
                 let msg = OscMessage {
                     addr,
                     args: vec![OscType::Blob(blob.clone())],
                 };
-                if n == 6 {
+                if n == 4 || n == 6 {
                     assert!(
                         parse_meter_message(&msg).is_none(),
-                        "meters/6 must not enter the level hub"
+                        "RTA/DYN must not enter the level hub"
                     );
                 } else {
                     assert_eq!(
@@ -375,6 +432,12 @@ mod tests {
                 }
             }
         }
+        // Legacy/fake shapes must keep the legacy path (never match the
+        // count word): the fake's 3-level blob, a silent pair, garbage.
+        assert!(parse_xair_meter_blob(&build_meter_blob(&[0.1, 0.5, 0.9])).is_none());
+        assert!(parse_xair_meter_blob(&build_meter_blob(&[0.0, 0.0])).is_none());
+        assert!(parse_xair_meter_blob(&[0xABu8; 37]).is_none());
+        assert!(parse_xair_meter_blob(&[0xFFu8; 100]).is_none());
     }
 
     /// No-slash address matching: the desk's `meters/N` form (and bare

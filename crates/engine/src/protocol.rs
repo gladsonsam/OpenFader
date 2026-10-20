@@ -73,6 +73,8 @@ pub enum Cmd {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
     },
+    /// Shared desk RTA interest while EQ is visible; null releases this client.
+    SpectrumTarget { ch: Option<u16> },
     Focus {
         ch: Option<u16>,
         chs: Option<Vec<serde_json::Value>>,
@@ -313,6 +315,7 @@ impl Cmd {
             "solo",
             "param",
             "focus",
+            "spectrum_target",
             "lock",
             "unlock",
             "list_shows",
@@ -622,6 +625,15 @@ pub enum Event {
         ch: u16,
         bins: Vec<f32>,
     },
+    /// Verified provider audio-frequency bins; legacy `spectrum` is envelope activity.
+    AudioSpectrum {
+        ch: Option<u16>,
+        bins_db: Vec<f32>,
+        band_edges_hz: Vec<f32>,
+        source: String,
+        position: String,
+        epoch: u64,
+    },
     Gr {
         ch: u16,
         gate: f32,
@@ -827,6 +839,7 @@ impl Event {
             Event::Shows { .. } => "shows",
             Event::Meters { .. } => "meters",
             Event::Spectrum { .. } => "spectrum",
+            Event::AudioSpectrum { .. } => "audio_spectrum",
             Event::Gr { .. } => "gr",
             Event::Caps { .. } => "caps",
             Event::Params { .. } => "params",

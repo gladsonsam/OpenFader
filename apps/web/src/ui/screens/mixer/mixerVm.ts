@@ -206,6 +206,7 @@ export function mixerAllCells(
   frozen: boolean,
   liveDb?: (fixtureId: string) => number | null,
   deskOf?: (fixtureId: string) => DeskGroups | null,
+  liveSignals?: LiveMeterSignals,
 ): StripCell[] {
   const out: StripCell[] = [];
   for (let n = 1; n <= 48; n++) {
@@ -213,7 +214,7 @@ export function mixerAllCells(
     const vm = stripVm(state, chans, id);
     if (!vm) continue;
     const desk = deskOf?.(id) ?? null;
-    out.push({ ...vm, desk, meter: stripMeterSource(chans, meter, frozen, state.peakHold, id, liveDb) });
+    out.push({ ...vm, desk, meter: stripMeterSource(chans, meter, frozen, state.peakHold, id, liveDb, liveSignals) });
   }
   return out;
 }
@@ -263,6 +264,12 @@ export interface MasterCell extends MasterVm {
  * so frozen feeds report silence; live mode reads the shared sim. When a
  * real relay link is up, `liveDb` (dB, like levelOf) wins over the sim.
  */
+export interface LiveMeterSignals {
+  peak(id: string): number | null;
+  clip(id: string): boolean | null;
+  reduction(ref: string): number | null;
+}
+
 export function stripMeterSource(
   chans: Record<string, Channel>,
   meter: MeterSim | null,
@@ -270,36 +277,21 @@ export function stripMeterSource(
   peakHold: boolean,
   id: string,
   liveDb?: (fixtureId: string) => number | null,
+  liveSignals?: LiveMeterSignals,
 ): MeterSource {
-  let liveLevel: number | null = null;
-  let livePeak = -90;
-  let peakUntil = 0;
-  let clipUntil = 0;
   return {
-    getLevel: () => {
-      liveLevel = liveDb?.(id) ?? null;
-      if (liveLevel !== null) {
-        const now = Date.now();
-        if (liveLevel >= livePeak || now > peakUntil) {
-          livePeak = liveLevel;
-          peakUntil = now + 1500;
-        }
-        if (liveLevel > -0.3) clipUntil = now + 1500;
-        return liveLevel;
-      }
-      return frozen ? -90 : (meter?.levelOf(id) ?? -90);
-    },
+    getLevel: () => liveDb?.(id) ?? (frozen ? -90 : (meter?.levelOf(id) ?? -90)),
     getPeak: () => {
+      if (liveDb && liveDb(id) !== null) return liveSignals?.peak(id) ?? -90;
       if (frozen) return null;
-      if (liveLevel !== null) return livePeak > -80 ? livePeak : null;
       const v = meter?.peakOf(id) ?? null;
       return v == null || v <= -90 ? null : v;
     },
-    getClip: () => {
-      if (frozen) return false;
-      return liveLevel !== null ? Date.now() < clipUntil : (meter?.clipping(id, Date.now()) ?? false);
-    },
+    getClip: () => liveDb && liveDb(id) !== null
+      ? liveSignals?.clip(id) ?? false
+      : (frozen ? false : (meter ? meter.clipping(id, Date.now()) : false)),
     grOn: () => {
+      if (liveDb && liveDb(id) !== null) return (liveSignals?.reduction(`comp/${id}`) ?? 0) > 0.05;
       if (frozen) return false;
       const dyn = chans[id]?.dyn;
       if (!dyn || !dyn.comp.on) return false;
@@ -315,16 +307,19 @@ export function masterMeterSource(
   frozen: boolean,
   id: string,
   liveDb?: (fixtureId: string) => number | null,
+  liveSignals?: LiveMeterSignals,
 ): MeterSource {
   return {
     getLevel: (ch: number) => {
       const lv = liveDb?.(id);
-      if (lv != null) return ch === 0 ? lv : lv - 1.5;
+      if (lv != null) return lv; // no fabricated right-channel offset on live mono taps
       // Frozen fixtures paint silence on both channels (design reference).
       if (frozen) return -90;
       const lvl = meter?.levelOf(id) ?? -90;
       return ch === 0 ? lvl : lvl - 1.5;
     },
+    getPeak: () => liveSignals?.peak(id) ?? null,
+    getClip: () => liveSignals?.clip(id) ?? false,
     showPeak: false,
   };
 }
@@ -341,6 +336,7 @@ export function mixerCells(
   frozen: boolean,
   liveDb?: (fixtureId: string) => number | null,
   deskOf?: (fixtureId: string) => DeskGroups | null,
+  liveSignals?: LiveMeterSignals,
 ): StripCell[] {
   const out: StripCell[] = [];
   for (const id of mixerSlots(state.bank)) {
@@ -348,7 +344,7 @@ export function mixerCells(
     const vm = stripVm(state, chans, id);
     if (!vm) continue;
     const desk = deskOf?.(id) ?? null;
-    out.push({ ...vm, desk, meter: stripMeterSource(chans, meter, frozen, state.peakHold, id, liveDb) });
+    out.push({ ...vm, desk, meter: stripMeterSource(chans, meter, frozen, state.peakHold, id, liveDb, liveSignals) });
   }
   return out;
 }
@@ -361,8 +357,9 @@ export function mixerMasterCell(
   frozen: boolean,
   liveDb?: (fixtureId: string) => number | null,
   deskOf?: (fixtureId: string) => DeskGroups | null,
+  liveSignals?: LiveMeterSignals,
 ): MasterCell | null {
   const vm = masterVm(state, chans);
   if (!vm) return null;
-  return { ...vm, desk: deskOf?.(vm.id) ?? null, meter: masterMeterSource(meter, frozen, vm.id, liveDb) };
+  return { ...vm, desk: deskOf?.(vm.id) ?? null, meter: masterMeterSource(meter, frozen, vm.id, liveDb, liveSignals) };
 }

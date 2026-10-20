@@ -90,6 +90,8 @@ pub trait DynDriver: Send + Sync {
     fn file_transfer(&self) -> bool;
     fn subscribe_updates(&self) -> Option<tokio::sync::broadcast::Receiver<ParamUpdate>>;
     fn poll_meters(&self) -> MeterFrame;
+    fn poll_spectrum(&self) -> Vec<openmix_core::AudioSpectrum>;
+    async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()>;
     async fn connect(&self, addr: &str) -> anyhow::Result<()>;
     async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()>;
     async fn get_fader(&self, strip: StripId) -> anyhow::Result<f32>;
@@ -338,6 +340,12 @@ macro_rules! impl_dyn_driver {
         }
         fn param_defs(&self) -> &'static [ParamDef] {
             MixerDriver::param_defs(self)
+        }
+        async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()> {
+            MixerDriver::set_spectrum_target(self, owner, strip).await
+        }
+        fn poll_spectrum(&self) -> Vec<openmix_core::AudioSpectrum> {
+            MixerDriver::poll_spectrum(self)
         }
         fn meter_taps(&self) -> &'static [&'static str] {
             MixerDriver::meter_taps(self)

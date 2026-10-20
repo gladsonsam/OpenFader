@@ -5,6 +5,7 @@ import { mount } from 'svelte';
 import AppFrame from './AppFrame.svelte';
 import type { Component } from 'svelte';
 import { loadManifestModules } from './modules/registry.ts';
+import { contentLoaderFor, loadShellScreen } from './screens/loadScreen.ts';
 
 const screens = new Map<string, Component>();
 const galleries = new Map<string, () => Promise<{ default: Component }>>();
@@ -17,45 +18,6 @@ export function registerScreen(id: string, component: Component): void {
 /** Extension point: register a gallery page (lazy) by id. */
 export function registerGallery(id: string, loader: () => Promise<{ default: Component }>): void {
   galleries.set(id, loader);
-}
-
-/**
- * Content packages needed for first paint, by mount id. Each loader imports
- * ONLY its package's register file (which pulls that screen's component);
- * every other package settles in the background after mount (see
- * settleRemaining). Returns null for ids owned by debug/demo/editor routes,
- * which fall through to full registration like before.
- */
-function contentLoaderFor(screen: string | null): (() => Promise<unknown>) | null {
-  switch (screen) {
-    case null: // default route boots the mixer content
-    case 'mixer':
-      return () => import('./screens/mixer/register.ts');
-    case 'ch-input':
-    case 'ch-eq':
-    case 'ch-gate':
-    case 'ch-comp':
-    case 'ch-sends':
-    case 'ch-groups':
-      return () =>
-        Promise.all([
-          import('./screens/channel/register.ts'),
-          import('./screens/channel/eq/register.ts'),
-          import('./screens/channel/dyn/register.ts'),
-        ]);
-    case 'fx':
-      return () => import('./screens/fx/register.ts');
-    case 'routing':
-      return () => import('./screens/routing/register.ts');
-    case 'connection':
-      return () => import('./screens/connection/register.ts');
-    case 'settings':
-      return () => import('./screens/settings/register.ts');
-    case 'scenes':
-      return () => import('./screens/scenes/register.ts');
-    default:
-      return null;
-  }
 }
 
 /**
@@ -79,8 +41,8 @@ function galleryLoaderFor(id: string): (() => Promise<unknown>) | null {
  * floor (two frames + 2 s) and then an idle slot, so on slow links the
  * first paint's fetches finish first (dynamic import() has no priority
  * knob; starting the burst early measurably delayed FCP on HTTP/1.1).
- * Late registrations bump the shell revision so an already-mounted screen
- * that rendered a placeholder picks up its content (see shell/registry.ts).
+ * Navigation requests its own screen and manifests immediately through
+ * loadShellScreen, without waiting for this background batch.
  * A watchdog covers frames that never come (hidden tab). Each package still
  * loads in isolation (screens/index.ts per-module catch), so a broken
  * package can't take down the route.
@@ -93,9 +55,8 @@ function settleRemaining(): void {
     Promise.all([
       import('./screens/index.ts').then((m) => m.registered),
       // Manifest packages deferred past paint (registration is idempotent;
-      // already-loaded paint files are rejected as duplicates). Screens that
-      // mount from this batch re-resolve via the shell revision; their
-      // layouts re-resolve via the manifest revision (see registry.ts).
+      // already-loaded paint files are rejected as duplicates). Layouts
+      // re-resolve via the manifest revision (see registry.ts).
       loadManifestModules(),
     ]).catch((e) => console.error('[ui4] background registration failed:', e));
   };
@@ -120,47 +81,6 @@ function settleRemaining(): void {
     }
   };
   afterFloor();
-}
-
-/**
- * Manifest packages needed for first paint, by mount id (glob keys relative
- * to modules/registry.ts). The mixer paint needs only the layout primitives
- * (`_example`, incl. the generic `btn` leaf) + the strip modules
- * (`m1-mixer`); every other package settles in the background after mount
- * (see settleRemaining) and LayoutRenderer re-resolves when it lands.
- * Returns null for ids owned by debug/demo/editor routes, which fall
- * through to full registration like before.
- */
-function manifestsFor(screen: string | null): string[] | null {
-  switch (screen) {
-    case null: // default route boots the mixer content
-    case 'mixer':
-      return ['./manifests/_example.ts', './manifests/m1-mixer.ts'];
-    case 'ch-input':
-    case 'ch-eq':
-    case 'ch-gate':
-    case 'ch-comp':
-    case 'ch-sends':
-    case 'ch-groups':
-      return [
-        './manifests/_example.ts',
-        './manifests/c1-channel.ts',
-        './manifests/c2-eq.ts',
-        './manifests/c3-dyn.ts',
-        './manifests/p1-presets.ts',
-        './manifests/m1-mixer.ts',
-      ];
-    case 'fx':
-      return ['./manifests/_example.ts', './manifests/f1-fx.ts'];
-    case 'routing':
-    case 'connection':
-      return ['./manifests/_example.ts', './manifests/s78-pages.ts'];
-    case 'settings':
-    case 'scenes':
-      return ['./manifests/_example.ts', './manifests/s910-pages.ts'];
-    default:
-      return null;
-  }
 }
 
 /**
@@ -228,10 +148,9 @@ export async function mountUi(target: HTMLElement, params: URLSearchParams): Pro
   const screen = params.get('screen');
   const need = screen ? contentLoaderFor(screen) : contentLoaderFor(null);
   const contentP = need
-    ? need().then(() => true)
+    ? Promise.resolve(loadShellScreen(screen ?? 'mixer')).then(() => true)
     : import('./screens/index').then((index) => index.registered.then(() => false));
-  const paintFiles = manifestsFor(screen ?? null);
-  const manifestP = (paintFiles ? loadManifestModules(paintFiles) : loadManifestModules()).catch((e) => {
+  const manifestP = (need ? Promise.resolve() : loadManifestModules()).catch((e) => {
     console.error('[ui4] manifest load failed:', e);
   });
   try {

@@ -195,17 +195,16 @@ pub fn send_tap(root: &str, send: u8) -> anyhow::Result<String> {
 
 /// OSC address of one channel send pan (`mix/MM/pan`, float `0..1`).
 ///
-/// The firmware map lists send `pan` on odd slots only; the driver addresses
-/// every slot uniformly (live-verified for slot 1: `/ch/01/mix/01/pan`
-/// answers).
+/// Only bus-pair slots 1, 3 and 5 have a pan leaf. Even bus slots and
+/// FX-send slots are silent on XR18 FW 1.20 (rig-verified 2026-10-20).
 ///
 /// ```
 /// # use openmix_proto_xair::mix::send_pan;
 /// assert_eq!(send_pan("/ch/01", 1).unwrap(), "/ch/01/mix/01/pan");
 /// ```
 pub fn send_pan(root: &str, send: u8) -> anyhow::Result<String> {
-    if !(1..=AUX_SENDS + FX_SENDS).contains(&send) {
-        anyhow::bail!("send slot {send} out of range 1..={}", AUX_SENDS + FX_SENDS);
+    if !matches!(send, 1 | 3 | 5) {
+        anyhow::bail!("send pan not supported for slot {send}; expected 1, 3 or 5");
     }
     Ok(format!("{root}/mix/{send:02}/pan"))
 }
