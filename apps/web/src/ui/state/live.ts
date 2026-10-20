@@ -11,8 +11,12 @@ export const RELAY_LS_KEY = 'openmix.relay-host';
 /** Set when the user connects; cleared on manual disconnect (auto-rejoin). */
 export const RELAY_AUTO_KEY = 'openmix.relay-auto';
 export const DEFAULT_RELAY_HOST = '127.0.0.1:8080';
-/** Handshake budget: caps must arrive this soon after connect. */
-export const CONNECT_TIMEOUT_MS = 6000;
+/** Handshake budget: caps must arrive this soon after connect. Raised past
+ * the old 6 s: post-switch first paint is local-speed, but a lossy-venue
+ * connect burst (300 ms per query, several queries) can legitimately take
+ * seconds before caps lands — expiring here while the engine is still
+ * working would flip the UI to error and invite a retry double-load. */
+export const CONNECT_TIMEOUT_MS = 15000;
 /** Scan busy budget: the engine sends no scan-started event (devices only
  *  lands when the sweep finishes), so the UI clears its busy state on the
  *  next devices frame or after this long, whichever comes first. */

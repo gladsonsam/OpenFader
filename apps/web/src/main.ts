@@ -7,8 +7,9 @@ if (!target) throw new Error('#app mount target not found');
 const params = new URLSearchParams(window.location.search);
 
 async function boot(el: HTMLElement) {
-  await import('./ui/tokens.css');
-  await import('./ui/app.css');
+  // Tokens + app CSS fetch in parallel (serial awaits stalled first paint
+  // on the slower of the two).
+  await Promise.all([import('./ui/tokens.css'), import('./ui/app.css')]);
   // App-shell service worker is a production/PWA concern. Registered
   // during dev it serves stale-while-revalidate transforms, so the
   // engineer tests old code after every edit. Never register it here;

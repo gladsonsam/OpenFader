@@ -361,8 +361,13 @@ export function registerBuiltins(): void {
 
   // desk mix config + sends (live-only, caps-gated; same echo pattern)
   uiThrough('ui.setLrAssign', a => [a['id'], a['assigned']], { args: { id: 'string', assigned: 'boolean' }, describe: 'Set desk LR assign (lock-checked)' });
+  uiThrough('ui.setDcaAssign', a => [a['id'], a['group'], a['member']], { args: { id: 'string', group: 'number', member: 'boolean' }, describe: 'Set desk DCA membership (lock-checked)' });
   uiThrough('ui.setAutomixWeight', a => [a['id'], a['value']], { args: { id: 'string', value: 'number' }, describe: 'Set desk automix weight 0..1 (lock-checked)' });
+  uiThrough('ui.setAutomixOn', a => [a['id'], a['on']], { args: { id: 'string', on: 'boolean' }, describe: 'Set desk automix enable (lock-checked)' });
+  uiThrough('ui.setInsertOn', a => [a['id'], a['on']], { args: { id: 'string', on: 'boolean' }, describe: 'Set desk channel-insert bypass (lock-checked)' });
+  uiThrough('ui.setInsertSel', a => [a['id'], a['value']], { args: { id: 'string', value: 'number' }, describe: 'Set desk channel-insert select 0..8 (lock-checked)' });
   uiThrough('ui.toggleSendGrpon', a => [a['id'], a['k']], { args: { id: 'string', k: 'number' }, describe: 'Toggle desk send group-on (lock-checked)' });
+  uiThrough('ui.setSendTap', a => [a['id'], a['k'], a['value']], { args: { id: 'string', k: 'number', value: 'number' }, describe: 'Set desk send tap point 0..5 (lock-checked)' });
 
   // connection
   registerAction('ui.scan', (args, ctx) => {

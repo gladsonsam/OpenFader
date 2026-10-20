@@ -39,6 +39,8 @@ export const manifests: ModuleManifest[] = [
       index: { type: 'number', min: 0, max: 15, step: 1, default: 0 },
       name: { type: 'text', default: 'FX 1' },
       type: { type: 'text', default: 'Hall' },
+      code: { type: 'text', default: '' },
+      art: { type: 'object', default: {} },
       state: { type: 'text', default: 'On' },
       stateColor: { type: 'color', default: '#7be27b' },
       ret: { type: 'text', default: 'Ret 1/2' },

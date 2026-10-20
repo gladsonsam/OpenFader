@@ -1103,6 +1103,8 @@ fn geq2_def(par: u8) -> Option<FxParamDef> {
 
 /// Short display name for an effect-type index (`None` = undocumented
 /// index — index 15 is a gap in the wire order; treat like unknown).
+/// This is the desk code (`HALL`, `DLY`, …): stable wire key, used as the
+/// `caps.fx` type `id`. Human-facing UI shows [`fx_effect_full_name`].
 ///
 /// ```
 /// # use openmix_proto_xair::fx::fx_effect_name;
@@ -1112,8 +1114,34 @@ fn geq2_def(par: u8) -> Option<FxParamDef> {
 /// assert_eq!(fx_effect_name(61), None);
 /// ```
 pub fn fx_effect_name(index: u8) -> Option<&'static str> {
-    let (name, _) = fx_effect_meta(index)?;
+    let (name, _, _) = fx_effect_meta(index)?;
     Some(name)
+}
+
+/// Full display name for an effect-type index (`None` = undocumented
+/// index, same gap rule as [`fx_effect_name`]).
+///
+/// Provenance: 58 of the 60 names are the X-AIR-Edit 1.8.1 rack-select
+/// strings (see `docs/captures/xair-edit-1.8.1/app_structure.txt` §4 —
+/// our own prior strings inventory, names only, no artwork): matched to
+/// wire indices by family/param semantics (the rack-select order is
+/// grouped by category, NOT wire order). Two are clean-room inferences,
+/// marked below: `PLAT` has no entry in the captured strings
+/// ("Plate Reverb" from the code + plate param family) and `ULC2` takes
+/// "Dual Ultimo Compressor" (the captured "Stereo Ultimo Compressor"
+/// has no corresponding wire index in the 0..=60 order — possibly a
+/// single-channel variant outside this table; never asserted).
+///
+/// ```
+/// # use openmix_proto_xair::fx::fx_effect_full_name;
+/// assert_eq!(fx_effect_full_name(0), Some("Hall Reverb"));
+/// assert_eq!(fx_effect_full_name(10), Some("Stereo Delay"));
+/// assert_eq!(fx_effect_full_name(60), Some("Stereo Pitch Shifter"));
+/// assert_eq!(fx_effect_full_name(15), None);
+/// ```
+pub fn fx_effect_full_name(index: u8) -> Option<&'static str> {
+    let (_, full, _) = fx_effect_meta(index)?;
+    Some(full)
 }
 
 /// Number of meaningful (non-padding) pars for an effect-type index
@@ -1126,79 +1154,83 @@ pub fn fx_effect_name(index: u8) -> Option<&'static str> {
 /// assert_eq!(fx_param_count(15), None);
 /// ```
 pub fn fx_param_count(index: u8) -> Option<u8> {
-    let (_, used) = fx_effect_meta(index)?;
+    let (_, _, used) = fx_effect_meta(index)?;
     Some(used)
 }
 
-fn fx_effect_meta(index: u8) -> Option<(&'static str, u8)> {
+fn fx_effect_meta(index: u8) -> Option<(&'static str, &'static str, u8)> {
     match index {
-        0 => Some(("HALL", 12)),
-        1 => Some(("AMBI", 10)),
-        2 => Some(("RPLT", 16)),
-        3 => Some(("ROOM", 16)),
-        4 => Some(("CHAM", 16)),
-        5 => Some(("PLAT", 12)),
-        6 => Some(("VREV", 10)),
-        7 => Some(("VRM", 13)),
-        8 => Some(("GATE", 10)),
-        9 => Some(("RVRS", 9)),
-        10 => Some(("DLY", 12)),
-        11 => Some(("3TAP", 15)),
-        12 => Some(("4TAP", 15)),
-        13 => Some(("CRS", 11)),
-        14 => Some(("FLNG", 12)),
+        0 => Some(("HALL", "Hall Reverb", 12)),
+        1 => Some(("AMBI", "Ambience", 10)),
+        2 => Some(("RPLT", "Rich Plate Reverb", 16)),
+        3 => Some(("ROOM", "Room Reverb", 16)),
+        4 => Some(("CHAM", "Chamber Reverb", 16)),
+        // Inferred: no "Plate Reverb" in the captured rack-select strings.
+        5 => Some(("PLAT", "Plate Reverb", 12)),
+        6 => Some(("VREV", "Vintage Reverb", 10)),
+        7 => Some(("VRM", "Vintage Room", 13)),
+        8 => Some(("GATE", "Gated Reverb", 10)),
+        9 => Some(("RVRS", "Reverse Reverb", 9)),
+        10 => Some(("DLY", "Stereo Delay", 12)),
+        11 => Some(("3TAP", "3-Tap Delay", 15)),
+        12 => Some(("4TAP", "Rhythm Delay", 15)),
+        13 => Some(("CRS", "Stereo Chorus", 11)),
+        14 => Some(("FLNG", "Stereo Flanger", 12)),
         // 15: undocumented gap (FLNG 14 → PHAS 16) — generic fallback.
-        16 => Some(("PHAS", 12)),
-        17 => Some(("DIMC", 7)),
-        18 => Some(("FILT", 14)),
-        19 => Some(("ROTA", 8)),
-        20 => Some(("PAN", 9)),
-        21 => Some(("SUB", 10)),
-        22 => Some(("D/RV", 12)),
-        23 => Some(("CR/R", 12)),
-        24 => Some(("FL/R", 12)),
-        25 => Some(("D/CR", 12)),
-        26 => Some(("D/FL", 12)),
-        27 => Some(("MODD", 13)),
-        28 => Some(("GEQ2", 64)),
-        29 => Some(("GEQ", 32)),
-        30 => Some(("TEQ2", 64)),
-        31 => Some(("TEQ", 32)),
-        32 => Some(("DES2", 6)),
-        33 => Some(("DES", 6)),
-        34 => Some(("P1A", 11)),
-        35 => Some(("P1A2", 22)),
-        36 => Some(("PQ5", 9)),
-        37 => Some(("PQ5S", 18)),
-        38 => Some(("WAVD", 6)),
-        39 => Some(("LIM", 8)),
-        40 => Some(("CMB", 29)),
-        41 => Some(("CMB2", 58)),
-        42 => Some(("FAC", 7)),
-        43 => Some(("FAC1M", 14)),
-        44 => Some(("FAC2", 14)),
-        45 => Some(("LEC", 5)),
-        46 => Some(("LEC2", 10)),
+        16 => Some(("PHAS", "Stereo Phaser", 12)),
+        17 => Some(("DIMC", "Dimensional Chorus", 7)),
+        18 => Some(("FILT", "Mood Filter", 14)),
+        19 => Some(("ROTA", "Rotary Speaker", 8)),
+        20 => Some(("PAN", "Tremolo / Panner", 9)),
+        21 => Some(("SUB", "Suboctaver", 10)),
+        22 => Some(("D/RV", "Delay + Chamber", 12)),
+        23 => Some(("CR/R", "Chorus + Chamber", 12)),
+        24 => Some(("FL/R", "Flanger + Chamber", 12)),
+        25 => Some(("D/CR", "Delay + Chorus", 12)),
+        26 => Some(("D/FL", "Delay + Flanger", 12)),
+        27 => Some(("MODD", "Modulation Delay", 13)),
+        28 => Some(("GEQ2", "Dual Graphic EQ", 64)),
+        29 => Some(("GEQ", "Stereo Graphic EQ", 32)),
+        30 => Some(("TEQ2", "Dual TruEQ", 64)),
+        31 => Some(("TEQ", "Stereo TruEQ", 32)),
+        32 => Some(("DES2", "Dual DeEsser", 6)),
+        33 => Some(("DES", "Stereo DeEsser", 6)),
+        34 => Some(("P1A", "Stereo Xtec EQ1", 11)),
+        35 => Some(("P1A2", "Dual Xtec EQ1", 22)),
+        36 => Some(("PQ5", "Stereo Xtec EQ5", 9)),
+        37 => Some(("PQ5S", "Dual Xtec EQ5", 18)),
+        38 => Some(("WAVD", "Wave Designer", 6)),
+        39 => Some(("LIM", "Precision Limiter", 8)),
+        40 => Some(("CMB", "Stereo Combinator", 29)),
+        41 => Some(("CMB2", "Dual Combinator", 58)),
+        42 => Some(("FAC", "Stereo Fair Compressor", 7)),
+        43 => Some(("FAC1M", "M/S Fair Compressor", 14)),
+        44 => Some(("FAC2", "Dual Fair Compressor", 14)),
+        45 => Some(("LEC", "Stereo Leisure Compressor", 5)),
+        46 => Some(("LEC2", "Dual Leisure Compressor", 10)),
         // 47/48 are contested in the notes: the wire-order grid (stated
         // doubly-sourced, count-checked) says 47=ULC2/48=ENH2, while the
         // section headers claim ULC(47), ULC2(48) AND ENH2(48) — 48 is
         // double-claimed, so at least one section number is a typo. The
         // grid wins for names; every row of 47 is forced inferred (see
         // fx_param_def) and 48 is wholly inferred already (flagged layout).
-        47 => Some(("ULC2", 12)),
-        48 => Some(("ENH2", 16)),
-        49 => Some(("ENH", 9)),
-        50 => Some(("EXC2", 14)),
-        51 => Some(("EXC", 7)),
-        52 => Some(("IMG", 7)),
-        53 => Some(("EDI", 8)),
-        54 => Some(("SON", 8)),
-        55 => Some(("AMP2", 18)),
-        56 => Some(("AMP", 9)),
-        57 => Some(("DRV2", 20)),
-        58 => Some(("DRV", 10)),
-        59 => Some(("PIT2", 12)),
-        60 => Some(("PIT", 6)),
+        // "Dual Ultimo Compressor": the captured strings also list a
+        // "Stereo Ultimo Compressor" with no wire index here (see
+        // fx_effect_full_name docs) — never asserted.
+        47 => Some(("ULC2", "Dual Ultimo Compressor", 12)),
+        48 => Some(("ENH2", "Dual Enhancer", 16)),
+        49 => Some(("ENH", "Stereo Enhancer", 9)),
+        50 => Some(("EXC2", "Dual Exciter", 14)),
+        51 => Some(("EXC", "Stereo Exciter", 7)),
+        52 => Some(("IMG", "Stereo Imager", 7)),
+        53 => Some(("EDI", "Edison EX1", 8)),
+        54 => Some(("SON", "Sound Maxer", 8)),
+        55 => Some(("AMP2", "Dual Guitar Amp", 18)),
+        56 => Some(("AMP", "Stereo Guitar Amp", 9)),
+        57 => Some(("DRV2", "Dual Tube Stage", 20)),
+        58 => Some(("DRV", "Stereo Tube Stage", 10)),
+        59 => Some(("PIT2", "Dual Pitch Shifter", 12)),
+        60 => Some(("PIT", "Stereo Pitch Shifter", 6)),
         _ => None,
     }
 }
@@ -1557,6 +1589,36 @@ mod tests {
         assert_eq!(fx_effect_name(60), Some("PIT"));
         assert_eq!(fx_effect_name(61), None);
         assert_eq!(fx_effect_name(255), None);
+    }
+
+    #[test]
+    fn full_names_cover_wire_order() {
+        // Every documented index has a full display name; the gap (15)
+        // and out-of-range indices have none. Spot-check the mapping.
+        let named: Vec<u8> = (0..=60).filter(|i| fx_effect_full_name(*i).is_some()).collect();
+        assert_eq!(named.len(), 60);
+        assert!(!named.contains(&15));
+        for i in named {
+            let full = fx_effect_full_name(i).unwrap();
+            assert!(!full.is_empty(), "index {i}");
+            assert_ne!(full, fx_effect_name(i).unwrap(), "index {i} full == code");
+        }
+        assert_eq!(fx_effect_full_name(0), Some("Hall Reverb"));
+        assert_eq!(fx_effect_full_name(2), Some("Rich Plate Reverb"));
+        assert_eq!(fx_effect_full_name(10), Some("Stereo Delay"));
+        assert_eq!(fx_effect_full_name(11), Some("3-Tap Delay"));
+        assert_eq!(fx_effect_full_name(12), Some("Rhythm Delay"));
+        assert_eq!(fx_effect_full_name(20), Some("Tremolo / Panner"));
+        assert_eq!(fx_effect_full_name(21), Some("Suboctaver"));
+        assert_eq!(fx_effect_full_name(22), Some("Delay + Chamber"));
+        assert_eq!(fx_effect_full_name(27), Some("Modulation Delay"));
+        assert_eq!(fx_effect_full_name(43), Some("M/S Fair Compressor"));
+        assert_eq!(fx_effect_full_name(47), Some("Dual Ultimo Compressor"));
+        assert_eq!(fx_effect_full_name(53), Some("Edison EX1"));
+        assert_eq!(fx_effect_full_name(54), Some("Sound Maxer"));
+        assert_eq!(fx_effect_full_name(60), Some("Stereo Pitch Shifter"));
+        assert_eq!(fx_effect_full_name(15), None);
+        assert_eq!(fx_effect_full_name(61), None);
     }
 
     #[test]

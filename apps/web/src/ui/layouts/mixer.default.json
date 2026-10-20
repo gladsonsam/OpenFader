@@ -325,8 +325,7 @@
       "props": {
         "width": 52,
         "flex": "none",
-        "gap": 3,
-        "justify": "space-between"
+        "gap": 3
       },
       "children": [
         {
@@ -335,6 +334,7 @@
           "props": {
             "label": "LR",
             "height": 44,
+            "flex": "1 0 44px",
             "fontSize": 12,
             "padding": "0 2px",
             "bg": "#1b2330",
@@ -366,6 +366,7 @@
               "module": "btn",
               "props": {
                 "height": 44,
+                "flex": "1 0 44px",
                 "fontSize": 10,
                 "padding": "0 2px"
               },

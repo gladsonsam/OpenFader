@@ -18,6 +18,7 @@ import type { ModuleManifest, ModuleProps } from '../types.ts';
 import ChannelTabButton from '../../screens/channel/ChannelTabButton.svelte';
 import GroupsCard from '../../screens/channel/GroupsCard.svelte';
 import DeskCard from '../../screens/channel/DeskCard.svelte';
+import InsertCard from '../../screens/channel/InsertCard.svelte';
 import StripNameChip from '../../screens/channel/StripNameChip.svelte';
 import StripPanBar from '../../screens/channel/StripPanBar.svelte';
 import StripMute from '../../screens/channel/StripMute.svelte';
@@ -165,17 +166,17 @@ export const manifests: ModuleManifest[] = [
     props: { row: vmObject, fine: { type: 'bool', default: false } },
     defaults: { fine: false },
     size: { minW: 320, fixedH: 58 },
-    events: [{ name: 'input', args: ['value'] }, { name: 'togglePre' }, { name: 'toggleGrpon' }],
+    events: [{ name: 'input', args: ['value'] }, { name: 'togglePre' }, { name: 'toggleGrpon' }, { name: 'setTap', args: ['value'] }],
   },
   {
     id: 'channel-groups-card',
-    title: 'Channel desk-groups card',
+    title: 'Channel assign card',
     category: 'channel',
     component: as(GroupsCard),
-    props: { vm: vmObject },
+    props: { vm: vmObject, getGr: vmObject },
     defaults: {},
     size: { flex: true, minW: 270 },
-    events: [{ name: 'assign', args: ['kind', 'group', 'member'] }, { name: 'master', args: ['kind', 'group', 'muted'] }],
+    events: [{ name: 'assign', args: ['kind', 'group', 'member'] }, { name: 'master', args: ['kind', 'group', 'muted'] }, { name: 'dca', args: ['group', 'member'] }, { name: 'lr', args: ['assigned'] }, { name: 'pan', args: ['value'] }, { name: 'automix', args: ['value'] }, { name: 'automixOn', args: ['on'] }],
   },
   {
     id: 'channel-desk-card',
@@ -186,6 +187,16 @@ export const manifests: ModuleManifest[] = [
     defaults: {},
     size: { flex: true, minW: 270 },
     events: [{ name: 'lr', args: ['assigned'] }, { name: 'automix', args: ['value'] }],
+  },
+  {
+    id: 'channel-insert-card',
+    title: 'Channel insert card',
+    category: 'channel',
+    component: as(InsertCard),
+    props: { vm: vmObject },
+    defaults: {},
+    size: { flex: true, minW: 270 },
+    events: [{ name: 'toggle', args: ['on'] }, { name: 'sel', args: ['value'] }],
   },
 ];
 

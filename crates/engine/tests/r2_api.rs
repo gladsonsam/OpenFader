@@ -257,7 +257,10 @@ async fn connect_device_moves_link() {
     assert_eq!(v.get("name"), Some(&json!("Rehearsal Desk")));
     assert_eq!(v.get("ip"), Some(&json!("192.168.40.99")));
     assert_eq!(v.get("fs"), Some(&json!(48000)));
-    assert!(v.get("latency_ms").and_then(Value::as_f64).unwrap_or(0.0) > 0.0);
+    // Fresh first paint carries the cached link (latency 0 until the ~2 s
+    // link ticker lands its first round-trip measurement — fast-first
+    // connect never blocks the UI on the probe).
+    assert!(v.get("latency_ms").and_then(Value::as_f64).unwrap_or(-1.0) >= 0.0);
     // Disconnect flips the link; the session survives.
     client.send(Cmd::Disconnect).await.unwrap();
     let link = wait_for(
@@ -268,6 +271,56 @@ async fn connect_device_moves_link() {
     assert_eq!(ev_json(&link).get("state"), Some(&json!("disconnected")));
     client.send(Cmd::Fader { ch: 0, value: 0.5, key: None}).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::State { .. })).await;
+}
+
+#[tokio::test]
+async fn connect_first_paint_beats_fill() {
+    // Fast-first post_switch: the command path emits caps + cached link
+    // (+ state/info) before the fill worker lands fx/routing/masters.
+    let engine = new_engine().await;
+    let mut client = engine.attach(None).await;
+    drain_snapshot(&mut client).await;
+    client
+        .send(Cmd::Connect {
+            driver: "sim".to_string(),
+            addr: None,
+        })
+        .await
+        .unwrap();
+    // Unicast You lands first (socket order: reply before broadcasts).
+    let you = wait_for(&mut client, |e| matches!(e, Event::You { .. })).await;
+    assert_eq!(ev_json(&you).get("id"), Some(&json!(client.id)));
+    // Collect until caps + link are both seen; no fill frame may precede
+    // them (meter/ticker frames interleave freely and are ignored).
+    let mut saw_caps = false;
+    let mut saw_link = false;
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while !(saw_caps && saw_link) {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "caps+link first paint arrives"
+        );
+        let next = tokio::time::timeout(Duration::from_millis(500), client.events.recv()).await;
+        let Ok(Some(e)) = next else { continue };
+        match &e {
+            Event::Caps { .. } => saw_caps = true,
+            Event::Link { .. } => saw_link = true,
+            Event::Fx { .. }
+            | Event::Routing { .. }
+            | Event::Bus { .. }
+            | Event::Subgroup { .. }
+            | Event::MuteGroup { .. }
+            | Event::MuteGroupAssign { .. }
+            | Event::SubgroupAssign { .. }
+            | Event::Solo { .. }
+            | Event::Main { .. } => panic!("fill frame {} beat first paint", e.tag()),
+            _ => {}
+        }
+    }
+    // The deferred fill still lands the rack, routing and masters after.
+    wait_for(&mut client, |e| matches!(e, Event::Fx { .. })).await;
+    wait_for(&mut client, |e| matches!(e, Event::Routing { .. })).await;
+    wait_for(&mut client, |e| matches!(e, Event::Main { .. })).await;
 }
 
 #[tokio::test]

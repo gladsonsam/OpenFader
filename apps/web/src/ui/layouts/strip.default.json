@@ -176,7 +176,7 @@
         "height": 40
       },
       "variants": {
-        "phone": { "hidden": true, "props": { "height": 48 } },
+        "phone": { "props": { "height": 48 } },
         "tablet": { "props": { "height": 48 } }
       },
       "bind": {
@@ -304,6 +304,7 @@
             "sub": "item.sub",
             "color": "item.color",
             "text": "item.text",
+            "icon": "item.icon",
             "selectAria": "item.selectAria"
           },
           "on": {

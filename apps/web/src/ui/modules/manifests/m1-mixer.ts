@@ -156,7 +156,7 @@ export const manifests: ModuleManifest[] = [
       selectAria: { type: 'text', default: 'Select Ch 1, source Lcl 01' },
     },
     defaults: { variant: 'strip' },
-    size: { minW: 60, fixedH: 52 },
+    size: { minW: 60, fixedH: 76 },
     events: [{ name: 'select' }],
   },
   {
@@ -169,10 +169,11 @@ export const manifests: ModuleManifest[] = [
       sub: { type: 'text', default: 'Lcl 01' },
       color: { type: 'color', default: '#5cdb5c' },
       text: { type: 'color', default: '#10240f' },
+      icon: { type: 'text', default: '' },
       selectAria: { type: 'text', default: 'Select Ch 1, source Lcl 01' },
     },
     defaults: {},
-    size: { minW: 60, fixedH: 28 },
+    size: { minW: 60, fixedH: 56 },
     events: [{ name: 'select' }],
   },
   {

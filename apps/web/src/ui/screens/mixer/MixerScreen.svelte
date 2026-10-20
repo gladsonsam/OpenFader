@@ -23,7 +23,7 @@
   import { bindUiActions } from '../../modules/actions.ts';
   import { useDeviceClass } from '../../modules/device.svelte.ts';
   import './actions.ts';
-  import { mixerAllCells, mixerCells, mixerMasterCell, mixerSlots, phoneGridCols, SLOT_COUNT, tabletGridCols } from './mixerVm.ts';
+  import { mixerAllCells, mixerCells, mixerMasterCell, mixerSlots, phoneGridCols, SLOT_COUNT, stripMeterSource, stripVm, tabletGridCols } from './mixerVm.ts';
   import type { DeskGroups } from './mixerVm.ts';
   import type { LayoutNode, RepeatScope } from '../../modules/schema.ts';
   import defaults from '../../layouts/mixer.default.json';
@@ -87,11 +87,26 @@
   // strips on desks smaller than the fixture (XR18: 16 in, not 48).
   // Desktop and phone share these cells, so both filter identically.
   // Offline/fixture renders everything (the design baseline).
+  // Default-bank extension (XR18 owner pattern): on the `ch1` bank the
+  // live view appends the stereo aux input plus the four FX returns in
+  // desk order (1–16, Aux, FxRet 1–4) — strips the fixture bank never
+  // listed. Other banks render their own items only; offline the fixture
+  // baseline (16 cells) is untouched.
   const liveCells = $derived(
     (() => {
       const w = live.engine;
       if (live.phase !== 'online' || !w || !w.capsReady) return cells;
-      return cells.filter(c => bridgeStrip(w, c.id) !== null);
+      const kept = cells.filter(c => bridgeStrip(w, c.id) !== null);
+      if (ui.state.bank !== 'ch1') return kept;
+      const extra: typeof kept = [];
+      for (const id of ['aux1', 'fx1', 'fx2', 'fx3', 'fx4']) {
+        if (kept.some(c => c.id === id) || extra.some(c => c.id === id)) continue;
+        if (bridgeStrip(w, id) === null) continue;
+        const vm = stripVm(ui.state, ui.chans, id);
+        if (!vm) continue;
+        extra.push({ ...vm, desk: deskOf(id), meter: stripMeterSource(ui.chans, ui.meter, frozen, ui.state.peakHold, id, liveDb) });
+      }
+      return [...kept, ...extra];
     })(),
   );
   const master = $derived(mixerMasterCell(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf));
