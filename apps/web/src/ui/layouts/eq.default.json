@@ -70,7 +70,9 @@
       "bind": {
         "graph": "eqGraph",
         "locked": "store.locked",
-        "fine": "store.fine"
+        "fine": "store.fine",
+        "selBand": "store.selBand",
+        "selQ": "eqSelQ"
       },
       "on": {
         "select": {
@@ -98,6 +100,21 @@
             },
             "locked": {
               "$expr": "store.locked"
+            }
+          }
+        },
+        "q": {
+          "do": "ui.setEqParam",
+          "args": {
+            "id": {
+              "$expr": "selId"
+            },
+            "band": {
+              "$expr": "payload.band"
+            },
+            "param": "q",
+            "value": {
+              "$expr": "payload.q"
             }
           }
         }

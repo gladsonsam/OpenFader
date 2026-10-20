@@ -18,7 +18,7 @@
   import { bankDefs } from '../fixtures/designData.ts';
   import { bridgeStrip } from '../state/engineBridge.ts';
   import { modeTabToScreen } from '../state/urlBridge.ts';
-  import { getShellScreen, subscribeShellScreens } from './registry.ts';
+  import { loadShellScreen } from '../screens/loadScreen.ts';
   import type { Component } from 'svelte';
   import { meterBridge } from '../screens/meters/meterBridgeState.svelte.ts';
   import { useDeviceClass } from '../modules/device.svelte.ts';
@@ -61,14 +61,15 @@
   });
 
   const screenId = $derived(modeTabToScreen(ui.state.mode, ui.state.tab) ?? 'mixer');
-  // Boot mounts before all content packages finish registering; re-resolve
-  // when a late registration lands instead of sticking on the placeholder.
-  let shellRev = $state(0);
-  $effect(() => subscribeShellScreens(() => { shellRev++; }));
-  const Content = $derived.by(() => {
-    void shellRev;
-    return getShellScreen(screenId);
+  // A selected route must not wait for the post-paint background batch.
+  // Components and layout modules become available together; cached routes
+  // resolve synchronously. The await block discards stale navigation loads.
+  let loadAttempt = $state(0);
+  const screenRequest = $derived.by(() => {
+    void loadAttempt;
+    return loadShellScreen(screenId);
   });
+  const screenLabel = $derived(ui.state.mode === 'connect' ? 'connection' : ui.state.mode);
   // Meter-bridge overlay starts closed: split it out of the boot chunk and
   // load it on first open.
   let MeterOverlay = $state<Component | null>(null);
@@ -141,11 +142,16 @@
         style="flex:1;min-height:0;min-width:0;display:flex;flex-direction:column"
         in:fly={{ y: REDUCED_MOTION ? 0 : -16, duration: REDUCED_MOTION ? 0 : 120 }}
       >
-        {#if Content}
+        {#await screenRequest}
+          <div style={placeholderStyle} role="status" aria-busy="true">Loading {screenLabel}…</div>
+        {:then Content}
           <Content />
-        {:else}
-          <div style={placeholderStyle}>screen not built yet: {screenId}</div>
-        {/if}
+        {:catch}
+          <div class="screen-load-error" role="alert">
+            <span>Couldn’t load {screenLabel}.</span>
+            <button onclick={() => { loadAttempt++; }}>Try again</button>
+          </div>
+        {/await}
       </div>
     {/key}
     {#if showRail && !isPhone}
@@ -157,3 +163,25 @@
     <MeterOverlay />
   {/if}
 </AppFrame>
+
+<style>
+  .screen-load-error {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--u4-text-5);
+    font-size: 14px;
+  }
+  .screen-load-error button {
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--u4-line-ctl);
+    border-radius: 3px;
+    background: var(--u4-btn-bg);
+    color: var(--u4-text-1);
+    font: inherit;
+    cursor: pointer;
+  }
+</style>

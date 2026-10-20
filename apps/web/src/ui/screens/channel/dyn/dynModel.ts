@@ -188,10 +188,13 @@ export interface DynDot {
 }
 
 /** Operating-point dot in % of plot size (numeric; format with toFixed(1)). */
-export function dynDotNums(kind: DynKind, p: DynParams, levelDb: number): DynDot {
+export function dynDotNums(kind: DynKind, p: DynParams, levelDb: number, reductionDb?: number): DynDot {
   const lo = DYN_LO[kind];
   const lvl = clamp(levelDb, lo, 0);
-  const outL = outOf(kind, p, lvl);
+  // A received zero is an operating point with zero reduction, never a
+  // request to estimate GR from the static threshold/ratio curve.
+  const outL = reductionDb === undefined ? outOf(kind, p, lvl)
+    : lvl - reductionDb + (kind === 'comp' && p.on ? (p as Comp).makeup : 0);
   return {
     left: dynMap(lo, lvl) / 2,
     top: 100 - clamp(dynMap(lo, outL), 0, DYN_SIZE) / 2,

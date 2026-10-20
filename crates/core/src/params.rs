@@ -553,6 +553,14 @@ impl ParamRegistry {
         }
     }
 
+    /// Narrow a provider's canonical row to its actual strip families.
+    /// Other providers keep the canonical scopes.
+    pub fn restrict_scopes(&mut self, id: &str, scopes: &'static [StripKind]) {
+        if let Some(def) = self.defs.iter_mut().find(|d| d.id == id) {
+            def.scopes = scopes;
+        }
+    }
+
     /// Look up one entry by id (canonical + contributed).
     pub fn find(&self, id: &str) -> Option<&ParamDef> {
         self.defs.iter().find(|d| d.id == id)

@@ -175,6 +175,15 @@ export interface InputView {
 /** Meter buffers by global strip slot (shape mirrors meterSim: level/peak
  *  Float32Arrays + clip latch; decoded imperatively, never per-frame
  *  reactive — SPEC 2a). GR in dB reduction >= 0. */
+export interface AudioSpectrumFrame {
+  ch: number | null;
+  binsDb: Float32Array;
+  bandEdgesHz: Float32Array;
+  source: string;
+  position: string;
+  epoch: number;
+}
+
 export interface MeterState {
   /** Slots allocated (== stripCount; resized on topology change). */
   size: number;
@@ -184,12 +193,16 @@ export interface MeterState {
   peak: Float32Array;
   /** Clip latch timestamps (ms, performance.now basis). */
   clipUntil: Float64Array;
-  /** Gate GR per slot, dB >= 0 (first 16 channels stream; else 0). */
+  /** Gate GR per topology slot, dB >= 0; NaN until a frame arrives. */
   grGate: Float32Array;
-  /** Comp GR per slot, dB >= 0. */
+  /** Comp GR per topology slot, dB >= 0; NaN until a frame arrives. */
   grComp: Float32Array;
   /** Latest 64-bin spectrum per channel (only streamed channels present). */
   spectrum(ch: number): Float32Array | null;
+  spectrumSource?(ch: number): 'audio' | 'envelope' | null;
+  /** Latest selected desk source, with measured dB and explicit band edges. */
+  audioSpectrum?(): AudioSpectrumFrame | null;
+  reduction?(ch: number, kind: 'gate' | 'comp'): number | null;
   /** Negotiated meter taps (`hello {taps:true}`): tap -> per-slot levels. */
   taps: Record<string, Float32Array>;
 }
@@ -339,6 +352,7 @@ export interface World {
   /** Visible strips (bank page + open channel + visible groups). */
   setVisible(chs: number[]): void;
   setOpenChannel(ch: number | null): void;
+  setSpectrumTarget?(ch: number | null): void;
   /** Expire timed-out optimistic edits (display reverts); returns keys. */
   sweep(nowMs: number): string[];
 

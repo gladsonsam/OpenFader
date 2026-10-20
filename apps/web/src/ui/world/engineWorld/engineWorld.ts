@@ -15,6 +15,7 @@
 // edits revert after CONFIRM_TIMEOUT_MS (see sweep()).
 
 import type {
+  AudioSpectrumFrame,
   CapsRow as WorldCapsRow,
   DenyInfo,
   DeviceView,
@@ -42,6 +43,7 @@ import {
   cmdConnect,
   cmdFader,
   cmdFocus,
+  cmdSpectrumTarget,
   cmdLock,
   cmdMainFader,
   cmdMute,
@@ -153,6 +155,11 @@ export class EngineWorld implements World {
   private grGate = new Float32Array(0);
   private grComp = new Float32Array(0);
   private spectra = new Map<number, Float32Array>();
+  private spectrumSources = new Map<number, 'audio' | 'envelope'>();
+  private spectrumAt = new Map<number, number>();
+  private grAt = new Map<number, number>();
+  private audioFrame: AudioSpectrumFrame | null = null;
+  private audioAt = -Infinity;
   private _taps: Record<string, Float32Array> = {};
 
   private _connectedAt: number | null = null;
@@ -187,7 +194,15 @@ export class EngineWorld implements World {
       clipUntil: this.clipUntil,
       grGate: this.grGate,
       grComp: this.grComp,
-      spectrum: (ch: number) => this.spectra.get(ch) ?? null,
+      spectrum: (ch: number) => this.perf() - (this.spectrumAt.get(ch) ?? -Infinity) < 1500
+        ? this.spectra.get(ch) ?? null : null,
+      spectrumSource: (ch: number) => this.spectrumSources.get(ch) ?? null,
+      audioSpectrum: () => this.perf() - this.audioAt < 750 ? this.audioFrame : null,
+      reduction: (ch, kind) => {
+        if (this.perf() - (this.grAt.get(ch) ?? -Infinity) >= 1500) return null;
+        const v = (kind === 'gate' ? this.grGate : this.grComp)[ch];
+        return Number.isFinite(v) ? v! : null;
+      },
       taps: this._taps,
     };
     this.lib = new LibraryStore((msg) => this.transport.send(msg));
@@ -195,6 +210,7 @@ export class EngineWorld implements World {
     this.unsubs.push(
       transport.onStatus((online) => {
         this._online = online;
+        if (!online) this.clearMeters();
         if (online && this._connectedAt === null) this._connectedAt = this.perf();
         this.bump();
         this.statusSubs.forEach((cb) => {
@@ -299,7 +315,7 @@ export class EngineWorld implements World {
       // never poke reactive subscribers (no per-frame reactive hot path);
       // canvas readers repaint on their own cadence.
       const meterClass =
-        evt.kind === 'meters' || evt.kind === 'spectrum' || evt.kind === 'gr' || evt.kind === 'taps';
+        evt.kind === 'meters' || evt.kind === 'spectrum' || evt.kind === 'audio_spectrum' || evt.kind === 'gr' || evt.kind === 'taps';
       if (evt.kind === 'unknown') return; // newer-engine frames never disturb the UI
       this.apply(evt);
       if (!meterClass) this.bump();
@@ -389,6 +405,7 @@ export class EngineWorld implements World {
           this.states.clear();
           this.firstSeenAt.clear();
           this.mainPending = null;
+          this.clearMeters();
         }
         this._driver = nextDriver;
         this.topology = evt.topology;
@@ -406,7 +423,20 @@ export class EngineWorld implements World {
       case 'meters':
         this.applyLevels(evt.levels);
         break;
+      case 'audio_spectrum': {
+        this.audioAt = this.perf();
+        this.audioFrame = evt.binsDb.length ? {
+          ch: evt.ch, binsDb: new Float32Array(evt.binsDb), bandEdgesHz: new Float32Array(evt.bandEdgesHz),
+          source: evt.source, position: evt.position, epoch: evt.epoch,
+        } : null;
+        break;
+      }
       case 'spectrum': {
+        if (evt.ch < 0 || evt.ch >= this._stripCount || evt.bins.length !== 64) break;
+        // Old relay envelope frames never replace audio data for this strip.
+        if (evt.source === 'envelope' && this.spectrumSources.get(evt.ch) === 'audio') break;
+        this.spectrumSources.set(evt.ch, evt.source);
+        this.spectrumAt.set(evt.ch, this.perf());
         let arr = this.spectra.get(evt.ch);
         if (!arr) {
           arr = new Float32Array(64);
@@ -469,6 +499,20 @@ export class EngineWorld implements World {
     return this.firstSeenAt.get(`${ch}:${id}`) ?? null;
   }
 
+  private clearMeters(): void {
+    this.level.fill(0);
+    this.peak.fill(0);
+    this.clipUntil.fill(0);
+    this.grGate.fill(NaN);
+    this.grComp.fill(NaN);
+    this.grAt.clear();
+    this.spectra.clear();
+    this.spectrumSources.clear();
+    this.spectrumAt.clear();
+    this.audioFrame = null;
+    this.audioAt = -Infinity;
+  }
+
   private ensureStripCount(n: number): void {
     if (n <= this._stripCount) return;
     const next = n;
@@ -484,8 +528,11 @@ export class EngineWorld implements World {
     };
     this.level = grow(this.level);
     this.peak = grow(this.peak);
+    const oldSize = this.grGate.length;
     this.grGate = grow(this.grGate);
     this.grComp = grow(this.grComp);
+    this.grGate.fill(NaN, oldSize);
+    this.grComp.fill(NaN, oldSize);
     this.peakUntil = growF(this.peakUntil);
     this.clipUntil = growF(this.clipUntil);
     for (const k of Object.keys(this._taps)) {
@@ -518,6 +565,7 @@ export class EngineWorld implements World {
 
   private applyGr(ch: number, gate: number, comp: number): void {
     this.ensureStripCount(ch + 1);
+    this.grAt.set(ch, this.perf());
     this.grGate[ch] = Math.max(0, gate);
     this.grComp[ch] = Math.max(0, comp);
   }
@@ -716,6 +764,12 @@ export class EngineWorld implements World {
   setVisible(chs: number[]): void {
     this.visible = normalizeFocus(chs);
     this.scheduleFocus();
+  }
+
+  setSpectrumTarget(ch: number | null): void {
+    this.audioFrame = null;
+    this.audioAt = -Infinity;
+    this.transport.send(cmdSpectrumTarget(ch));
   }
 
   setOpenChannel(ch: number | null): void {

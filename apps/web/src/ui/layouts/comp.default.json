@@ -111,7 +111,8 @@
             "frozen": "frozen",
             "staticDotL": "dynDotL",
             "staticDotT": "dynDotT",
-            "getLevel": "dynGetLevel"
+            "getLevel": "dynGetLevel",
+                    "getReduction": "dynGetReduction"
           }
         },
         {

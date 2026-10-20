@@ -9,6 +9,7 @@
      engine; this card only emits `probe-desk` (payload carries the typed
      host) and re-reads recents + the live link. -->
 <script lang="ts">
+  import { onDestroy } from 'svelte';
   import { live } from '../../state/live.svelte.ts';
 
   let {
@@ -16,6 +17,7 @@
   }: {
     onEvent?: (name: string, payload?: unknown) => void;
   } = $props();
+  const fieldId = $props.id();
 
   function bareIp(v: string): string {
     const s = v.trim();
@@ -68,16 +70,16 @@
   );
   const status = $derived(
     !online
-      ? 'Relay link is down — it reconnects on its own; once online, Add pings the desk.'
+      ? 'Connection service unavailable. Reconnecting automatically…'
       : pending === null
-        ? 'Desks on another subnet never answer broadcast. Type the desk IP — the relay pings it directly and connects.'
+        ? 'Enter the mixer’s address, then select Connect.'
         : connectedName !== null
           ? `${pending} answered — connected to ${connectedName || pending}.`
           : found
             ? `${pending} answered — connecting…`
             : timedOut
               ? `No reply from ${pending} — check the IP and that the desk is on.`
-              : `Pinging ${pending} via the relay, then connecting …`,
+              : `Checking ${pending}, then connecting…`,
   );
 
   function clearTimer(): void {
@@ -86,6 +88,7 @@
       timer = null;
     }
   }
+  onDestroy(clearTimer);
 
   function add(raw: string): void {
     const v = raw.trim();
@@ -106,46 +109,84 @@
   }
 </script>
 
-<div
-  style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:12px 14px;border-radius:3px;border:1px dashed var(--u4-line-ctl);background:var(--u4-well-bg)"
->
-  <div style="box-sizing:content-box;font-size:13px;font-weight:600">Add desk by IP</div>
-  <div style="box-sizing:content-box;display:flex;gap:8px;flex-wrap:wrap">
-    <input
-      bind:value={draft}
-      aria-label="Desk IP address"
-      placeholder="192.168.40.123"
-      autocapitalize="off"
-      autocomplete="off"
-      autocorrect="off"
-      spellcheck={false}
-      inputmode="decimal"
-      onkeydown={e => {
-        if (e.key === 'Enter') add(draft);
-      }}
-      style="box-sizing:border-box;flex:1 1 140px;min-width:0;height:44px;padding:0 12px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-panel-bg);color:var(--u4-text-1);font-size:16px;font-family:inherit"
-    />
-    <button
-      onclick={() => add(draft)}
-      disabled={!online || !draft.trim()}
-      aria-label="Add desk by IP and connect"
-      title={online ? 'Ask the relay to ping this address, then connect' : 'Relay link is down'}
-      style="box-sizing:border-box;height:44px;min-width:104px;padding:0 14px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:var(--u4-btn-bg);color:var(--u4-text-1);font-size:14px;cursor:pointer;font-variant-numeric:normal"
-      >Add</button
-    >
-  </div>
+<section class="manual-desk" aria-labelledby={`${fieldId}-title`}>
+  <h2 id={`${fieldId}-title`}>Connect by IP address</h2>
+  <p>Use the mixer’s address if it doesn’t appear in a network scan.</p>
+  <form onsubmit={e => { e.preventDefault(); add(draft); }}>
+    <label for={fieldId}>Mixer IP address</label>
+    <p id={`${fieldId}-example`} class="example">Example: 192.168.40.123</p>
+    <div class="address-row">
+      <input
+        id={fieldId}
+        bind:value={draft}
+        aria-describedby={`${fieldId}-example`}
+        autocapitalize="off"
+        autocomplete="off"
+        autocorrect="off"
+        spellcheck={false}
+        inputmode="decimal"
+      />
+      <button type="submit" disabled={!online || !draft.trim()}>Connect</button>
+    </div>
+  </form>
   {#if recents.length > 0}
-    <div style="box-sizing:content-box;display:flex;gap:6px;flex-wrap:wrap">
-      {#each recents as r (r)}
-        <button
-          onclick={() => add(r)}
-          disabled={!online}
-          aria-label="Re-probe {r}"
-          style="box-sizing:border-box;min-height:32px;padding:2px 10px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:transparent;color:var(--u4-text-5);font-size:12px;cursor:pointer;font-variant-numeric:normal"
-          >{r}</button
-        >
-      {/each}
+    <div class="recents">
+      <p>Recent addresses · tap to connect</p>
+      <div class="recent-addresses">
+        {#each recents as r (r)}
+          <button onclick={() => add(r)} disabled={!online} aria-label="Connect to {r}">{r}</button>
+        {/each}
+      </div>
     </div>
   {/if}
-  <div style="box-sizing:content-box;font-size:12px;color:var(--u4-text-7)" role="status">{status}</div>
-</div>
+  <p class="status" role="status">{status}</p>
+</section>
+
+<style>
+  .manual-desk {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid var(--u4-line-panel);
+    border-radius: 3px;
+    background: var(--u4-panel-bg);
+  }
+  h2 { margin: 0; font-size: 16px; font-weight: 600; }
+  p { margin: 0; color: var(--u4-text-5); font-size: 13px; line-height: 1.5; }
+  form { display: flex; flex-direction: column; gap: 6px; }
+  label { font-size: 13px; font-weight: 600; }
+  .example, .status, .recents p { color: var(--u4-text-7); font-size: 12px; }
+  .address-row, .recent-addresses { display: flex; gap: 8px; flex-wrap: wrap; }
+  input {
+    box-sizing: border-box;
+    flex: 1 1 140px;
+    min-width: 0;
+    height: 44px;
+    padding: 0 12px;
+    border: 1px solid var(--u4-line-ctl);
+    border-radius: 3px;
+    background: var(--u4-well-bg);
+    color: var(--u4-text-1);
+    font: inherit;
+    font-size: 16px;
+  }
+  button {
+    box-sizing: border-box;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--u4-line-ctl);
+    border-radius: 3px;
+    background: var(--u4-btn-bg);
+    color: var(--u4-text-1);
+    font: inherit;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.45; cursor: default; }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--u4-green); outline-offset: 2px; }
+  .recents { display: flex; flex-direction: column; gap: 6px; }
+  .recent-addresses button { padding: 0 10px; background: var(--u4-well-bg); color: var(--u4-text-5); font-size: 12px; }
+</style>

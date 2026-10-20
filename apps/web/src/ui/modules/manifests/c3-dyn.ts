@@ -64,6 +64,7 @@ export const manifests: ModuleManifest[] = [
       staticDotL: { type: 'text', default: '0' },
       staticDotT: { type: 'text', default: '100' },
       getLevel: vmObject,
+      getReduction: vmObject,
     },
     defaults: { kind: 'comp', color: '#ff9f43', frozen: true },
     size: { minW: 400, minH: 300, flex: true },
