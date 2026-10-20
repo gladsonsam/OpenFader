@@ -4,7 +4,7 @@
      build/desk still load. Adds no wrapper elements of its own. -->
 <script lang="ts">
   import RenderNode from './RenderNode.svelte';
-  import { getModule } from './registry.ts';
+  import { getModule, subscribeManifests } from './registry.ts';
   import { normalizeLayout } from './validate.ts';
   import type { LayoutNode, RepeatScope } from './schema.ts';
   import type { ContextSource } from './context.ts';
@@ -28,7 +28,15 @@
     settings?: Record<string, unknown>;
   } = $props();
 
-  const tree = $derived(normalizeLayout(layout, (id) => getModule(id) !== undefined).tree);
+  // Boot mounts before all manifest packages finish loading; re-resolve
+  // when a late registration lands instead of sticking on `missing-module`
+  // placeholders (see registry.ts manifestsRevision).
+  let manifestRev = $state(0);
+  $effect(() => subscribeManifests(() => { manifestRev++; }));
+  const tree = $derived.by(() => {
+    void manifestRev;
+    return normalizeLayout(layout, (id) => getModule(id) !== undefined).tree;
+  });
 </script>
 
 <RenderNode node={tree} {source} {scope} {device} {role} {caps} {settings} />

@@ -23,6 +23,7 @@ import Text from '../layout/Text.svelte';
 import Spacer from '../layout/Spacer.svelte';
 import Group from '../layout/Group.svelte';
 import Missing from '../layout/Missing.svelte';
+import Btn from '../generic/Btn.svelte';
 
 function as<P>(c: unknown): Component<ModuleProps<P>> {
   return c as Component<ModuleProps<P>>;
@@ -169,6 +170,31 @@ export const manifests: ModuleManifest[] = [
     defaults: {},
     size: {},
     fallback: 'collapse',
+  },
+  {
+    id: 'btn',
+    title: 'Exact button',
+    category: 'control',
+    component: as(Btn),
+    props: {
+      label: { type: 'text', default: 'Button' },
+      icon: { type: 'text' },
+      iconSize: { type: 'number', min: 12, max: 32, step: 1, unit: 'px', default: 16 },
+      bg: { type: 'color', default: 'var(--u4-btn-bg)' },      fg: { type: 'color', default: 'var(--u4-text-1)' },
+      border: { type: 'text', default: '1px solid var(--u4-line-ctl)' },
+      height: { type: 'number', min: 24, max: 64, step: 2, unit: 'px', default: 36 },
+      flex: { type: 'text' },
+      padding: { type: 'text', default: '0 12px' },
+      minWidth: { type: 'number', min: 0, max: 300, step: 1, unit: 'px' },
+      fontSize: { type: 'number', min: 10, max: 20, step: 1, unit: 'px', default: 13 },
+      pressed: { type: 'text' },
+      ariaLabel: { type: 'text' },
+      disabled: { type: 'bool', default: false },
+      bare: { type: 'bool', default: false },
+    },
+    defaults: { label: 'Button' },
+    size: {},
+    events: [{ name: 'press' }],
   },
 ];
 
