@@ -118,6 +118,36 @@ export interface AppSettings {
   [key: string]: unknown;
 }
 
+interface StoreLike {
+  get<T>(key: string): Promise<T | null | undefined>;
+  set(key: string, value: unknown): Promise<void>;
+  save(): Promise<void>;
+}
+
+/** Cached store handle: `load()` once, reuse across accesses (was one
+ * `load('settings.json', …)` + `save()` per access). Reset on failure so
+ * the next access retries instead of pinning a dead handle. */
+let storePromise: Promise<StoreLike | null> | null = null;
+
+async function getStore(): Promise<StoreLike | null> {
+  if (!isTauri()) return null;
+  if (!storePromise) {
+    storePromise = import('@tauri-apps/plugin-store').then(
+      async (m) => {
+        try {
+          return (await m.load('settings.json', { autoSave: 100 })) as StoreLike;
+        } catch {
+          return null;
+        }
+      },
+      () => null,
+    );
+  }
+  const store = await storePromise;
+  if (!store) storePromise = null;
+  return store;
+}
+
 export async function loadSettings(): Promise<AppSettings> {
   if (!isTauri()) {
     try {
@@ -127,8 +157,8 @@ export async function loadSettings(): Promise<AppSettings> {
     }
   }
   try {
-    const { load } = await import('@tauri-apps/plugin-store');
-    const store = await load('settings.json', { autoSave: 100 });
+    const store = await getStore();
+    if (!store) return {};
     return ((await store.get<AppSettings>('settings')) ?? {}) as AppSettings;
   } catch {
     return {};
@@ -146,12 +176,87 @@ export async function saveSettings(patch: AppSettings): Promise<void> {
     return;
   }
   try {
-    const { load } = await import('@tauri-apps/plugin-store');
-    const store = await load('settings.json', { autoSave: 100 });
+    const store = await getStore();
+    if (!store) return;
     const cur = ((await store.get<AppSettings>('settings')) ?? {}) as AppSettings;
     await store.set('settings', { ...cur, ...patch });
     await store.save();
   } catch {
     /* ignore */
+  }
+}
+
+// ---- App visibility (background battery) ----
+//
+// The engine push stream (Tauri Channel / `openmix-event` / poll fallback
+// in `ui/world/transport.ts`) stays live in the background — an idle phone
+// holds no JS timer in push mode and must not gain one here. Only canvas
+// painting pauses: meter loops check `isAppHidden()` and skip `draw()`
+// while hidden, so resume is instant (fresh frames are already queued).
+//
+// Wiring: `initAppVisibility()` is called unconditionally from `main.ts`
+// boot (works in browser/PWA too, not just the Tauri shell). Tauri window
+// events (`onWindowEvent` focus/close) are deliberately not used — that
+// would touch the Rust shell this track must not change; JS
+// `visibilitychange` + `pagehide`/`pageshow` cover mobile WebView suspend.
+
+let visibilityInit = false;
+let appHidden = typeof document !== 'undefined' ? document.hidden : false;
+const foregroundCbs = new Set<() => void>();
+
+/** True while the app is backgrounded (hidden tab / suspended WebView). */
+export function isAppHidden(): boolean {
+  try {
+    if (typeof document !== 'undefined' && document.hidden) return true;
+  } catch {
+    /* ignore */
+  }
+  return appHidden;
+}
+
+/** Run `cb` on every background → foreground transition. */
+export function onAppForeground(cb: () => void): () => void {
+  foregroundCbs.add(cb);
+  return () => {
+    foregroundCbs.delete(cb);
+  };
+}
+
+function fireForeground(): void {
+  foregroundCbs.forEach((cb) => {
+    try {
+      cb();
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
+/** Idempotent: track `visibilitychange` + `pagehide`/`pageshow`. No-op
+ * without a DOM (node tests). Safe to call outside the Tauri runtime. */
+export function initAppVisibility(): void {
+  if (visibilityInit || typeof document === 'undefined') return;
+  visibilityInit = true;
+  appHidden = document.hidden;
+  document.addEventListener('visibilitychange', () => {
+    const hidden = document.hidden;
+    if (hidden === appHidden) return;
+    appHidden = hidden;
+    if (!hidden) fireForeground();
+  });
+  // `pagehide`/`pageshow` cover mobile WebView suspend where
+  // `visibilitychange` can lag or never fire.
+  try {
+    window.addEventListener('pagehide', () => {
+      appHidden = true;
+    });
+    window.addEventListener('pageshow', () => {
+      const hidden = document.hidden;
+      if (hidden === appHidden) return;
+      appHidden = hidden;
+      if (!hidden) fireForeground();
+    });
+  } catch {
+    /* non-browser shell */
   }
 }

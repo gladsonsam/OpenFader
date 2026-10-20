@@ -14,6 +14,7 @@
 
 import { visibleCount, type UiState } from '../../state/uiLogic.ts';
 import { PRESETS, type ThemePresetId } from '../../modules/theme.ts';
+import { APP_VERSION } from '../../../version.ts';
 
 export type SettingPanelId = 'Display' | 'Faders' | 'Safety' | 'About';
 export type SettingControl = 'segmented' | 'toggle' | 'pads' | 'none';
@@ -109,6 +110,7 @@ function boolOpts(cur: boolean): SettingOptionVm[] {
 }
 
 function descOf(d: SettingDescriptor, state: UiState): string {
+  if (d.key === 'appVersion') return APP_VERSION;
   return d.key === 'console' ? consoleDescription(state.connected) : d.description;
 }
 
