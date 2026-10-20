@@ -120,10 +120,10 @@ export class LibraryStore {
         };
         return true;
       case 'scenes':
-        this._scenes = evt.scenes.map((s) => ({ ...s }));
+        this._scenes = evt.scenes.map((s) => ({ number: s.number, name: s.name, current: s.current, savedAt: s.saved_at }));
         return true;
       case 'fx':
-        this._fxSlots = evt.slots.map((s) => ({ ...s, params: { ...s.params } }));
+        this._fxSlots = evt.slots.map((s) => ({ slot: s.slot, type: s.type, on: s.on, bypass: s.bypass, retLabel: s.ret_label, level: s.level, params: { ...s.params } }));
         return true;
       case 'routing':
         this._patches = evt.patches.map((p) => ({ ...p }));

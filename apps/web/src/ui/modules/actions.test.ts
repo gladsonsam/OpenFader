@@ -12,7 +12,6 @@ import {
   registerAction,
   registerBuiltins,
   resolveArgs,
-  type ActionCtx,
 } from './actions.ts';
 import {
   initialWorld,

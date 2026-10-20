@@ -607,6 +607,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.23.1",
+ "futures",
  "openmix-core",
  "openmix-proto-dl32s",
  "openmix-proto-xair",

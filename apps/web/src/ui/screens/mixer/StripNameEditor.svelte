@@ -29,6 +29,7 @@
   const selectedIcon = $derived(props.selectedIcon ?? null);
 </script>
 
+<!-- svelte-ignore a11y_interactive_supports_focus, a11y_click_events_have_key_events -->
 <div
   role="dialog"
   aria-label="Edit channel name, colour and icon"
@@ -36,6 +37,7 @@
   onpointerdown={(e) => e.stopPropagation()}
   style="position:absolute;left:0;right:0;bottom:calc(100% + 6px);z-index:10;display:flex;flex-direction:column;gap:6px;padding:8px;border-radius:var(--u4-r-3);border:1px solid var(--u4-knob-hubline);background:var(--u4-well-bg-2);box-shadow:0 8px 20px rgba(0,0,0,.6)"
 >
+  <!-- svelte-ignore a11y_autofocus -->
   <input
     type="text"
     aria-label="Channel name"

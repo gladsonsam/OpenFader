@@ -26,7 +26,7 @@
 
 <button
   onclick={() => onEvent?.('press')}
-  aria-pressed={props.pressed}
+  aria-pressed={props.pressed as boolean | "true" | "false" | "mixed" | undefined}
   style="box-sizing:border-box;font-variant-numeric:normal;height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:0 4px;border-radius:3px;border:1px solid {props.border};background:{props.bg};color:{props.fg};cursor:pointer"
 >
   <span style="font-size:13px;font-weight:500">{props.label}</span>

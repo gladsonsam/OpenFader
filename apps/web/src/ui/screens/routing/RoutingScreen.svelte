@@ -7,7 +7,6 @@
   import { ui } from '../../state/uiStore.svelte.ts';
   import { live } from '../../state/live.svelte.ts';
   import { useDeviceClass } from '../../modules/device.svelte.ts';
-  import { bridgeStrip } from '../../state/engineBridge.ts';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
   import { fixtureSource } from '../../modules/context.ts';
   import { createProfileStore } from '../../modules/profile/store.svelte.ts';

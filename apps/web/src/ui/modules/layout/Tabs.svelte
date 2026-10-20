@@ -22,6 +22,7 @@
     nodeId: string;
   } = $props();
 
+  // svelte-ignore state_referenced_locally: initial tab only; later prop changes do not reset local selection.
   let active = $state(props.active ?? 0);
   const labels = $derived(props.tabs ?? nodes.map((n) => n.id));
   const current = $derived(nodes[Math.min(active, Math.max(0, nodes.length - 1))]);
