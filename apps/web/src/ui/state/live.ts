@@ -152,34 +152,50 @@ export function pageHostSuggestion(configuredHost: string, pageHostname: string)
   return suggestion;
 }
 
-/** Recent manual-desk hosts (add-by-IP): most recent first, max 5. */
+/** Recent choices are history, never a claim of present reachability. */
 const RECENT_DESKS_KEY = 'openmix.recent-desks';
 const MAX_RECENT_DESKS = 5;
-
-export function loadRecentDesks(): string[] {
-  try {
-    const raw = storage()?.getItem(RECENT_DESKS_KEY);
-    if (!raw) return [];
-    const arr: unknown = JSON.parse(raw);
-    if (!Array.isArray(arr)) return [];
-    return arr.filter((v): v is string => typeof v === 'string' && v.trim().length > 0).slice(0, MAX_RECENT_DESKS);
-  } catch {
-    return [];
-  }
+export interface RecentDesk {
+  host: string;
+  name?: string;
+  model?: string;
+  resolvedIp?: string;
+  connectedAt?: number;
 }
 
-/** Remember a manually probed desk host (dedupe, most-recent-first). */
-export function saveRecentDesk(host: string): string[] {
-  const h = host.trim();
-  const next = [h, ...loadRecentDesks().filter(d => d.toLowerCase() !== h.toLowerCase())].slice(
-    0,
-    MAX_RECENT_DESKS,
-  );
+export function loadRecentDesks(): RecentDesk[] {
   try {
-    storage()?.setItem(RECENT_DESKS_KEY, JSON.stringify(next));
-  } catch {
-    /* ignore */
-  }
+    const arr: unknown = JSON.parse(storage()?.getItem(RECENT_DESKS_KEY) ?? '[]');
+    if (!Array.isArray(arr)) return [];
+    const result: RecentDesk[] = [];
+    for (const value of arr) {
+      const v = typeof value === 'string' ? { host: value } : value;
+      if (!v || typeof v.host !== 'string' || !v.host.trim()) continue;
+      const host = v.host.trim();
+      if (result.some(d => d.host.toLowerCase() === host.toLowerCase())) continue;
+      const d: RecentDesk = { host };
+      // Only records carrying an actual success timestamp carry identity.
+      if (typeof v.connectedAt === 'number' && Number.isFinite(v.connectedAt) && v.connectedAt > 0) {
+        d.connectedAt = v.connectedAt;
+        for (const key of ['name', 'model', 'resolvedIp'] as const)
+          if (typeof v[key] === 'string' && v[key].trim()) d[key] = v[key].trim();
+      }
+      result.push(d);
+      if (result.length === MAX_RECENT_DESKS) break;
+    }
+    return result;
+  } catch { return []; }
+}
+
+export function saveRecentDesk(host: string, confirmed?: Omit<RecentDesk, 'host'>): RecentDesk[] {
+  const h = host.trim();
+  const old = loadRecentDesks();
+  if (!h) return old;
+  const previous = old.find(d => d.host.toLowerCase() === h.toLowerCase());
+  const next = [{ ...previous, ...confirmed, host: h }, ...old.filter(d =>
+    d.host.toLowerCase() !== h.toLowerCase() && !(confirmed?.resolvedIp && d.resolvedIp === confirmed.resolvedIp)
+  )].slice(0, MAX_RECENT_DESKS);
+  try { storage()?.setItem(RECENT_DESKS_KEY, JSON.stringify(next)); } catch { /* unavailable storage */ }
   return next;
 }
 

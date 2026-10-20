@@ -695,8 +695,14 @@ pub enum Event {
         list: Vec<DeviceDesc>,
         scanned_at: u64,
     },
-    /// R2 link status: `{"type":"link","state":"connected|disconnected|
-    /// offline","name","ip","fs":48000,"latency_ms":1.2}`. Re-emitted on
+    /// R2 link status: `{"type":"link","state":"connected|reconnecting|
+    /// disconnected|offline","name","ip","fs":48000,"latency_ms":1.2}`.
+    /// `reconnecting` = the control-health query failed
+    /// [`POLL_TIMEOUT_STRIKES`](crate::engine::POLL_TIMEOUT_STRIKES) times in
+    /// a row (~6 s); a single miss holds `connected` while arming the bounded
+    /// poller reconciliation. Steady-state `name` is the console name from
+    /// `/info` (or the discovered device name); the bare model (`XR18`) only
+    /// appears as a degraded fallback when `/info` did not answer. Re-emitted on
     /// every link change and every ~2 s with a fresh round-trip
     /// measurement (OSC query timing on hardware, deterministic jitter
     /// on sim).

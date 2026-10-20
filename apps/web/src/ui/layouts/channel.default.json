@@ -172,7 +172,7 @@
                 "inline": true
               },
               "bind": {
-                "name": "cell.name",
+                "name": "cell.editName",
                 "selectedColor": "cell.color",
                 "selectedIcon": "cell.icon"
               },

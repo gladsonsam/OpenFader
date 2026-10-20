@@ -27,7 +27,7 @@
   class="u4-scene-button"
   onclick={onOpen}
   aria-label={label}
-  style="box-sizing:border-box;height:{narrow ? 44 : 46}px;flex:{narrow ? '0 1 auto' : 'none'};max-width:{narrow ? 112 : 280}px;display:flex;align-items:center;gap:{narrow ? 6 : 10}px;padding:0 {narrow ? 8 : 12}px;border-radius:var(--u4-r-3);border:1px solid {active
+  style="box-sizing:border-box;height:var(--u4-header-button-size, {narrow ? 44 : 46}px);flex:{narrow ? '0 1 auto' : 'none'};max-width:{narrow ? 112 : 280}px;display:flex;align-items:center;gap:{narrow ? 6 : 10}px;padding:0 {narrow ? 8 : 12}px;border-radius:var(--u4-r-3);border:1px solid {active
     ? 'var(--u4-tile-border-on)'
     : 'var(--u4-tile-border)'};background:{active
     ? 'var(--u4-tile-bg-on)'

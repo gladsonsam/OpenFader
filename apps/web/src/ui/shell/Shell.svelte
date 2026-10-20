@@ -16,7 +16,7 @@
   import { live } from '../state/live.svelte.ts';
   import { bankDefs } from '../fixtures/designData.ts';
   import { bridgeStrip } from '../state/engineBridge.ts';
-  import { modeTabToScreen, parseFixtureUrl } from '../state/urlBridge.ts';
+  import { modeTabToScreen } from '../state/urlBridge.ts';
   import { loadShellScreen } from '../screens/loadScreen.ts';
   import { startScreenPreload } from '../screens/preloadScreens.ts';
   import type { Component } from 'svelte';
@@ -26,8 +26,8 @@
 
   const banks = bankDefs();
   const fixtureMode = typeof window !== 'undefined' && ['1', 'true'].includes(new URLSearchParams(window.location.search).get('fixture') ?? '');
-  const initialScreen = typeof window !== 'undefined' ? parseFixtureUrl(window.location.search).screen : null;
-  let urlInitialized = $state(false);
+  // Resolve the landing choice before the first outlet render.
+  if (typeof window !== 'undefined') ui.initFromUrl(window.location.search);
 
   // Live availability filter (item 4): online, banks with no strip on the
   // desk topology hide (XR18: Ch 17-32/33-48/Mtx/Grp/DCA banks vanish).
@@ -58,8 +58,6 @@
   const isPhone = $derived(device.now === 'phone');
 
   onMount(() => {
-    ui.initFromUrl(window.location.search);
-    urlInitialized = true;
     ui.markReady();
     return startScreenPreload(() => ({
       screen: screenId,
@@ -68,7 +66,7 @@
     }));
   });
 
-  const screenId = $derived((!urlInitialized && initialScreen) || modeTabToScreen(ui.state.mode, ui.state.tab) || 'mixer');
+  const screenId = $derived(modeTabToScreen(ui.state.mode, ui.state.tab) || 'mixer');
   // A selected route must not wait for the post-paint background batch.
   // Components and layout modules become available together; cached routes
   // resolve synchronously. The await block discards stale navigation loads.
@@ -88,6 +86,8 @@
         .catch(() => undefined);
     }
   });
+
+  const connection = $derived(live.connectionStatus(ui.state.connected === 'offline'));
 
   const showRail = $derived(ui.state.mode === 'mixer');
 
@@ -119,7 +119,7 @@
 
 <AppFrame>
   <HeaderBar
-    vm={{ ...ui.header, connDot: live.deskConnected ? 'var(--u4-green)' : 'var(--u4-red-hi)', connAria: live.deskConnected ? 'Connection: connected, select device' : 'Connection: not connected, select device' }}
+    vm={{ ...ui.header, connDot: connection.color, connAria: connection.aria }}
     mode={ui.state.mode}
     compact={isPhone}
     connected={live.deskConnected || live.demo || ui.state.connected === 'offline' || (fixtureMode && ui.state.connected !== null && ui.state.connected !== 'offline')}
@@ -136,12 +136,6 @@
     onNextChannel={() => ui.do.stepChannel(1)}
     metersActive={meterBridge.open}
   />
-  {#if ui.state.connected === 'offline'}
-    <div class="offline-banner" role="status">
-      <span>Working offline · local preview</span>
-      <button onclick={() => ui.do.goOnline()}>Go online / Connect</button>
-    </div>
-  {/if}
   <div class="u4-shell-body" class:u4-mixer-body={ui.state.mode === 'mixer'} class:u4-edge-dock={showRail && !isPhone} style={bodyStyle}>
     {#key ui.state.mode}
       <div
@@ -170,8 +164,6 @@
 </AppFrame>
 
 <style>
-  .offline-banner { flex:none; display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:8px; padding:6px 12px; background:#302615; color:#f0c77e; font-size:13px; }
-  .offline-banner button { min-height:44px; padding:8px 14px; border:1px solid #806435; border-radius:3px; background:#46351a; color:#ffe3ae; font:inherit; cursor:pointer; }
 
   .screen-transition {
     height: 2px;

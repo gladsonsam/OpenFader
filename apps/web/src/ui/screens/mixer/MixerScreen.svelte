@@ -11,7 +11,6 @@
      meters draw imperatively from the shared meterSim getters (the renderer
      does no work per animation frame). -->
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { ui } from '../../state/uiStore.svelte.ts';
   import { live } from '../../state/live.svelte.ts';
   import { gridCols } from '../../state/logic/selectors.ts';
@@ -25,7 +24,7 @@
   import { bindUiActions } from '../../modules/actions.ts';
   import { useDeviceClass } from '../../modules/device.svelte.ts';
   import './actions.ts';
-  import { mixerAllCells, mixerCells, mixerMasterCell, mixerSlots, phoneGridCols, SLOT_COUNT, stripMeterSource, stripVm, tabletGridCols } from './mixerVm.ts';
+  import { mixerCells, mixerMasterCell, mixerSlots, phoneGridCols, SLOT_COUNT, stripMeterSource, stripVm, tabletGridCols } from './mixerVm.ts';
   import type { DeskGroups } from './mixerVm.ts';
   import type { LayoutNode, RepeatScope } from '../../modules/schema.ts';
   import defaults from '../../layouts/mixer.default.json';
@@ -102,6 +101,7 @@
   const liveCells = $derived(
     (() => {
       const w = live.engine;
+      void live.version;
       if (live.phase !== 'online' || !w || !w.capsReady) return cells;
       const kept = cells.filter(c => bridgeStrip(w, c.id) !== null);
       if (ui.state.bank !== 'ch1') return kept;
@@ -152,40 +152,10 @@
       return rows;
     })(),
   );
-  const emptyCount = $derived(Math.max(0, SLOT_COUNT - liveCells.length));
-  // Boot window (J2): the phone snap pager lays out all 48 inputs, but only
-  // ~3 are visible — building all 48 strip subtrees dominated first render
-  // (~1 s). Paint the leading window first; the rest appends on idle (the
-  // Repeat keys by item, so this is append-only). Desktop/tablet never read
-  // `allBankItems`, so the window is a no-op there.
-  let stripWindow = $state(8);
-  onMount(() => {
-    const expand = () => {
-      stripWindow = Number.MAX_SAFE_INTEGER;
-    };
-    try {
-      const w = window as unknown as {
-        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void;
-      };
-      if (typeof w.requestIdleCallback === 'function') w.requestIdleCallback(expand, { timeout: 1500 });
-      else setTimeout(expand, 800);
-    } catch {
-      setTimeout(expand, 800);
-    }
-  });
-  // All 48 inputs in order for the phone snap pager (no banks: the rail is
-  // hidden on phones). Desk badges ride along like the bank cells. Online,
-  // the same topology filter as the desktop grid applies (XR18: 16 in, not
-  // 48) -- unmapped strips have no desk counterpart (writes no-op, meters
-  // -90) and must not page as phantom strips.
-  const allCells = $derived(
-    (() => {
-      const cells = mixerAllCells(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf, liveSignals);
-      const w = live.engine;
-      if (live.phase !== 'online' || !w || !w.capsReady) return cells;
-      return cells.filter(c => bridgeStrip(w, c.id) !== null);
-    })(),
-  );
+  // A bank owns one finite set of real strips on every device. The phone
+  // rail changes that bank too; it must not keep paging a second 48-input list.
+  const emptyCount = $derived(device.now === 'phone' || (live.phase === 'online' && live.engine?.capsReady)
+    ? 0 : Math.max(0, SLOT_COUNT - liveCells.length));
   const tree = $derived(store.tree(defaults as unknown as LayoutNode));
   // Phone layer rail (the shell rail stays desktop-only): bank descriptors
   // for `over: 'list:banks'`, with the same live availability filter as the
@@ -217,7 +187,7 @@
     // distinct placeholder ids, one per trailing slot.
     lists: {
       emptySlots: Array.from({ length: emptyCount }, (_, i) => `empty-${i}`),
-      allBankItems: (stripWindow >= allCells.length ? allCells : allCells.slice(0, stripWindow)) as unknown as string[],
+      allBankItems: liveCells as unknown as string[],
       banks: liveBanks.map(b => ({ key: b.key, label: RAIL_SHORT[b.key] ?? b.label, color: b.color, text: b.text })),
     },
     master,
@@ -228,14 +198,16 @@
     // Responsive column templates for the phone/tablet grid variants
     // (`bind: { columns: 'phoneCols' }` in mixer.default.json). Providing
     // them on desktop too is harmless: no variant reads them there.
-    phoneCols: phoneGridCols(),
-    tabletCols: tabletGridCols(liveCells.length),
+    phoneCols: phoneGridCols(liveCells.length),
+    tabletCols: tabletGridCols(liveCells.length + emptyCount),
   } as unknown as RepeatScope);
-  const settings = $derived({ gridCols: gridCols(ui.state.spp, 12, liveCells.length) });
+  const settings = $derived({ gridCols: gridCols(ui.state.spp, 12, liveCells.length + emptyCount) });
   const source = fixtureSource({ meter: ref => live.liveReductionDb(ref) });
 </script>
 
-<LayoutRenderer layout={tree} {source} {scope} {settings} device={device.now} />
+{#key ui.state.bank}
+  <LayoutRenderer layout={tree} {source} {scope} {settings} device={device.now} />
+{/key}
 {#if ui.state.busPopup}
   <BusPopup rows={busRows} onPick={id => ui.do.selectBusMaster(id)} onClose={() => ui.do.closeBusPopup()} />
 {/if}
