@@ -13,6 +13,7 @@
 <script lang="ts">
   import { ui } from '../../state/uiStore.svelte.ts';
   import { live } from '../../state/live.svelte.ts';
+  import { gridCols } from '../../state/logic/selectors.ts';
   import { bridgeStrip } from '../../state/engineBridge.ts';
   import { dbToPos, bankDefs } from '../../fixtures/designData.ts';
   import { stripStateOf } from './stripState.ts';
@@ -196,14 +197,16 @@
     master,
     frozen,
     anatomy,
+    stripDevice: device.processingPreviews ? device.now : 'phone',
+    showProcessing: device.processingPreviews,
     // Responsive column templates for the phone/tablet grid variants
     // (`bind: { columns: 'phoneCols' }` in mixer.default.json). Providing
     // them on desktop too is harmless: no variant reads them there.
     phoneCols: phoneGridCols(),
     tabletCols: tabletGridCols(liveCells.length),
   } as unknown as RepeatScope);
-  const settings = $derived({ gridCols: ui.gridCols });
-  const source = fixtureSource({});
+  const settings = $derived({ gridCols: gridCols(ui.state.spp, 12, liveCells.length) });
+  const source = fixtureSource({ meter: ref => live.liveReductionDb(ref) });
 </script>
 
 <LayoutRenderer layout={tree} {source} {scope} {settings} device={device.now} />

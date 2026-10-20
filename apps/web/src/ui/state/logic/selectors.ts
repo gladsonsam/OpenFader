@@ -64,10 +64,10 @@ export const STRIP_MAX_PX = 150;
 /** Desktop minimum strip width (tracks never shrink below this). */
 export const STRIP_MIN_PX = 80;
 
-export function gridCols(spp: number | null, fallback = 12): string {
+export function gridCols(spp: number | null, fallback = 12, count = 16): string {
   const n = visibleCount(spp, fallback);
   const per = 'calc((100% - ' + (3 * (n - 1)) + 'px) / ' + n + ')';
-  return 'repeat(16, minmax(' + STRIP_MIN_PX + 'px, min(' + STRIP_MAX_PX + 'px, ' + per + ')))';
+  return 'repeat(' + Math.max(16, count) + ', minmax(' + STRIP_MIN_PX + 'px, min(' + STRIP_MAX_PX + 'px, ' + per + ')))';
 }
 
 /** Bank pager for derived (phone/portrait) layouts; the 1280x720 design

@@ -22,7 +22,7 @@
     nodeId: _nodeId,
     onEvent,
   }: {
-    props: { vm?: GroupsVm | null; getGr?: (() => number | null) | null };
+    props: { vm?: GroupsVm | null; getGr?: (() => number | null) | null; showPan?: boolean };
     ctx: ModuleContext;
     nodeId: string;
     onEvent?: (name: string, payload?: unknown) => void;
@@ -82,9 +82,8 @@
         >{linkText}</span
       >
     </div>
-    {#if vm.lrSupported || vm.panSupported}
+    {#if vm.lrSupported || (vm.panSupported && props.showPan !== false)}
       <div style="display:flex;flex-direction:column;gap:4px">
-        <span style="font-size:12px;color:#7f8a9c">Assign</span>
         {#if vm.lrSupported}
           <button
             onclick={() => onEvent?.('lr', { assigned: !(vm.lrAssigned === true) })}
@@ -95,7 +94,7 @@
             >{vm.lrLabel}</button
           >
         {/if}
-        {#if vm.panSupported}
+        {#if vm.panSupported && props.showPan !== false}
           <label style="display:flex;flex-direction:column;gap:4px">
             <span style="font-size:12px;color:#7f8a9c">Pan · {vm.panText}</span>
             <input

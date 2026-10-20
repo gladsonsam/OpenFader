@@ -8,6 +8,7 @@
   import { PRESETS, applyTheme, clearTheme } from './modules/theme.ts';
 
   let { children }: { children?: Snippet } = $props();
+  const handset = typeof navigator !== 'undefined' && /iPhone|iPod/.test(navigator.userAgent);
 
   // Theme presets are token overrides applied as inline variables on the
   // frame (design-dark = no overrides: tokens.css is the truth). Switching
@@ -42,6 +43,7 @@
 <div
   bind:this={frame}
   class="u4-frame"
+  data-handset={handset ? '' : undefined}
   data-canvas-width="1280"
   data-canvas-height="720"
   data-document-role="page"

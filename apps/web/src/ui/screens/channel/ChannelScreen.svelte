@@ -262,8 +262,8 @@
     })(),
   );
   const anatomy = $derived(store.tree(stripDefaults as unknown as LayoutNode));
-  const scopeWithState = $derived({ ...scope, selState: selStateOf(), cell: selCell, anatomy });
-  const source = fixtureSource({});
+  const scopeWithState = $derived({ ...scope, selState: selStateOf(), cell: selCell, anatomy, stripDevice: device.processingPreviews ? device.now : 'phone' });
+  const source = fixtureSource({ meter: ref => live.liveReductionDb(ref) });
 </script>
 
 <LayoutRenderer layout={tree} source={source} scope={scopeWithState} device={device.now} />
