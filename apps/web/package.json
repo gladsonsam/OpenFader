@@ -1,7 +1,7 @@
 {
   "name": "openmix-web",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "openmix mixer UI — Svelte port (static build, no SSR)",
   "scripts": {
@@ -9,6 +9,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check:version": "node ../../scripts/sync-version.mjs --check",
+    "sync:version": "node ../../scripts/sync-version.mjs",
     "smoke": "node e2e-smoke.mjs"
   },
   "dependencies": {

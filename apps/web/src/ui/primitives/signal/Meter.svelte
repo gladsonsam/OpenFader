@@ -10,6 +10,7 @@
      PEAK_HOLD_MS / CLIP_HOLD_MS). -->
 <script lang="ts">
   import { dbToPos } from '../../fixtures/designData.ts';
+  import { isAppHidden } from '../../../mobile.ts';
 
   export interface MeterSource {
     getLevel: (ch: number) => number;
@@ -226,7 +227,10 @@
     if (frozen) return;
     let raf = 0;
     const loop = (): void => {
-      draw(pal);
+      // Background battery: skip canvas painting while hidden. The engine
+      // push stream stays live (no transport change), so the next visible
+      // frame paints fresh levels instantly.
+      if (!isAppHidden()) draw(pal);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);

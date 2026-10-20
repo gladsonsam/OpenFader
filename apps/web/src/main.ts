@@ -29,6 +29,9 @@ async function boot(el: HTMLElement) {
   // Native mobile bridge (wake-lock, logging). No-op in
   // browser/PWA; never blocks first paint.
   import('./mobile.ts').then((m) => m.initMobile()).catch(() => undefined);
+  // Background battery: pause canvas painting while hidden (the push
+  // stream stays live). Works in browser/PWA too — not Tauri-gated.
+  import('./mobile.ts').then((m) => m.initAppVisibility()).catch(() => undefined);
   const m = await import('./ui/mount.ts');
   return m.mountUi(el, params);
 }

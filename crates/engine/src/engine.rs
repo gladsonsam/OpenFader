@@ -23,7 +23,7 @@ use openmix_core::{
     MeterFrame, ParamValue, StripId,
 };
 use serde_json::{json, Value};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 
 use crate::drivers::{
     driver_names, DynDriver, FxFlavor, RegisteredDriver,
@@ -627,6 +627,13 @@ pub struct Engine {
     /// broadcast discovery never crosses subnets, so a hardware `scan` also
     /// verifies this address and lists the linked desk when it answers.
     desk_addrs: RwLock<HashMap<String, String>>,
+    /// Wakeups for edge adapters (P0): notified on every mailbox write
+    /// ([`broadcast`](Engine::broadcast), `broadcast_except`, `unicast`,
+    /// and the attach snapshot). The Tauri IPC `push_task` waits on this
+    /// instead of a second 50 ms poll, so ticker frames go out in ~ms
+    /// instead of up to 50 ms of phase-added age; the 50 ms interval stays
+    /// as a fallback ceiling. Coalescing is fine — receivers always drain.
+    notify: Arc<Notify>,
 }
 
 impl Engine {
@@ -695,6 +702,7 @@ impl Engine {
             meter_driver: RwLock::new(None),
             meter_guard: RwLock::new(None),
             desk_addrs: RwLock::new(HashMap::new()),
+            notify: Arc::new(Notify::new()),
         });
         // FX cache for the default driver (sim): seeded synchronously so
         // the first attach already carries the rack.
@@ -1054,15 +1062,19 @@ impl Engine {
     }
 
     /// Send an event to every connected client (skips closed mailboxes;
-    /// the sweeper prunes them).
+    /// the sweeper prunes them). Notifies [`tick_notify`](Engine::tick_notify)
+    /// waiters (edge push tasks) — one permit per call, coalesced by design.
     fn broadcast(&self, event: &Event) {
         let clients = self.clients.read().unwrap();
         for entry in clients.values() {
             let _ = entry.mailbox.send(event.clone());
         }
+        drop(clients);
+        self.notify.notify_one();
     }
 
     /// [`broadcast`] to everyone except one client (join roster updates).
+    /// Notifies tick waiters like [`broadcast`](Engine::broadcast) does.
     fn broadcast_except(&self, event: &Event, skip: &str) {
         let clients = self.clients.read().unwrap();
         for (id, entry) in clients.iter() {
@@ -1070,13 +1082,27 @@ impl Engine {
                 let _ = entry.mailbox.send(event.clone());
             }
         }
+        drop(clients);
+        self.notify.notify_one();
     }
 
     /// Unicast one event to a single client (direct replies, denials).
+    /// Notifies tick waiters like [`broadcast`](Engine::broadcast) does.
     fn unicast(&self, id: &str, event: Event) {
         if let Some(entry) = self.clients.read().unwrap().get(id) {
             let _ = entry.mailbox.send(event);
         }
+        self.notify.notify_one();
+    }
+
+    /// Edge-adapter wakeup handle (P0): the Tauri IPC `push_task` waits on
+    /// this instead of a second 50 ms poll. Notified on every mailbox
+    /// write (broadcasts, unicasts, attach snapshot); the 50 ms interval
+    /// stays as a fallback ceiling. [`Notify`] stores one permit while no
+    /// waiter is parked, so a broadcast between drain and wait still wakes
+    /// the next wait (no lost wakeup — at most coalesced).
+    pub fn tick_notify(&self) -> Arc<Notify> {
+        Arc::clone(&self.notify)
     }
 
     /// Allocate the next client id/label pair (`client-N` fallback).
