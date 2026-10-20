@@ -6448,7 +6448,7 @@ mod tests {
     fn driver_capability_sets() {
         let engine = Engine::new(EngineConfig::default());
         // sim = full catalogue; xair = loopback-tested subset; dl32s =
-        // fader/mute/name only (unchanged driver behaviour otherwise).
+        // Wave-1 verified set (see `openmix_proto_dl32s::DL32S_CAPABILITIES`).
         assert_eq!(
             engine.driver_capabilities("sim").len(),
             engine.registry("sim").len()
@@ -6457,7 +6457,10 @@ mod tests {
             engine.driver_capabilities("xair"),
             openmix_proto_xair::XAIR_CAPABILITIES
         );
-        assert_eq!(engine.driver_capabilities("dl32s"), &["fader", "mute", "name"]);
+        assert_eq!(
+            engine.driver_capabilities("dl32s"),
+            openmix_proto_dl32s::DL32S_CAPABILITIES
+        );
         assert_eq!(engine.driver_capabilities("nope"), engine.driver_capabilities("sim"));
         assert_eq!(engine.driver_channels("xair"), 16);
         assert_eq!(engine.driver_channels("sim"), 32);
