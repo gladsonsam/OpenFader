@@ -91,6 +91,8 @@ pub struct OscSession {
     /// late replies). Drivers subscribe here to learn desk-side changes
     /// without polling. Bounded (256); slow readers lag, never block.
     update_tx: broadcast::Sender<OscMessage>,
+    received_tx: broadcast::Sender<(std::time::Instant, OscMessage)>,
+    latest_meter: Arc<std::sync::Mutex<Option<(std::time::Instant, MeterFrame)>>>,
     _recv: JoinHandle<()>,
     _keepalive: Option<JoinHandle<()>>,
 }
@@ -115,28 +117,41 @@ impl OscSession {
             Arc::new(Mutex::new(HashMap::new()));
         let (meter_tx, _) = broadcast::channel::<MeterFrame>(64);
         let (update_tx, _) = broadcast::channel::<OscMessage>(256);
+        let (received_tx, _) = broadcast::channel(2048);
+        let latest_meter = Arc::new(std::sync::Mutex::new(None));
 
         let recv = {
             let socket = socket.clone();
             let pending = pending.clone();
             let meter_tx = meter_tx.clone();
             let update_tx = update_tx.clone();
+            let received_tx = received_tx.clone();
+            let latest_meter = latest_meter.clone();
             tokio::spawn(async move {
                 let mut buf = vec![0u8; RECV_BUF];
                 loop {
                     let n = match socket.recv(&mut buf).await {
                         Ok(n) => n,
-                        Err(_) => break,
+                        Err(error) => {
+                            eprintln!("OSC receive error: {error}; retrying same connected peer in 250ms");
+                            tokio::time::sleep(Duration::from_millis(250)).await;
+                            continue;
+                        }
                     };
                     let packet = match osc::decode_packet(&buf[..n]) {
                         Ok(p) => p,
                         Err(_) => continue,
                     };
+                    let received = std::time::Instant::now();
                     for msg in osc::flatten(packet) {
                         if let Some(frame) = parse_meter_message(&msg) {
+                            *latest_meter.lock().unwrap() = Some((received, frame.clone()));
                             let _ = meter_tx.send(frame);
                             continue;
                         }
+                        // Query replies also enter the ordered receive plane. A
+                        // late query caller must not hide a newer desk change.
+                        let _ = received_tx.send((received, msg.clone()));
                         let mut guard = pending.lock().await;
                         if let Some(tx) = guard.remove(&msg.addr) {
                             let _ = tx.send(msg);
@@ -171,6 +186,8 @@ impl OscSession {
             query_lock: Mutex::new(()),
             meter_tx,
             update_tx,
+            received_tx,
+            latest_meter,
             _recv: recv,
             _keepalive: keep,
         }
@@ -223,6 +240,16 @@ impl OscSession {
     /// this to ingest desk-side change broadcasts without polling.
     pub fn subscribe_updates(&self) -> broadcast::Receiver<OscMessage> {
         self.update_tx.subscribe()
+    }
+
+    /// Ordered control receives, timestamped at the socket, including replies.
+    pub fn subscribe_received_updates(&self) -> broadcast::Receiver<(std::time::Instant, OscMessage)> {
+        self.received_tx.subscribe()
+    }
+
+    /// Most recent socket-received level sample; never refresh its age on replay.
+    pub fn latest_meter_sample(&self) -> Option<(std::time::Instant, MeterFrame)> {
+        self.latest_meter.lock().unwrap().clone()
     }
 
     /// App-style per-param push subscribe (VERIFIED live 2026-10-19, XR18

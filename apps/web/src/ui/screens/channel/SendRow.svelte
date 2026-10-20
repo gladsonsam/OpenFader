@@ -80,6 +80,7 @@
   } | null = null;
 
   function down(e: PointerEvent): void {
+    if (!Number.isFinite(row.value)) return;
     const rect = area?.getBoundingClientRect();
     const w = Math.max(60, (rect?.width ?? 64) - 18);
     const target = e.currentTarget as HTMLElement;
@@ -111,6 +112,7 @@
     drag = null;
   }
   function key(e: KeyboardEvent): void {
+    if (!Number.isFinite(row.value)) return;
     const k = fine ? 0.25 : 1;
     let v: number | null = null;
     if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') v = row.value - 0.01 * k;
@@ -123,6 +125,12 @@
     e.preventDefault();
     onEvent?.('input', { value: Math.max(0, Math.min(1, v)) });
   }
+  $effect(() => {
+    const cancel = (): void => { drag = null; };
+    window.addEventListener('openmix-control-epoch', cancel);
+    window.addEventListener('openmix-control-released', cancel);
+    return () => { window.removeEventListener('openmix-control-epoch', cancel); window.removeEventListener('openmix-control-released', cancel); };
+  });
 </script>
 
 <div
@@ -130,12 +138,13 @@
 >
   <span style="width:54px;flex:none;font-size:15px;font-weight:600">{row.name}</span>
   <button
+    disabled={!Number.isFinite(row.value)}
     bind:this={area}
     role="slider"
     aria-label={row.aria}
     aria-valuemin={0}
     aria-valuemax={100}
-    aria-valuenow={Math.round(row.value * 100)}
+    aria-valuenow={Number.isFinite(row.value) ? Math.round(row.value * 100) : undefined}
     aria-valuetext={row.text + ' dB'}
     onpointerdown={down}
     onpointermove={move}

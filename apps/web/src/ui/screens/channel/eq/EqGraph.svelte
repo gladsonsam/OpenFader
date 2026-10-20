@@ -34,7 +34,7 @@
 <script lang="ts">
   import { fade } from 'svelte/transition';
   import { REDUCED_MOTION } from '../../../primitives/feel.ts';
-  import { eqNodeApply, eqPointFromPos, type EqGraphVm } from './eqModel.ts';
+  import { eqPointFromPos, type EqGraphVm } from './eqModel.ts';
   import type { ModuleContext } from '../../../modules/types.ts';
   import { bridgeStrip } from '../../../state/engineBridge.ts';
   import { live } from '../../../state/live.svelte.ts';
@@ -72,7 +72,7 @@
   // Selected band + its live Q, bound from the channel scope (store.selBand
   // / eqSelQ in the EQ layouts). Pinch snapshots both at gesture start so
   // store-echo lag can never shift the baseline mid-gesture.
-  const selBand = $derived(props.selBand ?? 1);
+  const selBand = $derived(graph?.selectedBand ?? props.selBand ?? 1);
   const selQ = $derived(props.selQ ?? 0);
 
   // ---- Touch gesture state (Fader.svelte pattern) ----
@@ -101,8 +101,16 @@
   let dead = false;
 
   /** Q clamp/rounding, mirroring eqParamFromDrag's q branch (0.3..16, 2dp). */
-  function clampQ(q: number): number {
-    return Math.round(Math.min(16, Math.max(0.3, q)) * 100) / 100;
+  function clampQ(q: number, band = selBand): number {
+    const r = graph?.nodes.find(n => n.band === band)?.ranges.q;
+    return r ? Math.round(Math.min(r[1], Math.max(r[0], q)) * 100) / 100 : NaN;
+  }
+  function applyNode(band: number, f: number, g: number): { f: number; g: number } | null {
+    const node = graph?.nodes.find(n => n.band === band);
+    const r = node?.ranges.f;
+    if (!node || !r) return null;
+    const gr = node.ranges.g;
+    return { f: Math.min(r[1], Math.max(r[0], f)), g: gr ? Math.min(gr[1], Math.max(gr[0], g)) : node.gain };
   }
 
   function spread(a: number, b: number): number {
@@ -146,15 +154,17 @@
     const r = box.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return;
     const p = eqPointFromPos((cx - r.left) / r.width, (cy - r.top) / r.height);
-    const a = eqNodeApply(band, p.f, p.g);
-    const cur = graph.nodes[band];
+    const a = applyNode(band, p.f, p.g);
+    if (!a) return;
+    const cur = graph.nodes.find(n => n.band === band);
     if (band === 0) onEvent?.('node', { band, f: a.f, g: cur ? cur.gain : -3 });
     else onEvent?.('node', { band, f: a.f, g: a.g });
   }
 
   function emitQ(q: number): void {
     if (!pinch || locked) return;
-    const c = clampQ(q);
+    const c = clampQ(q, pinch.band);
+    if (!Number.isFinite(c)) return;
     if (c === pinch.lastQ) return;
     pinch.lastQ = c;
     onEvent?.('q', { band: pinch.band, q: c });
@@ -191,7 +201,7 @@
       pair = true;
       const ids = [...pts.keys()];
       const b = selBand;
-      if (b > 0 && ids.length === 2 && ids[0] !== undefined && ids[1] !== undefined) {
+      if (b > 0 && graph?.nodes.find(n => n.band === b)?.ranges.q && Number.isFinite(selQ) && ids.length === 2 && ids[0] !== undefined && ids[1] !== undefined) {
         const d0 = Math.hypot(
           (pts.get(ids[1])?.x ?? 0) - (pts.get(ids[0])?.x ?? 0),
           (pts.get(ids[1])?.y ?? 0) - (pts.get(ids[0])?.y ?? 0),
@@ -324,7 +334,7 @@
   });
 
   function key(e: KeyboardEvent, band: number): void {
-    const node = graph?.nodes[band];
+    const node = graph?.nodes.find(n => n.band === band);
     if (!node) return;
     const step = fine ? 0.25 : 1;
     let f = node.freq;
@@ -336,11 +346,11 @@
     } else if (band !== 0 && (e.key === 'PageUp' || e.key === 'PageDown')) {
       // Q keyboard fallback (pinch is touch-only): anchored on this node's
       // own Q so it is exact even when the node is not the selected band.
-      if (locked) return;
+      if (locked || !node.ranges.q || !Number.isFinite(node.q)) return;
       e.preventDefault();
       onEvent?.('select', { band });
       const q0 = node.q > 0 ? node.q : 1;
-      const q = clampQ(q0 * Math.pow(2, (e.key === 'PageUp' ? 0.5 : -0.5) * step));
+      const q = clampQ(q0 * Math.pow(2, (e.key === 'PageUp' ? 0.5 : -0.5) * step), band);
       onEvent?.('q', { band, q });
       return;
     } else if (e.key === 'Home' || e.key === 'End') {
@@ -350,9 +360,16 @@
     e.preventDefault();
     onEvent?.('select', { band });
     if (locked) return;
-    const a = eqNodeApply(band, f, g);
+    const a = applyNode(band, f, g);
+    if (!a) return;
     onEvent?.('node', { band, f: a.f, g: band === 0 ? node.gain : a.g });
   }
+  $effect(() => {
+    const cancel = (): void => { for (const pid of pts.keys()) releaseGrab(pid); pts.clear(); single = null; pinch = null; pair = false; dead = false; unlistenWindow(); };
+    window.addEventListener('openmix-control-epoch', cancel);
+    window.addEventListener('openmix-control-released', cancel);
+    return () => { window.removeEventListener('openmix-control-epoch', cancel); window.removeEventListener('openmix-control-released', cancel); };
+  });
 </script>
 
 <div
@@ -366,6 +383,7 @@
   style="box-sizing:content-box;flex:1 1 280px;min-height:{minH}px;position:relative;border-radius:6px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg);overflow:hidden;touch-action:none"
 >
   {#if graph}
+    {#if graph.note}<span style="position:absolute;top:8px;left:12px;font-size:12px;color:var(--u4-text-4)">{graph.note}</span>{/if}
     <svg
       viewBox="0 0 1000 300"
       preserveAspectRatio="none"

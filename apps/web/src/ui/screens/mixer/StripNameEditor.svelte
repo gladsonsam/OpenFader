@@ -136,7 +136,12 @@
             class="icon-choice tpress"
             onclick={() => onEvent?.('reicon', { icon: iconName })}
           >
-            <svg width="32" height="32" viewBox={def.viewBox} aria-hidden="true">
+            <svg
+              width="32" height="32" viewBox={def.viewBox}
+              fill="none" stroke="currentColor" stroke-width={def.strokeWidth}
+              stroke-linecap={def.linecap ?? 'butt'} stroke-linejoin={def.linejoin ?? 'miter'}
+              aria-hidden="true"
+            >
               {@html def.body}
             </svg>
             <span>{def.label}</span>

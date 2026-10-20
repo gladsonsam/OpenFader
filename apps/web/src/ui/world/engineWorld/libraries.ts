@@ -90,6 +90,14 @@ export class LibraryStore {
     this.send = send;
   }
 
+  /** Connection/topology epoch: no prior desk values may survive. */
+  reset(): void {
+    this._fxSlots = []; this._patches = []; this._scenes = [];
+    this._busMasters = {}; this._subMasters = {}; this._muteMasters = {};
+    this._subAssign = {}; this._mgAssign = {}; this._solos = {};
+    this._mainFader = null; this._mainMuted = null; this._link = null;
+  }
+
   /** Store one engine frame; true when this store owns the kind. */
   apply(evt: EngineEvent): boolean {
     switch (evt.kind) {
@@ -172,6 +180,10 @@ export class LibraryStore {
     this._fxCaps = { slots: fx.slots, types: fx.types.map((t) => ({ id: t.id, label: t.label, params: t.params.map((q) => ({ ...q })) })) };
     this._routingSupported = routingSupported;
     if (groups) {
+      if (groups.buses !== this._groups.buses || groups.subgroups !== this._groups.subgroups || groups.mute_groups !== this._groups.muteGroups || (groups.mg_assign ?? true) !== this._groups.mgAssign || (groups.sub_assign ?? true) !== this._groups.subAssign) {
+        this._busMasters = {}; this._subMasters = {}; this._muteMasters = {};
+        this._subAssign = {}; this._mgAssign = {};
+      }
       this._groups = {
         buses: Math.max(0, groups.buses),
         subgroups: Math.max(0, groups.subgroups),

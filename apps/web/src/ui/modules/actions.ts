@@ -282,6 +282,7 @@ export function registerBuiltins(): void {
   uiThrough('ui.goRouting', () => [], A('Open the Routing page'));
   uiThrough('ui.goConnect', () => [], A('Open the Connection page'));
   uiThrough('ui.goSettings', () => [], A('Open the Settings page'));
+  uiThrough('ui.goOnline', () => [], A('Leave offline mode and open Connect'));
   uiThrough('ui.goOffline', () => [], A('Work offline'));
   uiThrough('ui.goBack', () => [], A('Go back to the previous mode'));
   uiThrough('ui.openScenes', () => [], A('Open the Scenes page'));

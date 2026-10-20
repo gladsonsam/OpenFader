@@ -47,18 +47,20 @@
         HPF
       </button>
       <button
-        onclick={() => onEvent?.('toggle', { band: 0 })}
+        disabled={props.locked || !vm.toggleable}
+        onclick={() => { if (!props.locked && vm.toggleable) onEvent?.('toggle', { band: 0 }); }}
         aria-pressed={vm.onStr}
         aria-label={vm.toggleAria}
         style="box-sizing:border-box;font-variant-numeric:normal;height:32px;padding:0 10px;border-radius:4px;border:1px solid var(--u4-line-ctl);background:{vm.onBg};color:{vm.onText};font-size:13px;cursor:pointer"
         >{vm.onLabel}</button
       >
     </div>
-    {#if showSlope}
+    {#if showSlope && vm.slopeEditable}
       <div style="box-sizing:content-box;display:flex;gap:4px">
         {#each [12, 24] as s (s)}
           {@const active = vm.slope === s}
           <button
+            disabled={props.locked}
             onclick={() => onEvent?.('slope', { slope: s })}
             aria-pressed={active ? 'true' : 'false'}
             aria-label={'HPF slope ' + s + ' dB per octave'}
@@ -76,6 +78,8 @@
         mode="eq"
         eqBand={0}
         eqParam="f"
+        range={vm.range}
+        disabled={props.locked || !vm.range || !Number.isFinite(vm.freq)}
         value={vm.freq}
         label="Freq"
         color={vm.color}

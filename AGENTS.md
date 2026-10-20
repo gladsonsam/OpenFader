@@ -8,6 +8,14 @@
 - Leave the desk in a sane state when done (unmute, faders back) unless
   the task says otherwise.
 
+## Backlog pickup policy (binding; BACKLOG.md is the source of truth)
+- BACKLOG.md lane A (autonomous pickup) may be picked up only within
+  normal user scope for that task; lane B (explicit owner approval ONLY)
+  must NEVER be auto-selected, dispatched, implemented, or investigated —
+  not even under general "work through the backlog" instructions.
+- Lane B requires explicit task-specific owner permission naming the
+  item. Organizing the backlog does not authorize implementing it.
+
 ## Agent notes: simulator verification loop (agent-maintained)
 - Frontend edits are embedded in the Rust binary and the Xcode project's Rust
   phase is a no-op, so `build_run_sim` alone re-installs the OLD bundle. Run

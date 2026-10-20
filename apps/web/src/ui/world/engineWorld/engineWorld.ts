@@ -160,6 +160,16 @@ export class EngineWorld implements World {
   private grAt = new Map<number, number>();
   private audioFrame: AudioSpectrumFrame | null = null;
   private audioAt = -Infinity;
+  private levelsAt = -Infinity;
+  private tapAt = new Map<string, number>();
+  private maintenanceTimer: unknown = null;
+  private spectrumTarget: number | null = null;
+  private epoch = 0;
+  private pointerHeld = false;
+  private hydrating = true;
+  private backendEpoch: number | null = null;
+  private receivedAt = new Map<string, number>();
+  private changedAt = new Map<string, number>();
   private _taps: Record<string, Float32Array> = {};
 
   private _connectedAt: number | null = null;
@@ -194,12 +204,12 @@ export class EngineWorld implements World {
       clipUntil: this.clipUntil,
       grGate: this.grGate,
       grComp: this.grComp,
-      spectrum: (ch: number) => this.perf() - (this.spectrumAt.get(ch) ?? -Infinity) < 1500
+      spectrum: (ch: number) => this.perf() - (this.spectrumAt.get(ch) ?? -Infinity) < 500
         ? this.spectra.get(ch) ?? null : null,
       spectrumSource: (ch: number) => this.spectrumSources.get(ch) ?? null,
       audioSpectrum: () => this.perf() - this.audioAt < 750 ? this.audioFrame : null,
       reduction: (ch, kind) => {
-        if (this.perf() - (this.grAt.get(ch) ?? -Infinity) >= 1500) return null;
+        if (this.perf() - (this.grAt.get(ch) ?? -Infinity) >= 500) return null;
         const v = (kind === 'gate' ? this.grGate : this.grComp)[ch];
         return Number.isFinite(v) ? v! : null;
       },
@@ -210,7 +220,8 @@ export class EngineWorld implements World {
     this.unsubs.push(
       transport.onStatus((online) => {
         this._online = online;
-        if (!online) this.clearMeters();
+        if (!online) this.resetEpoch();
+        if (online) { this.lastFocusSent = []; this.scheduleFocus(); }
         if (online && this._connectedAt === null) this._connectedAt = this.perf();
         this.bump();
         this.statusSubs.forEach((cb) => {
@@ -222,9 +233,20 @@ export class EngineWorld implements World {
         });
       }),
     );
+    const maintain = (): void => {
+      this.sweep(this.clock());
+      const now = this.perf();
+      if (now - this.levelsAt >= 450) { this.level.fill(NaN); this.peak.fill(NaN); this.clipUntil.fill(0); }
+      for (const [ch, at] of this.grAt) if (now - at >= 450) { this.grGate[ch] = NaN; this.grComp[ch] = NaN; }
+      for (const [tap, at] of this.tapAt) if (now - at >= 450) this._taps[tap]?.fill(NaN);
+      this.maintenanceTimer = this.setTimer(maintain, 50);
+    };
+    this.maintenanceTimer = this.setTimer(maintain, 50);
   }
 
   destroy(): void {
+    if (this.maintenanceTimer !== null) this.clearTimer(this.maintenanceTimer);
+    this.maintenanceTimer = null;
     for (const u of this.unsubs.splice(0)) {
       try {
         u();
@@ -252,6 +274,51 @@ export class EngineWorld implements World {
     });
   }
 
+  /** Cancel ownership and reads when the transport/native session changes. */
+  resetEpoch(resetBackend = true): void {
+    if (resetBackend) this.backendEpoch = null;
+    this.epoch++;
+    this.hydrating = true;
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('openmix-control-epoch'));
+    this.pointerHeld = false;
+    this.maps = emptyMaps(); this.states.clear(); this.firstSeenAt.clear();
+    this.receivedAt.clear(); this.changedAt.clear();
+    this.mainPending = null; this._mainFader = null; this.locks.clear();
+    this.coalescer.clear(); this.lib.reset(); this.clearMeters();
+    this.lastFocusSent = []; this._connectedAt = this.perf();
+    if (this.focusTimer !== null) this.clearTimer(this.focusTimer);
+    this.focusTimer = null;
+    if (this._online) { this.scheduleFocus(); if (this.spectrumTarget !== null) this.transport.send(cmdSpectrumTarget(this.spectrumTarget)); }
+    this.bump();
+  }
+
+  get connectionEpoch(): number { return this.epoch; }
+  rearmSubscriptions(): void {
+    this.lastFocusSent = []; this.scheduleFocus();
+    if (this.spectrumTarget !== null) this.transport.send(cmdSpectrumTarget(this.spectrumTarget));
+  }
+
+  /** Release held edits on gesture end/unlock/denial. Confirmed values are
+   * retained while editing and become visible as soon as ownership ends. */
+  beginGesture(): void { this.pointerHeld = true; }
+
+  releasePending(ch?: number, flush = false): void {
+    this.pointerHeld = false;
+    for (const key of Object.keys(this.maps.pending)) {
+      if (ch !== undefined && !key.startsWith(`${ch}:`)) continue;
+      if (flush) this.coalescer.flush(key); else this.coalescer.cancel(key);
+      delete this.maps.pending[key];
+    }
+    if (ch === undefined || this.kindOf(ch) === 'main') { this.mainPending = null; this.coalescer.cancel('main:fader'); }
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('openmix-control-released'));
+    this.bump();
+  }
+
+  valueTiming(ch: number, id: string): { receivedAt: number | null; changedAt: number | null } {
+    const key = `${ch}:${id}`;
+    return { receivedAt: this.receivedAt.get(key) ?? null, changedAt: this.changedAt.get(key) ?? null };
+  }
+
   // ---- connection ----
 
   get online(): boolean {
@@ -271,10 +338,7 @@ export class EngineWorld implements World {
   }
 
   connect(driver?: string, addr?: string): void {
-    this.maps = emptyMaps();
-    this.firstSeenAt.clear();
-    this.mainPending = null;
-    this._connectedAt = this.perf();
+    this.resetEpoch();
     this.transport.connect();
     // Attach-only when the caller chose no driver: open the socket (the
     // transport sends hello on open) and accept whatever driver the relay
@@ -330,19 +394,38 @@ export class EngineWorld implements World {
 
   private apply(evt: EngineEvent): void {
     if (evt.kind === 'info' && evt.driver) this._driver = evt.driver;
+    if (evt.kind === 'link' && evt.state === 'disconnected' && this.lib.link?.state !== 'disconnected') this.resetEpoch();
+    if (evt.kind === 'main' || evt.kind === 'bus') {
+      const ch = evt.kind === 'main' ? this.topology.find(t => t.kind === 'main')?.first : (() => { const t = this.topology.find(t => t.kind === 'bus'); return t ? t.first + evt.bus : undefined; })();
+      if (ch !== undefined) {
+        const values: Record<string, ParamValue> = {};
+        if (evt.fader !== null) values.fader = evt.fader;
+        if (evt.muted !== null) values.mute = evt.muted;
+        this.noteReceipt(ch, values); applyParams(this.maps, ch, values);
+      }
+    }
     if (this.lib.apply(evt)) return;
     switch (evt.kind) {
+      case 'sync_epoch':
+        if (this.backendEpoch !== null && this.backendEpoch !== evt.epoch) this.resetEpoch(false);
+        this.backendEpoch = evt.epoch;
+        this.rearmSubscriptions();
+        break;
       case 'unknown':
         return;
       case 'you':
         this._selfId = evt.id;
+        this.lastFocusSent = []; this.scheduleFocus();
+        if (this.spectrumTarget !== null) this.transport.send(cmdSpectrumTarget(this.spectrumTarget));
         this._clients = { ...this._clients, selfId: evt.id };
         break;
       case 'state':
+        this.hydrating = false;
         this._driver = evt.driver || this._driver;
         this.ensureStripCount(evt.strips.reduce((m, s) => Math.max(m, s.ch + 1), 0));
         for (const s of evt.strips) {
           this.states.set(s.ch, { name: s.name, fader: s.fader, muted: s.muted });
+          this.noteReceipt(s.ch, { fader: s.fader, mute: s.muted, name: s.name });
           // The state frame carries the confirmed fader/mute/name: clear matching pending.
           const slot = this.maps.confirmed[s.ch] ?? (this.maps.confirmed[s.ch] = {});
           if (slot['fader'] !== s.fader) {
@@ -358,7 +441,7 @@ export class EngineWorld implements World {
               // Desk-quantized fader echoes (cf. valuesEqual) must clear the
               // edit like params frames do; strict equality strands it.
               // Mute/name still compare exactly via valuesEqual's fallback.
-              if (valuesEqual(pend.value, cur)) delete this.maps.pending[`${s.ch}:${id}`];
+              if (!pend.held && valuesEqual(pend.value, cur)) delete this.maps.pending[`${s.ch}:${id}`];
             }
           }
         }
@@ -372,11 +455,14 @@ export class EngineWorld implements World {
         }
         break;
       case 'param':
+        this.noteReceipt(evt.ch, { [evt.field]: evt.value });
         if (applyParams(this.maps, evt.ch, { [evt.field]: evt.value })) this.markSeen(evt.ch, evt.field);
         else if (confirmedKnown(this.maps, evt.ch, evt.field)) this.markSeen(evt.ch, evt.field);
         this.ensureStripCount(evt.ch + 1);
         break;
       case 'params':
+        this.hydrating = false;
+        this.noteReceipt(evt.ch, evt.values);
         for (const id of Object.keys(evt.values)) {
           if (!confirmedKnown(this.maps, evt.ch, id)) this.markSeen(evt.ch, id);
         }
@@ -401,11 +487,7 @@ export class EngineWorld implements World {
           this.topology.length > 0 &&
           (nextDriver !== this._driver || topoFingerprint(this.topology) !== topoFingerprint(evt.topology))
         ) {
-          this.maps = emptyMaps();
-          this.states.clear();
-          this.firstSeenAt.clear();
-          this.mainPending = null;
-          this.clearMeters();
+          this.resetEpoch();
         }
         this._driver = nextDriver;
         this.topology = evt.topology;
@@ -463,6 +545,7 @@ export class EngineWorld implements World {
         this._clients = { count: evt.count, writers: evt.writers.slice(), selfId: this._selfId };
         break;
       case 'error':
+        this.releasePending(evt.ch);
         this._lastDeny = {
           ch: evt.ch ?? null,
           lockedBy: evt.locked_by ?? null,
@@ -490,6 +573,14 @@ export class EngineWorld implements World {
     // (setParam etc.) bump themselves.
   }
 
+  private noteReceipt(ch: number, values: Record<string, ParamValue>): void {
+    for (const [id, value] of Object.entries(values)) {
+      const key = `${ch}:${id}`;
+      this.receivedAt.set(key, this.clock());
+      if (!valuesEqual(this.maps.confirmed[ch]?.[id], value)) this.changedAt.set(key, this.clock());
+    }
+  }
+
   private markSeen(ch: number, id: string): void {
     const key = `${ch}:${id}`;
     if (!this.firstSeenAt.has(key)) this.firstSeenAt.set(key, this.perf());
@@ -500,8 +591,11 @@ export class EngineWorld implements World {
   }
 
   private clearMeters(): void {
-    this.level.fill(0);
-    this.peak.fill(0);
+    this.level.fill(NaN);
+    this.peak.fill(NaN);
+    this.levelsAt = -Infinity;
+    this.tapAt.clear();
+    for (const tap of Object.values(this._taps)) tap.fill(NaN);
     this.clipUntil.fill(0);
     this.grGate.fill(NaN);
     this.grComp.fill(NaN);
@@ -518,6 +612,7 @@ export class EngineWorld implements World {
     const next = n;
     const grow = (a: Float32Array<ArrayBuffer>): Float32Array<ArrayBuffer> => {
       const b = new Float32Array(next);
+      b.fill(NaN);
       b.set(a.subarray(0, Math.min(a.length, next)));
       return b;
     };
@@ -537,6 +632,7 @@ export class EngineWorld implements World {
     this.clipUntil = growF(this.clipUntil);
     for (const k of Object.keys(this._taps)) {
       const b = new Float32Array(next);
+      b.fill(NaN);
       b.set(this._taps[k]!.subarray(0, Math.min(this._taps[k]!.length, next)));
       this._taps[k] = b;
     }
@@ -552,6 +648,7 @@ export class EngineWorld implements World {
   private applyLevels(levels: readonly number[]): void {
     this.ensureStripCount(levels.length);
     const now = this.perf();
+    this.levelsAt = now;
     for (let i = 0; i < levels.length; i++) {
       const v = clamp(levels[i] ?? 0, 0, 1);
       this.level[i] = v;
@@ -572,6 +669,7 @@ export class EngineWorld implements World {
 
   private applyTap(tap: string, levels: readonly number[]): void {
     this.ensureStripCount(levels.length);
+    this.tapAt.set(tap, this.perf());
     let arr = this._taps[tap];
     if (!arr) {
       arr = new Float32Array(this._stripCount);
@@ -619,18 +717,11 @@ export class EngineWorld implements World {
     const id = fam ? fam.key + (local + 1) : 'ch' + (ch + 1);
     const confirmed = this.maps.confirmed[ch];
     const state = this.states.get(ch);
-    const nameV = confirmed?.['name'];
-    const name =
-      typeof nameV === 'string' && nameV
-        ? nameV
-        : (state?.name ?? '') || (fam ? fam.name_prefix + ' ' + (local + 1) : 'Ch ' + (ch + 1));
-    const srcV = confirmed?.['source'];
-    const source =
-      typeof srcV === 'string' && srcV
-        ? srcV
-        : fam
-          ? fam.name_prefix + ' ' + String(local + 1).padStart(2, '0')
-          : '';
+    const nameV = this.param(ch, 'name');
+    const fallbackName = fam ? fam.name_prefix + ' ' + (local + 1) : 'Ch ' + (ch + 1);
+    const name = typeof nameV === 'string' ? nameV || fallbackName : fallbackName;
+    const srcV = this.param(ch, 'source');
+    const source = typeof srcV === 'string' ? srcV : '';
     const colorV = confirmed?.['color'];
     const colorIdx =
       typeof colorV === 'number' && Number.isFinite(colorV) ? Math.round(colorV) : (fam?.color_default ?? 2);
@@ -638,7 +729,7 @@ export class EngineWorld implements World {
     const bank = this.bankFor(ch);
     const text = bank && bank.colour === colour ? bank.text : contrastText(colour);
     const faderV = optimisticValue(this.maps, ch, 'fader');
-    const fader = typeof faderV === 'number' ? faderV : (state?.fader ?? 0);
+    const fader = typeof faderV === 'number' ? faderV : (state?.fader ?? NaN);
     const muteV = optimisticValue(this.maps, ch, 'mute');
     const muted = typeof muteV === 'boolean' ? muteV : (state?.muted ?? false);
     const panField = this.supports('balance', ch) ? 'balance' : 'pan';
@@ -650,13 +741,17 @@ export class EngineWorld implements World {
 
   get mainFader(): number | null {
     if (this.mainPending) return this.mainPending.value;
-    return this.lib.mainMaster.fader ?? this._mainFader;
+    const ch = this.topology.find(t => t.kind === 'main')?.first;
+    const v = ch === undefined ? null : this.param(ch, 'fader');
+    return typeof v === 'number' ? v : this._mainFader;
   }
 
   /** Main LR master mute (pending-optimistic not tracked: the mute button
    *  flips on echo; null = unknown yet). */
   get mainMuted(): boolean | null {
-    return this.lib.mainMaster.muted;
+    const ch = this.topology.find(t => t.kind === 'main')?.first;
+    const v = ch === undefined ? null : this.param(ch, 'mute');
+    return typeof v === 'boolean' ? v : null;
   }
 
   // ---- params / caps ----
@@ -711,6 +806,7 @@ export class EngineWorld implements World {
   }
 
   setParam(ch: number, id: string, v: ParamValue): boolean {
+    if (!this._online || this.hydrating) return false;
     if (!this.supports(id, ch)) return false;
     const coerced = coerceWrite(this.caps.defs[id], v);
     if (coerced === null) return false;
@@ -719,11 +815,13 @@ export class EngineWorld implements World {
     const res = this.coalescer.offer(key, () => this.sendParam(ch, id, coerced));
     void res;
     noteOptimistic(this.maps, ch, id, coerced, now);
+    this.maps.pending[key]!.held = this.pointerHeld;
     this.bump();
     return true;
   }
 
   setFader(ch: number, v01: number): boolean {
+    if (!this._online || this.hydrating) return false;
     if (!this.supports('fader', ch)) return false;
     if (typeof v01 !== 'number' || !Number.isFinite(v01)) return false;
     const v = clamp(v01, 0, 1);
@@ -731,21 +829,26 @@ export class EngineWorld implements World {
     const now = this.clock();
     this.coalescer.offer(key, () => this.transport.send(cmdFader(ch, v)));
     noteOptimistic(this.maps, ch, 'fader', v, now);
+    this.maps.pending[key]!.held = this.pointerHeld;
     this.bump();
     return true;
   }
 
   setMute(ch: number, muted: boolean): boolean {
+    if (!this._online || this.hydrating) return false;
     if (!this.supports('mute', ch)) return false;
     if (typeof muted !== 'boolean') return false;
     const now = this.clock();
     this.coalescer.offer(`${ch}:mute`, () => this.transport.send(cmdMute(ch, muted)));
     noteOptimistic(this.maps, ch, 'mute', muted, now);
+    this.maps.pending[`${ch}:mute`]!.held = this.pointerHeld;
     this.bump();
     return true;
   }
 
   setMainFader(v01: number): boolean {
+    const ch = this.topology.find(t => t.kind === 'main')?.first;
+    if (ch !== undefined) return this.setFader(ch, v01);
     if (!this.caps.ready || !this.caps.defs['fader'] || this.caps.unsupported.includes('fader')) return false;
     if (typeof v01 !== 'number' || !Number.isFinite(v01)) return false;
     const v = clamp(v01, 0, 1);
@@ -767,6 +870,7 @@ export class EngineWorld implements World {
   }
 
   setSpectrumTarget(ch: number | null): void {
+    this.spectrumTarget = ch;
     this.audioFrame = null;
     this.audioAt = -Infinity;
     this.transport.send(cmdSpectrumTarget(ch));
@@ -794,8 +898,13 @@ export class EngineWorld implements World {
 
   sweep(nowMs: number): string[] {
     const expired = sweepPending(this.maps.pending, nowMs, this.confirmTimeoutMs);
-    if (this.mainPending && nowMs - this.mainPending.at >= this.confirmTimeoutMs) this.mainPending = null;
-    if (expired.length) this.bump();
+    for (const key of expired) this.coalescer.cancel(key);
+    const mainExpired = !!this.mainPending && nowMs - this.mainPending.at >= this.confirmTimeoutMs;
+    if (this.mainPending && nowMs - this.mainPending.at >= this.confirmTimeoutMs) { this.mainPending = null; this.coalescer.cancel('main:fader'); }
+    if (expired.length || mainExpired) {
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('openmix-control-released'));
+      this.bump();
+    }
     return expired
       .map((k) => splitKey(k))
       .filter((s): s is { ch: number; id: string } => s !== null)
@@ -839,7 +948,7 @@ export class EngineWorld implements World {
   }
 
   /** Design-side write helpers (used by W1 binding; tested round-trip). */
-  writeEqBandType(ch: number, band: number, t: 'LS' | 'PEQ' | 'HS'): boolean {
+  writeEqBandType(ch: number, band: number, t: import('../../fixtures/designData.ts').EqBandType): boolean {
     return writeEqBandTypeTo(this, ch, band, t);
   }
   writeSlope(ch: number, s: 12 | 24): boolean {
@@ -864,6 +973,7 @@ export class EngineWorld implements World {
     this.transport.send(cmdLock(ch));
   }
   unlockStrip(ch: number): void {
+    this.releasePending(ch);
     this.transport.send(cmdUnlock(ch));
   }
   get clients(): { count: number; writers: string[]; selfId: string | null } {
@@ -997,7 +1107,10 @@ export class EngineWorld implements World {
     return this.lib.groupCaps;
   }
   busMaster(bus: number): { fader: number; muted: boolean } | null {
-    return this.lib.busMaster(bus);
+    const t = this.topology.find(t => t.kind === 'bus');
+    if (!t || bus < 0 || bus >= t.count) return null;
+    const fader = this.param(t.first + bus, 'fader'), muted = this.param(t.first + bus, 'mute');
+    return typeof fader === 'number' && typeof muted === 'boolean' ? { fader, muted } : null;
   }
   subgroupMaster(group: number): { fader: number; muted: boolean } | null {
     return this.lib.subgroupMaster(group);
@@ -1037,7 +1150,7 @@ export class EngineWorld implements World {
   }
   /** Main LR master state (null fields = unknown yet). */
   get mainMaster(): { fader: number | null; muted: boolean | null } {
-    return this.lib.mainMaster;
+    return { fader: this.mainFader, muted: this.mainMuted };
   }
   /** Per-strip solo (false when never echoed). */
   soloOf(ch: number): boolean {
@@ -1045,6 +1158,8 @@ export class EngineWorld implements World {
   }
   setMainMute(muted: boolean): void {
     if (typeof muted !== 'boolean') return;
+    const ch = this.topology.find(t => t.kind === 'main')?.first;
+    if (ch !== undefined) { this.setMute(ch, muted); return; }
     this.lib.setMainMute(muted);
     this.bump();
   }

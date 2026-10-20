@@ -75,12 +75,15 @@ export interface StripVm {
   hasDyn: boolean;
   input: Channel['input'];
   gateOn: boolean;
+  hasGate?: boolean;
+  hasComp?: boolean;
   compOn: boolean;
   gatePath: string;
   compPath: string;
   eqAria: string;
   dynAria: string;
   muted: boolean;
+  muteKnown?: boolean;
   /** Design muteOpacity gate: muteEnable && !locked. */
   muteEnabled: boolean;
   solo: boolean;
@@ -133,19 +136,22 @@ export function stripVm(
     dynPath: hasEq ? dynThumbPath(c) : '',
     hasDyn: !!c.dyn,
     input: c.input,
+    hasGate: !!c.dyn && (!c.dyn.gate.live || c.dyn.gate.live.supported.on),
+    hasComp: !!c.dyn && (!c.dyn.comp.live || c.dyn.comp.live.supported.on),
     gateOn: !!c.dyn?.gate.on,
     compOn: !!c.dyn?.comp.on,
     gatePath: dynThumbPath(c, 'gate'),
     compPath: dynThumbPath(c, 'comp'),
     eqAria: st.eqAria,
     dynAria: st.dynAria,
-    muted: c.mute,
-    muteEnabled: state.muteEnable && !state.locked,
+    muted: c.live && !c.live.known.mute ? false : c.mute,
+    muteKnown: !c.live || c.live.known.mute,
+    muteEnabled: state.muteEnable && !state.locked && (!c.live || c.live.known.mute),
     solo: c.solo,
     soloEnabled: state.muteEnable && !state.locked,
     useSend,
     value,
-    readout: fmtDb(value),
+    readout: fmtDb(value, c.live?.driver),
     readColor: useSend ? 'var(--u4-cyan)' : 'var(--u4-text-4)',
     faderAria: st.faderAria,
     selectAria: st.selectAria,

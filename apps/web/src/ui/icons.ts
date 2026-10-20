@@ -1,54 +1,12 @@
 // Shared control artwork and the locally bundled channel icon catalogue.
 
-import micUrl from './assets/icons8/microphone.png';
-import choirUrl from './assets/icons8/choir.png';
-import talkbackUrl from './assets/icons8/megaphone.png';
-import headsetUrl from './assets/icons8/headset.png';
-import guitarUrl from './assets/icons8/guitar.png';
-import bassUrl from './assets/icons8/bass-guitar.png';
-import banjoUrl from './assets/icons8/banjo.png';
-import violinUrl from './assets/icons8/violin.png';
-import celloUrl from './assets/icons8/cello.png';
-import harpUrl from './assets/icons8/harp.png';
-import drumsUrl from './assets/icons8/drum-set.png';
-import kickUrl from './assets/icons8/bass-drum.png';
-import snareUrl from './assets/icons8/snare-drum.png';
-import cymbalsUrl from './assets/icons8/cymbals.png';
-import maracasUrl from './assets/icons8/maracas.png';
-import xylophoneUrl from './assets/icons8/xylophone.png';
-import bellUrl from './assets/icons8/bell.png';
-import keysUrl from './assets/icons8/piano.png';
-import accordionUrl from './assets/icons8/accordion.png';
-import saxophoneUrl from './assets/icons8/saxophone.png';
-import trumpetUrl from './assets/icons8/trumpet.png';
-import tromboneUrl from './assets/icons8/trombone.png';
-import fluteUrl from './assets/icons8/flute.png';
-import clarinetUrl from './assets/icons8/clarinet.png';
-import harmonicaUrl from './assets/icons8/harmonica.png';
-import vinylUrl from './assets/icons8/music-record.png';
-import cdUrl from './assets/icons8/cd.png';
-import laptopUrl from './assets/icons8/laptop.png';
-import phoneUrl from './assets/icons8/smartphone.png';
-import radioUrl from './assets/icons8/radio.png';
-import usbUrl from './assets/icons8/usb-memory-stick.png';
-import videoUrl from './assets/icons8/video.png';
-import tvUrl from './assets/icons8/tv.png';
-import webcamUrl from './assets/icons8/webcam.png';
-import libraryUrl from './assets/icons8/music-library.png';
-import headphonesUrl from './assets/icons8/headphones.png';
-import speakerUrl from './assets/icons8/speaker.png';
-import subwooferUrl from './assets/icons8/subwoofer.png';
-import groupUrl from './assets/icons8/music-conductor.png';
-import orchestraUrl from './assets/icons8/orchestra.png';
-import fxUrl from './assets/icons8/audio-wave.png';
-import musicUrl from './assets/icons8/musical-notes.png';
-import cableUrl from './assets/icons8/audio-cable.png';
+import { channelGlyphs } from './assets/channel-icons/glyphs.ts';
 
 export interface IconDef {
   viewBox: string;
-  /** Inner SVG markup, including image elements for bundled colour artwork. */
+  /** Trusted, locally bundled inner SVG markup. */
   body: string;
-  /** Default stroke width; raster artwork uses zero. */
+  /** Default stroke width in viewBox units. */
   strokeWidth: number;
   /** linecap used in the template (most are round) */
   linecap?: 'round' | 'butt' | 'square' | 'inherit';
@@ -146,58 +104,65 @@ export const icons = {
 
 export type IconName = keyof typeof icons;
 
-/** Bundled Icons8 Color assets: shared by strips, tags, and the searchable picker. */
-const channelIcon = (url: string, label: string, category: string, keywords: string) => ({
-  ...def('0 0 100 100', `<image href="${url}" width="100" height="100" />`, 0),
+/** Approved local 24px / 1.5px Stroke artwork, shared by strips, tags and picker. */
+const channelIcon = (body: string, label: string, category: string, keywords: string) => ({
+  ...def('0 0 24 24', body, 1.5, { linecap: 'round', linejoin: 'round' }),
   label,
   category,
   keywords,
 });
 
 export const chanIcons = {
-  mic: channelIcon(micUrl, "Microphone", "Vocals", "vocal vox lead backing speech"),
-  choir: channelIcon(choirUrl, "Choir", "Vocals", "vocal backing ensemble"),
-  talkback: channelIcon(talkbackUrl, "Talkback", "Vocals", "announcement speech"),
-  headset: channelIcon(headsetUrl, "Headset", "Vocals", "wireless speech"),
-  guitar: channelIcon(guitarUrl, "Guitar", "Strings", "acoustic gtr"),
-  bass: channelIcon(bassUrl, "Bass guitar", "Strings", "electric bass"),
-  banjo: channelIcon(banjoUrl, "Banjo", "Strings", "folk"),
-  violin: channelIcon(violinUrl, "Violin", "Strings", "fiddle strings"),
-  cello: channelIcon(celloUrl, "Cello", "Strings", "strings"),
-  harp: channelIcon(harpUrl, "Harp", "Strings", "strings"),
-  drums: channelIcon(drumsUrl, "Drum kit", "Drums & percussion", "drums kit"),
-  kick: channelIcon(kickUrl, "Kick", "Drums & percussion", "bass drum bd"),
-  snare: channelIcon(snareUrl, "Snare", "Drums & percussion", "drum sd"),
-  cymbals: channelIcon(cymbalsUrl, "Cymbals", "Drums & percussion", "hi hat overhead oh crash ride"),
-  maracas: channelIcon(maracasUrl, "Maracas", "Drums & percussion", "shaker percussion"),
-  xylophone: channelIcon(xylophoneUrl, "Xylophone", "Drums & percussion", "mallet marimba percussion"),
-  bell: channelIcon(bellUrl, "Bell", "Drums & percussion", "chime percussion"),
-  keys: channelIcon(keysUrl, "Keys", "Keys & winds", "keyboard piano synth organ"),
-  accordion: channelIcon(accordionUrl, "Accordion", "Keys & winds", "keys"),
-  saxophone: channelIcon(saxophoneUrl, "Saxophone", "Keys & winds", "sax brass woodwind"),
-  trumpet: channelIcon(trumpetUrl, "Trumpet", "Keys & winds", "brass horn"),
-  trombone: channelIcon(tromboneUrl, "Trombone", "Keys & winds", "brass horn"),
-  flute: channelIcon(fluteUrl, "Flute", "Keys & winds", "woodwind"),
-  clarinet: channelIcon(clarinetUrl, "Clarinet", "Keys & winds", "woodwind"),
-  harmonica: channelIcon(harmonicaUrl, "Harmonica", "Keys & winds", "blues harp"),
-  vinyl: channelIcon(vinylUrl, "Turntable", "Playback & media", "dj vinyl record tracks"),
-  cd: channelIcon(cdUrl, "Disc", "Playback & media", "cd playback tracks"),
-  laptop: channelIcon(laptopUrl, "Laptop", "Playback & media", "computer playback tracks"),
-  phone: channelIcon(phoneUrl, "Phone", "Playback & media", "mobile playback aux"),
-  radio: channelIcon(radioUrl, "Radio", "Playback & media", "broadcast tuner"),
-  usb: channelIcon(usbUrl, "USB drive", "Playback & media", "playback tracks"),
-  video: channelIcon(videoUrl, "Video", "Playback & media", "media film"),
-  tv: channelIcon(tvUrl, "TV", "Playback & media", "screen television"),
-  webcam: channelIcon(webcamUrl, "Camera", "Playback & media", "video livestream"),
-  library: channelIcon(libraryUrl, "Playlist", "Playback & media", "music library tracks"),
-  headphones: channelIcon(headphonesUrl, "Headphones", "Outputs & groups", "monitor iem ears"),
-  speaker: channelIcon(speakerUrl, "Speaker", "Outputs & groups", "main output pa"),
-  subwoofer: channelIcon(subwooferUrl, "Subwoofer", "Outputs & groups", "sub output bass"),
-  group: channelIcon(groupUrl, "Group", "Outputs & groups", "dca bus master conductor"),
-  orchestra: channelIcon(orchestraUrl, "Orchestra", "Outputs & groups", "ensemble band"),
-  fx: channelIcon(fxUrl, "Effects", "Outputs & groups", "fx reverb delay processing"),
-  music: channelIcon(musicUrl, "Music", "Outputs & groups", "notes generic"),
-  cable: channelIcon(cableUrl, "Line input", "Outputs & groups", "di cable jack aux input"),
+  mic: channelIcon(channelGlyphs.mic, "Microphone", "Vocals", "vocal vox lead backing speech"),
+  choir: channelIcon(channelGlyphs.choir, "Choir", "Vocals", "vocal backing ensemble"),
+  talkback: channelIcon(channelGlyphs.talkback, "Talkback", "Vocals", "announcement speech"),
+  headset: channelIcon(channelGlyphs.headset, "Headset", "Vocals", "wireless speech"),
+  guitar: channelIcon(channelGlyphs.guitar, "Acoustic guitar", "Strings", "acoustic gtr"),
+  bass: channelIcon(channelGlyphs.bass, "Bass guitar", "Strings", "electric bass"),
+  banjo: channelIcon(channelGlyphs.banjo, "Banjo", "Strings", "folk"),
+  violin: channelIcon(channelGlyphs.violin, "Violin", "Strings", "fiddle strings"),
+  cello: channelIcon(channelGlyphs.cello, "Cello", "Strings", "strings"),
+  harp: channelIcon(channelGlyphs.harp, "Harp", "Strings", "strings"),
+  drums: channelIcon(channelGlyphs.drums, "Drum kit", "Drums & percussion", "drums kit"),
+  kick: channelIcon(channelGlyphs.kick, "Kick", "Drums & percussion", "bass drum bd"),
+  snare: channelIcon(channelGlyphs.snare, "Snare", "Drums & percussion", "drum sd"),
+  cymbals: channelIcon(channelGlyphs.cymbals, "Cymbals", "Drums & percussion", "hi hat overhead oh crash ride"),
+  maracas: channelIcon(channelGlyphs.maracas, "Maracas", "Drums & percussion", "shaker percussion"),
+  xylophone: channelIcon(channelGlyphs.xylophone, "Xylophone", "Drums & percussion", "mallet marimba percussion"),
+  bell: channelIcon(channelGlyphs.bell, "Bell", "Drums & percussion", "chime percussion"),
+  keys: channelIcon(channelGlyphs.keys, "Keys", "Keys & winds", "keyboard piano synth organ"),
+  accordion: channelIcon(channelGlyphs.accordion, "Accordion", "Keys & winds", "keys"),
+  saxophone: channelIcon(channelGlyphs.saxophone, "Saxophone", "Keys & winds", "sax brass woodwind"),
+  trumpet: channelIcon(channelGlyphs.trumpet, "Trumpet", "Keys & winds", "brass horn"),
+  trombone: channelIcon(channelGlyphs.trombone, "Trombone", "Keys & winds", "brass horn"),
+  flute: channelIcon(channelGlyphs.flute, "Flute", "Keys & winds", "woodwind"),
+  clarinet: channelIcon(channelGlyphs.clarinet, "Clarinet", "Keys & winds", "woodwind"),
+  harmonica: channelIcon(channelGlyphs.harmonica, "Harmonica", "Keys & winds", "blues harp"),
+  vinyl: channelIcon(channelGlyphs.vinyl, "Turntable", "Playback & media", "dj vinyl record tracks"),
+  cd: channelIcon(channelGlyphs.cd, "Disc", "Playback & media", "cd playback tracks"),
+  laptop: channelIcon(channelGlyphs.laptop, "Laptop", "Playback & media", "computer playback tracks"),
+  phone: channelIcon(channelGlyphs.phone, "Phone", "Playback & media", "mobile playback aux"),
+  radio: channelIcon(channelGlyphs.radio, "Radio", "Playback & media", "broadcast tuner"),
+  usb: channelIcon(channelGlyphs.usb, "USB drive", "Playback & media", "playback tracks"),
+  video: channelIcon(channelGlyphs.video, "Video", "Playback & media", "media film"),
+  tv: channelIcon(channelGlyphs.tv, "TV", "Playback & media", "screen television"),
+  webcam: channelIcon(channelGlyphs.webcam, "Camera", "Playback & media", "video livestream"),
+  library: channelIcon(channelGlyphs.library, "Playlist", "Playback & media", "music library tracks"),
+  headphones: channelIcon(channelGlyphs.headphones, "Headphones", "Outputs & groups", "monitor iem ears"),
+  speaker: channelIcon(channelGlyphs.speaker, "Speaker", "Outputs & groups", "main output pa"),
+  subwoofer: channelIcon(channelGlyphs.subwoofer, "Subwoofer", "Outputs & groups", "sub output bass"),
+  group: channelIcon(channelGlyphs.group, "Group", "Outputs & groups", "dca bus master conductor"),
+  orchestra: channelIcon(channelGlyphs.orchestra, "Orchestra", "Outputs & groups", "ensemble band"),
+  fx: channelIcon(channelGlyphs.fx, "Effects", "Outputs & groups", "fx reverb delay processing"),
+  music: channelIcon(channelGlyphs.music, "Music", "Outputs & groups", "notes generic"),
+  cable: channelIcon(channelGlyphs.cable, "Line input", "Outputs & groups", "di cable jack aux input"),
+  electric: channelIcon(channelGlyphs.electric, "Electric guitar", "Strings", "electric guitar gtr"),
+  hihat: channelIcon(channelGlyphs.hihat, "Hi-hat", "Drums & percussion", "hi hat hihat cymbal closed open"),
+  tom: channelIcon(channelGlyphs.tom, "Tom", "Drums & percussion", "rack floor tom drum"),
+  piano: channelIcon(channelGlyphs.piano, "Grand piano", "Keys & winds", "acoustic grand piano keys"),
+  mixer: channelIcon(channelGlyphs.mixer, "Mixer", "Outputs & groups", "console desk board bus mix"),
+  play: channelIcon(channelGlyphs.play, "Play", "Playback & media", "playback start tracks"),
+  pause: channelIcon(channelGlyphs.pause, "Pause", "Playback & media", "playback pause tracks"),
 } satisfies Record<string, IconDef & { label: string; category: string; keywords: string }>;
 
 export type ChanIconName = keyof typeof chanIcons;
@@ -277,4 +242,11 @@ export const CHAN_ICON_NAMES = [
   'fx',
   'music',
   'cable',
+  'electric',
+  'hihat',
+  'tom',
+  'piano',
+  'mixer',
+  'play',
+  'pause',
 ] satisfies ChanIconName[];

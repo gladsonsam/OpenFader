@@ -131,7 +131,7 @@
     const reduction = frozen ? null : getReduction?.(kind);
     const d = dynDotNums(kind, params, level, reduction ?? undefined);
     // No authoritative operating point without both a level and live GR.
-    if (dot) dot.style.visibility = getReduction && (reduction == null || level <= -90) ? 'hidden' : 'visible';
+    if (dot) dot.style.visibility = !props.path || !Number.isFinite(level) || (getReduction && (reduction == null || level <= -90)) ? 'hidden' : 'visible';
     if (dot) {
       dot.style.left = d.left.toFixed(1) + '%';
       dot.style.top = d.top.toFixed(1) + '%';
@@ -149,6 +149,11 @@
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
   });
+
+  function snapRatio(value: number): number {
+    const choices = params?.live?.choices?.ratio;
+    return choices?.length ? choices.reduce((best, v) => Math.abs(v - value) < Math.abs(best - value) ? v : best) : value;
+  }
 
   // Graph drag: horizontal moves the threshold (both kinds); on comp,
   // vertical moves the ratio with follow-the-line mapping (the curve end
@@ -172,7 +177,7 @@
   } | null = null;
 
   function down(e: PointerEvent): void {
-    if (!onEvent || e.button !== 0) return;
+    if (!onEvent || e.button !== 0 || !params || (params.live && !params.live.known.on)) return;
     const r = plot?.getBoundingClientRect();
     if (!r || r.width < 1 || r.height < 1) return;
     drag = {
@@ -215,7 +220,7 @@
       onEvent('thr', { value: dynThrRaw(kind, (e.clientX - drag.px) / drag.w) });
     } else if (drag.mode === 'ratio') {
       onEvent('ratio', {
-        value: dynRatioRaw((e.clientY - drag.py) / drag.h, compThrMakeup.thr, compThrMakeup.makeup),
+        value: snapRatio(dynRatioRaw((e.clientY - drag.py) / drag.h, compThrMakeup.thr, compThrMakeup.makeup, params?.live?.ranges.ratio)),
       });
     }
   }
@@ -231,7 +236,7 @@
   // off-axis movement is naturally ignored. Touch scrolling is preserved
   // by touch-action (T: pan-y, R/G: pan-x; the comp plot takes none) via
   // pointercancel, same as the EQ graph.
-  const handles = $derived(params ? dynHandles(kind, params) : []);
+  const handles = $derived(params && props.path ? dynHandles(kind, params) : []);
   let hdrag: {
     id: DynHandle['id'];
     px: number;
@@ -262,7 +267,7 @@
       onEvent('thr', { value: dynThrRaw(kind, (e.clientX - hdrag.px) / hdrag.w) });
     } else if (hdrag.id === 'ratio') {
       onEvent('ratio', {
-        value: dynRatioRaw((e.clientY - hdrag.py) / hdrag.h, compThrMakeup.thr, compThrMakeup.makeup),
+        value: snapRatio(dynRatioRaw((e.clientY - hdrag.py) / hdrag.h, compThrMakeup.thr, compThrMakeup.makeup, params?.live?.ranges.ratio)),
       });
     } else {
       onEvent('makeup', { value: dynMakeupRaw((e.clientY - hdrag.py) / hdrag.h) });
@@ -276,7 +281,9 @@
   }
   function hkey(h: DynHandle, e: KeyboardEvent): void {
     if (!onEvent) return;
-    const s = spec(dynSpecKey(kind, h.id));
+    const base = spec(dynSpecKey(kind, h.id));
+    const range = params?.live?.ranges[h.id];
+    const s = range ? { ...base, min: range[0], max: range[1], log: range[0] > 0 && base.log } : base;
     const linStep = s.step && !s.log ? s.step / (s.max - s.min) : 0.02;
     const cur = toN(s, h.value);
     let n: number | null = null;
@@ -289,11 +296,18 @@
     else return;
     e.preventDefault();
     e.stopPropagation();
-    onEvent(h.id, { value: fromN(s, clamp(n, 0, 1)) });
+    const raw = fromN(s, clamp(n, 0, 1));
+    onEvent(h.id, { value: h.id === 'ratio' ? snapRatio(raw) : raw });
   }
   function htext(h: DynHandle): string {
     return spec(dynSpecKey(kind, h.id)).fmt(h.value);
   }
+  $effect(() => {
+    const cancel = (): void => { drag = null; hdrag = null; };
+    window.addEventListener('openmix-control-epoch', cancel);
+    window.addEventListener('openmix-control-released', cancel);
+    return () => { window.removeEventListener('openmix-control-epoch', cancel); window.removeEventListener('openmix-control-released', cancel); };
+  });
 </script>
 
 <style>

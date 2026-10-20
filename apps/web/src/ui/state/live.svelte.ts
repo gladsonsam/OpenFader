@@ -20,6 +20,8 @@ import type { Transport } from '../world/transport.ts';
 import { isTauriRuntime } from '../world/tauriEnv.ts';
 import {
   CONNECT_TIMEOUT_MS,
+  loadOfflineMode,
+  saveOfflineMode,
   DEFAULT_RELAY_HOST,
   SCAN_TIMEOUT_MS,
   isLoopbackHost,
@@ -37,31 +39,10 @@ import {
   type LivePhase,
 } from './live.ts';
 import { bridgeStrip } from './engineBridge.ts';
+import { onAppBackground, onAppForeground } from '../../mobile.ts';
 import { hasLiveLevel } from './meterCapabilities.ts';
 
 export type { LivePhase };
-
-/** Explicit offline mode persists across reloads (set by the connection
- * screen's Work-offline action). While set, the app never auto-links the
- * relay: offline means zero network. An explicit user connect (relay card
- * or `?server=`) clears it — that intent wins over the stored flag. */
-const OFFLINE_LS_KEY = 'openmix-offline';
-
-function loadOfflineMode(): boolean {
-  try {
-    return typeof localStorage !== 'undefined' && localStorage.getItem(OFFLINE_LS_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function clearOfflineMode(): void {
-  try {
-    localStorage?.removeItem(OFFLINE_LS_KEY);
-  } catch {
-    /* ignore */
-  }
-}
 
 class LiveRelay {
   phase: LivePhase = $state('idle');
@@ -82,6 +63,9 @@ class LiveRelay {
   /** Bumped on every engine ingest so screens re-read meters/version. */
   version = $state(0);
 
+  private generation = 0;
+  private closing: Promise<void> = Promise.resolve();
+  private closingTransport: Transport | null = null;
   private transport: Transport | null = null;
   private world: EngineWorld | null = null;
   private unsubs: Array<() => void> = [];
@@ -274,7 +258,8 @@ class LiveRelay {
     }
     if (this.phase === 'online' || this.phase === 'connecting') return;
     // An explicit link-up is a real-desk intent: leave offline mode.
-    clearOfflineMode();
+    saveOfflineMode(false);
+    const generation = ++this.generation;
     this.teardown();
     this.phase = 'connecting';
     this.message = this.embedded ? 'Connecting to embedded engine …' : 'Connecting to ' + this.host + ' …';
@@ -291,14 +276,17 @@ class LiveRelay {
     let engine: typeof import('../world/engineWorld/engineWorld.ts');
     let transports: typeof import('../world/transport.ts');
     try {
+      await this.closing;
+      if (generation !== this.generation) return;
       [engine, transports] = await Promise.all([
         import('../world/engineWorld/engineWorld.ts'),
         import('../world/transport.ts'),
       ]);
     } catch (e) {
-      this.fail(e instanceof Error ? e.message : String(e));
+      if (generation === this.generation) this.fail(e instanceof Error ? e.message : String(e));
       return;
     }
+    if (generation !== this.generation) return;
     // Embedded (Tauri shell): the engine runs in-process — no relay host.
     // Browser: the relay at the configured host (the relay host field is
     // only used on this path).
@@ -306,7 +294,7 @@ class LiveRelay {
       ? new transports.TauriTransport()
       : new transports.WsTransport(relayUrlFromHost(this.host));
     const world = new engine.EngineWorld(transport);
-    if (this.phase !== 'connecting') {
+    if (generation !== this.generation || this.phase !== 'connecting') {
       // A disconnect() landed while the engine modules loaded: drop the
       // fresh link instead of resurrecting it.
       try {
@@ -323,6 +311,31 @@ class LiveRelay {
     }
     this.transport = transport;
     this.world = world;
+    this.unsubs.push(onAppBackground(() => world.resetEpoch()));
+    this.unsubs.push(onAppForeground(() => {
+      world.resetEpoch();
+    }));
+    // Pointer handlers on controls flush their final write before this
+    // deferred release. Newest confirmed external values then win.
+    let releaseTimer: ReturnType<typeof setTimeout> | null = null;
+    const pointers = new Set<number>();
+    const release = (e: PointerEvent): void => {
+      pointers.delete(e.pointerId);
+      if (pointers.size) return;
+      if (releaseTimer) clearTimeout(releaseTimer);
+      releaseTimer = setTimeout(() => world.releasePending(undefined, true), 0);
+    };
+    const cancelPointers = (): void => { pointers.clear(); if (releaseTimer) clearTimeout(releaseTimer); releaseTimer = null; };
+    window.addEventListener('openmix-control-epoch', cancelPointers);
+    this.unsubs.push(() => window.removeEventListener('openmix-control-epoch', cancelPointers));
+    const resumed = (): void => world.rearmSubscriptions();
+    window.addEventListener('openmix-engine-resumed', resumed);
+    this.unsubs.push(() => window.removeEventListener('openmix-engine-resumed', resumed));
+    const begin = (e: PointerEvent): void => { pointers.add(e.pointerId); if (releaseTimer) clearTimeout(releaseTimer); releaseTimer = null; world.beginGesture(); };
+    window.addEventListener('pointerdown', begin, true);
+    window.addEventListener('pointerup', release);
+    window.addEventListener('pointercancel', release);
+    this.unsubs.push(() => { window.removeEventListener('pointerdown', begin, true); window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); if (releaseTimer) clearTimeout(releaseTimer); });
     this.unsubs.push(transport.onStatus((up) => this.onStatus(up)));
     this.unsubs.push(
       world.subscribe(() => {
@@ -334,7 +347,7 @@ class LiveRelay {
           this.scanning = false;
           this.clearScanTimer();
         }
-        if (!this.capsReady && world.capsReady) {
+        if ((!this.capsReady || this.phase !== 'online') && world.online && world.capsReady) {
           this.capsReady = true;
           this.latencyMs = Date.now() - this.helloAt;
           this.phase = 'online';
@@ -406,6 +419,7 @@ class LiveRelay {
   }
 
   private fail(msg: string): void {
+    ++this.generation;
     this.clearTimer();
     this.clearScanTimer();
     this.scanning = false;
@@ -415,7 +429,8 @@ class LiveRelay {
     saveRelayAuto(false);
   }
 
-  disconnect(): void {
+  disconnect(): Promise<void> {
+    ++this.generation;
     this.clearTimer();
     this.clearScanTimer();
     this.scanning = false;
@@ -427,6 +442,7 @@ class LiveRelay {
     this.capsReady = false;
     this.latencyMs = null;
     saveRelayAuto(false);
+    return this.closing;
   }
 
   private clearTimer(): void {
@@ -449,13 +465,19 @@ class LiveRelay {
     } catch {
       /* ignore */
     }
-    try {
-      this.transport?.close();
-    } catch {
-      /* ignore */
-    }
+    const transport = this.transport ?? this.closingTransport;
+    this.closingTransport = transport;
     this.world = null;
     this.transport = null;
+    // close() stops writes synchronously; native detach must finish before
+    // another transport can attach to the process-wide embedded engine.
+    const closed = transport?.close();
+    this.closing = Promise.all([this.closing.catch(() => undefined), closed]).then(() => {
+      if (this.closingTransport === transport) this.closingTransport = null;
+    });
+    // Callers that await disconnect see failures; fire-and-forget offline
+    // transitions do not create an unhandled rejection. Retry can detach again.
+    void this.closing.catch(() => undefined);
   }
 
   /** Live meter level in dB for a fixture strip id.
@@ -476,7 +498,6 @@ class LiveRelay {
     const ch = bridgeStrip(w, fixtureId);
     if (ch === null || ch >= w.meters.size) return null;
     if (!w.supports(`${kind}_on`, ch)) return null;
-    if (w.param(ch, `${kind}_on`) === false) return 0;
     return w.meters.reduction?.(ch, kind) ?? null;
   }
 
@@ -487,8 +508,9 @@ class LiveRelay {
     if (level === null) return null;
     const w = this.world!;
     const ch = bridgeStrip(w, fixtureId);
-    if (ch === null || !hasLiveLevel(w, ch) || (w.driver !== 'sim' && !this.deskConnected)) return -90;
-    return linearToDb(w.meters.peak[ch] ?? 0);
+    if (ch === null || !hasLiveLevel(w, ch) || (w.driver !== 'sim' && !this.deskConnected)) return NaN;
+    const value = w.meters.peak[ch];
+    return typeof value === 'number' && Number.isFinite(value) ? linearToDb(value) : NaN;
   }
 
   liveClipOn(fixtureId: string): boolean | null {
@@ -501,12 +523,14 @@ class LiveRelay {
 
   liveLevelDb(fixtureId: string): number | null {
     const w = this.world;
-    if (this.phase !== 'online' || !w || !w.capsReady) return null;
-    if (w.driver !== 'sim' && !this.deskConnected) return -90;
+    if (!w) return null;
+    if (this.phase !== 'online' || !w.capsReady) return NaN;
+    if (w.driver !== 'sim' && !this.deskConnected) return NaN;
     const ch = bridgeStrip(w, fixtureId);
-    if (ch === null || ch >= w.meters.size) return -90;
-    if (!hasLiveLevel(w, ch)) return -90;
-    return linearToDb(w.meters.level[ch] ?? 0);
+    if (ch === null || ch >= w.meters.size) return NaN;
+    if (!hasLiveLevel(w, ch)) return NaN;
+    const value = w.meters.level[ch];
+    return typeof value === 'number' && Number.isFinite(value) ? linearToDb(value) : NaN;
   }
 }
 

@@ -3,6 +3,7 @@
      layout `bind`, `knob` ({key,value}) / `phantom` / `invert` events out.
      Card chrome + knobs verbatim from design-template.html (isInputTab). -->
 <script lang="ts">
+  import { spec } from '../../fixtures/designData.ts';
   import Knob from '../../primitives/signal/Knob.svelte';
   import type { ModuleContext } from '../../modules/types.ts';
   import type { InputVm } from './channelModel.ts';
@@ -29,7 +30,9 @@
 >
   <div style="font-size:12px;color:var(--u4-text-6)">Preamp</div>
   <div style="box-sizing:content-box;display:flex;justify-content:space-around;gap:6px">
+    {#if !vm.live || vm.live.supported.gain}
     <Knob
+      specOverride={vm.live?.ranges.gain ? { ...spec('gain'), min: vm.live.ranges.gain[0], max: vm.live.ranges.gain[1] } : undefined}
       specKey="gain"
       value={vm.gain}
       label="Gain"
@@ -39,7 +42,10 @@
       fine={props.fine ?? false}
       oninput={(v) => onEvent?.('knob', { key: 'gain', value: v })}
     />
+    {/if}
+    {#if !vm.live || vm.live.supported.trim}
     <Knob
+      specOverride={vm.live?.ranges.trim ? { ...spec('trim'), min: vm.live.ranges.trim[0], max: vm.live.ranges.trim[1] } : undefined}
       specKey="trim"
       value={vm.trim}
       label="Trim"
@@ -49,20 +55,27 @@
       fine={props.fine ?? false}
       oninput={(v) => onEvent?.('knob', { key: 'trim', value: v })}
     />
+    {/if}
   </div>
   <div style="box-sizing:content-box;display:flex;gap:6px">
+      {#if !vm.live || vm.live.supported.phantom}
       <button
+        disabled={vm.live && !vm.live.known.phantom}
         onclick={() => onEvent?.('phantom')}
         aria-pressed={vm.phantomOn ? 'true' : 'false'}
         style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:48px;border-radius:3px;border:1px solid {vm.phantomBorder};background:{vm.phantomBg};color:{vm.phantomFg};font-size:14px;font-weight:600;cursor:pointer"
         >{vm.phantomLabel}</button
       >
+      {/if}
+    {#if !vm.live || vm.live.supported.invert}
     <button
+      disabled={vm.live && !vm.live.known.invert}
       onclick={() => onEvent?.('invert')}
       aria-pressed={vm.invert ? 'true' : 'false'}
       style="box-sizing:border-box;font-variant-numeric:normal;flex:1;height:48px;border-radius:3px;border:1px solid var(--u4-line-ctl);background:{vm.invertBg};color:{vm.invertFg};font-size:14px;font-weight:600;cursor:pointer"
-      >Ø Polarity</button
+      >{vm.live && !vm.live.known.invert ? 'Ø Unknown' : vm.invert ? 'Ø Inverted' : 'Ø Normal'}</button
     >
+    {/if}
   </div>
 </section>
 {/if}
