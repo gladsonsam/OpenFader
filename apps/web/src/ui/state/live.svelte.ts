@@ -160,7 +160,12 @@ class LiveRelay {
       // default — 127.0.0.1 is only correct on the relay's own machine.
       try {
         const hn = window.location.hostname;
-        if (hn && !isLoopbackHost(hn) && isLoopbackHost(relayHostPart(this.host))) {
+        const relayHost = relayHostPart(this.host);
+        if (import.meta.env.DEV && (isLoopbackHost(relayHost) || relayHost === hn)) {
+          const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+          this.disconnect();
+          this.host = `${scheme}://${window.location.host}/ws`;
+        } else if (hn && !isLoopbackHost(hn) && isLoopbackHost(relayHost)) {
           const h = hn + ':' + relayPortPart(this.host);
           if (h !== this.host) {
             this.disconnect();
@@ -255,6 +260,12 @@ class LiveRelay {
   }
 
   async connect(host?: string, driver?: string, addr?: string): Promise<void> {
+    if (import.meta.env.DEV && !this.embedded) {
+      const scheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      host = `${scheme}://${window.location.host}/ws`;
+      driver = 'sim';
+      addr = undefined;
+    }
     if (!this.embedded && host !== undefined) {
       const h = host.trim() || DEFAULT_RELAY_HOST;
       this.host = h;
@@ -464,7 +475,11 @@ class LiveRelay {
     if (w.driver !== 'sim' && !this.deskConnected) return null;
     const ch = bridgeStrip(w, fixtureId);
     if (ch === null || ch >= w.meters.size) return null;
-    const value = (kind === 'gate' ? w.meters.grGate : w.meters.grComp)[ch];
+    if (w.param(ch, `${kind}_on`) === false) return 0;
+    // Negotiated taps cover every strip; legacy GR frames cover only
+    // the first channels and may be unavailable on the sim driver.
+    const tap = w.meters.taps[kind === 'gate' ? 'gr_gate' : 'gr_comp'];
+    const value = tap?.[ch] ?? (kind === 'gate' ? w.meters.grGate : w.meters.grComp)[ch];
     return Number.isFinite(value) ? Math.max(0, value) : null;
   }
 

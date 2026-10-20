@@ -299,6 +299,7 @@
 </style>
 
 <div
+  data-signal-plot
   style="box-sizing:content-box;flex:{flexCss}{widthCss};min-height:{minH}px;display:flex;gap:10px;overflow:visible;padding:16px 16px 12px 6px;border-radius:3px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg)"
 >
   <div aria-hidden="true" style="box-sizing:content-box;width:34px;flex:none;position:relative;margin-bottom:24px">
@@ -371,7 +372,7 @@
         <path
           d={props.path ?? ''}
           fill="none"
-          stroke="#f0d36a"
+          stroke="var(--u4-detail-curve, #f0d36a)"
           stroke-width="3"
           stroke-linejoin="round"
           vector-effect="non-scaling-stroke"

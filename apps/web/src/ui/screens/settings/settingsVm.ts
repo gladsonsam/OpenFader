@@ -32,7 +32,7 @@ export interface SettingDescriptor {
 
 export const SETTING_DESCRIPTORS: SettingDescriptor[] = [
   { key: 'spp', panel: 'Display', title: 'Strips per screen', description: 'Fewer strips are wider and easier to hit. Swipe to reach the rest.', control: 'segmented', bind: 'setting:spp' },
-  { key: 'theme', panel: 'Display', title: 'Theme', description: 'Console Blue, Graphite, Tungsten or Daylight. Meters and accent colours stay put.', control: 'segmented', bind: 'setting:theme' },
+  { key: 'theme', panel: 'Display', title: 'Theme', description: 'Dark, Light, and alternate palettes. Signal meter colours stay consistent.', control: 'segmented', bind: 'setting:theme' },
   { key: 'peakHold', panel: 'Display', title: 'Meter peak hold', description: 'Keeps a line at the highest level for 1.5 s.', control: 'toggle', bind: 'setting:peakHold' },
   { key: 'fine', panel: 'Faders', title: 'Fine control', description: 'Faders and knobs move a quarter as far per drag.', control: 'toggle', bind: 'setting:fine' },
   { key: 'sof', panel: 'Faders', title: 'Sends on faders', description: 'Strip faders set sends to the target mix. The master strip shows that mix.', control: 'toggle', bind: 'setting:sof' },

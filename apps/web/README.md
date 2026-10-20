@@ -14,11 +14,17 @@ transport (`src/ui/world/transport.ts`) speaking the same engine
 
 ```sh
 npm install
-npm run dev      # hot-reload on http://localhost:5173
+npm run dev      # isolated fake desk + hot-reload on http://localhost:5173
 ```
 
-The UI auto-connects the `sim` driver, so it is usable with no hardware
-and no relay server. For real hardware, run the Rust WS relay
+`npm run dev` builds and starts its own loopback simulator on port 18080,
+seeds changing gate/compressor reduction and phantom power on selected
+channels, and starts Vite. Both stop when the script exits. Rust/Cargo
+and Node 22+ are required. The dev UI always connects through Vite's `/ws`
+proxy; saved hosts and `?server=` cannot redirect it to hardware. The
+simulator rejects hardware connections and LAN discovery.
+
+For real hardware, use a production build and run the Rust WS relay
 (`crates/serve`) on the LAN and either open the dev server from a LAN
 browser or pass `?server=192.168.1.10` (host or `host:port`; `ws://`
 prefix optional).

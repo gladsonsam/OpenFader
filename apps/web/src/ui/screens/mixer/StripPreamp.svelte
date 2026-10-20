@@ -18,7 +18,7 @@
   title={props.input ? `Gain ${props.input.gain} dB · Trim ${props.input.trim} dB · 48V ${props.input.phantom ? 'on' : 'off'}` : 'No preamp'}>
   {#if props.input}
     <span class="preamp-row" aria-hidden="true">
-      <span class="track"><span class="marker" style={`left:calc(${gain}% - ${gain / 100 * 4}px)`}></span></span>
+      <span class="track"><span class="gain-fill" style={`width:${gain}%`}></span><span class="marker" style={`left:calc(${gain}% - ${gain / 100 * 4}px)`}></span></span>
       <span class:phantom-on={props.input.phantom} class="phantom">48V</span>
     </span>
     <span class="preamp-row" aria-hidden="true">
@@ -32,8 +32,9 @@
   .strip-preamp:disabled { cursor:default; opacity:1; }
   .preamp-row { display:flex; align-items:center; gap:5px; height:18px; }
   .track { display:block; position:relative; flex:1; height:8px; border:1px solid var(--u4-line-panel); border-radius:1px; overflow:hidden; background:var(--u4-well-bg); }
-  .marker { position:absolute; top:0; width:4px; height:100%; background:#a9adb3; }
+  .marker { position:absolute; top:0; width:4px; height:100%; background:var(--u4-preamp-marker, #a9adb3); }
   .trim-fill { display:block; height:100%; background:#759b32; }
+  .gain-fill { display:block; height:100%; background:#d64545; }
   .phantom { font-size:9px; color:var(--u4-text-10); }
   .phantom-on { color:#ff5454; font-weight:700; }
 </style>

@@ -118,17 +118,17 @@
   }
 
   const btn =
-    'box-sizing:border-box;min-height:44px;padding:8px 12px;border-radius:3px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid #3a414c;';
+    'box-sizing:border-box;min-height:44px;padding:8px 12px;border-radius:3px;font-size:14px;font-weight:600;cursor:pointer;border:1px solid var(--u4-detail-line, #3a414c);';
   const presetBtn =
-    btn + 'flex:1 1 150px;min-width:0;background:#1a2230;color:#e8edf5;text-align:left;display:flex;flex-direction:column;gap:2px;';
-  const rowBtn = btn + 'background:#2b3038;color:#e8edf5;white-space:nowrap;';
+    btn + 'flex:1 1 150px;min-width:0;background:var(--u4-detail-button, #1a2230);color:var(--u4-detail-heading, #e8edf5);text-align:left;display:flex;flex-direction:column;gap:2px;';
+  const rowBtn = btn + 'background:var(--u4-detail-button, #2b3038);color:var(--u4-detail-heading, #e8edf5);white-space:nowrap;';
 </script>
 
 <details
   aria-label="Channel presets"
-  style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:3px;border:1px solid #1f2836;background:#0e1520;min-width:0"
+  style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:3px;border:1px solid var(--u4-detail-line, #1f2836);background:var(--u4-detail-panel, #0e1520);min-width:0"
 >
-  <summary style="min-height:44px;align-content:center;cursor:pointer;font-size:15px;font-weight:600;color:#eef2f5">Channel presets</summary>
+  <summary style="min-height:44px;align-content:center;cursor:pointer;font-size:15px;font-weight:600;color:var(--u4-detail-heading, #eef2f5)">Channel presets</summary>
   <div style="display:flex;flex-direction:column;gap:8px">
 
   {#if missingSections.length}
@@ -137,7 +137,7 @@
     </div>
   {/if}
 
-  <div style="font-size:12px;font-weight:700;color:#8f9bb0">Built-in</div>
+  <div style="font-size:12px;font-weight:700;color:var(--u4-detail-muted, #8f9bb0)">Built-in</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap">
     {#each builtins as p (p.id)}
       {@const note = supportNote(p)}
@@ -149,47 +149,47 @@
         aria-label={'Recall preset ' + p.label + (note.text ? ' (' + note.text + ')' : '')}
       >
         <span style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{p.label}</span>
-        <span style="font-size:11px;font-weight:400;color:#8f9bb0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+        <span style="font-size:11px;font-weight:400;color:var(--u4-detail-muted, #8f9bb0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
           {note.text || summarizePreset(p)}
         </span>
       </button>
     {/each}
   </div>
 
-  <div style="font-size:12px;font-weight:700;color:#8f9bb0">Save current</div>
+  <div style="font-size:12px;font-weight:700;color:var(--u4-detail-muted, #8f9bb0)">Save current</div>
   <div style="display:flex;gap:6px;flex-wrap:wrap">
     <input
       bind:value={name}
       placeholder={ch.name + ' preset'}
       aria-label="New preset name"
       maxlength="32"
-      style="box-sizing:border-box;flex:1 1 140px;min-width:0;min-height:44px;padding:8px 10px;border-radius:3px;border:1px solid #3a414c;background:#0e1520;color:#e8edf5;font-size:14px"
+      style="box-sizing:border-box;flex:1 1 140px;min-width:0;min-height:44px;padding:8px 10px;border-radius:3px;border:1px solid var(--u4-detail-line, #3a414c);background:var(--u4-detail-panel, #0e1520);color:var(--u4-detail-heading, #e8edf5);font-size:14px"
     />
     <button style={rowBtn + 'background:#5cdb5c;color:#10240f;border-color:#5cdb5c'} onclick={save} aria-label="Save current channel as preset">Save</button>
   </div>
-  <div style="font-size:11px;color:#7f8a9c">Saves tone only — never fader/mute/pan/sends, never 48V.</div>
+  <div style="font-size:11px;color:var(--u4-detail-muted, #7f8a9c)">Saves tone only — never fader/mute/pan/sends, never 48V.</div>
 
   {#if userList.length}
-    <div style="font-size:12px;font-weight:700;color:#8f9bb0">Saved</div>
+    <div style="font-size:12px;font-weight:700;color:var(--u4-detail-muted, #8f9bb0)">Saved</div>
     <div style="display:flex;flex-direction:column;gap:6px">
       {#each userList as p (p.id)}
         {@const note = supportNote(p)}
         <div
-          style="box-sizing:border-box;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px;border-radius:3px;border:1px solid #222a36;background:#0b111b"
+          style="box-sizing:border-box;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px;border-radius:3px;border:1px solid var(--u4-detail-line, #222a36);background:var(--u4-detail-well, #0b111b)"
         >
           {#if renamingId === p.id}
             <input
               bind:value={renameText}
               aria-label="Rename preset"
               maxlength="32"
-              style="box-sizing:border-box;flex:1 1 120px;min-width:0;min-height:44px;padding:8px 10px;border-radius:3px;border:1px solid #3a414c;background:#0e1520;color:#e8edf5;font-size:14px"
+              style="box-sizing:border-box;flex:1 1 120px;min-width:0;min-height:44px;padding:8px 10px;border-radius:3px;border:1px solid var(--u4-detail-line, #3a414c);background:var(--u4-detail-panel, #0e1520);color:var(--u4-detail-heading, #e8edf5);font-size:14px"
             />
             <button style={rowBtn} onclick={() => commitRename(p.id)} aria-label="Confirm rename">✓</button>
             <button style={rowBtn} onclick={() => (renamingId = null)} aria-label="Cancel rename">✕</button>
           {:else}
             <div style="flex:1 1 120px;min-width:0">
-              <div style="font-size:14px;font-weight:700;color:#eef2f5;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{p.label}</div>
-              <div style="font-size:11px;color:#8f9bb0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title={note.title || summarizePreset(p)}>
+              <div style="font-size:14px;font-weight:700;color:var(--u4-detail-heading, #eef2f5);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{p.label}</div>
+              <div style="font-size:11px;color:var(--u4-detail-muted, #8f9bb0);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title={note.title || summarizePreset(p)}>
                 {note.text || summarizePreset(p)}
               </div>
             </div>
@@ -203,7 +203,7 @@
   {/if}
 
   {#if message}
-    <div style="font-size:12px;color:#c9d1dc" role="status">{message}</div>
+    <div style="font-size:12px;color:var(--u4-detail-text, #c9d1dc)" role="status">{message}</div>
   {/if}
   </div>
 </details>

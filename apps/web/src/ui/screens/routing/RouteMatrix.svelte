@@ -160,7 +160,7 @@
           title={tipOf(row, col, st)}
           style="box-sizing:border-box;width:{cell}px;height:{cell}px;display:flex;align-items:center;justify-content:center;padding:0;border:0;border-radius:0;background:{st ===
           'current'
-            ? '#0e2018'
+            ? 'var(--u4-route-current-bg, #0e2018)'
             : st === 'preview'
               ? 'var(--u4-route-preview)'
               : hot

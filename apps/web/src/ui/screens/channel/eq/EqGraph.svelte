@@ -139,6 +139,7 @@
 <div
   bind:this={box}
   data-graph="1"
+  data-signal-plot
   in:fade={{ duration: REDUCED_MOTION ? 0 : 120 }}
   style="box-sizing:content-box;flex:1 1 280px;min-height:{minH}px;position:relative;border-radius:6px;border:1px solid var(--u4-line-panel);background:var(--u4-well-bg);overflow:hidden;touch-action:pan-y"
 >
