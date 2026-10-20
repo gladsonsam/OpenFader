@@ -1076,8 +1076,15 @@ async fn new_xair_strip_ids_roundtrip_on_sim() {
     let engine = new_engine().await;
     let mut client = engine.attach(None).await;
     let snap = drain_snapshot(&mut client).await;
-    let caps = snap.iter().find(|e| matches!(e, Event::Caps { .. })).unwrap();
-    let params = ev_json(caps).get("params").and_then(Value::as_array).unwrap().clone();
+    // Attach ships the slim caps (essentials lane); the full catalogue —
+    // where the new strip ids live — follows on the first hello.
+    client
+        .send(Cmd::Hello { binary_meters: None, taps: None })
+        .await
+        .unwrap();
+    let caps = wait_for(&mut client, |e| matches!(e, Event::Caps { .. })).await;
+    let _ = snap;
+    let params = ev_json(&caps).get("params").and_then(Value::as_array).unwrap().clone();
     let ids: Vec<&str> = params
         .iter()
         .filter_map(|p| p.get("id").and_then(Value::as_str))

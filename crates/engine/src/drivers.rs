@@ -274,6 +274,29 @@ pub trait DynDriver: Send + Sync {
     fn group_assign_caps(&self) -> (bool, bool) {
         (false, false)
     }
+    /// Bulk subgroup-assign snapshot: ((strip, group), member) pairs, or
+    /// `None` when the driver has no bulk source (the engine falls back to
+    /// per-strip `get_subgroup_assign` reads). In-memory drivers serve this
+    /// from one lock acquisition instead of ~strips × groups awaits.
+    fn sub_assign_bulk(&self) -> Option<std::collections::HashMap<(u16, u8), bool>> {
+        None
+    }
+    /// Bulk mute-group-assign snapshot, mirroring
+    /// [`sub_assign_bulk`](DynDriver::sub_assign_bulk).
+    fn mg_assign_bulk(&self) -> Option<std::collections::HashMap<(u16, u8), bool>> {
+        None
+    }
+    /// Bulk solo snapshot: strip -> soloed, or `None` for the per-strip
+    /// `get_solo` fallback. Memory-solo drivers serve this from one lock.
+    fn solo_bulk(&self) -> Option<std::collections::HashMap<u16, bool>> {
+        None
+    }
+    /// Bulk `source`-param snapshot: strip -> raw text value, or `None`
+    /// for the per-strip `get_param` fallback. The engine still applies
+    /// the `parse_source` filter, so unpatched strips stay silent.
+    fn source_bulk(&self) -> Option<std::collections::HashMap<u16, String>> {
+        None
+    }
     /// Solos live in the desk: the snapshot re-reads the live solo bank
     /// (cached alongside). Drivers with memory solos serve them from the
     /// membership scan instead.
@@ -613,6 +636,20 @@ impl_dyn_driver!(openmix_sim::SimDriver {
     }
     fn group_assign_caps(&self) -> (bool, bool) {
         (true, true)
+    }
+    /// In-memory bulk snapshots behind the engine's attach fast path
+    /// (one lock each instead of ~1000 serial awaits; identical content).
+    fn sub_assign_bulk(&self) -> Option<std::collections::HashMap<(u16, u8), bool>> {
+        Some(self.bulk_sub_assign())
+    }
+    fn mg_assign_bulk(&self) -> Option<std::collections::HashMap<(u16, u8), bool>> {
+        Some(self.bulk_mg_assign())
+    }
+    fn solo_bulk(&self) -> Option<std::collections::HashMap<u16, bool>> {
+        Some(self.bulk_solos())
+    }
+    fn source_bulk(&self) -> Option<std::collections::HashMap<u16, String>> {
+        Some(self.bulk_sources())
     }
     async fn recall_show(&self, scene: &Scene, fade_ms: u64) -> anyhow::Result<()> {
         scene.recall_to(self, fade_ms).await
