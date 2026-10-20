@@ -126,7 +126,9 @@ fn input_head() -> Vec<Field> {
         field("comp_mode", 24, Enum, "Comp modern/vintage", None, true),
         field("comp_on", 25, Bool, "Comp on", None, true),
         field("comp_gain", 26, Db, "Comp makeup gain", None, false),
-        field("comp_threshold", 27, Db, "Comp threshold", Some((-60.0, 20.0)), false),
+        // Live survey 2026-10-20 (32 channels, read-only): -36.8..0.0.
+        // The inherited +20 top is unobserved; the desk-facing bound is 0.
+        field("comp_threshold", 27, Db, "Comp threshold", Some((-60.0, 0.0)), false),
         field("comp_attack", 28, Float, "Comp attack ms", None, false),
         field("comp_release", 29, Float, "Comp release ms", None, false),
         field("comp_ratio", 30, Float, "Comp ratio", None, false),
@@ -284,7 +286,9 @@ fn build_dl32s_inputs() -> ChannelBlock {
 }
 
 
-/// Subgroup master strips: 6 strips of 51 words from 4041.
+/// Subgroup master strips: 6 strips of 51 words from 4041. Mute + fader
+/// are live-verified (net-zero write+relay observed 2026-10-18 — see
+/// `docs/dl32s-protocol.md`); the rest of each 51-word strip is unmapped.
 pub fn dl32s_subgroups() -> &'static ChannelBlock {
     static B: OnceLock<ChannelBlock> = OnceLock::new();
     B.get_or_init(|| ChannelBlock {
@@ -407,6 +411,14 @@ mod tests {
         assert!(!block.field("aux8_pan").unwrap().verified);
         assert!(!block.field("mutegroup1").unwrap().verified);
         assert!(!block.field("vca6").unwrap().verified);
+        // Subgroup masters are live-verified (net-zero relay 2026-10-18);
+        // main/aux-master writes never ran (audible path) — unconfirmed.
+        assert!(dl32s_subgroups().field("mute").unwrap().verified);
+        assert!(dl32s_subgroups().field("fader").unwrap().verified);
+        assert!(!dl32s_main().field("mute").unwrap().verified);
+        assert!(!dl32s_main().field("fader").unwrap().verified);
+        assert!(!dl32s_auxmasters().field("mute").unwrap().verified);
+        assert!(!dl32s_auxmasters().field("fader").unwrap().verified);
         // Band 1 has no filter-type word.
         assert!(block.field("eq1_type").is_err());
         assert_eq!(block.field("eq1_q").unwrap().offset, 49);

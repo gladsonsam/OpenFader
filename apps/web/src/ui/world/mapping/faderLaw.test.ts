@@ -64,7 +64,7 @@ for (const law of [DESIGN_LAW, XAIR_LAW]) {
 
 // Law selection + readout.
 ok(lawForDriver('xair').id === 'xair', 'xair law');
-ok(lawForDriver('dl32s').id === 'xair', 'dl32s falls back to xair (placeholder)');
+ok(lawForDriver('dl32s').id === 'dl32s', 'dl32s resolves to its own measured law');
 ok(lawForDriver('bogus').id === 'xair', 'unknown driver falls back');
 ok(lawForDriver(undefined).id === 'xair', 'no driver falls back');
 ok(formatDb(-Infinity) === '-inf' && formatDb(-90) === '-inf', 'floor formats -inf');
