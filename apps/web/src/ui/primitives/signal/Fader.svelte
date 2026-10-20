@@ -1,23 +1,35 @@
 <!-- Vertical fader, pixel-matched to the design's strip fader.
      Exact metal cap (gradient + grip lines + centre line), scale labels,
-     rail, meter column and dB readout. Local-first drag: pointer capture,
-     dy mapped through uiLogic.faderFromDrag (0.25 factor in fine mode);
-     Arrow/PageUp/PageDown/Home/End keys; double-tap resets to unity
-5:      (0 dB) but ONLY when already near unity (gated window, so a stray
-6:      double-tap far from 0 dB never jumps the fader).
-     bank pager, vertical drags stay with the fader. Only presses that start
-     on the metal cap grab the fader (rail/meter/track fall through to the
-     scroller). A direction lock (~10px slop) applies to all pointers:
-     horizontal intent aborts without touching the value; vertical intent
-     drags. touch-action is split: the track is `auto` so touches starting
-     off the cap scroll freely; the cap is `none` so a touch starting on
-     it can never be stolen mid-gesture by the pager (pan-x let the pager
-     win the scroll race on finger jitter and kill the drag via
-     pointercancel after a few px). The cap tracks the finger 1:1 from a
-     local live value during the drag, not just the echoed store value —
-     painted synchronously to the cap transform (never via rAF/Svelte
-     flush, which per-strip Meter loops can starve on phone GPUs) while
-     commits throttle by wall clock with an exact flush on release.
+     rail, meter column and dB readout. Local-first drag: dy mapped through
+     uiLogic.faderFromDrag (0.25 factor in fine mode); Arrow/PageUp/PageDown/
+     Home/End keys; double-tap resets to unity (0 dB) but ONLY when already
+     near unity (gated window, so a stray double-tap far from 0 dB never
+     jumps the fader).
+
+     Gesture arbitration with the strip pager (the fader column is tall, so
+     swiping there is natural): vertically the fader wins, horizontally the
+     pager does. Only presses that start on the metal cap grab the fader
+     (rail/meter/track fall through to the scroller). A direction lock
+     (~10px slop) applies to all pointers: horizontal intent aborts without
+     touching the value, vertical intent drags. touch-action is split: the
+     track is `auto` so touches starting off the cap scroll freely; the cap
+     (and its 8px grab pad) is `none` so a touch starting on it can never be
+     stolen mid-gesture by the pager.
+
+     Capture: touch pointers must NOT call setPointerCapture. The platform
+     already captures them implicitly to the pointerdown target, and
+     WKWebView drops an explicit capture on a touch pointer within a frame
+     of granting it — gotpointercapture then lostpointercapture while the
+     finger is still down. Ending the drag on that bogus capture loss is
+     what made a fader stick after ~11px of travel (measured: an 80pt drag
+     moved the value ~1dB instead of ~7dB). Mouse/pen have no implicit
+     capture, so they take it explicitly on the cap.
+
+     The cap tracks the finger 1:1 from a local live value during the drag,
+     not just the echoed store value — painted synchronously to the cap
+     transform (never via rAF/Svelte flush, which per-strip Meter loops can
+     starve on phone GPUs) while commits throttle by wall clock with an
+     exact flush on release.
      Variants: 'strip' (mixer, cap 36x50), 'aside' (channel strip,
      cap 46x60 + wider scale), 'master' (dual meter, lighter 40x52 cap,
      gold centre line). -->
@@ -256,8 +268,18 @@
       }
       // Still in slop, or not clearly vertical yet: no value change.
       if (ay <= 10 || ay <= ax) return;
+      // Touch pointers are already implicitly captured to the hit target by
+      // the platform, and WKWebView throws away an explicit setPointerCapture
+      // on a touch pointer within a frame of granting it (measured in the
+      // simulator: gotpointercapture, then lostpointercapture while the
+      // pointer is still down and moves keep arriving). Taking capture was
+      // therefore worse than useless: it only fired the lostcapture handler
+      // and killed a healthy drag. Rely on the implicit capture — the target
+      // stays pinned to the cap subtree, so moves keep bubbling to the button
+      // for the whole gesture. Mouse/pen have no implicit capture, so they
+      // still need the explicit grab to keep the drag alive off the cap.
       try {
-        drag.el?.setPointerCapture(e.pointerId);
+        if (e.pointerType !== 'touch') (capEl ?? drag.el)?.setPointerCapture(e.pointerId);
       } catch {
         /* noop */
       }
@@ -299,11 +321,13 @@
     // (Kept through the drag even if the echo lags; cleared here so a
     // rejected commit, e.g. a locked strip, can never stick the cap.)
     liveV = null;
-    if (e && drag?.active && drag.el) {
-      try {
-        if (drag.el.hasPointerCapture?.(e.pointerId)) drag.el.releasePointerCapture(e.pointerId);
-      } catch {
-        /* noop */
+    if (e && drag?.active) {
+      for (const n of [capEl, drag.el]) {
+        try {
+          if (n?.hasPointerCapture?.(e.pointerId)) n.releasePointerCapture(e.pointerId);
+        } catch {
+          /* noop */
+        }
       }
     }
     drag = null;
@@ -385,13 +409,23 @@
           : 'ns-resize'}"
       >
         <span
-          style="position:absolute;left:{cap.gripLR}px;right:{cap.gripLR}px;top:{cap.gripTB}px;height:{cap.gripH}px;border-radius:1px;background:repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px)"
+          style="position:absolute;left:{cap.gripLR}px;right:{cap.gripLR}px;top:{cap.gripTB}px;height:{cap.gripH}px;border-radius:1px;background:repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px);pointer-events:none"
         ></span>
         <span
-          style="position:absolute;left:{cap.gripLR}px;right:{cap.gripLR}px;bottom:{cap.gripTB}px;height:{cap.gripH}px;border-radius:1px;background:repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px)"
+          style="position:absolute;left:{cap.gripLR}px;right:{cap.gripLR}px;bottom:{cap.gripTB}px;height:{cap.gripH}px;border-radius:1px;background:repeating-linear-gradient(to bottom, rgba(255,255,255,.17) 0 1px, rgba(0,0,0,.4) 1px 3px);pointer-events:none"
         ></span>
         <span
-          style="position:absolute;left:0;right:0;top:50%;height:3px;margin-top:-1.5px;background:{capLine};box-shadow:{capGlow}"
+          style="position:absolute;left:0;right:0;top:50%;height:3px;margin-top:-1.5px;background:{capLine};box-shadow:{capGlow};pointer-events:none"
+        ></span>
+        <!-- Grab pad: an 8px transparent hit extension so the small metal cap
+             stays easy to grab. It MUST own `touch-action:none` itself:
+             WKWebView resolves the pan gesture from the hit target's
+             touch-action (not the cap's — touch-action is not inherited), so
+             a hit on a decorative child left the pager free to claim the pan
+             and cancel a vertical fader drag. -->
+        <span
+          aria-hidden="true"
+          style="position:absolute;inset:-8px;display:block;touch-action:none"
         ></span>
       </span>
     </span>
