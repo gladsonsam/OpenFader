@@ -96,7 +96,10 @@ export function bridgeFader(world: World, id: string, v01: number): boolean {
 /** Mute write-through (main rides the Main LR master mute). */
 export function bridgeMute(world: World, id: string, muted: boolean): boolean {
   if (typeof muted !== 'boolean') return false;
-  if (id === 'mainlr') return world.setMainMute(muted);
+  if (id === 'mainlr') {
+    world.setMainMute(muted);
+    return true;
+  }
   const ch = bridgeStrip(world, id);
   return ch === null ? false : world.setMute(ch, muted);
 }
@@ -105,7 +108,9 @@ export function bridgeMute(world: World, id: string, muted: boolean): boolean {
 export function bridgeSolo(world: World, id: string, soloed: boolean): boolean {
   if (typeof soloed !== 'boolean' || id === 'mainlr') return false;
   const ch = bridgeStrip(world, id);
-  return ch === null ? false : world.setSolo(ch, soloed);
+  if (ch === null) return false;
+  world.setSolo(ch, soloed);
+  return true;
 }
 
 /** Pan write-through (design -1..1 -> engine -100..100). */

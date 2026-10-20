@@ -59,7 +59,7 @@
 
 <button
   onclick={() => onEvent?.('press', { node: nodeId })}
-  aria-pressed={props.pressed}
+  aria-pressed={props.pressed as boolean | "true" | "false" | "mixed" | undefined}
   aria-label={props.ariaLabel}
   aria-disabled={props.disabled}
   disabled={props.disabled}

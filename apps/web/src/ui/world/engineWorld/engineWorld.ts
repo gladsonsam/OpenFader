@@ -472,12 +472,12 @@ export class EngineWorld implements World {
   private ensureStripCount(n: number): void {
     if (n <= this._stripCount) return;
     const next = n;
-    const grow = (a: Float32Array): Float32Array => {
+    const grow = (a: Float32Array<ArrayBuffer>): Float32Array<ArrayBuffer> => {
       const b = new Float32Array(next);
       b.set(a.subarray(0, Math.min(a.length, next)));
       return b;
     };
-    const growF = (a: Float64Array): Float64Array => {
+    const growF = (a: Float64Array<ArrayBuffer>): Float64Array<ArrayBuffer> => {
       const b = new Float64Array(next);
       b.set(a.subarray(0, Math.min(a.length, next)));
       return b;
@@ -621,7 +621,7 @@ export class EngineWorld implements World {
 
   def(id: string): WorldCapsRow | null {
     const d = this.caps.defs[id];
-    return d ? { ...d, scopes: d.scopes.slice() } : null;
+    return d ? { ...d, kind: d.kind as WorldCapsRow['kind'], scopes: d.scopes.slice() } : null;
   }
 
   supports(id: string, ch?: number): boolean {

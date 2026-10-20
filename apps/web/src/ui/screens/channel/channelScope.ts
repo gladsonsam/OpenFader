@@ -50,8 +50,8 @@ import {
   type EqHpfCardVm,
   type EqMasterToggle,
 } from './eq/eqModel.ts';
-import type { Channel } from '../fixtures/designData.ts';
-import type { Tab, UiState, World } from '../state/uiLogic.ts';
+import type { Channel } from '../../fixtures/designData.ts';
+import type { Tab, UiState, World } from '../../state/uiLogic.ts';
 import type { GroupsVm, LiveGroupsSource } from './groupsModel.ts';
 import { groupsVmFor } from './groupsModel.ts';
 import type { DeskVm, LiveDeskSource } from './deskModel.ts';
@@ -74,7 +74,7 @@ export interface ChannelScopeArgs extends ChannelScopeFeeds {
   state: UiState;
   chans: Record<string, Channel>;
   /** FX plane (part of the World the strip vm reads). */
-  fx: import('../state/uiLogic.ts').World['fx'];
+  fx: import('../../state/uiLogic.ts').World['fx'];
   sel: Channel;
   /** Live desk groups source (null offline: the card hides). */
   liveGroups?: LiveGroupsSource | null;

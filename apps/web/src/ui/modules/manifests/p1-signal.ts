@@ -16,7 +16,8 @@ import ScaleLabels from '../../primitives/signal/ScaleLabels.svelte';
 // The signal components take plain props (value in, oninput out); the layout
 // renderer adapts ModuleProps to them. Casts are adapter intent, not lies:
 // each manifest's binds list the exact data the adapter must supply.
-const asModule = <P>(c: Component<unknown>): Component<ModuleProps<P>> =>
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const asModule = <P>(c: Component<any>): Component<ModuleProps<P>> =>
   c as unknown as Component<ModuleProps<P>>;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

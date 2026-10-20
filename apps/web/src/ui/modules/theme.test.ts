@@ -25,13 +25,13 @@ import {
       removeProperty: (k: string) => vars.delete(k),
     },
   };
-  const set = applyTheme({ id: 't', overrides: { 'u4-page-bg': '#fff', '--u4-panel-bg': '#000' } }, root);
+  const set = applyTheme({ id: 't', label: 't', overrides: { 'u4-page-bg': '#fff', '--u4-panel-bg': '#000' } }, root);
   assert.deepEqual(set.sort(), ['--u4-page-bg', '--u4-panel-bg']);
   assert.equal(vars.get('--u4-page-bg'), '#fff');
   clearTheme(set, root);
   assert.equal(vars.size, 0);
   // never throws without a root/document
-  assert.deepEqual(applyTheme({ id: 't', overrides: {} }), []);
+  assert.deepEqual(applyTheme({ id: 't', label: 't', overrides: {} }), []);
 }
 
 // --- sanitiser: scope prefixing, at-rule + url rejection ---

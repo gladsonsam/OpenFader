@@ -29,6 +29,7 @@
   } = $props();
 </script>
 
+<!-- svelte-ignore a11y_interactive_supports_focus -->
 <div
   role="dialog"
   aria-label="Select master bus"

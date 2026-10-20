@@ -179,7 +179,7 @@
     {#each banks as b (b.key)}
       <button
         onclick={() => (bankOn[b.key] = !(bankOn[b.key] !== false))}
-        aria-pressed={(bankOn[b.key] !== false).toString()}
+        aria-pressed={bankOn[b.key] !== false}
         aria-label={'Scope bank ' + b.label}
         title={b.label}
         style="{cellBtn}{tog(bankOn[b.key] !== false)}"
@@ -191,7 +191,7 @@
     {#each GROUPS as g (g.id)}
       <button
         onclick={() => (groupOn[g.id] = !(groupOn[g.id] !== false))}
-        aria-pressed={(groupOn[g.id] !== false).toString()}
+        aria-pressed={groupOn[g.id] !== false}
         aria-label={'Scope group ' + g.label}
         style="{cellBtn}{tog(groupOn[g.id] !== false)}"
         >{g.label}</button
@@ -202,7 +202,7 @@
     {#each GLOBALS as g (g.id)}
       <button
         onclick={() => (globalOn[g.id] = !(globalOn[g.id] !== false))}
-        aria-pressed={(globalOn[g.id] !== false).toString()}
+        aria-pressed={globalOn[g.id] !== false}
         aria-label={'Scope global ' + g.label}
         style="{cellBtn}{tog(globalOn[g.id] !== false)}"
         >{g.label}</button

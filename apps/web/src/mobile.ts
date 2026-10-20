@@ -186,23 +186,33 @@ export async function saveSettings(patch: AppSettings): Promise<void> {
   }
 }
 
-// ---- App visibility (background battery) ----
+// ---- App visibility (background battery + push gate) ----
 //
 // The engine push stream (Tauri Channel / `openmix-event` / poll fallback
 // in `ui/world/transport.ts`) stays live in the background — an idle phone
-// holds no JS timer in push mode and must not gain one here. Only canvas
+// holds no JS timer in push mode and must not gain one here. Canvas
 // painting pauses: meter loops check `isAppHidden()` and skip `draw()`
-// while hidden, so resume is instant (fresh frames are already queued).
+// while hidden.
+//
+// The backend is told too (mobile freeze fix): while the WebView is
+// suspended it reads nothing, so Rust would keep queueing every meter /
+// GR / tap frame into the WebView IPC queue (~1.7k messages/s) until
+// resume chokes on the backlog. On hide we call `engine_set_active(false)`
+// (Rust keeps draining the engine mailbox but drops the frames); on show
+// `engine_set_active(true)` + `engine_resync`, which queues one fresh
+// snapshot so desk changes made while hidden arrive in a single batch.
+// Both calls are fire-and-forget and no-ops outside the Tauri runtime.
 //
 // Wiring: `initAppVisibility()` is called unconditionally from `main.ts`
 // boot (works in browser/PWA too, not just the Tauri shell). Tauri window
-// events (`onWindowEvent` focus/close) are deliberately not used — that
-// would touch the Rust shell this track must not change; JS
-// `visibilitychange` + `pagehide`/`pageshow` cover mobile WebView suspend.
+// events (`onWindowEvent` focus/close) are deliberately not used: real
+// mobile suspend is covered by Rust `WindowEvent::Suspended`/`Resumed`,
+// and JS `visibilitychange` + `pagehide`/`pageshow` cover the WebView.
 
 let visibilityInit = false;
 let appHidden = typeof document !== 'undefined' ? document.hidden : false;
 const foregroundCbs = new Set<() => void>();
+const backgroundCbs = new Set<() => void>();
 
 /** True while the app is backgrounded (hidden tab / suspended WebView). */
 export function isAppHidden(): boolean {
@@ -222,6 +232,15 @@ export function onAppForeground(cb: () => void): () => void {
   };
 }
 
+/** Run `cb` on every foreground → background transition (WebView hide /
+ * mobile suspend). */
+export function onAppBackground(cb: () => void): () => void {
+  backgroundCbs.add(cb);
+  return () => {
+    backgroundCbs.delete(cb);
+  };
+}
+
 function fireForeground(): void {
   foregroundCbs.forEach((cb) => {
     try {
@@ -232,6 +251,54 @@ function fireForeground(): void {
   });
 }
 
+function fireBackground(): void {
+  backgroundCbs.forEach((cb) => {
+    try {
+      cb();
+    } catch {
+      /* ignore */
+    }
+  });
+}
+
+/** Pause the backend push stream (Tauri only, fire-and-forget). */
+async function setEngineActive(active: boolean): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('engine_set_active', { active });
+  } catch {
+    /* older shell without the command: fall back to the pre-fix behavior */
+  }
+}
+
+/** Resume: re-enable push, then ask for one fresh snapshot (Tauri only). */
+async function resumeEngine(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('engine_set_active', { active: true });
+    await invoke('engine_resync');
+  } catch {
+    /* older shell without the commands */
+  }
+}
+
+function handleHidden(): void {
+  const was = appHidden;
+  appHidden = true;
+  if (!was) fireBackground();
+  void setEngineActive(false);
+}
+
+function handleVisible(): void {
+  const was = appHidden;
+  appHidden = typeof document !== 'undefined' ? document.hidden : false;
+  if (appHidden || !was) return;
+  fireForeground();
+  void resumeEngine();
+}
+
 /** Idempotent: track `visibilitychange` + `pagehide`/`pageshow`. No-op
  * without a DOM (node tests). Safe to call outside the Tauri runtime. */
 export function initAppVisibility(): void {
@@ -239,22 +306,15 @@ export function initAppVisibility(): void {
   visibilityInit = true;
   appHidden = document.hidden;
   document.addEventListener('visibilitychange', () => {
-    const hidden = document.hidden;
-    if (hidden === appHidden) return;
-    appHidden = hidden;
-    if (!hidden) fireForeground();
+    if (document.hidden) handleHidden();
+    else handleVisible();
   });
   // `pagehide`/`pageshow` cover mobile WebView suspend where
   // `visibilitychange` can lag or never fire.
   try {
-    window.addEventListener('pagehide', () => {
-      appHidden = true;
-    });
+    window.addEventListener('pagehide', handleHidden);
     window.addEventListener('pageshow', () => {
-      const hidden = document.hidden;
-      if (hidden === appHidden) return;
-      appHidden = hidden;
-      if (!hidden) fireForeground();
+      if (!document.hidden) handleVisible();
     });
   } catch {
     /* non-browser shell */

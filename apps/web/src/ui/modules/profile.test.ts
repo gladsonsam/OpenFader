@@ -165,7 +165,7 @@ const defaults = (): LayoutNode => ({
   const json = exportProfile(p);
   const back = importProfile(json);
   assert.equal(back.ok, true);
-  assert.deepEqual((back as { profile: typeof p }).profile.ops, p.ops);
+  assert.deepEqual((back as unknown as { profile: typeof p }).profile.ops, p.ops);
   // v1 JSON imports through migration
   const v1json = JSON.stringify({ v: 1, id: 'o', ops: [], theme: {}, banks: [], settings: {}, pages: [], locked: false });
   assert.equal(importProfile(v1json).ok, true);
@@ -215,7 +215,7 @@ const defaults = (): LayoutNode => ({
   ] as never };
   const back = importProfile(exportProfile(p));
   assert.equal(back.ok, true);
-  assert.deepEqual((back as { profile: typeof p }).profile.ops, p.ops);
+  assert.deepEqual((back as unknown as { profile: typeof p }).profile.ops, p.ops);
   // diffFromDefault picks up bind/on/when edits and replays them
   const cur = defaults();
   (cur.children![0] as unknown as Record<string, unknown>)['on'] = { click: { do: 'ui.goBack' } };

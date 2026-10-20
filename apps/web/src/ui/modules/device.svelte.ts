@@ -5,7 +5,8 @@
 // into chrome components (Shell rail orientation, header density). Tracks
 // window resize (covers rotation); with no window (SSR/node) it reports
 // 'desktop' so non-browser renders always match the design baseline.
-import { deviceClassOf, type DeviceClass } from './device.ts';
+import { deviceClassOf } from './device.ts';
+import type { DeviceClass } from './types.ts';
 
 export interface DeviceState {
   readonly now: DeviceClass;

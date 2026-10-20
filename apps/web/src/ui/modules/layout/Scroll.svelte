@@ -35,6 +35,10 @@
     children?: Snippet;
   } = $props();
 
+  let el: HTMLDivElement | null = $state(null);
+  let gest: { id: number; x0: number; y0: number; sl: number } | null = null;
+  let scrolling = $state(false);
+
   const style = $derived(
     styleJoin([
       'display:flex',
@@ -58,9 +62,6 @@
     ]),
   );
 
-  let el: HTMLDivElement | null = $state(null);
-  let gest: { id: number; x0: number; y0: number; sl: number } | null = null;
-  let scrolling = $state(false);
   // Mouse-fling momentum: smoothed release velocity (px/frame at 60fps),
   // decayed per frame until it drops below the stop threshold. Touch/pen
   // keep native momentum; mouse has none, so the container emulates it.
@@ -91,14 +92,16 @@
     flingV = 0;
   }
   function move(e: PointerEvent): void {
-    if (!props.dragScroll || !gest || e.pointerId !== gest.id) return;
+    if (!props.dragScroll) return;
+    const g = gest;
+    if (!g || e.pointerId !== g.id) return;
     if (e.buttons !== 1) {
       gest = null;
       scrolling = false;
       return;
     }
     if (scrolling) {
-      if (el) el.scrollLeft = gest.sl - (e.clientX - gest.x0);
+      if (el) el.scrollLeft = g.sl - (e.clientX - g.x0);
       // Smoothed per-frame velocity for the release fling.
       const now = e.timeStamp;
       const dt = Math.max(1, now - lastT);
@@ -129,8 +132,8 @@
         }
       }
     }
-    const ax = Math.abs(e.clientX - gest.x0);
-    const ay = Math.abs(e.clientY - gest.y0);
+    const ax = Math.abs(e.clientX - g.x0);
+    const ay = Math.abs(e.clientY - g.y0);
     if (ay > 10 && ay > ax) {
       gest = null;
       return; // vertical: the child control owns it
@@ -144,7 +147,7 @@
       /* noop */
     }
     scrolling = true;
-    if (el) el.scrollLeft = gest.sl - (e.clientX - gest.x0);
+    if (el) el.scrollLeft = g.sl - (e.clientX - g.x0);
   }
   function end(e: PointerEvent): void {
     if (e.pointerId !== gest?.id) return;
@@ -183,6 +186,7 @@
   }
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   bind:this={el}
   data-node={nodeId}

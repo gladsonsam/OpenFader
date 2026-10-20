@@ -124,6 +124,7 @@
       </div>
     {/each}
     {#each rows as row, ri (row.id)}
+      <!-- svelte-ignore a11y_interactive_supports_focus -->
       <div
         role="rowheader"
         onmouseenter={() => {

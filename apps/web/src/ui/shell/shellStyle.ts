@@ -52,6 +52,6 @@ export function tileStyle(active: boolean): TileStyle {
 }
 
 /** aria-current value used by every header toolbar button. */
-export function ariaCurrent(active: boolean): string {
+export function ariaCurrent(active: boolean): 'page' | 'false' {
   return active ? 'page' : 'false';
 }

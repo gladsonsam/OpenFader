@@ -46,6 +46,7 @@
   }
 </script>
 
+<!-- svelte-ignore a11y_interactive_supports_focus -->
 <div
   role="dialog"
   aria-modal="true"
@@ -77,6 +78,7 @@
         >
       {/if}
       <span style="font-size:11px;color:#7f8a9c">{liveCount} ladders</span>
+      <!-- svelte-ignore a11y_autofocus -->
       <button
         onclick={close}
         aria-label="Close meter bridge"

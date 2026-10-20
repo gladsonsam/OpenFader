@@ -67,6 +67,7 @@
 </div>
 
 {#if open}
+  <!-- svelte-ignore a11y_interactive_supports_focus -->
   <div
     role="dialog"
     aria-label="EQ options"

@@ -17,7 +17,7 @@ import SettingsPanel from '../../screens/settings/SettingsPanel.svelte';
 import SceneCard from '../../screens/scenes/SceneCard.svelte';
 import SceneRecallBar from '../../screens/scenes/SceneRecallBar.svelte';
 
-const asModule = <P>(c: Component<unknown>): Component<ModuleProps<P>> =>
+const asModule = <P>(c: Component<any>): Component<ModuleProps<P>> =>
   c as unknown as Component<ModuleProps<P>>;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

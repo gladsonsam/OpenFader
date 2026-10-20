@@ -149,8 +149,10 @@ export class WsTransport implements Transport {
 
   private clearRetry(): void {
     if (this.retryTimer !== null) {
-      (this.opts.clearTimer ?? clearTimeout)(this.retryTimer);
+      const t = this.retryTimer;
       this.retryTimer = null;
+      if (this.opts.clearTimer) this.opts.clearTimer(t);
+      else clearTimeout(t as ReturnType<typeof setTimeout>);
     }
   }
 
@@ -212,7 +214,7 @@ export class WsTransport implements Transport {
       else if (d instanceof ArrayBuffer) this.emit(d);
       else if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(d)) {
         const v = d as Uint8Array;
-        this.emit(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
+        this.emit(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) as ArrayBuffer);
       }
     };
     const down = (): void => {
@@ -327,7 +329,7 @@ export class ReplayTransport implements Transport {
   }
 
   feedBinary(buf: ArrayBuffer | Uint8Array): void {
-    const msg: ArrayBuffer = buf instanceof Uint8Array ? buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) : buf;
+    const msg: ArrayBuffer = buf instanceof Uint8Array ? (buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer) : buf;
     this.msgCbs.forEach((cb) => {
       try {
         cb(msg);
@@ -533,13 +535,13 @@ export class TauriTransport implements Transport {
     }
     if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(frames)) {
       const v = frames as Uint8Array;
-      this.emitMsg(v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength));
+      this.emitMsg((v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) as ArrayBuffer));
       return;
     }
     if (!Array.isArray(frames)) return;
     if (frames.length > 0 && typeof frames[0] === 'number') {
       const bytes = Uint8Array.from(frames as number[]);
-      this.emitMsg(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+      this.emitMsg((bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer));
       return;
     }
     for (const f of frames) {

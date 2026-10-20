@@ -19,15 +19,6 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function getPath(obj: unknown, path: string): unknown {
-  let cur = obj;
-  for (const part of path.split('.')) {
-    if (!isRecord(cur)) return undefined;
-    cur = cur[part];
-  }
-  return cur;
-}
-
 function setPath(obj: Record<string, unknown>, path: string, value: unknown): boolean {
   const parts = path.split('.');
   let cur = obj;
