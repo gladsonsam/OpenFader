@@ -180,6 +180,11 @@ impl Outbox {
                     self.meters_dropped += 1;
                 }
             }
+            E::AudioSpectrum { .. } => {
+                if self.spectrum.insert(u16::MAX, event).is_some() {
+                    self.spectrum_dropped += 1;
+                }
+            }
             E::Spectrum { ch, .. } => {
                 if self.spectrum.insert(ch, event).is_some() {
                     self.spectrum_dropped += 1;

@@ -60,6 +60,7 @@ client.detach().await; // also runs on drop
 | `mute` | `ch`, `muted`, `key?` | broadcast `state` (`by`) |
 | `param` | `ch`, `field`, `value` (number\|bool\|string), `key?` | broadcast confirmed `param` (`by`) + `state` |
 | `focus` | `ch` **or** `chs:[...]` (indices or stable keys) | none on success; `error` when all out of range (partial: valid focus + `error` naming the ignored) |
+| `spectrum_target` | `ch` (topology slot or null to release) | provider RTA selection; `error` if unavailable/in use |
 | `lock` / `unlock` | `ch`, `key?` | broadcast `locks`; contending/foreign ops denied with `locked_by` |
 | `hello` | `binary_meters?` (bool), `taps?` (bool) | unicast `hello` ack with the current preferences (never broadcast) |
 | `list_shows` | — | unicast `shows` |
@@ -127,9 +128,22 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   the meter SOURCE rate (50 ms / 20 Hz, the desk rate; `METER_INTERVAL` in
   `openmix-transport`). Never downsampled by the engine or the adapter.
 - `spectrum`: `{"type":"spectrum","ch":0,"bins":[...64 floats in 0..1...]}` —
-  per tick, first 16 channels only.
-- `gr`: `{"type":"gr","ch":0,"gate":0.0,"comp":0.0}` — per tick, first 16
-  channels; dB reduction `>= 0` (0.0 = no reduction / no data yet). Reads
+  simulator-only meter-envelope FFT activity, per tick, first 16 inputs.
+  These are **not audio frequencies**.
+- `audio_spectrum`: `ch` (nullable topology slot), `bins_db` (measured signed
+  dB), `band_edges_hz` (one more edge than bins), `source`, `position`, `epoch`.
+  XR18 preserves all 100 bins; nominal display edges follow X-AIR-Edit and
+  isolated-tone verification. An empty bin vector clears prior audio data.
+  One global latest-only slot prevents old-source frames lingering in adapters.
+  `spectrum_target {ch}` acquires/changes the source while EQ is open;
+  `ch:null` releases the client's interest. Ownership, same-session readback,
+  invalidation and compare-before-restore are handled by the provider.
+  [XR18 evidence and limits](../../docs/xair-rta-verification.md).
+
+- `gr`: `{"type":"gr","ch":0,"gate":0.0,"comp":0.0}` — per tick, supported topology
+  strips (hardware inputs, buses, main; simulator retains its 16-input
+  fanout budget); dB reduction `>= 0` (0.0 = received no
+  reduction; absent cache/unsupported strips emit no GR event). Reads
   are cache-only (no extra wire traffic), so the per-tick cadence is free.
 - `hello`: `{"type":"hello","binary_meters":true}` — unicast ack to the
   `hello` command, carrying the client's current binary-meter preference.
@@ -310,7 +324,7 @@ decode divides appropriately via `u16_to_taps_level`).
 
 `seq` is a per-client monotonic frame counter (adapter-owned,
 wrapping `u32`); `t_ms` is the engine monotonic clock in ms
-(`Engine::now_ms`, wraps at ~49.7 days — never wall time). `spectrum`
+(`Engine::now_ms`, wraps at ~49.7 days — never wall time). `spectrum` / `audio_spectrum`
 stays JSON in both modes (it is already small and typed).
 
 Golden binary fixtures live in `tests/golden_bin/*.bin.hex` (NOT
@@ -540,8 +554,9 @@ param poller. Sources: sim synthesizes all four per strip (`in`
 pre-fader ignoring mute/fader, `post` post-fader silent when muted,
 `gr_gate`/`gr_comp` dB); xair serves `post` from the `/meters/1` blob
 cache and GR from the `/meters/6` DYN cache (`in` unavailable — no
-`/meters/0` subscribe; both UNVERIFIED-ON-RIG); dl32s serves `post`
-only (fake-meter cache). Taps broadcast only while at least one client
+`/meters/0` subscribe). XR18 FW 1.20 verified 2026-10-20: levels
+inputs + aux; DYN 39 slots at 20 Hz (16 gate + 16 comp + 6 bus + LR).
+DL32S advertises no meter taps until a signal decoder is implemented. Taps broadcast only while at least one client
 negotiated them, so old clients see no new traffic; the serve adapter
 holds one latest-only slot per tap (drops/sends fold into the meters
 `stats` counters — the shape is pinned) and encodes binary type 3 only
@@ -585,3 +600,11 @@ driver-side; the engine checks up front so denials never touch hardware.
   `R2GOLDEN_UPDATE=1`). They live outside `tests/golden/` so the
   TypeScript parser test (which enumerates known shapes) stays green —
   the TS parser itself ignores unknown frame types.
+
+Audio spectra and legacy envelope spectra share bounded latest-only per-strip
+slots in both `serve` and Tauri. A supplied audio spectrum wins over envelope
+activity; the UI labels provenance and expires missing spectra/GR after 1.5 s.
+Missing GR starts as unavailable, so a received 0 dB does not trigger an
+estimated threshold fallback. Dynamics bars/dots use received GR; the static
+transfer curve remains a parameter model. Live peaks/clips use the same
+verified source guard as levels; unsupported slots never animate from fixtures.

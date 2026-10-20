@@ -9,15 +9,13 @@
 // Honesty rules (PLAN W2 + backlog item):
 // - Meter levels come ONLY from the live engine path (world.meters.level,
 //   negotiated over WS). Offline every ladder reads null (dark, -inf).
-// - On xair only kind 'in' strips have a rig-verified blob index
-//   (proto-xair: blob 0..15 = channels; families past the channels are
-//   unverified, so the blob landing in those slots is NOT their level).
-//   Non-input strips on xair therefore read null too — same guard as
-//   live.liveLevelDb, duplicated here (engineBridge is another lane).
+// - On xair only inputs and the stereo aux input have verified taps.
+//   Share the live relay's guard; all other families stay dark.
 // - Groups the desk/engine has no strips for collapse with a reason;
 //   they never render phantom ladders.
 
 import { linearToDb } from '../../state/live.ts';
+import { hasLiveLevel } from '../../state/meterCapabilities.ts';
 import type { EngineWorld } from '../../world/engineWorld/engineWorld.ts';
 import type { StripKind } from '../../world/types.ts';
 
@@ -61,11 +59,11 @@ function stripsOf(world: EngineWorld, kind: StripKind): number[] {
 }
 
 /** Live level in dB for a strip, or null when there is honestly no data:
- * offline, or an xair strip past the verified channel blob region. */
+ * offline, or an xair strip without a verified level tap. */
 export function liveLevelDb(world: EngineWorld | null, online: boolean, ch: number): number | null {
   if (!online || !world || !world.capsReady) return null;
   if (ch < 0 || ch >= world.meters.size) return null;
-  if (world.driver === 'xair' && world.kindOf(ch) !== 'in') return null;
+  if (!hasLiveLevel(world, ch)) return null;
   return linearToDb(world.meters.level[ch] ?? 0);
 }
 
@@ -130,13 +128,15 @@ export function buildMeterGroups(
     collapsedReason: ins.length ? null : `no input strips on ${desk}`,
   });
   const rest = ins.slice(16);
+  const aux = world.driver === 'xair'
+    ? stripsOf(world, 'ret').filter((ch) => hasLiveLevel(world, ch))
+    : [];
   groups.push({
     key: 'inputs17',
-    title: rest.length > 2 ? `Analog Inputs 17–${16 + rest.length}` : 'Analog Inputs 17–18',
-    ladders: laddersFor(world, true, rest),
-    // Aux 17/18 has no strips on any known driver; extra 'in' strips
-    // (sim Ch 17+) show as ladders instead.
-    collapsedReason: rest.length ? null : `no Aux 17/18 strips on ${desk}`,
+    title: aux.length ? 'Aux 17–18' : rest.length > 2 ? `Analog Inputs 17–${16 + rest.length}` : 'Analog Inputs 17–18',
+    // Aux is one stereo strip with one verified tap, not separate L/R taps.
+    ladders: [...laddersFor(world, true, rest), ...laddersFor(world, true, aux).map((ladder) => ({ ...ladder, sub: '17/18' }))],
+    collapsedReason: rest.length || aux.length ? null : `no Aux 17/18 strips on ${desk}`,
   });
   const snd = stripsOf(world, 'fxsnd');
   groups.push({
@@ -145,7 +145,7 @@ export function buildMeterGroups(
     ladders: laddersFor(world, true, snd),
     collapsedReason: snd.length ? null : `no FX-send strips on ${desk}`,
   });
-  const ret = stripsOf(world, 'ret');
+  const ret = stripsOf(world, 'ret').filter((ch) => !aux.includes(ch));
   groups.push({
     key: 'fxrets',
     title: ret.length ? `FX Returns 1–${ret.length}` : 'FX Returns 1–4',

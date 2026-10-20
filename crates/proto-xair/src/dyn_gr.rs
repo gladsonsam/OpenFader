@@ -8,7 +8,7 @@
 //! — GR arrives only inside meter blobs, decoded below.
 //!
 //! Documented sources (Behringer *X AIR Mixer OSC Document*, fw 1.11 —
-//! community/Behringer-published, NOT owner-rig verified):
+//! community/Behringer-published; owner XR18 FW 1.20 verified 2026-10-20):
 //!
 //! * `/meters/6` ALL DYN: one blob of a 4-byte size word + 39 × i16LE at
 //!   1/256 dB: 16 gate GR (ch 1..16), 16 dyn GR (ch 1..16), 6 bus dyn GR,
@@ -25,7 +25,11 @@
 //! that id is a per-channel strip meter, on X-Air `/meters/6` is the
 //! all-dynamics blob above. Different desks, different namespaces.
 //!
-//! Wire encoding assumption (documented "signed 16 bit, 1/256 dB"): each
+//! Owner rig: /meters/6 delivered 160 packets / 8 s (20 Hz), 82 B / 39
+//! samples. Input gate reductions observed; comp/bus/LR slots read 0 dB.
+//! Nonzero bus/LR reduction remains unexercised.
+//!
+//! Wire encoding (signed 16 bit, 1/256 dB): each
 //! sample is `dB * 256` as i16LE, `<= 0` (reduction). Positive samples, if
 //! ever seen, are clamped to 0 dB reduction rather than interpreted.
 //!

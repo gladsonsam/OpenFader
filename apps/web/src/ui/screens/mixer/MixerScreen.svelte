@@ -68,6 +68,11 @@
   // closure reads the engine arrays imperatively each animation frame, so
   // no reactive re-derivation is needed for drawing).
   const liveDb = (id: string): number | null => live.liveLevelDb(id);
+  const liveSignals = {
+    peak: (id: string) => live.livePeakDb(id),
+    clip: (id: string) => live.liveClipOn(id),
+    reduction: (ref: string) => live.liveReductionDb(ref),
+  };
   // Live desk status overlay (names/colours arrive via the fixture
   // sync; membership + link + preamp leaves ride the scope directly).
   // Null offline: the badges/icons hide and fixture mode is untouched.
@@ -83,7 +88,7 @@
     return stripStateOf(w, ch);
   };
 
-  const cells = $derived(mixerCells(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf));
+  const cells = $derived(mixerCells(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf, liveSignals));
   // Live availability filter (item 4): online, only strips the desk
   // topology actually has (bridgeStrip-mapped) render — no phantom
   // strips on desks smaller than the fixture (XR18: 16 in, not 48).
@@ -106,12 +111,12 @@
         if (bridgeStrip(w, id) === null) continue;
         const vm = stripVm(ui.state, ui.chans, id);
         if (!vm) continue;
-        extra.push({ ...vm, desk: deskOf(id), meter: stripMeterSource(ui.chans, ui.meter, frozen, ui.state.peakHold, id, liveDb) });
+        extra.push({ ...vm, desk: deskOf(id), meter: stripMeterSource(ui.chans, ui.meter, frozen, ui.state.peakHold, id, liveDb, liveSignals) });
       }
       return [...kept, ...extra];
     })(),
   );
-  const master = $derived(mixerMasterCell(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf));
+  const master = $derived(mixerMasterCell(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf, liveSignals));
 
   // Bus selector popup rows (item 7): Main LR + bus masters + FX returns
   // (the owner pattern). Fixture lists render offline; online, only
@@ -175,7 +180,7 @@
   // -90) and must not page as phantom strips.
   const allCells = $derived(
     (() => {
-      const cells = mixerAllCells(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf);
+      const cells = mixerAllCells(ui.state, ui.chans, ui.meter, frozen, liveDb, deskOf, liveSignals);
       const w = live.engine;
       if (live.phase !== 'online' || !w || !w.capsReady) return cells;
       return cells.filter(c => bridgeStrip(w, c.id) !== null);

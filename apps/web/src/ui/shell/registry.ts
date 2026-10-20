@@ -4,8 +4,8 @@
 // current mode/tab + the bank rail (mixer only). Screen packages that land
 // later (M1 mixer, C1-C3 channel, F1 fx, S7-S10 pages) plug their content
 // in via registerShellScreen(id, component) or the bulk registerDesignScreens
-// helper — they never touch the header or rail. Until a screen registers,
-// the Shell shows a neutral `screen not built yet: <id>` placeholder.
+// helper — they never touch the header or rail. The shared screen loader
+// waits for content and layout registrations before rendering the outlet.
 //
 // Screen ids are the fixture URL contract (see ui/state/urlBridge.ts):
 // mixer | ch-input | ch-eq | ch-gate | ch-comp | ch-sends |
@@ -30,16 +30,14 @@ export function registerDesignScreens(map: Record<string, Component>): void {
   for (const [id, component] of Object.entries(map)) registerShellScreen(id, component);
 }
 
-/** Look up the outlet component for a design screen id (null = placeholder). */
+/** Look up the outlet component for a design screen id (null = not registered). */
 export function getShellScreen(id: string): Component | null {
   return shellScreens.get(id) ?? null;
 }
 
 /**
- * Revision bumped on every shell-screen registration. Boot mounts the Shell
- * before all content packages finish (see ui/mount.ts); the Shell
- * subscribes so a late registration re-resolves instead of sticking on the
- * `screen not built yet` placeholder.
+ * Revision bumped on every shell-screen registration. Consumers can
+ * subscribe to packages registering in the background after first paint.
  */
 let revision = 0;
 const listeners = new Set<() => void>();

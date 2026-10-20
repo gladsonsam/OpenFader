@@ -92,123 +92,161 @@
       ]
     },
     {
-      "id": "dev-head",
-      "module": "row",
+      "id": "network-discovery",
+      "module": "col",
       "props": {
-        "align": "center",
-        "gap": 8,
-        "margin": "6px 0 0 0",
-        "box": "content-box"
+        "tag": "section",
+        "label": "Network discovery",
+        "gap": 12,
+        "padding": 16,
+        "radius": 3,
+        "border": "1px solid var(--u4-line-panel)",
+        "background": "var(--u4-panel-bg)",
+        "box": "border-box",
+        "minWidth": 0
       },
       "children": [
         {
-          "id": "dev-label",
+          "id": "dev-head",
+          "module": "row",
+          "props": {
+            "align": "center",
+            "wrap": true,
+            "gap": 8,
+            "box": "content-box"
+          },
+          "children": [
+            {
+              "id": "dev-label",
+              "module": "text",
+              "props": {
+                "tag": "span",
+                "value": "Network discovery",
+                "size": 16,
+                "color": "var(--u4-text-1)",
+                "margin": "0 auto 0 0",
+                "weight": 600
+              }
+            },
+            {
+              "id": "dev-scan-label",
+              "module": "text",
+              "props": {
+                "size": 13,
+                "color": "var(--u4-text-7)"
+              },
+              "bind": {
+                "value": "conn.lastScan"
+              }
+            }
+          ]
+        },
+        {
+          "id": "discovery-help",
           "module": "text",
           "props": {
-            "tag": "span",
-            "value": "Devices on this network",
-            "size": 12,
-            "color": "var(--u4-text-6)",
-            "margin": "0 auto 0 0"
+            "value": "Find mixers on the same network, then choose a device to connect.",
+            "size": 13,
+            "color": "var(--u4-text-5)"
           }
         },
         {
-          "id": "dev-scan-label",
+          "id": "scan-action",
+          "module": "row",
+          "props": {
+            "wrap": true,
+            "gap": 8,
+            "box": "border-box"
+          },
+          "children": [
+            {
+              "id": "scan",
+              "module": "btn",
+              "props": {
+                "label": "Scan devices on this network",
+                "height": 44,
+                "fontSize": 14,
+                "padding": "0 14px",
+                "bg": "var(--u4-green)",
+                "fg": "#10240f",
+                "border": "1px solid var(--u4-green)",
+                "bare": true
+              },
+              "bind": {
+                "label": "conn.scanLabel",
+                "disabled": "conn.scanBusy"
+              },
+              "on": {
+                "press": {
+                  "do": "ui.scan"
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "dev-rows",
+          "module": "repeat",
+          "props": {
+            "over": "list:devices"
+          },
+          "children": [
+            {
+              "id": "dev-row",
+              "module": "device-row",
+              "bind": {
+                "device": "item"
+              },
+              "on": {
+                "connect": {
+                  "do": "ui.connect",
+                  "args": {
+                    "key": {
+                      "$expr": "payload.key"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": "dev-scanning",
           "module": "text",
           "props": {
             "size": 13,
             "color": "var(--u4-text-7)"
           },
           "bind": {
-            "value": "conn.lastScan"
-          }
+            "value": "conn.scanHint"
+          },
+          "when": "conn.scanHint"
         },
         {
-          "id": "scan",
-          "module": "btn",
+          "id": "dev-scan-err",
+          "module": "text",
           "props": {
-            "label": "Scan",
-            "height": 40,
-            "fontSize": 14,
-            "padding": "0 14px",
-            "bg": "var(--u4-btn-bg)",
-            "fg": "var(--u4-text-1)",
-            "border": "1px solid var(--u4-line-ctl)",
-            "bare": true
+            "size": 13,
+            "color": "#ff9a8a"
           },
           "bind": {
-            "label": "conn.scanLabel",
-            "disabled": "conn.scanBusy"
+            "value": "conn.scanError"
           },
-          "on": {
-            "press": {
-              "do": "ui.scan"
-            }
-          }
-        }
-      ]
-    },
-    {
-      "id": "dev-rows",
-      "module": "repeat",
-      "props": {
-        "over": "list:devices"
-      },
-      "children": [
+          "when": "conn.scanError"
+        },
         {
-          "id": "dev-row",
-          "module": "device-row",
-          "bind": {
-            "device": "item"
+          "id": "dev-empty",
+          "module": "text",
+          "props": {
+            "size": 13,
+            "color": "var(--u4-text-7)"
           },
-          "on": {
-            "connect": {
-              "do": "ui.connect",
-              "args": {
-                "key": {
-                  "$expr": "payload.key"
-                }
-              }
-            }
-          }
+          "bind": {
+            "value": "conn.emptyText"
+          },
+          "when": "conn.emptyText"
         }
       ]
-    },
-    {
-      "id": "dev-scanning",
-      "module": "text",
-      "props": {
-        "size": 13,
-        "color": "var(--u4-text-7)"
-      },
-      "bind": {
-        "value": "conn.scanHint"
-      },
-      "when": "conn.scanHint"
-    },
-    {
-      "id": "dev-scan-err",
-      "module": "text",
-      "props": {
-        "size": 13,
-        "color": "#ff9a8a"
-      },
-      "bind": {
-        "value": "conn.scanError"
-      },
-      "when": "conn.scanError"
-    },
-    {
-      "id": "dev-empty",
-      "module": "text",
-      "props": {
-        "size": 13,
-        "color": "var(--u4-text-7)"
-      },
-      "bind": {
-        "value": "conn.emptyText"
-      },
-      "when": "conn.emptyText"
     },
     {
       "id": "manual-desk",

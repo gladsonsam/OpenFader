@@ -75,6 +75,9 @@ export interface EqNodeVm {
   valueText: string;
   freq: number;
   gain: number;
+  /** Current Q (HPF node: 0 — HPF has no Q). Carried so gestures/keyboard
+   *  can anchor relative Q edits without a second lookup. */
+  q: number;
   x: string;
   y: string;
   size: number;
@@ -346,7 +349,7 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
   }));
 
   const nodes: EqNodeVm[] = [];
-  const mkNode = (band: number, f: number, g: number, on: boolean): void => {
+  const mkNode = (band: number, f: number, g: number, q: number, on: boolean): void => {
     const active = sb === band;
     const yN = clamp((dbTop - g) / (dbTop - dbBottom), 0.03, 0.97);
     const audible = on && eq.on;
@@ -362,6 +365,7 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
       valueText: band === 0 ? fmtF(f) : fmtF(f) + ', ' + fmtG(g),
       freq: f,
       gain: g,
+      q,
       x: (clamp(xOf(f), 0, 1) * 100).toFixed(2),
       y: (yN * 100).toFixed(2),
       size: active ? 36 : 30,
@@ -370,8 +374,8 @@ export function eqGraphVm(eq: Eq, selBand: number, opts: EqGraphOpts = {}): EqGr
       op: on && eq.on ? 1 : 0.4,
     });
   };
-  mkNode(0, eq.hpf.f, -3, eq.hpf.on);
-  bands.forEach((b, i) => mkNode(i + 1, b.f, b.g, b.on));
+  mkNode(0, eq.hpf.f, -3, 0, eq.hpf.on);
+  bands.forEach((b, i) => mkNode(i + 1, b.f, b.g, b.q, b.on));
 
   return {
     curvePath,

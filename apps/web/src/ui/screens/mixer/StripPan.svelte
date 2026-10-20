@@ -1,7 +1,7 @@
 <!-- W5c module `strip-pan`: one strip's pan bar (ModuleProps wrapper over the
      P1 PanBar). Value null (DCA strips) renders the design's dark placeholder
-     well verbatim from design-template.html (content-box, so the 30px height
-     + border matches to the px). Drags stay local-first inside PanBar; the
+     well with the same 30px border-box height as PanBar so mute stays
+     aligned across strips. Drags stay local-first inside PanBar; the
      committed value emits `input` (payload.value) for the layout `on` action
      (ui.setPan, lock-checked in the store). -->
 <script lang="ts">
@@ -33,7 +33,7 @@
   <div
     aria-hidden="true"
     data-ctl="pan-empty"
-    style="height:30px;flex:none;border:1px solid var(--u4-rail-border);border-radius:3px;box-sizing:content-box"
+    style="height:30px;flex:none;border:1px solid var(--u4-rail-border);border-radius:3px;box-sizing:border-box"
   ></div>
 {:else}
   <PanBar

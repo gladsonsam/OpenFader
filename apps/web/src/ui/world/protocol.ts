@@ -109,7 +109,8 @@ export type EngineEvent =
       files: { supported: boolean };
     }
   | { kind: 'meters'; levels: number[] }
-  | { kind: 'spectrum'; ch: number; bins: number[] }
+  | { kind: 'spectrum'; ch: number; bins: number[]; source: 'audio' | 'envelope' }
+  | { kind: 'audio_spectrum'; ch: number | null; binsDb: number[]; bandEdgesHz: number[]; source: string; position: string; epoch: number }
   | { kind: 'gr'; ch: number; gate: number; comp: number }
   | { kind: 'taps'; tap: string; levels: number[] }
   | { kind: 'bus'; bus: number; fader: number; muted: boolean }
@@ -341,10 +342,20 @@ export function parseEvent(text: string): EngineEvent | null {
     case 'meters':
       if (!Array.isArray(m['levels'])) return null;
       return { kind: 'meters', levels: m['levels'].map((v: unknown) => num(v)) };
+    case 'audio_spectrum': {
+      const bins = m['bins_db'], edges = m['band_edges_hz'];
+      if (!Array.isArray(bins) || !Array.isArray(edges) || bins.length > 1024) return null;
+      if (bins.length && edges.length !== bins.length + 1) return null;
+      if (!bins.every((v: unknown) => typeof v === 'number' && Number.isFinite(v))) return null;
+      if (!edges.every((v: unknown, i: number) => typeof v === 'number' && Number.isFinite(v) && v > 0 && (i === 0 || v > edges[i - 1]))) return null;
+      return { kind: 'audio_spectrum', ch: int(m['ch']), binsDb: bins, bandEdgesHz: edges,
+        source: typeof m['source'] === 'string' ? m['source'] : 'Unknown desk source',
+        position: typeof m['position'] === 'string' ? m['position'] : '', epoch: num(m['epoch']) };
+    }
     case 'spectrum': {
       const ch = int(m['ch']);
       if (ch === null || !Array.isArray(m['bins'])) return null;
-      return { kind: 'spectrum', ch, bins: m['bins'].map((v: unknown) => num(v)) };
+      return { kind: 'spectrum', ch, bins: m['bins'].map((v: unknown) => num(v)), source: m['type'] === 'audio_spectrum' ? 'audio' : 'envelope' };
     }
     case 'gr': {
       const ch = int(m['ch']);
@@ -663,6 +674,7 @@ export const cmdSolo = (ch: number, soloed: boolean): string => cmd({ cmd: 'solo
 export const cmdClearSolo = (): string => cmd({ cmd: 'clear_solo' });
 export const cmdParam = (ch: number, field: string, value: ParamValue): string =>
   cmd({ cmd: 'param', ch, field, value });
+export const cmdSpectrumTarget = (ch: number | null): string => cmd({ cmd: 'spectrum_target', ch });
 export const cmdFocus = (chs: number[]): string =>
   cmd(chs.length === 1 ? { cmd: 'focus', ch: chs[0] } : { cmd: 'focus', chs });
 export const cmdLock = (ch: number): string => cmd({ cmd: 'lock', ch });

@@ -98,9 +98,20 @@
           "when": "item.hasEq"
         },
         {
+          "id": "eq-mini-empty",
+          "module": "col",
+          "when": "!item.hasEq",
+          "props": {
+            "flex": "1 1 0",
+            "minHeight": 0,
+            "border": "1px solid var(--u4-line-faint)",
+            "radius": 3,
+            "background": "var(--u4-well-bg)"
+          }
+        },
+        {
           "id": "dynamics-well",
           "module": "col",
-          "when": "item.hasDyn",
           "props": {
             "height": 51,
             "flex": "none",
@@ -189,10 +200,7 @@
             }
           ]
         }
-      ],
-      "bind": {
-        "height": "item.hasDyn ? (item.hasEq ? 102 : 51) : 48"
-      }
+      ]
     },
     {
       "id": "proc-empty",

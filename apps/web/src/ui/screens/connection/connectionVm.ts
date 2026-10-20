@@ -141,7 +141,7 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
     const found =
       on && scanned && live.devices ? liveDeviceVms(live.devices, live.linkName) : [];
     const scanBusy = live.scanning === true;
-    const scanLabel = scanBusy ? 'Scanning…' : 'Scan';
+    const scanLabel = scanBusy ? 'Scanning…' : 'Scan devices on this network';
     const scanHint = scanBusy ? 'Scanning for desks…' : null;
     const scanError = live.scanError ?? null;
     const lastScan = scanBusy
@@ -159,8 +159,8 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
         : scanError
           ? null
           : !scanned
-            ? 'Press Scan to list the desks on this network.'
-            : 'No desks found — the desk may be off, on another network, or unreachable by broadcast. Retry Scan, or work offline below.';
+            ? 'No scan yet. Scan this network to find available mixers.'
+            : 'No devices found. Check the mixer is on and on the same network, scan again, or connect by IP address below.';
     const linked = on && live.linkName
       ? live.devices?.find(d => d.name === live.linkName || d.ip === live.linkName) ?? null
       : null;
@@ -188,7 +188,7 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
       halo: 'rgba(255,74,61,.18)',
       cardBorder: '#5a2420',
       title: 'Not connected',
-      sub: 'Pick a console below',
+      sub: 'Scan this network or connect by IP address',
       isConnected: false,
       lastScan,
       scanLabel,
@@ -209,16 +209,16 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
       halo: 'rgba(255,74,61,.18)',
       cardBorder: '#5a2420',
       title: 'Not connected',
-      sub: 'Pick a console below',
+      sub: 'Scan this network or connect by IP address',
       isConnected: false,
       lastScan: state.lastScan,
-      scanLabel: 'Scan',
+      scanLabel: 'Scan devices on this network',
       scanBusy: false,
       scanHint: null,
       scanError: null,
       devices: [],
       emptyText:
-        'No desk linked yet — press Scan. Only real desks on this network are listed here.',
+        'Scan this network to find available mixers.',
       showFix: false,
       showManualDesk: false,
     };
@@ -237,13 +237,13 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
       sub: 'Changes sync when you connect',
       isConnected: false,
       lastScan: state.lastScan,
-      scanLabel: 'Scan',
+      scanLabel: 'Scan devices on this network',
       scanBusy: false,
       scanHint: null,
       scanError: null,
       devices: [],
       emptyText:
-        'Offline demo — the full sim desk runs on this device. No network is used; press Scan to list real desks.',
+        'Working offline. Scan this network when you’re ready to find a mixer.',
       showFix: false,
       showManualDesk: false,
     };
@@ -256,7 +256,7 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
     sub: cur!.ip + ' · 48 kHz · latency 1.2 ms',
     isConnected: true,
     lastScan: state.lastScan,
-    scanLabel: 'Scan',
+    scanLabel: 'Scan devices on this network',
     scanBusy: false,
     scanHint: null,
     scanError: null,
