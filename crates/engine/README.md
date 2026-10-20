@@ -34,7 +34,9 @@ client.detach().await; // also runs on drop
 - `attach(label) -> ClientHandle { id, send(Cmd), send_json(&str), events }`:
   `id` is `client-N`; `events` (`mpsc::UnboundedReceiver<Event>`) first
   yields the attach snapshot (`you`, `state`, `shows`, `clients`, `locks`,
-  `caps`, `devices`, `link`, `info`?, `scenes`, `fx`, `routing`, then one
+  slim `caps` (essentials lane — the full catalogue follows on the
+  client's first `hello`), `devices`, `link`, `info`?, `scenes`, `fx`,
+  `routing`, then one
   `params` frame per cached channel) in that order, then
   every live broadcast. Unicast frames (replies, denials, command errors)
   arrive only in the sender's mailbox.
@@ -132,7 +134,9 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
 - `hello`: `{"type":"hello","binary_meters":true}` — unicast ack to the
   `hello` command, carrying the client's current binary-meter preference.
   R2 adds `"taps":true` when the client negotiated meter taps (skipped on
-  the wire while false, so the MR1 ack stays byte-identical).
+  the wire while false, so the MR1 ack stays byte-identical). The first
+  `hello` per client also unicasts the full `caps` catalogue just before
+  the ack (attach ships the slim lane); later hellos ack only.
 - `devices` (R2): `{"type":"devices","list":[{id,name,model,ip,
   kind:"console"|"io",state:"available"|"connected"|"in_use",fw?}...],
   "scanned_at":<unix secs>}` — discovery result (sim: the design's three
@@ -197,6 +201,12 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   (sim/dl32s: true; xair: false).
   `min`/`max` are `null` for bool/text. Broadcast on `connect` and when
   a param drops out (below); unicast to every newly attached client.
+  Attach ships the slim shape (`params`: the essentials lane —
+  `fader`/`mute`/`name`/`pan`/`color` — so first paint never waits for
+  the catalogue); the client's first `hello` (sent right after subscribe
+  on every transport) unicasts the full catalogue ahead of its ack, and
+  later hellos are pure re-acks. Resume (`push_snapshot`) and all other
+  paths carry the full shape.
   Additive: old fields are byte-identical.
 - `params`: `{"type":"params","ch":3,"key"?,"values":{"gain":12.5,...}}` —
   engineering units (dB, Hz, whole-number enums), diff-only after the
@@ -233,7 +243,7 @@ command errors → sender only. Everything else → every client.
 
 ## Ordering guarantees
 - Attach snapshot order: `you`, `state`, `shows`, `clients`, `locks`,
-  `caps`, `devices`, `link`, `info` (when the driver answers), `scenes`,
+  slim `caps` (full catalogue on first `hello`), `devices`, `link`, `info` (when the driver answers), `scenes`,
   `fx`, `routing`, `params…`. The R1 six-frame prefix is unchanged.
 - A command's unicast reply (or error) is delivered to the sender *before*
   that command's broadcasts (mirrors the relay socket, which sent the

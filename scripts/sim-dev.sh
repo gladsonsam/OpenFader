@@ -41,6 +41,40 @@ fi
 step "rust build (re-embeds apps/web/dist)"
 cargo build --manifest-path "$ROOT/src-tauri/Cargo.toml" --target aarch64-apple-ios-sim | tail -2
 
+step "gen/apple self-heal (splash + staticlib symlinks)"
+# LaunchScreen: gen/apple is gitignored and regenerated stock by
+# `tauri ios init`, so re-apply the committed branded template on every
+# build (cmp-guarded to keep warm rebuilds fast). See docs/sim-verify.md.
+SPLASH_SRC="$ROOT/scripts/ios/LaunchScreen.storyboard"
+SPLASH_DST="$ROOT/src-tauri/gen/apple/LaunchScreen.storyboard"
+if ! cmp -s "$SPLASH_SRC" "$SPLASH_DST"; then
+  cp "$SPLASH_SRC" "$SPLASH_DST"
+  echo "splash re-applied"
+fi
+# Externals/libapp.a is a symlink into a cargo target dir. Worktrees get
+# gen/apple via rsync from the main checkout, which copies the ABSOLUTE
+# symlink — so a worktree xcodebuild would silently link (and ship) the
+# main checkout's staticlib. Repoint at this checkout's own target when
+# the link aims elsewhere; a no-op where it already points at itself.
+for l in "$ROOT"/src-tauri/gen/apple/Externals/*/debug/libapp.a \
+         "$ROOT"/src-tauri/gen/apple/Externals/*/release/libapp.a; do
+  [ -L "$l" ] || continue
+  case "$l" in
+    */arm64/*) triple=aarch64-apple-ios-sim ;;
+    */x86_64/*) triple=x86_64-apple-ios ;;
+    *) continue ;;
+  esac
+  case "$l" in
+    */debug/*) cfg=debug ;; *) cfg=release ;;
+  esac
+  want="$ROOT/src-tauri/target/$triple/$cfg/libopenmix_app.a"
+  cur="$(readlink "$l")"
+  if [ "$cur" != "$want" ]; then
+    ln -sfn "$want" "$l"
+    echo "repointed $l -> $want (was $cur)"
+  fi
+done
+
 step "xcodebuild"
 xcodebuild -project "$PROJ" -scheme "$SCHEME" -configuration debug \
   -sdk iphonesimulator -derivedDataPath "$DERIVED" build >/tmp/sim-dev-xcodebuild.log 2>&1 \
