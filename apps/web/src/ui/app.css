@@ -217,8 +217,9 @@ body {
 
 @media (min-width: 600px) and (max-width: 1099px) {
   .u4-frame[data-handset] .u4-header {
-    height: max(var(--u4-header-h), var(--app-safe-top)) !important;
-    padding-top: 0 !important;
+    min-height: max(calc(var(--u4-header-h) + 1px), var(--app-safe-top)) !important;
+    height: auto !important;
+    padding-top: 6px !important;
     padding-right: max(calc(var(--app-safe-right) + 8px), calc(var(--app-safe-top) * 2)) !important;
   }
 

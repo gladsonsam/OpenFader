@@ -1,10 +1,9 @@
-// S78 Connection screen: pure view-model builder.
-//
-// Exact port of the `connectVals` branch of the design's renderVals
-// (docs/design/src/design-logic.js.txt). The status dot formula is shared
-// with headerView (uiLogic.ts): online green, offline amber, else red.
-// Run: node --experimental-strip-types apps/web/src/ui/screens/connection/connectionVm.test.ts
+// Connection view model. Live hardware status comes only from the shared
+// session selector; discovered rows are not evidence of an active session.
+// The no-live branch remains available for explicit design fixtures.
 
+import { sessionStatus } from '../../state/sessionStatus.ts';
+import type { LinkView } from '../../world/types.ts';
 import { devices } from '../../fixtures/designData.ts';
 import { headerView, type UiState, type World } from '../../state/uiLogic.ts';
 import type { LivePhase } from '../../state/live.ts';
@@ -64,6 +63,8 @@ export interface ConnectionVm {
 /** Live relay state the status card prefers over the fixture picker. */
 export interface LiveStatus {
   phase: LivePhase;
+  capsReady?: boolean;
+  link?: LinkView | null;
   message: string;
   host: string;
   latencyMs: number | null;
@@ -88,7 +89,7 @@ export interface LiveStatus {
 
 function liveDeviceVms(
   devs: NonNullable<LiveStatus['devices']>,
-  linkName: string | null | undefined,
+  linkIp: string | null | undefined,
 ): DeviceVm[] {
   // Only real desks ever reach this list (the engine never emits sim
   // seeds; the filter below drops any legacy/foreign via-less row).
@@ -96,9 +97,9 @@ function liveDeviceVms(
   // (unicast verified) or a manual add-by-IP probe — broadcast needs
   // no badge.
   return devs
-    .filter(d => d.via !== null && d.via !== undefined)
+    .filter(d => ['broadcast', 'linked', 'manual'].includes(d.via ?? '') && !!d.ip.trim())
     .map(d => {
-      const on = !!linkName && (d.name === linkName || d.ip === linkName);
+      const on = !!linkIp && d.ip === linkIp;
       const via = !on && (d.via === 'linked' || d.via === 'manual')
         ? d.via === 'linked'
           ? ' · linked desk'
@@ -106,7 +107,7 @@ function liveDeviceVms(
         : '';
       return {
         key: d.id,
-        name: d.name,
+        name: d.name.trim() || d.model || 'Mixer',
         sub: d.model + ' · ' + d.ip + (d.fw ? ' · FW ' + d.fw : '') + via,
         icon: CONN_ICONS[d.kind] ?? CONN_ICONS['console']!,
         status: on ? 'Connected' : d.state === 'connected' ? 'Reachable' : d.state,
@@ -135,70 +136,23 @@ export function buildConnectionVm(state: UiState, live?: LiveStatus): Connection
   // are the ONLY device source here: real discovered desks, an honest
   // empty state, or a press-Scan hint — fixtures never leak in, and no
   // "Live · relay link" / host / 127.0.0.1 chrome ever renders.
-  if (!offline && live && (live.phase === 'online' || live.phase === 'connecting' || live.phase === 'error')) {
-    const on = live.phase === 'online';
+  if (live) {
+    const status = sessionStatus(live.phase, live.capsReady === true, live.driver ?? '', live.link ?? null, offline);
     const scanned = (live.scannedAt ?? 0) > 0;
-    const found =
-      on && scanned && live.devices ? liveDeviceVms(live.devices, live.linkName) : [];
-    const scanBusy = live.scanning === true;
-    const scanLabel = scanBusy ? 'Scanning…' : 'Scan devices on this network';
-    const scanHint = scanBusy ? 'Scanning for desks…' : null;
-    const scanError = live.scanError ?? null;
-    const lastScan = scanBusy
-      ? 'Scanning for desks…'
-      : scanned
-        ? 'Scanned at ' + new Date(live.scannedAt! * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-        : 'Not scanned yet';
-    // Manual add-by-IP lives next to the rows it feeds: the probe needs a
-    // relay link, so the card shows while online, or while errored (where
-    // it explains the link is down instead of probing blind).
-    const showManualDesk = on || live.phase === 'error';
-    const emptyFor = (): string | null =>
-      found.length
-        ? null
-        : scanError
-          ? null
-          : !scanned
-            ? 'No scan yet. Scan this network to find available mixers.'
-            : 'No devices found. Check the mixer is on and on the same network, scan again, or connect by IP address below.';
-    const linked = on && live.linkName
-      ? live.devices?.find(d => d.name === live.linkName || d.ip === live.linkName) ?? null
-      : null;
-    if (linked) {
-      return {
-        dot: '#5fe060',
-        halo: 'rgba(95,224,96,.18)',
-        cardBorder: '#2c4a2e',
-        title: 'Connected to ' + linked.name,
-        sub: linked.model + ' · ' + linked.ip,
-        isConnected: false,
-        lastScan,
-        scanLabel,
-        scanBusy,
-        scanHint,
-        scanError,
-        devices: found,
-        emptyText: null,
-        showFix: false,
-        showManualDesk,
-      };
-    }
+    const scanBusy = live.scanning === true && !offline;
+    const found = status.ready ? liveDeviceVms(live.devices ?? [], status.connected ? live.link?.ip : null) : [];
     return {
-      dot: '#ff4a3d',
-      halo: 'rgba(255,74,61,.18)',
-      cardBorder: '#5a2420',
-      title: 'Not connected',
-      sub: 'Scan this network or connect by IP address',
-      isConnected: false,
-      lastScan,
-      scanLabel,
-      scanBusy,
-      scanHint,
-      scanError,
-      devices: found,
-      emptyText: emptyFor(),
-      showFix: false,
-      showManualDesk,
+      dot: status.color, halo: 'transparent', cardBorder: status.color,
+      title: status.label, sub: status.detail, isConnected: status.connected,
+      lastScan: scanBusy ? 'Searching this network…' : scanned
+        ? 'Last scan ' + new Date(live.scannedAt! * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Ready when you are',
+      scanLabel: scanBusy ? 'Searching…' : scanned ? 'Scan again' : 'Find mixers',
+      scanBusy, scanHint: scanBusy ? 'Waiting for mixers to reply…' : null,
+      scanError: live.scanError ?? null, devices: found,
+      emptyText: found.length || scanBusy || live.scanError ? null : scanned
+        ? 'No mixers found. Check the mixer’s power and Wi-Fi network, or enter its IP address.'
+        : 'Your mixer will appear here after a scan.',
+      showFix: !status.ready && !offline, showManualDesk: !offline,
     };
   }
   // No relay link was ever picked and no fixture console is selected: say
@@ -275,7 +229,7 @@ function deviceVms(
     const on = d.key === connected;
     return {
       key: d.key,
-      name: d.name,
+      name: d.name.trim() || d.model || 'Mixer',
       sub: d.model + ' · ' + d.ip,
       icon: CONN_ICONS[d.kind],
       status: on ? 'Connected' : d.kind === 'io' ? 'I/O · in use' : 'Available',

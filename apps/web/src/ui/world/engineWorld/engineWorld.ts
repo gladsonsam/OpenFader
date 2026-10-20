@@ -143,6 +143,7 @@ export class EngineWorld implements World {
   private locks = new Map<number, string>();
   private _clients = { count: 0, writers: [] as string[], selfId: null as string | null };
   private _lastDeny: DenyInfo | null = null;
+  private _denyVersion = 0;
   /** Shows/scenes/FX/routing/devices/link/info/offline (libraries.ts). */
   private readonly lib: LibraryStore;
 
@@ -392,7 +393,14 @@ export class EngineWorld implements World {
     else this.applyTap(bin.tap, bin.levels);
   }
 
+  capsVersion = 0;
+  linkVersion = 0;
+  devicesVersion = 0;
+
   private apply(evt: EngineEvent): void {
+    if (evt.kind === 'caps') this.capsVersion++;
+    if (evt.kind === 'link') this.linkVersion++;
+    if (evt.kind === 'devices') this.devicesVersion++;
     if (evt.kind === 'info' && evt.driver) this._driver = evt.driver;
     if (evt.kind === 'link' && evt.state === 'disconnected' && this.lib.link?.state !== 'disconnected') this.resetEpoch();
     if (evt.kind === 'main' || evt.kind === 'bus') {
@@ -545,6 +553,7 @@ export class EngineWorld implements World {
         this._clients = { count: evt.count, writers: evt.writers.slice(), selfId: this._selfId };
         break;
       case 'error':
+        this._denyVersion++;
         this.releasePending(evt.ch);
         this._lastDeny = {
           ch: evt.ch ?? null,
@@ -979,6 +988,8 @@ export class EngineWorld implements World {
   get clients(): { count: number; writers: string[]; selfId: string | null } {
     return { count: this._clients.count, writers: this._clients.writers.slice(), selfId: this._selfId };
   }
+  /** Event identity for consumers; lastDeny returns a defensive copy. */
+  get denyVersion(): number { return this._denyVersion; }
   get lastDeny(): DenyInfo | null {
     return this._lastDeny ? { ...this._lastDeny } : null;
   }

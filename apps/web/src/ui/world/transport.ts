@@ -50,6 +50,8 @@ export interface Transport {
   onMessage(cb: (msg: TransportMessage) => void): Unsub;
   onStatus(cb: (online: boolean) => void): Unsub;
   close(): void | Promise<void>;
+  /** Same-socket FIFO command completion; optional on non-WS transports. */
+  barrier?(): Promise<void>;
 }
 
 /**
@@ -119,6 +121,8 @@ export class WsTransport implements Transport {
   private failures = 0;
   private retryTimer: unknown = null;
   private manuallyClosed = false;
+  private helloIssued = 0;
+  private helloReceived = 0;
 
   constructor(url?: string, opts: WsTransportOptions = {}) {
     this.url = url ?? wsUrlFromLocation();
@@ -180,6 +184,8 @@ export class WsTransport implements Transport {
       return;
     }
     this.socket = ws;
+    this.helloIssued = 0;
+    this.helloReceived = 0;
     try {
       ws.binaryType = 'arraybuffer';
     } catch {
@@ -191,7 +197,7 @@ export class WsTransport implements Transport {
       this.setOnline(true);
       for (const m of this.queue.splice(0)) {
         try {
-          ws.send(m);
+          this.sendFrame(ws, m);
         } catch {
           this.queue.unshift(m);
           break;
@@ -200,7 +206,7 @@ export class WsTransport implements Transport {
       // Negotiate binary meters (+taps) on EVERY connect (incl. reconnects):
       // the preference is per-client on the engine and resets on drop.
       try {
-        ws.send(cmdHello(this.opts.binaryMeters ?? true, this.opts.wantTaps ?? true ? true : undefined));
+        this.sendFrame(ws, cmdHello(this.opts.binaryMeters ?? true, this.opts.wantTaps ?? true ? true : undefined));
       } catch {
         /* queued implicitly on next failure */
       }
@@ -208,7 +214,10 @@ export class WsTransport implements Transport {
     ws.onmessage = (ev: { data: unknown }) => {
       if (this.socket !== ws || this.manuallyClosed) return;
       const d = ev.data;
-      if (typeof d === 'string') this.emit(d);
+      if (typeof d === 'string') {
+        try { if (JSON.parse(d).type === 'hello') this.helloReceived++; } catch { /* malformed frames are ignored by the world */ }
+        this.emit(d);
+      }
       else if (d instanceof ArrayBuffer) this.emit(d);
       else if (typeof ArrayBuffer !== 'undefined' && ArrayBuffer.isView(d)) {
         const v = d as Uint8Array;
@@ -244,7 +253,7 @@ export class WsTransport implements Transport {
     const open = this.socket && (this.socket.readyState as number) === 1;
     if (open && this.socket) {
       try {
-        this.socket.send(json);
+        this.sendFrame(this.socket, json);
         return;
       } catch {
         this.socket = null;
@@ -253,6 +262,35 @@ export class WsTransport implements Transport {
     }
     if (queueable(json)) this.queue.push(json);
     if (this.wantOpen && !this.manuallyClosed && !this.socket) this.open();
+  }
+
+  private sendFrame(ws: WsSocket, json: string): void {
+    ws.send(json);
+    try { if (JSON.parse(json).cmd === 'hello') this.helloIssued++; } catch { /* protocol handles invalid commands */ }
+  }
+
+  /** serve's per-socket inbound loop awaits each command. The Nth unicast
+   * hello acknowledgement therefore proves every earlier command on THIS
+   * socket finished. Count all hellos, including the initial negotiation;
+   * periodic link frames and other clients cannot satisfy this barrier.
+   * An empty hello preserves binary-meter/tap preferences. */
+  barrier(): Promise<void> {
+    const ws = this.socket;
+    if (!ws || !this.online || ws.readyState !== 1) return Promise.reject(new Error('Relay socket is unavailable; cleanup is unconfirmed.'));
+    const target = this.helloIssued + 1;
+    return new Promise<void>((resolve, reject) => {
+      let offMessage = () => {};
+      let offStatus = () => {};
+      const finish = (error?: Error) => { clearTimeout(timer); offMessage(); offStatus(); error ? reject(error) : resolve(); };
+      const timer = setTimeout(() => finish(new Error('Relay has not acknowledged queued cleanup. The pending request may still finish.')), 30000);
+      offMessage = this.onMessage(() => {
+        if (this.socket === ws && this.helloReceived >= target) finish();
+      });
+      offStatus = this.onStatus(up => { if (!up || this.socket !== ws) finish(new Error('Relay connection changed before cleanup was confirmed.')); });
+      try { this.sendFrame(ws, '{"cmd":"hello"}'); } catch (error) {
+        finish(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
   }
 
   onMessage(cb: (msg: TransportMessage) => void): Unsub {

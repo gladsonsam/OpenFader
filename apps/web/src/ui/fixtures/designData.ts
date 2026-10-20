@@ -14,6 +14,8 @@ export type EqRanges = Record<'f' | 'g' | 'q', EqRange | null>;
 export interface BankItem {
   id: string;
   name: string;
+  /** Raw live scribble, kept separate from the physical display fallback. */
+  rawName?: string;
   src: string;
   eq: boolean;
   kind: ChannelKind;

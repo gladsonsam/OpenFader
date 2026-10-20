@@ -56,6 +56,7 @@ export interface DeskGroups {
 export interface StripVm {
   id: string;
   name: string;
+  editName: string;
   /** Name-bar sub line: source patch, or 'Stereo out' / 'Aux bus' for master. */
   sub: string;
   color: string;
@@ -121,6 +122,7 @@ export function stripVm(
   return {
     id,
     name: c.name,
+    editName: c.rawName ?? c.name,
     sub: c.src,
     color: c.color,
     text: c.text,
@@ -225,16 +227,10 @@ export function mixerAllCells(
   return out;
 }
 
-/**
- * Phone strip-grid columns (responsive `phone` variant in mixer.default.json).
- * Dense 96px strips: cap 36 + scale 17 + meter 14 + gaps (~70 min) still
- * fit; the 48 fixed columns keep the whole desk a horizontally snapping
- * pager the user swipes through (the layer rail lives in the mixer layout
- * now, not the shell). At 440px: 440 - 76 (master) - 52 (rail) = 312px
- * scrollport / 96 = 3.25 strips visible (3 + a bit).
- */
-export function phoneGridCols(): string {
-  return 'repeat(48, 96px)';
+/** Phone strips keep a touch-friendly width, with exactly one column per
+ * rendered cell. Reserving 48 columns for a 21-strip desk creates empty scroll. */
+export function phoneGridCols(count = SLOT_COUNT): string {
+  return `repeat(${Math.max(1, count)}, 96px)`;
 }
 
 /**
@@ -242,7 +238,7 @@ export function phoneGridCols(): string {
  * the scrollport, with a touch-friendly minimum width on narrower screens.
  */
 export function tabletGridCols(count = SLOT_COUNT): string {
-  return `repeat(${Math.max(SLOT_COUNT, count)}, minmax(96px, calc((100% - 15px) / 6)))`;
+  return `repeat(${Math.max(1, count)}, minmax(96px, calc((100% - 15px) / 6)))`;
 }
 
 // ---------- layout scope builders (W5c conversion) ----------

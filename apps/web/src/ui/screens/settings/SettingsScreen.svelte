@@ -5,6 +5,7 @@
       clicks dispatch ui.setSetting (screens/settings/actions.ts) through the
       store. This file only registers the layout: scope + profile + action binding. -->
 <script lang="ts">
+  import { live } from '../../state/live.svelte.ts';
   import { ui } from '../../state/uiStore.svelte.ts';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
   import { fixtureSource } from '../../modules/context.ts';
@@ -49,7 +50,8 @@
         : row),
       faderRows: rows('Faders'),
       safetyRows: rows('Safety'),
-      aboutRows: rows('About'),
+      aboutRows: rows('About').map(row => row.key === 'console'
+        ? { ...row, desc: live.connectionStatus(ui.state.connected === 'offline').label } : row),
     },
   });
   const source = fixtureSource({});
