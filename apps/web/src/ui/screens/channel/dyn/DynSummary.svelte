@@ -103,14 +103,14 @@
   >
     <div
       role="menu"
-      style="box-sizing:content-box;width:min(420px,100%);max-height:min(560px,90vh);overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:6px;border:1px solid #2a3443;background:#0b111b"
+      style="box-sizing:content-box;width:min(420px,100%);max-height:min(560px,90vh);overflow-y:auto;display:flex;flex-direction:column;gap:6px;padding:14px;border-radius:6px;border:1px solid var(--u4-detail-line, #2a3443);background:var(--u4-detail-well, #0b111b)"
     >
       <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:16px;font-weight:700;color:#eef2f5;margin-right:auto">{kindLabel}</span>
+        <span style="font-size:16px;font-weight:700;color:var(--u4-detail-heading, #eef2f5);margin-right:auto">{kindLabel}</span>
         <button
           onclick={() => (open = false)}
           aria-label={'Close ' + kindLabel + ' options'}
-          style="box-sizing:border-box;width:36px;height:36px;border-radius:3px;border:1px solid #3a414c;background:#2b3038;color:#e8edf5;font-size:16px;cursor:pointer"
+          style="box-sizing:border-box;width:36px;height:36px;border-radius:3px;border:1px solid var(--u4-detail-line, #3a414c);background:var(--u4-detail-button, #2b3038);color:var(--u4-detail-heading, #e8edf5);font-size:16px;cursor:pointer"
           >✕</button
         >
       </div>
@@ -118,26 +118,26 @@
         role="menuitem"
         onclick={() => pick('toggle')}
         disabled={locked}
-        style="box-sizing:border-box;display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 10px;border-radius:3px;border:1px solid #222a36;background:#0e1520;cursor:{locked
+        style="box-sizing:border-box;display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 10px;border-radius:3px;border:1px solid var(--u4-detail-line, #222a36);background:var(--u4-detail-panel, #0e1520);cursor:{locked
           ? 'not-allowed'
           : 'pointer'};text-align:left;opacity:{locked ? 0.45 : 1}"
       >
         <span style="flex:1 1 auto;min-width:0">
-          <span style="display:block;font-size:14px;font-weight:700;color:#eef2f5">{props.label ?? ''}</span>
-          <span style="display:block;font-size:11px;color:#8792a4">Toggle bypass</span>
+          <span style="display:block;font-size:14px;font-weight:700;color:var(--u4-detail-heading, #eef2f5)">{props.label ?? ''}</span>
+          <span style="display:block;font-size:11px;color:var(--u4-detail-muted, #8792a4)">Toggle bypass</span>
         </span>
       </button>
       <button
         role="menuitem"
         onclick={() => pick('reset')}
         disabled={locked}
-        style="box-sizing:border-box;display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 10px;border-radius:3px;border:1px solid #222a36;background:#0e1520;cursor:{locked
+        style="box-sizing:border-box;display:flex;align-items:center;gap:10px;min-height:52px;padding:8px 10px;border-radius:3px;border:1px solid var(--u4-detail-line, #222a36);background:var(--u4-detail-panel, #0e1520);cursor:{locked
           ? 'not-allowed'
           : 'pointer'};text-align:left;opacity:{locked ? 0.45 : 1}"
       >
         <span style="flex:1 1 auto;min-width:0">
-          <span style="display:block;font-size:14px;font-weight:700;color:#eef2f5">Reset</span>
-          <span style="display:block;font-size:11px;color:#8792a4">Factory defaults, switched in</span>
+          <span style="display:block;font-size:14px;font-weight:700;color:var(--u4-detail-heading, #eef2f5)">Reset</span>
+          <span style="display:block;font-size:11px;color:var(--u4-detail-muted, #8792a4)">Factory defaults, switched in</span>
         </span>
       </button>
     </div>

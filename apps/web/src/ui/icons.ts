@@ -1,13 +1,54 @@
-// Every inline SVG path/viewBox used in docs/design/src/design-template.html
-// plus the device icons from the design logic (connectVals ICON map).
-// Paths use the template's exact stroke/fill attributes; sizes come from the
-// width/height on the template's <svg> elements (18/16/22/20/24).
+// Shared control artwork and the locally bundled channel icon catalogue.
+
+import micUrl from './assets/icons8/microphone.png';
+import choirUrl from './assets/icons8/choir.png';
+import talkbackUrl from './assets/icons8/megaphone.png';
+import headsetUrl from './assets/icons8/headset.png';
+import guitarUrl from './assets/icons8/guitar.png';
+import bassUrl from './assets/icons8/bass-guitar.png';
+import banjoUrl from './assets/icons8/banjo.png';
+import violinUrl from './assets/icons8/violin.png';
+import celloUrl from './assets/icons8/cello.png';
+import harpUrl from './assets/icons8/harp.png';
+import drumsUrl from './assets/icons8/drum-set.png';
+import kickUrl from './assets/icons8/bass-drum.png';
+import snareUrl from './assets/icons8/snare-drum.png';
+import cymbalsUrl from './assets/icons8/cymbals.png';
+import maracasUrl from './assets/icons8/maracas.png';
+import xylophoneUrl from './assets/icons8/xylophone.png';
+import bellUrl from './assets/icons8/bell.png';
+import keysUrl from './assets/icons8/piano.png';
+import accordionUrl from './assets/icons8/accordion.png';
+import saxophoneUrl from './assets/icons8/saxophone.png';
+import trumpetUrl from './assets/icons8/trumpet.png';
+import tromboneUrl from './assets/icons8/trombone.png';
+import fluteUrl from './assets/icons8/flute.png';
+import clarinetUrl from './assets/icons8/clarinet.png';
+import harmonicaUrl from './assets/icons8/harmonica.png';
+import vinylUrl from './assets/icons8/music-record.png';
+import cdUrl from './assets/icons8/cd.png';
+import laptopUrl from './assets/icons8/laptop.png';
+import phoneUrl from './assets/icons8/smartphone.png';
+import radioUrl from './assets/icons8/radio.png';
+import usbUrl from './assets/icons8/usb-memory-stick.png';
+import videoUrl from './assets/icons8/video.png';
+import tvUrl from './assets/icons8/tv.png';
+import webcamUrl from './assets/icons8/webcam.png';
+import libraryUrl from './assets/icons8/music-library.png';
+import headphonesUrl from './assets/icons8/headphones.png';
+import speakerUrl from './assets/icons8/speaker.png';
+import subwooferUrl from './assets/icons8/subwoofer.png';
+import groupUrl from './assets/icons8/music-conductor.png';
+import orchestraUrl from './assets/icons8/orchestra.png';
+import fxUrl from './assets/icons8/audio-wave.png';
+import musicUrl from './assets/icons8/musical-notes.png';
+import cableUrl from './assets/icons8/audio-cable.png';
 
 export interface IconDef {
   viewBox: string;
-  /** inner SVG markup (paths/circles/rects), copied from the template */
+  /** Inner SVG markup, including image elements for bundled colour artwork. */
   body: string;
-  /** default stroke width used in the template */
+  /** Default stroke width; raster artwork uses zero. */
   strokeWidth: number;
   /** linecap used in the template (most are round) */
   linecap?: 'round' | 'butt' | 'square' | 'inherit';
@@ -105,70 +146,135 @@ export const icons = {
 
 export type IconName = keyof typeof icons;
 
-/** Per-channel strip icons: Lucide artwork (ISC, https://lucide.dev),
- * vendored so the gig app stays offline-first. Same 24x24 stroke language
- * as the UI set above; channels opt in (null = no icon, the default). */
+/** Bundled Icons8 Color assets: shared by strips, tags, and the searchable picker. */
+const channelIcon = (url: string, label: string, category: string, keywords: string) => ({
+  ...def('0 0 100 100', `<image href="${url}" width="100" height="100" />`, 0),
+  label,
+  category,
+  keywords,
+});
+
 export const chanIcons = {
-  /** Vocal / handheld mic (lucide: mic) */
-  mic: def(
-    '0 0 24 24',
-    '<path d="M12 19v3" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /><rect x="9" y="2" width="6" height="13" rx="3" />',
-    2,
-    { linecap: 'round', linejoin: 'round' },
-  ),
-  /** Electric guitar (lucide: guitar) */
-  guitar: def(
-    '0 0 24 24',
-    '<path d="m11.9 12.1 4.514-4.514" /><path d="M20.1 2.3a1 1 0 0 0-1.4 0l-1.114 1.114A2 2 0 0 0 17 4.828v1.344a2 2 0 0 1-.586 1.414A2 2 0 0 1 17.828 7h1.344a2 2 0 0 0 1.414-.586L21.7 5.3a1 1 0 0 0 0-1.4z" /><path d="m6 16 2 2" /><path d="M8.23 9.85A3 3 0 0 1 11 8a5 5 0 0 1 5 5 3 3 0 0 1-1.85 2.77l-.92.38A2 2 0 0 0 12 18a4 4 0 0 1-4 4 6 6 0 0 1-6-6 4 4 0 0 1 4-4 2 2 0 0 0 1.85-1.23z" />',
-    2,
-    { linecap: 'round', linejoin: 'round' },
-  ),
-  /** Drums (lucide: drum) */
-  drums: def(
-    '0 0 24 24',
-    '<path d="m2 2 8 8" /><path d="m22 2-8 8" /><ellipse cx="12" cy="9" rx="10" ry="5" /><path d="M7 13.4v7.9" /><path d="M12 14v8" /><path d="M17 13.4v7.9" /><path d="M2 9v8a10 5 0 0 0 20 0V9" />',
-    2,
-    { linecap: 'round', linejoin: 'round' },
-  ),
-  /** Keys / piano (lucide: piano) */
-  keys: def(
-    '0 0 24 24',
-    '<path d="M10 13v4" /><path d="M14 13v4" /><path d="M18 13v4" /><path d="M2 13h20" /><path d="M22 11.5A3.5 3.5 0 0018.5 8a3.52 3.52 0 01-3.173-2A7 7 0 002 9v10a2 2 0 002 2h16a2 2 0 002-2z" /><path d="M6 13v4" />',
-    2,
-    { linecap: 'round', linejoin: 'round' },
-  ),
-  /** Headphones / DJ (lucide: headphones) */
-  headphones: def(
-    '0 0 24 24',
-    '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3" />',
-    2,
-    { linecap: 'round', linejoin: 'round' },
-  ),
-  /** Vinyl / playback (lucide: disc-3) */
-  vinyl: def(
-    '0 0 24 24',
-    '<circle cx="12" cy="12" r="10" /><path d="M6 12c0-1.7.7-3.2 1.8-4.2" /><circle cx="12" cy="12" r="2" /><path d="M18 12c0 1.7-.7 3.2-1.8 4.2" />',
-    2,
-    { linecap: 'round', linejoin: 'round' },
-  ),
-  /** FX / sparkle (lucide: sparkles) */
-  fx: def(
-    '0 0 24 24',
-    '<path d="M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z" /><path d="M20 2v4" /><path d="M22 4h-4" /><circle cx="4" cy="20" r="2" />',
-    2,
-    { linecap: 'round', linejoin: 'round' },
-  ),
-  /** General music note (lucide: music) — bass, horns, anything else */
-  music: def(
-    '0 0 24 24',
-    '<path d="M21 16V3a1 1 0 0 0-1.28-.96l-10 2.917a1 1 0 0 0-.72.96V19" /><circle cx="18" cy="16" r="3" /><circle cx="6" cy="19" r="3" />',
-    2,
-    { linecap: 'round', linejoin: 'round' },
-  ),
-} satisfies Record<string, IconDef>;
+  mic: channelIcon(micUrl, "Microphone", "Vocals", "vocal vox lead backing speech"),
+  choir: channelIcon(choirUrl, "Choir", "Vocals", "vocal backing ensemble"),
+  talkback: channelIcon(talkbackUrl, "Talkback", "Vocals", "announcement speech"),
+  headset: channelIcon(headsetUrl, "Headset", "Vocals", "wireless speech"),
+  guitar: channelIcon(guitarUrl, "Guitar", "Strings", "acoustic gtr"),
+  bass: channelIcon(bassUrl, "Bass guitar", "Strings", "electric bass"),
+  banjo: channelIcon(banjoUrl, "Banjo", "Strings", "folk"),
+  violin: channelIcon(violinUrl, "Violin", "Strings", "fiddle strings"),
+  cello: channelIcon(celloUrl, "Cello", "Strings", "strings"),
+  harp: channelIcon(harpUrl, "Harp", "Strings", "strings"),
+  drums: channelIcon(drumsUrl, "Drum kit", "Drums & percussion", "drums kit"),
+  kick: channelIcon(kickUrl, "Kick", "Drums & percussion", "bass drum bd"),
+  snare: channelIcon(snareUrl, "Snare", "Drums & percussion", "drum sd"),
+  cymbals: channelIcon(cymbalsUrl, "Cymbals", "Drums & percussion", "hi hat overhead oh crash ride"),
+  maracas: channelIcon(maracasUrl, "Maracas", "Drums & percussion", "shaker percussion"),
+  xylophone: channelIcon(xylophoneUrl, "Xylophone", "Drums & percussion", "mallet marimba percussion"),
+  bell: channelIcon(bellUrl, "Bell", "Drums & percussion", "chime percussion"),
+  keys: channelIcon(keysUrl, "Keys", "Keys & winds", "keyboard piano synth organ"),
+  accordion: channelIcon(accordionUrl, "Accordion", "Keys & winds", "keys"),
+  saxophone: channelIcon(saxophoneUrl, "Saxophone", "Keys & winds", "sax brass woodwind"),
+  trumpet: channelIcon(trumpetUrl, "Trumpet", "Keys & winds", "brass horn"),
+  trombone: channelIcon(tromboneUrl, "Trombone", "Keys & winds", "brass horn"),
+  flute: channelIcon(fluteUrl, "Flute", "Keys & winds", "woodwind"),
+  clarinet: channelIcon(clarinetUrl, "Clarinet", "Keys & winds", "woodwind"),
+  harmonica: channelIcon(harmonicaUrl, "Harmonica", "Keys & winds", "blues harp"),
+  vinyl: channelIcon(vinylUrl, "Turntable", "Playback & media", "dj vinyl record tracks"),
+  cd: channelIcon(cdUrl, "Disc", "Playback & media", "cd playback tracks"),
+  laptop: channelIcon(laptopUrl, "Laptop", "Playback & media", "computer playback tracks"),
+  phone: channelIcon(phoneUrl, "Phone", "Playback & media", "mobile playback aux"),
+  radio: channelIcon(radioUrl, "Radio", "Playback & media", "broadcast tuner"),
+  usb: channelIcon(usbUrl, "USB drive", "Playback & media", "playback tracks"),
+  video: channelIcon(videoUrl, "Video", "Playback & media", "media film"),
+  tv: channelIcon(tvUrl, "TV", "Playback & media", "screen television"),
+  webcam: channelIcon(webcamUrl, "Camera", "Playback & media", "video livestream"),
+  library: channelIcon(libraryUrl, "Playlist", "Playback & media", "music library tracks"),
+  headphones: channelIcon(headphonesUrl, "Headphones", "Outputs & groups", "monitor iem ears"),
+  speaker: channelIcon(speakerUrl, "Speaker", "Outputs & groups", "main output pa"),
+  subwoofer: channelIcon(subwooferUrl, "Subwoofer", "Outputs & groups", "sub output bass"),
+  group: channelIcon(groupUrl, "Group", "Outputs & groups", "dca bus master conductor"),
+  orchestra: channelIcon(orchestraUrl, "Orchestra", "Outputs & groups", "ensemble band"),
+  fx: channelIcon(fxUrl, "Effects", "Outputs & groups", "fx reverb delay processing"),
+  music: channelIcon(musicUrl, "Music", "Outputs & groups", "notes generic"),
+  cable: channelIcon(cableUrl, "Line input", "Outputs & groups", "di cable jack aux input"),
+} satisfies Record<string, IconDef & { label: string; category: string; keywords: string }>;
 
 export type ChanIconName = keyof typeof chanIcons;
-/** Picker order (grid order in the name editor). */
-export const CHAN_ICON_NAMES: ChanIconName[] = [
-  'mic', 'guitar', 'drums', 'keys', 'headphones', 'vinyl', 'fx', 'music',
-];
+
+/** Automatic channel artwork; an explicit icon or "No icon" overrides it. */
+export function defaultChannelIcon(name: string, id: string): ChanIconName {
+  if (/kick|bass drum/i.test(name)) return 'kick';
+  if (/snare/i.test(name)) return 'snare';
+  if (/hat|cymbal|overhead|\boh\b/i.test(name)) return 'cymbals';
+  if (/drum|tom|perc/i.test(name)) return 'drums';
+  if (/bass/i.test(name)) return 'bass';
+  if (/guitar|\bgtr\b|\bac gt\b/i.test(name)) return 'guitar';
+  if (/sax/i.test(name)) return 'saxophone';
+  if (/trumpet/i.test(name)) return 'trumpet';
+  if (/trombone/i.test(name)) return 'trombone';
+  if (/violin|fiddle/i.test(name)) return 'violin';
+  if (/cello/i.test(name)) return 'cello';
+  if (/flute/i.test(name)) return 'flute';
+  if (/clarinet/i.test(name)) return 'clarinet';
+  if (/keys|piano|synth|organ/i.test(name)) return 'keys';
+  if (/choir/i.test(name)) return 'choir';
+  if (/talk/i.test(name)) return 'talkback';
+  if (/vox|vocal|mic/i.test(name)) return 'mic';
+  if (/laptop|computer/i.test(name)) return 'laptop';
+  if (/playback|track|\bdj\b|usb|aux/i.test(name)) return 'vinyl';
+  if (/^fx/.test(id)) return 'fx';
+  if (/monitor|\biem\b|^mix\d/i.test(name) || /^mix\d/.test(id)) return 'headphones';
+  if (/^main|^mtx/.test(id)) return 'speaker';
+  if (/^dca|^grp/.test(id)) return 'group';
+  return /^in\d/.test(id) ? 'mic' : 'music';
+}
+
+export const CHANNEL_ICON_CATEGORIES = ["Vocals", "Strings", "Drums & percussion", "Keys & winds", "Playback & media", "Outputs & groups"];
+
+/** Stable IDs preserve saved channel selections as the catalogue grows. */
+export const CHAN_ICON_NAMES = [
+  'mic',
+  'choir',
+  'talkback',
+  'headset',
+  'guitar',
+  'bass',
+  'banjo',
+  'violin',
+  'cello',
+  'harp',
+  'drums',
+  'kick',
+  'snare',
+  'cymbals',
+  'maracas',
+  'xylophone',
+  'bell',
+  'keys',
+  'accordion',
+  'saxophone',
+  'trumpet',
+  'trombone',
+  'flute',
+  'clarinet',
+  'harmonica',
+  'vinyl',
+  'cd',
+  'laptop',
+  'phone',
+  'radio',
+  'usb',
+  'video',
+  'tv',
+  'webcam',
+  'library',
+  'headphones',
+  'speaker',
+  'subwoofer',
+  'group',
+  'orchestra',
+  'fx',
+  'music',
+  'cable',
+] satisfies ChanIconName[];

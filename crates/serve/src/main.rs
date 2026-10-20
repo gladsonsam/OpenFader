@@ -17,6 +17,7 @@ Usage: openmix-serve [--port PORT] [--bind ADDR] [--driver sim|xair|dl32s]
                      [--data-dir DIR] [--poll-inflight N]
 
 Options:
+  --sim-only      Disable hardware connections and LAN discovery
   --port <n>       HTTP+WS port (default 8080)
   --bind <addr>    bind address (default 0.0.0.0, reachable over LAN)
   --driver <name>  sim (default), xair, dl32s
@@ -43,6 +44,7 @@ async fn main() -> anyhow::Result<()> {
     let mut i = 0;
     while i < argv.len() {
         match argv[i].as_str() {
+            "--sim-only" => opts.sim_only = true,
             "--port" => {
                 i += 1;
                 port = argv

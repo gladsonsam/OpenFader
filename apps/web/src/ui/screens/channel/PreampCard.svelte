@@ -33,7 +33,7 @@
       specKey="gain"
       value={vm.gain}
       label="Gain"
-      color="#7be27b"
+      color="var(--u4-preamp-gain, #7be27b)"
       size={68}
       defaultValue={30}
       fine={props.fine ?? false}
@@ -43,7 +43,7 @@
       specKey="trim"
       value={vm.trim}
       label="Trim"
-      color="#7be27b"
+      color="var(--u4-preamp-trim, #7be27b)"
       size={68}
       defaultValue={0}
       fine={props.fine ?? false}

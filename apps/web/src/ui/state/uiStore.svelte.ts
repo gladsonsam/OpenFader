@@ -358,12 +358,42 @@ function syncWorldToFixture(w: EngineWorld): void {
           changed = true;
         }
       }
-      if (w.status(ch, 'pan') !== 'pending' && slot.pan !== null) {
-        const p = w.param(ch, 'pan');
+      const panField = w.supports('balance', ch) ? 'balance' : 'pan';
+      if (!w.supports(panField, ch)) {
+        if (slot.pan !== null) {
+          slot.pan = null;
+          changed = true;
+        }
+      } else if (w.status(ch, panField) !== 'pending') {
+        const p = w.param(ch, panField);
         if (typeof p === 'number' && Number.isFinite(p)) {
           const d = enginePanToDesign(p);
-          if (Math.abs(slot.pan - d) > 1e-6) {
+          if (slot.pan === null || Math.abs(slot.pan - d) > 1e-6) {
             slot.pan = d;
+            changed = true;
+          }
+        }
+      }
+      if (slot.input) {
+        for (const field of ['gain', 'trim'] as const) {
+          const value = w.param(ch, field);
+          if (w.status(ch, field) !== 'pending' && typeof value === 'number' && slot.input[field] !== value) {
+            slot.input[field] = value;
+            changed = true;
+          }
+        }
+        const phantom = w.param(ch, 'phantom');
+        if (w.status(ch, 'phantom') !== 'pending' && typeof phantom === 'boolean' && slot.input.phantom !== phantom) {
+          slot.input.phantom = phantom;
+          changed = true;
+        }
+      }
+      if (slot.dyn) {
+        for (const kind of ['gate', 'comp'] as const) {
+          const field = `${kind}_on`;
+          const value = w.param(ch, field);
+          if (w.status(ch, field) !== 'pending' && typeof value === 'boolean' && slot.dyn[kind].on !== value) {
+            slot.dyn[kind].on = value;
             changed = true;
           }
         }

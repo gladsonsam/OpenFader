@@ -224,7 +224,7 @@ impl RecallScope {
 /// anything unrecognized falls back to Config (never silently dropped
 /// from a partial recall — Config off excludes it like the rest).
 pub fn param_scope_group(id: &str) -> &'static str {
-    if id == "fader" || id == "pan" {
+    if id == "fader" || id == "pan" || id == "balance" {
         return "fader_pan";
     }
     if id == "mute" {
@@ -3596,7 +3596,7 @@ impl Engine {
             let Some(kind) = kind_of(ch) else {
                 continue;
             };
-            for id in ["pan", "name"].iter().rev() {
+            for id in ["pan", "balance", "name"].iter().rev() {
                 if !ids.iter().any(|s| s == id) {
                     continue;
                 }
@@ -5227,7 +5227,7 @@ fn is_timeout_error(e: &anyhow::Error) -> bool {
 /// rides focus (visible strips) or the background sweep — see
 /// [`Engine::core_poll_list`].
 fn is_essentials_id(id: &str) -> bool {
-    matches!(id, "fader" | "mute" | "name" | "pan" | "color")
+    matches!(id, "fader" | "mute" | "name" | "pan" | "balance" | "color")
 }
 
 fn param_value_json(pv: &ParamValue) -> Value {
@@ -5418,7 +5418,7 @@ fn is_core_id(id: &str, first: bool) -> bool {
     if first {
         id == "fader" || id == "mute"
     } else {
-        id == "name" || id == "pan"
+        id == "name" || id == "pan" || id == "balance"
     }
 }
 
@@ -5438,7 +5438,7 @@ fn safe_order_key(id: &str) -> (u8, &str) {
         6
     } else if id.starts_with("send") || id.starts_with("aux") || id.starts_with("fx") {
         7
-    } else if id == "pan" {
+    } else if id == "pan" || id == "balance" {
         8
     } else {
         9
@@ -5902,7 +5902,7 @@ mod tests {
         assert_eq!(caps.get("type"), Some(&json!("caps")));
         assert_eq!(caps.get("driver"), Some(&json!("sim")));
         let params = caps.get("params").and_then(Value::as_array).unwrap();
-        assert_eq!(params.len(), openmix_core::params::CATALOGUE.len());
+        assert_eq!(params.len(), engine.registry("sim").len());
         let ids: Vec<&str> = params
             .iter()
             .map(|p| p.get("id").and_then(Value::as_str).unwrap())
@@ -5943,7 +5943,7 @@ mod tests {
         // fader/mute/name only (unchanged driver behaviour otherwise).
         assert_eq!(
             engine.driver_capabilities("sim").len(),
-            openmix_core::params::CATALOGUE.len()
+            engine.registry("sim").len()
         );
         assert_eq!(
             engine.driver_capabilities("xair"),
@@ -5966,11 +5966,10 @@ mod tests {
     fn registries_merge_canonical_plus_provider_rows() {
         use openmix_core::params::ParamRegistry;
         let engine = Engine::new(EngineConfig::default());
-        // No provider ships extra rows today: every merged registry is the
-        // canonical table in catalogue order, so `caps` stays byte-identical.
+        // Provider rows append without replacing the canonical table.
         for driver in ["sim", "xair", "dl32s"] {
             let reg = engine.registry(driver);
-            assert_eq!(reg.len(), openmix_core::params::CATALOGUE.len(), "{driver}");
+            assert_eq!(reg.len(), openmix_core::params::CATALOGUE.len() + engine.drv(driver).param_defs().len(), "{driver}");
             for def in openmix_core::params::CATALOGUE {
                 assert_eq!(reg.find(def.id).map(|d| d.id), Some(def.id), "{driver}");
             }

@@ -218,10 +218,10 @@ export function buildFxSlotVm(
     code: '',
     art: fxArtFor(slot.type),
     state: fxStateLabel(slot),
-    stateColor: slot.on ? '#7be27b' : '#f0b44a',
+    stateColor: slot.on ? 'var(--u4-state-on, #7be27b)' : '#f0b44a',
     pressed: selected,
     border: selected ? '#b28cff' : 'var(--u4-line-faint)',
-    bg: selected ? '#1b2330' : 'var(--u4-panel-bg)',
+    bg: selected ? 'var(--u4-selected-surface, #1b2330)' : 'var(--u4-panel-bg)',
     ret: fxRetLabel(index),
     meterPct: meterPctText(slot.on, levelDb),
   };

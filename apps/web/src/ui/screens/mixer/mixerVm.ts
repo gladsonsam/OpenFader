@@ -17,6 +17,7 @@ import {
   type Channel,
 } from '../../fixtures/designData.ts';
 import type { MeterSim } from '../../fixtures/meterSim.ts';
+import { defaultChannelIcon } from '../../icons.ts';
 import type { MeterSource } from '../../primitives/signal/Meter.svelte';
 import {
   masterId,
@@ -120,15 +121,15 @@ export function stripVm(
     sub: c.src,
     color: c.color,
     text: c.text,
-    icon: c.icon ?? null,
-    ring: id === state.sel ? 'inset 0 0 0 2px ' + c.color : 'none',
+    icon: c.icon === undefined ? defaultChannelIcon(c.name, id) : c.icon,
+    ring: id === state.sel ? `inset 0 0 0 2px var(--u4-strip-selected-ring, ${c.color})` : 'none',
     pan: c.pan,
     panLeft: 50 + (c.pan ?? 0) * 44,
     panText: st.panText,
     panAria: st.panAria,
     hasEq,
     eqPath: hasEq ? eqThumbPath(c) : '',
-    eqStroke: hasEq && c.eq!.on ? '#d9c24a' : '#4a5262',
+    eqStroke: hasEq && c.eq!.on ? 'var(--u4-eq-mini-curve, #d9c24a)' : 'var(--u4-eq-mini-bypass, #4a5262)',
     dynPath: hasEq ? dynThumbPath(c) : '',
     hasDyn: !!c.dyn,
     input: c.input,
@@ -270,14 +271,34 @@ export function stripMeterSource(
   id: string,
   liveDb?: (fixtureId: string) => number | null,
 ): MeterSource {
+  let liveLevel: number | null = null;
+  let livePeak = -90;
+  let peakUntil = 0;
+  let clipUntil = 0;
   return {
-    getLevel: () => liveDb?.(id) ?? (frozen ? -90 : (meter?.levelOf(id) ?? -90)),
+    getLevel: () => {
+      liveLevel = liveDb?.(id) ?? null;
+      if (liveLevel !== null) {
+        const now = Date.now();
+        if (liveLevel >= livePeak || now > peakUntil) {
+          livePeak = liveLevel;
+          peakUntil = now + 1500;
+        }
+        if (liveLevel > -0.3) clipUntil = now + 1500;
+        return liveLevel;
+      }
+      return frozen ? -90 : (meter?.levelOf(id) ?? -90);
+    },
     getPeak: () => {
       if (frozen) return null;
+      if (liveLevel !== null) return livePeak > -80 ? livePeak : null;
       const v = meter?.peakOf(id) ?? null;
       return v == null || v <= -90 ? null : v;
     },
-    getClip: () => (frozen ? false : (meter ? meter.clipping(id, Date.now()) : false)),
+    getClip: () => {
+      if (frozen) return false;
+      return liveLevel !== null ? Date.now() < clipUntil : (meter?.clipping(id, Date.now()) ?? false);
+    },
     grOn: () => {
       if (frozen) return false;
       const dyn = chans[id]?.dyn;

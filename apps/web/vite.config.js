@@ -32,7 +32,12 @@ export default defineConfig({
   plugins: [svelte({ preprocess: vitePreprocess() }), pwaAssets()],
   base: './',
   // Dev/preview behind the dev1-<port>.gladsonsam.com tunnel (host check would block it).
-  server: { allowedHosts: ['.gladsonsam.com'] },
+  server: {
+    allowedHosts: ['.gladsonsam.com'],
+    proxy: {
+      '/ws': { target: 'ws://127.0.0.1:18080', ws: true },
+    },
+  },
   preview: { allowedHosts: ['.gladsonsam.com'] },
   build: {
     outDir: 'dist',

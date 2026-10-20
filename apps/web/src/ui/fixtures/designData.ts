@@ -185,7 +185,7 @@ export function buildChannels(): Record<string, Channel> {
       fader: it.kind === 'dca' ? 0.75 : 0.6 + r() * 0.15,
       mute: false,
       solo: false,
-      pan: (it.kind === 'dca' || it.kind === 'out') ? null : (r() < 0.5 ? 0 : Math.round((r() * 2 - 1) * 60) / 100),
+      pan: it.id === 'mainlr' ? 0 : (it.kind === 'dca' || it.kind === 'out') ? null : (r() < 0.5 ? 0 : Math.round((r() * 2 - 1) * 60) / 100),
       sends: isIn ? Array.from({ length: 16 }, () => Math.round(r() * 70) / 100) : null,
       sendPre: isIn ? Array.from({ length: 16 }, (_, k) => k < 8) : null,
       input: it.kind === 'in' ? { gain: Math.round(20 + r() * 30), trim: 0, phantom: false, invert: false, delayOn: false, delay: 0 } : null,

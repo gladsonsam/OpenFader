@@ -1,9 +1,10 @@
 <!-- Signal meter, pixel-matched to the design's meter columns.
      Drawn on canvas (imperative rAF, no reactive hot path): gradient fill
      (green 0-66%, amber 66-84%, red 84-100%), dark cover above the fill
-     line, 2px peak-hold line, clip block, and (strip only) the GR block.
-     Variants: 'strip' (6px column + 5px clip/GR column), 'aside' (8px
-     column + 6px clip), 'master' (dual 6px columns), 'hbar' (the Input
+     line, 2px peak-hold line, and clip block. Dynamics status lives in
+     the processing box above the fader.
+     Variants: 'strip' (6px column), 'aside' (8px column), each with a
+     square clip light above it; 'master' (dual 6px columns), 'hbar' (the Input
      tab horizontal level bar, full-width 12px). Levels are read through
      getters every frame; the 1.5 s peak/clip hold comes from the
      MeterSim driving the getters (fixtures/meterSim constants
@@ -34,11 +35,15 @@
   } = $props();
 
   let canvas: HTMLCanvasElement | null = $state(null);
+  const displayedDb = new Float64Array(2).fill(Number.NaN);
+  let lastDrawMs = 0;
+  let frameMs = 16;
 
   /** Colours resolve from ui/tokens.css at runtime, literals = design values. */
   function cssVar(name: string, fallback: string): string {
     try {
-      const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+      const root = canvas?.closest('.u4-frame') ?? document.documentElement;
+      const v = getComputedStyle(root).getPropertyValue(name).trim();
       return v || fallback;
     } catch {
       return fallback;
@@ -53,8 +58,6 @@
     peak: string;
     clipOn: string;
     clipOff: string;
-    grOn: string;
-    grOff: string;
   }
 
   /** Resolved once per mount (plus theme changes), not per frame. */
@@ -68,8 +71,6 @@
       peak: '#f2f5f9',
       clipOn: cssVar('--u4-clip', '#ff3b30'),
       clipOff: cssVar('--u4-clip-dark', '#3a1214'),
-      grOn: cssVar('--u4-gr-lit', '#ff6b4a'),
-      grOff: cssVar('--u4-gr-dark', '#3a1a14'),
     };
   }
 
@@ -81,8 +82,6 @@
     peak: '#f2f5f9',
     clipOn: '#ff3b30',
     clipOff: '#3a1214',
-    grOn: '#ff6b4a',
-    grOff: '#3a1a14',
   });
 
   function draw(pal: Palette): void {
@@ -93,6 +92,9 @@
     const w = cv.clientWidth;
     const h = cv.clientHeight;
     if (!w || !h) return;
+    const now = performance.now();
+    frameMs = lastDrawMs ? Math.min(100, now - lastDrawMs) : 16;
+    lastDrawMs = now;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const bw = Math.max(1, Math.round(w * dpr));
     const bh = Math.max(1, Math.round(h * dpr));
@@ -109,8 +111,8 @@
       return;
     }
     // Vertical column layout per variant (design insets, px):
-    //   strip:  meter x0 w6,  clip/gr x8 w5
-    //   aside:  meter x0 w8,  clip x12 w6
+    //   strip:  meter x0 w6, clip above
+    //   aside:  meter x0 w8, clip above
     //   master: meter0 x0 w6, meter1 x9 w6
     if (variant === 'master') {
       drawColumn(g, 0, 6, h, 0, pal, showPeak);
@@ -118,21 +120,16 @@
       return;
     }
     const mw = variant === 'aside' ? 8 : 6;
-    drawColumn(g, 0, mw, h, 0, pal, showPeak);
+    const meterTop = mw + 3;
+    g.clearRect(0, 0, w, h);
+    g.save();
+    g.translate(0, meterTop);
+    drawColumn(g, 0, mw, Math.max(0, h - meterTop), 0, pal, showPeak);
+    g.restore();
     const clip = source.getClip ? source.getClip(0) : false;
-    // Strip canvas is 14px at right:1; clip/gr sit at right:1 w5 -> x9 w5.
-    // Aside canvas is 18px at right:0; clip sits at right:0 w6 -> x12 w6.
-    const cx = variant === 'aside' ? 12 : 9;
-    const cw = variant === 'aside' ? 6 : 5;
     g.fillStyle = clip ? pal.clipOn : pal.clipOff;
-    roundRect(g, cx, 0, cw, h * 0.22, 1);
+    roundRect(g, 0, 0, mw, mw, 1);
     g.fill();
-    if (variant === 'strip') {
-      const gr = typeof source.grOn === 'function' ? source.grOn() : !!source.grOn;
-      g.fillStyle = gr ? pal.grOn : pal.grOff;
-      roundRect(g, cx, h * 0.26, cw, h * 0.18, 1);
-      g.fill();
-    }
   }
 
   function drawColumn(
@@ -144,7 +141,13 @@
     pal: Palette,
     showPeak: boolean,
   ): void {
-    const lvl = source.getLevel(ch);
+    const target = source.getLevel(ch);
+    const previous = displayedDb[ch];
+    const timeConstant = target > previous ? 55 : 320;
+    const lvl = frozen || !Number.isFinite(previous)
+      ? target
+      : previous + (target - previous) * (1 - Math.exp(-frameMs / timeConstant));
+    displayedDb[ch] = lvl;
     const mpos = Math.max(0, Math.min(1, dbToPos(lvl)));
     // Gradient bands measured from the bottom (design: to top, 66/84).
     const yGreen = h * (1 - 0.66);
@@ -211,7 +214,7 @@
     update();
     const mo = new MutationObserver(update);
     try {
-      mo.observe(document.documentElement, {
+      mo.observe(canvas?.closest('.u4-frame') ?? document.documentElement, {
         attributes: true,
         attributeFilter: ['class', 'style'],
       });

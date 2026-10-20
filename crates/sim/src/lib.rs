@@ -786,17 +786,21 @@ impl SimDriver {
         self.tick.fetch_add(ticks, Ordering::Relaxed);
     }
 
-    fn meter_level(&self, i: usize, tick: u64) -> f32 {
-        // Deterministic pseudo-live meters: layered sines per strip.
-        let t = tick as f32 * 0.15;
+    fn input_db(i: usize, tick: u64) -> f32 {
+        // Slow, staggered phrases instead of full-scale rhythmic flashing.
+        let t = tick as f32 * 0.025;
         let ph = i as f32 * 0.7;
-        let v = 0.55 + 0.25 * (t + ph).sin() + 0.15 * (t * 2.3 + ph * 1.7).sin();
-        let muted = self.read().get(i).map(|s| s.mute).unwrap_or(false);
-        if muted {
-            0.0
-        } else {
-            v.clamp(0.0, 1.0)
-        }
+        let rate = 0.65 + (i % 5) as f32 * 0.07;
+        let phrase = (0.5 + 0.35 * (t * rate + ph).sin()
+            + 0.15 * (t * 1.7 + ph * 1.3).sin()).clamp(0.0, 1.0);
+        -36.0 + 24.0 * phrase
+    }
+
+    fn meter_level(&self, i: usize, tick: u64) -> f32 {
+        let strips = self.read();
+        let Some(strip) = strips.get(i) else { return 0.0; };
+        if strip.mute { return 0.0; }
+        10.0_f32.powf(Self::input_db(i, tick) / 20.0) * strip.fader
     }
 
     // ---- R2: FX rack (design types, [`SIM_FX_SLOTS`] slots) ----
@@ -928,18 +932,28 @@ impl SimDriver {
     pub fn poll_taps(&self) -> Vec<StripTaps> {
         let tick = self.tick.fetch_add(1, Ordering::Relaxed);
         let strips = self.read();
+        let params = self.params.read().unwrap();
         (0..strips.len())
             .map(|i| {
-                let t = tick as f32 * 0.15;
-                let ph = i as f32 * 0.7;
-                let input = (0.55 + 0.25 * (t + ph).sin() + 0.15 * (t * 2.3 + ph * 1.7).sin())
-                    .clamp(0.0, 1.0);
+                let input_db = Self::input_db(i, tick);
+                let input = 10.0_f32.powf(input_db / 20.0);
                 let s = &strips[i];
-                let post = if s.mute { 0.0 } else { (input * (0.3 + 0.7 * s.fader)).clamp(0.0, 1.0) };
-                // GR: gated strips show gate reduction on hot inputs,
-                // comp reduction follows the fader-driven level.
-                let gr_gate_db = ((input - 0.72) * 30.0).clamp(0.0, 12.0);
-                let gr_comp_db = ((post - 0.6) * 15.0).clamp(0.0, 9.0);
+                let post = if s.mute { 0.0 } else { input * s.fader };
+                // Dynamics act before mute/fader. The fake input swings
+                // through thresholds so both reduction indicators animate.
+                let param = |name: &str, fallback: f32| match params[i].get(name) {
+                    Some(ParamValue::Float(v)) => *v,
+                    _ => fallback,
+                };
+                let enabled = |name: &str| matches!(params[i].get(name), Some(ParamValue::Bool(true)));
+                let gr_gate_db = if enabled("gate_on") {
+                    ((param("gate_thr", -40.0) - input_db) / 12.0).clamp(0.0, 1.0)
+                        * param("gate_range", 30.0)
+                } else { 0.0 };
+                let gr_comp_db = if enabled("comp_on") {
+                    (input_db - param("comp_thr", -20.0)).max(0.0)
+                        * (1.0 - 1.0 / param("comp_ratio", 4.0).max(1.0))
+                } else { 0.0 };
                 StripTaps { input, post, gr_gate_db, gr_comp_db }
             })
             .collect()
@@ -989,6 +1003,18 @@ impl SimDriver {
 }
 
 impl MixerDriver for SimDriver {
+    fn param_defs(&self) -> &'static [openmix_core::params::ParamDef] {
+        static DEFS: std::sync::OnceLock<[openmix_core::params::ParamDef; 1]> = std::sync::OnceLock::new();
+        DEFS.get_or_init(|| {
+            let mut balance = *openmix_core::params::find("pan").expect("catalogue has pan");
+            balance.id = "balance";
+            balance.label = "Balance";
+            balance.scope = openmix_core::params::ParamScope::Main;
+            balance.scopes = &[StripKind::Main];
+            [balance]
+        })
+    }
+
     fn name(&self) -> &'static str {
         "sim"
     }
@@ -1004,6 +1030,7 @@ impl MixerDriver for SimDriver {
             openmix_core::params::CATALOGUE
                 .iter()
                 .map(|d| d.id)
+                .chain(self.param_defs().iter().map(|d| d.id))
                 .collect()
         })
     }
@@ -1234,6 +1261,13 @@ impl MixerDriver for SimDriver {
             ("fader", ParamValue::Float(v)) => return self.set_fader(strip, *v).await,
             ("mute", ParamValue::Bool(m)) => return self.set_mute(strip, *m).await,
             ("name", ParamValue::Text(n)) => return self.set_name(strip, n).await,
+            ("balance", ParamValue::Float(v)) => {
+                if kind != StripKind::Main {
+                    anyhow::bail!("sim: balance out of scope for {kind:?} strips");
+                }
+                self.write()[i].pan = Self::check_pan(*v)?;
+                return Ok(());
+            }
             ("pan", ParamValue::Float(v)) => {
                 if !openmix_core::params::supports_kind(
                     openmix_core::params::find("pan").expect("catalogue has pan"),
@@ -1272,6 +1306,12 @@ impl MixerDriver for SimDriver {
             "fader" => return self.get_fader(strip).await.map(ParamValue::Float),
             "mute" => return self.get_mute(strip).await.map(ParamValue::Bool),
             "name" => return self.get_name(strip).await.map(ParamValue::Text),
+            "balance" => {
+                if kind != StripKind::Main {
+                    anyhow::bail!("sim: balance out of scope for {kind:?} strips");
+                }
+                return Ok(ParamValue::Float(self.read()[i].pan));
+            }
             "pan" => {
                 if !openmix_core::params::supports_kind(
                     openmix_core::params::find("pan").expect("catalogue has pan"),
@@ -1726,7 +1766,7 @@ mod tests {
         let caps = d.capabilities();
         assert_eq!(
             caps.len(),
-            params::CATALOGUE.len(),
+            params::CATALOGUE.len() + d.param_defs().len(),
             "sim implements the whole catalogue"
         );
         for def in params::CATALOGUE {
