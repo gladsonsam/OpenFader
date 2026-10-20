@@ -30,7 +30,8 @@
 <button
   onclick={() => onEvent?.('open')}
   aria-label={props.ariaLabel ?? 'Open EQ'}
-  style="flex:1;position:relative;padding:0;border:0;border-bottom:1px solid var(--u4-line-panel);background:transparent;cursor:pointer"
+  title={props.ariaLabel ?? 'Open EQ'}
+  style="flex:1;min-height:0;position:relative;padding:0;border:1px solid var(--u4-line-panel);border-radius:3px;background:var(--u4-well-bg-2);cursor:pointer;overflow:hidden"
 >
   <svg
     viewBox="0 0 100 40"
@@ -55,5 +56,4 @@
       vector-effect="non-scaling-stroke"
     ></path>
   </svg>
-  <span style="position:absolute;left:4px;top:2px;font-size:11px;color:var(--u4-text-10)">EQ</span>
 </button>

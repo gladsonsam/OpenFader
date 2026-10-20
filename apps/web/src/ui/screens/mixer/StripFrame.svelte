@@ -17,7 +17,7 @@
 
   let {
     props = {},
-    ctx: _ctx,
+    ctx,
     nodeId: _nodeId,
     onEvent: _onEvent,
   }: {
@@ -46,7 +46,7 @@
     index: props.index ?? 0,
     frozen: props.frozen ?? false,
   });
-  const source = fixtureSource({});
+  const source = fixtureSource({ meter: ref => ctx.useMeter(`meter:${ref}`) });
 </script>
 
 <LayoutRenderer {layout} {source} {scope} {device} settings={{}} />

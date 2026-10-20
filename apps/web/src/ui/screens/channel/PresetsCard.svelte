@@ -124,14 +124,12 @@
   const rowBtn = btn + 'background:#2b3038;color:#e8edf5;white-space:nowrap;';
 </script>
 
-<section
+<details
   aria-label="Channel presets"
   style="box-sizing:content-box;display:flex;flex-direction:column;gap:8px;padding:10px;border-radius:3px;border:1px solid #1f2836;background:#0e1520;min-width:0"
 >
-  <div style="display:flex;align-items:baseline;gap:8px;flex-wrap:wrap">
-    <span style="font-size:15px;font-weight:700;color:#eef2f5;margin-right:auto">Presets</span>
-    <span style="font-size:11px;color:#8792a4">{ch.name} · tone starters (gain/EQ/dyn)</span>
-  </div>
+  <summary style="min-height:44px;align-content:center;cursor:pointer;font-size:15px;font-weight:600;color:#eef2f5">Channel presets</summary>
+  <div style="display:flex;flex-direction:column;gap:8px">
 
   {#if missingSections.length}
     <div style="font-size:12px;color:#f0b44a">
@@ -207,4 +205,5 @@
   {#if message}
     <div style="font-size:12px;color:#c9d1dc" role="status">{message}</div>
   {/if}
-</section>
+  </div>
+</details>

@@ -415,13 +415,14 @@ export function compOut(c: Comp, x: number): number {
   return y + c.makeup;
 }
 
-export function dynThumbPath(ch: Channel): string {
+export function dynThumbPath(ch: Channel, which?: 'gate' | 'comp'): string {
   if (!ch.dyn) return '';
   const pts: string[] = [];
+  const floor = which === 'gate' ? -80 : -60;
   for (let i = 0; i <= 24; i++) {
-    const inp = -60 + i * 2.5;
-    const o = compOut(ch.dyn.comp, gateOut(ch.dyn.gate, inp));
-    pts.push(((inp + 60) / 60 * 100).toFixed(1) + ' ' + Math.max(0, Math.min(40, -o / 60 * 40)).toFixed(1));
+    const inp = floor + i * (-floor / 24);
+    const o = which === 'gate' ? gateOut(ch.dyn.gate, inp) : which === 'comp' ? compOut(ch.dyn.comp, inp) : compOut(ch.dyn.comp, gateOut(ch.dyn.gate, inp));
+    pts.push(((inp - floor) / -floor * 100).toFixed(1) + ' ' + Math.max(0, Math.min(40, -o / -floor * 40)).toFixed(1));
   }
   return 'M' + pts.join(' L');
 }

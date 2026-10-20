@@ -9,7 +9,7 @@ import { isChannel, PAGE_MODES, type Mode, type Tab, type UiState, type World, w
 
 export function openPage(w: World, mode: Mode, extra?: Partial<UiState>): World {
   const prev = PAGE_MODES.includes(w.state.mode) ? w.state.prevMode : w.state.mode;
-  return withState(w, { mode, prevMode: prev, ...(extra ?? {}) });
+  return withState(w, { mode, prevMode: prev, ...(mode === 'channel' ? { tab: 'input' } : {}), ...(extra ?? {}) });
 }
 
 export function goFx(w: World): World { return openPage(w, 'fx'); }

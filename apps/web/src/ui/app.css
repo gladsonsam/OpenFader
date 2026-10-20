@@ -114,6 +114,19 @@ body {
   background: linear-gradient(to bottom, var(--u4-header-bg) 0px, var(--u4-header-bg) var(--dock-status-height), var(--u4-rail-bg) var(--dock-status-height));
 }
 
+@media (min-width: 600px) and (max-width: 1099px) {
+  .u4-frame[data-handset] .u4-header {
+    height: max(var(--u4-header-h), var(--app-safe-top)) !important;
+    padding-top: 0 !important;
+    padding-right: max(calc(var(--app-safe-right) + 8px), calc(var(--app-safe-top) * 2)) !important;
+  }
+
+  .u4-frame[data-handset] .u4-header > .u4-scene-button {
+    max-width: 112px !important;
+    overflow: hidden;
+  }
+}
+
 /* Desktop keeps the design's 600px minimum (diff canvas is 1280x720);
  * phones/tablets and short viewports shrink to the real viewport so the
  * frame itself never overflows the document. */
@@ -177,6 +190,10 @@ body {
 /* Grid items snap to the scrollport start under a `snapItems` grid (the
  * mixer phone/tablet strip pager). Attribute-gated, no media query needed:
  * the attribute is only set by the phone/tablet variants. */
+.u4-frame [data-node='strip-grid'] {
+  grid-auto-flow: column;
+}
+
 [data-snap-items] {
   scroll-padding-inline: 8px;
 }
