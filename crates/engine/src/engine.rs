@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
         Arc, RwLock, Weak,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -622,6 +622,14 @@ pub struct Engine {
     fx_refill_requested: AtomicBool,
     sync_state: std::sync::Mutex<SyncState>,
     repair_dirty: AtomicBool,
+    /// Consecutive control-health query failures (see
+    /// [`Engine::measure_latency`]): the `link` holds `connected` until
+    /// [`POLL_TIMEOUT_STRIKES`] in a row — one lost datagram on venue wifi
+    /// must not flap the status UI while the independent meter stream stays
+    /// live. Any success (or any link reset) clears the count, so a truly
+    /// dead control path still surfaces as `reconnecting` after ~6 s and is
+    /// never masked by fresh meters.
+    health_strikes: AtomicU8,
     read_failures: RwLock<ReadFailures>,
     /// R2 offline-editing state.
     offline: RwLock<OfflineState>,
@@ -769,6 +777,7 @@ impl Engine {
             fx_refill_requested: AtomicBool::new(false),
             sync_state: std::sync::Mutex::new(SyncState::default()),
             repair_dirty: AtomicBool::new(false),
+            health_strikes: AtomicU8::new(0),
             read_failures: RwLock::new(HashMap::new()),
             offline: RwLock::new(OfflineState::default()),
             visible: RwLock::new(Vec::new()),
@@ -1715,16 +1724,36 @@ impl Engine {
         let (name, device) = match entry {
             Some(d) => (d.name.clone(), Some(d.id.clone())),
             None => {
+                // Manual add-by-IP with no prior scan: resolve the steady-state
+                // name from the desk `/info` reply (index 1 = console name,
+                // e.g. `Example Mixer`; index 2 = model, e.g. `XR18` — see
+                // `info_from_strings`). The console name wins; the model is
+                // only a degraded fallback, never the steady state when
+                // `/info` answered. Unverified `/info` paths are NOT probed —
+                // this reuses the single supported `query_info` codec.
                 let driver = self.active_driver();
-                let model = self
-                    .drv(&driver)
-                    .query_info()
-                    .await
-                    .map(|i| i.model)
-                    .unwrap_or_else(|_| driver.clone());
-                (model, None)
+                match self.drv(&driver).query_info().await {
+                    Ok(info) if !info.name.is_empty() => {
+                        eprintln!("engine: link name from console name {:?}", info.name);
+                        (info.name, None)
+                    }
+                    Ok(info) if !info.model.is_empty() => {
+                        eprintln!("engine: link name from model fallback {:?}", info.model);
+                        (info.model, None)
+                    }
+                    _ => {
+                        eprintln!(
+                            "engine: link name from driver key {driver:?} (/info unanswered)"
+                        );
+                        (driver, None)
+                    }
+                }
             }
         };
+        // A (re)connect is a fresh control path: clear any accumulated
+        // health strikes so the new session starts `connected` (see
+        // `measure_latency`).
+        self.health_strikes.store(0, Ordering::Release);
         let mut link = self.link.write().unwrap();
         link.state = "connected".to_string();
         link.name = name;
@@ -2004,6 +2033,17 @@ impl Engine {
     /// One round-trip latency sample in ms: OSC query timing on hardware
     /// (a lightweight main-fader query), small deterministic jitter on
     /// sim. Failures keep the last sample (never block the ticker).
+    ///
+    /// Bounded failure policy (matches the poller's
+    /// [`POLL_TIMEOUT_STRIKES`] tolerance): a single failed query only arms
+    /// the bounded `repair_dirty` reconciliation and keeps `connected` — one
+    /// lost datagram must not flap the status UI while the independent UDP
+    /// meter stream stays live. The `link` flips to `reconnecting` only
+    /// after [`POLL_TIMEOUT_STRIKES`] consecutive failures (~6 s at the 2 s
+    /// [`LINK_INTERVAL`]). The strike count resets on any success and on
+    /// every link reset (connect/disconnect/offline), and fresh meters
+    /// NEVER reset it — so a dead control path always surfaces after ~6 s
+    /// and cannot be masked indefinitely by live levels.
     async fn measure_latency(&self) -> f32 {
         let last = self.link.read().unwrap().latency_ms;
         if self.reads_suspended.load(Ordering::Acquire) { return last; }
@@ -2012,17 +2052,32 @@ impl Engine {
             let target = self.active_drv().get_main_fader().await;
             match target {
                 Ok(_) => {
+                    self.health_strikes.store(0, Ordering::Release);
                     let mut link = self.link.write().unwrap();
-                    if link.state == "reconnecting" { link.state = "connected".into(); }
+                    if link.state == "reconnecting" {
+                        link.state = "connected".into();
+                        eprintln!("engine: control health recovered; link connected");
+                    }
                     t0.elapsed().as_secs_f32() * 1000.0
                 }
                 Err(error) => {
-                    let mut link = self.link.write().unwrap();
-                    if !self.reads_suspended.load(Ordering::Acquire) { link.state = "reconnecting".into(); }
                     self.repair_dirty.store(true, Ordering::Release);
-                    eprintln!("engine: control health query failed: {error}; link stale, bounded repair armed");
+                    let strikes = self
+                        .health_strikes
+                        .load(Ordering::Acquire)
+                        .saturating_add(1);
+                    self.health_strikes.store(strikes, Ordering::Release);
+                    if strikes >= POLL_TIMEOUT_STRIKES {
+                        let mut link = self.link.write().unwrap();
+                        if !self.reads_suspended.load(Ordering::Acquire) {
+                            link.state = "reconnecting".into();
+                        }
+                        eprintln!("engine: control health query failed ({strikes} in a row): {error}; link reconnecting, bounded repair armed");
+                    } else {
+                        eprintln!("engine: control health query failed ({strikes} in a row, tolerating up to {}): {error}; link holds connected, bounded repair armed", POLL_TIMEOUT_STRIKES);
+                    }
                     last
-                },
+                }
             }
         } else {
             1.0 + ((self.now_ms() / 100) % 5) as f32 * 0.1
@@ -5088,6 +5143,7 @@ impl Engine {
                 // resubscribes from clean state (see `connect`).
                 *self.meter_guard.write().unwrap() = None;
                 *self.meter_driver.write().unwrap() = None;
+                self.health_strikes.store(0, Ordering::Release);
                 {
                     let mut link = self.link.write().unwrap();
                     link.state = "disconnected".to_string();
@@ -5355,6 +5411,7 @@ impl Engine {
                 self.invalidate_connection();
                 self.reads_suspended.store(false, Ordering::Release);
                 *self.active.write().unwrap() = "sim".to_string();
+                self.health_strikes.store(0, Ordering::Release);
                 {
                     let mut link = self.link.write().unwrap();
                     link.state = "offline".to_string();

@@ -1,7 +1,7 @@
-// Import code, never mount hidden screens. One import unit per idle turn
-// prevents the old all-packages burst from competing with live controls.
+// Startup has already prepared every normal route. Only secondary extension,
+// editor and gallery registrations remain for bounded, interaction-aware idle work.
 import { loadManifestModules, manifestModuleFiles } from '../modules/registry.ts';
-import { screenNavigationPending, screenPreloadTasks, shellScreenReady } from './loadScreen.ts';
+import { screenNavigationPending } from './loadScreen.ts';
 import type { ScreenId } from '../state/urlBridge.ts';
 
 interface PreloadContext {
@@ -9,15 +9,6 @@ interface PreloadContext {
   connected: boolean;
   connecting: boolean;
 }
-
-const mixingOrder: ScreenId[] = [
-  'mixer', 'ch-input', 'ch-eq', 'ch-comp', 'ch-gate', 'ch-sends',
-  'routing', 'fx', 'ch-groups', 'scenes', 'connection', 'settings',
-];
-const disconnectedOrder: ScreenId[] = [
-  'connection', 'mixer', 'settings', 'ch-input', 'ch-eq', 'ch-comp',
-  'ch-gate', 'ch-sends', 'routing', 'fx', 'ch-groups', 'scenes',
-];
 
 export function startScreenPreload(context: () => PreloadContext): () => void {
   if (typeof window === 'undefined' || typeof document === 'undefined') return () => {};
@@ -31,15 +22,11 @@ export function startScreenPreload(context: () => PreloadContext): () => void {
     (navigator.hardwareConcurrency > 0 && navigator.hardwareConcurrency <= 2);
   const gap = constrained ? 180 : 24;
   const idleWindow = constrained ? 500 : 120;
-  // Construct only the next route's queue, inside its idle turn. Building
-  // all twelve here synchronously parsed/validated profiles in onMount.
-  const queues = new Map<ScreenId, Array<() => Promise<unknown>>>();
-  // Preserve auto-discovered extensions and the full custom-layout palette,
-  // but only after the normal navigation destinations have warmed.
+  // Preserve auto-discovered extensions and editor palettes after normal
+  // navigation has been made ready by mountUi (never defer core pages here).
   const registrations = import.meta.glob(['../**/register.ts', '../**/*-register.ts', '../**/*Register.ts']);
   const remaining = [
     ...manifestModuleFiles().map(file => () => loadManifestModules([file])),
-    () => import('./meters/MeterBridge.svelte'),
     ...Object.values(registrations),
   ];
   let stopped = false;
@@ -100,19 +87,7 @@ export function startScreenPreload(context: () => PreloadContext): () => void {
       schedule(100);
       return;
     }
-    const order = [current.screen, ...(current.connected ? mixingOrder : disconnectedOrder)];
-    let task: (() => Promise<unknown>) | undefined;
-    for (const id of order) {
-      if (shellScreenReady(id)) continue;
-      let queue = queues.get(id);
-      if (!queue) {
-        queue = screenPreloadTasks(id);
-        queues.set(id, queue);
-      }
-      task = queue.shift();
-      if (task) break;
-    }
-    task ??= remaining.shift();
+    const task = remaining.shift();
     if (!task) return;
     busy = true;
     Promise.resolve().then(task).catch(error => {

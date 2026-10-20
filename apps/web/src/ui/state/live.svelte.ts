@@ -37,7 +37,9 @@ import {
   linearToDb,
   relayUrlFromHost,
   type LivePhase,
+  type RecentDesk,
 } from './live.ts';
+import { sessionStatus } from './sessionStatus.ts';
 import { bridgeStrip } from './engineBridge.ts';
 import { onAppBackground, onAppForeground } from '../../mobile.ts';
 import { hasLiveLevel } from './meterCapabilities.ts';
@@ -88,16 +90,14 @@ class LiveRelay {
     return this.world;
   }
 
-  get deskConnected(): boolean {
+  connectionStatus(offline = false) {
     void this.version;
-    const w = this.world;
-    return this.phase === 'online' && !!w?.capsReady && w.driver !== 'sim' && w.link?.state === 'connected';
+    return sessionStatus(this.phase, this.world?.capsReady ?? false, this.world?.driver ?? '', this.world?.link ?? null, offline);
   }
 
-  get demo(): boolean {
-    void this.version;
-    return this.phase === 'online' && !!this.world?.capsReady && this.world.driver === 'sim';
-  }
+  get deskConnected(): boolean { return this.connectionStatus().connected; }
+
+  get demo(): boolean { return this.connectionStatus().demo; }
 
   /** EngineWorld observers (the fixture sync): called with the world on
    * every world bump, plus immediately when the world already exists.
@@ -122,12 +122,13 @@ class LiveRelay {
   /** Apply `?server=` once at boot (browser only — ignored when embedded:
    * the Tauri shell always links the in-process engine, never a relay). */
   initFromUrl(search: string): void {
+    const q = new URLSearchParams(search.startsWith('?') ? search : '?' + search);
+    const isFixture = q.get('fixture') === '1' || q.get('fixture') === 'true';
+    if (isFixture) return;
     if (this.embedded) {
       if (typeof window !== 'undefined' && !loadOfflineMode() && this.phase === 'idle') this.connect();
       return;
     }
-    const q = new URLSearchParams(search.startsWith('?') ? search : '?' + search);
-    const isFixture = q.get('fixture') === '1' || q.get('fixture') === 'true';
     const { host, fromUrl } = relayHostFromSearch(search, this.host);
     if (fromUrl) {
       this.disconnect();
@@ -135,7 +136,7 @@ class LiveRelay {
       saveRelayHost(host);
       // An explicit ?server= is an instruction to link up, not just to
       // remember the host (world-debug and phone-on-LAN flows).
-      if (!isFixture) this.connect();
+      if (!loadOfflineMode()) this.connect();
       return;
     }
     if (typeof window !== 'undefined' && !isFixture) {
@@ -205,12 +206,13 @@ class LiveRelay {
   }
 
   /** Recent manual-desk hosts (retained for the engine probe path). */
-  recentDesks(): string[] {
+  recentDesks(): RecentDesk[] {
     return loadRecentDesks();
   }
 
-  rememberDesk(host: string): string[] {
-    return saveRecentDesk(host);
+  rememberDesk(host: string, confirmed?: Omit<RecentDesk, 'host'>): RecentDesk[] {
+    this.version++;
+    return saveRecentDesk(host, confirmed);
   }
 
   /**
@@ -235,6 +237,12 @@ class LiveRelay {
       this.scanning = false;
       this.scanError = 'Scan timed out — no response. Retry Scan, or work offline below.';
     }, SCAN_TIMEOUT_MS);
+  }
+
+  noteScanFailed(message: string): void {
+    this.clearScanTimer();
+    this.scanning = false;
+    this.scanError = message;
   }
 
   private clearScanTimer(): void {
@@ -427,6 +435,19 @@ class LiveRelay {
     this.phase = 'error';
     this.message = msg;
     saveRelayAuto(false);
+  }
+
+  /** Drain the shared relay's ordered command queue before local detach. */
+  async disconnectDeskAndDrain(): Promise<void> {
+    const transport = this.transport;
+    const world = this.world;
+    if (!world || this.phase !== 'online' || !transport?.barrier)
+      throw new Error('Relay cleanup is unconfirmed. Restore the service and retry cancellation.');
+    world.disconnectDesk();
+    await transport.barrier();
+    if (this.transport !== transport || this.world !== world || world.link?.state !== 'disconnected')
+      throw new Error('Relay did not confirm a disconnected session after queued cleanup. Retry cancellation.');
+    await this.disconnect();
   }
 
   disconnect(): Promise<void> {

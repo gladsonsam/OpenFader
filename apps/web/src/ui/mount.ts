@@ -5,7 +5,7 @@ import { mount } from 'svelte';
 import AppFrame from './AppFrame.svelte';
 import type { Component } from 'svelte';
 import { loadManifestModules } from './modules/registry.ts';
-import { contentLoaderFor } from './screens/loadScreen.ts';
+import { contentLoaderFor, prepareCoreScreens } from './screens/loadScreen.ts';
 
 const screens = new Map<string, Component>();
 const galleries = new Map<string, () => Promise<{ default: Component }>>();
@@ -36,19 +36,17 @@ function galleryLoaderFor(id: string): (() => Promise<unknown>) | null {
 }
 
 /**
- * Prefetch the engine modules while the paint-path fetches are still in
- * flight, so the first link-up's dynamic imports resolve from cache instead
- * of stalling connect->attach on another custom-protocol round trip (J3).
- * Fixture/gallery boots never link up, so they never pay for these chunks.
+ * Prepare connection code behind the local readiness view so the first
+ * link-up reuses cached imports. Importing does not start a connection.
+ * Fixture/gallery boots never link up, so they skip this explicit preparation.
  */
-function prefetchEngine(): void {
-  try {
-    void import('./world/engineWorld/engineWorld.ts').catch(() => undefined);
-    void import('./world/transport.ts').catch(() => undefined);
-    void import('@tauri-apps/api/core').catch(() => undefined);
-  } catch {
-    /* ignore */
-  }
+async function prepareEngine(): Promise<unknown> {
+  return Promise.all([
+    import('./world/engineWorld/engineWorld.ts'),
+    import('./world/transport.ts'),
+    import('@tauri-apps/api/core'),
+    import('@tauri-apps/api/event'),
+  ]);
 }
 
 function isFixtureParams(params: URLSearchParams): boolean {
@@ -64,7 +62,19 @@ export function screenFromParams(params: URLSearchParams): Component | null {
   return null;
 }
 
-export async function mountUi(target: HTMLElement, params: URLSearchParams): Promise<object> {
+interface StartupOptions {
+  signal?: AbortSignal;
+  onProgress?: (completed: number, total: number) => void;
+}
+
+export async function mountUi(target: HTMLElement, params: URLSearchParams, options: StartupOptions = {}): Promise<object> {
+  function reveal(Screen: Component): object {
+    // A timed-out attempt may finish its uncancellable imports later. It must
+    // never replace the retry view or a newer attempt's mounted application.
+    options.signal?.throwIfAborted();
+    target.replaceChildren();
+    return mount(Screen, { target });
+  }
   if (params.has('gallery')) {
     const id = params.get('gallery') || 'primitives';
     const need = galleryLoaderFor(id);
@@ -86,22 +96,21 @@ export async function mountUi(target: HTMLElement, params: URLSearchParams): Pro
     });
     const loader = galleries.get(id);
     const m = loader ? await loader() : await import('./gallery/Gallery.svelte');
-    const app = mount(m.default, { target });
-    return app;
+    return reveal(m.default);
   }
-  // Mount navigation as soon as the shell is available. Its outlet owns
-  // the selected content/manifests and retry state; waiting for those here
-  // would also hold the header hostage to a slow content import/profile.
-  if (!isFixtureParams(params)) prefetchEngine();
-  const shellP = import('./shell/shellRegister.ts');
+  // The owner prefers a longer visible startup to a delayed first visit to
+  // each page. Prepare all normal routes and controls BEFORE mounting Shell;
+  // this loads code only, never connects or waits for hardware/hydration.
   const screen = params.get('screen');
   const need = screen ? contentLoaderFor(screen) : contentLoaderFor(null);
-  try {
-    await shellP;
-  } catch (e) {
-    console.error('[ui4] shell registration failed:', e);
-  }
-  if (!need) {
+  await Promise.all([
+    import('./shell/shellRegister.ts'),
+    prepareCoreScreens(options.onProgress),
+    import('./screens/meters/MeterBridge.svelte'),
+    ...(!isFixtureParams(params) ? [prepareEngine()] : []),
+  ]);
+  performance.mark('openmix:screens-ready');
+  if (!need && screen !== 'shell') {
     // Debug/editor/extension routes retain their full registration path.
     try {
       const index = await import('./screens/index');
@@ -115,10 +124,9 @@ export async function mountUi(target: HTMLElement, params: URLSearchParams): Pro
   }
   const Screen = screenFromParams(params) ?? screens.get('mixer') ?? null;
   if (Screen) {
-    const app = mount(Screen, { target });
-    return app;
+    return reveal(Screen);
   }
   // No screen resolved and no `mixer` registered (bare package set):
   // mount the empty frame rather than failing the route.
-  return mount(AppFrame, { target });
+  return reveal(AppFrame);
 }
