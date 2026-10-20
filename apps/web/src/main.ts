@@ -1,5 +1,7 @@
 const target = document.getElementById('app');
 if (!target) throw new Error('#app mount target not found');
+// Drop the static boot placeholder (index.html): Svelte owns #app from here.
+target.replaceChildren();
 
 // ui4 is the only UI. `/` mounts it directly; `?ui=4` remains as an alias.
 // Fixture query params (?fixture=1&freeze=1&screen=...&gallery=...)

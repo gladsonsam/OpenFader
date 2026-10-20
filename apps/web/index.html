@@ -9,6 +9,19 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="openmix" />
+    <style>
+      /* First-paint background: the WebView surface is white until CSS/JS
+         load — paint it the app's dark surface inline so launch is never
+         white, matching the branded LaunchScreen pixel-for-pixel. */
+      html, body { margin: 0; padding: 0; background: #0b0e14; height: 100%; }
+      #app { min-height: 100dvh; background: #0b0e14; }
+      .bootstatic { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; background: #0b0e14; }
+      .bootstatic-word { color: #fff; font: 700 40px/1 -apple-system, system-ui, sans-serif; }
+      .bootstatic-spin { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255,255,255,.18); border-top-color: #fff; animation: bootstaticspin .9s linear infinite; }
+      .bootstatic-msg { color: rgba(255,255,255,.55); font: 13px/1.4 -apple-system, system-ui, sans-serif; letter-spacing: 2px; }
+      @keyframes bootstaticspin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .bootstatic-spin { animation: none; } }
+    </style>
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
@@ -16,7 +29,16 @@
     <title>openmix</title>
   </head>
   <body>
-    <div id="app"></div>
+    <div id="app">
+      <!-- Pre-JS boot placeholder: replaced by Svelte on mount (main.ts
+           clears #app first). Same visual language as the iOS LaunchScreen
+           so storyboard -> web is a seamless dark handoff. -->
+      <div class="bootstatic">
+        <div class="bootstatic-word">openmix</div>
+        <div class="bootstatic-spin"></div>
+        <div class="bootstatic-msg">LOADING</div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -1,4 +1,6 @@
 // S78 module manifests, L1-converted: routing + connection leaf modules.
+// (The generic `btn` leaf used to live here; it moved to the layout
+// primitives file so the mixer paint path needs one less package.)
 //
 // Extension API (MODULES.md §4): picked up by loadManifestModules() via
 // import.meta.glob — no other wiring needed. Components are presentational
@@ -10,7 +12,6 @@
 
 import type { Component } from 'svelte';
 import type { ModuleManifest, ModuleProps } from '../types.ts';
-import Btn from '../generic/Btn.svelte';
 import RouteTile from '../../screens/routing/RouteTile.svelte';
 import RouteMatrix from '../../screens/routing/RouteMatrix.svelte';
 import SrcTile from '../../screens/routing/SrcTile.svelte';
@@ -25,31 +26,6 @@ function as<P>(c: unknown): Component<ModuleProps<P>> {
 const pressEvent = [{ name: 'press' }];
 
 export const manifests: ModuleManifest[] = [
-  {
-    id: 'btn',
-    title: 'Exact button',
-    category: 'control',
-    component: as(Btn),
-    props: {
-      label: { type: 'text', default: 'Button' },
-      icon: { type: 'text' },
-      iconSize: { type: 'number', min: 12, max: 32, step: 1, unit: 'px', default: 16 },
-      bg: { type: 'color', default: 'var(--u4-btn-bg)' },      fg: { type: 'color', default: 'var(--u4-text-1)' },
-      border: { type: 'text', default: '1px solid var(--u4-line-ctl)' },
-      height: { type: 'number', min: 24, max: 64, step: 2, unit: 'px', default: 36 },
-      flex: { type: 'text' },
-      padding: { type: 'text', default: '0 12px' },
-      minWidth: { type: 'number', min: 0, max: 300, step: 1, unit: 'px' },
-      fontSize: { type: 'number', min: 10, max: 20, step: 1, unit: 'px', default: 13 },
-      pressed: { type: 'text' },
-      ariaLabel: { type: 'text' },
-      disabled: { type: 'bool', default: false },
-      bare: { type: 'bool', default: false },
-    },
-    defaults: { label: 'Button' },
-    size: {},
-    events: pressEvent,
-  },
   {
     id: 'route-tile',
     title: 'Routing channel tile',

@@ -166,9 +166,39 @@ async fn caps_and_params_snapshot() {
     let snap = drain_snapshot(&mut a).await;
     let caps = ev_json(&snap[5].clone());
     assert_eq!(caps.get("driver"), Some(&json!("sim")));
+    // Attach ships the slim caps (essentials lane only — first paint
+    // never waits for the catalogue); the full catalogue follows on the
+    // first hello as a unicast rebroadcast.
     let params = caps.get("params").and_then(Value::as_array).unwrap();
-    assert_eq!(params.len(), openmix_core::params::CATALOGUE.len(), "sim caps list the full catalogue");
+    assert_eq!(
+        params.len(),
+        5,
+        "attach caps carry the essentials lane only (got {params:?})"
+    );
+    let ids: Vec<&str> = params
+        .iter()
+        .filter_map(|p| p.get("id").and_then(Value::as_str))
+        .collect();
+    for id in ["fader", "mute", "name", "pan", "color"] {
+        assert!(ids.contains(&id), "slim caps carry {id}");
+    }
     assert_eq!(caps.get("unsupported"), Some(&json!([])));
+
+    // First hello completes the catalogue (unicast, before the ack).
+    a.send(Cmd::Hello { binary_meters: None, taps: None })
+        .await
+        .unwrap();
+    let full = wait_for(&mut a, |e| matches!(e, Event::Caps { .. })).await;
+    let full_json = ev_json(&full);
+    let full_params = full_json.get("params").and_then(Value::as_array).unwrap();
+    assert_eq!(full_params.len(), openmix_core::params::CATALOGUE.len(), "hello completes the full catalogue");
+    // The ack still follows, and a second hello is a pure re-ack (no
+    // second catalogue — the flag is per client).
+    wait_for(&mut a, |e| matches!(e, Event::Hello { .. })).await;
+    a.send(Cmd::Hello { binary_meters: None, taps: None })
+        .await
+        .unwrap();
+    wait_for(&mut a, |e| matches!(e, Event::Hello { .. })).await;
 
     // A param write, then a second attach sees the full snapshot with it.
     a.send(Cmd::Param {

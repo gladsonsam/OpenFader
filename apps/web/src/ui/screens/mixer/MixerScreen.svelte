@@ -11,6 +11,7 @@
      meters draw imperatively from the shared meterSim getters (the renderer
      does no work per animation frame). -->
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { ui } from '../../state/uiStore.svelte.ts';
   import { live } from '../../state/live.svelte.ts';
   import { gridCols } from '../../state/logic/selectors.ts';
@@ -147,6 +148,26 @@
     })(),
   );
   const emptyCount = $derived(Math.max(0, SLOT_COUNT - liveCells.length));
+  // Boot window (J2): the phone snap pager lays out all 48 inputs, but only
+  // ~3 are visible — building all 48 strip subtrees dominated first render
+  // (~1 s). Paint the leading window first; the rest appends on idle (the
+  // Repeat keys by item, so this is append-only). Desktop/tablet never read
+  // `allBankItems`, so the window is a no-op there.
+  let stripWindow = $state(8);
+  onMount(() => {
+    const expand = () => {
+      stripWindow = Number.MAX_SAFE_INTEGER;
+    };
+    try {
+      const w = window as unknown as {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void;
+      };
+      if (typeof w.requestIdleCallback === 'function') w.requestIdleCallback(expand, { timeout: 1500 });
+      else setTimeout(expand, 800);
+    } catch {
+      setTimeout(expand, 800);
+    }
+  });
   // All 48 inputs in order for the phone snap pager (no banks: the rail is
   // hidden on phones). Desk badges ride along like the bank cells. Online,
   // the same topology filter as the desktop grid applies (XR18: 16 in, not
@@ -191,7 +212,7 @@
     // distinct placeholder ids, one per trailing slot.
     lists: {
       emptySlots: Array.from({ length: emptyCount }, (_, i) => `empty-${i}`),
-      allBankItems: allCells as unknown as string[],
+      allBankItems: (stripWindow >= allCells.length ? allCells : allCells.slice(0, stripWindow)) as unknown as string[],
       banks: liveBanks.map(b => ({ key: b.key, label: RAIL_SHORT[b.key] ?? b.label, color: b.color, text: b.text })),
     },
     master,
