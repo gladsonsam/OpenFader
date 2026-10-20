@@ -26,8 +26,10 @@
 //                (a desk-side LCut/HCut reads back as a shelf after a write)
 //   hpf_slope   engine 0..2 (meaning UNVERIFIED-ON-RIG; assumed 0=12,1=18,2=24)
 //                vs design 12|24 -> 18 folds to 12 on read
-//   send tap    0=pre/1=post ASSUMED (default 1.0 = post; design defaults the
-//                first 8 sends to pre — defaults intentionally differ)
+//   send tap    engine 0..5 IN/PREEQ/POSTEQ/PRE/POST/GRP (desk-verified
+//                2026-10-20: bus slots 1-6 accept all six, FX slots 7-10
+//                refuse 5=GRP; defaults 2 on buses, 4 on FX; design fixture
+//                sendPre booleans are offline-only and unrelated)
 // Exact (no mismatch): pan (-100..100 <-> -1..1), trim, comp_thr, comp_makeup,
 // phantom/polarity/delay_on, fader wire, name/source, mute.
 
@@ -87,13 +89,71 @@ export function design01ToSendDb(v: number, law: FaderLaw = XAIR_LAW): number {
   return law.toDb(Math.min(1, Math.max(0, v)));
 }
 
-/** Engine sendN_tap enum -> design pre flag (0=pre ASSUMED, 1=post). */
+/** Engine sendN_tap enum -> design pre flag (fixture/offline only: the live
+ *  sends tab reads the desk tap through the overlay instead). Kept for the
+ *  boolean fixture `sendPre` path; NOT the desk truth (see SEND_TAP_LABELS). */
 export function tapToPre(tap: number): boolean {
   return Math.round(tap) === 0;
 }
 
 export function preToTap(pre: boolean): number {
   return pre ? 0 : 1;
+}
+
+/**
+ * Desk send-tap point names (XR18 `/ch/NN/mix/MM/tap` int `0..=5`).
+ * Rig-verified 2026-10-20: 0 IN, 1 PREEQ, 2 POSTEQ, 3 PRE (pre-fader),
+ * 4 POST (post-fader), 5 GRP = the subgroup pickoff (mixer control software's
+ * "subgroup" option — there is NO separate per-send subgroup leaf; every
+ * `/mix/MM/subgroup|grp|assign` candidate is silent on the desk).
+ */
+export const SEND_TAP_LABELS: readonly string[] = [
+  'IN',
+  'Pre-EQ',
+  'Post-EQ',
+  'Pre',
+  'Post',
+  'Sub-GRP',
+];
+
+/** Tap enum value -> short button label (`IN`, `Pre-EQ`, …; `?` when unknown). */
+export function tapLabel(tap: number): string {
+  const i = Math.round(tap);
+  return Number.isInteger(i) && i >= 0 && i < SEND_TAP_LABELS.length
+    ? SEND_TAP_LABELS[i]!
+    : '?';
+}
+
+/**
+ * Legal tap choices for a 1-based generic send slot. The XR18 (`xair`
+ * driver) is 6+4: bus slots 1-6 accept the full six-point set (writes
+ * 0..5 read back exact), FX slots 7-10 refuse 5=GRP (the write is
+ * ignored, the slot keeps its value — verified 2026-10-20 on muted ch16
+ * slots 07/08/10). Every other driver keeps the legacy generic design
+ * pre/post pair (0/1).
+ */
+export function tapOptionsForSlot(driver: string, n: number): number[] {
+  if (driver === 'xair' && Number.isInteger(n)) {
+    if (n >= 1 && n <= 6) return [0, 1, 2, 3, 4, 5];
+    if (n >= 7 && n <= 10) return [0, 1, 2, 3, 4];
+  }
+  return [0, 1];
+}
+
+/**
+ * Desk destination label for a 1-based generic send slot (sends-tab rows,
+ * SOF aria). The XR18 (`xair` driver) is a 6+4 desk: slots 1-6 feed the six
+ * bus masters, 7-10 the four FX send masters (firmware `mix/01..10`;
+ * owner-rig verified 2026-10-20 that `/mix/11..16` leaves and containers
+ * are silent on channel and bus roots, so slots past 10 never render on
+ * xair). Every other driver keeps the generic design `Mix N` label.
+ */
+export function sendDestName(driver: string, n: number): string {
+  if (driver === 'xair' && Number.isInteger(n)) {
+    if (n >= 1 && n <= 6) return `Bus ${n}`;
+    if (n >= 7 && n <= 10) return `FX ${n - 6}`;
+  }
+  return `Mix ${n}`;
 }
 
 export function clamp(v: number, lo: number, hi: number): number {

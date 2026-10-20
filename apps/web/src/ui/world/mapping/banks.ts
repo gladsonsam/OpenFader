@@ -46,7 +46,9 @@ function bankKeyFor(famKey: string, startCh: number, kind: string): string {
     if (startCh === 0) return 'ch1';
     return 'ch' + (startCh + 1);
   }
-  if (kind === 'ret') return 'fx';
+  // The XR18 stereo aux input is its own one-strip `ret` family (`aux`):
+  // it must not collide with the FX-return `fx` bank.
+  if (kind === 'ret') return famKey === 'aux' ? 'aux' : 'fx';
   if (kind === 'bus') return 'mix';
   if (kind === 'fxsnd') return famKey === 'grp' ? 'grp' : 'fxsnd';
   if (kind === 'mtx' || kind === 'main') return 'mtx';

@@ -2,9 +2,10 @@
      through LayoutRenderer + actions + bindings (tab list + when-switched
      tab content + master strip). The JSON owns the composition; the tab
      rail is data (tab descriptor list repeated over channel-tab-button),
-     the content area renders the selected tab's layout, and the master
-     strip is composed from its parts so users can rebuild it from channel
-     modules. This file only builds the scope: store state + view-models
+     the content area renders the selected tab's layout, and the left strip
+     reuses the shared mixer strip (strip.default.json through strip-frame)
+     fed by the mixer's cell view-model for the selected channel. This file
+     only builds the scope: store state + view-models
      (channelScope) + live meter feeds, then binds ui.do. -->
 <script lang="ts">
   import { ui } from '../../state/uiStore.svelte.ts';
@@ -12,6 +13,7 @@
   import { bridgeStrip } from '../../state/engineBridge.ts';
   import type { LiveGroupsSource } from './groupsModel.ts';
   import type { LiveDeskSource } from './deskModel.ts';
+  import type { LiveInsertSource } from './insertModel.ts';
   import type { DeskSendsOverlay } from './channelModel.ts';
   import LayoutRenderer from '../../modules/LayoutRenderer.svelte';
   import { fixtureSource } from '../../modules/context.ts';
@@ -19,12 +21,16 @@
   import { bindUiActions } from '../../modules/actions.ts';
   import { useDeviceClass } from '../../modules/device.svelte.ts';
   import './actions.ts';
+  import '../mixer/actions.ts';
   import { buildChannelScope } from './channelScope.ts';
   import { stripStateOf } from '../mixer/stripState.ts';
+  import { stripVm } from '../mixer/mixerVm.ts';
+  import { sendDestName, tapOptionsForSlot } from '../../world/mapping/params.ts';
   import type { DeskGroups } from '../mixer/mixerVm.ts';
   import type { MeterSource } from '../../primitives/signal/Meter.svelte';
   import type { LayoutNode } from '../../modules/schema.ts';
   import defaults from '../../layouts/channel.default.json';
+  import stripDefaults from '../../layouts/strip.default.json';
 
   const store = createProfileStore('channel');
   bindUiActions(ui.do, { profile: store });
@@ -58,15 +64,17 @@
 
   const tree = $derived(store.tree(defaults as unknown as LayoutNode));
 
-  // Live desk groups source for the selected channel (null offline: the
-  // groups card hides and fixture mode is untouched). Membership/master
-  // values are echo-confirmed only — null until the engine confirms them.
+  // Live desk assign source for the selected channel (null offline: the
+  // assign card hides and fixture mode is untouched). Membership/master/
+  // param values are echo-confirmed only — null until the engine confirms
+  // them.
   function liveGroupsSource(): LiveGroupsSource | null {
     void live.version; // re-read on every engine ingest (control frames only)
     const w = live.engine;
     if (live.phase !== 'online' || !w || !w.capsReady) return null;
     const ch = bridgeStrip(w, ui.sel.id);
     if (ch === null) return null;
+    const grCh = ch;
     return {
       engineCh: ch,
       driver: w.driver,
@@ -78,6 +86,36 @@
       subgroupAssigned: (g) => w.subgroupAssigned(ch, g),
       muteGroupMaster: (g) => w.muteGroupMaster(g),
       subgroupMasterMuted: (g) => w.subgroupMaster(g)?.muted ?? null,
+      dcaGroups: 4,
+      assignDca: w.supports('dca1_assign', ch),
+      dcaAssigned: (g) => {
+        const v = w.param(ch, `dca${g + 1}_assign`);
+        return typeof v === 'boolean' ? v : null;
+      },
+      lrSupported: w.supports('lr_assign', ch),
+      lrAssign: () => {
+        const v = w.param(ch, 'lr_assign');
+        return typeof v === 'boolean' ? v : null;
+      },
+      panSupported: w.supports('pan', ch),
+      pan: () => {
+        const v = w.param(ch, 'pan');
+        return typeof v === 'number' ? v : null;
+      },
+      automixSupported: w.supports('automix_on', ch) || w.supports('automix_weight', ch),
+      automixOn: () => {
+        const v = w.param(ch, 'automix_on');
+        return typeof v === 'boolean' ? v : null;
+      },
+      automixWeight: () => {
+        const v = w.param(ch, 'automix_weight');
+        return typeof v === 'number' ? v : null;
+      },
+      grComp: () => {
+        if (grCh >= w.meters.size) return null;
+        const v = w.meters.grComp[grCh];
+        return typeof v === 'number' && Number.isFinite(v) ? v : null;
+      },
       // `link` is a real per-strip leaf on sim; on xair stereo link is the
       // global /config/chlink switch (unsupported) — the card says so.
       linkSupported: w.supports('link', ch),
@@ -116,7 +154,10 @@
     };
   }
 
-  // Live desk send overlay (group-on per send slot, caps-gated per slot).
+  // Live desk send overlay (group-on + tap point per send slot, the desk's
+  // own slot list and destination names, all caps-gated per slot). Null
+  // offline, unmapped or on a desk without a sendN_* plane (DL32S addresses
+  // aux/fx instead): the fixture rows render untouched.
   function deskSendsSource(): DeskSendsOverlay | null {
     void live.version; // re-read on every engine ingest (control frames only)
     const w = live.engine;
@@ -129,6 +170,52 @@
         return typeof v === 'boolean' ? v : null;
       },
       grponSupported: (n: number) => w.supports(`send${n}_grpon`, ch),
+      // Desk tap enum 0..5 (IN/PREEQ/POSTEQ/PRE/POST/GRP); unknown reads
+      // null so the row shows the unknown look until the echo lands.
+      tap: (n: number) => {
+        const v = w.param(ch, `send${n}_tap`);
+        return typeof v === 'number' ? v : null;
+      },
+      tapSupported: (n: number) => w.supports(`send${n}_tap`, ch),
+      // Per-slot legal choices: bus slots take all six, FX slots refuse
+      // GRP (desk-verified 2026-10-20) — the row cycles within this set.
+      tapOptions: (n: number) => tapOptionsForSlot(w.driver, n),
+      // XR18: slots 1-10 answer, 11-16 are silent on the desk (no leaf) and
+      // no sendN_* plane yields null and keeps the fixture rows.
+      sendSlots: () => {
+        const slots: number[] = [];
+        for (let n = 1; n <= 16; n++) if (w.supports(`send${n}_level`, ch)) slots.push(n);
+        return slots.length > 0 ? slots : null;
+      },
+      destName: (n: number) => sendDestName(w.driver, n),
+    };
+  }
+
+  // Live desk-insert source for the selected channel (bypass + select,
+  // both caps-gated). Null offline/unmapped/unsupported: the card hides
+  // and fixture mode is untouched.
+  function liveInsertSource(): LiveInsertSource | null {
+    void live.version; // re-read on every engine ingest (control frames only)
+    const w = live.engine;
+    if (live.phase !== 'online' || !w || !w.capsReady) return null;
+    const ch = bridgeStrip(w, ui.sel.id);
+    if (ch === null) return null;
+    const on = w.supports('insert_on', ch);
+    const sel = w.supports('insert_sel', ch);
+    if (!on && !sel) return null;
+    return {
+      engineCh: ch,
+      driver: w.driver,
+      onSupported: on,
+      insertOn: () => {
+        const v = w.param(ch, 'insert_on');
+        return typeof v === 'boolean' ? v : null;
+      },
+      selSupported: sel,
+      insertSel: () => {
+        const v = w.param(ch, 'insert_sel');
+        return typeof v === 'number' ? v : null;
+      },
     };
   }
 
@@ -157,10 +244,25 @@
       dynGetLevel,
       liveGroups: liveGroupsSource(),
       liveDesk: liveDeskSource(),
+      liveInsert: liveInsertSource(),
       deskSends: deskSendsSource(),
     }),
   );
-  const scopeWithState = $derived({ ...scope, selState: selStateOf() });
+  // The left strip is the SAME shared strip the main mixer renders
+  // (strip.default.json through `strip-frame` — mute, full fader, name —
+  // not the old bespoke channel-* mini-strip). The cell is the mixer's own
+  // view-model for the selected channel, so mute/fader/solo/pan/name behave
+  // exactly like the mixer; `ui.setStripFader` comes from the mixer's
+  // actions (imported above for its side effect).
+  const selCell = $derived(
+    (() => {
+      const vm = stripVm(ui.state, ui.chans, ui.sel.id);
+      if (vm === null) return null;
+      return { ...vm, desk: selStateOf(), meter: stripMeter };
+    })(),
+  );
+  const anatomy = $derived(store.tree(stripDefaults as unknown as LayoutNode));
+  const scopeWithState = $derived({ ...scope, selState: selStateOf(), cell: selCell, anatomy });
   const source = fixtureSource({});
 </script>
 

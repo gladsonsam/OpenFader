@@ -63,11 +63,12 @@ const XR18 = [
   { key: 'fxsnd', kind: 'fxsnd', label: 'FxSnd 1-4', first: 26, count: 4, name_prefix: 'FxSnd', color_default: 4 },
   { key: 'main', kind: 'main', label: 'Main LR', first: 30, count: 1, name_prefix: 'Main', color_default: 11 },
   { key: 'dca', kind: 'dca', label: 'DCA 1-4', first: 31, count: 4, name_prefix: 'DCA', color_default: 0 },
+  { key: 'aux', kind: 'ret', label: 'Aux', first: 35, count: 1, name_prefix: 'Aux', color_default: 2 },
 ];
 
 {
   const banks = deriveBanks(XR18);
-  ok(banks.length === 6, 'xr18 yields 6 banks', banks.map((b) => b.key).join(','));
+  ok(banks.length === 7, 'xr18 yields 7 banks', banks.map((b) => b.key).join(','));
   const byKey: Record<string, (typeof banks)[number]> = {};
   for (const b of banks) byKey[b.key] = b;
   ok(byKey['ch1']!.label === 'Ch 1-16' && byKey['ch1']!.strips.length === 16, 'xr18 inputs');
@@ -76,8 +77,9 @@ const XR18 = [
   ok(byKey['fxsnd']!.label === 'FxSnd 1-4', 'xr18 fxsnd label');
   ok(byKey['mtx']!.label === 'Mtx/Main' && byKey['mtx']!.strips.length === 1, 'xr18 main folds into Mtx/Main');
   ok(byKey['dca']!.strips.length === 4, 'xr18 dca');
+  ok(byKey['aux']!.label === 'Aux' && byKey['aux']!.strips.length === 1 && byKey['aux']!.strips[0] === 35, 'xr18 aux bank');
   const all = banks.flatMap((b) => b.strips).sort((a, b) => a - b);
-  ok(all.length === 35 && all[34] === 34, 'xr18 covers all 35 strips');
+  ok(all.length === 36 && all[35] === 35, 'xr18 covers all 36 strips');
 }
 
 // DL32S-like topology (single 32-input family).

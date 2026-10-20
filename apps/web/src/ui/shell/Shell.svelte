@@ -17,8 +17,8 @@
   import { bankDefs } from '../fixtures/designData.ts';
   import { bridgeStrip } from '../state/engineBridge.ts';
   import { modeTabToScreen } from '../state/urlBridge.ts';
-  import { getShellScreen } from './registry.ts';
-  import MeterBridge from '../screens/meters/MeterBridge.svelte';
+  import { getShellScreen, subscribeShellScreens } from './registry.ts';
+  import type { Component } from 'svelte';
   import { meterBridge } from '../screens/meters/meterBridgeState.svelte.ts';
   import { useDeviceClass } from '../modules/device.svelte.ts';
   import type { Mode } from '../state/uiLogic.ts';
@@ -59,7 +59,25 @@
   });
 
   const screenId = $derived(modeTabToScreen(ui.state.mode, ui.state.tab) ?? 'mixer');
-  const Content = $derived(getShellScreen(screenId));
+  // Boot mounts before all content packages finish registering; re-resolve
+  // when a late registration lands instead of sticking on the placeholder.
+  let shellRev = $state(0);
+  $effect(() => subscribeShellScreens(() => { shellRev++; }));
+  const Content = $derived.by(() => {
+    void shellRev;
+    return getShellScreen(screenId);
+  });
+  // Meter-bridge overlay starts closed: split it out of the boot chunk and
+  // load it on first open.
+  let MeterOverlay = $state<Component | null>(null);
+  $effect(() => {
+    if (meterBridge.open && !MeterOverlay) {
+      import('../screens/meters/MeterBridge.svelte')
+        .then((m) => { MeterOverlay = m.default; })
+        .catch(() => undefined);
+    }
+  });
+
   const showRail = $derived(ui.state.mode === 'mixer');
 
   // Body containers copied verbatim from the design template per mode; the
@@ -128,7 +146,7 @@
       <BankRail banks={liveBanks} activeKey={ui.state.bank} onSelect={(k) => ui.do.setBank(k)} orientation="side" />
     {/if}
   </div>
-  {#if meterBridge.open}
-    <MeterBridge />
+  {#if meterBridge.open && MeterOverlay}
+    <MeterOverlay />
   {/if}
 </AppFrame>

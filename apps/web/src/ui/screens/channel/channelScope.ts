@@ -56,6 +56,8 @@ import type { GroupsVm, LiveGroupsSource } from './groupsModel.ts';
 import { groupsVmFor } from './groupsModel.ts';
 import type { DeskVm, LiveDeskSource } from './deskModel.ts';
 import { deskVmFor } from './deskModel.ts';
+import type { InsertVm, LiveInsertSource } from './insertModel.ts';
+import { insertVmFor } from './insertModel.ts';
 
 export interface ChannelScopeFeeds {
   /** Live meter feed for the master strip fader (reads ui.meter). */
@@ -80,6 +82,8 @@ export interface ChannelScopeArgs extends ChannelScopeFeeds {
   liveGroups?: LiveGroupsSource | null;
   /** Live desk-config source (null offline: the card hides). */
   liveDesk?: LiveDeskSource | null;
+  /** Live insert source (null offline: the card hides). */
+  liveInsert?: LiveInsertSource | null;
   /** Live desk send overlay (null offline: GRP buttons hide). */
   deskSends?: DeskSendsOverlay | null;
 }
@@ -158,8 +162,12 @@ export interface ChannelScope {
   frozen: boolean;
   /** Desk groups card vm (null offline: the layout `when` hides the card). */
   groupsVm: GroupsVm | null;
+  /** Live GR reader for the assign card (null offline: static vm value). */
+  assignGr: (() => number | null) | null;
   /** Desk-config card vm (null offline: the layout `when` hides the card). */
   deskVm: DeskVm | null;
+  /** Insert card vm (null offline: the layout `when` hides the card). */
+  insertVm: InsertVm | null;
 }
 
 /** Tab the dyn modules render for (gate tab -> gate, everything else -> comp). */
@@ -217,7 +225,7 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
   // count so the rail is glanceable without opening the tab.
   const groupsEntry: TabListEntry = {
     id: 'groups',
-    title: 'Groups',
+    title: 'Assign',
     note: groupsTabNote(groups),
     current: tab === 'groups',
     border: tab === 'groups' ? ch.color : 'var(--u4-btn-bg)',
@@ -286,6 +294,8 @@ export function buildChannelScope(a: ChannelScopeArgs): ChannelScope {
     dynGetLevel: a.dynGetLevel,
     frozen: a.frozen,
     groupsVm: groups,
+    assignGr: a.liveGroups?.grComp ?? null,
     deskVm: deskVmFor(a.liveDesk ?? null),
+    insertVm: insertVmFor(a.liveInsert ?? null),
   };
 }

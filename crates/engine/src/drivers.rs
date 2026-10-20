@@ -128,6 +128,28 @@ pub trait DynDriver: Send + Sync {
     async fn subscribe_meters(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<MeterFrame>>;
     async fn set_fx_param(&self, slot: u8, param: u8, value: f32) -> anyhow::Result<()>;
     async fn get_fx_param(&self, slot: u8, param: u8) -> anyhow::Result<f32>;
+    /// Single-query FX param read with an already-known effect index
+    /// (xair: skips the per-param type re-query; default: ignores the hint
+    /// and pays the two-query cost).
+    async fn get_fx_param_with_type(
+        &self,
+        slot: u8,
+        param: u8,
+        effect: Option<u8>,
+    ) -> anyhow::Result<f32> {
+        let _ = effect;
+        self.get_fx_param(slot, param).await
+    }
+    /// Live solo bank in one query (xair override; default loops
+    /// `get_solo`). `channels` entries, index `i` = strip `i` soloed;
+    /// unreadable strips read back unsoloed, never fail the snapshot.
+    async fn solo_bank(&self, channels: usize) -> anyhow::Result<Vec<bool>> {
+        let mut out = Vec::with_capacity(channels);
+        for ch in 0..channels as u16 {
+            out.push(self.get_solo(StripId(ch)).await.unwrap_or(false));
+        }
+        Ok(out)
+    }
 
     // ---- engine extensions (defaults: honestly unsupported) ----
 
@@ -599,6 +621,16 @@ impl_dyn_driver!(openmix_sim::SimDriver {
 
 impl_dyn_driver!(openmix_proto_xair::XAirDriver {
 
+    /// Mute-group membership rides the strip `{root}/grp/mute` bitmask
+    /// (rig-verified XR18 FW 1.20, 2026-10-20 — the driver serves
+    /// `get/set_mute_group_assign`, so attach snapshots and the
+    /// `MuteGroupAssign` command work). No subgroup leaf exists on X-Air
+    /// (subgroups are a DL32S/sim concept), so subgroup assign stays
+    /// honestly unsupported.
+    fn group_assign_caps(&self) -> (bool, bool) {
+        (true, false)
+    }
+
     fn fx_flavor(&self) -> FxFlavor {
         FxFlavor::Numbered
     }
@@ -611,13 +643,32 @@ impl_dyn_driver!(openmix_proto_xair::XAirDriver {
     async fn fx_type_index(&self, slot: u8) -> Option<u8> {
         self.get_fx_type(slot).await.ok()
     }
+    /// Single-query param read with a known effect index (connect burst /
+    /// poller fast path): skips the per-param `/fx/N/type` re-query.
+    async fn get_fx_param_with_type(
+        &self,
+        slot: u8,
+        param: u8,
+        effect: Option<u8>,
+    ) -> anyhow::Result<f32> {
+        openmix_proto_xair::XAirDriver::get_fx_param_with_type(self, slot, param, effect).await
+    }
+    /// Live solo bank in one query (connect-burst fan-out): 1 query, not 16.
+    async fn solo_bank(&self, channels: usize) -> anyhow::Result<Vec<bool>> {
+        let _ = channels;
+        openmix_proto_xair::XAirDriver::solo_bank(self).await
+    }
     /// Desk-native type select (`/fx/N/type`, rig-verified 2026-10-19):
-    /// resolve the caps-advertised short name (`HALL`, `VRM`, … — the same
-    /// `proto-xair` effect table behind `caps.fx`) to the firmware index,
-    /// then write it. Unknown names bail locally, never hitting the desk.
+    /// resolve the caps-advertised name (short code `id` like `HALL`/`VRM`
+    /// or full display `label` like `Hall Reverb` — same `proto-xair`
+    /// effect table behind `caps.fx`) to the firmware index, then write
+    /// it. Unknown names bail locally, never hitting the desk.
     async fn fx_set_type(&self, slot: u8, fx_type: &str) -> anyhow::Result<()> {
         let index = (0..=openmix_proto_xair::fx::FX_TYPE_MAX)
-            .find(|&i| openmix_proto_xair::fx::fx_effect_name(i) == Some(fx_type))
+            .find(|&i| {
+                openmix_proto_xair::fx::fx_effect_name(i) == Some(fx_type)
+                    || openmix_proto_xair::fx::fx_effect_full_name(i) == Some(fx_type)
+            })
             .ok_or_else(|| anyhow::anyhow!("unknown fx type {fx_type:?}"))?;
         openmix_proto_xair::XAirDriver::set_fx_type(self, slot, index).await
     }

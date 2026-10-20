@@ -205,6 +205,27 @@ export function buildChannels(): Record<string, Channel> {
       } : null,
     };
   }));
+  // Live-desk aux input (XR18 stereo aux return, `/rtn/aux`): a fixture
+  // channel outside every fixture bank (no PRNG draws — the seeded values
+  // above must stay identical). Offline it never renders (no bank lists
+  // it); online on xair it joins the default mixer view after Ch 16.
+  // Fixed values, never random: the live sync overwrites them on connect.
+  out['aux1'] = {
+    id: 'aux1', name: 'Aux', src: 'Aux In', color: '#5cdb5c', text: '#10240f', kind: 'ret',
+    act: 0.35, ph: 0, fader: 0.6, mute: false, solo: false, pan: 0,
+    sends: null, sendPre: null, input: null,
+    eq: {
+      on: true,
+      hpf: { on: false, f: 80, slope: 12 },
+      bands: [
+        { type: 'LS', f: 120, g: 0, q: 0.7, on: true },
+        { type: 'PEQ', f: 800, g: 0, q: 1.4, on: true },
+        { type: 'PEQ', f: 3000, g: 0, q: 1.4, on: true },
+        { type: 'HS', f: 8000, g: 0, q: 0.7, on: true },
+      ],
+    },
+    dyn: null,
+  };
   return out;
 }
 

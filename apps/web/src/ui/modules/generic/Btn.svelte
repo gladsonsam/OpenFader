@@ -27,6 +27,10 @@
       padding?: string;
       minWidth?: number | string;
       fontSize?: number;
+      /** Flex shorthand when the button sits in a flex container (e.g. the
+          phone layer rail: '1 0 44px' fills spare vertical space while
+          keeping the 44px touch minimum). */
+      flex?: string;
       pressed?: string;
       ariaLabel?: string;
       /** Disabled (e.g. Scan while a sweep is in flight): non-interactive + dimmed. */
@@ -48,6 +52,7 @@
     'box-sizing:border-box;font-variant-numeric:normal;' +
       `height:${props.height ?? 36}px;` +
       mw +
+      (props.flex ? `flex:${props.flex};` : '') +
       `padding:${props.padding ?? '0 12px'};border-radius:3px;` +
       `border:${props.border ?? '1px solid var(--u4-line-ctl)'};` +
       `background:${props.bg ?? 'var(--u4-btn-bg)'};color:${props.fg ?? 'var(--u4-text-1)'};` +

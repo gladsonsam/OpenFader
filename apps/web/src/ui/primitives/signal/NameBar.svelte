@@ -1,5 +1,6 @@
 <!-- Strip name bar, pixel-matched to the design's select button.
-     Strip/master: 52px, name 16px w600 centred. (The old 12px source
+     Strip/master: 76px, name 16px w600 centred with the 44px channel icon
+     stacked above (taller chips so icon + name never clip).
      sub-line is intentionally gone: the routing page owns patching now,
      and screen readers still get the source via selectAria.)
      Channel plate: 54px centred name 17px w600. -->

@@ -15,8 +15,9 @@
 // (dB, like MeterSim.levelOf) and prefer them when online; fader/mute writes
 // still edit the fixture model (engine write-through is wave 3).
 
-import { EngineWorld } from '../world/engineWorld/engineWorld.ts';
-import { TauriTransport, WsTransport, isTauriRuntime, type Transport } from '../world/transport.ts';
+import type { EngineWorld } from '../world/engineWorld/engineWorld.ts';
+import type { Transport } from '../world/transport.ts';
+import { isTauriRuntime } from '../world/tauriEnv.ts';
 import {
   CONNECT_TIMEOUT_MS,
   DEFAULT_RELAY_HOST,
@@ -242,7 +243,7 @@ class LiveRelay {
     }
   }
 
-  connect(host?: string, driver?: string, addr?: string): void {
+  async connect(host?: string, driver?: string, addr?: string): Promise<void> {
     if (!this.embedded && host !== undefined) {
       const h = host.trim() || DEFAULT_RELAY_HOST;
       this.host = h;
@@ -261,13 +262,42 @@ class LiveRelay {
     // Remember the intent: reopening the app rejoins the link. A failed
     // handshake clears it again (fail) so a bad host doesn't nag on boot.
     saveRelayAuto(true);
+    // The engine modules (EngineWorld + transports + protocol) stay out of
+    // the boot chunk: they load here, on the first link-up, while first
+    // paint has already happened. Fixture mode never pays for them.
+    let engine: typeof import('../world/engineWorld/engineWorld.ts');
+    let transports: typeof import('../world/transport.ts');
+    try {
+      [engine, transports] = await Promise.all([
+        import('../world/engineWorld/engineWorld.ts'),
+        import('../world/transport.ts'),
+      ]);
+    } catch (e) {
+      this.fail(e instanceof Error ? e.message : String(e));
+      return;
+    }
     // Embedded (Tauri shell): the engine runs in-process — no relay host.
     // Browser: the relay at the configured host (the relay host field is
     // only used on this path).
     const transport: Transport = this.embedded
-      ? new TauriTransport()
-      : new WsTransport(relayUrlFromHost(this.host));
-    const world = new EngineWorld(transport);
+      ? new transports.TauriTransport()
+      : new transports.WsTransport(relayUrlFromHost(this.host));
+    const world = new engine.EngineWorld(transport);
+    if (this.phase !== 'connecting') {
+      // A disconnect() landed while the engine modules loaded: drop the
+      // fresh link instead of resurrecting it.
+      try {
+        world.destroy();
+      } catch {
+        /* ignore */
+      }
+      try {
+        transport.close();
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
     this.transport = transport;
     this.world = world;
     this.unsubs.push(transport.onStatus((up) => this.onStatus(up)));

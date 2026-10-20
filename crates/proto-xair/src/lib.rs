@@ -17,8 +17,10 @@ pub mod comp;
 pub mod eq;
 pub mod fx;
 pub mod gate;
+pub mod groups;
 pub mod headamp;
 pub mod input;
+pub mod insert;
 pub mod look;
 pub mod mix;
 pub mod solo;
@@ -239,10 +241,12 @@ pub mod addrs {
     }
 }
 
-/// XR18 strip index map (global, 35 strips). Channels 0..16 keep their
+/// XR18 strip index map (global, 36 strips). Channels 0..16 keep their
 /// historic meaning; buses stay single-digit on the wire (T2); the FX-return
 /// family lives at `/rtn/N` (the firmware map has no `/fxrtn` root —
-/// `/fxrtn/N/*` is silent on FW 1.20); DCA strips address fader/on directly
+/// `/fxrtn/N/*` is silent on FW 1.20); the stereo aux input lives at
+/// `/rtn/aux` (NOT `/aux/*` or `/auxin/*` — the desk is silent there,
+/// owner-rig verified 2026-10-20); DCA strips address fader/on directly
 /// under `/dca/N` (no `/mix` segment — `/dca/N/mix/fader` is silent).
 /// Every family below is live-verified on the owner rig except `/rtn/N`
 /// fader/on (verified present 2026-10-18: fader + on answer) — see
@@ -255,17 +259,19 @@ pub mod addrs {
 /// | 26..30  | fxsnd  | fxsnd | `/fxsend/N`|
 /// | 30..31  | main   | main  | `/lr`      |
 /// | 31..35  | dca    | dca   | `/dca/N`   |
-pub const XAIR_TOPOLOGY: [openmix_core::StripFamily; 6] = [
+/// | 35..36  | aux    | ret   | `/rtn/aux` |
+pub const XAIR_TOPOLOGY: [openmix_core::StripFamily; 7] = [
     openmix_core::StripFamily { key: "ch", kind: openmix_core::StripKind::In, label: "Ch 1-16", first: 0, count: 16, name_prefix: "Ch", color_default: 2 },
     openmix_core::StripFamily { key: "fxret", kind: openmix_core::StripKind::Ret, label: "FxRet 1-4", first: 16, count: 4, name_prefix: "FxRet", color_default: 6 },
     openmix_core::StripFamily { key: "bus", kind: openmix_core::StripKind::Bus, label: "Bus 1-6", first: 20, count: 6, name_prefix: "Mix", color_default: 6 },
     openmix_core::StripFamily { key: "fxsnd", kind: openmix_core::StripKind::FxSnd, label: "FxSnd 1-4", first: 26, count: 4, name_prefix: "FxSnd", color_default: 4 },
     openmix_core::StripFamily { key: "main", kind: openmix_core::StripKind::Main, label: "Main LR", first: 30, count: 1, name_prefix: "Main", color_default: 11 },
     openmix_core::StripFamily { key: "dca", kind: openmix_core::StripKind::Dca, label: "DCA 1-4", first: 31, count: 4, name_prefix: "DCA", color_default: 0 },
+    openmix_core::StripFamily { key: "aux", kind: openmix_core::StripKind::Ret, label: "Aux", first: 35, count: 1, name_prefix: "Aux", color_default: 2 },
 ];
 
-/// Total addressable strips on the XR18 map (16 + 4 + 6 + 4 + 1 + 4).
-pub const XAIR_STRIPS: usize = 35;
+/// Total addressable strips on the XR18 map (16 + 4 + 6 + 4 + 1 + 4 + 1).
+pub const XAIR_STRIPS: usize = 36;
 
 /// Loopback-tested param-plane capabilities: the ids this driver implements
 /// with `get_param`/`set_param` (each covered by a strict fake-desk loopback
@@ -294,9 +300,16 @@ pub const XAIR_CAPABILITIES: &[&str] = &[
     "polarity",
     "pan",
     "lr_assign",
+    "dca1_assign",
+    "dca2_assign",
+    "dca3_assign",
+    "dca4_assign",
     "hpf_on",
     "hpf_freq",
+    "automix_on",
     "automix_weight",
+    "insert_on",
+    "insert_sel",
     "color",
     "gate_on",
     "gate_thr",
@@ -477,9 +490,31 @@ fn generic_send(param: &str) -> anyhow::Result<(u8, &str)> {
     Ok((n, leaf))
 }
 
+/// Parse a `dcaN_assign` param id into its 0-based DCA group index.
+fn dca_assign(param: &str) -> anyhow::Result<u8> {
+    let rest = param
+        .strip_prefix("dca")
+        .ok_or_else(|| anyhow::anyhow!("xair: not a dca param {param:?}"))?;
+    let (n, leaf) = rest
+        .split_once('_')
+        .ok_or_else(|| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    if leaf != "assign" {
+        anyhow::bail!("xair: unknown param {param:?}");
+    }
+    let n: u8 = n
+        .parse()
+        .map_err(|_| anyhow::anyhow!("xair: unknown param {param:?}"))?;
+    if !(1..=groups::DCA_GROUPS).contains(&n) {
+        anyhow::bail!("xair: unknown param {param:?}");
+    }
+    Ok(n - 1)
+}
+
 /// Global strip index to (family kind, OSC root). Channels keep the
 /// `/ch/NN` root (T3); FX returns live at `/rtn/N` (NOT `/fxrtn/N` — the
-/// desk is silent there); buses are single-digit `/bus/N` (T2); DCA strips
+/// desk is silent there); the stereo aux input lives at `/rtn/aux` (NOT
+/// `/aux/*` or `/auxin/*` — the desk is silent there, owner-rig verified
+/// 2026-10-20); buses are single-digit `/bus/N` (T2); DCA strips
 /// are `/dca/N` with fader/on directly underneath (no `/mix` segment).
 /// Every root below is live-verified on the owner rig (FW 1.20).
 fn strip_root(strip: u16) -> anyhow::Result<(openmix_core::StripKind, String)> {    use openmix_core::StripKind as K;
@@ -502,7 +537,10 @@ fn strip_root(strip: u16) -> anyhow::Result<(openmix_core::StripKind, String)> {
     if (31..35).contains(&s) {
         return Ok((K::Dca, format!("/dca/{}", s - 31 + 1)));
     }
-    anyhow::bail!("channel strip {strip} out of range 0..=34 (0-based)")
+    if s == 35 {
+        return Ok((K::Ret, "/rtn/aux".to_string()));
+    }
+    anyhow::bail!("channel strip {strip} out of range 0..=35 (0-based)")
 }
 
 /// Scope-check one catalogue id against a strip kind: out-of-scope is a
@@ -594,10 +632,12 @@ async fn probe_port(host: &str, port: u16) -> bool {
     )
 }
 
-/// Reverse of [`strip_root`]: an OSC root back to its global strip index.
-/// Returns `None` for roots outside the XR18 map (including the legacy
-/// stereo `/rtn/aux` form, which this driver never addresses).
+/// Reverse of [`strip_root`]: an OSC root back to its global strip index./// Returns `None` for roots outside the XR18 map. The stereo aux input
+/// (`/rtn/aux`) is strip 35; numeric `/rtn/N` covers the four FX returns.
 fn strip_of_root(root: &str) -> Option<u16> {
+    if root == "/rtn/aux" {
+        return Some(35);
+    }
     let path = root.strip_prefix('/')?;
     let (fam, n) = path.split_once('/')?;
     let n: usize = n.parse().ok()?;
@@ -625,6 +665,14 @@ const AUX_LEVEL_IDS: [&str; 6] = [
     "aux6_level",
 ];
 const FX_LEVEL_IDS: [&str; 4] = ["fx1_level", "fx2_level", "fx3_level", "fx4_level"];
+/// Canonical catalogue ids per DCA-assign bit (`dca1..4_assign`, the same
+/// ids the `dcaN_assign` get_param arms decode — for `parse_inbound`).
+const DCA_ASSIGN_IDS: [&str; 4] = [
+    "dca1_assign",
+    "dca2_assign",
+    "dca3_assign",
+    "dca4_assign",
+];
 
 /// Canonical catalogue ids per EQ band leaf (bands 1..=6 index 0..=5) —
 /// the same ids `get_param`'s eq arms decode, for `parse_inbound`.
@@ -666,10 +714,20 @@ const EQ_TYPE_IDS: [&str; 6] = [
 /// Everything deeper (dyn/tap) keeps riding the poller; add leaves here
 /// (mirroring `get_param`'s decode arms) to extend live coverage.
 ///
-/// Returns the global strip index, the catalogue id and the value in
-/// engineering units (same as `get_param`); `None` for anything outside
+/// Returns the decoded updates — global strip index, catalogue id and value
+/// in engineering units (same as `get_param`); empty for anything outside
 /// the mix surface (other clients' poll traffic, meter streams, `/info`).
-pub fn parse_inbound(msg: &OscMessage) -> Option<(u16, &'static str, ParamValue)> {
+/// Bitmask/container leaves fan out to one update per catalogue id:
+/// `grp/dca` fans out to four `dcaN_assign` updates, the `automix`
+/// container to `automix_on` + `automix_weight`. `grp/mute` stays out
+/// (mute-group membership has no catalogue ids — the engine tracks it
+/// through `MuteGroupAssign` events, so desk-side mute-group moves surface
+/// at the next attach snapshot).
+pub fn parse_inbound(msg: &OscMessage) -> Vec<(u16, &'static str, ParamValue)> {
+    parse_inbound_go(msg).unwrap_or_default()
+}
+
+fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static str, ParamValue)>> {
     let addr = msg.addr.strip_prefix('/')?;
     // Solo switches (`/-stat/solosw/NN`, 1-based channel bank): the desk
     // broadcasts these on solo changes (surface, mixer control software, or our own
@@ -677,12 +735,16 @@ pub fn parse_inbound(msg: &OscMessage) -> Option<(u16, &'static str, ParamValue)
     // id so the engine can fan them out as `Solo` events; out-of-range
     // leaves stay silent (XR18: channels 1..=16 only).
     if let Some(rest) = addr.strip_prefix("-stat/solosw/") {
-        let n: u16 = rest.parse().ok()?;
+        let Ok(n): Result<u16, _> = rest.parse() else {
+            return None;
+        };
         if !(1..=addrs::XR18_CHANNELS).contains(&n) {
             return None;
         }
-        let on = osc::int_arg(msg).ok()? != 0;
-        return Some((n - 1, "solo", ParamValue::Bool(on)));
+        let Ok(on) = osc::int_arg(msg) else {
+            return None;
+        };
+        return Some(vec![(n - 1, "solo", ParamValue::Bool(on != 0))]);
     }
     // Headamp gain (`/headamp/NN/gain`, 1-based wire channel): the only
     // non-strip-root leaf covered here, decoded like `get_param`'s `gain`
@@ -697,31 +759,31 @@ pub fn parse_inbound(msg: &OscMessage) -> Option<(u16, &'static str, ParamValue)
             return None;
         }
         let db = headamp::wire_to_db(osc::fader_value(msg).ok()?).ok()?;
-        return Some((ch - 1, "gain", ParamValue::Float(db)));
+        return Some(vec![(ch - 1, "gain", ParamValue::Float(db))]);
     }
     // DCA direct forms first (`/dca/N/fader`, `/dca/N/on` — no `/mix`).
     if let Some(rest) = addr.strip_prefix("dca/") {
         let (n, leaf) = rest.split_once('/')?;
         let strip = strip_of_root(&format!("/dca/{n}"))?;
         return match leaf {
-            "fader" => Some((strip, "fader", ParamValue::Float(osc::fader_value(msg).ok()?))),
-            "on" => Some((strip, "mute", ParamValue::Bool(osc::mute_is_muted(msg).ok()?))),
+            "fader" => Some(vec![(strip, "fader", ParamValue::Float(osc::fader_value(msg).ok()?))]),
+            "on" => Some(vec![(strip, "mute", ParamValue::Bool(osc::mute_is_muted(msg).ok()?))]),
             _ => None,
         };
     }
     // Main LR (`/lr/mix/fader`, `/lr/mix/on`, `/lr/config/name`).
     if addr == "lr/mix/fader" {
-        return Some((LR_STRIP, "fader", ParamValue::Float(osc::fader_value(msg).ok()?)));
+        return Some(vec![(LR_STRIP, "fader", ParamValue::Float(osc::fader_value(msg).ok()?))]);
     }
     if addr == "lr/mix/on" {
-        return Some((LR_STRIP, "mute", ParamValue::Bool(osc::mute_is_muted(msg).ok()?)));
+        return Some(vec![(LR_STRIP, "mute", ParamValue::Bool(osc::mute_is_muted(msg).ok()?))]);
     }
     if addr == "lr/config/name" {
-        return Some((LR_STRIP, "name", ParamValue::Text(osc::string_args(msg).into_iter().next()?)));
+        return Some(vec![(LR_STRIP, "name", ParamValue::Text(osc::string_args(msg).into_iter().next()?))]);
     }
     if addr == "lr/config/color" {
         let i = look::int_from_msg(msg, look::COLOR_MIN, look::COLOR_MAX, "color").ok()?;
-        return Some((LR_STRIP, "color", ParamValue::Float(i as f32)));
+        return Some(vec![(LR_STRIP, "color", ParamValue::Float(i as f32))]);
     }
     // Family roots: `/ch/NN`, `/rtn/N`, `/bus/N`, `/fxsend/N`, with the
     // mix block (`…/mix/fader|on|pan`), a send slot (`…/mix/MM/level`) or a
@@ -747,7 +809,7 @@ pub fn parse_inbound(msg: &OscMessage) -> Option<(u16, &'static str, ParamValue)
             _ => return None,
         };
         let db = mix::wire_to_send_db(mix::send_level_value(msg).ok()?).ok()?;
-        return Some((ch - 1, id, ParamValue::Float(db)));
+        return Some(vec![(ch - 1, id, ParamValue::Float(db))]);
     }
     // EQ on/off (`{root}/eq/on`): channels, FX returns, buses and main LR
     // — decoded like the `get_param` `eq_on` arm. FX-send/DCA roots carry
@@ -765,7 +827,34 @@ pub fn parse_inbound(msg: &OscMessage) -> Option<(u16, &'static str, ParamValue)
         } else {
             strip_of_root(&format!("/{eq_root}"))?
         };
-        return Some((strip, "eq_on", ParamValue::Bool(osc::is_on(msg).ok()?)));
+        return Some(vec![(strip, "eq_on", ParamValue::Bool(osc::is_on(msg).ok()?))]);
+    }
+    // Insert bypass/select (`{root}/insert/on|sel`): channels, buses and
+    // main LR only — returns, FX sends and masters carry no insert leaf
+    // (the desk is silent there). Decoded like the `get_param`
+    // `insert_on`/`insert_sel` arms (raw `0..=8` sel, no slot mapping).
+    if let Some(ins_root) = addr.strip_suffix("/insert/on") {
+        if ins_root != "lr" && !ins_root.starts_with("ch/") && !ins_root.starts_with("bus/") {
+            return None;
+        }
+        let strip = if ins_root == "lr" {
+            LR_STRIP
+        } else {
+            strip_of_root(&format!("/{ins_root}"))?
+        };
+        return Some(vec![(strip, "insert_on", ParamValue::Bool(osc::is_on(msg).ok()?))]);
+    }
+    if let Some(ins_root) = addr.strip_suffix("/insert/sel") {
+        if ins_root != "lr" && !ins_root.starts_with("ch/") && !ins_root.starts_with("bus/") {
+            return None;
+        }
+        let strip = if ins_root == "lr" {
+            LR_STRIP
+        } else {
+            strip_of_root(&format!("/{ins_root}"))?
+        };
+        let sel = insert::sel_from_msg(msg).ok()? as f32;
+        return Some(vec![(strip, "insert_sel", ParamValue::Float(sel))]);
     }
     // EQ band leaves (`{root}/eq/{band}/{g|f|q|type}`): decoded like the
     // matching `get_param` eq arms (same codecs, engineering units).
@@ -806,10 +895,56 @@ pub fn parse_inbound(msg: &OscMessage) -> Option<(u16, &'static str, ParamValue)
             "q" => ParamValue::Float(eq::wire_to_q(osc::fader_value(msg).ok()?).ok()?),
             _ => ParamValue::Float(eq::eqtype_from_msg(msg).ok()? as f32),
         };
-        return Some((strip, id, value));
+        return Some(vec![(strip, id, value)]);
+    }
+    // Group assignment (`{root}/grp/dca`, int bitmask): one update per DCA
+    // catalogue id (same decode as the `dcaN_assign` get_param arms).
+    // `grp/mute` carries no catalogue ids (the engine tracks mute-group
+    // membership through `MuteGroupAssign` events) and stays out — see the
+    // fn docs. DCA/main roots carry no `grp` leaf on the desk; a message
+    // from anywhere else stays silent.
+    if let Some(grp_root) = addr.strip_suffix("/grp/dca") {
+        let strip = strip_of_root(&format!("/{grp_root}"))?;
+        let (kind, _) = strip_root(strip).ok()?;
+        if !matches!(
+            kind,
+            openmix_core::StripKind::In
+                | openmix_core::StripKind::Ret
+                | openmix_core::StripKind::Bus
+                | openmix_core::StripKind::FxSnd
+        ) {
+            return None;
+        }
+        let mask = groups::mask_from_msg(msg).ok()?;
+        return Some(
+            DCA_ASSIGN_IDS
+                .iter()
+                .enumerate()
+                .map(|(i, id)| (strip, *id, ParamValue::Bool(mask & (1 << i) != 0)))
+                .collect(),
+        );
+    }
+    // Automix container (`{root}/automix`, `(int, float)` = enable +
+    // weight): one update per leaf (same decode as the `automix_on` /
+    // `automix_weight` get_param arms). Channel strips only — the desk is
+    // silent on `automix` everywhere else. (`…/automix/weight` does not
+    // match this suffix and keeps its existing handling: none — weight
+    // queries ride `get_param`; desk-side weight moves arrive as container
+    // broadcasts, decoded here.)
+    if let Some(am_root) = addr.strip_suffix("/automix") {
+        let strip = strip_of_root(&format!("/{am_root}"))?;
+        let (kind, _) = strip_root(strip).ok()?;
+        if kind != openmix_core::StripKind::In {
+            return None;
+        }
+        let (on, w) = automix::automix_from_msg(msg).ok()?;
+        return Some(vec![
+            (strip, "automix_on", ParamValue::Bool(on)),
+            (strip, "automix_weight", ParamValue::Float(w)),
+        ]);
     }
     let (root, leaf) = match leaf {
-        "fader" | "on" | "pan" => {
+        "fader" | "on" | "pan" | "lr" => {
             let (root, block) = head.rsplit_once('/')?;
             if block != "mix" {
                 return None;
@@ -827,16 +962,20 @@ pub fn parse_inbound(msg: &OscMessage) -> Option<(u16, &'static str, ParamValue)
     };
     let strip = strip_of_root(&format!("/{root}"))?;
     match leaf {
-        "fader" => Some((strip, "fader", ParamValue::Float(osc::fader_value(msg).ok()?))),
-        "on" => Some((strip, "mute", ParamValue::Bool(osc::mute_is_muted(msg).ok()?))),
+        "fader" => Some(vec![(strip, "fader", ParamValue::Float(osc::fader_value(msg).ok()?))]),
+        "on" => Some(vec![(strip, "mute", ParamValue::Bool(osc::mute_is_muted(msg).ok()?))]),
         "pan" => {
             let pan = mix::wire_to_pan(osc::fader_value(msg).ok()?).ok()?;
-            Some((strip, "pan", ParamValue::Float(pan)))
+            Some(vec![(strip, "pan", ParamValue::Float(pan))])
         }
-        "name" => Some((strip, "name", ParamValue::Text(osc::string_args(msg).into_iter().next()?))),
+        // LR assign (`{root}/mix/lr`, int; same decode as `get_param`).
+        // Main LR never reaches here (`/lr` has no `lr` field, and
+        // `strip_of_root("/lr")` is `None` anyway).
+        "lr" => Some(vec![(strip, "lr_assign", ParamValue::Bool(osc::is_on(msg).ok()?))]),
+        "name" => Some(vec![(strip, "name", ParamValue::Text(osc::string_args(msg).into_iter().next()?))]),
         "color" => {
             let i = look::int_from_msg(msg, look::COLOR_MIN, look::COLOR_MAX, "color").ok()?;
-            Some((strip, "color", ParamValue::Float(i as f32)))
+            Some(vec![(strip, "color", ParamValue::Float(i as f32))])
         }
         _ => None,
     }
@@ -870,7 +1009,10 @@ pub struct XAirDriver {
     /// Last decoded `/meters/6` ALL DYN frame (`None` until the first blob
     /// is ingested). Serves the `gate_gr` / `comp_gr` param reads — the
     /// desk has no GR query address, so there is nothing else to read.
-    dyn_cache: Mutex<Option<dyn_gr::DynMeters>>,
+    /// Shared with the per-connection ingest task (see `connect`), which
+    /// routes every streamed DYN blob here; the `/meters/6` subscribe in
+    /// `subscribe_meters_once` starts that stream.
+    dyn_cache: std::sync::Arc<tokio::sync::Mutex<Option<dyn_gr::DynMeters>>>,
     /// Desk-originated mix-surface updates (see [`parse_inbound`]): stable
     /// across reconnects, fed by one ingest task per connection. The engine
     /// subscribes once and applies these to its param cache live.
@@ -904,7 +1046,7 @@ impl XAirDriver {
             session: Mutex::new(None),
             peer: Mutex::new(String::new()),
             model,
-            dyn_cache: Mutex::new(None),
+            dyn_cache: std::sync::Arc::new(Mutex::new(None)),
             update_tx,
             meter_latest: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
@@ -915,6 +1057,21 @@ impl XAirDriver {
     /// hardware, T3).
     fn check_channel(&self, strip: u16) -> anyhow::Result<u16> {
         addrs::channel_in(strip, self.model.channels())
+    }
+
+    /// Strip root for group-assignment leaves (`grp/dca`, `grp/mute`):
+    /// channels, FX returns, buses and FX-send masters answer (rig-verified
+    /// XR18 FW 1.20); main LR and DCA strips are live-silent there and bail
+    /// locally so callers never burn a 2 s query timeout on hardware.
+    fn assign_root(&self, strip: u16, what: &str) -> anyhow::Result<(openmix_core::StripKind, String)> {
+        let (kind, root) = strip_root(strip)?;
+        match kind {
+            openmix_core::StripKind::In
+            | openmix_core::StripKind::Ret
+            | openmix_core::StripKind::Bus
+            | openmix_core::StripKind::FxSnd => Ok((kind, root)),
+            _ => anyhow::bail!("xair: {what} not supported on {kind:?} strips (no grp leaf)"),
+        }
     }
 
     /// Connect-time port sweep for a bare host (no `:port`): ping `/info`
@@ -1009,6 +1166,41 @@ impl XAirDriver {
                 vec![OscType::String(name.to_string())],
             )
             .await
+    }
+
+    /// Single-query FX param read when the loaded effect index is already
+    /// known (connect burst / poller fast path): skips the per-param
+    /// `/fx/N/type` re-query in the trait `get_fx_param`. `None`
+    /// (unknown/unreadable type) falls back to raw decode, exactly like
+    /// the two-query path.
+    pub async fn get_fx_param_with_type(
+        &self,
+        slot: u8,
+        param: u8,
+        effect: Option<u8>,
+    ) -> anyhow::Result<f32> {
+        let addr = fx::fx_param(slot, param)?;
+        let guard = self.session().await?;
+        let session = guard.as_ref().unwrap();
+        let def = effect.and_then(|t| fx::fx_param_def(t, param + 1));
+        let reply = session.query(&addr).await?;
+        fx::parse_fx_param(&reply.args, def.as_ref())
+    }
+
+    /// Live solo bank in ONE query (`/-stat/solosw` int args, 1 per
+    /// channel): index `i` set = channel `i + 1` soloed. Backs the engine
+    /// snapshot fan-out so a connect burst costs 1 query, not 16.
+    pub async fn solo_bank(&self) -> anyhow::Result<Vec<bool>> {
+        let n = self.model.channels() as usize;
+        let guard = self.session().await?;
+        let reply = guard
+            .as_ref()
+            .unwrap()
+            .query(addrs::SOLO_SW)
+            .await?;
+        Ok((0..n)
+            .map(|i| matches!(reply.args.get(i), Some(OscType::Int(v)) if *v != 0))
+            .collect())
     }
 
     /// Map a raw `/info` reply to [`MixerInfo`]. Hardware order (baseline
@@ -1239,16 +1431,10 @@ impl XAirDriver {
         Ok(())
     }
 
-    /// Ingest one raw `/meters/6` OSC message into the GR cache (the
-    /// documented ALL DYN shape — see [`crate::dyn_gr`]). Any other address
-    /// (or a non-blob payload) bails: no guessing at unknown meter layouts.
-    ///
-    /// Ingestion lives here — not in the session recv loop — because the
-    /// shared transport hub only forwards level-only `MeterFrame`s and this
-    /// crate cannot change that routing. A future transport raw-frame hook
-    /// (or the relay slice) calls this per DYN blob; until then the cache
-    /// fills in tests, and [`MixerDriver::get_param`] reports no-data.
-    pub async fn ingest_dyn_message(&self, msg: &OscMessage) -> anyhow::Result<()> {
+    /// Decode one raw `/meters/6` OSC message into [`DynMeters`]
+    /// (shared by [`Self::ingest_dyn_message`] and the per-connection
+    /// ingest task in `connect`).
+    fn decode_dyn_message(msg: &OscMessage) -> anyhow::Result<dyn_gr::DynMeters> {
         if msg.addr != addrs::METER_DYN_SUBSCRIBE {
             anyhow::bail!("ingest_dyn_message: unsupported meter {}", msg.addr);
         }
@@ -1259,7 +1445,19 @@ impl XAirDriver {
         let Some(blob) = blob else {
             anyhow::bail!("ingest_dyn_message: /meters/6 without blob payload");
         };
-        let dyn_meters = dyn_gr::parse_dyn_blob(blob)?;
+        dyn_gr::parse_dyn_blob(blob)
+    }
+
+    /// Ingest one raw `/meters/6` OSC message into the GR cache (the
+    /// documented ALL DYN shape — see [`crate::dyn_gr`]). Any other address
+    /// (or a non-blob payload) bails: no guessing at unknown meter layouts.
+    ///
+    /// Ingestion also runs live: the per-connection task in `connect`
+    /// routes every streamed DYN blob through [`Self::decode_dyn_message`]
+    /// into the same cache, so the `gate_gr` / `comp_gr` param reads serve
+    /// live reduction once the desk streams (see `subscribe_meters_once`).
+    pub async fn ingest_dyn_message(&self, msg: &OscMessage) -> anyhow::Result<()> {
+        let dyn_meters = Self::decode_dyn_message(msg)?;
         *self.dyn_cache.lock().await = Some(dyn_meters);
         Ok(())
     }
@@ -1295,14 +1493,15 @@ impl MixerDriver for XAirDriver {
         XAIR_TOPOLOGY.to_vec()
     }
 
-    /// Total addressable strips (35 on the XR18 map).
+    /// Total addressable strips (36 on the XR18 map).
     fn strip_count(&self) -> usize {
         XAIR_STRIPS
     }
 
-    /// Addressable channel strips for this model (XR18: 16; `/rtn/aux` and
-    /// buses/main are separate methods, not strips). Keeps `list`/sweeps
-    /// off the phantom `/ch/17+` range the desk never answers (T3).
+    /// Addressable channel strips for this model (XR18: 16; `/rtn/N`,
+    /// `/rtn/aux`, buses/main are separate strips, not channels). Keeps
+    /// `list`/sweeps off the phantom `/ch/17+` range the desk never
+    /// answers (T3).
     fn channel_count(&self) -> usize {
         self.model.channels() as usize
     }
@@ -1323,11 +1522,15 @@ impl MixerDriver for XAirDriver {
         // out every query (phantom link, tap-to-connect looks dead with no
         // message). Two attempts absorb one lost datagram on flaky venue
         // wifi; a desk that answers nothing fails fast with the address in
-        // the message so the UI can offer a retry.
+        // the message so the UI can offer a retry. Attempts use the
+        // connect-burst budget (not the steady-state 2 s query timeout).
         let mut verified = false;
         for _ in 0..2 {
             if session
-                .query_timeout(addrs::INFO, std::time::Duration::from_millis(800))
+                .query_timeout(
+                    addrs::INFO,
+                    openmix_transport::session::CONNECT_BURST_TIMEOUT,
+                )
                 .await
                 .is_ok()
             {
@@ -1342,14 +1545,24 @@ impl MixerDriver for XAirDriver {
         }
         // Desk-broadcast ingest: parse every unmatched inbound message into
         // the stable update channel (one task per connection; it exits when
-        // the next connect drops this session).
+        // the next connect drops this session). `/meters/6` ALL DYN blobs
+        // ride along here too (the transport hub only forwards levels, so
+        // the session files DYN blobs as unmatched traffic): route them
+        // into the GR cache backing the `gate_gr` / `comp_gr` param reads.
         let mut rx = session.subscribe_updates();
         let tx = self.update_tx.clone();
+        let dyn_cache = self.dyn_cache.clone();
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
                     Ok(msg) => {
-                        if let Some((strip, param, value)) = parse_inbound(&msg) {
+                        if msg.addr == addrs::METER_DYN_SUBSCRIBE {
+                            if let Ok(dyn_m) = Self::decode_dyn_message(&msg) {
+                                *dyn_cache.lock().await = Some(dyn_m);
+                            }
+                            continue;
+                        }
+                        for (strip, param, value) in parse_inbound(&msg) {
                             let _ = tx.send(openmix_core::ParamUpdate {
                                 strip: StripId(strip),
                                 param: param.to_string(),
@@ -1494,6 +1707,47 @@ impl MixerDriver for XAirDriver {
         }
     }
 
+    /// Channel -> mute-group membership, bit `group` of the strip's
+    /// `{root}/grp/mute` bitmask (rig-verified XR18 FW 1.20, 2026-10-20:
+    /// write `1` → `1`, `2` → `2`, restore `0`; out-of-range writes
+    /// saturate on the desk, so the group is validated locally first).
+    /// Read-modify-write: the desk has no per-group leaf. Main-LR and DCA
+    /// strips carry no `grp` leaf (live-silent) and bail locally instead
+    /// of timing out on hardware — this also keeps the engine attach
+    /// snapshot (which scans every strip) fast.
+    async fn set_mute_group_assign(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+    ) -> anyhow::Result<()> {
+        let (kind, root) = self.assign_root(ch.0, "mute-group assign")?;
+        let _ = kind;
+        let guard = self.session().await?;
+        let session = guard.as_ref().unwrap();
+        let reply = session.query(&groups::grp_mute(&root)).await?;
+        let mask = groups::mask_from_msg(&reply)?;
+        let next = groups::mask_with(mask, group, member, "mute group")?;
+        session
+            .send(&groups::grp_mute(&root), vec![OscType::Int(next)])
+            .await
+    }
+
+    /// Channel -> mute-group membership read (same leaf; groups with no
+    /// desk leaf bail locally — see [`Self::set_mute_group_assign`]).
+    async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        let (kind, root) = self.assign_root(ch.0, "mute-group assign")?;
+        let _ = kind;
+        let guard = self.session().await?;
+        let reply = guard
+            .as_ref()
+            .unwrap()
+            .query(&groups::grp_mute(&root))
+            .await?;
+        let mask = groups::mask_from_msg(&reply)?;
+        groups::mask_has(mask, group, "mute group")
+    }
+
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
         let guard = self.session().await?;
         guard
@@ -1599,22 +1853,15 @@ impl MixerDriver for XAirDriver {
     }
 
     async fn get_fx_param(&self, slot: u8, param: u8) -> anyhow::Result<f32> {
-        let addr = fx::fx_param(slot, param)?;
-        let guard = self.session().await?;
-        let session = guard.as_ref().unwrap();
         // Loaded effect selects the par def (enum pars reply as INT option
         // indices on hardware — see `crate::fx`). A missing/unparseable
         // type falls back to raw decode (`None` def); plain floats stay
         // bit-exact either way (baseline §6 row 5).
-        let def = match session.query(&fx::fx_type(slot)?).await {
-            Ok(treply) => match fx::parse_fx_type(&treply.args) {
-                Ok(t) => fx::fx_param_def(t, param + 1),
-                Err(_) => None,
-            },
+        let effect = match self.session().await?.as_ref().unwrap().query(&fx::fx_type(slot)?).await {
+            Ok(treply) => fx::parse_fx_type(&treply.args).ok(),
             Err(_) => None,
         };
-        let reply = session.query(&addr).await?;
-        fx::parse_fx_param(&reply.args, def.as_ref())
+        self.get_fx_param_with_type(slot, param, effect).await
     }
 
     async fn subscribe_meters(
@@ -1989,6 +2236,55 @@ impl MixerDriver for XAirDriver {
                     .send(&automix::automix_weight(&root), vec![OscType::Float(automix::weight_to_wire(w)?)])
                     .await
             }
+            ("automix_on", ParamValue::Bool(on)) => {
+                // No standalone leaf: read the container (keeping the
+                // current weight) and rewrite it with the new enable bit.
+                // Two queries, one write — the enable survives verbatim.
+                let guard = self.session().await?;
+                let session = guard.as_ref().unwrap();
+                let reply = session.query(&automix::automix(&root)).await?;
+                let (_, w) = automix::automix_from_msg(&reply)?;
+                session
+                    .send(&automix::automix(&root), automix::automix_to_args(on, w)?)
+                    .await
+            }
+            (p, ParamValue::Bool(member)) if p.starts_with("dca") => {
+                // Read-modify-write on the `{root}/grp/dca` bitmask (the
+                // desk has no per-group leaf). Out-of-range groups and
+                // upper bits never reach the desk (see `groups`).
+                let group = dca_assign(p)?;
+                let guard = self.session().await?;
+                let session = guard.as_ref().unwrap();
+                let reply = session.query(&groups::grp_dca(&root)).await?;
+                let mask = groups::mask_from_msg(&reply)?;
+                let next = groups::mask_with(mask, group, member, "dca")?;
+                session
+                    .send(&groups::grp_dca(&root), vec![OscType::Int(next)])
+                    .await
+            }
+            ("insert_on", ParamValue::Bool(on)) => {
+                // Insert bypass switch (`{root}/insert/on`, rig-verified
+                // 2026-10-20). The scope check above already confined this
+                // to channel/bus/main strips (returns/sends/masters have no
+                // insert leaf — the desk is silent there).
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&insert::insert_on(&root), vec![codec::bool_arg(on)])
+                    .await
+            }
+            ("insert_sel", ParamValue::Float(v)) => {
+                // Insert select (`{root}/insert/sel`, raw int `0..=8`,
+                // rig-verified 2026-10-20 — NOT 1..4 FX slots, so no slot
+                // mapping is asserted). Same scoping as `insert_on`.
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send(&insert::insert_sel(&root), vec![insert::sel_to_arg(v)?])
+                    .await
+            }
             (p, _) => anyhow::bail!("{}: unknown param {p:?}", self.name()),
         }
     }
@@ -2094,6 +2390,34 @@ impl MixerDriver for XAirDriver {
                 let guard = self.session().await?;
                 let reply = guard.as_ref().unwrap().query(&automix::automix_weight(&root)).await?;
                 automix::wire_to_weight(osc::fader_value(&reply)?).map(ParamValue::Float)
+            }
+            "automix_on" => {
+                // No standalone leaf (the desk is silent on
+                // `{root}/automix/on`): read the container and take pos0.
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&automix::automix(&root)).await?;
+                automix::automix_from_msg(&reply).map(|(on, _)| ParamValue::Bool(on))
+            }
+            p if p.starts_with("dca") => {
+                // DCA membership bits of the `{root}/grp/dca` bitmask
+                // (the scope check above already confined this to strips
+                // whose root answers the leaf — channels, FX returns,
+                // buses; main/DCA/FX-send masters are silent there).
+                let group = dca_assign(p)?;
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&groups::grp_dca(&root)).await?;
+                let mask = groups::mask_from_msg(&reply)?;
+                groups::mask_has(mask, group, "dca").map(ParamValue::Bool)
+            }
+            "insert_on" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&insert::insert_on(&root)).await?;
+                osc::is_on(&reply).map(ParamValue::Bool)
+            }
+            "insert_sel" => {
+                let guard = self.session().await?;
+                let reply = guard.as_ref().unwrap().query(&insert::insert_sel(&root)).await?;
+                insert::sel_from_msg(&reply).map(|i| ParamValue::Float(i as f32))
             }
             "pan" => {
                 let guard = self.session().await?;
@@ -2571,6 +2895,88 @@ mod tests {
                                 worker.names.lock().unwrap().insert(a.to_string(), s.clone());
                                 None
                             }
+                            // Group-assignment bitmasks (`{root}/grp/dca`,
+                            // `{root}/grp/mute`): the live desk keeps only
+                            // the low 4 bits (writes of 32/63 read back 15),
+                            // so the fake masks on store — an unmasked store
+                            // would pass a test the desk would fail.
+                            (a, Some(OscType::Int(i)))
+                                if a.ends_with("/grp/dca") || a.ends_with("/grp/mute") =>
+                            {
+                                worker.plane_ints.lock().unwrap().insert(a.to_string(), *i & 0x0F);
+                                None
+                            }
+                            (a, None)
+                                if a.ends_with("/grp/dca") || a.ends_with("/grp/mute") =>
+                            {
+                                let v = worker
+                                    .plane_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0);
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            // LR assign (`{root}/mix/lr`, int 1/0): store
+                            // verbatim; untouched strips read back the live
+                            // rig defaults (channels/FX returns assigned,
+                            // buses not).
+                            (a, Some(OscType::Int(i))) if a.ends_with("/mix/lr") => {
+                                worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
+                            (a, None) if a.ends_with("/mix/lr") => {
+                                let v = worker
+                                    .plane_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or_else(|| {
+                                        if a.starts_with("/bus/") {
+                                            0
+                                        } else {
+                                            1
+                                        }
+                                    });
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            // Automix container (`{root}/automix`, `(int,
+                            // float)` = enable + weight): store both
+                            // verbatim; untouched strips read back (0, 0.5)
+                            // like the live rig.
+                            (a, Some(_)) if a.ends_with("/automix") => {
+                                if let [OscType::Int(on), OscType::Float(w)] = msg.args.as_slice()
+                                {
+                                    worker.plane_ints.lock().unwrap().insert(a.to_string(), *on);
+                                    worker.plane_floats.lock().unwrap().insert(a.to_string(), *w);
+                                }
+                                None
+                            }
+                            (a, None) if a.ends_with("/automix") => {
+                                let on = worker
+                                    .plane_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0);
+                                let w = worker
+                                    .plane_floats
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0.5);
+                                Some(
+                                    osc::encode_message(
+                                        a,
+                                        vec![OscType::Int(on), OscType::Float(w)],
+                                    )
+                                    .unwrap(),
+                                )
+                            }
                             (a, None)
                                 if a.ends_with("/mix/fader")
                                     || a.starts_with("/dca/") && a.ends_with("/fader") =>
@@ -2777,6 +3183,17 @@ mod tests {
                                 worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
                                 None
                             }
+                            // Strip insert (`{root}/insert/on|sel`, ch/bus/lr
+                            // — rig-verified 2026-10-20; the driver never
+                            // asks on rtn/fxsend/dca roots, which stay
+                            // silent like the live desk): verbatim ints.
+                            (a, Some(OscType::Int(i)))
+                                if a.ends_with("/insert/on")
+                                    || a.ends_with("/insert/sel") =>
+                            {
+                                worker.plane_ints.lock().unwrap().insert(a.to_string(), *i);
+                                None
+                            }
                             // v2b: solo monitoring globals (`/config/solo/*`):
                             // verbatim ints/float, untouched reads default
                             // per rig (dim 0, mute 0, level 0.75, source 3).
@@ -2796,8 +3213,9 @@ mod tests {
                             }
                             // v2b: FX slot insert (`/fx/N/insert`): verbatim
                             // ints, untouched reads default 0 (bypassed).
-                            // (Strip insert containers like `/ch/01/insert`
-                            // stay silent — no driver arm addresses them.)
+                            // (Strip insert *containers* like `/ch/01/insert`
+                            // stay silent — the driver addresses only the
+                            // `/insert/on|sel` leaves.)
                             (a, Some(OscType::Int(i)))
                                 if a.starts_with("/fx/") && a.ends_with("/insert") =>
                             {
@@ -2910,6 +3328,22 @@ mod tests {
                             // v2b: FX slot insert reads back stored, else 0.
                             (a, None)
                                 if a.starts_with("/fx/") && a.ends_with("/insert") =>
+                            {
+                                let v = worker
+                                    .plane_ints
+                                    .lock()
+                                    .unwrap()
+                                    .get(a)
+                                    .copied()
+                                    .unwrap_or(0);
+                                Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
+                            }
+                            // Strip insert reads back stored, else 0
+                            // (bypassed, nothing selected — matches the rig
+                            // defaults on untouched strips).
+                            (a, None)
+                                if a.ends_with("/insert/on")
+                                    || a.ends_with("/insert/sel") =>
                             {
                                 let v = worker
                                     .plane_ints
@@ -3121,6 +3555,123 @@ mod tests {
         assert!(driver.set_mute_group(4, false).await.is_err());
     }
 
+    /// Assign-plane loopback over UDP (`groups` + automix container, desk
+    /// shapes rig-verified 2026-10-20): DCA/mute bitmask RMW, automix
+    /// enable container RMW (weight preserved), LR round-trip. Out-of-range
+    /// groups and silent roots (main/DCA) bail locally — the live desk
+    /// saturates out-of-range mask writes, so an unchecked index would
+    /// (mis)assign every group there.
+    #[tokio::test]
+    async fn driver_assign_plane_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // DCA bits on strip 0 (wire `/ch/01/grp/dca`, untouched reads 0).
+        assert!(matches!(
+            driver.get_param(StripId(0), "dca1_assign").await.unwrap(),
+            ParamValue::Bool(false)
+        ));
+        driver
+            .set_param(StripId(0), "dca1_assign", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert!(matches!(
+            driver.get_param(StripId(0), "dca1_assign").await.unwrap(),
+            ParamValue::Bool(true)
+        ));
+        // Neighbouring bits stay clear; a second bit ORs in.
+        assert!(matches!(
+            driver.get_param(StripId(0), "dca2_assign").await.unwrap(),
+            ParamValue::Bool(false)
+        ));
+        driver
+            .set_param(StripId(0), "dca3_assign", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert!(matches!(
+            driver.get_param(StripId(0), "dca1_assign").await.unwrap(),
+            ParamValue::Bool(true)
+        ));
+        driver
+            .set_param(StripId(0), "dca1_assign", ParamValue::Bool(false))
+            .await
+            .unwrap();
+        assert!(matches!(
+            driver.get_param(StripId(0), "dca1_assign").await.unwrap(),
+            ParamValue::Bool(false)
+        ));
+        assert!(matches!(
+            driver.get_param(StripId(0), "dca3_assign").await.unwrap(),
+            ParamValue::Bool(true)
+        ));
+        // Unknown DCA ids and out-of-scope strips bail locally.
+        assert!(driver.get_param(StripId(0), "dca5_assign").await.is_err());
+        assert!(
+            driver
+                .set_param(StripId(30), "dca1_assign", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+        // LR assign round-trips (untouched strips read assigned).
+        assert!(matches!(
+            driver.get_param(StripId(0), "lr_assign").await.unwrap(),
+            ParamValue::Bool(true)
+        ));
+        driver
+            .set_param(StripId(0), "lr_assign", ParamValue::Bool(false))
+            .await
+            .unwrap();
+        assert!(matches!(
+            driver.get_param(StripId(0), "lr_assign").await.unwrap(),
+            ParamValue::Bool(false)
+        ));
+        driver
+            .set_param(StripId(0), "lr_assign", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        // Mute-group membership via the driver methods (bit 1; bit 0
+        // stays clear; out-of-range groups bail locally).
+        assert!(!driver.get_mute_group_assign(StripId(0), 0).await.unwrap());
+        driver.set_mute_group_assign(StripId(0), 1, true).await.unwrap();
+        assert!(driver.get_mute_group_assign(StripId(0), 1).await.unwrap());
+        assert!(!driver.get_mute_group_assign(StripId(0), 0).await.unwrap());
+        driver.set_mute_group_assign(StripId(0), 1, false).await.unwrap();
+        assert!(!driver.get_mute_group_assign(StripId(0), 1).await.unwrap());
+        assert!(driver.get_mute_group_assign(StripId(0), 4).await.is_err());
+        assert!(driver.set_mute_group_assign(StripId(0), 4, true).await.is_err());
+        // Main-LR (strip 30) and DCA (strip 31) strips carry no `grp`
+        // leaf: local bail, never a hardware timeout.
+        assert!(driver.get_mute_group_assign(StripId(30), 0).await.is_err());
+        assert!(driver.set_mute_group_assign(StripId(31), 0, true).await.is_err());
+        // Automix enable preserves the weight (container RMW).
+        driver
+            .set_param(StripId(0), "automix_weight", ParamValue::Float(0.75))
+            .await
+            .unwrap();
+        driver
+            .set_param(StripId(0), "automix_on", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert!(matches!(
+            driver.get_param(StripId(0), "automix_on").await.unwrap(),
+            ParamValue::Bool(true)
+        ));
+        assert!(matches!(
+            driver.get_param(StripId(0), "automix_weight").await.unwrap(),
+            ParamValue::Float(w) if (w - 0.75).abs() < 1e-6
+        ));
+        driver
+            .set_param(StripId(0), "automix_on", ParamValue::Bool(false))
+            .await
+            .unwrap();
+        assert!(matches!(
+            driver.get_param(StripId(0), "automix_on").await.unwrap(),
+            ParamValue::Bool(false)
+        ));
+        assert!(matches!(
+            driver.get_param(StripId(0), "automix_weight").await.unwrap(),
+            ParamValue::Float(w) if (w - 0.75).abs() < 1e-6
+        ));
+    }
+
     /// Clear-solo action: fire-and-forget set ACKed by silence, query reads
     /// back int 0 (nothing soloed) — the live-desk shape.
     #[tokio::test]
@@ -3292,45 +3843,40 @@ mod tests {
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/01/mix/01/level",
             vec![OscType::Float(0.5)],
-        ))
-        .expect("send level parses");
+        )).into_iter().next().expect("send level parses");
         assert_eq!((strip, param), (0, "aux1_level"));
         assert!(matches!(value, ParamValue::Float(v) if (v - mix::wire_to_send_db(0.5).unwrap()).abs() < 1e-6));
         // FX-send slot 7 -> `fx1_level`.
         let (strip, param, _) = parse_inbound(&msg(
             "/ch/02/mix/07/level",
             vec![OscType::Float(0.25)],
-        ))
-        .expect("fx send level parses");
+        )).into_iter().next().expect("fx send level parses");
         assert_eq!((strip, param), (1, "fx1_level"));
         // Headamp gain -> dB like the `gain` arm.
         let (strip, param, value) = parse_inbound(&msg(
             "/headamp/01/gain",
             vec![OscType::Float(0.5)],
-        ))
-        .expect("headamp gain parses");
+        )).into_iter().next().expect("headamp gain parses");
         assert_eq!((strip, param), (0, "gain"));
         assert!(matches!(value, ParamValue::Float(v) if (v - 24.0).abs() < 1e-5));
         // Strip + LR color -> float enum like the `color` arm.
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/01/config/color",
             vec![OscType::Int(3)],
-        ))
-        .expect("strip color parses");
+        )).into_iter().next().expect("strip color parses");
         assert_eq!((strip, param), (0, "color"));
         assert!(matches!(value, ParamValue::Float(v) if v == 3.0));
         let (strip, param, _) = parse_inbound(&msg(
             "/lr/config/color",
             vec![OscType::Int(7)],
-        ))
-        .expect("lr color parses");
+        )).into_iter().next().expect("lr color parses");
         assert_eq!((strip, param), (LR_STRIP, "color"));
         // Out-of-scope shapes stay silent: bus roots carry no send slots,
         // headamp ends at ch16, slots end at 10, icon has no arm.
-        assert!(parse_inbound(&msg("/bus/1/mix/01/level", vec![OscType::Float(0.5)])).is_none());
-        assert!(parse_inbound(&msg("/headamp/17/gain", vec![OscType::Float(0.5)])).is_none());
-        assert!(parse_inbound(&msg("/ch/01/mix/11/level", vec![OscType::Float(0.5)])).is_none());
-        assert!(parse_inbound(&msg("/ch/01/config/icon", vec![OscType::Int(1)])).is_none());
+        assert!(parse_inbound(&msg("/bus/1/mix/01/level", vec![OscType::Float(0.5)])).is_empty());
+        assert!(parse_inbound(&msg("/headamp/17/gain", vec![OscType::Float(0.5)])).is_empty());
+        assert!(parse_inbound(&msg("/ch/01/mix/11/level", vec![OscType::Float(0.5)])).is_empty());
+        assert!(parse_inbound(&msg("/ch/01/config/icon", vec![OscType::Int(1)])).is_empty());
     }
 
     /// Desk-originated solo updates ride `/-stat/solosw/NN` (the same
@@ -3347,21 +3893,59 @@ mod tests {
         let (strip, param, value) = parse_inbound(&msg(
             "/-stat/solosw/01",
             vec![OscType::Int(1)],
-        ))
-        .expect("solosw on parses");
+        )).into_iter().next().expect("solosw on parses");
         assert_eq!((strip, param), (0, "solo"));
         assert!(matches!(value, ParamValue::Bool(true)));
         let (strip, param, value) = parse_inbound(&msg(
             "/-stat/solosw/16",
             vec![OscType::Int(0)],
-        ))
-        .expect("solosw off parses");
+        )).into_iter().next().expect("solosw off parses");
         assert_eq!((strip, param), (15, "solo"));
         assert!(matches!(value, ParamValue::Bool(false)));
-        assert!(parse_inbound(&msg("/-stat/solosw/17", vec![OscType::Int(1)])).is_none());
-        assert!(parse_inbound(&msg("/-stat/solosw/00", vec![OscType::Int(1)])).is_none());
-        assert!(parse_inbound(&msg("/-stat/solosw", vec![OscType::Int(1)])).is_none());
-        assert!(parse_inbound(&msg("/-action/clearsolo", vec![OscType::Int(1)])).is_none());
+        assert!(parse_inbound(&msg("/-stat/solosw/17", vec![OscType::Int(1)])).is_empty());
+        assert!(parse_inbound(&msg("/-stat/solosw/00", vec![OscType::Int(1)])).is_empty());
+        assert!(parse_inbound(&msg("/-stat/solosw", vec![OscType::Int(1)])).is_empty());
+        assert!(parse_inbound(&msg("/-action/clearsolo", vec![OscType::Int(1)])).is_empty());
+    }
+
+    /// Desk-originated assign-plane updates (`{root}/mix/lr`,
+    /// `{root}/grp/dca`, `{root}/automix`): decoded like the matching
+    /// `get_param` arms. `grp/dca` fans out to one update per DCA id, the
+    /// automix container to enable + weight; `grp/mute` stays silent (no
+    /// catalogue ids — membership rides `MuteGroupAssign` events).
+    #[test]
+    fn inbound_covers_assign_plane() {
+        let msg = |addr: &str, args: Vec<OscType>| OscMessage {
+            addr: addr.to_string(),
+            args,
+        };
+        // LR assign -> bool like the `lr_assign` arm.
+        let updates = parse_inbound(&msg("/ch/01/mix/lr", vec![OscType::Int(0)]));
+        assert_eq!(updates.len(), 1);
+        assert_eq!((updates[0].0, updates[0].1), (0, "lr_assign"));
+        assert!(matches!(updates[0].2, ParamValue::Bool(false)));
+        // DCA bitmask -> one bool per DCA id (bits 0 + 2 set).
+        let updates = parse_inbound(&msg("/ch/01/grp/dca", vec![OscType::Int(5)]));
+        assert_eq!(updates.len(), 4);
+        for (i, (strip, id, value)) in updates.iter().enumerate() {
+            assert_eq!((*strip, *id), (0, DCA_ASSIGN_IDS[i]));
+            assert!(matches!(value, ParamValue::Bool(b) if *b == (i == 0 || i == 2)));
+        }
+        // Automix container -> enable + weight.
+        let updates = parse_inbound(&msg(
+            "/ch/01/automix",
+            vec![OscType::Int(1), OscType::Float(0.75)],
+        ));
+        assert_eq!(updates.len(), 2);
+        assert_eq!((updates[0].0, updates[0].1), (0, "automix_on"));
+        assert!(matches!(updates[0].2, ParamValue::Bool(true)));
+        assert_eq!((updates[1].0, updates[1].1), (0, "automix_weight"));
+        assert!(matches!(updates[1].2, ParamValue::Float(w) if (w - 0.75).abs() < 1e-6));
+        // Mute-group bitmask: no catalogue ids, stays silent here.
+        assert!(parse_inbound(&msg("/ch/01/grp/mute", vec![OscType::Int(3)])).is_empty());
+        // Silent roots stay silent (no `grp`/`lr` leaf on the desk).
+        assert!(parse_inbound(&msg("/lr/grp/dca", vec![OscType::Int(1)])).is_empty());
+        assert!(parse_inbound(&msg("/dca/1/grp/dca", vec![OscType::Int(1)])).is_empty());
     }
 
     /// Desk-originated EQ updates (`{root}/eq/on`, `{root}/eq/{band}/{g|f|q/type}`):
@@ -3380,85 +3964,75 @@ mod tests {
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/01/eq/1/g",
             vec![OscType::Float(0.75)],
-        ))
-        .expect("eq gain parses");
+        )).into_iter().next().expect("eq gain parses");
         assert_eq!((strip, param), (0, "eq1_gain"));
         assert!(matches!(value, ParamValue::Float(v) if (v - eq::wire_to_gain_db(0.75).unwrap()).abs() < 1e-6));
         // Channel band freq/q/type ride their own codecs.
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/02/eq/2/f",
             vec![OscType::Float(0.5)],
-        ))
-        .expect("eq freq parses");
+        )).into_iter().next().expect("eq freq parses");
         assert_eq!((strip, param), (1, "eq2_freq"));
         assert!(matches!(value, ParamValue::Float(v) if (v - eq::wire_to_freq_hz(0.5).unwrap()).abs() < 1e-6));
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/03/eq/3/q",
             vec![OscType::Float(0.5)],
-        ))
-        .expect("eq q parses");
+        )).into_iter().next().expect("eq q parses");
         assert_eq!((strip, param), (2, "eq3_q"));
         assert!(matches!(value, ParamValue::Float(v) if (v - eq::wire_to_q(0.5).unwrap()).abs() < 1e-6));
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/04/eq/4/type",
             vec![OscType::Int(2)],
-        ))
-        .expect("eq type parses");
+        )).into_iter().next().expect("eq type parses");
         assert_eq!((strip, param), (3, "eq4_type"));
         assert!(matches!(value, ParamValue::Float(v) if v == 2.0));
         // FX-return band gain (strip 16 = `/rtn/1`, 4-band family).
         let (strip, param, _) = parse_inbound(&msg(
             "/rtn/1/eq/1/g",
             vec![OscType::Float(0.5)],
-        ))
-        .expect("fxret eq gain parses");
+        )).into_iter().next().expect("fxret eq gain parses");
         assert_eq!((strip, param), (16, "eq1_gain"));
         // Bus bands 5+6 answer (strip 20 = `/bus/1`, 6-band family).
         let (strip, param, _) = parse_inbound(&msg(
             "/bus/1/eq/5/g",
             vec![OscType::Float(0.5)],
-        ))
-        .expect("bus eq5 gain parses");
+        )).into_iter().next().expect("bus eq5 gain parses");
         assert_eq!((strip, param), (20, "eq5_gain"));
         let (strip, param, _) = parse_inbound(&msg(
             "/bus/1/eq/6/type",
             vec![OscType::Int(5)],
-        ))
-        .expect("bus eq6 type parses");
+        )).into_iter().next().expect("bus eq6 type parses");
         assert_eq!((strip, param), (20, "eq6_type"));
         // Main LR EQ (strip 30 = `/lr`).
         let (strip, param, _) = parse_inbound(&msg(
             "/lr/eq/2/g",
             vec![OscType::Float(0.25)],
-        ))
-        .expect("lr eq gain parses");
+        )).into_iter().next().expect("lr eq gain parses");
         assert_eq!((strip, param), (LR_STRIP, "eq2_gain"));
         // EQ on/off decodes like the `eq_on` arm.
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/01/eq/on",
             vec![OscType::Int(1)],
-        ))
-        .expect("eq on parses");
+        )).into_iter().next().expect("eq on parses");
         assert_eq!((strip, param), (0, "eq_on"));
         assert!(matches!(value, ParamValue::Bool(true)));
         let (strip, param, _) = parse_inbound(&msg(
             "/lr/eq/on",
             vec![OscType::Int(0)],
-        ))
-        .expect("lr eq on parses");
+        )).into_iter().next().expect("lr eq on parses");
         assert_eq!((strip, param), (LR_STRIP, "eq_on"));
         // Out-of-scope shapes stay silent: band 5+ on a 4-band channel,
         // band 0/7+, FX-send/DCA roots (no EQ there), non-EQ `/type`
         // leaves (FX type select), and garbage roots.
-        assert!(parse_inbound(&msg("/ch/01/eq/5/g", vec![OscType::Float(0.5)])).is_none());
-        assert!(parse_inbound(&msg("/ch/01/eq/0/g", vec![OscType::Float(0.5)])).is_none());
-        assert!(parse_inbound(&msg("/ch/01/eq/7/g", vec![OscType::Float(0.5)])).is_none());
-        assert!(parse_inbound(&msg("/fxsend/1/eq/1/g", vec![OscType::Float(0.5)])).is_none());
-        assert!(parse_inbound(&msg("/dca/1/eq/1/g", vec![OscType::Float(0.5)])).is_none());
-        assert!(parse_inbound(&msg("/dca/1/eq/on", vec![OscType::Int(1)])).is_none());
-        assert!(parse_inbound(&msg("/fx/1/type", vec![OscType::Int(3)])).is_none());
-        assert!(parse_inbound(&msg("/ch/01/gate/filter/type", vec![OscType::Int(1)])).is_none());
-        assert!(parse_inbound(&msg("/ch/99/eq/1/g", vec![OscType::Float(0.5)])).is_none());
+        assert!(parse_inbound(&msg("/ch/01/eq/5/g", vec![OscType::Float(0.5)])).is_empty());
+        assert!(parse_inbound(&msg("/ch/01/eq/0/g", vec![OscType::Float(0.5)])).is_empty());
+        assert!(parse_inbound(&msg("/ch/01/eq/7/g", vec![OscType::Float(0.5)])).is_empty());
+        assert!(parse_inbound(&msg("/fxsend/1/eq/1/g", vec![OscType::Float(0.5)])).is_empty());
+        assert!(parse_inbound(&msg("/dca/1/eq/1/g", vec![OscType::Float(0.5)])).is_empty());
+        assert!(parse_inbound(&msg("/dca/1/eq/on", vec![OscType::Int(1)])).is_empty());
+        assert!(parse_inbound(&msg("/fx/1/type", vec![OscType::Int(3)])).is_empty());
+        assert!(parse_inbound(&msg("/ch/01/gate/filter/type", vec![OscType::Int(1)])).is_empty());
+        assert!(parse_inbound(&msg("/ch/99/eq/1/g", vec![OscType::Float(0.5)])).is_empty());
     }
 
     /// Desk-broadcast ingest for EQ over the real `connect()` path: an
@@ -3650,14 +4224,15 @@ mod tests {
         assert_eq!(x32kind.channel_count(), 32);
 
         let (driver, _) = connected_driver().await;
-        // v2 topology (35 strips): strips 0..16 stay channels (`/ch/01..16`,
+        // v2 topology (36 strips): strips 0..16 stay channels (`/ch/01..16`,
         // rig T3); strips 16..35 are the FX-return (`/rtn/N`)/bus/FX-send/
-        // LR/DCA roots, all live-verified. The strip space now
-        // ends at 34 — not 15.
+        // LR/DCA roots, all live-verified; strip 35 is the stereo aux
+        // input (`/rtn/aux`). The strip space now ends at 35 — not 15.
         assert!(driver.set_fader(StripId(15), 0.5).await.is_ok());
         assert!(driver.set_fader(StripId(16), 0.5).await.is_ok());
         assert!(driver.set_fader(StripId(34), 0.5).await.is_ok());
-        assert!(driver.set_fader(StripId(35), 0.5).await.is_err());
+        assert!(driver.set_fader(StripId(35), 0.5).await.is_ok());
+        assert!(driver.set_fader(StripId(36), 0.5).await.is_err());
         assert!(driver.get_mute(StripId(99)).await.is_err());
         assert!(driver.set_bus_fader(6, 0.5).await.is_err());
         assert!(driver.get_bus_fader(6).await.is_err());
@@ -3666,10 +4241,11 @@ mod tests {
     #[tokio::test]
     async fn driver_rejects_out_of_range_strips() {
         let (driver, _) = connected_driver().await;
-        // v2: the strip space ends at 34 (16 ch + 4 ret + 6 bus + 4 fxsnd +
-        // LR + 4 DCA); 32 is a DCA strip, 35+ is out of range.
+        // v2: the strip space ends at 35 (16 ch + 4 ret + 6 bus + 4 fxsnd +
+        // LR + 4 DCA + aux); 32 is a DCA strip, 36+ is out of range.
         assert!(driver.set_fader(StripId(32), 0.5).await.is_ok());
-        assert!(driver.set_fader(StripId(35), 0.5).await.is_err());
+        assert!(driver.set_fader(StripId(35), 0.5).await.is_ok());
+        assert!(driver.set_fader(StripId(36), 0.5).await.is_err());
         assert!(driver.get_mute(StripId(99)).await.is_err());
         assert!(driver.set_bus_fader(6, 0.5).await.is_err());
         assert!(driver.get_bus_fader(6).await.is_err());
@@ -3692,6 +4268,117 @@ mod tests {
         assert!(!driver.get_aux_mute().await.unwrap());
         driver.set_aux_name("COMP LR").await.unwrap();
         assert_eq!(driver.get_aux_name().await.unwrap(), "COMP LR");
+    }
+
+    /// Aux input as a first-class strip (strip 35 = `/rtn/aux`, owner-rig
+    /// verified 2026-10-20): fader/mute/name/pan/color/eq ride the same
+    /// `set_param`/`get_param` path as channels 1-16, and desk broadcasts
+    /// decode via `parse_inbound` to strip 35.
+    #[tokio::test]
+    async fn driver_aux_strip_param_path() {
+        let (driver, _) = connected_driver().await;
+        let aux = StripId(35);
+        driver
+            .set_param(aux, "fader", ParamValue::Float(0.5))
+            .await
+            .unwrap();
+        let ParamValue::Float(v) = driver.get_param(aux, "fader").await.unwrap() else {
+            panic!("aux fader read back non-float");
+        };
+        assert!(
+            (v - 0.5).abs() < addrs::FADER_READBACK_EPSILON,
+            "aux strip fader readback {v} outside hardware epsilon"
+        );
+        driver
+            .set_param(aux, "mute", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(aux, "mute").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        driver
+            .set_param(aux, "mute", ParamValue::Bool(false))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(aux, "mute").await.unwrap(),
+            ParamValue::Bool(false)
+        );
+        driver
+            .set_param(aux, "name", ParamValue::Text("AUX IN".to_string()))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(aux, "name").await.unwrap(),
+            ParamValue::Text("AUX IN".to_string())
+        );
+        driver
+            .set_param(aux, "pan", ParamValue::Float(0.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(pan) = driver.get_param(aux, "pan").await.unwrap() else {
+            panic!("aux pan read back non-float");
+        };
+        assert!((pan - 0.0).abs() < 1e-4, "aux pan readback {pan}");
+        driver
+            .set_param(aux, "eq1_gain", ParamValue::Float(3.0))
+            .await
+            .unwrap();
+        let ParamValue::Float(g) = driver.get_param(aux, "eq1_gain").await.unwrap() else {
+            panic!("aux eq1_gain read back non-float");
+        };
+        assert!((g - 3.0).abs() < 1e-4, "aux eq1_gain readback {g}");
+        // Aux carries 4 EQ bands like the FX returns: band 5+ is
+        // scope-rejected driver-side, never hitting a silent address.
+        assert!(
+            driver
+                .set_param(aux, "eq5_gain", ParamValue::Float(0.0))
+                .await
+                .is_err()
+        );
+        // Input-scoped leaves stay out of scope on the aux return.
+        assert!(driver.get_param(aux, "gain").await.is_err());
+        assert!(driver.get_param(aux, "phantom").await.is_err());
+        // Channel sends are channel-scoped: aux sends ride no leaf here.
+        assert!(
+            driver
+                .set_param(aux, "aux1_level", ParamValue::Float(-10.0))
+                .await
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn inbound_covers_rtn_aux() {
+        let msg = |addr: &str, args: Vec<OscType>| OscMessage {
+            addr: addr.to_string(),
+            args,
+        };
+        let (strip, param, _) = parse_inbound(&msg(
+            "/rtn/aux/mix/fader",
+            vec![OscType::Float(0.5)],
+        )).into_iter().next().expect("aux fader parses");
+        assert_eq!((strip, param), (35, "fader"));
+        let (strip, param, value) = parse_inbound(&msg(
+            "/rtn/aux/mix/on",
+            vec![OscType::Int(0)],
+        )).into_iter().next().expect("aux mute parses");
+        assert_eq!((strip, param), (35, "mute"));
+        assert!(matches!(value, ParamValue::Bool(true)));
+        let (strip, param, _) = parse_inbound(&msg(
+            "/rtn/aux/config/name",
+            vec![OscType::String("COMP LR".to_string())],
+        )).into_iter().next().expect("aux name parses");
+        assert_eq!((strip, param), (35, "name"));
+        let (strip, param, _) = parse_inbound(&msg(
+            "/rtn/aux/eq/1/g",
+            vec![OscType::Float(0.5)],
+        )).into_iter().next().expect("aux eq gain parses");
+        assert_eq!((strip, param), (35, "eq1_gain"));
+        // No phantom `/aux/*` or `/auxin/*` roots: only `/rtn/aux` decodes.
+        assert!(parse_inbound(&msg("/aux/mix/fader", vec![OscType::Float(0.5)])).is_empty());
+        assert!(parse_inbound(&msg("/auxin/mix/fader", vec![OscType::Float(0.5)])).is_empty());
     }
 
     /// Headamp gain/phantom loopback over UDP (`crate::headamp`,
@@ -3916,7 +4603,7 @@ mod tests {
         );
 
         // v2: strip 16 is an FX return (input-scoped leaves like trim stay
-        // out-of-scope errors there); the strip space ends at 34.
+        // out-of-scope errors there); the strip space ends at 35.
         assert!(
             driver
                 .set_param(StripId(16), "trim", ParamValue::Float(0.0))
@@ -4355,7 +5042,7 @@ mod tests {
                 .is_err()
         );
         // v2: strip 16 is an FX return (pan applies there); the strip space
-        // ends at 34, so 40 is out of range.
+        // ends at 35, so 40 is out of range.
         assert!(
             driver
                 .set_param(StripId(40), "pan", ParamValue::Float(0.0))
@@ -4887,6 +5574,82 @@ mod tests {
         assert!(driver.get_param(StripId(16), "automix_weight").await.is_err());
     }
 
+    /// Strip insert loopback over UDP (`crate::insert`, rig-verified
+    /// 2026-10-20): `{root}/insert/on` rides int `1`/`0`, `{root}/insert/sel`
+    /// rides the raw int `0..=8` (NOT 1..4 FX slots) on channel/bus/main
+    /// strips. Untouched reads match the rig (bypassed, nothing selected).
+    #[tokio::test]
+    async fn driver_strip_insert_roundtrip() {
+        let (driver, _) = connected_driver().await;
+        // Channel, bus and main strips; untouched reads default off/0.
+        for s in [StripId(0), StripId(20), StripId(30)] {
+            assert_eq!(
+                driver.get_param(s, "insert_on").await.unwrap(),
+                ParamValue::Bool(false)
+            );
+            assert_eq!(
+                driver.get_param(s, "insert_sel").await.unwrap(),
+                ParamValue::Float(0.0)
+            );
+        }
+        driver
+            .set_param(StripId(0), "insert_on", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "insert_on").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        driver
+            .set_param(StripId(0), "insert_sel", ParamValue::Float(7.0))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(0), "insert_sel").await.unwrap(),
+            ParamValue::Float(7.0)
+        );
+        // Main LR rides the same leaves.
+        driver
+            .set_param(StripId(30), "insert_on", ParamValue::Bool(true))
+            .await
+            .unwrap();
+        assert_eq!(
+            driver.get_param(StripId(30), "insert_on").await.unwrap(),
+            ParamValue::Bool(true)
+        );
+        // Range and kind enforced locally, never sent.
+        assert!(
+            driver
+                .set_param(StripId(0), "insert_on", ParamValue::Float(1.0))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "insert_sel", ParamValue::Float(9.0))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "insert_sel", ParamValue::Float(1.5))
+                .await
+                .is_err()
+        );
+        assert!(
+            driver
+                .set_param(StripId(0), "insert_sel", ParamValue::Bool(true))
+                .await
+                .is_err()
+        );
+        // Returns, FX sends and masters carry no insert leaf (the desk is
+        // silent there — catalogue scopes reject before any I/O).
+        for s in [StripId(16), StripId(26), StripId(31), StripId(35)] {
+            assert!(driver.get_param(s, "insert_on").await.is_err());
+            assert!(driver.get_param(s, "insert_sel").await.is_err());
+        }
+    }
+
     /// Solo monitoring globals loopback over UDP (`crate::solo`,
     /// rig-verified 2026-10-19): dim/mute/level/source round-trip through
     /// the global driver methods; untouched reads match the rig (dim 0,
@@ -5034,11 +5797,11 @@ mod tests {
         assert!(driver.get_param(d, "gate_thr").await.is_err());
     }
 
-    /// XR18 strip map shape: ordered, contiguous, 35 strips; roots resolve
+    /// XR18 strip map shape: ordered, contiguous, 36 strips; roots resolve
     /// per family; out-of-range stays a local error.
     #[test]
     fn topology_matches_strip_roots() {
-        assert_eq!(XAIR_STRIPS, 35);
+        assert_eq!(XAIR_STRIPS, 36);
         let mut next = 0usize;
         for fam in XAIR_TOPOLOGY {
             assert_eq!(fam.first, next, "gap/overlap before {}", fam.key);
@@ -5057,7 +5820,11 @@ mod tests {
         assert_eq!(strip_root(30).unwrap().1, "/lr");
         assert_eq!(strip_root(31).unwrap().1, "/dca/1");
         assert_eq!(strip_root(34).unwrap().1, "/dca/4");
-        assert!(strip_root(35).is_err());
+        let (k, r) = strip_root(35).unwrap();
+        assert_eq!((k, r.as_str()), (openmix_core::StripKind::Ret, "/rtn/aux"));
+        assert!(strip_root(36).is_err());
         assert!(strip_root(99).is_err());
+        assert_eq!(strip_of_root("/rtn/aux"), Some(35));
+        assert_eq!(strip_of_root("/rtn/1"), Some(16));
     }
 }

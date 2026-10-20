@@ -26,6 +26,8 @@
                 "index": "item.index",
                 "name": "item.name",
                 "type": "item.type",
+                "code": "item.code",
+                "art": "item.art",
                 "state": "item.state",
                 "stateColor": "item.stateColor",
                 "ret": "item.ret",

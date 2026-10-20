@@ -37,6 +37,7 @@ export const manifests: ModuleManifest[] = [
       bg: { type: 'color', default: 'var(--u4-btn-bg)' },      fg: { type: 'color', default: 'var(--u4-text-1)' },
       border: { type: 'text', default: '1px solid var(--u4-line-ctl)' },
       height: { type: 'number', min: 24, max: 64, step: 2, unit: 'px', default: 36 },
+      flex: { type: 'text' },
       padding: { type: 'text', default: '0 12px' },
       minWidth: { type: 'number', min: 0, max: 300, step: 1, unit: 'px' },
       fontSize: { type: 'number', min: 10, max: 20, step: 1, unit: 'px', default: 13 },

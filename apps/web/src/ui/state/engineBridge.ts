@@ -35,8 +35,13 @@ import {
 } from '../world/mapping/params.ts';
 import type { StripKind, World } from '../world/types.ts';
 
-/** Fixture id -> (family kind, 0-based ordinal). Null = no strip form. */
+/** Fixture id -> (family kind, 0-based ordinal). Null = no strip form.
+ * `aux1` is the XR18 stereo aux input (`/rtn/aux`, its own one-strip `ret`
+ * family in the xair topology): the index is the *family* ordinal (0 = the
+ * aux strip itself). `bridgeStrip` resolves it family-aware below, never by
+ * coarse `ret` ordinal (which would collide with the FX returns). */
 export function bridgeTarget(id: string): { kind: StripKind; index: number } | null {
+  if (id === 'aux1') return { kind: 'ret', index: 0 };
   let m = /^in(\d+)$/.exec(id);
   if (m) {
     const n = parseInt(m[1]!, 10);
@@ -73,8 +78,26 @@ export function bridgeTarget(id: string): { kind: StripKind; index: number } | n
   return null;
 }
 
-/** Nth strip of a family kind on the live world; null when absent. */
+/** Nth strip of a family kind on the live world; null when absent.
+ * `ret` ids resolve family-aware: `aux1` is the strip of the `aux` family
+ * (the XR18 stereo aux input), `fxN` the Nth strip of the `fxret` family
+ * (both are kind `ret`, so a coarse ordinal would collide). Other kinds
+ * keep the historical kind-ordinal mapping. */
 export function bridgeStrip(world: World, id: string): number | null {
+  if (id === 'aux1') {
+    const b = world.banks.find((bk) => bk.families.includes('aux'));
+    const s = b?.strips[0];
+    return typeof s === 'number' ? s : null;
+  }
+  const fxm = /^fx(\d+)$/.exec(id);
+  if (fxm) {
+    const n = parseInt(fxm[1]!, 10);
+    if (!Number.isInteger(n) || n < 1) return null;
+    const b = world.banks.find((bk) => bk.families.includes('fxret'));
+    if (b) return n - 1 < b.strips.length ? (b.strips[n - 1] as number) : null;
+    // No `fxret` family on this desk (older topology): fall through to
+    // the coarse kind-ordinal mapping below.
+  }
   const t = bridgeTarget(id);
   if (!t) return null;
   let seen = 0;
@@ -141,6 +164,15 @@ export function bridgeSendGrpon(world: World, id: string, k: number, grouped: bo
   return world.setParam(ch, `send${k + 1}_grpon`, grouped);
 }
 
+/** Send tap-point write-through (desk `sendN_tap` enum 0..5; fixture has
+ * no counterpart — the echo re-renders the row). Whole numbers only. */
+export function bridgeSendTap(world: World, id: string, k: number, tap: number): boolean {
+  const ch = bridgeStrip(world, id);
+  if (ch === null || !Number.isInteger(k) || k < 0) return false;
+  if (!Number.isInteger(tap) || tap < 0 || tap > 5) return false;
+  return world.setParam(ch, `send${k + 1}_tap`, tap);
+}
+
 /** LR assign write-through (`{root}/mix/lr`; fixture has no counterpart). */
 export function bridgeLrAssign(world: World, id: string, assigned: boolean): boolean {
   const ch = bridgeStrip(world, id);
@@ -153,6 +185,24 @@ export function bridgeAutomixWeight(world: World, id: string, weight: number): b
   const ch = bridgeStrip(world, id);
   if (ch === null || !Number.isFinite(weight)) return false;
   return world.setParam(ch, 'automix_weight', Math.min(1, Math.max(0, weight)));
+}
+
+/** Channel-insert bypass write-through (`{root}/insert/on`; fixture has
+ * no counterpart). Unknown/unmapped strips and lock-checked callers stay
+ * silent (false). */
+export function bridgeInsertOn(world: World, id: string, on: boolean): boolean {
+  const ch = bridgeStrip(world, id);
+  if (ch === null || typeof on !== 'boolean') return false;
+  return world.setParam(ch, 'insert_on', on);
+}
+
+/** Channel-insert select write-through (`{root}/insert/sel`, raw int
+ * `0..=8` — the desk values are NOT 1..4 FX slots, so no slot mapping is
+ * asserted; fixture has no counterpart). Whole-number clamped. */
+export function bridgeInsertSel(world: World, id: string, sel: number): boolean {
+  const ch = bridgeStrip(world, id);
+  if (ch === null || !Number.isFinite(sel)) return false;
+  return world.setParam(ch, 'insert_sel', Math.min(8, Math.max(0, Math.round(sel))));
 }
 
 export type EqBridgeParam = 'f' | 'g' | 'q';
