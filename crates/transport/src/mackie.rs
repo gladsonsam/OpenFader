@@ -20,7 +20,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{Mutex, oneshot};
+use tokio::sync::{broadcast, Mutex, oneshot};
 use tokio::task::JoinHandle;
 
 // ---------------------------------------------------------------------------
@@ -593,16 +593,42 @@ struct Caches {
     names: StdMutex<HashMap<u32, String>>,
     snapshot_names: StdMutex<HashMap<u32, String>>,
     current_snapshot: StdMutex<Option<u32>>,
+    push_tx: broadcast::Sender<PushEvent>,
+}
+
+/// Desk-originated push, emitted for every inbound value/name/snapshot
+/// frame: the mixer's unprompted requests, its broadcasts, AND our own
+/// query replies (the desk relays state to every client alike). Drivers
+/// decode these into `ParamUpdate`s; the engine dedups them against its
+/// cache, so own-write echoes converge instead of looping.
+#[derive(Clone, Debug)]
+pub enum PushEvent {
+    /// One `ChannelValues` block: `value_type` 5 = params, 2 = mute-group
+    /// masters, 1 = meters (encoding unconfirmed — drivers skip it).
+    Values {
+        value_type: u8,
+        start: u32,
+        raws: Vec<u32>,
+    },
+    /// One `ChannelNames` table (`(slot, name)` pairs, 1-based slots).
+    Names { pairs: Vec<(u32, String)> },
+    /// Snapshot recall relay (desk state changed wholesale — the poller
+    /// converges; drivers do not fan this out as strip updates).
+    SnapshotRecall(u32),
+    /// Snapshot slot rename relay.
+    SnapshotRename { slot: u32, name: String },
 }
 
 impl Caches {
     fn fresh() -> Self {
+        let (push_tx, _) = broadcast::channel(256);
         Self {
             values: StdMutex::new(HashMap::new()),
             type2_values: StdMutex::new(HashMap::new()),
             names: StdMutex::new(HashMap::new()),
             snapshot_names: StdMutex::new(HashMap::new()),
             current_snapshot: StdMutex::new(None),
+            push_tx,
         }
     }
 }
@@ -676,6 +702,14 @@ impl MackieSession {
         self.rx_task.abort();
         self.keepalive_task.abort();
         self.fail_all_pending("session closed");
+    }
+
+    /// Tap the desk-originated push feed: every inbound value/name/snapshot
+    /// frame is forwarded here as well as into the caches. Drivers decode
+    /// these into `ParamUpdate`s for live ingest (another client's moves
+    /// arrive without a poll sweep). Lagged receivers skip, never block.
+    pub fn subscribe_pushes(&self) -> broadcast::Receiver<PushEvent> {
+        self.caches.push_tx.subscribe()
     }
 
     fn fail_all_pending(&self, reason: &str) {
@@ -1450,36 +1484,6 @@ fn ingest_type2(cache: &StdMutex<HashMap<u32, u32>>, block: &ValueBlock) {
     }
 }
 
-fn ingest_names(cache: &StdMutex<HashMap<u32, String>>, body: &[u8]) {
-    if let Some(pairs) = parse_name_table(body) {
-        if let Ok(mut c) = cache.lock() {
-            for (slot, name) in pairs {
-                c.insert(slot, name);
-            }
-        }
-    }
-}
-
-fn ingest_snapshot(
-    names: &StdMutex<HashMap<u32, String>>,
-    current: &StdMutex<Option<u32>>,
-    body: &[u8],
-) {
-    match parse_snapshot_push(body) {
-        Some(SnapshotEvent::Recall(n)) => {
-            if let Ok(mut c) = current.lock() {
-                *c = Some(n);
-            }
-        }
-        Some(SnapshotEvent::Rename(n, name)) => {
-            if let Ok(mut c) = names.lock() {
-                c.insert(n, name);
-            }
-        }
-        None => {}
-    }
-}
-
 fn complete_pending(
     pending: &Arc<StdMutex<HashMap<u8, oneshot::Sender<PendingResult>>>>,
     seq: u8,
@@ -1510,18 +1514,46 @@ async fn dispatch(
                 Command::GeneralInfo => GENERAL_INFO_REPLY.to_vec(),
                 Command::ChannelInfoControl => msg.body.get(..4).unwrap_or(&[]).to_vec(),
                 Command::ShowSnapshot => {
-                    ingest_snapshot(snapshot_names, current_snapshot, &msg.body);
+                    match parse_snapshot_push(&msg.body) {
+                        Some(SnapshotEvent::Recall(n)) => {
+                            if let Ok(mut c) = current_snapshot.lock() {
+                                *c = Some(n);
+                            }
+                            let _ = caches.push_tx.send(PushEvent::SnapshotRecall(n));
+                        }
+                        Some(SnapshotEvent::Rename(n, name)) => {
+                            if let Ok(mut c) = snapshot_names.lock() {
+                                c.insert(n, name.clone());
+                            }
+                            let _ = caches
+                                .push_tx
+                                .send(PushEvent::SnapshotRename { slot: n, name });
+                        }
+                        None => {}
+                    }
                     msg.body.get(..4).unwrap_or(&[]).to_vec()
                 }
                 Command::ChannelValues => {
                     if let Some(block) = parse_value_block(&msg.body) {
                         ingest_values(values, &block);
                         ingest_type2(type2_values, &block);
+                        let _ = caches.push_tx.send(PushEvent::Values {
+                            value_type: block.value_type,
+                            start: block.start,
+                            raws: block.raws.clone(),
+                        });
                     }
                     Vec::new()
                 }
                 Command::ChannelNames => {
-                    ingest_names(names, &msg.body);
+                    if let Some(pairs) = parse_name_table(&msg.body) {
+                        if let Ok(mut c) = names.lock() {
+                            for (slot, name) in &pairs {
+                                c.insert(*slot, name.clone());
+                            }
+                        }
+                        let _ = caches.push_tx.send(PushEvent::Names { pairs });
+                    }
                     Vec::new()
                 }
                 _ => Vec::new(),
@@ -1533,6 +1565,11 @@ async fn dispatch(
                 if let Some(block) = parse_value_block(&msg.body) {
                     ingest_values(values, &block);
                     ingest_type2(type2_values, &block);
+                    let _ = caches.push_tx.send(PushEvent::Values {
+                        value_type: block.value_type,
+                        start: block.start,
+                        raws: block.raws.clone(),
+                    });
                 }
             }
         }
@@ -1541,6 +1578,11 @@ async fn dispatch(
                 if let Some(block) = parse_value_block(&msg.body) {
                     ingest_values(values, &block);
                     ingest_type2(type2_values, &block);
+                    let _ = caches.push_tx.send(PushEvent::Values {
+                        value_type: block.value_type,
+                        start: block.start,
+                        raws: block.raws.clone(),
+                    });
                 }
             }
             if msg.msg_type == MessageType::Error {
@@ -1964,6 +2006,119 @@ mod tests {
         // Own writes are cached locally without an echo.
         assert_eq!(session.cached(8), Some(0));
         assert_eq!(session.cached_type2(11), Some(1));
+
+        session.close();
+        fake_task.abort();
+    }
+
+    #[tokio::test]
+    async fn session_push_events_loopback() {
+        // Push feed: every inbound value/name/snapshot frame is forwarded
+        // to subscribers as well as into the caches. The fake answers init
+        // like the passing bulk test, then fires one broadcast values
+        // frame, one mixer-initiated names request and one snapshot recall
+        // AFTER the final init step (2nd ChannelInfoControl), so the test's
+        // subscription (post-connect) observes them.
+        let (listener, addr) = loopback_listener().await.unwrap();
+        let fake_task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut seq: u8 = 80;
+            let mut next_seq = move || {
+                seq = seq.wrapping_add(1);
+                if seq == 0 {
+                    seq = 1;
+                }
+                seq
+            };
+            let mut cic_count = 0;
+            let mut fired = false;
+            loop {
+                let req = match read_frame(&mut stream).await {
+                    Ok(m) => m,
+                    Err(_) => break,
+                };
+                let resp = response_to(&req, vec![]);
+                if write_msg(&mut stream, &resp).await.is_err() {
+                    break;
+                }
+                if req.command == Command::ChannelInfoControl {
+                    cic_count += 1;
+                }
+                if fired || cic_count < 2 {
+                    continue;
+                }
+                fired = true;
+                // Broadcast values: ch2 mute (addr 114) = 1,
+                // ch2 fader (addr 115) = -15 dB float.
+                let mut body = vec![];
+                body.extend_from_slice(&114u32.to_be_bytes());
+                body.extend_from_slice(&0x00000500u32.to_be_bytes());
+                body.extend_from_slice(&1u32.to_be_bytes());
+                body.extend_from_slice(&(-15.0f32).to_be_bytes());
+                let push = Message {
+                    seq: next_seq(),
+                    msg_type: MessageType::Broadcast,
+                    command: Command::ChannelValues,
+                    body,
+                };
+                write_msg(&mut stream, &push).await.unwrap();
+                // Mixer-initiated names request: slot 4 "Keys".
+                let padded = b"Keys".to_vec();
+                let mut nbody = vec![];
+                nbody.extend_from_slice(&4u32.to_be_bytes());
+                nbody.extend_from_slice(&0x00010000u32.to_be_bytes());
+                nbody.extend_from_slice(&word_swap(&padded));
+                let names = Message {
+                    seq: next_seq(),
+                    msg_type: MessageType::Request,
+                    command: Command::ChannelNames,
+                    body: nbody,
+                };
+                write_msg(&mut stream, &names).await.unwrap();
+                // Snapshot recall relay: slot 7.
+                let sbody = vec![0, 0, 0, 1, 0, 0, 0, 7];
+                let snap = Message {
+                    seq: next_seq(),
+                    msg_type: MessageType::Request,
+                    command: Command::ShowSnapshot,
+                    body: sbody,
+                };
+                write_msg(&mut stream, &snap).await.unwrap();
+            }
+        });
+
+        let session = MackieSession::connect(&addr.to_string()).await.unwrap();
+        let mut rx = session.subscribe_pushes();
+        let mut got_values = false;
+        let mut got_names = false;
+        let mut got_recall = false;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while !(got_values && got_names && got_recall) {
+            if tokio::time::Instant::now() > deadline {
+                panic!("push events missing: values={got_values} names={got_names} recall={got_recall}");
+            }
+            let ev = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .expect("push timeout")
+                .expect("push channel closed");
+            match ev {
+                PushEvent::Values { value_type, start, raws }
+                    if value_type == 5 && start == 114 =>
+                {
+                    assert_eq!(raws, vec![1, (-15.0f32).to_bits()]);
+                    got_values = true;
+                }
+                PushEvent::Names { pairs } => {
+                    assert_eq!(pairs, vec![(4, "Keys".to_string())]);
+                    got_names = true;
+                }
+                PushEvent::SnapshotRecall(7) => got_recall = true,
+                other => panic!("unexpected push event: {other:?}"),
+            }
+        }
+        // Cache and push feed agree.
+        assert_eq!(session.cached(114), Some(1));
+        assert_eq!(session.name(4).as_deref(), Some("Keys"));
 
         session.close();
         fake_task.abort();

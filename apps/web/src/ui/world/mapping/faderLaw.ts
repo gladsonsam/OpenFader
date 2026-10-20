@@ -110,12 +110,66 @@ export const XAIR_LAW: FaderLaw = {
   topDb: TOP_DB,
 };
 
-const LAWS: Record<string, FaderLaw> = { design: DESIGN_LAW, xair: XAIR_LAW, dl32s: XAIR_LAW };
+/** DL32S / DigiMixer fader scale (uniform 9-segment over its dB table —
+ *  matches `DL32S_FADER_SCALE` in `crates/proto-dl32s`, so the readout
+ *  agrees with the engine round-trip exactly). Joints:
+ *  0/-120, 1/9/-60, 2/9/-40, 3/9/-30, 4/9/-20, 5/9/-10, 6/9/-5, 7/9/0,
+ *  8/9/+5, 1/+10. */
+const DL32S_POINTS: ReadonlyArray<readonly [number, number]> = [
+  [0, -120],
+  [1 / 9, -60],
+  [2 / 9, -40],
+  [3 / 9, -30],
+  [4 / 9, -20],
+  [5 / 9, -10],
+  [6 / 9, -5],
+  [7 / 9, 0],
+  [8 / 9, 5],
+  [1, 10],
+];
+
+function dl32sToDb(f: number): number {
+  if (!Number.isFinite(f) || f <= 0) return -Infinity;
+  const T = DL32S_POINTS;
+  for (let i = 1; i < T.length; i++) {
+    if (f <= T[i]![0]) {
+      const a = T[i - 1]!;
+      const b = T[i]!;
+      return a[1] + ((b[1] - a[1]) * (f - a[0])) / (b[0] - a[0]);
+    }
+  }
+  return TOP_DB;
+}
+
+function dl32sFromDb(db: number): number {
+  if (!Number.isFinite(db) || db <= -120) return 0;
+  if (db >= TOP_DB) return 1;
+  const T = DL32S_POINTS;
+  for (let i = 1; i < T.length; i++) {
+    if (db <= T[i]![1]) {
+      const a = T[i - 1]!;
+      const b = T[i]!;
+      return a[0] + ((b[0] - a[0]) * (db - a[1])) / (b[1] - a[1]);
+    }
+  }
+  return 1;
+}
+
+export const DL32S_LAW: FaderLaw = {
+  id: 'dl32s',
+  label: 'Mackie DL32S',
+  toDb: dl32sToDb,
+  fromDb: dl32sFromDb,
+  floorDb: -120,
+  topDb: TOP_DB,
+};
+
+const LAWS: Record<string, FaderLaw> = { design: DESIGN_LAW, xair: XAIR_LAW, dl32s: DL32S_LAW };
 
 /**
  * Law named by caps (driver id → law). The relay does not ship a law id yet,
- * so every driver resolves to the X-Air law (dl32s placeholder, same as v3);
- * `design` is fixture-only. Unknown drivers fall back to X-Air.
+ * so each driver resolves to its own measured law (`design` is
+ * fixture-only). Unknown drivers fall back to X-Air.
  */
 export function lawForDriver(driver?: string | null): FaderLaw {
   if (driver && Object.prototype.hasOwnProperty.call(LAWS, driver)) return LAWS[driver]!;

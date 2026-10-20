@@ -224,8 +224,9 @@ export interface SendRowVm {
 /** Live desk overlay for the sends tab (null = offline: GRP + tap hide).
  *
  *  `sendSlots` lists the desk's generic send slots in desk order (1-based);
- *  null means the desk has no `sendN_*` plane (e.g. DL32S, which addresses
- *  `auxN_`/`fxN_` instead) and the fixture rows render untouched.
+ *  null means the desk has no `sendN_*` plane and the fixture rows render
+ *  untouched. Wave 1: DL32S advertises `send1-8_level` (aux) +
+ *  `send9-12_level` (FX); `sendN_tap`/`grpon` have no leaf and collapse.
  *  `destName` labels one 1-based slot (`Bus 1-6`, `FX 1-4` on xair); null
  *  falls back to the generic `Mix N` row name.
  *  `tap` reads the desk `sendN_tap` enum (`0..=5` IN/PREEQ/POSTEQ/PRE/POST/
