@@ -762,7 +762,9 @@ export const ui = {
 
   do: {
     openPage: (m: Mode) => {
-      if (m === 'mixer' && !attempt && !cancelling && !cleanupRequired && (live.deskConnected || world.state.connected === 'offline' || fixtureSession)) enterSession();
+      // Deliberate navigation uses session truth; a separate pending attempt
+      // keeps its freshness checks and ordered cancellation lifecycle.
+      if (m === 'mixer' && !cancelling && (live.deskConnected || world.state.connected === 'offline' || fixtureSession)) enterSession();
       else update(openPage(world, m));
     },
     cancelConnection: () => { void cancelConnection().catch(() => undefined); },
