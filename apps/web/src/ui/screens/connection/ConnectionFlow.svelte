@@ -43,7 +43,7 @@
       {#if session.connected}<p>{session.detail}</p>{:else if session.demo}<p>Simulator</p>{/if}
     </div>
     {#if session.connected}
-      <div class="session-actions"><button class="primary" disabled={busy} onclick={() => ui.do.openPage('mixer')}>Open mixer</button><button disabled={flow.cancelling} onclick={cancel}>Disconnect</button></div>
+      <div class="session-actions"><button class="primary" disabled={flow.cancelling} onclick={() => ui.do.openPage('mixer')}>Open mixer</button><button disabled={flow.cancelling} onclick={cancel}>Disconnect</button></div>
     {:else if offline}
       <button class="primary" onclick={() => ui.do.goOnline()}>Go online</button>
     {:else if session.starting && !pending}
