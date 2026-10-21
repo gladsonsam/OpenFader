@@ -4399,7 +4399,9 @@ impl Engine {
     async fn apply_cmd(&self, writer: &str, cmd: Cmd) {
         let started = Instant::now();
         let generation = self.connection_gen.load(Ordering::Acquire);
-        let connecting = matches!(cmd, Cmd::Connect { .. } | Cmd::ConnectDevice { .. } | Cmd::Disconnect | Cmd::Offline { .. });
+        // Probe connects on success, so its caps/link/devices must survive
+        // the generation change just like an explicit connection command.
+        let connecting = matches!(cmd, Cmd::Connect { .. } | Cmd::ConnectDevice { .. } | Cmd::Probe { .. } | Cmd::Disconnect | Cmd::Offline { .. });
         let mut out = Vec::new();
         match self.apply(cmd, writer, &mut out).await {
             Ok(Some(reply)) => self.unicast(writer, reply),
