@@ -945,6 +945,52 @@ impl Event {
     }
 }
 
+/// One engine-to-mailbox frame: the typed [`Event`] plus its wire JSON
+/// serialized exactly once at broadcast time.
+///
+/// `broadcast` builds one `SharedEvent` per event and hands an `Arc` clone
+/// to every client's mailbox, so N clients share one `serde_json` run and
+/// one backing allocation instead of paying N serializations. Adapters use
+/// [`SharedEvent::json`] for the text path (control frames, and stream
+/// frames for clients that did not negotiate binary) and fall back to
+/// [`Event::to_binary`] per client only where the encoding is inherently
+/// per-client (binary meter frames carry a per-connection sequence
+/// number). Ordering and per-client filtering (unicast vs broadcast,
+/// `broadcast_except` skips) are unchanged — only the serialization and
+/// the per-client `Event` clone are deduped.
+#[derive(Debug, Clone)]
+pub struct SharedEvent {
+    /// The typed event (shared: cloning this is one `Arc` bump, never a
+    /// deep clone of the level/bin/holdings vectors).
+    pub event: std::sync::Arc<Event>,
+    /// `event.to_json()` computed once in [`SharedEvent::new`].
+    pub json: std::sync::Arc<str>,
+}
+
+impl SharedEvent {
+    /// Wrap `event`, serializing its wire JSON once.
+    pub fn new(event: Event) -> Self {
+        let json: std::sync::Arc<str> = event.to_json().into();
+        Self {
+            event: std::sync::Arc::new(event),
+            json,
+        }
+    }
+
+    /// The `type` tag string (see [`Event::tag`]).
+    pub fn tag(&self) -> &'static str {
+        self.event.tag()
+    }
+}
+
+impl std::ops::Deref for SharedEvent {
+    type Target = Event;
+
+    fn deref(&self) -> &Event {
+        &self.event
+    }
+}
+
 /// Parse one wire JSON line into a [`Cmd`].
 ///
 /// Unknown `cmd` tags keep the historical `unknown cmd "bogus"` message;
