@@ -84,30 +84,9 @@ class U4FxPage extends StatefulWidget {
 }
 
 class _U4FxPageState extends State<U4FxPage> {
-  Timer? _meterLoop;
-
-  @override
-  void initState() {
-    super.initState();
-    _meterLoop =
-        Timer.periodic(const Duration(milliseconds: 80), (_) => _tick());
-    _tick();
-  }
-
-  Future<void> _tick() async {
-    try {
-      await widget.store.pollMeters();
-    } catch (_) {
-      // Never crash the meter loop on a transport hiccup.
-    }
-  }
-
-  @override
-  void dispose() {
-    _meterLoop?.cancel();
-    super.dispose();
-  }
-
+  // Freshness comes from the single shell-owned 80 ms loop
+  // (AppShell -> AppStore.pollMeters); this page owns no timer and only
+  // listens to already-updating notifiers.
   @override
   Widget build(BuildContext context) {
     return Scaffold(

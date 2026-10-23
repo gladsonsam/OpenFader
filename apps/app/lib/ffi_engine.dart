@@ -62,6 +62,13 @@ class FfiEngine implements EngineApi {
   Future<List<String>> poll(String clientId, int cap) =>
       frb.poll(clientId: clientId, cap: cap);
 
+  /// Binary meter fan-out (`poll_binary` over FRB): length-prefixed
+  /// `Event::to_binary` frames; throws on a stale native library missing
+  /// the symbol (the caller falls back to JSON meters from [poll]).
+  @override
+  Future<Uint8List> pollBinary(String clientId, int cap) =>
+      frb.pollBinary(clientId: clientId, cap: cap);
+
   @override
   Future<void> resync(String clientId) => frb.resync(clientId: clientId);
 }

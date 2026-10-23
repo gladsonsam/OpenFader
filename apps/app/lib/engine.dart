@@ -131,6 +131,9 @@ abstract class EngineApi {
   Future<String> boot();
   Future<void> cmd(String clientId, String json);
   Future<List<String>> poll(String clientId, int cap);
+  // Hot meter path: length-prefixed binary frames (see [splitBinaryBatch]);
+  // non-meter events stay on [poll] (JSON fallback, never lost).
+  Future<Uint8List> pollBinary(String clientId, int cap);
   Future<void> resync(String clientId);
 }
 
@@ -212,6 +215,28 @@ BinaryFrame? parseBinary(Uint8List bytes) {
     ]);
   }
   return null;
+}
+
+/// Split one `pollBinary` blob into its individual binary frames.
+///
+/// Inverse of the Rust `encode_binary_batch`
+/// (`crates/flutter_bridge/src/api.rs`): repeated
+/// `[u32 LE frame_len][frame bytes...]`, each frame decoded with
+/// [parseBinary]. A short/truncated tail is dropped — never throws — so a
+/// torn read degrades to fewer meter frames, never a crashed meter loop.
+List<Uint8List> splitBinaryBatch(Uint8List blob) {
+  final out = <Uint8List>[];
+  if (blob.isEmpty) return out;
+  final view = ByteData.sublistView(blob);
+  var offset = 0;
+  while (offset + 4 <= blob.length) {
+    final len = view.getUint32(offset, Endian.little);
+    offset += 4;
+    if (offset + len > blob.length) break;
+    out.add(Uint8List.sublistView(blob, offset, offset + len));
+    offset += len;
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------

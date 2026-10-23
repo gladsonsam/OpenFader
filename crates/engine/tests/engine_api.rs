@@ -5,7 +5,7 @@
 use std::{sync::Arc, time::Duration};
 
 use openmix_core::access::Policy;
-use openmix_engine::{ClientHandle, Cmd, Engine, EngineConfig, Event};
+use openmix_engine::{ClientHandle, Cmd, Engine, EngineConfig, Event, SharedEvent};
 use serde_json::{json, Value};
 
 fn ev_json(event: &Event) -> Value {
@@ -22,7 +22,7 @@ async fn attach(engine: &Arc<Engine>) -> ClientHandle {
     engine.attach(None).await
 }
 
-async fn next_event(handle: &mut ClientHandle) -> Event {
+async fn next_event(handle: &mut ClientHandle) -> SharedEvent {
     tokio::time::timeout(Duration::from_secs(5), handle.events.recv())
         .await
         .expect("event in time")
@@ -30,7 +30,7 @@ async fn next_event(handle: &mut ClientHandle) -> Event {
 }
 
 /// Next event matching `want`, skipping interleaved frames (meters, …).
-async fn wait_for(handle: &mut ClientHandle, want: impl Fn(&Event) -> bool) -> Event {
+async fn wait_for(handle: &mut ClientHandle, want: impl Fn(&Event) -> bool) -> SharedEvent {
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     loop {
         if std::time::Instant::now() > deadline {
@@ -50,12 +50,12 @@ async fn wait_for(handle: &mut ClientHandle, want: impl Fn(&Event) -> bool) -> E
 /// Drain the 6-frame attach snapshot (you/state/shows/clients/locks/caps),
 /// returning it in order. Fails when a params frame arrives first (cache
 /// must start empty) — snapshot order is part of the contract.
-async fn drain_snapshot(handle: &mut ClientHandle) -> Vec<Event> {
+async fn drain_snapshot(handle: &mut ClientHandle) -> Vec<SharedEvent> {
     let mut out = Vec::new();
     for _ in 0..6 {
         out.push(next_event(handle).await);
     }
-    let tags: Vec<&str> = out.iter().map(Event::tag).collect();
+    let tags: Vec<&str> = out.iter().map(|e| e.tag()).collect();
     assert_eq!(
         tags,
         ["you", "state", "shows", "clients", "locks", "caps"],
@@ -70,7 +70,7 @@ async fn attach_snapshot_order_and_self_id() {
     let mut client = attach(&engine).await;
     let snap = drain_snapshot(&mut client).await;
     let you_id = snap[0].clone();
-    let Event::You { id } = &you_id else {
+    let Event::You { id } = &*you_id else {
         panic!("first frame is you");
     };
     assert_eq!(id, &client.id, "you id matches the handle id");
@@ -292,10 +292,13 @@ async fn focus_prioritizes_channel() {
             panic!("timed out waiting for ch5 full set; progress: {seen:?}");
         }
         let next = tokio::time::timeout(Duration::from_millis(500), a.events.recv()).await;
-        let Ok(Some(Event::Params { ch, values, ..})) = next else {
+        let Ok(Some(frame)) = next else {
             continue;
         };
-        seen.entry(ch).or_default().extend(values.keys().cloned());
+        let Event::Params { ch, values, .. } = &*frame else {
+            continue;
+        };
+        seen.entry(*ch).or_default().extend(values.keys().cloned());
     }
     let ch0 = seen.get(&0).map(|s| s.len()).unwrap_or(0);
     assert!(ch0 < full, "ch5 completed ({full} params) while ch0 still partial ({ch0})");
@@ -313,10 +316,13 @@ async fn focus_prioritizes_channel() {
             panic!("timed out waiting for ch7 full set");
         }
         let next = tokio::time::timeout(Duration::from_millis(500), a.events.recv()).await;
-        let Ok(Some(Event::Params { ch, values, ..})) = next else {
+        let Ok(Some(frame)) = next else {
             continue;
         };
-        seen.entry(ch).or_default().extend(values.keys().cloned());
+        let Event::Params { ch, values, .. } = &*frame else {
+            continue;
+        };
+        seen.entry(*ch).or_default().extend(values.keys().cloned());
     }
 
     // Out-of-range focus: error event, session stays alive.
@@ -353,10 +359,13 @@ async fn focus_prioritizes_channel() {
             panic!("timed out waiting for ch3 full set");
         }
         let next = tokio::time::timeout(Duration::from_millis(500), a.events.recv()).await;
-        let Ok(Some(Event::Params { ch, values, ..})) = next else {
+        let Ok(Some(frame)) = next else {
             continue;
         };
-        seen.entry(ch).or_default().extend(values.keys().cloned());
+        let Event::Params { ch, values, .. } = &*frame else {
+            continue;
+        };
+        seen.entry(*ch).or_default().extend(values.keys().cloned());
     }
 }
 
@@ -667,9 +676,9 @@ async fn shows_capture_recall_delete() {
         }
         let next = tokio::time::timeout(Duration::from_millis(500), a.events.recv()).await;
         let Ok(Some(e)) = next else { continue };
-        match e {
+        match &*e {
             Event::Param { ch, field, value, .. } => {
-                if ch == 0
+                if *ch == 0
                     && field == "fader"
                     && value.as_f64().is_some_and(|f| (f - cap_fader).abs() < 1e-6)
                 {
@@ -843,7 +852,7 @@ async fn presence_writer_tag_and_unicast() {
     wait_for(&mut b, |e| matches!(e, Event::Error { .. })).await;
     let quiet = tokio::time::timeout(Duration::from_millis(300), a.events.recv()).await;
     assert!(
-        !matches!(&quiet, Ok(Some(Event::Error { .. }))),
+        !matches!(&quiet, Ok(Some(frame)) if matches!(&**frame, Event::Error { .. })),
         "a must not see b's error"
     );
 
