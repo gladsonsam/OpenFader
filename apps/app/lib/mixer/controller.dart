@@ -54,6 +54,10 @@ class MixerController extends ChangeNotifier {
   String? _selectedKey;
   int _page = 0;
   int _pageSize = 8;
+
+  /// Horizontal scroll offset, retained across tab switches so returning
+  /// home lands on the same mixer view.
+  double scrollOffset = 0;
   bool _demoSeeded = false;
   bool _allowDemoSeed;
   bool _seeding = false;

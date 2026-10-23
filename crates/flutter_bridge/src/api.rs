@@ -1,5 +1,5 @@
 //! FRB entry points (`crate::api`): thin Cmd/Event JSON movers over the
-//! embedded `openmix-engine` session. No mixer logic lives here.
+//! embedded `openfader-engine` session. No mixer logic lives here.
 //!
 //! TODO (before real use): meter collapse latest-only. [`poll`] currently
 //! drains everything up to `cap`; a stalled Dart poll loop gets a stale
@@ -8,7 +8,7 @@
 //! poll rate past a smoke test.
 
 use crate::{BridgeClient, DRAIN_CAP_DEFAULT, DRAIN_CAP_MAX, clients, engine, rt, set_engine};
-use openmix_engine::{Engine, EngineConfig};
+use openfader_engine::{Engine, EngineConfig};
 
 /// Boot the embedded engine on `sim` (idempotent) and attach the
 /// `app` client. Returns the client id Dart passes to every other
@@ -22,7 +22,7 @@ pub fn boot() -> String {
             // Sim boot has no network: a failure means the engine itself is
             // broken (loud-propagate: fail fast).
             rt().block_on(e.connect("sim", None))
-                .expect("openmix_flutter_bridge: embedded sim boot");
+                .expect("openfader_flutter_bridge: embedded sim boot");
             set_engine(e.clone());
             e
         }
@@ -133,7 +133,7 @@ pub async fn resync(client_id: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openmix_engine::protocol::{
+    use openfader_engine::protocol::{
         BIN_HEADER_LEN, BIN_TYPE_GR, BIN_TYPE_METERS, BIN_TYPE_TAPS, BIN_VERSION, Event,
         level_to_u16,
     };

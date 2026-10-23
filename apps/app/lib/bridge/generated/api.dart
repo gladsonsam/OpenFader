@@ -15,19 +15,19 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 /// Boot the embedded engine on `sim` (idempotent) and attach the
 /// `app` client. Returns the client id Dart passes to every other
 /// call. Repeat calls attach a NEW client on the same session.
-String boot() => OpenmixBridge.instance.api.crateApiBoot();
+String boot() => OpenfaderBridge.instance.api.crateApiBoot();
 
 /// Send one engine Cmd JSON (`{"cmd":...}`, the WS relay spelling).
 /// Rejections arrive as unicast `error` Events in the client's mailbox
 /// (collect them with [`poll`]); unknown clients are ignored.
 Future<void> cmd({required String clientId, required String json}) =>
-    OpenmixBridge.instance.api.crateApiCmd(clientId: clientId, json: json);
+    OpenfaderBridge.instance.api.crateApiCmd(clientId: clientId, json: json);
 
 /// Drain queued Event JSON frames (`Event::to_json`, byte-identical to the
 /// WS relay) for `client_id`, up to `cap` frames (`0` = default).
 /// Overflow stays queued for the next call. Unknown clients get `[]`.
 Future<List<String>> poll({required String clientId, required int cap}) =>
-    OpenmixBridge.instance.api.crateApiPoll(clientId: clientId, cap: cap);
+    OpenfaderBridge.instance.api.crateApiPoll(clientId: clientId, cap: cap);
 
 /// Drain queued meter-class events as compact binary frames
 /// (`Event::to_binary` layout, length-prefixed: `[u32 LE len][frame]...`).
@@ -35,17 +35,17 @@ Future<List<String>> poll({required String clientId, required int cap}) =>
 /// the next [poll] (JSON fallback, never lost). Empty return = no meter
 /// frames queued. Unknown clients get empty bytes.
 Future<Uint8List> pollBinary({required String clientId, required int cap}) =>
-    OpenmixBridge.instance.api
+    OpenfaderBridge.instance.api
         .crateApiPollBinary(clientId: clientId, cap: cap);
 
 /// Queue a fresh snapshot into an already-attached client's mailbox (the
 /// resume path: same frame set as attach, minus `you`). No-op when the id
 /// is not attached.
 Future<void> resync({required String clientId}) =>
-    OpenmixBridge.instance.api.crateApiResync(clientId: clientId);
+    OpenfaderBridge.instance.api.crateApiResync(clientId: clientId);
 
 /// Edge stats: queue depth behind the push fan-out for `client_id`
 /// (same shape as the engine's `ipc_stats`, minus the counters the
 /// collapse layer will own — see the module TODO).
 String stats({required String clientId}) =>
-    OpenmixBridge.instance.api.crateApiStats(clientId: clientId);
+    OpenfaderBridge.instance.api.crateApiStats(clientId: clientId);

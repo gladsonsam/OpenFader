@@ -1,16 +1,16 @@
 [package]
-name = "openmix-flutter-bridge"
+name = "openfader-flutter-bridge"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [lib]
-name = "openmix_flutter_bridge"
+name = "openfader_flutter_bridge"
 path = "src/lib.rs"
 crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
-openmix-engine = { path = "../engine" }
+openfader-engine = { path = "../engine" }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
 flutter_rust_bridge = "=2.13.0"
 serde_json = "1"

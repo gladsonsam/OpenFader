@@ -1,5 +1,5 @@
 [package]
-name = "openmix-core"
+name = "openfader-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,7 +10,7 @@ realfft = { version = "3", optional = true }
 tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
 
 [dev-dependencies]
-openmix-sim = { path = "../sim" }
+openfader-sim = { path = "../sim" }
 
 [features]
 default = []

@@ -24,7 +24,7 @@ for arch in $ARCHS; do
   esac
   # Prevent Xcode's iOS SDKROOT from leaking into host build scripts.
   env -u SDKROOT cargo build --locked --manifest-path "$repo_root/Cargo.toml" \
-    -p openmix-flutter-bridge --target "$target" --profile "$cargo_profile"
-  libraries+=("$CARGO_TARGET_DIR/$target/$profile/libopenmix_flutter_bridge.a")
+    -p openfader-flutter-bridge --target "$target" --profile "$cargo_profile"
+  libraries+=("$CARGO_TARGET_DIR/$target/$profile/libopenfader_flutter_bridge.a")
 done
-xcrun lipo -create "${libraries[@]}" -output "$BUILT_PRODUCTS_DIR/libopenmix_flutter_bridge.a"
+xcrun lipo -create "${libraries[@]}" -output "$BUILT_PRODUCTS_DIR/libopenfader_flutter_bridge.a"

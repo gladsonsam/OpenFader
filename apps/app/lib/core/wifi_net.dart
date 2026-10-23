@@ -17,7 +17,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 class WifiNet {
-  static const _ch = MethodChannel('openmix/wifi_net');
+  static const _ch = MethodChannel('openfader/wifi_net');
 
   /// Pin process traffic to Wi-Fi before probe/connect. No-op off Android.
   static Future<bool> bindWifi() async {
@@ -96,7 +96,7 @@ class WifiNet {
       if (!loc.isGranted && !loc.isLimited) missing.add('Location');
       if (missing.isEmpty) return null;
       return 'Grant ${missing.join(' + ')} to scan/probe the desk '
-          '(Android Settings → Apps → OpenMix → Permissions).';
+          '(Android Settings → Apps → OpenFader → Permissions).';
     } catch (_) {
       return null;
     }

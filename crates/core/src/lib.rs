@@ -1,7 +1,7 @@
 //! UI-free mixer state. Implemented by proto-xair, proto-dl32s, sim.
 //!
 //! Shared logic (OSC encode/decode, TCP framing, keepalive, meter
-//! ring-buffer, reconnect, discovery) lives in `openmix-transport`, never in
+//! ring-buffer, reconnect, discovery) lives in `openfader-transport`, never in
 //! driver crates. A new provider adds one crate implementing [`MixerDriver`]
 //! plus an address-table row; core stays untouched.
 //!
@@ -707,7 +707,7 @@ pub trait MixerDriver: Send + Sync {
         anyhow::bail!("{}: query_info not supported", self.name())
     }
 
-    // ---- FX params (openmix_core::fx; X-Air/DL32S map these later) ----
+    // ---- FX params (openfader_core::fx; X-Air/DL32S map these later) ----
     /// Set one numbered FX param: `slot` 1..=4, `index` 0..64, value 0..1.
     /// Default: unsupported (validate with [`fx::FxRack`] first).
     async fn set_fx_param(&self, slot: u8, param: u8, value: f32) -> anyhow::Result<()> {
@@ -722,7 +722,7 @@ pub trait MixerDriver: Send + Sync {
     }
 
     // ---- meters ----
-    /// Shared broadcast hub lives in `openmix-transport`; drivers hand out
+    /// Shared broadcast hub lives in `openfader-transport`; drivers hand out
     /// receivers. Default: unsupported (use [`MixerDriver::poll_meters`]).
     async fn subscribe_meters(
         &self,

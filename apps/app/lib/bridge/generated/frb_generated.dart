@@ -16,16 +16,16 @@ import 'frb_generated.io.dart'
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 /// Main entrypoint of the Rust API
-class OpenmixBridge extends BaseEntrypoint<OpenmixBridgeApi,
-    OpenmixBridgeApiImpl, OpenmixBridgeWire> {
+class OpenfaderBridge extends BaseEntrypoint<OpenfaderBridgeApi,
+    OpenfaderBridgeApiImpl, OpenfaderBridgeWire> {
   @internal
-  static final instance = OpenmixBridge._();
+  static final instance = OpenfaderBridge._();
 
-  OpenmixBridge._();
+  OpenfaderBridge._();
 
   /// Initialize flutter_rust_bridge
   static Future<void> init({
-    OpenmixBridgeApi? api,
+    OpenfaderBridgeApi? api,
     BaseHandler? handler,
     ExternalLibrary? externalLibrary,
     bool forceSameCodegenVersion = true,
@@ -41,7 +41,7 @@ class OpenmixBridge extends BaseEntrypoint<OpenmixBridgeApi,
   /// Initialize flutter_rust_bridge in mock mode.
   /// No libraries for FFI are loaded.
   static void initMock({
-    required OpenmixBridgeApi api,
+    required OpenfaderBridgeApi api,
   }) {
     instance.initMockImpl(
       api: api,
@@ -55,12 +55,12 @@ class OpenmixBridge extends BaseEntrypoint<OpenmixBridgeApi,
   static void dispose() => instance.disposeImpl();
 
   @override
-  ApiImplConstructor<OpenmixBridgeApiImpl, OpenmixBridgeWire>
-      get apiImplConstructor => OpenmixBridgeApiImpl.new;
+  ApiImplConstructor<OpenfaderBridgeApiImpl, OpenfaderBridgeWire>
+      get apiImplConstructor => OpenfaderBridgeApiImpl.new;
 
   @override
-  WireConstructor<OpenmixBridgeWire> get wireConstructor =>
-      OpenmixBridgeWire.fromExternalLibrary;
+  WireConstructor<OpenfaderBridgeWire> get wireConstructor =>
+      OpenfaderBridgeWire.fromExternalLibrary;
 
   @override
   Future<void> executeRustInitializers() async {}
@@ -77,14 +77,14 @@ class OpenmixBridge extends BaseEntrypoint<OpenmixBridgeApi,
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
-    stem: 'openmix_flutter_bridge',
+    stem: 'openfader_flutter_bridge',
     ioDirectory: '../../crates/flutter_bridge/target/release/',
     webPrefix: 'pkg/',
     wasmBindgenName: 'wasm_bindgen',
   );
 }
 
-abstract class OpenmixBridgeApi extends BaseApi {
+abstract class OpenfaderBridgeApi extends BaseApi {
   String crateApiBoot();
 
   Future<void> crateApiCmd({required String clientId, required String json});
@@ -100,9 +100,9 @@ abstract class OpenmixBridgeApi extends BaseApi {
   String crateApiStats({required String clientId});
 }
 
-class OpenmixBridgeApiImpl extends OpenmixBridgeApiImplPlatform
-    implements OpenmixBridgeApi {
-  OpenmixBridgeApiImpl({
+class OpenfaderBridgeApiImpl extends OpenfaderBridgeApiImplPlatform
+    implements OpenfaderBridgeApi {
+  OpenfaderBridgeApiImpl({
     required super.handler,
     required super.wire,
     required super.generalizedFrbRustBinding,

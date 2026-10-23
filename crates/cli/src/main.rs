@@ -1,12 +1,12 @@
-//! openmix-cli: headless demo of any `MixerDriver`.
+//! openfader-cli: headless demo of any `MixerDriver`.
 //!
 //! Uses sim by default; pass `--driver xair|dl32s --addr <ip>` for hardware.
 //! Channels are 1-based in the CLI (`1..=N`) and map to 0-based `StripId`.
-use openmix_core::{MixerDriver, ParamValue, StripId};
+use openfader_core::{MixerDriver, ParamValue, StripId};
 use std::time::Duration;
 
 const HELP: &str = "\
-Usage: openmix-cli [--driver sim|xair|dl32s] [--addr IP] [--preset generic|xr18|dl32s|studio] <command> [args]
+Usage: openfader-cli [--driver sim|xair|dl32s] [--addr IP] [--preset generic|xr18|dl32s|studio] <command> [args]
 
 Commands:
   list                       list all strips (name, fader, mute)
@@ -49,7 +49,7 @@ fn parse_bool_word(raw: &str) -> anyhow::Result<bool> {
 /// fall back to number → bool-word → string, so the CLI can already drive
 /// them on hardware that answers without a per-id subcommand.
 fn parse_param_value(id: &str, raw: &str) -> anyhow::Result<ParamValue> {
-    use openmix_core::params::{find, ParamKind};
+    use openfader_core::params::{find, ParamKind};
     match find(id).map(|d| d.kind) {
         Some(ParamKind::Bool) => parse_bool_word(raw).map(ParamValue::Bool),
         Some(ParamKind::Text) => Ok(ParamValue::Text(raw.to_string())),
@@ -72,9 +72,9 @@ fn parse_param_value(id: &str, raw: &str) -> anyhow::Result<ParamValue> {
 /// Static dispatch over drivers (`MixerDriver` is not dyn-compatible due to
 /// async methods). New providers add one variant + one delegation arm.
 enum AnyDriver {
-    Sim(Box<openmix_sim::SimDriver>),
-    XAir(Box<openmix_proto_xair::XAirDriver>),
-    Dl32s(Box<openmix_proto_dl32s::Dl32sDriver>),
+    Sim(Box<openfader_sim::SimDriver>),
+    XAir(Box<openfader_proto_xair::XAirDriver>),
+    Dl32s(Box<openfader_proto_dl32s::Dl32sDriver>),
 }
 
 impl MixerDriver for AnyDriver {
@@ -160,28 +160,28 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Dl32s(d) => d.get_param(strip, param).await,
         }
     }
-    async fn snapshot(&self) -> anyhow::Result<openmix_core::MixerSnapshot> {
+    async fn snapshot(&self) -> anyhow::Result<openfader_core::MixerSnapshot> {
         match self {
             AnyDriver::Sim(d) => d.snapshot().await,
             AnyDriver::XAir(d) => d.snapshot().await,
             AnyDriver::Dl32s(d) => d.snapshot().await,
         }
     }
-    async fn recall(&self, snapshot: &openmix_core::MixerSnapshot) -> anyhow::Result<()> {
+    async fn recall(&self, snapshot: &openfader_core::MixerSnapshot) -> anyhow::Result<()> {
         match self {
             AnyDriver::Sim(d) => d.recall(snapshot).await,
             AnyDriver::XAir(d) => d.recall(snapshot).await,
             AnyDriver::Dl32s(d) => d.recall(snapshot).await,
         }
     }
-    async fn query_info(&self) -> anyhow::Result<openmix_core::MixerInfo> {
+    async fn query_info(&self) -> anyhow::Result<openfader_core::MixerInfo> {
         match self {
             AnyDriver::Sim(d) => d.query_info().await,
             AnyDriver::XAir(d) => d.query_info().await,
             AnyDriver::Dl32s(d) => d.query_info().await,
         }
     }
-    fn poll_meters(&self) -> openmix_core::MeterFrame {
+    fn poll_meters(&self) -> openfader_core::MeterFrame {
         match self {
             AnyDriver::Sim(d) => d.poll_meters(),
             AnyDriver::XAir(d) => d.poll_meters(),
@@ -190,11 +190,11 @@ impl MixerDriver for AnyDriver {
     }
 }
 
-fn make_driver(kind: &str, preset: openmix_sim::SimPreset) -> AnyDriver {
+fn make_driver(kind: &str, preset: openfader_sim::SimPreset) -> AnyDriver {
     match kind {
-        "xair" => AnyDriver::XAir(Box::new(openmix_proto_xair::XAirDriver::new())),
-        "dl32s" => AnyDriver::Dl32s(Box::new(openmix_proto_dl32s::Dl32sDriver::new())),
-        _ => AnyDriver::Sim(Box::new(openmix_sim::SimDriver::with_preset(preset))),
+        "xair" => AnyDriver::XAir(Box::new(openfader_proto_xair::XAirDriver::new())),
+        "dl32s" => AnyDriver::Dl32s(Box::new(openfader_proto_dl32s::Dl32sDriver::new())),
+        _ => AnyDriver::Sim(Box::new(openfader_sim::SimDriver::with_preset(preset))),
     }
 }
 
@@ -205,7 +205,7 @@ async fn main() -> anyhow::Result<()> {
     // Global flags (may appear before the command).
     let mut driver = "sim".to_string();
     let mut addr: Option<String> = None;
-    let mut preset = openmix_sim::SimPreset::Generic;
+    let mut preset = openfader_sim::SimPreset::Generic;
     let mut rest: Vec<String> = Vec::new();
     let mut i = 0;
     while i < argv.len() {
@@ -237,13 +237,13 @@ async fn main() -> anyhow::Result<()> {
                     .get(i)
                     .cloned()
                     .ok_or_else(|| anyhow::anyhow!("--preset needs a value"))?;
-                preset = openmix_sim::SimPreset::parse(&raw).ok_or_else(|| {
+                preset = openfader_sim::SimPreset::parse(&raw).ok_or_else(|| {
                     anyhow::anyhow!("unknown preset {raw:?}; expected generic|xr18|dl32s|studio")
                 })?;
             }
             v if v.starts_with("--preset=") => {
                 let raw = &v["--preset=".len()..];
-                preset = openmix_sim::SimPreset::parse(raw).ok_or_else(|| {
+                preset = openfader_sim::SimPreset::parse(raw).ok_or_else(|| {
                     anyhow::anyhow!("unknown preset {raw:?}; expected generic|xr18|dl32s|studio")
                 })?;
             }
@@ -274,7 +274,7 @@ async fn main() -> anyhow::Result<()> {
                 .parse()?;
             timeout = Duration::from_millis(ms);
         }
-        let found = openmix_transport::discover_xair(timeout).await?;
+        let found = openfader_transport::discover_xair(timeout).await?;
         if found.is_empty() {
             println!("no X-Air devices found");
         }

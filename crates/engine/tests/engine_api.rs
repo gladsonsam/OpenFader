@@ -4,8 +4,8 @@
 
 use std::{sync::Arc, time::Duration};
 
-use openmix_core::access::Policy;
-use openmix_engine::{ClientHandle, Cmd, Engine, EngineConfig, Event, SharedEvent};
+use openfader_core::access::Policy;
+use openfader_engine::{ClientHandle, Cmd, Engine, EngineConfig, Event, SharedEvent};
 use serde_json::{json, Value};
 
 fn ev_json(event: &Event) -> Value {
@@ -191,7 +191,7 @@ async fn caps_and_params_snapshot() {
     let full = wait_for(&mut a, |e| matches!(e, Event::Caps { .. })).await;
     let full_json = ev_json(&full);
     let full_params = full_json.get("params").and_then(Value::as_array).unwrap();
-    assert_eq!(full_params.len(), openmix_core::params::CATALOGUE.len() + 1, "hello completes the catalogue plus stereo balance");
+    assert_eq!(full_params.len(), openfader_core::params::CATALOGUE.len() + 1, "hello completes the catalogue plus stereo balance");
     // The ack still follows, and a second hello is a pure re-ack (no
     // second catalogue — the flag is per client).
     wait_for(&mut a, |e| matches!(e, Event::Hello { .. })).await;
@@ -283,9 +283,9 @@ async fn focus_prioritizes_channel() {
     let mut seen: std::collections::HashMap<u16, std::collections::HashSet<String>> =
         Default::default();
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
-    let full = openmix_core::params::CATALOGUE
+    let full = openfader_core::params::CATALOGUE
         .iter()
-        .filter(|d| openmix_core::params::supports_kind(d, openmix_core::StripKind::In))
+        .filter(|d| openfader_core::params::supports_kind(d, openfader_core::StripKind::In))
         .count();
     while seen.get(&5).map(|s: &std::collections::HashSet<String>| s.len()).unwrap_or(0) < full {
         if std::time::Instant::now() > deadline {

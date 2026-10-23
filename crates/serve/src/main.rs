@@ -1,18 +1,18 @@
-//! openmix-serve: headless run-anywhere server.
+//! openfader-serve: headless run-anywhere server.
 //!
 //! Serves the static `ui/` directory over HTTP plus a WebSocket mixer API
-//! on one port, backed by any `openmix-core` driver (sim default).
+//! on one port, backed by any `openfader-core` driver (sim default).
 //!
 //! Browsers cannot speak UDP/OSC, so hardware mixers (X-Air, DL32S) need
-//! this bridge on the LAN: the browser talks WebSocket to `openmix-serve`,
+//! this bridge on the LAN: the browser talks WebSocket to `openfader-serve`,
 //! which translates to mixer UDP on the server side.
 
 use std::{net::SocketAddr, path::PathBuf};
 
-use openmix_serve::ServeOptions;
+use openfader_serve::ServeOptions;
 
 const HELP: &str = "\
-Usage: openmix-serve [--port PORT] [--bind ADDR] [--driver sim|xair|dl32s]
+Usage: openfader-serve [--port PORT] [--bind ADDR] [--driver sim|xair|dl32s]
                      [--preset generic|xr18|dl32s|studio] [--addr IP] [--static-dir DIR]
                      [--data-dir DIR] [--poll-inflight N]
 
@@ -162,10 +162,10 @@ async fn main() -> anyhow::Result<()> {
 
     let sock: SocketAddr = format!("{bind}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(sock).await?;
-    openmix_serve::run_with_full(
+    openfader_serve::run_with_full(
         listener,
         opts,
-        openmix_serve::LOCK_TTL,
+        openfader_serve::LOCK_TTL,
         std::time::Duration::from_millis(poll_ms),
         None,
         None,

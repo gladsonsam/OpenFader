@@ -15,7 +15,7 @@ use std::{
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-use openmix_core::{
+use openfader_core::{
     access::{Policy, Role},
     params::{self, ParamRegistry},
     rta::RtaProcessor,
@@ -161,12 +161,12 @@ impl RecallScope {
     /// Key-aware strip match against the active topology: union semantics —
     /// both lists absent means all strips; otherwise a strip matches when
     /// its index is in `strips` OR its canonical key (see
-    /// [`openmix_core::strip_key_for_index`]) is in `strip_keys`. Unknown
+    /// [`openfader_core::strip_key_for_index`]) is in `strip_keys`. Unknown
     /// keys never match (they name strips from another desk, not a failure).
     pub fn matches_strip(
         &self,
         strip: u16,
-        topology: &[openmix_core::StripFamily],
+        topology: &[openfader_core::StripFamily],
     ) -> bool {
         if self.strips.is_none() && self.strip_keys.is_none() {
             return true;
@@ -181,10 +181,10 @@ impl RecallScope {
         let Some(keys) = self.strip_keys.as_ref() else {
             return false;
         };
-        openmix_core::strip_key_for_index(topology, strip as usize).is_some_and(|canon| {
+        openfader_core::strip_key_for_index(topology, strip as usize).is_some_and(|canon| {
             keys.iter().any(|want| {
-                openmix_core::parse_strip_key(want).is_some_and(|(wf, wi)| {
-                    openmix_core::parse_strip_key(&canon)
+                openfader_core::parse_strip_key(want).is_some_and(|(wf, wi)| {
+                    openfader_core::parse_strip_key(&canon)
                         .is_some_and(|(cf, ci)| wf == cf && wi == ci)
                 })
             })
@@ -336,7 +336,7 @@ pub trait DeviceScanner: Send + Sync {
 }
 
 /// Production LAN scanner: broadcast probes for every row of the
-/// transport [`PROBE_TABLE`](openmix_transport::discovery::PROBE_TABLE)
+/// transport [`PROBE_TABLE`](openfader_transport::discovery::PROBE_TABLE)
 /// via `crates/transport`. UNVERIFIED-ON-RIG: mapping replies to devices
 /// has only ever run against the fake in tests.
 pub struct RealScanner;
@@ -349,7 +349,7 @@ impl DeviceScanner for RealScanner {
     ) -> Pin<Box<dyn Future<Output = Vec<DeviceDesc>> + Send + 'a>> {
         Box::pin(async move {
             let mut out = Vec::new();
-            if let Ok(devs) = openmix_transport::discovery::discover_all(timeout).await {
+            if let Ok(devs) = openfader_transport::discovery::discover_all(timeout).await {
                 for d in devs {
                     let name = display(d.driver, &d.model);
                     push_row(&mut out, device_row(d, "broadcast", name));
@@ -364,7 +364,7 @@ impl DeviceScanner for RealScanner {
 /// unicast verify (manual add), the linked desk and the /24 sweep; only
 /// `via` differs. No sim rows ever come from here.
 fn device_row(
-    d: openmix_transport::discovery::DiscoveredDevice,
+    d: openfader_transport::discovery::DiscoveredDevice,
     via: &str,
     display_name: String,
 ) -> DeviceDesc {
@@ -425,7 +425,7 @@ pub struct EngineConfig {
     /// Param-plane poll tick (production: [`PARAM_POLL_INTERVAL`]).
     pub poll_interval: Duration,
     /// Optional sim desk preset (hardware drivers ignore it).
-    pub preset: Option<openmix_sim::SimPreset>,
+    pub preset: Option<openfader_sim::SimPreset>,
     /// R2 scene library directory: numbered scenes persist as
     /// `scenes.json` here and reload on the next [`Engine::new`].
     /// `None` = in-memory only (tests default here and pass a temp dir
@@ -784,7 +784,7 @@ pub struct Engine {
     /// broadcast stays alive while subscribed (the driver's cache drain
     /// holds its own resubscribed clone). Replaced on every hardware
     /// connect, cleared on disconnect/switch-away.
-    meter_guard: RwLock<Option<tokio::sync::broadcast::Receiver<openmix_core::MeterFrame>>>,
+    meter_guard: RwLock<Option<tokio::sync::broadcast::Receiver<openfader_core::MeterFrame>>>,
     /// Last connected/probed address per driver (the `addr` of
     /// [`Engine::connect`]): broadcast discovery never crosses subnets, so a
     /// hardware `scan` also verifies these addresses and lists the linked
@@ -1311,7 +1311,7 @@ impl Engine {
             });
         }
         // Meter/spectrum/GR ticker at the SOURCE rate
-        // ([`METER_INTERVAL`](openmix_transport::METER_INTERVAL) = 50 ms =
+        // ([`METER_INTERVAL`](openfader_transport::METER_INTERVAL) = 50 ms =
         // 20 Hz, the desk rate): no adapter-side downsampling. GR rides the
         // same tick (cache-only reads, no extra wire traffic). Slow clients
         // get latest-only delivery in the adapter (`crates/serve`), so the
@@ -1326,7 +1326,7 @@ impl Engine {
                 let mut last_level_sample = None;
                 let mut last_gr_sample = None;
                 let mut tick =
-                    tokio::time::interval(openmix_transport::METER_INTERVAL);
+                    tokio::time::interval(openfader_transport::METER_INTERVAL);
                 tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
                 // Skip the immediate first tick so a fresh client gets
                 // state first.
@@ -1785,13 +1785,13 @@ impl Engine {
     }
 
     /// Ordered strip families of the named driver (`caps.topology`).
-    fn driver_topology(&self, driver: &str) -> Vec<openmix_core::StripFamily> {
+    fn driver_topology(&self, driver: &str) -> Vec<openfader_core::StripFamily> {
         self.drv(driver).topology()
     }
 
     /// Stable key for one strip on the named driver (`None` off-topology).
     fn strip_key(&self, driver: &str, strip: u16) -> Option<String> {
-        openmix_core::strip_key_for_index(&self.driver_topology(driver), strip as usize)
+        openfader_core::strip_key_for_index(&self.driver_topology(driver), strip as usize)
     }
 
     /// Stable key for one strip on the ACTIVE driver (`None` off-topology).
@@ -1808,7 +1808,7 @@ impl Engine {
         let driver = self.active_driver();
         let topo = self.driver_topology(&driver);
         if let Some(k) = key.filter(|k| !k.trim().is_empty()) {
-            if let Some(idx) = openmix_core::strip_index_for_key(&topo, k) {
+            if let Some(idx) = openfader_core::strip_index_for_key(&topo, k) {
                 let max = u16::try_from(self.driver_strips(&driver)).unwrap_or(u16::MAX);
                 if (idx as u16) < max {
                     return Ok(idx as u16);
@@ -1832,7 +1832,7 @@ impl Engine {
         let mut out = Vec::new();
         for item in items {
             if let Some(k) = item.as_str() {
-                let idx = openmix_core::strip_index_for_key(&topo, k)
+                let idx = openfader_core::strip_index_for_key(&topo, k)
                     .ok_or_else(|| anyhow::anyhow!("focus: unknown strip key {k:?} on {driver}"))?;
                 if idx >= n {
                     anyhow::bail!("focus: strip key {k:?} out of range 0..{n}");
@@ -1987,7 +1987,7 @@ impl Engine {
                 color_default: f.color_default,
                 params_scope: vec![f.kind.as_str().to_string()],
                 strip_keys: (f.first..f.first + f.count)
-                    .filter_map(|i| openmix_core::strip_key_for_index(&topo_fams, i))
+                    .filter_map(|i| openfader_core::strip_key_for_index(&topo_fams, i))
                     .collect(),
             })
             .collect();
@@ -2117,7 +2117,7 @@ impl Engine {
     /// silence. Broadcast discovery never crosses subnets; this is the
     /// manual-add and cross-subnet path (read-only on the desk).
     async fn probe_desk(&self, driver: &str, addr: &str) -> Option<DeviceDesc> {
-        use openmix_transport::discovery::{probe_addr, PROBE_TABLE};
+        use openfader_transport::discovery::{probe_addr, PROBE_TABLE};
         let raw = addr.trim().to_string();
         // Accept `ip`, `ip:port`, or a hostname; resolve to one IP.
         let ip: IpAddr = raw
@@ -2129,7 +2129,7 @@ impl Engine {
             })
             .or_else(|| {
                 std::net::ToSocketAddrs::to_socket_addrs(
-                    format!("{raw}:{}", openmix_transport::discovery::XAIR_PORT).as_str(),
+                    format!("{raw}:{}", openfader_transport::discovery::XAIR_PORT).as_str(),
                 )
                 .ok()?
                 .next()
@@ -2306,7 +2306,7 @@ impl Engine {
                 }
                 strips.push(StoredStrip {
                     strip: s as u16,
-                    key: openmix_core::strip_key_for_index(&topo, s),
+                    key: openfader_core::strip_key_for_index(&topo, s),
                     name: match name_v {
                         Some(ParamValue::Text(n)) => n,
                         _ => format!("{}{}", fam.name_prefix, s - fam.first + 1),
@@ -2346,7 +2346,7 @@ impl Engine {
     }
 
     /// Recall a full-plane scene: faders ride the shared fade
-    /// ([`openmix_core::show::fade_strips`], same as named shows), every
+    /// ([`openfader_core::show::fade_strips`], same as named shows), every
     /// other param goes through `set_param` in [`safe_order_key`] order, then
     /// FX + routing + main. Locks are bypassed (show control) and reported
     /// via the returned `overrode_locks` (existing error semantics for
@@ -2370,7 +2370,7 @@ impl Engine {
         let resolve = |s: &StoredStrip| -> u16 {
             s.key
                 .as_deref()
-                .and_then(|k| openmix_core::strip_index_for_key(&topo, k))
+                .and_then(|k| openfader_core::strip_index_for_key(&topo, k))
                 .map(|i| i as u16)
                 .unwrap_or(s.strip)
         };
@@ -2398,13 +2398,13 @@ impl Engine {
             };
             targets.push((id, if want_fader { s.fader } else { cur_fader }, if want_mute { s.mute } else { cur_mute }));
         }
-        openmix_core::show::fade_strips(self, &targets, fade_ms).await?;
+        openfader_core::show::fade_strips(self, &targets, fade_ms).await?;
         for (s, r) in &strips {
             let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
             if want_mute && s.mute {
                 self.drv_set_mute(StripId(*r), true).await?;
             }
-            let key = openmix_core::strip_key_for_index(&topo, *r as usize);
+            let key = openfader_core::strip_key_for_index(&topo, *r as usize);
             if scope.is_none_or(|sc| sc.allows_param("fader")) {
                 out.push(Event::Param {
                     ch: *r,
@@ -2448,7 +2448,7 @@ impl Engine {
                     field: (*id).clone(),
                     value: value.clone(),
                     by: Some(writer.to_string()),
-                    key: openmix_core::strip_key_for_index(&topo, *r as usize),
+                    key: openfader_core::strip_key_for_index(&topo, *r as usize),
                 });
             }
             if s.name.is_empty() || scope.is_some_and(|sc| !sc.allows_param("name")) {
@@ -2506,7 +2506,7 @@ impl Engine {
     fn fx_caps(&self, driver: &str) -> crate::protocol::FxCaps {
         let drv = self.drv(driver);
         let types = if drv.fx_flavor() == FxFlavor::Design {
-            openmix_core::fx::FX_TYPES
+            openfader_core::fx::FX_TYPES
                 .iter()
                 .map(|t| crate::protocol::FxTypeCaps {
                     id: t.id.to_string(),
@@ -2923,7 +2923,7 @@ impl Engine {
             bus,
             fader,
             muted,
-            key: Some(openmix_core::strip_key("bus", bus.saturating_add(1) as u16)),
+            key: Some(openfader_core::strip_key("bus", bus.saturating_add(1) as u16)),
         })
     }
 
@@ -2979,7 +2979,7 @@ impl Engine {
                     bus,
                     fader,
                     muted,
-                    key: Some(openmix_core::strip_key("bus", bus.saturating_add(1) as u16)),
+                    key: Some(openfader_core::strip_key("bus", bus.saturating_add(1) as u16)),
                 }),
                 _ => None,
             };
@@ -3029,7 +3029,7 @@ impl Engine {
             let solo_bulk = if !drv.is_hardware() { drv.solo_bulk() } else { None };
             for ch in 0..strips as u16 {
                 let id = StripId(ch);
-                let key = openmix_core::strip_key_for_index(&topo, ch as usize);
+                let key = openfader_core::strip_key_for_index(&topo, ch as usize);
                 for group in 0..subgroups {
                     let member = match &sub_bulk {
                         Some(map) => Some(map.get(&(ch, group)).copied().unwrap_or(false)),
@@ -3061,7 +3061,7 @@ impl Engine {
                         out.push(Event::Solo {
                             ch,
                             soloed,
-                            key: openmix_core::strip_key_for_index(&topo, ch as usize),
+                            key: openfader_core::strip_key_for_index(&topo, ch as usize),
                         });
                     }
                 }
@@ -3083,7 +3083,7 @@ impl Engine {
                     out.push(Event::Solo {
                         ch,
                         soloed: *soloed,
-                        key: openmix_core::strip_key_for_index(&topo, ch as usize),
+                        key: openfader_core::strip_key_for_index(&topo, ch as usize),
                     });
                 }
             }
@@ -3137,7 +3137,7 @@ impl Engine {
         let bulk = drv.source_bulk();
         let mut out = Vec::new();
         for fam in &topo {
-            if fam.kind != openmix_core::StripKind::In {
+            if fam.kind != openfader_core::StripKind::In {
                 continue;
             }
             for s in fam.first..fam.first + fam.count {
@@ -3152,7 +3152,7 @@ impl Engine {
                 if let Some((group, index)) = parse_source(&label) {
                     out.push(StoredRoute {
                         strip: s as u16,
-                        key: openmix_core::strip_key_for_index(&topo, s),
+                        key: openfader_core::strip_key_for_index(&topo, s),
                         group,
                         index,
                     });
@@ -3176,7 +3176,7 @@ impl Engine {
             let strip = row
                 .key
                 .as_deref()
-                .and_then(|k| openmix_core::strip_index_for_key(&topo, k))
+                .and_then(|k| openfader_core::strip_index_for_key(&topo, k))
                 .map(|i| i as u16)
                 .unwrap_or(row.strip);
             drv.patch_set(StripId(strip), &row.group, row.index)?;
@@ -3280,7 +3280,7 @@ impl Engine {
                 .as_deref()
                 .and_then(|k| {
                     let topo = self.driver_topology(&self.active_driver());
-                    openmix_core::strip_index_for_key(&topo, k)
+                    openfader_core::strip_index_for_key(&topo, k)
                 })
                 .map(|i| i as u16)
                 .unwrap_or(c.strip);
@@ -3323,7 +3323,7 @@ impl Engine {
             .as_deref()
             .and_then(|k| {
                 let topo = self.driver_topology(&self.active_driver());
-                openmix_core::strip_index_for_key(&topo, k)
+                openfader_core::strip_index_for_key(&topo, k)
             })
             .map(|i| i as u16)
             .unwrap_or(c.strip);
@@ -3464,8 +3464,8 @@ impl Engine {
                 let topo = self.driver_topology(&self.active_driver());
                 if let Some(fam) = topo.iter().find(|f| (f.first..f.first + f.count).contains(&(ch as usize))) {
                     let event = match fam.kind {
-                        openmix_core::StripKind::Main => Some(Event::Main { fader: Some(fader), muted: Some(muted) }),
-                        openmix_core::StripKind::Bus => Some(Event::Bus { bus: (ch as usize - fam.first) as u8, fader, muted, key: self.active_strip_key(ch) }),
+                        openfader_core::StripKind::Main => Some(Event::Main { fader: Some(fader), muted: Some(muted) }),
+                        openfader_core::StripKind::Bus => Some(Event::Bus { bus: (ch as usize - fam.first) as u8, fader, muted, key: self.active_strip_key(ch) }),
                         _ => None,
                     };
                     if let Some(event) = event {
@@ -3490,20 +3490,20 @@ impl Engine {
                     if let Some(v) = fresh(row.ch, "mute").and_then(|v| v.as_bool()) { row.muted = v; }
                     if let Some(Value::String(v)) = fresh(row.ch, "name") { row.name = v; }
                 }
-                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openmix_core::StripKind::Main) {
+                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openfader_core::StripKind::Main) {
                     if let Some(v) = fresh(fam.first as u16, "fader").and_then(|v| v.as_f64()) { *main_fader = Some(v as f32); }
                 }
             }
             Event::Param { ch, field, value, .. } => { if let Some(v) = fresh(*ch, field) { *value = v; } }
             Event::Solo { ch, soloed, .. } => { if let Some(v) = fresh(*ch, "solo").and_then(|v| v.as_bool()) { *soloed = v; } }
             Event::Main { fader, muted } => {
-                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openmix_core::StripKind::Main) {
+                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openfader_core::StripKind::Main) {
                     if let Some(v) = fresh(fam.first as u16, "fader").and_then(|v| v.as_f64()) { *fader = Some(v as f32); }
                     if let Some(v) = fresh(fam.first as u16, "mute").and_then(|v| v.as_bool()) { *muted = Some(v); }
                 }
             }
             Event::Bus { bus, fader, muted, .. } => {
-                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openmix_core::StripKind::Bus) {
+                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openfader_core::StripKind::Bus) {
                     let ch = fam.first as u16 + *bus as u16;
                     if let Some(v) = fresh(ch, "fader").and_then(|v| v.as_f64()) { *fader = v as f32; }
                     if let Some(v) = fresh(ch, "mute").and_then(|v| v.as_bool()) { *muted = v; }
@@ -3839,7 +3839,7 @@ impl Engine {
         // burst budget off the command path.
         out.push(self.caps_message());
         out.push(self.link_message_cached());
-        let burst = openmix_transport::session::CONNECT_BURST_TIMEOUT;
+        let burst = openfader_transport::session::CONNECT_BURST_TIMEOUT;
         let fast = tokio::time::timeout(
             burst,
             async {
@@ -4050,7 +4050,7 @@ impl Engine {
                 Some(Event::Params {
                     ch,
                     values: values.iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, v)| (k.clone(), v.clone())).collect(),
-                    key: openmix_core::strip_key_for_index(&topo, ch as usize),
+                    key: openfader_core::strip_key_for_index(&topo, ch as usize),
                 })
             })
             .collect()
@@ -4444,7 +4444,7 @@ impl Engine {
     /// [`DynDriver::param_plane_snapshot`]: the engine captures the
     /// canonical strip basics used by its live param plane, without
     /// inventing values when the desk fails to answer.
-    async fn active_snapshot(&self) -> anyhow::Result<openmix_core::MixerSnapshot> {
+    async fn active_snapshot(&self) -> anyhow::Result<openfader_core::MixerSnapshot> {
         let driver = self.active_driver();
         match self.active_drv().snapshot().await {
             Ok(snapshot) => Ok(snapshot),
@@ -4453,7 +4453,7 @@ impl Engine {
                     return Err(first);
                 }
         let generation = self.connection_gen.load(Ordering::Acquire);
-        let mut snapshot = openmix_core::MixerSnapshot::default();
+        let mut snapshot = openfader_core::MixerSnapshot::default();
         for family in self.driver_topology(&driver) {
             for index in family.first..family.first + family.count {
                 let id = StripId(index as u16);
@@ -4468,7 +4468,7 @@ impl Engine {
                     };
                 anyhow::ensure!(self.connection_gen.load(Ordering::Acquire) == generation,
                     "desk changed during scene capture");
-                snapshot.strips.push(openmix_core::ChannelStrip {
+                snapshot.strips.push(openfader_core::ChannelStrip {
                     id, name, fader, mute, pan: 0.5,
                 });
             }
@@ -4705,7 +4705,7 @@ impl Engine {
             // state when the driver has none). Not strip-locked: locks pin
             // per-channel strips.
             Cmd::MainFader { value } => {
-                let value = openmix_core::validate_fader(value)?;
+                let value = openfader_core::validate_fader(value)?;
                 policy.allow_main(value)?;
                 let from = if self.offline.read().unwrap().active {
                     Some(self.active_main_fader().await.map(|v| json!(v)).unwrap_or(Value::Null))
@@ -5115,7 +5115,7 @@ impl Engine {
                     // remembered /24 (specs merged when two drivers share
                     // it), all plans in parallel.
                     let sweep_fut = async {
-                        use openmix_transport::discovery::{
+                        use openfader_transport::discovery::{
                             subnet24, sweep_known_subnet, ProbeSpec, PROBE_TABLE,
                         };
                         let mut plans: Vec<(std::net::Ipv4Addr, Vec<ProbeSpec>)> = Vec::new();
@@ -5154,14 +5154,14 @@ impl Engine {
                             }
                         }
                         let sweeps = plans.into_iter().map(|(prefix, specs)| async move {
-                            let budget = openmix_transport::discovery::SWEEP_TIMEOUT
+                            let budget = openfader_transport::discovery::SWEEP_TIMEOUT
                                 + Duration::from_millis(300);
                             match tokio::time::timeout(
                                 budget,
                                 sweep_known_subnet(
                                     &specs,
                                     std::net::IpAddr::V4(prefix),
-                                    openmix_transport::discovery::SWEEP_TIMEOUT,
+                                    openfader_transport::discovery::SWEEP_TIMEOUT,
                                 ),
                             )
                             .await
@@ -5415,7 +5415,7 @@ impl Engine {
                 }
                 let fx_type = fx_type.trim().to_string();
                 if drv.fx_flavor() == FxFlavor::Design {
-                    openmix_core::fx::fx_type_meta(&fx_type)
+                    openfader_core::fx::fx_type_meta(&fx_type)
                         .ok_or_else(|| anyhow::anyhow!("unknown fx type {fx_type:?}"))?;
                 } else if drv.fx_flavor() == FxFlavor::Numbered {
                     // Desk-native rack: names come from the desk type
@@ -5633,7 +5633,7 @@ impl Engine {
             }
             // R2 mix-bus masters (0-based `bus` over `0..bus_count()`).
             Cmd::BusFader { bus, value } => {
-                let value = openmix_core::validate_fader(value)?;
+                let value = openfader_core::validate_fader(value)?;
                 policy.allow_master_fader(value)?;
                 self.active_drv().set_bus_fader(bus, value).await?;
                 self.note_write(writer);
@@ -5651,7 +5651,7 @@ impl Engine {
             }
             // R2 subgroup masters (0-based `group` over `0..subgroup_count()`).
             Cmd::SubgroupFader { group, value } => {
-                let value = openmix_core::validate_fader(value)?;
+                let value = openfader_core::validate_fader(value)?;
                 policy.allow_master_fader(value)?;
                 self.active_drv().set_subgroup_fader(group, value).await?;
                 self.note_write(writer);
@@ -5940,10 +5940,10 @@ impl Engine {
     }
 }
 
-/// Write-through [`openmix_core::show::FadeDriver`]: numbered-scene recall
-/// shares the single [`openmix_core::show::fade_strips`] implementation with
+/// Write-through [`openfader_core::show::FadeDriver`]: numbered-scene recall
+/// shares the single [`openfader_core::show::fade_strips`] implementation with
 /// named-show recall (which fades through the driver blanket impl).
-impl openmix_core::show::FadeDriver for Engine {
+impl openfader_core::show::FadeDriver for Engine {
     async fn fade_set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
         self.drv_set_mute(strip, muted).await
     }
@@ -5965,7 +5965,7 @@ async fn snapshot_strips(d: &dyn DynDriver) -> Vec<crate::protocol::StateStrip> 
             .iter()
             .map(|s| crate::protocol::StateStrip {
                 ch: s.id.0,
-                key: openmix_core::strip_key_for_index(&topo, s.id.0 as usize),
+                key: openfader_core::strip_key_for_index(&topo, s.id.0 as usize),
                 name: s.name.clone(),
                 fader: s.fader,
                 muted: s.mute,
@@ -6062,7 +6062,7 @@ fn refresh_agrees(read: &Value, written: &Value) -> bool {
 
 /// Map a sim slot's positional param vector onto design param ids.
 fn param_vec_to_map(fx_type: &str, values: &[f32]) -> BTreeMap<String, f32> {
-    match openmix_core::fx::fx_type_meta(fx_type) {
+    match openfader_core::fx::fx_type_meta(fx_type) {
         Some(meta) => meta
             .params
             .iter()
@@ -6390,8 +6390,8 @@ mod tests {
         // Discovered-device dial: a bare IP gains an explicit port when
         // the provider answers there (the sweep is skipped); everything
         // else passes through untouched.
-        let xair = openmix_proto_xair::XAirDriver::new();
-        let sim = openmix_sim::SimDriver::new();
+        let xair = openfader_proto_xair::XAirDriver::new();
+        let sim = openfader_sim::SimDriver::new();
         assert_eq!(
             crate::drivers::DynDriver::dial_addr(&xair, "192.168.1.20"),
             "192.168.1.20:10024"
@@ -6426,7 +6426,7 @@ mod tests {
     #[test]
     fn desks_persist_across_restart() {
         let dir = std::env::temp_dir().join(format!(
-            "openmix-desks-{}-{}",
+            "openfader-desks-{}-{}",
             std::process::id(),
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -6542,7 +6542,7 @@ mod tests {
         // `FxSetType` on a desk-native rack validates against the same
         // table `caps.fx` advertises (short code `id` or full display
         // `label`), not the design list: design names are unknown there.
-        let xair = openmix_proto_xair::XAirDriver::new();
+        let xair = openfader_proto_xair::XAirDriver::new();
         let idx = |name: &str| crate::drivers::DynDriver::fx_type_index_of(&xair, name);
         assert_eq!(idx("HALL"), Some(0));
         assert_eq!(idx("VRM"), Some(7));
@@ -6754,7 +6754,7 @@ mod tests {
             .iter()
             .map(|p| p.get("id").and_then(Value::as_str).unwrap())
             .collect();
-        for def in openmix_core::params::CATALOGUE {
+        for def in openfader_core::params::CATALOGUE {
             assert!(ids.contains(&def.id), "caps miss {}", def.id);
         }
         // Every entry carries the pinned frame shape, v2 scopes included
@@ -6767,7 +6767,7 @@ mod tests {
         // `caps.topology` covers the sim strip space; `meter_taps` names the
         // declared taps (additive: old fields byte-identical).
         let topo = caps.get("topology").and_then(Value::as_array).unwrap();
-        assert_eq!(topo.len(), openmix_sim::SIM_TOPOLOGY.len());
+        assert_eq!(topo.len(), openfader_sim::SIM_TOPOLOGY.len());
         let first = &topo[0];
         assert_eq!(first.get("key"), Some(&json!("ch")));
         assert_eq!(first.get("kind"), Some(&json!("in")));
@@ -6787,40 +6787,40 @@ mod tests {
     fn driver_capability_sets() {
         let engine = Engine::new(EngineConfig::default());
         // sim = full catalogue; xair = loopback-tested subset; dl32s =
-        // Wave-1 verified set (see `openmix_proto_dl32s::DL32S_CAPABILITIES`).
+        // Wave-1 verified set (see `openfader_proto_dl32s::DL32S_CAPABILITIES`).
         assert_eq!(
             engine.driver_capabilities("sim").len(),
             engine.registry("sim").len()
         );
         assert_eq!(
             engine.driver_capabilities("xair"),
-            openmix_proto_xair::XAIR_CAPABILITIES
+            openfader_proto_xair::XAIR_CAPABILITIES
         );
         assert_eq!(
             engine.driver_capabilities("dl32s"),
-            openmix_proto_dl32s::DL32S_CAPABILITIES
+            openfader_proto_dl32s::DL32S_CAPABILITIES
         );
         assert_eq!(engine.driver_capabilities("nope"), engine.driver_capabilities("sim"));
         assert_eq!(engine.driver_channels("xair"), 16);
         assert_eq!(engine.driver_channels("sim"), 32);
         // Strip totals (topology): sim 77, xair 36, dl32s 32.
-        assert_eq!(engine.driver_strips("sim"), openmix_sim::SIM_STRIPS);
-        assert_eq!(engine.driver_strips("xair"), openmix_proto_xair::XAIR_STRIPS);
+        assert_eq!(engine.driver_strips("sim"), openfader_sim::SIM_STRIPS);
+        assert_eq!(engine.driver_strips("xair"), openfader_proto_xair::XAIR_STRIPS);
         assert_eq!(engine.driver_strips("dl32s"), 32);
-        assert_eq!(engine.driver_topology("sim").len(), openmix_sim::SIM_TOPOLOGY.len());
-        assert_eq!(engine.driver_topology("xair").len(), openmix_proto_xair::XAIR_TOPOLOGY.len());
+        assert_eq!(engine.driver_topology("sim").len(), openfader_sim::SIM_TOPOLOGY.len());
+        assert_eq!(engine.driver_topology("xair").len(), openfader_proto_xair::XAIR_TOPOLOGY.len());
         assert_eq!(engine.driver_meter_taps("sim"), vec!["in", "post", "gr_gate", "gr_comp"]);
     }
 
     #[test]
     fn registries_merge_canonical_plus_provider_rows() {
-        use openmix_core::params::ParamRegistry;
+        use openfader_core::params::ParamRegistry;
         let engine = Engine::new(EngineConfig::default());
         // Provider rows append without replacing the canonical table.
         for driver in ["sim", "xair", "dl32s"] {
             let reg = engine.registry(driver);
-            assert_eq!(reg.len(), openmix_core::params::CATALOGUE.len() + engine.drv(driver).param_defs().len(), "{driver}");
-            for def in openmix_core::params::CATALOGUE {
+            assert_eq!(reg.len(), openfader_core::params::CATALOGUE.len() + engine.drv(driver).param_defs().len(), "{driver}");
+            for def in openfader_core::params::CATALOGUE {
                 assert_eq!(reg.find(def.id).map(|d| d.id), Some(def.id), "{driver}");
             }
             // Canonical fader/mute/name/pan stable through the merge.
@@ -6836,7 +6836,7 @@ mod tests {
         // The merge helper itself: canonical wins, provider rows append.
         let mut reg = ParamRegistry::canonical();
         reg.register(engine.drv("xair").param_defs());
-        assert_eq!(reg.len(), openmix_core::params::CATALOGUE.len());
+        assert_eq!(reg.len(), openfader_core::params::CATALOGUE.len());
     }
 
     /// Resume path: `push_snapshot` queues the attach frame set into an
@@ -7019,7 +7019,7 @@ mod tests {
                         engine
                             .registry(driver)
                             .find(id)
-                            .map(|def| openmix_core::params::supports_kind(def, fam.kind))
+                            .map(|def| openfader_core::params::supports_kind(def, fam.kind))
                             .unwrap_or(true)
                     })
                     .count();
@@ -7041,7 +7041,7 @@ mod tests {
                             engine
                                 .registry(driver)
                                 .find(id)
-                                .map(|def| openmix_core::params::supports_kind(def, fam.kind))
+                                .map(|def| openfader_core::params::supports_kind(def, fam.kind))
                                 .unwrap_or(true)
                         })
                         .copied()
@@ -7092,7 +7092,7 @@ mod tests {
     fn strip_keys_survive_desk_switch() {
         // Positional indices collide across desks (sim strip 32 = first bus
         // master, xair strip 32 = third DCA); stable keys do not.
-        use openmix_core::{strip_index_for_key, strip_key_for_index};
+        use openfader_core::{strip_index_for_key, strip_key_for_index};
         let engine = Engine::new(EngineConfig::default());
         let sim = engine.driver_topology("sim");
         let xair = engine.driver_topology("xair");
@@ -7282,7 +7282,7 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         loop {
             let v = drv
-                .get_fader(openmix_core::StripId(1))
+                .get_fader(openfader_core::StripId(1))
                 .await
                 .unwrap_or(0.0);
             if (v - 0.9).abs() < 1e-6 {
@@ -7318,7 +7318,7 @@ mod tests {
         let deadline = std::time::Instant::now() + Duration::from_secs(10);
         loop {
             let v = drv
-                .get_fader(openmix_core::StripId(1))
+                .get_fader(openfader_core::StripId(1))
                 .await
                 .unwrap_or(0.0);
             if (v - 0.9).abs() < 1e-6 {
@@ -7522,7 +7522,7 @@ mod tests {
                     engine
                         .registry("sim")
                         .find(id)
-                        .map(|def| openmix_core::params::supports_kind(def, fam.kind))
+                        .map(|def| openfader_core::params::supports_kind(def, fam.kind))
                         .unwrap_or(true)
                 })
                 .collect();

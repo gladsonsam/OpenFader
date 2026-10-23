@@ -1,10 +1,10 @@
 //! Behringer X-Air OSC driver (XR12/16/18, MR18).
 //!
-//! Thin mapping over [`openmix_transport::OscSession`]: this crate owns ONLY the
+//! Thin mapping over [`openfader_transport::OscSession`]: this crate owns ONLY the
 //! X-Air address table + arg mapping. Sockets, keepalive, meter parsing, and
-//! request/response plumbing all live in `openmix-transport`.
-use openmix_core::{MixerDriver, MixerInfo, ParamValue, StripId};
-use openmix_transport::{KeepaliveConfig, OscSession, osc};
+//! request/response plumbing all live in `openfader-transport`.
+use openfader_core::{MixerDriver, MixerInfo, ParamValue, StripId};
+use openfader_transport::{KeepaliveConfig, OscSession, osc};
 use rosc::{OscMessage, OscType};
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
@@ -29,7 +29,7 @@ mod sync_decode;
 
 pub mod addrs {
     //! X-Air address table. The wire is 1-based with zero-padded two-digit
-    //! channel numbers (`/ch/01/…`); [`StripId`](openmix_core::StripId) is
+    //! channel numbers (`/ch/01/…`); [`StripId`](openfader_core::StripId) is
     //! 0-based everywhere, so [`channel`] adds 1. Buses are the exception:
     //! the desk answers single-digit `/bus/1/…` and stays silent on
     //! zero-padded `/bus/01/…` (hardware-verified XR18 FW 1.20, T2), so
@@ -252,7 +252,7 @@ pub mod addrs {
 /// under `/dca/N` (no `/mix` segment — `/dca/N/mix/fader` is silent).
 /// Every family below is live-verified on the owner rig except `/rtn/N`
 /// fader/on (verified present 2026-10-18: fader + on answer) — see
-/// `docs/xr18-baseline.md`:
+/// XR18 baseline notes:
 /// | indices | family | kind  | root       |
 /// |---------|--------|-------|------------|
 /// | 0..16   | ch     | in    | `/ch/NN`   |
@@ -262,14 +262,14 @@ pub mod addrs {
 /// | 30..31  | main   | main  | `/lr`      |
 /// | 31..35  | dca    | dca   | `/dca/N`   |
 /// | 35..36  | aux    | ret   | `/rtn/aux` |
-pub const XAIR_TOPOLOGY: [openmix_core::StripFamily; 7] = [
-    openmix_core::StripFamily { key: "ch", kind: openmix_core::StripKind::In, label: "Ch 1-16", first: 0, count: 16, name_prefix: "Ch", color_default: 2 },
-    openmix_core::StripFamily { key: "fxret", kind: openmix_core::StripKind::Ret, label: "FxRet 1-4", first: 16, count: 4, name_prefix: "FxRet", color_default: 6 },
-    openmix_core::StripFamily { key: "bus", kind: openmix_core::StripKind::Bus, label: "Bus 1-6", first: 20, count: 6, name_prefix: "Mix", color_default: 6 },
-    openmix_core::StripFamily { key: "fxsnd", kind: openmix_core::StripKind::FxSnd, label: "FxSnd 1-4", first: 26, count: 4, name_prefix: "FxSnd", color_default: 4 },
-    openmix_core::StripFamily { key: "main", kind: openmix_core::StripKind::Main, label: "Main LR", first: 30, count: 1, name_prefix: "Main", color_default: 11 },
-    openmix_core::StripFamily { key: "dca", kind: openmix_core::StripKind::Dca, label: "DCA 1-4", first: 31, count: 4, name_prefix: "DCA", color_default: 0 },
-    openmix_core::StripFamily { key: "aux", kind: openmix_core::StripKind::Ret, label: "Aux", first: 35, count: 1, name_prefix: "Aux", color_default: 2 },
+pub const XAIR_TOPOLOGY: [openfader_core::StripFamily; 7] = [
+    openfader_core::StripFamily { key: "ch", kind: openfader_core::StripKind::In, label: "Ch 1-16", first: 0, count: 16, name_prefix: "Ch", color_default: 2 },
+    openfader_core::StripFamily { key: "fxret", kind: openfader_core::StripKind::Ret, label: "FxRet 1-4", first: 16, count: 4, name_prefix: "FxRet", color_default: 6 },
+    openfader_core::StripFamily { key: "bus", kind: openfader_core::StripKind::Bus, label: "Bus 1-6", first: 20, count: 6, name_prefix: "Mix", color_default: 6 },
+    openfader_core::StripFamily { key: "fxsnd", kind: openfader_core::StripKind::FxSnd, label: "FxSnd 1-4", first: 26, count: 4, name_prefix: "FxSnd", color_default: 4 },
+    openfader_core::StripFamily { key: "main", kind: openfader_core::StripKind::Main, label: "Main LR", first: 30, count: 1, name_prefix: "Main", color_default: 11 },
+    openfader_core::StripFamily { key: "dca", kind: openfader_core::StripKind::Dca, label: "DCA 1-4", first: 31, count: 4, name_prefix: "DCA", color_default: 0 },
+    openfader_core::StripFamily { key: "aux", kind: openfader_core::StripKind::Ret, label: "Aux", first: 35, count: 1, name_prefix: "Aux", color_default: 2 },
 ];
 
 /// Total addressable strips on the XR18 map (16 + 4 + 6 + 4 + 1 + 4 + 1).
@@ -278,8 +278,8 @@ pub const XAIR_STRIPS: usize = 36;
 /// Loopback-tested param-plane capabilities: the ids this driver implements
 /// with `get_param`/`set_param` (each covered by a strict fake-desk loopback
 /// test below, and every address confirmed against the owner XR18 FW 1.20 —
-/// see `docs/xr18-baseline.md`). Everything else in
-/// [`openmix_core::params::CATALOGUE`] is reported in `caps.unsupported`
+/// see XR18 baseline notes). Everything else in
+/// [`openfader_core::params::CATALOGUE`] is reported in `caps.unsupported`
 /// so the UI hides it. Honest exclusions: `delay_on`/`delay_ms`
 /// (X32-only), `hpf_slope` (X32-only), `source` (`insrc` live-silent on FW
 /// 1.20), `icon` (no such leaf in the firmware map), `link` (stereo link is
@@ -432,8 +432,8 @@ fn eq_leaf(param: &str) -> anyhow::Result<(u8, &str)> {
 
 /// Enforce the firmware band count for one strip kind: channels and aux
 /// returns carry 4 bands, buses and main LR 6 (`1..n: 4 4 6 6`).
-fn check_eq_band(kind: openmix_core::StripKind, band: u8) -> anyhow::Result<()> {
-    use openmix_core::StripKind as K;
+fn check_eq_band(kind: openfader_core::StripKind, band: u8) -> anyhow::Result<()> {
+    use openfader_core::StripKind as K;
     let max = match kind {
         K::In | K::Ret => 4,
         _ => 6,
@@ -512,7 +512,7 @@ fn dca_assign(param: &str) -> anyhow::Result<u8> {
 /// 2026-10-20); buses are single-digit `/bus/N` (T2); DCA strips
 /// are `/dca/N` with fader/on directly underneath (no `/mix` segment).
 /// Every root below is live-verified on the owner rig (FW 1.20).
-fn strip_root(strip: u16) -> anyhow::Result<(openmix_core::StripKind, String)> {    use openmix_core::StripKind as K;
+fn strip_root(strip: u16) -> anyhow::Result<(openfader_core::StripKind, String)> {    use openfader_core::StripKind as K;
     let s = strip as usize;
     if s < 16 {
         return Ok((K::In, format!("/ch/{:02}", s + 1)));
@@ -541,11 +541,11 @@ fn strip_root(strip: u16) -> anyhow::Result<(openmix_core::StripKind, String)> {
 /// Scope-check one catalogue id against a strip kind: out-of-scope is a
 /// NON-drop-class error (the engine pre-filters its poll set by scopes, so
 /// this only fires on direct misuse and must never shrink `caps`).
-fn check_scope(param: &str, kind: openmix_core::StripKind) -> anyhow::Result<()> {
-    let def = openmix_core::params::find(param)
+fn check_scope(param: &str, kind: openfader_core::StripKind) -> anyhow::Result<()> {
+    let def = openfader_core::params::find(param)
         .ok_or_else(|| anyhow::anyhow!("xair: unknown param {param:?}"))?;
-    if !openmix_core::params::supports_kind(def, kind)
-        || (param == "comp_key_src" && kind == openmix_core::StripKind::Main)
+    if !openfader_core::params::supports_kind(def, kind)
+        || (param == "comp_key_src" && kind == openfader_core::StripKind::Main)
     {
         anyhow::bail!("xair: {param} out of scope for {kind:?} strips");
     }
@@ -586,7 +586,7 @@ fn strip_config_name(root: &str) -> String {
 
 /// True when `addr` carries an explicit `:port` (or parses as a full
 /// `SocketAddr`): the connect sweep leaves those alone and dials as-is.
-/// Mirrors [`openmix_transport::session::resolve_peer`]'s host/port split
+/// Mirrors [`openfader_transport::session::resolve_peer`]'s host/port split
 /// (bare IPv6 without brackets is treated as a bare host, same as there).
 fn has_explicit_port(addr: &str) -> bool {
     if addr.parse::<SocketAddr>().is_ok() {
@@ -603,7 +603,7 @@ fn has_explicit_port(addr: &str) -> bool {
 /// as alive. Bounded by [`addrs::CONNECT_PROBE_TIMEOUT`]; never used on
 /// the steady-state path.
 async fn probe_port(host: &str, port: u16) -> bool {
-    use openmix_transport::session::resolve_peer;
+    use openfader_transport::session::resolve_peer;
     let peer = match resolve_peer(host, port) {
         Ok(p) => p,
         Err(_) => return false,
@@ -740,7 +740,7 @@ fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static str, ParamVal
     }
     if let Some(root) = addr.strip_suffix("/grp/mute") {
         let strip = strip_of_root(&format!("/{root}"))?;
-        if !matches!(strip_root(strip).ok()?.0, openmix_core::StripKind::In | openmix_core::StripKind::Ret | openmix_core::StripKind::Bus | openmix_core::StripKind::FxSnd) { return None; }
+        if !matches!(strip_root(strip).ok()?.0, openfader_core::StripKind::In | openfader_core::StripKind::Ret | openfader_core::StripKind::Bus | openfader_core::StripKind::FxSnd) { return None; }
         let mask = groups::mask_from_msg(msg).ok()?;
         const IDS: [&str; 4] = ["_mg1", "_mg2", "_mg3", "_mg4"];
         return Some(IDS.iter().enumerate().map(|(i, id)| (strip, *id, ParamValue::Bool(mask & (1 << i) != 0))).collect());
@@ -951,10 +951,10 @@ fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static str, ParamVal
         let (kind, _) = strip_root(strip).ok()?;
         if !matches!(
             kind,
-            openmix_core::StripKind::In
-                | openmix_core::StripKind::Ret
-                | openmix_core::StripKind::Bus
-                | openmix_core::StripKind::FxSnd
+            openfader_core::StripKind::In
+                | openfader_core::StripKind::Ret
+                | openfader_core::StripKind::Bus
+                | openfader_core::StripKind::FxSnd
         ) {
             return None;
         }
@@ -977,7 +977,7 @@ fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static str, ParamVal
     if let Some(am_root) = addr.strip_suffix("/automix") {
         let strip = strip_of_root(&format!("/{am_root}"))?;
         let (kind, _) = strip_root(strip).ok()?;
-        if kind != openmix_core::StripKind::In {
+        if kind != openfader_core::StripKind::In {
             return None;
         }
         let (on, w) = automix::automix_from_msg(msg).ok()?;
@@ -1065,7 +1065,7 @@ pub struct XAirDriver {
     /// Desk-originated mix-surface updates (see [`parse_inbound`]): stable
     /// across reconnects, fed by one ingest task per connection. The engine
     /// subscribes once and applies these to its param cache live.
-    update_tx: broadcast::Sender<openmix_core::ParamUpdate>,
+    update_tx: broadcast::Sender<openfader_core::ParamUpdate>,
     /// Latest `/meters/1` levels in decoded blob order (40 linear levels:
     /// input bank `0..16`, aux-return post at idx 26 — rig-verified
     /// 2026-10-20; families past the channels are NOT mapped to strips —
@@ -1117,13 +1117,13 @@ impl XAirDriver {
     /// channels, FX returns, buses and FX-send masters answer (rig-verified
     /// XR18 FW 1.20); main LR and DCA strips are live-silent there and bail
     /// locally so callers never burn a 2 s query timeout on hardware.
-    fn assign_root(&self, strip: u16, what: &str) -> anyhow::Result<(openmix_core::StripKind, String)> {
+    fn assign_root(&self, strip: u16, what: &str) -> anyhow::Result<(openfader_core::StripKind, String)> {
         let (kind, root) = strip_root(strip)?;
         match kind {
-            openmix_core::StripKind::In
-            | openmix_core::StripKind::Ret
-            | openmix_core::StripKind::Bus
-            | openmix_core::StripKind::FxSnd => Ok((kind, root)),
+            openfader_core::StripKind::In
+            | openfader_core::StripKind::Ret
+            | openfader_core::StripKind::Bus
+            | openfader_core::StripKind::FxSnd => Ok((kind, root)),
             _ => anyhow::bail!("xair: {what} not supported on {kind:?} strips (no grp leaf)"),
         }
     }
@@ -1135,7 +1135,7 @@ impl XAirDriver {
     /// dial 10024 anyway — venue wifi may drop the ping but pass the
     /// session (same best-effort posture as the old unconditional dial).
     async fn sweep_peer(host: &str) -> anyhow::Result<SocketAddr> {
-        use openmix_transport::session::resolve_peer;
+        use openfader_transport::session::resolve_peer;
         if probe_port(host, addrs::PORT).await {
             return resolve_peer(host, addrs::PORT);
         }
@@ -1401,7 +1401,7 @@ impl XAirDriver {
     pub async fn subscribe_meters_with_interval(
         &self,
         interval: std::time::Duration,
-    ) -> anyhow::Result<broadcast::Receiver<openmix_core::MeterFrame>> {
+    ) -> anyhow::Result<broadcast::Receiver<openfader_core::MeterFrame>> {
         let rx = self.session().await?.as_ref().unwrap().subscribe_meters();
         self.spawn_meter_renewal(interval).await?;
         // Keep the receiver/drain and watchdog installed even after an
@@ -1415,7 +1415,7 @@ impl XAirDriver {
     /// [`Self::subscribe_meters_with_interval`].
     async fn subscribe_meters_once(
         &self,
-    ) -> anyhow::Result<broadcast::Receiver<openmix_core::MeterFrame>> {
+    ) -> anyhow::Result<broadcast::Receiver<openfader_core::MeterFrame>> {
         let guard = self.session().await?;
         let session = guard.as_ref().unwrap();
         // Documented working form (xr-meters against real XR hardware, x-Air
@@ -1480,7 +1480,7 @@ impl XAirDriver {
         )?;
         let task = tokio::spawn(async move {
             let mut ticker =
-                openmix_transport::session::keepalive_ticker(interval.min(std::time::Duration::from_secs(1)));
+                openfader_transport::session::keepalive_ticker(interval.min(std::time::Duration::from_secs(1)));
             let mut renewed = std::time::Instant::now();
             // `keepalive_ticker` fires immediately; consume it so the first
             // renewal lands one full `interval` after the initial subscribe.
@@ -1572,7 +1572,7 @@ impl MixerDriver for XAirDriver {
     }
 
     /// XR18 strip map (16 in + 4 FX ret + 6 bus + 4 FX send + LR + 4 DCA).
-    fn topology(&self) -> Vec<openmix_core::StripFamily> {
+    fn topology(&self) -> Vec<openfader_core::StripFamily> {
         XAIR_TOPOLOGY.to_vec()
     }
 
@@ -1595,7 +1595,7 @@ impl MixerDriver for XAirDriver {
         // as-is with no sweep. Neither path touches the steady-state 2 s
         // query timeout.
         let peer = if has_explicit_port(addr) {
-            openmix_transport::session::resolve_peer(addr, addrs::PORT)?
+            openfader_transport::session::resolve_peer(addr, addrs::PORT)?
         } else {
             Self::sweep_peer(addr).await?
         };
@@ -1612,7 +1612,7 @@ impl MixerDriver for XAirDriver {
             if session
                 .query_timeout(
                     addrs::INFO,
-                    openmix_transport::session::CONNECT_BURST_TIMEOUT,
+                    openfader_transport::session::CONNECT_BURST_TIMEOUT,
                 )
                 .await
                 .is_ok()
@@ -1662,24 +1662,24 @@ impl MixerDriver for XAirDriver {
                                     if let Some(args) = type_args {
                                         if let Ok(index) = fx::parse_fx_type(args) {
                                             fx_types[slot as usize - 1] = Some(index);
-                                            let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(slot), param: "_fx_type".into(), value: ParamValue::Float(index as f32) });
+                                            let _ = tx.send(openfader_core::ParamUpdate { received_at, strip: StripId(slot), param: "_fx_type".into(), value: ParamValue::Float(index as f32) });
                                         }
                                     } else if let Some(index) = leaf.strip_prefix("par/").and_then(|n| n.parse::<u8>().ok()).filter(|n| (1..=64).contains(n)) {
                                         if let Some(effect) = fx_types[slot as usize - 1] {
                                             if let Some(def) = fx::fx_param_def(effect, index) {
                                                 if let Ok(value) = fx::parse_fx_param(&msg.args, Some(&def)) {
-                                                    let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(slot), param: format!("_fx_par{index:02}"), value: ParamValue::Float(value) });
+                                                    let _ = tx.send(openfader_core::ParamUpdate { received_at, strip: StripId(slot), param: format!("_fx_par{index:02}"), value: ParamValue::Float(value) });
                                                 }
                                             }
                                         } else {
-                                            let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(slot), param: "_fx_dirty".into(), value: ParamValue::Bool(true) });
+                                            let _ = tx.send(openfader_core::ParamUpdate { received_at, strip: StripId(slot), param: "_fx_dirty".into(), value: ParamValue::Bool(true) });
                                         }
                                     } else if leaf == "par" {
                                         if let Some(effect) = fx_types[slot as usize - 1] {
                                             for (i, arg) in msg.args.iter().take(64).enumerate() {
                                                 if let Some(def) = fx::fx_param_def(effect, i as u8 + 1) {
                                                     if let Ok(value) = fx::parse_fx_param(std::slice::from_ref(arg), Some(&def)) {
-                                                        let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(slot), param: format!("_fx_par{:02}", i + 1), value: ParamValue::Float(value) });
+                                                        let _ = tx.send(openfader_core::ParamUpdate { received_at, strip: StripId(slot), param: format!("_fx_par{:02}", i + 1), value: ParamValue::Float(value) });
                                                     }
                                                 }
                                             }
@@ -1691,7 +1691,7 @@ impl MixerDriver for XAirDriver {
                             } else if let Ok(slot @ 1..=4) = rest.parse::<u16>() {
                                 if let Ok(index) = fx::parse_fx_type(&msg.args) {
                                     fx_types[slot as usize - 1] = Some(index);
-                                    let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(slot), param: "_fx_type".into(), value: ParamValue::Float(index as f32) });
+                                    let _ = tx.send(openfader_core::ParamUpdate { received_at, strip: StripId(slot), param: "_fx_type".into(), value: ParamValue::Float(index as f32) });
                                 }
                             }
                             continue;
@@ -1711,18 +1711,18 @@ impl MixerDriver for XAirDriver {
                                         Some((strip, Some(suffix))) => (strip, ParamValue::Text(suffix)),
                                         Some((strip, None)) => (strip, ParamValue::Bool(true)),
                                         None if path.starts_with("/fx/") => {
-                                            let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(0), param: "_fx_dirty".into(), value: ParamValue::Bool(true) });
+                                            let _ = tx.send(openfader_core::ParamUpdate { received_at, strip: StripId(0), param: "_fx_dirty".into(), value: ParamValue::Bool(true) });
                                             continue;
                                         }
                                         None => (u16::MAX, ParamValue::Bool(true)),
                                     };
-                                    let _ = tx.send(openmix_core::ParamUpdate { received_at, strip: StripId(strip), param: "_sync_dirty".into(), value });
+                                    let _ = tx.send(openfader_core::ParamUpdate { received_at, strip: StripId(strip), param: "_sync_dirty".into(), value });
                                 }
                             }
                             continue;
                         }
                         for (strip, param, value) in parse_inbound(&msg) {
-                            let _ = tx.send(openmix_core::ParamUpdate {
+                            let _ = tx.send(openfader_core::ParamUpdate {
                                 received_at,
                                 strip: StripId(strip),
                                 param: param.to_string(),
@@ -1732,7 +1732,7 @@ impl MixerDriver for XAirDriver {
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         eprintln!("xair: control receive lagged {n}; requesting bounded reconciliation");
-                        let _ = tx.send(openmix_core::ParamUpdate { received_at: std::time::Instant::now(), strip: StripId(u16::MAX), param: "_sync_dirty".into(), value: ParamValue::Bool(true) });
+                        let _ = tx.send(openfader_core::ParamUpdate { received_at: std::time::Instant::now(), strip: StripId(u16::MAX), param: "_sync_dirty".into(), value: ParamValue::Bool(true) });
                     },
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
@@ -1760,7 +1760,7 @@ impl MixerDriver for XAirDriver {
         let session = self.session().await?.as_ref().unwrap().clone();
         // Drain pre-suspend socket traffic through a lightweight reply
         // barrier, then require new samples. No cached replay becomes fresh.
-        let _ = session.query_timeout(addrs::INFO, openmix_transport::session::CONNECT_BURST_TIMEOUT).await;
+        let _ = session.query_timeout(addrs::INFO, openfader_transport::session::CONNECT_BURST_TIMEOUT).await;
         *self.receive_since.lock().unwrap() = std::time::Instant::now();
         *self.meter_latest.lock().unwrap() = None;
         *self.dyn_cache.lock().await = None;
@@ -2030,10 +2030,10 @@ impl MixerDriver for XAirDriver {
     /// mapping, so they read honest silence here — never a neighbor's
     /// level. `None` (no blob yet) reads back full-map silence, like the
     /// core default.
-    fn poll_meters(&self) -> openmix_core::MeterFrame {
+    fn poll_meters(&self) -> openfader_core::MeterFrame {
         let sample = self.meter_latest.lock().unwrap();
         let Some((_, latest)) = sample.as_ref().filter(|(at, _)| at.elapsed() <= std::time::Duration::from_millis(500)) else {
-            return openmix_core::MeterFrame { levels: Vec::new() };
+            return openfader_core::MeterFrame { levels: Vec::new() };
         };
         let mut levels = vec![0.0f32; XAIR_STRIPS];
         for (i, v) in latest.iter().take(16).enumerate() {
@@ -2042,7 +2042,7 @@ impl MixerDriver for XAirDriver {
         if let Some(v) = latest.get(26) {
             levels[35] = *v;
         }
-        openmix_core::MeterFrame { levels }
+        openfader_core::MeterFrame { levels }
     }
 
     async fn query_info(&self) -> anyhow::Result<MixerInfo> {
@@ -2078,7 +2078,7 @@ impl MixerDriver for XAirDriver {
         self.get_fx_param_with_type(slot, param, effect).await
     }
 
-    fn poll_spectrum(&self) -> Vec<openmix_core::AudioSpectrum> {
+    fn poll_spectrum(&self) -> Vec<openfader_core::AudioSpectrum> {
         self.rta.lock().unwrap().as_ref().map_or_else(Vec::new, |rta| rta.poll())
     }
 
@@ -2090,7 +2090,7 @@ impl MixerDriver for XAirDriver {
 
     async fn subscribe_meters(
         &self,
-    ) -> anyhow::Result<broadcast::Receiver<openmix_core::MeterFrame>> {
+    ) -> anyhow::Result<broadcast::Receiver<openfader_core::MeterFrame>> {
         let rx = self
             .subscribe_meters_with_interval(addrs::METER_RENEW_INTERVAL)
             .await?;
@@ -2126,7 +2126,7 @@ impl MixerDriver for XAirDriver {
     /// the receiver.
     fn subscribe_updates(
         &self,
-    ) -> Option<broadcast::Receiver<openmix_core::ParamUpdate>> {
+    ) -> Option<broadcast::Receiver<openfader_core::ParamUpdate>> {
         Some(self.update_tx.subscribe())
     }
 
@@ -2136,7 +2136,7 @@ impl MixerDriver for XAirDriver {
     /// kind-scoped gate/comp/EQ sets; FX-send masters and DCAs carry
     /// fader/mute/name/color only (catalogue scopes). Every address/codec is
     /// confirmed against the owner XR18 (FW 1.20) — see
-    /// `docs/xr18-baseline.md` for the readback table.
+    /// XR18 baseline notes for the readback table.
     ///
     /// GR reads ride the param path (`gate_gr`/`comp_gr` serve dB reduction
     /// `>= 0` from the last `/meters/6` blob; no GR query address exists).
@@ -2154,7 +2154,7 @@ impl MixerDriver for XAirDriver {
         value: ParamValue,
     ) -> anyhow::Result<()> {
         let (kind, root) = strip_root(strip.0)?;
-        if openmix_core::params::find(param).is_some() {
+        if openfader_core::params::find(param).is_some() {
             check_scope(param, kind)?;
         }
         // Channel wire number for channel-only leaves (headamp/input: the
@@ -2521,7 +2521,7 @@ impl MixerDriver for XAirDriver {
 
     async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
         let (kind, root) = strip_root(strip.0)?;
-        if openmix_core::params::find(param).is_some() {
+        if openfader_core::params::find(param).is_some() {
             check_scope(param, kind)?;
         }
         let ch = || self.check_channel(strip.0);
@@ -2725,7 +2725,7 @@ impl MixerDriver for XAirDriver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use openmix_transport::meters::build_meter_blob;
+    use openfader_transport::meters::build_meter_blob;
     use rosc::OscType;
     use std::collections::HashMap;
     use std::net::SocketAddr;
@@ -3802,8 +3802,8 @@ mod tests {
         driver.clear_solo().await.unwrap();
     }
 
-    /// Rig-gated solo write-path discovery (env `OPENMIX_RIG=1`, desk
-    /// address via `OPENMIX_RIG_ADDR`; skipped otherwise so CI stays
+    /// Rig-gated solo write-path discovery (env `OPENFADER_RIG=1`, desk
+    /// address via `OPENFADER_RIG_ADDR`; skipped otherwise so CI stays
     /// green). Uses muted
     /// ch16 only, read -> write -> readback -> clear -> verify. Reports
     /// which `/-stat/solosw/NN` numbering the desk honors (1-based `16`
@@ -3811,11 +3811,11 @@ mod tests {
     /// PFL only, cleared immediately; never run while the rig is live.
     #[tokio::test]
     async fn rig_solo_write_path() {
-        if std::env::var("OPENMIX_RIG").as_deref() != Ok("1") {
+        if std::env::var("OPENFADER_RIG").as_deref() != Ok("1") {
             return;
         }
         let driver = XAirDriver::new();
-        let rig = std::env::var("OPENMIX_RIG_ADDR").unwrap_or_else(|_| "192.168.1.20".to_string());
+        let rig = std::env::var("OPENFADER_RIG_ADDR").unwrap_or_else(|_| "192.168.1.20".to_string());
         driver.connect(&format!("{rig}:10024")).await.unwrap();
         let bank = async || {
             let guard = driver.session().await.unwrap();
@@ -5049,7 +5049,7 @@ mod tests {
 
     #[test]
     fn capabilities_match_loopback_tested_set() {
-        use openmix_core::params;
+        use openfader_core::params;
         // Every advertised id exists in the canonical catalogue…
         for id in XAIR_CAPABILITIES {
             assert!(
@@ -5946,9 +5946,9 @@ mod tests {
         }
         assert_eq!(next, XAIR_STRIPS);
         let (k, r) = strip_root(0).unwrap();
-        assert_eq!((k, r.as_str()), (openmix_core::StripKind::In, "/ch/01"));
+        assert_eq!((k, r.as_str()), (openfader_core::StripKind::In, "/ch/01"));
         let (k, r) = strip_root(15).unwrap();
-        assert_eq!((k, r.as_str()), (openmix_core::StripKind::In, "/ch/16"));
+        assert_eq!((k, r.as_str()), (openfader_core::StripKind::In, "/ch/16"));
         assert_eq!(strip_root(16).unwrap().1, "/rtn/1");
         assert_eq!(strip_root(19).unwrap().1, "/rtn/4");
         assert_eq!(strip_root(20).unwrap().1, "/bus/1");
@@ -5958,7 +5958,7 @@ mod tests {
         assert_eq!(strip_root(31).unwrap().1, "/dca/1");
         assert_eq!(strip_root(34).unwrap().1, "/dca/4");
         let (k, r) = strip_root(35).unwrap();
-        assert_eq!((k, r.as_str()), (openmix_core::StripKind::Ret, "/rtn/aux"));
+        assert_eq!((k, r.as_str()), (openfader_core::StripKind::Ret, "/rtn/aux"));
         assert!(strip_root(36).is_err());
         assert!(strip_root(99).is_err());
         assert_eq!(strip_of_root("/rtn/aux"), Some(35));

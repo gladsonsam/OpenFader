@@ -15,10 +15,10 @@ node_modules/
 **/local.properties
 **/.cxx/
 
-# Internal docs live in private openmix-docs-private — do not track here
+# Internal planning docs live elsewhere — do not track here
 BACKLOG.md
 
-# Local-only dev scripts (live in private openmix-docs-private)
+# Local-only dev scripts (kept out of the repo)
 scripts/dev-xr18.sh
 scripts/flutter-sim-dev.sh
 scripts/flutter-mac-dev.sh

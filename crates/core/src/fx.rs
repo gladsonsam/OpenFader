@@ -113,7 +113,7 @@ impl Default for FxRack {
 // ---------------------------------------------------------------------------
 // R2 FX type metadata: the design's six FX types + their param tables.
 //
-// Source: `docs/design/src/design-logic.js.txt` (`buildFx` defaults +
+// Source: design logic reference (`buildFx` defaults +
 // `fxDefs` labels/formatters). These are UI-facing display tables only:
 // values on the wire stay normalized 0.0..=1.0; `min`/`max`/`unit` describe
 // the engineering range the UI formats into, `default` is the design's

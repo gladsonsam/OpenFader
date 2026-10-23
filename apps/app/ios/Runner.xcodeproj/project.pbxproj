@@ -225,7 +225,7 @@
 			);
 			name = "Run Script";
 			outputPaths = (
-				"$(BUILT_PRODUCTS_DIR)/libopenmix_flutter_bridge.a",
+				"$(BUILT_PRODUCTS_DIR)/libopenfader_flutter_bridge.a",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;

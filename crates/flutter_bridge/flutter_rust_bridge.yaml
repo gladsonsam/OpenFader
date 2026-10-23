@@ -6,4 +6,4 @@ rust_root: .
 rust_input: crate::api
 rust_output: src/frb_generated.rs
 dart_output: ../../apps/app/lib/bridge/generated
-dart_entrypoint_class_name: OpenmixBridge
+dart_entrypoint_class_name: OpenfaderBridge

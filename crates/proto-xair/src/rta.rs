@@ -1,9 +1,9 @@
-//! XR18 RTA100, verified on FW1.20. See docs/xair-rta-verification.md.
+//! XR18 RTA100, verified on FW1.20. See XR18 RTA verification notes.
 //! This actor shares the driver OSC session; selector queries run concurrently
 //! with hydration and never enter the strip poll budget. It is the sole writer for the shared selector. Other
 //! desk clients can take over; we then relinquish ownership instead of fighting.
-use openmix_core::{AudioSpectrum, StripId};
-use openmix_transport::OscSession;
+use openfader_core::{AudioSpectrum, StripId};
+use openfader_transport::OscSession;
 use rosc::{OscMessage, OscType};
 use std::{
     sync::{Arc, Mutex},
@@ -154,7 +154,7 @@ impl RtaStream {
                                 return Ok(());
                             }
                             let source = strip_source(req.strip.unwrap())?;
-                            anyhow::ensure!(lease.as_ref().is_none_or(|l| l.owner == req.owner), "RTA is in use by another openmix client");
+                            anyhow::ensure!(lease.as_ref().is_none_or(|l| l.owner == req.owner), "RTA is in use by another openfader client");
                             let before = read(&session).await?;
                             if let Some(old) = &lease {
                                 if before != old.selected {
