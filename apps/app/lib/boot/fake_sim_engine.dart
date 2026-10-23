@@ -4,7 +4,9 @@
 // or any FFI init failure).
 library;
 
+import 'dart:collection';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../engine.dart';
@@ -18,37 +20,33 @@ class FakeSimEngine implements EngineApi {
           name: 'CH${(i + 1).toString().padLeft(2, '0')}',
           fader: 0.75,
           muted: false));
-  final List<List<String>> _mailbox = [];
-  int _tick = 0;
-  int _binTick = 0;
+  final Queue<String> _mailbox = Queue<String>();
+  final Stopwatch _signalClock = Stopwatch()..start();
+  int _lastMeterTick = -1;
   int _binSeq = 0;
 
   @override
   Future<String> boot() async {
-    _mailbox.add([
-      jsonEncode({'type': 'you', 'id': 'client-1'})
-    ]);
+    _mailbox.add(jsonEncode({'type': 'you', 'id': 'client-1'}));
     _snapshot();
     return 'client-1';
   }
 
   void _snapshot() {
-    _mailbox.add([
-      jsonEncode({
-        'type': 'state',
-        'driver': 'sim',
-        'strips': [
-          for (final s in _strips)
-            {
-              'ch': s.ch,
-              'key': s.key,
-              'name': s.name,
-              'fader': s.fader,
-              'muted': s.muted
-            }
-        ],
-      })
-    ]);
+    _mailbox.add(jsonEncode({
+      'type': 'state',
+      'driver': 'sim',
+      'strips': [
+        for (final s in _strips)
+          {
+            'ch': s.ch,
+            'key': s.key,
+            'name': s.name,
+            'fader': s.fader,
+            'muted': s.muted
+          }
+      ],
+    }));
   }
 
   @override
@@ -74,34 +72,54 @@ class FakeSimEngine implements EngineApi {
   }
 
   void _echo(int ch, String field, Object value) {
-    _mailbox.add([
-      jsonEncode({'type': 'param', 'ch': ch, 'field': field, 'value': value})
-    ]);
+    _mailbox.add(
+      jsonEncode({'type': 'param', 'ch': ch, 'field': field, 'value': value}),
+    );
     _snapshot();
   }
 
-  List<double> _meterLevels(int tick) => [
-        for (var i = 0; i < _strips.length; i++)
-          _strips[i].muted
-              ? 0.0
-              : (_strips[i].fader *
-                      (0.55 + 0.35 * ((tick * (i + 3)) % 10) / 10)
-                          .clamp(0.0, 1.0))
-      ];
+  // Latest-only 20 Hz source, sampled by the shell's existing poll loop.
+  // Both encodings drain this same source: extra control polls must neither
+  // accelerate the signal nor replay it through JSON after binary delivery.
+  List<double>? _takeMeterLevels() {
+    final tick = _signalClock.elapsedMilliseconds ~/ 50;
+    if (tick == _lastMeterTick) return null;
+    _lastMeterTick = tick;
+    final t = tick * 0.025;
+    return [
+      for (var i = 0; i < _strips.length; i++)
+        _strips[i].muted ? 0.0 : _inputLevel(i, t) * _strips[i].fader
+    ];
+  }
+
+  double _inputLevel(int i, double t) {
+    // Same slow, staggered -36..-12 dB phrases as the native sim.
+    final phase = i * 0.7;
+    final rate = 0.65 + (i % 5) * 0.07;
+    final phrase = (0.5 +
+            0.35 * math.sin(t * rate + phase) +
+            0.15 * math.sin(t * 1.7 + phase * 1.3))
+        .clamp(0.0, 1.0);
+    return math.pow(10.0, (-36.0 + 24.0 * phrase) / 20.0).toDouble();
+  }
+
+  int _drainCap(int cap) => cap == 0 ? 512 : cap.clamp(1, 4096);
 
   @override
   Future<List<String>> poll(String clientId, int cap) async {
-    // One fake 20 Hz meter frame per poll, then the queued control frames.
-    _tick++;
-    final out = <String>[
-      jsonEncode({'type': 'meters', 'levels': _meterLevels(_tick)})
-    ];
-    for (final batch in _mailbox) {
-      out.addAll(batch);
-      if (out.length >= cap) break;
+    final limit = _drainCap(cap);
+    final out = <String>[];
+    // Keep undelivered controls queued when a caller requests a small cap.
+    while (_mailbox.isNotEmpty && out.length < limit) {
+      out.add(_mailbox.removeFirst());
     }
-    _mailbox.clear();
-    return out.take(cap).toList();
+    if (out.length < limit) {
+      final levels = _takeMeterLevels();
+      if (levels != null) {
+        out.add(jsonEncode({'type': 'meters', 'levels': levels}));
+      }
+    }
+    return out;
   }
 
   @override
@@ -110,18 +128,16 @@ class FakeSimEngine implements EngineApi {
     // `Event::to_binary` layout (protocol.rs: `[u8 type=1, u8 version=1,
     // u16 n, u32 seq, u32 t_ms]` + `n x u16` levels, little-endian),
     // wrapped in the `pollBinary` length prefix (`u32 LE len` + frame).
-    // Independent tick/seq counters so the binary and JSON paths never
-    // disturb each other; the app applies binary first, JSON after.
-    _binTick++;
-    final levels = _meterLevels(_binTick);
+    final levels = _takeMeterLevels();
+    if (levels == null) return Uint8List(0);
     final n = levels.length;
     final frame = ByteData(binHeaderLen + n * 2);
     frame.setUint8(0, binTypeMeters);
     frame.setUint8(1, binVersion);
     frame.setUint16(2, n, Endian.little);
-    frame.setUint32(4, _binSeq++, Endian.little);
-    frame.setUint32(8,
-        DateTime.now().millisecondsSinceEpoch & 0xffffffff, Endian.little);
+    frame.setUint32(4, _binSeq, Endian.little);
+    _binSeq = (_binSeq + 1) & 0xffffffff;
+    frame.setUint32(8, (_lastMeterTick * 50) & 0xffffffff, Endian.little);
     for (var i = 0; i < n; i++) {
       frame.setUint16(binHeaderLen + i * 2,
           (levels[i].clamp(0.0, 1.0) * 65535).round(), Endian.little);
