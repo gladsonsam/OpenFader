@@ -5,7 +5,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use openmix_engine::{Cmd, Engine, EngineConfig, Event};
+use openmix_engine::{Cmd, Engine, EngineConfig, Event, SharedEvent};
 use serde_json::{json, Value};
 
 fn ev_json(event: &Event) -> Value {
@@ -18,7 +18,7 @@ async fn new_engine() -> Arc<Engine> {
     engine
 }
 
-async fn next_event(handle: &mut openmix_engine::engine::ClientHandle) -> Event {
+async fn next_event(handle: &mut openmix_engine::engine::ClientHandle) -> SharedEvent {
     tokio::time::timeout(Duration::from_secs(5), handle.events.recv())
         .await
         .expect("event in time")
@@ -29,7 +29,7 @@ async fn next_event(handle: &mut openmix_engine::engine::ClientHandle) -> Event 
 async fn wait_for(
     handle: &mut openmix_engine::engine::ClientHandle,
     want: impl Fn(&Event) -> bool,
-) -> Event {
+) -> SharedEvent {
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     loop {
         if std::time::Instant::now() > deadline {
@@ -45,7 +45,7 @@ async fn wait_for(
 
 /// Drain the 12-frame attach snapshot, asserting the R1 six-frame prefix
 /// and the R2 suffix (devices/link/info/scenes/fx/routing).
-async fn drain_snapshot(handle: &mut openmix_engine::engine::ClientHandle) -> Vec<Event> {
+async fn drain_snapshot(handle: &mut openmix_engine::engine::ClientHandle) -> Vec<SharedEvent> {
     let mut out = Vec::new();
     // R1 prefix (6) + R2 frames (devices/link/info/scenes/fx/routing) +
     // master-section snapshot (sim: 8 bus + 6 subgroup + 6 mute-group +
@@ -53,7 +53,7 @@ async fn drain_snapshot(handle: &mut openmix_engine::engine::ClientHandle) -> Ve
     for _ in 0..33 {
         out.push(next_event(handle).await);
     }
-    let tags: Vec<&str> = out.iter().map(Event::tag).collect();
+    let tags: Vec<&str> = out.iter().map(|e| e.tag()).collect();
     assert_eq!(
         &tags[..6],
         ["you", "state", "shows", "clients", "locks", "caps"],
@@ -167,7 +167,7 @@ async fn scan_empty_is_honest_empty() {
     // Boot is honest too: no devices, link disconnected.
     let boot_devices = snap
         .iter()
-        .find(|e| matches!(e, Event::Devices { .. }))
+        .find(|e| matches!(&*e.event, Event::Devices { .. }))
         .unwrap();
     assert_eq!(
         ev_json(boot_devices)
@@ -179,7 +179,7 @@ async fn scan_empty_is_honest_empty() {
     );
     let boot_link = snap
         .iter()
-        .find(|e| matches!(e, Event::Link { .. }))
+        .find(|e| matches!(&*e.event, Event::Link { .. }))
         .unwrap();
     assert_eq!(
         ev_json(boot_link).get("state"),
@@ -303,7 +303,7 @@ async fn connect_first_paint_beats_fill() {
         );
         let next = tokio::time::timeout(Duration::from_millis(500), client.events.recv()).await;
         let Ok(Some(e)) = next else { continue };
-        match &e {
+        match &*e {
             Event::Caps { .. } => saw_caps = true,
             Event::Link { .. } => saw_link = true,
             Event::Fx { .. }
@@ -332,7 +332,7 @@ async fn info_reports_desk_identity() {
     // Snapshot carries info (sim answers synchronously).
     let info = snap
         .iter()
-        .find(|e| matches!(e, Event::Info { .. }))
+        .find(|e| matches!(&*e.event, Event::Info { .. }))
         .expect("snapshot has info");
     let v = ev_json(info);
     assert_eq!(v.get("sample_rate"), Some(&json!(48000)));
@@ -389,10 +389,12 @@ async fn scene_save_recall_roundtrip_restores_plane() {
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     while !got.contains_key("eq1_gain") || !got.contains_key("comp_thr") || !got.contains_key("send1_level") {
         assert!(std::time::Instant::now() < deadline, "recall echoes arrive: {got:?}");
-        if let Ok(Some(Event::Param { ch: 0, field, value, .. })) =
+        if let Ok(Some(frame)) =
             tokio::time::timeout(Duration::from_millis(500), client.events.recv()).await
         {
-            got.insert(field, value);
+            if let Event::Param { ch: 0, field, value, .. } = &*frame {
+                got.insert(field.clone(), value.clone());
+            }
         }
     }
     assert_eq!(got.get("fader"), Some(&json!(0.9f32)));
@@ -475,7 +477,7 @@ async fn scene_recall_scope_filters_axes() {
     while !saw_mute {
         assert!(std::time::Instant::now() < deadline, "scoped mute echo arrives");
         if let Ok(Some(e)) = tokio::time::timeout(Duration::from_millis(500), client.events.recv()).await {
-            if let Event::Param { ch: 0, field, value, .. } = &e {
+            if let Event::Param { ch: 0, field, value, .. } = &*e {
                 assert_ne!(field, "fader", "fader axis excluded from scope");
                 assert_ne!(field, "eq1_gain", "eq axis excluded from scope");
                 if field == "mute" {
@@ -483,7 +485,7 @@ async fn scene_recall_scope_filters_axes() {
                     saw_mute = true;
                 }
             }
-            if let Event::Param { ch: 1, .. } = &e {
+            if let Event::Param { ch: 1, .. } = &*e {
                 panic!("strip 1 outside the scope must not recall: {e:?}");
             }
         }
@@ -522,7 +524,7 @@ async fn scenes_persist_across_restart() {
     engine2.connect("sim", None).await.unwrap();
     let mut client2 = engine2.attach(None).await;
     let snap = drain_snapshot(&mut client2).await;
-    let scenes = snap.iter().find(|e| matches!(e, Event::Scenes { .. })).unwrap();
+    let scenes = snap.iter().find(|e| matches!(&*e.event, Event::Scenes { .. })).unwrap();
     let list = ev_json(scenes).get("scenes").and_then(Value::as_array).unwrap().clone();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].get("number"), Some(&json!(7)));
@@ -546,7 +548,7 @@ async fn fx_caps_state_and_commands() {
     let mut client = engine.attach(None).await;
     let snap = drain_snapshot(&mut client).await;
     // caps.fx: 8 slots + six design type tables with param rows.
-    let caps = snap.iter().find(|e| matches!(e, Event::Caps { .. })).unwrap();
+    let caps = snap.iter().find(|e| matches!(&*e.event, Event::Caps { .. })).unwrap();
     let v = ev_json(caps);
     let fx = v.get("fx").expect("caps.fx");
     assert_eq!(fx.get("slots"), Some(&json!(8)));
@@ -562,7 +564,7 @@ async fn fx_caps_state_and_commands() {
         assert!(params[0].get(key).is_some(), "fx param row carries {key}");
     }
     // Snapshot fx: 8 design slots, first is Hall/on, last bypassed-off.
-    let fx = snap.iter().find(|e| matches!(e, Event::Fx { .. })).unwrap();
+    let fx = snap.iter().find(|e| matches!(&*e.event, Event::Fx { .. })).unwrap();
     let slots = ev_json(fx).get("slots").and_then(Value::as_array).unwrap().clone();
     assert_eq!(slots.len(), 8);
     assert_eq!(slots[0].get("type"), Some(&json!("Hall")));
@@ -618,7 +620,7 @@ async fn routing_patch_roundtrip() {
     let engine = new_engine().await;
     let mut client = engine.attach(None).await;
     let snap = drain_snapshot(&mut client).await;
-    let caps = snap.iter().find(|e| matches!(e, Event::Caps { .. })).unwrap();
+    let caps = snap.iter().find(|e| matches!(&*e.event, Event::Caps { .. })).unwrap();
     let routing = ev_json(caps).get("routing").cloned().unwrap();
     assert_eq!(routing.get("supported"), Some(&json!(true)));
     assert_eq!(routing.get("per_strip"), Some(&json!(true)));
@@ -627,7 +629,7 @@ async fn routing_patch_roundtrip() {
     assert_eq!(groups[0].get("key"), Some(&json!("Lcl")));
     assert_eq!(groups[0].get("count"), Some(&json!(32)));
     // Defaults mirror the design (Ch n <- Lcl n): snapshot carries them.
-    let routing = snap.iter().find(|e| matches!(e, Event::Routing { .. })).unwrap();
+    let routing = snap.iter().find(|e| matches!(&*e.event, Event::Routing { .. })).unwrap();
     let patches = ev_json(routing).get("patches").and_then(Value::as_array).unwrap().clone();
     assert!(!patches.is_empty());
     assert!(patches.iter().any(|p| p.get("strip") == Some(&json!(0)) && p.get("label") == Some(&json!("Lcl 01"))));
@@ -740,7 +742,7 @@ async fn taps_negotiation_and_frames() {
             |e| matches!(e, Event::Taps { tap, .. } if tap == want),
         )
         .await;
-        if let Event::Taps { levels, .. } = frame {
+        if let Event::Taps { levels, .. } = &*frame {
             assert_eq!(levels.len(), 77, "tap {want} covers every strip");
         } else {
             panic!("expected taps");
@@ -783,8 +785,8 @@ async fn poller_inflight_defaults_and_focus_order() {
     }
     let mut chs: Vec<u16> = Vec::new();
     while let Ok(e) = client.events.try_recv() {
-        if let Event::Params { ch, .. } = e {
-            chs.push(ch);
+        if let Event::Params { ch, .. } = &*e {
+            chs.push(*ch);
         }
     }
     assert!(!chs.is_empty());
@@ -830,8 +832,8 @@ async fn visible_lane_serves_focused_strips_first() {
     }
     let mut chs: Vec<u16> = Vec::new();
     while let Ok(e) = client.events.try_recv() {
-        if let Event::Params { ch, .. } = e {
-            chs.push(ch);
+        if let Event::Params { ch, .. } = &*e {
+            chs.push(*ch);
         }
     }
     assert!(!chs.is_empty());
@@ -903,7 +905,7 @@ async fn masters_groups_files_roundtrip() {
     let snap = drain_snapshot(&mut client).await;
     // caps groups/files advertisement (sim: 8 buses, 6 subgroups, 6 mute
     // groups, file transfer modeled in-memory).
-    let caps = snap.iter().find(|e| matches!(e, Event::Caps { .. })).unwrap();
+    let caps = snap.iter().find(|e| matches!(&*e.event, Event::Caps { .. })).unwrap();
     let v = ev_json(caps);
     assert_eq!(v.get("groups"), Some(&json!({"buses": 8, "subgroups": 6, "mute_groups": 6, "mg_assign": true, "sub_assign": true})));
     assert_eq!(v.get("files"), Some(&json!({"supported": true})));

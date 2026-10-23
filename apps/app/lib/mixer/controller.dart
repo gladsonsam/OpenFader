@@ -80,6 +80,17 @@ class MixerController extends ChangeNotifier {
       (store.strips.where((s) => s.key != 'main').length / _pageSize).ceil();
   int get muteGroupCount => store.engine.muteGroupCount;
   bool get hasSolo => store.hasSolo;
+
+  /// Per-strip control notifiers (passthrough to the store): strips listen
+  /// to their own ch so fader/mute/pan writes rebuild one strip, never the
+  /// page. See AppStore: the hot path updates these in place with no
+  /// global notifyListeners().
+  ValueListenable<double> faderNoteOf(int? ch, bool master) =>
+      master || ch == null ? store.masterFaderNote : store.faderOf(ch);
+  ValueListenable<bool> muteNoteOf(int? ch, bool master) =>
+      master || ch == null ? store.masterMutedNote : store.muteOf(ch);
+  ValueListenable<double> panNoteOf(int ch) => store.panNoteOf(ch);
+  ValueListenable<bool> soloNoteOf(int ch) => store.soloNoteOf(ch);
   List<MixerChannel> get channels => store.strips
       .where((s) => s.key != 'main')
       .skip(_page * _pageSize)
@@ -221,9 +232,13 @@ class MixerController extends ChangeNotifier {
   void unity(MixerChannel ch) => setPosition(ch, .758);
   void toggleMute(MixerChannel ch) {
     if (ch.master) {
-      store.setMasterMuted(!ch.muted);
+      store.setMasterMuted(!store.masterMutedNote.value);
     } else {
-      store.setMute(ch.channel!, !ch.muted);
+      // Read the live notifier, not the snapshot: the page no longer
+      // rebuilds on mute taps so ch.muted may be stale.
+      final live =
+          ch.channel != null ? store.muteOf(ch.channel!).value : ch.muted;
+      store.setMute(ch.channel!, !live);
     }
   }
 
@@ -264,7 +279,14 @@ class MixerController extends ChangeNotifier {
   void nudgeSelected(double delta) {
     final ch = selected;
     if (ch != null) {
-      setPosition(ch, MixerFaderScale.fromEngine(ch.fader) + delta);
+      // Live fader: snapshots go stale between global rebuilds now that
+      // fader drags no longer notify.
+      final live = ch.master
+          ? store.masterFaderNote.value
+          : ch.channel != null
+              ? store.faderOf(ch.channel!).value
+              : ch.fader;
+      setPosition(ch, MixerFaderScale.fromEngine(live) + delta);
     }
   }
 

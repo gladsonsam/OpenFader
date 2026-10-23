@@ -3,8 +3,9 @@
 // After boot (sim or FFI), main.dart creates one [AppStore] and pushes
 // [AppShell]. The shell owns:
 // - a shared 80 ms poll loop ([AppStore.pollMeters]) so every tab stays
-//   fresh even when the visible page has no loop of its own (the A/B/C
-//   pages keep their own loops too; AppStore serializes mailbox drains);
+//   fresh from this single ticker. The A/B/C pages own no loop of their
+//   own; AppStore serializes mailbox drains and the _polling guard makes
+//   any stray overlap a no-op.
 // - bottom (narrow) / side (wide >= 720) rail across Mixer, Meters,
 //   Channel + the six Area D screens (read-only imports — this file never
 //   edits them);
@@ -102,8 +103,9 @@ class _AppShellState extends State<AppShell> {
     _settings = _SettingsStore(widget.store);
     _fx = _FxStore(widget.store);
     _debug = _DebugStore(widget.store);
-    // Shared freshness loop (see file docs: harmless overlap with the
-    // per-page loops — one drain, one engine state).
+    // Single shared freshness ticker: the ONLY 80 ms poll loop in the app.
+    // Every tab (mixer/meters/channel/FX/...) renders from the notifiers
+    // this drain updates in place; pages own no timer of their own.
     _shellLoop =
         Timer.periodic(const Duration(milliseconds: 80), (_) => _tick());
     _tick();
@@ -145,6 +147,12 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final store = widget.store;
+    // Structural listener only: fader/mute/pan hot-path writes update
+    // per-strip ValueNotifiers in place (AppStore.faderOf/muteOf/panNoteOf)
+    // and never call notifyListeners(), so a fader drag rebuilds one
+    // MixerStrip instead of this whole shell + every strip. This builder
+    // fires for connection / strips add-remove / bank / bus / solo-banner
+    // changes.
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
@@ -1002,13 +1010,18 @@ class _SettingsStore extends _StoreBase implements SettingsStore {
 // ---------------------------------------------------------------------------
 
 class _FxStore extends _StoreBase implements FxStore {
-  _FxStore(super.app);
+  _FxStore(super.app) {
+    // FX meters ride the single shell-owned poll loop: every AppStore drain
+    // re-syncs the slot notifiers in place, so the FX page needs no timer.
+    app.addListener(_syncFxMeters);
+  }
 
   int _sel = 0;
   final Map<int, ValueNotifier<double>> _meters = {};
 
   @override
   void dispose() {
+    app.removeListener(_syncFxMeters);
     for (final m in _meters.values) {
       m.dispose();
     }
@@ -1080,6 +1093,10 @@ class _FxStore extends _StoreBase implements FxStore {
   @override
   Future<void> pollMeters() async {
     await app.pollMeters();
+    _syncFxMeters();
+  }
+
+  void _syncFxMeters() {
     if (_dead) return;
     for (final e in _meters.entries) {
       final i = _raw.indexWhere((s) => s.slot == e.key);
