@@ -4,6 +4,7 @@ import '../controller.dart';
 import '../design.dart';
 import '../../u4law.dart';
 import '../../widgets/number_entry.dart';
+import '../../widgets/design_icon.dart';
 import 'banks.dart';
 
 class MixerToolbar extends StatelessWidget {
@@ -120,21 +121,18 @@ class MixerToolbar extends StatelessWidget {
             MixerToolButton(
                 label: 'Settings',
                 onPressed: () => onNavigate(MixerDestination.settings),
-                child: const Icon(Icons.settings_outlined,
-                    size: 22, color: Color(0xffb5b5b5))),
+                child: const DesignIcon(DesignSymbol.settings)),
             const SizedBox(width: 8),
             MixerToolButton(
                 label: 'Routing',
                 onPressed: () => onNavigate(MixerDestination.routing),
-                child: const Icon(Icons.account_tree_outlined,
-                    size: 22, color: Color(0xffb5b5b5))),
+                child: const DesignIcon(DesignSymbol.routing)),
             const SizedBox(width: 8),
             MixerToolButton(
                 label: 'Layout',
                 onPressed: () =>
                     showMixerLayout(context, controller, onNavigate),
-                child: const Icon(Icons.view_column_outlined,
-                    size: 22, color: Color(0xffb5b5b5))),
+                child: const DesignIcon(DesignSymbol.layout)),
             Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: SizedBox(

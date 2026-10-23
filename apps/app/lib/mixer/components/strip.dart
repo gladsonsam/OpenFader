@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../design.dart';
+import '../geometry.dart';
 import 'fader.dart';
 import 'nameplate.dart';
 import 'pan.dart';
@@ -30,15 +31,19 @@ class MixerStrip extends StatelessWidget {
       required this.onOpen});
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
-        final short = box.maxHeight < 540;
-        final tiny = box.maxHeight < 330;
-        final showRack = box.maxHeight >= (compact ? 360 : 480);
-        final rackHeight = compact ? 56.0 : (short ? 110.0 : 146.0);
-        final iconHeight = tiny
-            ? 0.0
-            : compact || short
-                ? 28.0
-                : (box.maxHeight > 760 ? 80.0 : 52.0);
+        final g = MixerGeometry(
+            phone: compact, width: box.maxWidth, height: box.maxHeight);
+        Widget place(double y, double height, Widget child,
+            {bool touch = false}) {
+          final target = touch ? g.target(height) : height;
+          return Positioned(
+              left: g.left,
+              right: g.right,
+              top: y - (target - height) / 2,
+              height: target,
+              child: child);
+        }
+
         final ch = channel;
         final isMaster = ch.master;
         final chIndex = ch.channel;
@@ -48,117 +53,119 @@ class MixerStrip extends StatelessWidget {
                 decoration: const BoxDecoration(
                     border:
                         Border(right: BorderSide(color: Color(0xff101010)))),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      SizedBox(height: compact || short ? 4 : 12),
-                      if (showRack) ...[
-                        Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 5),
-                            child: SizedBox(
-                                height: rackHeight,
-                                child: compact
-                                    ? MixerEqPreview(
-                                        channel: ch,
-                                        demo: controller.demo,
-                                        compact: true,
-                                        onOpen: onOpen)
-                                    : MixerProcessingRack(
-                                        channel: ch,
-                                        demo: controller.demo,
-                                        onOpen: onOpen,
-                                        onGain: (v) =>
-                                            controller.setGain(ch, v)))),
-                        const SizedBox(height: 6),
-                      ],
-                      if (!tiny)
-                        Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 5),
-                            child: isMaster || chIndex == null
-                                ? MixerPan(
-                                    name: ch.name,
-                                    value: 0,
-                                    onChanged: null)
-                                : ValueListenableBuilder<double>(
-                                    valueListenable:
-                                        controller.panNoteOf(chIndex),
-                                    builder: (context, pan, _) => MixerPan(
-                                        name: ch.name,
-                                        value: pan,
-                                        onChanged: (v) =>
-                                            controller.setPan(ch, v)))),
-                      const SizedBox(height: 5),
-                      Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 5),
-                          child: ValueListenableBuilder<bool>(
-                              valueListenable: controller.muteNoteOf(
-                                  chIndex, isMaster),
-                              builder: (context, muted, _) => MixerToggle(
-                                  label: 'Mute',
-                                  visualHeight: compact ? 36 : 44,
-                                  fontSize: compact ? 17 : 21,
+                child: Stack(children: [
+                  place(
+                      g.rackY,
+                      g.rackH,
+                      compact
+                          ? MixerEqPreview(
+                              channel: ch,
+                              demo: controller.demo,
+                              compact: true,
+                              onOpen: onOpen)
+                          : MixerProcessingRack(
+                              channel: ch,
+                              demo: controller.demo,
+                              onOpen: onOpen,
+                              onGain: (v) => controller.setGain(ch, v))),
+                  place(
+                      g.panY,
+                      g.panH,
+                      isMaster || chIndex == null
+                          ? MixerPan(
+                              name: ch.name,
+                              value: 0,
+                              visualHeight: g.panH,
+                              onChanged: null)
+                          : ValueListenableBuilder<double>(
+                              valueListenable: controller.panNoteOf(chIndex),
+                              builder: (context, pan, _) => MixerPan(
+                                  name: ch.name,
+                                  value: pan,
+                                  visualHeight: g.panH,
+                                  onChanged: (v) => controller.setPan(ch, v))),
+                      touch: true),
+                  place(
+                      g.muteY,
+                      g.muteH,
+                      ValueListenableBuilder<bool>(
+                          valueListenable:
+                              controller.muteNoteOf(chIndex, isMaster),
+                          builder: (context, muted, _) => MixerToggle(
+                              label: 'Mute',
+                              visualHeight: g.muteH,
+                              fontSize: g.x(compact ? 20 : 32),
+                              channelName: ch.name,
+                              on: muted,
+                              activeColor: MixerDesign.mute,
+                              onPressed: () => controller.toggleMute(ch))),
+                      touch: true),
+                  place(
+                      g.faderY,
+                      g.faderH,
+                      ValueListenableBuilder<double>(
+                          valueListenable:
+                              controller.faderNoteOf(chIndex, isMaster),
+                          builder: (context, fader, _) => MixerFader(
+                              channel: _withFader(ch, fader),
+                              compact: compact,
+                              onPosition: (v) => controller.setPosition(ch, v),
+                              onSelect: () => controller.select(ch),
+                              onUnity: () => controller.unity(ch)))),
+                  place(
+                      g.soloY,
+                      g.soloH,
+                      isMaster || chIndex == null
+                          ? MixerToggle(
+                              label: 'Solo',
+                              channelName: ch.name,
+                              on: false,
+                              visualHeight: g.soloH,
+                              fontSize: g.x(compact ? 20 : 32),
+                              activeColor: MixerDesign.solo,
+                              onPressed: null)
+                          : ValueListenableBuilder<bool>(
+                              valueListenable: controller.soloNoteOf(chIndex),
+                              builder: (context, solo, _) => MixerToggle(
+                                  label: 'Solo',
+                                  visualHeight: g.soloH,
+                                  fontSize: g.x(compact ? 20 : 32),
                                   channelName: ch.name,
-                                  on: muted,
-                                  activeColor: MixerDesign.mute,
-                                  onPressed: () =>
-                                      controller.toggleMute(ch)))),
-                      const SizedBox(height: 8),
-                      Expanded(
-                          child: Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 6),
-                              child: ValueListenableBuilder<double>(
-                                  valueListenable: controller.faderNoteOf(
-                                      chIndex, isMaster),
-                                  builder: (context, fader, _) => MixerFader(
-                                      channel: _withFader(ch, fader),
-                                      onPosition: (v) =>
-                                          controller.setPosition(ch, v),
-                                      onSelect: () => controller.select(ch),
-                                      onUnity: () => controller.unity(ch))))),
-                      const SizedBox(height: 8),
-                      Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 5),
-                          child: isMaster || chIndex == null
-                              ? const SizedBox(height: 44)
-                              : ValueListenableBuilder<bool>(
-                                  valueListenable:
-                                      controller.soloNoteOf(chIndex),
-                                  builder: (context, solo, _) => MixerToggle(
-                                      label: 'Solo',
-                                      visualHeight: compact ? 30 : 44,
-                                      fontSize: compact ? 15 : 21,
-                                      channelName: ch.name,
-                                      on: solo,
-                                      activeColor: MixerDesign.solo,
-                                      onPressed: () =>
-                                          controller.toggleSolo(ch)))),
-                      const SizedBox(height: 4),
-                      MixerNameplate(
+                                  on: solo,
+                                  activeColor: MixerDesign.solo,
+                                  onPressed: () => controller.toggleSolo(ch))),
+                      touch: true),
+                  Positioned(
+                      left: 0,
+                      right: 0,
+                      top: g.scribbleY,
+                      bottom: 0,
+                      child: MixerNameplate(
                           channel: ch,
-                          iconHeight: iconHeight,
+                          iconHeight: g.scribbleH,
+                          nameHeight: g.nameH,
+                          nameOffset: g.nameY - g.scribbleY,
+                          fontSize: g.nameText,
                           compact: compact,
-                          bottomInset: bottomInset,
                           onSelect: () => controller.select(ch),
-                          onOpen: onOpen),
-                    ])));
+                          onOpen: onOpen)),
+                ])));
       });
 
   /// Snapshot copy carrying the live fader value for [MixerFader] (level
   /// label + cap position). Identity/selection/meter stay from the snapshot.
-  static MixerChannel _withFader(MixerChannel ch, double fader) =>
-      MixerChannel(
-          key: ch.key,
-          name: ch.name,
-          number: ch.number,
-          channel: ch.channel,
-          artwork: ch.artwork,
-          fader: fader,
-          pan: ch.pan,
-          muted: ch.muted,
-          solo: ch.solo,
-          selected: ch.selected,
-          master: ch.master,
-          meter: ch.meter,
-          params: ch.params);
+  static MixerChannel _withFader(MixerChannel ch, double fader) => MixerChannel(
+      key: ch.key,
+      name: ch.name,
+      number: ch.number,
+      channel: ch.channel,
+      artwork: ch.artwork,
+      fader: fader,
+      pan: ch.pan,
+      muted: ch.muted,
+      solo: ch.solo,
+      selected: ch.selected,
+      master: ch.master,
+      meter: ch.meter,
+      params: ch.params);
 }

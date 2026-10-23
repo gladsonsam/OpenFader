@@ -100,12 +100,8 @@ class _MeterPainter extends CustomPainter {
       final clipped = MeterTuning.holdClips
           ? signal.peak >= .99
           : signal.source.value >= .99;
-      mixerBox(
-          c,
-          Rect.fromLTWH(x, 0, w, clipHeight),
-          clipped
-              ? MixerDesign.mute
-              : const Color(0xff3d1006),
+      mixerBox(c, Rect.fromLTWH(x, 0, w, clipHeight),
+          clipped ? MixerDesign.mute : const Color(0xff3d1006),
           radius: 3);
       final unity = MixerFaderScale.positionForDb(0);
       final warning = MixerFaderScale.positionForDb(-12);
