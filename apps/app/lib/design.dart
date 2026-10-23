@@ -43,6 +43,10 @@ abstract final class AppDesign {
   ];
   static const radius = BorderRadius.all(Radius.circular(10));
   static const font = 'Barlow';
+
+  /// Larger touch targets (Appearance setting): chunkier fader caps and
+  /// knobs. Read at build time; pages listen to prefs so it applies live.
+  static bool largeTargets = true;
   static TextStyle type(double size,
           {Color color = text, FontWeight weight = FontWeight.w400}) =>
       TextStyle(
