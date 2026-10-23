@@ -42,27 +42,42 @@ class MixerNameplate extends StatelessWidget {
                             : MixerArtwork('instrument_${channel.artwork}',
                                 width: iconHeight, height: iconHeight)),
                   ])),
-            Container(
-                // Keep a slim footer at the screen edge; the home inset must
-                // not be added to its height and steal fader travel.
-                height: compact ? (bottomInset > 0 ? 32 : 24) : 32,
-                width: double.infinity,
-                alignment: compact ? Alignment.topCenter : Alignment.center,
-                padding:
-                    EdgeInsets.only(left: 3, right: 3, top: compact ? 2 : 0),
-                color: channel.master
-                    ? const Color(0xff141414)
-                    : MixerDesign.tapes[(channel.channel ?? 0) % 8],
-                child: Text(
-                    channel.master && iconHeight > 0 && !compact
-                        ? ''
-                        : channel.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: MixerDesign.type(compact ? 12 : 15,
-                        color: channel.master
-                            ? MixerDesign.mutedText
-                            : const Color(0xff161616),
-                        weight: FontWeight.w600))),
+            // Design: the master bar carries the bus colour + an LR tab
+            // sitting on its top edge.
+            Stack(clipBehavior: Clip.none, children: [
+              Container(
+                  // Keep a slim footer at the screen edge; the home inset must
+                  // not be added to its height and steal fader travel.
+                  height: compact ? (bottomInset > 0 ? 32 : 24) : 32,
+                  width: double.infinity,
+                  alignment: compact ? Alignment.topCenter : Alignment.center,
+                  padding:
+                      EdgeInsets.only(left: 3, right: 3, top: compact ? 2 : 0),
+                  color: channel.master
+                      ? MixerDesign.bus
+                      : MixerDesign.tapes[(channel.channel ?? 0) % 8],
+                  child: Text(
+                      channel.master && iconHeight > 0 && !compact
+                          ? ''
+                          : channel.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: MixerDesign.type(compact ? 12 : 15,
+                          color: const Color(0xff161616),
+                          weight: FontWeight.w600))),
+              if (channel.master)
+                Positioned(
+                    right: 0,
+                    top: compact ? -13 : -18,
+                    child: Container(
+                        padding: EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: compact ? 1 : 3),
+                        color: MixerDesign.bus,
+                        child: Text('LR',
+                            style: MixerDesign.type(compact ? 10 : 14,
+                                color: const Color(0xff161616),
+                                weight: FontWeight.w700)))),
+            ]),
           ])));
 }

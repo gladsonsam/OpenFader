@@ -79,7 +79,7 @@ class MixerBanks extends StatelessWidget {
                       if (count > 0) ...[
                         Center(
                             child: Text('MUTE', style: MixerDesign.type(14))),
-                        for (var g = 0; g < count; g++)
+                        for (var g = 0; g < count; g++) ...[
                           SizedBox(
                               height: 34,
                               child: TextButton(
@@ -92,6 +92,8 @@ class MixerBanks extends StatelessWidget {
                                   onPressed: () =>
                                       controller.toggleMuteGroup(g),
                                   child: Text('${g + 1}'))),
+                          if (g < count - 1) const SizedBox(height: 6),
+                        ],
                         const SizedBox(height: 10),
                       ],
                       Center(child: Text('MIX', style: MixerDesign.type(14))),

@@ -32,8 +32,7 @@ class MixerStrip extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         final short = box.maxHeight < 540;
         final tiny = box.maxHeight < 330;
-        final showRack = controller.view == MixerView.processing &&
-            box.maxHeight >= (compact ? 360 : 480);
+        final showRack = box.maxHeight >= (compact ? 360 : 480);
         final rackHeight = compact ? 56.0 : (short ? 110.0 : 146.0);
         final iconHeight = tiny
             ? 0.0
