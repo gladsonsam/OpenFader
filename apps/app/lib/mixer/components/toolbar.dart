@@ -22,7 +22,6 @@ class MixerToolbar extends StatelessWidget {
       this.showBankControls = false});
   @override
   Widget build(BuildContext context) {
-    final selected = controller.selected;
     // Phone menu + layout sheet destinations (the connection shortcut was
     // removed from the toolbar; the old Link screen lives here).
     final actions = <(String, MixerDestination)>[
@@ -34,81 +33,58 @@ class MixerToolbar extends StatelessWidget {
       ('Connection', MixerDestination.connect),
       ('Debug', MixerDestination.debug),
     ];
-    final readout = Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        height: 52,
-        decoration: BoxDecoration(
-            color: MixerDesign.panel,
-            borderRadius: MixerDesign.radius,
-            border: Border.all(color: MixerDesign.line)),
-        // Stack the phone identity above the readout so the value
-        // stays centered across the full bar without hiding labels.
-        child: Flex(
-            direction: compact ? Axis.vertical : Axis.horizontal,
-            children: [
-              // Active-strip labels: tapping opens the channel page.
-              if (!compact)
+    final readout = ValueListenableBuilder<MixerReadoutFocus>(
+        valueListenable: controller.readoutFocus,
+        builder: (context, focus, _) {
+          final channel = controller.readoutChannel;
+          return Container(
+              padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10),
+              height: 52,
+              decoration: BoxDecoration(
+                  color: MixerDesign.panel,
+                  borderRadius: MixerDesign.radius,
+                  border: Border.all(color: MixerDesign.line)),
+              child: Row(children: [
+                // Equal constrained side lanes keep the numeric value centered
+                // in the box on both layouts. Long names stay in the left lane.
                 Expanded(
-                    child: selected == null || selected.master
-                        ? const SizedBox.shrink()
-                        : GestureDetector(
-                            onTap: () => onNavigate(MixerDestination.channel),
-                            behavior: HitTestBehavior.opaque,
-                            child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Ch ${selected.number}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: MixerDesign.type(14,
-                                          color: MixerDesign.mutedText)),
-                                  Text(selected.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: MixerDesign.type(14,
-                                          color: MixerDesign.mutedText)),
-                                ])))
-              else if (compact)
-                GestureDetector(
-                    onTap: selected == null || selected.master
-                        ? null
-                        : () => onNavigate(MixerDestination.channel),
-                    behavior: HitTestBehavior.opaque,
-                    child: Text(
-                        selected == null
-                            ? 'Connecting…'
-                            : selected.master
-                                ? selected.name
-                                : 'Ch ${selected.number} · ${selected.name}',
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: MixerDesign.type(12,
-                            color: MixerDesign.mutedText))),
-              // Live fader readout: tapping types a dB value.
-              // Listens to the selected strip's fader notifier so
-              // it tracks drags without a page rebuild.
-              Expanded(
-                  child: Center(
-                      child: _SelectedLevel(
-                          controller: controller,
-                          compact: compact,
-                          onEdit: selected == null
-                              ? null
-                              : () => _typeFader(context, controller)))),
-              // Equal side lanes keep the value centered in the full
-              // box regardless of the selected channel's label length.
-              if (!compact)
+                    child: GestureDetector(
+                        onTap: channel == null || channel.master
+                            ? null
+                            : () {
+                                controller.select(channel);
+                                onNavigate(MixerDestination.channel);
+                              },
+                        behavior: HitTestBehavior.opaque,
+                        child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                  channel == null
+                                      ? 'Connecting…'
+                                      : _targetLabel(channel),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: MixerDesign.type(compact ? 12 : 14,
+                                      color: MixerDesign.mutedText)),
+                              Text(_controlLabel(focus.control),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: MixerDesign.type(compact ? 12 : 14,
+                                      color: MixerDesign.mutedText)),
+                            ]))),
                 Expanded(
-                    child: Align(
-                        alignment: Alignment.centerRight,
-                        child: Text('Fader',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: MixerDesign.type(22,
-                                color: MixerDesign.mutedText)))),
-            ]));
+                    flex: compact ? 2 : 1,
+                    child: Center(
+                        child: _SelectedLevel(
+                            controller: controller,
+                            channel: channel,
+                            control: focus.control,
+                            compact: compact))),
+                const Expanded(child: SizedBox.shrink()),
+              ]));
+        });
     return Container(
         height: compact ? 64 : 68,
         padding:
@@ -210,59 +186,105 @@ class MixerToolbar extends StatelessWidget {
   }
 }
 
-/// Selected-strip dB readout. Listens to the selected strip's fader
-/// notifier (not the page rebuild) so it tracks the active drag.
-/// Tapping types a dB value via [onEdit].
+String _targetLabel(MixerChannel channel) =>
+    channel.master ? 'Main LR' : channel.name;
+
+String _controlLabel(MixerReadoutControl control) => switch (control) {
+      MixerReadoutControl.volume => 'Volume',
+      MixerReadoutControl.pan => 'Pan',
+      MixerReadoutControl.gain => 'Gain',
+    };
+
+/// Only this readout follows focus changes and live fader/pan writes.
 class _SelectedLevel extends StatelessWidget {
   final MixerController controller;
+  final MixerChannel? channel;
+  final MixerReadoutControl control;
   final bool compact;
-  final VoidCallback? onEdit;
   const _SelectedLevel(
-      {required this.controller, required this.compact, this.onEdit});
+      {required this.controller,
+      required this.channel,
+      required this.control,
+      required this.compact});
+
   @override
   Widget build(BuildContext context) {
-    final selected = controller.selected;
-    if (selected == null) {
-      return Text('Connecting…',
-          maxLines: 1,
-          style: MixerDesign.type(compact ? 18 : 22,
-              color: MixerDesign.lime, weight: FontWeight.w700));
+    final ch = channel;
+    if (ch == null) return _value(context, '—');
+    if (control == MixerReadoutControl.gain) {
+      final gain = (ch.params['gain'] as num?)?.toDouble() ?? 0;
+      return _value(context, '${gain.toStringAsFixed(1)} dB');
     }
     return ValueListenableBuilder<double>(
-        valueListenable:
-            controller.faderNoteOf(selected.channel, selected.master),
-        builder: (context, fader, _) => Semantics(
-            button: true,
-            label:
-                '${selected.master ? 'Main' : selected.name} fader, ${fmtDb(fader)} dB, activate to type a value',
+        valueListenable: control == MixerReadoutControl.pan
+            ? controller.panNoteOf(ch.channel!)
+            : controller.faderNoteOf(ch.channel, ch.master),
+        builder: (context, value, _) => _value(
+            context,
+            control == MixerReadoutControl.pan
+                ? panText(value)
+                : '${fmtDb(value)} dB'));
+  }
+
+  Widget _value(BuildContext context, String text) {
+    final ch = channel;
+    final onEdit = ch == null
+        ? null
+        : () => _typeControl(context, controller, ch, control);
+    return Semantics(
+        button: onEdit != null,
+        label: ch == null
+            ? 'Connecting'
+            : '${_targetLabel(ch)} ${_controlLabel(control)}, $text, activate to type a value',
+        onTap: onEdit,
+        child: GestureDetector(
             onTap: onEdit,
-            child: GestureDetector(
-                onTap: onEdit,
-                behavior: HitTestBehavior.opaque,
-                child: Text('${fmtDb(fader)} dB',
+            behavior: HitTestBehavior.opaque,
+            child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(text,
                     maxLines: 1,
                     style: MixerDesign.type(compact ? 18 : 22,
                         color: MixerDesign.lime, weight: FontWeight.w700)))));
   }
 }
 
-/// Typed fader entry: parse dB (or -inf) and move the selected strip there.
-Future<void> _typeFader(
-    BuildContext context, MixerController controller) async {
-  final selected = controller.selected;
-  if (selected == null) return;
-  final v = await showNumberEntry(
+/// Capture the target and control before opening entry, so acceptance writes
+/// the value the dialog described even if focus changes while it is open.
+Future<void> _typeControl(BuildContext context, MixerController controller,
+    MixerChannel channel, MixerReadoutControl control) async {
+  final double initial;
+  switch (control) {
+    case MixerReadoutControl.volume:
+      initial = controller.faderNoteOf(channel.channel, channel.master).value;
+    case MixerReadoutControl.pan:
+      if (channel.master) return;
+      initial = controller.panNoteOf(channel.channel!).value * 100;
+    case MixerReadoutControl.gain:
+      if (channel.master) return;
+      initial = (channel.params['gain'] as num?)?.toDouble() ?? 0;
+  }
+  final volume = control == MixerReadoutControl.volume;
+  final pan = control == MixerReadoutControl.pan;
+  final value = await showNumberEntry(
       context: context,
-      title: '${selected.master ? 'Main' : 'Ch ${selected.number}'} fader',
-      initial: fmtDb(
-          controller.faderNoteOf(selected.channel, selected.master).value),
-      min: -60,
-      max: 10,
-      allowNegInf: true,
+      title:
+          '${_targetLabel(channel)} ${_controlLabel(control)}${pan ? ' (−100 L … +100 R)' : ''}',
+      initial: volume ? fmtDb(initial) : initial.toStringAsFixed(1),
+      min: volume ? -60 : (pan ? -100 : -12),
+      max: volume ? 10 : (pan ? 100 : 60),
+      allowNegInf: volume,
       negInfValue: double.negativeInfinity);
-  if (v == null) return;
-  controller.setPosition(
-      selected, v.isFinite ? MixerFaderScale.positionForDb(v) : 0);
+  if (value == null) return;
+  switch (control) {
+    case MixerReadoutControl.volume:
+      controller.setPosition(
+          channel, value.isFinite ? MixerFaderScale.positionForDb(value) : 0);
+    case MixerReadoutControl.pan:
+      controller.setPan(channel, value / 100);
+    case MixerReadoutControl.gain:
+      controller.setGain(channel, value);
+  }
 }
 
 /// Phone menu: explicit semantics button opening a menu sheet.
