@@ -18,12 +18,14 @@
 
 use std::{
     collections::{BTreeMap, HashMap},
+    net::{IpAddr, SocketAddr},
     sync::Arc,
 };
 
 use openmix_core::{
     params::{ParamDef, ParamRegistry},
     MeterFrame, MixerDriver, MixerInfo, MixerSnapshot, ParamUpdate, ParamValue, StripFamily, StripId,
+    StripKind,
 };
 use openmix_core::show::Scene;
 
@@ -311,6 +313,98 @@ pub trait DynDriver: Send + Sync {
     /// Desk fire-and-forget clear-solo.
     async fn clear_solo(&self) -> anyhow::Result<()> {
         anyhow::bail!("{}: clear solo not supported", self.name())
+    }
+    // ---- provider tuning (defaults keep session logic brand-free) ----
+    /// Display name for a discovered device.
+    fn display_name(&self, model: &str) -> String {
+        format!("{} {model}", self.name())
+    }
+    /// The link needs an explicit hydration pass after connect.
+    fn needs_hydration(&self) -> bool {
+        false
+    }
+    /// Envelope-spectrum visualizer (sim only, never a provider feed).
+    fn emits_envelope_spectrum(&self) -> bool {
+        false
+    }
+    /// Strip count behind GR broadcast.
+    fn gr_channel_count(&self) -> usize {
+        self.strip_count()
+    }
+    /// Max concurrent poller queries for one tick.
+    fn poll_inflight(&self) -> usize {
+        // Rig-measured 2026-10-19 (XR18, routed LAN): 48 sequential
+        // queries in 29 ms (~1600 q/s burst), so 4 sequential reads per
+        // 50 ms tick (80 q/s average) runs with ~20x headroom; the
+        // adaptive EMA still halves the batch while the desk is
+        // saturated, so slow venue wifi backs off on its own.
+        4
+    }
+    /// Focus-lane take cap for one tick (slow links take fewer).
+    fn poll_focus_limit(&self, inflight: usize) -> usize {
+        inflight
+    }
+    /// Visible-lane take for the remainder of one tick.
+    fn poll_visible_take(&self, rest: usize) -> usize {
+        rest
+    }
+    /// Guaranteed background share of one tick (0 = periodic only).
+    fn poll_bg_share(&self, inflight: usize, tick: u64, remaining: usize) -> usize {
+        if tick.is_multiple_of(inflight.max(2) as u64) {
+            1.min(remaining)
+        } else {
+            0
+        }
+    }
+    /// The priority lane stays armed across sweeps (slow subscribed links).
+    fn prio_always_armed(&self) -> bool {
+        false
+    }
+    /// Extra per-strip ids appended to the essentials/static poll lists.
+    fn essentials_extra_ids(&self, kind: StripKind) -> &'static [&'static str] {
+        let _ = kind;
+        &[]
+    }
+    /// Static poll rows outside the per-strip plane (group planes, return
+    /// switches, ...). Empty when the plane serves none.
+    fn static_extra_rows(&self, topo: &[StripFamily]) -> Vec<(u16, &'static str)> {
+        let _ = topo;
+        Vec::new()
+    }
+    /// Scope restrictions applied to this provider's param registry
+    /// (`(param id, allowed strip kinds)`; empty = none).
+    fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> {
+        Vec::new()
+    }
+    /// No native bulk snapshot: the engine may capture the canonical
+    /// param plane instead (honest reads, never invented values).
+    fn param_plane_snapshot(&self) -> bool {
+        false
+    }
+    /// Discovered-device dial address (bare IPs may gain an explicit port
+    /// when the desk answers there; other forms pass through untouched).
+    fn dial_addr(&self, ip: &str) -> String {
+        ip.to_string()
+    }
+    /// Desk-native FX type name for an effect index (Numbered racks).
+    fn fx_type_name(&self, type_index: u8) -> Option<&'static str> {
+        let _ = type_index;
+        None
+    }
+    /// Param count for a desk-native effect index (Numbered racks).
+    fn fx_type_param_count(&self, type_index: u8) -> Option<usize> {
+        let _ = type_index;
+        None
+    }
+    /// Reverse lookup: effect name back to its desk type index (Numbered
+    /// racks validate names against the desk table).
+    fn fx_type_index_of(&self, fx_type: &str) -> Option<u8> {
+        let _ = fx_type;
+        None
+    }
+    /// Desk-native FX type catalogue behind `caps.fx` (Numbered racks).
+    fn fx_type_caps(&self) -> Vec<crate::protocol::FxTypeCaps> {
+        Vec::new()
     }
     /// Named-show recall on this driver (no default: every provider
     /// forwards to [`Scene::recall_to`]).
@@ -651,6 +745,12 @@ impl_dyn_driver!(openmix_sim::SimDriver {
     fn group_assign_caps(&self) -> (bool, bool) {
         (true, true)
     }
+    fn emits_envelope_spectrum(&self) -> bool {
+        true
+    }
+    fn gr_channel_count(&self) -> usize {
+        self.strip_count().min(crate::engine::GR_CHANNELS)
+    }
     /// In-memory bulk snapshots behind the engine's attach fast path
     /// (one lock each instead of ~1000 serial awaits; identical content).
     fn sub_assign_bulk(&self) -> Option<std::collections::HashMap<(u16, u8), bool>> {
@@ -687,6 +787,132 @@ impl_dyn_driver!(openmix_proto_xair::XAirDriver {
     }
     fn fx_slot_count(&self) -> usize {
         4
+    }
+    fn display_name(&self, model: &str) -> String {
+        format!("X-Air {model}")
+    }
+    fn needs_hydration(&self) -> bool {
+        true
+    }
+    fn poll_focus_limit(&self, inflight: usize) -> usize {
+        inflight.saturating_sub(1).min(1)
+    }
+    fn poll_visible_take(&self, rest: usize) -> usize {
+        rest.min(1)
+    }
+    fn poll_bg_share(&self, inflight: usize, tick: u64, remaining: usize) -> usize {
+        if inflight > 1 || tick.is_multiple_of(inflight.max(2) as u64) {
+            1.min(remaining)
+        } else {
+            0
+        }
+    }
+    fn prio_always_armed(&self) -> bool {
+        true
+    }
+    fn essentials_extra_ids(&self, kind: StripKind) -> &'static [&'static str] {
+        if matches!(kind, StripKind::In) {
+            &["solo"]
+        } else {
+            &[]
+        }
+    }
+    fn static_extra_rows(&self, topo: &[StripFamily]) -> Vec<(u16, &'static str)> {
+        let mut out = Vec::new();
+        for group in 0..4 {
+            out.push((group, "_mute_group"));
+        }
+        for fam in topo {
+            if matches!(
+                fam.kind,
+                StripKind::In | StripKind::Ret | StripKind::Bus | StripKind::FxSnd
+            ) {
+                for strip in fam.first..fam.first + fam.count {
+                    for id in ["_mg1", "_mg2", "_mg3", "_mg4"] {
+                        out.push((strip as u16, id));
+                    }
+                }
+            }
+            if fam.kind == StripKind::In {
+                for strip in fam.first..fam.first + fam.count {
+                    out.push((strip as u16, "rtnsw"));
+                }
+            }
+        }
+        out
+    }
+    fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> {
+        // XR18 LR has dynamics but no external key-source leaf.
+        const SCOPES: &[StripKind] = &[StripKind::In, StripKind::Bus];
+        vec![("comp_key_src", SCOPES)]
+    }
+    fn param_plane_snapshot(&self) -> bool {
+        true
+    }
+    fn dial_addr(&self, ip: &str) -> String {
+        if ip.parse::<SocketAddr>().is_ok() {
+            return ip.to_string();
+        }
+        if let Some((h, p)) = ip.rsplit_once(':') {
+            if p.parse::<u16>().is_ok() && h.trim_matches(['[', ']']).parse::<IpAddr>().is_ok() {
+                return ip.to_string();
+            }
+        }
+        if ip.parse::<IpAddr>().is_ok() && !ip.contains(':') {
+            return format!("{ip}:{}", openmix_proto_xair::addrs::PORT);
+        }
+        ip.to_string()
+    }
+    fn fx_type_name(&self, type_index: u8) -> Option<&'static str> {
+        openmix_proto_xair::fx::fx_effect_name(type_index)
+    }
+    fn fx_type_param_count(&self, type_index: u8) -> Option<usize> {
+        openmix_proto_xair::fx::fx_param_count(type_index).map(|n| n as usize)
+    }
+    fn fx_type_index_of(&self, fx_type: &str) -> Option<u8> {
+        (0..=openmix_proto_xair::fx::FX_TYPE_MAX).find(|&index| {
+            openmix_proto_xair::fx::fx_effect_name(index) == Some(fx_type)
+                || openmix_proto_xair::fx::fx_effect_full_name(index) == Some(fx_type)
+        })
+    }
+    fn fx_type_caps(&self) -> Vec<crate::protocol::FxTypeCaps> {
+        use openmix_proto_xair::fx as xfx;
+        let mut out = Vec::new();
+        for index in 0..=xfx::FX_TYPE_MAX {
+            let Some(code) = xfx::fx_effect_name(index) else {
+                continue;
+            };
+            let label = xfx::fx_effect_full_name(index).unwrap_or(code);
+            let mut params = Vec::new();
+            for par in 1..=xfx::PARAM_COUNT as u8 {
+                let Some(def) = xfx::fx_param_def(index, par) else {
+                    continue;
+                };
+                let mut label = def.label.to_string();
+                if let Some(bank) = def.bank {
+                    label.push(' ');
+                    label.push_str(bank);
+                }
+                if def.inferred {
+                    label.push('?');
+                }
+                params.push(crate::protocol::FxParamCaps {
+                    id: format!("par{par:02}"),
+                    label,
+                    unit: def.unit.to_string(),
+                    min: 0.0,
+                    max: 1.0,
+                    default: 0.5,
+                    scale: "lin".to_string(),
+                });
+            }
+            out.push(crate::protocol::FxTypeCaps {
+                id: code.to_string(),
+                label: label.to_string(),
+                params,
+            });
+        }
+        out
     }
     /// Live effect-type read (`/fx/N/type`): the desk answers queries
     /// here with an int `0..=60`; unreadable slots stay `None` (honest
@@ -807,6 +1033,10 @@ impl_dyn_driver!(openmix_proto_dl32s::Dl32sDriver {
     }
     fn group_assign_caps(&self) -> (bool, bool) {
         (true, true)
+    }
+    fn poll_inflight(&self) -> usize {
+        // Mackie correlated request/response: no concurrency headroom.
+        1
     }
     async fn recall_show(&self, scene: &Scene, fade_ms: u64) -> anyhow::Result<()> {
         scene.recall_to(self, fade_ms).await
