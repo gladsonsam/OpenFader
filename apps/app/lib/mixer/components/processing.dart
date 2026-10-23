@@ -19,51 +19,57 @@ class MixerProcessingRack extends StatelessWidget {
       required this.onOpen,
       required this.onGain});
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-      decoration: BoxDecoration(
-          color: MixerDesign.panel,
-          borderRadius: MixerDesign.radius,
-          border: Border.all(color: MixerDesign.line)),
-      child: Padding(
-          padding: const EdgeInsets.all(5),
-          child: Column(children: [
-            SizedBox(
-                height: 24,
-                child: LayoutBuilder(
-                    builder: (context, box) => Semantics(
-                        container: true,
-                        label: '${channel.name} gain',
-                        slider: !channel.master,
-                        child: GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onHorizontalDragUpdate: channel.master
-                                ? null
-                                : (d) => onGain(
-                                    ((channel.params['gain'] as num?)
-                                                ?.toDouble() ??
-                                            0) +
-                                        d.delta.dx / box.maxWidth * 72),
-                            child: CustomPaint(
-                                size: Size(box.maxWidth, 24),
-                                painter: _GainPainter(
-                                    channel.params, channel.master, demo)))))),
-            const SizedBox(height: 5),
-            Expanded(
-                child: MixerEqPreview(
-                    channel: channel, demo: demo, onOpen: onOpen)),
-            const SizedBox(height: 5),
-            SizedBox(
-                height: 26,
-                child: CustomPaint(
-                    size: const Size(double.infinity, 26),
-                    painter: _DynamicsPainter(
-                        channel.params,
-                        demo &&
-                                !channel.params.containsKey('gate_gr') &&
-                                !channel.params.containsKey('comp_gr')
-                            ? masterFaderReference[channel.artwork].compression
-                            : null))),
-          ])));
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
+        final sy = box.maxHeight / 202;
+        final sx = box.maxWidth / 178.2;
+        Widget place(double top, double height, Widget child) => Positioned(
+            left: 5 * sx,
+            right: 5 * sx,
+            top: top * sy,
+            height: height * sy,
+            child: child);
+        return DecoratedBox(
+            decoration: BoxDecoration(
+                color: MixerDesign.well,
+                borderRadius: MixerDesign.radius,
+                border: Border.all(color: MixerDesign.line)),
+            child: Stack(children: [
+              place(
+                  5,
+                  channel.master ? 57 : 36,
+                  LayoutBuilder(
+                      builder: (context, gainBox) => Semantics(
+                          container: true,
+                          label: '${channel.name} gain',
+                          slider: !channel.master,
+                          child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onHorizontalDragUpdate: channel.master
+                                  ? null
+                                  : (d) => onGain(
+                                      ((channel.params['gain'] as num?)
+                                                  ?.toDouble() ??
+                                              0) +
+                                          d.delta.dx / gainBox.maxWidth * 72),
+                              child: CustomPaint(
+                                  painter: _GainPainter(channel.params,
+                                      channel.master, demo)))))),
+              place(channel.master ? 68 : 47, channel.master ? 58 : 79,
+                  MixerEqPreview(channel: channel, demo: demo, onOpen: onOpen)),
+              place(
+                  132,
+                  62,
+                  CustomPaint(
+                      painter: _DynamicsPainter(
+                          channel.params,
+                          demo &&
+                                  !channel.params.containsKey('gate_gr') &&
+                                  !channel.params.containsKey('comp_gr')
+                              ? masterFaderReference[channel.artwork]
+                                  .compression
+                              : null))),
+            ]));
+      });
 }
 
 /// Shared EQ entry point. The compact variant gives phones the same access to
@@ -138,6 +144,9 @@ class _GainPainter extends CustomPainter {
   _GainPainter(this.params, this.master, this.demo);
   @override
   void paint(Canvas c, Size s) {
+    c.save();
+    c.scale(s.width / 168.2, s.height / 36);
+    s = const Size(168.2, 36);
     mixerBox(c, Offset.zero & s, const Color(0xff181818), radius: 6);
     if (master) {
       for (var n = 0; n < 24; n++) {
@@ -146,6 +155,7 @@ class _GainPainter extends CustomPainter {
             const Color(0xff555555),
             radius: 1);
       }
+      c.restore();
       return;
     }
     final width = s.width * .7;
@@ -161,9 +171,10 @@ class _GainPainter extends CustomPainter {
         radius: 1);
     // Design: 48V indicator replaces the A/B label (red when phantom is on).
     final phantom = params['phantom'] == true || params['phantom'] == 1;
-    mixerText(c, '48V', Offset(s.width - 34, 7), 9,
+    mixerText(c, '48V', Offset(s.width - 39, 7), 13,
         color: phantom ? MixerDesign.phantom : const Color(0xff737373),
         weight: FontWeight.w700);
+    c.restore();
   }
 
   @override
@@ -179,10 +190,14 @@ class _DynamicsPainter extends CustomPainter {
   _DynamicsPainter(this.params, this.fixture);
   @override
   void paint(Canvas c, Size s) {
+    c.save();
+    c.scale(1, s.height / 62);
+    s = Size(s.width, 62);
     mixerBox(c, Offset.zero & s, const Color(0xff181818), radius: 6);
     for (var i = 0; i < 2; i++) {
-      final y = 3.0 + i * 12;
-      mixerBox(c, Rect.fromLTWH(4, y, s.width - 8, 8), const Color(0xff121212),
+      final y = 7.0 + i * 23;
+      mixerBox(
+          c, Rect.fromLTWH(4, y, s.width - 14, 15), const Color(0xff121212),
           radius: 3, border: const Color(0xff333333), stroke: 2);
       final value = fixture != null && i < fixture!.length
           ? fixture![i] / 100
@@ -193,10 +208,11 @@ class _DynamicsPainter extends CustomPainter {
               30;
       final w = (s.width - 12) * value.clamp(0.0, 1.0);
       if (w > 0) {
-        mixerBox(c, Rect.fromLTWH(s.width - 6 - w, y + 2, w, 4),
+        mixerBox(c, Rect.fromLTWH(s.width - 6 - w, y + 3, w, 9),
             const Color(0xffff4b06));
       }
     }
+    c.restore();
   }
 
   @override

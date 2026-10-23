@@ -47,9 +47,10 @@ Future<void> showMixerLayout(BuildContext context, MixerController controller,
                             }),
                       const Divider(color: MixerDesign.line),
                       ListTile(
-                          title: Text('Master bus',
-                              style: MixerDesign.type(17)),
-                          subtitle: Text(controller.store.busRows
+                          title:
+                              Text('Master bus', style: MixerDesign.type(17)),
+                          subtitle: Text(
+                              controller.store.busRows
                                   .where((b) => b.active)
                                   .map((b) => b.name)
                                   .join(', '),
@@ -59,17 +60,13 @@ Future<void> showMixerLayout(BuildContext context, MixerController controller,
                             Navigator.pop(context);
                             showMixerBuses(context, controller);
                           }),
-                      for (final entry in <(
-                        String,
-                        MixerDestination
-                      )>[
+                      for (final entry in <(String, MixerDestination)>[
                         ('Meter bridge', MixerDestination.meters),
                         ('Connection', MixerDestination.connect),
                         ('Debug', MixerDestination.debug),
                       ])
                         ListTile(
-                            title:
-                                Text(entry.$1, style: MixerDesign.type(17)),
+                            title: Text(entry.$1, style: MixerDesign.type(17)),
                             onTap: () {
                               Navigator.pop(context);
                               onNavigate(entry.$2);
@@ -141,73 +138,138 @@ class MixerBanks extends StatelessWidget {
     return Material(
         color: const Color(0xff141414),
         child: vertical
-            ? SizedBox(
-                width: 96,
-                child: ListView(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                    children: [
-                      Center(child: status),
-                      const SizedBox(height: 12),
-                      if (count > 0) ...[
-                        Center(
-                            child: Text('MUTE', style: MixerDesign.type(14))),
-                        for (var g = 0; g < count; g++) ...[
-                          SizedBox(
-                              height: 34,
-                              child: TextButton(
-                                  style: TextButton.styleFrom(
-                                      foregroundColor: controller
-                                                  .store.engine.muteGroups[g] ==
-                                              true
-                                          ? MixerDesign.lime
-                                          : MixerDesign.mutedText),
-                                  onPressed: () =>
-                                      controller.toggleMuteGroup(g),
-                                  child: Text('${g + 1}'))),
-                          if (g < count - 1) const SizedBox(height: 6),
-                        ],
-                        const SizedBox(height: 10),
-                      ],
-                      Center(child: Text('MIX', style: MixerDesign.type(14))),
-                      TextButton(
-                          onPressed: () => showMixerBuses(context, controller),
-                          child: Text(controller.master.name,
-                              style: MixerDesign.type(20,
-                                  weight: FontWeight.w600))),
-                      const Divider(color: MixerDesign.line),
-                      for (final bank in banks)
-                        Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
+            ? LayoutBuilder(builder: (context, box) {
+                final sx = box.maxWidth / 93;
+                final sy = box.maxHeight / 1259;
+                // Keep the authored visual scale separate from the hit target.
+                // Short viewports scroll rather than compressing/overlapping rows.
+                double h(double value) =>
+                    (value * sy).clamp(44.0, double.infinity);
+                Widget fittedLabel(String text, double size,
+                        {Color color = MixerDesign.text,
+                        FontWeight weight = FontWeight.w400}) =>
+                    FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(text,
+                            maxLines: 1,
+                            softWrap: false,
+                            style: MixerDesign.type(size * sx,
+                                color: color, weight: weight)));
+                Widget title(String text, double height, {double size = 25}) =>
+                    SizedBox(
+                        height: height * sy,
+                        child: Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 4 * sx),
+                            child: Center(child: fittedLabel(text, size))));
+                Widget button(String label, VoidCallback? onTap,
+                        {bool active = false,
+                        double size = 30,
+                        double height = 43,
+                        Color? color,
+                        FontWeight weight = FontWeight.w400}) =>
+                    SizedBox(
+                        height: h(height),
+                        width: double.infinity,
+                        child: Semantics(
+                            selected: active,
                             child: TextButton(
+                                onPressed: onTap,
                                 style: TextButton.styleFrom(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 2),
-                                    minimumSize: const Size(44, 40),
-                                    backgroundColor:
-                                        bank.key == controller.store.bank
-                                            ? MixerDesign.selected
-                                            : null,
-                                    foregroundColor:
-                                        bank.key == controller.store.bank
-                                            ? MixerDesign.lime
-                                            : MixerDesign.mutedText,
-                                    shape: const RoundedRectangleBorder(
-                                        borderRadius: MixerDesign.radius)),
-                                onPressed: () => controller.setBank(bank.key),
-                                child: Text(bank.label,
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(
-                                        fontFamily: MixerDesign.font,
-                                        fontSize: 13)))),
-                      _pager(),
-                      if (controller.hasSolo)
-                        TextButton(
-                            onPressed: controller.store.clearSolos,
-                            child: Text('Clear solos',
-                                style: MixerDesign.type(12,
-                                    color: MixerDesign.solo))),
-                    ]))
+                                    // Override the app's filled, rounded buttons:
+                                    // the reference rail has flat text rows.
+                                    backgroundColor: Colors.transparent,
+                                    shape: const RoundedRectangleBorder(),
+                                    padding: EdgeInsets.symmetric(
+                                        horizontal: 4 * sx),
+                                    minimumSize: const Size(44, 44),
+                                    tapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.standard),
+                                child: fittedLabel(label, size,
+                                    color: active
+                                        ? MixerDesign.lime
+                                        : color ?? MixerDesign.mutedText,
+                                    weight: weight))));
+                return SingleChildScrollView(
+                    child: Column(children: [
+                  title('MUTE', 58),
+                  Container(
+                      constraints: BoxConstraints(minHeight: 256 * sy),
+                      color: MixerDesign.background,
+                      child: Column(children: [
+                        for (var g = 0; g < count; g++)
+                          button(
+                              '${g + 1}', () => controller.toggleMuteGroup(g),
+                              active: controller.store.engine.muteGroups[g] ==
+                                  true),
+                      ])),
+                  title('MIX', 49),
+                  SizedBox(
+                      height:
+                          (149 * sy).clamp(59 * sy + h(54), double.infinity),
+                      width: double.infinity,
+                      child: ColoredBox(
+                          color: MixerDesign.background,
+                          child: Stack(children: [
+                            Positioned(
+                                left: 7 * sx,
+                                top: 8 * sy,
+                                right: 7 * sx,
+                                child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: fittedLabel('LR', 16,
+                                        color: MixerDesign.bus,
+                                        weight: FontWeight.w700))),
+                            Positioned(
+                                top: 59 * sy,
+                                left: 0,
+                                right: 0,
+                                child: button(controller.master.name,
+                                    () => showMixerBuses(context, controller),
+                                    size: 36,
+                                    height: 54,
+                                    color: MixerDesign.text,
+                                    weight: FontWeight.w600)),
+                          ]))),
+                  Container(
+                      width: double.infinity,
+                      constraints: BoxConstraints(minHeight: 360 * sy),
+                      padding: EdgeInsets.symmetric(vertical: 6 * sy),
+                      decoration: BoxDecoration(
+                          color: MixerDesign.background,
+                          border: Border.all(color: MixerDesign.cap, width: 2),
+                          borderRadius: BorderRadius.circular(14 * sx)),
+                      child: Column(children: [
+                        for (final bank in banks)
+                          button(bank.label, () => controller.setBank(bank.key),
+                              active: bank.key == controller.store.bank,
+                              size: 31),
+                      ])),
+                  for (final bus in controller.store.busRows)
+                    button(bus.name, () => controller.store.selectBus(bus.id),
+                        active: bus.active, size: 31),
+                  if (controller.pageCount > 1) ...[
+                    button(
+                        '‹',
+                        controller.page > 0
+                            ? () => controller.nextPage(-1)
+                            : null),
+                    title(
+                        '${controller.page + 1}/${controller.pageCount.clamp(1, 999)}',
+                        24,
+                        size: 16),
+                    button(
+                        '›',
+                        controller.page + 1 < controller.pageCount
+                            ? () => controller.nextPage(1)
+                            : null),
+                  ],
+                  if (controller.hasSolo)
+                    button('Clear solos', controller.store.clearSolos,
+                        size: 18),
+                  title('MASTERS', 31, size: 16),
+                ]));
+              })
             : SizedBox(
                 height: 54,
                 child: Padding(

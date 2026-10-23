@@ -9,11 +9,13 @@ import 'meter.dart';
 /// Travel is in local logical points, with a stable start value per gesture.
 class MixerFader extends StatefulWidget {
   final MixerChannel channel;
+  final bool compact;
   final ValueChanged<double> onPosition;
   final VoidCallback onSelect, onUnity;
   const MixerFader(
       {super.key,
       required this.channel,
+      this.compact = false,
       required this.onPosition,
       required this.onSelect,
       required this.onUnity});
@@ -32,11 +34,15 @@ class _MixerFaderState extends State<MixerFader> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         final ch = widget.channel;
-        final geometry = _FaderGeometry(box.biggest);
+        final geometry = _FaderGeometry(box.biggest, widget.compact);
         final position = _drag ?? MixerFaderScale.fromEngine(ch.fader);
         final y = geometry.top + (1 - position) * geometry.travel;
         // Design: selected cap grows (1.4x tablet) with a lime glow.
-        final scale = ch.selected ? 1.4 : _held ? 1.15 : 1.0;
+        final scale = ch.selected
+            ? (widget.compact ? 1.25 : 1.4)
+            : _held
+                ? 1.15
+                : 1.0;
         return Semantics(
             label: '${ch.name} level',
             value: ch.levelLabel,
@@ -58,15 +64,20 @@ class _MixerFaderState extends State<MixerFader> {
                         width: ch.selected ? 1.5 : 1)),
                 child: Stack(clipBehavior: Clip.none, children: [
                   Positioned.fill(
-                      child: CustomPaint(painter: _ScalePainter(geometry, ch.number))),
+                      child: CustomPaint(
+                          painter: _ScalePainter(geometry, ch.number))),
                   Positioned(
-                      left: box.maxWidth * .24,
+                      left: box.maxWidth *
+                          (widget.compact ? 22 / 96.2 : 45 / 178.2),
                       top: geometry.top - MixerMeter.scaleInset,
-                      width: (box.maxWidth * .21).clamp(16, 30),
+                      width: box.maxWidth *
+                          (widget.compact ? 20 / 96.2 : 36 / 178.2),
                       bottom: geometry.bottom,
                       child: MixerMeter(level: ch.meter, stereo: ch.master)),
                   Positioned(
-                      left: geometry.x - geometry.capWidth / 2 - geometry.touchPad,
+                      left: geometry.x -
+                          geometry.capWidth / 2 -
+                          geometry.touchPad,
                       top: y - geometry.capHeight / 2 - geometry.touchPad,
                       width: geometry.capWidth + geometry.touchPad * 2,
                       height: geometry.capHeight + geometry.touchPad * 2,
@@ -102,8 +113,8 @@ class _MixerFaderState extends State<MixerFader> {
                                   onVerticalDragEnd: (_) => _release(),
                                   onVerticalDragCancel: _release,
                                   child: Padding(
-                                      padding: EdgeInsets.all(
-                                          geometry.touchPad),
+                                      padding:
+                                          EdgeInsets.all(geometry.touchPad),
                                       child: AnimatedScale(
                                           scale: scale,
                                           duration:
@@ -123,18 +134,17 @@ class _MixerFaderState extends State<MixerFader> {
 
 class _FaderGeometry {
   final Size size;
-  const _FaderGeometry(this.size);
-  // Reserve room for the held cap without changing travel during a gesture.
-  double get top => capHeight * 1.28 / 2 + 5;
-  double get bottom => top;
+  final bool compact;
+  const _FaderGeometry(this.size, this.compact);
+  double get top => size.height * (compact ? 38 / 534 : 65 / 647);
+  double get bottom => size.height * (compact ? 56 / 534 : 55 / 647);
   double get travel => math.max(40, size.height - top - bottom);
-  double get x => size.width * .59;
-  // Design caps are chunky squares: ~38% of strip width on tablet, ~50%
-  // on phones (54px on a 104px strip). Meter width ≈ strip minus padding.
-  // Larger touch targets (Appearance) grows caps a step further.
-  double get capWidth => (size.width *
-          (MixerDesign.largeTargets ? .52 : .48))
-      .clamp(34, MixerDesign.largeTargets ? 110 : 96);
+  double get x => size.width * (compact ? 57 / 96.2 : 101 / 178.2);
+  double get capWidth => math.max(
+      34,
+      size.width *
+          (compact ? 54 / 96.2 : 84 / 178.2) *
+          (MixerDesign.largeTargets ? 1.08 : 1));
   double get capHeight => capWidth;
 
   /// Touch padding around the cap (also grows with larger targets).
@@ -154,7 +164,7 @@ class _ScalePainter extends CustomPainter {
         radius: 3, border: const Color(0xff2a2a2a));
     // Design number column (tablet+ only): 1-6 repeated in three banks.
     // The mock marks the third bank's "1" red on channel 1; replicate it.
-    if (s.width >= 140) {
+    if (!g.compact) {
       final size = (s.width * .088).clamp(12.0, 18.0);
       for (var i = 0; i < 18; i++) {
         final y = g.top + (i + .5) / 18 * g.travel - size / 2;
@@ -166,7 +176,7 @@ class _ScalePainter extends CustomPainter {
     }
     for (final mark in MixerFaderScale.marks) {
       final y = g.top + (1 - MixerFaderScale.positionForDb(mark.$1)) * g.travel;
-      final x = s.width * .77;
+      final x = s.width * (g.compact ? 66 / 96.2 : 127 / 178.2);
       // Design prefixes: • labeled (/ – on phones), ○ unity, · minor.
       final label = mark.$2;
       final prefix = label == 'U'
@@ -176,7 +186,8 @@ class _ScalePainter extends CustomPainter {
               : s.width < 140
                   ? '–'
                   : '•';
-      mixerText(c, '$prefix$label', Offset(x, y - 6), 9,
+      mixerText(c, '$prefix$label', Offset(x, y - 6),
+          s.width * (g.compact ? 11 / 96.2 : 14 / 178.2),
           color: const Color(0xffdddddd));
     }
   }
@@ -193,8 +204,8 @@ class _CapPainter extends CustomPainter {
   void paint(Canvas c, Size s) {
     // Design cap: one rounded square with ribbed grip zones top + bottom
     // and the lime position line through the middle.
-    final rect = RRect.fromRectAndRadius(
-        Offset.zero & s, const Radius.circular(14));
+    final rect =
+        RRect.fromRectAndRadius(Offset.zero & s, const Radius.circular(14));
     if (glow) {
       c.drawPath(
           Path()..addRRect(rect),
@@ -209,8 +220,8 @@ class _CapPainter extends CustomPainter {
             ..color = const Color(0x45effb00)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
     }
-    c.drawShadow(Path()..addRRect(rect), Colors.black.withValues(alpha: .6), 3,
-        false);
+    c.drawShadow(
+        Path()..addRRect(rect), Colors.black.withValues(alpha: .6), 3, false);
     mixerBox(c, Offset.zero & s, MixerDesign.cap,
         radius: 14, border: const Color(0xff555555));
     c.drawLine(const Offset(6, .5), Offset(s.width - 6, .5),
@@ -224,9 +235,7 @@ class _CapPainter extends CustomPainter {
     for (var zone = 0; zone < 2; zone++) {
       final top = zone == 0 ? ribTop : s.height - ribTop - 2 * ribGap - 3;
       for (var row = 0; row < 3; row++) {
-        mixerBox(
-            c,
-            Rect.fromLTWH(ix, top + row * ribGap, s.width - 2 * ix, 2),
+        mixerBox(c, Rect.fromLTWH(ix, top + row * ribGap, s.width - 2 * ix, 2),
             const Color(0xff151515),
             radius: 1);
         mixerBox(
@@ -246,6 +255,5 @@ class _CapPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CapPainter old) =>
-      old.held != held || old.glow != glow;
+  bool shouldRepaint(_CapPainter old) => old.held != held || old.glow != glow;
 }

@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../design.dart';
+import '../icons.dart';
 
 class MixerNameplate extends StatelessWidget {
   final MixerChannel channel;
-  final double iconHeight, bottomInset;
+  final double iconHeight, bottomInset, nameHeight, nameOffset, fontSize;
   final bool compact;
   final VoidCallback onSelect, onOpen;
   const MixerNameplate(
@@ -13,6 +14,9 @@ class MixerNameplate extends StatelessWidget {
       required this.iconHeight,
       this.compact = false,
       this.bottomInset = 0,
+      this.nameHeight = 36,
+      this.nameOffset = 86,
+      this.fontSize = 17,
       required this.onSelect,
       required this.onOpen});
   @override
@@ -24,60 +28,71 @@ class MixerNameplate extends StatelessWidget {
           onTap: onSelect,
           onDoubleTap: onOpen,
           behavior: HitTestBehavior.opaque,
-          child: Column(children: [
-            if (iconHeight > 0)
-              SizedBox(
-                  height: iconHeight + (compact ? 20 : 0),
-                  child: Stack(children: [
-                    Positioned(
-                        left: compact ? 6 : 2,
-                        top: compact ? 8 : 1,
-                        child:
-                            Text(channel.number, style: MixerDesign.type(11))),
-                    Center(
-                        child: channel.master
-                            ? Text(compact ? '' : channel.name,
-                                style: MixerDesign.type(compact ? 18 : 23,
-                                    weight: FontWeight.w600))
-                            : MixerArtwork('instrument_${channel.artwork}',
-                                width: iconHeight, height: iconHeight)),
-                  ])),
-            // Design: the master bar carries the bus colour + an LR tab
-            // sitting on its top edge.
-            Stack(clipBehavior: Clip.none, children: [
-              Container(
-                  // Keep a slim footer at the screen edge; the home inset must
-                  // not be added to its height and steal fader travel.
-                  height: compact ? (bottomInset > 0 ? 32 : 24) : 32,
-                  width: double.infinity,
-                  alignment: compact ? Alignment.topCenter : Alignment.center,
-                  padding:
-                      EdgeInsets.only(left: 3, right: 3, top: compact ? 2 : 0),
-                  color: channel.master
-                      ? MixerDesign.bus
-                      : MixerDesign.tapes[(channel.channel ?? 0) % 8],
-                  child: Text(
-                      channel.master && iconHeight > 0 && !compact
-                          ? ''
-                          : channel.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: MixerDesign.type(compact ? 12 : 15,
-                          color: const Color(0xff161616),
-                          weight: FontWeight.w600))),
+          child: LayoutBuilder(builder: (context, box) {
+            final sx = box.maxWidth / (compact ? 104.2 : 192.2);
+            final tape = channel.master
+                ? MixerDesign.bus
+                : MixerDesign.tapes[(channel.channel ?? 0) % 8];
+            return Stack(clipBehavior: Clip.none, children: [
+              if (!channel.master)
+                Positioned(
+                    left: (compact ? 6 : 3) * sx,
+                    top: 2,
+                    child: Text(channel.number,
+                        style: MixerDesign.type((compact ? 15 : 20) * sx,
+                            color: MixerDesign.mutedText,
+                            weight: FontWeight.w600))),
+              Positioned(
+                  left: (compact ? 24 : 46) * sx,
+                  top: iconHeight * (compact ? 8 / 86 : 4 / 122),
+                  width: (compact ? 56 : 103) * sx,
+                  height: iconHeight * (compact ? 60 / 86 : 98 / 122),
+                  child: channel.master
+                      ? const MixerMainArtwork()
+                      : MixerArtwork('instrument_${channel.artwork}',
+                          width: double.infinity, height: double.infinity)),
+              Positioned(
+                  left: 0,
+                  right: 0,
+                  top: nameOffset,
+                  height: nameHeight,
+                  child: ColoredBox(
+                      color: tape,
+                      child: Center(
+                          child: Text(channel.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: MixerDesign.type(fontSize,
+                                  color: MixerDesign.well,
+                                  weight: FontWeight.w600))))),
               if (channel.master)
                 Positioned(
                     right: 0,
-                    top: compact ? -13 : -18,
-                    child: Container(
-                        padding: EdgeInsets.symmetric(
-                            horizontal: 9,
-                            vertical: compact ? 1 : 3),
-                        color: MixerDesign.bus,
-                        child: Text('LR',
-                            style: MixerDesign.type(compact ? 10 : 14,
-                                color: const Color(0xff161616),
-                                weight: FontWeight.w700)))),
-            ]),
-          ])));
+                    top: nameOffset - (compact ? 18 : 26) * sx,
+                    child: ClipPath(
+                        clipper: _BusTabClipper(),
+                        child: Container(
+                            color: tape,
+                            padding: EdgeInsets.fromLTRB(18 * sx, 0, 9 * sx, 0),
+                            height: (compact ? 18 : 26) * sx,
+                            alignment: Alignment.center,
+                            child: Text('LR',
+                                style: MixerDesign.type(
+                                    (compact ? 10 : 14) * sx,
+                                    color: MixerDesign.well,
+                                    weight: FontWeight.w700))))),
+            ]);
+          })));
+}
+
+class _BusTabClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) => Path()
+    ..moveTo(size.height * .78, 0)
+    ..lineTo(size.width, 0)
+    ..lineTo(size.width, size.height)
+    ..lineTo(0, size.height)
+    ..close();
+  @override
+  bool shouldReclip(_BusTabClipper oldClipper) => false;
 }
