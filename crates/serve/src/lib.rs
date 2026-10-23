@@ -125,19 +125,19 @@ struct Outbox {
     /// WS BINARY type 3 when set, JSON text otherwise.
     taps_binary: bool,
     seq: u32,
-    meters: Option<openmix_engine::Event>,
+    meters: Option<openmix_engine::SharedEvent>,
     meters_sent: u64,
     meters_dropped: u64,
     /// R2 per-tap latest-only slots (one frame per tap id). Drops/sends
     /// fold into the meters counters (the `stats` shape is pinned).
-    taps: HashMap<String, openmix_engine::Event>,
-    spectrum: HashMap<u16, openmix_engine::Event>,
+    taps: HashMap<String, openmix_engine::SharedEvent>,
+    spectrum: HashMap<u16, openmix_engine::SharedEvent>,
     spectrum_sent: u64,
     spectrum_dropped: u64,
-    gr: HashMap<u16, openmix_engine::Event>,
+    gr: HashMap<u16, openmix_engine::SharedEvent>,
     gr_sent: u64,
     gr_dropped: u64,
-    control: VecDeque<openmix_engine::Event>,
+    control: VecDeque<openmix_engine::SharedEvent>,
     pump_closed: bool,
 }
 
@@ -166,36 +166,42 @@ impl Outbox {
     /// slots of 1 (replacement counts a drop), everything else queues in
     /// the reliable control FIFO. The pump task calls this per mailbox
     /// event; it never blocks, so the engine mailbox stays drained even
-    /// when the socket stalls.
-    fn store(&mut self, event: openmix_engine::Event) {
+    /// when the socket stalls. Frames carry their wire JSON serialized
+    /// once at broadcast time and shared across clients (see
+    /// [`openmix_engine::SharedEvent`]); the text path below reuses it
+    /// instead of re-serializing per client.
+    fn store(&mut self, frame: openmix_engine::SharedEvent) {
         use openmix_engine::Event as E;
-        match event {
+        match &*frame.event {
             E::Meters { .. } => {
-                if self.meters.replace(event).is_some() {
+                if self.meters.replace(frame).is_some() {
                     self.meters_dropped += 1;
                 }
             }
-            E::Taps { ref tap, .. } => {
-                if self.taps.insert(tap.clone(), event).is_some() {
+            E::Taps { tap, .. } => {
+                let key = tap.clone();
+                if self.taps.insert(key, frame).is_some() {
                     self.meters_dropped += 1;
                 }
             }
             E::AudioSpectrum { .. } => {
-                if self.spectrum.insert(u16::MAX, event).is_some() {
+                if self.spectrum.insert(u16::MAX, frame).is_some() {
                     self.spectrum_dropped += 1;
                 }
             }
             E::Spectrum { ch, .. } => {
-                if self.spectrum.insert(ch, event).is_some() {
+                let key = *ch;
+                if self.spectrum.insert(key, frame).is_some() {
                     self.spectrum_dropped += 1;
                 }
             }
             E::Gr { ch, .. } => {
-                if self.gr.insert(ch, event).is_some() {
+                let key = *ch;
+                if self.gr.insert(key, frame).is_some() {
                     self.gr_dropped += 1;
                 }
             }
-            other => self.control.push_back(other),
+            _ => self.control.push_back(frame),
         }
     }
 
@@ -237,8 +243,9 @@ impl Outbox {
         &mut self,
         engine: &openmix_engine::Engine,
     ) -> Option<(Message, StreamKind)> {
-        if let Some(event) = self.control.pop_front() {
-            return Some((Message::Text(event.to_json().into()), StreamKind::Control));
+        if let Some(frame) = self.control.pop_front() {
+            // Shared broadcast-time serialization: no per-client serde run.
+            return Some((Message::Text(frame.json.to_string().into()), StreamKind::Control));
         }
         let t_ms = engine.now_ms();
         if let Some(event) = self.meters.take() {
@@ -273,18 +280,21 @@ impl Outbox {
 }
 
 fn encode_stream(
-    event: openmix_engine::Event,
+    frame: openmix_engine::SharedEvent,
     seq: &mut u32,
     t_ms: u32,
     binary: bool,
 ) -> Message {
     if binary {
-        if let Some(bytes) = event.to_binary(*seq, t_ms) {
+        if let Some(bytes) = frame.event.to_binary(*seq, t_ms) {
             *seq = seq.wrapping_add(1);
             return Message::Binary(bytes.into());
         }
     }
-    Message::Text(event.to_json().into())
+    // JSON fallback reuses the broadcast-time serialization shared across
+    // clients (binary stays per-client: the sequence number is per
+    // connection).
+    Message::Text(frame.json.to_string().into())
 }
 
 /// Per-connection realtime counters behind the `stats` event.
@@ -377,11 +387,11 @@ async fn handle_socket(
                                 _ => false,
                             };
                             if blocked {
-                                outbox.lock().await.control.push_back(openmix_engine::Event::Error {
+                                outbox.lock().await.control.push_back(openmix_engine::SharedEvent::new(openmix_engine::Event::Error {
                                     message: "Simulation only: hardware connections and discovery are disabled".into(),
                                     locked_by: None,
                                     ch: None,
-                                });
+                                }));
                                 notify.notify_one();
                                 continue;
                             }
@@ -783,11 +793,12 @@ mod tests {
         use openmix_engine::Event;
         let engine = openmix_engine::Engine::new(openmix_engine::EngineConfig::default());
         let mut o = Outbox::new();
-        o.store(Event::Taps { tap: "in".into(), levels: vec![0.1] });
-        o.store(Event::Taps { tap: "post".into(), levels: vec![0.2] });
+        let shared = openmix_engine::SharedEvent::new;
+        o.store(shared(Event::Taps { tap: "in".into(), levels: vec![0.1] }));
+        o.store(shared(Event::Taps { tap: "post".into(), levels: vec![0.2] }));
         assert_eq!(o.queue_depth(), 2);
         // Same tap replaces: one drop folded into the meters counter.
-        o.store(Event::Taps { tap: "in".into(), levels: vec![0.3] });
+        o.store(shared(Event::Taps { tap: "in".into(), levels: vec![0.3] }));
         assert_eq!(o.meters_dropped, 1);
         assert_eq!(o.queue_depth(), 2);
         // JSON by default…
@@ -796,7 +807,7 @@ mod tests {
         assert!(matches!(msg, Message::Text(_)));
         // …binary type 3 once the client negotiated taps.
         o.taps_binary = true;
-        o.store(Event::Taps { tap: "gr_comp".into(), levels: vec![6.0] });
+        o.store(shared(Event::Taps { tap: "gr_comp".into(), levels: vec![6.0] }));
         // Drain remaining queued taps first (per-tap slots are unordered).
         while o.taps.len() > 1 {
             let _ = o.take_next(&engine).unwrap();
@@ -817,21 +828,22 @@ mod tests {
         use openmix_engine::Event;
         let engine = openmix_engine::Engine::new(openmix_engine::EngineConfig::default());
         let mut o = Outbox::new();
+        let shared = openmix_engine::SharedEvent::new;
         // Two meter frames with no take in between: one drop.
-        o.store(Event::Meters { levels: vec![0.1] });
-        o.store(Event::Meters { levels: vec![0.2] });
+        o.store(shared(Event::Meters { levels: vec![0.1] }));
+        o.store(shared(Event::Meters { levels: vec![0.2] }));
         assert_eq!(o.meters_dropped, 1);
         assert_eq!(o.queue_depth(), 1);
         // Per-channel spectrum/gr slots are independent per channel.
-        o.store(Event::Spectrum { ch: 3, bins: vec![] });
-        o.store(Event::Gr { ch: 3, gate: 1.0, comp: 0.0 });
+        o.store(shared(Event::Spectrum { ch: 3, bins: vec![] }));
+        o.store(shared(Event::Gr { ch: 3, gate: 1.0, comp: 0.0 }));
         assert_eq!(o.queue_depth(), 3);
-        o.store(Event::Spectrum { ch: 3, bins: vec![] });
+        o.store(shared(Event::Spectrum { ch: 3, bins: vec![] }));
         assert_eq!(o.spectrum_dropped, 1);
-        o.store(Event::Gr { ch: 4, gate: 0.0, comp: 0.0 });
+        o.store(shared(Event::Gr { ch: 4, gate: 0.0, comp: 0.0 }));
         assert_eq!(o.gr_dropped, 0, "other channels do not collide");
         // Control first, then streams; marks advance the sent counters.
-        o.store(Event::You { id: "client-1".into() });
+        o.store(shared(Event::You { id: "client-1".into() }));
         let (first, kind) = o.take_next(&engine).unwrap();
         assert!(matches!(kind, StreamKind::Control));
         assert!(matches!(first, Message::Text(_)));
