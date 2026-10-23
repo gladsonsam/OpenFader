@@ -85,16 +85,22 @@ class MixerToolbar extends StatelessWidget {
                                               compact ? 12 : 14,
                                               color: MixerDesign.mutedText)),
                                   ])),
-                              // Live fader readout: listens to the
-                              // selected strip's fader notifier so it
-                              // tracks drags without a page rebuild.
-                              _SelectedLevel(
-                                  controller: controller, compact: compact),
+                              // Live fader readout: centered like the design
+                              // session output; listens to the selected
+                              // strip's fader notifier so it tracks drags
+                              // without a page rebuild.
+                              Expanded(
+                                  child: Center(
+                                      child: _SelectedLevel(
+                                          controller: controller,
+                                          compact: compact))),
                             ])),
                             if (!compact)
-                              Text('Fader',
-                                  style: MixerDesign.type(22,
-                                      color: MixerDesign.mutedText)),
+                              Padding(
+                                  padding: const EdgeInsets.only(left: 12),
+                                  child: Text('Fader',
+                                      style: MixerDesign.type(22,
+                                          color: MixerDesign.mutedText))),
                           ]))))),
           const SizedBox(width: 4),
           if (!compact) ...[
