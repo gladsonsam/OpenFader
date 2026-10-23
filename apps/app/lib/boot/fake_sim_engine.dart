@@ -20,6 +20,53 @@ class FakeSimEngine implements EngineApi {
           name: 'CH${(i + 1).toString().padLeft(2, '0')}',
           fader: 0.75,
           muted: false));
+  // An explicit offline capability subset. Every advertised leaf has an
+  // engineering-unit value and survives resync, like the native sim.
+  static const _defaults = <String, Object>{
+    'fader': 0.75,
+    'mute': false,
+    'gain': 0.0,
+    'trim': 0.0,
+    'phantom': false,
+    'polarity': false,
+    'pan': 0.0,
+    'lr_assign': true,
+    'usbreturn': 0,
+    'hpf_on': false,
+    'hpf_freq': 80.0,
+    'eq_on': false,
+    'gate_on': false,
+    'gate_thr': -50.0,
+    'gate_range': 60.0,
+    'gate_att': 1.0,
+    'gate_hold': 50.0,
+    'gate_rel': 100.0,
+    'comp_on': false,
+    'comp_thr': -20.0,
+    'comp_ratio': 2.0,
+    'comp_knee': 3.0,
+    'comp_makeup': 0.0,
+    'comp_att': 10.0,
+    'comp_hold': 20.0,
+    'comp_rel': 100.0,
+  };
+  final List<Map<String, Object>> _params = List.generate(
+      8,
+      (ch) => {
+            ..._defaults,
+            'source': 'Local ${ch + 1}',
+            for (var band = 1; band <= 4; band++) ...{
+              'eq${band}_freq': [100.0, 2000.0, 5000.0, 10000.0][band - 1],
+              'eq${band}_gain': 0.0,
+              'eq${band}_q': 1.0,
+            },
+            for (var slot = 1; slot <= 10; slot++) ...{
+              'send${slot}_level': -90.0,
+              'send${slot}_pan': 0.0,
+              'send${slot}_tap': 4,
+              'send${slot}_on': true,
+            },
+          });
   final Queue<String> _mailbox = Queue<String>();
   final Stopwatch _signalClock = Stopwatch()..start();
   int _lastMeterTick = -1;
@@ -33,6 +80,17 @@ class FakeSimEngine implements EngineApi {
   }
 
   void _snapshot() {
+    _mailbox.add(jsonEncode({
+      'type': 'caps',
+      'driver': 'sim',
+      'params': [
+        for (final id in _params.first.keys) {'id': id}
+      ],
+    }));
+    for (var ch = 0; ch < _params.length; ch++) {
+      _mailbox
+          .add(jsonEncode({'type': 'params', 'ch': ch, 'values': _params[ch]}));
+    }
     _mailbox.add(jsonEncode({
       'type': 'state',
       'driver': 'sim',
@@ -52,20 +110,76 @@ class FakeSimEngine implements EngineApi {
   @override
   Future<void> cmd(String clientId, String json) async {
     final c = jsonDecode(json) as Map<String, dynamic>;
+    final ch = (c['ch'] as num?)?.toInt();
+    if (ch != null && (ch < 0 || ch >= _strips.length)) return;
     switch (c['cmd']) {
-      case 'connect':
+      case 'refresh_devices':
+      case 'discover_devices':
+        _mailbox
+            .add(jsonEncode({'type': 'devices', 'list': [], 'scanned_at': 0}));
+        _mailbox.add(jsonEncode({
+          'type': 'device_operation_complete',
+          'request_id': c['request_id'],
+          'operation': c['cmd'] == 'refresh_devices' ? 'refresh' : 'discover',
+          'results': [
+            if (c['cmd'] == 'refresh_devices')
+              for (final addr in (c['hosts'] as List? ?? const []))
+                {'addr': addr, 'status': 'unsupported'},
+          ],
+          'error': 'Hardware discovery is unavailable in the offline fallback',
+        }));
+        return;
+      case 'param':
+        if (ch == null) return;
+        final field = c['field'];
+        final value = c['value'];
+        if (field is! String || !_params[ch].containsKey(field)) return;
+        final current = _params[ch][field];
+        if ((current is num && value is num && value.isFinite) ||
+            (current is bool && value is bool) ||
+            (current is String && value is String)) {
+          _params[ch][field] = value as Object;
+          if (field == 'fader' && value is num) {
+            _strips[ch].fader = value.toDouble();
+          }
+          if (field == 'mute' && value is bool) _strips[ch].muted = value;
+          _mailbox.add(jsonEncode(
+              {'type': 'param', 'ch': ch, 'field': field, 'value': value}));
+        }
+        return;
       case 'scan':
+        _mailbox
+            .add(jsonEncode({'type': 'devices', 'list': [], 'scanned_at': 0}));
+        return;
       case 'probe':
+      case 'connect_device':
+        _mailbox.add(jsonEncode({
+          'type': 'error',
+          'message':
+              'Hardware connections are unavailable in the offline fallback'
+        }));
+        return;
+      case 'connect':
+        if (c['driver'] != null && c['driver'] != 'sim') {
+          _mailbox.add(jsonEncode({
+            'type': 'error',
+            'message':
+                'Hardware connections are unavailable in the offline fallback'
+          }));
+          return;
+        }
         _snapshot();
         return;
       case 'fader':
         final ch = (c['ch'] as num).toInt();
         _strips[ch].fader = ((c['value'] as num)).toDouble();
+        _params[ch]['fader'] = _strips[ch].fader;
         _echo(ch, 'fader', _strips[ch].fader);
         return;
       case 'mute':
         final ch = (c['ch'] as num).toInt();
         _strips[ch].muted = c['muted'] as bool;
+        _params[ch]['mute'] = _strips[ch].muted;
         _echo(ch, 'mute', _strips[ch].muted);
         return;
     }

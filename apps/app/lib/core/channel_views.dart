@@ -23,7 +23,8 @@ class ChannelWrites {
   final Map<String, Object> _pending = {};
   Timer? _timer;
 
-  ChannelWrites(this._write, {this.interval = const Duration(milliseconds: 16)});
+  ChannelWrites(this._write,
+      {this.interval = const Duration(milliseconds: 16)});
 
   void queue(String leaf, Object value) {
     _pending[leaf] = value;
@@ -58,10 +59,20 @@ double eqParamFromDrag(
   List<double>? range,
 }) {
   final dy = dyPx * (fine ? 0.25 : 1.0);
-  final lo = range != null ? range[0] : (param == 'f' ? 20.0 : param == 'g' ? -15.0 : 0.3);
+  final lo = range != null
+      ? range[0]
+      : (param == 'f'
+          ? 20.0
+          : param == 'g'
+              ? -15.0
+              : 0.3);
   final hi = range != null
       ? range[1]
-      : (param == 'f' ? (band == 0 ? 1000.0 : 20000.0) : param == 'g' ? 15.0 : 16.0);
+      : (param == 'f'
+          ? (band == 0 ? 1000.0 : 20000.0)
+          : param == 'g'
+              ? 15.0
+              : 16.0);
   double clamp(double v) => v < lo ? lo : (v > hi ? hi : v);
   if (param == 'f') return clamp(start * math.pow(2, dy / 30).toDouble());
   if (param == 'g') return (clamp(start + dy * 0.1) * 10).round() / 10;
@@ -72,20 +83,26 @@ double eqParamFromDrag(
 ({double f, double g}) eqNodeFromPos(double x, double y) {
   final cx = x.clamp(0.0, 1.0);
   final cy = y.clamp(0.0, 1.0);
-  return (f: 20 * math.pow(1000, cx).toDouble(), g: ((15 - 30 * cy) * 10).round() / 10);
+  return (
+    f: 20 * math.pow(1000, cx).toDouble(),
+    g: ((15 - 30 * cy) * 10).round() / 10
+  );
 }
 
 /// Spec-knob drag port (inputDyn.ts specFromDrag): normalised drag -> value.
-double specFromDrag(double min, double max, double startN, double dyPx, bool fine) {
+double specFromDrag(
+    double min, double max, double startN, double dyPx, bool fine) {
   final n = (startN + dyPx / 180 * (fine ? 0.25 : 1.0)).clamp(0.0, 1.0);
   return min + (max - min) * n;
 }
 
 /// Normalised 0..1 position of [v] in [min]..[max].
-double toN(double min, double max, double v) => ((v - min) / (max - min)).clamp(0.0, 1.0);
+double toN(double min, double max, double v) =>
+    ((v - min) / (max - min)).clamp(0.0, 1.0);
 
 /// Denormalise [n] (0..1) into [min]..[max].
-double fromN(double min, double max, double n) => min + (max - min) * n.clamp(0.0, 1.0);
+double fromN(double min, double max, double n) =>
+    min + (max - min) * n.clamp(0.0, 1.0);
 
 enum EqBandType { low, mid, high, lowCut, highCut }
 
@@ -97,6 +114,7 @@ class EqBandVm {
   final double g; // dB
   final double q;
   final bool on;
+  final int? type; // Native filter enum; null until reported by the desk.
   final List<double>? fRange;
   final List<double>? gRange;
   final List<double>? qRange;
@@ -108,6 +126,7 @@ class EqBandVm {
     required this.g,
     required this.q,
     this.on = true,
+    this.type,
     this.fRange,
     this.gRange,
     this.qRange,
@@ -120,6 +139,7 @@ class EqBandVm {
         g: g ?? this.g,
         q: q ?? this.q,
         on: on ?? this.on,
+        type: type,
         fRange: fRange,
         gRange: gRange,
         qRange: qRange,
@@ -165,12 +185,12 @@ class EqGraphGeom {
   ];
   static const bandNames = <String>['HPF', 'Low', 'Lo-Mid', 'Hi-Mid', 'High'];
 
-  static double xOf(double f) =>
-      math.log(f / fMin) / math.log(fMax / fMin) * w;
+  static double xOf(double f) => math.log(f / fMin) / math.log(fMax / fMin) * w;
 
   static double yOf(double db) => (dbTop - db) / (dbTop - dbBottom) * h;
 
-  static double fOfX(double x) => fMin * math.pow(fMax / fMin, x / w).toDouble();
+  static double fOfX(double x) =>
+      fMin * math.pow(fMax / fMin, x / w).toDouble();
 
   static double dbOfY(double y) => dbTop - y / h * (dbTop - dbBottom);
 }
@@ -180,7 +200,13 @@ class EqGraphGeom {
 const double _fs = 48000;
 
 double _biquadDb(
-  double b0, double b1, double b2, double a0, double a1, double a2, double f,
+  double b0,
+  double b1,
+  double b2,
+  double a0,
+  double a1,
+  double a2,
+  double f,
 ) {
   final w = 2 * math.pi * f / _fs;
   final cw = math.cos(w);
@@ -215,21 +241,31 @@ double _shelfDb(bool high, double f0, double gainDb, double f) {
   final alpha = math.sin(w0) / 2 * math.sqrt((a + 1 / a) * (1 / s - 1) + 2);
   final sq = 2 * math.sqrt(a) * alpha;
   if (high) {
-    return _biquadDb(a * ((a + 1) + (a - 1) * cw + sq), -2 * a * ((a - 1) + (a + 1) * cw),
-        a * ((a + 1) + (a - 1) * cw - sq), (a + 1) - (a - 1) * cw + sq,
-        2 * ((a - 1) - (a + 1) * cw), (a + 1) - (a - 1) * cw - sq, f);
+    return _biquadDb(
+        a * ((a + 1) + (a - 1) * cw + sq),
+        -2 * a * ((a - 1) + (a + 1) * cw),
+        a * ((a + 1) + (a - 1) * cw - sq),
+        (a + 1) - (a - 1) * cw + sq,
+        2 * ((a - 1) - (a + 1) * cw),
+        (a + 1) - (a - 1) * cw - sq,
+        f);
   }
-  return _biquadDb(a * ((a + 1) - (a - 1) * cw + sq), 2 * a * ((a - 1) - (a + 1) * cw),
-      a * ((a + 1) - (a - 1) * cw - sq), (a + 1) + (a - 1) * cw + sq,
-      -2 * ((a - 1) + (a + 1) * cw), (a + 1) + (a - 1) * cw - sq, f);
+  return _biquadDb(
+      a * ((a + 1) - (a - 1) * cw + sq),
+      2 * a * ((a - 1) - (a + 1) * cw),
+      a * ((a + 1) - (a - 1) * cw - sq),
+      (a + 1) + (a - 1) * cw + sq,
+      -2 * ((a - 1) + (a + 1) * cw),
+      (a + 1) + (a - 1) * cw - sq,
+      f);
 }
 
 double _highpassDb(double f0, double f) {
   final w0 = 2 * math.pi * f0 / _fs;
   final alpha = math.sin(w0) / (2 * 0.7071);
   final cw = math.cos(w0);
-  return _biquadDb((1 + cw) / 2, -(1 + cw), (1 + cw) / 2, 1 + alpha, -2 * cw,
-      1 - alpha, f);
+  return _biquadDb(
+      (1 + cw) / 2, -(1 + cw), (1 + cw) / 2, 1 + alpha, -2 * cw, 1 - alpha, f);
 }
 
 /// Summed EQ magnitude curve in dB, [EqGraphGeom.n] samples log 20..20k.
@@ -274,6 +310,16 @@ class ChannelDynVm {
   final double ratio; // comp only
   final double knee; // comp only, dB
   final double makeup; // comp only, dB
+  final int? mode;
+  final int? detector;
+  final int? envelope;
+  final int? keySource;
+  final bool? filterOn;
+  final int? filterType;
+  final double? filterFreq;
+  final double? mix;
+  final bool? auto;
+  final bool? softKnee; // Driver-specific enum interpretation.
 
   const ChannelDynVm({
     required this.kind,
@@ -286,13 +332,27 @@ class ChannelDynVm {
     this.ratio = 3,
     this.knee = 3,
     this.makeup = 0,
+    this.mode,
+    this.detector,
+    this.envelope,
+    this.keySource,
+    this.filterOn,
+    this.filterType,
+    this.filterFreq,
+    this.mix,
+    this.auto,
+    this.softKnee,
   });
 
   double get lo => kind == DynKind.gate ? -80 : -60;
 
   /// Static defaults (inputDyn.ts DYN_RESET tables).
-  static ChannelDynVm resetDefault(DynKind kind) =>
-      ChannelDynVm(kind: kind, on: true);
+  static ChannelDynVm resetDefault(DynKind kind) => ChannelDynVm(
+        kind: kind,
+        thr: kind == DynKind.gate ? -50 : -20,
+        att: kind == DynKind.gate ? 0.5 : 10,
+        rel: kind == DynKind.gate ? 150 : 120,
+      );
 }
 
 const dynResetGate = <String, double>{
@@ -363,6 +423,8 @@ class ChannelSendVm {
   final String destName;
   final double level; // 0..1 fader pos
   final bool muted;
+  final bool canMute;
+  final double? pan; // -1..1; null = unsupported or not yet reported.
   final bool? grpon; // null = unsupported leaf
   final int? tap; // desk tap enum 0..5, null = unknown
   final List<int> tapOptions;
@@ -372,9 +434,11 @@ class ChannelSendVm {
     required this.destName,
     this.level = 0.75,
     this.muted = false,
+    this.canMute = false,
+    this.pan,
     this.grpon,
     this.tap,
-    this.tapOptions = const [0, 1, 2, 3, 4, 5],
+    this.tapOptions = const [],
   });
 }
 
@@ -412,11 +476,19 @@ class ChannelPreampVm {
 
 /// Source card snapshot (source input-VM subset).
 class ChannelSourceVm {
+  final int? sourceA; // Opaque native routing IDs; do not infer patch labels.
+  final int? sourceB;
+  final int? selected; // DL32S: 0 = A, 1 = B.
+  final int? usbReturn; // XR18 USB return channel; not an A/B selector.
   final String srcName;
   final String srcGroup;
   final double levelDb;
 
   const ChannelSourceVm({
+    this.sourceA,
+    this.sourceB,
+    this.selected,
+    this.usbReturn,
     this.srcName = '—',
     this.srcGroup = '',
     this.levelDb = -90,
