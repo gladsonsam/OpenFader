@@ -1,7 +1,31 @@
 target/
 dist/
 node_modules/
-src-tauri/target/
-src-tauri/gen/
 *.log
 .DS_Store
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+**/build/
+**/.gradle/
+**/.kotlin/
+**/local.properties
+**/.cxx/
+
+# Internal docs live in private openmix-docs-private — do not track here
+BACKLOG.md
+
+# Local-only dev scripts (live in private openmix-docs-private)
+scripts/dev-xr18.sh
+scripts/flutter-sim-dev.sh
+scripts/flutter-mac-dev.sh
+
+# Flutter Rust bridge prebuilts — rebuilt in CI (deploy.yml), not tracked
+**/jniLibs/
+**/*.so
+
+# Packaged manual-build artifacts
+/artifacts/

@@ -1,7 +1,8 @@
-//! Live-rig proof for the six mechanism items (XR18 @ 192.168.40.123).
+//! Live-rig proof for the six mechanism items (owner XR18 on the LAN).
 //!
 //! IGNORED by default (`cargo test --workspace` skips these): run only on
-//! the owner's LAN with `OPENMIX_LIVE_RIG=1 cargo test -p openmix-proto-xair
+//! a LAN with an XR18, desk address via `OPENMIX_RIG_ADDR` (default
+//! `192.168.1.20`), with `OPENMIX_LIVE_RIG=1 cargo test -p openmix-proto-xair
 //! --test live_rig -- --ignored`. Reads plus same-value roundtrips only,
 //! except the single `/-action/clearsolo` fire-and-forget (speakers-safe,
 //! monitoring-side only) and read-only measurement queries. NEVER run from
@@ -10,7 +11,9 @@
 use openmix_core::{MixerDriver, ParamValue, StripId};
 use openmix_proto_xair::XAirDriver;
 
-const RIG: &str = "192.168.40.123";
+fn rig_addr() -> String {
+    std::env::var("OPENMIX_RIG_ADDR").unwrap_or_else(|_| "192.168.1.20".to_string())
+}
 
 fn live() -> bool {
     std::env::var("OPENMIX_LIVE_RIG").as_deref() == Ok("1")
@@ -19,7 +22,7 @@ fn live() -> bool {
 async fn connected() -> XAirDriver {
     let d = XAirDriver::new();
     // Bare IP (no `:port`): exercises the connect-time 10024 -> 10023 sweep.
-    d.connect(RIG).await.expect("rig connect (sweep) failed");
+    d.connect(rig_addr()).await.expect("rig connect (sweep) failed");
     d
 }
 

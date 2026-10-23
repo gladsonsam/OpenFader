@@ -1,21 +1,11 @@
 version: 2
 updates:
-  - package-ecosystem: npm
-    directory: /apps/web
-    schedule:
-      interval: weekly
-    target-branch: main
-  - package-ecosystem: npm
-    directory: /src-tauri
+  - package-ecosystem: pub
+    directory: /apps/app
     schedule:
       interval: weekly
     target-branch: main
   - package-ecosystem: cargo
-    directory: /
-    schedule:
-      interval: weekly
-    target-branch: main
-  - package-ecosystem: docker
     directory: /
     schedule:
       interval: weekly

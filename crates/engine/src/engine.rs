@@ -67,12 +67,12 @@ pub const FX_POLL_EVERY: u64 = 4;
 
 /// R2 default desk sample rate reported in `link`/`info` (all supported
 /// desks run 48 kHz; a desk reporting otherwise is a finding, not a const
-/// change — see `docs/LIVE-RIG.md`).
+/// change).
 pub const DESK_SAMPLE_RATE: u32 = 48000;
 
 /// Per-driver default poller pipelining (`max_inflight`): concurrent
 /// driver queries per poll tick. Rig-measured 2026-10-19 (XR18 @
-/// 192.168.40.123, routed LAN): 48 sequential queries in 29 ms (~1600 q/s
+/// 192.168.1.20, routed LAN): 48 sequential queries in 29 ms (~1600 q/s
 /// burst), so 4 sequential reads per 50 ms tick (80 q/s average) runs with
 /// ~20x headroom; the adaptive EMA (`effective_inflight`) still halves the
 /// batch while the desk is saturated, so slow venue wifi backs off on its
@@ -685,7 +685,7 @@ pub struct Engine {
     desk_addrs: RwLock<HashMap<String, String>>,
     /// Wakeups for edge adapters (P0): notified on every mailbox write
     /// ([`broadcast`](Engine::broadcast), `broadcast_except`, `unicast`,
-    /// and the attach snapshot). The Tauri IPC `push_task` waits on this
+    /// and the attach snapshot). An edge-adapter `push_task` waits on this
     /// instead of a second 50 ms poll, so ticker frames go out in ~ms
     /// instead of up to 50 ms of phase-added age; the 50 ms interval stays
     /// as a fallback ceiling. Coalescing is fine — receivers always drain.
@@ -1404,7 +1404,7 @@ impl Engine {
         self.notify.notify_one();
     }
 
-    /// Edge-adapter wakeup handle (P0): the Tauri IPC `push_task` waits on
+    /// Edge-adapter wakeup handle (P0): an edge-adapter `push_task` waits on
     /// this instead of a second 50 ms poll. Notified on every mailbox
     /// write (broadcasts, unicasts, attach snapshot); the 50 ms interval
     /// stays as a fallback ceiling. [`Notify`] stores one permit while no
@@ -1726,7 +1726,7 @@ impl Engine {
             None => {
                 // Manual add-by-IP with no prior scan: resolve the steady-state
                 // name from the desk `/info` reply (index 1 = console name,
-                // e.g. `Home Studio`; index 2 = model, e.g. `XR18` — see
+                // e.g. `Studio`; index 2 = model, e.g. `XR18` — see
                 // `info_from_strings`). The console name wins; the model is
                 // only a degraded fallback, never the steady state when
                 // `/info` answered. Unverified `/info` paths are NOT probed —
@@ -4299,7 +4299,35 @@ impl Engine {
 
     /// Snapshot the active driver (used by `capture_scene`).
     async fn active_snapshot(&self) -> anyhow::Result<openmix_core::MixerSnapshot> {
-        self.active_drv().snapshot().await
+        let driver = self.active_driver();
+        if driver != "xair" {
+            return self.active_drv().snapshot().await;
+        }
+        // X-Air has no native bulk snapshot. Capture the same canonical
+        // strip basics used by its live param plane, without inventing
+        // values when the desk fails to answer.
+        let generation = self.connection_gen.load(Ordering::Acquire);
+        let mut snapshot = openmix_core::MixerSnapshot::default();
+        for family in self.driver_topology(&driver) {
+            for index in family.first..family.first + family.count {
+                let id = StripId(index as u16);
+                let (fader, mute, name) = tokio::try_join!(
+                    self.read_param(&driver, id, "fader"),
+                    self.read_param(&driver, id, "mute"),
+                    self.read_param(&driver, id, "name"),
+                )?;
+                let (ParamValue::Float(fader), ParamValue::Bool(mute), ParamValue::Text(name)) =
+                    (fader, mute, name) else {
+                        anyhow::bail!("xair: invalid snapshot values for strip {index}");
+                    };
+                anyhow::ensure!(self.connection_gen.load(Ordering::Acquire) == generation,
+                    "desk changed during scene capture");
+                snapshot.strips.push(openmix_core::ChannelStrip {
+                    id, name, fader, mute, pan: 0.5,
+                });
+            }
+        }
+        Ok(snapshot)
     }
 
     /// Main fader of the active driver, `None` when the driver has none.
@@ -6204,14 +6232,14 @@ mod tests {
     fn dial_addr_skips_sweep_only_for_bare_xair_ips() {
         // Discovered-device dial: bare xair IPs gain :10024 (the sweep is
         // skipped); everything else passes through untouched.
-        assert_eq!(dial_addr("xair", "192.168.40.123"), "192.168.40.123:10024");
+        assert_eq!(dial_addr("xair", "192.168.1.20"), "192.168.1.20:10024");
         assert_eq!(
-            dial_addr("xair", "192.168.40.123:10024"),
-            "192.168.40.123:10024"
+            dial_addr("xair", "192.168.1.20:10024"),
+            "192.168.1.20:10024"
         );
         assert_eq!(dial_addr("xair", "desk.local"), "desk.local");
-        assert_eq!(dial_addr("dl32s", "192.168.40.123"), "192.168.40.123");
-        assert_eq!(dial_addr("sim", "192.168.40.123"), "192.168.40.123");
+        assert_eq!(dial_addr("dl32s", "192.168.1.20"), "192.168.1.20");
+        assert_eq!(dial_addr("sim", "192.168.1.20"), "192.168.1.20");
     }
 
     #[test]
@@ -6243,7 +6271,7 @@ mod tests {
                 ..EngineConfig::default()
             });
             assert!(engine.desk_addrs.read().unwrap().is_empty());
-            engine.remember_desk("xair", "192.168.40.123");
+            engine.remember_desk("xair", "192.168.1.20");
             assert!(dir.join("desks.json").exists(), "desk file written");
         }
         let engine = Engine::new(EngineConfig {
@@ -6257,7 +6285,7 @@ mod tests {
                 .unwrap()
                 .get("xair")
                 .map(String::as_str),
-            Some("192.168.40.123"),
+            Some("192.168.1.20"),
             "restart reloads the remembered address"
         );
         // No data dir: in-memory only, never panics.
@@ -6364,7 +6392,7 @@ mod tests {
     #[test]
     fn probe_cmd_parses() {
         let cmd: Cmd =
-            serde_json::from_value(json!({"cmd": "probe", "addr": "192.168.40.123"})).unwrap();
+            serde_json::from_value(json!({"cmd": "probe", "addr": "192.168.1.20"})).unwrap();
         assert!(matches!(cmd, Cmd::Probe { .. }));
         assert!(Cmd::known_tags().contains(&"probe"));
     }
@@ -6504,8 +6532,8 @@ mod tests {
 
     /// Resume path: `push_snapshot` queues the attach frame set into an
     /// already-attached client's mailbox (fresh state, no `you`, no roster
-    /// churn, no lock/role change). This is what the Tauri shell calls when
-    /// the WebView comes back from `Suspended`, so a UI that missed minutes
+    /// churn, no lock/role change). This is what the native shell calls when
+    /// the app comes back from the background, so a UI that missed minutes
     /// of frames catches up in one batch.
     #[tokio::test]
     async fn push_snapshot_refreshes_without_reattaching() {
