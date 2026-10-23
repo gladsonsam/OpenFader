@@ -16,7 +16,7 @@ fn default_driver() -> String {
 ///
 /// Deserializes both `{"cmd":"focus","ch":N}` and
 /// `{"cmd":"focus","chs":[...]}` into [`Cmd::Focus`]; `set_main_fader` is
-/// accepted as an alias of `main_fader` (the Tauri command name).
+/// accepted as an alias of `main_fader` (legacy command name).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 pub enum Cmd {
@@ -115,7 +115,7 @@ pub enum Cmd {
     ConnectDevice {
         id: String,
     },
-    /// R2: add one desk by IP (`{"cmd":"probe","addr":"192.168.50.123"}`):
+    /// R2: add one desk by IP (`{"cmd":"probe","addr":"192.168.1.120"}`):
     /// directed unicast `/xinfo` (cross-subnet desks never answer broadcast
     /// discovery, but they DO answer unicast). On a reply the desk is
     /// upserted into the device list (`via: "manual"`), remembered

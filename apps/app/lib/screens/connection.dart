@@ -1,0 +1,495 @@
+// Area D: connection screen (scan/probe/connect/disconnect; reads
+// devices/link/info/clients). The relay
+// link itself never renders here — this screen is only about desks.
+//
+// Wiring: everything flows through [ConnectionStore] (constructor
+// injection — Area A implements it over the engine; this file only renders
+// ui4 tokens, see lib/theme.dart). No Material Card/AppBar/Switch/Slider;
+// plain text buttons only.
+import 'package:flutter/material.dart';
+
+import '../theme.dart';
+import '../widgets/console_button.dart';
+
+/// One discovered desk row (engine `devices` event entry).
+class ConnDevice {
+  final String id;
+  final String name;
+  final String sub; // model · ip · fw
+  final String state;
+  final bool connected;
+
+  const ConnDevice({
+    required this.id,
+    required this.name,
+    required this.sub,
+    this.state = '',
+    this.connected = false,
+  });
+}
+
+/// Minimal store contract the connection screen renders. Implemented by
+/// the shell/owner over the live engine.
+abstract class ConnectionStore extends ChangeNotifier {
+  String get title;
+  String get sub;
+  bool get isConnected;
+  bool get scanning;
+  String get lastScan;
+  String? get scanError;
+  String? get errorAt;
+  String? get lastProbe;
+  int get probeAttempt;
+  bool get probing;
+  List<ConnDevice> get devices;
+  String? get emptyText;
+  String get linkInfo; // link state/name/ip/rtt line
+  String get deskInfo; // info model/fw line
+  int get clientCount;
+  List<String> get writers;
+
+  void scan(); // cmd scan
+  void probe(String addr); // cmd probe (+connect on verify)
+  Future<void> retryProbe(); // re-send last probe up to 3 attempts
+  void connectDevice(String id); // cmd connect_device
+  void connectSim(); // offline demo desk
+  void disconnect(); // cmd disconnect
+  void requestInfo(); // cmd info
+  void clearError();
+  Future<bool> ensurePermissions();
+}
+
+class U4ConnectionPage extends StatefulWidget {
+  final ConnectionStore store;
+  final VoidCallback? onOpenDebug;
+
+  const U4ConnectionPage({super.key, required this.store, this.onOpenDebug});
+
+  @override
+  State<U4ConnectionPage> createState() => _U4ConnectionPageState();
+}
+
+class _U4ConnectionPageState extends State<U4ConnectionPage> {
+  final _ipCtl = TextEditingController();
+
+  @override
+  void dispose() {
+    _ipCtl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: U4.page,
+      body: SafeArea(
+        child: ListenableBuilder(
+          listenable: widget.store,
+          builder: (context, _) {
+            final store = widget.store;
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _StatusCard(store: store),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _Btn(
+                        label: store.scanning ? 'Searching…' : 'Find mixers',
+                        enabled: !store.scanning,
+                        primary: true,
+                        onTap: store.scan,
+                      ),
+                      const SizedBox(width: 6),
+                      _Btn(
+                        label: 'Demo desk',
+                        onTap: store.connectSim,
+                      ),
+                      if (store.isConnected) ...[
+                        const SizedBox(width: 6),
+                        _Btn(
+                          label: 'Disconnect',
+                          danger: true,
+                          onTap: store.disconnect,
+                        ),
+                      ],
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(store.lastScan,
+                        style: const TextStyle(fontSize: 11, color: U4.text7)),
+                  ),
+                  if (store.scanning)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4),
+                      child: Text('Waiting for mixers to reply…',
+                          style: TextStyle(fontSize: 12, color: U4.text4)),
+                    ),
+                  if (store.scanError != null) _ErrorBanner(store: store),
+                  const SizedBox(height: 10),
+                  const Text('MIXERS',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: U4.text4)),
+                  const SizedBox(height: 6),
+                  if (store.devices.isEmpty)
+                    Text(
+                      store.emptyText ??
+                          'Scan this network to find available mixers.',
+                      style: const TextStyle(fontSize: 12, color: U4.text7),
+                    )
+                  else
+                    for (final d in store.devices)
+                      _DeviceRow(
+                        device: d,
+                        onConnect: () => store.connectDevice(d.id),
+                      ),
+                  const SizedBox(height: 10),
+                  const Text('ADD BY IP',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: U4.text4)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: U4.well,
+                            border: Border.all(color: U4.railBorder),
+                            borderRadius: U4.rBtn,
+                          ),
+                          child: TextField(
+                            controller: _ipCtl,
+                            keyboardType: TextInputType.text,
+                            style:
+                                const TextStyle(fontSize: 13, color: U4.text1),
+                            decoration: const InputDecoration(
+                              isDense: true,
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              disabledBorder: InputBorder.none,
+                              focusedBorder: UnderlineInputBorder(
+                                  borderSide: BorderSide(color: U4.cyan)),
+                              filled: false,
+                              contentPadding:
+                                  EdgeInsets.symmetric(vertical: 12),
+                              hintText: '192.168.1.120',
+                              hintStyle: TextStyle(color: U4.text10),
+                            ),
+                            onSubmitted: (v) {
+                              final a = v.trim();
+                              if (a.isNotEmpty) {
+                                FocusScope.of(context).unfocus();
+                                store.probe(a);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      _Btn(
+                        label: store.probing
+                            ? 'Probing ${store.probeAttempt}/3…'
+                            : 'Probe',
+                        onTap: () {
+                          final a = _ipCtl.text.trim();
+                          if (a.isNotEmpty) {
+                            FocusScope.of(context).unfocus();
+                            store.probe(a);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  _InfoCard(store: store, onOpenDebug: widget.onOpenDebug),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorBanner extends StatelessWidget {
+  final ConnectionStore store;
+  const _ErrorBanner({required this.store});
+
+  @override
+  Widget build(BuildContext context) {
+    final err = store.scanError ?? '';
+    final canRetry = (store.lastProbe ?? '').isNotEmpty && !store.probing;
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2A1210),
+        border: Border.all(color: const Color(0xFFB9443E)),
+        borderRadius: const BorderRadius.all(Radius.circular(10)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('DESK LINK FAILED',
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFFFF8A80))),
+          const SizedBox(height: 4),
+          Text(err,
+              style: const TextStyle(fontSize: 12, color: Color(0xFFFFCDD2))),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              if (canRetry)
+                Expanded(
+                  child: _Btn(
+                    label:
+                        'Retry probe ${store.lastProbe} (${store.probeAttempt}/3)',
+                    primary: true,
+                    onTap: store.retryProbe,
+                  ),
+                ),
+              if (canRetry) const SizedBox(width: 6),
+              Expanded(
+                child: _Btn(
+                  label: 'Rescan',
+                  onTap: store.scan,
+                ),
+              ),
+              const SizedBox(width: 6),
+              _Btn(label: 'Dismiss', onTap: store.clearError),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusCard extends StatelessWidget {
+  final ConnectionStore store;
+  const _StatusCard({required this.store});
+
+  @override
+  Widget build(BuildContext context) {
+    final dot = store.isConnected ? U4.meterGreen : const Color(0xFFFF4A3D);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: U4.panel,
+        border: Border.all(
+            color: store.isConnected ? U4.cyan : const Color(0xFF5A2420)),
+        borderRadius: const BorderRadius.all(Radius.circular(10)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: dot,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(store.title,
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: U4.text1)),
+                Text(store.sub,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: U4.text7)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeviceRow extends StatelessWidget {
+  final ConnDevice device;
+  final VoidCallback onConnect;
+
+  const _DeviceRow({required this.device, required this.onConnect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: U4.panel,
+        border: Border.all(color: device.connected ? U4.cyan : U4.tileBorder),
+        borderRadius: U4.rBtn,
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(device.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: U4.text1)),
+                Text(device.sub,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: U4.text7)),
+              ],
+            ),
+          ),
+          Text(
+            device.connected
+                ? 'Connected'
+                : device.state.isEmpty
+                    ? 'Available'
+                    : device.state,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: device.connected ? U4.meterGreen : U4.text4,
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (!device.connected)
+            GestureDetector(
+              onTap: onConnect,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: const BoxDecoration(
+                  color: U4.cyan,
+                  borderRadius: U4.rBtn,
+                ),
+                child: const Text('Connect',
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: U4.well)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  final ConnectionStore store;
+  final VoidCallback? onOpenDebug;
+  const _InfoCard({required this.store, this.onOpenDebug});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: U4.panel,
+        border: Border.all(color: U4.tileBorder),
+        borderRadius: const BorderRadius.all(Radius.circular(10)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _line('link', store.linkInfo),
+          _line('desk', store.deskInfo),
+          _line('clients',
+              '${store.clientCount}${store.writers.isEmpty ? '' : ' · ${store.writers.join(',')}'}'),
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: store.requestInfo,
+            child: const Text('REFRESH DESK INFO',
+                style: TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w700, color: U4.cyan)),
+          ),
+          if (onOpenDebug != null) ...[
+            const SizedBox(height: 4),
+            GestureDetector(
+              onTap: onOpenDebug,
+              child: const Text('OPEN DEBUG LOG →',
+                  style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: U4.cyan)),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _line(String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 56,
+            child:
+                Text(k, style: const TextStyle(fontSize: 11, color: U4.text7)),
+          ),
+          Expanded(
+            child: Text(v.isEmpty ? '—' : v,
+                style: const TextStyle(fontSize: 11, color: U4.text4)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Btn extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool enabled;
+  final bool primary;
+  final bool danger;
+
+  const _Btn({
+    required this.label,
+    required this.onTap,
+    this.enabled = true,
+    this.primary = false,
+    this.danger = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ConsoleButton(
+        label: label,
+        primary: primary,
+        danger: danger,
+        onPressed: enabled ? onTap : null);
+  }
+}

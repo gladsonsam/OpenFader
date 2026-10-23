@@ -50,7 +50,7 @@
 //!   absent and [`parse_fx_param`] bails on it like an unknown par,
 //!   never surfacing NaN as a value.
 //!
-//! Web UI field naming (see `FxRack.svelte`): `fx{slot}_par{MM}` with the
+//! Mixer UI field naming: `fx{slot}_par{MM}` with the
 //! same 1-based conventions, e.g. `fx1_par01` = slot 1, param index 0.
 //! Passed through the existing `param` command as
 //! `backend.setParam(slot - 1, 'fx{slot}_par{MM}', value01)` — the field

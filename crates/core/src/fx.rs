@@ -193,8 +193,7 @@ const FLANGER_PARAMS: &[FxParamMeta] = &[
     FxParamMeta { id: "mix", label: "Mix", unit: "%", min: 0.0, max: 100.0, default: 1.0, scale: "lin" },
 ];
 
-/// The design's six FX types in UI order (mirrors `FX_TYPES` in
-/// `apps/web/src/ui/fixtures/designData.ts`).
+/// The design's six FX types in UI order.
 pub const FX_TYPES: &[FxTypeMeta] = &[
     FxTypeMeta { id: "hall", label: "Hall", params: HALL_PARAMS },
     FxTypeMeta { id: "plate", label: "Plate", params: PLATE_PARAMS },

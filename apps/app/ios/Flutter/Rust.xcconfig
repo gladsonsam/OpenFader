@@ -1,0 +1,1 @@
+OTHER_LDFLAGS = $(inherited) -force_load "$(BUILT_PRODUCTS_DIR)/libopenmix_flutter_bridge.a" -lc++ -framework Security -framework SystemConfiguration

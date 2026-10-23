@@ -3,9 +3,8 @@
 //! the binary taps layout.
 //!
 //! Lives in `tests/golden_r2/` — NOT `tests/golden/`: that directory is
-//! consumed 1:1 by `apps/web/src/lib/golden.test.ts`, which rejects
-//! unknown frame types (the TS parser itself ignores them, but its test
-//! enumerates known shapes). Same precedent as `tests/golden_bin/`.
+//! consumed 1:1 by an out-of-tree parser test, which rejects
+//! unknown frame types. Same precedent as `tests/golden_bin/`.
 //! Regenerate with `R2GOLDEN_UPDATE=1`.
 
 use std::collections::BTreeMap;

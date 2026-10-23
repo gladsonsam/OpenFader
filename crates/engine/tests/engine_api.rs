@@ -1,6 +1,6 @@
 //! Engine API tests: drive the engine in-process (no sockets) through
 //! `attach`/`send`/`events` with the same scenarios as the serve WS
-//! integration tests, so a future Tauri adapter is covered by construction.
+//! integration tests, so future adapters are covered by construction.
 
 use std::{sync::Arc, time::Duration};
 
@@ -745,7 +745,7 @@ async fn main_fader_set_and_state() {
     .await;
     assert_eq!(ev_json(&st).get("by"), Some(&json!(a.id)));
 
-    // set_main_fader alias (the Tauri command name) works the same.
+    // set_main_fader alias (legacy command name) works the same.
     a.send_json(r#"{"cmd":"set_main_fader","value":0.3}"#).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::State { main_fader, .. } => {
