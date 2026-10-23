@@ -699,7 +699,7 @@ mod tests {
             vec![
                 "255.255.255.255:10024".to_string(),
                 "192.168.20.255:10024".to_string(),
-                "192.168.1.255:10024".to_string(),
+                "192.168.50.255:10024".to_string(),
             ]
         );
         // Per-interface list (one directed broadcast) is the same shape.
@@ -738,17 +738,17 @@ mod tests {
     fn sweep_targets_shape() {
         let desk: Ipv4Addr = "192.168.1.123".parse().unwrap();
         let prefix = subnet24(desk);
-        assert_eq!(prefix, Ipv4Addr::new(192, 168, 40, 0));
+        assert_eq!(prefix, Ipv4Addr::new(192, 168, 1, 0));
         // Idempotent on an already-masked prefix.
         assert_eq!(subnet24(prefix), prefix);
-        let own = [Ipv4Addr::new(192, 168, 40, 10)];
+        let own = [Ipv4Addr::new(192, 168, 1, 10)];
         let targets = sweep_targets(prefix, &own);
         assert_eq!(targets.len(), 253, ".1-.254 minus this host");
-        assert_eq!(targets.first(), Some(&Ipv4Addr::new(192, 168, 40, 1)));
-        assert_eq!(targets.last(), Some(&Ipv4Addr::new(192, 168, 40, 254)));
+        assert_eq!(targets.first(), Some(&Ipv4Addr::new(192, 168, 1, 1)));
+        assert_eq!(targets.last(), Some(&Ipv4Addr::new(192, 168, 1, 254)));
         assert!(!targets.contains(&own[0]), "own address excluded");
-        assert!(!targets.contains(&Ipv4Addr::new(192, 168, 40, 0)));
-        assert!(!targets.contains(&Ipv4Addr::new(192, 168, 40, 255)));
+        assert!(!targets.contains(&Ipv4Addr::new(192, 168, 1, 0)));
+        assert!(!targets.contains(&Ipv4Addr::new(192, 168, 1, 255)));
         // An address from another /24 never leaks into the sweep.
         assert!(!targets.contains(&Ipv4Addr::new(192, 168, 20, 5)));
     }
