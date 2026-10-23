@@ -23,7 +23,7 @@
 //!   the X32 leaves differ (no `insrc`/`rtnsrc`/`rtntrim`/`hpon` there), so
 //!   leaf shapes come from the two X-Air sources above, not Maillot.
 //!
-//! Owner-rig verified 2026-10-18 ~02:00 AWST (XR18 FW 1.20, 192.168.40.123,
+//! Owner-rig verified 2026-10-18 (XR18 FW 1.20,
 //! 3–5 s timeouts, each leaf re-read across rounds):
 //! `/ch/01+16/config/rtnsrc` (`,i` 0 / 17), `/ch/01+16/preamp/rtntrim`
 //! (`,f` 0.5 / 0.0 = 0 dB / −18 dB), `/ch/01+16/preamp/invert` + `/hpon`

@@ -27,14 +27,13 @@
 //! have no X-Air wire slot and are sim-only. Sim stores both id sets
 //! independently (both read/write); drivers document the alias.
 //!
-//! Ranges follow the real hardware (X-Air), NOT the old DL32S-flavoured UI
-//! guesses in `apps/web/src/lib/sections.ts`. Known divergences from that
-//! file (the UI v3 MS2 step follows this catalogue):
+//! Ranges follow the real hardware (X-Air). Known divergences that older
+//! UI code had from this catalogue:
 //!
-//! * `gain`: `-12..=+60` dB here vs `-20..=60` there (X-Air headamp floor).
-//! * `pan`: `-100..=+100` here vs `-1..=+1` there (X-Air `mix/pan`).
-//! * `eqN_gain`: `-15..=+15` dB here vs `+-20` there (X-Air `eq/g`).
-//! * `eqN_q`: `0.3..=10` here vs `0.1..=20` there (X-Air `eq/q`).
+//! * `gain`: `-12..=+60` dB (X-Air headamp floor).
+//! * `pan`: `-100..=+100` (X-Air `mix/pan`).
+//! * `eqN_gain`: `-15..=+15` dB (X-Air `eq/g`).
+//! * `eqN_q`: `0.3..=10` (X-Air `eq/q`).
 //! * `eq1_type`: exists here (X-Air bands 1..4 all carry `type 0..=5`);
 //!   sections.ts omits band 1 (true only of the DL32S layout).
 //! * `eqN_type`: `0..=5` here vs `0..=3` there (six X-Air filter types).

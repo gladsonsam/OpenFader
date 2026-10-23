@@ -1258,7 +1258,7 @@ impl XAirDriver {
     }
 
     /// Map a raw `/info` reply to [`MixerInfo`]. Hardware order (baseline
-    /// §1, XR18 FW 1.20 `/info` → `[V0.04, Home Studio, XR18, 1.20]`):
+    /// §1, XR18 FW 1.20 `/info` → `[V0.04, Studio, XR18, 1.20]`):
     /// index 1 = name, 2 = model, 3 = firmware (index 0 is the protocol
     /// revision). Short replies yield empty fields rather than guesses.
     fn info_from_strings(strings: Vec<String>, peer: String) -> MixerInfo {
@@ -3802,8 +3802,9 @@ mod tests {
         driver.clear_solo().await.unwrap();
     }
 
-    /// Rig-gated solo write-path discovery (env `OPENMIX_RIG=1` + XR18 at
-    /// 192.168.40.123; skipped otherwise so CI stays green). Uses muted
+    /// Rig-gated solo write-path discovery (env `OPENMIX_RIG=1`, desk
+    /// address via `OPENMIX_RIG_ADDR`; skipped otherwise so CI stays
+    /// green). Uses muted
     /// ch16 only, read -> write -> readback -> clear -> verify. Reports
     /// which `/-stat/solosw/NN` numbering the desk honors (1-based `16`
     /// vs 0-based `15`) — run with `-- --nocapture` to see the verdict.
@@ -3814,7 +3815,8 @@ mod tests {
             return;
         }
         let driver = XAirDriver::new();
-        driver.connect("192.168.40.123:10024").await.unwrap();
+        let rig = std::env::var("OPENMIX_RIG_ADDR").unwrap_or_else(|_| "192.168.1.20".to_string());
+        driver.connect(format!("{rig}:10024")).await.unwrap();
         let bank = async || {
             let guard = driver.session().await.unwrap();
             let reply = guard
@@ -3923,9 +3925,9 @@ mod tests {
     /// sweep, and `connect()` with an explicit port dials it directly.
     #[test]
     fn explicit_port_detection() {
-        assert!(has_explicit_port("192.168.40.123:10024"));
-        assert!(has_explicit_port("192.168.40.123:10023"));
-        assert!(!has_explicit_port("192.168.40.123"));
+        assert!(has_explicit_port("192.168.1.20:10024"));
+        assert!(has_explicit_port("192.168.1.20:10023"));
+        assert!(!has_explicit_port("192.168.1.20"));
         assert!(!has_explicit_port("mixer.lan"));
     }
 

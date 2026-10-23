@@ -1,0 +1,1215 @@
+// Area A wire-up: app shell + router + D-screen store implementations.
+//
+// After boot (sim or FFI), main.dart creates one [AppStore] and pushes
+// [AppShell]. The shell owns:
+// - a shared 80 ms poll loop ([AppStore.pollMeters]) so every tab stays
+//   fresh even when the visible page has no loop of its own (the A/B/C
+//   pages keep their own loops too; AppStore serializes mailbox drains);
+// - bottom (narrow) / side (wide >= 720) rail across Mixer, Meters,
+//   Channel + the six Area D screens (read-only imports — this file never
+//   edits them);
+// - the header ([U4ShellHeader]) with tile jumps into the D tabs.
+//
+// The six `_*Store` classes below implement the Area D store contracts
+// over [AppStore.engine] (reads) + [AppStore.sendRaw] (writes). They
+// forward AppStore notifications so tab switches rebuild. Honest gaps
+// (documented, not faked):
+// - settings stats: `stats` frames are not parsed into EngineState; the
+//   request is sent and the Debug tab shows raw state instead.
+// - FX knobs render the slot `params` map generically (0..1) until
+//   caps.fx param tables are parsed; tap-tempo has no engine cmd.
+library;
+
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../core/wifi_net.dart';
+import '../engine.dart';
+import '../ffi_engine.dart';
+import '../state/app_store.dart';
+import '../theme.dart';
+import 'shell.dart';
+import '../screens/channel.dart';
+import '../screens/connection.dart';
+import '../screens/debug.dart';
+import '../screens/fx.dart';
+import '../screens/meters.dart';
+import '../mixer/controller.dart';
+import '../mixer/page.dart';
+import '../screens/routing.dart';
+import '../screens/scenes.dart';
+import '../screens/settings.dart';
+
+/// Shell tabs in rail order.
+enum AppTab {
+  mixer('Mixer'),
+  meters('Meters'),
+  channel('Channel'),
+  scenes('Scenes'),
+  fx('FX'),
+  routing('Routing'),
+  connect('Connection'),
+  settings('Settings'),
+  debug('Debug');
+
+  const AppTab(this.label);
+  final String label;
+}
+
+/// Post-boot shell: header + routed page + bottom/side rail.
+class AppShell extends StatefulWidget {
+  final EngineApi api;
+  final AppStore store;
+  final AppTab initialTab;
+
+  /// True when main() won the real embedded engine; false = loud FAKE
+  /// sim fallback (native .so missing or FFI init failed). Never silent.
+  final bool isRealEngine;
+
+  const AppShell(
+      {super.key,
+      required this.api,
+      required this.store,
+      this.initialTab = AppTab.mixer,
+      required this.isRealEngine});
+
+  @override
+  State<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends State<AppShell> {
+  late AppTab _tab;
+  Timer? _shellLoop;
+
+  late final MixerController _mixer;
+  late final _ConnStore _conn;
+  late final _RoutingStore _routing;
+  late final _ScenesStore _scenes;
+  late final _SettingsStore _settings;
+  late final _FxStore _fx;
+  late final _DebugStore _debug;
+
+  @override
+  void initState() {
+    super.initState();
+    _tab = widget.initialTab;
+    _mixer = MixerController(widget.store,
+        seedReferenceDemo: widget.initialTab == AppTab.mixer);
+    _conn = _ConnStore(widget.store);
+    _routing = _RoutingStore(widget.store);
+    _scenes = _ScenesStore(widget.store);
+    _settings = _SettingsStore(widget.store);
+    _fx = _FxStore(widget.store);
+    _debug = _DebugStore(widget.store);
+    // Shared freshness loop (see file docs: harmless overlap with the
+    // per-page loops — one drain, one engine state).
+    _shellLoop =
+        Timer.periodic(const Duration(milliseconds: 80), (_) => _tick());
+    _tick();
+  }
+
+  Future<void> _tick() async {
+    try {
+      await widget.store.pollMeters();
+    } catch (_) {
+      // Never crash the shell loop on a transport hiccup.
+    }
+  }
+
+  @override
+  void dispose() {
+    _shellLoop?.cancel();
+    _mixer.dispose();
+    _conn.dispose();
+    _routing.dispose();
+    _scenes.dispose();
+    _settings.dispose();
+    _fx.dispose();
+    _debug.dispose();
+    super.dispose();
+  }
+
+  void _go(AppTab t) => setState(() => _tab = t);
+
+  ShellMode _modeOf(AppTab t) => switch (t) {
+        AppTab.mixer || AppTab.meters => ShellMode.mixer,
+        AppTab.channel => ShellMode.channel,
+        AppTab.scenes => ShellMode.scenes,
+        AppTab.fx => ShellMode.fx,
+        AppTab.routing => ShellMode.routing,
+        AppTab.connect => ShellMode.connect,
+        AppTab.settings || AppTab.debug => ShellMode.settings,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.store;
+    return ListenableBuilder(
+      listenable: store,
+      builder: (context, _) {
+        final connected = store.engine.connected;
+        final sim = store.engine.driver == 'sim';
+
+        // Never let "Connected · sim" read as a desk: SIM gets its own tag.
+        // Plus the boot-time backend verdict: real embedded engine vs the
+        // FAKE sim fallback. Loud on every path — never silent.
+        final title = sim
+            ? 'OpenMix · Demo desk'
+            : '${store.engine.linkName.isEmpty ? 'OpenMix' : store.engine.linkName} · ${store.engine.linkState.isEmpty ? 'Not connected' : store.engine.linkState}';
+        final isChan = _tab == AppTab.channel;
+        final narrow = MediaQuery.sizeOf(context).width < 720;
+        if (_tab == AppTab.mixer &&
+            (connected || sim || store.engine.linkState == 'offline')) {
+          return _mixerPage();
+        }
+        final header = U4ShellHeader(
+          title: title,
+          pageTitle: _tab.label,
+          showBack: _tab != AppTab.mixer,
+          onBack: () => _go(AppTab.mixer),
+          mode: _modeOf(_tab),
+          connected: connected,
+          connDot: connected ? (sim ? U4.text7 : U4.meterGreen) : U4.meterAmber,
+          connAria: !connected
+              ? 'Disconnected'
+              : sim
+                  ? 'Demo simulator (not a desk)'
+                  : 'Connected to desk',
+          isChannel: isChan,
+          channelName: isChan ? store.displayName : '',
+          metersActive: _tab == AppTab.meters,
+          scenesActive: _tab == AppTab.scenes,
+          sceneNum: _sceneNum(store),
+          sceneName: _sceneName(store),
+          sceneAria:
+              '${_sceneNum(store).isEmpty ? '' : 'Scene ${_sceneNum(store)}, '}${_sceneName(store)}, open scene list',
+          compact: MediaQuery.sizeOf(context).width < 600,
+          onFx: () => _go(AppTab.fx),
+          onRouting: () => _go(AppTab.routing),
+          onConnect: () => _go(AppTab.connect),
+          onSettings: () => _go(AppTab.settings),
+          onMeters: () => _go(AppTab.meters),
+          onScene: () => _go(AppTab.scenes),
+          onPrevChannel: isChan && connected
+              ? () => store.openChannel((store.channelIndex - 1)
+                  .clamp(0, store.engine.strips.length - 1))
+              : null,
+          onNextChannel: isChan && connected
+              ? () => store.openChannel((store.channelIndex + 1)
+                  .clamp(0, store.engine.strips.length - 1))
+              : null,
+        );
+        final page = _pageFor(_tab, store);
+        final rail = _NavRail(
+          active: _tab,
+          onGo: _go,
+          vertical: !narrow,
+        );
+        final body = narrow
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [Expanded(child: page), rail],
+              )
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [Expanded(child: page), rail],
+              );
+        return U4Shell(header: header, child: body);
+      },
+    );
+  }
+
+  Widget _mixerPage() => MixerPage(
+      controller: _mixer,
+      onNavigate: (destination) => _go(switch (destination) {
+            MixerDestination.meters => AppTab.meters,
+            MixerDestination.channel => AppTab.channel,
+            MixerDestination.scenes => AppTab.scenes,
+            MixerDestination.fx => AppTab.fx,
+            MixerDestination.routing => AppTab.routing,
+            MixerDestination.connect => AppTab.connect,
+            MixerDestination.settings => AppTab.settings,
+            MixerDestination.debug => AppTab.debug,
+          }));
+
+  Widget _pageFor(AppTab t, AppStore store) {
+    if (!store.engine.connected &&
+        store.engine.driver != 'sim' &&
+        store.engine.linkState != 'offline' &&
+        {AppTab.mixer, AppTab.channel, AppTab.fx, AppTab.routing}.contains(t)) {
+      return Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('Mixer disconnected',
+            style: TextStyle(color: U4.text1, fontSize: 18)),
+        TextButton(
+            onPressed: () => _go(AppTab.connect),
+            child: const Text('Reconnect mixer')),
+      ]));
+    }
+    return switch (t) {
+      AppTab.mixer => _mixerPage(),
+      AppTab.meters =>
+        U4MetersPage(store: store, onClose: () => _go(AppTab.mixer)),
+      AppTab.channel => ChannelPage(stripKey: store.stripKey, store: store),
+      AppTab.scenes => U4ScenesPage(store: _scenes),
+      AppTab.fx => U4FxPage(store: _fx),
+      AppTab.routing => U4RoutingPage(store: _routing),
+      AppTab.connect => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _EngineTagBanner(isReal: widget.isRealEngine),
+            Expanded(
+                child: U4ConnectionPage(
+                    store: _conn, onOpenDebug: () => _go(AppTab.debug))),
+          ],
+        ),
+      AppTab.settings => U4SettingsPage(store: _settings),
+      AppTab.debug => U4DebugPage(store: _debug),
+    };
+  }
+
+  String _sceneNum(AppStore s) {
+    for (final e in s.engine.scenes) {
+      if (e.current) return e.number.toString().padLeft(3, '0');
+    }
+    return '';
+  }
+
+  String _sceneName(AppStore s) {
+    for (final e in s.engine.scenes) {
+      if (e.current) return e.name.isEmpty ? 'Scene ${e.number}' : e.name;
+    }
+    return s.engine.scenes.isEmpty
+        ? 'Scenes'
+        : '${s.engine.scenes.length} ${s.engine.scenes.length == 1 ? 'scene' : 'scenes'}';
+  }
+}
+
+/// Bottom (narrow) / side (wide) tab rail. Plain text buttons, ui4 tokens.
+class _NavRail extends StatelessWidget {
+  final AppTab active;
+  final ValueChanged<AppTab> onGo;
+  final bool vertical;
+
+  const _NavRail(
+      {required this.active, required this.onGo, required this.vertical});
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      for (final t in AppTab.values)
+        Padding(
+          padding: EdgeInsets.only(
+              right: vertical ? 0 : 4, bottom: vertical ? 4 : 0),
+          child: TextButton(
+            onPressed: () => onGo(t),
+            style: TextButton.styleFrom(
+                backgroundColor: t == active ? U4.control : Colors.transparent,
+                foregroundColor: t == active ? U4.cyan : U4.text7,
+                minimumSize: const Size(44, 44),
+                padding: EdgeInsets.symmetric(horizontal: vertical ? 10 : 14),
+                shape: const RoundedRectangleBorder(borderRadius: U4.rBtn)),
+            child: Text(t.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          ),
+        ),
+    ];
+    if (vertical) {
+      return Container(
+        width: 108,
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+        decoration: const BoxDecoration(
+            border: Border(left: BorderSide(color: U4.lineHeader))),
+        child: SingleChildScrollView(
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch, children: items),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+      decoration: const BoxDecoration(
+          border: Border(top: BorderSide(color: U4.lineHeader))),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: items),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Engine backend banner: the boot-time verdict, loud on every tab that
+// matters (AppShell header carries it in the title; the Link tab gets
+// this full-width strip too). Green = real embedded engine, red = FAKE
+// sim fallback with the FFI failure reason inline.
+// ---------------------------------------------------------------------------
+
+class _EngineTagBanner extends StatelessWidget {
+  final bool isReal;
+
+  const _EngineTagBanner({required this.isReal});
+
+  @override
+  Widget build(BuildContext context) {
+    final err = isReal ? null : FfiEngine.lastError?.toString();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: isReal ? const Color(0xFF0E2A12) : const Color(0xFF3A0D0D),
+        border: Border(
+            bottom: BorderSide(color: isReal ? U4.meterGreen : U4.meterRed)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            isReal
+                ? 'ENGINE: embedded openmix-engine (real)'
+                : 'ENGINE: FAKE sim fallback — native lib missing, desk impossible',
+            style: TextStyle(
+                color: isReal ? U4.meterGreen : U4.meterRed,
+                fontSize: 13,
+                fontWeight: FontWeight.w700),
+          ),
+          if (err != null && err.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text('FFI: $err',
+                  style: const TextStyle(color: U4.text4, fontSize: 11)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared base: forwards AppStore notifications, exposes send + engine.
+// ---------------------------------------------------------------------------
+
+abstract class _StoreBase extends ChangeNotifier {
+  _StoreBase(this.app) {
+    app.addListener(_forward);
+  }
+
+  final AppStore app;
+  bool _dead = false;
+
+  EngineState get engine => app.engine;
+  void send(String json) => app.sendRaw(json);
+
+  void _forward() {
+    if (!_dead) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _dead = true;
+    app.removeListener(_forward);
+    super.dispose();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Connection
+// ---------------------------------------------------------------------------
+
+class _ConnStore extends _StoreBase implements ConnectionStore {
+  _ConnStore(super.app) {
+    _devicesSeen = app.engine.devices.length;
+    _lastError = app.visibleError;
+    app.addListener(_settle);
+  }
+
+  bool _scanning = false;
+  String _lastScan = 'never';
+  Timer? _scanTimer;
+
+  // Probe retry state: the desk unicast can be lost (wrong interface,
+  // mobile data, ARP miss), so one shot is not enough.
+  String _lastProbe = '';
+  int _probeAttempt = 0;
+  bool _probing = false;
+
+  // Settle tracking: scanning ends when the engine answers (devices list
+  // changes or an error frame/transport failure lands), not on a fixed
+  // timer. The timer below is only a fallback so the spinner cannot stick.
+  int _devicesSeen = 0;
+  String _lastError = '';
+
+  @override
+  void dispose() {
+    app.removeListener(_settle);
+    _scanTimer?.cancel();
+    super.dispose();
+  }
+
+  void _settle() {
+    final n = app.engine.devices.length;
+    final err = app.visibleError;
+    if (_scanning && (n != _devicesSeen || err != _lastError)) {
+      _scanning = false;
+      _scanTimer?.cancel();
+      _lastScan = 'scan ${_fmtTime(DateTime.now())} · $n desk(s)';
+      WifiNet.scanStop();
+    }
+    _devicesSeen = n;
+    _lastError = err;
+  }
+
+  static String _fmtTime(DateTime t) => t.toIso8601String().substring(11, 19);
+
+  bool get _isSim => engine.driver == 'sim';
+
+  @override
+  String get title {
+    if (!isConnected) {
+      return _isSim
+          ? 'Not connected · sim (demo — not a desk)'
+          : 'Not connected · ${engine.driver}';
+    }
+    if (_isSim) return 'Demo desk · SIM — not a real desk';
+    final link = engine.linkState.isEmpty ? '' : ' · ${engine.linkState}';
+    final name = engine.linkName.isEmpty ? '' : ' · ${engine.linkName}';
+    return 'Connected · desk ${engine.driver}$link$name';
+  }
+
+  @override
+  String get sub {
+    if (!isConnected) {
+      return _isSim
+          ? 'Simulator only — no desk hardware. Scan/probe on desk Wi-Fi to find the XR18.'
+          : 'driver=${engine.driver} — scan/probe the desk Wi-Fi.';
+    }
+    if (_isSim) {
+      return 'SIMULATOR — ${engine.strips.length} strips · no desk hardware · '
+          'link=${engine.linkState.isEmpty ? '—' : engine.linkState}';
+    }
+    return '${engine.strips.length} strips · '
+        'link=${engine.linkState.isEmpty ? '—' : engine.linkState} '
+        '${engine.linkName} ${engine.linkIp}';
+  }
+
+  @override
+  bool get isConnected => engine.connected;
+
+  @override
+  bool get scanning => _scanning;
+
+  @override
+  String get lastScan => _lastScan;
+
+  /// Exact engine/transport failure + timestamp, persistent until cleared
+  /// by a good poll or the next scan/probe. Never hides the string.
+  @override
+  String? get scanError {
+    final e = app.visibleError;
+    if (e.isEmpty) return null;
+    final at = app.visibleErrorAt;
+    final ts = at == null ? '' : ' (${_fmtTime(at)})';
+    return '$e$ts';
+  }
+
+  @override
+  String? get errorAt {
+    final at = app.visibleErrorAt;
+    return at == null ? null : _fmtTime(at);
+  }
+
+  @override
+  String? get lastProbe => _lastProbe.isEmpty ? null : _lastProbe;
+
+  @override
+  int get probeAttempt => _probeAttempt;
+
+  @override
+  bool get probing => _probing;
+
+  @override
+  List<ConnDevice> get devices => [
+        for (final d in engine.devices)
+          ConnDevice(
+            id: d.id,
+            name: d.name,
+            sub: [d.model, d.ip, d.firmware]
+                .where((s) => s.isNotEmpty)
+                .join(' · '),
+            state: d.state == 'connected' && !engine.connected
+                ? 'available'
+                : d.state,
+            connected: engine.connected &&
+                engine.driver != 'sim' &&
+                d.ip == engine.linkIp,
+          ),
+      ];
+
+  @override
+  String? get emptyText =>
+      engine.devices.isEmpty ? 'No desks seen yet — Scan first.' : null;
+
+  @override
+  String get linkInfo {
+    final simTag = _isSim ? 'SIM (not a desk)' : 'desk';
+    return '$simTag driver=${engine.driver} '
+        'link=${engine.linkState.isEmpty ? '—' : engine.linkState} '
+        '${engine.linkName}';
+  }
+
+  @override
+  String get deskInfo => [
+        engine.model,
+        engine.firmware.isEmpty ? '' : 'FW ${engine.firmware}',
+        engine.sampleRate == 0 ? '' : '${engine.sampleRate ~/ 1000} kHz',
+        '${engine.strips.length} strips'
+      ].where((s) => s.isNotEmpty).join(' · ');
+
+  @override
+  int get clientCount => engine.clientCount;
+
+  @override
+  List<String> get writers => engine.writers;
+
+  @override
+  Future<bool> ensurePermissions() => WifiNet.ensureScanPermissions();
+
+  @override
+  void scan() {
+    if (_scanning) return;
+    _scanning = true;
+    _devicesSeen = engine.devices.length;
+    _lastError = app.visibleError;
+    app.clearErrors();
+    notifyListeners();
+    WifiNet.ensureScanPermissions().then((_) {
+      WifiNet.scanStart();
+      send(Cmds.scan());
+    });
+    // Fallback only: the devices/error event settles the spinner first.
+    _scanTimer?.cancel();
+    _scanTimer = Timer(const Duration(seconds: 10), () {
+      if (_scanning) {
+        _scanning = false;
+        _lastScan = 'scan ${_fmtTime(DateTime.now())} · no reply yet';
+        WifiNet.scanStop();
+        notifyListeners();
+      }
+    });
+  }
+
+  @override
+  void probe(String addr) {
+    _lastProbe = addr.trim();
+    unawaited(_probeLoop(_lastProbe));
+  }
+
+  /// Re-send the unicast probe up to 3 attempts (~900 ms apart) until the
+  /// engine shows strips from a non-sim driver or reports devices. The
+  /// exact engine error string stays visible via [scanError] throughout.
+  @override
+  Future<void> retryProbe() =>
+      _probeLoop(_lastProbe, attempts: _lastProbe.isEmpty ? 0 : 3);
+
+  Future<void> _probeLoop(String addr, {int attempts = 3}) async {
+    if (addr.isEmpty || _probing) return;
+    _probing = true;
+    _probeAttempt = 0;
+    notifyListeners();
+    try {
+      await WifiNet.ensureScanPermissions();
+      await WifiNet.bindWifi();
+      for (var i = 0; i < attempts; i++) {
+        _probeAttempt = i + 1;
+        app.clearErrors();
+        notifyListeners();
+        send(Cmds.probe(addr));
+        // Give the current request time to finish before retrying. Repeated
+        // probes restart hardware hydration and used to keep the mixer empty.
+        for (var wait = 0; wait < 30 && !_dead; wait++) {
+          await Future.delayed(const Duration(milliseconds: 100));
+          if ((engine.connected && engine.linkIp == addr) ||
+              app.visibleError.isNotEmpty) {
+            break;
+          }
+        }
+        if (_dead || (engine.connected && engine.linkIp == addr)) break;
+      }
+    } finally {
+      _probing = false;
+      if (!_dead) notifyListeners();
+    }
+  }
+
+  @override
+  void connectDevice(String id) {
+    WifiNet.bindWifi();
+    send(Cmds.connectDevice(id));
+  }
+
+  @override
+  void connectSim() => send(Cmds.connectSim());
+
+  @override
+  void disconnect() => send(Cmds.disconnect());
+
+  @override
+  void requestInfo() => send(Cmds.info());
+
+  @override
+  void clearError() => app.clearErrors();
+}
+
+// ---------------------------------------------------------------------------
+// Routing
+// ---------------------------------------------------------------------------
+
+class _RoutingStore extends _StoreBase implements RoutingStore {
+  _RoutingStore(super.app);
+
+  List<Map<String, dynamic>> get _groups => [
+        for (final g in engine.routingCaps['groups'] as List? ?? const [])
+          if (g is Map<String, dynamic>) g,
+      ];
+  String _group = 'Lcl';
+  int? _sel;
+
+  @override
+  List<RouteStrip> get strips => [
+        for (final s in engine.strips)
+          RouteStrip(
+            strip: s.ch,
+            id: 'in${s.ch + 1}',
+            name: s.name.isEmpty ? 'CH${s.ch + 1}' : s.name,
+            src: _srcOf(s.ch),
+          ),
+      ];
+
+  String _srcOf(int ch) {
+    for (final p in engine.routing) {
+      final strip = (p['strip'] as num?)?.toInt();
+      if (strip == ch) {
+        final src = p['source'] ?? p['src'];
+        if (src is String && src.isNotEmpty) return src;
+      }
+    }
+    return '';
+  }
+
+  @override
+  List<String> get groups => [for (final g in _groups) g['key'] as String];
+
+  @override
+  String get group =>
+      groups.contains(_group) ? _group : groups.firstOrNull ?? '';
+
+  @override
+  int? get selectedStrip => _sel;
+
+  @override
+  String get selectedName {
+    if (_sel == null) return 'No strip selected';
+    for (final s in engine.strips) {
+      if (s.ch == _sel) return s.name.isEmpty ? 'CH${s.ch + 1}' : s.name;
+    }
+    return 'CH${_sel! + 1}';
+  }
+
+  @override
+  String get selectedSrc {
+    if (_sel == null) return '';
+    return _srcOf(_sel!);
+  }
+
+  @override
+  List<RouteSrcTile> get srcTiles => [
+        for (var i = 1;
+            i <=
+                ((_groups.where((g) => g['key'] == group).firstOrNull?['count']
+                            as num?)
+                        ?.toInt() ??
+                    0);
+            i++)
+          RouteSrcTile(
+            label: '$group $i',
+            group: group,
+            index: i,
+            usedBy: _usedBy('$group $i'),
+            current: selectedSrc == '$group $i',
+          ),
+      ];
+
+  String _usedBy(String label) {
+    for (final s in engine.strips) {
+      if (_srcOf(s.ch) == label) {
+        return s.name.isEmpty ? 'CH${s.ch + 1}' : s.name;
+      }
+    }
+    return '';
+  }
+
+  // Honest until caps.routing is parsed into EngineState: the desk has
+  // answered caps, so patch commands are at least addressable.
+  @override
+  bool get routingSupported => engine.routingCaps['supported'] == true;
+
+  @override
+  void selectStrip(int strip) {
+    _sel = strip;
+    notifyListeners();
+  }
+
+  @override
+  void selectGroup(String group) {
+    _group = group;
+    notifyListeners();
+  }
+
+  @override
+  void patch(RouteSrcTile tile) {
+    if (_sel == null) return;
+    send(Cmds.patchSet(_sel!, tile.group, tile.index));
+  }
+
+  @override
+  void clearPatch(int strip) => send(Cmds.patchClear(strip));
+}
+
+// ---------------------------------------------------------------------------
+// Scenes
+// ---------------------------------------------------------------------------
+
+class _ScenesStore extends _StoreBase implements ScenesStore {
+  _ScenesStore(super.app);
+
+  String? _show;
+  bool _newShow = false;
+  bool _busy = false;
+  String? _status;
+
+  @override
+  bool get busy => _busy;
+
+  @override
+  String? get status =>
+      app.visibleError.isNotEmpty ? app.visibleError : _status;
+
+  Future<void> _run(String command, String pending, String done) async {
+    if (_busy || !online) return;
+    _busy = true;
+    _status = pending;
+    app.clearErrors();
+    notifyListeners();
+    try {
+      await app.sendCommand(command);
+      _status = done;
+    } catch (error) {
+      _status = 'Scene command failed: $error';
+    } finally {
+      _busy = false;
+      if (!_dead) notifyListeners();
+    }
+  }
+
+  @override
+  List<SceneEntryVm> get entries => [
+        for (final s in engine.scenes)
+          SceneEntryVm(number: s.number, name: s.name, current: s.current),
+      ];
+
+  @override
+  List<String> get shows => engine.shows.keys.toList();
+
+  @override
+  List<String> get showScenes => engine.shows[show] ?? const [];
+
+  @override
+  String? get show => _newShow
+      ? null
+      : engine.shows.containsKey(_show)
+          ? _show
+          : shows.firstOrNull;
+
+  @override
+  bool get online => engine.connected;
+
+  int _freeSlot() {
+    final used = {for (final s in engine.scenes) s.number};
+    for (var n = 1; n <= 99; n++) {
+      if (!used.contains(n)) return n;
+    }
+    return 99;
+  }
+
+  @override
+  void save(String name) => unawaited(_run(Cmds.sceneSave(_freeSlot(), name),
+      'Saving snapshot…', 'Snapshot saved.'));
+
+  @override
+  void recall(int number) => unawaited(_run(
+      Cmds.sceneRecall(number), 'Recalling snapshot…', 'Snapshot recalled.'));
+
+  @override
+  void rename(int number, String name) => unawaited(_run(
+      Cmds.sceneRename(number, name),
+      'Renaming snapshot…',
+      'Snapshot renamed.'));
+
+  @override
+  void remove(int number) => unawaited(_run(
+      Cmds.sceneDelete(number), 'Deleting snapshot…', 'Snapshot deleted.'));
+
+  @override
+  void clearAll() => unawaited(
+      _run(Cmds.sceneClear(), 'Clearing snapshots…', 'Snapshots cleared.'));
+
+  @override
+  void selectShow(String show) {
+    _newShow = false;
+    _show = show;
+    send(Cmds.listShows());
+    notifyListeners();
+  }
+
+  @override
+  void beginShow() {
+    _newShow = true;
+    notifyListeners();
+  }
+
+  @override
+  void captureShow(String name) {
+    final selected = show ?? name;
+    _newShow = false;
+    _show = selected;
+    unawaited(_run(Cmds.captureScene(selected, name), 'Capturing scene…',
+        'Scene captured.'));
+  }
+
+  @override
+  void recallShow(String name) => unawaited(_run(
+      Cmds.recallScene(show ?? name, name), 'Loading scene…', 'Scene loaded.'));
+
+  @override
+  void deleteShow(String name) => unawaited(_run(
+      Cmds.deleteScene(show ?? name, name),
+      'Deleting scene…',
+      'Scene deleted.'));
+}
+
+// ---------------------------------------------------------------------------
+// Settings
+// ---------------------------------------------------------------------------
+
+class _SettingsStore extends _StoreBase implements SettingsStore {
+  _SettingsStore(super.app);
+
+  final Map<String, String> _prefs = {
+    'phantom_confirm': 'on',
+    'peak_hold': 'on',
+  };
+  String? _notice;
+
+  @override
+  List<SettingsSectionVm> get sections => [
+        SettingsSectionVm(title: 'Session (this device)', rows: [
+          SettingRowVm(
+            key: 'phantom_confirm',
+            label: 'Phantom confirm',
+            desc: 'Two-tap arm before 48V switches.',
+            isToggle: true,
+            options: [
+              SettingOption(
+                  label: 'On',
+                  value: 'on',
+                  pressed: _prefs['phantom_confirm'] == 'on'),
+              SettingOption(
+                  label: 'Off',
+                  value: 'off',
+                  pressed: _prefs['phantom_confirm'] == 'off'),
+            ],
+          ),
+          SettingRowVm(
+            key: 'peak_hold',
+            label: 'Meter peak hold',
+            desc: 'Hold ladder peaks ~1.2 s.',
+            isToggle: true,
+            options: [
+              SettingOption(
+                  label: 'On',
+                  value: 'on',
+                  pressed: _prefs['peak_hold'] == 'on'),
+              SettingOption(
+                  label: 'Off',
+                  value: 'off',
+                  pressed: _prefs['peak_hold'] == 'off'),
+            ],
+          ),
+        ]),
+      ];
+
+  @override
+  List<OfflineChangeVm> get offlineChanges => [
+        for (final c in engine.offlineDiff)
+          OfflineChangeVm(
+            strip: c.strip,
+            id: c.id,
+            from: '${c.from}',
+            to: '${c.to}',
+          ),
+      ];
+
+  @override
+  String get stats => '';
+
+  @override
+  String? get notice => _notice;
+
+  @override
+  void setSetting(String key, String value) {
+    _prefs[key] = value;
+    _notice = null;
+    notifyListeners();
+  }
+
+  @override
+  void offlinePush() {
+    send(Cmds.offlinePush(true));
+    _notice = 'Push requested.';
+    notifyListeners();
+  }
+
+  @override
+  void offlineDiscard() {
+    send(Cmds.offlineDiscard());
+    _notice = 'Discard requested.';
+    notifyListeners();
+  }
+
+  @override
+  void requestStats() {
+    send(Cmds.stats());
+    _notice = 'Stats requested — see the Dbg tab.';
+    notifyListeners();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// FX (port of web fxModel FX_TYPES + generic param knobs)
+// ---------------------------------------------------------------------------
+
+class _FxStore extends _StoreBase implements FxStore {
+  _FxStore(super.app);
+
+  int _sel = 0;
+  final Map<int, ValueNotifier<double>> _meters = {};
+
+  @override
+  void dispose() {
+    for (final m in _meters.values) {
+      m.dispose();
+    }
+    super.dispose();
+  }
+
+  List<FxSlot> get _raw => engine.fx;
+
+  @override
+  List<FxSlotVm> get slots => [
+        for (final s in _raw)
+          FxSlotVm(
+            slot: s.slot,
+            name: 'FX ${s.slot}',
+            type: s.type.isEmpty ? '—' : s.type,
+            on: s.on,
+            bypass: s.bypass,
+            ret: s.returnLabel,
+          ),
+      ];
+
+  @override
+  int get selected => _sel.clamp(0, _raw.isEmpty ? 0 : _raw.length - 1);
+
+  @override
+  List<String> get typeOptions => [
+        for (final type in engine.fxTypes)
+          (type['id'] ?? type['label']) as String
+      ];
+
+  FxSlot? get _cur =>
+      _raw.isEmpty ? null : _raw[selected.clamp(0, _raw.length - 1)];
+
+  @override
+  List<FxKnobVm> get knobs {
+    final c = _cur;
+    if (c == null) return const [];
+    final ps = c.params.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    return [
+      for (final e in ps)
+        FxKnobVm(
+          id: e.key,
+          label: e.key,
+          min: 0,
+          max: 1,
+          value: e.value.clamp(0.0, 1.0),
+          text: '${(e.value.clamp(0.0, 1.0) * 100).toStringAsFixed(0)}%',
+        ),
+    ];
+  }
+
+  @override
+  bool get tapVisible => (_cur?.type ?? '').toLowerCase().contains('delay');
+
+  @override
+  String get tapLabel => 'TAP';
+
+  @override
+  ValueNotifier<double> meterOf(int slot) {
+    final n = _meters.putIfAbsent(slot, () => ValueNotifier(0));
+    final i = _raw.indexWhere((s) => s.slot == slot);
+    if (i >= 0 && i < engine.meters.length) {
+      n.value = _raw[i].level.clamp(0.0, 1.0);
+    }
+    return n;
+  }
+
+  @override
+  Future<void> pollMeters() async {
+    await app.pollMeters();
+    if (_dead) return;
+    for (final e in _meters.entries) {
+      final i = _raw.indexWhere((s) => s.slot == e.key);
+      if (i >= 0 && i < engine.meters.length) {
+        e.value.value = _raw[i].level.clamp(0.0, 1.0);
+      }
+    }
+  }
+
+  @override
+  void selectSlot(int slot) {
+    final i = _raw.indexWhere((s) => s.slot == slot);
+    _sel = i < 0 ? slot : i;
+    notifyListeners();
+  }
+
+  @override
+  void setType(String type) {
+    final c = _cur;
+    if (c == null) return;
+    send(Cmds.fxSetType(c.slot, type));
+  }
+
+  @override
+  void setParam(String id, double value) {
+    final c = _cur;
+    if (c == null) return;
+    send(Cmds.fxParam(c.slot, id, value));
+  }
+
+  @override
+  void setOn(bool on) {
+    final c = _cur;
+    if (c == null) return;
+    send(Cmds.fxOn(c.slot, on));
+  }
+
+  @override
+  void setBypass(bool bypass) {
+    final c = _cur;
+    if (c == null) return;
+    send(Cmds.fxBypass(c.slot, bypass));
+  }
+
+  // No tap-tempo cmd in the engine protocol; the TAP tile is shown for
+  // Delay types (web parity) but stays a no-op until the protocol grows one.
+  @override
+  void tap() {}
+}
+
+// ---------------------------------------------------------------------------
+// Debug
+// ---------------------------------------------------------------------------
+
+class _DebugStore extends _StoreBase implements DebugStore {
+  _DebugStore(super.app);
+
+  int _tick = 0;
+
+  @override
+  int get tick => _tick;
+
+  @override
+  List<double> get spark => List.of(engine.meters);
+
+  @override
+  List<DebugSection> get sections => [
+        DebugSection(title: 'link', lines: [
+          'client=${engine.clientId}',
+          'driver=${engine.driver}',
+          'state=${engine.linkState} name=${engine.linkName}',
+          'strips=${engine.strips.length} meters=${engine.meters.length}',
+        ]),
+        DebugSection(title: 'strips', lines: [
+          for (final s in engine.strips.take(8))
+            'ch${s.ch} ${s.key} "${s.name}" f=${s.fader.toStringAsFixed(3)} m=${s.muted}',
+          if (engine.strips.length > 8) '… +${engine.strips.length - 8} more',
+        ]),
+        DebugSection(title: 'caps', lines: [
+          'ready=${engine.capsReady} params=${engine.supportedParams.length}',
+          ...engine.supportedParams.take(12),
+        ]),
+        DebugSection(title: 'live', lines: [
+          'main_fader=${engine.mainFader} main_muted=${engine.mainMuted}',
+          'solos=${engine.solos} locks=${engine.locks}',
+          'scenes=${engine.scenes.length} fx=${engine.fx.length} routing=${engine.routing.length}',
+          'gr=${engine.grGate.length}/${engine.grComp.length} spectrum=${engine.spectrum.length}',
+        ]),
+        if (engine.error.isNotEmpty)
+          DebugSection(title: 'error', lines: [engine.error]),
+      ];
+
+  @override
+  Future<void> refresh() async {
+    _tick++;
+    try {
+      await app.pollMeters();
+    } catch (_) {
+      // Never crash the debug loop on a transport hiccup.
+    }
+    notifyListeners();
+  }
+
+  @override
+  void sendHello() => send(Cmds.hello());
+
+  @override
+  void sendStats() => send(Cmds.stats());
+
+  @override
+  void nudgeFader() {
+    var f = 0.75;
+    for (final s in engine.strips) {
+      if (s.ch == 0) f = s.fader;
+    }
+    send(Cmds.fader(0, (f + 0.05).clamp(0.0, 1.0)));
+  }
+
+  @override
+  void toggleMute() {
+    var m = false;
+    for (final s in engine.strips) {
+      if (s.ch == 0) m = s.muted;
+    }
+    send(Cmds.mute(0, !m));
+  }
+
+  @override
+  void scan() => send(Cmds.scan());
+
+  @override
+  void requestInfo() => send(Cmds.info());
+}

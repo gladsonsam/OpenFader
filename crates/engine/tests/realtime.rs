@@ -142,8 +142,7 @@ fn binary_quantization_roundtrips() {
     assert_eq!(GR_DB_MAX, 63.75);
 }
 
-/// Minimal reference decoder for the binary meter layout (mirrors the UI
-/// decoder in `apps/web/src/lib/binaryFrames.test.ts`).
+/// Minimal reference decoder for the binary meter layout.
 struct BinFrame {
     ftype: u8,
     version: u8,

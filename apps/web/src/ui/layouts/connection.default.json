@@ -1,6 +1,0 @@
-{
-  "id": "connection",
-  "module": "col",
-  "props": { "width": "100%", "minWidth": 0, "box": "border-box" },
-  "children": [{ "id": "connection-flow", "module": "connection-flow" }]
-}

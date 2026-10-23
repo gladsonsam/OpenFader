@@ -14,9 +14,7 @@
 //! Values are STARTING POINTS, not targets: HPFs sit at the safe end,
 //! cuts are shallow (-2..-3 dB), boosts cap at +3 dB, ratios at 2:1..4:1.
 //! The engineer still dials in against the room and the source.
-//!
-//! Web mirror: `apps/web/src/components/PresetPicker.svelte` carries the
-//! same table for preview/apply — keep the two in sync by hand.
+//! These values ship to every client — keep them conservative.
 
 use crate::{MixerDriver, ParamValue, StripId};
 

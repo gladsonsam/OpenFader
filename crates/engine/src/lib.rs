@@ -1,6 +1,6 @@
 //! openmix-engine: the single transport-agnostic mixer session.
 //!
-//! Every frontend (browser via the relay, desktop/mobile via Tauri, CLI,
+//! Every frontend (native app via the bridge, CLI,
 //! future apps) gets the FULL mixer capability through this crate: driver
 //! sessions, strip state + param plane (caps, poller, focus, diff,
 //! confirmed-write refresh, unsupported dropout), meters/spectrum/GR
@@ -10,8 +10,8 @@
 //!
 //! The engine speaks exactly one protocol: [`Cmd`] in, [`Event`] out (see
 //! [`protocol`], specified in `crates/engine/README.md`). Adapters
-//! (`crates/serve` for WebSocket + static files, `src-tauri` for IPC) only
-//! move `Cmd`/`Event` JSON; they contain no mixer logic.
+//! (`crates/serve` for WebSocket, `crates/flutter_bridge` for the native
+//! app) only move `Cmd`/`Event` JSON; they contain no mixer logic.
 //!
 //! ```no_run
 //! use std::sync::Arc;
