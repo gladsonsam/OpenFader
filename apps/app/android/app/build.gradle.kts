@@ -6,7 +6,8 @@ plugins {
 
 android {
     namespace = "com.openfader.app"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler_android 13.x metadata requires API 37.
+    compileSdk = 37
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
