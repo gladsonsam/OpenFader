@@ -121,6 +121,11 @@ class _MixerPageState extends State<MixerPage> {
                                 onNavigate: widget.onNavigate,
                                 compact: constraints.maxWidth < 800,
                                 showBankControls: mobile),
+                            // Design bus bar: full-width strip in the
+                            // selected bus colour between toolbar + strips.
+                            Container(
+                                height: mobile ? 6 : 8,
+                                color: MixerDesign.bus),
                             if (controller.error.isNotEmpty)
                               Material(
                                   color: const Color(0xff54221d),

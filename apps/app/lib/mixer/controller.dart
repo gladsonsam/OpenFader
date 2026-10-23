@@ -6,7 +6,8 @@ import '../u4law.dart';
 import 'design.dart';
 import 'reference.dart';
 
-enum MixerView { processing, faders }
+// Mixer view modes were removed: the rack (trim/EQ/dynamics) always shows
+// when the strip is tall enough, matching the design on every layout.
 
 enum MixerDestination {
   meters,
@@ -58,7 +59,6 @@ class MixerController extends ChangeNotifier {
   bool _seeding = false;
   bool _disposed = false;
   String _driver;
-  MixerView _view = MixerView.processing;
   MixerController(this.store, {bool seedReferenceDemo = false})
       : _allowDemoSeed = seedReferenceDemo,
         _driver = store.engine.driver {
@@ -73,7 +73,6 @@ class MixerController extends ChangeNotifier {
           ? (store.engine.model.isEmpty ? 'Connected' : store.engine.model)
           : 'Disconnected';
   String get error => store.visibleError;
-  MixerView get view => _view;
   int get page => _page;
   int get pageSize => _pageSize;
   int get pageCount =>
@@ -203,12 +202,6 @@ class MixerController extends ChangeNotifier {
     final first = _page * _pageSize;
     _pageSize = count;
     _page = first ~/ count;
-    notifyListeners();
-  }
-
-  void setView(MixerView value) {
-    if (_view == value) return;
-    _view = value;
     notifyListeners();
   }
 
