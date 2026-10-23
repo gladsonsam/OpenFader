@@ -124,7 +124,7 @@ class Cmds {
 // ---------------------------------------------------------------------------
 // EngineApi: transport behind the UI. `FfiEngine` (see `ffi_engine.dart`)
 // drives the real embedded engine via the FRB bindings; `FakeSimEngine`
-// (in `main.dart`) drives the same Cmd/Event JSON in-memory so the UI
+// (in `boot/fake_sim_engine.dart`) drives the same Cmd/Event JSON in-memory so the UI
 // works even when the native library fails to load.
 // ---------------------------------------------------------------------------
 abstract class EngineApi {
