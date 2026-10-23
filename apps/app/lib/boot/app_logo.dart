@@ -26,7 +26,7 @@ class AppLogo extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         color: U4.well,
-        border: Border.all(color: U4.line),
+        border: Border.all(color: U4.linePanel),
         borderRadius: BorderRadius.circular(size * 0.24),
       ),
       child: Row(
