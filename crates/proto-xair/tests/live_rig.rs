@@ -22,7 +22,7 @@ fn live() -> bool {
 async fn connected() -> XAirDriver {
     let d = XAirDriver::new();
     // Bare IP (no `:port`): exercises the connect-time 10024 -> 10023 sweep.
-    d.connect(rig_addr()).await.expect("rig connect (sweep) failed");
+    d.connect(&rig_addr()).await.expect("rig connect (sweep) failed");
     d
 }
 
