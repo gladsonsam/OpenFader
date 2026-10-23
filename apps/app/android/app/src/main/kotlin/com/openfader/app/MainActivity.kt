@@ -1,4 +1,4 @@
-package com.openmix.app
+package com.openfader.app
 
 import android.content.Context
 import android.net.ConnectivityManager
