@@ -10,9 +10,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../palette.dart';
 
 /// Purple FX accent (design knobItem colour for the FX screen).
-const fxAccent = U4.cyan;
 
 /// One param row in the selected slot (stable param key + range + value).
 class FxKnobVm {
@@ -90,7 +90,7 @@ class _U4FxPageState extends State<U4FxPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: U4.page,
+      backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.store,
@@ -104,12 +104,12 @@ class _U4FxPageState extends State<U4FxPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('FX',
+                  Text('FX',
                       style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.6,
-                          color: U4.text1)),
+                          color: ConsolePalette.of(context).text1)),
                   const SizedBox(height: 8),
                   GridView.builder(
                     shrinkWrap: true,
@@ -133,9 +133,13 @@ class _U4FxPageState extends State<U4FxPage> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 8),
                             decoration: BoxDecoration(
-                              color: on ? U4.selected : U4.panel,
+                              color: on
+                                  ? ConsolePalette.of(context).selected
+                                  : ConsolePalette.of(context).panel,
                               border: Border.all(
-                                color: on ? fxAccent : U4.tileBorder,
+                                color: on
+                                    ? ConsolePalette.of(context).cyan
+                                    : ConsolePalette.of(context).tileBorder,
                                 width: on ? 2 : 1,
                               ),
                               borderRadius: U4.rBtn,
@@ -150,8 +154,10 @@ class _U4FxPageState extends State<U4FxPage> {
                                       child: Text(s.name,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                              fontSize: 11, color: U4.text7)),
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: ConsolePalette.of(context)
+                                                  .text7)),
                                     ),
                                     Text(
                                       stateOn ? 'On' : 'Bypassed',
@@ -159,8 +165,10 @@ class _U4FxPageState extends State<U4FxPage> {
                                         fontSize: 11,
                                         fontWeight: FontWeight.w700,
                                         color: stateOn
-                                            ? U4.meterGreen
-                                            : U4.meterAmber,
+                                            ? ConsolePalette.of(context)
+                                                .meterGreen
+                                            : ConsolePalette.of(context)
+                                                .meterAmber,
                                       ),
                                     ),
                                   ],
@@ -168,18 +176,20 @@ class _U4FxPageState extends State<U4FxPage> {
                                 Text(s.type,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w700,
-                                        color: U4.text1)),
+                                        color:
+                                            ConsolePalette.of(context).text1)),
                                 const SizedBox(height: 4),
                                 ValueListenableBuilder<double>(
                                   valueListenable: store.meterOf(s.slot),
                                   builder: (context, lv, _) {
                                     return Container(
                                       height: 4,
-                                      decoration: const BoxDecoration(
-                                        color: U4.control,
+                                      decoration: BoxDecoration(
+                                        color:
+                                            ConsolePalette.of(context).control,
                                         borderRadius: BorderRadius.all(
                                             Radius.circular(2)),
                                       ),
@@ -188,8 +198,9 @@ class _U4FxPageState extends State<U4FxPage> {
                                         widthFactor: (stateOn ? lv : 0.0)
                                             .clamp(0.0, 1.0),
                                         child: Container(
-                                          decoration: const BoxDecoration(
-                                            color: fxAccent,
+                                          decoration: BoxDecoration(
+                                            color:
+                                                ConsolePalette.of(context).cyan,
                                             borderRadius: BorderRadius.all(
                                                 Radius.circular(2)),
                                           ),
@@ -202,8 +213,10 @@ class _U4FxPageState extends State<U4FxPage> {
                                   Text(s.ret,
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                          fontSize: 11, color: U4.text7)),
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: ConsolePalette.of(context)
+                                              .text7)),
                               ],
                             ),
                           ),
@@ -237,8 +250,8 @@ class _DetailPanel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: U4.panel,
-        border: Border.all(color: U4.linePanel),
+        color: ConsolePalette.of(context).panel,
+        border: Border.all(color: ConsolePalette.of(context).linePanel),
         borderRadius: const BorderRadius.all(Radius.circular(10)),
       ),
       child: Column(
@@ -247,8 +260,10 @@ class _DetailPanel extends StatelessWidget {
           Text('FX ${slot.slot} · ${slot.type}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.w600, color: U4.text1)),
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: ConsolePalette.of(context).text1)),
           const SizedBox(height: 10),
           Row(
             children: [
@@ -259,9 +274,13 @@ class _DetailPanel extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: slot.on ? U4.cyan : const Color(0xFF2A1F0A),
-                      border:
-                          Border.all(color: slot.on ? U4.cyan : U4.meterAmber),
+                      color: slot.on
+                          ? ConsolePalette.of(context).cyan
+                          : ConsolePalette.of(context).warningContainer,
+                      border: Border.all(
+                          color: slot.on
+                              ? ConsolePalette.of(context).cyan
+                              : ConsolePalette.of(context).meterAmber),
                       borderRadius: U4.rBtn,
                     ),
                     child: Text(slot.on ? 'On' : 'Off',
@@ -271,8 +290,10 @@ class _DetailPanel extends StatelessWidget {
                         style: TextStyle(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color:
-                                slot.on ? U4.well : const Color(0xFFF6C76A))),
+                            color: slot.on
+                                ? ConsolePalette.of(context).onAccent
+                                : ConsolePalette.of(context)
+                                    .onWarningContainer)),
                   ),
                 ),
               ),
@@ -284,9 +305,13 @@ class _DetailPanel extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: slot.bypass ? U4.meterAmber : U4.well,
+                      color: slot.bypass
+                          ? ConsolePalette.of(context).solo
+                          : ConsolePalette.of(context).well,
                       border: Border.all(
-                          color: slot.bypass ? U4.meterAmber : U4.lineCtl),
+                          color: slot.bypass
+                              ? ConsolePalette.of(context).solo
+                              : ConsolePalette.of(context).lineCtl),
                       borderRadius: U4.rBtn,
                     ),
                     child: Text(slot.bypass ? 'Bypassed' : 'Bypass',
@@ -297,8 +322,8 @@ class _DetailPanel extends StatelessWidget {
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                             color: slot.bypass
-                                ? const Color(0xFF241703)
-                                : U4.text1)),
+                                ? ConsolePalette.of(context).onSolo
+                                : ConsolePalette.of(context).text1)),
                   ),
                 ),
               ),
@@ -311,18 +336,19 @@ class _DetailPanel extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: U4.well,
-                        border: Border.all(color: U4.lineCtl),
+                        color: ConsolePalette.of(context).well,
+                        border: Border.all(
+                            color: ConsolePalette.of(context).lineCtl),
                         borderRadius: U4.rBtn,
                       ),
                       child: Text(store.tapLabel,
                           textAlign: TextAlign.center,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontSize: 13,
                               fontWeight: FontWeight.w700,
-                              color: U4.text1)),
+                              color: ConsolePalette.of(context).text1)),
                     ),
                   ),
                 ),
@@ -341,7 +367,9 @@ class _DetailPanel extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: t == slot.type ? fxAccent : U4.well,
+                      color: t == slot.type
+                          ? ConsolePalette.of(context).cyan
+                          : ConsolePalette.of(context).well,
                       borderRadius: U4.rBtn,
                     ),
                     child: Text(t,
@@ -351,7 +379,9 @@ class _DetailPanel extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w600,
-                          color: t == slot.type ? U4.selected : U4.text4,
+                          color: t == slot.type
+                              ? ConsolePalette.of(context).onAccent
+                              : ConsolePalette.of(context).text4,
                         )),
                   ),
                 ),
@@ -398,10 +428,13 @@ class _ParamBar extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(knob.label,
-                      style: const TextStyle(fontSize: 12, color: U4.text4)),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: ConsolePalette.of(context).text4)),
                 ),
                 Text(knob.text,
-                    style: const TextStyle(fontSize: 13, color: U4.text1)),
+                    style: TextStyle(
+                        fontSize: 13, color: ConsolePalette.of(context).text1)),
               ],
             ),
             const SizedBox(height: 4),
@@ -432,16 +465,16 @@ class _ParamBar extends StatelessWidget {
                 alignment: Alignment.center,
                 child: Container(
                   height: 6,
-                  decoration: const BoxDecoration(
-                    color: U4.control,
+                  decoration: BoxDecoration(
+                    color: ConsolePalette.of(context).control,
                     borderRadius: BorderRadius.all(Radius.circular(10)),
                   ),
                   child: FractionallySizedBox(
                     alignment: Alignment.centerLeft,
                     widthFactor: frac,
                     child: Container(
-                      decoration: const BoxDecoration(
-                        color: fxAccent,
+                      decoration: BoxDecoration(
+                        color: ConsolePalette.of(context).cyan,
                         borderRadius: BorderRadius.all(Radius.circular(10)),
                       ),
                     ),

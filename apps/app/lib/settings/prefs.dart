@@ -11,19 +11,21 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 class PrefsService extends ChangeNotifier {
   PrefsService._();
   static final PrefsService instance = PrefsService._();
-  static bool _initStarted = false;
+  static Future<void>? _initializing;
 
   SharedPreferences? _prefs;
   bool get loaded => _prefs != null;
 
-  static void ensureInitialized() {
-    if (_initStarted) return;
-    _initStarted = true;
-    SharedPreferences.getInstance().then((p) {
-      instance._prefs = p;
-      instance._applyWakeLock();
-      instance.notifyListeners();
-    });
+  static Future<void> ensureInitialized() => _initializing ??= _initialize();
+  static Future<void> _initialize() async {
+    try {
+      instance._prefs = await SharedPreferences.getInstance();
+    } catch (_) {
+      _initializing = null;
+      rethrow;
+    }
+    instance._applyWakeLock();
+    instance.notifyListeners();
   }
 
   // --- connection ----------------------------------------------------------
@@ -37,6 +39,15 @@ class PrefsService extends ChangeNotifier {
       _prefs?.getString('openfader.lastMixerAddr') ?? '';
 
   // --- appearance -----------------------------------------------------------
+  String get appearance =>
+      _choice('openfader.appearance', ['dark', 'light', 'system'], 'dark');
+  String get accent =>
+      _choice('openfader.accent', ['lime', 'ocean', 'violet', 'amber'], 'lime');
+  String _choice(String key, List<String> choices, String fallback) {
+    final value = _prefs?.getString(key);
+    return choices.contains(value) ? value! : fallback;
+  }
+
   String get interfaceSize =>
       _prefs?.getString('openfader.interfaceSize') ?? 'comfortable';
   bool get keepAwake => _prefs?.getBool('openfader.keepAwake') ?? true;
@@ -84,6 +95,20 @@ class PrefsService extends ChangeNotifier {
 
   Future<void> setStartupDest(String v) => _set('openfader.startupDest', v);
   Future<void> setLastMixerAddr(String v) => _set('openfader.lastMixerAddr', v);
+  Future<void> setAppearance(String v) {
+    if (!['dark', 'light', 'system'].contains(v)) {
+      throw ArgumentError.value(v);
+    }
+    return _set('openfader.appearance', v);
+  }
+
+  Future<void> setAccent(String v) {
+    if (!['lime', 'ocean', 'violet', 'amber'].contains(v)) {
+      throw ArgumentError.value(v);
+    }
+    return _set('openfader.accent', v);
+  }
+
   Future<void> setInterfaceSize(String v) => _set('openfader.interfaceSize', v);
   Future<void> setKeepAwake(bool v) async {
     await _set('openfader.keepAwake', v);
@@ -112,6 +137,8 @@ class PrefsService extends ChangeNotifier {
       'openfader.reconnectLast',
       'openfader.rememberRecents',
       'openfader.startupDest',
+      'openfader.appearance',
+      'openfader.accent',
       'openfader.interfaceSize',
       'openfader.keepAwake',
       'openfader.meterRate',

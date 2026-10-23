@@ -6,8 +6,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import '../palette.dart';
 
-import '../theme.dart';
 import '../u4law.dart';
 import 'meter.dart';
 
@@ -17,7 +17,7 @@ class U4Fader extends StatefulWidget {
   final double value;
   final String dbText;
   final FaderAccent accent;
-  final Color readColor;
+  final Color? readColor;
   final bool fine;
   final ValueNotifier<double> meter;
   final ValueChanged<double>? onChanged;
@@ -28,7 +28,7 @@ class U4Fader extends StatefulWidget {
     required this.dbText,
     required this.meter,
     this.accent = FaderAccent.chan,
-    this.readColor = U4.text4,
+    this.readColor,
     this.fine = false,
     this.onChanged,
   });
@@ -52,21 +52,40 @@ class _U4FaderState extends State<U4Fader> {
   DateTime _lastCommit = DateTime.fromMillisecondsSinceEpoch(0);
   static const _commitMs = 100;
 
-  late final Map<String, TextPainter> _labels = {
-    for (final m in scaleMarks)
-      m.label: TextPainter(
-        text: TextSpan(
-          text: m.label,
-          style: const TextStyle(
-              color: U4.text7, fontSize: 10, fontFeatures: [FontFeature.tabularFigures()]),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(),
-  };
+  Map<String, TextPainter> _labels = {};
+  ConsolePalette? _labelPalette;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final palette = ConsolePalette.of(context);
+    if (_labelPalette == palette) return;
+    for (final label in _labels.values) {
+      label.dispose();
+    }
+    _labelPalette = palette;
+    _labels = {
+      for (final mark in scaleMarks)
+        mark.label: TextPainter(
+          text: TextSpan(
+            text: mark.label,
+            style: TextStyle(
+              color: palette.text7,
+              fontSize: 10,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout(),
+    };
+  }
 
   @override
   void dispose() {
     _trailing?.cancel();
+    for (final label in _labels.values) {
+      label.dispose();
+    }
     super.dispose();
   }
 
@@ -141,7 +160,7 @@ class _U4FaderState extends State<U4Fader> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: widget.readColor,
+                  color: widget.readColor ?? ConsolePalette.of(context).text4,
                   fontSize: StripFaderGeo.readFont,
                   fontFeatures: const [FontFeature.tabularFigures()],
                 ),
@@ -180,8 +199,7 @@ class _U4FaderState extends State<U4Fader> {
                       if (ay <= StripFaderGeo.lockV || ay <= ax) return;
                       _active = true;
                     }
-                    final v =
-                        faderFromDrag(_start, dyUp, _trackH, widget.fine);
+                    final v = faderFromDrag(_start, dyUp, _trackH, widget.fine);
                     _live = v;
                     setState(() {});
                     _offer(v);
@@ -201,6 +219,7 @@ class _U4FaderState extends State<U4Fader> {
                       Positioned.fill(
                         child: CustomPaint(
                           painter: _FaderPainter(
+                            palette: ConsolePalette.of(context),
                             value: _shown,
                             accent: widget.accent,
                             labels: _labels,
@@ -229,12 +248,16 @@ class _U4FaderState extends State<U4Fader> {
 }
 
 class _FaderPainter extends CustomPainter {
+  final ConsolePalette palette;
   final double value;
   final FaderAccent accent;
   final Map<String, TextPainter> labels;
 
   _FaderPainter(
-      {required this.value, required this.accent, required this.labels});
+      {required this.palette,
+      required this.value,
+      required this.accent,
+      required this.labels});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -249,7 +272,7 @@ class _FaderPainter extends CustomPainter {
       final tp = labels[m.label]!;
       tp.paint(canvas, Offset(17 - tp.width, y - tp.height / 2));
       final tick = Paint()
-        ..color = m.label == '0' ? U4.text1 : U4.scaleTick;
+        ..color = m.label == '0' ? palette.text1 : palette.scaleTick;
       canvas.drawRect(Rect.fromLTWH(19, y - 0.5, 7, 1), tick);
     }
 
@@ -257,12 +280,11 @@ class _FaderPainter extends CustomPainter {
     final cx = size.width / 2;
     final rail = RRect.fromRectAndRadius(
         Rect.fromLTWH(cx - 2, trackTop, 4, trackH), const Radius.circular(2));
-    canvas.drawRRect(
-        rail, Paint()..color = U4.railBg);
+    canvas.drawRRect(rail, Paint()..color = palette.railBg);
     canvas.drawRRect(
         rail,
         Paint()
-          ..color = U4.railRing
+          ..color = palette.railRing
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1);
 
@@ -278,26 +300,30 @@ class _FaderPainter extends CustomPainter {
     canvas.drawRRect(
         cap.shift(const Offset(0, 4)),
         Paint()
-          ..color = const Color(0xBF000000)
+          ..color = palette.shadow.withValues(alpha: .75)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
-    final stops = accent == FaderAccent.master
-        ? const [0xFF8A909A, 0xFF565B64, 0xFF3A3E46, 0xFF22252B, 0xFF3A3E46,
-            0xFF565B64, 0xFF737983]
-        : const [0xFF7A808A, 0xFF4A4F58, 0xFF30343B, 0xFF1C1F24, 0xFF30343B,
-            0xFF4A4F58, 0xFF646A73];
+    final stops = [
+      palette.knob,
+      palette.cap,
+      palette.control,
+      palette.panel,
+      palette.control,
+      palette.cap,
+      palette.knob,
+    ];
     canvas.drawRRect(
         cap,
         Paint()
           ..shader = LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [for (final s in stops) Color(s)],
+            colors: stops,
             stops: const [0, 0.07, 0.44, 0.5, 0.56, 0.93, 1],
           ).createShader(cap.outerRect));
     canvas.drawRRect(
         cap,
         Paint()
-          ..color = const Color(0x47FFFFFF)
+          ..color = palette.knob.withValues(alpha: .28)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1);
     // Grip lines (top + bottom bands).
@@ -312,23 +338,25 @@ class _FaderPainter extends CustomPainter {
             Offset(cap.outerRect.right - StripFaderGeo.gripLR, y),
             Paint()
               ..color = i.isEven
-                  ? const Color(0x2BFFFFFF)
-                  : const Color(0x66000000)
+                  ? palette.knob.withValues(alpha: .17)
+                  : palette.well.withValues(alpha: .4)
               ..strokeWidth = 1);
       }
     }
     // Centre line + glow.
-    final line = accent == FaderAccent.master ? U4.masterLine : Colors.white;
+    final line =
+        accent == FaderAccent.master ? palette.masterLine : palette.text1;
     canvas.drawRect(
         Rect.fromLTWH(cap.outerRect.left, capY - 4, StripFaderGeo.capW, 8),
         Paint()
           ..color = line.withValues(alpha: 0.35)
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3));
-    canvas.drawRect(Rect.fromLTWH(cap.outerRect.left, capY - 1.5,
-        StripFaderGeo.capW, 3), Paint()..color = line);
+    canvas.drawRect(
+        Rect.fromLTWH(cap.outerRect.left, capY - 1.5, StripFaderGeo.capW, 3),
+        Paint()..color = line);
   }
 
   @override
   bool shouldRepaint(_FaderPainter old) =>
-      old.value != value || old.accent != accent;
+      old.palette != palette || old.value != value || old.accent != accent;
 }

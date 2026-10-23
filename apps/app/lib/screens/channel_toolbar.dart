@@ -7,6 +7,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../palette.dart';
 import '../design.dart';
 import '../widgets/design_icon.dart';
 import 'package:flutter/foundation.dart';
@@ -46,9 +47,11 @@ class ChannelToolbar extends StatelessWidget {
 
   Widget _toolbar(BuildContext context, ChannelFocus? focus) => Container(
       height: compact ? 64 : 68,
-      decoration: const BoxDecoration(
-          color: U4.page,
-          border: Border(bottom: BorderSide(color: U4.lineHeader))),
+      decoration: BoxDecoration(
+          color: ConsolePalette.of(context).page,
+          border: Border(
+              bottom:
+                  BorderSide(color: ConsolePalette.of(context).lineHeader))),
       child: LayoutBuilder(builder: (context, box) {
         final toolsWidth = compact ? 44.0 : 296.0;
         final toolsLeft = box.maxWidth - 16 - toolsWidth;
@@ -63,9 +66,10 @@ class ChannelToolbar extends StatelessWidget {
               child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   decoration: BoxDecoration(
-                      color: AppDesign.panel,
+                      color: ConsolePalette.of(context).panel,
                       borderRadius: U4.rBtn,
-                      border: Border.all(color: U4.linePanel)),
+                      border: Border.all(
+                          color: ConsolePalette.of(context).linePanel)),
                   child: Stack(alignment: Alignment.center, children: [
                     Align(
                         alignment: Alignment.centerLeft,
@@ -80,7 +84,8 @@ class ChannelToolbar extends StatelessWidget {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: AppDesign.type(compact ? 12 : 14,
-                                          color: U4.text7)),
+                                          color: ConsolePalette.of(context)
+                                              .text7)),
                                   Text(
                                       focus == null
                                           ? 'Fader'
@@ -88,7 +93,8 @@ class ChannelToolbar extends StatelessWidget {
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis,
                                       style: AppDesign.type(compact ? 12 : 14,
-                                          color: U4.text7)),
+                                          color: ConsolePalette.of(context)
+                                              .text7)),
                                 ]))),
                     // Numeric center stays at the exact midpoint of the readout.
                     Center(
@@ -108,7 +114,8 @@ class ChannelToolbar extends StatelessWidget {
                       onPressed: () => onTool(ChannelTool.fx),
                       child: Text('FX',
                           style: AppDesign.type(20,
-                              color: U4.text7, weight: FontWeight.w600))),
+                              color: ConsolePalette.of(context).text7,
+                              weight: FontWeight.w600))),
                   const SizedBox(width: 8),
                   _ToolButton(
                       label: 'Settings',
@@ -131,11 +138,13 @@ class ChannelToolbar extends StatelessWidget {
                       child: TextButton(
                           onPressed: () => onTool(ChannelTool.scenes),
                           style: TextButton.styleFrom(
-                              backgroundColor: AppDesign.chip,
-                              foregroundColor: U4.text7,
-                              disabledForegroundColor: U4.text7),
+                              backgroundColor: ConsolePalette.of(context).chip,
+                              foregroundColor: ConsolePalette.of(context).text7,
+                              disabledForegroundColor:
+                                  ConsolePalette.of(context).text7),
                           child: Text('Shows',
-                              style: AppDesign.type(18, color: U4.text7)))),
+                              style: AppDesign.type(18,
+                                  color: ConsolePalette.of(context).text7)))),
                 ] else
                   _ChannelMenuButton(onSelected: (action) => action(), items: [
                     for (final t in ChannelTool.values)
@@ -178,7 +187,8 @@ class _FocusedValue extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppDesign.type(compact ? 18 : 22,
-                      color: U4.cyan, weight: FontWeight.w700)))));
+                      color: ConsolePalette.of(context).cyan,
+                      weight: FontWeight.w700)))));
 }
 
 class _ChannelMenuButton extends StatelessWidget {
@@ -202,9 +212,10 @@ class _ChannelMenuButton extends StatelessWidget {
                   child: Container(
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                          color: AppDesign.chip,
+                          color: ConsolePalette.of(context).chip,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: U4.linePanel)),
+                          border: Border.all(
+                              color: ConsolePalette.of(context).linePanel)),
                       child: const DesignIcon(DesignSymbol.menu))))));
 
   Future<void> _open(BuildContext context) async {
@@ -214,7 +225,7 @@ class _ChannelMenuButton extends StatelessWidget {
     if (box == null || overlay == null) return;
     final choice = await showMenu<VoidCallback>(
       context: context,
-      color: AppDesign.chip,
+      color: ConsolePalette.of(context).chip,
       position: RelativeRect.fromRect(
           Rect.fromPoints(
               box.localToGlobal(Offset.zero, ancestor: overlay),
@@ -257,15 +268,17 @@ class _HomeButton extends StatelessWidget {
                   child: Container(
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                          color: AppDesign.chip,
+                          color: ConsolePalette.of(context).chip,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: U4.linePanel)),
+                          border: Border.all(
+                              color: ConsolePalette.of(context).linePanel)),
                       child: SvgPicture.string(
                           '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9"/></svg>',
                           width: 22,
                           height: 22,
-                          colorFilter: const ColorFilter.mode(
-                              U4.text7, BlendMode.srcIn)))))));
+                          colorFilter: ColorFilter.mode(
+                              ConsolePalette.of(context).text7,
+                              BlendMode.srcIn)))))));
 }
 
 class _ToolButton extends StatelessWidget {
@@ -290,9 +303,10 @@ class _ToolButton extends StatelessWidget {
                   child: Container(
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                          color: AppDesign.chip,
+                          color: ConsolePalette.of(context).chip,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: U4.linePanel)),
+                          border: Border.all(
+                              color: ConsolePalette.of(context).linePanel)),
                       child: child)))));
 }
 
@@ -326,7 +340,7 @@ class _FaderValue extends StatelessWidget {
                                   fontFamily: U4.font,
                                   fontSize: compact ? 18 : 22,
                                   fontWeight: FontWeight.w700,
-                                  color: U4.cyan,
+                                  color: ConsolePalette.of(context).cyan,
                                   fontFeatures: const [
                                     FontFeature.tabularFigures()
                                   ]))))));

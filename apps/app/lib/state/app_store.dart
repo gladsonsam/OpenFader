@@ -40,7 +40,7 @@ import '../core/channel_views.dart';
 import '../core/coalescer.dart';
 import '../core/store.dart' as ps;
 import '../engine.dart';
-import '../theme.dart';
+import '../palette.dart';
 import '../u4law.dart';
 import '../screens/channel.dart';
 import '../screens/meters.dart';
@@ -703,8 +703,8 @@ class AppStore extends ChangeNotifier
                     (f['first'] as num).toInt() <= entry.value.$1 &&
                     (f['first'] as num).toInt() + (f['count'] as num).toInt() >
                         entry.value.$1)['label'] as String,
-            color: U4.cyan,
-            text: U4.page),
+            color: const ConsolePalette().lime,
+            text: const ConsolePalette().onAccent),
     ]);
     _banksCache = built;
     return built;

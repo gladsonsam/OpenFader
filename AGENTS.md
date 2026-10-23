@@ -14,7 +14,10 @@ Brand is **OpenFader**, one word. License GPL-3.0-or-later.
 - `apps/app/lib/mixer/` — mixer `page.dart`, `controller.dart`, `store.dart`,
   shared tokens in `design.dart`, widgets in `components/`.
 - `apps/app/lib/state/app_store.dart` — the single store (engine reads, `sendRaw` writes).
-- `apps/app/lib/{theme.dart,design.dart,u4law.dart}` — shared tokens (`U4`/`AppDesign`),
+- `apps/app/lib/palette.dart` — immutable `ConsolePalette` theme extension. Resolve
+  with `ConsolePalette.of(context)` in widgets; pass snapshots into painters and
+  compare them in `shouldRepaint`. UI colors must not be global mutable state.
+- `apps/app/lib/{theme.dart,design.dart,u4law.dart}` — shared geometry/type (`U4`/`AppDesign`),
   fader law. Never hardcode colors; never touch the fader law casually
   (protocol values depend on it).
 - `apps/app/lib/engine.dart` — `Cmds` protocol + `EngineState`. `FakeSimEngine`

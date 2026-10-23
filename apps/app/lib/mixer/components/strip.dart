@@ -1,6 +1,6 @@
+import '../../palette.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
-import '../design.dart';
 import '../geometry.dart';
 import 'fader.dart';
 import 'nameplate.dart';
@@ -48,11 +48,14 @@ class MixerStrip extends StatelessWidget {
         final isMaster = ch.master;
         final chIndex = ch.channel;
         return ColoredBox(
-            color: ch.selected ? MixerDesign.selected : MixerDesign.background,
+            color: ch.selected
+                ? ConsolePalette.of(context).selected
+                : ConsolePalette.of(context).background,
             child: DecoratedBox(
-                decoration: const BoxDecoration(
-                    border:
-                        Border(right: BorderSide(color: Color(0xff101010)))),
+                decoration: BoxDecoration(
+                    border: Border(
+                        right: BorderSide(
+                            color: ConsolePalette.of(context).line))),
                 child: Stack(children: [
                   place(
                       g.rackY,
@@ -97,7 +100,9 @@ class MixerStrip extends StatelessWidget {
                               fontSize: g.x(compact ? 20 : 32),
                               channelName: ch.name,
                               on: muted,
-                              activeColor: MixerDesign.mute,
+                              activeColor: ConsolePalette.of(context).mute,
+                              activeForeground:
+                                  ConsolePalette.of(context).onDanger,
                               onPressed: () => controller.toggleMute(ch))),
                       touch: true),
                   place(
@@ -122,7 +127,9 @@ class MixerStrip extends StatelessWidget {
                               on: false,
                               visualHeight: g.soloH,
                               fontSize: g.x(compact ? 20 : 32),
-                              activeColor: MixerDesign.solo,
+                              activeColor: ConsolePalette.of(context).solo,
+                              activeForeground:
+                                  ConsolePalette.of(context).onSolo,
                               onPressed: null)
                           : ValueListenableBuilder<bool>(
                               valueListenable: controller.soloNoteOf(chIndex),
@@ -132,7 +139,9 @@ class MixerStrip extends StatelessWidget {
                                   fontSize: g.x(compact ? 20 : 32),
                                   channelName: ch.name,
                                   on: solo,
-                                  activeColor: MixerDesign.solo,
+                                  activeColor: ConsolePalette.of(context).solo,
+                                  activeForeground:
+                                      ConsolePalette.of(context).onSolo,
                                   onPressed: () => controller.toggleSolo(ch))),
                       touch: true),
                   Positioned(

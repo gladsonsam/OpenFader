@@ -1,6 +1,7 @@
 // MUTE button: full-width h40 base (h48 on touch builds).
 // matching the strip phone variant).
 import 'package:flutter/material.dart';
+import '../palette.dart';
 
 import '../theme.dart';
 
@@ -27,8 +28,13 @@ class U4MuteButton extends StatelessWidget {
           height: height,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: muted ? U4.muteOnBg : U4.muteOffBg,
-            border: Border.all(color: muted ? U4.muteOnBd : U4.muteOffBd),
+            color: muted
+                ? ConsolePalette.of(context).muteOnBg
+                : ConsolePalette.of(context).muteOffBg,
+            border: Border.all(
+                color: muted
+                    ? ConsolePalette.of(context).muteOnBd
+                    : ConsolePalette.of(context).muteOffBd),
             borderRadius: U4.rBtn,
           ),
           child: Text(
@@ -39,7 +45,9 @@ class U4MuteButton extends StatelessWidget {
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w500,
-              color: muted ? Colors.white : U4.muteOffTx,
+              color: muted
+                  ? ConsolePalette.of(context).onDanger
+                  : ConsolePalette.of(context).muteOffTx,
             ),
           ),
         ),

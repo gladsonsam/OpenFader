@@ -2,12 +2,13 @@
 //
 // Previously `main()` awaited `FfiEngine.create()` (up to the 5 s FRB
 // timeout on failure) *before* `runApp`, so startup sat on the OS splash
-// with no feedback. Now `runApp` fires immediately and [BootGate] drives
+// with no feedback. After the lightweight preference read, [BootGate] drives
 // the staged boot ([BootController]: interface → native engine → engine
 // boot → state sync) with a logo + name + live step status, then replaces
 // itself with the full-port shell. Desk discovery still lives in the
 // Link tab after boot — there is no manual boot screen any more.
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'boot/boot_controller.dart';
 import 'boot/launch_screen.dart';
@@ -17,8 +18,13 @@ import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Prefs load async after the first frame; UI applies them when ready.
-  PrefsService.ensureInitialized();
+  // Resolve saved appearance before the first Flutter frame.
+  try {
+    await PrefsService.ensureInitialized();
+  } catch (error) {
+    // Storage failure must not strand the app on its native launch screen.
+    debugPrint('Preferences unavailable; using defaults: $error');
+  }
   runApp(const OpenfaderApp());
 }
 
@@ -30,8 +36,7 @@ class OpenfaderApp extends StatelessWidget {
     return ListenableBuilder(
       listenable: PrefsService.instance,
       builder: (context, _) {
-        final density = switch (
-            PrefsService.instance.interfaceSize) {
+        final density = switch (PrefsService.instance.interfaceSize) {
           'compact' => VisualDensity.compact,
           'large' => VisualDensity.comfortable,
           _ => VisualDensity.standard,
@@ -39,12 +44,33 @@ class OpenfaderApp extends StatelessWidget {
         return MaterialApp(
           title: 'OpenFader',
           debugShowCheckedModeBanner: false,
-          theme: u4Theme().copyWith(visualDensity: density),
-          builder: (context, child) => MediaQuery(
-              data: MediaQuery.of(context).copyWith(
-                  textScaler: TextScaler.linear(
-                      PrefsService.instance.textScale)),
-              child: child!),
+          theme: u4Theme(
+                  brightness: Brightness.light,
+                  accent: PrefsService.instance.accent)
+              .copyWith(visualDensity: density),
+          darkTheme: u4Theme(
+                  brightness: Brightness.dark,
+                  accent: PrefsService.instance.accent)
+              .copyWith(visualDensity: density),
+          themeMode: switch (PrefsService.instance.appearance) {
+            'light' => ThemeMode.light,
+            'system' => ThemeMode.system,
+            _ => ThemeMode.dark,
+          },
+          themeAnimationDuration: Duration.zero,
+          builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+              value: Theme.of(context).brightness == Brightness.light
+                  ? SystemUiOverlayStyle.dark.copyWith(
+                      systemNavigationBarColor:
+                          Theme.of(context).scaffoldBackgroundColor)
+                  : SystemUiOverlayStyle.light.copyWith(
+                      systemNavigationBarColor:
+                          Theme.of(context).scaffoldBackgroundColor),
+              child: MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                      textScaler:
+                          TextScaler.linear(PrefsService.instance.textScale)),
+                  child: child!)),
           home: const BootGate(),
         );
       },

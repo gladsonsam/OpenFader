@@ -4,6 +4,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../palette.dart';
 
 import '../theme.dart';
 
@@ -44,8 +45,13 @@ class U4SceneButton extends StatelessWidget {
           constraints: BoxConstraints(maxWidth: narrow ? double.infinity : 280),
           padding: EdgeInsets.symmetric(horizontal: narrow ? 8 : 12),
           decoration: BoxDecoration(
-            color: active ? U4.selected : U4.tileBg,
-            border: Border.all(color: active ? U4.lineCtl : U4.divider),
+            color: active
+                ? ConsolePalette.of(context).selected
+                : ConsolePalette.of(context).tileBg,
+            border: Border.all(
+                color: active
+                    ? ConsolePalette.of(context).lineCtl
+                    : ConsolePalette.of(context).divider),
             borderRadius: U4.rBtn,
           ),
           child: Row(
@@ -59,23 +65,25 @@ class U4SceneButton extends StatelessWidget {
                     children: [
                       TextSpan(
                         text: num.isEmpty ? '' : '$num  ',
-                        style: const TextStyle(fontSize: 15, color: U4.text10),
+                        style: TextStyle(
+                            fontSize: 15,
+                            color: ConsolePalette.of(context).text10),
                       ),
                       TextSpan(
                         text: name,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w600,
-                            color: U4.text1),
+                            color: ConsolePalette.of(context).text1),
                       ),
                     ],
                   ),
                 ),
               ),
               const SizedBox(width: 10),
-              const CustomPaint(
-                size: Size(16, 16),
-                painter: _ChevronPainter(),
+              CustomPaint(
+                size: const Size(16, 16),
+                painter: _ChevronPainter(ConsolePalette.of(context)),
               ),
             ],
           ),
@@ -87,12 +95,13 @@ class U4SceneButton extends StatelessWidget {
 
 /// Down-chevron (inline SVG path `M6 9l6 6 6-6`).
 class _ChevronPainter extends CustomPainter {
-  const _ChevronPainter();
+  final ConsolePalette palette;
+  const _ChevronPainter(this.palette);
 
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()
-      ..color = U4.text7
+      ..color = palette.text7
       ..strokeWidth = 2.2
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round
@@ -105,5 +114,5 @@ class _ChevronPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_ChevronPainter old) => false;
+  bool shouldRepaint(_ChevronPainter old) => old.palette != palette;
 }

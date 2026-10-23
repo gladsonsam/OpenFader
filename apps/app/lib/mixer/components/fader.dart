@@ -1,3 +1,4 @@
+import '../../palette.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../controller.dart';
@@ -55,17 +56,18 @@ class _MixerFaderState extends State<MixerFader> {
             onDecrease: () => widget.onPosition(position - .01),
             child: DecoratedBox(
                 decoration: BoxDecoration(
-                    color: MixerDesign.well,
+                    color: ConsolePalette.of(context).well,
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                         color: ch.selected
-                            ? MixerDesign.selectedLine
-                            : MixerDesign.line,
+                            ? ConsolePalette.of(context).selectedLine
+                            : ConsolePalette.of(context).line,
                         width: ch.selected ? 1.5 : 1)),
                 child: Stack(clipBehavior: Clip.none, children: [
                   Positioned.fill(
                       child: CustomPaint(
-                          painter: _ScalePainter(geometry, ch.number))),
+                          painter: _ScalePainter(ConsolePalette.of(context),
+                              geometry, ch.number))),
                   Positioned(
                       left: box.maxWidth *
                           (widget.compact ? 22 / 96.2 : 45 / 178.2),
@@ -126,6 +128,8 @@ class _MixerFaderState extends State<MixerFader> {
                                           curve: Curves.easeOutCubic,
                                           child: CustomPaint(
                                               painter: _CapPainter(
+                                                  palette: ConsolePalette.of(
+                                                      context),
                                                   held: _held,
                                                   glow: ch.selected)))))))),
                 ])));
@@ -152,16 +156,17 @@ class _FaderGeometry {
 }
 
 class _ScalePainter extends CustomPainter {
+  final ConsolePalette palette;
   final _FaderGeometry g;
   final String number;
-  const _ScalePainter(this.g, this.number);
+  const _ScalePainter(this.palette, this.g, this.number);
   @override
   void paint(Canvas c, Size s) {
     mixerText(c, 'LR', const Offset(8, 10), 10,
-        color: MixerDesign.mutedText, weight: FontWeight.w600);
-    mixerBox(c, Rect.fromLTWH(g.x - 3, g.top - 3, 6, g.travel + 6),
-        const Color(0xff161616),
-        radius: 3, border: const Color(0xff2a2a2a));
+        color: palette.mutedText, weight: FontWeight.w600);
+    mixerBox(
+        c, Rect.fromLTWH(g.x - 3, g.top - 3, 6, g.travel + 6), palette.slot,
+        radius: 3, border: palette.slotBorder);
     // Design number column (tablet+ only): 1-6 repeated in three banks.
     // The mock marks the third bank's "1" red on channel 1; replicate it.
     if (!g.compact) {
@@ -170,7 +175,7 @@ class _ScalePainter extends CustomPainter {
         final y = g.top + (i + .5) / 18 * g.travel - size / 2;
         final red = number == '1' && i == 12;
         mixerText(c, '${i % 6 + 1}', Offset(s.width * .08, y), size,
-            color: red ? const Color(0xffed0800) : const Color(0xff646464),
+            color: red ? palette.mute : palette.text10,
             weight: FontWeight.w600);
       }
     }
@@ -188,18 +193,20 @@ class _ScalePainter extends CustomPainter {
                   : '•';
       mixerText(c, '$prefix$label', Offset(x, y - 6),
           s.width * (g.compact ? 11 / 96.2 : 14 / 178.2),
-          color: const Color(0xffdddddd));
+          color: palette.scaleTick);
     }
   }
 
   @override
   bool shouldRepaint(_ScalePainter old) =>
-      old.g.size != g.size || old.number != number;
+      old.palette != palette || old.g.size != g.size || old.number != number;
 }
 
 class _CapPainter extends CustomPainter {
+  final ConsolePalette palette;
   final bool held, glow;
-  const _CapPainter({required this.held, this.glow = false});
+  const _CapPainter(
+      {required this.palette, required this.held, this.glow = false});
   @override
   void paint(Canvas c, Size s) {
     // Design cap: one rounded square with ribbed grip zones top + bottom
@@ -210,22 +217,21 @@ class _CapPainter extends CustomPainter {
       c.drawPath(
           Path()..addRRect(rect),
           Paint()
-            ..color = MixerDesign.lime.withValues(alpha: .4)
+            ..color = palette.lime.withValues(alpha: .4)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
     }
     if (held) {
       c.drawPath(
           Path()..addRRect(rect),
           Paint()
-            ..color = const Color(0x45effb00)
+            ..color = palette.lime.withValues(alpha: .27)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
     }
-    c.drawShadow(
-        Path()..addRRect(rect), Colors.black.withValues(alpha: .6), 3, false);
-    mixerBox(c, Offset.zero & s, MixerDesign.cap,
-        radius: 14, border: const Color(0xff555555));
+    c.drawShadow(Path()..addRRect(rect), palette.shadow, 3, false);
+    mixerBox(c, Offset.zero & s, palette.cap,
+        radius: 14, border: palette.capBorder);
     c.drawLine(const Offset(6, .5), Offset(s.width - 6, .5),
-        Paint()..color = const Color(0xbfffffff));
+        Paint()..color = palette.capHighlight);
     // Ribbed grips: repeating dark slits across the top and bottom zones.
     // All insets are proportional so the small phone cap keeps the same
     // look as the large tablet one (design: 14px inset on an 84px cap).
@@ -236,12 +242,12 @@ class _CapPainter extends CustomPainter {
       final top = zone == 0 ? ribTop : s.height - ribTop - 2 * ribGap - 3;
       for (var row = 0; row < 3; row++) {
         mixerBox(c, Rect.fromLTWH(ix, top + row * ribGap, s.width - 2 * ix, 2),
-            const Color(0xff151515),
+            palette.capGrip,
             radius: 1);
         mixerBox(
             c,
             Rect.fromLTWH(ix, top + row * ribGap + 2, s.width - 2 * ix, 1),
-            const Color(0xff585858),
+            palette.capGripLight,
             radius: 1);
       }
     }
@@ -250,10 +256,11 @@ class _CapPainter extends CustomPainter {
     mixerBox(
         c,
         Rect.fromLTWH(ix, s.height / 2 - lineH / 2, s.width - 2 * ix, lineH),
-        MixerDesign.lime,
+        palette.lime,
         radius: 3);
   }
 
   @override
-  bool shouldRepaint(_CapPainter old) => old.held != held || old.glow != glow;
+  bool shouldRepaint(_CapPainter old) =>
+      old.palette != palette || old.held != held || old.glow != glow;
 }
