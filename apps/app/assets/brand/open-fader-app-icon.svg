@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="100 90 452 452" fill="none" role="img" aria-labelledby="title desc">
+<title id="title">Open Fader</title>
+<desc id="desc">Official Open Fader logo: an upright open chartreuse frame, dark square fader caps and continuous green signal meters, in the app palette.</desc>
+<rect x="100" y="90" width="452" height="452" fill="#1c1c1c" /><g id="console">
+<rect id="flat-chassis" x="116" y="100" width="420" height="434" rx="54" fill="#262626" stroke="#363636" stroke-width="2" /><g id="04-open-frame"><path d="M497 238v-66q0-31-31-31H186q-31 0-31 31v285q0 31 31 31h280q31 0 31-31v-62" stroke="#d6f13f" stroke-width="10" /></g><g id="05-control-bed"><rect x="177" y="166" width="296" height="294" rx="16" fill="#181818" /></g><g id="06-channel-1">
+<rect x="191" y="183" width="66" height="258" rx="9" fill="#0f0f0f" stroke="#2c2c2c" stroke-width="1.5" />
+<rect x="195" y="187" width="58" height="250" rx="6" fill="#0f0f0f" />
+<g id="signal-meter-1"><rect x="201" y="194" width="14" height="7" rx="2" fill="#3d1006" /><rect x="201" y="206" width="14" height="38" rx="2" fill="#3a2600" /><rect x="201" y="250" width="14" height="178" rx="2" fill="#1a2a00" /><rect x="201" y="296" width="14" height="132" rx="2" fill="#a8e05f" /><rect x="201" y="286" width="14" height="2" fill="#e0a400" /></g>
+<rect x="229" y="197" width="7" height="230" rx="3" fill="#161616" stroke="#2a2a2a" stroke-width="1.5" />
+<path d="M246 209h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 228h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 247h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 266h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 285h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 304h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 323h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 342h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 361h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 380h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 399h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M246 418h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+</g>
+<g id="07-fader-cap-1" transform="translate(200 249) scale(0.761904762)">
+<rect width="84" height="84" rx="14" fill="#3a3a3a" stroke="#555" stroke-width="1" /><path d="M14 1h56q13 0 13 13" stroke="#666" stroke-width="1" />
+<path d="M14 13h56" stroke="#151515" stroke-width="2" /><path d="M14 14.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 20h56" stroke="#151515" stroke-width="2" /><path d="M14 21.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 27h56" stroke="#151515" stroke-width="2" /><path d="M14 28.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 53h56" stroke="#151515" stroke-width="2" /><path d="M14 54.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 60h56" stroke="#151515" stroke-width="2" /><path d="M14 61.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 67h56" stroke="#151515" stroke-width="2" /><path d="M14 68.5h56" stroke="#585858" stroke-width="1" />
+<rect x="14" y="39.5" width="56" height="5" rx="3" fill="#d6f13f" /></g>
+<g id="06-channel-2">
+<rect x="291" y="183" width="66" height="258" rx="9" fill="#0f0f0f" stroke="#2c2c2c" stroke-width="1.5" />
+<rect x="295" y="187" width="58" height="250" rx="6" fill="#0f0f0f" />
+<g id="signal-meter-2"><rect x="301" y="194" width="14" height="7" rx="2" fill="#3d1006" /><rect x="301" y="206" width="14" height="38" rx="2" fill="#3a2600" /><rect x="301" y="250" width="14" height="178" rx="2" fill="#1a2a00" /><rect x="301" y="350" width="14" height="78" rx="2" fill="#a8e05f" /><rect x="301" y="340" width="14" height="2" fill="#e0a400" /></g>
+<rect x="329" y="197" width="7" height="230" rx="3" fill="#161616" stroke="#2a2a2a" stroke-width="1.5" />
+<path d="M346 209h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 228h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 247h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 266h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 285h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 304h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 323h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 342h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 361h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 380h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 399h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M346 418h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+</g>
+<g id="07-fader-cap-2" transform="translate(300 325) scale(0.761904762)">
+<rect width="84" height="84" rx="14" fill="#3a3a3a" stroke="#555" stroke-width="1" /><path d="M14 1h56q13 0 13 13" stroke="#666" stroke-width="1" />
+<path d="M14 13h56" stroke="#151515" stroke-width="2" /><path d="M14 14.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 20h56" stroke="#151515" stroke-width="2" /><path d="M14 21.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 27h56" stroke="#151515" stroke-width="2" /><path d="M14 28.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 53h56" stroke="#151515" stroke-width="2" /><path d="M14 54.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 60h56" stroke="#151515" stroke-width="2" /><path d="M14 61.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 67h56" stroke="#151515" stroke-width="2" /><path d="M14 68.5h56" stroke="#585858" stroke-width="1" />
+<rect x="14" y="39.5" width="56" height="5" rx="3" fill="#d6f13f" /></g>
+<g id="06-channel-3">
+<rect x="391" y="183" width="66" height="258" rx="9" fill="#0f0f0f" stroke="#2c2c2c" stroke-width="1.5" />
+<rect x="395" y="187" width="58" height="250" rx="6" fill="#0f0f0f" />
+<g id="signal-meter-3"><rect x="401" y="194" width="14" height="7" rx="2" fill="#3d1006" /><rect x="401" y="206" width="14" height="38" rx="2" fill="#3a2600" /><rect x="401" y="250" width="14" height="178" rx="2" fill="#1a2a00" /><rect x="401" y="270" width="14" height="158" rx="2" fill="#a8e05f" /><rect x="401" y="260" width="14" height="2" fill="#e0a400" /></g>
+<rect x="429" y="197" width="7" height="230" rx="3" fill="#161616" stroke="#2a2a2a" stroke-width="1.5" />
+<path d="M446 209h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 228h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 247h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 266h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 285h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 304h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 323h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 342h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 361h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 380h5" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 399h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+<path d="M446 418h3" stroke="#737373" stroke-opacity=".6" stroke-width="1" />
+</g>
+<g id="07-fader-cap-3" transform="translate(400 201) scale(0.761904762)">
+<rect width="84" height="84" rx="14" fill="#3a3a3a" stroke="#555" stroke-width="1" /><path d="M14 1h56q13 0 13 13" stroke="#666" stroke-width="1" />
+<path d="M14 13h56" stroke="#151515" stroke-width="2" /><path d="M14 14.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 20h56" stroke="#151515" stroke-width="2" /><path d="M14 21.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 27h56" stroke="#151515" stroke-width="2" /><path d="M14 28.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 53h56" stroke="#151515" stroke-width="2" /><path d="M14 54.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 60h56" stroke="#151515" stroke-width="2" /><path d="M14 61.5h56" stroke="#585858" stroke-width="1" />
+<path d="M14 67h56" stroke="#151515" stroke-width="2" /><path d="M14 68.5h56" stroke="#585858" stroke-width="1" />
+<rect x="14" y="39.5" width="56" height="5" rx="3" fill="#d6f13f" /></g>
+
+</g></svg>

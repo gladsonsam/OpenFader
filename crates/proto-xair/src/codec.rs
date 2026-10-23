@@ -8,7 +8,7 @@
 //! Int leaves (modes, sources, taps, filter types) travel as `Int` with
 //! whole-number-float decode tolerance; plain on/off switches travel as int
 //! `1`/`0` (the xair-api-python convention — NOT the inverted `/mix/on`
-//! semantics of [`openmix_transport::osc::on_arg`]).
+//! semantics of [`openfader_transport::osc::on_arg`]).
 //!
 //! Error strings keep the per-block `{tag} {what} …` shape the block
 //! modules historically produced, so diagnostics read the same as before.
@@ -106,8 +106,8 @@ pub fn int_from_msg(
 
 /// Encode a plain (non-inverted) on/off switch the way xair-api writes it:
 /// int `1`/`0`. (Unlike `/mix/on`, these are NOT inverted —
-/// [`openmix_transport::osc::on_arg`] must not be used here.)
-/// Decode with [`openmix_transport::osc::is_on`] (`wire == 1` means on).
+/// [`openfader_transport::osc::on_arg`] must not be used here.)
+/// Decode with [`openfader_transport::osc::is_on`] (`wire == 1` means on).
 pub fn bool_arg(on: bool) -> OscType {
     OscType::Int(if on { 1 } else { 0 })
 }

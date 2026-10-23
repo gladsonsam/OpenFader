@@ -31,7 +31,7 @@
 //! arm retained for loopback only): per-send on/off (`/ch/NN/mix/MM/on`,
 //! baseline T7).
 
-use openmix_transport::osc;
+use openfader_transport::osc;
 use rosc::OscType;
 
 /// Pan bounds in the relay's engineering units (firmware map `-100..100`).
@@ -55,7 +55,7 @@ pub const SEND_MAX_DB: f32 = 10.0;
 /// OSC address of the channel pan (`mix/pan`, linear wire `0..1`).
 ///
 /// ```
-/// # use openmix_proto_xair::mix::mix_pan;
+/// # use openfader_proto_xair::mix::mix_pan;
 /// assert_eq!(mix_pan(1), "/ch/01/mix/pan");
 /// assert_eq!(mix_pan(16), "/ch/16/mix/pan");
 /// ```
@@ -68,7 +68,7 @@ pub fn mix_pan(ch: u16) -> String {
 /// sends, `7..=10` are FX sends.
 ///
 /// ```
-/// # use openmix_proto_xair::mix::send_level;
+/// # use openfader_proto_xair::mix::send_level;
 /// assert_eq!(send_level(1, 1).unwrap(), "/ch/01/mix/01/level");
 /// assert_eq!(send_level(16, 10).unwrap(), "/ch/16/mix/10/level");
 /// ```
@@ -121,7 +121,7 @@ pub fn wire_to_pan(v: f32) -> anyhow::Result<f32> {
 }
 
 /// Map a send level in dB to the normalized wire float via the X-Air fader
-/// law (mirrors xair-api `db_to` and `docs/ui-spec/SPEC.md` §4 exactly:
+/// law (mirrors xair-api `db_to` and UI spec §4 exactly:
 /// joints at `-60/-30/-10/0`, floor `-90` = `-inf`). Rejects NaN/infinite
 /// and out-of-range values before anything is sent.
 pub fn send_db_to_wire(db: f32) -> anyhow::Result<f32> {
@@ -182,7 +182,7 @@ pub fn send_level_value(msg: &rosc::OscMessage) -> anyhow::Result<f32> {
 /// wrong and rejects live values, so the full six-point enum is encoded.
 ///
 /// ```
-/// # use openmix_proto_xair::mix::send_tap;
+/// # use openfader_proto_xair::mix::send_tap;
 /// assert_eq!(send_tap("/ch/01", 1).unwrap(), "/ch/01/mix/01/tap");
 /// assert_eq!(send_tap("/ch/16", 10).unwrap(), "/ch/16/mix/10/tap");
 /// ```
@@ -199,7 +199,7 @@ pub fn send_tap(root: &str, send: u8) -> anyhow::Result<String> {
 /// FX-send slots are silent on XR18 FW 1.20 (rig-verified 2026-10-20).
 ///
 /// ```
-/// # use openmix_proto_xair::mix::send_pan;
+/// # use openfader_proto_xair::mix::send_pan;
 /// assert_eq!(send_pan("/ch/01", 1).unwrap(), "/ch/01/mix/01/pan");
 /// ```
 pub fn send_pan(root: &str, send: u8) -> anyhow::Result<String> {
@@ -219,7 +219,7 @@ pub fn send_pan(root: &str, send: u8) -> anyhow::Result<String> {
 /// never address this builder with the `/lr` root.
 ///
 /// ```
-/// # use openmix_proto_xair::mix::mix_lr;
+/// # use openfader_proto_xair::mix::mix_lr;
 /// assert_eq!(mix_lr("/ch/01"), "/ch/01/mix/lr");
 /// assert_eq!(mix_lr("/bus/1"), "/bus/1/mix/lr");
 /// ```
@@ -235,7 +235,7 @@ pub fn mix_lr(root: &str) -> String {
 /// `/ch/01/mix/MM/grpon` slots read `0`.
 ///
 /// ```
-/// # use openmix_proto_xair::mix::send_grpon;
+/// # use openfader_proto_xair::mix::send_grpon;
 /// assert_eq!(send_grpon("/ch/01", 1).unwrap(), "/ch/01/mix/01/grpon");
 /// assert_eq!(send_grpon("/bus/1", 10).unwrap(), "/bus/1/mix/10/grpon");
 /// ```
@@ -254,7 +254,7 @@ pub fn send_grpon(root: &str, send: u8) -> anyhow::Result<String> {
 /// direct misuse errors locally instead of timing out on hardware.
 ///
 /// ```
-/// # use openmix_proto_xair::mix::send_on;
+/// # use openfader_proto_xair::mix::send_on;
 /// assert_eq!(send_on("/ch/01", 1).unwrap(), "/ch/01/mix/01/on");
 /// ```
 pub fn send_on(root: &str, send: u8) -> anyhow::Result<String> {
@@ -300,7 +300,7 @@ pub fn tap_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<i32> {
 /// Wire slot for a generic `sendN_*` id (`N = 1..=10`): sends 1..6 are the
 /// bus sends, 7..10 the FX sends (same slots as `aux1..6` / `fx1..4`).
 /// (Send on/off switches use the shared codec: [`crate::codec::bool_arg`]
-/// to encode, [`openmix_transport::osc::is_on`] to decode.)
+/// to encode, [`openfader_transport::osc::is_on`] to decode.)
 pub fn generic_send_slot(n: u8) -> anyhow::Result<u8> {
     if !(1..=AUX_SENDS + FX_SENDS).contains(&n) {
         anyhow::bail!("send {n} out of range 1..={} (X-Air has 6 bus + 4 FX sends)", AUX_SENDS + FX_SENDS);

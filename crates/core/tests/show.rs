@@ -1,7 +1,7 @@
 //! Scenes/shows recall against the SimDriver (integration: one core build).
-use openmix_core::show::Scene;
-use openmix_core::{MixerDriver, StripId};
-use openmix_sim::SimDriver;
+use openfader_core::show::Scene;
+use openfader_core::{MixerDriver, StripId};
+use openfader_sim::SimDriver;
 
 async fn driven() -> SimDriver {
     let d = SimDriver::new();

@@ -1,7 +1,7 @@
 //! Gate/dynamics gain-reduction (GR) meter decoding for X-Air.
 //!
 //! There is NO per-channel GR query address: neither the hardware baseline
-//! (`docs/xr18-baseline.md` — no `/ch/XX/gate/gr` or `/ch/XX/dyn/gr` was
+//! (XR18 baseline notes — no `/ch/XX/gate/gr` or `/ch/XX/dyn/gr` was
 //! ever observed) nor protocol reference X32 OSC protocol documentation (the
 //! only `gr` under `/ch/` there is `grp`, i.e. mute *groups*) defines one.
 //! Per the no-guessing rule, GR reads via OSC query are marked UNSUPPORTED
@@ -34,12 +34,12 @@
 //! ever seen, are clamped to 0 dB reduction rather than interpreted.
 //!
 //! Exposure path (chosen: **param path**, least invention): the shared
-//! meter hub (`openmix-transport`) only carries level-only [`openmix_core`]
-//! [`MeterFrame`](openmix_core::MeterFrame)s, and extending it is outside
+//! meter hub (`openfader-transport`) only carries level-only [`openfader_core`]
+//! [`MeterFrame`](openfader_core::MeterFrame)s, and extending it is outside
 //! this crate's scope — so the driver caches the last decoded [`DynMeters`]
 //! and serves `gate_gr` / `comp_gr` (dB reduction `>= 0` as
-//! [`ParamValue::Float`](openmix_core::ParamValue)) from
-//! [`MixerDriver::get_param`](openmix_core::MixerDriver::get_param). No-data
+//! [`ParamValue::Float`](openfader_core::ParamValue)) from
+//! [`MixerDriver::get_param`](openfader_core::MixerDriver::get_param). No-data
 //! (no blob ingested yet) is an `Err`, so UIs keep the static scale. The
 //! ingestion point is [`crate::XAirDriver::ingest_dyn_message`]; the desk
 //! starts streaming once subscribed (see `subscribe_meters`).

@@ -67,12 +67,12 @@ jobs:
         # The script embeds a fresh engine in every platform bundle.
         shell: bash
         env:
-          OPENMIX_BUILD_NUMBER: ${{ github.run_number }}
-          OPENMIX_PLATFORM: ${{ matrix.platform }}
-        run: python scripts/ci-build-app.py "$OPENMIX_PLATFORM"
+          OPENFADER_BUILD_NUMBER: ${{ github.run_number }}
+          OPENFADER_PLATFORM: ${{ matrix.platform }}
+        run: python scripts/ci-build-app.py "$OPENFADER_PLATFORM"
       - uses: actions/upload-artifact@v7
         with:
-          name: openmix-${{ matrix.platform }}-${{ github.sha }}
+          name: openfader-${{ matrix.platform }}-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
           retention-days: 14

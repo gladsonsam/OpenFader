@@ -166,7 +166,7 @@ pub fn wire_to_q(v: f32) -> anyhow::Result<f32> {
 }
 
 /// Encode an EQ filter type: whole-number floats `0..=5` (the relay delivers
-/// UI numbers as [`openmix_core::ParamValue::Float`]) encode to the int the
+/// UI numbers as [`openfader_core::ParamValue::Float`]) encode to the int the
 /// desk answers.
 pub fn eqtype_to_arg(v: f32) -> anyhow::Result<OscType> {
     if !v.is_finite() || v.fract() != 0.0 {

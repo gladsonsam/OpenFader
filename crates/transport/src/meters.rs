@@ -15,7 +15,7 @@
 //! Address forms: driver-subscribes get blobs addressed `/meters/N`, while
 //! app-style `/batchsubscribe` gets the SAME blobs addressed `meters/N`
 //! (no leading slash — rig-verified 2026-10-19, XR18 FW 1.20; see
-//! `docs/mixer control software-protocol-map.md` §4). Both forms route into the parse path.
+//! mixer control software protocol map §4). Both forms route into the parse path.
 //!
 //! Blob census (rig lengths): m0:20B m1:84B m2:76B m3:116B m4:204B
 //! m5:92B m6:82B m7:36B m8:12B m9:12B; the first 4 bytes are the LE i32
@@ -28,7 +28,7 @@
 //! memory (sync polled UIs, tests); [`MeterHub`] broadcasts frames every
 //! [`METER_INTERVAL`] over [`tokio::sync::broadcast`] (async push UIs;
 //! lagging receivers skip, which is the desired ring-buffer behavior).
-use openmix_core::MeterFrame;
+use openfader_core::MeterFrame;
 use rosc::{OscMessage, OscType};
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -371,7 +371,7 @@ mod tests {
         assert!(is_meter_addr("/meters"));
     }
 
-    /// Blob census from docs/mixer control software-protocol-map.md §4 (lengths
+    /// Blob census from mixer control software protocol map §4 (lengths
     /// rig-verified 2026-10-19; FORMAT corrected 2026-10-20: the first 4
     /// bytes are a LE i32 sample count, samples are dBFSx256 — the old
     /// "first le16 = count − 2, no header" reading saw the count word's

@@ -36,7 +36,7 @@ class LaunchScreen extends StatelessWidget {
                   children: [
                     const AppLogo(),
                     const SizedBox(height: 20),
-                    const Text('OpenMix',
+                    const Text('OpenFader',
                         style: TextStyle(
                             color: U4.text1,
                             fontSize: 30,

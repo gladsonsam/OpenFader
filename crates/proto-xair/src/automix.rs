@@ -5,7 +5,7 @@
 //! - Behringer XR18 firmware OSC map, FW 1.14 (xr-meters `parameters.txt`):
 //!   the channel block carries an `automix/` node with `weight`.
 //! - Community X-Air OSC table: `/ch/01/automix/weight` float `0.0..=1.0`.
-//! - mixer control software protocol map (`docs/mixer control software-protocol-map.md` §7):
+//! - mixer control software protocol map (mixer control software protocol map §7):
 //!   `automix ,if` = (enable, weight).
 //!
 //! Owner-rig verified 2026-10-20 (XR18 FW 1.20, ch16 muted/unused,
@@ -25,7 +25,7 @@ pub const AUTOMIX_WEIGHT_MAX: f32 = 1.0;
 /// = (enable, weight)).
 ///
 /// ```
-/// # use openmix_proto_xair::automix::automix;
+/// # use openfader_proto_xair::automix::automix;
 /// assert_eq!(automix("/ch/01"), "/ch/01/automix");
 /// ```
 pub fn automix(root: &str) -> String {
@@ -52,7 +52,7 @@ pub fn automix_to_args(on: bool, weight: f32) -> anyhow::Result<Vec<rosc::OscTyp
 /// OSC address of one channel automix weight leaf (`automix/weight`).
 ///
 /// ```
-/// # use openmix_proto_xair::automix::automix_weight;
+/// # use openfader_proto_xair::automix::automix_weight;
 /// assert_eq!(automix_weight("/ch/01"), "/ch/01/automix/weight");
 /// ```
 pub fn automix_weight(root: &str) -> String {

@@ -1,9 +1,9 @@
-//! openmix-serve: thin adapter over [`openmix_engine::Engine`].
+//! openfader-serve: thin adapter over [`openfader_engine::Engine`].
 //!
 //! Serves the static `ui/` directory over HTTP plus a WebSocket JSON mixer
 //! API on one port. Every socket owns one engine client: inbound text lines
-//! decode to [`Cmd`](openmix_engine::Cmd), live
-//! [`Event`](openmix_engine::Event)s encode back to text (or to WS BINARY
+//! decode to [`Cmd`](openfader_engine::Cmd), live
+//! [`Event`](openfader_engine::Event)s encode back to text (or to WS BINARY
 //! frames for meter fan-out when the client opted in via `hello`). No mixer
 //! state lives here — sessions, the driver bank, the poller, shows, pins
 //! and the roster all live in the engine. The wire protocol is specified in
@@ -47,7 +47,7 @@ use hyper_util::{
 };
 use tokio::sync::{mpsc, Mutex, Notify};
 
-pub use openmix_engine::{LOCK_TTL, PARAM_POLL_INTERVAL};
+pub use openfader_engine::{LOCK_TTL, PARAM_POLL_INTERVAL};
 
 /// Startup options for [`run`].
 #[derive(Clone, Debug)]
@@ -125,19 +125,19 @@ struct Outbox {
     /// WS BINARY type 3 when set, JSON text otherwise.
     taps_binary: bool,
     seq: u32,
-    meters: Option<openmix_engine::SharedEvent>,
+    meters: Option<openfader_engine::SharedEvent>,
     meters_sent: u64,
     meters_dropped: u64,
     /// R2 per-tap latest-only slots (one frame per tap id). Drops/sends
     /// fold into the meters counters (the `stats` shape is pinned).
-    taps: HashMap<String, openmix_engine::SharedEvent>,
-    spectrum: HashMap<u16, openmix_engine::SharedEvent>,
+    taps: HashMap<String, openfader_engine::SharedEvent>,
+    spectrum: HashMap<u16, openfader_engine::SharedEvent>,
     spectrum_sent: u64,
     spectrum_dropped: u64,
-    gr: HashMap<u16, openmix_engine::SharedEvent>,
+    gr: HashMap<u16, openfader_engine::SharedEvent>,
     gr_sent: u64,
     gr_dropped: u64,
-    control: VecDeque<openmix_engine::SharedEvent>,
+    control: VecDeque<openfader_engine::SharedEvent>,
     pump_closed: bool,
 }
 
@@ -168,10 +168,10 @@ impl Outbox {
     /// event; it never blocks, so the engine mailbox stays drained even
     /// when the socket stalls. Frames carry their wire JSON serialized
     /// once at broadcast time and shared across clients (see
-    /// [`openmix_engine::SharedEvent`]); the text path below reuses it
+    /// [`openfader_engine::SharedEvent`]); the text path below reuses it
     /// instead of re-serializing per client.
-    fn store(&mut self, frame: openmix_engine::SharedEvent) {
-        use openmix_engine::Event as E;
+    fn store(&mut self, frame: openfader_engine::SharedEvent) {
+        use openfader_engine::Event as E;
         match &*frame.event {
             E::Meters { .. } => {
                 if self.meters.replace(frame).is_some() {
@@ -233,7 +233,7 @@ impl Outbox {
 
     /// Next frame to put on the socket: control FIFO first, then one
     /// stream frame. Encodes binary when the client opted in and the event
-    /// supports it ([`Event::to_binary`](openmix_engine::Event::to_binary));
+    /// supports it ([`Event::to_binary`](openfader_engine::Event::to_binary));
     /// control frames (and `spectrum`, which stays JSON) always encode as
     /// text, so JSON stays byte-identical for clients that did not opt in.
     /// R2 taps frames encode binary (type 3) only for taps-negotiated
@@ -241,7 +241,7 @@ impl Outbox {
     /// pinned, so taps fold into `meters_sent`/`meters_dropped`).
     fn take_next(
         &mut self,
-        engine: &openmix_engine::Engine,
+        engine: &openfader_engine::Engine,
     ) -> Option<(Message, StreamKind)> {
         if let Some(frame) = self.control.pop_front() {
             // Shared broadcast-time serialization: no per-client serde run.
@@ -280,7 +280,7 @@ impl Outbox {
 }
 
 fn encode_stream(
-    frame: openmix_engine::SharedEvent,
+    frame: openfader_engine::SharedEvent,
     seq: &mut u32,
     t_ms: u32,
     binary: bool,
@@ -355,7 +355,7 @@ enum SenderJob {
 /// arrive as unicast `error` events; leaving the loop detaches the client.
 async fn handle_socket(
     socket: WebSocket,
-    engine: Arc<openmix_engine::Engine>,
+    engine: Arc<openfader_engine::Engine>,
     name: Option<String>,
     sim_only: bool,
 ) {
@@ -380,14 +380,14 @@ async fn handle_socket(
                 match msg {
                     Ok(Message::Text(text)) => {
                         if sim_only {
-                            use openmix_engine::Cmd;
-                            let blocked = match openmix_engine::parse_cmd(&text) {
+                            use openfader_engine::Cmd;
+                            let blocked = match openfader_engine::parse_cmd(&text) {
                                 Ok(Cmd::Connect { driver, .. }) => driver != "sim",
                                 Ok(Cmd::Scan | Cmd::Probe { .. } | Cmd::ConnectDevice { .. }) => true,
                                 _ => false,
                             };
                             if blocked {
-                                outbox.lock().await.control.push_back(openmix_engine::SharedEvent::new(openmix_engine::Event::Error {
+                                outbox.lock().await.control.push_back(openfader_engine::SharedEvent::new(openfader_engine::Event::Error {
                                     message: "Simulation only: hardware connections and discovery are disabled".into(),
                                     locked_by: None,
                                     ch: None,
@@ -531,7 +531,7 @@ async fn static_root(AxumState(app): AxumState<AppState>) -> impl IntoResponse {
 fn api_only() -> axum::response::Response {
     (
         StatusCode::NOT_FOUND,
-        Html("<h1>openmix-serve</h1><p>No static UI found. WebSocket API at <code>/ws</code>.</p>"),
+        Html("<h1>openfader-serve</h1><p>No static UI found. WebSocket API at <code>/ws</code>.</p>"),
     )
         .into_response()
 }
@@ -559,13 +559,13 @@ async fn static_file(
     }
 }
 
-/// Resolve the static UI directory: explicit flag > `$OPENMIX_UI_DIR` >
+/// Resolve the static UI directory: explicit flag > `$OPENFADER_UI_DIR` >
 /// `ui/` under the CWD > `ui/` next to the workspace checkout (dev).
 pub fn resolve_static_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
     if let Some(dir) = explicit {
         return dir.is_dir().then_some(dir);
     }
-    if let Ok(env) = std::env::var("OPENMIX_UI_DIR") {
+    if let Ok(env) = std::env::var("OPENFADER_UI_DIR") {
         let p = PathBuf::from(env);
         if p.is_dir() {
             return Some(p);
@@ -579,12 +579,12 @@ pub fn resolve_static_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
     .find(|candidate| candidate.is_dir())
 }
 
-/// Single axum state for every route: WS/API share the [`Engine`](openmix_engine::Engine), static
+/// Single axum state for every route: WS/API share the [`Engine`](openfader_engine::Engine), static
 /// files read the (optional) UI directory.
 #[derive(Clone)]
 struct AppState {
     sim_only: bool,
-    engine: Arc<openmix_engine::Engine>,
+    engine: Arc<openfader_engine::Engine>,
     static_dir: Option<Arc<PathBuf>>,
 }
 
@@ -603,12 +603,12 @@ async fn serve_loop(
         let (stream, _peer) = match listener.accept().await {
             Ok(v) => v,
             Err(e) => {
-                eprintln!("openmix-serve: accept error: {e:#}; continuing");
+                eprintln!("openfader-serve: accept error: {e:#}; continuing");
                 continue;
             }
         };
         if let Err(e) = configure_accepted(&stream) {
-            eprintln!("openmix-serve: TCP_NODELAY failed: {e:#}");
+            eprintln!("openfader-serve: TCP_NODELAY failed: {e:#}");
         }
         let svc = TowerToHyperService::new(app.clone());
         tokio::spawn(async move {
@@ -617,7 +617,7 @@ async fn serve_loop(
                 .serve_connection_with_upgrades(io, svc)
                 .await
             {
-                eprintln!("openmix-serve: connection error: {e:#}");
+                eprintln!("openfader-serve: connection error: {e:#}");
             }
         });
     }
@@ -669,7 +669,7 @@ pub async fn run_with_full(
     poll_inflight: Option<usize>,
     data_dir: Option<PathBuf>,
 ) -> anyhow::Result<()> {
-    use openmix_engine::{Engine, EngineConfig};
+    use openfader_engine::{Engine, EngineConfig};
 
     let local = listener.local_addr()?;
     if opts.sim_only && (opts.driver != "sim" || opts.addr.is_some() || opts.data_dir.is_some() || data_dir.is_some()) {
@@ -677,7 +677,7 @@ pub async fn run_with_full(
     }
     let preset = match opts.preset.as_deref() {
         None => None,
-        Some(name) => Some(openmix_sim::SimPreset::parse(name).ok_or_else(|| {
+        Some(name) => Some(openfader_sim::SimPreset::parse(name).ok_or_else(|| {
             anyhow::anyhow!("unknown --preset {name:?} (want generic|xr18|dl32s|studio)")
         })?),
     };
@@ -694,7 +694,7 @@ pub async fn run_with_full(
     // so a browser client can retry via the `connect` command.
     if let Err(e) = engine.connect(&opts.driver, opts.addr.as_deref()).await {
         eprintln!(
-            "openmix-serve: initial connect ({} @ {}) failed: {e:#}; continuing, \
+            "openfader-serve: initial connect ({} @ {}) failed: {e:#}; continuing, \
              retry with {{\"cmd\":\"connect\",...}}",
             opts.driver,
             opts.addr.as_deref().unwrap_or("(default)"),
@@ -703,8 +703,8 @@ pub async fn run_with_full(
 
     let static_dir = resolve_static_dir(opts.static_dir).map(Arc::new);
     match &static_dir {
-        Some(dir) => eprintln!("openmix-serve: serving UI from {}", dir.display()),
-        None => eprintln!("openmix-serve: no ui/ directory found; API only"),
+        Some(dir) => eprintln!("openfader-serve: serving UI from {}", dir.display()),
+        None => eprintln!("openfader-serve: no ui/ directory found; API only"),
     }
     let app = Router::new()
         .route("/ws", get(ws_handler))
@@ -713,7 +713,7 @@ pub async fn run_with_full(
         .route("/{*path}", get(static_file))
         .with_state(AppState { engine, static_dir, sim_only: opts.sim_only });
 
-    eprintln!("openmix-serve: listening on http://{local} (ws://{local}/ws)");
+    eprintln!("openfader-serve: listening on http://{local} (ws://{local}/ws)");
     serve_loop(listener, app).await?;
     Ok(())
 }
@@ -789,11 +789,11 @@ mod tests {
     /// taps frames go binary (type 3) only for taps-negotiated clients.
     #[test]
     fn outbox_taps_latest_only_and_binary() {
-        use openmix_engine::protocol::BIN_TYPE_TAPS;
-        use openmix_engine::Event;
-        let engine = openmix_engine::Engine::new(openmix_engine::EngineConfig::default());
+        use openfader_engine::protocol::BIN_TYPE_TAPS;
+        use openfader_engine::Event;
+        let engine = openfader_engine::Engine::new(openfader_engine::EngineConfig::default());
         let mut o = Outbox::new();
-        let shared = openmix_engine::SharedEvent::new;
+        let shared = openfader_engine::SharedEvent::new;
         o.store(shared(Event::Taps { tap: "in".into(), levels: vec![0.1] }));
         o.store(shared(Event::Taps { tap: "post".into(), levels: vec![0.2] }));
         assert_eq!(o.queue_depth(), 2);
@@ -825,10 +825,10 @@ mod tests {
 
     #[test]
     fn outbox_latest_only_slots() {
-        use openmix_engine::Event;
-        let engine = openmix_engine::Engine::new(openmix_engine::EngineConfig::default());
+        use openfader_engine::Event;
+        let engine = openfader_engine::Engine::new(openfader_engine::EngineConfig::default());
         let mut o = Outbox::new();
-        let shared = openmix_engine::SharedEvent::new;
+        let shared = openfader_engine::SharedEvent::new;
         // Two meter frames with no take in between: one drop.
         o.store(shared(Event::Meters { levels: vec![0.1] }));
         o.store(shared(Event::Meters { levels: vec![0.2] }));

@@ -12,9 +12,9 @@ import 'dart:convert';
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_web.dart';
 
-abstract class OpenmixBridgeApiImplPlatform
-    extends BaseApiImpl<OpenmixBridgeWire> {
-  OpenmixBridgeApiImplPlatform({
+abstract class OpenfaderBridgeApiImplPlatform
+    extends BaseApiImpl<OpenfaderBridgeWire> {
+  OpenfaderBridgeApiImplPlatform({
     required super.handler,
     required super.wire,
     required super.generalizedFrbRustBinding,
@@ -91,13 +91,13 @@ abstract class OpenmixBridgeApiImplPlatform
 
 // Section: wire_class
 
-class OpenmixBridgeWire implements BaseWire {
-  OpenmixBridgeWire.fromExternalLibrary(ExternalLibrary lib);
+class OpenfaderBridgeWire implements BaseWire {
+  OpenfaderBridgeWire.fromExternalLibrary(ExternalLibrary lib);
 }
 
 @JS('wasm_bindgen')
-external OpenmixBridgeWasmModule get wasmModule;
+external OpenfaderBridgeWasmModule get wasmModule;
 
 @JS()
 @anonymous
-extension type OpenmixBridgeWasmModule._(JSObject _) implements JSObject {}
+extension type OpenfaderBridgeWasmModule._(JSObject _) implements JSObject {}

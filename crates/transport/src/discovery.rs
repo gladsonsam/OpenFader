@@ -44,7 +44,7 @@ pub const XINFO_PROBE: &[u8] = b"/xinfo\0\0,";
 pub const INFO_PROBE: &[u8] = b"/info\0\0\0,";
 
 /// Per-driver probe table. DL32S intentionally has no broadcast probe yet:
-/// its protocol is closed pending own-LAN capture (see docs/dl32s-protocol.md).
+/// its protocol is closed pending own-LAN capture (see DL32S protocol notes).
 pub const PROBE_TABLE: &[ProbeSpec] = &[
     ProbeSpec {
         driver: "xair",

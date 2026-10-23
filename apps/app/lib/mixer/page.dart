@@ -13,20 +13,37 @@ import 'components/toolbar.dart';
 class MixerPage extends StatefulWidget {
   final MixerController controller;
   final ValueChanged<MixerDestination> onNavigate;
+
+  /// Return to the Connections start screen (top-left home button).
+  final VoidCallback? onHome;
   const MixerPage(
-      {super.key, required this.controller, required this.onNavigate});
+      {super.key,
+      required this.controller,
+      required this.onNavigate,
+      this.onHome});
   @override
   State<MixerPage> createState() => _MixerPageState();
 }
 
 class _MixerPageState extends State<MixerPage> {
-  final _scroll = ScrollController();
+  late final ScrollController _scroll;
   final _focus = FocusNode(debugLabel: 'Mixer keyboard');
   int? _configuredSize;
   String? _bank;
   int? _page;
+
+  @override
+  void initState() {
+    super.initState();
+    // Retain horizontal scroll across tab switches (channel home returns
+    // to the same mixer state).
+    _scroll = ScrollController(
+        initialScrollOffset: widget.controller.scrollOffset);
+  }
+
   @override
   void dispose() {
+    widget.controller.scrollOffset = _scroll.hasClients ? _scroll.offset : 0;
     _scroll.dispose();
     _focus.dispose();
     super.dispose();
@@ -119,6 +136,7 @@ class _MixerPageState extends State<MixerPage> {
                             MixerToolbar(
                                 controller: controller,
                                 onNavigate: widget.onNavigate,
+                                onHome: widget.onHome,
                                 compact: constraints.maxWidth < 800,
                                 showBankControls: mobile),
                             // Design bus bar: full-width strip in the

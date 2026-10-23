@@ -10,11 +10,11 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use openmix_engine::protocol::{
+use openfader_engine::protocol::{
     tap_id, taps_level_to_u16, u16_to_taps_level, BIN_HEADER_LEN, BIN_TYPE_TAPS,
     BIN_VERSION, TAPS_GR_DB_FULLSCALE,
 };
-use openmix_engine::{Cmd, Event};
+use openfader_engine::{Cmd, Event};
 use serde_json::{json, Value};
 
 fn golden_dir() -> PathBuf {
@@ -27,7 +27,7 @@ fn examples() -> Vec<(String, Value)> {
             "devices",
             Event::Devices {
                 list: vec![
-                    openmix_engine::protocol::DeviceDesc {
+                    openfader_engine::protocol::DeviceDesc {
                         id: "foh".to_string(),
                         name: "FOH Console".to_string(),
                         model: "SimConsole 48".to_string(),
@@ -37,7 +37,7 @@ fn examples() -> Vec<(String, Value)> {
                         fw: Some("0.1.0".to_string()),
                         via: None,
                     },
-                    openmix_engine::protocol::DeviceDesc {
+                    openfader_engine::protocol::DeviceDesc {
                         id: "sb1".to_string(),
                         name: "Stage Box A".to_string(),
                         model: "SimIO 32".to_string(),
@@ -75,13 +75,13 @@ fn examples() -> Vec<(String, Value)> {
             "scenes",
             Event::Scenes {
                 scenes: vec![
-                    openmix_engine::protocol::SceneEntry {
+                    openfader_engine::protocol::SceneEntry {
                         number: 1,
                         name: "Soundcheck".to_string(),
                         current: false,
                         saved_at: 1700000000,
                     },
-                    openmix_engine::protocol::SceneEntry {
+                    openfader_engine::protocol::SceneEntry {
                         number: 5,
                         name: "Set 1".to_string(),
                         current: true,
@@ -93,7 +93,7 @@ fn examples() -> Vec<(String, Value)> {
         (
             "fx",
             Event::Fx {
-                slots: vec![openmix_engine::protocol::FxSlotState {
+                slots: vec![openfader_engine::protocol::FxSlotState {
                     slot: 1,
                     fx_type: "Hall".to_string(),
                     on: true,
@@ -109,7 +109,7 @@ fn examples() -> Vec<(String, Value)> {
         (
             "routing",
             Event::Routing {
-                patches: vec![openmix_engine::protocol::PatchEntry {
+                patches: vec![openfader_engine::protocol::PatchEntry {
                     strip: 0,
                     key: None,
                     group: "Net".to_string(),
@@ -121,7 +121,7 @@ fn examples() -> Vec<(String, Value)> {
         (
             "offline_diff",
             Event::OfflineDiff {
-                changes: vec![openmix_engine::protocol::OfflineChange {
+                changes: vec![openfader_engine::protocol::OfflineChange {
                     strip: 0,
                     key: None,
                     id: "gain".to_string(),
@@ -177,7 +177,7 @@ fn examples() -> Vec<(String, Value)> {
     .collect();
     for (name, v) in &commands {
         let text = serde_json::to_string(v).unwrap();
-        openmix_engine::parse_cmd(&text)
+        openfader_engine::parse_cmd(&text)
             .unwrap_or_else(|e| panic!("r2 golden command {name} parses: {e}"));
     }
     out.extend(commands);
@@ -210,7 +210,7 @@ fn r2_golden_frames_validate() {
             let cmd: Cmd = serde_json::from_value(file.clone())
                 .unwrap_or_else(|e| panic!("r2 golden command {name}.json parses as Cmd: {e}"));
             let back = serde_json::to_string(&cmd).unwrap();
-            openmix_engine::parse_cmd(&back)
+            openfader_engine::parse_cmd(&back)
                 .unwrap_or_else(|e| panic!("r2 golden command {name} re-parses: {e}"));
         } else {
             let event: Event = serde_json::from_value(file.clone()).unwrap_or_else(|e| {

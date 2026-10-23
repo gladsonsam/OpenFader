@@ -150,11 +150,11 @@ async fn ws_sim_studio_preset() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let opts = openmix_serve::ServeOptions {
+    let opts = openfader_serve::ServeOptions {
         preset: Some("studio".to_string()),
         ..Default::default()
     };
-    let server = tokio::spawn(openmix_serve::run(listener, opts));
+    let server = tokio::spawn(openfader_serve::run(listener, opts));
 
     let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
         .await
@@ -176,9 +176,9 @@ async fn ws_sim_connect_fader_mute() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run(
+    let server = tokio::spawn(openfader_serve::run(
         listener,
-        openmix_serve::ServeOptions::default(),
+        openfader_serve::ServeOptions::default(),
     ));
 
     let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
@@ -376,9 +376,9 @@ async fn ws_scenes_capture_recall_delete() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run(
+    let server = tokio::spawn(openfader_serve::run(
         listener,
-        openmix_serve::ServeOptions::default(),
+        openfader_serve::ServeOptions::default(),
     ));
 
     let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
@@ -578,9 +578,9 @@ async fn ws_client_presence_and_writer_tag() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run(
+    let server = tokio::spawn(openfader_serve::run(
         listener,
-        openmix_serve::ServeOptions::default(),
+        openfader_serve::ServeOptions::default(),
     ));
     use tokio_tungstenite::tungstenite::Message;
 
@@ -712,9 +712,9 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run(
+    let server = tokio::spawn(openfader_serve::run(
         listener,
-        openmix_serve::ServeOptions::default(),
+        openfader_serve::ServeOptions::default(),
     ));
     use tokio_tungstenite::tungstenite::Message;
 
@@ -1008,7 +1008,7 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
 }
 
 /// Strip-lock expiry uses a short test TTL (`run_with_lock_ttl`) instead
-/// of waiting out the 60 s production [`openmix_serve::LOCK_TTL`]: c1 pins
+/// of waiting out the 60 s production [`openfader_serve::LOCK_TTL`]: c1 pins
 /// ch2, c2 is denied, then after the TTL the pin auto-releases (sweeper
 /// broadcast) and c2 writes freely.
 #[tokio::test]
@@ -1018,9 +1018,9 @@ async fn ws_strip_locks_expiry() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run_with_lock_ttl(
+    let server = tokio::spawn(openfader_serve::run_with_lock_ttl(
         listener,
-        openmix_serve::ServeOptions::default(),
+        openfader_serve::ServeOptions::default(),
         std::time::Duration::from_millis(200),
     ));
 
@@ -1145,9 +1145,9 @@ async fn ws_main_fader_set_and_state() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run(
+    let server = tokio::spawn(openfader_serve::run(
         listener,
-        openmix_serve::ServeOptions::default(),
+        openfader_serve::ServeOptions::default(),
     ));
 
     let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
@@ -1253,9 +1253,9 @@ async fn ws_you_self_id_precedes_state_and_tags_writes() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run(
+    let server = tokio::spawn(openfader_serve::run(
         listener,
-        openmix_serve::ServeOptions::default(),
+        openfader_serve::ServeOptions::default(),
     ));
 
     let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
@@ -1379,9 +1379,9 @@ async fn ws_caps_and_params_snapshot() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run(
+    let server = tokio::spawn(openfader_serve::run(
         listener,
-        openmix_serve::ServeOptions::default(),
+        openfader_serve::ServeOptions::default(),
     ));
 
     let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
@@ -1492,10 +1492,10 @@ async fn ws_params_diff_broadcast() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run_with_poll(
+    let server = tokio::spawn(openfader_serve::run_with_poll(
         listener,
-        openmix_serve::ServeOptions::default(),
-        openmix_serve::LOCK_TTL,
+        openfader_serve::ServeOptions::default(),
+        openfader_serve::LOCK_TTL,
         Duration::from_millis(1),
     ));
 
@@ -1563,10 +1563,10 @@ async fn ws_focus_prioritizes_channel() {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run_with_poll(
+    let server = tokio::spawn(openfader_serve::run_with_poll(
         listener,
-        openmix_serve::ServeOptions::default(),
-        openmix_serve::LOCK_TTL,
+        openfader_serve::ServeOptions::default(),
+        openfader_serve::LOCK_TTL,
         Duration::from_millis(2),
     ));
 
@@ -1708,10 +1708,10 @@ async fn ws_focus_flood_superseded() {
     // channel completes.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run_with_poll(
+    let server = tokio::spawn(openfader_serve::run_with_poll(
         listener,
-        openmix_serve::ServeOptions::default(),
-        openmix_serve::LOCK_TTL,
+        openfader_serve::ServeOptions::default(),
+        openfader_serve::LOCK_TTL,
         Duration::from_millis(2),
     ));
     let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
@@ -1772,10 +1772,10 @@ async fn ws_focus_flood_superseded() {
     // within ~3 s despite the flood backlog.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let server = tokio::spawn(openmix_serve::run_with_poll(
+    let server = tokio::spawn(openfader_serve::run_with_poll(
         listener,
-        openmix_serve::ServeOptions::default(),
-        openmix_serve::LOCK_TTL,
+        openfader_serve::ServeOptions::default(),
+        openfader_serve::LOCK_TTL,
         Duration::from_millis(50),
     ));
     let (stream, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))

@@ -31,7 +31,7 @@ pub const ICON_MAX: i32 = 31;
 /// OSC address of one strip colour (`config/color`, int `0..=15`).
 ///
 /// ```
-/// # use openmix_proto_xair::look::strip_color;
+/// # use openfader_proto_xair::look::strip_color;
 /// assert_eq!(strip_color("/ch/01"), "/ch/01/config/color");
 /// assert_eq!(strip_color("/bus/1"), "/bus/1/config/color");
 /// ```
@@ -42,7 +42,7 @@ pub fn strip_color(root: &str) -> String {
 /// OSC address of one strip icon (`config/icon`, int `0..=31`).
 ///
 /// ```
-/// # use openmix_proto_xair::look::strip_icon;
+/// # use openfader_proto_xair::look::strip_icon;
 /// assert_eq!(strip_icon("/ch/01"), "/ch/01/config/icon");
 /// ```
 pub fn strip_icon(root: &str) -> String {
@@ -52,7 +52,7 @@ pub fn strip_icon(root: &str) -> String {
 /// OSC address of one channel stereo-link switch (`config/link`, int `1`/`0`).
 ///
 /// ```
-/// # use openmix_proto_xair::look::strip_link;
+/// # use openfader_proto_xair::look::strip_link;
 /// assert_eq!(strip_link("/ch/01"), "/ch/01/config/link");
 /// ```
 pub fn strip_link(root: &str) -> String {
@@ -71,7 +71,7 @@ pub fn icon_to_arg(v: f32) -> anyhow::Result<OscType> {
 
 /// Decode a colour/int-enum reply (int kept, whole-number float accepted).
 /// (Link switches use the shared codec instead: [`crate::codec::bool_arg`]
-/// to encode, [`openmix_transport::osc::is_on`] to decode.)
+/// to encode, [`openfader_transport::osc::is_on`] to decode.)
 pub fn int_from_msg(msg: &rosc::OscMessage, min: i32, max: i32, what: &str) -> anyhow::Result<i32> {
     crate::codec::int_from_msg(msg, min, max, "look", what)
 }
