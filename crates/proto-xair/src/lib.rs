@@ -3816,7 +3816,7 @@ mod tests {
         }
         let driver = XAirDriver::new();
         let rig = std::env::var("OPENMIX_RIG_ADDR").unwrap_or_else(|_| "192.168.1.20".to_string());
-        driver.connect(format!("{rig}:10024")).await.unwrap();
+        driver.connect(&format!("{rig}:10024")).await.unwrap();
         let bank = async || {
             let guard = driver.session().await.unwrap();
             let reply = guard

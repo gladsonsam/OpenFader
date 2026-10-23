@@ -99,12 +99,13 @@ impl FakeScanner {
 }
 
 impl openmix_engine::engine::DeviceScanner for FakeScanner {
-    fn scan(
-        &self,
+    fn scan<'a>(
+        &'a self,
+        _display: &'a (dyn Fn(&str, &str) -> String + Send + Sync),
         _timeout: Duration,
     ) -> std::pin::Pin<
         Box<
-            dyn std::future::Future<Output = Vec<openmix_engine::protocol::DeviceDesc>> + Send + '_,
+            dyn std::future::Future<Output = Vec<openmix_engine::protocol::DeviceDesc>> + Send + 'a,
         >,
     > {
         let rows = self.rows.clone();
