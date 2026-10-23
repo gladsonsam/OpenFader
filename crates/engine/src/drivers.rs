@@ -22,12 +22,12 @@ use std::{
     sync::Arc,
 };
 
-use openmix_core::{
+use openfader_core::{
     params::{ParamDef, ParamRegistry},
     MeterFrame, MixerDriver, MixerInfo, MixerSnapshot, ParamUpdate, ParamValue, StripFamily, StripId,
     StripKind,
 };
-use openmix_core::show::Scene;
+use openfader_core::show::Scene;
 
 /// Neutral FX slot view: the sim design rack projected off the sim type so
 /// session logic never names a provider type.
@@ -92,7 +92,7 @@ pub trait DynDriver: Send + Sync {
     fn file_transfer(&self) -> bool;
     fn subscribe_updates(&self) -> Option<tokio::sync::broadcast::Receiver<ParamUpdate>>;
     fn poll_meters(&self) -> MeterFrame;
-    fn poll_spectrum(&self) -> Vec<openmix_core::AudioSpectrum>;
+    fn poll_spectrum(&self) -> Vec<openfader_core::AudioSpectrum>;
     async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()>;
     async fn connect(&self, addr: &str) -> anyhow::Result<()>;
     async fn disconnect(&self) -> anyhow::Result<()> { Ok(()) }
@@ -441,7 +441,7 @@ macro_rules! impl_dyn_driver {
         async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()> {
             MixerDriver::set_spectrum_target(self, owner, strip).await
         }
-        fn poll_spectrum(&self) -> Vec<openmix_core::AudioSpectrum> {
+        fn poll_spectrum(&self) -> Vec<openfader_core::AudioSpectrum> {
             MixerDriver::poll_spectrum(self)
         }
         fn meter_taps(&self) -> &'static [&'static str] {
@@ -609,13 +609,13 @@ macro_rules! impl_dyn_driver {
     };
 }
 
-impl_dyn_driver!(openmix_sim::SimDriver {
+impl_dyn_driver!(openfader_sim::SimDriver {
 
     fn fx_flavor(&self) -> FxFlavor {
         FxFlavor::Design
     }
     fn fx_slot_count(&self) -> usize {
-        openmix_sim::SIM_FX_SLOTS
+        openfader_sim::SIM_FX_SLOTS
     }
     fn fx_snapshot(&self) -> Vec<FxSlotView> {
         self.fx_slots()
@@ -715,7 +715,7 @@ impl_dyn_driver!(openmix_sim::SimDriver {
         self.clear_patch(strip)
     }
     fn routing_groups(&self) -> Vec<RoutingGroup> {
-        openmix_sim::SIM_PATCH_GROUPS
+        openfader_sim::SIM_PATCH_GROUPS
             .iter()
             .map(|(key, label, count)| RoutingGroup {
                 key,
@@ -770,7 +770,7 @@ impl_dyn_driver!(openmix_sim::SimDriver {
     }
 });
 
-impl_dyn_driver!(openmix_proto_xair::XAirDriver {
+impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 
     /// Mute-group membership rides the strip `{root}/grp/mute` bitmask
     /// (rig-verified XR18 FW 1.20, 2026-10-20 — the driver serves
@@ -859,24 +859,24 @@ impl_dyn_driver!(openmix_proto_xair::XAirDriver {
             }
         }
         if ip.parse::<IpAddr>().is_ok() && !ip.contains(':') {
-            return format!("{ip}:{}", openmix_proto_xair::addrs::PORT);
+            return format!("{ip}:{}", openfader_proto_xair::addrs::PORT);
         }
         ip.to_string()
     }
     fn fx_type_name(&self, type_index: u8) -> Option<&'static str> {
-        openmix_proto_xair::fx::fx_effect_name(type_index)
+        openfader_proto_xair::fx::fx_effect_name(type_index)
     }
     fn fx_type_param_count(&self, type_index: u8) -> Option<usize> {
-        openmix_proto_xair::fx::fx_param_count(type_index).map(|n| n as usize)
+        openfader_proto_xair::fx::fx_param_count(type_index).map(|n| n as usize)
     }
     fn fx_type_index_of(&self, fx_type: &str) -> Option<u8> {
-        (0..=openmix_proto_xair::fx::FX_TYPE_MAX).find(|&index| {
-            openmix_proto_xair::fx::fx_effect_name(index) == Some(fx_type)
-                || openmix_proto_xair::fx::fx_effect_full_name(index) == Some(fx_type)
+        (0..=openfader_proto_xair::fx::FX_TYPE_MAX).find(|&index| {
+            openfader_proto_xair::fx::fx_effect_name(index) == Some(fx_type)
+                || openfader_proto_xair::fx::fx_effect_full_name(index) == Some(fx_type)
         })
     }
     fn fx_type_caps(&self) -> Vec<crate::protocol::FxTypeCaps> {
-        use openmix_proto_xair::fx as xfx;
+        use openfader_proto_xair::fx as xfx;
         let mut out = Vec::new();
         for index in 0..=xfx::FX_TYPE_MAX {
             let Some(code) = xfx::fx_effect_name(index) else {
@@ -928,12 +928,12 @@ impl_dyn_driver!(openmix_proto_xair::XAirDriver {
         param: u8,
         effect: Option<u8>,
     ) -> anyhow::Result<f32> {
-        openmix_proto_xair::XAirDriver::get_fx_param_with_type(self, slot, param, effect).await
+        openfader_proto_xair::XAirDriver::get_fx_param_with_type(self, slot, param, effect).await
     }
     /// Live solo bank in one query (connect-burst fan-out): 1 query, not 16.
     async fn solo_bank(&self, channels: usize) -> anyhow::Result<Vec<bool>> {
         let _ = channels;
-        openmix_proto_xair::XAirDriver::solo_bank(self).await
+        openfader_proto_xair::XAirDriver::solo_bank(self).await
     }
     /// Desk-native type select (`/fx/N/type`, rig-verified 2026-10-19):
     /// resolve the caps-advertised name (short code `id` like `HALL`/`VRM`
@@ -941,13 +941,13 @@ impl_dyn_driver!(openmix_proto_xair::XAirDriver {
     /// effect table behind `caps.fx`) to the firmware index, then write
     /// it. Unknown names bail locally, never hitting the desk.
     async fn fx_set_type(&self, slot: u8, fx_type: &str) -> anyhow::Result<()> {
-        let index = (0..=openmix_proto_xair::fx::FX_TYPE_MAX)
+        let index = (0..=openfader_proto_xair::fx::FX_TYPE_MAX)
             .find(|&i| {
-                openmix_proto_xair::fx::fx_effect_name(i) == Some(fx_type)
-                    || openmix_proto_xair::fx::fx_effect_full_name(i) == Some(fx_type)
+                openfader_proto_xair::fx::fx_effect_name(i) == Some(fx_type)
+                    || openfader_proto_xair::fx::fx_effect_full_name(i) == Some(fx_type)
             })
             .ok_or_else(|| anyhow::anyhow!("unknown fx type {fx_type:?}"))?;
-        openmix_proto_xair::XAirDriver::set_fx_type(self, slot, index).await
+        openfader_proto_xair::XAirDriver::set_fx_type(self, slot, index).await
     }
     async fn fx_set_param(&self, slot: u8, id: &str, value: f32) -> anyhow::Result<()> {
         // Numbered pars only (design ids have no verified mapping).
@@ -1022,7 +1022,7 @@ impl_dyn_driver!(openmix_proto_xair::XAirDriver {
     }
 });
 
-impl_dyn_driver!(openmix_proto_dl32s::Dl32sDriver {
+impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
 
     fn claims_device(&self, id: &str, model: &str) -> bool {
         let m = model.to_lowercase();
@@ -1058,7 +1058,7 @@ impl RegisteredDriver {
     /// Merged param registry for this provider: the canonical catalogue
     /// plus the driver's contributed [`DynDriver::param_defs`] rows
     /// (canonical ids win on collision — see
-    /// [`ParamRegistry::register`](openmix_core::params::ParamRegistry::register)).
+    /// [`ParamRegistry::register`](openfader_core::params::ParamRegistry::register)).
     /// The engine builds one per driver at boot and resolves every caps /
     /// poll / snapshot / recall path through it, so a mixer with unique
     /// DSP arrives without editing core.
@@ -1073,10 +1073,10 @@ impl RegisteredDriver {
 /// fallback, then hardware in the historical if/else priority). The engine
 /// holds these in a `HashMap<String, RegisteredDriver>`; the `Vec` order
 /// is the device-claim and display order.
-pub fn registered_drivers(preset: Option<openmix_sim::SimPreset>) -> Vec<RegisteredDriver> {
+pub fn registered_drivers(preset: Option<openfader_sim::SimPreset>) -> Vec<RegisteredDriver> {
     let sim = match preset {
-        Some(p) => openmix_sim::SimDriver::with_preset(p),
-        None => openmix_sim::SimDriver::new(),
+        Some(p) => openfader_sim::SimDriver::with_preset(p),
+        None => openfader_sim::SimDriver::new(),
     };
     vec![
         RegisteredDriver {
@@ -1087,18 +1087,18 @@ pub fn registered_drivers(preset: Option<openmix_sim::SimPreset>) -> Vec<Registe
         RegisteredDriver {
             name: "xair",
             default_addr: "192.168.1.1",
-            driver: Arc::new(openmix_proto_xair::XAirDriver::new()),
+            driver: Arc::new(openfader_proto_xair::XAirDriver::new()),
         },
         RegisteredDriver {
             name: "dl32s",
             default_addr: "192.168.1.1",
-            driver: Arc::new(openmix_proto_dl32s::Dl32sDriver::new()),
+            driver: Arc::new(openfader_proto_dl32s::Dl32sDriver::new()),
         },
     ]
 }
 
 /// Registry as a name-keyed map for the session.
-pub fn driver_map(preset: Option<openmix_sim::SimPreset>) -> HashMap<String, RegisteredDriver> {
+pub fn driver_map(preset: Option<openfader_sim::SimPreset>) -> HashMap<String, RegisteredDriver> {
     registered_drivers(preset)
         .into_iter()
         .map(|r| (r.name.to_string(), r))

@@ -1,12 +1,12 @@
 [package]
-name = "openmix-proto-dl32s"
+name = "openfader-proto-dl32s"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-openmix-core = { path = "../core" }
-openmix-transport = { path = "../transport" }
+openfader-core = { path = "../core" }
+openfader-transport = { path = "../transport" }
 tokio = { version = "1", features = ["sync"] }
 anyhow = "1"
 

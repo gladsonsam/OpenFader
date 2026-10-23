@@ -5,7 +5,7 @@
 
 use std::{sync::Arc, time::Duration};
 
-use openmix_engine::{Cmd, Engine, EngineConfig, Event, SharedEvent};
+use openfader_engine::{Cmd, Engine, EngineConfig, Event, SharedEvent};
 use serde_json::{json, Value};
 
 fn ev_json(event: &Event) -> Value {
@@ -18,7 +18,7 @@ async fn new_engine() -> Arc<Engine> {
     engine
 }
 
-async fn next_event(handle: &mut openmix_engine::engine::ClientHandle) -> SharedEvent {
+async fn next_event(handle: &mut openfader_engine::engine::ClientHandle) -> SharedEvent {
     tokio::time::timeout(Duration::from_secs(5), handle.events.recv())
         .await
         .expect("event in time")
@@ -27,7 +27,7 @@ async fn next_event(handle: &mut openmix_engine::engine::ClientHandle) -> Shared
 
 /// Next event matching `want`, skipping interleaved frames.
 async fn wait_for(
-    handle: &mut openmix_engine::engine::ClientHandle,
+    handle: &mut openfader_engine::engine::ClientHandle,
     want: impl Fn(&Event) -> bool,
 ) -> SharedEvent {
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
@@ -45,7 +45,7 @@ async fn wait_for(
 
 /// Drain the 12-frame attach snapshot, asserting the R1 six-frame prefix
 /// and the R2 suffix (devices/link/info/scenes/fx/routing).
-async fn drain_snapshot(handle: &mut openmix_engine::engine::ClientHandle) -> Vec<SharedEvent> {
+async fn drain_snapshot(handle: &mut openfader_engine::engine::ClientHandle) -> Vec<SharedEvent> {
     let mut out = Vec::new();
     // R1 prefix (6) + R2 frames (devices/link/info/scenes/fx/routing) +
     // master-section snapshot (sim: 8 bus + 6 subgroup + 6 mute-group +
@@ -76,7 +76,7 @@ fn is_error_containing(e: &Event, needle: &str) -> bool {
 
 /// Fake LAN scanner: the phone's broadcast discovery never touches the
 /// network in tests. Returns the canned rows with `via: "broadcast"`,
-/// exactly like [`openmix_engine::RealScanner`](RealScanner) maps replies.
+/// exactly like [`openfader_engine::RealScanner`](RealScanner) maps replies.
 struct FakeScanner {
     rows: Vec<(String, String, String, String, String)>,
 }
@@ -98,21 +98,21 @@ impl FakeScanner {
     }
 }
 
-impl openmix_engine::engine::DeviceScanner for FakeScanner {
+impl openfader_engine::engine::DeviceScanner for FakeScanner {
     fn scan<'a>(
         &'a self,
         _display: &'a (dyn Fn(&str, &str) -> String + Send + Sync),
         _timeout: Duration,
     ) -> std::pin::Pin<
         Box<
-            dyn std::future::Future<Output = Vec<openmix_engine::protocol::DeviceDesc>> + Send + 'a,
+            dyn std::future::Future<Output = Vec<openfader_engine::protocol::DeviceDesc>> + Send + 'a,
         >,
     > {
         let rows = self.rows.clone();
         Box::pin(async move {
             rows.into_iter()
                 .map(
-                    |(id, name, model, ip, kind)| openmix_engine::protocol::DeviceDesc {
+                    |(id, name, model, ip, kind)| openfader_engine::protocol::DeviceDesc {
                         id,
                         name,
                         model,
@@ -432,7 +432,7 @@ async fn scene_save_recall_roundtrip_restores_plane() {
 
 #[tokio::test]
 async fn scene_recall_scope_filters_axes() {
-    use openmix_engine::engine::RecallScope;
+    use openfader_engine::engine::RecallScope;
     let engine = new_engine().await;
     let mut client = engine.attach(None).await;
     let _snap = drain_snapshot(&mut client).await;
@@ -495,7 +495,7 @@ async fn scene_recall_scope_filters_axes() {
 #[tokio::test]
 async fn scenes_persist_across_restart() {
     let dir = std::env::temp_dir().join(format!(
-        "openmix-r2-scenes-{}-{}",
+        "openfader-r2-scenes-{}-{}",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1014,7 +1014,7 @@ async fn masters_reject_out_of_range_and_bad_input() {
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "not found"));
     // Restricted role: musician cannot move masters or upload files.
-    engine.set_client_policy(&client.id, openmix_core::access::Policy::musician([0]));
+    engine.set_client_policy(&client.id, openfader_core::access::Policy::musician([0]));
     client.send(Cmd::BusFader { bus: 0, value: 0.5 }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "blocked"));

@@ -1,4 +1,4 @@
-// OpenMix launch mark: four mini channel faders in the console palette.
+// OpenFader launch mark: four mini channel faders in the console palette.
 // Pure widgets (no image asset), so it paints on the very first frame
 // with zero asset-load cost and works on every platform.
 library;

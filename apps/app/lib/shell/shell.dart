@@ -12,14 +12,13 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import 'bank_rail.dart';
-import 'header_bar.dart';
 
 export 'bank_rail.dart';
 export 'header_bar.dart';
 export 'scene_button.dart';
 
 class U4Shell extends StatelessWidget {
-  final U4ShellHeader header;
+  final Widget header;
   final Widget child;
 
   /// Bank rail (mixer only — the shell owns the condition, like the web).

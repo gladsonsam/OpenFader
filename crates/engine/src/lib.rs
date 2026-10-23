@@ -1,4 +1,4 @@
-//! openmix-engine: the single transport-agnostic mixer session.
+//! openfader-engine: the single transport-agnostic mixer session.
 //!
 //! Every frontend (native app via the bridge, CLI,
 //! future apps) gets the FULL mixer capability through this crate: driver
@@ -15,7 +15,7 @@
 //!
 //! ```no_run
 //! use std::sync::Arc;
-//! use openmix_engine::{Engine, EngineConfig, Cmd};
+//! use openfader_engine::{Engine, EngineConfig, Cmd};
 //!
 //! # async fn run() {
 //! let engine = Engine::new(EngineConfig::default());

@@ -16,16 +16,16 @@ import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const OpenmixApp());
+  runApp(const OpenfaderApp());
 }
 
-class OpenmixApp extends StatelessWidget {
-  const OpenmixApp({super.key});
+class OpenfaderApp extends StatelessWidget {
+  const OpenfaderApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'OpenMix',
+      title: 'OpenFader',
       debugShowCheckedModeBanner: false,
       theme: u4Theme(),
       home: const BootGate(),

@@ -154,7 +154,7 @@ pub(super) fn address(strip: u16, p: &str) -> Option<String> {
     if p != "rtnsw" {
         check_scope(p, kind).ok()?;
     }
-    if p == "rtnsw" && kind != openmix_core::StripKind::In {
+    if p == "rtnsw" && kind != openfader_core::StripKind::In {
         return None;
     }
     let suffix = match p {

@@ -859,87 +859,87 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
-name = "openmix-cli"
+name = "openfader-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "openmix-core",
- "openmix-proto-dl32s",
- "openmix-proto-xair",
- "openmix-sim",
- "openmix-transport",
+ "openfader-core",
+ "openfader-proto-dl32s",
+ "openfader-proto-xair",
+ "openfader-sim",
+ "openfader-transport",
  "tokio",
 ]
 
 [[package]]
-name = "openmix-core"
+name = "openfader-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "openmix-sim",
+ "openfader-sim",
  "realfft",
  "tokio",
 ]
 
 [[package]]
-name = "openmix-engine"
+name = "openfader-engine"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
  "base64 0.23.1",
  "futures",
- "openmix-core",
- "openmix-proto-dl32s",
- "openmix-proto-xair",
- "openmix-sim",
- "openmix-transport",
+ "openfader-core",
+ "openfader-proto-dl32s",
+ "openfader-proto-xair",
+ "openfader-sim",
+ "openfader-transport",
  "serde",
  "serde_json",
  "tokio",
 ]
 
 [[package]]
-name = "openmix-flutter-bridge"
+name = "openfader-flutter-bridge"
 version = "0.1.0"
 dependencies = [
  "flutter_rust_bridge",
- "openmix-engine",
+ "openfader-engine",
  "serde_json",
  "tokio",
 ]
 
 [[package]]
-name = "openmix-proto-dl32s"
+name = "openfader-proto-dl32s"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "openmix-core",
- "openmix-transport",
+ "openfader-core",
+ "openfader-transport",
  "tokio",
 ]
 
 [[package]]
-name = "openmix-proto-xair"
+name = "openfader-proto-xair"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "openmix-core",
- "openmix-transport",
+ "openfader-core",
+ "openfader-transport",
  "rosc",
  "tokio",
 ]
 
 [[package]]
-name = "openmix-serve"
+name = "openfader-serve"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
  "futures",
  "hyper-util",
- "openmix-engine",
- "openmix-sim",
+ "openfader-engine",
+ "openfader-sim",
  "serde_json",
  "socket2",
  "tokio",
@@ -947,21 +947,21 @@ dependencies = [
 ]
 
 [[package]]
-name = "openmix-sim"
+name = "openfader-sim"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "openmix-core",
+ "openfader-core",
  "tokio",
 ]
 
 [[package]]
-name = "openmix-transport"
+name = "openfader-transport"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "if-addrs",
- "openmix-core",
+ "openfader-core",
  "rosc",
  "tokio",
 ]

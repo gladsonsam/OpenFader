@@ -1,4 +1,4 @@
-// Real transport: embedded `openmix-engine` via the FRB bindings in
+// Real transport: embedded `openfader-engine` via the FRB bindings in
 // `bridge/generated/` (see `bridge_stub.dart`). Same `EngineApi` surface
 // as `FakeSimEngine`, so the UI is transport-agnostic.
 //
@@ -27,26 +27,26 @@ class FfiEngine implements EngineApi {
   static Future<FfiEngine?> create() async {
     lastError = null;
     try {
-      await OpenmixBridge.init(
+      await OpenfaderBridge.init(
         // iOS links the Rust static archive into Runner. Android loads .so.
         externalLibrary: Platform.isIOS
             ? ExternalLibrary.process(iKnowHowToUseIt: true)
             : Platform.isMacOS
                 ? ExternalLibrary.open(
-                    '${File(Platform.resolvedExecutable).parent.parent.path}/Frameworks/libopenmix_flutter_bridge.dylib')
+                    '${File(Platform.resolvedExecutable).parent.parent.path}/Frameworks/libopenfader_flutter_bridge.dylib')
                 : Platform.isLinux
                     ? ExternalLibrary.open(
-                        '${File(Platform.resolvedExecutable).parent.path}/lib/libopenmix_flutter_bridge.so')
+                        '${File(Platform.resolvedExecutable).parent.path}/lib/libopenfader_flutter_bridge.so')
                     : Platform.isWindows
                         ? ExternalLibrary.open(
-                            '${File(Platform.resolvedExecutable).parent.path}/openmix_flutter_bridge.dll')
+                            '${File(Platform.resolvedExecutable).parent.path}/openfader_flutter_bridge.dll')
                         : null,
       ).timeout(const Duration(seconds: 5));
-      debugPrint('OpenMix: embedded native engine initialized');
+      debugPrint('OpenFader: embedded native engine initialized');
       return FfiEngine._();
     } catch (e) {
       lastError = e;
-      debugPrint('OpenMix: native engine initialization failed: $e');
+      debugPrint('OpenFader: native engine initialization failed: $e');
       return null;
     }
   }

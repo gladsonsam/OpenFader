@@ -43,6 +43,14 @@ abstract class ConnectionStore extends ChangeNotifier {
   bool get probing;
   List<ConnDevice> get devices;
   String? get emptyText;
+
+  /// IP/hostname of an engine-known device id, or '' when unknown.
+  /// Lets the start screen probe a row directly (with retry + errors)
+  /// instead of parsing the display string.
+  String hostOf(String id);
+
+  /// IP/hostname of the current link, or '' when none/sim.
+  String get connectedHost;
   String get linkInfo; // link state/name/ip/rtt line
   String get deskInfo; // info model/fw line
   int get clientCount;

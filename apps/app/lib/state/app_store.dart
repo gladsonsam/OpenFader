@@ -42,6 +42,7 @@ import '../core/coalescer.dart';
 import '../core/store.dart' as ps;
 import '../engine.dart';
 import '../theme.dart';
+import '../u4law.dart';
 import '../screens/channel.dart';
 import '../screens/meters.dart';
 import '../mixer/store.dart';
@@ -927,6 +928,15 @@ class AppStore extends ChangeNotifier
     }
     return 'CH${(_channel + 1).toString().padLeft(2, '0')}';
   }
+
+  @override
+  String get channelNumber => '${_channel + 1}';
+
+  @override
+  ValueNotifier<double> faderNote() => faderOf(_channel);
+
+  @override
+  void setFaderDb(double db) => setFader(_channel, dbToPos(db));
 
   @override
   double? paramNum(String leaf) {

@@ -10,9 +10,9 @@ import 'dart:ffi' as ffi;
 import 'frb_generated.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart';
 
-abstract class OpenmixBridgeApiImplPlatform
-    extends BaseApiImpl<OpenmixBridgeWire> {
-  OpenmixBridgeApiImplPlatform({
+abstract class OpenfaderBridgeApiImplPlatform
+    extends BaseApiImpl<OpenfaderBridgeWire> {
+  OpenfaderBridgeApiImplPlatform({
     required super.handler,
     required super.wire,
     required super.generalizedFrbRustBinding,
@@ -89,15 +89,15 @@ abstract class OpenmixBridgeApiImplPlatform
 
 // Section: wire_class
 
-class OpenmixBridgeWire implements BaseWire {
-  factory OpenmixBridgeWire.fromExternalLibrary(ExternalLibrary lib) =>
-      OpenmixBridgeWire(lib.ffiDynamicLibrary);
+class OpenfaderBridgeWire implements BaseWire {
+  factory OpenfaderBridgeWire.fromExternalLibrary(ExternalLibrary lib) =>
+      OpenfaderBridgeWire(lib.ffiDynamicLibrary);
 
   /// Holds the symbol lookup function.
   final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
       _lookup;
 
   /// The symbols are looked up in [dynamicLibrary].
-  OpenmixBridgeWire(ffi.DynamicLibrary dynamicLibrary)
+  OpenfaderBridgeWire(ffi.DynamicLibrary dynamicLibrary)
       : _lookup = dynamicLibrary.lookup;
 }

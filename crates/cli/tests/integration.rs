@@ -1,10 +1,10 @@
 //! Workspace integration: sim fader roundtrip + CLI --help smoke.
-use openmix_core::{MixerDriver, ParamValue, StripId};
+use openfader_core::{MixerDriver, ParamValue, StripId};
 use std::process::Command;
 
 #[tokio::test]
 async fn sim_fader_roundtrip() {
-    let drv = openmix_sim::SimDriver::new();
+    let drv = openfader_sim::SimDriver::new();
     drv.connect("sim://local").await.unwrap();
     assert_eq!(drv.name(), "sim");
     assert_eq!(drv.channel_count(), 32);
@@ -34,7 +34,7 @@ async fn sim_fader_roundtrip() {
 
     // Snapshot recall restores prior state.
     let snap = drv.snapshot().await.unwrap();
-    assert_eq!(snap.strips.len(), openmix_sim::SIM_STRIPS); // full v2 topology (77 strips)
+    assert_eq!(snap.strips.len(), openfader_sim::SIM_STRIPS); // full v2 topology (77 strips)
     drv.set_fader(StripId(0), 0.9).await.unwrap();
     drv.recall(&snap).await.unwrap();
     assert!((drv.get_fader(StripId(0)).await.unwrap() - 0.5).abs() < 1e-6);
@@ -45,18 +45,18 @@ async fn sim_fader_roundtrip() {
 
     // Fake meters: one frame per strip, muted strip reads 0.
     let frame = drv.poll_meters();
-    assert_eq!(frame.levels.len(), openmix_sim::SIM_STRIPS);
+    assert_eq!(frame.levels.len(), openfader_sim::SIM_STRIPS);
     assert_eq!(frame.levels[2], 0.0);
     assert!(frame.levels[0] > 0.0);
 }
 
 #[test]
 fn cli_help_smoke() {
-    let bin = env!("CARGO_BIN_EXE_openmix-cli");
+    let bin = env!("CARGO_BIN_EXE_openfader-cli");
     let out = Command::new(bin)
         .arg("--help")
         .output()
-        .expect("run openmix-cli --help");
+        .expect("run openfader-cli --help");
     assert!(out.status.success());
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("Usage"), "help text missing Usage: {text}");
@@ -66,11 +66,11 @@ fn cli_help_smoke() {
 
 #[test]
 fn cli_list_smoke() {
-    let bin = env!("CARGO_BIN_EXE_openmix-cli");
+    let bin = env!("CARGO_BIN_EXE_openfader-cli");
     let out = Command::new(bin)
         .args(["--driver", "sim", "list"])
         .output()
-        .expect("run openmix-cli list");
+        .expect("run openfader-cli list");
     assert!(out.status.success());
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains("CH01"), "list missing strips: {text}");

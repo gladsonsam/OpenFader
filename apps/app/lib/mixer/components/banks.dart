@@ -3,6 +3,79 @@ import '../controller.dart';
 import '../design.dart';
 import 'toggle.dart';
 
+Future<void> showMixerLayout(BuildContext context, MixerController controller,
+        ValueChanged<MixerDestination> onNavigate,
+        {bool? locked, VoidCallback? onLock}) =>
+    showModalBottomSheet<void>(
+        context: context,
+        backgroundColor: MixerDesign.background,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+            child: ListenableBuilder(
+                listenable: controller,
+                builder: (context, _) => ListView(shrinkWrap: true, children: [
+                      Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: Text('Layout',
+                              style: MixerDesign.type(20,
+                                  weight: FontWeight.w600))),
+                      if (locked != null && onLock != null)
+                        ListTile(
+                            title: Text(
+                                locked ? 'Unlock channel' : 'Lock channel',
+                                style: MixerDesign.type(17)),
+                            trailing: Icon(
+                                locked
+                                    ? Icons.lock_outline
+                                    : Icons.lock_open_outlined,
+                                color: MixerDesign.mutedText),
+                            onTap: () {
+                              Navigator.pop(context);
+                              onLock();
+                            }),
+                      for (final bank in controller.store.banks)
+                        ListTile(
+                            title:
+                                Text(bank.label, style: MixerDesign.type(17)),
+                            trailing: bank.key == controller.store.bank
+                                ? const Icon(Icons.check,
+                                    color: MixerDesign.lime)
+                                : null,
+                            onTap: () {
+                              controller.setBank(bank.key);
+                              Navigator.pop(context);
+                            }),
+                      const Divider(color: MixerDesign.line),
+                      ListTile(
+                          title: Text('Master bus',
+                              style: MixerDesign.type(17)),
+                          subtitle: Text(controller.store.busRows
+                                  .where((b) => b.active)
+                                  .map((b) => b.name)
+                                  .join(', '),
+                              style: MixerDesign.type(13,
+                                  color: MixerDesign.mutedText)),
+                          onTap: () {
+                            Navigator.pop(context);
+                            showMixerBuses(context, controller);
+                          }),
+                      for (final entry in <(
+                        String,
+                        MixerDestination
+                      )>[
+                        ('Meter bridge', MixerDestination.meters),
+                        ('Connection', MixerDestination.connect),
+                        ('Debug', MixerDestination.debug),
+                      ])
+                        ListTile(
+                            title:
+                                Text(entry.$1, style: MixerDesign.type(17)),
+                            onTap: () {
+                              Navigator.pop(context);
+                              onNavigate(entry.$2);
+                            }),
+                    ]))));
+
 Future<void> showMixerBuses(BuildContext context, MixerController controller) =>
     showModalBottomSheet<void>(
         context: context,

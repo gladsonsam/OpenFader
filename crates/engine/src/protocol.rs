@@ -1,6 +1,6 @@
 //! [`Cmd`] in, [`Event`] out: the single protocol every adapter speaks.
 //!
-//! The JSON is byte-compatible with the `openmix-serve` WebSocket protocol
+//! The JSON is byte-compatible with the `openfader-serve` WebSocket protocol
 //! (see `crates/engine/README.md`): same `cmd`/`type` tags, same field
 //! names, same shapes. Existing clients must not notice the move.
 

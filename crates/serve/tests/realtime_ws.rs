@@ -18,9 +18,9 @@ async fn serve() -> std::net::SocketAddr {
         .await
         .unwrap();
     let addr = listener.local_addr().unwrap();
-    tokio::spawn(openmix_serve::run(
+    tokio::spawn(openfader_serve::run(
         listener,
-        openmix_serve::ServeOptions::default(),
+        openfader_serve::ServeOptions::default(),
     ));
     addr
 }
@@ -259,8 +259,8 @@ fn stats_golden_shape() {
         assert!(v.get(key).is_some(), "golden stats carries {key}");
     }
     // The live constructor produces the same key set (byte-stable order).
-    let live: Value = serde_json::from_str(&openmix_serve::stats_json(
-        &openmix_serve::StatsSnapshot {
+    let live: Value = serde_json::from_str(&openfader_serve::stats_json(
+        &openfader_serve::StatsSnapshot {
             meters_sent: 1,
             ..Default::default()
         },

@@ -34,7 +34,7 @@ pub const GAIN_MAX_DB: f32 = 60.0;
 /// (`HeadAmp.address` = `/headamp/{index+1:02d}` + `/gain`).
 ///
 /// ```
-/// # use openmix_proto_xair::headamp::headamp_gain;
+/// # use openfader_proto_xair::headamp::headamp_gain;
 /// assert_eq!(headamp_gain(1), "/headamp/01/gain");
 /// assert_eq!(headamp_gain(16), "/headamp/16/gain");
 /// ```
@@ -45,7 +45,7 @@ pub fn headamp_gain(ch: u16) -> String {
 /// OSC address of one headamp phantom switch (`…/phantom`, int `1`/`0`).
 ///
 /// ```
-/// # use openmix_proto_xair::headamp::headamp_phantom;
+/// # use openfader_proto_xair::headamp::headamp_phantom;
 /// assert_eq!(headamp_phantom(1), "/headamp/01/phantom");
 /// assert_eq!(headamp_phantom(16), "/headamp/16/phantom");
 /// ```
@@ -129,7 +129,7 @@ mod tests {
     fn phantom_roundtrips_as_plain_bool_int() {
         // Phantom shares the single plain-bool wire codec: int `1`/`0`,
         // decoded with `osc::is_on` (`wire == 1` means on).
-        use openmix_transport::osc;
+        use openfader_transport::osc;
         use rosc::{OscMessage, OscType};
         assert_eq!(crate::codec::bool_arg(true), OscType::Int(1));
         assert_eq!(crate::codec::bool_arg(false), OscType::Int(0));

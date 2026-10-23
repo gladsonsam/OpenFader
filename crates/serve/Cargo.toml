@@ -1,20 +1,20 @@
 [package]
-name = "openmix-serve"
+name = "openfader-serve"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "openmix-serve"
+name = "openfader-serve"
 path = "src/main.rs"
 
 [lib]
-name = "openmix_serve"
+name = "openfader_serve"
 path = "src/lib.rs"
 
 [dependencies]
-openmix-engine = { path = "../engine" }
-openmix-sim = { path = "../sim" }
+openfader-engine = { path = "../engine" }
+openfader-sim = { path = "../sim" }
 anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", features = ["ws"] }

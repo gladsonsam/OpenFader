@@ -17,7 +17,7 @@
 //! Total [`SIM_STRIPS`] = 77. DCA strips carry fader/mute/name/color only
 //! (catalogue scopes); every other family answers its full scoped set from
 //! the first poll (seeded state, no silent gaps).
-use openmix_core::{
+use openfader_core::{
     validate_fader, ChannelStrip, MeterFrame, MixerDriver, MixerSnapshot, ParamValue, StripFamily,
     StripId, StripKind,
 };
@@ -73,7 +73,7 @@ pub fn kind_of_strip(idx: usize) -> anyhow::Result<StripKind> {
 
 /// Named scene preset for [`SimDriver`]: realistic channel/bus scribbles
 /// for the two supported hardware desks, plus a `Studio` clone of the
-/// owner's live XR18 desk (see `docs/xr18-baseline.md` §2). Geometry stays
+/// owner's live XR18 desk (see XR18 baseline notes §2). Geometry stays
 /// 32ch + 8 buses (the sim is a stand-in, not a channel-count model); only
 /// names change (plus the reported model string in [`MixerDriver::query_info`]).
 /// `Generic` is the historical default (`CH01..`, `BUS1..`) and is what
@@ -90,7 +90,7 @@ pub enum SimPreset {
     Xr18,
     /// Mackie DL32S layout: 32 real inputs.
     Dl32s,
-    /// Owner's XR18 desk as found (`docs/xr18-baseline.md` §2): real
+    /// Owner's XR18 desk as found (XR18 baseline notes §2): real
     /// scribbles/order (`BASS`, `VOX`, `GTR L/R`, `DRUM L/R`, `KEYS L/R`,
     /// `AC GTR`, `Abelton` — desk spelling kept), bus scribbles
     /// (`COMP L/R`, `DRUM`, `KEYS`, `VOX`) and baseline faders/mutes.
@@ -143,7 +143,7 @@ pub const PRESET_BUSES: [&str; 8] = [
     "MixBus", "Mon 1", "Mon 2", "Mon 3", "Mon 4", "Reverb", "Delay", "FX",
 ];
 
-/// Owner's XR18 desk scribbles, in channel order (`docs/xr18-baseline.md`
+/// Owner's XR18 desk scribbles, in channel order (XR18 baseline notes
 /// §2). `""` is an empty desk scribble, not a spare: channels 02/03/06/14
 /// read back empty on the hardware. Desk spelling kept (`Abelton`).
 /// Strips 17..=32 keep their `CHxx` spare labels (XR18 is a 16-channel desk).
@@ -152,7 +152,7 @@ pub const STUDIO_CHANNELS: [&str; 16] = [
     "KEYS R", "AC GTR", "", "Abelton", "Abelton",
 ];
 
-/// Owner's desk-as-found channel faders, same order (`docs/xr18-baseline.md`
+/// Owner's desk-as-found channel faders, same order (XR18 baseline notes
 /// §2; `/ch/NN/mix/fader`).
 pub const STUDIO_FADERS: [f32; 16] = [
     0.197458, 0.0, 0.337243, 0.348974, 0.375367, 0.0, 0.434995, 0.434995, 0.0, 0.482893,
@@ -343,7 +343,7 @@ fn seed_pan(idx: usize, name: &str) -> f32 {
 /// they live in [`ChannelStrip`]. Writes via `set_param` overwrite these
 /// seeds and read back bit-exact.
 fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
-    use openmix_core::params::CATALOGUE;
+    use openfader_core::params::CATALOGUE;
     let mut m: HashMap<String, ParamValue> = HashMap::new();
     // Catalogue defaults first, then a plausible scene on top.
     for def in CATALOGUE {
@@ -505,7 +505,7 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
 /// DCA strips only ever answer fader/mute/name/color (scopes); the extra
 /// seeds are harmless (hidden by the scope check in `get_param`).
 fn seed_params_for_family(idx: usize, name: &str, kind: StripKind) -> HashMap<String, ParamValue> {
-    use openmix_core::params::CATALOGUE;
+    use openfader_core::params::CATALOGUE;
     let mut m: HashMap<String, ParamValue> = HashMap::new();
     for def in CATALOGUE {
         match def.id {
@@ -564,7 +564,7 @@ pub struct SimFxSlot {
 pub const SIM_FX_SLOTS: usize = 8;
 
 /// A design device for the R2 `devices` event (mirrors `devices()` in
-/// `docs/design/src/design-logic.js.txt`).
+/// design logic reference).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SimDevice {
     pub id: &'static str,
@@ -605,9 +605,9 @@ pub struct StripTaps {
 /// (test helper: scopes decide where an id round-trips).
 #[cfg(test)]
 fn first_supporting_strip(id: &str) -> Option<StripId> {
-    let def = openmix_core::params::find(id)?;
+    let def = openfader_core::params::find(id)?;
     for fam in SIM_TOPOLOGY {
-        if openmix_core::params::supports_kind(def, fam.kind) {
+        if openfader_core::params::supports_kind(def, fam.kind) {
             return Some(StripId(fam.first as u16));
         }
     }
@@ -616,14 +616,14 @@ fn first_supporting_strip(id: &str) -> Option<StripId> {
 
 fn default_fx_for(preset: SimPreset) -> Vec<SimFxSlot> {
     let _ = preset;
-    openmix_core::fx::DESIGN_FX_DEFAULT_TYPES
+    openfader_core::fx::DESIGN_FX_DEFAULT_TYPES
         .iter()
         .enumerate()
         .map(|(i, t)| SimFxSlot {
             fx_type: t.to_string(),
             on: i != 7,
             bypass: false,
-            params: openmix_core::fx::fx_default_params(t),
+            params: openfader_core::fx::fx_default_params(t),
         })
         .collect()
 }
@@ -642,7 +642,7 @@ pub struct SimDriver {
     connected: RwLock<bool>,
     preset: SimPreset,
     /// R2 FX rack: [`SIM_FX_SLOTS`] design-type slots (type/on/bypass +
-    /// normalized params). Seeded from [`openmix_core::fx`] design defaults
+    /// normalized params). Seeded from [`openfader_core::fx`] design defaults
     /// (`buildFx` order); writes overwrite and read back bit-exact.
     fx: RwLock<Vec<SimFxSlot>>,
     /// R2 subgroup masters: 6 × (fader 0..1, mute), in-memory (no desk
@@ -664,7 +664,7 @@ impl SimDriver {
         Self::with_preset(SimPreset::Generic)
     }
 
-    /// Named desk preset (`--preset xr18|dl32s|studio` in `openmix-cli`).
+    /// Named desk preset (`--preset xr18|dl32s|studio` in `openfader-cli`).
     /// Geometry is unchanged (32ch + 8 buses); only scribbles differ
     /// (studio additionally mirrors desk-as-found faders/mutes + main).
     pub fn with_preset(preset: SimPreset) -> Self {
@@ -713,7 +713,7 @@ impl SimDriver {
         self.preset
     }
 
-    /// Engineering pan (`-100..=+100`, [`openmix_core::params`] catalogue)
+    /// Engineering pan (`-100..=+100`, [`openfader_core::params`] catalogue)
     /// for one strip. Strip storage uses the catalogue scale directly
     /// (default `0.0` = centre, set in [`default_strips_for`]) so `params`
     /// frames never carry the legacy `0.5`-centre position scale.
@@ -826,7 +826,7 @@ impl SimDriver {
     /// to the type's design defaults (mirrors the UI picking a new type).
     pub fn set_fx_type(&self, slot: u8, fx_type: &str) -> anyhow::Result<()> {
         let i = self.fx_idx(slot)?;
-        let meta = openmix_core::fx::fx_type_meta(fx_type)
+        let meta = openfader_core::fx::fx_type_meta(fx_type)
             .ok_or_else(|| anyhow::anyhow!("sim: unknown fx type {fx_type:?}"))?;
         let mut fx = self.fx.write().expect("sim fx poisoned");
         fx[i].fx_type = meta.label.to_string();
@@ -846,7 +846,7 @@ impl SimDriver {
         }
         let i = self.fx_idx(slot)?;
         let mut fx = self.fx.write().expect("sim fx poisoned");
-        let meta = openmix_core::fx::fx_type_meta(&fx[i].fx_type.clone())
+        let meta = openfader_core::fx::fx_type_meta(&fx[i].fx_type.clone())
             .ok_or_else(|| anyhow::anyhow!("sim: fx slot {slot} has unknown type"))?;
         let pos = meta
             .params
@@ -860,7 +860,7 @@ impl SimDriver {
     pub fn get_fx_param(&self, slot: u8, id: &str) -> anyhow::Result<f32> {
         let i = self.fx_idx(slot)?;
         let fx = self.fx.read().expect("sim fx poisoned");
-        let meta = openmix_core::fx::fx_type_meta(&fx[i].fx_type)
+        let meta = openfader_core::fx::fx_type_meta(&fx[i].fx_type)
             .ok_or_else(|| anyhow::anyhow!("sim: fx slot {slot} has unknown type"))?;
         let pos = meta
             .params
@@ -898,7 +898,7 @@ impl SimDriver {
     pub fn set_patch(&self, strip: StripId, group: &str, index: u8) -> anyhow::Result<String> {
         let i = self.idx(strip)?;
         let kind = kind_of_strip(i)?;
-        if kind != openmix_core::StripKind::In {
+        if kind != openfader_core::StripKind::In {
             anyhow::bail!("sim: patch only supported on input strips");
         }
         let (key, count) = Self::check_patch_group(group)?;
@@ -916,7 +916,7 @@ impl SimDriver {
     pub fn clear_patch(&self, strip: StripId) -> anyhow::Result<()> {
         let i = self.idx(strip)?;
         let kind = kind_of_strip(i)?;
-        if kind != openmix_core::StripKind::In {
+        if kind != openfader_core::StripKind::In {
             anyhow::bail!("sim: patch only supported on input strips");
         }
         self.params.write().expect("sim params poisoned")[i]
@@ -1003,13 +1003,13 @@ impl SimDriver {
 }
 
 impl MixerDriver for SimDriver {
-    fn param_defs(&self) -> &'static [openmix_core::params::ParamDef] {
-        static DEFS: std::sync::OnceLock<[openmix_core::params::ParamDef; 1]> = std::sync::OnceLock::new();
+    fn param_defs(&self) -> &'static [openfader_core::params::ParamDef] {
+        static DEFS: std::sync::OnceLock<[openfader_core::params::ParamDef; 1]> = std::sync::OnceLock::new();
         DEFS.get_or_init(|| {
-            let mut balance = *openmix_core::params::find("pan").expect("catalogue has pan");
+            let mut balance = *openfader_core::params::find("pan").expect("catalogue has pan");
             balance.id = "balance";
             balance.label = "Balance";
-            balance.scope = openmix_core::params::ParamScope::Main;
+            balance.scope = openfader_core::params::ParamScope::Main;
             balance.scopes = &[StripKind::Main];
             [balance]
         })
@@ -1027,7 +1027,7 @@ impl MixerDriver for SimDriver {
     fn capabilities(&self) -> &'static [&'static str] {
         static IDS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
         IDS.get_or_init(|| {
-            openmix_core::params::CATALOGUE
+            openfader_core::params::CATALOGUE
                 .iter()
                 .map(|d| d.id)
                 .chain(self.param_defs().iter().map(|d| d.id))
@@ -1269,8 +1269,8 @@ impl MixerDriver for SimDriver {
                 return Ok(());
             }
             ("pan", ParamValue::Float(v)) => {
-                if !openmix_core::params::supports_kind(
-                    openmix_core::params::find("pan").expect("catalogue has pan"),
+                if !openfader_core::params::supports_kind(
+                    openfader_core::params::find("pan").expect("catalogue has pan"),
                     kind,
                 ) {
                     anyhow::bail!("sim: pan out of scope for {kind:?} strips");
@@ -1284,11 +1284,11 @@ impl MixerDriver for SimDriver {
         // Catalogue v2 ids: scope-checked (out-of-scope is a non-drop-class
         // error — the engine pre-filters the poll set by scopes, so this
         // only fires on direct misuse) and range-validated.
-        if let Some(def) = openmix_core::params::find(param) {
-            if !openmix_core::params::supports_kind(def, kind) {
+        if let Some(def) = openfader_core::params::find(param) {
+            if !openfader_core::params::supports_kind(def, kind) {
                 anyhow::bail!("sim: {param} out of scope for {kind:?} strips");
             }
-            openmix_core::params::validate(param, &value)?;
+            openfader_core::params::validate(param, &value)?;
             // Bit-exact store: no dB conversion, no quantization in sim.
             self.params.write().expect("sim params poisoned")[i].insert(param.to_string(), value);
             return Ok(());
@@ -1313,8 +1313,8 @@ impl MixerDriver for SimDriver {
                 return Ok(ParamValue::Float(self.read()[i].pan));
             }
             "pan" => {
-                if !openmix_core::params::supports_kind(
-                    openmix_core::params::find("pan").expect("catalogue has pan"),
+                if !openfader_core::params::supports_kind(
+                    openfader_core::params::find("pan").expect("catalogue has pan"),
                     kind,
                 ) {
                     anyhow::bail!("sim: pan out of scope for {kind:?} strips");
@@ -1323,8 +1323,8 @@ impl MixerDriver for SimDriver {
             }
             _ => {}
         }
-        if let Some(def) = openmix_core::params::find(param) {
-            if !openmix_core::params::supports_kind(def, kind) {
+        if let Some(def) = openfader_core::params::find(param) {
+            if !openfader_core::params::supports_kind(def, kind) {
                 anyhow::bail!("sim: {param} out of scope for {kind:?} strips");
             }
             if let Some(v) = self.params.read().expect("sim params poisoned")[i].get(param) {
@@ -1363,12 +1363,12 @@ impl MixerDriver for SimDriver {
         Ok(())
     }
 
-    async fn query_info(&self) -> anyhow::Result<openmix_core::MixerInfo> {
+    async fn query_info(&self) -> anyhow::Result<openfader_core::MixerInfo> {
         let model = match self.preset {
             SimPreset::Generic => "SimDriver 32+8".to_string(),
             p => format!("SimDriver 32+8 ({})", p.name()),
         };
-        Ok(openmix_core::MixerInfo {
+        Ok(openfader_core::MixerInfo {
             name: "sim".into(),
             model,
             firmware: "0.1.0".into(),
@@ -1748,7 +1748,7 @@ mod tests {
         // default for anything never written): no "no value yet".
         let g = d.get_param(StripId(5), "gain").await.unwrap();
         assert!(
-            openmix_core::params::validate("gain", &g).is_ok(),
+            openfader_core::params::validate("gain", &g).is_ok(),
             "seeded gain validates: {g:?}"
         );
         // Out-of-range strips still error.
@@ -1761,7 +1761,7 @@ mod tests {
 
     #[tokio::test]
     async fn capabilities_cover_the_whole_catalogue() {
-        use openmix_core::params;
+        use openfader_core::params;
         let d = SimDriver::new();
         let caps = d.capabilities();
         assert_eq!(
@@ -1780,12 +1780,12 @@ mod tests {
 
     #[tokio::test]
     async fn param_roundtrip_every_catalogue_id() {
-        use openmix_core::params::ParamKind;
+        use openfader_core::params::ParamKind;
         let d = SimDriver::new();
         // One representative value per kind, in catalogue range, on the
         // first strip whose kind supports the id (scopes are the
         // catalogue's call — e.g. eq5_* is bus/main-only).
-        for def in openmix_core::params::CATALOGUE {
+        for def in openfader_core::params::CATALOGUE {
             let s = first_supporting_strip(def.id).expect("every id is supported somewhere");
             let v = match def.kind {
                 ParamKind::Float => ParamValue::Float((def.min + def.max) / 2.0),
@@ -1807,7 +1807,7 @@ mod tests {
         // (usbreturn/eq1_type/eq2_type are input-scoped: strip 2 stands.)
         let s = StripId(2);
         for id in ["usbreturn", "eq1_type", "eq2_type"] {
-            let def = openmix_core::params::find(id).unwrap();
+            let def = openfader_core::params::find(id).unwrap();
             d.set_param(s, id, ParamValue::Float(def.max)).await.unwrap();
             assert_eq!(
                 d.get_param(s, id).await.unwrap(),
@@ -1818,7 +1818,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_catalogue_id_readable_from_first_poll() {
-        use openmix_core::params;
+        use openfader_core::params;
         // Fresh drivers answer get_param for every catalogue id on every
         // strip whose kind supports it, before anything is written
         // (seeded scene, catalogue defaults at minimum) — the relay
@@ -1836,7 +1836,7 @@ mod tests {
             for ch in 0..SIM_CHANNELS {
                 let s = StripId(ch as u16);
                 for def in params::CATALOGUE {
-                    if !params::supports_kind(def, openmix_core::StripKind::In) {
+                    if !params::supports_kind(def, openfader_core::StripKind::In) {
                         continue;
                     }
                     checked += 1;
@@ -1851,7 +1851,7 @@ mod tests {
             assert!(checked > 100, "input strips carry the bulk of the catalogue");
             // Bus/main-scoped ids (eq5_*) answer on their own families.
             for def in params::CATALOGUE {
-                if params::supports_kind(def, openmix_core::StripKind::In) {
+                if params::supports_kind(def, openfader_core::StripKind::In) {
                     continue;
                 }
                 let s = first_supporting_strip(def.id).expect("scoped id has a strip");
@@ -1937,7 +1937,7 @@ mod tests {
 
     #[tokio::test]
     async fn every_strip_answers_its_scoped_set() {
-        use openmix_core::params;
+        use openfader_core::params;
         // The ch30-class fix: after construction (no writes) every strip
         // answers get_param for every catalogue id its kind supports, and
         // the value validates. DCA strips answer only fader/mute/name/color.

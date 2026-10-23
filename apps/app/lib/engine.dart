@@ -1,6 +1,6 @@
 // Cmd JSON builders (client -> engine) and Event JSON parsers
 // (engine -> client). Same wire protocol as the WS relay:
-// `openmix_engine::protocol::{Cmd, Event}` serialization, byte
+// `openfader_engine::protocol::{Cmd, Event}` serialization, byte
 // identical. Unknown event types are ignored so old/new engines interop.
 import 'dart:convert';
 import 'dart:typed_data';

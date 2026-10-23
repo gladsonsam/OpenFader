@@ -6,7 +6,7 @@
 //! (hardware-verified read of `/fx/1/par/01` → `,f 0.1`, same-value
 //! roundtrip write `0.5` → `0.5` bit-exact — baseline §6 row 5).
 //!
-//! [`openmix_core::fx`] owns the shape and validation (0-based slot/index
+//! [`openfader_core::fx`] owns the shape and validation (0-based slot/index
 //! at the trait level); this module adds 1 on the wire and owns the
 //! per-effect-type label table below. FX params round-trip bit-exact on
 //! hardware (unlike faders, no ~10-bit quantization — baseline T8), so
@@ -56,29 +56,29 @@
 //! `backend.setParam(slot - 1, 'fx{slot}_par{MM}', value01)` — the field
 //! is authoritative, `ch` carries the 0-based slot so a future relay can
 //! route without parsing the field.
-use openmix_core::fx::{FX_PARAM_COUNT, FX_SLOT_MAX, FX_SLOT_MIN};
+use openfader_core::fx::{FX_PARAM_COUNT, FX_SLOT_MAX, FX_SLOT_MIN};
 use rosc::OscType;
 
 /// Validate a 1-based wire slot number (`1..=4`).
 pub fn check_slot(slot: u8) -> anyhow::Result<u8> {
-    openmix_core::fx::validate_slot(slot)
+    openfader_core::fx::validate_slot(slot)
 }
 
 /// Validate a 0-based param index (`0..64`).
 pub fn check_index(index: u8) -> anyhow::Result<u8> {
-    openmix_core::fx::validate_param_index(index)
+    openfader_core::fx::validate_param_index(index)
 }
 
 /// Validate a normalized param value (`0.0..=1.0`, finite).
 pub fn check_value(value: f32) -> anyhow::Result<f32> {
-    openmix_core::fx::validate_param_value(value)
+    openfader_core::fx::validate_param_value(value)
 }
 
 /// OSC address for one FX param: 0-based `index` maps to 1-based `MM`.
 /// Slot is the 1-based wire number (`1..=4`, same as the trait hooks).
 ///
 /// ```
-/// # use openmix_proto_xair::fx::fx_param;
+/// # use openfader_proto_xair::fx::fx_param;
 /// assert_eq!(fx_param(1, 0).unwrap(), "/fx/1/par/01");
 /// assert_eq!(fx_param(4, 63).unwrap(), "/fx/4/par/64");
 /// ```
@@ -99,7 +99,7 @@ pub fn fx_field(slot: u8, index: u8) -> anyhow::Result<String> {
 /// carries the loaded algorithm as an int `0..=60` (see module docs).
 ///
 /// ```
-/// # use openmix_proto_xair::fx::fx_type;
+/// # use openfader_proto_xair::fx::fx_type;
 /// assert_eq!(fx_type(1).unwrap(), "/fx/1/type");
 /// assert_eq!(fx_type(4).unwrap(), "/fx/4/type");
 /// ```
@@ -116,7 +116,7 @@ pub fn fx_type(slot: u8) -> anyhow::Result<String> {
 /// slots 1–3 read 0.
 ///
 /// ```
-/// # use openmix_proto_xair::fx::fx_insert;
+/// # use openfader_proto_xair::fx::fx_insert;
 /// assert_eq!(fx_insert(1).unwrap(), "/fx/1/insert");
 /// assert_eq!(fx_insert(4).unwrap(), "/fx/4/insert");
 /// ```
@@ -136,10 +136,10 @@ pub fn fx_type_to_arg(effect: u8) -> anyhow::Result<rosc::OscType> {
 }
 
 /// Lowest/highest slot, re-exported for driver bounds checks.
-pub use openmix_core::fx::FX_SLOT_MAX as SLOT_MAX;
-pub use openmix_core::fx::FX_SLOT_MIN as SLOT_MIN;
+pub use openfader_core::fx::FX_SLOT_MAX as SLOT_MAX;
+pub use openfader_core::fx::FX_SLOT_MIN as SLOT_MIN;
 /// Params per slot (0-based `0..FX_PARAM_COUNT`), re-exported for loops.
-pub use openmix_core::fx::FX_PARAM_COUNT as PARAM_COUNT;
+pub use openfader_core::fx::FX_PARAM_COUNT as PARAM_COUNT;
 
 /// Lowest effect-type index on `/fx/N/type`.
 pub const FX_TYPE_MIN: u8 = 0;
@@ -201,7 +201,7 @@ pub fn parse_fx_type(args: &[OscType]) -> anyhow::Result<u8> {
 ///   floats bail the same way; anything non-numeric bails too.
 ///
 /// ```
-/// # use openmix_proto_xair::fx::{fx_param_def, parse_fx_param};
+/// # use openfader_proto_xair::fx::{fx_param_def, parse_fx_param};
 /// # use rosc::OscType;
 /// // VRM par 13 is Freeze (OFF/ON): int 0 → 0.0.
 /// let def = fx_param_def(7, 13);
@@ -1107,7 +1107,7 @@ fn geq2_def(par: u8) -> Option<FxParamDef> {
 /// `caps.fx` type `id`. Human-facing UI shows [`fx_effect_full_name`].
 ///
 /// ```
-/// # use openmix_proto_xair::fx::fx_effect_name;
+/// # use openfader_proto_xair::fx::fx_effect_name;
 /// assert_eq!(fx_effect_name(0), Some("HALL"));
 /// assert_eq!(fx_effect_name(60), Some("PIT"));
 /// assert_eq!(fx_effect_name(15), None);
@@ -1122,7 +1122,7 @@ pub fn fx_effect_name(index: u8) -> Option<&'static str> {
 /// index, same gap rule as [`fx_effect_name`]).
 ///
 /// Provenance: 58 of the 60 names are the X-AIR-Edit 1.8.1 rack-select
-/// strings (see `docs/captures/xair-edit-1.8.1/app_structure.txt` §4 —
+/// strings (see X-Air Edit 1.8.1 app structure capture §4 —
 /// our own prior strings inventory, names only, no artwork): matched to
 /// wire indices by family/param semantics (the rack-select order is
 /// grouped by category, NOT wire order). Two are clean-room inferences,
@@ -1133,7 +1133,7 @@ pub fn fx_effect_name(index: u8) -> Option<&'static str> {
 /// single-channel variant outside this table; never asserted).
 ///
 /// ```
-/// # use openmix_proto_xair::fx::fx_effect_full_name;
+/// # use openfader_proto_xair::fx::fx_effect_full_name;
 /// assert_eq!(fx_effect_full_name(0), Some("Hall Reverb"));
 /// assert_eq!(fx_effect_full_name(10), Some("Stereo Delay"));
 /// assert_eq!(fx_effect_full_name(60), Some("Stereo Pitch Shifter"));
@@ -1148,7 +1148,7 @@ pub fn fx_effect_full_name(index: u8) -> Option<&'static str> {
 /// (`None` = undocumented index).
 ///
 /// ```
-/// # use openmix_proto_xair::fx::fx_param_count;
+/// # use openfader_proto_xair::fx::fx_param_count;
 /// assert_eq!(fx_param_count(0), Some(12));
 /// assert_eq!(fx_param_count(28), Some(64));
 /// assert_eq!(fx_param_count(15), None);
@@ -1240,7 +1240,7 @@ fn fx_effect_meta(index: u8) -> Option<(&'static str, &'static str, u8)> {
 /// numbered sliders for unknown types).
 ///
 /// ```
-/// # use openmix_proto_xair::fx::fx_param_def;
+/// # use openfader_proto_xair::fx::fx_param_def;
 /// let d = fx_param_def(0, 1).unwrap();
 /// assert_eq!((d.label, d.unit), ("PreDelay", "ms"));
 /// assert!(fx_param_def(0, 13).is_none()); // HALL padding
@@ -1355,7 +1355,7 @@ pub enum TapSubdiv {
 /// and get no TAP button (no guessing).
 ///
 /// ```
-/// # use openmix_proto_xair::fx::{fx_tap_target, TapSubdiv, tap_delay_ms};
+/// # use openfader_proto_xair::fx::{fx_tap_target, TapSubdiv, tap_delay_ms};
 /// let t = fx_tap_target(10).unwrap();
 /// assert_eq!((t.par, t.min_ms, t.max_ms), (2, 1.0, 3000.0));
 /// assert!(t.subdiv);
@@ -1393,7 +1393,7 @@ pub fn fx_tap_target(index: u8) -> Option<FxTapTarget> {
 /// few, non-finite/non-positive, or outside a sane 20..=300 BPM window.
 ///
 /// ```
-/// # use openmix_proto_xair::fx::tap_bpm_from_intervals_ms;
+/// # use openfader_proto_xair::fx::tap_bpm_from_intervals_ms;
 /// assert!((tap_bpm_from_intervals_ms(&[500.0, 500.0, 500.0]).unwrap() - 120.0).abs() < 1e-9);
 /// assert!(tap_bpm_from_intervals_ms(&[500.0, 500.0]).is_none()); // only 3 taps
 /// ```
@@ -1780,7 +1780,7 @@ mod tests {
     /// drive that effect's labeled pars bit-exact.
     #[tokio::test]
     async fn loopback_type_then_labeled_pars() {
-        use openmix_transport::{osc, OscSession};
+        use openfader_transport::{osc, OscSession};
         use std::collections::HashMap;
         use std::sync::{Arc, Mutex as StdMutex};
         use tokio::net::UdpSocket;
@@ -1937,7 +1937,7 @@ mod tests {
     /// — tap target par writes round-trip bit-exact via `set_fx_param`.
     #[tokio::test]
     async fn loopback_tap_target_par_roundtrip() {
-        use openmix_transport::{osc, OscSession};
+        use openfader_transport::{osc, OscSession};
         use std::collections::HashMap;
         use std::sync::{Arc, Mutex as StdMutex};
         use tokio::net::UdpSocket;
@@ -2035,7 +2035,7 @@ mod tests {
     /// float roundtrips.
     #[tokio::test]
     async fn loopback_mixed_int_float_pars_with_nan_padding() {
-        use openmix_transport::{osc, OscSession};
+        use openfader_transport::{osc, OscSession};
         use std::collections::HashMap;
         use std::sync::{Arc, Mutex as StdMutex};
         use tokio::net::UdpSocket;

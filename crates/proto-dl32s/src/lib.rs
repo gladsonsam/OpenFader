@@ -2,17 +2,17 @@
 //!
 //! This crate owns ONLY the DL32S address table ([`addrs`]) plus argument
 //! mapping. All sockets, framing, keepalive, caching and the init handshake
-//! live in `openmix-transport::mackie`. New providers add a crate shaped
+//! live in `openfader-transport::mackie`. New providers add a crate shaped
 //! exactly like this one: table + mapping, zero core changes.
 
 pub mod addrs;
 
 use addrs::{dl32s_inputs, INPUT_COUNT};
-use openmix_core::{
+use openfader_core::{
     validate_fader, ChannelStrip, MixerDriver, MixerInfo, MixerSnapshot, ParamUpdate, ParamValue,
     StripId,
 };
-use openmix_transport::mackie::{
+use openfader_transport::mackie::{
     MackieSession, PushEvent, MUTE_GROUP_COUNT, REQUEST_TIMEOUT, VALUE_TYPE_PARAM,
 };
 use std::sync::{
@@ -25,7 +25,7 @@ use tokio::sync::{broadcast, Mutex, MutexGuard};
 /// position was confirmed on hardware AND whose value domain was confirmed
 /// live — by the read-only push-cache survey (varied values prove the desk
 /// stores the domain) or by write+relay with net-zero restore 2026-10-20.
-/// See `docs/dl32s-protocol.md` and the `verified` flags in [`addrs`].
+/// See DL32S protocol notes and the `verified` flags in [`addrs`].
 ///
 /// Deliberately absent (reachable only by raw table key for experts):
 /// - `icon` — position verified, but the live domain is ~1000+ (app icon
@@ -634,7 +634,7 @@ impl Dl32sDriver {
         let guard = self.session().await?;
         guard.as_ref().expect("checked above").site_survey(REQUEST_TIMEOUT).await
     }
-    pub async fn get_transport_status(&self, kind: &str) -> anyhow::Result<openmix_transport::mackie::Message> {
+    pub async fn get_transport_status(&self, kind: &str) -> anyhow::Result<openfader_transport::mackie::Message> {
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
         let subtype = match kind {
@@ -645,7 +645,7 @@ impl Dl32sDriver {
         };
         session.request_general_info(subtype, REQUEST_TIMEOUT).await
     }
-    pub async fn get_show_info(&self) -> anyhow::Result<openmix_transport::mackie::Message> {
+    pub async fn get_show_info(&self) -> anyhow::Result<openfader_transport::mackie::Message> {
         let guard = self.session().await?;
         guard.as_ref().expect("checked above").get_show_info(REQUEST_TIMEOUT).await
     }
@@ -653,7 +653,7 @@ impl Dl32sDriver {
         let guard = self.session().await?;
         guard.as_ref().expect("checked above").show_ok().await
     }
-    pub async fn get_show_crc(&self, pid: u32) -> anyhow::Result<openmix_transport::mackie::Message> {
+    pub async fn get_show_crc(&self, pid: u32) -> anyhow::Result<openfader_transport::mackie::Message> {
         let guard = self.session().await?;
         guard.as_ref().expect("checked above").get_show_crc(pid, REQUEST_TIMEOUT).await
     }
@@ -731,10 +731,10 @@ impl MixerDriver for Dl32sDriver {
     /// leaves are served through the bus/subgroup/mute-group/main
     /// methods below, not as pollable strips, so no extra topology is
     /// advertised).
-    fn topology(&self) -> Vec<openmix_core::StripFamily> {
-        vec![openmix_core::StripFamily {
+    fn topology(&self) -> Vec<openfader_core::StripFamily> {
+        vec![openfader_core::StripFamily {
             key: "ch",
-            kind: openmix_core::StripKind::In,
+            kind: openfader_core::StripKind::In,
             label: "Ch 1-32",
             first: 0,
             count: INPUT_COUNT as usize,
@@ -757,19 +757,19 @@ impl MixerDriver for Dl32sDriver {
     /// `eq_mode` (write-proven 0/1, modern/vintage per Mackie convention).
     /// Canonical ids win on collision, so a future canonical `eq_mode`
     /// upgrades this row seamlessly.
-    fn param_defs(&self) -> &'static [openmix_core::params::ParamDef] {
-        static DEFS: std::sync::OnceLock<[openmix_core::params::ParamDef; 1]> =
+    fn param_defs(&self) -> &'static [openfader_core::params::ParamDef] {
+        static DEFS: std::sync::OnceLock<[openfader_core::params::ParamDef; 1]> =
             std::sync::OnceLock::new();
         DEFS.get_or_init(|| {
-            [openmix_core::params::ParamDef {
+            [openfader_core::params::ParamDef {
                 id: "eq_mode",
-                kind: openmix_core::params::ParamKind::Enum,
-                scope: openmix_core::params::ParamScope::Channel,
-                scopes: openmix_core::params::SCOPES_EQ,
+                kind: openfader_core::params::ParamKind::Enum,
+                scope: openfader_core::params::ParamScope::Channel,
+                scopes: openfader_core::params::SCOPES_EQ,
                 min: 0.0,
                 max: 1.0,
                 unit: "",
-                default: openmix_core::params::ParamDefault::Float(0.0),
+                default: openfader_core::params::ParamDefault::Float(0.0),
                 label: "EQ modern/vintage",
             }]
         })
@@ -1307,7 +1307,7 @@ mod tests {
         // driver's provider rows, so the engine renders a params row for it.
         let defs = Dl32sDriver::new().param_defs();
         for id in caps {
-            let known = openmix_core::params::find(id).is_some()
+            let known = openfader_core::params::find(id).is_some()
                 || defs.iter().any(|d| d.id == *id);
             assert!(known, "caps id {id} resolves nowhere");
         }
@@ -1458,7 +1458,7 @@ mod tests {
 
     #[test]
     fn decode_push_names_and_snapshot() {
-        use openmix_transport::mackie::PushEvent;
+        use openfader_transport::mackie::PushEvent;
         let got = decode_push(PushEvent::Names {
             pairs: vec![(1, "Vox".to_string()), (33, "Aux".to_string())],
         });
@@ -1485,7 +1485,7 @@ mod tests {
 
     #[tokio::test]
     async fn broadcast_push_arrives_as_param_update_loopback() {
-        use openmix_transport::mackie::{
+        use openfader_transport::mackie::{
             decode_one, word_swap, Command, Message, MessageType, RawValue,
         };
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -1534,7 +1534,7 @@ mod tests {
                 // sent before the test subscribes are missed by broadcast
                 // semantics, so a later repetition must follow.
                 // Another client moved ch1 fader to -15 dB (addr 9).
-                let body = openmix_transport::mackie::build_single_set(
+                let body = openfader_transport::mackie::build_single_set(
                     9,
                     RawValue::Float(-15.0),
                     5,

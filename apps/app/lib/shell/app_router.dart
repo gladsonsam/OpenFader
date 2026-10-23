@@ -32,10 +32,13 @@ import '../state/app_store.dart';
 import '../theme.dart';
 import 'shell.dart';
 import '../screens/channel.dart';
+import '../mixer/components/banks.dart';
+import '../screens/channel_toolbar.dart';
 import '../screens/connection.dart';
 import '../screens/debug.dart';
 import '../screens/fx.dart';
 import '../screens/meters.dart';
+import '../screens/start.dart';
 import '../mixer/controller.dart';
 import '../mixer/page.dart';
 import '../screens/routing.dart';
@@ -82,6 +85,11 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late AppTab _tab;
   Timer? _shellLoop;
+
+  /// The Connections start screen is the app's front door: shown first
+  /// after boot, re-opened from the mixer home button. The shell (header,
+  /// rail, poll loop) stays alive underneath so returning keeps state.
+  bool _showStart = true;
 
   late final MixerController _mixer;
   late final _ConnStore _conn;
@@ -147,6 +155,21 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final store = widget.store;
+    // Front door first: the Connections start screen replaces all shell
+    // chrome until the user enters the mixer (connect, open, offline).
+    if (_showStart) {
+      return ListenableBuilder(
+        listenable: store,
+        builder: (context, _) => ConnectionsStartScreen(
+          store: _conn,
+          onEnterMixer: () => setState(() => _showStart = false),
+          onWorkOffline: () {
+            _conn.connectSim();
+            setState(() => _showStart = false);
+          },
+        ),
+      );
+    }
     // Structural listener only: fader/mute/pan hot-path writes update
     // per-strip ValueNotifiers in place (AppStore.faderOf/muteOf/panNoteOf)
     // and never call notifyListeners(), so a fader drag rebuilds one
@@ -163,8 +186,8 @@ class _AppShellState extends State<AppShell> {
         // Plus the boot-time backend verdict: real embedded engine vs the
         // FAKE sim fallback. Loud on every path — never silent.
         final title = sim
-            ? 'OpenMix · Demo desk'
-            : '${store.engine.linkName.isEmpty ? 'OpenMix' : store.engine.linkName} · ${store.engine.linkState.isEmpty ? 'Not connected' : store.engine.linkState}';
+            ? 'OpenFader · Demo desk'
+            : '${store.engine.linkName.isEmpty ? 'OpenFader' : store.engine.linkName} · ${store.engine.linkState.isEmpty ? 'Not connected' : store.engine.linkState}';
         final isChan = _tab == AppTab.channel;
         final narrow = MediaQuery.sizeOf(context).width < 720;
         if (_tab == AppTab.mixer &&
@@ -214,6 +237,19 @@ class _AppShellState extends State<AppShell> {
           onGo: _go,
           vertical: !narrow,
         );
+        // Channel views carry their own approved toolbar (home + session
+        // + tools), so the shared shell header steps aside for them.
+        if (isChan) {
+          final toolbar = ChannelToolbar(
+            store: store,
+            compact: MediaQuery.sizeOf(context).width < 600,
+            onHome: () => _go(AppTab.mixer),
+            onTool: _channelTool,
+            onLock: () =>
+                store.locked ? store.cmdUnlock() : store.cmdLock(),
+          );
+          return U4Shell(header: toolbar, child: page);
+        }
         final body = narrow
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -228,8 +264,35 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
+  void _channelTool(ChannelTool t) {
+    switch (t) {
+      case ChannelTool.fx:
+        _go(AppTab.fx);
+      case ChannelTool.settings:
+        _go(AppTab.settings);
+      case ChannelTool.routing:
+        _go(AppTab.routing);
+      case ChannelTool.layout:
+        showMixerLayout(context, _mixer, (d) => _go(switch (d) {
+              MixerDestination.meters => AppTab.meters,
+              MixerDestination.channel => AppTab.channel,
+              MixerDestination.scenes => AppTab.scenes,
+              MixerDestination.fx => AppTab.fx,
+              MixerDestination.routing => AppTab.routing,
+              MixerDestination.connect => AppTab.connect,
+              MixerDestination.settings => AppTab.settings,
+              MixerDestination.debug => AppTab.debug,
+            }),
+            locked: widget.store.locked,
+            onLock: () => widget.store.locked
+                ? widget.store.cmdUnlock()
+                : widget.store.cmdLock());
+    }
+  }
+
   Widget _mixerPage() => MixerPage(
       controller: _mixer,
+      onHome: () => setState(() => _showStart = true),
       onNavigate: (destination) => _go(switch (destination) {
             MixerDestination.meters => AppTab.meters,
             MixerDestination.channel => AppTab.channel,
@@ -377,7 +440,7 @@ class _EngineTagBanner extends StatelessWidget {
         children: [
           Text(
             isReal
-                ? 'ENGINE: embedded openmix-engine (real)'
+                ? 'ENGINE: embedded openfader-engine (real)'
                 : 'ENGINE: FAKE sim fallback — native lib missing, desk impossible',
             style: TextStyle(
                 color: isReal ? U4.meterGreen : U4.meterRed,
@@ -559,6 +622,18 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   @override
   String? get emptyText =>
       engine.devices.isEmpty ? 'No desks seen yet — Scan first.' : null;
+
+  @override
+  String hostOf(String id) {
+    for (final d in engine.devices) {
+      if (d.id == id) return d.ip;
+    }
+    return '';
+  }
+
+  @override
+  String get connectedHost =>
+      engine.driver == 'sim' ? '' : engine.linkIp;
 
   @override
   String get linkInfo {

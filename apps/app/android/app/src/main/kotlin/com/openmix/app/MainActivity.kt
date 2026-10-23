@@ -18,7 +18,7 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
-            "openmix/wifi_net"
+            "openfader/wifi_net"
         ).setMethodCallHandler { call, result ->
             when (call.method) {
                 "bindWifi" -> result.success(bindWifi())
@@ -82,7 +82,7 @@ class MainActivity : FlutterActivity() {
         return try {
             val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
                 ?: return false
-            val lock = multicastLock ?: wm.createMulticastLock("openmix_scan").also {
+            val lock = multicastLock ?: wm.createMulticastLock("openfader_scan").also {
                 it.setReferenceCounted(true)
                 multicastLock = it
             }

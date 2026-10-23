@@ -3,14 +3,14 @@
 //!
 //! `tests/golden/*.json` are committed fixtures (one file per frame type,
 //! one per command type). This test validates them: every frame parses as
-//! an [`Event`](openmix_engine::Event) and round-trips, every command parses
-//! as a [`Cmd`](openmix_engine::Cmd). Run with `GOLDEN_UPDATE=1` to
+//! an [`Event`](openfader_engine::Event) and round-trips, every command parses
+//! as a [`Cmd`](openfader_engine::Cmd). Run with `GOLDEN_UPDATE=1` to
 //! regenerate the fixtures from the constructors below (then commit).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use openmix_engine::{Cmd, Event};
+use openfader_engine::{Cmd, Event};
 use serde_json::{json, Value};
 
 fn golden_dir() -> PathBuf {
@@ -34,14 +34,14 @@ fn examples() -> Vec<(String, Value)> {
             Event::State {
                 driver: "sim".to_string(),
                 strips: vec![
-                    openmix_engine::protocol::StateStrip {
+                    openfader_engine::protocol::StateStrip {
                         ch: 0,
                         key: None,
                         name: "CH01".to_string(),
                         fader: 0.5,
                         muted: false,
                     },
-                    openmix_engine::protocol::StateStrip {
+                    openfader_engine::protocol::StateStrip {
                         ch: 1,
                         key: None,
                         name: "Vox".to_string(),
@@ -66,20 +66,20 @@ fn examples() -> Vec<(String, Value)> {
         (
             "shows",
             Event::Shows {
-                shows: vec![openmix_engine::protocol::Show {
+                shows: vec![openfader_engine::protocol::Show {
                     name: "gig".to_string(),
-                    scenes: vec![openmix_engine::protocol::Scene {
+                    scenes: vec![openfader_engine::protocol::Scene {
                         name: "verse".to_string(),
                         main_fader: Some(0.8),
                         strips: vec![
-                            openmix_engine::protocol::SceneStrip {
+                            openfader_engine::protocol::SceneStrip {
                                 ch: 0,
                                 key: None,
                                 name: "CH01".to_string(),
                                 fader: 0.5,
                                 muted: false,
                             },
-                            openmix_engine::protocol::SceneStrip {
+                            openfader_engine::protocol::SceneStrip {
                                 ch: 1,
                                 key: None,
                                 name: "Vox".to_string(),
@@ -117,7 +117,7 @@ fn examples() -> Vec<(String, Value)> {
             Event::Caps {
                 driver: "sim".to_string(),
                 params: vec![
-                    openmix_engine::protocol::ParamDef {
+                    openfader_engine::protocol::ParamDef {
                         id: "gain".to_string(),
                         kind: "float".to_string(),
                         scope: "channel".to_string(),
@@ -128,7 +128,7 @@ fn examples() -> Vec<(String, Value)> {
                         default: json!(20.0),
                         label: "Gain".to_string(),
                     },
-                    openmix_engine::protocol::ParamDef {
+                    openfader_engine::protocol::ParamDef {
                         id: "phantom".to_string(),
                         kind: "bool".to_string(),
                         scope: "channel".to_string(),
@@ -141,7 +141,7 @@ fn examples() -> Vec<(String, Value)> {
                     },
                 ],
                 unsupported: vec!["usbreturn".to_string()],
-                topology: vec![openmix_engine::protocol::TopologyFamily {
+                topology: vec![openfader_engine::protocol::TopologyFamily {
                     key: "ch".to_string(),
                     kind: "in".to_string(),
                     label: "Ch 1-32".to_string(),
@@ -160,12 +160,12 @@ fn examples() -> Vec<(String, Value)> {
                 ],
                 // R2 FX/routing blocks (sim: 8 design slots + six type
                 // tables; Lcl/Net/USB patching fully supported).
-                fx: openmix_engine::protocol::FxCaps {
+                fx: openfader_engine::protocol::FxCaps {
                     slots: 8,
-                    types: vec![openmix_engine::protocol::FxTypeCaps {
+                    types: vec![openfader_engine::protocol::FxTypeCaps {
                         id: "hall".to_string(),
                         label: "Hall".to_string(),
-                        params: vec![openmix_engine::protocol::FxParamCaps {
+                        params: vec![openfader_engine::protocol::FxParamCaps {
                             id: "mix".to_string(),
                             label: "Mix".to_string(),
                             unit: "%".to_string(),
@@ -176,8 +176,8 @@ fn examples() -> Vec<(String, Value)> {
                         }],
                     }],
                 },
-                routing: openmix_engine::protocol::RoutingCaps {
-                    groups: vec![openmix_engine::protocol::RoutingGroupCaps {
+                routing: openfader_engine::protocol::RoutingCaps {
+                    groups: vec![openfader_engine::protocol::RoutingGroupCaps {
                         key: "Lcl".to_string(),
                         label: "Local".to_string(),
                         count: 32,
@@ -185,14 +185,14 @@ fn examples() -> Vec<(String, Value)> {
                     per_strip: true,
                     supported: true,
                 },
-                groups: openmix_engine::protocol::GroupsCaps {
+                groups: openfader_engine::protocol::GroupsCaps {
                     buses: 8,
                     subgroups: 6,
                     mute_groups: 6,
                     mg_assign: true,
                     sub_assign: true,
                 },
-                files: openmix_engine::protocol::FilesCaps { supported: true },
+                files: openfader_engine::protocol::FilesCaps { supported: true },
             },
         ),
         (
@@ -363,7 +363,7 @@ fn examples() -> Vec<(String, Value)> {
     // Every command example must parse as a Cmd (validates the fixtures).
     for (name, v) in &commands {
         let text = serde_json::to_string(v).unwrap();
-        openmix_engine::parse_cmd(&text)
+        openfader_engine::parse_cmd(&text)
             .unwrap_or_else(|e| panic!("golden command {name} parses: {e}"));
     }
     out.extend(commands);
@@ -405,7 +405,7 @@ fn golden_frames_validate() {
             let cmd: Cmd = serde_json::from_value(file.clone())
                 .unwrap_or_else(|e| panic!("golden command {name}.json parses as Cmd: {e}"));
             let back = serde_json::to_string(&cmd).unwrap();
-            openmix_engine::parse_cmd(&back)
+            openfader_engine::parse_cmd(&back)
                 .unwrap_or_else(|e| panic!("golden command {name} re-parses: {e}"));
         }
     }
