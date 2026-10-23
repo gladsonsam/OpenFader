@@ -22,7 +22,7 @@
 //! engine.connect("sim", None).await.unwrap();
 //! let mut client = engine.attach(Some("ui".to_string())).await;
 //! client.send(Cmd::Fader { ch: 0, key: None, value: 0.5 }).await.unwrap();
-//! // `client.events` yields `Event`s: the initial snapshot first
+//! // `client.events` yields `SharedEvent`s: the initial snapshot first
 //! // (`you`, `state`, `shows`, `clients`, `locks`, `caps`, `devices`,
 //! // `link`, `info`?, `scenes`, `fx`, `routing`, `params`…),
 //! // then every live broadcast. Dropping `client` detaches it.
@@ -33,8 +33,8 @@ pub mod drivers;
 pub mod engine;
 pub mod protocol;
 
-pub use engine::{ClientHandle, Engine, EngineConfig, RecallScope};
-pub use protocol::{parse_cmd, Cmd, Event};
+pub use engine::{ClientHandle, ClientMailbox, Engine, EngineConfig, RecallScope};
+pub use protocol::{parse_cmd, Cmd, Event, SharedEvent};
 
 /// Default per-strip lock TTL (see [`EngineConfig::lock_ttl`]).
 pub use engine::LOCK_TTL;

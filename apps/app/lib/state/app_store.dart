@@ -6,10 +6,13 @@
 //
 // One [AppStore] implements the [MixerStore], [MetersStore] and
 // [ChannelStore] contracts (constructor injection — no global singleton,
-// so this never fights the screen workers). The screens own their 80 ms
-// meter loops and call [pollMeters]; control state notifies through
-// [ChangeNotifier], meter levels ride stable [ValueNotifier]s updated in
-// place and never rebuild widgets.
+// so this never fights the screen workers). Freshness comes from the
+// single shell-owned 80 ms ticker (AppShell calls [pollMeters]); screens
+// own no timer and only listen to already-updating notifiers. Per-strip
+// control state (fader/mute/pan) rides stable [ValueNotifier]s updated in
+// place and never rebuilds sibling widgets, while structural state
+// (strips/bank/bus/connection, solo banner) notifies through
+// [ChangeNotifier]. Meter levels ride the same stable-notifier pattern.
 //
 // Mapping gaps (honest, not faked):
 // - Channel writes use canonical desk catalogue leaves
@@ -23,8 +26,9 @@
 //   param-plane cache fills them from desk echoes.
 // - Bus rows render the MAIN bus (+ known engine buses); the bus popup
 //   picks the master bus shown, it does not re-patch routing.
-// - Binary meter/GR/tap frames apply via [applyBinaryFrame] for the future
-//   WS-transport path; `EngineApi.poll` only carries JSON text today.
+// - Binary meter/GR/tap frames ride the hot path ([EngineApi.pollBinary]
+//   + [applyBinaryFrame]); [EngineApi.poll] stays the JSON fallback for
+//   control frames — and for meters when binary is unavailable.
 library;
 
 import 'dart:async';
@@ -57,6 +61,10 @@ class AppStore extends ChangeNotifier
 
   final EngineState engine = EngineState();
   bool _polling = false;
+  // Binary meter path armed. A stale native library without `pollBinary`
+  // latches this off for the session (JSON meters from `poll` keep
+  // rendering); attach() re-arms so an upgraded library is picked up.
+  bool _binaryMeters = true;
   final ps.StoreMaps _maps = ps.StoreMaps();
 
   // --- connection (phase/message/host, reduced) ---
@@ -89,6 +97,20 @@ class AppStore extends ChangeNotifier
   final Map<String, ValueNotifier<double>> _busMeters = {};
   final Map<int, double> _peakAtMs = {};
 
+  // --- per-strip control notifiers (stable, updated in place) ---
+  // Hot-path writes (fader drags, mute taps, pan drags) update these in
+  // place and NEVER call notifyListeners(), so one strip rebuilds instead
+  // of the whole shell + all strips. Global notifyListeners() is reserved
+  // for structural changes (strips add/remove, bank/bus select, connection).
+  // Solo keeps its notifier AND a global notify (infrequent taps; the page
+  // solo banner reads hasSolo/soloCount off the store).
+  final Map<int, ValueNotifier<double>> _faderNotes = {};
+  final Map<int, ValueNotifier<bool>> _muteNotes = {};
+  final Map<int, ValueNotifier<double>> _panNotes = {};
+  final Map<int, ValueNotifier<bool>> _soloNotes = {};
+  final ValueNotifier<double> _masterFaderNote = ValueNotifier(0.75);
+  final ValueNotifier<bool> _masterMutedNote = ValueNotifier(false);
+
   // --- channel page state ---
   int _channel = 0;
   ChannelTab _tab = ChannelTab.input;
@@ -104,6 +126,30 @@ class AppStore extends ChangeNotifier
   final List<String> _presets = [];
   int? _focusCh;
 
+  // --- derived-list cache (no per-build allocations) ---
+  // strips/banks/busRows/groups/sends (+_bankRanges) rebuild only after a
+  // control-state mutation nulls them via [_invalidateDerived]. Cached lists
+  // are unmodifiable snapshots: callers only read them (verified: no call
+  // site sorts/adds/removes on these getters), so sharing one instance across
+  // builds is safe and fail-fast if a future caller tries to mutate.
+  Map<String, (int, int)>? _bankRangesCache;
+  List<Strip>? _stripsCache;
+  List<MixerBank>? _banksCache;
+  List<MixerBusRow>? _busRowsCache;
+  List<BridgeGroup>? _groupsCache;
+  List<ChannelSendVm>? _sendsCache;
+
+  /// Drop every derived-list cache. Call from any mutator that can affect
+  /// what the cached getters return (see call sites).
+  void _invalidateDerived() {
+    _bankRangesCache = null;
+    _stripsCache = null;
+    _banksCache = null;
+    _busRowsCache = null;
+    _groupsCache = null;
+    _sendsCache = null;
+  }
+
   // ------------------------------------------------------------------
   // Lifecycle
   // ------------------------------------------------------------------
@@ -111,18 +157,21 @@ class AppStore extends ChangeNotifier
   /// Attach to a booted client id (after `api.boot()`), then resync.
   Future<void> attach(String clientId) async {
     _clientId = clientId;
+    _binaryMeters = true; // re-arm: a fresh attach may carry a new library
     try {
       await _api.resync(clientId);
     } catch (e) {
       // transports may not implement resync; anything else is visible.
       _noteTransportError(e);
     }
+    _invalidateDerived();
   }
 
   void setOnline(bool v) {
     if (_online == v) return;
     _online = v;
     _message = v ? 'online' : 'Not connected';
+    _invalidateDerived(); // groups renders an offline placeholder
     notifyListeners();
   }
 
@@ -199,7 +248,7 @@ class AppStore extends ChangeNotifier
   double _nowMs() => DateTime.now().microsecondsSinceEpoch / 1000.0;
 
   // ------------------------------------------------------------------
-  // Shared 80 ms meter-loop target (all three screens call this).
+  // Single shared 80 ms ticker target (driven ONLY by the AppShell loop).
   // ------------------------------------------------------------------
   @override
   Future<void> pollMeters() async {
@@ -235,9 +284,28 @@ class AppStore extends ChangeNotifier
           }
         }
       }
+      // Confirm-timeout revert: caches + strip notifiers stay in sync,
+      // then one structural notify (rare path, not the drag hot path).
+      _invalidateDerived();
+      _syncControlNotes();
       notifyListeners();
     }
     List<String> frames;
+    // Hot meter path (20 Hz): compact binary frames fan straight into
+    // the meter notifiers with no JSON parse/alloc. Non-meter events seen
+    // here are set aside server-side and come back through poll() below,
+    // so the JSON fallback stays lossless. A missing `pollBinary` (stale
+    // native library) latches binary off; JSON meters keep rendering.
+    if (_binaryMeters) {
+      try {
+        final blob = await _api.pollBinary(_clientId, 512);
+        for (final frame in splitBinaryBatch(blob)) {
+          applyBinaryFrame(frame);
+        }
+      } catch (_) {
+        _binaryMeters = false;
+      }
+    }
     try {
       frames = await _api.poll(_clientId, 512);
     } catch (e) {
@@ -245,12 +313,14 @@ class AppStore extends ChangeNotifier
       return; // never crash the meter loop on a transport hiccup
     }
     var dirty = false;
+    var controlsTouched = false;
     for (final f in frames) {
       try {
         final e = jsonDecode(f);
         if (e is! Map<String, dynamic>) continue;
         final previousDriver = engine.driver;
-        dirty = engine.applyFrame(e) || dirty;
+        final controlOnly = _controlOnlyFrame(e);
+        final frameDirty = engine.applyFrame(e);
         if (previousDriver != engine.driver) {
           _coalescer.clear();
           _maps.confirmed.clear();
@@ -261,8 +331,17 @@ class AppStore extends ChangeNotifier
           _busId = 'main';
           _eqBandOn.clear();
           _focusCh = null;
+          _invalidateDerived();
+          dirty = true;
         }
         _confirmEcho(e);
+        if (controlOnly) {
+          // Per-strip control echo (fader/mute/pan/main/bus): the strip
+          // notifiers pick it up below, no global rebuild.
+          controlsTouched = true;
+        } else if (frameDirty) {
+          dirty = true;
+        }
       } catch (error) {
         _noteTransportError('Invalid engine frame: $error');
       }
@@ -284,15 +363,50 @@ class AppStore extends ChangeNotifier
       _deskName = engine.linkName.isNotEmpty ? engine.linkName : engine.driver;
     }
     _syncMeters(now);
+    // Push any control traffic (local optimistic writes already did; echoes
+    // land here) into the stable per-strip notifiers. ValueNotifiers only
+    // wake their own strip; the shell/page ListenableBuilders stay quiet.
+    if (dirty) _invalidateDerived();
+    if (controlsTouched || dirty) _syncControlNotes();
     if (dirty) notifyListeners();
   }
 
-  /// Binary fan-in for the future WS-transport path (SPEC 2a seq/t_ms).
+  /// Binary fan-in for the meter hot path (`pollBinary` frames) and the
+  /// future WS-transport path (SPEC 2a seq/t_ms). Version-mismatched or
+  /// short frames decode to null and are skipped — JSON meters from the
+  /// fallback poll keep the ladders alive.
   void applyBinaryFrame(Uint8List bytes) {
     final f = parseBinary(bytes);
     if (f == null) return;
     engine.applyBinary(f);
+    _invalidateDerived();
     _syncMeters(_nowMs());
+  }
+
+  /// True for engine frames that only move per-strip/master control state
+  /// (fader/mute/pan/main/bus). Those ride the strip notifiers via
+  /// [_syncControlNotes] and must not set the global `dirty` rebuild flag.
+  /// Everything else (state/caps/link/scenes/..., plus param frames carrying
+  /// name/param-plane fields, plus solo which feeds the page solo banner)
+  /// stays structural and keeps the global notify.
+  static const _stripControlFields = {'fader', 'mute', 'muted', 'pan'};
+
+  bool _controlOnlyFrame(Map<String, dynamic> e) {
+    switch (e['type']) {
+      case 'param':
+        final field = e['field'] as String?;
+        return field != null && _stripControlFields.contains(field);
+      case 'params':
+        final values = e['values'];
+        if (values is! Map || values.isEmpty) return false;
+        return values.keys
+            .every((k) => k is String && _stripControlFields.contains(k));
+      case 'main':
+      case 'bus':
+        return true;
+      default:
+        return false;
+    }
   }
 
   void _confirmEcho(Map<String, dynamic> e) {
@@ -310,6 +424,7 @@ class AppStore extends ChangeNotifier
         } else if ((field == 'mute' || field == 'muted') && v is bool) {
           _confirmedMute[ch] = v;
         }
+        _invalidateDerived();
         break;
       case 'params':
         final ch = (e['ch'] as num?)?.toInt();
@@ -328,6 +443,7 @@ class AppStore extends ChangeNotifier
         for (final kv in pv.entries) {
           ps.confirmInto(_maps.pending, ps.pendingKey(ch, kv.key), kv.value);
         }
+        _invalidateDerived();
         break;
       case 'state':
         final raw = (e['strips'] as List?) ?? const [];
@@ -346,6 +462,7 @@ class AppStore extends ChangeNotifier
             ps.confirmInto(_maps.pending, ps.pendingKey(ch, 'mute'), m);
           }
         }
+        _invalidateDerived();
         break;
     }
   }
@@ -397,27 +514,36 @@ class AppStore extends ChangeNotifier
   // ------------------------------------------------------------------
   @override
   List<Strip> get strips {
-    final ranges = _bankRanges;
-    final range = ranges[_bank];
-    if (range == null) return engine.strips;
-    return engine.strips
-        .where((s) => s.ch >= range.$1 && s.ch < range.$2)
-        .toList();
+    final cached = _stripsCache;
+    if (cached != null) return cached;
+    final range = _bankRanges[_bank];
+    final built = range == null
+        ? List<Strip>.unmodifiable(engine.strips)
+        : List<Strip>.unmodifiable(engine.strips
+            .where((s) => s.ch >= range.$1 && s.ch < range.$2));
+    _stripsCache = built;
+    return built;
   }
 
-  Map<String, (int, int)> get _bankRanges => {
-        for (final f in engine.topology)
-          for (var offset = 0;
-              offset < (f['count'] as num).toInt();
-              offset += 16)
-            f['key'] == 'ch'
-                ? 'ch${offset ~/ 16 + 1}'
-                : "${f['key']}:${(f['first'] as num).toInt() + offset}": (
-              (f['first'] as num).toInt() + offset,
-              (f['first'] as num).toInt() +
-                  math.min(offset + 16, (f['count'] as num).toInt())
-            ),
-      };
+  Map<String, (int, int)> get _bankRanges {
+    final cached = _bankRangesCache;
+    if (cached != null) return cached;
+    final Map<String, (int, int)> built = {
+      for (final f in engine.topology)
+        for (var offset = 0;
+            offset < (f['count'] as num).toInt();
+            offset += 16)
+          f['key'] == 'ch'
+              ? 'ch${offset ~/ 16 + 1}'
+              : "${f['key']}:${(f['first'] as num).toInt() + offset}": (
+            (f['first'] as num).toInt() + offset,
+            (f['first'] as num).toInt() +
+                math.min(offset + 16, (f['count'] as num).toInt())
+          ),
+    };
+    _bankRangesCache = built;
+    return built;
+  }
 
   @override
   double panOf(int ch) {
@@ -444,6 +570,91 @@ class AppStore extends ChangeNotifier
   @override
   ValueNotifier<double> get masterMeter => _masterMeter;
 
+  // ------------------------------------------------------------------
+  // Per-strip control notifiers: stable ValueNotifiers updated in place.
+  // Strips listen to their own ch only; the hot drag path never calls
+  // notifyListeners() so the shell + sibling strips are not rebuilt.
+  // ------------------------------------------------------------------
+  void _ensureStripNotes(int ch) {
+    _faderNotes.putIfAbsent(ch, () {
+      double v = 0;
+      for (final s in engine.strips) {
+        if (s.ch == ch) v = s.fader;
+      }
+      final opt = ps.optimisticValue(_maps, ch, 'fader');
+      if (opt is num) v = opt.toDouble().clamp(0.0, 1.0);
+      return ValueNotifier(v);
+    });
+    _muteNotes.putIfAbsent(ch, () {
+      bool m = false;
+      for (final s in engine.strips) {
+        if (s.ch == ch) m = s.muted;
+      }
+      final opt = ps.optimisticValue(_maps, ch, 'mute');
+      if (opt is bool) m = opt;
+      return ValueNotifier(m);
+    });
+    _panNotes.putIfAbsent(ch, () => ValueNotifier(panOf(ch)));
+    _soloNotes.putIfAbsent(ch, () => ValueNotifier(engine.solos.contains(ch)));
+  }
+
+  @override
+  ValueNotifier<double> faderOf(int ch) {
+    _ensureStripNotes(ch);
+    return _faderNotes[ch]!;
+  }
+
+  @override
+  ValueNotifier<bool> muteOf(int ch) {
+    _ensureStripNotes(ch);
+    return _muteNotes[ch]!;
+  }
+
+  @override
+  ValueNotifier<double> panNoteOf(int ch) {
+    _ensureStripNotes(ch);
+    return _panNotes[ch]!;
+  }
+
+  @override
+  ValueNotifier<bool> soloNoteOf(int ch) {
+    _ensureStripNotes(ch);
+    return _soloNotes[ch]!;
+  }
+
+  @override
+  ValueNotifier<double> get masterFaderNote => _masterFaderNote;
+
+  @override
+  ValueNotifier<bool> get masterMutedNote => _masterMutedNote;
+
+  void _pushStripNote(int ch) {
+    _ensureStripNotes(ch);
+    for (final s in engine.strips) {
+      if (s.ch != ch) continue;
+      final f = _faderNotes[ch]!;
+      if (f.value != s.fader) f.value = s.fader;
+      final m = _muteNotes[ch]!;
+      if (m.value != s.muted) m.value = s.muted;
+    }
+    final p = _panNotes[ch]!;
+    final pv = panOf(ch);
+    if (p.value != pv) p.value = pv;
+    final so = _soloNotes[ch]!;
+    final sv = engine.solos.contains(ch);
+    if (so.value != sv) so.value = sv;
+  }
+
+  void _syncControlNotes() {
+    for (final s in engine.strips) {
+      _pushStripNote(s.ch);
+    }
+    final mf = masterFader;
+    if (_masterFaderNote.value != mf) _masterFaderNote.value = mf;
+    final mm = masterMuted;
+    if (_masterMutedNote.value != mm) _masterMutedNote.value = mm;
+  }
+
   @override
   double get masterFader => _busId == 'main'
       ? engine.mainFader ?? _masterFader
@@ -460,44 +671,56 @@ class AppStore extends ChangeNotifier
       : 'BUS ${(int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1}';
 
   @override
-  List<MixerBank> get banks => [
-        for (final entry in _bankRanges.entries)
-          MixerBank(
-              key: entry.key,
-              label: entry.key.startsWith('ch')
-                  ? 'Ch ${entry.value.$1 + 1}–${entry.value.$2}'
-                  : engine.topology.firstWhere((f) =>
-                      (f['first'] as num).toInt() <= entry.value.$1 &&
-                      (f['first'] as num).toInt() +
-                              (f['count'] as num).toInt() >
-                          entry.value.$1)['label'] as String,
-              color: U4.cyan,
-              text: U4.page),
-      ];
+  List<MixerBank> get banks {
+    final cached = _banksCache;
+    if (cached != null) return cached;
+    final built = List<MixerBank>.unmodifiable([
+      for (final entry in _bankRanges.entries)
+        MixerBank(
+            key: entry.key,
+            label: entry.key.startsWith('ch')
+                ? 'Ch ${entry.value.$1 + 1}–${entry.value.$2}'
+                : engine.topology.firstWhere((f) =>
+                    (f['first'] as num).toInt() <= entry.value.$1 &&
+                    (f['first'] as num).toInt() +
+                            (f['count'] as num).toInt() >
+                        entry.value.$1)['label'] as String,
+            color: U4.cyan,
+            text: U4.page),
+    ]);
+    _banksCache = built;
+    return built;
+  }
 
   @override
   String get bank => _bank;
 
   @override
-  List<MixerBusRow> get busRows => [
+  List<MixerBusRow> get busRows {
+    final cached = _busRowsCache;
+    if (cached != null) return cached;
+    final built = List<MixerBusRow>.unmodifiable([
+      MixerBusRow(
+        id: 'main',
+        name: 'MAIN',
+        sub: 'LR master',
+        muted: masterMuted,
+        active: _busId == 'main',
+        meter: _masterMeter,
+      ),
+      for (final b in engine.busFaders.keys.toList()..sort())
         MixerBusRow(
-          id: 'main',
-          name: 'MAIN',
-          sub: 'LR master',
-          muted: masterMuted,
-          active: _busId == 'main',
-          meter: _masterMeter,
+          id: 'bus$b',
+          name: 'BUS ${b + 1}',
+          sub: engine.busMuted[b] == true ? 'muted' : 'open',
+          muted: engine.busMuted[b] ?? false,
+          active: _busId == 'bus$b',
+          meter: _busMeters.putIfAbsent('bus$b', () => ValueNotifier(0)),
         ),
-        for (final b in engine.busFaders.keys.toList()..sort())
-          MixerBusRow(
-            id: 'bus$b',
-            name: 'BUS ${b + 1}',
-            sub: engine.busMuted[b] == true ? 'muted' : 'open',
-            muted: engine.busMuted[b] ?? false,
-            active: _busId == 'bus$b',
-            meter: _busMeters.putIfAbsent('bus$b', () => ValueNotifier(0)),
-          ),
-      ];
+    ]);
+    _busRowsCache = built;
+    return built;
+  }
 
   @override
   void setFader(int ch, double v) {
@@ -506,8 +729,14 @@ class AppStore extends ChangeNotifier
       if (s.ch == ch) s.fader = nv;
     }
     ps.noteOptimistic(_maps, ch, 'fader', nv, _nowMs());
+    _ensureStripNotes(ch);
+    final n = _faderNotes[ch]!;
+    if (n.value != nv) n.value = nv;
     _coalescer.offer('fader:$ch', () => _send(Cmds.fader(ch, nv)));
-    notifyListeners();
+    // Hot path: no notifyListeners(). The dragged strip rebuilds from
+    // faderOf(ch) alone; shell + siblings stay quiet. Caches invalidated
+    // so the next structural rebuild sees fresh values.
+    _invalidateDerived();
   }
 
   @override
@@ -516,8 +745,13 @@ class AppStore extends ChangeNotifier
       if (s.ch == ch) s.muted = muted;
     }
     ps.noteOptimistic(_maps, ch, 'mute', muted, _nowMs());
+    _ensureStripNotes(ch);
+    final n = _muteNotes[ch]!;
+    if (n.value != muted) n.value = muted;
     _coalescer.offer('mute:$ch', () => _send(Cmds.mute(ch, muted)));
-    notifyListeners();
+    // Hot path: no notifyListeners(). The tapped strip rebuilds from
+    // muteOf(ch) alone. Caches invalidated for the next structural pass.
+    _invalidateDerived();
   }
 
   @override
@@ -528,14 +762,23 @@ class AppStore extends ChangeNotifier
     } else {
       engine.solos.remove(ch);
     }
+    _ensureStripNotes(ch);
+    final n = _soloNotes[ch]!;
+    if (n.value != on) n.value = on;
     _coalescer.offer('solo:$ch', () => _send(Cmds.solo(ch, on)));
+    // Solo stays global: the page solo banner reads hasSolo/soloCount.
+    _invalidateDerived();
     notifyListeners();
   }
 
   @override
   void clearSolos() {
     engine.solos.clear();
+    for (final n in _soloNotes.values) {
+      if (n.value) n.value = false;
+    }
     _send(Cmds.clearSolo());
+    _invalidateDerived();
     notifyListeners();
   }
 
@@ -543,8 +786,13 @@ class AppStore extends ChangeNotifier
   void setPan(int ch, double v) {
     final nv = v.clamp(-1.0, 1.0);
     ps.noteOptimistic(_maps, ch, 'pan', nv * 100, _nowMs());
+    _ensureStripNotes(ch);
+    final n = _panNotes[ch]!;
+    if (n.value != nv) n.value = nv;
     _coalescer.offer('pan:$ch', () => _send(Cmds.param(ch, 'pan', nv * 100)));
-    notifyListeners();
+    // Hot path: no notifyListeners(). The dragged strip rebuilds from
+    // panNoteOf(ch) alone. Caches invalidated for the next structural pass.
+    _invalidateDerived();
   }
 
   @override
@@ -554,13 +802,23 @@ class AppStore extends ChangeNotifier
       final bus = int.tryParse(_busId.replaceFirst('bus', ''));
       if (bus == null) return;
       engine.busFaders[bus] = _masterFader;
+      if (_masterFaderNote.value != _masterFader) {
+        _masterFaderNote.value = _masterFader;
+      }
       _coalescer.offer('bus_fader:$bus', () => _send(Cmds.busFader(bus, v)));
-      notifyListeners();
+      // Hot path: master strip rebuilds from masterFaderNote alone.
+      // No global notify; caches invalidated for the next structural pass.
+      _invalidateDerived();
       return;
     }
     engine.mainFader = _masterFader;
+    if (_masterFaderNote.value != _masterFader) {
+      _masterFaderNote.value = _masterFader;
+    }
     _coalescer.offer('main_fader', () => _send(Cmds.mainFader(_masterFader)));
-    notifyListeners();
+    // Hot path: master strip rebuilds from masterFaderNote alone.
+    // No global notify; caches invalidated for the next structural pass.
+    _invalidateDerived();
   }
 
   @override
@@ -570,24 +828,30 @@ class AppStore extends ChangeNotifier
       final bus = int.tryParse(_busId.replaceFirst('bus', ''));
       if (bus == null) return;
       engine.busMuted[bus] = muted;
+      if (_masterMutedNote.value != muted) _masterMutedNote.value = muted;
       _coalescer.offer('bus_mute:$bus', () => _send(Cmds.busMute(bus, muted)));
-      notifyListeners();
+      // Hot path: no global notify; caches invalidated.
+      _invalidateDerived();
       return;
     }
     engine.mainMuted = muted;
+    if (_masterMutedNote.value != muted) _masterMutedNote.value = muted;
     _coalescer.offer('main_mute', () => _send(Cmds.mainMute(muted)));
-    notifyListeners();
+    // Hot path: no global notify; caches invalidated for the next pass.
+    _invalidateDerived();
   }
 
   @override
   void selectBus(String id) {
     _busId = id;
+    _invalidateDerived();
     notifyListeners();
   }
 
   @override
   void setBank(String key) {
     _bank = key;
+    _invalidateDerived();
     notifyListeners();
   }
 
@@ -605,28 +869,31 @@ class AppStore extends ChangeNotifier
 
   @override
   List<BridgeGroup> get groups {
-    if (!_online || engine.strips.isEmpty) {
-      return const [
-        BridgeGroup(
-            key: 'in',
-            title: 'Inputs',
-            ladders: [],
-            collapsedReason: 'offline'),
-      ];
-    }
-    return [
-      BridgeGroup(
-        key: 'in',
-        title: 'Inputs',
-        ladders: [
-          for (final s in engine.strips)
-            BridgeLadder(
-                ch: s.ch,
-                label: s.name.isEmpty ? null : s.name,
-                sub: '${s.ch + 1}'),
-        ],
-      ),
-    ];
+    final cached = _groupsCache;
+    if (cached != null) return cached;
+    final built = (!_online || engine.strips.isEmpty)
+        ? const [
+            BridgeGroup(
+                key: 'in',
+                title: 'Inputs',
+                ladders: [],
+                collapsedReason: 'offline'),
+          ]
+        : List<BridgeGroup>.unmodifiable([
+            BridgeGroup(
+              key: 'in',
+              title: 'Inputs',
+              ladders: [
+                for (final s in engine.strips)
+                  BridgeLadder(
+                      ch: s.ch,
+                      label: s.name.isEmpty ? null : s.name,
+                      sub: '${s.ch + 1}'),
+              ],
+            ),
+          ]);
+    _groupsCache = built;
+    return built;
   }
 
   @override
@@ -646,6 +913,7 @@ class AppStore extends ChangeNotifier
     if (_channel == ch) return;
     _channel = ch;
     cmdFocus();
+    _invalidateDerived(); // sends are channel-scoped (sendN_on)
     notifyListeners();
   }
 
@@ -698,6 +966,7 @@ class AppStore extends ChangeNotifier
     ps.noteOptimistic(_maps, _channel, desk, coerced, _nowMs());
     _coalescer.offer('param:$_channel:$desk',
         () => _send(Cmds.param(_channel, desk, coerced)));
+    _invalidateDerived(); // optimistic sendN_on/mute reads feed sends
     notifyListeners();
   }
 
@@ -717,6 +986,7 @@ class AppStore extends ChangeNotifier
   void cmdSubgroupAssign(int g, bool on) {
     engine.subgroupAssign['$_channel:$g'] = on;
     _send(Cmds.subgroupAssign(_channel, g, on));
+    _invalidateDerived();
     notifyListeners();
   }
 
@@ -724,6 +994,7 @@ class AppStore extends ChangeNotifier
   void cmdMuteGroupAssign(int g, bool on) {
     engine.muteGroupAssign['$_channel:$g'] = on;
     _send(Cmds.muteGroupAssign(_channel, g, on));
+    _invalidateDerived();
     notifyListeners();
   }
 
@@ -798,17 +1069,22 @@ class AppStore extends ChangeNotifier
 
   @override
   List<ChannelSendVm> get sends {
+    final cached = _sendsCache;
+    if (cached != null) return cached;
     final buses = engine.busFaders.keys.toList()..sort();
-    if (buses.isEmpty) return const [];
-    return [
-      for (final b in buses)
-        ChannelSendVm(
-          slot: b + 1,
-          destName: 'Mix ${b + 1}',
-          level: 0.75,
-          muted: !(paramBool('send${b + 1}_on') ?? true),
-        ),
-    ];
+    final built = buses.isEmpty
+        ? const <ChannelSendVm>[]
+        : List<ChannelSendVm>.unmodifiable([
+            for (final b in buses)
+              ChannelSendVm(
+                slot: b + 1,
+                destName: 'Mix ${b + 1}',
+                level: 0.75,
+                muted: !(paramBool('send${b + 1}_on') ?? true),
+              ),
+          ]);
+    _sendsCache = built;
+    return built;
   }
 
   @override
@@ -866,6 +1142,7 @@ class AppStore extends ChangeNotifier
     }
     // No per-band desk leaf: fixture-local bypass (web parity).
     _eqBandOn[band] = on;
+    _invalidateDerived();
     notifyListeners();
   }
 
@@ -937,6 +1214,20 @@ class AppStore extends ChangeNotifier
       m.dispose();
     }
     _masterMeter.dispose();
+    for (final n in _faderNotes.values) {
+      n.dispose();
+    }
+    for (final n in _muteNotes.values) {
+      n.dispose();
+    }
+    for (final n in _panNotes.values) {
+      n.dispose();
+    }
+    for (final n in _soloNotes.values) {
+      n.dispose();
+    }
+    _masterFaderNote.dispose();
+    _masterMutedNote.dispose();
     for (final t in _taps.values) {
       t.dispose();
     }

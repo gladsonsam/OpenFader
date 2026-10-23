@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering},
         Arc, RwLock, Weak,
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -28,7 +28,7 @@ use tokio::sync::{mpsc, Notify};
 use crate::drivers::{
     driver_names, DynDriver, FxFlavor, RegisteredDriver,
 };
-use crate::protocol::{Cmd, DeviceDesc, Event, FxSlotState, OfflineChange, ParamDef, PatchEntry, Scene as SceneFrame, Show as ShowFrame};
+use crate::protocol::{Cmd, DeviceDesc, Event, FxSlotState, OfflineChange, ParamDef, PatchEntry, Scene as SceneFrame, Show as ShowFrame, SharedEvent};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 /// Link re-broadcast interval (R2): the `link` event goes out on every
@@ -453,9 +453,129 @@ impl Default for EngineConfig {
     }
 }
 
+/// Realtime stream key: one slot per meter-class family that a newer
+/// frame supersedes. `Meters` is a single global frame; `Taps` fan out per
+/// negotiated tap id; `Spectrum`/`AudioSpectrum`/`Gr` fan out per channel
+/// (`AudioSpectrum` without a strip shares the `u16::MAX` key, mirroring
+/// the serve-adapter outbox convention).
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum RtSlot {
+    Meters,
+    Tap(String),
+    Spectrum(u16),
+    Audio(u16),
+    Gr(u16),
+}
+
+/// Classify a frame: `Some` key for supersede-by-newer meter-class frames
+/// (`meters`, per-tap `taps`, envelope `spectrum`, provider
+/// `audio_spectrum`, per-channel `gr`), `None` for everything else.
+/// Control frames (state changes, params, roster, locks, errors, link,
+/// scenes, …) are never coalescible: they queue reliably in order.
+fn rt_slot_key(event: &Event) -> Option<RtSlot> {
+    match event {
+        Event::Meters { .. } => Some(RtSlot::Meters),
+        Event::Taps { tap, .. } => Some(RtSlot::Tap(tap.clone())),
+        Event::Spectrum { ch, .. } => Some(RtSlot::Spectrum(*ch)),
+        Event::AudioSpectrum { ch, .. } => Some(RtSlot::Audio(ch.unwrap_or(u16::MAX))),
+        Event::Gr { ch, .. } => Some(RtSlot::Gr(*ch)),
+        _ => None,
+    }
+}
+
+/// Per-mailbox latest-only realtime slots.
+///
+/// While [`inflight`](RtSlots::inflight) (a realtime frame sits queued in
+/// the channel, unconsumed), incoming meter-class frames replace the slot
+/// for their stream key instead of queueing: at most one latest frame per
+/// key waits, however fast the ticker runs. Consuming a realtime frame
+/// clears `inflight` and the [`ClientMailbox`] promotes every slot back
+/// into the channel, so an active client loses nothing but superseded
+/// (older same-key) frames, and a stalled client's realtime memory stays
+/// flat: one queued frame plus one slot set.
+#[derive(Default)]
+struct RtSlots {
+    /// A realtime frame is currently queued in the channel.
+    inflight: bool,
+    meters: Option<SharedEvent>,
+    taps: HashMap<String, SharedEvent>,
+    spectrum: HashMap<u16, SharedEvent>,
+    audio: HashMap<u16, SharedEvent>,
+    gr: HashMap<u16, SharedEvent>,
+}
+
+impl RtSlots {
+    /// Replace the slot for `key` with a newer frame (the older same-key
+    /// frame is superseded and dropped).
+    fn store(&mut self, key: RtSlot, frame: SharedEvent) {
+        match key {
+            RtSlot::Meters => {
+                self.meters = Some(frame);
+            }
+            RtSlot::Tap(tap) => {
+                self.taps.insert(tap, frame);
+            }
+            RtSlot::Spectrum(ch) => {
+                self.spectrum.insert(ch, frame);
+            }
+            RtSlot::Audio(key) => {
+                self.audio.insert(key, frame);
+            }
+            RtSlot::Gr(ch) => {
+                self.gr.insert(ch, frame);
+            }
+        }
+    }
+
+    /// Drain every slot, meters first then per-key families in key order
+    /// (deterministic promotion order for tests and adapters).
+    fn take_all(&mut self) -> Vec<SharedEvent> {
+        let mut out = Vec::new();
+        if let Some(frame) = self.meters.take() {
+            out.push(frame);
+        }
+        let mut taps: Vec<_> = std::mem::take(&mut self.taps).into_iter().collect();
+        taps.sort_by(|a, b| a.0.cmp(&b.0));
+        out.extend(taps.into_iter().map(|(_, frame)| frame));
+        let mut spectrum: Vec<_> = std::mem::take(&mut self.spectrum).into_iter().collect();
+        spectrum.sort_by_key(|(ch, _)| *ch);
+        out.extend(spectrum.into_iter().map(|(_, frame)| frame));
+        let mut audio: Vec<_> = std::mem::take(&mut self.audio).into_iter().collect();
+        audio.sort_by_key(|(ch, _)| *ch);
+        out.extend(audio.into_iter().map(|(_, frame)| frame));
+        let mut gr: Vec<_> = std::mem::take(&mut self.gr).into_iter().collect();
+        gr.sort_by_key(|(ch, _)| *ch);
+        out.extend(gr.into_iter().map(|(_, frame)| frame));
+        out
+    }
+
+    /// Frames currently held outside the channel.
+    fn occupancy(&self) -> usize {
+        usize::from(self.meters.is_some())
+            + self.taps.len()
+            + self.spectrum.len()
+            + self.audio.len()
+            + self.gr.len()
+    }
+}
+
 /// One connected client (presence tracking + mailbox + role).
+///
+/// The mailbox is a two-level fan-out: an unbounded channel carrying every
+/// frame in order, plus latest-only realtime slots (see [`RtSlots`]) shared
+/// with the client's [`ClientMailbox`]. Meter-class frames collapse per
+/// stream key while a frame is in flight, so a stalled client holds at most
+/// one queued realtime frame plus one latest frame per stream key; every
+/// other frame queues reliably and is never dropped or coalesced.
 struct ClientEntry {
-    mailbox: mpsc::UnboundedSender<Event>,
+    mailbox: mpsc::UnboundedSender<SharedEvent>,
+    /// Latest-only realtime slots for this mailbox (sender side writes,
+    /// the [`ClientMailbox`] promotes them back into the channel as the
+    /// client drains). Shared, never held across an `.await`.
+    rt: Arc<std::sync::Mutex<RtSlots>>,
+    /// Estimated channel backlog (every channel send increments, every
+    /// yield decrements). Backs [`ClientMailbox::len`] for edge stats.
+    queued: Arc<AtomicUsize>,
     #[allow(dead_code)]
     label: String,
     #[allow(dead_code)]
@@ -968,6 +1088,10 @@ impl Engine {
             // queries); the sync pieces (shows/locks/caps/devices/link/params)
             // are lock-local and stay serial.
             let snapshot_started = Instant::now();
+            // Per-mailbox realtime coalescing state: created per attach
+            // attempt (a generation retry discards it with the snapshot).
+            let rt = Arc::new(std::sync::Mutex::new(RtSlots::default()));
+            let queued = Arc::new(AtomicUsize::new(0));
             let you = Event::You { id: id.clone() };
             let shows = self.shows_message();
             let locks = self.locks_message();
@@ -991,27 +1115,28 @@ impl Engine {
                 let params = self.params_snapshot();
                 let fx = self.fx_message_cached();
                 let mut clients = self.clients.write().unwrap();
-                clients.insert(id.clone(), ClientEntry { mailbox: tx.clone(), label: clean.clone(),
+                clients.insert(id.clone(), ClientEntry { mailbox: tx.clone(), rt: Arc::clone(&rt), queued: Arc::clone(&queued), label: clean.clone(),
                     connected_at: Instant::now(), last_write: None, policy: Policy::admin(),
                     binary_meters: false, taps: false, caps_full: false });
                 let mut writers: Vec<_> = clients.iter().filter(|(_, c)| c.last_write.is_some_and(|t| t.elapsed().as_secs() < 10)).map(|(id, _)| id.clone()).collect();
                 writers.sort();
                 let roster = Event::Clients { count: clients.len(), writers };
+                let entry = clients.get(&id).expect("client just inserted");
                 for frame in [you, state, shows, roster, locks, caps, devices, link].into_iter()
                     .chain(info).chain([scenes, fx, routing]).chain(masters).chain(params)
                     .chain(sync.typed.values().cloned()).chain(std::iter::once(Event::SyncEpoch { epoch: generation })) {
-                    let _ = tx.send(self.reconcile_event(frame, &sync, snapshot_started));
+                    Self::push_to(entry, SharedEvent::new(self.reconcile_event(frame, &sync, snapshot_started)));
                 }
             }
             // Siblings learn about the join; the newcomer already has it.
-            self.broadcast_except(&self.clients_message(), &id);
+            self.broadcast_except(self.clients_message(), &id);
             // A fresh page on a seeded-but-incomplete FX cache (boot with a
             // numbered rack) completes the params in the background instead of
             // waiting out the one-param-per-tick poller trickle.
             if self.hydrating.load(Ordering::Acquire) != 0 || !self.fx_cache_complete() {
                 self.kick_fill();
             }
-            return ClientHandle { id: id.clone(), engine: Arc::clone(self), events: rx };
+            return ClientHandle { id: id.clone(), engine: Arc::clone(self), events: ClientMailbox::new(rx, tx, rt, queued) };
         }
     }
 
@@ -1177,7 +1302,7 @@ impl Engine {
                         Some(engine) => {
                             engine.prune_closed();
                             if engine.prune_expired_locks() {
-                                engine.broadcast(&engine.locks_message_inner());
+                                engine.broadcast(engine.locks_message_inner());
                             }
                         }
                         None => break,
@@ -1216,16 +1341,18 @@ impl Engine {
                     let gr_updated = stamps.is_none_or(|(_, at)| at.is_some() && at != last_gr_sample);
                     if let Some((levels, gr)) = stamps { last_level_sample = levels; last_gr_sample = gr; }
                     let levels = engine.meter_levels().await;
-                    rta.push_frame(&MeterFrame {
-                        levels: levels.clone(),
-                    });
-                    if level_updated && !levels.is_empty() {
-                        engine.broadcast(&Event::Meters { levels: levels.clone() });
+                    // Single owner for this tick's levels: RTA only
+                    // borrows during `push_frame`, so the broadcast
+                    // clone below is the only per-tick alloc here.
+                    let frame = MeterFrame { levels };
+                    rta.push_frame(&frame);
+                    if level_updated && !frame.levels.is_empty() {
+                        engine.broadcast(Event::Meters { levels: frame.levels.clone() });
                     }
                     if engine.any_taps_client() && (level_updated || gr_updated) {
                         for (tap, tap_levels) in engine.tap_frames().await {
                             if (tap == "post" && !level_updated) || (tap.starts_with("gr_") && !gr_updated) { continue; }
-                            engine.broadcast(&Event::Taps {
+                            engine.broadcast(Event::Taps {
                                 tap,
                                 levels: tap_levels,
                             });
@@ -1235,7 +1362,7 @@ impl Engine {
                     let mut supplied = std::collections::HashSet::new();
                     let frames = if engine.reads_suspended.load(Ordering::Acquire) { Vec::new() } else { drv.poll_spectrum() };
                     if frames.is_empty() && had_audio_spectrum {
-                        engine.broadcast(&Event::AudioSpectrum { ch: None, bins_db: Vec::new(),
+                        engine.broadcast(Event::AudioSpectrum { ch: None, bins_db: Vec::new(),
                             band_edges_hz: Vec::new(), source: "unavailable".into(), position: String::new(), epoch: 0 });
                     }
                     had_audio_spectrum = !frames.is_empty();
@@ -1248,7 +1375,7 @@ impl Engine {
                                 || frame.band_edges_hz.iter().any(|v| !v.is_finite() || *v <= 0.0)
                                 || frame.band_edges_hz.windows(2).any(|w| w[0] >= w[1]) { continue; }
                             if let Some(strip) = frame.strip { supplied.insert(usize::from(strip.0)); }
-                            engine.broadcast(&Event::AudioSpectrum {
+                            engine.broadcast(Event::AudioSpectrum {
                                 ch: frame.strip.map(|s| s.0), bins_db: frame.bins_db,
                                 band_edges_hz: frame.band_edges_hz, source: frame.source,
                                 position: frame.position, epoch: frame.epoch,
@@ -1258,9 +1385,9 @@ impl Engine {
                     // Envelope activity is a sim visualization only. It never
                     // substitutes for a provider's audio-frequency spectrum.
                     if drv.emits_envelope_spectrum() {
-                        for ch in 0..levels.len().min(SPECTRUM_CHANNELS) {
+                        for ch in 0..frame.levels.len().min(SPECTRUM_CHANNELS) {
                             if !supplied.contains(&ch) {
-                                engine.broadcast(&Event::Spectrum {
+                                engine.broadcast(Event::Spectrum {
                                     ch: ch as u16, bins: rta.spectrum(ch),
                                 });
                             }
@@ -1269,7 +1396,7 @@ impl Engine {
                     let gr_count = drv.gr_channel_count();
                     for ch in 0..if gr_updated { gr_count } else { 0 } {
                         if let Some((gate, comp)) = engine.gr_db(ch).await {
-                            engine.broadcast(&Event::Gr { ch: ch as u16, gate, comp });
+                            engine.broadcast(Event::Gr { ch: ch as u16, gate, comp });
                         }
                     }
                 }
@@ -1289,7 +1416,7 @@ impl Engine {
                         break;
                     };
                     let event = engine.link_message().await;
-                    engine.broadcast(&event);
+                    engine.broadcast(event);
                 }
             });
         }
@@ -1357,10 +1484,17 @@ impl Engine {
     /// Send an event to every connected client (skips closed mailboxes;
     /// the sweeper prunes them). Notifies [`tick_notify`](Engine::tick_notify)
     /// waiters (edge push tasks) — one permit per call, coalesced by design.
-    fn broadcast(&self, event: &Event) {
+    ///
+    /// The event is serialized once and shared: one [`SharedEvent`] (one
+    /// `serde_json` run, one backing allocation) is built here and an `Arc`
+    /// clone is handed to each mailbox, so N clients pay one serialization
+    /// instead of N. Per-client binary meter encoding still happens in the
+    /// adapters (binary frames carry a per-connection sequence number).
+    fn broadcast(&self, event: Event) {
+        let shared = SharedEvent::new(event);
         let clients = self.clients.read().unwrap();
         for entry in clients.values() {
-            let _ = entry.mailbox.send(event.clone());
+            Self::push_to(entry, shared.clone());
         }
         drop(clients);
         self.notify.notify_one();
@@ -1368,11 +1502,13 @@ impl Engine {
 
     /// [`broadcast`] to everyone except one client (join roster updates).
     /// Notifies tick waiters like [`broadcast`](Engine::broadcast) does.
-    fn broadcast_except(&self, event: &Event, skip: &str) {
+    /// Serialization is shared exactly like [`broadcast`].
+    fn broadcast_except(&self, event: Event, skip: &str) {
+        let shared = SharedEvent::new(event);
         let clients = self.clients.read().unwrap();
         for (id, entry) in clients.iter() {
             if id != skip {
-                let _ = entry.mailbox.send(event.clone());
+                Self::push_to(entry, shared.clone());
             }
         }
         drop(clients);
@@ -1383,9 +1519,39 @@ impl Engine {
     /// Notifies tick waiters like [`broadcast`](Engine::broadcast) does.
     fn unicast(&self, id: &str, event: Event) {
         if let Some(entry) = self.clients.read().unwrap().get(id) {
-            let _ = entry.mailbox.send(event);
+            Self::push_to(entry, SharedEvent::new(event));
         }
         self.notify.notify_one();
+    }
+
+    /// Deliver one frame to one mailbox (the single choke point behind
+    /// [`broadcast`](Engine::broadcast), `broadcast_except` and `unicast`,
+    /// plus the attach snapshot).
+    ///
+    /// Control frames (everything [`rt_slot_key`] rejects: state changes,
+    /// params, roster, locks, errors, …) always queue reliably in order and
+    /// are never dropped or coalesced. Meter-class frames queue directly on
+    /// the fast path (no realtime backlog), but while a realtime frame is
+    /// still queued they collapse into that mailbox's latest-only slots —
+    /// the newer frame supersedes the older same-key one — so a stalled
+    /// client accumulates at most one queued realtime frame plus one slot
+    /// set no matter how fast the ticker runs.
+    fn push_to(entry: &ClientEntry, frame: SharedEvent) {
+        if let Some(key) = rt_slot_key(&frame) {
+            let mut rt = entry.rt.lock().unwrap();
+            if rt.inflight {
+                rt.store(key, frame);
+                return;
+            }
+            if entry.mailbox.send(frame).is_ok() {
+                entry.queued.fetch_add(1, Ordering::Relaxed);
+                rt.inflight = true;
+            }
+            return;
+        }
+        if entry.mailbox.send(frame).is_ok() {
+            entry.queued.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// Edge-adapter wakeup handle (P0): an edge-adapter `push_task` waits on
@@ -1423,7 +1589,7 @@ impl Engine {
             .write()
             .unwrap()
             .retain(|(_, _, _, owner)| owner != id);
-        self.broadcast(&self.clients_message());
+        self.broadcast(self.clients_message());
         let released = {
             let mut locks = self.locks.write().unwrap();
             let before = locks.len();
@@ -1431,7 +1597,7 @@ impl Engine {
             locks.len() != before
         };
         if released {
-            self.broadcast(&self.locks_message_inner());
+            self.broadcast(self.locks_message_inner());
         }
     }
 
@@ -2643,7 +2809,7 @@ impl Engine {
             diff
         };
         if changed {
-            self.broadcast(&self.fx_message().await);
+            self.broadcast(self.fx_message().await);
         }
     }
 
@@ -3269,7 +3435,7 @@ impl Engine {
                 if row.params.get(&name) == Some(value) { false } else { row.params.insert(name, *value); true }
             };
             drop(cache);
-            if changed { self.broadcast(&self.fx_message_cached()); }
+            if changed { self.broadcast(self.fx_message_cached()); }
             return;
         }
         let v = param_value_json(pv);
@@ -3283,11 +3449,11 @@ impl Engine {
         } else { None };
         if let Some(event) = event {
             sync.typed.insert(format!("{ch}/{param}"), event.clone());
-            if changed { self.broadcast(&event); }
+            if changed { self.broadcast(event); }
             return;
         }
         if changed {
-            self.broadcast(&Event::Params { ch, values: [(param.to_string(), v)].into_iter().collect(), key: self.active_strip_key(ch) });
+            self.broadcast(Event::Params { ch, values: [(param.to_string(), v)].into_iter().collect(), key: self.active_strip_key(ch) });
         }
         // Main/bus library mirrors must follow exactly the same canonical cache.
         if matches!(param, "fader" | "mute") {
@@ -3304,7 +3470,7 @@ impl Engine {
                     };
                     if let Some(event) = event {
                         sync.typed.insert(format!("master/{ch}"), event.clone());
-                        if changed { self.broadcast(&event); }
+                        if changed { self.broadcast(event); }
                     }
                 }
             }
@@ -3747,20 +3913,20 @@ impl Engine {
         if self.connection_gen.load(Ordering::Acquire) != generation { return; }
         {
             let sync = self.sync_state.lock().unwrap();
-            self.broadcast(&self.reconcile_event(state, &sync, sampled));
+            self.broadcast(self.reconcile_event(state, &sync, sampled));
         }
         if let Ok(info) = self.info_message().await {
-            self.broadcast(&info);
+            self.broadcast(info);
         }
         // FX first (the rack the UI renders), then routing, then masters.
         self.refresh_fx_cache().await;
-        self.broadcast(&self.fx_message().await);
-        self.broadcast(&self.routing_message().await);
+        self.broadcast(self.fx_message().await);
+        self.broadcast(self.routing_message().await);
         let sampled = Instant::now();
         let masters = self.masters_snapshot().await;
         if self.connection_gen.load(Ordering::Acquire) != generation { return; }
         let sync = self.sync_state.lock().unwrap();
-        for frame in masters { self.broadcast(&self.reconcile_event(frame, &sync, sampled)); }
+        for frame in masters { self.broadcast(self.reconcile_event(frame, &sync, sampled)); }
     }
 
     /// Stop old-session work before replacing a driver session.
@@ -3770,7 +3936,7 @@ impl Engine {
         let generation = self.connection_gen.fetch_add(1, Ordering::AcqRel) + 1;
         *sync = SyncState::default();
         self.read_failures.write().unwrap().clear();
-        self.broadcast(&Event::SyncEpoch { epoch: generation });
+        self.broadcast(Event::SyncEpoch { epoch: generation });
         drop(sync);
         self.connection_changed.notify_waiters();
         self.hydrating.store(0, Ordering::Release);
@@ -3847,13 +4013,13 @@ impl Engine {
                 // frame or before a newly attaching client is registered.
                 // Replay the confirmed cache without repeating wire reads.
                 for event in self.params_snapshot() {
-                    self.broadcast(&event);
+                    self.broadcast(event);
                 }
                 eprintln!("engine: {driver} all-strip essentials ready in {:?}", start.elapsed());
             }
         }
         for event in self.params_snapshot() {
-            self.broadcast(&event);
+            self.broadcast(event);
         }
         eprintln!("engine: {driver} initial strip fill ready in {:?} ({reads} reads)", start.elapsed());
     }
@@ -4231,7 +4397,7 @@ impl Engine {
             dropped.insert((driver.to_string(), param.to_string()))
         };
         if fresh {
-            self.broadcast(&self.caps_message());
+            self.broadcast(self.caps_message());
         }
         fresh
     }
@@ -4427,7 +4593,7 @@ impl Engine {
         }
         let sync = self.sync_state.lock().unwrap();
         if !connecting && generation != self.connection_gen.load(Ordering::Acquire) { return; }
-        for event in out { self.broadcast(&self.reconcile_event(event, &sync, started)); }
+        for event in out { self.broadcast(self.reconcile_event(event, &sync, started)); }
     }
 
     /// Apply one client command from `writer` (its client id).
@@ -5620,13 +5786,112 @@ impl Engine {
 /// Dropping the handle detaches the client (best-effort synchronous;
 /// prefer an explicit [`detach`](ClientHandle::detach) so the roster update
 /// and lock auto-release are guaranteed to run).
+/// A client's live event mailbox: the receiving half of the engine
+/// fan-out with latest-only realtime coalescing.
+///
+/// `recv`/`try_recv` mirror [`mpsc::UnboundedReceiver`], so adapters drain
+/// exactly as before. Yielding a realtime frame clears that mailbox's
+/// in-flight flag and promotes every coalesced slot back into the channel
+/// (meters first, then per-key families in key order), so an actively
+/// draining client observes every stream's latest frame and loses nothing
+/// but superseded same-key frames. `len` covers both the queued channel
+/// backlog and the coalesced slots (what an edge fan-out still owes this
+/// client); control frames are always counted, never coalesced.
+pub struct ClientMailbox {
+    rx: mpsc::UnboundedReceiver<SharedEvent>,
+    /// Promotes coalesced slots back into `rx` as the client drains (an
+    /// extra sender on the same channel: unbounded sends never block).
+    tx: mpsc::UnboundedSender<SharedEvent>,
+    rt: Arc<std::sync::Mutex<RtSlots>>,
+    queued: Arc<AtomicUsize>,
+}
+
+impl ClientMailbox {
+    fn new(
+        rx: mpsc::UnboundedReceiver<SharedEvent>,
+        tx: mpsc::UnboundedSender<SharedEvent>,
+        rt: Arc<std::sync::Mutex<RtSlots>>,
+        queued: Arc<AtomicUsize>,
+    ) -> Self {
+        Self { rx, tx, rt, queued }
+    }
+
+    /// Next frame, waiting if empty (returns `None` once the engine has
+    /// detached and the queue has drained).
+    pub async fn recv(&mut self) -> Option<SharedEvent> {
+        let frame = self.rx.recv().await?;
+        self.after_yield(&frame);
+        Some(frame)
+    }
+
+    /// Next frame without waiting.
+    pub fn try_recv(&mut self) -> Result<SharedEvent, mpsc::error::TryRecvError> {
+        let frame = self.rx.try_recv()?;
+        self.after_yield(&frame);
+        Ok(frame)
+    }
+
+    /// Frames this client is still owed: queued channel backlog plus
+    /// coalesced realtime slots.
+    pub fn len(&self) -> usize {
+        self.queued.load(Ordering::Relaxed)
+            + self.rt.lock().map(|rt| rt.occupancy()).unwrap_or(0)
+    }
+
+    /// True when nothing is queued and no slot is held.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Account for one yielded frame; on realtime frames, clear in-flight
+    /// and promote the coalesced latest frames behind it.
+    fn after_yield(&mut self, frame: &SharedEvent) {
+        self.queued.fetch_sub(1, Ordering::Relaxed);
+        if rt_slot_key(frame).is_none() {
+            return;
+        }
+        let pending = match self.rt.lock() {
+            Ok(mut rt) => {
+                rt.inflight = false;
+                rt.take_all()
+            }
+            Err(_) => Vec::new(),
+        };
+        if pending.is_empty() {
+            return;
+        }
+        let mut promoted = false;
+        for frame in pending {
+            if self.tx.send(frame).is_ok() {
+                self.queued.fetch_add(1, Ordering::Relaxed);
+                promoted = true;
+            }
+        }
+        if promoted {
+            if let Ok(mut rt) = self.rt.lock() {
+                rt.inflight = true;
+            }
+        }
+    }
+}
+
 pub struct ClientHandle {
     /// Server-side id (`client-N`); matches later `by` tags.
     pub id: String,
     engine: Arc<Engine>,
-    /// Live event mailbox (unbounded: slow clients never apply
-    /// backpressure; the sweeper prunes detached mailboxes).
-    pub events: mpsc::UnboundedReceiver<Event>,
+    /// Live event mailbox: an unbounded channel plus per-mailbox
+    /// latest-only realtime slots (see [`RtSlots`]). Slow clients never
+    /// apply backpressure, but they no longer accumulate meter-class frames
+    /// without bound: while a realtime frame sits queued, newer `meters` /
+    /// `taps` / `spectrum` / `audio_spectrum` / `gr` frames supersede the
+    /// older same-key frame in the slots instead of queueing, so a stalled
+    /// client holds at most one queued realtime frame plus one latest frame
+    /// per realtime stream key. Every other frame (state changes, params,
+    /// roster, locks, errors, …) queues reliably in order and is never
+    /// dropped or coalesced. Each frame carries its wire JSON serialized
+    /// once at broadcast time and shared across clients via `Arc` (see
+    /// [`SharedEvent`]); the sweeper prunes detached mailboxes.
+    pub events: ClientMailbox,
 }
 
 impl ClientHandle {
@@ -6294,6 +6559,13 @@ mod tests {
         serde_json::to_value(event).unwrap()
     }
 
+    /// Parse a mailbox frame's shared wire JSON (see [`SharedEvent`]):
+    /// what the adapters put on the socket, byte-identical to
+    /// [`event_json`] for the same event, without re-serializing.
+    fn shared_json(frame: &SharedEvent) -> Value {
+        serde_json::from_str(&frame.json).unwrap()
+    }
+
     #[test]
     fn probe_cmd_parses() {
         let cmd: Cmd =
@@ -6336,6 +6608,138 @@ mod tests {
         let engine = Engine::new(EngineConfig::default());
         // Nothing listens on UDP 10024 here: no reply, no row.
         assert!(engine.probe_desk("xair", "127.0.0.1").await.is_none());
+    }
+
+    /// Mailbox coalescing harness: a detached entry + mailbox pair with no
+    /// ticker attached, so the bound assertions are exact.
+    fn stalled_pair() -> (ClientEntry, ClientMailbox) {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let rt = Arc::new(std::sync::Mutex::new(RtSlots::default()));
+        let queued = Arc::new(AtomicUsize::new(0));
+        let entry = ClientEntry {
+            mailbox: tx.clone(),
+            rt: Arc::clone(&rt),
+            queued: Arc::clone(&queued),
+            label: "test".to_string(),
+            connected_at: Instant::now(),
+            last_write: None,
+            policy: Policy::admin(),
+            binary_meters: false,
+            taps: false,
+            caps_full: false,
+        };
+        (entry, ClientMailbox::new(rx, tx, rt, queued))
+    }
+
+    fn meters_frame(v: f32) -> SharedEvent {
+        SharedEvent::new(Event::Meters { levels: vec![v] })
+    }
+
+    #[tokio::test]
+    async fn stalled_mailbox_coalesces_meter_flood_to_latest() {
+        let (entry, mut mailbox) = stalled_pair();
+        for i in 0..50u32 {
+            Engine::push_to(&entry, meters_frame(i as f32));
+        }
+        // Bound: one queued frame plus one slot, however long the stall.
+        assert_eq!(mailbox.len(), 2, "flood must collapse to queued + slot");
+        // The first delivery is the frame that was already queued; draining
+        // it promotes the latest behind it.
+        let first = mailbox.try_recv().expect("queued meters frame");
+        assert!(
+            matches!(&*first.event, Event::Meters { levels } if levels == &vec![0.0]),
+            "queued frame is delivered first"
+        );
+        let mut last = first;
+        while let Ok(frame) = mailbox.try_recv() {
+            last = frame;
+        }
+        assert!(
+            matches!(&*last.event, Event::Meters { levels } if levels == &vec![49.0]),
+            "latest frame must survive the flood"
+        );
+        assert!(mailbox.is_empty(), "slots must drain, not linger");
+    }
+
+    #[tokio::test]
+    async fn stalled_mailbox_never_drops_control_under_meter_flood() {
+        let (entry, mut mailbox) = stalled_pair();
+        for i in 0..20u16 {
+            Engine::push_to(&entry, meters_frame(i as f32));
+            Engine::push_to(
+                &entry,
+                SharedEvent::new(Event::Param {
+                    ch: i,
+                    field: "fader".to_string(),
+                    value: json!(0.5),
+                    key: None,
+                    by: None,
+                }),
+            );
+        }
+        Engine::push_to(
+            &entry,
+            SharedEvent::new(Event::Error {
+                message: "boom".to_string(),
+                locked_by: None,
+                ch: None,
+            }),
+        );
+        let mut params = Vec::new();
+        let mut errors = 0u32;
+        let mut meters = Vec::new();
+        while let Ok(frame) = mailbox.try_recv() {
+            match &*frame.event {
+                Event::Param { ch, .. } => params.push(*ch),
+                Event::Error { .. } => errors += 1,
+                Event::Meters { levels } => meters.push(levels.clone()),
+                other => panic!("unexpected frame in drain: {}", other.tag()),
+            }
+        }
+        assert_eq!(
+            params,
+            (0..20u16).collect::<Vec<_>>(),
+            "control order must survive the flood"
+        );
+        assert_eq!(errors, 1, "errors are never coalesced");
+        assert!(
+            meters.len() <= 2,
+            "meters collapse to queued + latest, got {}",
+            meters.len()
+        );
+        assert_eq!(meters.last().unwrap(), &vec![19.0], "latest meters frame must survive");
+        assert!(mailbox.is_empty());
+    }
+
+    #[tokio::test]
+    async fn stalled_mailbox_keeps_latest_per_realtime_key() {
+        let (entry, mut mailbox) = stalled_pair();
+        let gr = |ch: u16, gate: f32| SharedEvent::new(Event::Gr { ch, gate, comp: 0.0 });
+        // First frame queues; the rest collapse per channel key.
+        Engine::push_to(&entry, gr(0, 1.0));
+        Engine::push_to(&entry, gr(1, 1.0));
+        Engine::push_to(&entry, gr(0, 2.0));
+        Engine::push_to(&entry, SharedEvent::new(Event::Spectrum { ch: 3, bins: vec![0.5] }));
+        Engine::push_to(
+            &entry,
+            SharedEvent::new(Event::Taps { tap: "in".to_string(), levels: vec![0.25] }),
+        );
+        // 1 queued + 4 slots (gr/0, gr/1, spectrum/3, taps/in).
+        assert_eq!(mailbox.len(), 5);
+        let mut gates = Vec::new();
+        let mut taps = 0u32;
+        let mut spectra = 0u32;
+        while let Ok(frame) = mailbox.try_recv() {
+            match &*frame.event {
+                Event::Gr { gate, .. } => gates.push(*gate),
+                Event::Taps { .. } => taps += 1,
+                Event::Spectrum { .. } => spectra += 1,
+                other => panic!("unexpected frame in drain: {}", other.tag()),
+            }
+        }
+        assert_eq!(gates, vec![1.0, 2.0, 1.0], "per-channel latest, queued first");
+        assert_eq!((taps, spectra), (1, 1));
+        assert!(mailbox.is_empty());
     }
 
     #[tokio::test]
@@ -6456,7 +6860,7 @@ mod tests {
         let mut tags: Vec<String> = Vec::new();
         while let Ok(event) = client.events.try_recv() {
             tags.push(
-                event_json(event)
+                shared_json(&event)
                     .get("type")
                     .and_then(Value::as_str)
                     .unwrap_or("?")
@@ -6502,7 +6906,7 @@ mod tests {
                 .await
                 .expect("snapshot in time")
                 .expect("mailbox open");
-            tags.push(event_json(event).get("type").and_then(Value::as_str).unwrap_or("?").to_string());
+            tags.push(shared_json(&event).get("type").and_then(Value::as_str).unwrap_or("?").to_string());
         }
         assert_eq!(
             &tags[..6],
@@ -6580,7 +6984,7 @@ mod tests {
                 .await
                 .expect("caps update in time")
                 .expect("mailbox open");
-            assert_eq!(event_json(msg).get("type"), Some(&json!("caps")));
+            assert_eq!(shared_json(&msg).get("type"), Some(&json!("caps")));
         }
         // No-data errors never drop.
         let nodata = anyhow::anyhow!("sim: gain has no value yet");
@@ -6806,11 +7210,13 @@ mod tests {
         let mut saw: Option<(u16, Option<String>)> = None;
         for _ in 0..128 {
             match client.events.try_recv() {
-                Ok(Event::Param { ch, key, field, .. }) if field == "fader" => {
-                    saw = Some((ch, key));
-                    break;
-                }
-                Ok(_) => continue,
+                Ok(frame) => match &*frame {
+                    Event::Param { ch, key, field, .. } if field == "fader" => {
+                        saw = Some((*ch, key.clone()));
+                        break;
+                    }
+                    _ => continue,
+                },
                 Err(_) => break,
             }
         }
@@ -6827,11 +7233,13 @@ mod tests {
         let mut erred = false;
         for _ in 0..128 {
             match client.events.try_recv() {
-                Ok(Event::Error { message, .. }) if message.contains("grp/01") => {
-                    erred = true;
-                    break;
-                }
-                Ok(_) => continue,
+                Ok(frame) => match &*frame {
+                    Event::Error { message, .. } if message.contains("grp/01") => {
+                        erred = true;
+                        break;
+                    }
+                    _ => continue,
+                },
                 Err(_) => break,
             }
         }
@@ -6938,11 +7346,13 @@ mod tests {
         let mut found = None;
         for _ in 0..64 {
             match handle.events.try_recv() {
-                Ok(Event::Solo { ch, soloed, .. }) => {
-                    found = Some((ch, soloed));
-                    break;
-                }
-                Ok(_) => continue,
+                Ok(frame) => match &*frame {
+                    Event::Solo { ch, soloed, .. } => {
+                        found = Some((*ch, *soloed));
+                        break;
+                    }
+                    _ => continue,
+                },
                 Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
             }
         }
@@ -6953,11 +7363,13 @@ mod tests {
         let mut dup = false;
         for _ in 0..64 {
             match handle.events.try_recv() {
-                Ok(Event::Solo { .. }) => {
-                    dup = true;
-                    break;
-                }
-                Ok(_) => continue,
+                Ok(frame) => match &*frame {
+                    Event::Solo { .. } => {
+                        dup = true;
+                        break;
+                    }
+                    _ => continue,
+                },
                 Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
             }
         }
@@ -6967,11 +7379,13 @@ mod tests {
         let mut found = None;
         for _ in 0..64 {
             match handle.events.try_recv() {
-                Ok(Event::Solo { ch, soloed, .. }) => {
-                    found = Some((ch, soloed));
-                    break;
-                }
-                Ok(_) => continue,
+                Ok(frame) => match &*frame {
+                    Event::Solo { ch, soloed, .. } => {
+                        found = Some((*ch, *soloed));
+                        break;
+                    }
+                    _ => continue,
+                },
                 Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
             }
         }
@@ -6980,11 +7394,13 @@ mod tests {
         let mut saw_params = false;
         for _ in 0..64 {
             match handle.events.try_recv() {
-                Ok(Event::Params { ch: 2, .. }) => {
-                    saw_params = true;
-                    break;
-                }
-                Ok(_) => continue,
+                Ok(frame) => match &*frame {
+                    Event::Params { ch: 2, .. } => {
+                        saw_params = true;
+                        break;
+                    }
+                    _ => continue,
+                },
                 Err(TryRecvError::Empty) | Err(TryRecvError::Disconnected) => break,
             }
         }
@@ -7064,8 +7480,8 @@ mod tests {
         // block on ch5.
         let mut chs: Vec<u16> = Vec::new();
         while let Ok(event) = client.events.try_recv() {
-            if let Event::Params { ch, .. } = event {
-                chs.push(ch);
+            if let Event::Params { ch, .. } = &*event {
+                chs.push(*ch);
             }
         }
         assert_eq!(chs.len(), 8 + nparams, "8 round-robin + {nparams} focus reads");
@@ -7158,8 +7574,8 @@ mod tests {
         }
         let mut chs: Vec<u16> = Vec::new();
         while let Ok(event) = client.events.try_recv() {
-            if let Event::Params { ch, .. } = event {
-                chs.push(ch);
+            if let Event::Params { ch, .. } = &*event {
+                chs.push(*ch);
             }
         }
         assert_eq!(chs.len(), scoped, "focus block is exactly strip 40's set");

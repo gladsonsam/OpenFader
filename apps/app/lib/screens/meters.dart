@@ -5,8 +5,9 @@
 // Wiring: renders through [MetersStore] (constructor injection — no global
 // singleton, so this never fights the Area A worker). Levels come ONLY
 // from the live engine path via the store: offline every ladder reads
-// -inf (dark, never sim-animated, never faked). The screen owns one shared
-// 80 ms meter loop (fixtures freeze it; live ticks it) and sends
+// -inf (dark, never sim-animated, never faked). The screen owns no meter
+// loop of its own; freshness comes from the single shell-owned 80 ms loop
+// (AppShell -> AppStore.pollMeters) and this page only sends
 // `spectrum_target` (the visible strip) while visible, clearing it on
 // dispose — mirroring the web overlay behaviour.
 import 'dart:async';
@@ -94,25 +95,13 @@ class U4MetersPage extends StatefulWidget {
 }
 
 class _U4MetersPageState extends State<U4MetersPage> {
-  Timer? _meterLoop;
   int? _target;
 
   @override
   void initState() {
     super.initState();
     widget.store.addListener(_retarget);
-    _meterLoop =
-        Timer.periodic(const Duration(milliseconds: 80), (_) => _tick());
-    _tick();
     WidgetsBinding.instance.addPostFrameCallback((_) => _retarget());
-  }
-
-  Future<void> _tick() async {
-    try {
-      await widget.store.pollMeters();
-    } catch (_) {
-      // Never crash the meter loop on a transport hiccup.
-    }
   }
 
   /// Keep the spectrum target on the first visible ladder.
@@ -132,7 +121,6 @@ class _U4MetersPageState extends State<U4MetersPage> {
 
   @override
   void dispose() {
-    _meterLoop?.cancel();
     widget.store.removeListener(_retarget);
     widget.store.setSpectrumTarget(null);
     super.dispose();

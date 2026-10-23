@@ -7,7 +7,8 @@
 // cmdUnlock/cmdSubgroupAssign/cmdMuteGroupAssign); this file only renders
 // ui4 tokens (see lib/theme.dart) with CustomPainter DSP controls.
 // Portrait-first: horizontal tab rail on top, single vertical scroll of
-// section cards. An 80 ms meter loop pulls
+// section cards. Freshness comes from the single shell-owned 80 ms loop
+// (AppShell -> AppStore.pollMeters); this page owns no timer and renders
 // levels + spectrum + GR in place via notifiers.
 
 import 'dart:async';
@@ -98,7 +99,6 @@ class ChannelPage extends StatefulWidget {
 }
 
 class _ChannelPageState extends State<ChannelPage> {
-  Timer? _meterLoop;
   ChannelWrites? _writes;
 
   @override
@@ -108,22 +108,10 @@ class _ChannelPageState extends State<ChannelPage> {
     // Keep the engine's persistent detail lane on this channel
     // (web: w.setOpenChannel(bridgeStrip(w, id))).
     widget.store.cmdFocus();
-    _meterLoop =
-        Timer.periodic(const Duration(milliseconds: 80), (_) => _tick());
-    _tick();
-  }
-
-  Future<void> _tick() async {
-    try {
-      await widget.store.pollMeters();
-    } catch (_) {
-      // Never crash the meter loop on a transport hiccup.
-    }
   }
 
   @override
   void dispose() {
-    _meterLoop?.cancel();
     _writes?.dispose();
     super.dispose();
   }
