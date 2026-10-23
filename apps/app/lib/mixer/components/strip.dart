@@ -9,6 +9,12 @@ import 'toggle.dart';
 
 /// The same strip composition serves every layout. Only density and available
 /// space change; controls and callbacks never have a mobile/desktop fork.
+///
+/// Live control state (fader/mute/pan/solo) arrives via the controller's
+/// per-strip notifiers: each control rebuilds from its own
+/// [ValueListenableBuilder] so a fader drag wakes one strip, never the
+/// shell or sibling strips. The [MixerChannel] snapshot still carries
+/// structural identity (key/name/artwork/selection/meter/params).
 class MixerStrip extends StatelessWidget {
   final MixerChannel channel;
   final MixerController controller;
@@ -35,6 +41,8 @@ class MixerStrip extends StatelessWidget {
                 ? 28.0
                 : (box.maxHeight > 760 ? 80.0 : 52.0);
         final ch = channel;
+        final isMaster = ch.master;
+        final chIndex = ch.channel;
         return ColoredBox(
             color: ch.selected ? MixerDesign.selected : MixerDesign.background,
             child: DecoratedBox(
@@ -67,47 +75,65 @@ class MixerStrip extends StatelessWidget {
                       if (!tiny)
                         Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 5),
-                            child: MixerPan(
-                                name: ch.name,
-                                value: ch.pan,
-                                onChanged: ch.master
-                                    ? null
-                                    : (v) => controller.setPan(ch, v))),
+                            child: isMaster || chIndex == null
+                                ? MixerPan(
+                                    name: ch.name,
+                                    value: 0,
+                                    onChanged: null)
+                                : ValueListenableBuilder<double>(
+                                    valueListenable:
+                                        controller.panNoteOf(chIndex),
+                                    builder: (context, pan, _) => MixerPan(
+                                        name: ch.name,
+                                        value: pan,
+                                        onChanged: (v) =>
+                                            controller.setPan(ch, v)))),
                       const SizedBox(height: 5),
                       Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 5),
-                          child: MixerToggle(
-                              label: 'Mute',
-                              visualHeight: compact ? 36 : 44,
-                              fontSize: compact ? 17 : 21,
-                              channelName: ch.name,
-                              on: ch.muted,
-                              activeColor: MixerDesign.mute,
-                              onPressed: () => controller.toggleMute(ch))),
+                          child: ValueListenableBuilder<bool>(
+                              valueListenable: controller.muteNoteOf(
+                                  chIndex, isMaster),
+                              builder: (context, muted, _) => MixerToggle(
+                                  label: 'Mute',
+                                  visualHeight: compact ? 36 : 44,
+                                  fontSize: compact ? 17 : 21,
+                                  channelName: ch.name,
+                                  on: muted,
+                                  activeColor: MixerDesign.mute,
+                                  onPressed: () =>
+                                      controller.toggleMute(ch)))),
                       const SizedBox(height: 8),
                       Expanded(
                           child: Padding(
                               padding:
                                   const EdgeInsets.symmetric(horizontal: 6),
-                              child: MixerFader(
-                                  channel: ch,
-                                  onPosition: (v) =>
-                                      controller.setPosition(ch, v),
-                                  onSelect: () => controller.select(ch),
-                                  onUnity: () => controller.unity(ch)))),
+                              child: ValueListenableBuilder<double>(
+                                  valueListenable: controller.faderNoteOf(
+                                      chIndex, isMaster),
+                                  builder: (context, fader, _) => MixerFader(
+                                      channel: _withFader(ch, fader),
+                                      onPosition: (v) =>
+                                          controller.setPosition(ch, v),
+                                      onSelect: () => controller.select(ch),
+                                      onUnity: () => controller.unity(ch))))),
                       const SizedBox(height: 8),
                       Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 5),
-                          child: ch.master
+                          child: isMaster || chIndex == null
                               ? const SizedBox(height: 44)
-                              : MixerToggle(
-                                  label: 'Solo',
-                                  visualHeight: compact ? 30 : 44,
-                                  fontSize: compact ? 15 : 21,
-                                  channelName: ch.name,
-                                  on: ch.solo,
-                                  activeColor: MixerDesign.solo,
-                                  onPressed: () => controller.toggleSolo(ch))),
+                              : ValueListenableBuilder<bool>(
+                                  valueListenable:
+                                      controller.soloNoteOf(chIndex),
+                                  builder: (context, solo, _) => MixerToggle(
+                                      label: 'Solo',
+                                      visualHeight: compact ? 30 : 44,
+                                      fontSize: compact ? 15 : 21,
+                                      channelName: ch.name,
+                                      on: solo,
+                                      activeColor: MixerDesign.solo,
+                                      onPressed: () =>
+                                          controller.toggleSolo(ch)))),
                       const SizedBox(height: 4),
                       MixerNameplate(
                           channel: ch,
@@ -118,4 +144,22 @@ class MixerStrip extends StatelessWidget {
                           onOpen: onOpen),
                     ])));
       });
+
+  /// Snapshot copy carrying the live fader value for [MixerFader] (level
+  /// label + cap position). Identity/selection/meter stay from the snapshot.
+  static MixerChannel _withFader(MixerChannel ch, double fader) =>
+      MixerChannel(
+          key: ch.key,
+          name: ch.name,
+          number: ch.number,
+          channel: ch.channel,
+          artwork: ch.artwork,
+          fader: fader,
+          pan: ch.pan,
+          muted: ch.muted,
+          solo: ch.solo,
+          selected: ch.selected,
+          master: ch.master,
+          meter: ch.meter,
+          params: ch.params);
 }

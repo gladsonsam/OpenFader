@@ -5,6 +5,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../engine.dart';
 
@@ -19,6 +20,8 @@ class FakeSimEngine implements EngineApi {
           muted: false));
   final List<List<String>> _mailbox = [];
   int _tick = 0;
+  int _binTick = 0;
+  int _binSeq = 0;
 
   @override
   Future<String> boot() async {
@@ -77,22 +80,21 @@ class FakeSimEngine implements EngineApi {
     _snapshot();
   }
 
+  List<double> _meterLevels(int tick) => [
+        for (var i = 0; i < _strips.length; i++)
+          _strips[i].muted
+              ? 0.0
+              : (_strips[i].fader *
+                      (0.55 + 0.35 * ((tick * (i + 3)) % 10) / 10)
+                          .clamp(0.0, 1.0))
+      ];
+
   @override
   Future<List<String>> poll(String clientId, int cap) async {
     // One fake 20 Hz meter frame per poll, then the queued control frames.
     _tick++;
     final out = <String>[
-      jsonEncode({
-        'type': 'meters',
-        'levels': [
-          for (var i = 0; i < _strips.length; i++)
-            _strips[i].muted
-                ? 0.0
-                : (_strips[i].fader *
-                        (0.55 + 0.35 * ((_tick * (i + 3)) % 10) / 10)
-                            .clamp(0.0, 1.0))
-        ]
-      })
+      jsonEncode({'type': 'meters', 'levels': _meterLevels(_tick)})
     ];
     for (final batch in _mailbox) {
       out.addAll(batch);
@@ -100,6 +102,35 @@ class FakeSimEngine implements EngineApi {
     }
     _mailbox.clear();
     return out.take(cap).toList();
+  }
+
+  @override
+  Future<Uint8List> pollBinary(String clientId, int cap) async {
+    // Same synthetic 20 Hz meter frame as poll(), encoded in the compact
+    // `Event::to_binary` layout (protocol.rs: `[u8 type=1, u8 version=1,
+    // u16 n, u32 seq, u32 t_ms]` + `n x u16` levels, little-endian),
+    // wrapped in the `pollBinary` length prefix (`u32 LE len` + frame).
+    // Independent tick/seq counters so the binary and JSON paths never
+    // disturb each other; the app applies binary first, JSON after.
+    _binTick++;
+    final levels = _meterLevels(_binTick);
+    final n = levels.length;
+    final frame = ByteData(binHeaderLen + n * 2);
+    frame.setUint8(0, binTypeMeters);
+    frame.setUint8(1, binVersion);
+    frame.setUint16(2, n, Endian.little);
+    frame.setUint32(4, _binSeq++, Endian.little);
+    frame.setUint32(8,
+        DateTime.now().millisecondsSinceEpoch & 0xffffffff, Endian.little);
+    for (var i = 0; i < n; i++) {
+      frame.setUint16(binHeaderLen + i * 2,
+          (levels[i].clamp(0.0, 1.0) * 65535).round(), Endian.little);
+    }
+    final frameBytes = frame.buffer.asUint8List();
+    final out = Uint8List(4 + frameBytes.length);
+    ByteData.sublistView(out).setUint32(0, frameBytes.length, Endian.little);
+    out.setRange(4, out.length, frameBytes);
+    return out;
   }
 
   @override
