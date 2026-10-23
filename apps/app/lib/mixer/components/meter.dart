@@ -5,6 +5,8 @@ import '../design.dart';
 /// Live meter reusable in strips, bus pickers, and future meter bridges.
 /// The signal repaints this boundary directly; it does not rebuild controls.
 class MixerMeter extends StatefulWidget {
+  /// Align the signal's scale origin with the adjacent fader ruler.
+  static const scaleInset = 17.0;
   final ValueListenable<double> level;
   final bool stereo;
   const MixerMeter({super.key, required this.level, this.stereo = false});
@@ -78,7 +80,7 @@ class _MeterPainter extends CustomPainter {
   @override
   void paint(Canvas c, Size s) {
     final clipHeight = 11.0;
-    final top = clipHeight + 6;
+    const top = MixerMeter.scaleInset;
     final h = (s.height - top).clamp(1.0, double.infinity);
     final count = stereo ? 2 : 1;
     final w = (s.width - (count - 1) * 3) / count;
@@ -91,17 +93,27 @@ class _MeterPainter extends CustomPainter {
               ? MixerDesign.mute
               : const Color(0xff3d1006),
           radius: 3);
-      mixerBox(c, Rect.fromLTWH(x, top, w, h * .2), const Color(0xff3a2600),
+      final unity = MixerFaderScale.positionForDb(0);
+      final warning = MixerFaderScale.positionForDb(-12);
+      mixerBox(
+          c,
+          Rect.fromLTWH(x, top + (1 - unity) * h, w, (unity - warning) * h),
+          const Color(0xff3a2600),
           radius: 3);
-      mixerBox(c, Rect.fromLTWH(x, top + h * .21, w, h * .79),
+      mixerBox(c, Rect.fromLTWH(x, top + (1 - warning) * h, w, warning * h),
           const Color(0xff1a2a00),
           radius: 2);
-      final level = signal.source.value.clamp(0.0, 1.0);
-      mixerBox(c, Rect.fromLTWH(x, top + (1 - level) * h, w, level * h),
-          MixerDesign.meter,
-          radius: 2);
-      mixerBox(c, Rect.fromLTWH(x, top + (1 - signal.peak) * h, w, 3),
-          MixerDesign.amber);
+      final level = MixerFaderScale.positionForLevel(signal.source.value);
+      final peak = MixerFaderScale.positionForLevel(signal.peak);
+      if (level > 0) {
+        mixerBox(c, Rect.fromLTWH(x, top + (1 - level) * h, w, level * h),
+            MixerDesign.meter,
+            radius: 2);
+      }
+      if (peak > 0) {
+        mixerBox(
+            c, Rect.fromLTWH(x, top + (1 - peak) * h, w, 3), MixerDesign.amber);
+      }
     }
   }
 

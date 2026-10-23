@@ -59,7 +59,7 @@ class _MixerFaderState extends State<MixerFader> {
                       child: CustomPaint(painter: _ScalePainter(geometry))),
                   Positioned(
                       left: box.maxWidth * .24,
-                      top: geometry.top - 16,
+                      top: geometry.top - MixerMeter.scaleInset,
                       width: (box.maxWidth * .21).clamp(16, 30),
                       bottom: geometry.bottom,
                       child: MixerMeter(level: ch.meter, stereo: ch.master)),
