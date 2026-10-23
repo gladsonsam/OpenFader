@@ -364,7 +364,7 @@ class _Brand extends StatelessWidget {
           SizedBox(
               width: wide ? 76 : 50,
               height: wide ? 76 : 50,
-              child: SvgPicture.asset('assets/brand/open-fader-logo.svg',
+              child: SvgPicture.asset('assets/brand/open-fader-meter.svg',
                   semanticsLabel: 'OpenFader logo')),
           SizedBox(width: wide ? 24 : 16),
           Text('OpenFader',
