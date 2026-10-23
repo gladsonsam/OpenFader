@@ -40,6 +40,10 @@ class _MixerPageState extends State<MixerPage> {
     // to the same mixer state).
     _scroll = ScrollController(
         initialScrollOffset: widget.controller.scrollOffset);
+    // The first frame is a return to the retained bank/page, not a change
+    // of bank/page that should reset its saved horizontal position.
+    _bank = widget.controller.store.bank;
+    _page = widget.controller.page;
   }
 
   @override
