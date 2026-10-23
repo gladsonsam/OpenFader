@@ -20,6 +20,10 @@ enum MixerDestination {
   debug
 }
 
+enum MixerReadoutControl { volume, pan, gain }
+
+typedef MixerReadoutFocus = ({String? key, MixerReadoutControl control});
+
 /// Immutable strip input shared by phone/tablet/desktop. Meter notifications
 /// are independent of control snapshots and go straight to the meter painter.
 class MixerChannel {
@@ -52,6 +56,25 @@ class MixerChannel {
 class MixerController extends ChangeNotifier {
   final AppStore store;
   String? _selectedKey;
+
+  /// Readout focus is independent of strip selection. Focus changes rebuild
+  /// only the toolbar; control writes retain their existing store behavior.
+  final readoutFocus = ValueNotifier<MixerReadoutFocus>(
+      (key: null, control: MixerReadoutControl.volume));
+
+  MixerChannel? get readoutChannel {
+    final key = readoutFocus.value.key;
+    if (key == 'master') return master;
+    for (final strip in store.strips) {
+      if (strip.key == key) return _channel(strip);
+    }
+    return selected;
+  }
+
+  void _focusReadout(MixerChannel ch, MixerReadoutControl control) {
+    readoutFocus.value = (key: ch.key, control: control);
+  }
+
   int _page = 0;
   int _pageSize = 8;
 
@@ -158,11 +181,18 @@ class MixerController extends ChangeNotifier {
     if (_driver != store.engine.driver) {
       _driver = store.engine.driver;
       _selectedKey = null;
+      readoutFocus.value = (key: null, control: MixerReadoutControl.volume);
       _page = 0;
       _allowDemoSeed = false;
     }
     if (_page >= pageCount) _page = 0;
     _selectedKey ??= channels.firstOrNull?.key;
+    final focusKey = readoutFocus.value.key;
+    if (focusKey != null &&
+        focusKey != 'master' &&
+        !store.strips.any((s) => s.key == focusKey)) {
+      readoutFocus.value = (key: null, control: MixerReadoutControl.volume);
+    }
     _maybeSeedDemo();
     notifyListeners();
   }
@@ -210,6 +240,7 @@ class MixerController extends ChangeNotifier {
   }
 
   void select(MixerChannel channel) {
+    _focusReadout(channel, MixerReadoutControl.volume);
     if (_selectedKey == channel.key) return;
     _selectedKey = channel.key;
     if (channel.channel != null) store.openChannel(channel.channel!);
@@ -244,11 +275,14 @@ class MixerController extends ChangeNotifier {
   }
 
   void setPan(MixerChannel ch, double value) {
-    if (!ch.master) store.setPan(ch.channel!, value);
+    if (ch.master) return;
+    _focusReadout(ch, MixerReadoutControl.pan);
+    store.setPan(ch.channel!, value);
   }
 
   void setGain(MixerChannel ch, double value) {
     if (ch.master) return;
+    _focusReadout(ch, MixerReadoutControl.gain);
     store.openChannel(ch.channel!);
     store.cmdParam('gain', value.clamp(-12, 60));
   }
@@ -297,6 +331,7 @@ class MixerController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     store.removeListener(_changed);
+    readoutFocus.dispose();
     super.dispose();
   }
 }
