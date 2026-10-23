@@ -40,6 +40,8 @@ class _MixerPageState extends State<MixerPage> {
           child: LayoutBuilder(builder: (context, constraints) {
             final controller = widget.controller;
             final narrow = constraints.maxWidth < 600;
+            final stripWidthScale =
+                constraints.maxWidth > constraints.maxHeight ? .9 : 1.0;
             final mobile = narrow || constraints.maxHeight < 500;
             final sideRail =
                 constraints.maxWidth >= 1000 && constraints.maxHeight >= 580;
@@ -48,7 +50,8 @@ class _MixerPageState extends State<MixerPage> {
                 : constraints.maxWidth >= 1700
                     ? 12
                     : 8;
-            final pageSize = narrow ? basePageSize : (basePageSize / .9).ceil();
+            final pageSize =
+                narrow ? basePageSize : (basePageSize / stripWidthScale).ceil();
             if (_configuredSize != pageSize) {
               _configuredSize = pageSize;
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -74,7 +77,7 @@ class _MixerPageState extends State<MixerPage> {
                           : (contentWidth /
                                   (channels.length.clamp(1, basePageSize) + 1))
                               .clamp(108.0, 190.0)) *
-                      .9;
+                      stripWidthScale;
                   Widget strip(MixerChannel ch) => MixerStrip(
                       key: ValueKey(ch.key),
                       channel: ch,
