@@ -9,8 +9,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
-import '../theme.dart';
+import '../palette.dart';
 import '../widgets/console_button.dart';
 
 /// One inspector section (title + preformatted lines).
@@ -66,7 +67,7 @@ class _U4DebugPageState extends State<U4DebugPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: U4.page,
+      backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.store,
@@ -78,11 +79,11 @@ class _U4DebugPageState extends State<U4DebugPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text('world-debug · tick ${store.tick}',
-                      style: const TextStyle(
+                      style: TextStyle(
                           fontFamily: 'monospace',
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
-                          color: U4.text1)),
+                          color: ConsolePalette.of(context).text1)),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 6,
@@ -98,36 +99,39 @@ class _U4DebugPageState extends State<U4DebugPage> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  const Text('meters',
+                  Text('meters',
                       style: TextStyle(
                           fontFamily: 'monospace',
                           fontSize: 12,
-                          color: U4.cyan)),
+                          color: ConsolePalette.of(context).cyan)),
                   const SizedBox(height: 4),
                   Container(
                     decoration: BoxDecoration(
-                      color: U4.panel,
-                      border: Border.all(color: U4.lineCtl),
+                      color: ConsolePalette.of(context).panel,
+                      border:
+                          Border.all(color: ConsolePalette.of(context).lineCtl),
                     ),
                     child: CustomPaint(
                       size: const Size(double.infinity, 64),
-                      painter: _SparkPainter(levels: store.spark),
+                      painter: _SparkPainter(
+                          levels: store.spark,
+                          palette: ConsolePalette.of(context)),
                     ),
                   ),
                   const SizedBox(height: 10),
                   for (final s in store.sections) ...[
                     Text(s.title,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontFamily: 'monospace',
                             fontSize: 12,
-                            color: U4.cyan)),
+                            color: ConsolePalette.of(context).cyan)),
                     for (final l in s.lines)
                       Text(l,
-                          style: const TextStyle(
+                          style: TextStyle(
                               fontFamily: 'monospace',
                               fontSize: 11,
                               height: 1.45,
-                              color: U4.text1)),
+                              color: ConsolePalette.of(context).text1)),
                     const SizedBox(height: 8),
                   ],
                 ],
@@ -152,11 +156,14 @@ class _Probe extends StatelessWidget {
   }
 }
 
-/// Meter sparkline: one bar per slot, red past 0.966, white peak tick.
+/// Meter sparkline: one bar per slot, red past 0.966, contrasting peak tick.
 class _SparkPainter extends CustomPainter {
   final List<double> levels;
 
-  const _SparkPainter({required this.levels});
+  final ConsolePalette palette;
+
+  _SparkPainter({required List<double> levels, required this.palette})
+      : levels = List<double>.unmodifiable(levels);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -168,15 +175,16 @@ class _SparkPainter extends CustomPainter {
       final h = v * size.height;
       canvas.drawRect(
         Rect.fromLTWH(i * w, size.height - h, (w - 1).clamp(1.0, w), h),
-        Paint()..color = v > 0.966 ? const Color(0xFFFF0000) : U4.cyan,
+        Paint()..color = v > 0.966 ? palette.meterRed : palette.cyan,
       );
       canvas.drawRect(
         Rect.fromLTWH(i * w, size.height - h, (w - 1).clamp(1.0, w), 1),
-        Paint()..color = Colors.white,
+        Paint()..color = palette.peakLine,
       );
     }
   }
 
   @override
-  bool shouldRepaint(_SparkPainter old) => !identical(old.levels, levels);
+  bool shouldRepaint(_SparkPainter old) =>
+      old.palette != palette || !listEquals(old.levels, levels);
 }

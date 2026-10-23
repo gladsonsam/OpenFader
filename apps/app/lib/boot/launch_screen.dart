@@ -7,8 +7,8 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../palette.dart';
 
-import '../theme.dart';
 import 'app_logo.dart';
 import 'boot_controller.dart';
 
@@ -21,7 +21,7 @@ class LaunchScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: U4.page,
+      backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: controller,
@@ -36,16 +36,16 @@ class LaunchScreen extends StatelessWidget {
                   children: [
                     const AppLogo(),
                     const SizedBox(height: 20),
-                    const Text('OpenFader',
+                    Text('OpenFader',
                         style: TextStyle(
-                            color: U4.text1,
+                            color: ConsolePalette.of(context).text1,
                             fontSize: 30,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.5)),
                     const SizedBox(height: 4),
-                    const Text('CONSOLE REMOTE',
+                    Text('CONSOLE REMOTE',
                         style: TextStyle(
-                            color: U4.text7,
+                            color: ConsolePalette.of(context).text7,
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 3)),
@@ -53,11 +53,12 @@ class LaunchScreen extends StatelessWidget {
                     SizedBox(
                       width: 220,
                       child: failed
-                          ? const LinearProgressIndicator(
+                          ? LinearProgressIndicator(
                               value: 0,
-                              backgroundColor: U4.control,
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(U4.meterRed),
+                              backgroundColor:
+                                  ConsolePalette.of(context).control,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  ConsolePalette.of(context).meterRed),
                             )
                           : LinearProgressIndicator(
                               value: controller.done
@@ -65,37 +66,39 @@ class LaunchScreen extends StatelessWidget {
                                   : (controller.progress <= 0
                                       ? null
                                       : controller.progress),
-                              backgroundColor: U4.control,
-                              valueColor: const AlwaysStoppedAnimation<Color>(
-                                  U4.cyan),
+                              backgroundColor:
+                                  ConsolePalette.of(context).control,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  ConsolePalette.of(context).cyan),
                             ),
                     ),
                     const SizedBox(height: 12),
                     Text(controller.status,
                         textAlign: TextAlign.center,
-                        style:
-                            const TextStyle(color: U4.text4, fontSize: 13)),
+                        style: TextStyle(
+                            color: ConsolePalette.of(context).text4,
+                            fontSize: 13)),
                     const SizedBox(height: 20),
                     _StepList(controller: controller),
                     if (controller.engineLabel != null && !failed) ...[
                       const SizedBox(height: 12),
                       Text('engine: ${controller.engineLabel}',
-                          style: const TextStyle(
-                              color: U4.text7, fontSize: 12)),
+                          style: TextStyle(
+                              color: ConsolePalette.of(context).text7,
+                              fontSize: 12)),
                     ],
                     if (failed) ...[
                       const SizedBox(height: 12),
                       Text(controller.error!,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              color: U4.meterRed, fontSize: 12)),
+                          style: TextStyle(
+                              color: ConsolePalette.of(context).meterRed,
+                              fontSize: 12)),
                       const SizedBox(height: 12),
                       TextButton(
                         onPressed:
                             controller.running ? null : (onRetry ?? () {}),
-                        child: Text(controller.running
-                            ? 'Retrying…'
-                            : 'Retry'),
+                        child: Text(controller.running ? 'Retrying…' : 'Retry'),
                       ),
                     ],
                   ],
@@ -151,29 +154,30 @@ class _StepRow extends StatelessWidget {
     final Color textColor;
     switch (state) {
       case _StepState.done:
-        icon = const Icon(Icons.check_circle_outline,
-            size: 16, color: U4.meterGreen);
-        textColor = U4.text4;
+        icon = Icon(Icons.check_circle_outline,
+            size: 16, color: ConsolePalette.of(context).meterGreen);
+        textColor = ConsolePalette.of(context).text4;
         break;
       case _StepState.active:
-        icon = const SizedBox(
+        icon = SizedBox(
           width: 16,
           height: 16,
           child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(U4.cyan)),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                  ConsolePalette.of(context).cyan)),
         );
-        textColor = U4.text1;
+        textColor = ConsolePalette.of(context).text1;
         break;
       case _StepState.pending:
-        icon = const Icon(Icons.radio_button_unchecked,
-            size: 16, color: U4.text10);
-        textColor = U4.text7;
+        icon = Icon(Icons.radio_button_unchecked,
+            size: 16, color: ConsolePalette.of(context).text10);
+        textColor = ConsolePalette.of(context).text7;
         break;
       case _StepState.failed:
-        icon =
-            const Icon(Icons.error_outline, size: 16, color: U4.meterRed);
-        textColor = U4.meterRed;
+        icon = Icon(Icons.error_outline,
+            size: 16, color: ConsolePalette.of(context).meterRed);
+        textColor = ConsolePalette.of(context).meterRed;
         break;
     }
     return Padding(

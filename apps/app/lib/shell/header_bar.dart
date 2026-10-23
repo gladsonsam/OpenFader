@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../palette.dart';
 
 import '../theme.dart';
 import '../mixer/design.dart';
@@ -17,9 +18,9 @@ class U4ShellHeader extends StatelessWidget {
   final String backLabel;
   final bool isChannel;
   final String channelName;
-  final Color channelColor;
+  final Color? channelColor;
   final bool locked;
-  final Color connDot;
+  final Color? connDot;
   final String connAria;
   final ShellMode mode;
   final bool compact;
@@ -50,9 +51,9 @@ class U4ShellHeader extends StatelessWidget {
     this.backLabel = 'Back',
     this.isChannel = false,
     this.channelName = '',
-    this.channelColor = U4.cyan,
+    this.channelColor,
     this.locked = false,
-    this.connDot = U4.meterAmber,
+    this.connDot,
     this.connAria = 'Disconnected',
     this.mode = ShellMode.mixer,
     this.compact = false,
@@ -92,15 +93,18 @@ class U4ShellHeader extends StatelessWidget {
     return Container(
       height: compact ? 64 : 68,
       padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10, vertical: 6),
-      decoration: const BoxDecoration(
-          color: U4.headerBg,
-          border: Border(bottom: BorderSide(color: U4.lineHeader))),
+      decoration: BoxDecoration(
+          color: ConsolePalette.of(context).headerBg,
+          border: Border(
+              bottom:
+                  BorderSide(color: ConsolePalette.of(context).lineHeader))),
       child: Row(children: [
         if (showBack) ...[
           IconButton(
               tooltip: 'Back to mixer',
               onPressed: onBack,
-              icon: const Icon(Icons.chevron_left, color: U4.text1)),
+              icon: Icon(Icons.chevron_left,
+                  color: ConsolePalette.of(context).text1)),
           const SizedBox(width: 6),
         ],
         Expanded(
@@ -108,9 +112,9 @@ class U4ShellHeader extends StatelessWidget {
           height: 52,
           padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
-              color: U4.panel,
+              color: ConsolePalette.of(context).panel,
               borderRadius: U4.rBtn,
-              border: Border.all(color: U4.linePanel)),
+              border: Border.all(color: ConsolePalette.of(context).linePanel)),
           child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -122,7 +126,8 @@ class U4ShellHeader extends StatelessWidget {
                 Text(title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: MixerDesign.type(11, color: U4.text7)),
+                    style: MixerDesign.type(11,
+                        color: ConsolePalette.of(context).text7)),
               ]),
         )),
         const SizedBox(width: 4),
@@ -140,13 +145,14 @@ class U4ShellHeader extends StatelessWidget {
           IconButton(
               tooltip: 'Unlock channel',
               onPressed: onUnlock,
-              icon: const Icon(Icons.lock_outline, color: U4.meterAmber)),
+              icon: Icon(Icons.lock_outline,
+                  color: ConsolePalette.of(context).meterAmber)),
         _HeaderTool(
             label: connAria,
             artwork: 'connection',
             onTap: onConnect,
             active: mode == ShellMode.connect,
-            dot: connDot),
+            dot: connDot ?? ConsolePalette.of(context).meterAmber),
         if (!compact)
           for (final action in actions)
             _HeaderTool(
@@ -157,7 +163,8 @@ class U4ShellHeader extends StatelessWidget {
         if (compact)
           PopupMenuButton<int>(
             tooltip: 'More',
-            icon: const Icon(Icons.more_horiz, color: U4.text7),
+            icon:
+                Icon(Icons.more_horiz, color: ConsolePalette.of(context).text7),
             onSelected: (index) => actions[index].$3?.call(),
             itemBuilder: (_) => [
               for (var i = 0; i < actions.length; i++)
@@ -191,13 +198,17 @@ class _HeaderTool extends StatelessWidget {
           tooltip: label,
           onPressed: onTap,
           style: IconButton.styleFrom(
-              backgroundColor: active ? U4.control : Colors.transparent,
+              backgroundColor: active
+                  ? ConsolePalette.of(context).control
+                  : Colors.transparent,
               shape: const RoundedRectangleBorder(borderRadius: U4.rBtn)),
           icon: Stack(clipBehavior: Clip.none, children: [
             if (artwork == 'meters')
-              const Icon(Icons.graphic_eq, color: U4.text7)
+              Icon(Icons.graphic_eq, color: ConsolePalette.of(context).text7)
             else if (artwork == 'FX')
-              Text('FX', style: MixerDesign.type(17, color: U4.text7))
+              Text('FX',
+                  style: MixerDesign.type(17,
+                      color: ConsolePalette.of(context).text7))
             else
               MixerArtwork(artwork, width: 28, height: 28),
             if (dot != null)

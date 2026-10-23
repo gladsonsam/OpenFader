@@ -3,8 +3,7 @@
 // tape colour, so the icon area stays empty and the tape colour comes
 // from the channel position (CHAN_TAPE, mod 8) via the parent.
 import 'package:flutter/material.dart';
-
-import '../theme.dart';
+import '../palette.dart';
 
 class U4NameBar extends StatelessWidget {
   final String name;
@@ -23,8 +22,8 @@ class U4NameBar extends StatelessWidget {
     return Container(
       height: 76,
       clipBehavior: Clip.antiAlias,
-      decoration: const BoxDecoration(
-        color: U4.panel,
+      decoration: BoxDecoration(
+        color: ConsolePalette.of(context).panel,
         borderRadius: BorderRadius.only(
           topLeft: Radius.circular(3),
           topRight: Radius.circular(3),

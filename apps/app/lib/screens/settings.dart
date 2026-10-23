@@ -17,6 +17,7 @@ import '../settings/mixes.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
 import '../theme.dart';
+import '../palette.dart';
 
 enum SettingsSection {
   connections('Connections', Icons.wifi),
@@ -100,22 +101,22 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        backgroundColor: const Color(0xff262626),
+        backgroundColor: ConsolePalette.of(context).chip,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
-            side: const BorderSide(color: Color(0xff555555))),
+            side: BorderSide(color: ConsolePalette.of(context).lineCtl)),
         title: Text(title,
             style: TextStyle(
                 fontFamily: U4.font,
                 fontSize: wide ? 30 : 23,
                 fontWeight: FontWeight.w600,
-                color: U4.text1)),
+                color: ConsolePalette.of(context).text1)),
         content: Text(body,
             style: TextStyle(
                 fontFamily: U4.font,
                 fontSize: wide ? 25 : 17,
                 height: 1.5,
-                color: const Color(0xffb5b5b5))),
+                color: ConsolePalette.of(context).text7)),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -123,11 +124,11 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
                   style: TextStyle(
                       fontFamily: U4.font,
                       fontSize: wide ? 22 : 17,
-                      color: U4.text1))),
+                      color: ConsolePalette.of(context).text1))),
           TextButton(
               onPressed: () => Navigator.pop(context, true),
               style: TextButton.styleFrom(
-                  backgroundColor: const Color(0xffd63a2c),
+                  backgroundColor: ConsolePalette.of(context).mute,
                   padding: EdgeInsets.symmetric(
                       horizontal: 22, vertical: wide ? 12 : 10),
                   shape: RoundedRectangleBorder(
@@ -137,7 +138,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
                       fontFamily: U4.font,
                       fontSize: wide ? 22 : 17,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white))),
+                      color: ConsolePalette.of(context).onDanger))),
         ],
       ),
     );
@@ -155,7 +156,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width > 900;
     return Scaffold(
-      backgroundColor: U4.page,
+      backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.store,
@@ -179,9 +180,10 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
       padding: wide
           ? const EdgeInsets.symmetric(horizontal: 32)
           : const EdgeInsets.fromLTRB(16, 22, 16, 12),
-      decoration: const BoxDecoration(
-          color: Color(0xff181818),
-          border: Border(bottom: BorderSide(color: Color(0xff363636)))),
+      decoration: BoxDecoration(
+          color: ConsolePalette.of(context).headerBg,
+          border: Border(
+              bottom: BorderSide(color: ConsolePalette.of(context).line))),
       child: Row(children: [
         if (!wide && showBack)
           _IconBtn(
@@ -191,8 +193,8 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
               onTap: _page == null
                   ? widget.onClose
                   : () => setState(() => _page = null),
-              child: const _SettingsIcon(Icons.arrow_back,
-                  size: 22, color: Color(0xffb5b5b5))),
+              child: _SettingsIcon(Icons.arrow_back,
+                  size: 22, color: ConsolePalette.of(context).text7)),
         if (!wide && showBack) const SizedBox(width: 14),
         Expanded(
             child: Text(title,
@@ -202,12 +204,12 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
                     fontFamily: U4.font,
                     fontSize: wide ? 34 : 22,
                     fontWeight: FontWeight.w600,
-                    color: U4.text1))),
+                    color: ConsolePalette.of(context).text1))),
         _IconBtn(
             tooltip: 'Close Settings',
             onTap: widget.onClose,
-            child: const _SettingsIcon(Icons.close,
-                size: 22, color: Color(0xffb5b5b5))),
+            child: _SettingsIcon(Icons.close,
+                size: 22, color: ConsolePalette.of(context).text7)),
       ]),
     );
   }
@@ -307,12 +309,12 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
           Padding(
             padding: const EdgeInsets.only(bottom: 30),
             child: Text(s.label,
-                style: const TextStyle(
+                style: TextStyle(
                     fontFamily: U4.font,
                     fontSize: 36,
                     height: 1.22,
                     fontWeight: FontWeight.w600,
-                    color: U4.text1)),
+                    color: ConsolePalette.of(context).text1)),
           ),
         switch (s) {
           SettingsSection.connections => _ConnectionsDetail(
@@ -361,9 +363,10 @@ class _IconBtn extends StatelessWidget {
                   child: Container(
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                          color: const Color(0xff262626),
+                          color: ConsolePalette.of(context).chip,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xff363636))),
+                          border: Border.all(
+                              color: ConsolePalette.of(context).line)),
                       child: child)))));
 }
 
@@ -377,9 +380,10 @@ class _Sidebar extends StatelessWidget {
     return Container(
       width: 400,
       padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
-      decoration: const BoxDecoration(
-          color: Color(0xff181818),
-          border: Border(right: BorderSide(color: Color(0xff363636)))),
+      decoration: BoxDecoration(
+          color: ConsolePalette.of(context).headerBg,
+          border: Border(
+              right: BorderSide(color: ConsolePalette.of(context).line))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -400,14 +404,15 @@ class _Sidebar extends StatelessWidget {
                     constraints: const BoxConstraints(minHeight: 88),
                     decoration: BoxDecoration(
                         color: s == active
-                            ? const Color(0xff262b14)
+                            ? ConsolePalette.of(context).selectionFill
                             : Colors.transparent,
                         borderRadius: BorderRadius.circular(12)),
                     child: Row(children: [
                       _SettingsIcon(s.icon,
                           size: 26,
-                          color:
-                              s == active ? U4.cyan : const Color(0xffb5b5b5)),
+                          color: s == active
+                              ? ConsolePalette.of(context).cyan
+                              : ConsolePalette.of(context).text7),
                       const SizedBox(width: 16),
                       Expanded(
                           child: Text(s.label,
@@ -416,8 +421,8 @@ class _Sidebar extends StatelessWidget {
                                   fontSize: 25,
                                   fontWeight: FontWeight.w500,
                                   color: s == active
-                                      ? U4.cyan
-                                      : const Color(0xffb5b5b5)))),
+                                      ? ConsolePalette.of(context).cyan
+                                      : ConsolePalette.of(context).text7))),
                     ]),
                   ),
                 ),
@@ -436,12 +441,12 @@ class _Sidebar extends StatelessWidget {
                     child: SvgPicture.asset('assets/brand/open-fader-meter.svg',
                         semanticsLabel: 'OpenFader')),
                 const SizedBox(width: 14),
-                const Text('OpenFader',
+                Text('OpenFader',
                     style: TextStyle(
                         fontFamily: U4.font,
                         fontSize: 25,
                         fontWeight: FontWeight.w600,
-                        color: U4.text1)),
+                        color: ConsolePalette.of(context).text1)),
               ]),
             ),
           ),
@@ -453,7 +458,7 @@ class _Sidebar extends StatelessWidget {
 
 class _OverviewBrand extends StatelessWidget {
   @override
-  Widget build(BuildContext context) => const Padding(
+  Widget build(BuildContext context) => Padding(
         padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
         child: Row(children: [
           SizedBox(width: 54, height: 54, child: SvgPictureAssetLogo()),
@@ -463,7 +468,7 @@ class _OverviewBrand extends StatelessWidget {
                   fontFamily: U4.font,
                   fontSize: 25,
                   fontWeight: FontWeight.w600,
-                  color: U4.text1)),
+                  color: ConsolePalette.of(context).text1)),
         ]),
       );
 }
@@ -493,21 +498,21 @@ class _OverviewCard extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
               constraints: const BoxConstraints(minHeight: 90),
               decoration: BoxDecoration(
-                  color: const Color(0xff262626),
+                  color: ConsolePalette.of(context).chip,
                   borderRadius: BorderRadius.circular(12)),
               child: Row(children: [
                 _SettingsIcon(section.icon,
-                    size: 24, color: const Color(0xffb5b5b5)),
+                    size: 24, color: ConsolePalette.of(context).text7),
                 const SizedBox(width: 16),
                 Expanded(
                     child: Text(section.label,
-                        style: const TextStyle(
+                        style: TextStyle(
                             fontFamily: U4.font,
                             fontSize: 19,
                             fontWeight: FontWeight.w500,
-                            color: U4.text1))),
-                const _SettingsIcon(Icons.chevron_right,
-                    size: 24, color: Color(0xffb5b5b5)),
+                            color: ConsolePalette.of(context).text1))),
+                _SettingsIcon(Icons.chevron_right,
+                    size: 24, color: ConsolePalette.of(context).text7),
               ]))));
 }
 
@@ -539,28 +544,29 @@ class _Section extends StatelessWidget {
                   fontSize: wide ? 26 : 17,
                   height: wide ? 34 / 26 : 23 / 17,
                   fontWeight: FontWeight.w500,
-                  color: const Color(0xffb5b5b5))),
+                  color: ConsolePalette.of(context).text7)),
         ),
         Container(
           decoration: BoxDecoration(
-              color: const Color(0xff262626),
+              color: ConsolePalette.of(context).chip,
               borderRadius: BorderRadius.circular(wide ? 14 : 12)),
           clipBehavior: Clip.antiAlias,
           child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: _divided(children)),
+              children: _divided(context, children)),
         ),
       ],
     );
   }
 
-  static List<Widget> _divided(List<Widget> children) => [
+  static List<Widget> _divided(BuildContext context, List<Widget> children) => [
         for (var i = 0; i < children.length; i++)
           DecoratedBox(
               decoration: BoxDecoration(
                   border: i < children.length - 1
-                      ? const Border(
-                          bottom: BorderSide(color: Color(0xff363636)))
+                      ? Border(
+                          bottom: BorderSide(
+                              color: ConsolePalette.of(context).line))
                       : null),
               child: children[i]),
       ];
@@ -580,7 +586,7 @@ class _Note extends StatelessWidget {
               fontFamily: U4.font,
               fontSize: wide ? 23 : 15,
               height: wide ? 1.5 : 22 / 15,
-              color: const Color(0xffaaaaaa))),
+              color: ConsolePalette.of(context).panFill)),
     );
   }
 }
@@ -611,7 +617,7 @@ class _PrefRow extends StatelessWidget {
                   fontSize: wide ? 27 : 18,
                   height: wide ? 1.25 : 24 / 18,
                   fontWeight: FontWeight.w500,
-                  color: U4.text1)),
+                  color: ConsolePalette.of(context).text1)),
           if (desc != null) ...[
             SizedBox(height: wide ? 7 : 4),
             Text(desc!,
@@ -619,7 +625,7 @@ class _PrefRow extends StatelessWidget {
                     fontFamily: U4.font,
                     fontSize: wide ? 23 : 15,
                     height: wide ? 1.4 : 21 / 15,
-                    color: const Color(0xffb5b5b5))),
+                    color: ConsolePalette.of(context).text7)),
           ],
         ])),
         SizedBox(width: wide ? 24 : 16),
@@ -657,10 +663,14 @@ class _Toggle extends StatelessWidget {
               width: w,
               height: h,
               decoration: BoxDecoration(
-                  color: value ? U4.cyan : const Color(0xff444444),
+                  color: value
+                      ? ConsolePalette.of(context).cyan
+                      : ConsolePalette.of(context).control,
                   borderRadius: BorderRadius.circular(h / 2),
                   border: Border.all(
-                      color: value ? U4.cyan : const Color(0xff626262))),
+                      color: value
+                          ? ConsolePalette.of(context).cyan
+                          : ConsolePalette.of(context).lineCtl)),
               child: Stack(children: [
                 Positioned(
                     left: value ? w - knob - 4 : 4,
@@ -671,8 +681,8 @@ class _Toggle extends StatelessWidget {
                         decoration: BoxDecoration(
                             shape: BoxShape.circle,
                             color: value
-                                ? const Color(0xff1c1c1c)
-                                : const Color(0xffebebeb)))),
+                                ? ConsolePalette.of(context).onAccent
+                                : ConsolePalette.of(context).text))),
               ]),
             ),
           ),
@@ -703,18 +713,20 @@ class _Select extends StatelessWidget {
           maxWidth: wide ? 360 : 174),
       padding: EdgeInsets.symmetric(horizontal: wide ? 16 : 12),
       decoration: BoxDecoration(
-          color: const Color(0xff343434),
+          color: ConsolePalette.of(context).control,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xff414141))),
+          border: Border.all(color: ConsolePalette.of(context).lineCtl)),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
           isDense: true,
           value: value,
-          dropdownColor: const Color(0xff262626),
-          icon: const _SettingsIcon(Icons.arrow_drop_down,
-              size: 18, color: Color(0xffb5b5b5)),
+          dropdownColor: ConsolePalette.of(context).chip,
+          icon: _SettingsIcon(Icons.arrow_drop_down,
+              size: 18, color: ConsolePalette.of(context).text7),
           style: TextStyle(
-              fontFamily: U4.font, fontSize: wide ? 27 : 17, color: U4.text1),
+              fontFamily: U4.font,
+              fontSize: wide ? 27 : 17,
+              color: ConsolePalette.of(context).text1),
           items: [
             for (final o in options)
               DropdownMenuItem(
@@ -769,7 +781,9 @@ class _ActionRow extends StatelessWidget {
                           fontSize: wide ? 27 : 18,
                           height: wide ? 1.25 : 24 / 18,
                           fontWeight: FontWeight.w500,
-                          color: danger ? const Color(0xffff8a80) : U4.text1)),
+                          color: danger
+                              ? ConsolePalette.of(context).mute
+                              : ConsolePalette.of(context).text1)),
                   if (desc != null) ...[
                     SizedBox(height: wide ? 7 : 4),
                     Text(desc!,
@@ -777,12 +791,12 @@ class _ActionRow extends StatelessWidget {
                             fontFamily: U4.font,
                             fontSize: wide ? 23 : 15,
                             height: wide ? 1.4 : 21 / 15,
-                            color: const Color(0xffb5b5b5))),
+                            color: ConsolePalette.of(context).text7)),
                   ],
                 ])),
             const SizedBox(width: 16),
-            const _SettingsIcon(Icons.chevron_right,
-                size: 24, color: Color(0xffb5b5b5)),
+            _SettingsIcon(Icons.chevron_right,
+                size: 24, color: ConsolePalette.of(context).text7),
           ]),
         ),
       ),
@@ -804,7 +818,7 @@ class _ValueText extends StatelessWidget {
             fontFamily: U4.font,
             fontSize: wide ? 27 : 18,
             height: wide ? 1.3 : 24 / 18,
-            color: const Color(0xffb5b5b5),
+            color: ConsolePalette.of(context).text7,
             fontFeatures: const [FontFeature.tabularFigures()]));
   }
 }
@@ -929,7 +943,7 @@ class _SavedMixerRow extends StatelessWidget {
                   fontSize: wide ? 27 : 18,
                   height: wide ? 1.25 : 24 / 18,
                   fontWeight: FontWeight.w500,
-                  color: U4.text1)),
+                  color: ConsolePalette.of(context).text1)),
           SizedBox(height: wide ? 7 : 4),
           Text(addr,
               maxLines: 1,
@@ -938,7 +952,7 @@ class _SavedMixerRow extends StatelessWidget {
                   fontFamily: U4.font,
                   fontSize: wide ? 23 : 14,
                   height: wide ? 1.4 : 1.5,
-                  color: const Color(0xffb5b5b5),
+                  color: ConsolePalette.of(context).text7,
                   fontFeatures: const [FontFeature.tabularFigures()])),
         ])),
         _IconBtnInline(tooltip: 'Forget $name', onTap: onForget),
@@ -969,7 +983,8 @@ class _IconBtnInline extends StatelessWidget {
               child: InkWell(
                   borderRadius: BorderRadius.circular(10),
                   onTap: () => _runSettingsAction(context, onTap),
-                  child: _SettingsIcon(icon, size: 22, color: U4.text7)))));
+                  child: _SettingsIcon(icon,
+                      size: 22, color: ConsolePalette.of(context).text7)))));
 }
 
 // ---------------------------------------------------------------------------
@@ -1013,7 +1028,7 @@ class _MixesDetail extends StatelessWidget {
                             fontSize: wide ? 27 : 18,
                             height: wide ? 1.25 : 24 / 18,
                             fontWeight: FontWeight.w500,
-                            color: U4.text1)),
+                            color: ConsolePalette.of(context).text1)),
                     SizedBox(height: wide ? 7 : 4),
                     Text(
                         'Import a mix, or open the offline mixer to prepare one.',
@@ -1021,7 +1036,7 @@ class _MixesDetail extends StatelessWidget {
                             fontFamily: U4.font,
                             fontSize: wide ? 23 : 15,
                             height: wide ? 1.4 : 21 / 15,
-                            color: const Color(0xffb5b5b5))),
+                            color: ConsolePalette.of(context).text7)),
                   ]),
             )
           else
@@ -1148,7 +1163,7 @@ class _MixRow extends StatelessWidget {
                   fontFamily: U4.font,
                   fontSize: wide ? 27 : 18,
                   fontWeight: FontWeight.w500,
-                  color: U4.text1)),
+                  color: ConsolePalette.of(context).text1)),
           SizedBox(height: wide ? 7 : 4),
           Text(mix.mixerModel,
               maxLines: 1,
@@ -1156,7 +1171,7 @@ class _MixRow extends StatelessWidget {
               style: TextStyle(
                   fontFamily: U4.font,
                   fontSize: wide ? 23 : 14,
-                  color: const Color(0xffb5b5b5))),
+                  color: ConsolePalette.of(context).text7)),
         ])),
         _IconBtnInline(
             tooltip: 'Export ${mix.name}',
@@ -1190,10 +1205,13 @@ class _PrimaryButton extends StatelessWidget {
           padding:
               EdgeInsets.symmetric(horizontal: wide ? 22 : 14, vertical: 10),
           decoration: BoxDecoration(
-              color: U4.cyan, borderRadius: BorderRadius.circular(9)),
+              color: ConsolePalette.of(context).cyan,
+              borderRadius: BorderRadius.circular(9)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             if (icon != null) ...[
-              _SettingsIcon(icon!, size: wide ? 22 : 18, color: U4.page),
+              _SettingsIcon(icon!,
+                  size: wide ? 22 : 18,
+                  color: ConsolePalette.of(context).onAccent),
               SizedBox(width: wide ? 12 : 8),
             ],
             Text(label,
@@ -1202,7 +1220,7 @@ class _PrimaryButton extends StatelessWidget {
                     fontFamily: U4.font,
                     fontSize: wide ? 27 : 17,
                     fontWeight: FontWeight.w600,
-                    color: U4.page)),
+                    color: ConsolePalette.of(context).onAccent)),
           ]),
         ),
       ),
@@ -1231,12 +1249,14 @@ class _PlainButton extends StatelessWidget {
           padding:
               EdgeInsets.symmetric(horizontal: wide ? 22 : 14, vertical: 10),
           decoration: BoxDecoration(
-              color: const Color(0xff343434),
+              color: ConsolePalette.of(context).control,
               borderRadius: BorderRadius.circular(9),
-              border: Border.all(color: const Color(0xff414141))),
+              border: Border.all(color: ConsolePalette.of(context).lineCtl)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             if (icon != null) ...[
-              _SettingsIcon(icon!, size: wide ? 22 : 18, color: U4.text1),
+              _SettingsIcon(icon!,
+                  size: wide ? 22 : 18,
+                  color: ConsolePalette.of(context).text1),
               SizedBox(width: wide ? 12 : 8),
             ],
             Text(label,
@@ -1245,7 +1265,7 @@ class _PlainButton extends StatelessWidget {
                     fontFamily: U4.font,
                     fontSize: wide ? 27 : 17,
                     fontWeight: FontWeight.w500,
-                    color: U4.text1)),
+                    color: ConsolePalette.of(context).text1)),
           ]),
         ),
       ),
@@ -1381,7 +1401,35 @@ class _AppearanceDetail extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _Section(first: true, title: 'Display', children: [
-          const _PrefRow(label: 'Appearance', trailing: _ValueText('Dark')),
+          _PrefRow(
+              label: 'Appearance',
+              trailing: _Select(
+                  label: 'Appearance',
+                  value: prefs.appearance,
+                  options: const [
+                    ('dark', 'Dark'),
+                    ('light', 'Light'),
+                    ('system', 'System'),
+                  ],
+                  onChanged: (v) async {
+                    await prefs.setAppearance(v);
+                    toast('Preference saved');
+                  })),
+          _PrefRow(
+              label: 'Accent color',
+              trailing: _Select(
+                  label: 'Accent color',
+                  value: prefs.accent,
+                  options: const [
+                    ('lime', 'Lime'),
+                    ('ocean', 'Ocean'),
+                    ('violet', 'Violet'),
+                    ('amber', 'Amber'),
+                  ],
+                  onChanged: (v) async {
+                    await prefs.setAccent(v);
+                    toast('Preference saved');
+                  })),
           _PrefRow(
               label: 'Interface size',
               trailing: _Select(
@@ -1485,7 +1533,7 @@ class _AboutDetail extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (!wide)
-          const Padding(
+          Padding(
             padding: EdgeInsets.fromLTRB(4, 2, 4, 12),
             child: Row(children: [
               SizedBox(width: 64, height: 64, child: SvgPictureAssetLogo()),
@@ -1495,7 +1543,7 @@ class _AboutDetail extends StatelessWidget {
                       fontFamily: U4.font,
                       fontSize: 26,
                       fontWeight: FontWeight.w600,
-                      color: U4.text1)),
+                      color: ConsolePalette.of(context).text1)),
             ]),
           ),
         _Section(first: true, title: 'Support', children: [
@@ -1539,56 +1587,58 @@ class _AboutDetail extends StatelessWidget {
               onTap: () => showDialog<void>(
                   context: context,
                   builder: (context) => AlertDialog(
-                        backgroundColor: const Color(0xff262626),
+                        backgroundColor: ConsolePalette.of(context).chip,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14),
-                            side: const BorderSide(color: Color(0xff555555))),
-                        title: const Text('Licences & credits',
+                            side: BorderSide(
+                                color: ConsolePalette.of(context).lineCtl)),
+                        title: Text('Licences & credits',
                             style: TextStyle(
                                 fontFamily: U4.font,
                                 fontSize: 23,
                                 fontWeight: FontWeight.w600,
-                                color: U4.text1)),
+                                color: ConsolePalette.of(context).text1)),
                         content: Column(
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
+                            Text(
                                 'OpenFader is free and open source. The project repository contains the current licence and contributor information.',
                                 style: TextStyle(
                                     fontFamily: U4.font,
                                     fontSize: 17,
                                     height: 1.5,
-                                    color: Color(0xffb5b5b5))),
+                                    color: ConsolePalette.of(context).text7)),
                             const SizedBox(height: 12),
-                            const Text(
+                            Text(
                                 'Interface typeface: Barlow. Toolbar symbols and the OpenFader logo are vector artwork.',
                                 style: TextStyle(
                                     fontFamily: U4.font,
                                     fontSize: 17,
                                     height: 1.5,
-                                    color: Color(0xffb5b5b5))),
+                                    color: ConsolePalette.of(context).text7)),
                             const SizedBox(height: 16),
                             GestureDetector(
                               onTap: () => _runSettingsAction(
                                   context, () => _open(_repo)),
-                              child: const Text('Open project repository',
+                              child: Text('Open project repository',
                                   style: TextStyle(
                                       fontFamily: U4.font,
                                       fontSize: 17,
                                       fontWeight: FontWeight.w600,
-                                      color: U4.cyan)),
+                                      color: ConsolePalette.of(context).cyan)),
                             ),
                           ],
                         ),
                         actions: [
                           TextButton(
                               onPressed: () => Navigator.pop(context),
-                              child: const Text('Close',
+                              child: Text('Close',
                                   style: TextStyle(
                                       fontFamily: U4.font,
                                       fontSize: 17,
-                                      color: U4.text1))),
+                                      color:
+                                          ConsolePalette.of(context).text1))),
                         ],
                       ))),
         ]),
@@ -1601,7 +1651,7 @@ class _AboutDetail extends StatelessWidget {
                   fontFamily: U4.font,
                   fontSize: wide ? 18 : 13,
                   height: wide ? 24 / 18 : 18 / 13,
-                  color: U4.panFill)),
+                  color: ConsolePalette.of(context).panFill)),
         ),
       ],
     );
@@ -1644,7 +1694,7 @@ class _LinkRow extends StatelessWidget {
                           fontSize: wide ? 27 : 18,
                           height: wide ? 1.25 : 24 / 18,
                           fontWeight: FontWeight.w500,
-                          color: U4.text1)),
+                          color: ConsolePalette.of(context).text1)),
                   if (desc != null) ...[
                     SizedBox(height: wide ? 7 : 4),
                     Text(desc!,
@@ -1652,11 +1702,12 @@ class _LinkRow extends StatelessWidget {
                             fontFamily: U4.font,
                             fontSize: wide ? 23 : 15,
                             height: wide ? 1.4 : 21 / 15,
-                            color: const Color(0xffb5b5b5))),
+                            color: ConsolePalette.of(context).text7)),
                   ],
                 ])),
             const SizedBox(width: 16),
-            _SettingsIcon(icon, size: 22, color: const Color(0xffb5b5b5)),
+            _SettingsIcon(icon,
+                size: 22, color: ConsolePalette.of(context).text7),
           ]),
         ),
       ),
@@ -1698,7 +1749,7 @@ class _HelpAccordionState extends State<_HelpAccordion> {
                           fontSize: wide ? 27 : 18,
                           height: 1.2,
                           fontWeight: FontWeight.w500,
-                          color: U4.text1))),
+                          color: ConsolePalette.of(context).text1))),
               const SizedBox(width: 20),
               RotatedBox(
                   quarterTurns: _expanded ? 1 : 0,
@@ -1721,7 +1772,7 @@ class _HelpAccordionState extends State<_HelpAccordion> {
                       fontFamily: U4.font,
                       fontSize: wide ? 23 : 15,
                       height: wide ? 1.5 : 22 / 15,
-                      color: U4.text7)),
+                      color: ConsolePalette.of(context).text7)),
             ],
           ]),
         ),
@@ -1775,11 +1826,12 @@ Future<void> _runSettingsAction(
 class _SettingsIcon extends StatelessWidget {
   final IconData icon;
   final double size;
-  final Color color;
-  const _SettingsIcon(this.icon, {this.size = 22, this.color = U4.text7});
+  final Color? color;
+  const _SettingsIcon(this.icon, {this.size = 22, this.color});
 
   @override
   Widget build(BuildContext context) {
+    final color = this.color ?? ConsolePalette.of(context).text7;
     final body = switch (icon) {
       Icons.wifi =>
         '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 9h10M7 13h4M7 16h10"/>',

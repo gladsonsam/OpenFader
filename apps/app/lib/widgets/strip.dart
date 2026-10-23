@@ -3,6 +3,7 @@
 // name-wrap) with the phone-only preamp/proc sections omitted. Strip
 // frame: panel bg, 3px padding/gap, 8px radius on touch builds.
 import 'package:flutter/material.dart';
+import '../palette.dart';
 
 import '../engine.dart';
 import '../theme.dart';
@@ -48,8 +49,8 @@ class U4Strip extends StatelessWidget {
     return Container(
       width: 128,
       padding: const EdgeInsets.all(3),
-      decoration: const BoxDecoration(
-        color: U4.panel,
+      decoration: BoxDecoration(
+        color: ConsolePalette.of(context).panel,
         borderRadius: U4.rStrip,
       ),
       child: Column(
@@ -67,8 +68,8 @@ class U4Strip extends StatelessWidget {
           Expanded(
             child: Container(
               constraints: const BoxConstraints(minHeight: 180),
-              decoration: const BoxDecoration(
-                color: U4.well,
+              decoration: BoxDecoration(
+                color: ConsolePalette.of(context).well,
                 borderRadius: U4.rWell,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -117,16 +118,16 @@ class U4MasterStrip extends StatelessWidget {
   Widget build(BuildContext context) {
     final nameBar = U4NameBar(
       name: busName,
-      color: U4.masterLine,
-      text: const Color(0xFF241703), // --u4-amber-ink
+      color: ConsolePalette.of(context).masterLine,
+      text: ConsolePalette.of(context).onAccent,
     );
     return Container(
       width: 112,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: U4.panel,
+        color: ConsolePalette.of(context).panel,
         borderRadius: U4.rStrip,
-        border: Border.all(color: U4.masterLine),
+        border: Border.all(color: ConsolePalette.of(context).masterLine),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -136,8 +137,8 @@ class U4MasterStrip extends StatelessWidget {
           Expanded(
             child: Container(
               constraints: const BoxConstraints(minHeight: 180),
-              decoration: const BoxDecoration(
-                color: U4.well,
+              decoration: BoxDecoration(
+                color: ConsolePalette.of(context).well,
                 borderRadius: U4.rWell,
               ),
               padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -186,8 +187,13 @@ class U4SoloButton extends StatelessWidget {
           height: height,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: solo ? U4.cyan : U4.well,
-            border: Border.all(color: solo ? U4.cyan : U4.railBorder),
+            color: solo
+                ? ConsolePalette.of(context).solo
+                : ConsolePalette.of(context).well,
+            border: Border.all(
+                color: solo
+                    ? ConsolePalette.of(context).solo
+                    : ConsolePalette.of(context).railBorder),
             borderRadius: U4.rBtn,
           ),
           child: Text(
@@ -198,7 +204,9 @@ class U4SoloButton extends StatelessWidget {
             style: TextStyle(
               fontSize: 13,
               fontWeight: FontWeight.w700,
-              color: solo ? const Color(0xFF062A30) : U4.text7,
+              color: solo
+                  ? ConsolePalette.of(context).onSolo
+                  : ConsolePalette.of(context).text7,
             ),
           ),
         ),

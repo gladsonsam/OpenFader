@@ -15,6 +15,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../palette.dart';
 
 /// Meter scale (mixer control software pattern: 0..-50 dB).
 const bridgeTopDb = 0.0;
@@ -129,7 +130,7 @@ class _U4MetersPageState extends State<U4MetersPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: U4.page,
+      backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.store,
@@ -159,17 +160,18 @@ class _U4MetersPageState extends State<U4MetersPage> {
                                 horizontal: 10, vertical: 8),
                             margin: const EdgeInsets.only(bottom: 14),
                             decoration: BoxDecoration(
-                              color: U4.panel,
-                              border: Border.all(color: U4.divider),
+                              color: ConsolePalette.of(context).panel,
+                              border: Border.all(
+                                  color: ConsolePalette.of(context).divider),
                               borderRadius:
                                   const BorderRadius.all(Radius.circular(4)),
                             ),
-                            child: const Text(
+                            child: Text(
                               'Offline — ladders are dark until a live link is up. Connect for live meters.',
                               style: TextStyle(
                                   fontFamily: U4.font,
                                   fontSize: 12,
-                                  color: U4.text7),
+                                  color: ConsolePalette.of(context).text7),
                             ),
                           ),
                         for (final g in store.groups) ...[
@@ -214,24 +216,37 @@ class _BridgeHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final badge = !online
-        ? ('OFFLINE', U4.meterAmber)
+        ? (
+            'OFFLINE',
+            ConsolePalette.of(context).solo,
+            ConsolePalette.of(context).onSolo
+          )
         : demo
-            ? ('DEMO', U4.meterAmber)
-            : ('LIVE · ${deskName ?? ''}', U4.meterGreen);
+            ? (
+                'DEMO',
+                ConsolePalette.of(context).solo,
+                ConsolePalette.of(context).onSolo
+              )
+            : (
+                'LIVE · ${deskName ?? ''}',
+                ConsolePalette.of(context).successContainer,
+                ConsolePalette.of(context).onSuccessContainer
+              );
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: U4.lineHeader)),
+      decoration: BoxDecoration(
+        border: Border(
+            bottom: BorderSide(color: ConsolePalette.of(context).lineHeader)),
       ),
       child: Row(
         children: [
-          const Text('METERS',
+          Text('METERS',
               style: TextStyle(
                   fontFamily: U4.font,
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.6,
-                  color: U4.text1)),
+                  color: ConsolePalette.of(context).text1)),
           const Spacer(),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -243,16 +258,18 @@ class _BridgeHeader extends StatelessWidget {
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                     fontFamily: U4.font,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: U4.well)),
+                    color: badge.$3)),
           ),
           const SizedBox(width: 8),
           Text('$liveCount ladders',
-              style: const TextStyle(
-                  fontFamily: U4.font, fontSize: 11, color: U4.text7)),
+              style: TextStyle(
+                  fontFamily: U4.font,
+                  fontSize: 11,
+                  color: ConsolePalette.of(context).text7)),
           const SizedBox(width: 8),
           GestureDetector(
             onTap: onClose,
@@ -261,8 +278,8 @@ class _BridgeHeader extends StatelessWidget {
               height: 44,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: U4.control,
-                border: Border.all(color: U4.lineCtl),
+                color: ConsolePalette.of(context).control,
+                border: Border.all(color: ConsolePalette.of(context).lineCtl),
                 borderRadius: U4.rBtn,
               ),
               child: const Text('✕',
@@ -292,8 +309,8 @@ class _LadderGroup extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
       decoration: BoxDecoration(
-        color: U4.panel,
-        border: Border.all(color: U4.linePanel),
+        color: ConsolePalette.of(context).panel,
+        border: Border.all(color: ConsolePalette.of(context).linePanel),
         borderRadius: const BorderRadius.all(Radius.circular(10)),
       ),
       child: Column(
@@ -302,17 +319,19 @@ class _LadderGroup extends StatelessWidget {
           Row(
             children: [
               Text(group.title,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontFamily: U4.font,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: U4.text1)),
+                      color: ConsolePalette.of(context).text1)),
               if (!online)
-                const Padding(
+                Padding(
                   padding: EdgeInsets.only(left: 8),
                   child: Text('no data',
                       style: TextStyle(
-                          fontFamily: U4.font, fontSize: 10, color: U4.text7)),
+                          fontFamily: U4.font,
+                          fontSize: 10,
+                          color: ConsolePalette.of(context).text7)),
                 ),
             ],
           ),
@@ -352,25 +371,27 @@ class _CollapsedGroup extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
-          color: U4.panel,
-          border: Border.all(color: U4.selected),
+          color: ConsolePalette.of(context).panel,
+          border: Border.all(color: ConsolePalette.of(context).selected),
           borderRadius: const BorderRadius.all(Radius.circular(10)),
         ),
         child: Row(
           children: [
             Text(group.title,
-                style: const TextStyle(
+                style: TextStyle(
                     fontFamily: U4.font,
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
-                    color: U4.text7)),
+                    color: ConsolePalette.of(context).text7)),
             const SizedBox(width: 10),
             Expanded(
               child: Text(reason,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontFamily: U4.font, fontSize: 11, color: U4.text10)),
+                  style: TextStyle(
+                      fontFamily: U4.font,
+                      fontSize: 11,
+                      color: ConsolePalette.of(context).text10)),
             ),
           ],
         ),
@@ -380,11 +401,43 @@ class _CollapsedGroup extends StatelessWidget {
 }
 
 /// One read-only bridge ladder: CustomPainter column + scribble below.
-class _Ladder extends StatelessWidget {
+class _Ladder extends StatefulWidget {
   final BridgeLadder ladder;
   final BridgeTap tap;
 
   const _Ladder({required this.ladder, required this.tap});
+
+  @override
+  State<_Ladder> createState() => _LadderState();
+}
+
+class _LadderState extends State<_Ladder> {
+  _LadderPainter? _painter;
+
+  void _updatePainter() {
+    final palette = ConsolePalette.of(context);
+    if (_painter?.tap == widget.tap && _painter?.palette == palette) return;
+    _painter?.disposeLabels();
+    _painter = _LadderPainter(tap: widget.tap, palette: palette);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updatePainter();
+  }
+
+  @override
+  void didUpdateWidget(covariant _Ladder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _updatePainter();
+  }
+
+  @override
+  void dispose() {
+    _painter?.disposeLabels();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -394,24 +447,28 @@ class _Ladder extends StatelessWidget {
         children: [
           CustomPaint(
             size: const Size(44, 229),
-            painter: _LadderPainter(tap: tap),
+            painter: _painter,
           ),
           const SizedBox(height: 4),
           Text(
-            ladder.label ?? '—',
+            widget.ladder.label ?? '—',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-                fontFamily: U4.font, fontSize: 11, color: U4.text1),
+            style: TextStyle(
+                fontFamily: U4.font,
+                fontSize: 11,
+                color: ConsolePalette.of(context).text1),
           ),
           Text(
-            ladder.sub,
+            widget.ladder.sub,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-                fontFamily: U4.font, fontSize: 10, color: U4.text7),
+            style: TextStyle(
+                fontFamily: U4.font,
+                fontSize: 10,
+                color: ConsolePalette.of(context).text7),
           ),
         ],
       ),
@@ -421,14 +478,15 @@ class _Ladder extends StatelessWidget {
 
 class _LadderPainter extends CustomPainter {
   final BridgeTap tap;
+  final ConsolePalette palette;
   late final Map<String, TextPainter> _labels = {
     for (final l in const ['0', '-12', '-24', '-36', '-50'])
       l: TextPainter(
         text: TextSpan(
           text: l,
-          style: const TextStyle(
+          style: TextStyle(
               fontFamily: U4.font,
-              color: U4.text10,
+              color: palette.text10,
               fontSize: 8,
               fontFeatures: [FontFeature.tabularFigures()]),
         ),
@@ -436,8 +494,14 @@ class _LadderPainter extends CustomPainter {
       )..layout(),
   };
 
-  _LadderPainter({required this.tap})
+  _LadderPainter({required this.tap, required this.palette})
       : super(repaint: Listenable.merge([tap.db, tap.peakDb, tap.clip]));
+
+  void disposeLabels() {
+    for (final label in _labels.values) {
+      label.dispose();
+    }
+  }
 
   static double _yOf(double db, double top, double h) =>
       top + ((bridgeTopDb - db) / (bridgeTopDb - bridgeFloorDb)) * h;
@@ -457,15 +521,15 @@ class _LadderPainter extends CustomPainter {
 
     // Column well.
     canvas.drawRect(
-        Rect.fromLTWH(colL, colTop, colW, h), Paint()..color = U4.well);
+        Rect.fromLTWH(colL, colTop, colW, h), Paint()..color = palette.well);
 
     // Fill from the bottom up, banded red >= -6 / amber >= -12 / green.
     if (hasData && lv > bridgeFloorDb) {
       final fillY = _yOf(lv, colTop, h);
-      for (final band in const [
-        (lo: -50.0, hi: -12.0, c: U4.meterGreen),
-        (lo: -12.0, hi: -6.0, c: U4.meterAmber),
-        (lo: -6.0, hi: 0.0, c: U4.meterRed),
+      for (final band in [
+        (lo: -50.0, hi: -12.0, c: palette.meterGreen),
+        (lo: -12.0, hi: -6.0, c: palette.meterAmber),
+        (lo: -6.0, hi: 0.0, c: palette.meterRed),
       ]) {
         final yHi = _yOf(band.hi, colTop, h);
         final yLo = _yOf(band.lo, colTop, h);
@@ -481,7 +545,7 @@ class _LadderPainter extends CustomPainter {
     for (final mark in const [0.0, -12.0, -24.0, -36.0, -50.0]) {
       final y = _yOf(mark, colTop, h);
       canvas.drawRect(Rect.fromLTWH(colL - 4, y - 0.5, 4, 1),
-          Paint()..color = U4.scaleTick);
+          Paint()..color = palette.scaleTick);
       final tp = _labels[mark == 0 ? '0' : mark.toInt().toString()]!;
       tp.paint(canvas, Offset(colL - 5 - tp.width, y - tp.height / 2));
     }
@@ -492,16 +556,17 @@ class _LadderPainter extends CustomPainter {
       final py = _yOf(peak.clamp(bridgeFloorDb, bridgeTopDb), colTop, h)
           .clamp(colTop, colTop + h - 2);
       canvas.drawRect(
-          Rect.fromLTWH(colL, py, colW, 2), Paint()..color = U4.peakLine);
+          Rect.fromLTWH(colL, py, colW, 2), Paint()..color = palette.peakLine);
     }
 
     // Clip square above the column.
     canvas.drawRect(
       Rect.fromLTWH(colL + 1, 0, clipS, clipS),
-      Paint()..color = tap.clip.value ? U4.clipOn : U4.clipOff,
+      Paint()..color = tap.clip.value ? palette.clipOn : palette.clipOff,
     );
   }
 
   @override
-  bool shouldRepaint(_LadderPainter old) => old.tap != tap;
+  bool shouldRepaint(_LadderPainter old) =>
+      old.tap != tap || old.palette != palette;
 }

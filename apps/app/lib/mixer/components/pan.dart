@@ -1,3 +1,4 @@
+import '../../palette.dart';
 import 'package:flutter/material.dart';
 import '../../u4law.dart';
 import '../design.dart';
@@ -65,6 +66,7 @@ class _MixerPanState extends State<MixerPan> {
                               height: widget.visualHeight,
                               child: CustomPaint(
                                   painter: _PanPainter(
+                                      ConsolePalette.of(context),
                                       _drag == null
                                           ? widget.value
                                           : _snap(_drag!),
@@ -72,16 +74,17 @@ class _MixerPanState extends State<MixerPan> {
 }
 
 class _PanPainter extends CustomPainter {
+  final ConsolePalette palette;
   final double value;
   final bool held;
-  const _PanPainter(this.value, this.held);
+  const _PanPainter(this.palette, this.value, this.held);
   @override
   void paint(Canvas c, Size s) {
     c.save();
     c.scale(1, s.height / 44);
     s = Size(s.width, 44);
-    mixerBox(c, Offset.zero & s, MixerDesign.well,
-        radius: 12, border: held ? MixerDesign.selectedLine : null);
+    mixerBox(c, Offset.zero & s, palette.well,
+        radius: 12, border: held ? palette.selectedLine : null);
     final left = 12.0, right = s.width - 12, center = s.width / 2;
     final bow = Path()
       ..moveTo(left, 8)
@@ -89,7 +92,7 @@ class _PanPainter extends CustomPainter {
       ..lineTo(right, 36)
       ..quadraticBezierTo(center, 18, left, 36)
       ..close();
-    c.drawPath(bow, Paint()..color = const Color(0xff4a4a4a));
+    c.drawPath(bow, Paint()..color = palette.panShape);
     final x = center + value * (s.width - 24) * .36;
     if (value.abs() > .001) {
       c.save();
@@ -98,19 +101,18 @@ class _PanPainter extends CustomPainter {
           c,
           Rect.fromLTRB(
               x < center ? x : center, 8, x > center ? x : center, 36),
-          const Color(0xffcfcfcf));
+          palette.panFill);
       c.restore();
     }
-    mixerBox(c, Rect.fromLTWH(x - 10, 5, 20, 34), const Color(0xffd8d8d4),
-        radius: 6);
+    mixerBox(c, Rect.fromLTWH(x - 10, 5, 20, 34), palette.panKnob, radius: 6);
     for (var n = 0; n < 3; n++) {
-      mixerBox(
-          c, Rect.fromLTWH(x - 5 + n * 4, 11, 1, 22), const Color(0xff8e8e8a),
+      mixerBox(c, Rect.fromLTWH(x - 5 + n * 4, 11, 1, 22), palette.panGrip,
           radius: 1);
     }
     c.restore();
   }
 
   @override
-  bool shouldRepaint(_PanPainter old) => old.value != value || old.held != held;
+  bool shouldRepaint(_PanPainter old) =>
+      old.palette != palette || old.value != value || old.held != held;
 }
