@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../design.dart';
+import '../../u4law.dart';
 import 'banks.dart';
 
 class MixerToolbar extends StatelessWidget {
@@ -87,11 +88,12 @@ class MixerToolbar extends StatelessWidget {
                                       overflow: TextOverflow.ellipsis,
                                       style: MixerDesign.type(compact ? 13 : 14,
                                           color: MixerDesign.mutedText)),
-                                  Text(selected?.levelLabel ?? 'Connecting…',
-                                      maxLines: 1,
-                                      style: MixerDesign.type(compact ? 18 : 22,
-                                          color: MixerDesign.lime,
-                                          weight: FontWeight.w700)),
+                                  // Live fader readout: listens to the
+                                  // selected strip's fader notifier so it
+                                  // tracks drags without a page rebuild.
+                                  _SelectedLevel(
+                                      controller: controller,
+                                      compact: compact),
                                 ])),
                             if (!compact)
                               Text('Fader',
@@ -154,6 +156,31 @@ class MixerToolbar extends StatelessWidget {
             ],
           ),
         ]));
+  }
+}
+
+/// Selected-strip dB readout. Listens to the selected strip's fader
+/// notifier (not the page rebuild) so it tracks the active drag.
+class _SelectedLevel extends StatelessWidget {
+  final MixerController controller;
+  final bool compact;
+  const _SelectedLevel({required this.controller, required this.compact});
+  @override
+  Widget build(BuildContext context) {
+    final selected = controller.selected;
+    if (selected == null) {
+      return Text('Connecting…',
+          maxLines: 1,
+          style: MixerDesign.type(compact ? 18 : 22,
+              color: MixerDesign.lime, weight: FontWeight.w700));
+    }
+    return ValueListenableBuilder<double>(
+        valueListenable:
+            controller.faderNoteOf(selected.channel, selected.master),
+        builder: (context, fader, _) => Text('${fmtDb(fader)} dB',
+            maxLines: 1,
+            style: MixerDesign.type(compact ? 18 : 22,
+                color: MixerDesign.lime, weight: FontWeight.w700)));
   }
 }
 

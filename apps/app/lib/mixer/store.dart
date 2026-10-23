@@ -40,8 +40,10 @@ class MixerBusRow {
 /// Minimal store contract the mixer screen renders. Implemented by the
 /// shell/owner over the live engine or a fixture sim. Meters arrive via
 /// stable [ValueNotifier]s updated in place by [pollMeters] so the 80 ms
-/// loop never rebuilds widgets; control state (fader/mute/solo/bank/bus)
-/// notifies through [ChangeNotifier].
+/// loop never rebuilds widgets; per-strip control state (fader/mute/pan)
+/// rides the same pattern — one strip rebuilds from its own notifier while
+/// the shell and siblings stay quiet. Structural state (strips/bank/bus,
+/// solo banner) notifies through [ChangeNotifier].
 abstract class MixerStore extends ChangeNotifier {
   List<Strip> get strips;
   double panOf(int ch);
@@ -56,6 +58,16 @@ abstract class MixerStore extends ChangeNotifier {
   List<MixerBank> get banks;
   String get bank;
   List<MixerBusRow> get busRows;
+
+  /// Stable per-strip control notifiers, updated in place on the hot path
+  /// (fader/mute/pan drags and taps) without a global notify. Strips listen
+  /// to their own ch only.
+  ValueNotifier<double> faderOf(int ch);
+  ValueNotifier<bool> muteOf(int ch);
+  ValueNotifier<double> panNoteOf(int ch);
+  ValueNotifier<bool> soloNoteOf(int ch);
+  ValueNotifier<double> get masterFaderNote;
+  ValueNotifier<bool> get masterMutedNote;
 
   /// 80 ms meter-loop target: pull engine
   /// levels into the meter notifiers in place; no setState here.
