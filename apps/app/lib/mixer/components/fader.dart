@@ -35,6 +35,8 @@ class _MixerFaderState extends State<MixerFader> {
         final geometry = _FaderGeometry(box.biggest);
         final position = _drag ?? MixerFaderScale.fromEngine(ch.fader);
         final y = geometry.top + (1 - position) * geometry.travel;
+        // Design: selected cap grows (1.4x tablet) with a lime glow.
+        final scale = ch.selected ? 1.4 : _held ? 1.15 : 1.0;
         return Semantics(
             label: '${ch.name} level',
             value: ch.levelLabel,
@@ -56,7 +58,7 @@ class _MixerFaderState extends State<MixerFader> {
                         width: ch.selected ? 1.5 : 1)),
                 child: Stack(clipBehavior: Clip.none, children: [
                   Positioned.fill(
-                      child: CustomPaint(painter: _ScalePainter(geometry))),
+                      child: CustomPaint(painter: _ScalePainter(geometry, ch.number))),
                   Positioned(
                       left: box.maxWidth * .24,
                       top: geometry.top - MixerMeter.scaleInset,
@@ -102,7 +104,7 @@ class _MixerFaderState extends State<MixerFader> {
                                   child: Padding(
                                       padding: const EdgeInsets.all(6),
                                       child: AnimatedScale(
-                                          scale: _held ? 1.28 : 1,
+                                          scale: scale,
                                           duration:
                                               MediaQuery.disableAnimationsOf(
                                                       context)
@@ -111,8 +113,9 @@ class _MixerFaderState extends State<MixerFader> {
                                                       milliseconds: 110),
                                           curve: Curves.easeOutCubic,
                                           child: CustomPaint(
-                                              painter:
-                                                  _CapPainter(_held)))))))),
+                                              painter: _CapPainter(
+                                                  held: _held,
+                                                  glow: ch.selected)))))))),
                 ])));
       });
 }
@@ -125,13 +128,16 @@ class _FaderGeometry {
   double get bottom => top;
   double get travel => math.max(40, size.height - top - bottom);
   double get x => size.width * .59;
-  double get capWidth => (size.width * .39).clamp(34, 54);
-  double get capHeight => capWidth * 1.32;
+  // Design caps are chunky squares: ~38% of strip width on tablet, ~50%
+  // on phones (54px on a 104px strip). Meter width ≈ strip minus padding.
+  double get capWidth => (size.width * .48).clamp(34, 96);
+  double get capHeight => capWidth;
 }
 
 class _ScalePainter extends CustomPainter {
   final _FaderGeometry g;
-  const _ScalePainter(this.g);
+  final String number;
+  const _ScalePainter(this.g, this.number);
   @override
   void paint(Canvas c, Size s) {
     mixerText(c, 'LR', const Offset(8, 10), 10,
@@ -139,58 +145,100 @@ class _ScalePainter extends CustomPainter {
     mixerBox(c, Rect.fromLTWH(g.x - 3, g.top - 3, 6, g.travel + 6),
         const Color(0xff161616),
         radius: 3, border: const Color(0xff2a2a2a));
+    // Design number column (tablet+ only): 1-6 repeated in three banks.
+    // The mock marks the third bank's "1" red on channel 1; replicate it.
+    if (s.width >= 140) {
+      final size = (s.width * .088).clamp(12.0, 18.0);
+      for (var i = 0; i < 18; i++) {
+        final y = g.top + (i + .5) / 18 * g.travel - size / 2;
+        final red = number == '1' && i == 12;
+        mixerText(c, '${i % 6 + 1}', Offset(s.width * .08, y), size,
+            color: red ? const Color(0xffed0800) : const Color(0xff646464),
+            weight: FontWeight.w600);
+      }
+    }
     for (final mark in MixerFaderScale.marks) {
       final y = g.top + (1 - MixerFaderScale.positionForDb(mark.$1)) * g.travel;
       final x = s.width * .77;
-      c.drawLine(Offset(x - 4, y), Offset(x - 2, y),
-          Paint()..color = MixerDesign.mutedText);
-      mixerText(c, mark.$2, Offset(x, y - 6), 9,
+      // Design prefixes: • labeled (/ – on phones), ○ unity, · minor.
+      final label = mark.$2;
+      final prefix = label == 'U'
+          ? '○'
+          : label.isEmpty
+              ? '·'
+              : s.width < 140
+                  ? '–'
+                  : '•';
+      mixerText(c, '$prefix$label', Offset(x, y - 6), 9,
           color: const Color(0xffdddddd));
     }
   }
 
   @override
-  bool shouldRepaint(_ScalePainter old) => old.g.size != g.size;
+  bool shouldRepaint(_ScalePainter old) =>
+      old.g.size != g.size || old.number != number;
 }
 
 class _CapPainter extends CustomPainter {
-  final bool held;
-  const _CapPainter(this.held);
+  final bool held, glow;
+  const _CapPainter({required this.held, this.glow = false});
   @override
   void paint(Canvas c, Size s) {
-    final gap = 3.0;
-    final h = (s.height - gap) / 2;
-    final path = Path()
-      ..addRRect(RRect.fromRectAndRadius(
-          Rect.fromLTWH(0, 0, s.width, h), const Radius.circular(6)))
-      ..addRRect(RRect.fromRectAndRadius(
-          Rect.fromLTWH(0, h + gap, s.width, h), const Radius.circular(6)));
+    // Design cap: one rounded square with ribbed grip zones top + bottom
+    // and the lime position line through the middle.
+    final rect = RRect.fromRectAndRadius(
+        Offset.zero & s, const Radius.circular(14));
+    if (glow) {
+      c.drawPath(
+          Path()..addRRect(rect),
+          Paint()
+            ..color = MixerDesign.lime.withValues(alpha: .4)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    }
     if (held) {
       c.drawPath(
-          path,
+          Path()..addRRect(rect),
           Paint()
             ..color = const Color(0x45effb00)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
     }
-    c.drawShadow(path, Colors.black.withValues(alpha: .6), 3, false);
-    for (var n = 0; n < 2; n++) {
-      final y = n * (h + gap);
-      mixerBox(c, Rect.fromLTWH(0, y, s.width, h),
-          Color(n == 0 ? 0xffdcdcd8 : 0xffc8c8c4),
-          radius: 6);
-      c.drawLine(Offset(6, y + .5), Offset(s.width - 6, y + .5),
-          Paint()..color = const Color(0xbfffffff));
-      for (var grip = 0; grip < 2; grip++) {
+    c.drawShadow(Path()..addRRect(rect), Colors.black.withValues(alpha: .6), 3,
+        false);
+    mixerBox(c, Offset.zero & s, MixerDesign.cap,
+        radius: 14, border: const Color(0xff555555));
+    c.drawLine(const Offset(6, .5), Offset(s.width - 6, .5),
+        Paint()..color = const Color(0xbfffffff));
+    // Ribbed grips: repeating dark slits across the top and bottom zones.
+    // All insets are proportional so the small phone cap keeps the same
+    // look as the large tablet one (design: 14px inset on an 84px cap).
+    final ix = s.width * .17;
+    final ribTop = s.height * .14;
+    final ribGap = s.height * .08;
+    for (var zone = 0; zone < 2; zone++) {
+      final top = zone == 0 ? ribTop : s.height - ribTop - 2 * ribGap - 3;
+      for (var row = 0; row < 3; row++) {
         mixerBox(
             c,
-            Rect.fromLTWH(s.width * .18, y + h * (n == 0 ? .5 : .25) + grip * 6,
-                s.width * .64, 2),
-            const Color(0xff8c8c88),
+            Rect.fromLTWH(ix, top + row * ribGap, s.width - 2 * ix, 2),
+            const Color(0xff151515),
+            radius: 1);
+        mixerBox(
+            c,
+            Rect.fromLTWH(ix, top + row * ribGap + 2, s.width - 2 * ix, 1),
+            const Color(0xff585858),
             radius: 1);
       }
     }
+    // Lime position line through the middle.
+    final lineH = (s.height * .06).clamp(3.0, 6.0);
+    mixerBox(
+        c,
+        Rect.fromLTWH(ix, s.height / 2 - lineH / 2, s.width - 2 * ix, lineH),
+        MixerDesign.lime,
+        radius: 3);
   }
 
   @override
-  bool shouldRepaint(_CapPainter old) => old.held != held;
+  bool shouldRepaint(_CapPainter old) =>
+      old.held != held || old.glow != glow;
 }

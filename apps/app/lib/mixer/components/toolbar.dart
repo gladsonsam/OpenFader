@@ -34,33 +34,6 @@ class MixerToolbar extends StatelessWidget {
             color: MixerDesign.background,
             border: Border(bottom: BorderSide(color: MixerDesign.line))),
         child: Row(children: [
-          Container(
-              decoration: BoxDecoration(
-                  color: const Color(0xff262626),
-                  borderRadius: BorderRadius.circular(10)),
-              child: Row(children: [
-                for (final view in MixerView.values)
-                  SizedBox(
-                      width: compact ? 42 : 48,
-                      height: 44,
-                      child: IconButton(
-                          tooltip: view == MixerView.processing
-                              ? 'Processing view'
-                              : 'Fader view',
-                          isSelected: controller.view == view,
-                          style: IconButton.styleFrom(
-                              backgroundColor: controller.view == view
-                                  ? const Color(0xff383838)
-                                  : Colors.transparent,
-                              shape: const RoundedRectangleBorder(
-                                  borderRadius: MixerDesign.radius)),
-                          onPressed: () => controller.setView(view),
-                          icon: MixerArtwork(
-                              'tab_${view == MixerView.processing ? 1 : 2}',
-                              width: 36,
-                              height: 32)))
-              ])),
-          const SizedBox(width: 8),
           Expanded(
               child: Semantics(
                   button: selected != null && !selected.master,
@@ -78,23 +51,46 @@ class MixerToolbar extends StatelessWidget {
                               border: Border.all(color: MixerDesign.line)),
                           child: Row(children: [
                             Expanded(
-                                child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                  Text(selected?.name ?? 'OpenMix',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: MixerDesign.type(compact ? 13 : 14,
-                                          color: MixerDesign.mutedText)),
-                                  // Live fader readout: listens to the
-                                  // selected strip's fader notifier so it
-                                  // tracks drags without a page rebuild.
-                                  _SelectedLevel(
-                                      controller: controller,
-                                      compact: compact),
-                                ])),
+                                child: Row(children: [
+                              Expanded(
+                                  child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                    if (!compact &&
+                                        selected != null &&
+                                        !selected.master) ...[
+                                      Text('Ch ${selected.number}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: MixerDesign.type(14,
+                                              color: MixerDesign.mutedText)),
+                                      Text(selected.name,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: MixerDesign.type(14,
+                                              color: MixerDesign.mutedText)),
+                                    ] else
+                                      Text(
+                                          selected == null
+                                              ? 'OpenMix'
+                                              : selected.master
+                                                  ? selected.name
+                                                  : 'Ch ${selected.number} · ${selected.name}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: MixerDesign.type(
+                                              compact ? 12 : 14,
+                                              color: MixerDesign.mutedText)),
+                                  ])),
+                              // Live fader readout: listens to the
+                              // selected strip's fader notifier so it
+                              // tracks drags without a page rebuild.
+                              _SelectedLevel(
+                                  controller: controller, compact: compact),
+                            ])),
                             if (!compact)
                               Text('Fader',
                                   style: MixerDesign.type(22,
