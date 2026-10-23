@@ -24,6 +24,7 @@ use openfader_core::{
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::time::Instant;
 
 /// 32 input channels.
 pub const SIM_CHANNELS: usize = 32;
@@ -638,7 +639,8 @@ pub struct SimDriver {
     /// R2 Main LR master mute + per-strip solo (monitor bus), in-memory.
     main_muted: RwLock<bool>,
     solos: RwLock<HashMap<u16, bool>>,
-    tick: AtomicU64,
+    signal_started: Instant,
+    tick_offset: AtomicU64,
     connected: RwLock<bool>,
     preset: SimPreset,
     /// R2 FX rack: [`SIM_FX_SLOTS`] design-type slots (type/on/bypass +
@@ -696,7 +698,8 @@ impl SimDriver {
             main: RwLock::new(main),
             main_muted: RwLock::new(false),
             solos: RwLock::new(HashMap::new()),
-            tick: AtomicU64::new(0),
+            signal_started: Instant::now(),
+            tick_offset: AtomicU64::new(0),
             connected: RwLock::new(false),
             preset,
             fx: RwLock::new(default_fx_for(preset)),
@@ -783,7 +786,14 @@ impl SimDriver {
 
     /// Advance the fake-meter phase (1 tick == one 50ms frame).
     pub fn advance(&self, ticks: u64) {
-        self.tick.fetch_add(ticks, Ordering::Relaxed);
+        self.tick_offset.fetch_add(ticks, Ordering::Relaxed);
+    }
+
+    /// Reads share a monotonic 20 Hz phase. Meter, tap and per-channel GR
+    /// consumers must not advance the signal each time they sample it.
+    fn signal_tick(&self) -> u64 {
+        (self.signal_started.elapsed().as_millis() as u64 / 50)
+            .wrapping_add(self.tick_offset.load(Ordering::Relaxed))
     }
 
     fn input_db(i: usize, tick: u64) -> f32 {
@@ -930,7 +940,7 @@ impl SimDriver {
     /// (post-fader, silent when muted), `gr_gate`/`gr_comp` (dB reduction).
     /// Deterministic pseudo-live phase, same family as [`SimDriver::poll_meters`].
     pub fn poll_taps(&self) -> Vec<StripTaps> {
-        let tick = self.tick.fetch_add(1, Ordering::Relaxed);
+        let tick = self.signal_tick();
         let strips = self.read();
         let params = self.params.read().unwrap();
         (0..strips.len())
@@ -1377,7 +1387,7 @@ impl MixerDriver for SimDriver {
     }
 
     fn poll_meters(&self) -> MeterFrame {
-        let tick = self.tick.fetch_add(1, Ordering::Relaxed);
+        let tick = self.signal_tick();
         let n = self.read().len();
         let levels = (0..n).map(|i| self.meter_level(i, tick)).collect();
         MeterFrame { levels }
