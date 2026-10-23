@@ -22,12 +22,20 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../core/wifi_net.dart';
+import '../design.dart';
 import '../engine.dart';
 import '../ffi_engine.dart';
+import '../mixer/components/meter.dart';
+import '../settings/mixes.dart';
+import '../settings/prefs.dart';
+import '../settings/recents.dart';
 import '../state/app_store.dart';
 import '../theme.dart';
 import 'shell.dart';
@@ -84,12 +92,16 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   late AppTab _tab;
+
+  /// Where Close on the Settings page returns (the tab that opened it).
+  AppTab _prevTab = AppTab.mixer;
   Timer? _shellLoop;
 
   /// The Connections start screen is the app's front door: shown first
-  /// after boot, re-opened from the mixer home button. The shell (header,
-  /// rail, poll loop) stays alive underneath so returning keeps state.
-  bool _showStart = true;
+  /// after boot (unless the startup preference says Last mixer),
+  /// re-opened from the mixer brand button. The shell (header, rail,
+  /// poll loop) stays alive underneath so returning keeps state.
+  late bool _showStart;
 
   late final MixerController _mixer;
   late final _ConnStore _conn;
@@ -103,6 +115,8 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _tab = widget.initialTab;
+    _showStart =
+        PrefsService.instance.startupDest != 'last';
     _mixer = MixerController(widget.store,
         seedReferenceDemo: widget.initialTab == AppTab.mixer);
     _conn = _ConnStore(widget.store);
@@ -111,12 +125,43 @@ class _AppShellState extends State<AppShell> {
     _settings = _SettingsStore(widget.store);
     _fx = _FxStore(widget.store);
     _debug = _DebugStore(widget.store);
-    // Single shared freshness ticker: the ONLY 80 ms poll loop in the app.
+    _applyMeterTuning();
+    PrefsService.instance.addListener(_onPrefs);
+    // Single shared freshness ticker: the ONLY poll loop in the app.
     // Every tab (mixer/meters/channel/FX/...) renders from the notifiers
     // this drain updates in place; pages own no timer of their own.
-    _shellLoop =
-        Timer.periodic(const Duration(milliseconds: 80), (_) => _tick());
+    _restartLoop();
     _tick();
+    // Optional auto-reconnect to the last desk (off by default).
+    final prefs = PrefsService.instance;
+    if (prefs.reconnectLast && prefs.lastMixerAddr.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _conn.probe(prefs.lastMixerAddr);
+      });
+    }
+  }
+
+  /// Meter cadence + peak/clip behavior follow the Appearance prefs.
+  void _onPrefs() {
+    if (!mounted) return;
+    _applyMeterTuning();
+    _restartLoop();
+    setState(() {});
+  }
+
+  void _applyMeterTuning() {
+    final prefs = PrefsService.instance;
+    MeterTuning.peakHoldMs = prefs.peakHold * 1000;
+    MeterTuning.holdClips = prefs.holdClips;
+    AppDesign.largeTargets = prefs.largeTargets;
+  }
+
+  void _restartLoop() {
+    _shellLoop?.cancel();
+    final ms =
+        (1000 / PrefsService.instance.meterRate).round().clamp(16, 250);
+    _shellLoop = Timer.periodic(
+        Duration(milliseconds: ms), (_) => _tick());
   }
 
   Future<void> _tick() async {
@@ -130,6 +175,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void dispose() {
     _shellLoop?.cancel();
+    PrefsService.instance.removeListener(_onPrefs);
     _mixer.dispose();
     _conn.dispose();
     _routing.dispose();
@@ -140,7 +186,12 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
-  void _go(AppTab t) => setState(() => _tab = t);
+  void _go(AppTab t) => setState(() {
+        if (t == AppTab.settings && _tab != AppTab.settings) {
+          _prevTab = _tab;
+        }
+        _tab = t;
+      });
 
   ShellMode _modeOf(AppTab t) => switch (t) {
         AppTab.mixer || AppTab.meters => ShellMode.mixer,
@@ -194,7 +245,20 @@ class _AppShellState extends State<AppShell> {
             (connected || sim || store.engine.linkState == 'offline')) {
           return _mixerPage();
         }
-        final header = U4ShellHeader(
+        // Settings and channel views carry their own approved top bars,
+        // so the shared shell header steps aside for them.
+        final Widget header = isChan
+            ? ChannelToolbar(
+                store: store,
+                compact: MediaQuery.sizeOf(context).width < 600,
+                onHome: () => _go(AppTab.mixer),
+                onTool: _channelTool,
+                onLock: () =>
+                    store.locked ? store.cmdUnlock() : store.cmdLock(),
+              )
+            : _tab == AppTab.settings
+                ? const SizedBox.shrink()
+                : U4ShellHeader(
           title: title,
           pageTitle: _tab.label,
           showBack: _tab != AppTab.mixer,
@@ -237,19 +301,6 @@ class _AppShellState extends State<AppShell> {
           onGo: _go,
           vertical: !narrow,
         );
-        // Channel views carry their own approved toolbar (home + session
-        // + tools), so the shared shell header steps aside for them.
-        if (isChan) {
-          final toolbar = ChannelToolbar(
-            store: store,
-            compact: MediaQuery.sizeOf(context).width < 600,
-            onHome: () => _go(AppTab.mixer),
-            onTool: _channelTool,
-            onLock: () =>
-                store.locked ? store.cmdUnlock() : store.cmdLock(),
-          );
-          return U4Shell(header: toolbar, child: page);
-        }
         final body = narrow
             ? Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -335,7 +386,13 @@ class _AppShellState extends State<AppShell> {
                     store: _conn, onOpenDebug: () => _go(AppTab.debug))),
           ],
         ),
-      AppTab.settings => U4SettingsPage(store: _settings),
+      AppTab.settings => U4SettingsPage(
+          store: _settings,
+          onClose: () => _go(_prevTab),
+          onOpenMixer: () {
+            _conn.connectSim();
+            _go(AppTab.mixer);
+          }),
       AppTab.debug => U4DebugPage(store: _debug),
     };
   }
@@ -984,99 +1041,145 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
 }
 
 // ---------------------------------------------------------------------------
-// Settings
+// Settings: prefs + recents + local mixes over platform services.
 // ---------------------------------------------------------------------------
 
 class _SettingsStore extends _StoreBase implements SettingsStore {
-  _SettingsStore(super.app);
-
-  final Map<String, String> _prefs = {
-    'phantom_confirm': 'on',
-    'peak_hold': 'on',
-  };
-  String? _notice;
-
-  @override
-  List<SettingsSectionVm> get sections => [
-        SettingsSectionVm(title: 'Session (this device)', rows: [
-          SettingRowVm(
-            key: 'phantom_confirm',
-            label: 'Phantom confirm',
-            desc: 'Two-tap arm before 48V switches.',
-            isToggle: true,
-            options: [
-              SettingOption(
-                  label: 'On',
-                  value: 'on',
-                  pressed: _prefs['phantom_confirm'] == 'on'),
-              SettingOption(
-                  label: 'Off',
-                  value: 'off',
-                  pressed: _prefs['phantom_confirm'] == 'off'),
-            ],
-          ),
-          SettingRowVm(
-            key: 'peak_hold',
-            label: 'Meter peak hold',
-            desc: 'Hold ladder peaks ~1.2 s.',
-            isToggle: true,
-            options: [
-              SettingOption(
-                  label: 'On',
-                  value: 'on',
-                  pressed: _prefs['peak_hold'] == 'on'),
-              SettingOption(
-                  label: 'Off',
-                  value: 'off',
-                  pressed: _prefs['peak_hold'] == 'off'),
-            ],
-          ),
-        ]),
-      ];
+  _SettingsStore(super.app) {
+    prefs.addListener(_forward);
+    recents.addListener(_forward);
+    mixes.addListener(_forward);
+    recents.load();
+    mixes.refresh();
+  }
 
   @override
-  List<OfflineChangeVm> get offlineChanges => [
-        for (final c in engine.offlineDiff)
-          OfflineChangeVm(
-            strip: c.strip,
-            id: c.id,
-            from: '${c.from}',
-            to: '${c.to}',
-          ),
-      ];
+  void dispose() {
+    prefs.removeListener(_forward);
+    recents.removeListener(_forward);
+    mixes.removeListener(_forward);
+    super.dispose();
+  }
 
   @override
-  String get stats => '';
+  PrefsService get prefs => PrefsService.instance;
+
+  final RecentMixers _recents = RecentMixers.instance;
 
   @override
-  String? get notice => _notice;
+  RecentMixers get recents {
+    RecentMixers.ensureLoaded();
+    return _recents;
+  }
+
+  final LocalMixStore _mixes = LocalMixStore();
 
   @override
-  void setSetting(String key, String value) {
-    _prefs[key] = value;
-    _notice = null;
+  LocalMixStore get mixes => _mixes;
+
+  @override
+  Future<String?> importMix() async {
+    final err = await _mixes.importMix();
+    if (err == null) {
+      await _snapshotBackup();
+      notifyListeners();
+    }
+    return err;
+  }
+
+  @override
+  Future<void> exportMix(LocalMix mix) => _mixes.exportMix(mix);
+
+  @override
+  Future<void> deleteMix(LocalMix mix) async {
+    await _mixes.deleteMix(mix);
+    await _snapshotBackup();
     notifyListeners();
   }
 
   @override
-  void offlinePush() {
-    send(Cmds.offlinePush(true));
-    _notice = 'Push requested.';
+  Future<String> importBackup() async {
+    final res = await _mixes.importBackup();
+    if (res != 'cancelled') {
+      await _snapshotBackup();
+      notifyListeners();
+    }
+    return res;
+  }
+
+  @override
+  Future<void> exportBackup() => _mixes.exportBackup();
+
+  Future<void> _snapshotBackup() async {
+    if (!prefs.autoBackup) return;
+    try {
+      await _mixes.snapshotBackup();
+      await prefs.setBackupCreatedAt(
+          DateTime.now().toIso8601String());
+    } catch (_) {
+      // Backup failures must never break the mix action itself.
+    }
+  }
+
+  @override
+  Future<void> clearCache() async {
+    await _mixes.clearCache();
     notifyListeners();
   }
 
   @override
-  void offlineDiscard() {
-    send(Cmds.offlineDiscard());
-    _notice = 'Discard requested.';
+  Future<void> forgetMixers() async {
+    await _recents.clear();
     notifyListeners();
   }
 
   @override
-  void requestStats() {
-    send(Cmds.stats());
-    _notice = 'Stats requested — see the Dbg tab.';
+  Future<void> resetPrefs() async {
+    await prefs.resetToDefaults();
     notifyListeners();
+  }
+
+  @override
+  Future<void> deleteMixes() async {
+    await _mixes.deleteAll();
+    notifyListeners();
+  }
+
+  @override
+  Future<void> fullReset() async {
+    await _mixes.deleteAll();
+    await _mixes.clearCache();
+    await _recents.clear();
+    await prefs.clearAll();
+    notifyListeners();
+  }
+
+  @override
+  Future<void> exportDiagnostics() async {
+    final payload = {
+      'app': 'OpenFader',
+      'generatedAt': DateTime.now().toIso8601String(),
+      'preferences': {
+        'autoFind': prefs.autoFind,
+        'reconnectLast': prefs.reconnectLast,
+        'rememberRecents': prefs.rememberRecents,
+        'startupDest': prefs.startupDest,
+        'interfaceSize': prefs.interfaceSize,
+        'keepAwake': prefs.keepAwake,
+        'meterRate': prefs.meterRate,
+        'peakHold': prefs.peakHold,
+        'holdClips': prefs.holdClips,
+        'largeTargets': prefs.largeTargets,
+        'autoBackup': prefs.autoBackup,
+      },
+      'localMixCount': _mixes.mixes.length,
+      'savedMixerCount': _recents.items.length,
+    };
+    final tmp = Directory.systemTemp;
+    final file = File(
+        '${tmp.path}/open-fader-diagnostics.json');
+    await file.writeAsString(jsonEncode(payload));
+    await SharePlus.instance.share(ShareParams(files: [XFile(file.path)], subject: 'open-fader-diagnostics.json'));
   }
 }
 

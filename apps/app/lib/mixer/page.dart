@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'controller.dart';
 import 'design.dart';
+import '../settings/prefs.dart';
 import 'components/banks.dart';
 import 'components/strip.dart';
 import 'components/toolbar.dart';
@@ -76,7 +77,10 @@ class _MixerPageState extends State<MixerPage> {
               });
             }
             return ListenableBuilder(
-                listenable: controller,
+                // Rebuild on prefs too so large-targets/interface changes
+                // apply without reopening the screen (rare notifications).
+                listenable:
+                    Listenable.merge([controller, PrefsService.instance]),
                 builder: (context, _) {
                   if (_bank != controller.store.bank ||
                       _page != controller.page) {

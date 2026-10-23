@@ -172,11 +172,9 @@ class MixerToolbar extends StatelessWidget {
           if (compact)
             Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: PopupMenuButton<VoidCallback>(
-                tooltip: 'Menu',
-                color: const Color(0xff262626),
+              child: _MenuButton(
                 onSelected: (action) => action(),
-                itemBuilder: (_) => [
+                items: [
                   if (onHome != null)
                     PopupMenuItem(
                         value: onHome!,
@@ -204,17 +202,6 @@ class MixerToolbar extends StatelessWidget {
                               style: MixerDesign.type(16))),
                   ],
                 ],
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                      color: const Color(0xff262626),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xff363636))),
-                  child: const Icon(Icons.menu,
-                      size: 22, color: Color(0xffb5b5b5)),
-                ),
               ),
             ),
         ]));
@@ -277,6 +264,51 @@ Future<void> _typeFader(
       selected, v.isFinite ? MixerFaderScale.positionForDb(v) : 0);
 }
 
+
+/// Phone menu: explicit semantics button opening a menu sheet.
+class _MenuButton extends StatelessWidget {
+  final ValueChanged<VoidCallback> onSelected;
+  final List<PopupMenuEntry<VoidCallback>> items;
+  const _MenuButton({required this.onSelected, required this.items});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+      button: true,
+      label: 'Menu',
+      onTap: () => _open(context),
+      child: Tooltip(
+          message: 'Menu',
+          child: SizedBox(
+              width: 44,
+              height: 44,
+              child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => _open(context),
+                  child: Container(
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                          color: const Color(0xff262626),
+                          borderRadius: BorderRadius.circular(10),
+                          border:
+                              Border.all(color: const Color(0xff363636))),
+                      child: const Icon(Icons.menu,
+                          size: 22, color: Color(0xffb5b5b5)))))));
+
+  Future<void> _open(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final choice = await showMenu<VoidCallback>(
+      context: context,
+      color: const Color(0xff262626),
+      position: RelativeRect.fromRect(
+          box == null ? Rect.zero : Offset.zero & box.size,
+          Offset.zero & (overlay?.size ?? Size.zero)),
+      items: items,
+    );
+    if (choice != null) onSelected(choice);
+  }
+}
 
 /// Approved 44px toolbar button: charcoal fill, hairline edge, 10px radius,
 /// 22px icon or FX text in #b5b5b5.

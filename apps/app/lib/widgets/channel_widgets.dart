@@ -13,6 +13,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../core/channel_views.dart';
+import '../design.dart';
 import '../theme.dart';
 import 'console_button.dart';
 
@@ -168,7 +169,9 @@ class _U4KnobState extends State<U4Knob> {
           mainAxisSize: MainAxisSize.min,
           children: [
             CustomPaint(
-              size: const Size(68, 68),
+              size: Size(
+                  AppDesign.largeTargets ? 80 : 68,
+                  AppDesign.largeTargets ? 80 : 68),
               painter: _KnobPainter(
                 n: toN(widget.min, widget.max, widget.value),
                 color: widget.color,

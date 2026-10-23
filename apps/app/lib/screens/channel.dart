@@ -16,6 +16,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/channel_views.dart';
+import '../settings/prefs.dart';
 import '../theme.dart';
 import '../widgets/channel_widgets.dart';
 import '../widgets/number_entry.dart';
@@ -168,7 +169,8 @@ class _ChannelPageState extends State<ChannelPage> {
       backgroundColor: U4.page,
       body: SafeArea(
         child: ListenableBuilder(
-          listenable: widget.store,
+          listenable:
+              Listenable.merge([widget.store, PrefsService.instance]),
           builder: (context, _) {
             final store = widget.store;
             // The toolbar lives in the shell header now; this page owns
