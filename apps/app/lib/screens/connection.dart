@@ -48,6 +48,7 @@ abstract class ConnectionStore extends ChangeNotifier {
   /// Lets the start screen probe a row directly (with retry + errors)
   /// instead of parsing the display string.
   String hostOf(String id);
+  String canonicalHost(String host);
 
   /// IP/hostname of the current link, or '' when none/sim.
   String get connectedHost;
@@ -56,7 +57,9 @@ abstract class ConnectionStore extends ChangeNotifier {
   int get clientCount;
   List<String> get writers;
 
-  void scan(); // cmd scan
+  void scan(); // network discovery
+  void refreshKnown(List<String> hosts);
+  String? checkStatusOf(String host);
   void probe(String addr); // cmd probe (+connect on verify)
   Future<void> retryProbe(); // re-send last probe up to 3 attempts
   void connectDevice(String id); // cmd connect_device
