@@ -1,7 +1,7 @@
 //! Offline-first sync replay against the SimDriver.
-use openmix_core::sync::OpQueue;
-use openmix_core::{MixerDriver, StripId};
-use openmix_sim::SimDriver;
+use openfader_core::sync::OpQueue;
+use openfader_core::{MixerDriver, StripId};
+use openfader_sim::SimDriver;
 
 #[tokio::test]
 async fn replay_applies_lww_and_logs_conflict() {

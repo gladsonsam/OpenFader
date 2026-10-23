@@ -46,7 +46,7 @@
 //! - `config/color` answers (`,i` 0 on `/ch/16`, 2026-10-18 driver-path
 //!   re-read; same-value write-back on ch2 ACKs with zero state change).
 
-use openmix_transport::osc;
+use openfader_transport::osc;
 use rosc::{OscMessage, OscType};
 
 /// USB-return source index bounds (firmware map: `rtnsrc [0,17] // U01..U18`).
@@ -68,7 +68,7 @@ pub const HPF_MAX_HZ: f32 = 400.0;
 /// `Config.usbreturn`): 1-based wire number, zero-padded.
 ///
 /// ```
-/// # use openmix_proto_xair::input::config_rtnsrc;
+/// # use openfader_proto_xair::input::config_rtnsrc;
 /// assert_eq!(config_rtnsrc(1), "/ch/01/config/rtnsrc");
 /// assert_eq!(config_rtnsrc(16), "/ch/16/config/rtnsrc");
 /// ```
@@ -80,7 +80,7 @@ pub fn config_rtnsrc(ch: u16) -> String {
 /// `Preamp.usbtrim`): linear wire float `0..1` ↔ `−18..=+18` dB.
 ///
 /// ```
-/// # use openmix_proto_xair::input::preamp_rtntrim;
+/// # use openfader_proto_xair::input::preamp_rtntrim;
 /// assert_eq!(preamp_rtntrim(1), "/ch/01/preamp/rtntrim");
 /// ```
 pub fn preamp_rtntrim(ch: u16) -> String {
@@ -91,7 +91,7 @@ pub fn preamp_rtntrim(ch: u16) -> String {
 /// `Preamp.invert`, int `1`/`0`).
 ///
 /// ```
-/// # use openmix_proto_xair::input::preamp_invert;
+/// # use openfader_proto_xair::input::preamp_invert;
 /// assert_eq!(preamp_invert(16), "/ch/16/preamp/invert");
 /// ```
 pub fn preamp_invert(ch: u16) -> String {
@@ -102,7 +102,7 @@ pub fn preamp_invert(ch: u16) -> String {
 /// `Preamp.highpasson`, int `1`/`0`).
 ///
 /// ```
-/// # use openmix_proto_xair::input::preamp_hpf_on;
+/// # use openfader_proto_xair::input::preamp_hpf_on;
 /// assert_eq!(preamp_hpf_on(1), "/ch/01/preamp/hpon");
 /// ```
 pub fn preamp_hpf_on(ch: u16) -> String {
@@ -113,7 +113,7 @@ pub fn preamp_hpf_on(ch: u16) -> String {
 /// `Preamp.highpassfilter`): log wire float `0..1` ↔ `20..=400` Hz.
 ///
 /// ```
-/// # use openmix_proto_xair::input::preamp_hpf;
+/// # use openfader_proto_xair::input::preamp_hpf;
 /// assert_eq!(preamp_hpf(16), "/ch/16/preamp/hpf");
 /// ```
 pub fn preamp_hpf(ch: u16) -> String {
@@ -172,7 +172,7 @@ pub fn hpf_wire_to_hz(v: f32) -> anyhow::Result<f32> {
 }
 
 /// Encode a USB-return source index: the relay delivers UI numbers as
-/// [`openmix_core::ParamValue::Float`], so whole-number floats in `0..=17`
+/// [`openfader_core::ParamValue::Float`], so whole-number floats in `0..=17`
 /// (firmware-doc range) encode to the int the desk answers (`U01 + index`).
 /// Rejects NaN, fractions, and out-of-range values before anything is sent.
 pub fn usbreturn_to_arg(v: f32) -> anyhow::Result<OscType> {

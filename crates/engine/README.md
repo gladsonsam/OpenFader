@@ -1,4 +1,4 @@
-# openmix-engine: the single mixer session
+# openfader-engine: the single mixer session
 
 Every frontend (native app via the bridge, CLI,
 future apps) gets the FULL mixer capability through this crate. The engine
@@ -15,7 +15,7 @@ field names, same shapes).
 
 ```rust
 use std::sync::Arc;
-use openmix_engine::{Cmd, Engine, EngineConfig};
+use openfader_engine::{Cmd, Engine, EngineConfig};
 
 let engine: Arc<Engine> = Engine::new(EngineConfig::default());
 engine.connect("sim", None).await?;        // initial driver (adapters stay up on failure)
@@ -125,7 +125,7 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   `capture_scene`/`delete_scene`.
 - `meters`: `{"type":"meters","levels":[...]}` — one entry per strip, at
   the meter SOURCE rate (50 ms / 20 Hz, the desk rate; `METER_INTERVAL` in
-  `openmix-transport`). Never downsampled by the engine or the adapter.
+  `openfader-transport`). Never downsampled by the engine or the adapter.
 - `spectrum`: `{"type":"spectrum","ch":0,"bins":[...64 floats in 0..1...]}` —
   simulator-only meter-envelope FFT activity, per tick, first 16 inputs.
   These are **not audio frequencies**.
@@ -137,7 +137,7 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   `spectrum_target {ch}` acquires/changes the source while EQ is open;
   `ch:null` releases the client's interest. Ownership, same-session readback,
   invalidation and compare-before-restore are handled by the provider.
-  [XR18 evidence and limits](../../docs/xair-rta-verification.md).
+  XR18 evidence and limits: see the RTA verification notes.
 
 - `gr`: `{"type":"gr","ch":0,"gate":0.0,"comp":0.0}` — per tick, supported topology
   strips (hardware inputs, buses, main; simulator retains its 16-input
@@ -366,7 +366,7 @@ per-connection counters only exist where the socket is.
 
 ## Catalogue (v2)
 
-176 ids (`openmix_core::params::CATALOGUE`): the v1 set (fader/mute/name,
+176 ids (`openfader_core::params::CATALOGUE`): the v1 set (fader/mute/name,
 gain/phantom/usbreturn/trim/polarity/pan/hpf, gate/comp/eq on, 4-band EQ,
 legacy `aux1..8`/`fx1..4` sends — kept verbatim for the v3 UI) plus strip
 look (`color` 0..15, `icon`, `link`, `source`), `delay_on`/`delay_ms`
@@ -526,7 +526,7 @@ slot per cycle, cache-only (silent unless changed).
 supports patching (Lcl/Net/USB × 32; defaults mirror the design: Ch n
 ← Lcl n, Ch 33+ ← Net; reads/writes ride the `source` param plane).
 xair reports `supported:false` (`insrc` is live-silent on FW 1.20 —
-see `docs/xair-protocol.md`); `usbreturn` stays a plain param there.
+see X-Air Edit 1.8.1 protocol map); `usbreturn` stays a plain param there.
 DL32S: unsupported. `patch_set`/`patch_clear` honour roles
 (`allow_strip`) and strip locks (deny with `locked_by`, like params).
 

@@ -8,7 +8,7 @@
 //! `0106000100000002`, full 5257-address dump). DL16S/DL32R layouts are NOT
 //! verified here and stay unimplemented — see [`model_status`].
 
-use openmix_core::FaderScale;
+use openfader_core::FaderScale;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
@@ -288,7 +288,7 @@ fn build_dl32s_inputs() -> ChannelBlock {
 
 /// Subgroup master strips: 6 strips of 51 words from 4041. Mute + fader
 /// are live-verified (net-zero write+relay observed 2026-10-18 — see
-/// `docs/dl32s-protocol.md`); the rest of each 51-word strip is unmapped.
+/// DL32S protocol notes); the rest of each 51-word strip is unmapped.
 pub fn dl32s_subgroups() -> &'static ChannelBlock {
     static B: OnceLock<ChannelBlock> = OnceLock::new();
     B.get_or_init(|| ChannelBlock {

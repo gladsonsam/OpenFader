@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Shared visual language from docs/design/master-fader-dark-mode.html.
+/// Shared visual language from the master-fader dark-mode design mock.
 /// Layouts choose sizes; every screen shares colour, typography and shape.
 abstract final class AppDesign {
   static const background = Color(0xff1c1c1c);

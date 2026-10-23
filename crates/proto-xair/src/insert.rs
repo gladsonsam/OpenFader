@@ -2,11 +2,11 @@
 //!
 //! Doc sources (address shapes):
 //!
-//! - X-Air Edit protocol map (`docs/xair-edit-protocol-map.md` §7):
+//! - X-Air Edit protocol map (X-Air Edit protocol map §7):
 //!   `insert ,ii` = **(on, sel)** — the container carries exactly the two
 //!   leaves below, no position leaf.
 //! - Owner full-plane capture
-//!   (`docs/captures/xair-edit-1.8.1/live_fullplane_2026-10-19.json`):
+//!   (X-Air Edit 1.8.1 live full-plane capture (2026-10-19)):
 //!   `/ch/01..16`, `/bus/1..6` and `/lr` answer `insert`, `insert/on` and
 //!   `insert/sel`; `/rtn/*`, `/rtn/aux`, `/fxsend/*` and `/dca/*` carry no
 //!   insert node (silence, not guessed).
@@ -34,7 +34,7 @@ pub const INSERT_SEL_MAX: i32 = 8;
 /// `1` = inserted / `0` = bypassed).
 ///
 /// ```
-/// # use openmix_proto_xair::insert::insert_on;
+/// # use openfader_proto_xair::insert::insert_on;
 /// assert_eq!(insert_on("/ch/01"), "/ch/01/insert/on");
 /// assert_eq!(insert_on("/bus/1"), "/bus/1/insert/on");
 /// assert_eq!(insert_on("/lr"), "/lr/insert/on");
@@ -46,7 +46,7 @@ pub fn insert_on(root: &str) -> String {
 /// OSC address of one strip's insert select (`insert/sel`, int `0..=8`).
 ///
 /// ```
-/// # use openmix_proto_xair::insert::insert_sel;
+/// # use openfader_proto_xair::insert::insert_sel;
 /// assert_eq!(insert_sel("/ch/15"), "/ch/15/insert/sel");
 /// assert_eq!(insert_sel("/lr"), "/lr/insert/sel");
 /// ```

@@ -1,4 +1,4 @@
-openmix — open mixing-station alternative (X-Air + DL32S first)
+OpenFader — open mixing-station alternative (X-Air + DL32S first)
 
 Native Flutter app in `apps/app`; DSP/engine in `crates/`.
 

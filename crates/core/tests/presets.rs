@@ -1,10 +1,10 @@
 //! Presets apply against the SimDriver (integration: one core build).
-use openmix_core::presets::{PRESETS, apply_preset, preset_by_id};
-use openmix_core::{MixerDriver, StripId};
+use openfader_core::presets::{PRESETS, apply_preset, preset_by_id};
+use openfader_core::{MixerDriver, StripId};
 
 #[tokio::test]
 async fn every_preset_applies_to_sim() {
-    let d = openmix_sim::SimDriver::new();
+    let d = openfader_sim::SimDriver::new();
     let strip = StripId(0);
     for p in PRESETS {
         apply_preset(&d, strip, p)

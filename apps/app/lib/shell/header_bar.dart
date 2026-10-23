@@ -81,7 +81,7 @@ class U4ShellHeader extends StatelessWidget {
         ? channelName
         : pageTitle.isNotEmpty
             ? pageTitle
-            : 'OpenMix';
+            : 'OpenFader';
     final actions = <(String, String, VoidCallback?, bool)>[
       ('Effects', 'FX', onFx, mode == ShellMode.fx),
       ('Routing', 'routing', onRouting, mode == ShellMode.routing),

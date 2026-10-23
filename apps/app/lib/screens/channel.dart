@@ -18,9 +18,12 @@ import 'package:flutter/material.dart';
 import '../core/channel_views.dart';
 import '../theme.dart';
 import '../widgets/channel_widgets.dart';
+import '../widgets/number_entry.dart';
 
 /// Channel tabs (web CHANNEL_TAB_ORDER + groups/source/presets sections).
-enum ChannelTab { input, eq, gate, comp, sends, groups, presets }
+/// New order: Input → Gate → Comp → EQ. Sends lives inside Input;
+/// groups/presets left the tab bar (presets is a per-processor dropdown).
+enum ChannelTab { input, gate, comp, eq }
 
 /// Minimal store contract the channel screen renders. Implemented by the
 /// shell/owner over the live engine or a fixture sim. Meters arrive via
@@ -29,6 +32,15 @@ enum ChannelTab { input, eq, gate, comp, sends, groups, presets }
 abstract class ChannelStore extends ChangeNotifier {
   String get stripKey;
   String get displayName;
+
+  /// 1-based channel number for the toolbar readout.
+  String get channelNumber;
+
+  /// Live fader notifier for the toolbar readout + typed entry.
+  ValueNotifier<double> faderNote();
+
+  /// Move this channel's fader to an absolute dB value.
+  void setFaderDb(double db);
 
   // --- param plane (echo-confirmed reads, caps gating) ---
   double? paramNum(String leaf);
@@ -88,6 +100,25 @@ abstract class ChannelStore extends ChangeNotifier {
   void storePreset(String name);
 }
 
+/// One focused numeric control: the page's top readout renders [text]
+/// live and tapping it opens typed entry that flows back through [apply].
+class ChannelFocus {
+  final String title;
+  final String label;
+  final String Function() text;
+  final double min;
+  final double max;
+  final ValueChanged<double> apply;
+
+  const ChannelFocus(
+      {required this.title,
+      required this.label,
+      required this.text,
+      required this.min,
+      required this.max,
+      required this.apply});
+}
+
 class ChannelPage extends StatefulWidget {
   final String stripKey;
   final ChannelStore store;
@@ -101,6 +132,11 @@ class ChannelPage extends StatefulWidget {
 class _ChannelPageState extends State<ChannelPage> {
   ChannelWrites? _writes;
 
+  /// Focused numeric control; the slim bar under the tab rail renders it
+  /// live and tapping opens typed entry. Cleared on tab switch (EQ
+  /// re-focuses the selected band's frequency).
+  final _focus = ValueNotifier<ChannelFocus?>(null);
+
   @override
   void initState() {
     super.initState();
@@ -113,7 +149,17 @@ class _ChannelPageState extends State<ChannelPage> {
   @override
   void dispose() {
     _writes?.dispose();
+    _focus.dispose();
     super.dispose();
+  }
+
+  void _switchTab(ChannelStore store, ChannelTab tab) {
+    // EQ opens focused on the selected band's frequency (the top readout's
+    // default subject); other tabs clear the focus bar.
+    _focus.value = tab == ChannelTab.eq
+        ? eqFreqFocus(store, _writes!, store.eq.selectedBand)
+        : null;
+    store.setTab(tab);
   }
 
   @override
@@ -125,44 +171,64 @@ class _ChannelPageState extends State<ChannelPage> {
           listenable: widget.store,
           builder: (context, _) {
             final store = widget.store;
+            // The toolbar lives in the shell header now; this page owns
+            // the focus readout + processing navigation + content.
+            final wide = MediaQuery.sizeOf(context).width >= 700;
+            final content = SingleChildScrollView(
+              padding: const EdgeInsets.all(8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  switch (store.tab) {
+                    ChannelTab.input => _InputTab(
+                        store: store,
+                        writes: _writes!,
+                        onFocus: (f) => _focus.value = f),
+                    ChannelTab.eq => _EqTab(
+                        store: store,
+                        writes: _writes!,
+                        onFocus: (f) => _focus.value = f),
+                    ChannelTab.gate => _DynTab(
+                        store: store,
+                        writes: _writes!,
+                        onFocus: (f) => _focus.value = f,
+                        kind: DynKind.gate),
+                    ChannelTab.comp => _DynTab(
+                        store: store,
+                        writes: _writes!,
+                        onFocus: (f) => _focus.value = f,
+                        kind: DynKind.comp),
+                  },
+                ],
+              ),
+            );
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _TabRail(
-                  tab: store.tab,
-                  onTab: store.setTab,
-                  locked: store.locked,
-                  focused: store.focused,
-                  onLock: () =>
-                      store.locked ? store.cmdUnlock() : store.cmdLock(),
-                ),
+                _FocusBar(focus: _focus),
                 Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.all(8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        switch (store.tab) {
-                          ChannelTab.input =>
-                            _InputTab(store: store, writes: _writes!),
-                          ChannelTab.eq =>
-                            _EqTab(store: store, writes: _writes!),
-                          ChannelTab.gate => _DynTab(
-                              store: store,
-                              writes: _writes!,
-                              kind: DynKind.gate),
-                          ChannelTab.comp => _DynTab(
-                              store: store,
-                              writes: _writes!,
-                              kind: DynKind.comp),
-                          ChannelTab.sends => _SendsTab(store: store),
-                          ChannelTab.groups => _GroupsTab(store: store),
-                          ChannelTab.presets => _PresetsTab(store: store),
-                        },
-                      ],
-                    ),
-                  ),
+                  child: wide
+                      ? Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(8, 0, 0, 8),
+                              child: _SideMenu(
+                                  store: store,
+                                  tab: store.tab,
+                                  onTab: (t) => _switchTab(store, t)),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(child: content),
+                          ],
+                        )
+                      : content,
                 ),
+                if (!wide)
+                  _BottomNav(
+                      store: store,
+                      tab: store.tab,
+                      onTab: (t) => _switchTab(store, t)),
               ],
             );
           },
@@ -173,94 +239,471 @@ class _ChannelPageState extends State<ChannelPage> {
 }
 
 // ---------------------------------------------------------------------------
-// Header + tab rail
+// Focus readout bar: slim live row under the tab rail. Tapping opens typed
+// entry for the focused control.
 // ---------------------------------------------------------------------------
 
-class _TabRail extends StatelessWidget {
-  final ChannelTab tab;
-  final ValueChanged<ChannelTab> onTab;
-  final bool locked;
-  final bool focused;
-  final VoidCallback onLock;
-
-  const _TabRail({
-    required this.tab,
-    required this.onTab,
-    required this.locked,
-    required this.focused,
-    required this.onLock,
-  });
+class _FocusBar extends StatelessWidget {
+  final ValueNotifier<ChannelFocus?> focus;
+  const _FocusBar({required this.focus});
 
   @override
   Widget build(BuildContext context) {
-    const tabs = ChannelTab.values;
-    const labels = {
-      ChannelTab.input: 'Input',
-      ChannelTab.eq: 'EQ',
-      ChannelTab.gate: 'Gate',
-      ChannelTab.comp: 'Comp',
-      ChannelTab.sends: 'Sends',
-      ChannelTab.groups: 'Groups',
-      ChannelTab.presets: 'Presets',
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: U4.lineHeader)),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            for (final t in tabs)
-              GestureDetector(
-                onTap: () => onTab(t),
-                child: Container(
-                  margin: const EdgeInsets.only(right: 5),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: t == tab ? U4.selected : U4.bankOff,
-                    borderRadius: U4.rBtn,
-                    border:
-                        Border.all(color: t == tab ? U4.cyan : U4.railBorder),
-                  ),
-                  child: Text(labels[t]!,
-                      textAlign: TextAlign.center,
+    return ValueListenableBuilder<ChannelFocus?>(
+      valueListenable: focus,
+      builder: (context, f, _) {
+        if (f == null) return const SizedBox.shrink();
+        return GestureDetector(
+          onTap: () async {
+            final v = await showNumberEntry(
+                context: context,
+                title: '${f.title} · ${f.label}',
+                initial: f.text(),
+                min: f.min,
+                max: f.max);
+            if (v != null) f.apply(v);
+          },
+          behavior: HitTestBehavior.opaque,
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: const BoxDecoration(
+              border:
+                  Border(bottom: BorderSide(color: U4.lineHeader)),
+            ),
+            child: Row(children: [
+              Expanded(
+                  child: Text('${f.title} · ${f.label}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
+                      style: const TextStyle(
+                          fontFamily: U4.font,
                           fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: t == tab ? U4.text1 : U4.text7)),
-                ),
-              ),
-            GestureDetector(
-              onTap: onLock,
-              child: Container(
-                margin: const EdgeInsets.only(left: 4),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: locked ? U4.muteOffBg : U4.bankOff,
-                  borderRadius: U4.rBtn,
-                  border:
-                      Border.all(color: locked ? U4.muteOffBd : U4.railBorder),
-                ),
-                child: Text(locked ? 'UNLOCK' : 'LOCK',
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: locked ? U4.muteOffTx : U4.text7)),
-              ),
+                          color: U4.text7))),
+              Text(f.text(),
+                  maxLines: 1,
+                  style: const TextStyle(
+                      fontFamily: U4.font,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: U4.cyan,
+                      fontFeatures: [FontFeature.tabularFigures()])),
+              const SizedBox(width: 6),
+              const Icon(Icons.edit_outlined,
+                  size: 16, color: U4.text7),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Processing navigation: tablet side menu with live previews, phone flush
+// bottom bar. Order is Input → Gate → Comp → EQ.
+const _tabOrder = [
+  ChannelTab.input,
+  ChannelTab.gate,
+  ChannelTab.comp,
+  ChannelTab.eq,
+];
+
+const _tabLabels = {
+  ChannelTab.input: 'Input',
+  ChannelTab.gate: 'Gate',
+  ChannelTab.comp: 'Comp',
+  ChannelTab.eq: 'EQ',
+};
+
+bool _tabOff(ChannelStore store, ChannelTab tab) => switch (tab) {
+      ChannelTab.input => false,
+      ChannelTab.gate => !store.gate.on,
+      ChannelTab.comp => !store.comp.on,
+      ChannelTab.eq => !store.eq.on,
+    };
+
+class _SideMenu extends StatelessWidget {
+  final ChannelStore store;
+  final ChannelTab tab;
+  final ValueChanged<ChannelTab> onTab;
+  const _SideMenu(
+      {required this.store, required this.tab, required this.onTab});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 178,
+      padding: const EdgeInsets.all(6),
+      decoration: const BoxDecoration(
+        color: U4.panel,
+        borderRadius: BorderRadius.all(Radius.circular(18)),
+        border: Border.fromBorderSide(BorderSide(color: U4.lineHeader)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final t in _tabOrder)
+            Expanded(
+                child: _MenuRow(
+                    store: store,
+                    tab: t,
+                    active: t == tab,
+                    onTap: () => onTab(t))),
+        ],
+      ),
+    );
+  }
+}
+
+class _MenuRow extends StatelessWidget {
+  final ChannelStore store;
+  final ChannelTab tab;
+  final bool active;
+  final VoidCallback onTap;
+  const _MenuRow(
+      {required this.store,
+      required this.tab,
+      required this.active,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final off = _tabOff(store, tab);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Semantics(
+        button: true,
+        selected: active,
+        label: '${_tabLabels[tab]} processing',
+        onTap: onTap,
+        child: GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+            decoration: BoxDecoration(
+              color: active ? const Color(0xff262b14) : U4.tileBg,
+              borderRadius: U4.rBtn,
+              border: Border.all(
+                  color: active
+                      ? U4.cyan.withValues(alpha: 0.27)
+                      : U4.tileBorder),
             ),
-          ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Expanded(
+                      child: Text(_tabLabels[tab]!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontFamily: U4.font,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w600,
+                              color: active
+                                  ? U4.cyan
+                                  : off
+                                      ? U4.text7
+                                      : const Color(0xffc9c9c9)))),
+                  if (off)
+                    Text('OFF',
+                        style: TextStyle(
+                            fontFamily: U4.font,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.1,
+                            color: U4.text7)),
+                ]),
+                const SizedBox(height: 8),
+                Expanded(
+                    child: Opacity(
+                        opacity: off ? 0.35 : 1,
+                        child: _NavPreview(store: store, tab: tab))),
+              ],
+            ),
+          ),
         ),
       ),
     );
+  }
+}
+
+/// Live processing preview thumbnails (interaction disabled).
+class _NavPreview extends StatelessWidget {
+  final ChannelStore store;
+  final ChannelTab tab;
+  const _NavPreview({required this.store, required this.tab});
+
+  @override
+  Widget build(BuildContext context) {
+    switch (tab) {
+      case ChannelTab.input:
+        final gain = (store.paramNum('gain') ?? store.preamp.gain)
+            .clamp(0.0, 60.0)
+            .toDouble();
+        final phantom = store.preamp.phantom;
+        return Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+              color: U4.panel, borderRadius: BorderRadius.circular(8)),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                  height: 12,
+                  decoration: BoxDecoration(
+                      color: const Color(0xff252525),
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(
+                          color: const Color(0xff474747), width: 1.5)),
+                  child: FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: (gain / 60).clamp(0.05, 1.0),
+                      child: Container(
+                          decoration: BoxDecoration(
+                              color: const Color(0xff4f5a16),
+                              border: Border.all(color: U4.cyan))))),
+              const SizedBox(height: 4),
+              Text('48V',
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                      fontFamily: U4.font,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: phantom ? const Color(0xffef5548) : U4.text10)),
+            ],
+          ),
+        );
+      case ChannelTab.gate:
+      case ChannelTab.comp:
+        final kind = tab == ChannelTab.gate ? DynKind.gate : DynKind.comp;
+        final dyn = kind == DynKind.gate ? store.gate : store.comp;
+        final color =
+            kind == DynKind.gate ? U4.cyan : const Color(0xffa285d6);
+        return ValueListenableBuilder<double>(
+            valueListenable: store.levelDb,
+            builder: (context, db, _) => IgnorePointer(
+                child: U4DynGraph(
+                    dyn: dyn,
+                    levelDb: db,
+                    color: color,
+                    onThreshold: (_) {})));
+      case ChannelTab.eq:
+        final eq = store.eq;
+        return ValueListenableBuilder<List<double>>(
+            valueListenable: store.spectrum,
+            builder: (context, bins, _) => IgnorePointer(
+                child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                        color: const Color(0xff1f2314),
+                        borderRadius: BorderRadius.circular(8)),
+                    child: U4EqGraph(
+                        eq: eq,
+                        responseDb: eqResponseDb(eq),
+                        rtaBins: bins,
+                        rtaActive: false,
+                        onSelectBand: (_) {},
+                        onNode: (_, __, ___) {},
+                        onQ: (_, __) {}))));
+    }
+  }
+}
+
+/// Phone flush bottom bar: four cells with mini previews.
+class _BottomNav extends StatelessWidget {
+  final ChannelStore store;
+  final ChannelTab tab;
+  final ValueChanged<ChannelTab> onTab;
+  const _BottomNav(
+      {required this.store, required this.tab, required this.onTab});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 108,
+      decoration: const BoxDecoration(
+        color: U4.panel,
+        border: Border(top: BorderSide(color: Color(0xff363636))),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < _tabOrder.length; i++) ...[
+            Expanded(child: _BottomCell(
+                store: store,
+                tab: _tabOrder[i],
+                active: _tabOrder[i] == tab,
+                onTap: () => onTab(_tabOrder[i]))),
+            if (i < _tabOrder.length - 1)
+              Container(width: 1, color: const Color(0xff292929)),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _BottomCell extends StatelessWidget {
+  final ChannelStore store;
+  final ChannelTab tab;
+  final bool active;
+  final VoidCallback onTap;
+  const _BottomCell(
+      {required this.store,
+      required this.tab,
+      required this.active,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final off = _tabOff(store, tab);
+    return Semantics(
+      button: true,
+      selected: active,
+      label: '${_tabLabels[tab]} processing',
+      onTap: onTap,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          color: active ? const Color(0xff262b14) : U4.tileBg,
+          padding:
+              const EdgeInsets.fromLTRB(7, 9, 7, 5),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                  height: 56,
+                  child: Opacity(
+                      opacity: off ? 0.35 : 1,
+                      child: _NavPreview(store: store, tab: tab))),
+              const SizedBox(height: 4),
+              Text(_tabLabels[tab]!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontFamily: U4.font,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: active
+                          ? U4.cyan
+                          : off
+                              ? U4.text7
+                              : const Color(0xffb5b5b5))),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Focus builders: live text reads the store at render time (closures over
+// snapshots would go stale); apply mirrors the knob's write path.
+// ---------------------------------------------------------------------------
+
+String _eqFreqText(ChannelStore store, int band) {
+  if (band == 0) return '${store.eq.hpfF.toStringAsFixed(0)} Hz';
+  final bands = store.eq.bands;
+  final b = bands.firstWhere((x) => x.band == band,
+      orElse: () => bands.first);
+  final f = b.f;
+  return f >= 1000
+      ? '${(f / 1000).toStringAsFixed(1)}k'
+      : '${f.toStringAsFixed(0)} Hz';
+}
+
+/// Frequency focus for an EQ band (0 = HPF). Used when a band is pressed
+/// on the graph/dots and when switching to the EQ tab.
+ChannelFocus eqFreqFocus(
+    ChannelStore store, ChannelWrites writes, int band) {
+  final b = band.clamp(0, 4);
+  if (b == 0) {
+    return ChannelFocus(
+        title: 'EQ HPF',
+        label: 'Frequency',
+        text: () => _eqFreqText(store, 0),
+        min: 20,
+        max: 1000,
+        apply: (v) {
+          writes.queue('eq_hpf_f', v);
+          store.setEqParam(0, 'f', v);
+        });
+  }
+  return ChannelFocus(
+      title: 'EQ Band $b',
+      label: 'Frequency',
+      text: () => _eqFreqText(store, b),
+      min: b == 1 ? 20 : 100,
+      max: b == 4 ? 20000 : 16000,
+      apply: (v) {
+        writes.queue('eq${b}_f', v);
+        store.setEqParam(b, 'f', v);
+      });
+}
+
+ChannelFocus _eqGainFocus(
+    ChannelStore store, ChannelWrites writes, int band) {
+  return ChannelFocus(
+      title: 'EQ Band $band',
+      label: 'Gain',
+      text: () {
+        final bands = store.eq.bands;
+        final b = bands.firstWhere((x) => x.band == band,
+            orElse: () => bands.first);
+        return '${b.g.toStringAsFixed(1)} dB';
+      },
+      min: -15,
+      max: 15,
+      apply: (v) {
+        writes.queue('eq${band}_g', v);
+        store.setEqParam(band, 'g', v);
+      });
+}
+
+ChannelFocus _eqQFocus(
+    ChannelStore store, ChannelWrites writes, int band) {
+  return ChannelFocus(
+      title: 'EQ Band $band',
+      label: 'Q',
+      text: () {
+        final bands = store.eq.bands;
+        final b = bands.firstWhere((x) => x.band == band,
+            orElse: () => bands.first);
+        return b.q.toStringAsFixed(2);
+      },
+      min: 0.3,
+      max: 16,
+      apply: (v) {
+        writes.queue('eq${band}_q', v);
+        store.setEqParam(band, 'q', v);
+      });
+}
+
+String _dynLiveText(ChannelStore store, DynKind kind, String prop) {
+  final d = kind == DynKind.gate ? store.gate : store.comp;
+  switch (prop) {
+    case 'thr':
+      return '${d.thr.toStringAsFixed(1)} dB';
+    case 'range':
+      return '${d.range.toStringAsFixed(0)} dB';
+    case 'att':
+      return '${d.att.toStringAsFixed(1)} ms';
+    case 'hold':
+      return '${d.hold.toStringAsFixed(0)} ms';
+    case 'rel':
+      return '${d.rel.toStringAsFixed(0)} ms';
+    case 'ratio':
+      return '${d.ratio.toStringAsFixed(1)}:1';
+    case 'knee':
+      return '${d.knee.toStringAsFixed(1)} dB';
+    case 'makeup':
+      return '${d.makeup.toStringAsFixed(1)} dB';
+    default:
+      return '';
   }
 }
 
@@ -271,7 +714,9 @@ class _TabRail extends StatelessWidget {
 class _InputTab extends StatelessWidget {
   final ChannelStore store;
   final ChannelWrites writes;
-  const _InputTab({required this.store, required this.writes});
+  final ValueChanged<ChannelFocus> onFocus;
+  const _InputTab(
+      {required this.store, required this.writes, required this.onFocus});
 
   @override
   Widget build(BuildContext context) {
@@ -279,7 +724,7 @@ class _InputTab extends StatelessWidget {
     final src = store.source;
     final liveGain = store.paramNum('gain');
     final liveTrim = store.paramNum('trim');
-    return Column(
+    final left = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         U4Section(
@@ -297,6 +742,20 @@ class _InputTab extends StatelessWidget {
                     text: '${(liveGain ?? pre.gain).toStringAsFixed(1)} dB',
                     defaultValue: 30,
                     enabled: store.supports('gain'),
+                    onFocus: () => onFocus(ChannelFocus(
+                        title: 'Preamp',
+                        label: 'Gain',
+                        text: () {
+                          final live = store.paramNum('gain');
+                          final v = live ?? store.preamp.gain;
+                          return '${v.toStringAsFixed(1)} dB';
+                        },
+                        min: 0,
+                        max: 60,
+                        apply: (v) {
+                          writes.queue('gain', v);
+                          store.setPreamp('gain', v);
+                        })),
                     onInput: (v) {
                       writes.queue('gain', v);
                       store.setPreamp('gain', v);
@@ -310,6 +769,20 @@ class _InputTab extends StatelessWidget {
                     text: '${(liveTrim ?? pre.trim).toStringAsFixed(1)} dB',
                     defaultValue: 0,
                     enabled: store.supports('trim'),
+                    onFocus: () => onFocus(ChannelFocus(
+                        title: 'Preamp',
+                        label: 'Trim',
+                        text: () {
+                          final live = store.paramNum('trim');
+                          final v = live ?? store.preamp.trim;
+                          return '${v.toStringAsFixed(1)} dB';
+                        },
+                        min: -18,
+                        max: 18,
+                        apply: (v) {
+                          writes.queue('trim', v);
+                          store.setPreamp('trim', v);
+                        })),
                     onInput: (v) {
                       writes.queue('trim', v);
                       store.setPreamp('trim', v);
@@ -320,15 +793,15 @@ class _InputTab extends StatelessWidget {
               const SizedBox(height: 8),
               Row(
                 children: [
+                  // 48V is gray text when off, red when on — no box.
                   Expanded(
-                    child: U4Chip(
+                    child: _TextSwitch(
                       label: pre.phantomArmed
                           ? (pre.phantom
                               ? 'Tap again: 48V off'
                               : 'Tap again: 48V on')
                           : (pre.phantom ? '48V On' : '48V Off'),
-                      on: pre.phantom,
-                      accent: U4.meterAmber,
+                      active: pre.phantom,
                       enabled: store.supports('phantom'),
                       onTap: store.togglePhantom,
                     ),
@@ -380,8 +853,333 @@ class _InputTab extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 8),
+        _AssignBlock(store: store),
       ],
     );
+    final sends = _SendsBlock(store: store);
+    // Tablet: input panel beside the sends panel; phones stack them.
+    return LayoutBuilder(builder: (context, box) {
+      if (box.maxWidth >= 700) {
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 538, child: left),
+            const SizedBox(width: 12),
+            Expanded(flex: 806, child: sends),
+          ],
+        );
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [left, sends],
+      );
+    });
+  }
+}
+
+/// Gray/red text switch (48V rule): no box, 44pt target.
+class _TextSwitch extends StatelessWidget {
+  final String label;
+  final bool active;
+  final bool enabled;
+  final VoidCallback onTap;
+  const _TextSwitch(
+      {required this.label,
+      required this.active,
+      required this.enabled,
+      required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Opacity(
+        opacity: enabled ? 1 : 0.45,
+        child: GestureDetector(
+          onTap: enabled ? onTap : null,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            height: 44,
+            child: Center(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontFamily: U4.font,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: active
+                          ? const Color(0xffef5548)
+                          : const Color(0xff7a7a7a))),
+            ),
+          ),
+        ),
+      );
+}
+
+// ---------------------------------------------------------------------------
+// Sends block (inside Input): one row per send slot.
+// ---------------------------------------------------------------------------
+
+class _SendsBlock extends StatelessWidget {
+  final ChannelStore store;
+  const _SendsBlock({required this.store});
+
+  @override
+  Widget build(BuildContext context) {
+    final sends = store.sends;
+    return U4Section(
+      title: 'Sends · ${sends.length}',
+      child: sends.isEmpty
+          ? const Text('No send slots on this desk.',
+              style: TextStyle(fontSize: 13, color: U4.text7))
+          : Column(
+              children: [
+                for (final s in sends) ...[
+                  U4SendRow(
+                    send: s,
+                    onLevel: (v) => store.setSendLevel(s.slot, v),
+                    onMute: () => store.setSendMute(s.slot, !s.muted),
+                    onTapCycle: () {
+                      final opts = s.tapOptions;
+                      if (opts.isEmpty) return;
+                      final cur = s.tap ?? opts.first;
+                      final next = opts[(opts.indexOf(cur) + 1) % opts.length];
+                      store.setSendTap(s.slot, next);
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                ],
+              ],
+            ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Assignments block (inside Input): subgroup + mute-group assignment.
+// ---------------------------------------------------------------------------
+
+class _AssignBlock extends StatelessWidget {
+  final ChannelStore store;
+  const _AssignBlock({required this.store});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        U4Section(
+          title: 'Subgroups',
+          child: store.subgroupCount == 0
+              ? const Text('No subgroups on this desk.',
+                  style: TextStyle(fontSize: 13, color: U4.text7))
+              : Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (var g = 1; g <= store.subgroupCount; g++)
+                      _AssignChip(
+                        label: 'Sub $g',
+                        assigned: store.subgroupAssigned(g),
+                        onTap: () {
+                          final cur = store.subgroupAssigned(g) ?? false;
+                          store.cmdSubgroupAssign(g, !cur);
+                        },
+                      ),
+                  ],
+                ),
+        ),
+        const SizedBox(height: 8),
+        U4Section(
+          title: 'Mute groups',
+          child: store.muteGroupCount == 0
+              ? const Text('No mute groups on this desk.',
+                  style: TextStyle(fontSize: 13, color: U4.text7))
+              : Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (var g = 1; g <= store.muteGroupCount; g++)
+                      _AssignChip(
+                        label: 'MG $g',
+                        assigned: store.muteGroupAssigned(g),
+                        onTap: () {
+                          final cur = store.muteGroupAssigned(g) ?? false;
+                          store.cmdMuteGroupAssign(g, !cur);
+                        },
+                      ),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Shared boxed processor header: title + power toggle. ON is the lime
+// boxed style; bypassed is charcoal with gray text.
+// ---------------------------------------------------------------------------
+
+class _ProcessorHeader extends StatelessWidget {
+  final String title;
+  final bool on;
+  final VoidCallback onToggle;
+  final bool compact;
+
+  const _ProcessorHeader(
+      {required this.title,
+      required this.on,
+      required this.onToggle,
+      required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    final button = Semantics(
+      button: true,
+      label: '$title ${on ? 'on' : 'bypassed'}, activate to ${on ? 'bypass' : 'enable'}',
+      onTap: onToggle,
+      child: GestureDetector(
+        onTap: onToggle,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          height: compact ? 44 : 56,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 16),
+          decoration: BoxDecoration(
+            color: on ? const Color(0xff262b14) : const Color(0xff343434),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: on
+                    ? U4.cyan.withValues(alpha: 0.27)
+                    : const Color(0xff414141)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontFamily: U4.font,
+                      fontSize: compact ? 20 : 28,
+                      fontWeight: FontWeight.w600,
+                      color: on ? U4.cyan : const Color(0xffaaa9a9))),
+              Icon(Icons.power_settings_new,
+                  size: compact ? 22 : 24,
+                  color: on ? U4.cyan : const Color(0xffaaa9a9)),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (compact) return button;
+    return Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(width: 260, child: button));
+  }
+}
+
+/// Presets dropdown for the settings row (recall only; no new protocol).
+class _PresetsButton extends StatelessWidget {
+  final ChannelStore store;
+  final bool compact;
+  const _PresetsButton({required this.store, required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton.icon(
+      onPressed: () async {
+        final box = context.findRenderObject() as RenderBox?;
+        final overlay =
+            Overlay.of(context).context.findRenderObject() as RenderBox?;
+        final choice = await showMenu<String>(
+          context: context,
+          color: const Color(0xff262626),
+          position: RelativeRect.fromRect(
+              box == null
+                  ? Rect.zero
+                  : Offset.zero & box.size,
+              Offset.zero & (overlay?.size ?? Size.zero)),
+          items: [
+            if (store.presets.isEmpty)
+              const PopupMenuItem(
+                  enabled: false, child: Text('No presets stored')),
+            for (final p in store.presets)
+              PopupMenuItem(
+                  value: p,
+                  child: Text(p,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontFamily: U4.font, color: U4.text1))),
+          ],
+        );
+        if (choice != null) store.recallPreset(choice);
+      },
+      style: TextButton.styleFrom(
+          foregroundColor: U4.text1,
+          backgroundColor: const Color(0xff343434),
+          minimumSize: Size(64, compact ? 44 : 56),
+          padding:
+              EdgeInsets.symmetric(horizontal: compact ? 12 : 18),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+          textStyle: TextStyle(
+              fontFamily: U4.font,
+              fontSize: compact ? 14 : 22,
+              fontWeight: FontWeight.w500)),
+      icon: const Text('Presets'),
+      label: const Icon(Icons.arrow_drop_down, size: 20),
+    );
+  }
+}
+
+/// Compressor knee segmented control: Soft (6) / Hard (0).
+class _KneeSeg extends StatelessWidget {
+  final ChannelStore store;
+  final bool compact;
+  const _KneeSeg({required this.store, required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    final knee = store.comp.knee;
+    final soft = knee >= 3;
+    Widget seg(String label, bool active, VoidCallback onTap) =>
+        Expanded(
+            child: GestureDetector(
+                onTap: onTap,
+                behavior: HitTestBehavior.opaque,
+                child: Container(
+                    height: compact ? 36 : 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                        color: active
+                            ? const Color(0xff262b14)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                        border: active
+                            ? Border.all(
+                                color: U4.cyan.withValues(alpha: 0.33))
+                            : null),
+                    child: Text(label,
+                        style: TextStyle(
+                            fontFamily: U4.font,
+                            fontSize: compact ? 14 : 22,
+                            fontWeight: FontWeight.w500,
+                            color: active
+                                ? U4.cyan
+                                : U4.text7)))));
+    void setKnee(double v) => store.setDynParam(DynKind.comp, 'knee', v);
+    return Expanded(
+        child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+                color: const Color(0xff262626),
+                borderRadius: BorderRadius.circular(12)),
+            child: Row(children: [
+              seg('Soft', soft, () => setKnee(6)),
+              const SizedBox(width: 4),
+              seg('Hard', !soft, () => setKnee(0)),
+            ])));
   }
 }
 
@@ -389,37 +1187,88 @@ class _InputTab extends StatelessWidget {
 // EQ tab: curve + RTA + HPF + band cards
 // ---------------------------------------------------------------------------
 
-class _EqTab extends StatelessWidget {
+class _EqTab extends StatefulWidget {
   final ChannelStore store;
   final ChannelWrites writes;
-  const _EqTab({required this.store, required this.writes});
+  final ValueChanged<ChannelFocus> onFocus;
+  const _EqTab(
+      {required this.store, required this.writes, required this.onFocus});
+
+  @override
+  State<_EqTab> createState() => _EqTabState();
+}
+
+class _EqTabState extends State<_EqTab> {
+  /// Local display toggle for the RTA overlay (no desk state involved).
+  bool _showRta = true;
+
+  void _pick(int band) {
+    widget.store.selectEqBand(band);
+    widget.onFocus(eqFreqFocus(widget.store, widget.writes, band));
+  }
 
   @override
   Widget build(BuildContext context) {
+    final store = widget.store;
+    final writes = widget.writes;
+    final onFocus = widget.onFocus;
     final eq = store.eq;
     final response = eqResponseDb(eq);
+    final compact = MediaQuery.sizeOf(context).width < 600;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        U4Section(
-          title: 'EQ curve',
-          trailing: U4Chip(
-            label: eq.on ? 'EQ In' : 'EQ Out',
+        _ProcessorHeader(
+            title: 'EQ',
             on: eq.on,
-            onTap: () => store.setEqOn(!eq.on),
-          ),
+            compact: compact,
+            onToggle: () => store.setEqOn(!eq.on)),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: _PresetsButton(store: store, compact: compact)),
+          const SizedBox(width: 8),
+          Expanded(
+              child: GestureDetector(
+                  onTap: () => setState(() => _showRta = !_showRta),
+                  behavior: HitTestBehavior.opaque,
+                  child: Container(
+                      height: compact ? 44 : 56,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                          color: _showRta
+                              ? const Color(0xff262b14)
+                              : const Color(0xff343434),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                              color: _showRta
+                                  ? U4.cyan.withValues(alpha: 0.27)
+                                  : const Color(0xff414141))),
+                      child: Text('RTA',
+                          style: TextStyle(
+                              fontFamily: U4.font,
+                              fontSize: compact ? 14 : 22,
+                              fontWeight: FontWeight.w500,
+                              color: _showRta
+                                  ? U4.cyan
+                                  : U4.text1))))),
+        ]),
+        const SizedBox(height: 8),
+        Opacity(
+          opacity: eq.on ? 1 : 0.55,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               ValueListenableBuilder<List<double>>(
                 valueListenable: store.spectrum,
                 builder: (context, bins, _) {
-                  final active = bins.any((b) => b > 0.02);
+                  final active =
+                      _showRta && bins.any((b) => b > 0.02);
                   return U4EqGraph(
                     eq: eq,
                     responseDb: response,
                     rtaBins: bins,
                     rtaActive: active,
-                    onSelectBand: store.selectEqBand,
+                    onSelectBand: _pick,
                     onNode: (band, f, g) {
                       if (band == 0) {
                         writes.queue('eq_hpf_f', f.clamp(20, 1000));
@@ -439,7 +1288,7 @@ class _EqTab extends StatelessWidget {
                 },
               ),
               const SizedBox(height: 6),
-              _BandDots(eq: eq, onPick: store.selectEqBand),
+              _BandDots(eq: eq, onPick: _pick),
             ],
           ),
         ),
@@ -480,6 +1329,8 @@ class _EqTab extends StatelessWidget {
                   max: 1000,
                   text: '${eq.hpfF.toStringAsFixed(0)} Hz',
                   defaultValue: 80,
+                  onFocus: () =>
+                      onFocus(eqFreqFocus(store, writes, 0)),
                   onInput: (v) {
                     writes.queue('eq_hpf_f', v);
                     store.setEqParam(0, 'f', v);
@@ -518,6 +1369,8 @@ class _EqTab extends StatelessWidget {
                   ][b.band],
                   color: Color(EqGraphGeom
                       .bandColors[b.band % EqGraphGeom.bandColors.length]),
+                  onFocus: () =>
+                      onFocus(eqFreqFocus(store, writes, b.band)),
                   onInput: (v) {
                     writes.queue('eq${b.band}_f', v);
                     store.setEqParam(b.band, 'f', v);
@@ -532,6 +1385,8 @@ class _EqTab extends StatelessWidget {
                   defaultValue: 0,
                   color: Color(EqGraphGeom
                       .bandColors[b.band % EqGraphGeom.bandColors.length]),
+                  onFocus: () =>
+                      onFocus(_eqGainFocus(store, writes, b.band)),
                   onInput: (v) {
                     writes.queue('eq${b.band}_g', v);
                     store.setEqParam(b.band, 'g', v);
@@ -546,6 +1401,8 @@ class _EqTab extends StatelessWidget {
                   defaultValue: 1.4,
                   color: Color(EqGraphGeom
                       .bandColors[b.band % EqGraphGeom.bandColors.length]),
+                  onFocus: () =>
+                      onFocus(_eqQFocus(store, writes, b.band)),
                   onInput: (v) {
                     writes.queue('eq${b.band}_q', v);
                     store.setEqParam(b.band, 'q', v);
@@ -592,28 +1449,34 @@ class _BandDots extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         for (var b = 0; b <= eq.bands.length; b++)
-          GestureDetector(
+          Semantics(
+            button: true,
+            selected: eq.selectedBand == b,
+            label: b == 0 ? 'High-pass filter band' : 'EQ band $b',
             onTap: () => onPick(b),
-            child: Container(
-              width: 36,
-              height: 36,
-              alignment: Alignment.center,
-              margin: const EdgeInsets.symmetric(horizontal: 2),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: eq.selectedBand == b
-                        ? Colors.white
-                        : Colors.transparent,
-                    width: 2),
-              ),
+            child: GestureDetector(
+              onTap: () => onPick(b),
               child: Container(
-                width: 18,
-                height: 18,
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                margin: const EdgeInsets.symmetric(horizontal: 2),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: Color(EqGraphGeom
-                      .bandColors[b % EqGraphGeom.bandColors.length]),
+                  border: Border.all(
+                      color: eq.selectedBand == b
+                          ? Colors.white
+                          : Colors.transparent,
+                      width: 2),
+                ),
+                child: Container(
+                  width: 18,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(EqGraphGeom
+                        .bandColors[b % EqGraphGeom.bandColors.length]),
+                  ),
                 ),
               ),
             ),
@@ -631,26 +1494,41 @@ class _DynTab extends StatelessWidget {
   final ChannelStore store;
   final ChannelWrites writes;
   final DynKind kind;
+  final ValueChanged<ChannelFocus> onFocus;
   const _DynTab(
-      {required this.store, required this.writes, required this.kind});
+      {required this.store,
+      required this.writes,
+      required this.kind,
+      required this.onFocus});
 
   @override
   Widget build(BuildContext context) {
     final dyn = kind == DynKind.gate ? store.gate : store.comp;
-    final color = kind == DynKind.gate ? U4.cyan : U4.meterAmber;
+    final color =
+        kind == DynKind.gate ? U4.cyan : const Color(0xffa285d6);
     final label = kind == DynKind.gate ? 'Gate' : 'Comp';
+    final compact = MediaQuery.sizeOf(context).width < 600;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        U4Section(
-          title: '$label transfer',
-          trailing: U4Chip(
-            label: dyn.on ? '$label In' : '$label Out',
+        _ProcessorHeader(
+            title: label,
             on: dyn.on,
-            accent: color,
-            onTap: () => store.setDynOn(kind, !dyn.on),
-          ),
+            compact: compact,
+            onToggle: () => store.setDynOn(kind, !dyn.on)),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: _PresetsButton(store: store, compact: compact)),
+          if (kind == DynKind.comp) ...[
+            const SizedBox(width: 8),
+            _KneeSeg(store: store, compact: compact),
+          ],
+        ]),
+        const SizedBox(height: 8),
+        Opacity(
+          opacity: dyn.on ? 1 : 0.55,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               ValueListenableBuilder<double>(
                 valueListenable: store.levelDb,
@@ -698,6 +1576,16 @@ class _DynTab extends StatelessWidget {
                   text: k.text,
                   defaultValue: k.dflt,
                   color: color,
+                  onFocus: () => onFocus(ChannelFocus(
+                      title: label,
+                      label: k.label,
+                      text: () => _dynLiveText(store, kind, k.prop),
+                      min: k.min,
+                      max: k.max,
+                      apply: (v) {
+                        writes.queue('${kind.name}_${k.prop}', v);
+                        store.setDynParam(kind, k.prop, v);
+                      })),
                   onInput: (v) {
                     writes.queue('${kind.name}_${k.prop}', v);
                     store.setDynParam(kind, k.prop, v);
@@ -776,110 +1664,9 @@ List<_KnobDef> _dynKnobs(DynKind kind, ChannelDynVm d) {
 }
 
 // ---------------------------------------------------------------------------
-// Sends tab
+// (Sends/groups/presets left the tab bar: sends + assignments live inside
+// Input above; presets is a per-processor dropdown in the settings row.)
 // ---------------------------------------------------------------------------
-
-class _SendsTab extends StatelessWidget {
-  final ChannelStore store;
-  const _SendsTab({required this.store});
-
-  @override
-  Widget build(BuildContext context) {
-    final sends = store.sends;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        U4Section(
-          title: 'Sends · ${sends.length}',
-          child: sends.isEmpty
-              ? const Text('No send slots on this desk.',
-                  style: TextStyle(fontSize: 13, color: U4.text7))
-              : Column(
-                  children: [
-                    for (final s in sends) ...[
-                      U4SendRow(
-                        send: s,
-                        onLevel: (v) => store.setSendLevel(s.slot, v),
-                        onMute: () => store.setSendMute(s.slot, !s.muted),
-                        onTapCycle: () {
-                          final opts = s.tapOptions;
-                          if (opts.isEmpty) return;
-                          final cur = s.tap ?? opts.first;
-                          final next =
-                              opts[(opts.indexOf(cur) + 1) % opts.length];
-                          store.setSendTap(s.slot, next);
-                        },
-                      ),
-                      const SizedBox(height: 6),
-                    ],
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Groups tab: subgroup + mute-group assignment
-// ---------------------------------------------------------------------------
-
-class _GroupsTab extends StatelessWidget {
-  final ChannelStore store;
-  const _GroupsTab({required this.store});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        U4Section(
-          title: 'Subgroups',
-          child: store.subgroupCount == 0
-              ? const Text('No subgroups on this desk.',
-                  style: TextStyle(fontSize: 13, color: U4.text7))
-              : Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (var g = 1; g <= store.subgroupCount; g++)
-                      _AssignChip(
-                        label: 'Sub $g',
-                        assigned: store.subgroupAssigned(g),
-                        onTap: () {
-                          final cur = store.subgroupAssigned(g) ?? false;
-                          store.cmdSubgroupAssign(g, !cur);
-                        },
-                      ),
-                  ],
-                ),
-        ),
-        const SizedBox(height: 8),
-        U4Section(
-          title: 'Mute groups',
-          child: store.muteGroupCount == 0
-              ? const Text('No mute groups on this desk.',
-                  style: TextStyle(fontSize: 13, color: U4.text7))
-              : Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    for (var g = 1; g <= store.muteGroupCount; g++)
-                      _AssignChip(
-                        label: 'MG $g',
-                        assigned: store.muteGroupAssigned(g),
-                        onTap: () {
-                          final cur = store.muteGroupAssigned(g) ?? false;
-                          store.cmdMuteGroupAssign(g, !cur);
-                        },
-                      ),
-                  ],
-                ),
-        ),
-      ],
-    );
-  }
-}
 
 class _AssignChip extends StatelessWidget {
   final String label;
@@ -912,50 +1699,6 @@ class _AssignChip extends StatelessWidget {
                   color: on ? U4.text1 : U4.text7)),
         ),
       ),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Presets tab
-// ---------------------------------------------------------------------------
-
-class _PresetsTab extends StatelessWidget {
-  final ChannelStore store;
-  const _PresetsTab({required this.store});
-
-  @override
-  Widget build(BuildContext context) {
-    return U4Section(
-      title: 'Strip presets',
-      child: store.presets.isEmpty
-          ? const Text('No presets stored.',
-              style: TextStyle(fontSize: 13, color: U4.text7))
-          : Column(
-              children: [
-                for (final p in store.presets) ...[
-                  GestureDetector(
-                    onTap: () => store.recallPreset(p),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 14),
-                      decoration: BoxDecoration(
-                        color: U4.tileBg,
-                        border: Border.all(color: U4.tileBorder),
-                        borderRadius: U4.rBtn,
-                      ),
-                      child: Text(p,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style:
-                              const TextStyle(fontSize: 14, color: U4.text1)),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                ],
-              ],
-            ),
     );
   }
 }

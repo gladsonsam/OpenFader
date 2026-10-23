@@ -1,22 +1,22 @@
 //! Live-rig proof for the six mechanism items (owner XR18 on the LAN).
 //!
 //! IGNORED by default (`cargo test --workspace` skips these): run only on
-//! a LAN with an XR18, desk address via `OPENMIX_RIG_ADDR` (default
-//! `192.168.1.20`), with `OPENMIX_LIVE_RIG=1 cargo test -p openmix-proto-xair
+//! a LAN with an XR18, desk address via `OPENFADER_RIG_ADDR` (default
+//! `192.168.1.20`), with `OPENFADER_LIVE_RIG=1 cargo test -p openfader-proto-xair
 //! --test live_rig -- --ignored`. Reads plus same-value roundtrips only,
 //! except the single `/-action/clearsolo` fire-and-forget (speakers-safe,
 //! monitoring-side only) and read-only measurement queries. NEVER run from
 //! CI or off-LAN: every test fails closed without the env var.
 
-use openmix_core::{MixerDriver, ParamValue, StripId};
-use openmix_proto_xair::XAirDriver;
+use openfader_core::{MixerDriver, ParamValue, StripId};
+use openfader_proto_xair::XAirDriver;
 
 fn rig_addr() -> String {
-    std::env::var("OPENMIX_RIG_ADDR").unwrap_or_else(|_| "192.168.1.20".to_string())
+    std::env::var("OPENFADER_RIG_ADDR").unwrap_or_else(|_| "192.168.1.20".to_string())
 }
 
 fn live() -> bool {
-    std::env::var("OPENMIX_LIVE_RIG").as_deref() == Ok("1")
+    std::env::var("OPENFADER_LIVE_RIG").as_deref() == Ok("1")
 }
 
 async fn connected() -> XAirDriver {

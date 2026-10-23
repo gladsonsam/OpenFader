@@ -105,7 +105,7 @@ impl Policy {
 
     /// Pre-write check for strip-targeted commands (`fader`/`mute`/`param`).
     ///
-    /// The engine (`openmix-engine`) calls these per connected client so one
+    /// The engine (`openfader-engine`) calls these per connected client so one
     /// session can host several roles; [`CheckedDriver`] uses the same paths.
     /// Reads are never blocked.
     pub fn allow_strip(&self, strip: StripId) -> anyhow::Result<()> {

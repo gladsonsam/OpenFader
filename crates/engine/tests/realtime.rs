@@ -5,11 +5,11 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use openmix_engine::protocol::{
+use openfader_engine::protocol::{
     db_to_u8, level_to_u16, u8_to_db, u16_to_level, BIN_HEADER_LEN, BIN_TYPE_GR,
     BIN_TYPE_METERS, BIN_VERSION, GR_DB_MAX,
 };
-use openmix_engine::{Cmd, Engine, EngineConfig, Event, SharedEvent};
+use openfader_engine::{Cmd, Engine, EngineConfig, Event, SharedEvent};
 
 fn golden_bin_dir() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden_bin")
@@ -24,7 +24,7 @@ async fn new_engine() -> Arc<Engine> {
 /// Drain the 6-frame attach snapshot (`you`, `state`, `shows`, `clients`,
 /// `locks`, `caps`).
 async fn drain_snapshot(
-    handle: &mut openmix_engine::engine::ClientHandle,
+    handle: &mut openfader_engine::engine::ClientHandle,
 ) -> Vec<SharedEvent> {
     let mut out = Vec::new();
     for _ in 0..6 {
@@ -39,7 +39,7 @@ async fn drain_snapshot(
 }
 
 async fn wait_for(
-    handle: &mut openmix_engine::engine::ClientHandle,
+    handle: &mut openfader_engine::engine::ClientHandle,
     want: impl Fn(&Event) -> bool,
 ) -> SharedEvent {
     let deadline = Instant::now() + Duration::from_secs(15);

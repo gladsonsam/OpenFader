@@ -4,8 +4,8 @@
 //!
 //! - Behringer XR18 firmware OSC map, FW 1.14 (xr-meters `parameters.txt`):
 //!   every channel/bus strip carries a `grp/` node with `dca` + `mute`
-//!   leaves; the X-Air Edit 1.8.1 protocol map (`docs/xair-protocol.md`,
-//!   `docs/captures/xair-edit-1.8.1/live_fullplane_2026-10-19.json`) shows
+//!   leaves; the X-Air Edit 1.8.1 protocol map (notes plus the
+//!   X-Air Edit 1.8.1 live full-plane capture (2026-10-19)) shows
 //!   `/ch/NN/grp/dca`, `/ch/NN/grp/mute` (and the `/bus/N`, `/rtn/N`,
 //!   `/rtn/aux`, `/fxsend/N` parallels) answering int `0`, with the
 //!   two-int `/ch/NN/grp` container reading `(dca, mute)`.
@@ -33,7 +33,7 @@ pub const GROUP_MASK: i32 = 0x0F;
 /// OSC address of one strip's DCA-assignment bitmask (`grp/dca`, int).
 ///
 /// ```
-/// # use openmix_proto_xair::groups::grp_dca;
+/// # use openfader_proto_xair::groups::grp_dca;
 /// assert_eq!(grp_dca("/ch/01"), "/ch/01/grp/dca");
 /// assert_eq!(grp_dca("/bus/1"), "/bus/1/grp/dca");
 /// ```
@@ -45,7 +45,7 @@ pub fn grp_dca(root: &str) -> String {
 /// (`grp/mute`, int).
 ///
 /// ```
-/// # use openmix_proto_xair::groups::grp_mute;
+/// # use openfader_proto_xair::groups::grp_mute;
 /// assert_eq!(grp_mute("/ch/01"), "/ch/01/grp/mute");
 /// assert_eq!(grp_mute("/rtn/aux"), "/rtn/aux/grp/mute");
 /// ```

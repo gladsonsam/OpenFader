@@ -1,7 +1,7 @@
 //! Access-role enforcement against the SimDriver.
-use openmix_core::access::{CheckedDriver, Policy};
-use openmix_core::{MixerDriver, StripId};
-use openmix_sim::SimDriver;
+use openfader_core::access::{CheckedDriver, Policy};
+use openfader_core::{MixerDriver, StripId};
+use openfader_sim::SimDriver;
 
 async fn driven() -> SimDriver {
     let d = SimDriver::new();

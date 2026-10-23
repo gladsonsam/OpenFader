@@ -106,6 +106,10 @@ class U4Knob extends StatefulWidget {
   final bool enabled;
   final ValueChanged<double> onInput;
 
+  /// Reports user focus (tap / drag start / double-tap) so the page's top
+  /// readout can track this knob's numeric value. Never changes the value.
+  final VoidCallback? onFocus;
+
   const U4Knob({
     super.key,
     required this.label,
@@ -118,6 +122,7 @@ class U4Knob extends StatefulWidget {
     this.color = U4.meterGreen,
     this.fine = false,
     this.enabled = true,
+    this.onFocus,
   });
 
   @override
@@ -130,9 +135,15 @@ class _U4KnobState extends State<U4Knob> {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: '${widget.label} knob, ${widget.text}',
+      onTap: widget.enabled ? widget.onFocus : null,
+      child: GestureDetector(
+        onTap: widget.enabled ? widget.onFocus : null,
       onVerticalDragStart: widget.enabled
           ? (d) {
+              widget.onFocus?.call();
               _startN = toN(widget.min, widget.max, widget.value);
               _startValue = widget.value;
             }
@@ -145,8 +156,12 @@ class _U4KnobState extends State<U4Knob> {
               widget.onInput(v);
             }
           : null,
-      onDoubleTap:
-          widget.enabled ? () => widget.onInput(widget.defaultValue) : null,
+      onDoubleTap: widget.enabled
+          ? () {
+              widget.onFocus?.call();
+              widget.onInput(widget.defaultValue);
+            }
+          : null,
       child: Opacity(
         opacity: widget.enabled ? 1 : 0.45,
         child: Column(
@@ -181,6 +196,7 @@ class _U4KnobState extends State<U4Knob> {
               const SizedBox.shrink(),
           ],
         ),
+      ),
       ),
     );
   }
