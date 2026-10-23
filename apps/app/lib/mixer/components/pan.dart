@@ -5,9 +5,14 @@ import '../design.dart';
 class MixerPan extends StatefulWidget {
   final String name;
   final double value;
+  final double visualHeight;
   final ValueChanged<double>? onChanged;
   const MixerPan(
-      {super.key, required this.name, required this.value, this.onChanged});
+      {super.key,
+      required this.name,
+      required this.value,
+      this.visualHeight = 44,
+      this.onChanged});
   @override
   State<MixerPan> createState() => _MixerPanState();
 }
@@ -51,12 +56,19 @@ class _MixerPanState extends State<MixerPan> {
                   onHorizontalDragCancel: _release,
                   onDoubleTap: widget.onChanged == null ? null : () => _send(0),
                   child: SizedBox(
-                      height: 44,
+                      height:
+                          widget.visualHeight < 44 ? 44 : widget.visualHeight,
                       width: double.infinity,
-                      child: CustomPaint(
-                          painter: _PanPainter(
-                              _drag == null ? widget.value : _snap(_drag!),
-                              _drag != null)))))));
+                      child: Center(
+                          child: SizedBox(
+                              width: double.infinity,
+                              height: widget.visualHeight,
+                              child: CustomPaint(
+                                  painter: _PanPainter(
+                                      _drag == null
+                                          ? widget.value
+                                          : _snap(_drag!),
+                                      _drag != null)))))))));
 }
 
 class _PanPainter extends CustomPainter {
@@ -65,7 +77,10 @@ class _PanPainter extends CustomPainter {
   const _PanPainter(this.value, this.held);
   @override
   void paint(Canvas c, Size s) {
-    mixerBox(c, Offset.zero & s, MixerDesign.panel,
+    c.save();
+    c.scale(1, s.height / 44);
+    s = Size(s.width, 44);
+    mixerBox(c, Offset.zero & s, MixerDesign.well,
         radius: 12, border: held ? MixerDesign.selectedLine : null);
     final left = 12.0, right = s.width - 12, center = s.width / 2;
     final bow = Path()
@@ -93,6 +108,7 @@ class _PanPainter extends CustomPainter {
           c, Rect.fromLTWH(x - 5 + n * 4, 11, 1, 22), const Color(0xff8e8e8a),
           radius: 1);
     }
+    c.restore();
   }
 
   @override

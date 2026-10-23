@@ -1,9 +1,9 @@
-import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'controller.dart';
 import 'design.dart';
+import 'geometry.dart';
 import '../settings/prefs.dart';
 import 'components/banks.dart';
 import 'components/strip.dart';
@@ -38,8 +38,8 @@ class _MixerPageState extends State<MixerPage> {
     super.initState();
     // Retain horizontal scroll across tab switches (channel home returns
     // to the same mixer state).
-    _scroll = ScrollController(
-        initialScrollOffset: widget.controller.scrollOffset);
+    _scroll =
+        ScrollController(initialScrollOffset: widget.controller.scrollOffset);
     // The first frame is a return to the retained bank/page, not a change
     // of bank/page that should reset its saved horizontal position.
     _bank = widget.controller.store.bank;
@@ -61,19 +61,9 @@ class _MixerPageState extends State<MixerPage> {
           bottom: false,
           child: LayoutBuilder(builder: (context, constraints) {
             final controller = widget.controller;
-            final narrow = constraints.maxWidth < 600;
-            final stripWidthScale =
-                constraints.maxWidth > constraints.maxHeight ? .9 : 1.0;
-            final mobile = narrow || constraints.maxHeight < 500;
-            final sideRail =
-                constraints.maxWidth >= 1000 && constraints.maxHeight >= 580;
-            final basePageSize = constraints.maxWidth >= 2100
-                ? 16
-                : constraints.maxWidth >= 1700
-                    ? 12
-                    : 8;
-            final pageSize =
-                narrow ? basePageSize : (basePageSize / stripWidthScale).ceil();
+            final mobile = constraints.maxWidth < 600;
+            final sideRail = !mobile;
+            const pageSize = 8;
             if (_configuredSize != pageSize) {
               _configuredSize = pageSize;
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -95,14 +85,11 @@ class _MixerPageState extends State<MixerPage> {
                     });
                   }
                   final channels = controller.channels;
-                  final contentWidth =
-                      constraints.maxWidth - (sideRail ? 96 : 0);
-                  final stripWidth = (narrow
-                          ? 92.0
-                          : (contentWidth /
-                                  (channels.length.clamp(1, basePageSize) + 1))
-                              .clamp(108.0, 190.0)) *
-                      stripWidthScale;
+                  final railWidth = sideRail
+                      ? MixerGeometry.railWidth(constraints.maxWidth)
+                      : 0.0;
+                  final stripWidth =
+                      MixerGeometry.stripWidth(constraints.maxWidth, mobile);
                   Widget strip(MixerChannel ch) => MixerStrip(
                       key: ValueKey(ch.key),
                       channel: ch,
@@ -150,8 +137,7 @@ class _MixerPageState extends State<MixerPage> {
                             // Design bus bar: full-width strip in the
                             // selected bus colour between toolbar + strips.
                             Container(
-                                height: mobile ? 6 : 8,
-                                color: MixerDesign.bus),
+                                height: mobile ? 6 : 8, color: MixerDesign.bus),
                             if (controller.error.isNotEmpty)
                               Material(
                                   color: const Color(0xff54221d),
@@ -219,19 +205,18 @@ class _MixerPageState extends State<MixerPage> {
                                                   itemBuilder: (context, i) =>
                                                       strip(channels[i])))),
                                   SizedBox(
-                                      width: math.min(
-                                          stripWidth, contentWidth * .32),
+                                      width: stripWidth,
                                       child: strip(controller.master)),
                                   if (sideRail)
-                                    MixerBanks(
-                                        controller: controller, vertical: true),
+                                    SizedBox(
+                                        width: railWidth,
+                                        child: MixerBanks(
+                                            controller: controller,
+                                            vertical: true)),
                                 ])),
                             if (!sideRail && !mobile)
                               MixerBanks(
                                   controller: controller, vertical: false),
-                            if (!mobile)
-                              SizedBox(
-                                  height: MediaQuery.paddingOf(context).bottom),
                           ])));
                 });
           })));
