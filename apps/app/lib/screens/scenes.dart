@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../palette.dart';
 import '../widgets/console_button.dart';
 
 /// One numbered snapshot (engine `scenes` event entry).
@@ -73,7 +74,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: U4.page,
+      backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.store,
@@ -84,25 +85,28 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text('SCENES',
+                  Text('SCENES',
                       style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.6,
-                          color: U4.text1)),
+                          color: ConsolePalette.of(context).text1)),
                   if (!store.online)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 6),
                       child: Text(
                         'Offline — snapshots need a live desk.',
-                        style: TextStyle(fontSize: 12, color: U4.text7),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: ConsolePalette.of(context).text7),
                       ),
                     ),
                   if (store.status != null)
                     Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(store.status!,
-                            style: const TextStyle(color: U4.text4))),
+                            style: TextStyle(
+                                color: ConsolePalette.of(context).text4))),
                   if (store.busy)
                     const Padding(
                         padding: EdgeInsets.only(top: 6),
@@ -132,8 +136,10 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                   ),
                   const SizedBox(height: 6),
                   if (store.shows.isEmpty)
-                    const Text('no shows yet',
-                        style: TextStyle(fontSize: 12, color: U4.text7))
+                    Text('no shows yet',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: ConsolePalette.of(context).text7))
                   else ...[
                     Wrap(spacing: 6, runSpacing: 6, children: [
                       for (final show in store.shows)
@@ -142,8 +148,9 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                 ? null
                                 : () => store.selectShow(show),
                             style: OutlinedButton.styleFrom(
-                                foregroundColor:
-                                    show == store.show ? U4.cyan : U4.text1),
+                                foregroundColor: show == store.show
+                                    ? ConsolePalette.of(context).cyan
+                                    : ConsolePalette.of(context).text1),
                             child: Text(show)),
                     ]),
                     for (final scene in store.showScenes)
@@ -174,18 +181,19 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 8),
                             decoration: BoxDecoration(
-                              color: U4.well,
-                              border: Border.all(color: U4.lineCtl),
+                              color: ConsolePalette.of(context).well,
+                              border: Border.all(
+                                  color: ConsolePalette.of(context).lineCtl),
                               borderRadius: U4.rBtn,
                             ),
-                            child: const Text('Clear all',
+                            child: Text('Clear all',
                                 textAlign: TextAlign.center,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
-                                    color: U4.text1)),
+                                    color: ConsolePalette.of(context).text1)),
                           ),
                         ),
                     ],
@@ -205,8 +213,10 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                   ),
                   const SizedBox(height: 6),
                   if (store.entries.isEmpty)
-                    const Text('no snapshots saved',
-                        style: TextStyle(fontSize: 12, color: U4.text7))
+                    Text('no snapshots saved',
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: ConsolePalette.of(context).text7))
                   else
                     GridView.builder(
                       shrinkWrap: true,
@@ -226,10 +236,13 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 10, vertical: 8),
                           decoration: BoxDecoration(
-                            color: e.current ? U4.selected : U4.panel,
+                            color: e.current
+                                ? ConsolePalette.of(context).selected
+                                : ConsolePalette.of(context).panel,
                             border: Border.all(
-                                color:
-                                    e.current ? U4.meterGreen : U4.meterAmber,
+                                color: e.current
+                                    ? ConsolePalette.of(context).meterGreen
+                                    : ConsolePalette.of(context).meterAmber,
                                 width: e.current ? 2 : 1),
                             borderRadius: U4.rBtn,
                           ),
@@ -240,22 +253,27 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                       child: TextField(
                                         controller: _renameCtl,
                                         autofocus: true,
-                                        style: const TextStyle(
-                                            fontSize: 13, color: U4.text1),
-                                        decoration: const InputDecoration(
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            color: ConsolePalette.of(context)
+                                                .text1),
+                                        decoration: InputDecoration(
                                           isDense: true,
                                           border: InputBorder.none,
                                           enabledBorder: InputBorder.none,
                                           disabledBorder: InputBorder.none,
                                           focusedBorder: UnderlineInputBorder(
-                                              borderSide:
-                                                  BorderSide(color: U4.cyan)),
+                                              borderSide: BorderSide(
+                                                  color:
+                                                      ConsolePalette.of(context)
+                                                          .cyan)),
                                           filled: false,
                                           contentPadding: EdgeInsets.symmetric(
                                               vertical: 12),
                                           hintText: 'name…',
-                                          hintStyle:
-                                              TextStyle(color: U4.text10),
+                                          hintStyle: TextStyle(
+                                              color: ConsolePalette.of(context)
+                                                  .text10),
                                         ),
                                         onSubmitted: (v) {
                                           store.rename(e.number, v.trim());
@@ -269,10 +287,11 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                             e.number, _renameCtl.text.trim());
                                         setState(() => _renaming = null);
                                       },
-                                      child: const Text('✓',
+                                      child: Text('✓',
                                           style: TextStyle(
                                               fontSize: 16,
-                                              color: U4.meterGreen)),
+                                              color: ConsolePalette.of(context)
+                                                  .meterGreen)),
                                     ),
                                   ],
                                 )
@@ -284,19 +303,22 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                       children: [
                                         Text(
                                           e.number.toString().padLeft(3, '0'),
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                               fontSize: 11,
                                               fontWeight: FontWeight.w700,
-                                              color: U4.text7),
+                                              color: ConsolePalette.of(context)
+                                                  .text7),
                                         ),
                                         if (e.current)
-                                          const Padding(
+                                          Padding(
                                             padding: EdgeInsets.only(left: 6),
                                             child: Text('Current',
                                                 style: TextStyle(
                                                     fontSize: 10,
                                                     fontWeight: FontWeight.w700,
-                                                    color: U4.meterGreen)),
+                                                    color: ConsolePalette.of(
+                                                            context)
+                                                        .meterGreen)),
                                           ),
                                       ],
                                     ),
@@ -307,10 +329,11 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                           e.name,
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                               fontSize: 14,
                                               fontWeight: FontWeight.w600,
-                                              color: U4.text1),
+                                              color: ConsolePalette.of(context)
+                                                  .text1),
                                         ),
                                       ),
                                     ),
@@ -318,11 +341,13 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                       children: [
                                         GestureDetector(
                                           onTap: () => store.recall(e.number),
-                                          child: const Text('RECALL',
+                                          child: Text('RECALL',
                                               style: TextStyle(
                                                   fontSize: 11,
                                                   fontWeight: FontWeight.w700,
-                                                  color: U4.meterGreen)),
+                                                  color:
+                                                      ConsolePalette.of(context)
+                                                          .meterGreen)),
                                         ),
                                         const SizedBox(width: 12),
                                         GestureDetector(
@@ -331,18 +356,22 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                             setState(
                                                 () => _renaming = e.number);
                                           },
-                                          child: const Text('RENAME',
+                                          child: Text('RENAME',
                                               style: TextStyle(
                                                   fontSize: 11,
-                                                  color: U4.text7)),
+                                                  color:
+                                                      ConsolePalette.of(context)
+                                                          .text7)),
                                         ),
                                         const SizedBox(width: 12),
                                         GestureDetector(
                                           onTap: () => store.remove(e.number),
-                                          child: const Text('DELETE',
+                                          child: Text('DELETE',
                                               style: TextStyle(
                                                   fontSize: 11,
-                                                  color: Color(0xFFFF8A80))),
+                                                  color:
+                                                      ConsolePalette.of(context)
+                                                          .mute)),
                                         ),
                                       ],
                                     ),
@@ -370,8 +399,10 @@ class _SectionTitle extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Text(text,
-          style: const TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w700, color: U4.text4)),
+          style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: ConsolePalette.of(context).text4)),
     );
   }
 }
@@ -397,24 +428,26 @@ class _NameRow extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 10),
             decoration: BoxDecoration(
-              color: U4.well,
-              border: Border.all(color: U4.railBorder),
+              color: ConsolePalette.of(context).well,
+              border: Border.all(color: ConsolePalette.of(context).railBorder),
               borderRadius: U4.rBtn,
             ),
             child: TextField(
               controller: controller,
-              style: const TextStyle(fontSize: 13, color: U4.text1),
+              style: TextStyle(
+                  fontSize: 13, color: ConsolePalette.of(context).text1),
               decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
                 disabledBorder: InputBorder.none,
                 focusedBorder: UnderlineInputBorder(
-                    borderSide: BorderSide(color: U4.cyan)),
+                    borderSide:
+                        BorderSide(color: ConsolePalette.of(context).cyan)),
                 filled: false,
                 contentPadding: EdgeInsets.symmetric(vertical: 12),
                 hintText: hint,
-                hintStyle: const TextStyle(color: U4.text10),
+                hintStyle: TextStyle(color: ConsolePalette.of(context).text10),
               ),
               onSubmitted: (_) => onAction(),
             ),

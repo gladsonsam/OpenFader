@@ -1,3 +1,4 @@
+import '../../palette.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../design.dart';
@@ -31,16 +32,16 @@ class MixerNameplate extends StatelessWidget {
           child: LayoutBuilder(builder: (context, box) {
             final sx = box.maxWidth / (compact ? 104.2 : 192.2);
             final tape = channel.master
-                ? MixerDesign.bus
-                : MixerDesign.tapes[(channel.channel ?? 0) % 8];
+                ? ConsolePalette.of(context).bus
+                : ConsolePalette.of(context).tapes[(channel.channel ?? 0) % 8];
             return Stack(clipBehavior: Clip.none, children: [
               if (!channel.master)
                 Positioned(
                     left: (compact ? 6 : 3) * sx,
                     top: 2,
                     child: Text(channel.number,
-                        style: MixerDesign.type((compact ? 15 : 20) * sx,
-                            color: MixerDesign.mutedText,
+                        style: mixerType(context, (compact ? 15 : 20) * sx,
+                            color: ConsolePalette.of(context).mutedText,
                             weight: FontWeight.w600))),
               Positioned(
                   left: (compact ? 24 : 46) * sx,
@@ -62,8 +63,8 @@ class MixerNameplate extends StatelessWidget {
                           child: Text(channel.name,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: MixerDesign.type(fontSize,
-                                  color: MixerDesign.well,
+                              style: mixerType(context, fontSize,
+                                  color: ConsolePalette.of(context).inkOn(tape),
                                   weight: FontWeight.w600))))),
               if (channel.master)
                 Positioned(
@@ -77,9 +78,10 @@ class MixerNameplate extends StatelessWidget {
                             height: (compact ? 18 : 26) * sx,
                             alignment: Alignment.center,
                             child: Text('LR',
-                                style: MixerDesign.type(
-                                    (compact ? 10 : 14) * sx,
-                                    color: MixerDesign.well,
+                                style: mixerType(
+                                    context, (compact ? 10 : 14) * sx,
+                                    color:
+                                        ConsolePalette.of(context).inkOn(tape),
                                     weight: FontWeight.w700))))),
             ]);
           })));

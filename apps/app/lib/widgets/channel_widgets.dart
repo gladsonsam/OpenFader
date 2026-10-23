@@ -1,3 +1,4 @@
+import '../palette.dart';
 // Channel DSP widgets: custom-painted EQ curve + RTA overlay, dyn transfer
 // curves + GR meter, touch knobs and section cards. No Material form
 // widgets: every DSP control is a CustomPainter + GestureDetector in ui4
@@ -36,8 +37,8 @@ class U4Section extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: U4.panel,
-        border: Border.all(color: U4.linePanel),
+        color: ConsolePalette.of(context).panel,
+        border: Border.all(color: ConsolePalette.of(context).linePanel),
         borderRadius: U4.rBtn,
       ),
       child: Column(
@@ -47,8 +48,10 @@ class U4Section extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(title,
-                    style: const TextStyle(
-                        fontFamily: U4.font, fontSize: 12, color: U4.text7)),
+                    style: TextStyle(
+                        fontFamily: U4.font,
+                        fontSize: 12,
+                        color: ConsolePalette.of(context).text7)),
               ),
               if (trailing != null) trailing!,
             ],
@@ -103,7 +106,7 @@ class U4Knob extends StatefulWidget {
   final double max;
   final String text;
   final double defaultValue;
-  final Color color;
+  final Color? color;
   final bool fine;
   final bool enabled;
   final ValueChanged<double> onInput;
@@ -121,7 +124,7 @@ class U4Knob extends StatefulWidget {
     required this.text,
     required this.defaultValue,
     required this.onInput,
-    this.color = U4.meterGreen,
+    this.color,
     this.fine = false,
     this.enabled = true,
     this.onFocus,
@@ -177,8 +180,9 @@ class _U4KnobState extends State<U4Knob> {
                 size: Size(AppDesign.largeTargets ? 80 : 68,
                     AppDesign.largeTargets ? 80 : 68),
                 painter: _KnobPainter(
+                  palette: ConsolePalette.of(context),
                   n: toN(widget.min, widget.max, widget.value),
-                  color: widget.color,
+                  color: widget.color ?? ConsolePalette.of(context).meterGreen,
                 ),
               ),
               const SizedBox(height: 4),
@@ -186,16 +190,18 @@ class _U4KnobState extends State<U4Knob> {
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                      fontFamily: U4.font, fontSize: 11, color: U4.text7)),
+                  style: TextStyle(
+                      fontFamily: U4.font,
+                      fontSize: 11,
+                      color: ConsolePalette.of(context).text7)),
               Text(widget.text,
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                       fontFamily: U4.font,
                       fontSize: 12,
-                      color: U4.text1,
+                      color: ConsolePalette.of(context).text1,
                       fontFeatures: [FontFeature.tabularFigures()])),
             ],
           ),
@@ -206,10 +212,11 @@ class _U4KnobState extends State<U4Knob> {
 }
 
 class _KnobPainter extends CustomPainter {
+  final ConsolePalette palette;
   final double n;
   final Color color;
 
-  _KnobPainter({required this.n, required this.color});
+  _KnobPainter({required this.palette, required this.n, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -218,7 +225,7 @@ class _KnobPainter extends CustomPainter {
     const sweep0 = math.pi * 0.75;
     const sweep1 = math.pi * 2.25;
     final bg = Paint()
-      ..color = U4.railBorder
+      ..color = palette.railBorder
       ..style = PaintingStyle.stroke
       ..strokeWidth = 5
       ..strokeCap = StrokeCap.round;
@@ -238,12 +245,12 @@ class _KnobPainter extends CustomPainter {
       ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(c, c + Offset(math.cos(a), math.sin(a)) * (r - 4), p);
-    canvas.drawCircle(c, 3, Paint()..color = U4.text1);
+    canvas.drawCircle(c, 3, Paint()..color = palette.text1);
   }
 
   @override
   bool shouldRepaint(covariant _KnobPainter old) =>
-      old.n != n || old.color != color;
+      old.palette != palette || old.n != n || old.color != color;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,12 +260,14 @@ class _KnobPainter extends CustomPainter {
 /// EQ response painter: grid + summed curve + band nodes + live RTA area
 /// overlay (rtaOverlay.ts: peak-hold handled by the owner feeding [rtaBins]).
 class EqCurvePainter extends CustomPainter {
+  final ConsolePalette palette;
   final List<double> responseDb; // EqGraphGeom.n + 1 samples
   final ChannelEqVm eq;
   final List<double>? rtaBins; // 0..1 magnitudes, RTA_BINS wide
   final bool rtaActive;
 
   EqCurvePainter({
+    required this.palette,
     required this.responseDb,
     required this.eq,
     this.rtaBins,
@@ -284,12 +293,12 @@ class EqCurvePainter extends CustomPainter {
     final sx = size.width / EqGraphGeom.w;
     final sy = size.height / EqGraphGeom.h;
     void label(String text, Offset position,
-        {Color color = U4.text7, double font = 10, bool centered = false}) {
+        {Color? color, double font = 10, bool centered = false}) {
       final painter = TextPainter(
           text: TextSpan(
               text: text,
-              style:
-                  AppDesign.type(font, color: color, weight: FontWeight.w500)),
+              style: AppDesign.type(font,
+                  color: color ?? palette.text7, weight: FontWeight.w500)),
           textDirection: TextDirection.ltr)
         ..layout();
       painter.paint(
@@ -299,7 +308,7 @@ class EqCurvePainter extends CustomPainter {
     }
 
     final grid = Paint()
-      ..color = U4.linePanel
+      ..color = palette.linePanel
       ..strokeWidth = 1;
     for (var decade = 20.0; decade < 20000; decade *= 10) {
       for (var step = 1; step < 10; step++) {
@@ -336,11 +345,8 @@ class EqCurvePainter extends CustomPainter {
       }
       area.lineTo(size.width, size.height / 2);
       area.close();
-      canvas.drawPath(
-          area,
-          Paint()
-            ..color = Color(EqGraphGeom.bandColors[band.band])
-                .withValues(alpha: .25));
+      canvas.drawPath(area,
+          Paint()..color = palette.bandColor(band.band).withValues(alpha: .25));
     }
     // RTA overlay under the curve (verified audio_spectrum frames only;
     // the owner hides it when bins carry no signal).
@@ -356,7 +362,7 @@ class EqCurvePainter extends CustomPainter {
       path.lineTo(size.width, size.height);
       path.close();
       canvas.drawPath(
-          path, Paint()..color = AppDesign.meter.withValues(alpha: .2));
+          path, Paint()..color = palette.meter.withValues(alpha: .2));
     }
     // Summed curve + fill to 0 dB.
     if (responseDb.isNotEmpty) {
@@ -378,19 +384,20 @@ class EqCurvePainter extends CustomPainter {
       final lastX = size.width;
       fill.lineTo(lastX, zeroY);
       fill.close();
-      canvas.drawPath(fill, Paint()..color = U4.text7.withValues(alpha: .12));
+      canvas.drawPath(
+          fill, Paint()..color = palette.text7.withValues(alpha: .12));
       canvas.drawPath(
         curve,
         Paint()
-          ..color = U4.text1
+          ..color = palette.text1
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2,
       );
     }
     void node(Offset point, int band, bool on) {
-      final color = Color(EqGraphGeom.bandColors[band]);
+      final color = palette.bandColor(band);
       final radius = size.width < 500 ? 15.0 : 22.0;
-      canvas.drawCircle(point, radius, Paint()..color = AppDesign.chip);
+      canvas.drawCircle(point, radius, Paint()..color = palette.chip);
       canvas.drawCircle(
           point,
           radius,
@@ -399,7 +406,7 @@ class EqCurvePainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeWidth = eq.selectedBand == band ? 3 : 2);
       label(band == 0 ? 'HPF' : '$band', point,
-          color: U4.text1, font: band == 0 ? 9 : 14, centered: true);
+          color: palette.text1, font: band == 0 ? 9 : 14, centered: true);
     }
 
     for (final band in eq.bands) {
@@ -418,6 +425,7 @@ class EqCurvePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant EqCurvePainter old) =>
+      old.palette != palette ||
       old.responseDb != responseDb ||
       old.eq != eq ||
       old.rtaBins != rtaBins ||
@@ -465,9 +473,10 @@ class U4EqGraph extends StatelessWidget {
                 height: height,
                 padding: const EdgeInsets.fromLTRB(28, 14, 16, 30),
                 decoration: BoxDecoration(
-                    color: AppDesign.panel,
+                    color: ConsolePalette.of(context).panel,
                     borderRadius: U4.rWell,
-                    border: Border.all(color: U4.linePanel)),
+                    border: Border.all(
+                        color: ConsolePalette.of(context).linePanel)),
                 child: _EqGraphGesture(
                   width: w,
                   height: h,
@@ -478,6 +487,7 @@ class U4EqGraph extends StatelessWidget {
                   child: CustomPaint(
                     size: Size(w, h),
                     painter: EqCurvePainter(
+                      palette: ConsolePalette.of(context),
                       responseDb: responseDb,
                       eq: eq,
                       rtaBins: rtaBins,
@@ -682,11 +692,16 @@ class U4GraphTouchSurface extends StatelessWidget {
 /// Transfer-curve painter (dynModel.ts: lo..0 axes, gold curve, threshold
 /// line + tag, operating dot, unity diagonal).
 class DynCurvePainter extends CustomPainter {
+  final ConsolePalette palette;
   final ChannelDynVm dyn;
   final double? levelDb; // null when frozen: dot parks at lo
   final Color color;
 
-  DynCurvePainter({required this.dyn, this.levelDb, required this.color});
+  DynCurvePainter(
+      {required this.palette,
+      required this.dyn,
+      this.levelDb,
+      required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -696,7 +711,7 @@ class DynCurvePainter extends CustomPainter {
 
     // Grid every 10 dB.
     final grid = Paint()
-      ..color = U4.linePanel
+      ..color = palette.linePanel
       ..strokeWidth = 1;
     for (var v = lo + 10; v < 0; v += 10) {
       canvas.drawLine(Offset(px(v), 0), Offset(px(v), size.height), grid);
@@ -707,7 +722,7 @@ class DynCurvePainter extends CustomPainter {
         Offset(px(lo), py(lo)),
         Offset(px(0), py(0)),
         Paint()
-          ..color = U4.lineCtl
+          ..color = palette.lineCtl
           ..strokeWidth = 1);
     // Fill + curve.
     final pts = dynCurve(dyn);
@@ -731,7 +746,7 @@ class DynCurvePainter extends CustomPainter {
       canvas.drawPath(
         curve,
         Paint()
-          ..color = U4.cyan
+          ..color = palette.cyan
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2,
       );
@@ -748,8 +763,8 @@ class DynCurvePainter extends CustomPainter {
       final tp = TextPainter(
         text: TextSpan(
             text: '${dyn.thr.toStringAsFixed(1)} dB',
-            style: const TextStyle(
-                fontFamily: U4.font, fontSize: 10, color: U4.text1)),
+            style: TextStyle(
+                fontFamily: U4.font, fontSize: 10, color: palette.text1)),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset((x + 4).clamp(0, size.width - tp.width), 2));
@@ -762,14 +777,17 @@ class DynCurvePainter extends CustomPainter {
         dot,
         6,
         Paint()
-          ..color = Colors.white
+          ..color = palette.text1
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5);
   }
 
   @override
   bool shouldRepaint(covariant DynCurvePainter old) =>
-      old.dyn != dyn || old.levelDb != levelDb || old.color != color;
+      old.palette != palette ||
+      old.dyn != dyn ||
+      old.levelDb != levelDb ||
+      old.color != color;
 }
 
 /// Interactive transfer graph: horizontal drag edits threshold (both
@@ -839,7 +857,10 @@ class _U4DynGraphState extends State<U4DynGraph> {
         child: CustomPaint(
           size: size,
           painter: DynCurvePainter(
-              dyn: widget.dyn, levelDb: widget.levelDb, color: widget.color),
+              palette: ConsolePalette.of(context),
+              dyn: widget.dyn,
+              levelDb: widget.levelDb,
+              color: widget.color),
         ),
       );
     });
@@ -864,22 +885,26 @@ class U4GrBar extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('GR',
+                Text('GR',
                     style: TextStyle(
-                        fontFamily: U4.font, fontSize: 11, color: U4.text7)),
-                Text('${grDb.toStringAsFixed(1)} dB',
-                    style: const TextStyle(
                         fontFamily: U4.font,
                         fontSize: 11,
-                        color: U4.text1,
+                        color: ConsolePalette.of(context).text7)),
+                Text('${grDb.toStringAsFixed(1)} dB',
+                    style: TextStyle(
+                        fontFamily: U4.font,
+                        fontSize: 11,
+                        color: ConsolePalette.of(context).text1,
                         fontFeatures: [FontFeature.tabularFigures()])),
               ],
             ),
             const SizedBox(height: 4),
             CustomPaint(
               size: Size(w, 10),
-              painter:
-                  _GrPainter(frac: (-grDb / 24).clamp(0.0, 1.0), color: color),
+              painter: _GrPainter(
+                  palette: ConsolePalette.of(context),
+                  frac: (-grDb / 24).clamp(0.0, 1.0),
+                  color: color),
             ),
           ],
         );
@@ -889,15 +914,16 @@ class U4GrBar extends StatelessWidget {
 }
 
 class _GrPainter extends CustomPainter {
+  final ConsolePalette palette;
   final double frac;
   final Color color;
-  _GrPainter({required this.frac, required this.color});
+  _GrPainter({required this.palette, required this.frac, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(3)),
-      Paint()..color = U4.control,
+      Paint()..color = palette.control,
     );
     if (frac > 0) {
       canvas.drawRRect(
@@ -912,7 +938,7 @@ class _GrPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _GrPainter old) =>
-      old.frac != frac || old.color != color;
+      old.palette != palette || old.frac != frac || old.color != color;
 }
 
 // ---------------------------------------------------------------------------
@@ -939,8 +965,8 @@ class U4SendRow extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: U4.tileBg,
-        border: Border.all(color: U4.tileBorder),
+        color: ConsolePalette.of(context).tileBg,
+        border: Border.all(color: ConsolePalette.of(context).tileBorder),
         borderRadius: U4.rBtn,
       ),
       child: Row(
@@ -952,11 +978,11 @@ class U4SendRow extends StatelessWidget {
                 Text('S${send.slot} · ${send.destName}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontFamily: U4.font,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: U4.text1)),
+                        color: ConsolePalette.of(context).text1)),
                 const SizedBox(height: 6),
                 _MiniLevel(
                   value: send.level,
@@ -972,9 +998,13 @@ class U4SendRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: send.muted ? U4.muteOnBg : U4.tileBg,
-                border:
-                    Border.all(color: send.muted ? U4.muteOnBd : U4.tileBorder),
+                color: send.muted
+                    ? ConsolePalette.of(context).muteOnBg
+                    : ConsolePalette.of(context).tileBg,
+                border: Border.all(
+                    color: send.muted
+                        ? ConsolePalette.of(context).muteOnBd
+                        : ConsolePalette.of(context).tileBorder),
                 borderRadius: U4.rBtn,
               ),
               child: Text(send.muted ? 'MUTED' : 'open',
@@ -985,7 +1015,9 @@ class U4SendRow extends StatelessWidget {
                       fontFamily: U4.font,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: send.muted ? Colors.white : U4.text7)),
+                      color: send.muted
+                          ? ConsolePalette.of(context).onDanger
+                          : ConsolePalette.of(context).text7)),
             ),
           ),
           const SizedBox(width: 6),
@@ -995,8 +1027,9 @@ class U4SendRow extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: U4.panel,
-                border: Border.all(color: U4.railBorder),
+                color: ConsolePalette.of(context).panel,
+                border:
+                    Border.all(color: ConsolePalette.of(context).railBorder),
                 borderRadius: U4.rBtn,
               ),
               child: Text(
@@ -1006,11 +1039,11 @@ class U4SendRow extends StatelessWidget {
                 textAlign: TextAlign.center,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                     fontFamily: U4.font,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: U4.cyan),
+                    color: ConsolePalette.of(context).cyan),
               ),
             ),
           ),
@@ -1049,7 +1082,8 @@ class _MiniLevel extends StatelessWidget {
         height: 18,
         child: CustomPaint(
           size: const Size(double.infinity, 18),
-          painter: _MiniLevelPainter(value: value),
+          painter: _MiniLevelPainter(
+              palette: ConsolePalette.of(context), value: value),
         ),
       ),
     );
@@ -1057,34 +1091,36 @@ class _MiniLevel extends StatelessWidget {
 }
 
 class _MiniLevelPainter extends CustomPainter {
+  final ConsolePalette palette;
   final double value;
-  _MiniLevelPainter({required this.value});
+  _MiniLevelPainter({required this.palette, required this.value});
 
   @override
   void paint(Canvas canvas, Size size) {
     final bar = Rect.fromLTWH(0, 7, size.width, 4);
     canvas.drawRRect(
       RRect.fromRectAndRadius(bar, const Radius.circular(2)),
-      Paint()..color = U4.control,
+      Paint()..color = palette.control,
     );
     final fill = Rect.fromLTWH(0, 7, size.width * value.clamp(0.0, 1.0), 4);
     canvas.drawRRect(
       RRect.fromRectAndRadius(fill, const Radius.circular(2)),
-      Paint()..color = U4.cyan,
+      Paint()..color = palette.cyan,
     );
     final x = size.width * value.clamp(0.0, 1.0);
-    canvas.drawCircle(Offset(x, 9), 7, Paint()..color = U4.text1);
+    canvas.drawCircle(Offset(x, 9), 7, Paint()..color = palette.text1);
     canvas.drawCircle(
         Offset(x, 9),
         7,
         Paint()
-          ..color = U4.lineCtl
+          ..color = palette.lineCtl
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5);
   }
 
   @override
-  bool shouldRepaint(covariant _MiniLevelPainter old) => old.value != value;
+  bool shouldRepaint(covariant _MiniLevelPainter old) =>
+      old.palette != palette || old.value != value;
 }
 
 // ---------------------------------------------------------------------------
@@ -1106,7 +1142,8 @@ class U4LevelHbar extends StatelessWidget {
         final frac = ((db + 90) / 90).clamp(0.0, 1.0);
         return CustomPaint(
           size: const Size(double.infinity, 8),
-          painter: _HbarPainter(frac: frac),
+          painter:
+              _HbarPainter(palette: ConsolePalette.of(context), frac: frac),
         );
       },
     );
@@ -1114,24 +1151,25 @@ class U4LevelHbar extends StatelessWidget {
 }
 
 class _HbarPainter extends CustomPainter {
+  final ConsolePalette palette;
   final double frac;
-  _HbarPainter({required this.frac});
+  _HbarPainter({required this.palette, required this.frac});
 
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRRect(
       RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(3)),
-      Paint()..color = U4.control,
+      Paint()..color = palette.control,
     );
     final w = size.width * frac;
     if (w <= 0) {
       return;
     }
-    final p = Paint()..color = U4.meterGreen;
+    final p = Paint()..color = palette.meterGreen;
     if (frac > 0.82) {
-      p.color = U4.meterRed;
+      p.color = palette.meterRed;
     } else if (frac > 0.66) {
-      p.color = U4.meterAmber;
+      p.color = palette.meterAmber;
     }
     canvas.drawRRect(
       RRect.fromRectAndRadius(
@@ -1141,5 +1179,6 @@ class _HbarPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _HbarPainter old) => old.frac != frac;
+  bool shouldRepaint(covariant _HbarPainter old) =>
+      old.palette != palette || old.frac != frac;
 }

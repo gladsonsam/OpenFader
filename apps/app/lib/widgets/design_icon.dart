@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
+import '../palette.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import '../theme.dart';
 
 /// Outline artwork supplied in the final HTML handoff, in its 24-unit grid.
 enum DesignSymbol {
@@ -18,9 +18,8 @@ enum DesignSymbol {
 class DesignIcon extends StatelessWidget {
   final DesignSymbol symbol;
   final double size;
-  final Color color;
-  const DesignIcon(this.symbol,
-      {super.key, this.size = 22, this.color = U4.text7});
+  final Color? color;
+  const DesignIcon(this.symbol, {super.key, this.size = 22, this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +44,8 @@ class DesignIcon extends StatelessWidget {
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">$body</svg>',
       width: size,
       height: size,
-      colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+      colorFilter: ColorFilter.mode(
+          color ?? ConsolePalette.of(context).text7, BlendMode.srcIn),
     );
   }
 }

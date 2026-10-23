@@ -8,20 +8,19 @@
 library;
 
 import 'package:flutter/material.dart';
-
-import '../theme.dart';
+import '../palette.dart';
 
 /// Unselected bank-rail label tints (shellStyle.ts BANK_TINT).
-const Map<String, Color> bankTint = {
-  'ch1': U4.meterGreen,
-  'ch17': U4.meterGreen,
-  'ch33': U4.meterGreen,
-  'fx': U4.meterGreen,
-  'mix': Color(0xFF5FE3F0),
-  'grp': Color(0xFF8FB4FF),
-  'mtx': Color(0xFFEA8CF2),
-  'dca': Color(0xFFFF8A80),
-};
+Map<String, Color> _bankTint(ConsolePalette palette) => {
+      'ch1': palette.meterGreen,
+      'ch17': palette.meterGreen,
+      'ch33': palette.meterGreen,
+      'fx': palette.meterGreen,
+      'mix': const Color(0xFF5FE3F0),
+      'grp': const Color(0xFF8FB4FF),
+      'mtx': const Color(0xFFEA8CF2),
+      'dca': const Color(0xFFFF8A80),
+    };
 
 enum BankRailOrientation { side, bottom }
 
@@ -57,9 +56,10 @@ class U4BankRail extends StatelessWidget {
     if (orientation == BankRailOrientation.bottom) {
       return Container(
         height: 56,
-        decoration: const BoxDecoration(
-          color: U4.panel,
-          border: Border(top: BorderSide(color: U4.linePanel)),
+        decoration: BoxDecoration(
+          color: ConsolePalette.of(context).panel,
+          border: Border(
+              top: BorderSide(color: ConsolePalette.of(context).linePanel)),
         ),
         child: Row(
           children: [
@@ -79,7 +79,7 @@ class U4BankRail extends StatelessWidget {
     }
     return Container(
       width: 92,
-      color: U4.panel,
+      color: ConsolePalette.of(context).panel,
       child: Column(
         children: [
           for (var i = 0; i < banks.length; i++)
@@ -115,8 +115,14 @@ class _Segment extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = active ? bank.color : U4.bankOff;
-    final fg = active ? bank.text : (bankTint[bank.key] ?? U4.text1);
+    final palette = ConsolePalette.of(context);
+    final bg = active ? bank.color : palette.bankOff;
+    final tint = _bankTint(palette)[bank.key] ?? palette.text1;
+    final fg = active
+        ? bank.text
+        : palette.isLight
+            ? Color.lerp(tint, palette.text1, .55)!
+            : tint;
     return GestureDetector(
       onTap: () => onSelect(bank.key),
       child: Container(
@@ -127,12 +133,12 @@ class _Segment extends StatelessWidget {
           border: vertical
               ? Border(
                   top: leadingDivider
-                      ? const BorderSide(color: U4.linePanel)
+                      ? BorderSide(color: ConsolePalette.of(context).linePanel)
                       : BorderSide.none,
                 )
               : Border(
                   left: leadingDivider
-                      ? const BorderSide(color: U4.linePanel)
+                      ? BorderSide(color: ConsolePalette.of(context).linePanel)
                       : BorderSide.none,
                 ),
         ),

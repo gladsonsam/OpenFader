@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import '../core/channel_views.dart';
 import '../settings/prefs.dart';
 import '../theme.dart';
+import '../palette.dart';
 import '../design.dart';
 import '../u4law.dart';
 
@@ -247,7 +248,7 @@ class _ChannelPageState extends State<ChannelPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: U4.page,
+      backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: Listenable.merge([widget.store, PrefsService.instance]),
@@ -358,10 +359,11 @@ class _SideMenu extends StatelessWidget {
     return Container(
       width: 178,
       padding: const EdgeInsets.all(6),
-      decoration: const BoxDecoration(
-        color: U4.panel,
+      decoration: BoxDecoration(
+        color: ConsolePalette.of(context).panel,
         borderRadius: BorderRadius.all(Radius.circular(18)),
-        border: Border.fromBorderSide(BorderSide(color: U4.lineHeader)),
+        border: Border.fromBorderSide(
+            BorderSide(color: ConsolePalette.of(context).lineHeader)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -405,11 +407,14 @@ class _MenuRow extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
             decoration: BoxDecoration(
-              color: active ? const Color(0xff262b14) : U4.tileBg,
+              color: active
+                  ? ConsolePalette.of(context).selectionFill
+                  : ConsolePalette.of(context).tileBg,
               borderRadius: U4.rBtn,
               border: Border.all(
-                  color:
-                      active ? U4.cyan.withValues(alpha: 0.27) : U4.tileBorder),
+                  color: active
+                      ? ConsolePalette.of(context).cyan.withValues(alpha: 0.27)
+                      : ConsolePalette.of(context).tileBorder),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -424,10 +429,10 @@ class _MenuRow extends StatelessWidget {
                               fontSize: 24,
                               fontWeight: FontWeight.w600,
                               color: active
-                                  ? U4.cyan
+                                  ? ConsolePalette.of(context).cyan
                                   : off
-                                      ? U4.text7
-                                      : const Color(0xffc9c9c9)))),
+                                      ? ConsolePalette.of(context).text7
+                                      : ConsolePalette.of(context).text4))),
                   if (off)
                     Text('OFF',
                         style: TextStyle(
@@ -435,7 +440,7 @@ class _MenuRow extends StatelessWidget {
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1.1,
-                            color: U4.text7)),
+                            color: ConsolePalette.of(context).text7)),
                 ]),
                 const SizedBox(height: 8),
                 Expanded(
@@ -468,7 +473,8 @@ class _NavPreview extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-              color: U4.panel, borderRadius: BorderRadius.circular(8)),
+              color: ConsolePalette.of(context).panel,
+              borderRadius: BorderRadius.circular(8)),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -476,17 +482,19 @@ class _NavPreview extends StatelessWidget {
               Container(
                   height: 12,
                   decoration: BoxDecoration(
-                      color: const Color(0xff252525),
+                      color: ConsolePalette.of(context).chip,
                       borderRadius: BorderRadius.circular(3),
                       border: Border.all(
-                          color: const Color(0xff474747), width: 1.5)),
+                          color: ConsolePalette.of(context).lineCtl,
+                          width: 1.5)),
                   child: FractionallySizedBox(
                       alignment: Alignment.centerLeft,
                       widthFactor: (gain / 60).clamp(0.05, 1.0),
                       child: Container(
                           decoration: BoxDecoration(
-                              color: const Color(0xff4f5a16),
-                              border: Border.all(color: U4.cyan))))),
+                              color: ConsolePalette.of(context).selectionFill,
+                              border: Border.all(
+                                  color: ConsolePalette.of(context).cyan))))),
               const SizedBox(height: 4),
               Text('48V',
                   textAlign: TextAlign.right,
@@ -494,7 +502,9 @@ class _NavPreview extends StatelessWidget {
                       fontFamily: U4.font,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: phantom ? const Color(0xffef5548) : U4.text10)),
+                      color: phantom
+                          ? ConsolePalette.of(context).phantom
+                          : ConsolePalette.of(context).text10)),
             ],
           ),
         );
@@ -502,7 +512,9 @@ class _NavPreview extends StatelessWidget {
       case ChannelTab.comp:
         final kind = tab == ChannelTab.gate ? DynKind.gate : DynKind.comp;
         final dyn = kind == DynKind.gate ? store.gate : store.comp;
-        final color = kind == DynKind.gate ? U4.cyan : const Color(0xffa285d6);
+        final color = kind == DynKind.gate
+            ? ConsolePalette.of(context).cyan
+            : ConsolePalette.of(context).processingPurple;
         return ValueListenableBuilder<double>(
             valueListenable: store.levelDb,
             builder: (context, db, _) => IgnorePointer(
@@ -510,7 +522,9 @@ class _NavPreview extends StatelessWidget {
                     dyn: dyn, levelDb: db, color: color, onThreshold: (_) {})));
       case ChannelTab.eq:
         return SizedBox.expand(
-            child: CustomPaint(painter: _EqPreviewPainter(store.eq)));
+            child: CustomPaint(
+                painter:
+                    _EqPreviewPainter(store.eq, ConsolePalette.of(context))));
     }
   }
 }
@@ -528,9 +542,9 @@ class _BottomNav extends StatelessWidget {
     return Container(
       height:
           (MediaQuery.sizeOf(context).height * 112 / 1000).clamp(88.0, 112.0),
-      decoration: const BoxDecoration(
-        color: U4.panel,
-        border: Border(top: BorderSide(color: Color(0xff363636))),
+      decoration: BoxDecoration(
+        color: ConsolePalette.of(context).panel,
+        border: Border(top: BorderSide(color: ConsolePalette.of(context).line)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -543,7 +557,7 @@ class _BottomNav extends StatelessWidget {
                     active: _tabOrder[i] == tab,
                     onTap: () => onTab(_tabOrder[i]))),
             if (i < _tabOrder.length - 1)
-              Container(width: 1, color: const Color(0xff292929)),
+              Container(width: 1, color: ConsolePalette.of(context).line),
           ],
         ],
       ),
@@ -573,7 +587,9 @@ class _BottomCell extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          color: active ? const Color(0xff262b14) : U4.tileBg,
+          color: active
+              ? ConsolePalette.of(context).selectionFill
+              : ConsolePalette.of(context).tileBg,
           padding: const EdgeInsets.fromLTRB(7, 9, 7, 5),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -586,10 +602,10 @@ class _BottomCell extends StatelessWidget {
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                       color: active
-                          ? U4.cyan
+                          ? ConsolePalette.of(context).cyan
                           : off
-                              ? U4.text7
-                              : const Color(0xffb5b5b5))),
+                              ? ConsolePalette.of(context).text7
+                              : ConsolePalette.of(context).mutedText)),
               const SizedBox(height: 4),
               Expanded(
                   child: Opacity(
@@ -739,8 +755,8 @@ class _TextSwitch extends StatelessWidget {
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: active
-                          ? const Color(0xffef5548)
-                          : const Color(0xff7a7a7a))),
+                          ? ConsolePalette.of(context).phantom
+                          : ConsolePalette.of(context).text10)),
             ),
           ),
         ),
@@ -784,12 +800,14 @@ class _ProcessorHeader extends StatelessWidget {
           height: compact ? 44 : (56 * scale).clamp(44, 68),
           padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 16),
           decoration: BoxDecoration(
-            color: on ? const Color(0xff262b14) : const Color(0xff343434),
+            color: on
+                ? ConsolePalette.of(context).selectionFill
+                : ConsolePalette.of(context).control,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
                 color: on
-                    ? U4.cyan.withValues(alpha: 0.27)
-                    : const Color(0xff414141)),
+                    ? ConsolePalette.of(context).cyan.withValues(alpha: 0.27)
+                    : ConsolePalette.of(context).lineCtl),
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -801,10 +819,14 @@ class _ProcessorHeader extends StatelessWidget {
                       fontFamily: U4.font,
                       fontSize: compact ? 20 : 28 * scale,
                       fontWeight: FontWeight.w600,
-                      color: on ? U4.cyan : const Color(0xffaaa9a9))),
+                      color: on
+                          ? ConsolePalette.of(context).cyan
+                          : ConsolePalette.of(context).mutedText)),
               Icon(Icons.power_settings_new,
                   size: compact ? 22 : 24,
-                  color: on ? U4.cyan : const Color(0xffaaa9a9)),
+                  color: on
+                      ? ConsolePalette.of(context).cyan
+                      : ConsolePalette.of(context).mutedText),
             ],
           ),
         ),
@@ -833,7 +855,7 @@ class _PresetsButton extends StatelessWidget {
         if (box == null || overlay == null) return;
         final choice = await showMenu<String>(
           context: context,
-          color: const Color(0xff262626),
+          color: ConsolePalette.of(context).chip,
           position: RelativeRect.fromRect(
               Rect.fromPoints(
                   box.localToGlobal(Offset.zero, ancestor: overlay),
@@ -850,15 +872,16 @@ class _PresetsButton extends StatelessWidget {
                   child: Text(p,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                          fontFamily: U4.font, color: U4.text1))),
+                      style: TextStyle(
+                          fontFamily: U4.font,
+                          color: ConsolePalette.of(context).text1))),
           ],
         );
         if (choice != null) store.recallPreset(choice);
       },
       style: TextButton.styleFrom(
-          foregroundColor: U4.text1,
-          backgroundColor: const Color(0xff343434),
+          foregroundColor: ConsolePalette.of(context).text1,
+          backgroundColor: ConsolePalette.of(context).control,
           minimumSize: const Size(64, 44),
           padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 18),
           shape:

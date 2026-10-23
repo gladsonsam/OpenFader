@@ -26,6 +26,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../palette.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../core/wifi_net.dart';
@@ -276,8 +277,10 @@ class _AppShellState extends State<AppShell> {
                     mode: _modeOf(_tab),
                     connected: connected,
                     connDot: connected
-                        ? (sim ? U4.text7 : U4.meterGreen)
-                        : U4.meterAmber,
+                        ? (sim
+                            ? ConsolePalette.of(context).text7
+                            : ConsolePalette.of(context).meterGreen)
+                        : ConsolePalette.of(context).meterAmber,
                     connAria: !connected
                         ? 'Disconnected'
                         : sim
@@ -382,8 +385,9 @@ class _AppShellState extends State<AppShell> {
         {AppTab.mixer, AppTab.channel, AppTab.fx, AppTab.routing}.contains(t)) {
       return Center(
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-        const Text('Mixer disconnected',
-            style: TextStyle(color: U4.text1, fontSize: 18)),
+        Text('Mixer disconnected',
+            style: TextStyle(
+                color: ConsolePalette.of(context).text1, fontSize: 18)),
         TextButton(
             onPressed: () => _go(AppTab.connect),
             child: const Text('Reconnect mixer')),
@@ -493,8 +497,12 @@ class _NavRail extends StatelessWidget {
           child: TextButton(
             onPressed: () => onGo(t),
             style: TextButton.styleFrom(
-                backgroundColor: t == active ? U4.control : Colors.transparent,
-                foregroundColor: t == active ? U4.cyan : U4.text7,
+                backgroundColor: t == active
+                    ? ConsolePalette.of(context).control
+                    : Colors.transparent,
+                foregroundColor: t == active
+                    ? ConsolePalette.of(context).cyan
+                    : ConsolePalette.of(context).text7,
                 minimumSize: const Size(44, 44),
                 padding: EdgeInsets.symmetric(horizontal: vertical ? 10 : 14),
                 shape: const RoundedRectangleBorder(borderRadius: U4.rBtn)),
@@ -510,8 +518,10 @@ class _NavRail extends StatelessWidget {
       return Container(
         width: 108,
         padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-        decoration: const BoxDecoration(
-            border: Border(left: BorderSide(color: U4.lineHeader))),
+        decoration: BoxDecoration(
+            border: Border(
+                left:
+                    BorderSide(color: ConsolePalette.of(context).lineHeader))),
         child: SingleChildScrollView(
           child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch, children: items),
@@ -520,8 +530,9 @@ class _NavRail extends StatelessWidget {
     }
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-      decoration: const BoxDecoration(
-          border: Border(top: BorderSide(color: U4.lineHeader))),
+      decoration: BoxDecoration(
+          border: Border(
+              top: BorderSide(color: ConsolePalette.of(context).lineHeader))),
       child: SingleChildScrollView(
         scrollDirection: Axis.horizontal,
         child: Row(children: items),
@@ -548,9 +559,14 @@ class _EngineTagBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: isReal ? const Color(0xFF0E2A12) : const Color(0xFF3A0D0D),
+        color: isReal
+            ? ConsolePalette.of(context).successContainer
+            : ConsolePalette.of(context).errorContainer,
         border: Border(
-            bottom: BorderSide(color: isReal ? U4.meterGreen : U4.meterRed)),
+            bottom: BorderSide(
+                color: isReal
+                    ? ConsolePalette.of(context).meterGreen
+                    : ConsolePalette.of(context).meterRed)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -560,7 +576,9 @@ class _EngineTagBanner extends StatelessWidget {
                 ? 'ENGINE: embedded openfader-engine (real)'
                 : 'ENGINE: FAKE sim fallback — native lib missing, desk impossible',
             style: TextStyle(
-                color: isReal ? U4.meterGreen : U4.meterRed,
+                color: isReal
+                    ? ConsolePalette.of(context).onSuccessContainer
+                    : ConsolePalette.of(context).onErrorContainer,
                 fontSize: 13,
                 fontWeight: FontWeight.w700),
           ),
@@ -568,7 +586,9 @@ class _EngineTagBanner extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Text('FFI: $err',
-                  style: const TextStyle(color: U4.text4, fontSize: 11)),
+                  style: TextStyle(
+                      color: ConsolePalette.of(context).onErrorContainer,
+                      fontSize: 11)),
             ),
         ],
       ),

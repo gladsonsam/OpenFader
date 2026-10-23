@@ -1,3 +1,4 @@
+import '../../palette.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../design.dart';
@@ -50,7 +51,9 @@ class _MixerMeterState extends State<MixerMeter> {
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
       child: RepaintBoundary(
-          child: CustomPaint(painter: _MeterPainter(_signal, widget.stereo))));
+          child: CustomPaint(
+              painter: _MeterPainter(
+                  ConsolePalette.of(context), _signal, widget.stereo))));
 }
 
 class _MeterSignal extends ChangeNotifier {
@@ -85,9 +88,11 @@ class _MeterSignal extends ChangeNotifier {
 }
 
 class _MeterPainter extends CustomPainter {
+  final ConsolePalette palette;
   final _MeterSignal signal;
   final bool stereo;
-  _MeterPainter(this.signal, this.stereo) : super(repaint: signal);
+  _MeterPainter(this.palette, this.signal, this.stereo)
+      : super(repaint: signal);
   @override
   void paint(Canvas c, Size s) {
     final clipHeight = 11.0;
@@ -101,33 +106,33 @@ class _MeterPainter extends CustomPainter {
           ? signal.peak >= .99
           : signal.source.value >= .99;
       mixerBox(c, Rect.fromLTWH(x, 0, w, clipHeight),
-          clipped ? MixerDesign.mute : const Color(0xff3d1006),
+          clipped ? palette.mute : palette.over,
           radius: 3);
       final unity = MixerFaderScale.positionForDb(0);
       final warning = MixerFaderScale.positionForDb(-12);
       mixerBox(
           c,
           Rect.fromLTWH(x, top + (1 - unity) * h, w, (unity - warning) * h),
-          const Color(0xff3a2600),
+          palette.amberBack,
           radius: 3);
       mixerBox(c, Rect.fromLTWH(x, top + (1 - warning) * h, w, warning * h),
-          const Color(0xff1a2a00),
+          palette.greenBack,
           radius: 2);
       final level = MixerFaderScale.positionForLevel(signal.source.value);
       final peak = MixerFaderScale.positionForLevel(signal.peak);
       if (level > 0) {
         mixerBox(c, Rect.fromLTWH(x, top + (1 - level) * h, w, level * h),
-            MixerDesign.meter,
+            palette.meter,
             radius: 2);
       }
       if (peak > 0) {
         mixerBox(
-            c, Rect.fromLTWH(x, top + (1 - peak) * h, w, 3), MixerDesign.amber);
+            c, Rect.fromLTWH(x, top + (1 - peak) * h, w, 3), palette.amber);
       }
     }
   }
 
   @override
   bool shouldRepaint(_MeterPainter old) =>
-      old.signal != signal || old.stereo != stereo;
+      old.palette != palette || old.signal != signal || old.stereo != stereo;
 }

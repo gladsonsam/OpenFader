@@ -27,12 +27,16 @@ class _ProcessingButton extends StatelessWidget {
               alignment: Alignment.center,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                  color: active ? AppDesign.eqBg : AppDesign.chip,
+                  color: active
+                      ? ConsolePalette.of(context).selectionFill
+                      : ConsolePalette.of(context).chip,
                   borderRadius: U4.rBtn,
                   border: Border.all(
                       color: active
-                          ? U4.cyan.withValues(alpha: .27)
-                          : U4.linePanel)),
+                          ? ConsolePalette.of(context)
+                              .cyan
+                              .withValues(alpha: .27)
+                          : ConsolePalette.of(context).linePanel)),
               child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: detail == null
@@ -44,10 +48,10 @@ class _ProcessingButton extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: AppDesign.type(fontSize,
                             color: active
-                                ? U4.cyan
+                                ? ConsolePalette.of(context).cyan
                                 : onTap == null
-                                    ? U4.text7
-                                    : U4.text1,
+                                    ? ConsolePalette.of(context).text7
+                                    : ConsolePalette.of(context).text1,
                             weight: FontWeight.w600)),
                     if (detail != null) ...[
                       const SizedBox(height: 3),
@@ -55,7 +59,9 @@ class _ProcessingButton extends StatelessWidget {
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: AppDesign.type(14,
-                              color: active ? U4.cyan : U4.text7))
+                              color: active
+                                  ? ConsolePalette.of(context).cyan
+                                  : ConsolePalette.of(context).text7))
                     ]
                   ]))));
 }
@@ -67,7 +73,7 @@ class _ProcessingSlider extends StatefulWidget {
   final double fontSize;
   final bool enabled, pan, showLabel, compact, solidFill;
   final Widget? trailing;
-  final Color color;
+  final Color? color;
   final Color? valueColor;
   final VoidCallback? onFocus;
   final ValueChanged<double> onChanged;
@@ -87,7 +93,7 @@ class _ProcessingSlider extends StatefulWidget {
       this.compact = false,
       this.solidFill = false,
       this.valueColor,
-      this.color = U4.cyan});
+      this.color});
   @override
   State<_ProcessingSlider> createState() => _ProcessingSliderState();
 }
@@ -107,6 +113,7 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
 
   @override
   Widget build(BuildContext context) {
+    final color = widget.color ?? ConsolePalette.of(context).cyan;
     final v = _drag ?? widget.value;
     final track = Row(children: [
       Expanded(
@@ -159,9 +166,10 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                           child: CustomPaint(
                               size: Size(box.maxWidth, 44),
                               painter: _ProcessingTrackPainter(
+                                  palette: ConsolePalette.of(context),
                                   n: ((v - widget.min) / (widget.max - widget.min))
                                       .clamp(0, 1),
-                                  color: widget.color,
+                                  color: color,
                                   solidFill: widget.solidFill,
                                   pan: widget.pan))))))),
       if (widget.trailing != null) ...[
@@ -176,12 +184,13 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
             child: Row(children: [
               Expanded(
                   child: Text(widget.label,
-                      style: AppDesign.type(widget.fontSize, color: U4.text7))),
+                      style: AppDesign.type(widget.fontSize,
+                          color: ConsolePalette.of(context).text7))),
               Text(widget.text,
                   style: AppDesign.type(widget.fontSize,
                       color: widget.enabled
-                          ? (widget.valueColor ?? widget.color)
-                          : U4.text7,
+                          ? (widget.valueColor ?? color)
+                          : ConsolePalette.of(context).text7,
                       weight: FontWeight.w600)),
             ])));
     if (!widget.showLabel) return track;
@@ -202,11 +211,13 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
 }
 
 class _ProcessingTrackPainter extends CustomPainter {
+  final ConsolePalette palette;
   final double n;
   final Color color;
   final bool pan, solidFill;
   const _ProcessingTrackPainter(
-      {required this.n,
+      {required this.palette,
+      required this.n,
       required this.color,
       this.pan = false,
       this.solidFill = false});
@@ -214,11 +225,11 @@ class _ProcessingTrackPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final bounds = Offset.zero & size;
     canvas.drawRRect(RRect.fromRectAndRadius(bounds, const Radius.circular(12)),
-        Paint()..color = AppDesign.panel);
+        Paint()..color = palette.panel);
     canvas.drawRRect(
         RRect.fromRectAndRadius(bounds.deflate(.5), const Radius.circular(12)),
         Paint()
-          ..color = U4.linePanel
+          ..color = palette.linePanel
           ..style = PaintingStyle.stroke);
     final x = 12 + (size.width - 24) * n;
     if (pan) {
@@ -230,7 +241,7 @@ class _ProcessingTrackPainter extends CustomPainter {
         ..lineTo(size.width / 2, 25)
         ..lineTo(6, 36)
         ..close();
-      canvas.drawPath(p, Paint()..color = AppDesign.panShape);
+      canvas.drawPath(p, Paint()..color = palette.panShape);
     } else {
       canvas.drawRRect(
           RRect.fromRectAndRadius(
@@ -240,20 +251,21 @@ class _ProcessingTrackPainter extends CustomPainter {
     final cap = RRect.fromRectAndRadius(
         Rect.fromCenter(center: Offset(x, 22), width: 22, height: 32),
         const Radius.circular(6));
-    canvas.drawShadow(Path()..addRRect(cap), AppDesign.well, 3, false);
-    canvas.drawRRect(cap, Paint()..color = AppDesign.knob);
+    canvas.drawShadow(Path()..addRRect(cap), palette.well, 3, false);
+    canvas.drawRRect(cap, Paint()..color = palette.knob);
     for (var dx = -5.0; dx <= 5; dx += 4) {
       canvas.drawLine(
           Offset(x + dx, 13),
           Offset(x + dx, 31),
           Paint()
-            ..color = U4.text10
+            ..color = palette.text10
             ..strokeWidth = 2);
     }
   }
 
   @override
   bool shouldRepaint(_ProcessingTrackPainter old) =>
+      old.palette != palette ||
       old.n != n ||
       old.color != color ||
       old.pan != pan ||

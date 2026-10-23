@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../palette.dart';
 import '../design.dart';
 
 /// Shared console action: quiet hover/press feedback, keyboard focus, and a
@@ -19,15 +20,21 @@ class ConsoleButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final active = danger ? AppDesign.mute : accent ?? AppDesign.lime;
+    final active = danger
+        ? ConsolePalette.of(context).mute
+        : accent ?? ConsolePalette.of(context).lime;
     final filled = selected || primary;
     return TextButton(
         onPressed: onPressed,
         style: TextButton.styleFrom(
-          backgroundColor: filled ? active : AppDesign.control,
-          foregroundColor: filled && !danger ? AppDesign.well : AppDesign.text,
-          disabledBackgroundColor: AppDesign.selected,
-          disabledForegroundColor: AppDesign.mutedText,
+          backgroundColor: filled ? active : ConsolePalette.of(context).control,
+          foregroundColor: filled
+              ? (danger
+                  ? ConsolePalette.of(context).onDanger
+                  : ConsolePalette.of(context).onAccent)
+              : ConsolePalette.of(context).text,
+          disabledBackgroundColor: ConsolePalette.of(context).selected,
+          disabledForegroundColor: ConsolePalette.of(context).mutedText,
           minimumSize: const Size(44, 44),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           textStyle: AppDesign.type(13, weight: FontWeight.w600),
@@ -39,7 +46,7 @@ class ConsoleButton extends StatelessWidget {
                 : const Duration(milliseconds: 100),
             side: WidgetStateProperty.resolveWith(
                 (states) => states.contains(WidgetState.focused)
-                    ? const BorderSide(color: AppDesign.selectedLine)
+                    ? BorderSide(color: ConsolePalette.of(context).selectedLine)
                     : danger && !filled
                         ? BorderSide(color: active)
                         : BorderSide.none)),
