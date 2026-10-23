@@ -43,6 +43,13 @@ abstract final class MixerFaderScale {
     (-80.0, '∞')
   ];
   static double positionForDb(double d) => fromEngine(dbToPos(d));
+
+  /// Meter events carry linear amplitude, not a fader position or fill ratio.
+  /// Convert to dBFS before placing the signal against the shared dB ruler.
+  static double positionForLevel(double level) {
+    if (!level.isFinite || level <= 0) return 0;
+    return positionForDb(20 * math.log(level.clamp(0.0, 1.0)) / math.ln10);
+  }
 }
 
 class MixerArtwork extends StatelessWidget {
