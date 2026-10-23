@@ -7,6 +7,7 @@
 // the caller falls back to `FakeSimEngine` (demo still works without FFI).
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
 import 'bridge/generated/api.dart' as frb;
@@ -41,9 +42,11 @@ class FfiEngine implements EngineApi {
                             '${File(Platform.resolvedExecutable).parent.path}/openmix_flutter_bridge.dll')
                         : null,
       ).timeout(const Duration(seconds: 5));
+      debugPrint('OpenMix: embedded native engine initialized');
       return FfiEngine._();
     } catch (e) {
       lastError = e;
+      debugPrint('OpenMix: native engine initialization failed: $e');
       return null;
     }
   }
