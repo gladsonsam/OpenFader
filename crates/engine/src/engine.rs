@@ -70,22 +70,6 @@ pub const FX_POLL_EVERY: u64 = 4;
 /// change).
 pub const DESK_SAMPLE_RATE: u32 = 48000;
 
-/// Per-driver default poller pipelining (`max_inflight`): concurrent
-/// driver queries per poll tick. Rig-measured 2026-10-19 (XR18 @
-/// 192.168.1.120, routed LAN): 48 sequential queries in 29 ms (~1600 q/s
-/// burst), so 4 sequential reads per 50 ms tick (80 q/s average) runs with
-/// ~20x headroom; the adaptive EMA (`effective_inflight`) still halves the
-/// batch while the desk is saturated, so slow venue wifi backs off on its
-/// own. `dl32s` stays at 1 (Mackie correlated request/response, no rig
-/// measurement for concurrency).
-pub fn default_inflight(driver: &str) -> usize {
-    match driver {
-        "sim" => 4,
-        "dl32s" => 1,
-        _ => 4,
-    }
-}
-
 /// R2 scene numbers live in `001..=999` (`scene_save`/`scene_recall`).
 pub fn validate_scene_n(n: u16) -> anyhow::Result<u16> {
     if !(SCENE_MIN..=SCENE_MAX).contains(&n) {
@@ -380,10 +364,7 @@ fn device_row(d: openmix_transport::discovery::DiscoveredDevice, via: &str) -> D
     let ip = d.addr.ip().to_string();
     DeviceDesc {
         id: format!("{}-{ip}", d.driver),
-        name: match d.driver {
-            "xair" => format!("X-Air {}", d.model),
-            _ => format!("{} {}", d.driver, d.model),
-        },
+        name: self.drv(&d.driver).display_name(&d.model),
         model: d.model,
         ip,
         kind: "console".to_string(),
@@ -418,8 +399,8 @@ pub const GR_CHANNELS: usize = 16;
 pub const LOCK_TTL: Duration = Duration::from_secs(60);
 
 /// Param-plane poller tick: one pipelined batch per tick (`max_inflight`
-/// driver queries per tick; production xair/sim budget is 4 queries per
-/// 50 ms tick = 80 q/s). The poller runs on its own task and never blocks
+/// driver queries per tick; the 50 ms tick = 80 q/s at the default budget
+/// of 4). The poller runs on its own task and never blocks
 /// fader/meter traffic.
 pub const PARAM_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
@@ -444,8 +425,8 @@ pub struct EngineConfig {
     /// when they want persistence).
     pub data_dir: Option<PathBuf>,
     /// R2 poller pipelining: max concurrent driver queries per tick.
-    /// `None` in config = [`default_inflight`] per driver (sim/xair 4,
-    /// dl32s 1). `--poll-inflight` sets this.
+    /// `None` in config = per-driver default (see [`DynDriver::poll_inflight`]).
+    /// `--poll-inflight` sets this.
     pub poll_inflight: Option<usize>,
     /// R2 LAN scanner (default: [`RealScanner`]). Tests inject a fake so
     /// discovery never touches the network.
@@ -580,8 +561,8 @@ pub struct Engine {
     /// Rebuilt when the visible set changes (focus is infrequent).
     poll_visible: RwLock<PollVisibleCache>,
     /// Cached essentials-lane lists per driver: every strip's
-    /// fader/mute/name/pan/color (+ the `solo` backstop on xair channel
-    /// strips). Built once per driver (topology × caps × scopes never
+    /// fader/mute/name/pan/color (+ provider `solo` backstops where
+    /// served). Built once per driver (topology × caps × scopes never
     /// change at runtime, like `poll_static`); drop-class errors only SKIP
     /// entries at drain time.
     poll_core: RwLock<HashMap<String, Vec<(u16, &'static str)>>>,
@@ -614,7 +595,8 @@ pub struct Engine {
     scenes_current: RwLock<Option<u16>>,
     data_dir: Option<PathBuf>,
     /// R2 FX cache: engine-side mirror of the active driver's rack
-    /// (rebuilt on every driver switch; sim-backed, best-effort on xair).
+    /// (rebuilt on every driver switch; in-memory for Design racks,
+    /// live-read for numbered racks).
     fx_cache: RwLock<Vec<FxSlotRt>>,
     /// R2 FX poll cursor (round-robin over the rack, [`FX_POLL_EVERY`]).
     fx_cursor: AtomicU64,
@@ -649,7 +631,7 @@ pub struct Engine {
     /// [`Engine::poll_tick`]).
     lane_tick: AtomicU64,
     /// R2 poller pipelining: max concurrent driver queries per tick
-    /// (`None` in config = [`default_inflight`] per driver).
+    /// (`None` in config = per-driver default).
     poll_inflight: Option<usize>,
     /// Poll-batch RTT exponential moving average in microseconds
     /// (adaptive pipelining: the effective inflight halves while the EMA
@@ -665,9 +647,8 @@ pub struct Engine {
     scanner: Arc<dyn DeviceScanner>,
     /// Which driver holds the current hardware meter subscription
     /// (`None` until a hardware connect subscribes, and after a
-    /// disconnect/switch-away clears it). The xair
-    /// `subscribe_meters` installs the blob-order cache behind
-    /// `poll_meters`; without this kick the meter ticker would fan out
+    /// disconnect/switch-away clears it). A provider `subscribe_meters`
+    /// installs the blob-order cache behind `poll_meters`; without this kick the meter ticker would fan out
     /// silence on hardware (the sim synthesizes its own levels).
     /// Resubscribed on every successful hardware connect (one per
     /// connection generation).
@@ -729,12 +710,10 @@ impl Engine {
             .iter()
             .map(|r| {
                 let mut reg = r.param_registry();
-                // XR18 LR has dynamics but no external key-source leaf.
-                // Keep Main support on drivers that actually serve it.
-                if r.name == "xair" {
-                    reg.restrict_scopes("comp_key_src", &[
-                        openmix_core::StripKind::In, openmix_core::StripKind::Bus,
-                    ]);
+                // Provider-declared scope restrictions (e.g. a desk whose
+                // LR has dynamics but no external key-source leaf).
+                for (id, kinds) in r.driver.scope_restrictions() {
+                    reg.restrict_scopes(id, kinds);
                 }
                 (r.name.to_string(), reg)
             })
@@ -865,7 +844,7 @@ impl Engine {
         let drv = self.drv(driver);
         let was_suspended = self.reads_suspended.swap(true, Ordering::AcqRel);
         let generation = self.invalidate_connection();
-        if driver == "xair" {
+        if drv.needs_hydration() {
             self.hydrating.store(generation, Ordering::Release);
         }
         if let Err(e) = drv.connect(&target).await {
@@ -1271,7 +1250,7 @@ impl Engine {
                     }
                     // Envelope activity is a sim visualization only. It never
                     // substitutes for a provider's audio-frequency spectrum.
-                    if drv.name() == "sim" {
+                    if drv.emits_envelope_spectrum() {
                         for ch in 0..levels.len().min(SPECTRUM_CHANNELS) {
                             if !supplied.contains(&ch) {
                                 engine.broadcast(&Event::Spectrum {
@@ -1280,9 +1259,7 @@ impl Engine {
                             }
                         }
                     }
-                    let gr_count = if drv.name() == "sim" {
-                        drv.strip_count().min(GR_CHANNELS)
-                    } else { drv.strip_count() };
+                    let gr_count = drv.gr_channel_count();
                     for ch in 0..if gr_updated { gr_count } else { 0 } {
                         if let Some((gate, comp)) = engine.gr_db(ch).await {
                             engine.broadcast(&Event::Gr { ch: ch as u16, gate, comp });
@@ -1321,7 +1298,7 @@ impl Engine {
                     tick.tick().await;
                     let Some(engine) = weak.upgrade() else { break; };
                     if engine.reads_suspended.load(Ordering::Acquire) || engine.hydrating.load(Ordering::Acquire) != 0 { continue; }
-                    if engine.active_driver() == "xair" && engine.fx_refill_requested.swap(false, Ordering::AcqRel) {
+                    if engine.active_drv().fx_flavor() == FxFlavor::Numbered && engine.fx_refill_requested.swap(false, Ordering::AcqRel) {
                         let changed = engine.connection_changed.notified();
                         tokio::pin!(changed);
                         changed.as_mut().enable();
@@ -1874,7 +1851,7 @@ impl Engine {
     /// per-driver default; clamped to 1..=16).
     pub fn max_inflight(&self, driver: &str) -> usize {
         self.poll_inflight
-            .unwrap_or_else(|| default_inflight(driver))
+            .unwrap_or_else(|| self.drv(driver).poll_inflight())
             .clamp(1, 16)
     }
 
@@ -1998,7 +1975,7 @@ impl Engine {
         let ip_s = ip.to_string();
         Some(DeviceDesc {
             id: format!("{driver}-{ip_s}"),
-            name: format!("X-Air {model}"),
+            name: self.drv(driver).display_name(&model),
             model,
             ip: ip_s,
             kind: "console".to_string(),
@@ -2350,10 +2327,9 @@ impl Engine {
     // ================= R2: FX =================
 
     /// `caps.fx` for the named driver: slot count + type tables (design
-    /// racks carry the six design tables from `core::fx`; the X-Air
-    /// desk-native rack carries the 60 documented algorithms from
-    /// `proto-xair::fx` with labeled `parNN` params; rack-less drivers
-    /// carry none — see README matrix).
+    /// racks carry the six design tables from `core::fx`; numbered
+    /// desk-native racks carry their documented algorithms with labeled
+    /// `parNN` params; rack-less drivers carry none — see README matrix).
     fn fx_caps(&self, driver: &str) -> crate::protocol::FxCaps {
         let drv = self.drv(driver);
         let types = if drv.fx_flavor() == FxFlavor::Design {
@@ -2377,8 +2353,8 @@ impl Engine {
                         .collect(),
                 })
                 .collect()
-        } else if driver == "xair" {
-            xair_fx_caps()
+        } else if drv.fx_flavor() == FxFlavor::Numbered {
+            drv.fx_type_caps()
         } else {
             Vec::new()
         };
@@ -2420,10 +2396,11 @@ impl Engine {
         Event::Fx { slots }
     }
 
-    /// Rebuild the FX cache from the active driver (sim: full rack;
-    /// elsewhere: honest placeholder rows — type unknown, no params).
+    /// Rebuild the FX cache from the active driver (Design: full rack;
+    /// numbered: live types + used params; elsewhere: honest placeholder
+    /// rows — type unknown, no params).
     async fn refresh_fx_cache(&self) {
-        if self.active_driver() == "xair" {
+        if self.active_drv().fx_flavor() == FxFlavor::Numbered {
             let generation = self.connection_gen.load(Ordering::Acquire);
             let drv = self.active_drv();
             for slot in 1..=drv.fx_slot_count() as u8 {
@@ -2431,7 +2408,8 @@ impl Engine {
                 let Some(effect) = drv.fx_type_index(slot).await else { continue; };
                 if self.connection_gen.load(Ordering::Acquire) != generation { return; }
                 self.apply_received(slot as u16, "_fx_type", &ParamValue::Float(effect as f32), Instant::now(), Some(started));
-                for index in 0..openmix_proto_xair::fx::fx_param_count(effect).unwrap_or(0) {
+                let param_count = drv.fx_type_param_count(effect).unwrap_or(0);
+                for index in 0..param_count {
                     if self.fx_cache.read().unwrap().iter().find(|r| r.slot == slot).is_some_and(|r| r.params.contains_key(&format!("par{:02}", index + 1))) { continue; }
                     if self.writes_in_flight.load(Ordering::Relaxed) != 0 {
                         self.fx_refill_requested.store(true, Ordering::Release);
@@ -2440,7 +2418,7 @@ impl Engine {
                     let started = Instant::now();
                     let result = drv.get_fx_param_with_type(slot, index, Some(effect)).await;
                     if self.connection_gen.load(Ordering::Acquire) != generation { return; }
-                    if !self.fx_cache.read().unwrap().iter().find(|r| r.slot == slot).is_some_and(|r| xair_type_index_of(&r.fx_type) == Some(effect)) { break; }
+                    if !self.fx_cache.read().unwrap().iter().find(|r| r.slot == slot).is_some_and(|r| drv.fx_type_index_of(&r.fx_type) == Some(effect)) { break; }
                     if let Ok(value) = result { self.apply_received(slot as u16, &format!("_fx_par{:02}", index + 1), &ParamValue::Float(value), Instant::now(), Some(started)); }
                 }
             }
@@ -2451,7 +2429,7 @@ impl Engine {
     }
 
     /// Connect-time FX seed: full rows for in-memory (Design) racks,
-    /// type-only rows for the numbered xair rack (4 queries), honest
+    /// type-only rows for numbered racks, honest
     /// placeholders elsewhere. The command path never pays the ~1+N
     /// per-slot param cost; the deferred fill + the FX poller complete the
     /// params off the command path.
@@ -2462,7 +2440,7 @@ impl Engine {
         if self.connection_gen.load(Ordering::Acquire) != generation { return; }
         let sync = self.sync_state.lock().unwrap();
         let mut cache = self.fx_cache.write().unwrap();
-        if self.active_driver() != "xair" { *cache = rows; return; }
+        if self.active_drv().fx_flavor() != FxFlavor::Numbered { *cache = rows; return; }
         for row in rows {
             if let Some(existing) = cache.iter_mut().find(|r| r.slot == row.slot) {
                 if !sync.received.get(&(row.slot as u16, "_fx_type".into())).is_some_and(|(at, _)| *at > started) { *existing = row; }
@@ -2471,7 +2449,7 @@ impl Engine {
     }
 
     /// Seed rows for [`Engine::seed_fx_cache`]: Design racks read fully
-    /// (in-memory, no I/O); the xair rack reads types only; rack-less
+    /// (in-memory, no I/O); numbered racks read types only; rack-less
     /// drivers keep placeholders.
     async fn read_fx_seed_rows(&self) -> Vec<FxSlotRt> {
         let drv = self.active_drv();
@@ -2489,10 +2467,10 @@ impl Engine {
                 })
                 .collect();
         }
-        if drv.fx_flavor() == FxFlavor::Numbered && self.active_driver() == "xair" {
+        if drv.fx_flavor() == FxFlavor::Numbered {
             let mut rows = Vec::new();
             for slot in 1..=drv.fx_slot_count() as u8 {
-                rows.push(self.read_xair_slot_type_only(slot).await);
+                rows.push(self.read_numbered_slot_type_only(slot).await);
             }
             return rows;
         }
@@ -2527,8 +2505,8 @@ impl Engine {
     }
 
     /// Read FX rows from the active driver (design racks fully mirrored;
-    /// the X-Air desk-native rack reads the live type + used params per
-    /// slot over the verified `/fx/N/type` + `/fx/N/par/MM` path —
+    /// the desk-native numbered rack reads the live type + used params per
+    /// slot over the verified type + `parNN` path —
     /// best-effort, unreadable slots stay honest placeholders; rack-less
     /// drivers keep placeholders).
     async fn read_fx_rows(&self) -> Vec<FxSlotRt> {
@@ -2547,10 +2525,10 @@ impl Engine {
                 })
                 .collect();
         }
-        if drv.fx_flavor() == FxFlavor::Numbered && self.active_driver() == "xair" {
+        if drv.fx_flavor() == FxFlavor::Numbered {
             let mut rows = Vec::new();
             for slot in 1..=drv.fx_slot_count() as u8 {
-                rows.push(self.read_xair_slot(slot).await);
+                rows.push(self.read_numbered_slot(slot).await);
             }
             return rows;
         }
@@ -2569,23 +2547,23 @@ impl Engine {
             .collect()
     }
 
-    /// Best-effort live read of one X-Air FX slot: type first (unknown on
-    /// error), then each used param of the loaded effect (`parNN` keys).
-    /// On/off has no verified leaf and stays at the honest placeholder
-    /// (`on: true`, `bypass: false`) so the UI keeps the toggle hidden.
-    /// The type query runs once per slot: param reads reuse the known
-    /// effect index (single-query path), so a slot costs 1+N queries.
-    async fn read_xair_slot(&self, slot: u8) -> FxSlotRt {
+    /// Best-effort live read of one numbered-rack FX slot: type first
+    /// (unknown on error), then each used param of the loaded effect
+    /// (`parNN` keys). On/off has no verified leaf and stays at the honest
+    /// placeholder (`on: true`, `bypass: false`) so the UI keeps the toggle
+    /// hidden. The type query runs once per slot: param reads reuse the
+    /// known effect index (single-query path), so a slot costs 1+N queries.
+    async fn read_numbered_slot(&self, slot: u8) -> FxSlotRt {
         let drv = self.active_drv();
         let index = drv.fx_type_index(slot).await;
         let name = index
-            .and_then(xair_type_name)
+            .and_then(|i| drv.fx_type_name(i))
             .unwrap_or("—")
             .to_string();
         let mut params = BTreeMap::new();
         if let Some(type_idx) = index {
-            let used = openmix_proto_xair::fx::fx_param_count(type_idx).unwrap_or(0);
-            for i in 0..used {
+            let used = drv.fx_type_param_count(type_idx).unwrap_or(0);
+            for i in 0..used as u8 {
                 if let Ok(v) = drv.get_fx_param_with_type(slot, i, Some(type_idx)).await {
                     params.insert(format!("par{:02}", i + 1), v);
                 }
@@ -2600,15 +2578,15 @@ impl Engine {
         }
     }
 
-    /// Type-only read of one X-Air FX slot (connect-time seed: 1 query;
+    /// Type-only read of one numbered-rack FX slot (connect-time seed: 1 query;
     /// params stay empty until the deferred fill or the FX poller reads
     /// them). Same honest placeholder when the type is unreadable.
-    async fn read_xair_slot_type_only(&self, slot: u8) -> FxSlotRt {
+    async fn read_numbered_slot_type_only(&self, slot: u8) -> FxSlotRt {
         let name = self
             .active_drv()
             .fx_type_index(slot)
             .await
-            .and_then(xair_type_name)
+            .and_then(|i| self.active_drv().fx_type_name(i))
             .unwrap_or("—")
             .to_string();
         FxSlotRt {
@@ -2621,13 +2599,13 @@ impl Engine {
     }
 
     /// One FX poll read (round-robin over the design rack, or one live
-    /// X-Air slot param per tick; silent unless a value changed). Other
-    /// numbered/rack-less racks are not polled (no verified state path —
+    /// numbered-rack slot param per tick; silent unless a value changed).
+    /// Other rack-less racks are not polled (no verified state path —
     /// writes are fire-and-forget there).
     async fn fx_refresh_one(&self) {
         let drv = self.active_drv();
-        if drv.fx_flavor() == FxFlavor::Numbered && self.active_driver() == "xair" {
-            self.fx_refresh_one_xair().await;
+        if drv.fx_flavor() == FxFlavor::Numbered {
+            self.fx_refresh_one_numbered().await;
             return;
         }
         if drv.fx_flavor() != FxFlavor::Design {
@@ -2662,11 +2640,11 @@ impl Engine {
         }
     }
 
-    /// One X-Air poll tick: a single live read (type when the cached row
-    /// is still a placeholder, else one rotating param of the loaded
+    /// One numbered-rack poll tick: a single live read (type when the cached
+    /// row is still a placeholder, else one rotating param of the loaded
     /// effect). One query per tick keeps LAN load flat; desk-side moves
     /// converge within a few ticks and broadcasts only on change.
-    async fn fx_refresh_one_xair(&self) {
+    async fn fx_refresh_one_numbered(&self) {
         let count = self.active_drv().fx_slot_count();
         if count == 0 { return; }
         let generation = self.connection_gen.load(Ordering::Acquire);
@@ -2677,20 +2655,21 @@ impl Engine {
         let Some(effect) = drv.fx_type_index(slot).await else { return; };
         if self.connection_gen.load(Ordering::Acquire) != generation { return; }
         self.apply_received(slot as u16, "_fx_type", &ParamValue::Float(effect as f32), Instant::now(), Some(started));
-        let used = openmix_proto_xair::fx::fx_param_count(effect).unwrap_or(0);
+        let used = drv.fx_type_param_count(effect).unwrap_or(0);
         if used == 0 { return; }
         let index = {
             let cache = self.fx_cache.read().unwrap();
             let Some(row) = cache.iter().find(|r| r.slot == slot) else { return; };
             (0..used).find(|i| !row.params.contains_key(&format!("par{:02}", i + 1)))
-                .unwrap_or(((n / count) % used as usize) as u8)
+                .map(|i| i as u8)
+                .unwrap_or(((n / count) % used) as u8)
         };
         let started = Instant::now();
         if let Ok(value) = drv.get_fx_param_with_type(slot, index, Some(effect)).await {
             if self.connection_gen.load(Ordering::Acquire) == generation {
                 // A type push received during the query invalidates this decode.
                 let same_type = self.fx_cache.read().unwrap().iter().find(|r| r.slot == slot)
-                    .is_some_and(|r| xair_type_index_of(&r.fx_type) == Some(effect));
+                    .is_some_and(|r| drv.fx_type_index_of(&r.fx_type) == Some(effect));
                 if same_type { self.apply_received(slot as u16, &format!("_fx_par{:02}", index + 1), &ParamValue::Float(value), Instant::now(), Some(started)); }
             }
         }
@@ -2940,17 +2919,17 @@ impl Engine {
     }
 
     /// True when the FX cache needs no fill: design racks are in-memory
-    /// complete and rack-less rows are honest placeholders; only an xair
+    /// complete and rack-less rows are honest placeholders; only a numbered
     /// row with a known type but a short param set wants the worker.
     fn fx_cache_complete(&self) -> bool {
-        if self.active_drv().fx_flavor() != FxFlavor::Numbered || self.active_driver() != "xair" {
+        if self.active_drv().fx_flavor() != FxFlavor::Numbered {
             return true;
         }
         self.fx_cache.read().unwrap().iter().all(|row| {
-            match xair_type_index_of(&row.fx_type) {
+            match self.active_drv().fx_type_index_of(&row.fx_type) {
                 None => true,
                 Some(index) => {
-                    let used = openmix_proto_xair::fx::fx_param_count(index).unwrap_or(0) as usize;
+                    let used = self.active_drv().fx_type_param_count(index).unwrap_or(0);
                     row.params.len() >= used
                 }
             }
@@ -3269,7 +3248,7 @@ impl Engine {
             let mut cache = self.fx_cache.write().unwrap();
             let Some(row) = cache.iter_mut().find(|r| r.slot == slot) else { return; };
             let changed = if param == "_fx_type" {
-                let name = xair_type_name(*value as u8).unwrap_or("—").to_string();
+                let name = self.active_drv().fx_type_name(*value as u8).unwrap_or("—").to_string();
                 if row.fx_type != name {
                     row.fx_type = name;
                     row.params.clear();
@@ -3384,7 +3363,7 @@ impl Engine {
     /// `prio_armed`); `k` caps the take; the cursor round-robins within
     /// the sweep.
     fn pop_visible_batch(&self, driver: &str, k: usize) -> Vec<(u16, String)> {
-        if k == 0 || (driver != "xair" && !self.prio_armed.load(Ordering::Relaxed)) {
+        if k == 0 || (!self.drv(driver).prio_always_armed() && !self.prio_armed.load(Ordering::Relaxed)) {
             return Vec::new();
         }
         let vis = self.visible.read().unwrap().clone();
@@ -3405,7 +3384,7 @@ impl Engine {
             let taken = self.prio_taken.fetch_add(1, Ordering::Relaxed);
             if i == 0 && taken > 0 {
                 self.prio_armed.store(false, Ordering::Relaxed);
-                if driver != "xair" { break; }
+                if !self.drv(driver).prio_always_armed() { break; }
             }
             let (ch, id) = &list[i];
             if dropped.contains(&(driver.to_string(), id.to_string())) {
@@ -3462,9 +3441,9 @@ impl Engine {
     }
 
     /// Cached essentials poll list: every strip × fader/mute/name/pan/
-    /// color (caps + scopes filtered, like the static list) plus the `solo`
-    /// backstop id on xair channel strips (same rule as
-    /// [`Engine::static_poll_list`]). ~150 pairs on xair (vs ~2.2k
+    /// color (caps + scopes filtered, like the static list) plus provider
+    /// `solo` backstop ids (same rule as
+    /// [`Engine::static_poll_list`]). ~150 pairs on a full-size desk (vs ~2.2k
     /// background): the always-fresh lane for the values every bank
     /// renders, so a reconnected app is desk-fresh in seconds without
     /// waiting out the background sweep. Built once per driver (topology ×
@@ -3498,8 +3477,8 @@ impl Engine {
                 }
                 // Solo rides the essentials lane as its own id (same rule
                 // as the static list — see `static_poll_list`).
-                if driver == "xair" && fam.kind == openmix_core::StripKind::In {
-                    out.push((s as u16, "solo"));
+                for id in self.drv(driver).essentials_extra_ids(fam.kind) {
+                    out.push((s as u16, id));
                 }
             }
         }
@@ -3577,7 +3556,7 @@ impl Engine {
             eprintln!("engine: {driver} reconciliation queued {} keys; regular query budget, no snapshot reset", list.len());
         }
         let mut batch: Vec<(u16, String)> = Vec::with_capacity(n);
-        let focus_limit = if driver == "xair" { n.saturating_sub(1).min(1) } else { n };
+        let focus_limit = self.drv(driver).poll_focus_limit(n);
         while batch.len() < focus_limit {
             match self.pop_focus(&driver) {
                 Some(e) => batch.push(e),
@@ -3596,9 +3575,9 @@ impl Engine {
             // end, like the visible lane's did).
             let remaining = n - batch.len();
             let t = self.lane_tick.fetch_add(1, Ordering::Relaxed);
-            let bg_share = if (driver == "xair" && n > 1) || t.is_multiple_of(n.max(2) as u64) { 1.min(remaining) } else { 0 };
+            let bg_share = self.drv(driver).poll_bg_share(n, t, remaining);
             let mut rest = remaining - bg_share;
-            let vis = self.pop_visible_batch(&driver, if driver == "xair" { rest.min(1) } else { rest });
+            let vis = self.pop_visible_batch(&driver, self.drv(driver).poll_visible_take(rest));
             rest -= vis.len();
             batch.extend(vis);
             batch.extend(self.pop_core_batch(&driver, rest));
@@ -3676,7 +3655,7 @@ impl Engine {
         let driver = self.active_driver();
         self.param_dropped.write().unwrap().retain(|(d, _)| d != &driver);
         self.poll_timeouts.write().unwrap().retain(|(d, _), _| d != &driver);
-        if self.active_driver() == "xair" {
+        if self.active_drv().needs_hydration() {
             self.hydrating.store(self.connection_gen.load(Ordering::Acquire), Ordering::Release);
         }
         self.seed_fx_cache().await;
@@ -3947,30 +3926,20 @@ impl Engine {
                     out.push((s as u16, *id));
                 }
                 // Solo rides the poll set as its own id (never a catalogue
-                // param — the solosw bank has no per-strip query address,
-                // so it can never enter `caps`): xair channel strips
-                // re-read the bank via `get_solo` (`read_param` routes
-                // it). Appended to the strip's own block, so the list
+                // param — a solosw bank has no per-strip query address,
+                // so it can never enter `caps`): strips carrying the
+                // extra id re-read the bank via `get_solo`
+                // (`read_param` routes it). Appended to the strip's own block, so the list
                 // stays strip-major. This is the desk→app backstop for
                 // solos the live ingest never saw (attach gaps, dropped
                 // broadcasts); the ingest is the fast path.
-                if driver == "xair" && fam.kind == openmix_core::StripKind::In {
-                    out.push((s as u16, "solo"));
+                for id in self.drv(driver).essentials_extra_ids(fam.kind) {
+                    out.push((s as u16, id));
                 }
             }
         }
-        if driver == "xair" {
-            for group in 0..4 { out.push((group, "_mute_group")); }
-            for fam in &topo {
-                if matches!(fam.kind, openmix_core::StripKind::In | openmix_core::StripKind::Ret | openmix_core::StripKind::Bus | openmix_core::StripKind::FxSnd) {
-                    for strip in fam.first..fam.first + fam.count {
-                        for id in ["_mg1", "_mg2", "_mg3", "_mg4"] { out.push((strip as u16, id)); }
-                    }
-                }
-                if fam.kind == openmix_core::StripKind::In {
-                    for strip in fam.first..fam.first + fam.count { out.push((strip as u16, "rtnsw")); }
-                }
-            }
+        for (ch, id) in self.drv(driver).static_extra_rows(&topo) {
+            out.push((ch, id));
         }
         out.sort_by_key(|(ch, _)| *ch);
         self.poll_static.write().unwrap().insert(driver.to_string(), out.clone());
@@ -4297,15 +4266,19 @@ impl Engine {
         self.param_cache.read().unwrap().get(&ch.0).and_then(|values| values.get(param)).cloned()
     }
 
-    /// Snapshot the active driver (used by `capture_scene`).
+    /// Snapshot the active driver (used by `capture_scene`). Drivers with
+    /// no native bulk snapshot but a live param plane opt in via
+    /// [`DynDriver::param_plane_snapshot`]: the engine captures the
+    /// canonical strip basics used by its live param plane, without
+    /// inventing values when the desk fails to answer.
     async fn active_snapshot(&self) -> anyhow::Result<openmix_core::MixerSnapshot> {
         let driver = self.active_driver();
-        if driver != "xair" {
-            return self.active_drv().snapshot().await;
-        }
-        // X-Air has no native bulk snapshot. Capture the same canonical
-        // strip basics used by its live param plane, without inventing
-        // values when the desk fails to answer.
+        match self.active_drv().snapshot().await {
+            Ok(snapshot) => Ok(snapshot),
+            Err(first) => {
+                if !self.active_drv().param_plane_snapshot() {
+                    return Err(first);
+                }
         let generation = self.connection_gen.load(Ordering::Acquire);
         let mut snapshot = openmix_core::MixerSnapshot::default();
         for family in self.driver_topology(&driver) {
@@ -4318,7 +4291,7 @@ impl Engine {
                 )?;
                 let (ParamValue::Float(fader), ParamValue::Bool(mute), ParamValue::Text(name)) =
                     (fader, mute, name) else {
-                        anyhow::bail!("xair: invalid snapshot values for strip {index}");
+                        anyhow::bail!("{driver}: invalid snapshot values for strip {index}");
                     };
                 anyhow::ensure!(self.connection_gen.load(Ordering::Acquire) == generation,
                     "desk changed during scene capture");
@@ -4328,6 +4301,8 @@ impl Engine {
             }
         }
         Ok(snapshot)
+            }
+        }
     }
 
     /// Main fader of the active driver, `None` when the driver has none.
@@ -5082,12 +5057,11 @@ impl Engine {
                         break;
                     }
                 }
-                // Discovered-device dial carries an explicit :10024 on xair:
-                // the row already proved the desk answers there, so the
-                // bare-host sweep (probing 10024 then the 10023 fallback at
-                // 400 ms each) is skipped. Other drivers pass through
+                // Discovered-device dial carries an explicit port when the
+                // driver answers there (the row already proved it, so the
+                // bare-host sweep is skipped). Other drivers pass through
                 // untouched.
-                let dial = dial_addr(claimed, &entry.ip);
+                let dial = self.drv(claimed).dial_addr(&entry.ip);
                 self.connect(claimed, Some(&dial)).await?;
                 self.set_link_connected(Some(&id), &entry.ip).await;
                 self.post_switch(writer, out, false).await?;
@@ -5106,7 +5080,7 @@ impl Engine {
                 let driver = self.active_driver();
                 let Some(table_driver) = self.drv(&driver).probe_table() else {
                     anyhow::bail!(
-                        "probe needs the xair driver (relay runs {driver}) — switch drivers first"
+                        "probe needs a driver with a probe table (relay runs {driver}) — switch drivers first"
                     );
                 };
                 let Some(found) = self.probe_desk(table_driver, &addr).await else {
@@ -5267,12 +5241,12 @@ impl Engine {
                     openmix_core::fx::fx_type_meta(&fx_type)
                         .ok_or_else(|| anyhow::anyhow!("unknown fx type {fx_type:?}"))?;
                 } else if drv.fx_flavor() == FxFlavor::Numbered {
-                    // Desk-native rack (xair): names come from the desk type
+                    // Desk-native rack: names come from the desk type
                     // table behind `caps.fx` — the short code (`id`, e.g.
                     // `HALL`) or the full display name (`label`, e.g.
                     // `Hall Reverb`); the UI sends the code. Unknown here
                     // means unknown there.
-                    if xair_type_index_of(&fx_type).is_none() {
+                    if drv.fx_type_index_of(&fx_type).is_none() {
                         anyhow::bail!("unknown fx type {fx_type:?}");
                     }
                 } else {
@@ -5827,99 +5801,6 @@ fn param_vec_to_map(fx_type: &str, values: &[f32]) -> BTreeMap<String, f32> {
     }
 }
 
-/// Desk-native FX type tables for `caps.fx` on `xair`: the 60 documented
-/// algorithms from `proto-xair::fx` (index 15 is an undocumented gap in
-/// the wire order and stays out, like the `None` fallback there).
-///
-/// `id` is the desk short code (`HALL`, `DLY`, … — the stable wire key
-/// the UI writes back on type-select); `label` is the full display name
-/// (`Hall Reverb`, `Stereo Delay`, … from `fx_effect_full_name`).
-///
-/// Param ids are the verified wire numbers (`par01..par64`); labels are
-/// the X-Air display names with the dual-block bank (`A`/`B`) appended
-/// and a `?` suffix on research-low-confidence (`inferred`) rows. Ranges
-/// are normalized (`0..1`, the desk's wire domain for FX pars —
-/// bit-exact, no fader epsilon); the display ranges in the notes are
-/// strings (`1k`, `20k`) that do not fit the numeric caps shape, so the
-/// UI formats normalized values as percent and shows `unit` alongside.
-fn xair_fx_caps() -> Vec<crate::protocol::FxTypeCaps> {
-    use openmix_proto_xair::fx as xfx;
-    let mut out = Vec::new();
-    for index in 0..=xfx::FX_TYPE_MAX {
-        let Some(code) = xfx::fx_effect_name(index) else {
-            continue;
-        };
-        let label = xfx::fx_effect_full_name(index).unwrap_or(code);
-        let mut params = Vec::new();
-        for par in 1..=xfx::PARAM_COUNT as u8 {
-            let Some(def) = xfx::fx_param_def(index, par) else {
-                continue;
-            };
-            let mut label = def.label.to_string();
-            if let Some(bank) = def.bank {
-                label.push(' ');
-                label.push_str(bank);
-            }
-            if def.inferred {
-                label.push('?');
-            }
-            params.push(crate::protocol::FxParamCaps {
-                id: format!("par{par:02}"),
-                label,
-                unit: def.unit.to_string(),
-                min: 0.0,
-                max: 1.0,
-                default: 0.5,
-                scale: "lin".to_string(),
-            });
-        }
-        out.push(crate::protocol::FxTypeCaps {
-            id: code.to_string(),
-            label: label.to_string(),
-            params,
-        });
-    }
-    out
-}
-
-/// Discovered-device dial address: bare IPs on xair gain an explicit
-/// `:10024` so [`XAirDriver::connect`](openmix_proto_xair::XAirDriver::connect)
-/// skips the bare-host port sweep (the discovery row already proved the
-/// desk answers there). Forms with an explicit port, hostnames and other
-/// drivers pass through untouched.
-fn dial_addr(driver: &str, ip: &str) -> String {
-    if driver != "xair" {
-        return ip.to_string();
-    }
-    if ip.parse::<SocketAddr>().is_ok() {
-        return ip.to_string();
-    }
-    if let Some((h, p)) = ip.rsplit_once(':') {
-        if p.parse::<u16>().is_ok() && h.trim_matches(['[', ']']).parse::<IpAddr>().is_ok() {
-            return ip.to_string();
-        }
-    }
-    if ip.parse::<IpAddr>().is_ok() && !ip.contains(':') {
-        return format!("{ip}:{}", openmix_proto_xair::addrs::PORT);
-    }
-    ip.to_string()
-}
-
-/// Desk-native effect name for a `/fx/N/type` index (`None` = gap/unknown).
-fn xair_type_name(index: u8) -> Option<&'static str> {
-    openmix_proto_xair::fx::fx_effect_name(index)
-}
-
-/// Reverse lookup: effect name back to its `/fx/N/type` index (`None`
-/// for placeholders like `—` or unknown names). Accepts the desk short
-/// code (`caps.fx` `id`, e.g. `DLY`) or the full display name
-/// (`caps.fx` `label`, e.g. `Stereo Delay`) so the UI can send either.
-fn xair_type_index_of(name: &str) -> Option<u8> {
-    (0..=openmix_proto_xair::fx::FX_TYPE_MAX).find(|&index| {
-        openmix_proto_xair::fx::fx_effect_name(index) == Some(name)
-            || openmix_proto_xair::fx::fx_effect_full_name(index) == Some(name)
-    })
-}
 
 /// Parse a patch label (`Lcl 01`, `Net 12`, `USB 03`) into (group, 1-based
 /// index). The design's unpatched tile (`—`) and anything else → `None`.
@@ -6229,17 +6110,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dial_addr_skips_sweep_only_for_bare_xair_ips() {
-        // Discovered-device dial: bare xair IPs gain :10024 (the sweep is
-        // skipped); everything else passes through untouched.
-        assert_eq!(dial_addr("xair", "192.168.1.120"), "192.168.1.120:10024");
+    fn dial_addr_skips_sweep_only_for_bare_provider_ips() {
+        // Discovered-device dial: a bare IP gains an explicit port when
+        // the provider answers there (the sweep is skipped); everything
+        // else passes through untouched.
+        let xair = openmix_proto_xair::XAirDriver::new();
+        let sim = openmix_sim::SimDriver::new();
         assert_eq!(
-            dial_addr("xair", "192.168.1.120:10024"),
+            crate::drivers::DynDriver::dial_addr(&xair, "192.168.1.120"),
             "192.168.1.120:10024"
         );
-        assert_eq!(dial_addr("xair", "desk.local"), "desk.local");
-        assert_eq!(dial_addr("dl32s", "192.168.1.120"), "192.168.1.120");
-        assert_eq!(dial_addr("sim", "192.168.1.120"), "192.168.1.120");
+        assert_eq!(
+            crate::drivers::DynDriver::dial_addr(&xair, "192.168.1.120:10024"),
+            "192.168.1.120:10024"
+        );
+        assert_eq!(
+            crate::drivers::DynDriver::dial_addr(&xair, "desk.local"),
+            "desk.local"
+        );
+        assert_eq!(
+            crate::drivers::DynDriver::dial_addr(&sim, "192.168.1.120"),
+            "192.168.1.120"
+        );
     }
 
     #[test]
@@ -6370,19 +6262,21 @@ mod tests {
     }
 
     #[test]
-    fn xair_type_names_resolve_like_caps() {
-        // `FxSetType` on the desk-native rack validates against the same
+    fn numbered_type_names_resolve_like_caps() {
+        // `FxSetType` on a desk-native rack validates against the same
         // table `caps.fx` advertises (short code `id` or full display
         // `label`), not the design list: design names are unknown there.
-        assert_eq!(xair_type_index_of("HALL"), Some(0));
-        assert_eq!(xair_type_index_of("VRM"), Some(7));
-        assert_eq!(xair_type_index_of("PIT"), Some(60));
-        assert_eq!(xair_type_index_of("Hall Reverb"), Some(0));
-        assert_eq!(xair_type_index_of("Vintage Room"), Some(7));
-        assert_eq!(xair_type_index_of("Stereo Pitch Shifter"), Some(60));
-        assert_eq!(xair_type_index_of("Nope"), None);
-        assert_eq!(xair_type_index_of("Hall"), None);
-        assert_eq!(xair_type_index_of(""), None);
+        let xair = openmix_proto_xair::XAirDriver::new();
+        let idx = |name: &str| crate::drivers::DynDriver::fx_type_index_of(&xair, name);
+        assert_eq!(idx("HALL"), Some(0));
+        assert_eq!(idx("VRM"), Some(7));
+        assert_eq!(idx("PIT"), Some(60));
+        assert_eq!(idx("Hall Reverb"), Some(0));
+        assert_eq!(idx("Vintage Room"), Some(7));
+        assert_eq!(idx("Stereo Pitch Shifter"), Some(60));
+        assert_eq!(idx("Nope"), None);
+        assert_eq!(idx("Hall"), None);
+        assert_eq!(idx(""), None);
     }
 
     fn event_json(event: Event) -> Value {
@@ -6714,13 +6608,10 @@ mod tests {
                             .unwrap_or(true)
                     })
                     .count();
-                // Solo rides the poll set as its own id on xair channel
-                // strips (see `static_poll_list`): one extra entry per
-                // strip of the In family.
-                let n = n
-                    + usize::from(
-                        driver == "xair" && fam.kind == openmix_core::StripKind::In,
-                    );
+                // Solo rides the poll set as its own id on strips with a
+                // provider extra (see `static_poll_list`): one extra entry
+                // per strip of the matching families.
+                let n = n + engine.drv(driver).essentials_extra_ids(fam.kind).len();
                 expect += fam.count * n;
                 for s in fam.first..fam.first + fam.count {
                     let ids: Vec<&str> = list
@@ -6740,9 +6631,7 @@ mod tests {
                         })
                         .copied()
                         .collect();
-                    if driver == "xair" && fam.kind == openmix_core::StripKind::In {
-                        want.push("solo");
-                    }
+                    want.extend(engine.drv(driver).essentials_extra_ids(fam.kind).iter().copied());
                     assert_eq!(ids, want, "strip {s} carries the scoped set for {driver}");
                 }
             }
