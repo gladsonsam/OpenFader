@@ -34,7 +34,12 @@ class MixerToolbar extends StatelessWidget {
             color: MixerDesign.background,
             border: Border(bottom: BorderSide(color: MixerDesign.line))),
         child: Row(children: [
+          // Design session bar is shortened: empty top-left, then the bar
+          // (mock ratio 387 empty : 892 bar). Phones keep the full-width
+          // readout with the active-strip label.
+          if (!compact) const Expanded(flex: 387, child: SizedBox()),
           Expanded(
+              flex: compact ? 1 : 892,
               child: Semantics(
                   button: selected != null && !selected.master,
                   child: InkWell(
@@ -50,24 +55,56 @@ class MixerToolbar extends StatelessWidget {
                               borderRadius: MixerDesign.radius,
                               border: Border.all(color: MixerDesign.line)),
                           child: Row(children: [
-                            // Left side intentionally empty for now.
-                            const Expanded(child: SizedBox()),
-                              // Live fader readout: centered like the design
-                              // session output; listens to the selected
-                              // strip's fader notifier so it tracks drags
-                              // without a page rebuild.
+                            // Active-strip labels, back inside the bar.
+                            if (!compact &&
+                                selected != null &&
+                                !selected.master)
                               Expanded(
-                                  child: Center(
-                                      child: _SelectedLevel(
-                                          controller: controller,
-                                          compact: compact))),
-                              if (!compact)
-                                Padding(
-                                    padding: const EdgeInsets.only(left: 12),
-                                    child: Text('Fader',
-                                        style: MixerDesign.type(22,
-                                            color: MixerDesign.mutedText))),
-                            ]))))),
+                                  child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                    Text('Ch ${selected.number}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: MixerDesign.type(14,
+                                            color: MixerDesign.mutedText)),
+                                    Text(selected.name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: MixerDesign.type(14,
+                                            color: MixerDesign.mutedText)),
+                                  ]))
+                            else if (compact)
+                              Expanded(
+                                  child: Text(
+                                      selected == null
+                                          ? 'OpenMix'
+                                          : selected.master
+                                              ? selected.name
+                                              : 'Ch ${selected.number} · ${selected.name}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: MixerDesign.type(12,
+                                          color: MixerDesign.mutedText))),
+                            // Live fader readout: centered like the design
+                            // session output; listens to the selected
+                            // strip's fader notifier so it tracks drags
+                            // without a page rebuild.
+                            Expanded(
+                                child: Center(
+                                    child: _SelectedLevel(
+                                        controller: controller,
+                                        compact: compact))),
+                            if (!compact)
+                              Padding(
+                                  padding: const EdgeInsets.only(left: 12),
+                                  child: Text('Fader',
+                                      style: MixerDesign.type(22,
+                                          color: MixerDesign.mutedText))),
+                          ]))))),
           const SizedBox(width: 4),
           if (!compact) ...[
             for (final a in actions.take(5))
