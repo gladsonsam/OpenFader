@@ -277,26 +277,70 @@ class EqCurvePainter extends CustomPainter {
     10000,
     20000
   ];
-  static const _dbTicks = <double>[12, 6, 0, -6, -12];
+  static const _dbTicks = <double>[15, 10, 5, 0, -5, -10, -15];
 
   @override
   void paint(Canvas canvas, Size size) {
     final sx = size.width / EqGraphGeom.w;
     final sy = size.height / EqGraphGeom.h;
-    // Grid.
+    void label(String text, Offset position,
+        {Color color = U4.text7, double font = 10, bool centered = false}) {
+      final painter = TextPainter(
+          text: TextSpan(
+              text: text,
+              style:
+                  AppDesign.type(font, color: color, weight: FontWeight.w500)),
+          textDirection: TextDirection.ltr)
+        ..layout();
+      painter.paint(
+          canvas,
+          position -
+              Offset(centered ? painter.width / 2 : 0, painter.height / 2));
+    }
+
     final grid = Paint()
       ..color = U4.linePanel
       ..strokeWidth = 1;
-    for (final f in _freqTicks) {
-      final x = EqGraphGeom.xOf(f) * sx;
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+    for (var decade = 20.0; decade < 20000; decade *= 10) {
+      for (var step = 1; step < 10; step++) {
+        final f = decade * step;
+        if (f > 20000) continue;
+        final x = EqGraphGeom.xOf(f) * sx;
+        canvas.drawLine(Offset(x, 0), Offset(x, size.height), grid);
+      }
     }
     for (final db in _dbTicks) {
       final y = EqGraphGeom.yOf(db) * sy;
-      final p = Paint()
-        ..color = db == 0 ? U4.lineCtl : U4.linePanel
-        ..strokeWidth = db == 0 ? 1.5 : 1;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), p);
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+      label(db.toStringAsFixed(0), Offset(-24, y));
+    }
+    for (final f in _freqTicks) {
+      if (size.width < 500 && ![20, 100, 1000, 10000, 20000].contains(f)) {
+        continue;
+      }
+      final x = (EqGraphGeom.xOf(f) * sx).clamp(6.0, size.width - 8);
+      label(
+          f >= 1000
+              ? '${(f / 1000).toStringAsFixed(0)}k'
+              : f.toStringAsFixed(0),
+          Offset(x, size.height + 16),
+          centered: true);
+    }
+    // Individual band contributions use the same DSP response as the sum.
+    for (final band in eq.bands.where((b) => b.on)) {
+      final samples = eqResponseDb(ChannelEqVm(bands: [band]));
+      final area = Path()..moveTo(0, size.height / 2);
+      for (var i = 0; i < samples.length; i++) {
+        area.lineTo(i / (samples.length - 1) * size.width,
+            EqGraphGeom.yOf(samples[i]) * sy);
+      }
+      area.lineTo(size.width, size.height / 2);
+      area.close();
+      canvas.drawPath(
+          area,
+          Paint()
+            ..color = Color(EqGraphGeom.bandColors[band.band])
+                .withValues(alpha: .25));
     }
     // RTA overlay under the curve (verified audio_spectrum frames only;
     // the owner hides it when bins carry no signal).
@@ -311,7 +355,8 @@ class EqCurvePainter extends CustomPainter {
       }
       path.lineTo(size.width, size.height);
       path.close();
-      canvas.drawPath(path, Paint()..color = const Color(0x33a3ed19));
+      canvas.drawPath(
+          path, Paint()..color = AppDesign.meter.withValues(alpha: .2));
     }
     // Summed curve + fill to 0 dB.
     if (responseDb.isNotEmpty) {
@@ -333,49 +378,42 @@ class EqCurvePainter extends CustomPainter {
       final lastX = size.width;
       fill.lineTo(lastX, zeroY);
       fill.close();
-      canvas.drawPath(fill, Paint()..color = const Color(0x22969d88));
+      canvas.drawPath(fill, Paint()..color = U4.text7.withValues(alpha: .12));
       canvas.drawPath(
         curve,
         Paint()
-          ..color = U4.cyan
+          ..color = U4.text1
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2,
       );
     }
-    // Nodes.
-    for (var i = 0; i < eq.bands.length; i++) {
-      final b = eq.bands[i];
-      final x = EqGraphGeom.xOf(b.f.clamp(20, 20000)) * sx;
-      final y = EqGraphGeom.yOf(b.g.clamp(-15, 15)) * sy;
-      final col = Color(
-          EqGraphGeom.bandColors[(i + 1) % EqGraphGeom.bandColors.length]);
-      canvas.drawCircle(Offset(x, y), 9,
-          Paint()..color = col.withValues(alpha: b.on ? 1 : 0.35));
+    void node(Offset point, int band, bool on) {
+      final color = Color(EqGraphGeom.bandColors[band]);
+      final radius = size.width < 500 ? 15.0 : 22.0;
+      canvas.drawCircle(point, radius, Paint()..color = AppDesign.chip);
       canvas.drawCircle(
-          Offset(x, y),
-          9,
+          point,
+          radius,
           Paint()
-            ..color = eq.selectedBand == b.band ? Colors.white : U4.well
+            ..color = color.withValues(alpha: on ? 1 : .35)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = eq.selectedBand == b.band ? 2.5 : 1.5);
+            ..strokeWidth = eq.selectedBand == band ? 3 : 2);
+      label(band == 0 ? 'HPF' : '$band', point,
+          color: U4.text1, font: band == 0 ? 9 : 14, centered: true);
     }
-    // HPF node on the 0 dB line.
-    {
-      final x = EqGraphGeom.xOf(eq.hpfF.clamp(20, 1000)) * sx;
-      final y = EqGraphGeom.yOf(0) * sy;
-      final col = Color(EqGraphGeom.bandColors[0]);
-      canvas.drawCircle(Offset(x, y), 8,
-          Paint()..color = col.withValues(alpha: eq.hpfOn ? 1 : 0.35));
-      if (eq.selectedBand == 0) {
-        canvas.drawCircle(
-            Offset(x, y),
-            8,
-            Paint()
-              ..color = Colors.white
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 2.5);
-      }
+
+    for (final band in eq.bands) {
+      node(
+          Offset(EqGraphGeom.xOf(band.f.clamp(20, 20000)) * sx,
+              EqGraphGeom.yOf(band.g.clamp(-15, 15)) * sy),
+          band.band,
+          band.on);
     }
+    node(
+        Offset(EqGraphGeom.xOf(eq.hpfF.clamp(20, 1000)) * sx,
+            EqGraphGeom.yOf(0) * sy),
+        0,
+        eq.hpfOn);
   }
 
   @override
@@ -393,6 +431,7 @@ class U4EqGraph extends StatelessWidget {
   final List<double> responseDb;
   final List<double>? rtaBins;
   final bool rtaActive;
+  final double height;
   final ValueChanged<int> onSelectBand;
   final void Function(int band, double f, double g) onNode;
   final void Function(int band, double q) onQ;
@@ -403,6 +442,7 @@ class U4EqGraph extends StatelessWidget {
     required this.responseDb,
     this.rtaBins,
     this.rtaActive = false,
+    this.height = 344,
     required this.onSelectBand,
     required this.onNode,
     required this.onQ,
@@ -412,30 +452,39 @@ class U4EqGraph extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final w = constraints.maxWidth.isFinite ? constraints.maxWidth : 340.0;
-        const h = 190.0;
+        final outerWidth =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 340.0;
+        final w = outerWidth - 44;
+        final h = height - 44;
         return Semantics(
             container: true,
             label: 'EQ graph',
             hint:
                 'Drag a band to change frequency and gain. Pinch to change bandwidth.',
-            child: _EqGraphGesture(
-              width: w,
-              height: h,
-              eq: eq,
-              onSelectBand: onSelectBand,
-              onNode: onNode,
-              onQ: onQ,
-              child: CustomPaint(
-                size: Size(w, h),
-                painter: EqCurvePainter(
-                  responseDb: responseDb,
+            child: Container(
+                height: height,
+                padding: const EdgeInsets.fromLTRB(28, 14, 16, 30),
+                decoration: BoxDecoration(
+                    color: AppDesign.panel,
+                    borderRadius: U4.rWell,
+                    border: Border.all(color: U4.linePanel)),
+                child: _EqGraphGesture(
+                  width: w,
+                  height: h,
                   eq: eq,
-                  rtaBins: rtaBins,
-                  rtaActive: rtaActive,
-                ),
-              ),
-            ));
+                  onSelectBand: onSelectBand,
+                  onNode: onNode,
+                  onQ: onQ,
+                  child: CustomPaint(
+                    size: Size(w, h),
+                    painter: EqCurvePainter(
+                      responseDb: responseDb,
+                      eq: eq,
+                      rtaBins: rtaBins,
+                      rtaActive: rtaActive,
+                    ),
+                  ),
+                )));
       },
     );
   }
@@ -577,7 +626,7 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
 
   @override
   Widget build(BuildContext context) {
-    return _GraphTouchSurface(
+    return U4GraphTouchSurface(
       onDown: _down,
       onMove: _move,
       onUp: _up,
@@ -589,14 +638,15 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
 
 /// Graph touches belong to the graph from pointer-down, so an enclosing
 /// scroll view cannot win the gesture arena halfway through a node edit.
-class _GraphTouchSurface extends StatelessWidget {
+class U4GraphTouchSurface extends StatelessWidget {
   final PointerDownEventListener onDown;
   final PointerMoveEventListener onMove;
   final PointerUpEventListener onUp;
   final PointerCancelEventListener onCancel;
   final Widget child;
 
-  const _GraphTouchSurface({
+  const U4GraphTouchSurface({
+    super.key,
     required this.onDown,
     required this.onMove,
     required this.onUp,
@@ -781,7 +831,7 @@ class _U4DynGraphState extends State<U4DynGraph> {
     return LayoutBuilder(builder: (context, constraints) {
       final size =
           Size(constraints.maxWidth.isFinite ? constraints.maxWidth : 340, 170);
-      return _GraphTouchSurface(
+      return U4GraphTouchSurface(
         onDown: _down,
         onMove: (event) => _move(event, size),
         onUp: (event) => _pointers.remove(event.pointer),

@@ -1,0 +1,230 @@
+part of 'channel.dart';
+
+class _EqTab extends StatefulWidget {
+  final ChannelStore store;
+  final ChannelWrites writes;
+  final ValueChanged<ChannelFocus> onFocus;
+  const _EqTab(
+      {required this.store, required this.writes, required this.onFocus});
+  @override
+  State<_EqTab> createState() => _EqTabState();
+}
+
+class _EqTabState extends State<_EqTab> {
+  bool _showRta = true;
+
+  void _pick(int band) {
+    widget.store.selectEqBand(band);
+    widget.onFocus(eqFreqFocus(widget.store, widget.writes, band));
+  }
+
+  Widget _slider(EqBandVm band, String prop, String label) {
+    final range = switch (prop) {
+      'g' => band.gRange,
+      'f' => band.fRange,
+      _ => band.qRange,
+    };
+    final value = switch (prop) { 'g' => band.g, 'f' => band.f, _ => band.q };
+    final min =
+        range?.first ?? switch (prop) { 'g' => -15.0, 'f' => 20.0, _ => .3 };
+    final max =
+        range?.last ?? switch (prop) { 'g' => 15.0, 'f' => 20000.0, _ => 16.0 };
+    final focus = switch (prop) {
+      'g' => _eqGainFocus(widget.store, widget.writes, band.band),
+      'f' => eqFreqFocus(widget.store, widget.writes, band.band),
+      _ => _eqQFocus(widget.store, widget.writes, band.band),
+    };
+    return Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: _ProcessingSlider(
+            label: label,
+            text: focus.text(),
+            value: value,
+            min: min,
+            max: max,
+            compact: true,
+            color: Color(EqGraphGeom.bandColors[band.band]),
+            enabled: widget.store.supports('eq${band.band}_$prop'),
+            onFocus: () {
+              _pick(band.band);
+              widget.onFocus(focus);
+            },
+            onChanged: (v) {
+              widget.writes.queue('eq${band.band}_$prop', v);
+              widget.store.setEqParam(band.band, prop, v);
+            }));
+  }
+
+  Widget _hpf() {
+    final store = widget.store;
+    final eq = store.eq;
+    return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Row(children: [
+          SizedBox(
+              width: 84,
+              child: _ProcessingButton(
+                  label: 'HPF',
+                  active: eq.hpfOn,
+                  onTap: store.supports('hpf_on')
+                      ? () => store.setEqBandOn(0, !eq.hpfOn)
+                      : null)),
+          const SizedBox(width: 8),
+          Expanded(
+              child: _ProcessingSlider(
+                  label: 'HPF frequency',
+                  text: '${eq.hpfF.toStringAsFixed(0)} Hz',
+                  value: eq.hpfF,
+                  min: 20,
+                  max: 1000,
+                  showLabel: false,
+                  color: Color(EqGraphGeom.bandColors[0]),
+                  enabled: store.supports('eq_hpf_f'),
+                  onFocus: () =>
+                      widget.onFocus(eqFreqFocus(store, widget.writes, 0)),
+                  onChanged: (v) {
+                    widget.writes.queue('eq_hpf_f', v);
+                    store.setEqParam(0, 'f', v);
+                  })),
+        ]));
+  }
+
+  Widget _panel(EqBandVm band, double height) => Container(
+      height: height,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+          color: U4.tileBg,
+          borderRadius: U4.rWell,
+          border: Border.all(color: U4.linePanel)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _ProcessingButton(
+            label: 'Band ${band.band}',
+            active: band.on,
+            onTap: widget.store.supports('eq${band.band}_on')
+                ? () => widget.store.setEqBandOn(band.band, !band.on)
+                : null),
+        const Spacer(),
+        if (band.band == 1 || band.band == 4)
+          Row(children: [
+            for (final type in ['Shelf', 'Bell'])
+              Expanded(
+                  child: _ProcessingButton(
+                      label: type,
+                      active: band.type ==
+                          (type == 'Bell'
+                              ? 2
+                              : band.band == 1
+                                  ? 1
+                                  : 4),
+                      onTap: widget.store.supports('eq${band.band}_type')
+                          ? () => widget.store.cmdParam(
+                              'eq${band.band}_type',
+                              type == 'Bell'
+                                  ? 2
+                                  : band.band == 1
+                                      ? 1
+                                      : 4)
+                          : null)),
+          ]),
+        _slider(band, 'g', 'G'),
+        _slider(band, 'f', 'F'),
+        _slider(band, 'q', 'Q'),
+      ]));
+
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.store;
+    final eq = store.eq;
+    final wide = MediaQuery.sizeOf(context).width >= 700;
+    final selected =
+        eq.bands.where((b) => b.band == eq.selectedBand).firstOrNull ??
+            eq.bands.firstOrNull;
+    return LayoutBuilder(builder: (context, bounds) {
+      final scale = bounds.maxWidth / 1443;
+      return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _ProcessorHeader(
+            title: 'EQ',
+            on: eq.on,
+            compact: !wide,
+            onToggle: () => store.setEqOn(!eq.on)),
+        const SizedBox(height: 12),
+        Row(children: [
+          if (wide)
+            SizedBox(
+                width: 460 * scale,
+                child: _PresetsButton(store: store, compact: false))
+          else
+            Expanded(child: _PresetsButton(store: store, compact: true)),
+          const SizedBox(width: 8),
+          SizedBox(
+              width: wide ? 248 * scale : null,
+              child: Semantics(
+                  toggled: _showRta,
+                  child: _ProcessingButton(
+                      label: 'RTA',
+                      active: _showRta,
+                      onTap: () => setState(() => _showRta = !_showRta)))),
+          if (wide) const Spacer(),
+        ]),
+        const SizedBox(height: 8),
+        Opacity(
+            opacity: eq.on ? 1 : .55,
+            child: ValueListenableBuilder<List<double>>(
+                valueListenable: store.spectrum,
+                builder: (context, bins, _) => U4EqGraph(
+                      height: wide ? 665 * scale : bounds.maxWidth * 344 / 346,
+                      eq: eq,
+                      responseDb: eqResponseDb(eq),
+                      rtaBins: bins,
+                      rtaActive: _showRta && bins.any((b) => b > .02),
+                      onSelectBand: _pick,
+                      onNode: (band, f, g) {
+                        if (band == 0) {
+                          widget.writes.queue('eq_hpf_f', f.clamp(20, 1000));
+                          store.setEqParam(0, 'f', f.clamp(20, 1000));
+                        } else {
+                          widget.writes.queue('eq${band}_f', f);
+                          widget.writes.queue('eq${band}_g', g);
+                          store.setEqParam(band, 'f', f);
+                          store.setEqParam(band, 'g', g);
+                        }
+                      },
+                      onQ: (band, q) {
+                        widget.onFocus(_eqQFocus(store, widget.writes, band));
+                        widget.writes.queue('eq${band}_q', q);
+                        store.setEqParam(band, 'q', q);
+                      },
+                    ))),
+        const SizedBox(height: 8),
+        if (wide)
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            for (var i = 0; i < eq.bands.length; i++) ...[
+              if (i > 0) const SizedBox(width: 10),
+              Expanded(
+                  child: _panel(eq.bands[i], (500 * scale).clamp(360, 500))),
+            ],
+          ])
+        else ...[
+          Container(
+              decoration:
+                  BoxDecoration(color: AppDesign.chip, borderRadius: U4.rBtn),
+              padding: const EdgeInsets.all(3),
+              child: Row(children: [
+                for (final band in eq.bands)
+                  Expanded(
+                      child: _ProcessingButton(
+                          label: 'Band ${band.band}',
+                          active: eq.selectedBand == band.band,
+                          onTap: () => _pick(band.band))),
+              ])),
+          if (selected != null) ...[
+            _slider(selected, 'g', 'G'),
+            _slider(selected, 'f', 'F'),
+            _slider(selected, 'q', 'Q'),
+          ],
+        ],
+        _hpf(),
+      ]);
+    });
+  }
+}
