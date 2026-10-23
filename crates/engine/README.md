@@ -1,10 +1,10 @@
 # openmix-engine: the single mixer session
 
-Every frontend (browser via the relay, desktop/mobile via Tauri, CLI,
+Every frontend (native app via the bridge, CLI,
 future apps) gets the FULL mixer capability through this crate. The engine
 is transport-agnostic: it speaks exactly one protocol — [`Cmd`] in,
-[`Event`] out — and adapters (`crates/serve` for WebSocket + static files,
-`src-tauri` for IPC) only move `Cmd`/`Event` JSON. They contain no mixer
+[`Event`] out — and adapters (`crates/serve` for WebSocket,
+`crates/flutter_bridge` for the native app) only move `Cmd`/`Event` JSON. They contain no mixer
 logic. A feature that is not in the engine does not exist.
 
 Byte-compatibility rule: the JSON is the pre-existing WebSocket protocol.
@@ -47,8 +47,8 @@ client.detach().await; // also runs on drop
   session (default: admin). Denied writes surface as unicast `error` events.
 - The serve adapter maps `ServeOptions` to `EngineConfig` (`--poll-ms` to
   the poll tick, lock TTL to the sweeper) and pumps text lines both ways.
-  The Tauri adapter (ME2) will call `send` from `invoke('engine_cmd')` and
-  forward `events` over a `Channel`/event.
+  The bridge adapter calls `send` from its `cmd` entry point and forwards
+  `events` over the poll stream.
 
 ## Commands (`Cmd`, `{"cmd":...}`)
 
@@ -115,8 +115,7 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
 - `state`: `{"type":"state","driver":"sim","strips":[{"ch","key"?,"name",
   "fader","muted"}],"main_fader":0.8|null,"by":"client-1"?}` — full snapshot on
   attach/connect and after every mutation. `main_fader` is `null` when the
-  driver has none; `by` is absent on snapshots. LR main mirrors the Tauri
-  `get_state` shape.
+  driver has none; `by` is absent on snapshots.
 - `param`: `{"type":"param","ch":1,"key"?,"field":"gain","value":12.5,
   "by":"client-1"?}` — the confirmed (re-read) value after a `param`
   write, and once per applied value on `recall_scene`.
@@ -305,7 +304,7 @@ without the flag just re-acks; `{"cmd":"hello","binary_meters":false}`
 opts back out.
 
 `Event::to_binary(seq, t_ms)` is the single encoder (transport-agnostic:
-the WS adapter and the future Tauri adapter share it; JSON frames stay
+the WS adapter and the bridge share it; JSON frames stay
 byte-identical for clients that did not opt in). Layout, little-endian:
 
 ```
@@ -331,8 +330,7 @@ Golden binary fixtures live in `tests/golden_bin/*.bin.hex` (NOT
 `tests/golden/*.json`: that directory is consumed 1:1 by the TypeScript
 parser test, which rejects unknown frame types). `tests/realtime.rs`
 validates them against `to_binary` and decodes them with a reference
-decoder that `apps/web/src/lib/binaryFrames.test.ts` mirrors in
-TypeScript. R2 taps binaries live alongside the R2 JSON fixtures in
+decoder. R2 taps binaries live alongside the R2 JSON fixtures in
 `tests/golden_r2/` (`taps_in.bin.hex`, `taps_gr.bin.hex`, validated by
 `tests/golden_r2.rs`, which also carries every R2 command/frame JSON
 fixture — same split-directory reason).
@@ -462,7 +460,7 @@ WS end-to-end on a quiet box, production 50 ms tick):
 Pipelining scales ~linearly while reads are in-process (4.0×/7.9× for
 4/8); on hardware the ceiling is the desk RTT, not the tick — hence the
 adaptive backoff. The xair default of 4 was rig-measured 2026-10-19
-(XR18 @ 192.168.40.123, routed LAN: 48 sequential queries in 29 ms,
+(XR18 @ 192.168.1.20, routed LAN: 48 sequential queries in 29 ms,
 ~1600 q/s burst — 80 q/s average runs with ~20x headroom).
 `poll_tick` is public so tests and diagnostics can drive (and time) the
 poller deterministically; `poll_once` stays as the exact legacy
@@ -589,8 +587,7 @@ driver-side; the engine checks up front so denials never touch hardware.
   `clients`, `you`, `error`, `recalled`) and per command type
   (`cmd_connect`, `cmd_fader`, …). `tests/golden.rs` validates them
   against the constructors (regenerate with `GOLDEN_UPDATE=1`, then
-  commit); `apps/web/src/lib/golden.test.ts` feeds every frame through
-  the existing TypeScript parser.
+  commit).
 - `tests/golden_r2/*.json` + `*.bin.hex`: one file per R2 frame
   (`devices`, `link`, `info`, `scenes`, `fx`, `routing`,
   `offline_diff`, `taps`, `hello_taps`) and per R2 command
@@ -602,8 +599,8 @@ driver-side; the engine checks up front so denials never touch hardware.
   the TS parser itself ignores unknown frame types.
 
 Audio spectra and legacy envelope spectra share bounded latest-only per-strip
-slots in both `serve` and Tauri. A supplied audio spectrum wins over envelope
-activity; the UI labels provenance and expires missing spectra/GR after 1.5 s.
+slots in both `serve` and the bridge. A supplied audio spectrum wins over
+envelope activity; the UI labels provenance and expires missing spectra/GR after 1.5 s.
 Missing GR starts as unavailable, so a received 0 dB does not trigger an
 estimated threshold fallback. Dynamics bars/dots use received GR; the static
 transfer curve remains a parameter model. Live peaks/clips use the same

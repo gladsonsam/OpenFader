@@ -1,0 +1,9 @@
+# flutter_rust_bridge v2 codegen config. Run from this directory
+# (`crates/flutter_bridge`):
+#
+#   flutter_rust_bridge_codegen generate
+rust_root: .
+rust_input: crate::api
+rust_output: src/frb_generated.rs
+dart_output: ../../apps/app/lib/bridge/generated
+dart_entrypoint_class_name: OpenmixBridge

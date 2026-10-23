@@ -2017,9 +2017,11 @@ mod tests {
         // to subscribers as well as into the caches. The fake answers init
         // like the passing bulk test, then fires one broadcast values
         // frame, one mixer-initiated names request and one snapshot recall
-        // AFTER the final init step (2nd ChannelInfoControl), so the test's
-        // subscription (post-connect) observes them.
+        // AFTER the final init step (2nd ChannelInfoControl) AND after the
+        // test subscribes. The init response can share a TCP read with the
+        // pushes, so acknowledging init alone does not guarantee a subscriber.
         let (listener, addr) = loopback_listener().await.unwrap();
+        let (start_pushes, push_ready) = oneshot::channel::<()>();
         let fake_task = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut seq: u8 = 80;
@@ -2032,6 +2034,7 @@ mod tests {
             };
             let mut cic_count = 0;
             let mut fired = false;
+            let mut push_ready = Some(push_ready);
             loop {
                 let req = match read_frame(&mut stream).await {
                     Ok(m) => m,
@@ -2048,6 +2051,7 @@ mod tests {
                     continue;
                 }
                 fired = true;
+                push_ready.take().unwrap().await.expect("test subscribed");
                 // Broadcast values: ch2 mute (addr 114) = 1,
                 // ch2 fader (addr 115) = -15 dB float.
                 let mut body = vec![];
@@ -2089,6 +2093,9 @@ mod tests {
 
         let session = MackieSession::connect(&addr.to_string()).await.unwrap();
         let mut rx = session.subscribe_pushes();
+        start_pushes
+            .send(())
+            .expect("fake mixer waiting for subscriber");
         let mut got_values = false;
         let mut got_names = false;
         let mut got_recall = false;

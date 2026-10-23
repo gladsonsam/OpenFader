@@ -88,10 +88,10 @@ impl FakeScanner {
     fn one_desk() -> Arc<Self> {
         Arc::new(Self {
             rows: vec![(
-                "xair-192.168.40.123".to_string(),
+                "xair-192.168.1.20".to_string(),
                 "X-Air XR18".to_string(),
                 "XR18".to_string(),
-                "192.168.40.123".to_string(),
+                "192.168.1.20".to_string(),
                 "console".to_string(),
             )],
         })
@@ -151,7 +151,7 @@ async fn scan_lists_only_real_discovery() {
     let list = v.get("list").and_then(Value::as_array).unwrap();
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].get("name"), Some(&json!("X-Air XR18")));
-    assert_eq!(list[0].get("ip"), Some(&json!("192.168.40.123")));
+    assert_eq!(list[0].get("ip"), Some(&json!("192.168.1.20")));
     assert_eq!(list[0].get("via"), Some(&json!("broadcast")));
     assert!(v.get("scanned_at").and_then(Value::as_u64).unwrap_or(0) > 0);
 }
@@ -199,17 +199,17 @@ async fn connect_device_moves_link() {
     let scanner = Arc::new(FakeScanner {
         rows: vec![
             (
-                "sim-192.168.40.99".to_string(),
+                "sim-192.168.1.99".to_string(),
                 "Rehearsal Desk".to_string(),
                 "SimConsole 48".to_string(),
-                "192.168.40.99".to_string(),
+                "192.168.1.99".to_string(),
                 "console".to_string(),
             ),
             (
-                "sim-192.168.40.124".to_string(),
+                "sim-192.168.1.124".to_string(),
                 "Stage Box".to_string(),
                 "SimIO 32".to_string(),
-                "192.168.40.124".to_string(),
+                "192.168.1.124".to_string(),
                 "io".to_string(),
             ),
         ],
@@ -228,7 +228,7 @@ async fn connect_device_moves_link() {
     // I/O boxes cannot be mixing consoles.
     client
         .send(Cmd::ConnectDevice {
-            id: "sim-192.168.40.124".to_string(),
+            id: "sim-192.168.1.124".to_string(),
         })
         .await
         .unwrap();
@@ -247,7 +247,7 @@ async fn connect_device_moves_link() {
     // link frame still moves and names the desk).
     client
         .send(Cmd::ConnectDevice {
-            id: "sim-192.168.40.99".to_string(),
+            id: "sim-192.168.1.99".to_string(),
         })
         .await
         .unwrap();
@@ -255,7 +255,7 @@ async fn connect_device_moves_link() {
     let v = ev_json(&link);
     assert_eq!(v.get("state"), Some(&json!("connected")));
     assert_eq!(v.get("name"), Some(&json!("Rehearsal Desk")));
-    assert_eq!(v.get("ip"), Some(&json!("192.168.40.99")));
+    assert_eq!(v.get("ip"), Some(&json!("192.168.1.99")));
     assert_eq!(v.get("fs"), Some(&json!(48000)));
     // Fresh first paint carries the cached link (latency 0 until the ~2 s
     // link ticker lands its first round-trip measurement — fast-first
@@ -758,7 +758,7 @@ async fn taps_negotiation_and_frames() {
 async fn poller_inflight_defaults_and_focus_order() {
     let engine = new_engine().await;
     assert_eq!(engine.max_inflight("sim"), 4, "sim pipelines by default");
-    // Rig-measured 2026-10-19 (XR18 @ 192.168.40.123, routed LAN): 48
+    // Rig-measured 2026-10-19 (XR18 @ 192.168.1.20, routed LAN): 48
     // sequential queries in 29 ms (~1600 q/s burst), so 4 sequential reads
     // per 50 ms tick (80 q/s) runs with wide headroom; the adaptive EMA
     // still backs off on saturated links.
@@ -1069,8 +1069,8 @@ async fn probe_garbage_addr_errors_without_listing() {
 /// The newly-verified X-Air strip ids (`lr_assign`, `automix_weight`,
 /// `send1_grpon`) flow through the generic engine strip-param path with
 /// zero per-id work: they ride `caps`, write via `Cmd::Param`, and echo
-/// the confirmed value. Desk behaviour itself stays UNVERIFIED-ON-RIG
-/// (LIVE-RIG §10); this locks the relay side on sim.
+/// the confirmed value. Desk behaviour itself stays UNVERIFIED-ON-RIG;
+/// this locks the relay side on sim.
 #[tokio::test]
 async fn new_xair_strip_ids_roundtrip_on_sim() {
     let engine = new_engine().await;

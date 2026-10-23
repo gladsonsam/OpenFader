@@ -1136,8 +1136,7 @@ async fn ws_strip_locks_expiry() {
 }
 
 /// Main fader end-to-end (sim): `state` carries `main_fader`, the
-/// `main_fader` command (and its `set_main_fader` alias, mirroring the
-/// Tauri command) drives it with 0.0..=1.0 validation, and invalid
+/// `main_fader` command (and its `set_main_fader` legacy alias) drives it with 0.0..=1.0 validation, and invalid
 /// values error without moving it.
 #[tokio::test]
 async fn ws_main_fader_set_and_state() {
@@ -1182,7 +1181,7 @@ async fn ws_main_fader_set_and_state() {
         "main_fader mutation is writer-tagged"
     );
 
-    // `set_main_fader` alias (the Tauri command name) works the same.
+    // `set_main_fader` alias (legacy command name) works the same.
     tx.send(Message::text(
         json!({"cmd":"set_main_fader","value":0.3}).to_string(),
     ))

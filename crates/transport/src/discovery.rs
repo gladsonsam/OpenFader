@@ -377,7 +377,7 @@ fn subnet_broadcasts_v4() -> Vec<Ipv4Addr> {
     out
 }
 
-/// The /24 prefix of an address: `192.168.40.123` -> `192.168.40.0`.
+/// The /24 prefix of an address: `192.168.1.123` -> `192.168.1.0`.
 /// Accepts a known desk IP or an already-masked prefix (idempotent).
 /// Pure: unit-tested below.
 pub fn subnet24(ip: Ipv4Addr) -> Ipv4Addr {
@@ -592,16 +592,16 @@ mod tests {
         assert_eq!(list, sorted, "broadcast list is deduped + sorted");
     }
 
-    /// Real captured replies (XR18 FW 1.20, console named "Home Studio"):
+    /// Real captured replies (XR18 FW 1.20, console named "Studio"):
     /// the model is the second-to-last string arg — positional `nth(2)`
-    /// would read the IP ("192.168.40.123") or version ("V0.04") instead.
+    /// would read the IP ("192.168.1.123") or version ("V0.04") instead.
     #[test]
     fn parse_info_reply_reads_model_not_ip() {
-        let xinfo = b"/xinfo\x00\x00,ssss\x00\x00\x00192.168.40.123\x00\x00Home Studio\x00XR18\x00\x00\x00\x001.20\x00\x00\x00\x00";
+        let xinfo = b"/xinfo\x00\x00,ssss\x00\x00\x00192.168.1.123\x00\x00Studio\x00XR18\x00\x00\x00\x001.20\x00\x00\x00\x00";
         let (model, raw) = parse_info_reply(xinfo, "/xinfo").unwrap();
         assert_eq!(model, "XR18");
         assert!(raw.starts_with("/xinfo"));
-        let info = b"/info\x00\x00\x00,ssss\x00\x00\x00V0.04\x00\x00\x00Home Studio\x00XR18\x00\x00\x00\x001.20\x00\x00\x00\x00";
+        let info = b"/info\x00\x00\x00,ssss\x00\x00\x00V0.04\x00\x00\x00Studio\x00XR18\x00\x00\x00\x001.20\x00\x00\x00\x00";
         let (model, _) = parse_info_reply(info, "/info").unwrap();
         assert_eq!(model, "XR18");
         // Wrong prefix never matches; bare replies keep the old fallback.
@@ -699,7 +699,7 @@ mod tests {
             vec![
                 "255.255.255.255:10024".to_string(),
                 "192.168.20.255:10024".to_string(),
-                "192.168.40.255:10024".to_string(),
+                "192.168.1.255:10024".to_string(),
             ]
         );
         // Per-interface list (one directed broadcast) is the same shape.
@@ -736,7 +736,7 @@ mod tests {
     /// address is excluded.
     #[test]
     fn sweep_targets_shape() {
-        let desk: Ipv4Addr = "192.168.40.123".parse().unwrap();
+        let desk: Ipv4Addr = "192.168.1.123".parse().unwrap();
         let prefix = subnet24(desk);
         assert_eq!(prefix, Ipv4Addr::new(192, 168, 40, 0));
         // Idempotent on an already-masked prefix.

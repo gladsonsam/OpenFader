@@ -1,6 +1,0 @@
-{
-  "pages": [
-    { "id": "l0-demo", "title": "L0 demo", "layout": "l0-demo.default", "nav": "header" },
-    { "id": "l0-boxtest", "title": "L0 box test", "layout": "l0-boxtest", "nav": "hidden" }
-  ]
-}
