@@ -43,11 +43,12 @@ class _MixerPageState extends State<MixerPage> {
             final mobile = narrow || constraints.maxHeight < 500;
             final sideRail =
                 constraints.maxWidth >= 1000 && constraints.maxHeight >= 580;
-            final pageSize = constraints.maxWidth >= 2100
+            final basePageSize = constraints.maxWidth >= 2100
                 ? 16
                 : constraints.maxWidth >= 1700
                     ? 12
                     : 8;
+            final pageSize = narrow ? basePageSize : (basePageSize / .9).ceil();
             if (_configuredSize != pageSize) {
               _configuredSize = pageSize;
               WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -68,13 +69,12 @@ class _MixerPageState extends State<MixerPage> {
                   final channels = controller.channels;
                   final contentWidth =
                       constraints.maxWidth - (sideRail ? 96 : 0);
-                  final stripWidth = narrow
-                      ? 92.0
-                      : (contentWidth /
-                              (channels.length.clamp(1, pageSize) + 1))
-                          .clamp(108.0, 190.0);
-                  final masterWidth =
-                      narrow ? 92.0 : stripWidth.clamp(108.0, 164.0);
+                  final stripWidth = (narrow
+                          ? 92.0
+                          : (contentWidth /
+                                  (channels.length.clamp(1, basePageSize) + 1))
+                              .clamp(108.0, 190.0)) *
+                      .9;
                   Widget strip(MixerChannel ch) => MixerStrip(
                       key: ValueKey(ch.key),
                       channel: ch,
@@ -186,7 +186,7 @@ class _MixerPageState extends State<MixerPage> {
                                                       strip(channels[i])))),
                                   SizedBox(
                                       width: math.min(
-                                          masterWidth, contentWidth * .32),
+                                          stripWidth, contentWidth * .32),
                                       child: strip(controller.master)),
                                   if (sideRail)
                                     MixerBanks(
