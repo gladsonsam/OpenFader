@@ -749,7 +749,7 @@ impl_dyn_driver!(openmix_sim::SimDriver {
         true
     }
     fn gr_channel_count(&self) -> usize {
-        self.strip_count().min(crate::engine::GR_CHANNELS)
+        MixerDriver::strip_count(self).min(crate::engine::GR_CHANNELS)
     }
     /// In-memory bulk snapshots behind the engine's attach fast path
     /// (one lock each instead of ~1000 serial awaits; identical content).

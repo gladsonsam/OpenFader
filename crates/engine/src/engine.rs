@@ -5,7 +5,7 @@
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
     future::Future,
-    net::{IpAddr, SocketAddr},
+    net::IpAddr,
     path::PathBuf,
     pin::Pin,
     sync::{
@@ -328,10 +328,11 @@ impl Default for LinkState {
 /// (`crates/transport` mDNS/OSC broadcast discovery); tests inject a fake
 /// so no test ever touches the network.
 pub trait DeviceScanner: Send + Sync {
-    fn scan(
-        &self,
+    fn scan<'a>(
+        &'a self,
+        display: &'a (dyn Fn(&str, &str) -> String + Send + Sync),
         timeout: Duration,
-    ) -> Pin<Box<dyn Future<Output = Vec<DeviceDesc>> + Send + '_>>;
+    ) -> Pin<Box<dyn Future<Output = Vec<DeviceDesc>> + Send + 'a>>;
 }
 
 /// Production LAN scanner: broadcast probes for every row of the
@@ -341,15 +342,17 @@ pub trait DeviceScanner: Send + Sync {
 pub struct RealScanner;
 
 impl DeviceScanner for RealScanner {
-    fn scan(
-        &self,
+    fn scan<'a>(
+        &'a self,
+        display: &'a (dyn Fn(&str, &str) -> String + Send + Sync),
         timeout: Duration,
-    ) -> Pin<Box<dyn Future<Output = Vec<DeviceDesc>> + Send + '_>> {
+    ) -> Pin<Box<dyn Future<Output = Vec<DeviceDesc>> + Send + 'a>> {
         Box::pin(async move {
             let mut out = Vec::new();
             if let Ok(devs) = openmix_transport::discovery::discover_all(timeout).await {
                 for d in devs {
-                    push_row(&mut out, device_row(d, "broadcast"));
+                    let name = display(d.driver, &d.model);
+                    push_row(&mut out, device_row(d, "broadcast", name));
                 }
             }
             out
@@ -360,11 +363,15 @@ impl DeviceScanner for RealScanner {
 /// One discovery reply as a device row. Same mapping for broadcast, the
 /// unicast verify (manual add), the linked desk and the /24 sweep; only
 /// `via` differs. No sim rows ever come from here.
-fn device_row(d: openmix_transport::discovery::DiscoveredDevice, via: &str) -> DeviceDesc {
+fn device_row(
+    d: openmix_transport::discovery::DiscoveredDevice,
+    via: &str,
+    display_name: String,
+) -> DeviceDesc {
     let ip = d.addr.ip().to_string();
     DeviceDesc {
         id: format!("{}-{ip}", d.driver),
-        name: self.drv(&d.driver).display_name(&d.model),
+        name: display_name,
         model: d.model,
         ip,
         kind: "console".to_string(),
@@ -2416,7 +2423,7 @@ impl Engine {
                         return;
                     }
                     let started = Instant::now();
-                    let result = drv.get_fx_param_with_type(slot, index, Some(effect)).await;
+                    let result = drv.get_fx_param_with_type(slot, index as u8, Some(effect)).await;
                     if self.connection_gen.load(Ordering::Acquire) != generation { return; }
                     if !self.fx_cache.read().unwrap().iter().find(|r| r.slot == slot).is_some_and(|r| drv.fx_type_index_of(&r.fx_type) == Some(effect)) { break; }
                     if let Ok(value) = result { self.apply_received(slot as u16, &format!("_fx_par{:02}", index + 1), &ParamValue::Float(value), Instant::now(), Some(started)); }
@@ -3556,7 +3563,7 @@ impl Engine {
             eprintln!("engine: {driver} reconciliation queued {} keys; regular query budget, no snapshot reset", list.len());
         }
         let mut batch: Vec<(u16, String)> = Vec::with_capacity(n);
-        let focus_limit = self.drv(driver).poll_focus_limit(n);
+        let focus_limit = self.drv(&driver).poll_focus_limit(n);
         while batch.len() < focus_limit {
             match self.pop_focus(&driver) {
                 Some(e) => batch.push(e),
@@ -3575,9 +3582,9 @@ impl Engine {
             // end, like the visible lane's did).
             let remaining = n - batch.len();
             let t = self.lane_tick.fetch_add(1, Ordering::Relaxed);
-            let bg_share = self.drv(driver).poll_bg_share(n, t, remaining);
+            let bg_share = self.drv(&driver).poll_bg_share(n, t, remaining);
             let mut rest = remaining - bg_share;
-            let vis = self.pop_visible_batch(&driver, self.drv(driver).poll_visible_take(rest));
+            let vis = self.pop_visible_batch(&driver, self.drv(&driver).poll_visible_take(rest));
             rest -= vis.len();
             batch.extend(vis);
             batch.extend(self.pop_core_batch(&driver, rest));
@@ -4898,7 +4905,8 @@ impl Engine {
                     .map(|(d, a)| (d.clone(), a.clone()))
                     .collect();
 
-                let scan_fut = self.scanner.scan(Duration::from_secs(2));
+                let display = |k: &str, m: &str| self.drv(k).display_name(m);
+                let scan_fut = self.scanner.scan(&display, Duration::from_secs(2));
                 let verify_fut = async {
                     // (a) Linked desk + directed verify, all in parallel.
                     // Each item is capped: a connected-but-silent driver
@@ -4993,7 +5001,10 @@ impl Engine {
                             .await
                             {
                                 Ok(Ok(devs)) => {
-                                    devs.into_iter().map(|d| device_row(d, "manual")).collect()
+                                    devs.into_iter().map(|d| {
+                                        let name = self.drv(d.driver).display_name(&d.model);
+                                        device_row(d, "manual", name)
+                                    }).collect()
                                 }
                                 _ => Vec::new(), // a slow sweep is dropped, never blocks
                             }
