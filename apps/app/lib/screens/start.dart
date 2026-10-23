@@ -16,12 +16,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../design.dart';
+import '../widgets/design_icon.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
 import 'connection.dart';
 
 class ConnectionsStartScreen extends StatefulWidget {
   final ConnectionStore store;
+  final VoidCallback onSettings;
+  final VoidCallback onHelp;
 
   /// Row connected / already-connected tapped, or Work offline chosen.
   final VoidCallback onEnterMixer;
@@ -32,6 +35,8 @@ class ConnectionsStartScreen extends StatefulWidget {
   const ConnectionsStartScreen(
       {super.key,
       required this.store,
+      required this.onSettings,
+      required this.onHelp,
       required this.onEnterMixer,
       required this.onWorkOffline});
 
@@ -79,18 +84,6 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     });
   }
 
-  Future<void> _setRemember(bool v) async {
-    await _prefs.setRemember(v);
-    if (!mounted) return;
-    setState(() {});
-  }
-
-  Future<void> _setAutoFind(bool v) async {
-    await _prefs.setAutoFind(v);
-    if (!mounted) return;
-    setState(() {});
-  }
-
   @override
   void dispose() {
     widget.store.removeListener(_onStore);
@@ -118,25 +111,26 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     final byHost = <String, ConnDevice>{};
     for (final d in devices) {
       final host = _store.hostOf(d.id);
-      if (host.isNotEmpty) byHost[host] = d;
+      if (host.isNotEmpty) byHost[_store.canonicalHost(host)] = d;
     }
     final seen = <String>{};
     final rows = <_Row>[];
     for (final r in _recentsBox.items) {
-      seen.add(r.addr);
-      final d = byHost[r.addr];
+      seen.add(_store.canonicalHost(r.addr));
+      final d = byHost[_store.canonicalHost(r.addr)];
       rows.add(_Row(
           key: 'recent:${r.addr}',
           name: r.name.isEmpty ? r.addr : r.name,
           addr: r.addr,
           discovered: false,
           connected: d?.connected ?? false,
-          reachable: d != null));
+          reachable: _store.checkStatusOf(r.addr) == 'available' ||
+              (_store.checkStatusOf(r.addr) == null && d != null)));
     }
     for (final d in devices) {
       final host = _store.hostOf(d.id);
-      if (host.isEmpty || seen.contains(host)) continue;
-      seen.add(host);
+      if (host.isEmpty || seen.contains(_store.canonicalHost(host))) continue;
+      seen.add(_store.canonicalHost(host));
       rows.add(_Row(
           key: 'dev:${d.id}',
           name: d.name.isEmpty ? host : d.name,
@@ -168,8 +162,9 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     if (_wasProbing && !probing && _pending != null) {
       final addr = _pending!;
       final name = _pendingName ?? addr;
-      final hit = _store.connectedHost == addr ||
-          _store.devices.any((d) => d.connected);
+      final hit = _store.connectedHost == _store.canonicalHost(addr) ||
+          (addr.startsWith('id:') &&
+              _store.devices.any((d) => d.connected && 'id:${d.id}' == addr));
       if (!hit && (_store.scanError?.isEmpty ?? true)) {
         _pending = null;
         _pendingName = null;
@@ -181,17 +176,27 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     if (_pending != null && !probing) {
       final addr = _pending!;
       final name = _pendingName ?? addr;
-      final hit = _store.connectedHost == addr ||
-          _store.devices.any((d) => d.connected);
+      final hit = _store.connectedHost == _store.canonicalHost(addr) ||
+          (addr.startsWith('id:') &&
+              _store.devices.any((d) => d.connected && 'id:${d.id}' == addr));
       if (hit) {
         _pending = null;
         _pendingName = null;
-        unawaited(_persistConnection(name, addr));
-        widget.onEnterMixer();
+        unawaited(_persistAndEnter(name, addr));
         return;
       }
     }
     setState(() {});
+  }
+
+  Future<void> _persistAndEnter(String name, String addr) async {
+    try {
+      await _persistConnection(name, addr);
+      if (mounted) widget.onEnterMixer();
+    } catch (error) {
+      _toast(
+          'Connected, but this mixer could not be saved: $error. Tap Open mixer to continue.');
+    }
   }
 
   Future<void> _persistConnection(String name, String addr) async {
@@ -231,7 +236,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width >= 700;
+    final wide = MediaQuery.sizeOf(context).width > 900;
     return Scaffold(
       backgroundColor: AppDesign.background,
       body: SafeArea(
@@ -242,95 +247,66 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
             PrefsService.instance,
           ]),
           builder: (context, _) => Stack(
-          children: [
-            Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                    horizontal: wide ? 32 : 24, vertical: 24),
-                child: Column(
+            children: [
+              Column(children: [
+                Expanded(
+                    child: Center(
+                        child: SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(wide ? 32 : 24, wide ? 100 : 82,
+                      wide ? 32 : 24, wide ? 40 : 20),
+                  child: Transform.translate(
+                      offset: Offset(0, wide ? -40 : -10),
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        _Brand(wide: wide),
+                        SizedBox(height: wide ? 56 : 36),
+                        _Box(
+                          wide: wide,
+                          title: _rows().any((r) => r.discovered)
+                              ? 'Mixers'
+                              : 'Recent mixers',
+                          onRefresh: _store.scanning
+                              ? null
+                              : () => _store.refreshKnown(_recentsBox.items
+                                  .map((r) => r.addr)
+                                  .toList()),
+                          refreshing: _store.scanning,
+                          error: (_store.scanError?.isEmpty ?? true)
+                              ? null
+                              : _store.scanError,
+                          rows: _rows(),
+                          pending: _pending,
+                          onConnect: _connectRow,
+                          onDiscover: () => _store.scan(),
+                          onAdd: _showManualAdd,
+                        ),
+                      ])),
+                ))),
+                SizedBox(
+                    height: wide ? 112 : 100,
+                    child: Center(
+                        child: _WorkOffline(onTap: widget.onWorkOffline))),
+              ]),
+              Positioned(
+                top: wide ? 32 : 18,
+                right: wide ? 40 : 18,
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    _Brand(wide: wide),
-                    SizedBox(height: wide ? 56 : 36),
-                    _Box(
-                      wide: wide,
-                      title: _rows().any((r) => r.discovered)
-                          ? 'Mixers'
-                          : 'Recent mixers',
-                      onRefresh:
-                          _store.scanning ? null : () => _store.scan(),
-                      refreshing: _store.scanning,
-                      error: (_store.scanError?.isEmpty ?? true)
-                          ? null
-                          : _store.scanError,
-                      rows: _rows(),
-                      pending: _pending,
-                      onConnect: _connectRow,
-                      onDiscover: () => _store.scan(),
-                      onAdd: _showManualAdd,
-                    ),
-                    SizedBox(height: wide ? 100 : 72),
-                    _WorkOffline(onTap: widget.onWorkOffline),
+                    _CornerIcon(
+                        tooltip: 'Connection help',
+                        onTap: widget.onHelp,
+                        child: const _HelpGlyph()),
+                    SizedBox(width: wide ? 12 : 6),
+                    _CornerIcon(
+                        tooltip: 'Settings',
+                        onTap: widget.onSettings,
+                        child: const _GearGlyph()),
                   ],
                 ),
               ),
-            ),
-            Positioned(
-              top: 8,
-              right: wide ? 16 : 8,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _CornerIcon(
-                      tooltip: 'Connection help',
-                      onTap: _showHelp,
-                      child: const _HelpGlyph()),
-                  const SizedBox(width: 6),
-                  _CornerIcon(
-                      tooltip: 'Settings',
-                      onTap: _showSettings,
-                      child: const _GearGlyph()),
-                ],
-              ),
-            ),
-          ],
+            ],
           ),
         ),
-        ),
-      );
-  }
-
-  void _showHelp() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => _Dialog(
-        title: 'Connection help',
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _DialogCopy(
-                'Refresh checks your known mixers and looks for desks on this network.'),
-            _DialogCopy(
-                'Discover finds mixers on the local network and merges them into the same list.'),
-            _DialogCopy(
-                'Use Add manually to enter an IP address or hostname when the mixer is on another network.'),
-            _DialogCopy(
-                'Work offline opens the built-in demo desk with no network connection.'),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showSettings() {
-    showDialog<void>(
-      context: context,
-      builder: (context) => _PrefsDialog(
-        remember: _prefs.rememberRecents,
-        autoFind: _prefs.autoFind,
-        onRemember: _setRemember,
-        onAutoFind: _setAutoFind,
       ),
     );
   }
@@ -368,8 +344,7 @@ class _Brand extends StatelessWidget {
                   semanticsLabel: 'OpenFader logo')),
           SizedBox(width: wide ? 24 : 16),
           Text('OpenFader',
-              style: AppDesign.type(wide ? 48 : 34,
-                  weight: FontWeight.w600)),
+              style: AppDesign.type(wide ? 48 : 34, weight: FontWeight.w600)),
         ],
       );
 }
@@ -418,8 +393,7 @@ class _Box extends StatelessWidget {
             children: [
               Padding(
                 padding: EdgeInsets.symmetric(
-                    horizontal: wide ? 28 : 20,
-                    vertical: wide ? 20 : 14),
+                    horizontal: wide ? 28 : 20, vertical: wide ? 20 : 14),
                 child: Row(
                   children: [
                     Expanded(
@@ -445,26 +419,29 @@ class _Box extends StatelessWidget {
               if (rows.isEmpty)
                 Padding(
                   padding: EdgeInsets.symmetric(
-                      horizontal: wide ? 28 : 20,
-                      vertical: wide ? 24 : 18),
+                      horizontal: wide ? 28 : 20, vertical: wide ? 24 : 18),
                   child: Text('No mixers yet — Discover or Add manually.',
-                      style: AppDesign.type(wide ? 20 : 17,
+                      style: AppDesign.type(wide ? 23 : 17,
                           color: AppDesign.mutedText)),
                 )
               else
-                for (var i = 0; i < rows.length; i++) ...[
-                  _DeviceRow(
-                      row: rows[i],
-                      wide: wide,
-                      busy: pending != null,
-                      onConnect: () => onConnect(rows[i])),
-                  if (i < rows.length - 1)
-                    const Divider(
-                        color: Color(0xff3b3b3b), height: 1, indent: 0),
-                ],
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: wide ? 460 : 370),
+                  child: SingleChildScrollView(
+                      child: Column(children: [
+                    for (var i = 0; i < rows.length; i++) ...[
+                      _DeviceRow(
+                          row: rows[i],
+                          wide: wide,
+                          busy: pending != null,
+                          onConnect: () => onConnect(rows[i])),
+                      if (i < rows.length - 1)
+                        const Divider(color: AppDesign.line, height: 1),
+                    ],
+                  ])),
+                ),
               const Divider(color: Color(0xff3b3b3b), height: 1),
-              _BoxActions(
-                  wide: wide, onDiscover: onDiscover, onAdd: onAdd),
+              _BoxActions(wide: wide, onDiscover: onDiscover, onAdd: onAdd),
             ],
           ),
         ),
@@ -492,7 +469,7 @@ class _DeviceRow extends StatelessWidget {
             : 'Retry';
     return Padding(
       padding: EdgeInsets.symmetric(
-          horizontal: wide ? 28 : 20, vertical: wide ? 20 : 16),
+          horizontal: wide ? 28 : 20, vertical: wide ? 24 : 20),
       child: Row(
         children: [
           Expanded(
@@ -503,36 +480,31 @@ class _DeviceRow extends StatelessWidget {
                 Text(row.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppDesign.type(wide ? 24 : 21,
+                    style: AppDesign.type(wide ? 27 : 21,
                         weight: FontWeight.w500)),
-                const SizedBox(height: 4),
-                Text(
-                    row.discovered
-                        ? 'Discovered — ${row.addr}'
-                        : row.addr,
+                SizedBox(height: wide ? 8 : 7),
+                Text(row.discovered ? 'Discovered — ${row.addr}' : row.addr,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: AppDesign.type(wide ? 20 : 17,
+                    style: AppDesign.type(wide ? 23 : 17,
                         color: AppDesign.mutedText)),
               ])),
           const SizedBox(width: 12),
           SizedBox(
             height: wide ? 56 : 44,
+            width: wide ? 124 : 92,
             child: ElevatedButton(
               onPressed: busy ? null : onConnect,
               style: ElevatedButton.styleFrom(
-                  backgroundColor:
-                      primary ? AppDesign.lime : AppDesign.control,
-                  foregroundColor: primary
-                      ? const Color(0xff171717)
-                      : AppDesign.text,
+                  backgroundColor: primary ? AppDesign.lime : AppDesign.control,
+                  foregroundColor:
+                      primary ? const Color(0xff171717) : AppDesign.text,
                   disabledBackgroundColor: AppDesign.control,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6)),
-                  padding: EdgeInsets.symmetric(
-                      horizontal: wide ? 22 : 14),
-                  textStyle: AppDesign.type(wide ? 22 : 18,
-                      weight: FontWeight.w600)),
+                  padding: EdgeInsets.symmetric(horizontal: wide ? 22 : 14),
+                  textStyle:
+                      AppDesign.type(wide ? 24 : 18, weight: FontWeight.w600)),
               child: Text(label),
             ),
           ),
@@ -555,22 +527,23 @@ class _BoxActions extends StatelessWidget {
         foregroundColor: AppDesign.text,
         backgroundColor: Colors.transparent,
         disabledBackgroundColor: Colors.transparent,
-        minimumSize: Size(64, wide ? 60 : 52),
+        minimumSize: Size(64, wide ? 56 : 48),
         padding: const EdgeInsets.symmetric(horizontal: 6),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle:
-            AppDesign.type(wide ? 21 : 16, weight: FontWeight.w500));
+        textStyle: AppDesign.type(wide ? 24 : 17, weight: FontWeight.w500));
     Widget label(String text) => Flexible(
         fit: FlexFit.loose,
-        child: Text(text,
-            maxLines: 1,
-            softWrap: false,
-            textAlign: TextAlign.center,
-            style: AppDesign.type(wide ? 21 : 16,
-                weight: FontWeight.w500)));
+        child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(text,
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style:
+                    AppDesign.type(wide ? 24 : 17, weight: FontWeight.w500))));
     return Padding(
       padding: EdgeInsets.symmetric(
-          horizontal: wide ? 16 : 10, vertical: wide ? 12 : 10),
+          horizontal: wide ? 28 : 16, vertical: wide ? 20 : 12),
       child: Row(
         children: [
           Expanded(
@@ -619,8 +592,9 @@ class _WorkOffline extends StatelessWidget {
             disabledBackgroundColor: Colors.transparent,
             minimumSize: const Size(200, 56),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            textStyle:
-                AppDesign.type(22, weight: FontWeight.w500)),
+            textStyle: AppDesign.type(
+                MediaQuery.sizeOf(context).width > 900 ? 26 : 20,
+                weight: FontWeight.w400)),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -639,18 +613,15 @@ class _WorkOffline extends StatelessWidget {
 class _HelpGlyph extends StatelessWidget {
   const _HelpGlyph();
   @override
-  Widget build(BuildContext context) => const Text('?',
-      style: TextStyle(
-          fontSize: 24,
-          fontWeight: FontWeight.w600,
-          color: Color(0xffb5b5b5)));
+  Widget build(BuildContext context) =>
+      const DesignIcon(DesignSymbol.help, size: 28);
 }
 
 class _GearGlyph extends StatelessWidget {
   const _GearGlyph();
   @override
-  Widget build(BuildContext context) => Icon(Icons.settings_outlined,
-      size: 28, color: const Color(0xffb5b5b5));
+  Widget build(BuildContext context) =>
+      const DesignIcon(DesignSymbol.settings, size: 28);
 }
 
 class _RefreshGlyph extends StatelessWidget {
@@ -658,33 +629,28 @@ class _RefreshGlyph extends StatelessWidget {
   const _RefreshGlyph({required this.spinning});
   @override
   Widget build(BuildContext context) => Icon(Icons.refresh,
-      size: 26,
-      color: spinning
-          ? AppDesign.lime
-          : const Color(0xffb5b5b5));
+      size: 26, color: spinning ? AppDesign.lime : const Color(0xffb5b5b5));
 }
 
 class _ScanGlyph extends StatelessWidget {
   const _ScanGlyph();
   @override
-  Widget build(BuildContext context) => const Icon(
-      Icons.filter_center_focus,
-      size: 24,
-      color: Color(0xffb5b5b5));
+  Widget build(BuildContext context) =>
+      const DesignIcon(DesignSymbol.discover, size: 24);
 }
 
 class _PlusGlyph extends StatelessWidget {
   const _PlusGlyph();
   @override
   Widget build(BuildContext context) =>
-      const Icon(Icons.add, size: 24, color: Color(0xffb5b5b5));
+      const DesignIcon(DesignSymbol.add, size: 24);
 }
 
 class _ChevronGlyph extends StatelessWidget {
   const _ChevronGlyph();
   @override
-  Widget build(BuildContext context) => const Icon(Icons.chevron_right,
-      size: 22, color: Color(0xffb5b5b5));
+  Widget build(BuildContext context) =>
+      const Icon(Icons.chevron_right, size: 22, color: Color(0xffb5b5b5));
 }
 
 class _CornerIcon extends StatelessWidget {
@@ -701,8 +667,8 @@ class _CornerIcon extends StatelessWidget {
         child: Tooltip(
           message: tooltip,
           child: SizedBox(
-            width: 56,
-            height: 56,
+            width: 44,
+            height: 44,
             child: InkWell(
               borderRadius: BorderRadius.circular(28),
               onTap: onTap,
@@ -727,8 +693,8 @@ class _IconButton extends StatelessWidget {
         child: Tooltip(
           message: tooltip,
           child: SizedBox(
-            width: 50,
-            height: 50,
+            width: MediaQuery.sizeOf(context).width > 900 ? 50 : 44,
+            height: MediaQuery.sizeOf(context).width > 900 ? 50 : 44,
             child: InkWell(
               borderRadius: BorderRadius.circular(8),
               onTap: onTap,
@@ -765,8 +731,7 @@ class _Dialog extends StatelessWidget {
                 Row(children: [
                   Expanded(
                       child: Text(title,
-                          style: AppDesign.type(24,
-                              weight: FontWeight.w600))),
+                          style: AppDesign.type(24, weight: FontWeight.w600))),
                   _IconButton(
                       tooltip: 'Close',
                       onTap: () => Navigator.pop(context),
@@ -778,102 +743,6 @@ class _Dialog extends StatelessWidget {
               ],
             ),
           ),
-        ),
-      );
-}
-
-class _DialogCopy extends StatelessWidget {
-  final String text;
-  const _DialogCopy(this.text);
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        child: Text(text,
-            style: AppDesign.type(18, color: const Color(0xffd5d5d5))),
-      );
-}
-
-class _PrefsDialog extends StatelessWidget {
-  final bool remember;
-  final bool autoFind;
-  final ValueChanged<bool> onRemember;
-  final ValueChanged<bool> onAutoFind;
-  const _PrefsDialog(
-      {required this.remember,
-      required this.autoFind,
-      required this.onRemember,
-      required this.onAutoFind});
-
-  @override
-  Widget build(BuildContext context) => _Dialog(
-        title: 'Settings',
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _SettingRow(label: 'Appearance', value: 'Dark', onTap: null),
-            _ToggleRow(
-                label: 'Remember recent mixers',
-                value: remember,
-                onChanged: (v) {
-                  onRemember(v);
-                  Navigator.pop(context);
-                }),
-            _ToggleRow(
-                label: 'Find mixers automatically',
-                value: autoFind,
-                onChanged: (v) {
-                  onAutoFind(v);
-                  Navigator.pop(context);
-                }),
-          ],
-        ),
-      );
-}
-
-class _SettingRow extends StatelessWidget {
-  final String label;
-  final String value;
-  final VoidCallback? onTap;
-  const _SettingRow(
-      {required this.label, required this.value, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        child: Row(children: [
-          Expanded(
-              child: Text(label,
-                  style: AppDesign.type(19, color: AppDesign.text))),
-          Text(value,
-              style:
-                  AppDesign.type(19, color: AppDesign.mutedText)),
-        ]),
-      );
-}
-
-class _ToggleRow extends StatelessWidget {
-  final String label;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  const _ToggleRow(
-      {required this.label, required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) => InkWell(
-        onTap: () => onChanged(!value),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          child: Row(children: [
-            Expanded(
-                child: Text(label,
-                    style: AppDesign.type(19, color: AppDesign.text))),
-            Checkbox(
-                value: value,
-                onChanged: (v) => onChanged(v ?? false),
-                activeColor: AppDesign.lime,
-                checkColor: const Color(0xff171717),
-                side: const BorderSide(color: Color(0xffb5b5b5))),
-          ]),
         ),
       );
 }
@@ -927,8 +796,7 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text('IP address or hostname',
-                style:
-                    AppDesign.type(18, color: AppDesign.mutedText)),
+                style: AppDesign.type(18, color: AppDesign.mutedText)),
             const SizedBox(height: 6),
             TextField(
               controller: _addr,
@@ -940,24 +808,21 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
                 fillColor: const Color(0xff101010),
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
-                    borderSide:
-                        const BorderSide(color: Color(0xff414141))),
+                    borderSide: const BorderSide(color: Color(0xff414141))),
                 enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
-                    borderSide:
-                        const BorderSide(color: Color(0xff414141))),
+                    borderSide: const BorderSide(color: Color(0xff414141))),
                 focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
                     borderSide: const BorderSide(color: AppDesign.lime)),
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 14),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               ),
               onSubmitted: (_) => _submit(),
             ),
             const SizedBox(height: 14),
             Text('Name (optional)',
-                style:
-                    AppDesign.type(18, color: AppDesign.mutedText)),
+                style: AppDesign.type(18, color: AppDesign.mutedText)),
             const SizedBox(height: 6),
             TextField(
               controller: _name,
@@ -967,25 +832,21 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
                 fillColor: const Color(0xff101010),
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
-                    borderSide:
-                        const BorderSide(color: Color(0xff414141))),
+                    borderSide: const BorderSide(color: Color(0xff414141))),
                 enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
-                    borderSide:
-                        const BorderSide(color: Color(0xff414141))),
+                    borderSide: const BorderSide(color: Color(0xff414141))),
                 focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
                     borderSide: const BorderSide(color: AppDesign.lime)),
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 14),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               ),
               onSubmitted: (_) => _submit(),
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
-              Text(_error!,
-                  style:
-                      AppDesign.type(17, color: AppDesign.mute)),
+              Text(_error!, style: AppDesign.type(17, color: AppDesign.mute)),
             ],
             const SizedBox(height: 18),
             SizedBox(
@@ -997,8 +858,7 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
                     foregroundColor: const Color(0xff171717),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6)),
-                    textStyle: AppDesign.type(19,
-                        weight: FontWeight.w600)),
+                    textStyle: AppDesign.type(19, weight: FontWeight.w600)),
                 child: const Text('Add mixer'),
               ),
             ),

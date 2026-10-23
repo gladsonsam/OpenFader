@@ -31,6 +31,8 @@ abstract final class AppDesign {
   static const eqBg = Color(0xff1f2314);
   static const comp = Color(0xffff4b06);
   static const phantom = Color(0xffef5548);
+  static const processingBlue = Color(0xff59b0c4);
+  static const processingPurple = Color(0xffa285d6);
   static const tapes = [
     Color(0xffcc7e5b),
     Color(0xffcea94f),

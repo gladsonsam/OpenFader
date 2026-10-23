@@ -41,6 +41,7 @@ import '../theme.dart';
 import 'shell.dart';
 import '../screens/channel.dart';
 import '../mixer/components/banks.dart';
+import '../mixer/components/strip.dart';
 import '../screens/channel_toolbar.dart';
 import '../screens/connection.dart';
 import '../screens/debug.dart';
@@ -96,6 +97,7 @@ class _AppShellState extends State<AppShell> {
   /// Where Close on the Settings page returns (the tab that opened it).
   AppTab _prevTab = AppTab.mixer;
   Timer? _shellLoop;
+  final _channelFocus = ValueNotifier<ChannelFocus?>(null);
 
   /// The Connections start screen is the app's front door: shown first
   /// after boot (unless the startup preference says Last mixer),
@@ -115,8 +117,7 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _tab = widget.initialTab;
-    _showStart =
-        PrefsService.instance.startupDest != 'last';
+    _showStart = PrefsService.instance.startupDest != 'last';
     _mixer = MixerController(widget.store,
         seedReferenceDemo: widget.initialTab == AppTab.mixer);
     _conn = _ConnStore(widget.store);
@@ -158,10 +159,8 @@ class _AppShellState extends State<AppShell> {
 
   void _restartLoop() {
     _shellLoop?.cancel();
-    final ms =
-        (1000 / PrefsService.instance.meterRate).round().clamp(16, 250);
-    _shellLoop = Timer.periodic(
-        Duration(milliseconds: ms), (_) => _tick());
+    final ms = (1000 / PrefsService.instance.meterRate).round().clamp(16, 250);
+    _shellLoop = Timer.periodic(Duration(milliseconds: ms), (_) => _tick());
   }
 
   Future<void> _tick() async {
@@ -177,6 +176,7 @@ class _AppShellState extends State<AppShell> {
     _shellLoop?.cancel();
     PrefsService.instance.removeListener(_onPrefs);
     _mixer.dispose();
+    _channelFocus.dispose();
     _conn.dispose();
     _routing.dispose();
     _scenes.dispose();
@@ -193,6 +193,13 @@ class _AppShellState extends State<AppShell> {
         _tab = t;
       });
 
+  SettingsSection? _settingsSection;
+
+  void _openSettings(SettingsSection? section) {
+    _settingsSection = section;
+    _go(AppTab.settings);
+  }
+
   ShellMode _modeOf(AppTab t) => switch (t) {
         AppTab.mixer || AppTab.meters => ShellMode.mixer,
         AppTab.channel => ShellMode.channel,
@@ -208,11 +215,13 @@ class _AppShellState extends State<AppShell> {
     final store = widget.store;
     // Front door first: the Connections start screen replaces all shell
     // chrome until the user enters the mixer (connect, open, offline).
-    if (_showStart) {
+    if (_showStart && _tab != AppTab.settings) {
       return ListenableBuilder(
         listenable: store,
         builder: (context, _) => ConnectionsStartScreen(
           store: _conn,
+          onSettings: () => _openSettings(null),
+          onHelp: () => _openSettings(SettingsSection.about),
           onEnterMixer: () => setState(() => _showStart = false),
           onWorkOffline: () {
             _conn.connectSim();
@@ -249,6 +258,7 @@ class _AppShellState extends State<AppShell> {
         // so the shared shell header steps aside for them.
         final Widget header = isChan
             ? ChannelToolbar(
+                controlFocus: _channelFocus,
                 store: store,
                 compact: MediaQuery.sizeOf(context).width < 600,
                 onHome: () => _go(AppTab.mixer),
@@ -259,57 +269,62 @@ class _AppShellState extends State<AppShell> {
             : _tab == AppTab.settings
                 ? const SizedBox.shrink()
                 : U4ShellHeader(
-          title: title,
-          pageTitle: _tab.label,
-          showBack: _tab != AppTab.mixer,
-          onBack: () => _go(AppTab.mixer),
-          mode: _modeOf(_tab),
-          connected: connected,
-          connDot: connected ? (sim ? U4.text7 : U4.meterGreen) : U4.meterAmber,
-          connAria: !connected
-              ? 'Disconnected'
-              : sim
-                  ? 'Demo simulator (not a desk)'
-                  : 'Connected to desk',
-          isChannel: isChan,
-          channelName: isChan ? store.displayName : '',
-          metersActive: _tab == AppTab.meters,
-          scenesActive: _tab == AppTab.scenes,
-          sceneNum: _sceneNum(store),
-          sceneName: _sceneName(store),
-          sceneAria:
-              '${_sceneNum(store).isEmpty ? '' : 'Scene ${_sceneNum(store)}, '}${_sceneName(store)}, open scene list',
-          compact: MediaQuery.sizeOf(context).width < 600,
-          onFx: () => _go(AppTab.fx),
-          onRouting: () => _go(AppTab.routing),
-          onConnect: () => _go(AppTab.connect),
-          onSettings: () => _go(AppTab.settings),
-          onMeters: () => _go(AppTab.meters),
-          onScene: () => _go(AppTab.scenes),
-          onPrevChannel: isChan && connected
-              ? () => store.openChannel((store.channelIndex - 1)
-                  .clamp(0, store.engine.strips.length - 1))
-              : null,
-          onNextChannel: isChan && connected
-              ? () => store.openChannel((store.channelIndex + 1)
-                  .clamp(0, store.engine.strips.length - 1))
-              : null,
-        );
+                    title: title,
+                    pageTitle: _tab.label,
+                    showBack: _tab != AppTab.mixer,
+                    onBack: () => _go(AppTab.mixer),
+                    mode: _modeOf(_tab),
+                    connected: connected,
+                    connDot: connected
+                        ? (sim ? U4.text7 : U4.meterGreen)
+                        : U4.meterAmber,
+                    connAria: !connected
+                        ? 'Disconnected'
+                        : sim
+                            ? 'Demo simulator (not a desk)'
+                            : 'Connected to desk',
+                    isChannel: isChan,
+                    channelName: isChan ? store.displayName : '',
+                    metersActive: _tab == AppTab.meters,
+                    scenesActive: _tab == AppTab.scenes,
+                    sceneNum: _sceneNum(store),
+                    sceneName: _sceneName(store),
+                    sceneAria:
+                        '${_sceneNum(store).isEmpty ? '' : 'Scene ${_sceneNum(store)}, '}${_sceneName(store)}, open scene list',
+                    compact: MediaQuery.sizeOf(context).width < 600,
+                    onFx: () => _go(AppTab.fx),
+                    onRouting: () => _go(AppTab.routing),
+                    onConnect: () => _go(AppTab.connect),
+                    onSettings: () => _go(AppTab.settings),
+                    onMeters: () => _go(AppTab.meters),
+                    onScene: () => _go(AppTab.scenes),
+                    onPrevChannel: isChan && connected
+                        ? () => store.openChannel((store.channelIndex - 1)
+                            .clamp(0, store.engine.strips.length - 1))
+                        : null,
+                    onNextChannel: isChan && connected
+                        ? () => store.openChannel((store.channelIndex + 1)
+                            .clamp(0, store.engine.strips.length - 1))
+                        : null,
+                  );
         final page = _pageFor(_tab, store);
         final rail = _NavRail(
           active: _tab,
           onGo: _go,
           vertical: !narrow,
         );
-        final body = narrow
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [Expanded(child: page), rail],
-              )
-            : Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [Expanded(child: page), rail],
-              );
+        final ownsNavigation = isChan || _tab == AppTab.settings;
+        final body = ownsNavigation
+            ? page
+            : narrow
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [Expanded(child: page), rail],
+                  )
+                : Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [Expanded(child: page), rail],
+                  );
         return U4Shell(header: header, child: body);
       },
     );
@@ -317,6 +332,8 @@ class _AppShellState extends State<AppShell> {
 
   void _channelTool(ChannelTool t) {
     switch (t) {
+      case ChannelTool.scenes:
+        _go(AppTab.scenes);
       case ChannelTool.fx:
         _go(AppTab.fx);
       case ChannelTool.settings:
@@ -324,16 +341,19 @@ class _AppShellState extends State<AppShell> {
       case ChannelTool.routing:
         _go(AppTab.routing);
       case ChannelTool.layout:
-        showMixerLayout(context, _mixer, (d) => _go(switch (d) {
-              MixerDestination.meters => AppTab.meters,
-              MixerDestination.channel => AppTab.channel,
-              MixerDestination.scenes => AppTab.scenes,
-              MixerDestination.fx => AppTab.fx,
-              MixerDestination.routing => AppTab.routing,
-              MixerDestination.connect => AppTab.connect,
-              MixerDestination.settings => AppTab.settings,
-              MixerDestination.debug => AppTab.debug,
-            }),
+        showMixerLayout(
+            context,
+            _mixer,
+            (d) => _go(switch (d) {
+                  MixerDestination.meters => AppTab.meters,
+                  MixerDestination.channel => AppTab.channel,
+                  MixerDestination.scenes => AppTab.scenes,
+                  MixerDestination.fx => AppTab.fx,
+                  MixerDestination.routing => AppTab.routing,
+                  MixerDestination.connect => AppTab.connect,
+                  MixerDestination.settings => AppTab.settings,
+                  MixerDestination.debug => AppTab.debug,
+                }),
             locked: widget.store.locked,
             onLock: () => widget.store.locked
                 ? widget.store.cmdUnlock()
@@ -373,7 +393,11 @@ class _AppShellState extends State<AppShell> {
       AppTab.mixer => _mixerPage(),
       AppTab.meters =>
         U4MetersPage(store: store, onClose: () => _go(AppTab.mixer)),
-      AppTab.channel => ChannelPage(stripKey: store.stripKey, store: store),
+      AppTab.channel => ChannelPage(
+          stripKey: store.stripKey,
+          store: store,
+          mixerControls: _processingMixerControls(),
+          controlFocus: _channelFocus),
       AppTab.scenes => U4ScenesPage(store: _scenes),
       AppTab.fx => U4FxPage(store: _fx),
       AppTab.routing => U4RoutingPage(store: _routing),
@@ -387,15 +411,51 @@ class _AppShellState extends State<AppShell> {
           ],
         ),
       AppTab.settings => U4SettingsPage(
+          initialSection: _settingsSection,
           store: _settings,
-          onClose: () => _go(_prevTab),
+          onClose: () {
+            _settingsSection = null;
+            _go(_prevTab);
+          },
           onOpenMixer: () {
+            _showStart = false;
             _conn.connectSim();
             _go(AppTab.mixer);
           }),
       AppTab.debug => U4DebugPage(store: _debug),
     };
   }
+
+  Widget _processingMixerControls() => LayoutBuilder(builder: (context, box) {
+        final wide = MediaQuery.sizeOf(context).width >= 700;
+        return ListenableBuilder(
+            listenable: _mixer,
+            builder: (context, _) {
+              final selected = _mixer.selected;
+              Widget strip(MixerChannel ch) => MixerStrip(
+                  channel: ch,
+                  controller: _mixer,
+                  compact: !wide,
+                  onOpen: () {});
+              if (!wide) {
+                return selected == null
+                    ? const SizedBox.shrink()
+                    : strip(selected);
+              }
+              final railWidth = box.maxWidth * 93 / 285.2;
+              return Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                        child: selected == null
+                            ? const SizedBox.shrink()
+                            : strip(selected)),
+                    SizedBox(
+                        width: railWidth,
+                        child: MixerBanks(controller: _mixer, vertical: true)),
+                  ]);
+            });
+      });
 
   String _sceneNum(AppStore s) {
     for (final e in s.engine.scenes) {
@@ -549,7 +609,6 @@ abstract class _StoreBase extends ChangeNotifier {
 
 class _ConnStore extends _StoreBase implements ConnectionStore {
   _ConnStore(super.app) {
-    _devicesSeen = app.engine.devices.length;
     _lastError = app.visibleError;
     app.addListener(_settle);
   }
@@ -567,8 +626,11 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   // Settle tracking: scanning ends when the engine answers (devices list
   // changes or an error frame/transport failure lands), not on a fixed
   // timer. The timer below is only a fallback so the spinner cannot stick.
-  int _devicesSeen = 0;
   String _lastError = '';
+  String? _deviceRequest;
+  String? _operationError;
+  final Map<String, String> _checks = {};
+  final Map<String, String> _canonicalHosts = {};
 
   @override
   void dispose() {
@@ -578,15 +640,34 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   }
 
   void _settle() {
-    final n = app.engine.devices.length;
-    final err = app.visibleError;
-    if (_scanning && (n != _devicesSeen || err != _lastError)) {
+    final complete = engine.deviceOperationComplete;
+    if (_deviceRequest != null && complete?['request_id'] == _deviceRequest) {
+      _deviceRequest = null;
       _scanning = false;
       _scanTimer?.cancel();
-      _lastScan = 'scan ${_fmtTime(DateTime.now())} · $n desk(s)';
+      _operationError = complete?['error'] as String?;
+      for (final result in complete?['results'] as List? ?? const []) {
+        if (result is Map && result['addr'] is String) {
+          final host = (result['addr'] as String).trim().toLowerCase();
+          _checks[host] = '${result['status']}';
+          final device = result['device'];
+          if (device is Map && device['ip'] is String) {
+            _canonicalHosts[host] = (device['ip'] as String).toLowerCase();
+          }
+        }
+      }
+      _lastScan = '${complete?['operation']} ${_fmtTime(DateTime.now())}';
       WifiNet.scanStop();
+      notifyListeners();
     }
-    _devicesSeen = n;
+    final err = app.visibleError;
+    if (_scanning && err.isNotEmpty && err != _lastError) {
+      _scanning = false;
+      _deviceRequest = null;
+      _scanTimer?.cancel();
+      WifiNet.scanStop();
+      notifyListeners();
+    }
     _lastError = err;
   }
 
@@ -636,6 +717,7 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   /// by a good poll or the next scan/probe. Never hides the string.
   @override
   String? get scanError {
+    if (_operationError != null) return _operationError;
     final e = app.visibleError;
     if (e.isEmpty) return null;
     final at = app.visibleErrorAt;
@@ -689,8 +771,11 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   }
 
   @override
-  String get connectedHost =>
-      engine.driver == 'sim' ? '' : engine.linkIp;
+  String canonicalHost(String host) =>
+      _canonicalHosts[host.trim().toLowerCase()] ?? host.trim().toLowerCase();
+
+  @override
+  String get connectedHost => engine.driver == 'sim' ? '' : engine.linkIp;
 
   @override
   String get linkInfo {
@@ -718,23 +803,43 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   Future<bool> ensurePermissions() => WifiNet.ensureScanPermissions();
 
   @override
-  void scan() {
+  void scan() => _findDevices();
+
+  @override
+  void refreshKnown(List<String> hosts) => _findDevices(hosts: hosts);
+
+  @override
+  String? checkStatusOf(String host) => _checks[host.trim().toLowerCase()];
+
+  void _findDevices({List<String>? hosts}) {
     if (_scanning) return;
     _scanning = true;
-    _devicesSeen = engine.devices.length;
+    _operationError = null;
     _lastError = app.visibleError;
     app.clearErrors();
+    final request = 'devices-${DateTime.now().microsecondsSinceEpoch}';
+    _deviceRequest = request;
     notifyListeners();
-    WifiNet.ensureScanPermissions().then((_) {
+    WifiNet.ensureScanPermissions().then((granted) {
+      if (_dead || _deviceRequest != request) return;
+      if (!granted) {
+        _scanning = false;
+        _deviceRequest = null;
+        _operationError = 'Local network permission is required.';
+        notifyListeners();
+        return;
+      }
       WifiNet.scanStart();
-      send(Cmds.scan());
+      send(hosts == null
+          ? Cmds.discoverDevices(request)
+          : Cmds.refreshDevices(request, hosts));
     });
-    // Fallback only: the devices/error event settles the spinner first.
     _scanTimer?.cancel();
     _scanTimer = Timer(const Duration(seconds: 10), () {
-      if (_scanning) {
+      if (_scanning && _deviceRequest == request) {
         _scanning = false;
-        _lastScan = 'scan ${_fmtTime(DateTime.now())} · no reply yet';
+        _deviceRequest = null;
+        _operationError = 'The mixer check did not complete. Try again.';
         WifiNet.scanStop();
         notifyListeners();
       }
@@ -757,11 +862,28 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   Future<void> _probeLoop(String addr, {int attempts = 3}) async {
     if (addr.isEmpty || _probing) return;
     _probing = true;
+    _operationError = null;
     _probeAttempt = 0;
     notifyListeners();
     try {
       await WifiNet.ensureScanPermissions();
       await WifiNet.bindWifi();
+      if (InternetAddress.tryParse(addr) == null) {
+        try {
+          final resolved = await InternetAddress.lookup(addr)
+              .timeout(const Duration(seconds: 3));
+          if (resolved.isEmpty) throw StateError('No address found');
+          final target = resolved
+              .firstWhere((ip) => ip.type == InternetAddressType.IPv4,
+                  orElse: () => resolved.first)
+              .address;
+          _canonicalHosts[addr.toLowerCase()] = target;
+          addr = target;
+        } catch (error) {
+          _operationError = 'Could not resolve $_lastProbe: $error';
+          return;
+        }
+      }
       for (var i = 0; i < attempts; i++) {
         _probeAttempt = i + 1;
         app.clearErrors();
@@ -800,7 +922,11 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   void requestInfo() => send(Cmds.info());
 
   @override
-  void clearError() => app.clearErrors();
+  void clearError() {
+    _operationError = null;
+    app.clearErrors();
+    notifyListeners();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1114,10 +1240,10 @@ class _SettingsStore extends _StoreBase implements SettingsStore {
     if (!prefs.autoBackup) return;
     try {
       await _mixes.snapshotBackup();
-      await prefs.setBackupCreatedAt(
-          DateTime.now().toIso8601String());
-    } catch (_) {
-      // Backup failures must never break the mix action itself.
+      await prefs.setBackupCreatedAt(DateTime.now().toIso8601String());
+    } catch (error) {
+      throw StateError(
+          "The mix change was saved, but its automatic backup failed: $error");
     }
   }
 
@@ -1176,10 +1302,22 @@ class _SettingsStore extends _StoreBase implements SettingsStore {
       'savedMixerCount': _recents.items.length,
     };
     final tmp = Directory.systemTemp;
-    final file = File(
-        '${tmp.path}/open-fader-diagnostics.json');
+    final file = File('${tmp.path}/open-fader-diagnostics.json');
     await file.writeAsString(jsonEncode(payload));
-    await SharePlus.instance.share(ShareParams(files: [XFile(file.path)], subject: 'open-fader-diagnostics.json'));
+    final view = WidgetsBinding.instance.platformDispatcher.views.first;
+    final size = view.physicalSize / view.devicePixelRatio;
+    final result = await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path)],
+        subject: 'open-fader-diagnostics.json',
+        sharePositionOrigin:
+            Rect.fromLTWH(size.width / 2, size.height / 2, 1, 1)));
+    if (result.status == ShareResultStatus.dismissed) {
+      throw MixExportCancelled();
+    }
+    if (result.status != ShareResultStatus.success) {
+      throw StateError(
+          'The platform could not confirm the diagnostics export.');
+    }
   }
 }
 

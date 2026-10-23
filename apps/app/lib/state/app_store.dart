@@ -20,8 +20,7 @@
 //   gate_/comp_*, sendN_level/tap/on, polarity — never invert/eqN_f/eqN_g/
 //   sendN_mute). Short UI leaves are translated in [AppStore.deskLeaf], the
 //   single choke point covering both direct cmdParam calls and the
-//   ChannelWrites queue. Per-band EQ bypass stays fixture-local: the
-//   catalogue has no eqN_on leaf (web parity).
+//   ChannelWrites queue. Neither hardware driver has per-band EQ bypass.
 // - EQ/dyn/send snapshots still start from fixture defaults until the
 //   param-plane cache fills them from desk echoes.
 // - Bus rows render the MAIN bus (+ known engine buses); the bus popup
@@ -112,16 +111,14 @@ class AppStore extends ChangeNotifier
   final ValueNotifier<double> _masterFaderNote = ValueNotifier(0.75);
   final ValueNotifier<bool> _masterMutedNote = ValueNotifier(false);
 
+  // Raw engineering values, keyed by channel + canonical send field.
+  final Map<(int, String), ValueNotifier<double?>> _sendParamNotes = {};
+
   // --- channel page state ---
   int _channel = 0;
   ChannelTab _tab = ChannelTab.input;
   int _eqBand = 1;
 
-  /// Per-band EQ bypass is fixture-local: the desk catalogue has a global
-  /// `eq_on` but no per-band `eqN_on` leaf (web parity: per-band bypass
-  /// never hits the wire). An echo of `eqN_on` still wins if a driver
-  /// ever sends one.
-  final Map<int, bool> _eqBandOn = {};
   final ValueNotifier<double> _levelDb = ValueNotifier(double.negativeInfinity);
   final ValueNotifier<List<double>> _spectrum = ValueNotifier(const []);
   final List<String> _presets = [];
@@ -330,14 +327,13 @@ class AppStore extends ChangeNotifier
           _confirmedMute.clear();
           _bank = 'ch1';
           _busId = 'main';
-          _eqBandOn.clear();
           _focusCh = null;
           _invalidateDerived();
           dirty = true;
         }
         _confirmEcho(e);
         if (controlOnly) {
-          // Per-strip control echo (fader/mute/pan/main/bus): the strip
+          // Control echo (strip/send/main/bus): the strip
           // notifiers pick it up below, no global rebuild.
           controlsTouched = true;
         } else if (frameDirty) {
@@ -385,23 +381,27 @@ class AppStore extends ChangeNotifier
   }
 
   /// True for engine frames that only move per-strip/master control state
-  /// (fader/mute/pan/main/bus). Those ride the strip notifiers via
+  /// (fader/mute/pan/send level/send pan/main/bus). These ride notifiers via
   /// [_syncControlNotes] and must not set the global `dirty` rebuild flag.
   /// Everything else (state/caps/link/scenes/..., plus param frames carrying
   /// name/param-plane fields, plus solo which feeds the page solo banner)
   /// stays structural and keeps the global notify.
   static const _stripControlFields = {'fader', 'mute', 'muted', 'pan'};
 
+  static final _sendHotField = RegExp(r'^send[1-9]\d*_(pan|level)$');
+
+  bool _isHotControlField(String field) =>
+      _stripControlFields.contains(field) || _sendHotField.hasMatch(field);
+
   bool _controlOnlyFrame(Map<String, dynamic> e) {
     switch (e['type']) {
       case 'param':
         final field = e['field'] as String?;
-        return field != null && _stripControlFields.contains(field);
+        return field != null && _isHotControlField(field);
       case 'params':
         final values = e['values'];
         if (values is! Map || values.isEmpty) return false;
-        return values.keys
-            .every((k) => k is String && _stripControlFields.contains(k));
+        return values.keys.every((k) => k is String && _isHotControlField(k));
       case 'main':
       case 'bus':
         return true;
@@ -520,8 +520,8 @@ class AppStore extends ChangeNotifier
     final range = _bankRanges[_bank];
     final built = range == null
         ? List<Strip>.unmodifiable(engine.strips)
-        : List<Strip>.unmodifiable(engine.strips
-            .where((s) => s.ch >= range.$1 && s.ch < range.$2));
+        : List<Strip>.unmodifiable(
+            engine.strips.where((s) => s.ch >= range.$1 && s.ch < range.$2));
     _stripsCache = built;
     return built;
   }
@@ -531,9 +531,7 @@ class AppStore extends ChangeNotifier
     if (cached != null) return cached;
     final Map<String, (int, int)> built = {
       for (final f in engine.topology)
-        for (var offset = 0;
-            offset < (f['count'] as num).toInt();
-            offset += 16)
+        for (var offset = 0; offset < (f['count'] as num).toInt(); offset += 16)
           f['key'] == 'ch'
               ? 'ch${offset ~/ 16 + 1}'
               : "${f['key']}:${(f['first'] as num).toInt() + offset}": (
@@ -646,7 +644,27 @@ class AppStore extends ChangeNotifier
     if (so.value != sv) so.value = sv;
   }
 
+  double? _sendParamValue(int ch, String field) {
+    final value = ps.optimisticValue(_maps, ch, field);
+    return value is num ? value.toDouble() : null;
+  }
+
+  @override
+  ValueNotifier<double?> sendParamNote(int slot, String param) {
+    assert(param == 'pan' || param == 'level');
+    final key = (_channel, 'send${slot}_$param');
+    return _sendParamNotes.putIfAbsent(
+        key, () => ValueNotifier(_sendParamValue(key.$1, key.$2)));
+  }
+
+  void _syncSendParamNotes() {
+    for (final entry in _sendParamNotes.entries) {
+      entry.value.value = _sendParamValue(entry.key.$1, entry.key.$2);
+    }
+  }
+
   void _syncControlNotes() {
+    _syncSendParamNotes();
     for (final s in engine.strips) {
       _pushStripNote(s.ch);
     }
@@ -683,8 +701,7 @@ class AppStore extends ChangeNotifier
                 ? 'Ch ${entry.value.$1 + 1}–${entry.value.$2}'
                 : engine.topology.firstWhere((f) =>
                     (f['first'] as num).toInt() <= entry.value.$1 &&
-                    (f['first'] as num).toInt() +
-                            (f['count'] as num).toInt() >
+                    (f['first'] as num).toInt() + (f['count'] as num).toInt() >
                         entry.value.$1)['label'] as String,
             color: U4.cyan,
             text: U4.page),
@@ -940,30 +957,19 @@ class AppStore extends ChangeNotifier
 
   @override
   double? paramNum(String leaf) {
-    final v = ps.optimisticValue(_maps, _channel, leaf);
+    final v = ps.optimisticValue(_maps, _channel, deskLeaf(leaf));
     return v is num ? v.toDouble() : null;
   }
 
   @override
   bool? paramBool(String leaf) {
-    final v = ps.optimisticValue(_maps, _channel, leaf);
+    final v = ps.optimisticValue(_maps, _channel, deskLeaf(leaf));
     return v is bool ? v : null;
   }
-
-  static const _coreLeaves = {
-    'fader',
-    'mute',
-    'pan',
-    'gain',
-    'trim',
-    'phantom',
-    'polarity',
-  };
 
   @override
   bool supports(String leaf) {
     final desk = deskLeaf(leaf);
-    if (_coreLeaves.contains(desk)) return true;
     if (!engine.capsReady) return false;
     return engine.supportedParams.contains(desk);
   }
@@ -971,13 +977,21 @@ class AppStore extends ChangeNotifier
   @override
   void cmdParam(String leaf, Object value) {
     final desk = deskLeaf(leaf);
+    if (!supports(desk)) return;
+    if (value is num && !value.isFinite) return;
     final coerced = value;
-    _maps.confirmed.putIfAbsent(_channel, () => {});
-    ps.noteOptimistic(_maps, _channel, desk, coerced, _nowMs());
-    _coalescer.offer('param:$_channel:$desk',
-        () => _send(Cmds.param(_channel, desk, coerced)));
-    _invalidateDerived(); // optimistic sendN_on/mute reads feed sends
-    notifyListeners();
+    // Capture at enqueue time: navigation must not retarget a queued edit.
+    final ch = _channel;
+    _maps.confirmed.putIfAbsent(ch, () => {});
+    ps.noteOptimistic(_maps, ch, desk, coerced, _nowMs());
+    _coalescer.offer(
+        'param:$ch:$desk', () => _send(Cmds.param(ch, desk, coerced)));
+    _invalidateDerived(); // optimistic send reads feed sends
+    if (_sendHotField.hasMatch(desk)) {
+      _syncSendParamNotes();
+    } else {
+      notifyListeners();
+    }
   }
 
   @override
@@ -1024,22 +1038,69 @@ class AppStore extends ChangeNotifier
 
   @override
   ChannelPreampVm get preamp => ChannelPreampVm(
-        gain: paramNum('gain') ?? 30,
+        hasInput: supports('gain'),
+        gain: paramNum('gain') ?? 0,
         trim: paramNum('trim') ?? 0,
         phantom: paramBool('phantom') ?? false,
         invert: paramBool('polarity') ?? false,
+        delayMs: paramNum('delay_ms') ?? 0,
+        delayOn: paramBool('delay_on') ?? false,
       );
 
   @override
-  ChannelSourceVm get source =>
-      ChannelSourceVm(srcName: displayName, srcGroup: 'local');
+  ChannelSourceVm get source {
+    final raw = ps.optimisticValue(_maps, _channel, 'source');
+    return ChannelSourceVm(
+      srcName: raw is String ? raw : '—',
+      sourceA: paramNum('source_a')?.toInt(),
+      sourceB: paramNum('source_b')?.toInt(),
+      selected: paramNum('source_select')?.toInt(),
+      usbReturn: paramNum('usbreturn')?.toInt(),
+      levelDb: _levelDb.value,
+    );
+  }
+
+  double? sendPan(int slot) {
+    if (!supports('send${slot}_pan')) return null;
+    final value = paramNum('send${slot}_pan');
+    return value == null ? null : value.clamp(-100, 100) / 100;
+  }
+
+  /// DL32S source IDs remain opaque; only switch the verified A/B selector.
+  @override
+  void setSourceSelected(int selected) {
+    if (selected == 0 || selected == 1) cmdParam('source_select', selected);
+  }
+
+  @override
+  void setSendPan(int slot, double pan) =>
+      cmdParam('send${slot}_pan', pan.clamp(-1.0, 1.0) * 100);
+
+  @override
+  bool? get mainAssigned => paramBool('lr_assign');
+  @override
+  void setMainAssigned(bool on) => cmdParam('lr_assign', on);
+  @override
+  int get dcaCount => [
+        for (var n = 1; n <= 16; n++)
+          if (supports('dca${n}_assign')) n
+      ].fold(0, math.max);
+  @override
+  bool? dcaAssigned(int group) => paramBool('dca${group + 1}_assign');
+  @override
+  void setDcaAssigned(int group, bool on) =>
+      cmdParam('dca${group + 1}_assign', on);
+
+  @override
+  void setCompSoftKnee(bool soft) => cmdParam(
+      'comp_knee', engine.driver == 'dl32s' ? (soft ? 0 : 1) : (soft ? 3 : 0));
 
   @override
   ChannelEqVm get eq => ChannelEqVm(
-        on: paramBool('eq_on') ?? true,
+        on: paramBool('eq_on') ?? false,
         hpfF: paramNum('hpf_freq') ?? 80,
         hpfOn: paramBool('hpf_on') ?? false,
-        hpfSlope: paramNum('hpf_slope')?.toInt() ?? 12,
+        hpfSlope: 12,
         selectedBand: _eqBand,
         bands: [
           for (var b = 1; b <= 4; b++)
@@ -1050,7 +1111,8 @@ class AppStore extends ChangeNotifier
                   [80.0, 400.0, 1200.0, 6000.0][b - 1],
               g: paramNum('eq${b}_gain') ?? 0,
               q: paramNum('eq${b}_q') ?? 1,
-              on: _eqBandOn[b] ?? paramBool('eq${b}_on') ?? true,
+              on: true,
+              type: paramNum('eq${b}_type')?.toInt(),
             ),
         ],
       );
@@ -1059,7 +1121,7 @@ class AppStore extends ChangeNotifier
     final p = kind == DynKind.gate ? 'gate' : 'comp';
     return ChannelDynVm(
       kind: kind,
-      on: paramBool('${p}_on') ?? true,
+      on: paramBool('${p}_on') ?? false,
       thr: paramNum('${p}_thr') ?? (kind == DynKind.gate ? -50 : -20),
       range: paramNum('${p}_range') ?? 40,
       att: paramNum('${p}_att') ?? (kind == DynKind.gate ? 0.5 : 10),
@@ -1068,6 +1130,20 @@ class AppStore extends ChangeNotifier
       ratio: paramNum('${p}_ratio') ?? 3,
       knee: paramNum('${p}_knee') ?? 3,
       makeup: paramNum('${p}_makeup') ?? 0,
+      mode: paramNum('${p}_mode')?.toInt(),
+      detector: paramNum('${p}_det')?.toInt(),
+      envelope: paramNum('${p}_env')?.toInt(),
+      keySource: paramNum('${p}_key_src')?.toInt(),
+      filterOn: paramBool('${p}_filter_on'),
+      filterType: paramNum('${p}_filter_type')?.toInt(),
+      filterFreq: paramNum('${p}_filter_freq'),
+      mix: paramNum('${p}_mix'),
+      auto: paramBool('${p}_auto'),
+      softKnee: kind == DynKind.comp && paramNum('comp_knee') != null
+          ? (engine.driver == 'dl32s'
+              ? paramNum('comp_knee') == 0
+              : paramNum('comp_knee')! > 0)
+          : null,
     );
   }
 
@@ -1081,20 +1157,49 @@ class AppStore extends ChangeNotifier
   List<ChannelSendVm> get sends {
     final cached = _sendsCache;
     if (cached != null) return cached;
-    final buses = engine.busFaders.keys.toList()..sort();
-    final built = buses.isEmpty
-        ? const <ChannelSendVm>[]
-        : List<ChannelSendVm>.unmodifiable([
-            for (final b in buses)
-              ChannelSendVm(
-                slot: b + 1,
-                destName: 'Mix ${b + 1}',
-                level: 0.75,
-                muted: !(paramBool('send${b + 1}_on') ?? true),
-              ),
-          ]);
+    final built = List<ChannelSendVm>.unmodifiable([
+      for (var slot = 1; slot <= 16; slot++)
+        if (supports('send${slot}_level'))
+          ChannelSendVm(
+            slot: slot,
+            destName: _sendName(slot),
+            level: dbToPos(paramNum('send${slot}_level') ?? -90),
+            muted: supports('send${slot}_on')
+                ? !(paramBool('send${slot}_on') ?? true)
+                : paramBool(_sendMuteLeaf(slot)) ?? false,
+            canMute:
+                supports('send${slot}_on') || supports(_sendMuteLeaf(slot)),
+            pan: sendPan(slot),
+            tap: paramNum('send${slot}_tap')?.toInt(),
+            tapOptions: supports('send${slot}_tap')
+                ? const [0, 1, 2, 3, 4, 5]
+                : const [],
+            grpon: paramBool('send${slot}_grpon'),
+          ),
+    ]);
     _sendsCache = built;
     return built;
+  }
+
+  String _sendMuteLeaf(int slot) {
+    final auxCount = engine.driver == 'dl32s' ? 8 : 6;
+    return slot <= auxCount ? 'aux${slot}_mute' : 'fx${slot - auxCount}_mute';
+  }
+
+  String _sendName(int slot) {
+    final auxCount = engine.driver == 'dl32s' ? 8 : 6;
+    final kind = slot <= auxCount ? 'bus' : 'fxsnd';
+    final index = slot <= auxCount ? slot - 1 : slot - auxCount - 1;
+    for (final family in engine.topology) {
+      if (family['key'] != kind || index >= (family['count'] as num).toInt()) {
+        continue;
+      }
+      final ch = (family['first'] as num).toInt() + index;
+      for (final strip in engine.strips) {
+        if (strip.ch == ch) return strip.name;
+      }
+    }
+    return slot <= auxCount ? 'Aux $slot' : 'FX ${slot - auxCount}';
   }
 
   @override
@@ -1103,9 +1208,7 @@ class AppStore extends ChangeNotifier
       : engine.subgroupFaders.keys.reduce(math.max) + 1;
 
   @override
-  int get muteGroupCount => engine.muteGroups.isEmpty
-      ? 0
-      : engine.muteGroups.keys.reduce(math.max) + 1;
+  int get muteGroupCount => engine.muteGroupCount;
 
   @override
   bool? subgroupAssigned(int g) => engine.subgroupAssign['$_channel:$g'];
@@ -1150,14 +1253,14 @@ class AppStore extends ChangeNotifier
       cmdParam('hpf_on', on);
       return;
     }
-    // No per-band desk leaf: fixture-local bypass (web parity).
-    _eqBandOn[band] = on;
-    _invalidateDerived();
-    notifyListeners();
+    // Neither hardware driver has a per-band bypass leaf.
   }
 
   @override
-  void setHpfSlope(int slope) => cmdParam('hpf_slope', slope);
+  void setHpfSlope(int slope) {
+    // The public VM uses dB/oct, while the catalogue uses a native enum.
+    // Neither supported hardware driver advertises a verified slope control.
+  }
 
   @override
   void resetEq() {
@@ -1176,22 +1279,33 @@ class AppStore extends ChangeNotifier
 
   @override
   void resetDyn(DynKind kind) {
-    final d = ChannelDynVm.resetDefault(kind);
-    cmdParam('${kind.name}_thr', d.thr);
-    cmdParam('${kind.name}_ratio', d.ratio);
-    cmdParam('${kind.name}_att', d.att);
-    cmdParam('${kind.name}_rel', d.rel);
+    final defaults = kind == DynKind.gate ? dynResetGate : dynResetComp;
+    for (final entry in defaults.entries) {
+      if (kind == DynKind.comp && entry.key == 'knee') {
+        setCompSoftKnee(true);
+      } else {
+        cmdParam('${kind.name}_${entry.key}', entry.value);
+      }
+    }
   }
 
   @override
-  void setSendLevel(int slot, double value) =>
-      cmdParam('send${slot}_level', value);
+  void setSendLevel(int slot, double value) {
+    final db = posToDb(value.clamp(0.0, 1.0));
+    cmdParam('send${slot}_level', db.isFinite ? db : -90.0);
+  }
 
   @override
   void setSendTap(int slot, int tap) => cmdParam('send${slot}_tap', tap);
 
   @override
-  void setSendMute(int slot, bool muted) => cmdParam('send${slot}_on', !muted);
+  void setSendMute(int slot, bool muted) {
+    if (supports('send${slot}_on')) {
+      cmdParam('send${slot}_on', !muted);
+    } else {
+      cmdParam(_sendMuteLeaf(slot), muted);
+    }
+  }
 
   @override
   void togglePhantom() => cmdParam('phantom', !(paramBool('phantom') ?? false));
@@ -1234,6 +1348,9 @@ class AppStore extends ChangeNotifier
       n.dispose();
     }
     for (final n in _soloNotes.values) {
+      n.dispose();
+    }
+    for (final n in _sendParamNotes.values) {
       n.dispose();
     }
     _masterFaderNote.dispose();
