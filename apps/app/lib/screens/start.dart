@@ -10,25 +10,15 @@
 // only via an explicit user action or a user-initiated connect success.
 library;
 
-import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../design.dart';
+import '../settings/prefs.dart';
+import '../settings/recents.dart';
 import 'connection.dart';
-
-/// One persisted recent mixer (name + IP/hostname).
-class RecentMixer {
-  final String name;
-  final String addr;
-  const RecentMixer({required this.name, required this.addr});
-
-  Map<String, String> toJson() => {'name': name, 'addr': addr};
-  static RecentMixer fromJson(Map<String, dynamic> j) =>
-      RecentMixer(name: '${j['name'] ?? ''}', addr: '${j['addr'] ?? ''}');
-}
 
 class ConnectionsStartScreen extends StatefulWidget {
   final ConnectionStore store;
@@ -66,9 +56,8 @@ class _Row {
 }
 
 class _ConnectionsStartState extends State<ConnectionsStartScreen> {
-  List<RecentMixer> _recents = [];
-  bool _remember = true;
-  bool _autoFind = true;
+  RecentMixers get _recentsBox => RecentMixers.instance;
+  PrefsService get _prefs => PrefsService.instance;
 
   /// Pending user-initiated connect target (addr), or null when idle.
   String? _pending;
@@ -81,62 +70,25 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
   void initState() {
     super.initState();
     widget.store.addListener(_onStore);
-    _loadPrefs();
-  }
-
-  Future<void> _loadPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    final raw = prefs.getString('openfader.recentMixers');
-    var recents = <RecentMixer>[];
-    if (raw != null && raw.isNotEmpty) {
-      try {
-        final list = jsonDecode(raw) as List;
-        recents = [
-          for (final e in list)
-            if (e is Map<String, dynamic>) RecentMixer.fromJson(e)
-        ];
-      } catch (_) {
-        recents = [];
-      }
-    }
-    setState(() {
-      _recents = recents
-          .where((r) => r.addr.isNotEmpty)
-          .toList(growable: true);
-      _remember = prefs.getBool('openfader.rememberRecents') ?? true;
-      _autoFind = prefs.getBool('openfader.autoFind') ?? true;
-    });
-    if (_autoFind && !_scannedOnce) {
+    RecentMixers.ensureLoaded();
+    PrefsService.ensureInitialized();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _scannedOnce) return;
       _scannedOnce = true;
-      widget.store.scan();
-    }
-  }
-
-  Future<void> _saveRecents() async {
-    if (!_remember) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('openfader.recentMixers',
-        jsonEncode([for (final r in _recents) r.toJson()]));
+      if (_prefs.autoFind) widget.store.scan();
+    });
   }
 
   Future<void> _setRemember(bool v) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('openfader.rememberRecents', v);
+    await _prefs.setRemember(v);
     if (!mounted) return;
-    setState(() => _remember = v);
-    if (!v) {
-      await prefs.remove('openfader.recentMixers');
-    } else {
-      await _saveRecents();
-    }
+    setState(() {});
   }
 
   Future<void> _setAutoFind(bool v) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('openfader.autoFind', v);
+    await _prefs.setAutoFind(v);
     if (!mounted) return;
-    setState(() => _autoFind = v);
+    setState(() {});
   }
 
   @override
@@ -170,7 +122,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     }
     final seen = <String>{};
     final rows = <_Row>[];
-    for (final r in _recents) {
+    for (final r in _recentsBox.items) {
       seen.add(r.addr);
       final d = byHost[r.addr];
       rows.add(_Row(
@@ -234,7 +186,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
       if (hit) {
         _pending = null;
         _pendingName = null;
-        _rememberRecent(name, addr);
+        unawaited(_persistConnection(name, addr));
         widget.onEnterMixer();
         return;
       }
@@ -242,17 +194,12 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     setState(() {});
   }
 
-  void _rememberRecent(String name, String addr) {
-    if (!_remember || addr.isEmpty) return;
-    final i = _recents.indexWhere((r) => r.addr == addr);
-    if (i >= 0) {
-      if (_recents[i].name != name && name.isNotEmpty) {
-        _recents[i] = RecentMixer(name: name, addr: addr);
-      }
-    } else {
-      _recents.add(RecentMixer(name: name, addr: addr));
+  Future<void> _persistConnection(String name, String addr) async {
+    if (addr.isEmpty || addr.startsWith('id:')) return;
+    await PrefsService.instance.setLastMixerAddr(addr);
+    if (PrefsService.instance.rememberRecents) {
+      await RecentMixers.instance.remember(name, addr);
     }
-    _saveRecents();
   }
 
   void _connectRow(_Row row) {
@@ -288,7 +235,13 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     return Scaffold(
       backgroundColor: AppDesign.background,
       body: SafeArea(
-        child: Stack(
+        child: ListenableBuilder(
+          listenable: Listenable.merge([
+            widget.store,
+            RecentMixers.instance,
+            PrefsService.instance,
+          ]),
+          builder: (context, _) => Stack(
           children: [
             Center(
               child: SingleChildScrollView(
@@ -341,9 +294,10 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
               ),
             ),
           ],
+          ),
         ),
-      ),
-    );
+        ),
+      );
   }
 
   void _showHelp() {
@@ -373,8 +327,8 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     showDialog<void>(
       context: context,
       builder: (context) => _PrefsDialog(
-        remember: _remember,
-        autoFind: _autoFind,
+        remember: _prefs.rememberRecents,
+        autoFind: _prefs.autoFind,
         onRemember: _setRemember,
         onAutoFind: _setAutoFind,
       ),

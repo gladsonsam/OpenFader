@@ -119,11 +119,9 @@ class ChannelToolbar extends StatelessWidget {
           ] else
             Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: PopupMenuButton<VoidCallback>(
-                tooltip: 'Menu',
-                color: const Color(0xff262626),
+              child: _ChannelMenuButton(
                 onSelected: (action) => action(),
-                itemBuilder: (_) => [
+                items: [
                   for (final t in ChannelTool.values)
                     PopupMenuItem(
                         value: () => onTool(t),
@@ -142,20 +140,54 @@ class ChannelToolbar extends StatelessWidget {
                                 fontSize: 16,
                                 color: U4.text1))),
                 ],
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                      color: const Color(0xff262626),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xff363636))),
-                  child: const Icon(Icons.menu,
-                      size: 22, color: Color(0xffb5b5b5)),
-                ),
               ),
             ),
         ]));
+  }
+}
+
+class _ChannelMenuButton extends StatelessWidget {
+  final ValueChanged<VoidCallback> onSelected;
+  final List<PopupMenuEntry<VoidCallback>> items;
+  const _ChannelMenuButton(
+      {required this.onSelected, required this.items});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+      button: true,
+      label: 'Menu',
+      onTap: () => _open(context),
+      child: Tooltip(
+          message: 'Menu',
+          child: SizedBox(
+              width: 44,
+              height: 44,
+              child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => _open(context),
+                  child: Container(
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                          color: const Color(0xff262626),
+                          borderRadius: BorderRadius.circular(10),
+                          border:
+                              Border.all(color: const Color(0xff363636))),
+                      child: const Icon(Icons.menu,
+                          size: 22, color: Color(0xffb5b5b5)))))));
+
+  Future<void> _open(BuildContext context) async {
+    final box = context.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    final choice = await showMenu<VoidCallback>(
+      context: context,
+      color: const Color(0xff262626),
+      position: RelativeRect.fromRect(
+          box == null ? Rect.zero : Offset.zero & box.size,
+          Offset.zero & (overlay?.size ?? Size.zero)),
+      items: items,
+    );
+    if (choice != null) onSelected(choice);
   }
 }
 

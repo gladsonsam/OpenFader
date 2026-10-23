@@ -11,11 +11,14 @@ import 'package:flutter/material.dart';
 
 import 'boot/boot_controller.dart';
 import 'boot/launch_screen.dart';
+import 'settings/prefs.dart';
 import 'shell/app_router.dart';
 import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Prefs load async after the first frame; UI applies them when ready.
+  PrefsService.ensureInitialized();
   runApp(const OpenfaderApp());
 }
 
@@ -24,11 +27,27 @@ class OpenfaderApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'OpenFader',
-      debugShowCheckedModeBanner: false,
-      theme: u4Theme(),
-      home: const BootGate(),
+    return ListenableBuilder(
+      listenable: PrefsService.instance,
+      builder: (context, _) {
+        final density = switch (
+            PrefsService.instance.interfaceSize) {
+          'compact' => VisualDensity.compact,
+          'large' => VisualDensity.comfortable,
+          _ => VisualDensity.standard,
+        };
+        return MaterialApp(
+          title: 'OpenFader',
+          debugShowCheckedModeBanner: false,
+          theme: u4Theme().copyWith(visualDensity: density),
+          builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(
+                      PrefsService.instance.textScale)),
+              child: child!),
+          home: const BootGate(),
+        );
+      },
     );
   }
 }

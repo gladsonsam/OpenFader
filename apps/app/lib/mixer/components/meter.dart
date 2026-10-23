@@ -2,6 +2,16 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../design.dart';
 
+/// Live meter tunable behavior, driven by the Appearance prefs (applied
+/// by the shell; read at signal-update time, no rebuild needed).
+abstract final class MeterTuning {
+  /// Peak-hold time in ms (Peak hold setting, 1/3/5 s).
+  static int peakHoldMs = 1000;
+
+  /// When true the clip LED follows the held peak; otherwise live level.
+  static bool holdClips = true;
+}
+
 /// Live meter reusable in strips, bus pickers, and future meter bridges.
 /// The signal repaints this boundary directly; it does not rebuild controls.
 class MixerMeter extends StatefulWidget {
@@ -58,7 +68,8 @@ class _MeterSignal extends ChangeNotifier {
     if (level >= peak) {
       peak = level;
       _peakAt = now;
-    } else if (now.difference(_peakAt).inMilliseconds > 1200) {
+    } else if (now.difference(_peakAt).inMilliseconds >
+        MeterTuning.peakHoldMs) {
       peak =
           (peak - now.difference(_tick).inMilliseconds / 5000).clamp(level, 1);
     }
@@ -86,10 +97,13 @@ class _MeterPainter extends CustomPainter {
     final w = (s.width - (count - 1) * 3) / count;
     for (var i = 0; i < count; i++) {
       final x = i * (w + 3);
+      final clipped = MeterTuning.holdClips
+          ? signal.peak >= .99
+          : signal.source.value >= .99;
       mixerBox(
           c,
           Rect.fromLTWH(x, 0, w, clipHeight),
-          signal.source.value >= .99
+          clipped
               ? MixerDesign.mute
               : const Color(0xff3d1006),
           radius: 3);

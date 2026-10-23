@@ -66,10 +66,10 @@ class _MixerFaderState extends State<MixerFader> {
                       bottom: geometry.bottom,
                       child: MixerMeter(level: ch.meter, stereo: ch.master)),
                   Positioned(
-                      left: geometry.x - geometry.capWidth / 2 - 6,
-                      top: y - geometry.capHeight / 2 - 6,
-                      width: geometry.capWidth + 12,
-                      height: geometry.capHeight + 12,
+                      left: geometry.x - geometry.capWidth / 2 - geometry.touchPad,
+                      top: y - geometry.capHeight / 2 - geometry.touchPad,
+                      width: geometry.capWidth + geometry.touchPad * 2,
+                      height: geometry.capHeight + geometry.touchPad * 2,
                       child: Tooltip(
                           message: '${ch.levelLabel} · double-tap for unity',
                           triggerMode: TooltipTriggerMode.manual,
@@ -102,7 +102,8 @@ class _MixerFaderState extends State<MixerFader> {
                                   onVerticalDragEnd: (_) => _release(),
                                   onVerticalDragCancel: _release,
                                   child: Padding(
-                                      padding: const EdgeInsets.all(6),
+                                      padding: EdgeInsets.all(
+                                          geometry.touchPad),
                                       child: AnimatedScale(
                                           scale: scale,
                                           duration:
@@ -130,8 +131,14 @@ class _FaderGeometry {
   double get x => size.width * .59;
   // Design caps are chunky squares: ~38% of strip width on tablet, ~50%
   // on phones (54px on a 104px strip). Meter width ≈ strip minus padding.
-  double get capWidth => (size.width * .48).clamp(34, 96);
+  // Larger touch targets (Appearance) grows caps a step further.
+  double get capWidth => (size.width *
+          (MixerDesign.largeTargets ? .52 : .48))
+      .clamp(34, MixerDesign.largeTargets ? 110 : 96);
   double get capHeight => capWidth;
+
+  /// Touch padding around the cap (also grows with larger targets).
+  double get touchPad => MixerDesign.largeTargets ? 10 : 6;
 }
 
 class _ScalePainter extends CustomPainter {
