@@ -1,1 +1,4 @@
-OTHER_LDFLAGS = $(inherited) -force_load "$(BUILT_PRODUCTS_DIR)/libopenmix_flutter_bridge.a" -lc++ -framework Security -framework SystemConfiguration
+// Dart resolves these FRB 2.13 entry points with dlsym. -force_load alone
+// does not keep them alive when the Release linker strips unreferenced code.
+OPENMIX_FFI_ROOTS = -Wl,-u,_frb_create_shutdown_callback -Wl,-u,_frb_dart_fn_deliver_output -Wl,-u,_frb_dart_opaque_dart2rust_encode -Wl,-u,_frb_dart_opaque_drop_thread_box_persistent_handle -Wl,-u,_frb_dart_opaque_rust2dart_decode -Wl,-u,_frb_free_wire_sync_rust2dart_dco -Wl,-u,_frb_free_wire_sync_rust2dart_sse -Wl,-u,_frb_get_rust_content_hash -Wl,-u,_frb_init_frb_dart_api_dl -Wl,-u,_frb_pde_ffi_dispatcher_primary -Wl,-u,_frb_pde_ffi_dispatcher_sync -Wl,-u,_frb_rust_vec_u8_free -Wl,-u,_frb_rust_vec_u8_new -Wl,-u,_frb_rust_vec_u8_resize -Wl,-u,_store_dart_post_cobject
+OTHER_LDFLAGS = $(inherited) -force_load "$(BUILT_PRODUCTS_DIR)/libopenmix_flutter_bridge.a" -lc++ -framework Security -framework SystemConfiguration $(OPENMIX_FFI_ROOTS)
