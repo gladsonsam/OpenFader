@@ -16,6 +16,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import '../design.dart';
+import '../palette.dart';
 import '../widgets/design_icon.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
@@ -96,9 +97,12 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     if (!mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        backgroundColor: ConsolePalette.of(context).chip,
         content: Text(msg,
             textAlign: TextAlign.center,
-            style: AppDesign.type(15, weight: FontWeight.w500)),
+            style: AppDesign.type(15,
+                weight: FontWeight.w500,
+                color: ConsolePalette.of(context).text)),
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 3)));
   }
@@ -238,7 +242,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width > 900;
     return Scaffold(
-      backgroundColor: AppDesign.background,
+      backgroundColor: ConsolePalette.of(context).background,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: Listenable.merge([
@@ -344,7 +348,9 @@ class _Brand extends StatelessWidget {
                   semanticsLabel: 'OpenFader logo')),
           SizedBox(width: wide ? 24 : 16),
           Text('OpenFader',
-              style: AppDesign.type(wide ? 48 : 34, weight: FontWeight.w600)),
+              style: AppDesign.type(wide ? 48 : 34,
+                  weight: FontWeight.w600,
+                  color: ConsolePalette.of(context).text)),
         ],
       );
 }
@@ -382,8 +388,8 @@ class _Box extends StatelessWidget {
         constraints: BoxConstraints(maxWidth: wide ? 680 : 560),
         child: Container(
           decoration: BoxDecoration(
-            color: const Color(0xff262626),
-            border: Border.all(color: const Color(0xff383838)),
+            color: ConsolePalette.of(context).chip,
+            border: Border.all(color: ConsolePalette.of(context).lineCtl),
             borderRadius: BorderRadius.circular(10),
           ),
           clipBehavior: Clip.antiAlias,
@@ -399,7 +405,8 @@ class _Box extends StatelessWidget {
                     Expanded(
                         child: Text(title,
                             style: AppDesign.type(wide ? 27 : 21,
-                                weight: FontWeight.w500))),
+                                weight: FontWeight.w500,
+                                color: ConsolePalette.of(context).text))),
                     _IconButton(
                         tooltip: 'Refresh recent mixers',
                         onTap: onRefresh,
@@ -407,14 +414,14 @@ class _Box extends StatelessWidget {
                   ],
                 ),
               ),
-              const Divider(color: Color(0xff3b3b3b), height: 1),
+              Divider(color: ConsolePalette.of(context).line, height: 1),
               if (error != null)
                 Padding(
                   padding: EdgeInsets.symmetric(
                       horizontal: wide ? 28 : 20, vertical: 10),
                   child: Text(error!,
                       style: AppDesign.type(wide ? 18 : 15,
-                          color: AppDesign.mute)),
+                          color: ConsolePalette.of(context).mute)),
                 ),
               if (rows.isEmpty)
                 Padding(
@@ -422,7 +429,7 @@ class _Box extends StatelessWidget {
                       horizontal: wide ? 28 : 20, vertical: wide ? 24 : 18),
                   child: Text('No mixers yet — Discover or Add manually.',
                       style: AppDesign.type(wide ? 23 : 17,
-                          color: AppDesign.mutedText)),
+                          color: ConsolePalette.of(context).mutedText)),
                 )
               else
                 ConstrainedBox(
@@ -436,11 +443,12 @@ class _Box extends StatelessWidget {
                           busy: pending != null,
                           onConnect: () => onConnect(rows[i])),
                       if (i < rows.length - 1)
-                        const Divider(color: AppDesign.line, height: 1),
+                        Divider(
+                            color: ConsolePalette.of(context).line, height: 1),
                     ],
                   ])),
                 ),
-              const Divider(color: Color(0xff3b3b3b), height: 1),
+              Divider(color: ConsolePalette.of(context).line, height: 1),
               _BoxActions(wide: wide, onDiscover: onDiscover, onAdd: onAdd),
             ],
           ),
@@ -481,13 +489,14 @@ class _DeviceRow extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppDesign.type(wide ? 27 : 21,
-                        weight: FontWeight.w500)),
+                        weight: FontWeight.w500,
+                        color: ConsolePalette.of(context).text)),
                 SizedBox(height: wide ? 8 : 7),
                 Text(row.discovered ? 'Discovered — ${row.addr}' : row.addr,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppDesign.type(wide ? 23 : 17,
-                        color: AppDesign.mutedText)),
+                        color: ConsolePalette.of(context).mutedText)),
               ])),
           const SizedBox(width: 12),
           SizedBox(
@@ -496,15 +505,19 @@ class _DeviceRow extends StatelessWidget {
             child: ElevatedButton(
               onPressed: busy ? null : onConnect,
               style: ElevatedButton.styleFrom(
-                  backgroundColor: primary ? AppDesign.lime : AppDesign.control,
-                  foregroundColor:
-                      primary ? const Color(0xff171717) : AppDesign.text,
-                  disabledBackgroundColor: AppDesign.control,
+                  backgroundColor: primary
+                      ? ConsolePalette.of(context).lime
+                      : ConsolePalette.of(context).control,
+                  foregroundColor: primary
+                      ? ConsolePalette.of(context).onAccent
+                      : ConsolePalette.of(context).text,
+                  disabledBackgroundColor: ConsolePalette.of(context).control,
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6)),
                   padding: EdgeInsets.symmetric(horizontal: wide ? 22 : 14),
-                  textStyle:
-                      AppDesign.type(wide ? 24 : 18, weight: FontWeight.w600)),
+                  textStyle: AppDesign.type(wide ? 24 : 18,
+                      weight: FontWeight.w600,
+                      color: ConsolePalette.of(context).text)),
               child: Text(label),
             ),
           ),
@@ -524,13 +537,14 @@ class _BoxActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final style = TextButton.styleFrom(
-        foregroundColor: AppDesign.text,
+        foregroundColor: ConsolePalette.of(context).text,
         backgroundColor: Colors.transparent,
         disabledBackgroundColor: Colors.transparent,
         minimumSize: Size(64, wide ? 56 : 48),
         padding: const EdgeInsets.symmetric(horizontal: 6),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        textStyle: AppDesign.type(wide ? 24 : 17, weight: FontWeight.w500));
+        textStyle: AppDesign.type(wide ? 24 : 17,
+            weight: FontWeight.w500, color: ConsolePalette.of(context).text));
     Widget label(String text) => Flexible(
         fit: FlexFit.loose,
         child: FittedBox(
@@ -539,8 +553,9 @@ class _BoxActions extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 textAlign: TextAlign.center,
-                style:
-                    AppDesign.type(wide ? 24 : 17, weight: FontWeight.w500))));
+                style: AppDesign.type(wide ? 24 : 17,
+                    weight: FontWeight.w500,
+                    color: ConsolePalette.of(context).text))));
     return Padding(
       padding: EdgeInsets.symmetric(
           horizontal: wide ? 28 : 16, vertical: wide ? 20 : 12),
@@ -559,7 +574,8 @@ class _BoxActions extends StatelessWidget {
                         label('Discover mixers'),
                       ]))),
           const SizedBox(width: 12),
-          Container(width: 1, height: 36, color: const Color(0xff3b3b3b)),
+          Container(
+              width: 1, height: 36, color: ConsolePalette.of(context).line),
           const SizedBox(width: 12),
           Expanded(
               child: TextButton(
@@ -587,14 +603,15 @@ class _WorkOffline extends StatelessWidget {
   Widget build(BuildContext context) => TextButton(
         onPressed: onTap,
         style: TextButton.styleFrom(
-            foregroundColor: AppDesign.text,
+            foregroundColor: ConsolePalette.of(context).text,
             backgroundColor: Colors.transparent,
             disabledBackgroundColor: Colors.transparent,
             minimumSize: const Size(200, 56),
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             textStyle: AppDesign.type(
                 MediaQuery.sizeOf(context).width > 900 ? 26 : 20,
-                weight: FontWeight.w400)),
+                weight: FontWeight.w400,
+                color: ConsolePalette.of(context).text)),
         child: const Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -629,7 +646,10 @@ class _RefreshGlyph extends StatelessWidget {
   const _RefreshGlyph({required this.spinning});
   @override
   Widget build(BuildContext context) => Icon(Icons.refresh,
-      size: 26, color: spinning ? AppDesign.lime : const Color(0xffb5b5b5));
+      size: 26,
+      color: spinning
+          ? ConsolePalette.of(context).lime
+          : ConsolePalette.of(context).text7);
 }
 
 class _ScanGlyph extends StatelessWidget {
@@ -649,8 +669,8 @@ class _PlusGlyph extends StatelessWidget {
 class _ChevronGlyph extends StatelessWidget {
   const _ChevronGlyph();
   @override
-  Widget build(BuildContext context) =>
-      const Icon(Icons.chevron_right, size: 22, color: Color(0xffb5b5b5));
+  Widget build(BuildContext context) => Icon(Icons.chevron_right,
+      size: 22, color: ConsolePalette.of(context).text7);
 }
 
 class _CornerIcon extends StatelessWidget {
@@ -716,10 +736,10 @@ class _Dialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Dialog(
-        backgroundColor: const Color(0xff262626),
+        backgroundColor: ConsolePalette.of(context).chip,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(10),
-            side: const BorderSide(color: Color(0xff383838))),
+            side: BorderSide(color: ConsolePalette.of(context).lineCtl)),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
           child: Padding(
@@ -731,12 +751,14 @@ class _Dialog extends StatelessWidget {
                 Row(children: [
                   Expanded(
                       child: Text(title,
-                          style: AppDesign.type(24, weight: FontWeight.w600))),
+                          style: AppDesign.type(24,
+                              weight: FontWeight.w600,
+                              color: ConsolePalette.of(context).text))),
                   _IconButton(
                       tooltip: 'Close',
                       onTap: () => Navigator.pop(context),
-                      child: const Icon(Icons.close,
-                          size: 24, color: Color(0xffb5b5b5))),
+                      child: Icon(Icons.close,
+                          size: 24, color: ConsolePalette.of(context).text7)),
                 ]),
                 const SizedBox(height: 12),
                 child,
@@ -796,25 +818,29 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text('IP address or hostname',
-                style: AppDesign.type(18, color: AppDesign.mutedText)),
+                style: AppDesign.type(18,
+                    color: ConsolePalette.of(context).mutedText)),
             const SizedBox(height: 6),
             TextField(
               controller: _addr,
               keyboardType: TextInputType.url,
               autocorrect: false,
-              style: AppDesign.type(19),
+              style: AppDesign.type(19, color: ConsolePalette.of(context).text),
               decoration: InputDecoration(
                 filled: true,
-                fillColor: const Color(0xff101010),
+                fillColor: ConsolePalette.of(context).well,
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
-                    borderSide: const BorderSide(color: Color(0xff414141))),
+                    borderSide:
+                        BorderSide(color: ConsolePalette.of(context).lineCtl)),
                 enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
-                    borderSide: const BorderSide(color: Color(0xff414141))),
+                    borderSide:
+                        BorderSide(color: ConsolePalette.of(context).lineCtl)),
                 focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
-                    borderSide: const BorderSide(color: AppDesign.lime)),
+                    borderSide:
+                        BorderSide(color: ConsolePalette.of(context).lime)),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               ),
@@ -822,23 +848,27 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
             ),
             const SizedBox(height: 14),
             Text('Name (optional)',
-                style: AppDesign.type(18, color: AppDesign.mutedText)),
+                style: AppDesign.type(18,
+                    color: ConsolePalette.of(context).mutedText)),
             const SizedBox(height: 6),
             TextField(
               controller: _name,
-              style: AppDesign.type(19),
+              style: AppDesign.type(19, color: ConsolePalette.of(context).text),
               decoration: InputDecoration(
                 filled: true,
-                fillColor: const Color(0xff101010),
+                fillColor: ConsolePalette.of(context).well,
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
-                    borderSide: const BorderSide(color: Color(0xff414141))),
+                    borderSide:
+                        BorderSide(color: ConsolePalette.of(context).lineCtl)),
                 enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
-                    borderSide: const BorderSide(color: Color(0xff414141))),
+                    borderSide:
+                        BorderSide(color: ConsolePalette.of(context).lineCtl)),
                 focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(5),
-                    borderSide: const BorderSide(color: AppDesign.lime)),
+                    borderSide:
+                        BorderSide(color: ConsolePalette.of(context).lime)),
                 contentPadding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               ),
@@ -846,7 +876,9 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
-              Text(_error!, style: AppDesign.type(17, color: AppDesign.mute)),
+              Text(_error!,
+                  style: AppDesign.type(17,
+                      color: ConsolePalette.of(context).mute)),
             ],
             const SizedBox(height: 18),
             SizedBox(
@@ -854,11 +886,13 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
               child: ElevatedButton(
                 onPressed: _submit,
                 style: ElevatedButton.styleFrom(
-                    backgroundColor: AppDesign.lime,
-                    foregroundColor: const Color(0xff171717),
+                    backgroundColor: ConsolePalette.of(context).lime,
+                    foregroundColor: ConsolePalette.of(context).onAccent,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6)),
-                    textStyle: AppDesign.type(19, weight: FontWeight.w600)),
+                    textStyle: AppDesign.type(19,
+                        weight: FontWeight.w600,
+                        color: ConsolePalette.of(context).text)),
                 child: const Text('Add mixer'),
               ),
             ),

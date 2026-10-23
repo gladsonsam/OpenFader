@@ -3,8 +3,7 @@
 // square clip light above the column. Single CustomPainter inside a
 // RepaintBoundary; levels arrive as 0..1 fractions from the engine poll.
 import 'package:flutter/material.dart';
-
-import '../theme.dart';
+import '../palette.dart';
 
 /// Peak/clip hold times mirror the meter-sim constants
 /// (PEAK_HOLD_MS / CLIP_HOLD_MS = 1.5 s).
@@ -53,7 +52,8 @@ class _U4MeterState extends State<U4Meter> {
     var changed = false;
     if (lv >= _peak || now.isAfter(_peakHoldUntil)) {
       // Re-peak instantly; after the hold, fall toward the live level.
-      final next = lv >= _peak ? lv : (_peak + (lv - _peak) * 0.35).clamp(0.0, 1.0);
+      final next =
+          lv >= _peak ? lv : (_peak + (lv - _peak) * 0.35).clamp(0.0, 1.0);
       if ((next - _peak).abs() > 0.0005 || lv >= _peak) {
         _peak = next;
         changed = true;
@@ -80,6 +80,7 @@ class _U4MeterState extends State<U4Meter> {
     return RepaintBoundary(
       child: CustomPaint(
         painter: _MeterPainter(
+          palette: ConsolePalette.of(context),
           level: widget.level,
           peak: _peak,
           clip: _clip,
@@ -92,11 +93,16 @@ class _U4MeterState extends State<U4Meter> {
 }
 
 class _MeterPainter extends CustomPainter {
+  final ConsolePalette palette;
   final ValueNotifier<double> level;
   final double peak;
   final bool clip;
 
-  _MeterPainter({required this.level, required this.peak, required this.clip})
+  _MeterPainter(
+      {required this.palette,
+      required this.level,
+      required this.peak,
+      required this.clip})
       : super(repaint: level);
 
   @override
@@ -110,27 +116,27 @@ class _MeterPainter extends CustomPainter {
     final yGreen = meterTop + h * (1 - 0.66);
     final yAmber = meterTop + h * (1 - 0.84);
     canvas.drawRect(Rect.fromLTWH(0, yGreen, mw, meterTop + h - yGreen),
-        _fill(U4.meterGreen));
+        _fill(palette.meterGreen));
     canvas.drawRect(Rect.fromLTWH(0, yAmber, mw, yGreen - yAmber),
-        _fill(U4.meterAmber));
-    canvas.drawRect(
-        Rect.fromLTWH(0, meterTop, mw, yAmber - meterTop), _fill(U4.meterRed));
+        _fill(palette.meterAmber));
+    canvas.drawRect(Rect.fromLTWH(0, meterTop, mw, yAmber - meterTop),
+        _fill(palette.meterRed));
 
     // Dark cover above the fill line.
     final fillY = meterTop + h * (1 - lv);
     if (fillY > meterTop) {
-      canvas.drawRect(
-          Rect.fromLTWH(0, meterTop, mw, fillY - meterTop), _fill(U4.meterCover));
+      canvas.drawRect(Rect.fromLTWH(0, meterTop, mw, fillY - meterTop),
+          _fill(palette.meterCover));
     }
     // Peak-hold line (2px), hidden below -80 dB (design); fraction ~0 here.
     if (peak > 0.005) {
       final py = (meterTop + h * (1 - peak)).clamp(meterTop, meterTop + h - 2);
-      canvas.drawRect(Rect.fromLTWH(0, py, mw, 2), _fill(U4.peakLine));
+      canvas.drawRect(Rect.fromLTWH(0, py, mw, 2), _fill(palette.peakLine));
     }
     // Clip square above the column (design: square clip light).
     canvas.drawRect(
       Rect.fromLTWH(0, 0, mw, mw),
-      _fill(clip ? U4.clipOn : U4.clipOff),
+      _fill(clip ? palette.clipOn : palette.clipOff),
     );
   }
 
@@ -138,5 +144,8 @@ class _MeterPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_MeterPainter old) =>
-      old.peak != peak || old.clip != clip;
+      old.palette != palette ||
+      old.level != level ||
+      old.peak != peak ||
+      old.clip != clip;
 }

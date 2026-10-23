@@ -31,7 +31,8 @@ class _DynTab extends StatelessWidget {
     Widget control(_KnobDef k, {bool threshold = false}) => Container(
         padding: EdgeInsets.symmetric(
             horizontal: compact ? 12 : 16, vertical: compact ? 8 : 16),
-        decoration: BoxDecoration(color: U4.tileBg, borderRadius: U4.rWell),
+        decoration: BoxDecoration(
+            color: ConsolePalette.of(context).tileBg, borderRadius: U4.rWell),
         child: _ProcessingSlider(
             label: k.label,
             text: k.text,
@@ -44,18 +45,23 @@ class _DynTab extends StatelessWidget {
                 : (MediaQuery.sizeOf(context).width / 2048 * 22)
                     .clamp(14.0, 22.0),
             color: kind == DynKind.gate
-                ? AppDesign.processingBlue
-                : AppDesign.processingPurple,
+                ? ConsolePalette.of(context).processingBlue
+                : ConsolePalette.of(context).processingPurple,
             solidFill: true,
-            valueColor: threshold ? U4.cyan : U4.text1,
+            valueColor: threshold
+                ? ConsolePalette.of(context).cyan
+                : ConsolePalette.of(context).text1,
             enabled: store.supports('${kind.name}_${k.prop}'),
             onFocus: () => focus(k),
             onChanged: (v) => apply(k, v)));
     Widget secondary(_KnobDef k) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(color: U4.tileBg, borderRadius: U4.rWell),
+        decoration: BoxDecoration(
+            color: ConsolePalette.of(context).tileBg, borderRadius: U4.rWell),
         child: Row(children: [
-          Text(k.label, style: AppDesign.type(16, color: U4.text7)),
+          Text(k.label,
+              style:
+                  AppDesign.type(16, color: ConsolePalette.of(context).text7)),
           const SizedBox(width: 16),
           Expanded(
               child: _ProcessingSlider(
@@ -66,21 +72,24 @@ class _DynTab extends StatelessWidget {
                   max: k.max,
                   showLabel: false,
                   color: kind == DynKind.gate
-                      ? AppDesign.processingBlue
-                      : AppDesign.processingPurple,
+                      ? ConsolePalette.of(context).processingBlue
+                      : ConsolePalette.of(context).processingPurple,
                   solidFill: true,
                   enabled: store.supports('${kind.name}_${k.prop}'),
                   onFocus: () => focus(k),
                   onChanged: (v) => apply(k, v))),
           const SizedBox(width: 16),
-          Text(k.text, style: AppDesign.type(16, color: U4.text1)),
+          Text(k.text,
+              style:
+                  AppDesign.type(16, color: ConsolePalette.of(context).text1)),
         ]));
     final supplemental = Row(children: [
       Expanded(
           child: Container(
               padding: const EdgeInsets.all(12),
-              decoration:
-                  BoxDecoration(color: U4.tileBg, borderRadius: U4.rWell),
+              decoration: BoxDecoration(
+                  color: ConsolePalette.of(context).tileBg,
+                  borderRadius: U4.rWell),
               child: _ProcessingSlider(
                   label: 'Temperature',
                   text: '—',
@@ -89,14 +98,15 @@ class _DynTab extends StatelessWidget {
                   max: 100,
                   enabled: false,
                   compact: true,
-                  color: AppDesign.processingPurple,
+                  color: ConsolePalette.of(context).processingPurple,
                   onChanged: (_) {}))),
       const SizedBox(width: 8),
       Expanded(
           child: Container(
               padding: const EdgeInsets.all(12),
-              decoration:
-                  BoxDecoration(color: U4.tileBg, borderRadius: U4.rWell),
+              decoration: BoxDecoration(
+                  color: ConsolePalette.of(context).tileBg,
+                  borderRadius: U4.rWell),
               child: _ProcessingSlider(
                   label: 'Delay',
                   text: store.supports('delay_ms')
@@ -107,9 +117,9 @@ class _DynTab extends StatelessWidget {
                   max: 100,
                   enabled: store.supports('delay_ms'),
                   compact: true,
-                  color: AppDesign.processingPurple,
+                  color: ConsolePalette.of(context).processingPurple,
                   solidFill: true,
-                  valueColor: U4.text1,
+                  valueColor: ConsolePalette.of(context).text1,
                   onFocus: () => onFocus(ChannelFocus(
                       title: 'Compressor',
                       label: 'Delay',
@@ -145,7 +155,8 @@ class _DynTab extends StatelessWidget {
                 child: Container(
                     padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
-                        color: AppDesign.chip, borderRadius: U4.rBtn),
+                        color: ConsolePalette.of(context).chip,
+                        borderRadius: U4.rBtn),
                     child: Row(children: [
                       for (final soft in [true, false])
                         Expanded(
@@ -200,15 +211,19 @@ class _DynTab extends StatelessWidget {
         ] else ...[
           Container(
               height: (200 * scale).clamp(128.0, 200.0),
-              decoration:
-                  BoxDecoration(color: U4.tileBg, borderRadius: U4.rWell),
+              decoration: BoxDecoration(
+                  color: ConsolePalette.of(context).tileBg,
+                  borderRadius: U4.rWell),
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Row(children: [
                 for (var i = 0;
                     i < (kind == DynKind.gate ? 3 : knobs.length);
                     i++) ...[
                   if (i > 0)
-                    Container(width: 1, height: 100 * scale, color: U4.lineCtl),
+                    Container(
+                        width: 1,
+                        height: 100 * scale,
+                        color: ConsolePalette.of(context).lineCtl),
                   Expanded(child: control(knobs[i], threshold: i == 0)),
                 ]
               ])),
@@ -229,7 +244,8 @@ class _DynTab extends StatelessWidget {
                     .copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
                     title: Text('Temperature & Delay',
-                        style: AppDesign.type(14, color: U4.text7)),
+                        style: AppDesign.type(14,
+                            color: ConsolePalette.of(context).text7)),
                     tilePadding: const EdgeInsets.symmetric(horizontal: 12),
                     childrenPadding: const EdgeInsets.all(8),
                     minTileHeight: 44,
@@ -296,14 +312,19 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
         return Container(
             height: widget.height,
             decoration: BoxDecoration(
-                color: AppDesign.panel,
+                color: ConsolePalette.of(context).panel,
                 borderRadius: U4.rWell,
-                border: Border.all(color: U4.linePanel)),
+                border:
+                    Border.all(color: ConsolePalette.of(context).linePanel)),
             child: Stack(clipBehavior: Clip.none, children: [
               Positioned.fill(
                   child: CustomPaint(
-                      painter: _DynamicsPainter(widget.dyn, widget.level,
-                          widget.reduction, widget.compact))),
+                      painter: _DynamicsPainter(
+                          widget.dyn,
+                          widget.level,
+                          widget.reduction,
+                          widget.compact,
+                          ConsolePalette.of(context)))),
               for (final prop in [
                 'thr',
                 if (widget.dyn.kind == DynKind.comp) ...['ratio', 'makeup']
@@ -384,19 +405,22 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
 }
 
 class _DynamicsPainter extends CustomPainter {
+  final ConsolePalette palette;
   final ChannelDynVm dyn;
   final double level;
   final double? reduction;
   final bool compact;
-  const _DynamicsPainter(this.dyn, this.level, this.reduction, this.compact);
+  const _DynamicsPainter(
+      this.dyn, this.level, this.reduction, this.compact, this.palette);
   @override
   void paint(Canvas canvas, Size size) {
     final g = _DynamicsGeometry(size, compact);
-    void text(String value, Offset at, {Color color = U4.text7, double? font}) {
+    void text(String value, Offset at, {Color? color, double? font}) {
       final t = TextPainter(
           text: TextSpan(
               text: value,
-              style: AppDesign.type(font ?? (compact ? 8 : 12), color: color)),
+              style: AppDesign.type(font ?? (compact ? 8 : 12),
+                  color: color ?? palette.text7)),
           textDirection: TextDirection.ltr)
         ..layout();
       t.paint(canvas, at - Offset(t.width / 2, t.height / 2));
@@ -404,9 +428,11 @@ class _DynamicsPainter extends CustomPainter {
 
     for (var db = -80.0; db <= 0; db += 10) {
       canvas.drawLine(Offset(g.x(db), g.top), Offset(g.x(db), g.top + g.height),
-          Paint()..color = U4.linePanel);
-      canvas.drawLine(Offset(g.left, g.y(db)),
-          Offset(g.left + g.width, g.y(db)), Paint()..color = U4.linePanel);
+          Paint()..color = palette.linePanel);
+      canvas.drawLine(
+          Offset(g.left, g.y(db)),
+          Offset(g.left + g.width, g.y(db)),
+          Paint()..color = palette.linePanel);
       text('${db.toInt()}${db == 0 ? ' dB' : ''}',
           Offset(g.x(db), size.height * .94));
       text(
@@ -416,7 +442,7 @@ class _DynamicsPainter extends CustomPainter {
         Offset(g.x(-80), g.y(-80)),
         Offset(g.x(0), g.y(0)),
         Paint()
-          ..color = AppDesign.panShape
+          ..color = palette.panShape
           ..strokeWidth = 1.5);
     final curve = Path();
     if (dyn.kind == DynKind.gate) {
@@ -438,11 +464,11 @@ class _DynamicsPainter extends CustomPainter {
       ..lineTo(dyn.kind == DynKind.gate ? g.x(dyn.thr) : g.x(-80), g.y(-80))
       ..close();
     canvas.drawPath(
-        fill, Paint()..color = AppDesign.meter.withValues(alpha: .22));
+        fill, Paint()..color = palette.meter.withValues(alpha: .22));
     canvas.drawPath(
         curve,
         Paint()
-          ..color = U4.cyan
+          ..color = palette.cyan
           ..strokeWidth = 2
           ..style = PaintingStyle.stroke);
     for (final prop in [
@@ -451,16 +477,16 @@ class _DynamicsPainter extends CustomPainter {
     ]) {
       final p = g.node(dyn, prop);
       final r = compact ? 21.0 : (size.width * 48 / 1280).clamp(22.0, 48.0);
-      canvas.drawCircle(p, r, Paint()..color = AppDesign.chip);
+      canvas.drawCircle(p, r, Paint()..color = palette.chip);
       canvas.drawCircle(
           p,
           r,
           Paint()
-            ..color = U4.cyan
+            ..color = palette.cyan
             ..strokeWidth = 2
             ..style = PaintingStyle.stroke);
       text(switch (prop) { 'thr' => 'T', 'ratio' => 'R', _ => 'G' }, p,
-          color: U4.text1, font: compact ? 17 : r * .8);
+          color: palette.text1, font: compact ? 17 : r * .8);
     }
     // No synthetic detector: missing GR also leaves derived OUT unavailable.
     final out = reduction == null
@@ -474,7 +500,7 @@ class _DynamicsPainter extends CustomPainter {
       final w = size.width * (compact ? 26 / 752 : 24 / 1280);
       final rect = Rect.fromLTWH(x, g.top, w, g.height);
       canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(2)),
-          Paint()..color = i == 1 ? AppDesign.over : AppDesign.greenBack);
+          Paint()..color = i == 1 ? palette.over : palette.greenBack);
       final value = values[i];
       if (value != null && value.isFinite) {
         final n = i == 1
@@ -484,17 +510,18 @@ class _DynamicsPainter extends CustomPainter {
             i == 1
                 ? Rect.fromLTWH(x, g.top, w, g.height * n)
                 : Rect.fromLTWH(x, g.top + g.height * (1 - n), w, g.height * n),
-            Paint()..color = i == 1 ? AppDesign.comp : AppDesign.meter);
+            Paint()..color = i == 1 ? palette.comp : palette.meter);
       }
       text(['IN', 'GR', 'OUT'][i], Offset(x + w / 2, size.height * .89));
       text(value == null || !value.isFinite ? '—' : value.toStringAsFixed(1),
           Offset(x + w / 2, size.height * .95),
-          color: U4.text1);
+          color: palette.text1);
     }
   }
 
   @override
   bool shouldRepaint(_DynamicsPainter old) =>
+      old.palette != palette ||
       old.dyn != dyn ||
       old.level != level ||
       old.reduction != reduction ||
@@ -502,13 +529,14 @@ class _DynamicsPainter extends CustomPainter {
 }
 
 class _EqPreviewPainter extends CustomPainter {
+  final ConsolePalette palette;
   final ChannelEqVm eq;
-  const _EqPreviewPainter(this.eq);
+  const _EqPreviewPainter(this.eq, this.palette);
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRRect(
         RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(8)),
-        Paint()..color = AppDesign.eqBg);
+        Paint()..color = palette.eqBg);
     final response = eqResponseDb(eq);
     if (response.isEmpty) return;
     final curve = Path();
@@ -526,15 +554,16 @@ class _EqPreviewPainter extends CustomPainter {
       ..lineTo(0, size.height)
       ..close();
     canvas.drawPath(
-        fill, Paint()..color = AppDesign.meter.withValues(alpha: .22));
+        fill, Paint()..color = palette.meter.withValues(alpha: .22));
     canvas.drawPath(
         curve,
         Paint()
-          ..color = U4.text1
+          ..color = palette.text1
           ..strokeWidth = 1.6
           ..style = PaintingStyle.stroke);
   }
 
   @override
-  bool shouldRepaint(_EqPreviewPainter old) => old.eq != eq;
+  bool shouldRepaint(_EqPreviewPainter old) =>
+      old.palette != palette || old.eq != eq;
 }

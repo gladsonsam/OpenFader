@@ -1,3 +1,4 @@
+import '../../palette.dart';
 import 'package:flutter/material.dart';
 import '../design.dart';
 
@@ -6,7 +7,7 @@ import '../design.dart';
 class MixerToggle extends StatelessWidget {
   final String label, channelName;
   final bool on;
-  final Color activeColor;
+  final Color activeColor, activeForeground;
   final double visualHeight, fontSize;
   final VoidCallback? onPressed;
   const MixerToggle(
@@ -17,6 +18,7 @@ class MixerToggle extends StatelessWidget {
       this.visualHeight = 44,
       this.fontSize = 21,
       required this.activeColor,
+      required this.activeForeground,
       required this.onPressed});
   @override
   Widget build(BuildContext context) => Semantics(
@@ -44,11 +46,10 @@ class MixerToggle extends StatelessWidget {
                               style: TextButton.styleFrom(
                                       backgroundColor: on
                                           ? activeColor
-                                          : MixerDesign.control,
-                                      foregroundColor:
-                                          on && activeColor == MixerDesign.solo
-                                              ? const Color(0xff1b1a05)
-                                              : MixerDesign.text,
+                                          : ConsolePalette.of(context).control,
+                                      foregroundColor: on
+                                          ? activeForeground
+                                          : ConsolePalette.of(context).text,
                                       padding: const EdgeInsets.symmetric(
                                           horizontal: 4),
                                       minimumSize: Size(44, visualHeight),
@@ -57,7 +58,7 @@ class MixerToggle extends StatelessWidget {
                                           MaterialTapTargetSize.shrinkWrap,
                                       shape: const RoundedRectangleBorder(
                                           borderRadius: MixerDesign.radius),
-                                      textStyle: MixerDesign.type(fontSize,
+                                      textStyle: mixerType(context, fontSize,
                                           weight: FontWeight.w600))
                                   .copyWith(
                                 animationDuration:
@@ -67,18 +68,23 @@ class MixerToggle extends StatelessWidget {
                                 overlayColor:
                                     WidgetStateProperty.resolveWith((states) {
                                   if (states.contains(WidgetState.pressed)) {
-                                    return Colors.white.withValues(alpha: .16);
+                                    return ConsolePalette.of(context)
+                                        .text
+                                        .withValues(alpha: .16);
                                   }
                                   if (states.contains(WidgetState.hovered)) {
-                                    return Colors.white.withValues(alpha: .06);
+                                    return ConsolePalette.of(context)
+                                        .text
+                                        .withValues(alpha: .06);
                                   }
                                   return Colors.transparent;
                                 }),
                                 side: WidgetStateProperty.resolveWith(
                                     (states) => states
                                             .contains(WidgetState.focused)
-                                        ? const BorderSide(
-                                            color: MixerDesign.selectedLine)
+                                        ? BorderSide(
+                                            color: ConsolePalette.of(context)
+                                                .selectedLine)
                                         : const BorderSide(
                                             color: Colors.transparent)),
                               ),

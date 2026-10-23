@@ -9,8 +9,8 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../palette.dart';
 
-import '../theme.dart';
 import 'bank_rail.dart';
 
 export 'bank_rail.dart';
@@ -48,7 +48,7 @@ class U4Shell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: U4.page,
+      backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {

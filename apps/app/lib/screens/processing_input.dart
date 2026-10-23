@@ -45,19 +45,22 @@ class _InputTab extends StatelessWidget {
       if (!wide)
         Text('Input', style: AppDesign.type(18, weight: FontWeight.w600)),
       SizedBox(height: wide ? 16 : 12),
-      Text('Source', style: AppDesign.type(wide ? 18 : 14, color: U4.text7)),
+      Text('Source',
+          style: AppDesign.type(wide ? 18 : 14,
+              color: ConsolePalette.of(context).text7)),
       const SizedBox(height: 8),
       if (sources.isEmpty)
         Container(
             constraints: const BoxConstraints(minHeight: 60),
             padding: const EdgeInsets.all(12),
-            decoration:
-                BoxDecoration(color: AppDesign.chip, borderRadius: U4.rBtn),
+            decoration: BoxDecoration(
+                color: ConsolePalette.of(context).chip, borderRadius: U4.rBtn),
             child: Text(
                 [store.source.srcName, store.source.srcGroup]
                     .where((s) => s.isNotEmpty)
                     .join(' · '),
-                style: AppDesign.type(16, color: U4.text7)))
+                style: AppDesign.type(16,
+                    color: ConsolePalette.of(context).text7)))
       else if (wide)
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Expanded(
@@ -102,7 +105,7 @@ class _InputTab extends StatelessWidget {
       _ProcessingSlider(
           label: 'Trim',
           compact: !wide,
-          color: U4.cyan,
+          color: ConsolePalette.of(context).cyan,
           value: trim,
           min: -18,
           max: 18,
@@ -134,7 +137,8 @@ class _InputTab extends StatelessWidget {
         Expanded(
             child: Text(
                 pre.phantomArmed ? 'Confirm phantom power' : 'Phantom power',
-                style: AppDesign.type(14, color: U4.text7)))
+                style: AppDesign.type(14,
+                    color: ConsolePalette.of(context).text7)))
       ]),
       SizedBox(height: wide ? 24 : 14),
       _InputAssignments(store: store, wide: wide),
@@ -143,13 +147,15 @@ class _InputTab extends StatelessWidget {
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (!wide) ...[
         const SizedBox(height: 18),
-        Text('Sends', style: AppDesign.type(14, color: U4.text7))
+        Text('Sends',
+            style: AppDesign.type(14, color: ConsolePalette.of(context).text7))
       ],
       if (store.sends.isEmpty)
         Padding(
             padding: const EdgeInsets.symmetric(vertical: 16),
             child: Text('No send slots on this desk.',
-                style: AppDesign.type(14, color: U4.text7))),
+                style: AppDesign.type(14,
+                    color: ConsolePalette.of(context).text7))),
       for (final send in store.sends)
         Padding(
             padding:
@@ -167,7 +173,8 @@ class _InputTab extends StatelessWidget {
           child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: source)),
-      Container(width: 1, height: 760, color: U4.lineCtl),
+      Container(
+          width: 1, height: 760, color: ConsolePalette.of(context).lineCtl),
       Expanded(
           flex: 806,
           child: Padding(
@@ -238,7 +245,8 @@ class _InputAssignments extends StatelessWidget {
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Text(entry.key,
               textAlign: TextAlign.center,
-              style: AppDesign.type(16, color: U4.text7)),
+              style:
+                  AppDesign.type(16, color: ConsolePalette.of(context).text7)),
           const SizedBox(height: 8),
           for (final button in entry.value)
             Padding(padding: const EdgeInsets.only(bottom: 8), child: button),
@@ -259,8 +267,8 @@ class _InputAssignments extends StatelessWidget {
             dense: true,
             tilePadding: const EdgeInsets.symmetric(horizontal: 10),
             childrenPadding: const EdgeInsets.all(10),
-            backgroundColor: AppDesign.slot,
-            collapsedBackgroundColor: AppDesign.slot,
+            backgroundColor: ConsolePalette.of(context).slot,
+            collapsedBackgroundColor: ConsolePalette.of(context).slot,
             shape: const RoundedRectangleBorder(borderRadius: U4.rBtn),
             collapsedShape: const RoundedRectangleBorder(borderRadius: U4.rBtn),
             title: Row(children: [
@@ -272,7 +280,8 @@ class _InputAssignments extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.right,
-                      style: AppDesign.type(12, color: U4.text7))),
+                      style: AppDesign.type(12,
+                          color: ConsolePalette.of(context).text7))),
             ]),
             children: [
               Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../palette.dart';
 
 /// One input strip row (id `in1`..`in48`, live source label wins online).
 class RouteStrip {
@@ -68,16 +69,16 @@ class U4RoutingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: U4.page,
+      backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: store,
           builder: (context, _) {
             if (!store.routingSupported) {
-              return const Center(
+              return Center(
                 child: Text(
                   'Routing controls are unavailable for this driver.',
-                  style: TextStyle(color: U4.text4),
+                  style: TextStyle(color: ConsolePalette.of(context).text4),
                 ),
               );
             }
@@ -98,9 +99,10 @@ class U4RoutingPage extends StatelessWidget {
                 ),
                 Expanded(
                   child: store.strips.isEmpty
-                      ? const Center(
+                      ? Center(
                           child: Text('waiting for desk…',
-                              style: TextStyle(color: U4.text7)),
+                              style: TextStyle(
+                                  color: ConsolePalette.of(context).text7)),
                         )
                       : ListView.separated(
                           padding: const EdgeInsets.all(8),
@@ -116,9 +118,15 @@ class U4RoutingPage extends StatelessWidget {
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 10, vertical: 8),
                                 decoration: BoxDecoration(
-                                  color: on ? U4.selected : U4.well,
+                                  color: on
+                                      ? ConsolePalette.of(context).selected
+                                      : ConsolePalette.of(context).well,
                                   border: Border.all(
-                                      color: on ? Colors.white : U4.tileBorder),
+                                      color: on
+                                          ? ConsolePalette.of(context)
+                                              .selectedLine
+                                          : ConsolePalette.of(context)
+                                              .tileBorder),
                                   borderRadius: U4.rBtn,
                                 ),
                                 child: Row(
@@ -128,10 +136,11 @@ class U4RoutingPage extends StatelessWidget {
                                         s.name,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
+                                        style: TextStyle(
                                             fontSize: 13,
                                             fontWeight: FontWeight.w600,
-                                            color: U4.text1),
+                                            color: ConsolePalette.of(context)
+                                                .text1),
                                       ),
                                     ),
                                     Text(
@@ -142,8 +151,8 @@ class U4RoutingPage extends StatelessWidget {
                                         fontSize: 12,
                                         fontWeight: FontWeight.w700,
                                         color: s.src == '—'
-                                            ? const Color(0xFFFF8A80)
-                                            : U4.cyan,
+                                            ? ConsolePalette.of(context).mute
+                                            : ConsolePalette.of(context).cyan,
                                       ),
                                     ),
                                   ],
@@ -153,12 +162,14 @@ class U4RoutingPage extends StatelessWidget {
                           },
                         ),
                 ),
-                const Divider(color: U4.divider, height: 1),
+                Divider(color: ConsolePalette.of(context).divider, height: 1),
                 Padding(
                   padding: const EdgeInsets.all(8),
                   child: store.srcTiles.isEmpty
-                      ? const Text('no sources in this group',
-                          style: TextStyle(fontSize: 12, color: U4.text7))
+                      ? Text('no sources in this group',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: ConsolePalette.of(context).text7))
                       : GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
@@ -181,13 +192,15 @@ class U4RoutingPage extends StatelessWidget {
                                     const EdgeInsets.symmetric(horizontal: 4),
                                 decoration: BoxDecoration(
                                   color: t.current
-                                      ? U4.cyan
+                                      ? ConsolePalette.of(context).cyan
                                       : free
-                                          ? U4.well
-                                          : U4.control,
+                                          ? ConsolePalette.of(context).well
+                                          : ConsolePalette.of(context).control,
                                   border: Border.all(
-                                      color:
-                                          t.current ? U4.cyan : U4.tileBorder),
+                                      color: t.current
+                                          ? ConsolePalette.of(context).cyan
+                                          : ConsolePalette.of(context)
+                                              .tileBorder),
                                   borderRadius: U4.rBtn,
                                 ),
                                 child: Column(
@@ -201,7 +214,10 @@ class U4RoutingPage extends StatelessWidget {
                                       style: TextStyle(
                                         fontSize: 12,
                                         fontWeight: FontWeight.w700,
-                                        color: t.current ? U4.well : U4.text1,
+                                        color: t.current
+                                            ? ConsolePalette.of(context)
+                                                .onAccent
+                                            : ConsolePalette.of(context).text1,
                                       ),
                                     ),
                                     if (!t.current && t.usedBy.isNotEmpty)
@@ -210,8 +226,10 @@ class U4RoutingPage extends StatelessWidget {
                                         textAlign: TextAlign.center,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                            fontSize: 10, color: U4.text7),
+                                        style: TextStyle(
+                                            fontSize: 10,
+                                            color: ConsolePalette.of(context)
+                                                .text7),
                                       ),
                                   ],
                                 ),
@@ -244,17 +262,18 @@ class _Header extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: U4.lineHeader)),
+      decoration: BoxDecoration(
+        border: Border(
+            bottom: BorderSide(color: ConsolePalette.of(context).lineHeader)),
       ),
       child: Row(
         children: [
-          const Text('ROUTING',
+          Text('ROUTING',
               style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.6,
-                  color: U4.text1)),
+                  color: ConsolePalette.of(context).text1)),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -263,7 +282,8 @@ class _Header extends StatelessWidget {
                   : '$selectedName · $selectedSrc',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, color: U4.text7),
+              style: TextStyle(
+                  fontSize: 12, color: ConsolePalette.of(context).text7),
             ),
           ),
           if (onClear != null)
@@ -273,18 +293,18 @@ class _Header extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
-                  color: U4.well,
-                  border: Border.all(color: U4.lineCtl),
+                  color: ConsolePalette.of(context).well,
+                  border: Border.all(color: ConsolePalette.of(context).lineCtl),
                   borderRadius: U4.rBtn,
                 ),
-                child: const Text('Unpatch',
+                child: Text('Unpatch',
                     textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: U4.text1)),
+                        color: ConsolePalette.of(context).text1)),
               ),
             ),
         ],
@@ -318,10 +338,14 @@ class _GroupChips extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: g == active ? U4.cyan : U4.well,
+                  color: g == active
+                      ? ConsolePalette.of(context).cyan
+                      : ConsolePalette.of(context).well,
                   borderRadius: U4.rBtn,
-                  border:
-                      Border.all(color: g == active ? U4.cyan : U4.railBorder),
+                  border: Border.all(
+                      color: g == active
+                          ? ConsolePalette.of(context).cyan
+                          : ConsolePalette.of(context).railBorder),
                 ),
                 child: Text(
                   g,
@@ -331,7 +355,9 @@ class _GroupChips extends StatelessWidget {
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: g == active ? U4.well : U4.text4,
+                    color: g == active
+                        ? ConsolePalette.of(context).onAccent
+                        : ConsolePalette.of(context).text4,
                   ),
                 ),
               ),

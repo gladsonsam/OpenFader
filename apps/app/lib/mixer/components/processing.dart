@@ -1,3 +1,4 @@
+import '../../palette.dart';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -30,9 +31,9 @@ class MixerProcessingRack extends StatelessWidget {
             child: child);
         return DecoratedBox(
             decoration: BoxDecoration(
-                color: MixerDesign.well,
+                color: ConsolePalette.of(context).well,
                 borderRadius: MixerDesign.radius,
-                border: Border.all(color: MixerDesign.line)),
+                border: Border.all(color: ConsolePalette.of(context).line)),
             child: Stack(children: [
               place(
                   5,
@@ -52,8 +53,11 @@ class MixerProcessingRack extends StatelessWidget {
                                               0) +
                                           d.delta.dx / gainBox.maxWidth * 72),
                               child: CustomPaint(
-                                  painter: _GainPainter(channel.params,
-                                      channel.master, demo)))))),
+                                  painter: _GainPainter(
+                                      ConsolePalette.of(context),
+                                      channel.params,
+                                      channel.master,
+                                      demo)))))),
               place(channel.master ? 68 : 47, channel.master ? 58 : 79,
                   MixerEqPreview(channel: channel, demo: demo, onOpen: onOpen)),
               place(
@@ -61,6 +65,7 @@ class MixerProcessingRack extends StatelessWidget {
                   62,
                   CustomPaint(
                       painter: _DynamicsPainter(
+                          ConsolePalette.of(context),
                           channel.params,
                           demo &&
                                   !channel.params.containsKey('gate_gr') &&
@@ -102,7 +107,9 @@ class MixerEqPreview extends StatelessWidget {
                       height: double.infinity,
                       fit: BoxFit.fill)
                 else
-                  CustomPaint(painter: _EqPainter(channel.params)),
+                  CustomPaint(
+                      painter: _EqPainter(
+                          ConsolePalette.of(context), channel.params)),
                 if (compact)
                   Positioned(
                       top: 3,
@@ -110,9 +117,14 @@ class MixerEqPreview extends StatelessWidget {
                       child: IgnorePointer(
                           child: ExcludeSemantics(
                               child: Text('EQ',
-                                  style: MixerDesign.type(11,
-                                      color: const Color(0xffcfd4b8),
-                                      weight: FontWeight.w700))))),
+                                  style: mixerType(context, 11,
+                                          color:
+                                              ConsolePalette.of(context).text,
+                                          weight: FontWeight.w700)
+                                      .copyWith(
+                                          backgroundColor:
+                                              ConsolePalette.of(context)
+                                                  .eqBg))))),
                 if (compact)
                   Positioned(
                       top: 3,
@@ -120,85 +132,95 @@ class MixerEqPreview extends StatelessWidget {
                       child: IgnorePointer(
                           child: ExcludeSemantics(
                               child: Text('48V',
-                                  style: MixerDesign.type(10,
-                                      color: (channel.params['phantom'] ==
-                                                  true ||
-                                              channel.params['phantom'] == 1)
-                                          ? MixerDesign.phantom
-                                          : const Color(0xff7a7a7a),
-                                      weight: FontWeight.w700))))),
+                                  style: mixerType(context, 10,
+                                          color: (channel.params['phantom'] ==
+                                                      true ||
+                                                  channel.params['phantom'] ==
+                                                      1)
+                                              ? ConsolePalette.of(context)
+                                                  .phantom
+                                              : ConsolePalette.of(context)
+                                                  .mutedText,
+                                          weight: FontWeight.w700)
+                                      .copyWith(
+                                          backgroundColor:
+                                              ConsolePalette.of(context)
+                                                  .eqBg))))),
                 Material(
                     color: Colors.transparent,
                     child: InkWell(
                         onTap: onOpen,
                         overlayColor: WidgetStateProperty.resolveWith(
                             (states) => states.contains(WidgetState.pressed)
-                                ? Colors.white.withValues(alpha: .16)
+                                ? ConsolePalette.of(context)
+                                    .text
+                                    .withValues(alpha: .16)
                                 : null))),
               ]))));
 }
 
 class _GainPainter extends CustomPainter {
+  final ConsolePalette palette;
   final Map<String, Object> params;
   final bool master, demo;
-  _GainPainter(this.params, this.master, this.demo);
+  _GainPainter(this.palette, this.params, this.master, this.demo);
   @override
   void paint(Canvas c, Size s) {
     c.save();
     c.scale(s.width / 168.2, s.height / 36);
     s = const Size(168.2, 36);
-    mixerBox(c, Offset.zero & s, const Color(0xff181818), radius: 6);
+    mixerBox(c, Offset.zero & s, palette.panel, radius: 6);
     if (master) {
       for (var n = 0; n < 24; n++) {
         final w = (s.width - 22) / 8;
         mixerBox(c, Rect.fromLTWH(4 + n % 8 * (w + 2), 3 + n ~/ 8 * 6, w, 5),
-            const Color(0xff555555),
+            palette.lineCtl,
             radius: 1);
       }
       c.restore();
       return;
     }
     final width = s.width * .7;
-    mixerBox(c, Rect.fromLTWH(3, 7, width, 11), const Color(0xff252525),
-        radius: 3, border: const Color(0xff474747));
+    mixerBox(c, Rect.fromLTWH(3, 7, width, 11), palette.control,
+        radius: 3, border: palette.lineCtl);
     final amount = ((((params['gain'] as num?)?.toDouble() ?? 0) + 12) / 72)
         .clamp(0.0, 1.0);
-    mixerBox(c, Rect.fromLTWH(6, 10, (width - 7) * amount, 5),
-        const Color(0xff4f5a16),
-        radius: 2, border: MixerDesign.lime);
-    mixerBox(c, Rect.fromLTWH(4 + (width - 7) * amount, 8, 5, 9),
-        const Color(0xffa3a5a0),
+    mixerBox(
+        c, Rect.fromLTWH(6, 10, (width - 7) * amount, 5), palette.meterCover,
+        radius: 2, border: palette.lime);
+    mixerBox(c, Rect.fromLTWH(4 + (width - 7) * amount, 8, 5, 9), palette.text4,
         radius: 1);
     // Design: 48V indicator replaces the A/B label (red when phantom is on).
     final phantom = params['phantom'] == true || params['phantom'] == 1;
     mixerText(c, '48V', Offset(s.width - 39, 7), 13,
-        color: phantom ? MixerDesign.phantom : const Color(0xff737373),
+        color: phantom ? palette.phantom : palette.mutedText,
         weight: FontWeight.w700);
     c.restore();
   }
 
   @override
   bool shouldRepaint(_GainPainter old) =>
+      old.palette != palette ||
       old.master != master ||
       old.demo != demo ||
       !mapEquals(old.params, params);
 }
 
 class _DynamicsPainter extends CustomPainter {
+  final ConsolePalette palette;
   final Map<String, Object> params;
   final List<double>? fixture;
-  _DynamicsPainter(this.params, this.fixture);
+  _DynamicsPainter(this.palette, this.params, this.fixture);
   @override
   void paint(Canvas c, Size s) {
     c.save();
     c.scale(1, s.height / 62);
     s = Size(s.width, 62);
-    mixerBox(c, Offset.zero & s, const Color(0xff181818), radius: 6);
+    mixerBox(c, Offset.zero & s, palette.panel, radius: 6);
     for (var i = 0; i < 2; i++) {
       final y = 7.0 + i * 23;
-      mixerBox(
-          c, Rect.fromLTWH(4, y, s.width - 14, 15), const Color(0xff121212),
-          radius: 3, border: const Color(0xff333333), stroke: 2);
+      mixerBox(c, Rect.fromLTWH(4, y, s.width - 14, 15), palette.well,
+          radius: 3, border: palette.line, stroke: 2);
       final value = fixture != null && i < fixture!.length
           ? fixture![i] / 100
           : ((params[i == 0 ? 'gate_gr' : 'comp_gr'] as num?)
@@ -208,8 +230,7 @@ class _DynamicsPainter extends CustomPainter {
               30;
       final w = (s.width - 12) * value.clamp(0.0, 1.0);
       if (w > 0) {
-        mixerBox(c, Rect.fromLTWH(s.width - 6 - w, y + 3, w, 9),
-            const Color(0xffff4b06));
+        mixerBox(c, Rect.fromLTWH(s.width - 6 - w, y + 3, w, 9), palette.comp);
       }
     }
     c.restore();
@@ -217,15 +238,18 @@ class _DynamicsPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DynamicsPainter old) =>
-      !listEquals(old.fixture, fixture) || !mapEquals(old.params, params);
+      old.palette != palette ||
+      !listEquals(old.fixture, fixture) ||
+      !mapEquals(old.params, params);
 }
 
 class _EqPainter extends CustomPainter {
+  final ConsolePalette palette;
   final Map<String, Object> params;
-  _EqPainter(this.params);
+  _EqPainter(this.palette, this.params);
   @override
   void paint(Canvas c, Size s) {
-    mixerBox(c, Offset.zero & s, const Color(0xff233306));
+    mixerBox(c, Offset.zero & s, palette.eqBg);
     final curve = Path();
     for (var x = 0.0; x <= s.width; x++) {
       final frequency = 20 * math.pow(1000, x / s.width);
@@ -250,15 +274,16 @@ class _EqPainter extends CustomPainter {
       ..lineTo(s.width, s.height)
       ..lineTo(0, s.height)
       ..close();
-    c.drawPath(fill, Paint()..color = const Color(0xb5969d88));
+    c.drawPath(fill, Paint()..color = palette.panFill.withValues(alpha: .71));
     c.drawPath(
         curve,
         Paint()
-          ..color = const Color(0xffeef2e9)
+          ..color = palette.text
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.4);
   }
 
   @override
-  bool shouldRepaint(_EqPainter old) => !mapEquals(old.params, params);
+  bool shouldRepaint(_EqPainter old) =>
+      old.palette != palette || !mapEquals(old.params, params);
 }

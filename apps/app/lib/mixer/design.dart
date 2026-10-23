@@ -1,3 +1,4 @@
+import '../palette.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -81,7 +82,12 @@ class MixerArtwork extends StatelessWidget {
                 renderingStrategy: RenderingStrategy.raster,
                 'assets/master_fader/$name.svg',
                 width: w,
-                height: h)));
+                height: h,
+                colorMapper: _ArtworkColors(ConsolePalette.of(context)),
+                colorFilter: name.startsWith('tab_') || name == 'connection'
+                    ? ColorFilter.mode(
+                        ConsolePalette.of(context).mutedText, BlendMode.srcIn)
+                    : null)));
   }
 }
 
@@ -100,7 +106,7 @@ void mixerBox(Canvas c, Rect rect, Color color,
 }
 
 void mixerText(Canvas c, String text, Offset offset, double size,
-    {Color color = MixerDesign.mutedText,
+    {required Color color,
     FontWeight weight = FontWeight.w400,
     double? width,
     TextAlign align = TextAlign.left}) {
@@ -113,4 +119,33 @@ void mixerText(Canvas c, String text, Offset offset, double size,
       maxLines: 1)
     ..layout(minWidth: width ?? 0, maxWidth: width ?? double.infinity);
   p.paint(c, offset);
+}
+
+TextStyle mixerType(BuildContext context, double size,
+        {Color? color, FontWeight weight = FontWeight.w400}) =>
+    MixerDesign.type(size,
+        color: color ?? ConsolePalette.of(context).text, weight: weight);
+
+/// Recolor authored vector roles while retaining contrasting instrument detail.
+/// Brand assets are loaded separately and never pass through this mapper.
+class _ArtworkColors extends ColorMapper {
+  final ConsolePalette palette;
+  const _ArtworkColors(this.palette);
+  @override
+  Color substitute(
+          String? id, String elementName, String attributeName, Color color) =>
+      switch (color.toARGB32()) {
+        0xff233306 => palette.eqBg,
+        0xff969d88 => palette.panFill,
+        0xff526c1b => palette.greenBack,
+        0xffeef2e9 || 0xfff1f3e9 => palette.text,
+        0xffb5b5b5 => palette.mutedText,
+        0xff222222 => palette.background,
+        _ => color,
+      };
+  @override
+  bool operator ==(Object other) =>
+      other is _ArtworkColors && other.palette == palette;
+  @override
+  int get hashCode => palette.hashCode;
 }

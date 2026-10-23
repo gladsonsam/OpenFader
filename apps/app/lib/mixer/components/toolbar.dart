@@ -1,3 +1,4 @@
+import '../../palette.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../controller.dart';
@@ -42,9 +43,9 @@ class MixerToolbar extends StatelessWidget {
               padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10),
               height: 52,
               decoration: BoxDecoration(
-                  color: MixerDesign.panel,
+                  color: ConsolePalette.of(context).panel,
                   borderRadius: MixerDesign.radius,
-                  border: Border.all(color: MixerDesign.line)),
+                  border: Border.all(color: ConsolePalette.of(context).line)),
               child: Row(children: [
                 // Equal constrained side lanes keep the numeric value centered
                 // in the box on both layouts. Long names stay in the left lane.
@@ -67,13 +68,15 @@ class MixerToolbar extends StatelessWidget {
                                       : _targetLabel(channel),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: MixerDesign.type(compact ? 12 : 14,
-                                      color: MixerDesign.mutedText)),
+                                  style: mixerType(context, compact ? 12 : 14,
+                                      color: ConsolePalette.of(context)
+                                          .mutedText)),
                               Text(_controlLabel(focus.control),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: MixerDesign.type(compact ? 12 : 14,
-                                      color: MixerDesign.mutedText)),
+                                  style: mixerType(context, compact ? 12 : 14,
+                                      color: ConsolePalette.of(context)
+                                          .mutedText)),
                             ]))),
                 Expanded(
                     flex: compact ? 2 : 1,
@@ -90,9 +93,10 @@ class MixerToolbar extends StatelessWidget {
         height: compact ? 64 : 68,
         padding:
             EdgeInsets.symmetric(horizontal: compact ? 6 : 10, vertical: 6),
-        decoration: const BoxDecoration(
-            color: MixerDesign.background,
-            border: Border(bottom: BorderSide(color: MixerDesign.line))),
+        decoration: BoxDecoration(
+            color: ConsolePalette.of(context).background,
+            border: Border(
+                bottom: BorderSide(color: ConsolePalette.of(context).line))),
         child: Row(children: [
           // Approved symbol returns to Connections on both layouts.
           _BrandButton(
@@ -114,8 +118,8 @@ class MixerToolbar extends StatelessWidget {
                 label: 'Effects',
                 onPressed: () => onNavigate(MixerDestination.fx),
                 child: Text('FX',
-                    style: MixerDesign.type(20,
-                        color: const Color(0xffb5b5b5),
+                    style: mixerType(context, 20,
+                        color: ConsolePalette.of(context).mutedText,
                         weight: FontWeight.w600))),
             const SizedBox(width: 8),
             MixerToolButton(
@@ -139,9 +143,10 @@ class MixerToolbar extends StatelessWidget {
                     height: 44,
                     child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                            foregroundColor: MixerDesign.lime,
-                            backgroundColor: const Color(0xff262626),
-                            side: const BorderSide(color: Color(0xff3a3a3a)),
+                            foregroundColor: ConsolePalette.of(context).lime,
+                            backgroundColor: ConsolePalette.of(context).chip,
+                            side: BorderSide(
+                                color: ConsolePalette.of(context).lineCtl),
                             shape: const RoundedRectangleBorder(
                                 borderRadius: MixerDesign.radius)),
                         onPressed: () => onNavigate(MixerDestination.scenes),
@@ -157,25 +162,26 @@ class MixerToolbar extends StatelessWidget {
                     PopupMenuItem(
                         value: onHome!,
                         child:
-                            Text('Connections', style: MixerDesign.type(16))),
+                            Text('Connections', style: mixerType(context, 16))),
                   for (final a in actions)
                     PopupMenuItem(
                         value: () => onNavigate(a.$2),
-                        child: Text(a.$1, style: MixerDesign.type(16))),
+                        child: Text(a.$1, style: mixerType(context, 16))),
                   if (showBankControls) ...[
                     const PopupMenuDivider(),
                     PopupMenuItem(
                         value: () => showMixerBanks(context, controller),
                         child: Text('Channels & banks',
-                            style: MixerDesign.type(16))),
+                            style: mixerType(context, 16))),
                     PopupMenuItem(
                         value: () => showMixerBuses(context, controller),
-                        child: Text('Master bus', style: MixerDesign.type(16))),
+                        child:
+                            Text('Master bus', style: mixerType(context, 16))),
                     if (controller.muteGroupCount > 0)
                       PopupMenuItem(
                           value: () => showMixerMuteGroups(context, controller),
-                          child:
-                              Text('Mute groups', style: MixerDesign.type(16))),
+                          child: Text('Mute groups',
+                              style: mixerType(context, 16))),
                   ],
                 ],
               ),
@@ -242,8 +248,9 @@ class _SelectedLevel extends StatelessWidget {
                 fit: BoxFit.scaleDown,
                 child: Text(text,
                     maxLines: 1,
-                    style: MixerDesign.type(compact ? 18 : 22,
-                        color: MixerDesign.lime, weight: FontWeight.w700)))));
+                    style: mixerType(context, compact ? 18 : 22,
+                        color: ConsolePalette.of(context).lime,
+                        weight: FontWeight.w700)))));
   }
 }
 
@@ -307,11 +314,13 @@ class _MenuButton extends StatelessWidget {
                   child: Container(
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                          color: const Color(0xff262626),
+                          color: ConsolePalette.of(context).chip,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xff363636))),
-                      child: const Icon(Icons.menu,
-                          size: 22, color: Color(0xffb5b5b5)))))));
+                          border: Border.all(
+                              color: ConsolePalette.of(context).line)),
+                      child: Icon(Icons.menu,
+                          size: 22,
+                          color: ConsolePalette.of(context).mutedText))))));
 
   Future<void> _open(BuildContext context) async {
     final box = context.findRenderObject() as RenderBox?;
@@ -320,7 +329,7 @@ class _MenuButton extends StatelessWidget {
     if (box == null || overlay == null) return;
     final choice = await showMenu<VoidCallback>(
       context: context,
-      color: const Color(0xff262626),
+      color: ConsolePalette.of(context).chip,
       position: RelativeRect.fromRect(
           Rect.fromPoints(
               box.localToGlobal(Offset.zero, ancestor: overlay),
@@ -359,9 +368,10 @@ class MixerToolButton extends StatelessWidget {
                   child: Container(
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                          color: const Color(0xff262626),
+                          color: ConsolePalette.of(context).chip,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: const Color(0xff363636))),
+                          border: Border.all(
+                              color: ConsolePalette.of(context).line)),
                       child: child)))));
 }
 

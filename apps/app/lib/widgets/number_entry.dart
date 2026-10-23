@@ -3,6 +3,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import '../palette.dart';
 import 'package:flutter/services.dart';
 
 import '../design.dart';
@@ -25,12 +26,11 @@ Future<double?> showNumberEntry({
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
-        backgroundColor: AppDesign.panel,
+        backgroundColor: ConsolePalette.of(context).panel,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: AppDesign.line)),
-        title: Text(title,
-            style: AppDesign.type(18, weight: FontWeight.w600)),
+            side: BorderSide(color: ConsolePalette.of(context).line)),
+        title: Text(title, style: AppDesign.type(18, weight: FontWeight.w600)),
         content: SizedBox(
           width: 280,
           child: Column(
@@ -47,34 +47,37 @@ Future<double?> showNumberEntry({
                       RegExp(r'[-+0-9.,infIN°F ]')),
                 ],
                 style: AppDesign.type(24,
-                    color: AppDesign.lime, weight: FontWeight.w700),
+                    color: ConsolePalette.of(context).lime,
+                    weight: FontWeight.w700),
                 decoration: InputDecoration(
                   filled: true,
-                  fillColor: AppDesign.well,
+                  fillColor: ConsolePalette.of(context).well,
                   errorText: error,
-                  errorStyle: AppDesign.type(13, color: AppDesign.mute),
+                  errorStyle: AppDesign.type(13,
+                      color: ConsolePalette.of(context).mute),
                   border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide:
-                          const BorderSide(color: AppDesign.line)),
+                          BorderSide(color: ConsolePalette.of(context).line)),
                   enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide:
-                          const BorderSide(color: AppDesign.line)),
+                          BorderSide(color: ConsolePalette.of(context).line)),
                   focusedBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
                       borderSide:
-                          const BorderSide(color: AppDesign.lime)),
-                  contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 12),
+                          BorderSide(color: ConsolePalette.of(context).lime)),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 ),
-                onSubmitted: (_) =>
-                    _submit(context, ctl, setState, min, max,
-                        allowNegInf, negInfValue, (e) => error = e),
+                onSubmitted: (_) => _submit(context, ctl, setState, min, max,
+                    allowNegInf, negInfValue, (e) => error = e),
               ),
               const SizedBox(height: 6),
-              Text('Range ${min.toStringAsFixed(1)} … ${max.toStringAsFixed(1)}',
-                  style: AppDesign.type(12, color: AppDesign.mutedText)),
+              Text(
+                  'Range ${min.toStringAsFixed(1)} … ${max.toStringAsFixed(1)}',
+                  style: AppDesign.type(12,
+                      color: ConsolePalette.of(context).mutedText)),
             ],
           ),
         ),
@@ -82,14 +85,16 @@ Future<double?> showNumberEntry({
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: Text('Cancel',
-                style: AppDesign.type(16, color: AppDesign.mutedText)),
+                style: AppDesign.type(16,
+                    color: ConsolePalette.of(context).mutedText)),
           ),
           TextButton(
             onPressed: () => _submit(context, ctl, setState, min, max,
                 allowNegInf, negInfValue, (e) => error = e),
             child: Text('Set',
                 style: AppDesign.type(16,
-                    color: AppDesign.lime, weight: FontWeight.w600)),
+                    color: ConsolePalette.of(context).lime,
+                    weight: FontWeight.w600)),
           ),
         ],
       ),

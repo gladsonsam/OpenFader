@@ -43,7 +43,7 @@ class _EqTabState extends State<_EqTab> {
             min: min,
             max: max,
             compact: true,
-            color: Color(EqGraphGeom.bandColors[band.band]),
+            color: ConsolePalette.of(context).bandColor(band.band),
             enabled: widget.store.supports('eq${band.band}_$prop'),
             onFocus: () {
               _pick(band.band);
@@ -78,7 +78,7 @@ class _EqTabState extends State<_EqTab> {
                   min: 20,
                   max: 1000,
                   showLabel: false,
-                  color: Color(EqGraphGeom.bandColors[0]),
+                  color: ConsolePalette.of(context).bandColor(0),
                   enabled: store.supports('eq_hpf_f'),
                   onFocus: () =>
                       widget.onFocus(eqFreqFocus(store, widget.writes, 0)),
@@ -93,9 +93,9 @@ class _EqTabState extends State<_EqTab> {
       height: height,
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-          color: U4.tileBg,
+          color: ConsolePalette.of(context).tileBg,
           borderRadius: U4.rWell,
-          border: Border.all(color: U4.linePanel)),
+          border: Border.all(color: ConsolePalette.of(context).linePanel)),
       child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _ProcessingButton(
             label: 'Band ${band.band}',
@@ -206,8 +206,9 @@ class _EqTabState extends State<_EqTab> {
           ])
         else ...[
           Container(
-              decoration:
-                  BoxDecoration(color: AppDesign.chip, borderRadius: U4.rBtn),
+              decoration: BoxDecoration(
+                  color: ConsolePalette.of(context).chip,
+                  borderRadius: U4.rBtn),
               padding: const EdgeInsets.all(3),
               child: Row(children: [
                 for (final band in eq.bands)

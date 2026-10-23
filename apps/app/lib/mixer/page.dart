@@ -1,3 +1,4 @@
+import '../palette.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,7 +57,7 @@ class _MixerPageState extends State<MixerPage> {
 
   @override
   Widget build(BuildContext context) => Material(
-      color: MixerDesign.background,
+      color: ConsolePalette.of(context).background,
       child: SafeArea(
           bottom: false,
           child: LayoutBuilder(builder: (context, constraints) {
@@ -137,10 +138,11 @@ class _MixerPageState extends State<MixerPage> {
                             // Design bus bar: full-width strip in the
                             // selected bus colour between toolbar + strips.
                             Container(
-                                height: mobile ? 6 : 8, color: MixerDesign.bus),
+                                height: mobile ? 6 : 8,
+                                color: ConsolePalette.of(context).bus),
                             if (controller.error.isNotEmpty)
                               Material(
-                                  color: const Color(0xff54221d),
+                                  color: ConsolePalette.of(context).over,
                                   child: InkWell(
                                       onTap: () => widget
                                           .onNavigate(MixerDestination.connect),
@@ -148,9 +150,11 @@ class _MixerPageState extends State<MixerPage> {
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 12, vertical: 6),
                                           child: Row(children: [
-                                            const Icon(Icons.info_outline,
+                                            Icon(Icons.info_outline,
                                                 size: 16,
-                                                color: MixerDesign.text),
+                                                color:
+                                                    ConsolePalette.of(context)
+                                                        .text),
                                             const SizedBox(width: 8),
                                             Expanded(
                                                 child: Text(controller.error,
@@ -158,7 +162,7 @@ class _MixerPageState extends State<MixerPage> {
                                                     overflow:
                                                         TextOverflow.ellipsis,
                                                     style:
-                                                        MixerDesign.type(12)))
+                                                        mixerType(context, 12)))
                                           ])))),
                             if (controller.hasSolo && !sideRail)
                               SizedBox(
@@ -166,14 +170,17 @@ class _MixerPageState extends State<MixerPage> {
                                   child: Row(children: [
                                     const SizedBox(width: 10),
                                     Text('SOLO ${controller.store.soloCount}',
-                                        style: MixerDesign.type(12,
-                                            color: MixerDesign.solo)),
+                                        style: mixerType(context, 12,
+                                            color: ConsolePalette.of(context)
+                                                .solo)),
                                     const Spacer(),
                                     TextButton(
                                         onPressed: controller.store.clearSolos,
                                         child: Text('Clear solos',
-                                            style: MixerDesign.type(12,
-                                                color: MixerDesign.solo))),
+                                            style: mixerType(context, 12,
+                                                color:
+                                                    ConsolePalette.of(context)
+                                                        .solo))),
                                   ])),
                             Expanded(
                                 child: Row(
@@ -185,7 +192,8 @@ class _MixerPageState extends State<MixerPage> {
                                           ? Center(
                                               child: Text(
                                                   'Waiting for channels…',
-                                                  style: MixerDesign.type(16)))
+                                                  style:
+                                                      mixerType(context, 16)))
                                           : ScrollConfiguration(
                                               behavior:
                                                   const MaterialScrollBehavior()

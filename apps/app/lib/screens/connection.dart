@@ -9,6 +9,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
+import '../palette.dart';
 import '../widgets/console_button.dart';
 
 /// One discovered desk row (engine `devices` event entry).
@@ -92,7 +93,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: U4.page,
+      backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.store,
@@ -133,27 +134,33 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(store.lastScan,
-                        style: const TextStyle(fontSize: 11, color: U4.text7)),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: ConsolePalette.of(context).text7)),
                   ),
                   if (store.scanning)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 4),
                       child: Text('Waiting for mixers to reply…',
-                          style: TextStyle(fontSize: 12, color: U4.text4)),
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: ConsolePalette.of(context).text4)),
                     ),
                   if (store.scanError != null) _ErrorBanner(store: store),
                   const SizedBox(height: 10),
-                  const Text('MIXERS',
+                  Text('MIXERS',
                       style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: U4.text4)),
+                          color: ConsolePalette.of(context).text4)),
                   const SizedBox(height: 6),
                   if (store.devices.isEmpty)
                     Text(
                       store.emptyText ??
                           'Scan this network to find available mixers.',
-                      style: const TextStyle(fontSize: 12, color: U4.text7),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: ConsolePalette.of(context).text7),
                     )
                   else
                     for (final d in store.devices)
@@ -162,11 +169,11 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                         onConnect: () => store.connectDevice(d.id),
                       ),
                   const SizedBox(height: 10),
-                  const Text('ADD BY IP',
+                  Text('ADD BY IP',
                       style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: U4.text4)),
+                          color: ConsolePalette.of(context).text4)),
                   const SizedBox(height: 6),
                   Row(
                     children: [
@@ -174,27 +181,31 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10),
                           decoration: BoxDecoration(
-                            color: U4.well,
-                            border: Border.all(color: U4.railBorder),
+                            color: ConsolePalette.of(context).well,
+                            border: Border.all(
+                                color: ConsolePalette.of(context).railBorder),
                             borderRadius: U4.rBtn,
                           ),
                           child: TextField(
                             controller: _ipCtl,
                             keyboardType: TextInputType.text,
-                            style:
-                                const TextStyle(fontSize: 13, color: U4.text1),
-                            decoration: const InputDecoration(
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: ConsolePalette.of(context).text1),
+                            decoration: InputDecoration(
                               isDense: true,
                               border: InputBorder.none,
                               enabledBorder: InputBorder.none,
                               disabledBorder: InputBorder.none,
                               focusedBorder: UnderlineInputBorder(
-                                  borderSide: BorderSide(color: U4.cyan)),
+                                  borderSide: BorderSide(
+                                      color: ConsolePalette.of(context).cyan)),
                               filled: false,
                               contentPadding:
                                   EdgeInsets.symmetric(vertical: 12),
                               hintText: '192.168.1.20',
-                              hintStyle: TextStyle(color: U4.text10),
+                              hintStyle: TextStyle(
+                                  color: ConsolePalette.of(context).text10),
                             ),
                             onSubmitted: (v) {
                               final a = v.trim();
@@ -245,21 +256,23 @@ class _ErrorBanner extends StatelessWidget {
       margin: const EdgeInsets.only(top: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF2A1210),
-        border: Border.all(color: const Color(0xFFB9443E)),
+        color: ConsolePalette.of(context).errorContainer,
+        border: Border.all(color: ConsolePalette.of(context).mute),
         borderRadius: const BorderRadius.all(Radius.circular(10)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('DESK LINK FAILED',
+          Text('DESK LINK FAILED',
               style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFFFF8A80))),
+                  color: ConsolePalette.of(context).onErrorContainer)),
           const SizedBox(height: 4),
           Text(err,
-              style: const TextStyle(fontSize: 12, color: Color(0xFFFFCDD2))),
+              style: TextStyle(
+                  fontSize: 12,
+                  color: ConsolePalette.of(context).onErrorContainer)),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -295,13 +308,17 @@ class _StatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dot = store.isConnected ? U4.meterGreen : const Color(0xFFFF4A3D);
+    final dot = store.isConnected
+        ? ConsolePalette.of(context).meterGreen
+        : ConsolePalette.of(context).mute;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: U4.panel,
+        color: ConsolePalette.of(context).panel,
         border: Border.all(
-            color: store.isConnected ? U4.cyan : const Color(0xFF5A2420)),
+            color: store.isConnected
+                ? ConsolePalette.of(context).cyan
+                : ConsolePalette.of(context).mute),
         borderRadius: const BorderRadius.all(Radius.circular(10)),
       ),
       child: Row(
@@ -320,14 +337,15 @@ class _StatusCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(store.title,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
-                        color: U4.text1)),
+                        color: ConsolePalette.of(context).text1)),
                 Text(store.sub,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, color: U4.text7)),
+                    style: TextStyle(
+                        fontSize: 12, color: ConsolePalette.of(context).text7)),
               ],
             ),
           ),
@@ -349,8 +367,11 @@ class _DeviceRow extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
-        color: U4.panel,
-        border: Border.all(color: device.connected ? U4.cyan : U4.tileBorder),
+        color: ConsolePalette.of(context).panel,
+        border: Border.all(
+            color: device.connected
+                ? ConsolePalette.of(context).cyan
+                : ConsolePalette.of(context).tileBorder),
         borderRadius: U4.rBtn,
       ),
       child: Row(
@@ -362,14 +383,15 @@ class _DeviceRow extends StatelessWidget {
                 Text(device.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
-                        color: U4.text1)),
+                        color: ConsolePalette.of(context).text1)),
                 Text(device.sub,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 11, color: U4.text7)),
+                    style: TextStyle(
+                        fontSize: 11, color: ConsolePalette.of(context).text7)),
               ],
             ),
           ),
@@ -385,7 +407,9 @@ class _DeviceRow extends StatelessWidget {
             style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
-              color: device.connected ? U4.meterGreen : U4.text4,
+              color: device.connected
+                  ? ConsolePalette.of(context).meterGreen
+                  : ConsolePalette.of(context).text4,
             ),
           ),
           const SizedBox(width: 8),
@@ -395,18 +419,18 @@ class _DeviceRow extends StatelessWidget {
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: const BoxDecoration(
-                  color: U4.cyan,
+                decoration: BoxDecoration(
+                  color: ConsolePalette.of(context).cyan,
                   borderRadius: U4.rBtn,
                 ),
-                child: const Text('Connect',
+                child: Text('Connect',
                     textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: U4.well)),
+                        color: ConsolePalette.of(context).onAccent)),
               ),
             ),
         ],
@@ -425,33 +449,35 @@ class _InfoCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: U4.panel,
-        border: Border.all(color: U4.tileBorder),
+        color: ConsolePalette.of(context).panel,
+        border: Border.all(color: ConsolePalette.of(context).tileBorder),
         borderRadius: const BorderRadius.all(Radius.circular(10)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _line('link', store.linkInfo),
-          _line('desk', store.deskInfo),
-          _line('clients',
+          _line(context, 'link', store.linkInfo),
+          _line(context, 'desk', store.deskInfo),
+          _line(context, 'clients',
               '${store.clientCount}${store.writers.isEmpty ? '' : ' · ${store.writers.join(',')}'}'),
           const SizedBox(height: 6),
           GestureDetector(
             onTap: store.requestInfo,
-            child: const Text('REFRESH DESK INFO',
+            child: Text('REFRESH DESK INFO',
                 style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w700, color: U4.cyan)),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: ConsolePalette.of(context).cyan)),
           ),
           if (onOpenDebug != null) ...[
             const SizedBox(height: 4),
             GestureDetector(
               onTap: onOpenDebug,
-              child: const Text('OPEN DEBUG LOG →',
+              child: Text('OPEN DEBUG LOG →',
                   style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: U4.cyan)),
+                      color: ConsolePalette.of(context).cyan)),
             ),
           ],
         ],
@@ -459,7 +485,7 @@ class _InfoCard extends StatelessWidget {
     );
   }
 
-  Widget _line(String k, String v) {
+  Widget _line(BuildContext context, String k, String v) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Row(
@@ -467,12 +493,14 @@ class _InfoCard extends StatelessWidget {
         children: [
           SizedBox(
             width: 56,
-            child:
-                Text(k, style: const TextStyle(fontSize: 11, color: U4.text7)),
+            child: Text(k,
+                style: TextStyle(
+                    fontSize: 11, color: ConsolePalette.of(context).text7)),
           ),
           Expanded(
             child: Text(v.isEmpty ? '—' : v,
-                style: const TextStyle(fontSize: 11, color: U4.text4)),
+                style: TextStyle(
+                    fontSize: 11, color: ConsolePalette.of(context).text4)),
           ),
         ],
       ),
