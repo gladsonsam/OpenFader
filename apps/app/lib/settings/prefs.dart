@@ -28,8 +28,7 @@ class PrefsService extends ChangeNotifier {
 
   // --- connection ----------------------------------------------------------
   bool get autoFind => _prefs?.getBool('openfader.autoFind') ?? true;
-  bool get reconnectLast =>
-      _prefs?.getBool('openfader.reconnectLast') ?? false;
+  bool get reconnectLast => _prefs?.getBool('openfader.reconnectLast') ?? false;
   bool get rememberRecents =>
       _prefs?.getBool('openfader.rememberRecents') ?? true;
   String get startupDest =>
@@ -51,8 +50,7 @@ class PrefsService extends ChangeNotifier {
   int get meterRate => _prefs?.getInt('openfader.meterRate') ?? 30;
   int get peakHold => _prefs?.getInt('openfader.peakHold') ?? 1;
   bool get holdClips => _prefs?.getBool('openfader.holdClips') ?? true;
-  bool get largeTargets =>
-      _prefs?.getBool('openfader.largeTargets') ?? true;
+  bool get largeTargets => _prefs?.getBool('openfader.largeTargets') ?? true;
 
   // --- mixes ------------------------------------------------------------------
   bool get autoBackup => _prefs?.getBool('openfader.autoBackup') ?? true;
@@ -62,30 +60,31 @@ class PrefsService extends ChangeNotifier {
   Future<void> _set<T>(String key, T value) async {
     final p = _prefs ?? await SharedPreferences.getInstance();
     _prefs ??= p;
+    final bool saved;
     if (value is bool) {
-      await p.setBool(key, value);
+      saved = await p.setBool(key, value);
     } else if (value is int) {
-      await p.setInt(key, value);
+      saved = await p.setInt(key, value);
     } else {
-      await p.setString(key, value as String);
+      saved = await p.setString(key, value as String);
+    }
+    if (!saved) {
+      await p.reload();
+      notifyListeners();
+      throw StateError("The preference could not be saved.");
     }
     notifyListeners();
   }
 
-  Future<void> setAutoFind(bool v) =>
-      _set('openfader.autoFind', v);
-  Future<void> setReconnectLast(bool v) =>
-      _set('openfader.reconnectLast', v);
+  Future<void> setAutoFind(bool v) => _set('openfader.autoFind', v);
+  Future<void> setReconnectLast(bool v) => _set('openfader.reconnectLast', v);
   Future<void> setRemember(bool v) async {
     await _set('openfader.rememberRecents', v);
   }
 
-  Future<void> setStartupDest(String v) =>
-      _set('openfader.startupDest', v);
-  Future<void> setLastMixerAddr(String v) =>
-      _set('openfader.lastMixerAddr', v);
-  Future<void> setInterfaceSize(String v) =>
-      _set('openfader.interfaceSize', v);
+  Future<void> setStartupDest(String v) => _set('openfader.startupDest', v);
+  Future<void> setLastMixerAddr(String v) => _set('openfader.lastMixerAddr', v);
+  Future<void> setInterfaceSize(String v) => _set('openfader.interfaceSize', v);
   Future<void> setKeepAwake(bool v) async {
     await _set('openfader.keepAwake', v);
     _applyWakeLock();
@@ -94,10 +93,8 @@ class PrefsService extends ChangeNotifier {
   Future<void> setMeterRate(int v) => _set('openfader.meterRate', v);
   Future<void> setPeakHold(int v) => _set('openfader.peakHold', v);
   Future<void> setHoldClips(bool v) => _set('openfader.holdClips', v);
-  Future<void> setLargeTargets(bool v) =>
-      _set('openfader.largeTargets', v);
-  Future<void> setAutoBackup(bool v) =>
-      _set('openfader.autoBackup', v);
+  Future<void> setLargeTargets(bool v) => _set('openfader.largeTargets', v);
+  Future<void> setAutoBackup(bool v) => _set('openfader.autoBackup', v);
   Future<void> setBackupCreatedAt(String v) =>
       _set('openfader.backupCreatedAt', v);
 
@@ -123,7 +120,11 @@ class PrefsService extends ChangeNotifier {
       'openfader.largeTargets',
       'openfader.autoBackup',
     ]) {
-      await p.remove(key);
+      if (!await p.remove(key)) {
+        await p.reload();
+        notifyListeners();
+        throw StateError("The preference could not be removed.");
+      }
     }
     _applyWakeLock();
     notifyListeners();
@@ -134,7 +135,11 @@ class PrefsService extends ChangeNotifier {
     final p = _prefs ?? await SharedPreferences.getInstance();
     _prefs ??= p;
     for (final key in p.getKeys().where((k) => k.startsWith('openfader.'))) {
-      await p.remove(key);
+      if (!await p.remove(key)) {
+        await p.reload();
+        notifyListeners();
+        throw StateError("The preference could not be removed.");
+      }
     }
     _applyWakeLock();
     notifyListeners();
