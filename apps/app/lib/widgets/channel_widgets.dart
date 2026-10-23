@@ -10,6 +10,7 @@
 
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../core/channel_views.dart';
@@ -93,7 +94,7 @@ class U4Chip extends StatelessWidget {
 // Touch knob (vertical drag + double-tap reset, no Slider)
 // ---------------------------------------------------------------------------
 
-/// Touch knob: vertical drag edits (spec math via [onDrag]), double-tap
+/// Touch knob: vertical drag edits (spec math via [specFromDrag]), double-tap
 /// resets to [defaultValue]. Paints arc + pointer + value text.
 class U4Knob extends StatefulWidget {
   final String label;
@@ -132,7 +133,7 @@ class U4Knob extends StatefulWidget {
 
 class _U4KnobState extends State<U4Knob> {
   double? _startN;
-  double? _startValue;
+  double _dragDy = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -142,64 +143,63 @@ class _U4KnobState extends State<U4Knob> {
       onTap: widget.enabled ? widget.onFocus : null,
       child: GestureDetector(
         onTap: widget.enabled ? widget.onFocus : null,
-      onVerticalDragStart: widget.enabled
-          ? (d) {
-              widget.onFocus?.call();
-              _startN = toN(widget.min, widget.max, widget.value);
-              _startValue = widget.value;
-            }
-          : null,
-      onVerticalDragUpdate: widget.enabled
-          ? (d) {
-              final n0 = _startN ?? toN(widget.min, widget.max, widget.value);
-              final v = specFromDrag(widget.min, widget.max, n0,
-                  -d.localPosition.dy + 60, widget.fine);
-              widget.onInput(v);
-            }
-          : null,
-      onDoubleTap: widget.enabled
-          ? () {
-              widget.onFocus?.call();
-              widget.onInput(widget.defaultValue);
-            }
-          : null,
-      child: Opacity(
-        opacity: widget.enabled ? 1 : 0.45,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CustomPaint(
-              size: Size(
-                  AppDesign.largeTargets ? 80 : 68,
-                  AppDesign.largeTargets ? 80 : 68),
-              painter: _KnobPainter(
-                n: toN(widget.min, widget.max, widget.value),
-                color: widget.color,
+        onVerticalDragStart: widget.enabled
+            ? (d) {
+                widget.onFocus?.call();
+                _startN = toN(widget.min, widget.max, widget.value);
+                _dragDy = 0;
+              }
+            : null,
+        onVerticalDragUpdate: widget.enabled
+            ? (d) {
+                final n0 = _startN ?? toN(widget.min, widget.max, widget.value);
+                _dragDy -= d.delta.dy;
+                final v = specFromDrag(
+                    widget.min, widget.max, n0, _dragDy, widget.fine);
+                widget.onInput(v);
+              }
+            : null,
+        onVerticalDragEnd: widget.enabled ? (_) => _startN = null : null,
+        onVerticalDragCancel: widget.enabled ? () => _startN = null : null,
+        onDoubleTap: widget.enabled
+            ? () {
+                widget.onFocus?.call();
+                widget
+                    .onInput(widget.defaultValue.clamp(widget.min, widget.max));
+              }
+            : null,
+        child: Opacity(
+          opacity: widget.enabled ? 1 : 0.45,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CustomPaint(
+                size: Size(AppDesign.largeTargets ? 80 : 68,
+                    AppDesign.largeTargets ? 80 : 68),
+                painter: _KnobPainter(
+                  n: toN(widget.min, widget.max, widget.value),
+                  color: widget.color,
+                ),
               ),
-            ),
-            const SizedBox(height: 4),
-            Text(widget.label,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontFamily: U4.font, fontSize: 11, color: U4.text7)),
-            Text(widget.text,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                    fontFamily: U4.font,
-                    fontSize: 12,
-                    color: U4.text1,
-                    fontFeatures: [FontFeature.tabularFigures()])),
-            if (_startValue != null)
-              const SizedBox.shrink()
-            else
-              const SizedBox.shrink(),
-          ],
+              const SizedBox(height: 4),
+              Text(widget.label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontFamily: U4.font, fontSize: 11, color: U4.text7)),
+              Text(widget.text,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontFamily: U4.font,
+                      fontSize: 12,
+                      color: U4.text1,
+                      fontFeatures: [FontFeature.tabularFigures()])),
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -386,8 +386,8 @@ class EqCurvePainter extends CustomPainter {
       old.rtaActive != rtaActive;
 }
 
-/// Interactive EQ graph: node drag (freq/gain) + double-tap band select.
-/// Pinch-Q is exposed via [onQ]; HPF drags edit frequency only.
+/// Interactive EQ graph: tap to select, drag frequency/gain, pinch Q.
+/// HPF drags edit frequency only.
 class U4EqGraph extends StatelessWidget {
   final ChannelEqVm eq;
   final List<double> responseDb;
@@ -414,26 +414,28 @@ class U4EqGraph extends StatelessWidget {
       builder: (context, constraints) {
         final w = constraints.maxWidth.isFinite ? constraints.maxWidth : 340.0;
         const h = 190.0;
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onDoubleTap: null,
-          child: _EqGraphGesture(
-            width: w,
-            height: h,
-            eq: eq,
-            onSelectBand: onSelectBand,
-            onNode: onNode,
-            child: CustomPaint(
-              size: Size(w, h),
-              painter: EqCurvePainter(
-                responseDb: responseDb,
-                eq: eq,
-                rtaBins: rtaBins,
-                rtaActive: rtaActive,
+        return Semantics(
+            container: true,
+            label: 'EQ graph',
+            hint:
+                'Drag a band to change frequency and gain. Pinch to change bandwidth.',
+            child: _EqGraphGesture(
+              width: w,
+              height: h,
+              eq: eq,
+              onSelectBand: onSelectBand,
+              onNode: onNode,
+              onQ: onQ,
+              child: CustomPaint(
+                size: Size(w, h),
+                painter: EqCurvePainter(
+                  responseDb: responseDb,
+                  eq: eq,
+                  rtaBins: rtaBins,
+                  rtaActive: rtaActive,
+                ),
               ),
-            ),
-          ),
-        );
+            ));
       },
     );
   }
@@ -445,6 +447,7 @@ class _EqGraphGesture extends StatefulWidget {
   final ChannelEqVm eq;
   final ValueChanged<int> onSelectBand;
   final void Function(int band, double f, double g) onNode;
+  final void Function(int band, double q) onQ;
   final Widget child;
 
   const _EqGraphGesture({
@@ -453,6 +456,7 @@ class _EqGraphGesture extends StatefulWidget {
     required this.eq,
     required this.onSelectBand,
     required this.onNode,
+    required this.onQ,
     required this.child,
   });
 
@@ -461,56 +465,164 @@ class _EqGraphGesture extends StatefulWidget {
 }
 
 class _EqGraphGestureState extends State<_EqGraphGesture> {
+  final Map<int, Offset> _pointers = {};
   int? _dragBand;
+  double _f = 20;
+  double _g = 0;
+  double _q = 1;
+  double? _span;
 
-  int _hitBand(Offset local) {
-    var best = -1;
+  EqBandVm? get _band {
+    for (final band in widget.eq.bands) {
+      if (band.band == _dragBand) return band;
+    }
+    return null;
+  }
+
+  int? _hitBand(Offset local) {
+    int? best;
     var bestD = 30.0;
     for (final b in widget.eq.bands) {
-      final x =
-          toN(0, 1000, EqGraphGeom.xOf(b.f.clamp(20, 20000))) * widget.width;
-      final y = toN(-15, 15, b.g.clamp(-15, 15)) * widget.height;
-      final d = (Offset(x, y) - local).distance;
+      final node = Offset(
+        EqGraphGeom.xOf(b.f.clamp(20, 20000)) / EqGraphGeom.w * widget.width,
+        EqGraphGeom.yOf(b.g.clamp(-15, 15)) / EqGraphGeom.h * widget.height,
+      );
+      final d = (node - local).distance;
       if (d < bestD) {
         bestD = d;
         best = b.band;
       }
     }
-    if (best < 0) {
-      final x = toN(0, 1000, EqGraphGeom.xOf(widget.eq.hpfF.clamp(20, 1000))) *
-          widget.width;
-      if ((Offset(x, widget.height / 2) - local).distance < 30) best = 0;
-    }
+    final hpf = Offset(
+      EqGraphGeom.xOf(widget.eq.hpfF.clamp(20, 1000)) /
+          EqGraphGeom.w *
+          widget.width,
+      widget.height / 2,
+    );
+    if ((hpf - local).distance < bestD) best = 0;
     return best;
+  }
+
+  void _focus(int? band) {
+    _dragBand = band;
+    if (band == null) return;
+    if (band != 0 && _band == null) {
+      _dragBand = null;
+      return;
+    }
+    _f = band == 0 ? widget.eq.hpfF : (_band?.f ?? 20);
+    _g = band == 0 ? 0 : (_band?.g ?? 0);
+    _q = _band?.q ?? 1;
+    widget.onSelectBand(band);
+  }
+
+  double? get _pointerSpan {
+    if (_pointers.length != 2) return null;
+    return (_pointers.values.first - _pointers.values.last).distance;
+  }
+
+  void _down(PointerDownEvent event) {
+    if (_pointers.isEmpty) _focus(_hitBand(event.localPosition));
+    _pointers[event.pointer] = event.localPosition;
+    if (_pointers.length == 2 && _dragBand == null) {
+      _focus(widget.eq.selectedBand);
+    }
+    _span = _pointerSpan;
+  }
+
+  void _move(PointerMoveEvent event) {
+    final previous = _pointers[event.pointer];
+    if (previous == null) return;
+    _pointers[event.pointer] = event.localPosition;
+    final band = _dragBand;
+    if (band == null) return;
+    if (_pointers.length == 2) {
+      final span = _pointerSpan!;
+      final oldSpan = _span;
+      _span = span;
+      if (band == 0 || oldSpan == null || oldSpan < 1 || span < 1) return;
+      final range = _band?.qRange;
+      // Spread fingers to broaden the band (lower Q).
+      _q = (_q * oldSpan / span).clamp(range?[0] ?? 0.3, range?[1] ?? 16.0);
+      widget.onQ(band, _q);
+    } else if (_pointers.length == 1 && widget.width > 0 && widget.height > 0) {
+      final delta = event.localPosition - previous;
+      final fRange = _band?.fRange;
+      final gRange = _band?.gRange;
+      _f = (_f * math.pow(1000, delta.dx / widget.width))
+          .clamp(
+            band == 0 ? 20.0 : (fRange?[0] ?? 20.0),
+            band == 0 ? 1000.0 : (fRange?[1] ?? 20000.0),
+          )
+          .toDouble();
+      _g = band == 0
+          ? 0
+          : (_g - delta.dy / widget.height * 30)
+              .clamp(gRange?[0] ?? -15.0, gRange?[1] ?? 15.0);
+      widget.onNode(band, _f, _g);
+    }
+  }
+
+  void _up(PointerUpEvent event) {
+    _pointers.remove(event.pointer);
+    _span = _pointerSpan;
+    if (_pointers.isEmpty) _dragBand = null;
+  }
+
+  void _cancel(PointerCancelEvent event) {
+    _pointers.clear();
+    _dragBand = null;
+    _span = null;
   }
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onPanStart: (d) {
-        final band = _hitBand(d.localPosition);
-        if (band >= 0) {
-          _dragBand = band;
-          widget.onSelectBand(band);
-        }
-      },
-      onPanUpdate: (d) {
-        final band = _dragBand;
-        if (band == null) return;
-        final ux = (d.localPosition.dx / widget.width).clamp(0.0, 1.0);
-        final uy = (d.localPosition.dy / widget.height).clamp(0.0, 1.0);
-        final pos = eqNodeFromPos(ux, uy);
-        if (band == 0) {
-          widget.onNode(band, pos.f.clamp(20, 1000), 0);
-        } else {
-          widget.onNode(band, pos.f, pos.g);
-        }
-      },
-      onPanEnd: (_) => _dragBand = null,
+    return _GraphTouchSurface(
+      onDown: _down,
+      onMove: _move,
+      onUp: _up,
+      onCancel: _cancel,
       child: widget.child,
     );
   }
+}
+
+/// Graph touches belong to the graph from pointer-down, so an enclosing
+/// scroll view cannot win the gesture arena halfway through a node edit.
+class _GraphTouchSurface extends StatelessWidget {
+  final PointerDownEventListener onDown;
+  final PointerMoveEventListener onMove;
+  final PointerUpEventListener onUp;
+  final PointerCancelEventListener onCancel;
+  final Widget child;
+
+  const _GraphTouchSurface({
+    required this.onDown,
+    required this.onMove,
+    required this.onUp,
+    required this.onCancel,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) => RawGestureDetector(
+        behavior: HitTestBehavior.opaque,
+        gestures: {
+          EagerGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+            EagerGestureRecognizer.new,
+            (_) {},
+          ),
+        },
+        child: Listener(
+          behavior: HitTestBehavior.opaque,
+          onPointerDown: onDown,
+          onPointerMove: onMove,
+          onPointerUp: onUp,
+          onPointerCancel: onCancel,
+          child: child,
+        ),
+      );
 }
 
 // ---------------------------------------------------------------------------
@@ -612,7 +724,7 @@ class DynCurvePainter extends CustomPainter {
 
 /// Interactive transfer graph: horizontal drag edits threshold (both
 /// kinds); comp vertical drag edits ratio. No sliders.
-class U4DynGraph extends StatelessWidget {
+class U4DynGraph extends StatefulWidget {
   final ChannelDynVm dyn;
   final double? levelDb;
   final Color color;
@@ -629,27 +741,58 @@ class U4DynGraph extends StatelessWidget {
   });
 
   @override
+  State<U4DynGraph> createState() => _U4DynGraphState();
+}
+
+class _U4DynGraphState extends State<U4DynGraph> {
+  final Map<int, Offset> _pointers = {};
+  double _threshold = 0;
+  double _ratio = 1;
+
+  void _down(PointerDownEvent event) {
+    if (_pointers.isEmpty) {
+      _threshold = widget.dyn.thr;
+      _ratio = widget.dyn.ratio;
+    }
+    _pointers[event.pointer] = event.localPosition;
+  }
+
+  void _move(PointerMoveEvent event, Size size) {
+    final previous = _pointers[event.pointer];
+    if (previous == null) return;
+    _pointers[event.pointer] = event.localPosition;
+    if (_pointers.length != 1 || size.isEmpty) return;
+    final delta = event.localPosition - previous;
+    if (delta.dx != 0) {
+      _threshold = (_threshold + delta.dx / size.width * -widget.dyn.lo)
+          .clamp(widget.dyn.lo, 0.0);
+      widget.onThreshold(_threshold);
+    }
+    if (delta.dy != 0 &&
+        widget.dyn.kind == DynKind.comp &&
+        widget.onRatio != null) {
+      _ratio = (_ratio - delta.dy / size.height * 19).clamp(1.0, 20.0);
+      widget.onRatio!(_ratio);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onPanUpdate: (d) {
-        final box = context.findRenderObject() as RenderBox?;
-        if (box == null) return;
-        final size = box.size;
-        final lo = dyn.lo;
-        final thr =
-            lo + (d.localPosition.dx / size.width).clamp(0.0, 1.0) * -lo;
-        onThreshold(thr);
-        if (dyn.kind == DynKind.comp && onRatio != null) {
-          final up = 1 - (d.localPosition.dy / size.height).clamp(0.0, 1.0);
-          onRatio!(1 + up * 19); // 1..20
-        }
-      },
-      child: CustomPaint(
-        size: const Size(double.infinity, 170),
-        painter: DynCurvePainter(dyn: dyn, levelDb: levelDb, color: color),
-      ),
-    );
+    return LayoutBuilder(builder: (context, constraints) {
+      final size =
+          Size(constraints.maxWidth.isFinite ? constraints.maxWidth : 340, 170);
+      return _GraphTouchSurface(
+        onDown: _down,
+        onMove: (event) => _move(event, size),
+        onUp: (event) => _pointers.remove(event.pointer),
+        onCancel: (_) => _pointers.clear(),
+        child: CustomPaint(
+          size: size,
+          painter: DynCurvePainter(
+              dyn: widget.dyn, levelDb: widget.levelDb, color: widget.color),
+        ),
+      );
+    });
   }
 }
 
@@ -837,14 +980,19 @@ class _MiniLevel extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onPanUpdate: (d) {
+      onHorizontalDragStart: (d) {
         final box = context.findRenderObject() as RenderBox?;
-        if (box == null) return;
+        if (box == null || box.size.width <= 0) return;
         onChanged((d.localPosition.dx / box.size.width).clamp(0.0, 1.0));
       },
-      onTapDown: (d) {
+      onHorizontalDragUpdate: (d) {
         final box = context.findRenderObject() as RenderBox?;
-        if (box == null) return;
+        if (box == null || box.size.width <= 0) return;
+        onChanged((d.localPosition.dx / box.size.width).clamp(0.0, 1.0));
+      },
+      onTapUp: (d) {
+        final box = context.findRenderObject() as RenderBox?;
+        if (box == null || box.size.width <= 0) return;
         onChanged((d.localPosition.dx / box.size.width).clamp(0.0, 1.0));
       },
       child: SizedBox(
