@@ -59,7 +59,11 @@ class MixerToolbar extends StatelessWidget {
                       color: MixerDesign.panel,
                       borderRadius: MixerDesign.radius,
                       border: Border.all(color: MixerDesign.line)),
-                  child: Row(children: [
+                  // Stack the phone identity above the readout so the value
+                  // stays centered across the full bar without hiding labels.
+                  child: Flex(
+                      direction: compact ? Axis.vertical : Axis.horizontal,
+                      children: [
                     // Active-strip labels: tapping opens the channel page.
                     if (!compact &&
                         selected != null &&
@@ -87,23 +91,22 @@ class MixerToolbar extends StatelessWidget {
                                         color: MixerDesign.mutedText)),
                               ])))
                     else if (compact)
-                      Expanded(
-                          child: GestureDetector(
-                              onTap: selected == null || selected.master
-                                  ? null
-                                  : () => onNavigate(
-                                      MixerDestination.channel),
-                              behavior: HitTestBehavior.opaque,
-                              child: Text(
-                                  selected == null
-                                      ? 'OpenFader'
-                                      : selected.master
-                                          ? selected.name
-                                          : 'Ch ${selected.number} · ${selected.name}',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: MixerDesign.type(12,
-                                      color: MixerDesign.mutedText)))),
+                      GestureDetector(
+                          onTap: selected == null || selected.master
+                              ? null
+                              : () => onNavigate(MixerDestination.channel),
+                          behavior: HitTestBehavior.opaque,
+                          child: Text(
+                              selected == null
+                                  ? 'OpenFader'
+                                  : selected.master
+                                      ? selected.name
+                                      : 'Ch ${selected.number} · ${selected.name}',
+                              textAlign: TextAlign.center,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: MixerDesign.type(12,
+                                  color: MixerDesign.mutedText))),
                     // Live fader readout: tapping types a dB value.
                     // Listens to the selected strip's fader notifier so
                     // it tracks drags without a page rebuild.
