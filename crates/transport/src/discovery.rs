@@ -699,7 +699,7 @@ mod tests {
             vec![
                 "255.255.255.255:10024".to_string(),
                 "192.168.20.255:10024".to_string(),
-                "192.168.1.255:10024".to_string(),
+                "192.168.50.255:10024".to_string(),
             ]
         );
         // Per-interface list (one directed broadcast) is the same shape.
@@ -736,7 +736,7 @@ mod tests {
     /// address is excluded.
     #[test]
     fn sweep_targets_shape() {
-        let desk: Ipv4Addr = "192.168.1.123".parse().unwrap();
+        let desk: Ipv4Addr = "192.168.50.123".parse().unwrap();
         let prefix = subnet24(desk);
         assert_eq!(prefix, Ipv4Addr::new(192, 168, 40, 0));
         // Idempotent on an already-masked prefix.
