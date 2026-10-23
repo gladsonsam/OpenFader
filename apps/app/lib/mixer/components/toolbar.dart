@@ -50,41 +50,8 @@ class MixerToolbar extends StatelessWidget {
                               borderRadius: MixerDesign.radius,
                               border: Border.all(color: MixerDesign.line)),
                           child: Row(children: [
-                            Expanded(
-                                child: Row(children: [
-                              Expanded(
-                                  child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                    if (!compact &&
-                                        selected != null &&
-                                        !selected.master) ...[
-                                      Text('Ch ${selected.number}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: MixerDesign.type(14,
-                                              color: MixerDesign.mutedText)),
-                                      Text(selected.name,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: MixerDesign.type(14,
-                                              color: MixerDesign.mutedText)),
-                                    ] else
-                                      Text(
-                                          selected == null
-                                              ? 'OpenMix'
-                                              : selected.master
-                                                  ? selected.name
-                                                  : 'Ch ${selected.number} · ${selected.name}',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: MixerDesign.type(
-                                              compact ? 12 : 14,
-                                              color: MixerDesign.mutedText)),
-                                  ])),
+                            // Left side intentionally empty for now.
+                            const Expanded(child: SizedBox()),
                               // Live fader readout: centered like the design
                               // session output; listens to the selected
                               // strip's fader notifier so it tracks drags
@@ -94,14 +61,13 @@ class MixerToolbar extends StatelessWidget {
                                       child: _SelectedLevel(
                                           controller: controller,
                                           compact: compact))),
-                            ])),
-                            if (!compact)
-                              Padding(
-                                  padding: const EdgeInsets.only(left: 12),
-                                  child: Text('Fader',
-                                      style: MixerDesign.type(22,
-                                          color: MixerDesign.mutedText))),
-                          ]))))),
+                              if (!compact)
+                                Padding(
+                                    padding: const EdgeInsets.only(left: 12),
+                                    child: Text('Fader',
+                                        style: MixerDesign.type(22,
+                                            color: MixerDesign.mutedText))),
+                            ]))))),
           const SizedBox(width: 4),
           if (!compact) ...[
             for (final a in actions.take(5))
