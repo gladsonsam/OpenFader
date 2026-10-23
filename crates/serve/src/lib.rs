@@ -381,9 +381,41 @@ async fn handle_socket(
                     Ok(Message::Text(text)) => {
                         if sim_only {
                             use openfader_engine::Cmd;
+                            let operation = match openfader_engine::parse_cmd(&text) {
+                                Ok(Cmd::RefreshDevices { request_id, .. }) => {
+                                    Some((request_id, "refresh"))
+                                }
+                                Ok(Cmd::DiscoverDevices { request_id }) => {
+                                    Some((request_id, "discover"))
+                                }
+                                _ => None,
+                            };
+                            if let Some((request_id, operation)) = operation {
+                                outbox.lock().await.control.push_back(
+                                    openfader_engine::SharedEvent::new(
+                                        openfader_engine::Event::DeviceOperationComplete {
+                                            request_id,
+                                            operation: operation.into(),
+                                            results: Vec::new(),
+                                            error: Some(
+                                                "Simulation only: hardware discovery is disabled"
+                                                    .into(),
+                                            ),
+                                        },
+                                    ),
+                                );
+                                notify.notify_one();
+                                continue;
+                            }
                             let blocked = match openfader_engine::parse_cmd(&text) {
                                 Ok(Cmd::Connect { driver, .. }) => driver != "sim",
-                                Ok(Cmd::Scan | Cmd::Probe { .. } | Cmd::ConnectDevice { .. }) => true,
+                                Ok(
+                                    Cmd::Scan
+                                    | Cmd::Probe { .. }
+                                    | Cmd::ConnectDevice { .. }
+                                    | Cmd::RefreshDevices { .. }
+                                    | Cmd::DiscoverDevices { .. },
+                                ) => true,
                                 _ => false,
                             };
                             if blocked {

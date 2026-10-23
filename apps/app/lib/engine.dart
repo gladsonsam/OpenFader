@@ -38,6 +38,11 @@ class Cmds {
       ? '{"cmd":"connect","driver":${_q(driver)}}'
       : '{"cmd":"connect","driver":${_q(driver)},"addr":${_q(addr)}}';
   static String scan() => '{"cmd":"scan"}';
+  static String refreshDevices(String requestId, List<String> hosts) =>
+      jsonEncode(
+          {'cmd': 'refresh_devices', 'request_id': requestId, 'hosts': hosts});
+  static String discoverDevices(String requestId) =>
+      jsonEncode({'cmd': 'discover_devices', 'request_id': requestId});
   static String probe(String addr) => '{"cmd":"probe","addr":${_q(addr)}}';
   static String probeDesk(String addr) => probe(addr);
   static String connectDevice(String id) =>
@@ -339,6 +344,11 @@ class EngineState {
   String error = '';
   String? errorLockedBy;
   int? errorCh;
+
+  /// Latest explicitly correlated discovery/refresh completion. Parents match
+  /// request_id; unrelated or old operations cannot complete their spinner.
+  Map<String, dynamic>? deviceOperationComplete;
+
   bool capsReady = false;
   int muteGroupCount = 0;
   Set<String> supportedParams = {};
@@ -439,6 +449,9 @@ class EngineState {
             if (entry.key is String && entry.value != null)
               entry.key as String: entry.value as Object,
         });
+        return true;
+      case 'device_operation_complete':
+        deviceOperationComplete = Map<String, dynamic>.unmodifiable(e);
         return true;
       case 'caps':
         final nextDriver = e['driver'] as String? ?? driver;

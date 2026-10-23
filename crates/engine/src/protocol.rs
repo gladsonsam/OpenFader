@@ -109,6 +109,15 @@ pub enum Cmd {
     /// R2 devices/connection: `{"cmd":"scan"}` re-runs discovery and
     /// broadcasts a fresh [`Event::Devices`] frame to every client.
     Scan,
+    /// Verify only the supplied recent hosts, without connecting or sweeping.
+    RefreshDevices {
+        request_id: String,
+        hosts: Vec<String>,
+    },
+    /// Broadcast discovery merged into the existing list; never connects.
+    DiscoverDevices {
+        request_id: String,
+    },
     /// R2: connect one discovered device (`{"cmd":"connect_device",
     /// "id":"mon"}`). On sim this re-links the local model; on hardware
     /// drivers it dials the device address (UNVERIFIED-ON-RIG).
@@ -324,6 +333,8 @@ impl Cmd {
             "delete_scene",
             "hello",
             "scan",
+            "refresh_devices",
+            "discover_devices",
             "connect_device",
             "probe",
             "disconnect",
@@ -536,6 +547,16 @@ pub struct DeviceDesc {
     pub via: Option<String>,
 }
 
+/// One non-connecting directed verification result. A missing reply is not
+/// proof the host is down: only currently supported discovery protocols run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceCheck {
+    pub addr: String,
+    pub status: String,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub device: Option<DeviceDesc>,
+}
+
 /// One `scenes` library entry (R2): a numbered slot (`001..` display).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SceneEntry {
@@ -694,6 +715,14 @@ pub enum Event {
     Devices {
         list: Vec<DeviceDesc>,
         scanned_at: u64,
+    },
+    /// Explicit completion, including empty results and unavailable transports.
+    /// The requester's `devices` frame is queued before this event.
+    DeviceOperationComplete {
+        request_id: String,
+        operation: String,
+        results: Vec<DeviceCheck>,
+        error: Option<String>,
     },
     /// R2 link status: `{"type":"link","state":"connected|reconnecting|
     /// disconnected|offline","name","ip","fs":48000,"latency_ms":1.2}`.
@@ -858,6 +887,7 @@ impl Event {
             Event::Recalled { .. } => "recalled",
             Event::Hello { .. } => "hello",
             Event::Devices { .. } => "devices",
+            Event::DeviceOperationComplete { .. } => "device_operation_complete",
             Event::Link { .. } => "link",
             Event::Info { .. } => "info",
             Event::Scenes { .. } => "scenes",

@@ -25,10 +25,11 @@ use openfader_core::{
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, Notify};
 
-use crate::drivers::{
-    driver_names, DynDriver, FxFlavor, RegisteredDriver,
+use crate::drivers::{driver_names, DynDriver, FxFlavor, RegisteredDriver};
+use crate::protocol::{
+    Cmd, DeviceCheck, DeviceDesc, Event, FxSlotState, OfflineChange, ParamDef, PatchEntry,
+    Scene as SceneFrame, SharedEvent, Show as ShowFrame,
 };
-use crate::protocol::{Cmd, DeviceDesc, Event, FxSlotState, OfflineChange, ParamDef, PatchEntry, Scene as SceneFrame, Show as ShowFrame, SharedEvent};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
 /// Link re-broadcast interval (R2): the `link` event goes out on every
@@ -1257,7 +1258,7 @@ impl Engine {
                                 engine.repair_dirty.store(true, Ordering::Release);
                             }
                             continue;
-                        },
+                        }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                     };
                     let Some(engine) = weak.upgrade() else {
@@ -1867,9 +1868,7 @@ impl Engine {
             .read()
             .unwrap()
             .iter()
-            .find(|d| {
-                device_id.is_some_and(|id| d.id == id) || d.ip == ip
-            })
+            .find(|d| device_id.is_some_and(|id| d.id == id) || d.ip == ip)
             .cloned();
         let (name, device) = match entry {
             Some(d) => (d.name.clone(), Some(d.id.clone())),
@@ -2057,7 +2056,7 @@ impl Engine {
                 } else if link.state == "connected" && link.device_id.as_deref() == Some(d.id.as_str()) {
                     "connected".to_string()
                 } else {
-                    "available".to_string()
+                    d.state.clone()
                 };
                 DeviceDesc {
                     id: d.id.clone(),
@@ -2156,6 +2155,82 @@ impl Engine {
             fw: None,
             via: Some("manual".to_string()),
         })
+    }
+
+    /// Probe a supplied host with only verified discovery protocols. DNS and
+    /// socket waits are async and bounded by the caller; no driver is linked.
+    async fn check_recent_host(&self, addr: String) -> DeviceCheck {
+        use openfader_transport::discovery::{probe_addr, PROBE_TABLE};
+        let raw = addr.trim();
+        let invalid = || DeviceCheck {
+            addr: addr.clone(),
+            status: "invalid".into(),
+            device: None,
+        };
+        if raw.is_empty() || raw.len() > 255 || raw.chars().any(char::is_whitespace) {
+            return invalid();
+        }
+        let ip = if let Ok(ip) = raw.parse::<IpAddr>() {
+            ip
+        } else if let Ok(socket) = raw.parse::<std::net::SocketAddr>() {
+            socket.ip()
+        } else {
+            let host = raw.rsplit_once(':').map_or(raw, |(host, _)| host);
+            match tokio::net::lookup_host((host, 0)).await {
+                Ok(mut ips) => match ips.find(|s| s.is_ipv4()).or_else(|| ips.next()) {
+                    Some(socket) => socket.ip(),
+                    None => return invalid(),
+                },
+                Err(_) => return invalid(),
+            }
+        };
+        // DL32S has no verified discovery handshake. In particular its
+        // query_info is static identity metadata, not a network health check.
+        if self.devices.read().unwrap().iter().any(|d| {
+            d.model.to_ascii_lowercase().contains("dl32")
+                && (d.ip == raw || d.ip.parse::<IpAddr>().ok() == Some(ip))
+        }) {
+            return DeviceCheck {
+                addr,
+                status: "unsupported".into(),
+                device: None,
+            };
+        }
+        for spec in PROBE_TABLE {
+            if let Ok(rows) = probe_addr(spec, ip, Duration::from_millis(900)).await {
+                if let Some(reply) = rows.into_iter().next() {
+                    let name = self.drv(reply.driver).display_name(&reply.model);
+                    return DeviceCheck {
+                        addr,
+                        status: "available".into(),
+                        device: Some(device_row(reply, "refresh", name)),
+                    };
+                }
+            }
+        }
+        DeviceCheck {
+            addr,
+            status: "no_reply".into(),
+            device: None,
+        }
+    }
+
+    /// New operations preserve existing rows and upsert canonical identities
+    /// (driver + resolved IP). Legacy scan retains its replace semantics.
+    fn merge_device_rows(&self, rows: impl IntoIterator<Item = DeviceDesc>) {
+        let mut devices = self.devices.write().unwrap();
+        for row in rows {
+            if let Some(existing) = devices.iter_mut().find(|d| {
+                d.id == row.id
+                    || (d.id.split('-').next() == row.id.split('-').next()
+                        && d.ip.parse::<IpAddr>().ok().is_some()
+                        && d.ip.parse::<IpAddr>().ok() == row.ip.parse::<IpAddr>().ok())
+            }) {
+                *existing = row;
+            } else {
+                devices.push(row);
+            }
+        }
     }
 
     /// Cached `link` event (no measurement; the snapshot + change paths).
@@ -3113,15 +3188,18 @@ impl Engine {
     /// the `source` param plane; elsewhere the list is empty).
     async fn routing_message(&self) -> Event {
         Event::Routing {
-            patches: self.routing_snapshot().await.into_iter().map(|r| {
-                PatchEntry {
+            patches: self
+                .routing_snapshot()
+                .await
+                .into_iter()
+                .map(|r| PatchEntry {
                     strip: r.strip,
                     key: r.key.clone(),
                     label: format!("{} {:02}", r.group, r.index),
                     group: r.group,
                     index: r.index,
-                }
-            }).collect(),
+                })
+                .collect(),
         }
     }
 
@@ -3494,24 +3572,66 @@ impl Engine {
                     if let Some(v) = fresh(fam.first as u16, "fader").and_then(|v| v.as_f64()) { *main_fader = Some(v as f32); }
                 }
             }
-            Event::Param { ch, field, value, .. } => { if let Some(v) = fresh(*ch, field) { *value = v; } }
-            Event::Solo { ch, soloed, .. } => { if let Some(v) = fresh(*ch, "solo").and_then(|v| v.as_bool()) { *soloed = v; } }
+            Event::Param {
+                ch, field, value, ..
+            } => {
+                if let Some(v) = fresh(*ch, field) {
+                    *value = v;
+                }
+            }
+            Event::Solo { ch, soloed, .. } => {
+                if let Some(v) = fresh(*ch, "solo").and_then(|v| v.as_bool()) {
+                    *soloed = v;
+                }
+            }
             Event::Main { fader, muted } => {
-                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openfader_core::StripKind::Main) {
-                    if let Some(v) = fresh(fam.first as u16, "fader").and_then(|v| v.as_f64()) { *fader = Some(v as f32); }
-                    if let Some(v) = fresh(fam.first as u16, "mute").and_then(|v| v.as_bool()) { *muted = Some(v); }
+                if let Some(fam) = self
+                    .driver_topology(&self.active_driver())
+                    .iter()
+                    .find(|f| f.kind == openfader_core::StripKind::Main)
+                {
+                    if let Some(v) = fresh(fam.first as u16, "fader").and_then(|v| v.as_f64()) {
+                        *fader = Some(v as f32);
+                    }
+                    if let Some(v) = fresh(fam.first as u16, "mute").and_then(|v| v.as_bool()) {
+                        *muted = Some(v);
+                    }
                 }
             }
-            Event::Bus { bus, fader, muted, .. } => {
-                if let Some(fam) = self.driver_topology(&self.active_driver()).iter().find(|f| f.kind == openfader_core::StripKind::Bus) {
+            Event::Bus {
+                bus, fader, muted, ..
+            } => {
+                if let Some(fam) = self
+                    .driver_topology(&self.active_driver())
+                    .iter()
+                    .find(|f| f.kind == openfader_core::StripKind::Bus)
+                {
                     let ch = fam.first as u16 + *bus as u16;
-                    if let Some(v) = fresh(ch, "fader").and_then(|v| v.as_f64()) { *fader = v as f32; }
-                    if let Some(v) = fresh(ch, "mute").and_then(|v| v.as_bool()) { *muted = v; }
+                    if let Some(v) = fresh(ch, "fader").and_then(|v| v.as_f64()) {
+                        *fader = v as f32;
+                    }
+                    if let Some(v) = fresh(ch, "mute").and_then(|v| v.as_bool()) {
+                        *muted = v;
+                    }
                 }
             }
-            Event::MuteGroup { group, muted, .. } => { if let Some(v) = fresh(*group as u16, "_mute_group").and_then(|v| v.as_bool()) { *muted = v; } }
-            Event::MuteGroupAssign { ch, group, member, .. } => { if let Some(v) = fresh(*ch, &format!("_mg{}", *group + 1)).and_then(|v| v.as_bool()) { *member = v; } }
-            Event::Fx { .. } => { drop(cache); return self.fx_message_cached(); }
+            Event::MuteGroup { group, muted, .. } => {
+                if let Some(v) = fresh(*group as u16, "_mute_group").and_then(|v| v.as_bool()) {
+                    *muted = v;
+                }
+            }
+            Event::MuteGroupAssign {
+                ch, group, member, ..
+            } => {
+                if let Some(v) = fresh(*ch, &format!("_mg{}", *group + 1)).and_then(|v| v.as_bool())
+                {
+                    *member = v;
+                }
+            }
+            Event::Fx { .. } => {
+                drop(cache);
+                return self.fx_message_cached();
+            }
             _ => {}
         }
         event
@@ -4068,7 +4188,11 @@ impl Engine {
         let dropped = self.param_dropped.read().unwrap();
         self.static_poll_list(driver)
             .into_iter()
-            .filter(|(_, id)| !id.starts_with('_') && *id != "rtnsw" && !dropped.contains(&(driver.to_string(), id.to_string())))
+            .filter(|(_, id)| {
+                !id.starts_with('_')
+                    && *id != "rtnsw"
+                    && !dropped.contains(&(driver.to_string(), id.to_string()))
+            })
             .map(|(ch, id)| (ch, id.to_string()))
             .collect()
     }
@@ -4837,9 +4961,9 @@ impl Engine {
                         want = self.resolve_focus_list(&list)?;
                     }
                     (Some(n), None) => want.push(n),
-                    (None, None) => anyhow::bail!(
-                        "focus needs \"ch\" (integer) or \"chs\" (array of integers)"
-                    ),
+                    (None, None) => {
+                        anyhow::bail!("focus needs \"ch\" (integer) or \"chs\" (array of integers)")
+                    }
                 }
                 let nch = self.driver_strips(&self.active_driver());
                 let valid: Vec<u16> =
@@ -5040,6 +5164,89 @@ impl Engine {
                 }))
             }
             // ================= R2 =================
+            Cmd::RefreshDevices { request_id, hosts } => {
+                let mut results = Vec::new();
+                let error = if hosts.len() > 64 {
+                    Some("Refresh accepts at most 64 hosts".to_string())
+                } else {
+                    let mut seen = HashSet::new();
+                    let checks = hosts
+                        .into_iter()
+                        .filter(|host| seen.insert(host.trim().to_ascii_lowercase()))
+                        .map(|addr| async move {
+                            match tokio::time::timeout(
+                                Duration::from_secs(3),
+                                self.check_recent_host(addr.clone()),
+                            )
+                            .await
+                            {
+                                Ok(result) => result,
+                                Err(_) => DeviceCheck {
+                                    addr,
+                                    status: "no_reply".into(),
+                                    device: None,
+                                },
+                            }
+                        });
+                    results = futures::future::join_all(checks).await;
+                    // Remove verified hostname aliases before canonical upsert.
+                    {
+                        let mut devices = self.devices.write().unwrap();
+                        for result in &results {
+                            if let Some(row) = &result.device {
+                                devices.retain(|d| d.ip != result.addr || d.id == row.id);
+                            } else {
+                                for device in
+                                    devices.iter_mut().filter(|d| d.ip == result.addr.trim())
+                                {
+                                    device.state = "unverified".into();
+                                }
+                            }
+                        }
+                    }
+                    self.merge_device_rows(results.iter().filter_map(|r| r.device.clone()));
+                    None
+                };
+                self.scanned_at.store(now_unix(), Ordering::Relaxed);
+                self.unicast(writer, self.devices_message());
+                out.push(self.devices_message());
+                Ok(Some(Event::DeviceOperationComplete {
+                    request_id,
+                    operation: "refresh".into(),
+                    results,
+                    error,
+                }))
+            }
+            Cmd::DiscoverDevices { request_id } => {
+                let display = |k: &str, m: &str| self.drv(k).display_name(m);
+                let (rows, error) = match tokio::time::timeout(
+                    Duration::from_secs(4),
+                    self.scanner.scan(&display, Duration::from_secs(2)),
+                )
+                .await
+                {
+                    Ok(rows) => (rows, None),
+                    Err(_) => (Vec::new(), Some("Discovery timed out".to_string())),
+                };
+                let results = rows
+                    .iter()
+                    .map(|row| DeviceCheck {
+                        addr: row.ip.clone(),
+                        status: "available".into(),
+                        device: Some(row.clone()),
+                    })
+                    .collect();
+                self.merge_device_rows(rows);
+                self.scanned_at.store(now_unix(), Ordering::Relaxed);
+                self.unicast(writer, self.devices_message());
+                out.push(self.devices_message());
+                Ok(Some(Event::DeviceOperationComplete {
+                    request_id,
+                    operation: "discover".into(),
+                    results,
+                    error,
+                }))
+            }
             Cmd::Scan => {
                 // Real LAN discovery behind the trait (fake in tests),
                 // on EVERY driver: a sim-backed relay has no desks of its
@@ -5143,9 +5350,10 @@ impl Engine {
                             match plans.iter_mut().find(|(p, _)| *p == prefix) {
                                 Some((_, existing)) => {
                                     for s in specs {
-                                        if !existing.iter().any(|e| {
-                                            e.port == s.port && e.payload == s.payload
-                                        }) {
+                                        if !existing
+                                            .iter()
+                                            .any(|e| e.port == s.port && e.payload == s.payload)
+                                        {
                                             existing.push(s);
                                         }
                                     }
@@ -5166,12 +5374,13 @@ impl Engine {
                             )
                             .await
                             {
-                                Ok(Ok(devs)) => {
-                                    devs.into_iter().map(|d| {
+                                Ok(Ok(devs)) => devs
+                                    .into_iter()
+                                    .map(|d| {
                                         let name = self.drv(d.driver).display_name(&d.model);
                                         device_row(d, "manual", name)
-                                    }).collect()
-                                }
+                                    })
+                                    .collect(),
                                 _ => Vec::new(), // a slow sweep is dropped, never blocks
                             }
                         });
@@ -6050,12 +6259,10 @@ fn cache_store(
 /// A disagreeing re-read is the desk's stale pre-image, not a rejection.
 fn refresh_agrees(read: &Value, written: &Value) -> bool {
     match (read, written) {
-        (Value::Number(a), Value::Number(b)) => {
-            match (a.as_f64(), b.as_f64()) {
-                (Some(a), Some(b)) => (a - b).abs() <= 2e-3,
-                _ => false,
-            }
-        }
+        (Value::Number(a), Value::Number(b)) => match (a.as_f64(), b.as_f64()) {
+            (Some(a), Some(b)) => (a - b).abs() <= 2e-3,
+            _ => false,
+        },
         _ => read == written,
     }
 }
@@ -6067,7 +6274,12 @@ fn param_vec_to_map(fx_type: &str, values: &[f32]) -> BTreeMap<String, f32> {
             .params
             .iter()
             .enumerate()
-            .map(|(i, p)| (p.id.to_string(), values.get(i).copied().unwrap_or(p.default)))
+            .map(|(i, p)| {
+                (
+                    p.id.to_string(),
+                    values.get(i).copied().unwrap_or(p.default),
+                )
+            })
             .collect(),
         None => values
             .iter()
@@ -6714,15 +6926,30 @@ mod tests {
     #[tokio::test]
     async fn stalled_mailbox_keeps_latest_per_realtime_key() {
         let (entry, mut mailbox) = stalled_pair();
-        let gr = |ch: u16, gate: f32| SharedEvent::new(Event::Gr { ch, gate, comp: 0.0 });
+        let gr = |ch: u16, gate: f32| {
+            SharedEvent::new(Event::Gr {
+                ch,
+                gate,
+                comp: 0.0,
+            })
+        };
         // First frame queues; the rest collapse per channel key.
         Engine::push_to(&entry, gr(0, 1.0));
         Engine::push_to(&entry, gr(1, 1.0));
         Engine::push_to(&entry, gr(0, 2.0));
-        Engine::push_to(&entry, SharedEvent::new(Event::Spectrum { ch: 3, bins: vec![0.5] }));
         Engine::push_to(
             &entry,
-            SharedEvent::new(Event::Taps { tap: "in".to_string(), levels: vec![0.25] }),
+            SharedEvent::new(Event::Spectrum {
+                ch: 3,
+                bins: vec![0.5],
+            }),
+        );
+        Engine::push_to(
+            &entry,
+            SharedEvent::new(Event::Taps {
+                tap: "in".to_string(),
+                levels: vec![0.25],
+            }),
         );
         // 1 queued + 4 slots (gr/0, gr/1, spectrum/3, taps/in).
         assert_eq!(mailbox.len(), 5);
