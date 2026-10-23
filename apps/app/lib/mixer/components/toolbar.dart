@@ -34,6 +34,81 @@ class MixerToolbar extends StatelessWidget {
       ('Connection', MixerDestination.connect),
       ('Debug', MixerDestination.debug),
     ];
+    final readout = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        height: 52,
+        decoration: BoxDecoration(
+            color: MixerDesign.panel,
+            borderRadius: MixerDesign.radius,
+            border: Border.all(color: MixerDesign.line)),
+        // Stack the phone identity above the readout so the value
+        // stays centered across the full bar without hiding labels.
+        child: Flex(
+            direction: compact ? Axis.vertical : Axis.horizontal,
+            children: [
+              // Active-strip labels: tapping opens the channel page.
+              if (!compact)
+                Expanded(
+                    child: selected == null || selected.master
+                        ? const SizedBox.shrink()
+                        : GestureDetector(
+                            onTap: () => onNavigate(MixerDestination.channel),
+                            behavior: HitTestBehavior.opaque,
+                            child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Ch ${selected.number}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: MixerDesign.type(14,
+                                          color: MixerDesign.mutedText)),
+                                  Text(selected.name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: MixerDesign.type(14,
+                                          color: MixerDesign.mutedText)),
+                                ])))
+              else if (compact)
+                GestureDetector(
+                    onTap: selected == null || selected.master
+                        ? null
+                        : () => onNavigate(MixerDestination.channel),
+                    behavior: HitTestBehavior.opaque,
+                    child: Text(
+                        selected == null
+                            ? 'Connecting…'
+                            : selected.master
+                                ? selected.name
+                                : 'Ch ${selected.number} · ${selected.name}',
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: MixerDesign.type(12,
+                            color: MixerDesign.mutedText))),
+              // Live fader readout: tapping types a dB value.
+              // Listens to the selected strip's fader notifier so
+              // it tracks drags without a page rebuild.
+              Expanded(
+                  child: Center(
+                      child: _SelectedLevel(
+                          controller: controller,
+                          compact: compact,
+                          onEdit: selected == null
+                              ? null
+                              : () => _typeFader(context, controller)))),
+              // Equal side lanes keep the value centered in the full
+              // box regardless of the selected channel's label length.
+              if (!compact)
+                Expanded(
+                    child: Align(
+                        alignment: Alignment.centerRight,
+                        child: Text('Fader',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: MixerDesign.type(22,
+                                color: MixerDesign.mutedText)))),
+            ]));
     return Container(
         height: compact ? 64 : 68,
         padding:
@@ -42,97 +117,25 @@ class MixerToolbar extends StatelessWidget {
             color: MixerDesign.background,
             border: Border(bottom: BorderSide(color: MixerDesign.line))),
         child: Row(children: [
-          // Brand block: approved logo (symbol + name tablet, symbol phone)
-          // returning to Connections. Replaces the old empty slot / home
-          // icon and the deleted view tabs.
+          // Approved symbol returns to Connections on both layouts.
           _BrandButton(
               compact: compact,
               onHome: onHome,
               trailingGap: compact ? 6.0 : 0.0),
-          if (!compact) const Expanded(flex: 140, child: SizedBox()),
           Expanded(
-              flex: compact ? 1 : 892,
-              child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  height: 52,
-                  decoration: BoxDecoration(
-                      color: MixerDesign.panel,
-                      borderRadius: MixerDesign.radius,
-                      border: Border.all(color: MixerDesign.line)),
-                  // Stack the phone identity above the readout so the value
-                  // stays centered across the full bar without hiding labels.
-                  child: Flex(
-                      direction: compact ? Axis.vertical : Axis.horizontal,
-                      children: [
-                    // Active-strip labels: tapping opens the channel page.
-                    if (!compact &&
-                        selected != null &&
-                        !selected.master)
-                      Expanded(
-                          child: GestureDetector(
-                              onTap: () =>
-                                  onNavigate(MixerDestination.channel),
-                              behavior: HitTestBehavior.opaque,
-                              child: Column(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.center,
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                Text('Ch ${selected.number}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: MixerDesign.type(14,
-                                        color: MixerDesign.mutedText)),
-                                Text(selected.name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: MixerDesign.type(14,
-                                        color: MixerDesign.mutedText)),
-                              ])))
-                    else if (compact)
-                      GestureDetector(
-                          onTap: selected == null || selected.master
-                              ? null
-                              : () => onNavigate(MixerDestination.channel),
-                          behavior: HitTestBehavior.opaque,
-                          child: Text(
-                              selected == null
-                                  ? 'OpenFader'
-                                  : selected.master
-                                      ? selected.name
-                                      : 'Ch ${selected.number} · ${selected.name}',
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: MixerDesign.type(12,
-                                  color: MixerDesign.mutedText))),
-                    // Live fader readout: tapping types a dB value.
-                    // Listens to the selected strip's fader notifier so
-                    // it tracks drags without a page rebuild.
-                    Expanded(
-                        child: Center(
-                            child: _SelectedLevel(
-                                controller: controller,
-                                compact: compact,
-                                onEdit: selected == null
-                                    ? null
-                                    : () => _typeFader(
-                                        context, controller)))),
-                    if (!compact)
-                      Padding(
-                          padding: const EdgeInsets.only(left: 12),
-                          child: Text('Fader',
-                              style: MixerDesign.type(22,
-                                  color: MixerDesign.mutedText))),
-                  ]))),
-          const SizedBox(width: 4),
+              child: compact
+                  ? readout
+                  : Padding(
+                      // Equal insets center the bounded box in the gap from
+                      // the brand button's trailing edge to the FX button.
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child:
+                          Center(child: SizedBox(width: 892, child: readout)))),
+          if (compact) const SizedBox(width: 4),
           if (!compact) ...[
-            const SizedBox(width: 4),
             MixerToolButton(
                 label: 'Effects',
-                onPressed: () =>
-                    onNavigate(MixerDestination.fx),
+                onPressed: () => onNavigate(MixerDestination.fx),
                 child: Text('FX',
                     style: MixerDesign.type(20,
                         color: const Color(0xffb5b5b5),
@@ -140,15 +143,13 @@ class MixerToolbar extends StatelessWidget {
             const SizedBox(width: 8),
             MixerToolButton(
                 label: 'Settings',
-                onPressed: () =>
-                    onNavigate(MixerDestination.settings),
+                onPressed: () => onNavigate(MixerDestination.settings),
                 child: const Icon(Icons.settings_outlined,
                     size: 22, color: Color(0xffb5b5b5))),
             const SizedBox(width: 8),
             MixerToolButton(
                 label: 'Routing',
-                onPressed: () =>
-                    onNavigate(MixerDestination.routing),
+                onPressed: () => onNavigate(MixerDestination.routing),
                 child: const Icon(Icons.account_tree_outlined,
                     size: 22, color: Color(0xffb5b5b5))),
             const SizedBox(width: 8),
@@ -181,8 +182,8 @@ class MixerToolbar extends StatelessWidget {
                   if (onHome != null)
                     PopupMenuItem(
                         value: onHome!,
-                        child: Text('Connections',
-                            style: MixerDesign.type(16))),
+                        child:
+                            Text('Connections', style: MixerDesign.type(16))),
                   for (final a in actions)
                     PopupMenuItem(
                         value: () => onNavigate(a.$2),
@@ -195,14 +196,12 @@ class MixerToolbar extends StatelessWidget {
                             style: MixerDesign.type(16))),
                     PopupMenuItem(
                         value: () => showMixerBuses(context, controller),
-                        child: Text('Master bus',
-                            style: MixerDesign.type(16))),
+                        child: Text('Master bus', style: MixerDesign.type(16))),
                     if (controller.muteGroupCount > 0)
                       PopupMenuItem(
-                          value: () =>
-                              showMixerMuteGroups(context, controller),
-                          child: Text('Mute groups',
-                              style: MixerDesign.type(16))),
+                          value: () => showMixerMuteGroups(context, controller),
+                          child:
+                              Text('Mute groups', style: MixerDesign.type(16))),
                   ],
                 ],
               ),
@@ -243,8 +242,7 @@ class _SelectedLevel extends StatelessWidget {
                 child: Text('${fmtDb(fader)} dB',
                     maxLines: 1,
                     style: MixerDesign.type(compact ? 18 : 22,
-                        color: MixerDesign.lime,
-                        weight: FontWeight.w700)))));
+                        color: MixerDesign.lime, weight: FontWeight.w700)))));
   }
 }
 
@@ -256,8 +254,8 @@ Future<void> _typeFader(
   final v = await showNumberEntry(
       context: context,
       title: '${selected.master ? 'Main' : 'Ch ${selected.number}'} fader',
-      initial: fmtDb(controller.faderNoteOf(selected.channel, selected.master)
-          .value),
+      initial: fmtDb(
+          controller.faderNoteOf(selected.channel, selected.master).value),
       min: -60,
       max: 10,
       allowNegInf: true,
@@ -266,7 +264,6 @@ Future<void> _typeFader(
   controller.setPosition(
       selected, v.isFinite ? MixerFaderScale.positionForDb(v) : 0);
 }
-
 
 /// Phone menu: explicit semantics button opening a menu sheet.
 class _MenuButton extends StatelessWidget {
@@ -292,8 +289,7 @@ class _MenuButton extends StatelessWidget {
                       decoration: BoxDecoration(
                           color: const Color(0xff262626),
                           borderRadius: BorderRadius.circular(10),
-                          border:
-                              Border.all(color: const Color(0xff363636))),
+                          border: Border.all(color: const Color(0xff363636))),
                       child: const Icon(Icons.menu,
                           size: 22, color: Color(0xffb5b5b5)))))));
 
@@ -345,21 +341,17 @@ class MixerToolButton extends StatelessWidget {
                       decoration: BoxDecoration(
                           color: const Color(0xff262626),
                           borderRadius: BorderRadius.circular(10),
-                          border:
-                              Border.all(color: const Color(0xff363636))),
+                          border: Border.all(color: const Color(0xff363636))),
                       child: child)))));
 }
 
-/// Approved brand block (top-left): logo symbol + name on tablet, symbol
-/// only on phone. Tapping returns to Connections.
+/// Approved top-left logo symbol. Tapping returns to Connections.
 class _BrandButton extends StatelessWidget {
   final bool compact;
   final VoidCallback? onHome;
   final double trailingGap;
   const _BrandButton(
-      {required this.compact,
-      required this.onHome,
-      required this.trailingGap});
+      {required this.compact, required this.onHome, required this.trailingGap});
   @override
   Widget build(BuildContext context) {
     final logo = SizedBox(
@@ -367,16 +359,6 @@ class _BrandButton extends StatelessWidget {
         height: compact ? 44 : 52,
         child: SvgPicture.asset('assets/brand/open-fader-meter.svg',
             semanticsLabel: 'OpenFader'));
-    final body = compact
-        ? logo
-        : Row(mainAxisSize: MainAxisSize.min, children: [
-            logo,
-            const SizedBox(width: 14),
-            Text('OpenFader',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: MixerDesign.type(28, weight: FontWeight.w600)),
-          ]);
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Semantics(
           button: true,
@@ -390,7 +372,7 @@ class _BrandButton extends StatelessWidget {
                   child: Padding(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 4, vertical: 4),
-                      child: body)))),
+                      child: logo)))),
       SizedBox(width: trailingGap),
     ]);
   }
