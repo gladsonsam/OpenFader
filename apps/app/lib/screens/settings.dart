@@ -406,7 +406,7 @@ class _Sidebar extends StatelessWidget {
                     width: 44,
                     height: 44,
                     child: SvgPicture.asset(
-                        'assets/brand/open-fader-logo.svg',
+                        'assets/brand/open-fader-meter.svg',
                         semanticsLabel: 'OpenFader')),
                 const SizedBox(width: 14),
                 const Text('OpenFader',
@@ -448,7 +448,7 @@ class SvgPictureAssetLogo extends StatelessWidget {
   const SvgPictureAssetLogo({super.key});
   @override
   Widget build(BuildContext context) => SvgPicture.asset(
-      'assets/brand/open-fader-logo.svg',
+      'assets/brand/open-fader-meter.svg',
       semanticsLabel: 'OpenFader');
 }
 
