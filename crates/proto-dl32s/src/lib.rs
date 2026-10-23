@@ -42,8 +42,9 @@ use tokio::sync::{broadcast, Mutex, MutexGuard};
 ///   (values relay exact, labels may swap).
 /// - `viewN`/`vcaN`/`mutegroupN`/`subN` membership — write-proven live, but
 ///   served through the engine group `Cmd`s, not strip caps.
-/// - `source_a`/`source_b`/`source_select` — positions + int domains verified
-///   (1000+/2000+/A-B select), no canonical equivalent; raw passthrough only.
+/// - `source_a`/`source_b` — opaque native routing IDs (1000+/2000+).
+///   Exposed as provider rows without inventing routing labels.
+/// - `source_select` — native A/B selector, 0/1, exposed as a provider row.
 /// - `sendN_tap`/`sendN_grpon`/`sendN_on` — no confirmed leaf (the desk is
 ///   silent; the UI collapses them, never faked).
 /// - `hpf_slope` — reads constant 2, meaning inferred.
@@ -55,6 +56,9 @@ pub const DL32S_CAPABILITIES: &[&str] = &[
     "gain",
     "phantom",
     "trim",
+    "source_a",
+    "source_b",
+    "source_select",
     "polarity",
     "hpf_on",
     "hpf_freq",
@@ -758,20 +762,38 @@ impl MixerDriver for Dl32sDriver {
     /// Canonical ids win on collision, so a future canonical `eq_mode`
     /// upgrades this row seamlessly.
     fn param_defs(&self) -> &'static [openfader_core::params::ParamDef] {
-        static DEFS: std::sync::OnceLock<[openfader_core::params::ParamDef; 1]> =
+        static DEFS: std::sync::OnceLock<[openfader_core::params::ParamDef; 4]> =
             std::sync::OnceLock::new();
         DEFS.get_or_init(|| {
-            [openfader_core::params::ParamDef {
-                id: "eq_mode",
+            let source = |id, max, label| openfader_core::params::ParamDef {
+                id,
                 kind: openfader_core::params::ParamKind::Enum,
                 scope: openfader_core::params::ParamScope::Channel,
-                scopes: openfader_core::params::SCOPES_EQ,
+                scopes: openfader_core::params::SCOPES_INPUT,
                 min: 0.0,
-                max: 1.0,
+                max,
                 unit: "",
                 default: openfader_core::params::ParamDefault::Float(0.0),
-                label: "EQ modern/vintage",
-            }]
+                label,
+            };
+            [
+                openfader_core::params::ParamDef {
+                    id: "eq_mode",
+                    kind: openfader_core::params::ParamKind::Enum,
+                    scope: openfader_core::params::ParamScope::Channel,
+                    scopes: openfader_core::params::SCOPES_EQ,
+                    min: 0.0,
+                    max: 1.0,
+                    unit: "",
+                    default: openfader_core::params::ParamDefault::Float(0.0),
+                    label: "EQ modern/vintage",
+                },
+                // The source IDs are opaque native integers; the app only reads
+                // these two rows, preserving the desk's actual patch labels/IDs.
+                source("source_a", u32::MAX as f32, "Input A source ID"),
+                source("source_b", u32::MAX as f32, "Input B source ID"),
+                source("source_select", 1.0, "Input A/B"),
+            ]
         })
     }
 
@@ -1048,6 +1070,13 @@ impl MixerDriver for Dl32sDriver {
         value: ParamValue,
     ) -> anyhow::Result<()> {
         match (param, value) {
+            ("source_select", ParamValue::Float(v)) => {
+                if v != 0.0 && v != 1.0 {
+                    anyhow::bail!("dl32s: source_select must be 0 (A) or 1 (B), got {v}");
+                }
+                self.set_field(strip, "source_select", ParamValue::Float(v))
+                    .await
+            }
             ("fader", ParamValue::Float(v)) => self.set_fader(strip, v).await,
             ("mute", ParamValue::Bool(m)) => self.set_mute(strip, m).await,
             ("name", ParamValue::Text(n)) => self.set_name(strip, &n).await,
@@ -1295,11 +1324,23 @@ mod tests {
         for id in [
             "icon", // live domain is ~1000+, unmapped
             "eq1_type", // band 1 has no type word
-            "comp_auto", "comp_det", "comp_env", "comp_mix", // no leaf
-            "gate_key_src", "gate_filter_on", "comp_key_src", // no leaf
-            "eq_bands", "hpf_slope",
-            "source_select", "aux1_pan", "send1_tap", "send1_grpon",
-            "send1_on", "send9_pan", "send13_level", "send13_pan", "solo",
+            "comp_auto",
+            "comp_det",
+            "comp_env",
+            "comp_mix", // no leaf
+            "gate_key_src",
+            "gate_filter_on",
+            "comp_key_src", // no leaf
+            "eq_bands",
+            "hpf_slope",
+            "aux1_pan",
+            "send1_tap",
+            "send1_grpon",
+            "send1_on",
+            "send9_pan",
+            "send13_level",
+            "send13_pan",
+            "solo",
         ] {
             assert!(!caps.contains(&id), "caps must not advertise {id}");
         }
