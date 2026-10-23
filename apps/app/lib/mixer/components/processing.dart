@@ -104,9 +104,23 @@ class MixerEqPreview extends StatelessWidget {
                       child: IgnorePointer(
                           child: ExcludeSemantics(
                               child: Text('EQ',
-                                  style: MixerDesign.type(9,
-                                      color: MixerDesign.text,
-                                      weight: FontWeight.w600))))),
+                                  style: MixerDesign.type(11,
+                                      color: const Color(0xffcfd4b8),
+                                      weight: FontWeight.w700))))),
+                if (compact)
+                  Positioned(
+                      top: 3,
+                      right: 5,
+                      child: IgnorePointer(
+                          child: ExcludeSemantics(
+                              child: Text('48V',
+                                  style: MixerDesign.type(10,
+                                      color: (channel.params['phantom'] ==
+                                                  true ||
+                                              channel.params['phantom'] == 1)
+                                          ? MixerDesign.phantom
+                                          : const Color(0xff7a7a7a),
+                                      weight: FontWeight.w700))))),
                 Material(
                     color: Colors.transparent,
                     child: InkWell(
@@ -140,15 +154,16 @@ class _GainPainter extends CustomPainter {
     final amount = ((((params['gain'] as num?)?.toDouble() ?? 0) + 12) / 72)
         .clamp(0.0, 1.0);
     mixerBox(c, Rect.fromLTWH(6, 10, (width - 7) * amount, 5),
-        const Color(0xff31490d),
-        radius: 2, border: const Color(0xff7a9f2b));
+        const Color(0xff4f5a16),
+        radius: 2, border: MixerDesign.lime);
     mixerBox(c, Rect.fromLTWH(4 + (width - 7) * amount, 8, 5, 9),
         const Color(0xffa3a5a0),
         radius: 1);
-    mixerText(c, 'A', Offset(s.width - 24, 7), 9,
-        color: const Color(0xff737373), weight: FontWeight.w700);
-    mixerText(c, 'B', Offset(s.width - 11, 7), 9,
-        color: const Color(0xffbda91d), weight: FontWeight.w700);
+    // Design: 48V indicator replaces the A/B label (red when phantom is on).
+    final phantom = params['phantom'] == true || params['phantom'] == 1;
+    mixerText(c, '48V', Offset(s.width - 34, 7), 9,
+        color: phantom ? MixerDesign.phantom : const Color(0xff737373),
+        weight: FontWeight.w700);
   }
 
   @override
