@@ -30,7 +30,9 @@ jobs:
           python-version: '3.12'
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: abaf9c523780a608bd46686fd5e53740a07077f8
+          # Pinned Flutter SDK (Flutter 3.47.7, release tag: commit
+          # hashes are not resolvable by the setup action).
+          flutter-version: '3.47.7'
           channel: stable
           cache: true
       - uses: dtolnay/rust-toolchain@stable
