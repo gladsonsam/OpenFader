@@ -52,8 +52,17 @@ class RecentMixers extends ChangeNotifier {
 
   Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(key,
-        jsonEncode([for (final r in _items) {'name': r.name, 'addr': r.addr}]));
+    final saved = await prefs.setString(
+        key,
+        jsonEncode([
+          for (final r in _items) {'name': r.name, 'addr': r.addr}
+        ]));
+    if (!saved) {
+      await prefs.reload();
+      _items = _decode(prefs.getString(key));
+      notifyListeners();
+      throw StateError('Saved mixers could not be updated.');
+    }
     notifyListeners();
   }
 

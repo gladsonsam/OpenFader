@@ -6,11 +6,15 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' show PlatformDispatcher, Rect;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
+
+/// Dismissing the platform share sheet is not a successful export.
+class MixExportCancelled implements Exception {}
 
 class LocalMix {
   final String name;
@@ -60,10 +64,13 @@ class LocalMixStore extends ChangeNotifier {
     if (decoded is! Map<String, dynamic>) {
       return const MixValidation.bad('Not valid JSON.');
     }
-    final name = '${decoded['name'] ?? ''}'.trim();
+    final rawName = decoded['name'];
+    if (rawName is! String) {
+      return const MixValidation.bad('Choose a mix JSON file with a name.');
+    }
+    final name = rawName.trim();
     if (name.isEmpty || name.length > 160) {
-      return const MixValidation.bad(
-          'Choose a mix JSON file with a name.');
+      return const MixValidation.bad('Choose a mix JSON file with a name.');
     }
     return MixValidation.ok(decoded);
   }
@@ -78,8 +85,7 @@ class LocalMixStore extends ChangeNotifier {
         if (decoded is! Map<String, dynamic>) continue;
         final name = '${decoded['name'] ?? ''}';
         if (name.isEmpty) continue;
-        final created = DateTime.tryParse(
-                '${decoded['createdAt'] ?? ''}') ??
+        final created = DateTime.tryParse('${decoded['createdAt'] ?? ''}') ??
             DateTime.fromMillisecondsSinceEpoch(0);
         out.add(LocalMix(
             name: name,
@@ -99,7 +105,7 @@ class LocalMixStore extends ChangeNotifier {
     final picked = await FilePicker.pickFiles(
         type: FileType.custom, allowedExtensions: ['json']);
     final file = picked.firstOrNull;
-    if (file == null) return null; // cancelled
+    if (file == null) return 'cancelled';
     final bytes = await file.readAsBytes();
     if (bytes.lengthInBytes > 5 * 1024 * 1024) {
       return 'File is larger than 5 MB.';
@@ -133,8 +139,27 @@ class LocalMixStore extends ChangeNotifier {
   Future<void> exportMix(LocalMix mix) async {
     final dir = await _dir();
     final file = File('${dir.path}/${mix.file}');
-    if (!await file.exists()) return;
-    await SharePlus.instance.share(ShareParams(files: [XFile(file.path)], subject: '${mix.name}.json'));
+    if (!await file.exists()) {
+      throw FileSystemException('The mix file is missing.', file.path);
+    }
+    await _shareFile(file, '${mix.name}.json');
+  }
+
+  Future<void> _shareFile(File file, String subject) async {
+    // iPad requires a nonempty popover anchor in the presenting window.
+    final view = PlatformDispatcher.instance.views.first;
+    final size = view.physicalSize / view.devicePixelRatio;
+    final result = await SharePlus.instance.share(ShareParams(
+        files: [XFile(file.path)],
+        subject: subject,
+        sharePositionOrigin:
+            Rect.fromLTWH(size.width / 2, size.height / 2, 1, 1)));
+    if (result.status == ShareResultStatus.dismissed) {
+      throw MixExportCancelled();
+    }
+    if (result.status != ShareResultStatus.success) {
+      throw StateError('The platform could not confirm the export.');
+    }
   }
 
   Future<void> deleteMix(LocalMix mix) async {
@@ -148,16 +173,12 @@ class LocalMixStore extends ChangeNotifier {
     final dir = await _dir();
     await for (final e in dir.list()) {
       if (e is File && e.path.endsWith('.json')) {
-        try {
-          await e.delete();
-        } catch (_) {}
+        await e.delete();
       }
     }
     final backup = await _backupFile();
     if (await backup.exists()) {
-      try {
-        await backup.delete();
-      } catch (_) {}
+      await backup.delete();
     }
     await refresh();
   }
@@ -167,11 +188,16 @@ class LocalMixStore extends ChangeNotifier {
     final mixes = <Map<String, dynamic>>[];
     await for (final e in dir.list()) {
       if (e is! File || !e.path.endsWith('.json')) continue;
-      try {
-        final decoded = jsonDecode(await e.readAsString());
-        if (decoded is Map<String, dynamic>) mixes.add(decoded);
-        if (mixes.length >= 500) break;
-      } catch (_) {}
+      final decoded = jsonDecode(await e.readAsString());
+      final check = validateMix(decoded);
+      if (check.mix == null) {
+        throw FormatException(
+            'Cannot back up ${e.uri.pathSegments.last}: ${check.error}');
+      }
+      mixes.add(check.mix!);
+      if (mixes.length > 500) {
+        throw const FormatException('A backup can contain at most 500 mixes.');
+      }
     }
     return {
       'format': 'open-fader-backup',
@@ -189,10 +215,9 @@ class LocalMixStore extends ChangeNotifier {
   Future<String?> exportBackup() async {
     final payload = await _backupPayload();
     final tmp = Directory.systemTemp;
-    final file = File(
-        '${tmp.path}/open-fader-backup.json');
+    final file = File('${tmp.path}/open-fader-backup.json');
     await file.writeAsString(jsonEncode(payload));
-    await SharePlus.instance.share(ShareParams(files: [XFile(file.path)], subject: 'open-fader-backup.json'));
+    await _shareFile(file, 'open-fader-backup.json');
     return null;
   }
 
@@ -217,10 +242,13 @@ class LocalMixStore extends ChangeNotifier {
         (decoded['mixes'] as List).length > 500) {
       return 'Choose a backup JSON file with mixes.';
     }
+    final incoming = decoded['mixes'] as List;
+    if (incoming.any((m) => validateMix(m).mix == null)) {
+      return 'Choose a backup with a valid mixes list.';
+    }
     var count = 0;
     final dir = await _dir();
-    for (final m in decoded['mixes'] as List) {
-      if (validateMix(m).mix == null) continue;
+    for (final m in incoming) {
       final name = sanitize('${(m as Map)['name']}');
       var target = File('${dir.path}/$name.json');
       var n = 1;
@@ -241,29 +269,23 @@ class LocalMixStore extends ChangeNotifier {
   /// Bytes used by mixes + backup. Counts real files, not estimates.
   Future<int> storageBytes() async {
     var total = 0;
-    try {
-      final dir = await _dir();
-      await for (final e in dir.list()) {
-        if (e is File) total += await e.length();
-      }
-      final backup = await _backupFile();
-      if (await backup.exists()) total += await backup.length();
-    } catch (_) {}
+    final dir = await _dir();
+    await for (final e in dir.list()) {
+      if (e is File) total += await e.length();
+    }
+    final backup = await _backupFile();
+    if (await backup.exists()) total += await backup.length();
     return total;
   }
 
   /// Clears temporary/cache files only. Mixes, recents and prefs stay.
   Future<int> clearCache() async {
     var removed = 0;
-    try {
-      final tmp = await getTemporaryDirectory();
-      await for (final e in tmp.list()) {
-        try {
-          await e.delete(recursive: true);
-          removed++;
-        } catch (_) {}
-      }
-    } catch (_) {}
+    final tmp = await getTemporaryDirectory();
+    await for (final entry in tmp.list()) {
+      await entry.delete(recursive: true);
+      removed++;
+    }
     return removed;
   }
 }
