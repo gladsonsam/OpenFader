@@ -1,0 +1,12 @@
+# Docker build context: Rust workspace only. Everything else is host noise.
+target/
+dist/
+.git/
+.github/
+apps/
+scripts/
+artifacts/
+*.log
+.DS_Store
+.dart_tool/
+**/build/
