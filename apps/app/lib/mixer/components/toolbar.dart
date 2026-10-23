@@ -301,12 +301,16 @@ class _MenuButton extends StatelessWidget {
     final box = context.findRenderObject() as RenderBox?;
     final overlay =
         Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
     final choice = await showMenu<VoidCallback>(
       context: context,
       color: const Color(0xff262626),
       position: RelativeRect.fromRect(
-          box == null ? Rect.zero : Offset.zero & box.size,
-          Offset.zero & (overlay?.size ?? Size.zero)),
+          Rect.fromPoints(
+              box.localToGlobal(Offset.zero, ancestor: overlay),
+              box.localToGlobal(box.size.bottomRight(Offset.zero),
+                  ancestor: overlay)),
+          Offset.zero & overlay.size),
       items: items,
     );
     if (choice != null) onSelected(choice);
