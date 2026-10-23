@@ -132,6 +132,10 @@ class ChannelPage extends StatefulWidget {
 
 class _ChannelPageState extends State<ChannelPage> {
   ChannelWrites? _writes;
+  final _swipePointers = <int>{};
+  bool _swipeMultiTouch = false;
+  double _swipeDistance = 0;
+  ChannelTab? _swipeTab;
 
   /// Focused numeric control; the slim bar under the tab rail renders it
   /// live and tapping opens typed entry. Cleared on tab switch (EQ
@@ -161,6 +165,53 @@ class _ChannelPageState extends State<ChannelPage> {
         ? eqFreqFocus(store, _writes!, store.eq.selectedBand)
         : null;
     store.setTab(tab);
+  }
+
+  Widget _swipeNavigation(ChannelStore store, Widget child) {
+    return Listener(
+      onPointerDown: (event) {
+        if (_swipePointers.isEmpty) _swipeMultiTouch = false;
+        _swipePointers.add(event.pointer);
+        if (_swipePointers.length > 1) _swipeMultiTouch = true;
+      },
+      onPointerUp: (event) => _swipePointers.remove(event.pointer),
+      onPointerCancel: (event) {
+        _swipePointers.remove(event.pointer);
+        _swipeMultiTouch = true;
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        // Directional recognition leaves vertical scrolling to the scroll
+        // view. Descendant graph/slider recognizers take precedence over
+        // this fallback, so editing a control cannot also change tabs.
+        onHorizontalDragStart: (_) {
+          _swipeDistance = 0;
+          _swipeTab = store.tab;
+        },
+        onHorizontalDragUpdate: (details) {
+          _swipeDistance += details.delta.dx;
+        },
+        onHorizontalDragEnd: (details) {
+          final start = _swipeTab;
+          _swipeTab = null;
+          if (_swipeMultiTouch || start == null || store.tab != start) return;
+          final velocity = details.primaryVelocity ?? 0;
+          if (_swipeDistance.abs() < 56 &&
+              !(_swipeDistance.abs() >= 24 &&
+                  velocity.abs() >= 450 &&
+                  velocity.sign == _swipeDistance.sign)) {
+            return;
+          }
+          final index = _tabOrder.indexOf(start);
+          final next = index + (_swipeDistance < 0 ? 1 : -1);
+          if (next >= 0 && next < _tabOrder.length) {
+            _switchTab(store, _tabOrder[next]);
+          }
+        },
+        onHorizontalDragCancel: () => _swipeTab = null,
+        child: child,
+      ),
+    );
   }
 
   @override
@@ -204,6 +255,7 @@ class _ChannelPageState extends State<ChannelPage> {
                 ],
               ),
             );
+            final swipeContent = _swipeNavigation(store, content);
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -221,10 +273,10 @@ class _ChannelPageState extends State<ChannelPage> {
                                   onTab: (t) => _switchTab(store, t)),
                             ),
                             const SizedBox(width: 8),
-                            Expanded(child: content),
+                            Expanded(child: swipeContent),
                           ],
                         )
-                      : content,
+                      : swipeContent,
                 ),
                 if (!wide)
                   _BottomNav(
