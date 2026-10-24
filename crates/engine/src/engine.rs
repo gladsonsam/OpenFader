@@ -19,15 +19,15 @@ use openfader_core::{
     access::{Policy, Role},
     params::{self, ParamRegistry},
     show::{Scene, Show, DEFAULT_FADE_MS},
-    MeterFrame, ParamValue, StripId,
+    MeterFrame, NativeSnapshots, ParamValue, StripId,
 };
 use serde_json::{json, Value};
 use tokio::sync::{mpsc, Notify};
 
 use crate::drivers::{driver_names, DynDriver, FxFlavor, RegisteredDriver};
 use crate::protocol::{
-    Cmd, DeviceCheck, DeviceDesc, Event, FxSlotState, OfflineChange, ParamDef, PatchEntry,
-    Scene as SceneFrame, SharedEvent, Show as ShowFrame,
+    Cmd, DeviceCheck, DeviceDesc, Event, FxSlotState, NativeSnapshotEntry, NativeSnapshotsCaps,
+    OfflineChange, ParamDef, PatchEntry, Scene as SceneFrame, SharedEvent, Show as ShowFrame,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
@@ -726,6 +726,16 @@ pub struct Engine {
     /// Persisted as `scenes.json` under `data_dir` when configured.
     scenes_lib: RwLock<HashMap<u16, StoredScene>>,
     scenes_current: RwLock<Option<u16>>,
+    /// Last broadcast read-only native snapshot view: (connection
+    /// generation, driver view). The meter ticker re-samples the driver
+    /// hook every tick and broadcasts only on change (or generation
+    /// change) under the `sync_state` barrier with the generation as the
+    /// frame `epoch`, so a disconnected/driver switch can never retain the
+    /// last desk's slots and an old sample can never land after a newer
+    /// `SyncEpoch`. Recorded by every path that emits the
+    /// `native_snapshots` frame (attach, resume, post-switch, disconnect,
+    /// retained-session replay) to keep the ticker quiet afterwards.
+    native_last: RwLock<(u64, Option<NativeSnapshots>)>,
     data_dir: Option<PathBuf>,
     /// R2 FX cache: engine-side mirror of the active driver's rack
     /// (rebuilt on every driver switch; in-memory for Design racks,
@@ -882,6 +892,7 @@ impl Engine {
             link: RwLock::new(LinkState::default()),
             scenes_lib: RwLock::new(scenes_lib),
             scenes_current: RwLock::new(None),
+            native_last: RwLock::new((1, None)),
             data_dir,
             fx_cache: RwLock::new(Vec::new()),
             fx_cursor: AtomicU64::new(0),
@@ -1083,13 +1094,15 @@ impl Engine {
                 return;
             }
             for frame in info.into_iter()
-                .chain([self.fx_message_cached(), routing, self.scenes_message()])
+                .chain([self.fx_message_cached(), routing, self.scenes_message(), self.native_snapshots_message()])
                 .chain(masters) {
                 self.broadcast(self.reconcile_event(frame, &sync, sampled));
             }
             for frame in self.params_snapshot() {
                 self.broadcast(self.reconcile_event(frame, &sync, sampled));
             }
+            drop(sync);
+            self.record_native_view();
         }
     }
 
@@ -1156,6 +1169,9 @@ impl Engine {
             let caps = self.caps_slim_message();
             let devices = self.devices_message();
             let link = self.link_message_cached();
+            // Sync lock-local read (no I/O): the read-only native slot
+            // frame for this snapshot.
+            let native = self.native_snapshots_message();
             let (state, info, scenes, _fx, routing, masters) = tokio::join!(
                 self.state_message(None),
                 async { self.info_message().await.ok() },
@@ -1180,11 +1196,21 @@ impl Engine {
                 writers.sort();
                 let roster = Event::Clients { count: clients.len(), writers };
                 let entry = clients.get(&id).expect("client just inserted");
+                // Read-only native slots ride after the param plane (past
+                // every position existing snapshots assert) and before the
+                // epoch barrier.
                 for frame in [you, state, shows, roster, locks, caps, devices, link].into_iter()
                     .chain(info).chain([scenes, fx, routing]).chain(masters).chain(params)
+                    .chain(std::iter::once(native))
                     .chain(sync.typed.values().cloned()).chain(std::iter::once(Event::SyncEpoch { epoch: generation })) {
                     Self::push_to(entry, SharedEvent::new(self.reconcile_event(frame, &sync, snapshot_started)));
                 }
+                // Lock-free (no client/sync locks held): remember the
+                // emitted native view so the ticker stays quiet until it
+                // changes. A push landing between the sample above and
+                // this record only delays one frame (views are cumulative
+                // state — nothing is lost).
+                self.record_native_view();
             }
             // Siblings learn about the join; the newcomer already has it.
             self.broadcast_except(self.clients_message(), &id);
@@ -1206,7 +1232,8 @@ impl Engine {
     /// lane; a resumed UI already holds the catalogue and must never have
     /// it downgraded): `state`, `shows`, `clients`, `locks`, `caps`,
     /// `devices`, `link`, `info` (best-effort), `scenes`, `fx`, `routing`,
-    /// `masters_snapshot`, then one `params` frame per cached channel.
+    /// `masters_snapshot`, then one `params` frame per cached channel,
+    /// then the read-only `native_snapshots` frame.
     ///
     /// Never re-inserts the client, never touches locks/roles, and no-ops
     /// when the id is not attached. Cheap enough to be idempotent: adapters
@@ -1251,17 +1278,23 @@ impl Engine {
         if self.connection_gen.load(Ordering::Acquire) != generation { return; }
         let params = self.params_snapshot();
         let fx = self.fx_message_cached();
+        // Read-only native slots ride after the param plane (same position
+        // as `attach`), before the epoch barrier.
+        let native = self.native_snapshots_message();
         for event in [state, shows, roster, locks, caps, devices, link]
             .into_iter()
             .chain(info)
             .chain([scenes, fx, routing])
             .chain(masters)
             .chain(params)
+            .chain(std::iter::once(native))
             .chain(sync.typed.values().cloned())
             .chain(std::iter::once(Event::SyncEpoch { epoch: generation }))
         {
             self.unicast(client_id, self.reconcile_event(event, &sync, snapshot_started));
         }
+        drop(sync);
+        self.record_native_view();
     }
 
     /// Replace a connected client's access policy (default: admin).
@@ -1484,6 +1517,40 @@ impl Engine {
                     for ch in 0..if gr_updated { gr_count } else { 0 } {
                         if let Some((gate, comp)) = engine.gr_db(ch).await {
                             engine.broadcast(Event::Gr { ch: ch as u16, gate, comp });
+                        }
+                    }
+                    // Read-only native desk snapshots: re-sample the driver
+                    // hook on this same tick (lock-local session-cache
+                    // reads, no I/O, no new timer) and broadcast only on
+                    // change or session-generation change. The generation
+                    // is captured BEFORE the driver/view sampling, and the
+                    // dedup + broadcast run under the `sync_state` barrier
+                    // with a final generation + `reads_suspended` recheck —
+                    // so an old sample can never land after a newer
+                    // `SyncEpoch` (the frontend rejects a mismatched
+                    // `epoch`). No audio-param fanout: the frame carries
+                    // slot ids, names, the current marker and the engine
+                    // `epoch` only. No guard is held across an await (no
+                    // await below); `invalidate_connection` shares the same
+                    // barrier.
+                    {
+                        let generation = engine.connection_gen.load(Ordering::Acquire);
+                        let driver = engine.active_driver();
+                        let view = engine.drv(&driver).native_snapshots();
+                        // Held to the end of the block: the barrier shared
+                        // with `invalidate_connection`.
+                        let _sync = engine.sync_state.lock().unwrap();
+                        if engine.connection_gen.load(Ordering::Acquire) == generation
+                            && !engine.reads_suspended.load(Ordering::Acquire)
+                        {
+                            let key = (generation, view);
+                            let changed = *engine.native_last.read().unwrap() != key;
+                            if changed {
+                                *engine.native_last.write().unwrap() = key.clone();
+                                engine.broadcast(Self::native_message_for(
+                                    &driver, &key.1, generation,
+                                ));
+                            }
                         }
                     }
                 }
@@ -2086,6 +2153,7 @@ impl Engine {
             routing: self.routing_caps(&driver),
             groups: self.groups_caps(&driver),
             files: self.files_caps(&driver),
+            native_snapshots: self.native_caps(&driver),
         }
     }
 
@@ -3104,6 +3172,89 @@ impl Engine {
     fn files_caps(&self, driver: &str) -> crate::protocol::FilesCaps {
         let supported = self.drv(driver).file_transfer();
         crate::protocol::FilesCaps { supported }
+    }
+
+    /// `caps.native_snapshots`: read-only native slot support of the named
+    /// driver (`supported:false` where the driver models no native slots —
+    /// skipped on the wire there, so old frames stay byte-identical).
+    fn native_caps(&self, driver: &str) -> NativeSnapshotsCaps {
+        match self.drv(driver).native_snapshots() {
+            Some(_) => NativeSnapshotsCaps {
+                supported: true,
+                read_only: true,
+            },
+            None => NativeSnapshotsCaps {
+                supported: false,
+                read_only: false,
+            },
+        }
+    }
+
+    /// Current `native_snapshots` event for the active driver (see
+    /// [`native_message_for`](Engine::native_message_for)). The `epoch`
+    /// is the actual current engine generation, sampled BEFORE the driver
+    /// view so a racing connect invalidates this sample.
+    fn native_snapshots_message(&self) -> Event {
+        let generation = self.connection_gen.load(Ordering::Acquire);
+        let driver = self.active_driver();
+        Self::native_message_for(&driver, &self.drv(&driver).native_snapshots(), generation)
+    }
+
+    /// Build the `native_snapshots` event for `driver`'s hook view:
+    /// `unsupported` (not modelled — never faked), `unavailable`
+    /// (modelled but no live desk session), `loading` (live session, no
+    /// slot data pushed yet) or `ready` (push-observed PARTIAL metadata
+    /// only — never a full inventory). `current` stays `None` until a
+    /// desk recall is observed — never a slot-0 default. `epoch` is the
+    /// ENGINE connection generation (matches `SyncEpoch`, NOT the RTA
+    /// epoch) and is populated at every constructor. Read-only: no
+    /// command path writes native slots.
+    fn native_message_for(driver: &str, view: &Option<NativeSnapshots>, epoch: u64) -> Event {
+        match view {
+            None => Event::NativeSnapshots {
+                driver: driver.to_string(),
+                supported: false,
+                read_only: false,
+                status: "unsupported".to_string(),
+                slots: Vec::new(),
+                current: None,
+                epoch,
+            },
+            Some(v) => Event::NativeSnapshots {
+                driver: driver.to_string(),
+                supported: true,
+                read_only: true,
+                status: if !v.connected {
+                    "unavailable"
+                } else if !v.received {
+                    "loading"
+                } else {
+                    "ready"
+                }
+                .to_string(),
+                slots: v
+                    .slots
+                    .iter()
+                    .map(|s| NativeSnapshotEntry {
+                        slot: s.slot,
+                        name: s.name.clone(),
+                    })
+                    .collect(),
+                current: v.current,
+                epoch,
+            },
+        }
+    }
+
+    /// Record the just-emitted native view so the ticker stays quiet until
+    /// it actually changes (see [`native_last`](Engine::native_last)).
+    /// The generation is captured BEFORE the driver view so a racing
+    /// connect invalidates this record.
+    fn record_native_view(&self) {
+        let generation = self.connection_gen.load(Ordering::Acquire);
+        let driver = self.active_driver();
+        let view = self.drv(&driver).native_snapshots();
+        *self.native_last.write().unwrap() = (generation, view);
     }
 
     /// Full-state `bus` echo (DISPLAY continuity, not proof): both master
@@ -4138,6 +4289,11 @@ impl Engine {
         // Budget spent (slow venue wifi): the deferred fill re-emits
         // both, so no frame is ever lost — first paint just waits for
         // the fill instead of stalling the command on N x 2 s tails.
+        // The read-only native slot frame is sync and needs no I/O, so it
+        // always rides along (fresh status on every switch, never the
+        // last desk's slots).
+        out.push(self.native_snapshots_message());
+        self.record_native_view();
         if entering_offline {
             self.kick_fill();
             return Ok(());
@@ -5847,6 +6003,10 @@ impl Engine {
                     link.state = "disconnected".to_string();
                 }
                 out.push(self.link_message_cached());
+                // The desk is gone: native slots read unavailable (the
+                // driver reset its view on disconnect), never stale.
+                out.push(self.native_snapshots_message());
+                self.record_native_view();
                 Ok(None)
             }
             Cmd::Info => Ok(Some(self.info_message().await?)),

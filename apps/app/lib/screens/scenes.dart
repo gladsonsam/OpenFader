@@ -8,6 +8,7 @@
 // buttons only.
 import 'package:flutter/material.dart';
 
+import '../engine.dart' show NativeSnapshotsVm, NativeSnapshotsStatus;
 import '../theme.dart';
 import '../palette.dart';
 import '../widgets/console_button.dart';
@@ -36,6 +37,16 @@ abstract class ScenesStore extends ChangeNotifier {
   String? get show; // active show for capture/recall, null = numbered only
   bool get online;
 
+  /// Optional passive surface. Stores without native support remain honest.
+  NativeSnapshotsVm get nativeSnapshots =>
+      const NativeSnapshotsVm.unsupported();
+
+  /// Captures the session, selection, and library revision before a dialog
+  /// or inline edit. Validation rejects stale targets without sending.
+  Object get actionContext;
+  bool validateActionContext(Object captured);
+  bool captureWillOverwrite(String name);
+
   void save(String name); // scene_save into first free slot
   void recall(int number); // scene_recall
   void rename(int number, String name); // scene_rename
@@ -61,7 +72,90 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
   final _saveCtl = TextEditingController();
   final _showCtl = TextEditingController();
   int? _renaming;
+  Object? _renamingContext;
   final _renameCtl = TextEditingController();
+
+  Future<void> _confirm({
+    required String title,
+    required String body,
+    required String label,
+    required VoidCallback action,
+  }) async {
+    final store = widget.store;
+    if (store.busy || !store.online) return;
+    final captured = store.actionContext;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: ConsolePalette.of(context).chip,
+        scrollable: true,
+        title: Text(title,
+            style: TextStyle(color: ConsolePalette.of(context).text1)),
+        content: Text(body,
+            style: TextStyle(color: ConsolePalette.of(context).text7)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: Text(label)),
+        ],
+      ),
+    );
+    if (!mounted || !identical(store, widget.store) || ok != true) return;
+    if (store.validateActionContext(captured)) action();
+  }
+
+  Future<void> _captureShow() async {
+    final store = widget.store;
+    final name = _showCtl.text.trim();
+    if (name.isEmpty || store.busy || !store.online) return;
+    FocusScope.of(context).unfocus();
+    final selected = store.show ?? name;
+    void capture() {
+      store.captureShow(name);
+      if (_showCtl.text.trim() == name) _showCtl.clear();
+    }
+
+    if (store.captureWillOverwrite(name)) {
+      await _confirm(
+          title: 'Replace scene?',
+          body: 'Replace “$name” in OpenFader show “$selected” with a new '
+              'capture? The previous library contents cannot be recovered.',
+          label: 'Replace',
+          action: capture);
+    } else {
+      capture();
+    }
+  }
+
+  void _recallSnapshot(SceneEntryVm entry) {
+    final store = widget.store;
+    _confirm(
+        title: 'Recall snapshot?',
+        body: 'Request recall of OpenFader snapshot '
+            '${entry.number.toString().padLeft(3, '0')} “${entry.name}”? '
+            'This may change mixer settings. Mixer value verification '
+            'is unavailable here.',
+        label: 'Recall',
+        action: () => store.recall(entry.number));
+  }
+
+  void _submitRename() {
+    final store = widget.store;
+    final number = _renaming;
+    final captured = _renamingContext;
+    if (number != null &&
+        captured != null &&
+        store.validateActionContext(captured)) {
+      store.rename(number, _renameCtl.text.trim());
+    }
+    setState(() {
+      _renaming = null;
+      _renamingContext = null;
+    });
+  }
 
   @override
   void dispose() {
@@ -91,16 +185,23 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.6,
                           color: ConsolePalette.of(context).text1)),
-                  if (!store.online)
-                    Padding(
-                      padding: EdgeInsets.only(top: 6),
-                      child: Text(
-                        'Offline — snapshots need a live desk.',
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: ConsolePalette.of(context).text7),
-                      ),
+                  const SizedBox(height: 10),
+                  _NativeSnapshotsSection(view: store.nativeSnapshots),
+                  const SizedBox(height: 16),
+                  const _SectionTitle('OpenFader local library'),
+                  Padding(
+                    padding: EdgeInsets.only(top: 6),
+                    child: Text(
+                      store.online
+                          ? 'Local library lasts for this app session. '
+                              'It is not a native mixer backup.'
+                          : 'Offline · local library lasts for this app '
+                              'session. It is not a native mixer backup.',
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: ConsolePalette.of(context).text7),
                     ),
+                  ),
                   if (store.status != null)
                     Padding(
                         padding: const EdgeInsets.only(top: 8),
@@ -125,14 +226,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                         ? 'New show name…'
                         : 'Scene name in ${store.show}…',
                     actionLabel: store.busy ? 'Working…' : 'Capture',
-                    onAction: () {
-                      final v = _showCtl.text.trim();
-                      if (v.isNotEmpty && !store.busy && store.online) {
-                        FocusScope.of(context).unfocus();
-                        store.captureShow(v);
-                        _showCtl.clear();
-                      }
-                    },
+                    onAction: _captureShow,
                   ),
                   const SizedBox(height: 6),
                   if (store.shows.isEmpty)
@@ -161,12 +255,25 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                         TextButton(
                             onPressed: store.busy
                                 ? null
-                                : () => store.recallShow(scene),
+                                : () => _confirm(
+                                    title: 'Recall scene?',
+                                    body: 'Request recall of “$scene” in '
+                                        'OpenFader show “${store.show}”? This '
+                                        'may change mixer settings. Completion '
+                                        'and mixer value verification are '
+                                        'unavailable here.',
+                                    label: 'Recall',
+                                    action: () => store.recallShow(scene)),
                             child: const Text('LOAD')),
                         TextButton(
                             onPressed: store.busy
                                 ? null
-                                : () => store.deleteShow(scene),
+                                : () => _confirm(
+                                    title: 'Delete scene?',
+                                    body: 'Delete “$scene” from OpenFader show '
+                                        '“${store.show}”? This cannot be undone.',
+                                    label: 'Delete',
+                                    action: () => store.deleteShow(scene)),
                             child: const Text('DELETE')),
                       ]),
                   ],
@@ -176,7 +283,17 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                       const Expanded(child: _SectionTitle('Snapshots')),
                       if (store.entries.isNotEmpty)
                         GestureDetector(
-                          onTap: store.clearAll,
+                          onTap: store.busy
+                              ? null
+                              : () => _confirm(
+                                  title: 'Clear numbered snapshots?',
+                                  body: 'Delete all ${store.entries.length} '
+                                      'numbered snapshots from the OpenFader '
+                                      'engine library? This cannot be undone. '
+                                      'Named shows are separate.\n\n'
+                                      '${store.entries.map((e) => '${e.number.toString().padLeft(3, '0')} “${e.name}”').join('\n')}',
+                                  label: 'Clear all',
+                                  action: store.clearAll),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 8),
@@ -207,7 +324,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                       if (v.isNotEmpty && !store.busy && store.online) {
                         FocusScope.of(context).unfocus();
                         store.save(v);
-                        _saveCtl.clear();
+                        if (store.busy) _saveCtl.clear();
                       }
                     },
                   ),
@@ -275,18 +392,11 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                               color: ConsolePalette.of(context)
                                                   .text10),
                                         ),
-                                        onSubmitted: (v) {
-                                          store.rename(e.number, v.trim());
-                                          setState(() => _renaming = null);
-                                        },
+                                        onSubmitted: (_) => _submitRename(),
                                       ),
                                     ),
                                     GestureDetector(
-                                      onTap: () {
-                                        store.rename(
-                                            e.number, _renameCtl.text.trim());
-                                        setState(() => _renaming = null);
-                                      },
+                                      onTap: _submitRename,
                                       child: Text('✓',
                                           style: TextStyle(
                                               fontSize: 16,
@@ -312,7 +422,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         if (e.current)
                                           Padding(
                                             padding: EdgeInsets.only(left: 6),
-                                            child: Text('Current',
+                                            child: Text('Library current',
                                                 style: TextStyle(
                                                     fontSize: 10,
                                                     fontWeight: FontWeight.w700,
@@ -324,7 +434,9 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                     ),
                                     Expanded(
                                       child: GestureDetector(
-                                        onTap: () => store.recall(e.number),
+                                        onTap: store.busy
+                                            ? null
+                                            : () => _recallSnapshot(e),
                                         child: Text(
                                           e.name,
                                           maxLines: 1,
@@ -340,7 +452,9 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                     Row(
                                       children: [
                                         GestureDetector(
-                                          onTap: () => store.recall(e.number),
+                                          onTap: store.busy
+                                              ? null
+                                              : () => _recallSnapshot(e),
                                           child: Text('RECALL',
                                               style: TextStyle(
                                                   fontSize: 11,
@@ -351,11 +465,15 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         ),
                                         const SizedBox(width: 12),
                                         GestureDetector(
-                                          onTap: () {
-                                            _renameCtl.text = e.name;
-                                            setState(
-                                                () => _renaming = e.number);
-                                          },
+                                          onTap: store.busy
+                                              ? null
+                                              : () {
+                                                  _renameCtl.text = e.name;
+                                                  _renamingContext =
+                                                      store.actionContext;
+                                                  setState(() =>
+                                                      _renaming = e.number);
+                                                },
                                           child: Text('RENAME',
                                               style: TextStyle(
                                                   fontSize: 11,
@@ -365,7 +483,18 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         ),
                                         const SizedBox(width: 12),
                                         GestureDetector(
-                                          onTap: () => store.remove(e.number),
+                                          onTap: store.busy
+                                              ? null
+                                              : () => _confirm(
+                                                  title: 'Delete snapshot?',
+                                                  body: 'Delete OpenFader '
+                                                      'snapshot '
+                                                      '${e.number.toString().padLeft(3, '0')} '
+                                                      '“${e.name}”? This '
+                                                      'cannot be undone.',
+                                                  label: 'Delete',
+                                                  action: () =>
+                                                      store.remove(e.number)),
                                           child: Text('DELETE',
                                               style: TextStyle(
                                                   fontSize: 11,
@@ -385,6 +514,94 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _NativeSnapshotsSection extends StatelessWidget {
+  final NativeSnapshotsVm view;
+
+  const _NativeSnapshotsSection({required this.view});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    final message = switch (view.status) {
+      NativeSnapshotsStatus.unknown =>
+        'This engine has not advertised native snapshot reports.',
+      NativeSnapshotsStatus.unsupported => view.driver == 'sim'
+          ? 'Native mixer snapshots are unavailable in the simulator.'
+          : 'Native snapshot reports are unavailable for this driver.',
+      NativeSnapshotsStatus.unavailable =>
+        'Mixer snapshot reports are unavailable while disconnected.',
+      NativeSnapshotsStatus.loading => 'Waiting for mixer snapshot reports',
+      NativeSnapshotsStatus.ready => 'Observed slots',
+    };
+    String? reportedName;
+    for (final slot in view.slots) {
+      if (slot.slot == view.current && slot.name.trim().isNotEmpty) {
+        reportedName = slot.name;
+      }
+    }
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: palette.well,
+          border: Border.all(color: palette.railBorder),
+          borderRadius: U4.rBtn),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const _SectionTitle('Mixer snapshots · read only'),
+          Text(message, style: TextStyle(fontSize: 12, color: palette.text7)),
+          if (view.status == NativeSnapshotsStatus.ready) ...[
+            const SizedBox(height: 8),
+            Text(
+                view.current == null
+                    ? 'No native recall slot reported.'
+                    : 'Last reported slot ${view.current}'
+                        '${reportedName == null ? '' : ' · $reportedName'}',
+                style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: palette.text1)),
+            const SizedBox(height: 4),
+            Text('Last reported recall only; mixer audio state is unconfirmed.',
+                style: TextStyle(fontSize: 12, color: palette.text7)),
+            const SizedBox(height: 8),
+            if (view.slots.isEmpty)
+              Text('No slot names reported yet.',
+                  style: TextStyle(fontSize: 12, color: palette.text7)),
+            for (final slot in view.slots)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Slot ${slot.slot}',
+                          style: TextStyle(fontSize: 12, color: palette.text4)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                            slot.name.trim().isEmpty
+                                ? 'Name not reported'
+                                : slot.name,
+                            style:
+                                TextStyle(fontSize: 13, color: palette.text1)),
+                      ),
+                    ]),
+              ),
+          ],
+          if (view.supported) ...[
+            const SizedBox(height: 8),
+            Text(
+                'Only mixer-pushed reports are shown. Names may be from '
+                'earlier reports in this session; this is not a complete '
+                'or current inventory.',
+                style: TextStyle(fontSize: 12, color: palette.text7)),
+          ],
+        ],
       ),
     );
   }

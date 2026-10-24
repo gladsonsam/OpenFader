@@ -635,6 +635,18 @@ struct Caches {
     names: StdMutex<NameStore>,
     snapshot_names: StdMutex<HashMap<u32, String>>,
     current_snapshot: StdMutex<Option<u32>>,
+    /// Push-only native snapshot record (verified desk evidence): written
+    /// EXCLUSIVELY by the receive loop when a genuine desk snapshot push
+    /// (recall relay / rename relay) arrives. Own-write paths
+    /// (`save_show_snapshot`'s optimistic insert, `delete_snapshot`'s
+    /// removal) touch `snapshot_names` only and never these stores, so no
+    /// readback path can mistake our own optimism for desk confirmation
+    /// — no future pending-cache laundering by construction (there is no
+    /// pending mark here at all: push writes are proof, everything else
+    /// cannot write). A fresh session starts empty (a new connect means a
+    /// new `Caches`), so stale desks never survive a session change.
+    snapshot_names_pushed: StdMutex<HashMap<u32, String>>,
+    current_snapshot_pushed: StdMutex<Option<u32>>,
     /// Own-write provenance: words/slots whose cached entry came from a
     /// local `write_*`/`set_channel_name` instead of a desk push live in the
     /// same [`ValueStore`]/[`NameStore`] lock as the value itself (see the
@@ -680,6 +692,8 @@ impl Caches {
             names: StdMutex::new(NameStore { names: HashMap::new(), pending: HashSet::new() }),
             snapshot_names: StdMutex::new(HashMap::new()),
             current_snapshot: StdMutex::new(None),
+            snapshot_names_pushed: StdMutex::new(HashMap::new()),
+            current_snapshot_pushed: StdMutex::new(None),
             push_tx,
         }
     }
@@ -1030,6 +1044,21 @@ impl MackieSession {
 
     pub fn current_snapshot(&self) -> Option<u32> {
         self.caches.current_snapshot.lock().ok().and_then(|g| *g)
+    }
+
+    /// Push-evidenced snapshot names: ONLY genuine desk snapshot pushes
+    /// populate this (see the `snapshot_names_pushed` store docs). Own
+    /// `save_show_snapshot` optimism and `delete_snapshot` removals never
+    /// touch it. Passive read (no `Show.zip` download, no wire traffic).
+    pub fn snapshot_names_pushed(&self) -> HashMap<u32, String> {
+        self.caches.snapshot_names_pushed.lock().map(|c| c.clone()).unwrap_or_default()
+    }
+
+    /// Push-evidenced current snapshot marker: ONLY a genuine desk recall
+    /// relay sets this. `None` means no recall observed — never a slot-0
+    /// default. Passive read (no wire traffic).
+    pub fn current_snapshot_pushed(&self) -> Option<u32> {
+        self.caches.current_snapshot_pushed.lock().ok().and_then(|g| *g)
     }
 
     // ---- mute groups (fixed protocol addresses) ----
@@ -1685,10 +1714,20 @@ async fn dispatch(
                             if let Ok(mut c) = current_snapshot.lock() {
                                 *c = Some(n);
                             }
+                            // Push-only verified record (see the
+                            // `snapshot_names_pushed` store docs): desk
+                            // evidence, never own-write optimism.
+                            if let Ok(mut c) = caches.current_snapshot_pushed.lock() {
+                                *c = Some(n);
+                            }
                             let _ = caches.push_tx.send(PushEvent::SnapshotRecall(n));
                         }
                         Some(SnapshotEvent::Rename(n, name)) => {
                             if let Ok(mut c) = snapshot_names.lock() {
+                                c.insert(n, name.clone());
+                            }
+                            // Push-only verified record (see above).
+                            if let Ok(mut c) = caches.snapshot_names_pushed.lock() {
                                 c.insert(n, name.clone());
                             }
                             let _ = caches

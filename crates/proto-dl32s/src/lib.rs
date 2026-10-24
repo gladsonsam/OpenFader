@@ -481,6 +481,19 @@ struct SpectrumState {
     bins_db: Vec<f32>,
 }
 
+/// Private generation-tagged wrapper around the public
+/// [`openfader_core::NativeSnapshots`] view: `generation` names the
+/// connection that owns `view` (same pattern as [`MeterState`] /
+/// [`SpectrumState`]). The ingest task compares inside the lock so a
+/// stale task can never write into a newer session's view, and the
+/// getter withholds a mismatched generation. The public core model stays
+/// untagged.
+#[derive(Debug, Default)]
+struct NativeCache {
+    generation: u64,
+    view: openfader_core::NativeSnapshots,
+}
+
 /// Decode one meter push's RTA bins (indices 60..90, BE-f32 dB), or `None`
 /// when the shape is not the exact 91-word one, any bin is non-finite, or
 /// all bins sit at the [`RTA_SENTINEL_DB`] transition sentinel.
@@ -608,6 +621,13 @@ pub struct Dl32sDriver {
     generation: Arc<AtomicU64>,
     meters: Arc<std::sync::Mutex<MeterState>>,
     spectrum: Arc<std::sync::Mutex<SpectrumState>>,
+    /// Read-only native snapshot view (see [`NativeCache`]): seeded from
+    /// the session's push-only verified stores on connect (covering pushes
+    /// that arrived before this connection's ingest subscription), then
+    /// updated from genuine `SnapshotRecall`/`SnapshotRename` pushes by
+    /// the ingest task. Own saves/deletes never touch it. Reset on
+    /// disconnect so a dead session reads unavailable, never the last desk.
+    native: Arc<std::sync::Mutex<NativeCache>>,
 }
 
 impl Default for Dl32sDriver {
@@ -626,6 +646,7 @@ impl Dl32sDriver {
             generation: Arc::new(AtomicU64::new(0)),
             meters: Arc::new(std::sync::Mutex::new(MeterState::default())),
             spectrum: Arc::new(std::sync::Mutex::new(SpectrumState::default())),
+            native: Arc::new(std::sync::Mutex::new(NativeCache::default())),
         }
     }
 
@@ -1245,6 +1266,25 @@ impl MixerDriver for Dl32sDriver {
         let gen = self.generation.clone();
         let meters = self.meters.clone();
         let spectrum = self.spectrum.clone();
+        // Seed the read-only native snapshot view from the session's
+        // push-only verified stores (covers snapshot pushes that arrived
+        // before this subscription; the broadcast channel buffers anything
+        // newer until the task below drains it). Verified stores only —
+        // own-save optimism never seeds this view.
+        let native = self.native.clone();
+        if let Ok(mut n) = native.lock() {
+            let mut slots: Vec<openfader_core::NativeSnapshotSlot> = session
+                .snapshot_names_pushed()
+                .into_iter()
+                .map(|(slot, name)| openfader_core::NativeSnapshotSlot { slot, name })
+                .collect();
+            slots.sort_by_key(|s| s.slot);
+            n.generation = generation;
+            n.view.slots = slots;
+            n.view.current = session.current_snapshot_pushed();
+            n.view.received = !n.view.slots.is_empty() || n.view.current.is_some();
+            n.view.connected = true;
+        }
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
@@ -1285,6 +1325,50 @@ impl MixerDriver for Dl32sDriver {
                                 }
                             }
                             continue;
+                        }
+                        // Read-only native snapshot tracking: genuine desk
+                        // recall/rename pushes update the view (received
+                        // marks PARTIAL observed metadata — even a bare
+                        // recall with no names proves only the last
+                        // reported recall, never a full inventory). No
+                        // param fanout: `decode_push` already maps these to
+                        // nothing, and this view is sampled by the engine
+                        // ticker, never fanned out as strip updates. The
+                        // inside-lock generation check closes the
+                        // seed race: a stale task that passed the outer
+                        // check above must not write into the newer
+                        // session's view.
+                        match &push {
+                            openfader_transport::mackie::PushEvent::SnapshotRecall(n) => {
+                                if let Ok(mut v) = native.lock() {
+                                    if v.generation != generation {
+                                        break;
+                                    }
+                                    if v.view.connected {
+                                        v.view.current = Some(*n);
+                                        v.view.received = true;
+                                    }
+                                }
+                            }
+                            openfader_transport::mackie::PushEvent::SnapshotRename { slot, name } => {
+                                if let Ok(mut v) = native.lock() {
+                                    if v.generation != generation {
+                                        break;
+                                    }
+                                    if v.view.connected {
+                                        match v.view.slots.iter_mut().find(|s| s.slot == *slot) {
+                                            Some(row) => row.name = name.clone(),
+                                            None => v.view.slots.push(openfader_core::NativeSnapshotSlot {
+                                                slot: *slot,
+                                                name: name.clone(),
+                                            }),
+                                        }
+                                        v.view.slots.sort_by_key(|s| s.slot);
+                                        v.view.received = true;
+                                    }
+                                }
+                            }
+                            _ => {}
                         }
                         for update in decode_push(push) {
                             let _ = tx.send(update);
@@ -1763,6 +1847,22 @@ impl MixerDriver for Dl32sDriver {
         &["in"]
     }
 
+    /// Read-only native snapshot view: the push-observed model above
+    /// (`Some` whenever this driver is selected — supported but possibly
+    /// unconnected/loading — so the engine can render honest status
+    /// instead of guessing). A mismatched private generation withholds
+    /// the view (unavailable default) so a newer session never reads the
+    /// older session's slots. No write path exists behind this hook.
+    fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
+        let current = self.generation.load(Ordering::Acquire);
+        self.native.lock().ok().map(|v| {
+            if v.generation != current {
+                return openfader_core::NativeSnapshots::default();
+            }
+            v.view.clone()
+        })
+    }
+
     /// Non-blocking input-meter sample: the cached linear levels (one per
     /// input strip), or empty when no fresh push backs this generation —
     /// empty means unavailable, never a fabricated silence row. The engine
@@ -1882,6 +1982,13 @@ impl MixerDriver for Dl32sDriver {
         if let Ok(mut s) = self.spectrum.lock() {
             s.updated_at = None;
             s.bins_db.clear();
+        }
+        // The last desk must not survive disconnect: the private
+        // generation tag and the view reset together (the engine emits
+        // `unavailable`, never stale slots; the getter would withhold a
+        // mismatched generation either way).
+        if let Ok(mut n) = self.native.lock() {
+            *n = NativeCache::default();
         }
         Ok(())
     }
