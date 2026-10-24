@@ -18,7 +18,6 @@ use std::{
 use openfader_core::{
     access::{Policy, Role},
     params::{self, ParamRegistry},
-    rta::RtaProcessor,
     show::{Scene, Show, DEFAULT_FADE_MS},
     MeterFrame, ParamValue, StripId,
 };
@@ -1322,7 +1321,6 @@ impl Engine {
         {
             let weak: Weak<Self> = Arc::downgrade(self);
             tokio::spawn(async move {
-                let mut rta = RtaProcessor::new(0);
                 let mut had_audio_spectrum = false;
                 let mut last_level_sample = None;
                 let mut last_gr_sample = None;
@@ -1342,11 +1340,7 @@ impl Engine {
                     let gr_updated = stamps.is_none_or(|(_, at)| at.is_some() && at != last_gr_sample);
                     if let Some((levels, gr)) = stamps { last_level_sample = levels; last_gr_sample = gr; }
                     let levels = engine.meter_levels().await;
-                    // Single owner for this tick's levels: RTA only
-                    // borrows during `push_frame`, so the broadcast
-                    // clone below is the only per-tick alloc here.
                     let frame = MeterFrame { levels };
-                    rta.push_frame(&frame);
                     if level_updated && !frame.levels.is_empty() {
                         engine.broadcast(Event::Meters { levels: frame.levels.clone() });
                     }
@@ -1383,15 +1377,12 @@ impl Engine {
                             });
                         }
                     }
-                    // Envelope activity is a sim visualization only. It never
-                    // substitutes for a provider's audio-frequency spectrum.
-                    if drv.emits_envelope_spectrum() {
-                        for ch in 0..frame.levels.len().min(SPECTRUM_CHANNELS) {
-                            if !supplied.contains(&ch) {
-                                engine.broadcast(Event::Spectrum {
-                                    ch: ch as u16, bins: rta.spectrum(ch),
-                                });
-                            }
+                    // Demo spectra come from the simulator's stable frequency
+                    // profile, never an FFT of control-rate meter envelopes.
+                    for ch in 0..frame.levels.len().min(SPECTRUM_CHANNELS) {
+                        if supplied.contains(&ch) { continue; }
+                        if let Some(bins) = drv.demo_spectrum(ch) {
+                            engine.broadcast(Event::Spectrum { ch: ch as u16, bins });
                         }
                     }
                     let gr_count = drv.gr_channel_count();

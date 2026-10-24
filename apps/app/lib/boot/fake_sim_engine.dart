@@ -68,6 +68,7 @@ class FakeSimEngine implements EngineApi {
             },
           });
   final Queue<String> _mailbox = Queue<String>();
+  final Map<int, String> _pendingSpectra = {};
   final Stopwatch _signalClock = Stopwatch()..start();
   int _lastMeterTick = -1;
   int _binSeq = 0;
@@ -200,6 +201,15 @@ class FakeSimEngine implements EngineApi {
     if (tick == _lastMeterTick) return null;
     _lastMeterTick = tick;
     final t = tick * 0.025;
+    for (var ch = 0; ch < _strips.length; ch++) {
+      final level =
+          _strips[ch].muted ? 0.0 : _inputLevel(ch, t) * _strips[ch].fader;
+      _pendingSpectra[ch] = jsonEncode({
+        'type': 'spectrum',
+        'ch': ch,
+        'bins': _demoSpectrum(ch, level),
+      });
+    }
     return [
       for (var i = 0; i < _strips.length; i++)
         _strips[i].muted ? 0.0 : _inputLevel(i, t) * _strips[i].fader
@@ -217,6 +227,25 @@ class FakeSimEngine implements EngineApi {
     return math.pow(10.0, (-36.0 + 24.0 * phrase) / 20.0).toDouble();
   }
 
+  // Keep synchronized with SimDriver.demo_spectrum. Fixed frequency peaks,
+  // slowly moving levels, no per-frame normalization of meter-envelope FFTs.
+  List<double> _demoSpectrum(int ch, double level) {
+    if (level <= 0) return List.filled(64, 0);
+    final envelope =
+        ((20 * math.log(level) / math.ln10 + 90) / 70).clamp(0.0, 1.0);
+    return List.generate(64, (bin) {
+      final x = bin.toDouble();
+      double peak(double center, double width) =>
+          math.exp(-.5 * math.pow((x - center) / width, 2));
+      final profile = .012 +
+          .92 * peak(12 + (ch % 3).toDouble(), 3) +
+          .55 * peak(23 + (ch % 4).toDouble(), 3.8) +
+          .20 * peak(34, 5);
+      final texture = .85 + .15 * math.cos(x * 1.9 + ch * .7);
+      return (profile * texture * envelope).clamp(0.0, 1.0);
+    });
+  }
+
   int _drainCap(int cap) => cap == 0 ? 512 : cap.clamp(1, 4096);
 
   @override
@@ -232,6 +261,9 @@ class FakeSimEngine implements EngineApi {
       if (levels != null) {
         out.add(jsonEncode({'type': 'meters', 'levels': levels}));
       }
+    }
+    while (_pendingSpectra.isNotEmpty && out.length < limit) {
+      out.add(_pendingSpectra.remove(_pendingSpectra.keys.first)!);
     }
     return out;
   }
