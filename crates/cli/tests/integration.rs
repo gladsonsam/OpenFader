@@ -9,7 +9,6 @@ async fn sim_fader_roundtrip() {
     assert_eq!(drv.name(), "sim");
     assert_eq!(drv.channel_count(), 32);
 
-    // Fader roundtrip via dedicated + generic param paths.
     drv.set_fader(StripId(0), 0.5).await.unwrap();
     assert!((drv.get_fader(StripId(0)).await.unwrap() - 0.5).abs() < 1e-6);
     drv.set_param(StripId(1), "fader", ParamValue::Float(0.25))
@@ -20,26 +19,22 @@ async fn sim_fader_roundtrip() {
         ParamValue::Float(v) if (v - 0.25).abs() < 1e-6
     ));
 
-    // Mute + naming.
     drv.set_mute(StripId(2), true).await.unwrap();
     assert!(drv.get_mute(StripId(2)).await.unwrap());
     drv.set_name(StripId(0), "KICK").await.unwrap();
     assert_eq!(drv.get_name(StripId(0)).await.unwrap(), "KICK");
 
-    // Buses + main.
     drv.set_bus_fader(0, 0.6).await.unwrap();
     assert!((drv.get_bus_fader(0).await.unwrap() - 0.6).abs() < 1e-6);
     drv.set_main_fader(0.8).await.unwrap();
     assert!((drv.get_main_fader().await.unwrap() - 0.8).abs() < 1e-6);
 
-    // Snapshot recall restores prior state.
     let snap = drv.snapshot().await.unwrap();
     assert_eq!(snap.strips.len(), openfader_sim::SIM_STRIPS); // full v2 topology (77 strips)
     drv.set_fader(StripId(0), 0.9).await.unwrap();
     drv.recall(&snap).await.unwrap();
     assert!((drv.get_fader(StripId(0)).await.unwrap() - 0.5).abs() < 1e-6);
 
-    // Rejects bad input.
     assert!(drv.set_fader(StripId(0), 2.0).await.is_err());
     assert!(drv.set_fader(StripId(999), 0.5).await.is_err());
 

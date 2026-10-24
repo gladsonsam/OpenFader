@@ -1,9 +1,4 @@
-// Launch (splash) screen: logo + name + live boot status.
-//
-// Shown on the very first frame while [BootController] works through its
-// stages. Renders the step checklist (done / active / pending), a progress
-// bar, and the current status line ("Loading native engine…"), plus the
-// backend verdict and a Retry button when boot fails.
+// Launch screen: logo, name, live boot status, and Retry on failure.
 library;
 
 import 'package:flutter/material.dart';

@@ -59,22 +59,18 @@
 use openfader_core::fx::{FX_PARAM_COUNT, FX_SLOT_MAX, FX_SLOT_MIN};
 use rosc::OscType;
 
-/// Validate a 1-based wire slot number (`1..=4`).
 pub fn check_slot(slot: u8) -> anyhow::Result<u8> {
     openfader_core::fx::validate_slot(slot)
 }
 
-/// Validate a 0-based param index (`0..64`).
 pub fn check_index(index: u8) -> anyhow::Result<u8> {
     openfader_core::fx::validate_param_index(index)
 }
 
-/// Validate a normalized param value (`0.0..=1.0`, finite).
 pub fn check_value(value: f32) -> anyhow::Result<f32> {
     openfader_core::fx::validate_param_value(value)
 }
 
-/// OSC address for one FX param: 0-based `index` maps to 1-based `MM`.
 /// Slot is the 1-based wire number (`1..=4`, same as the trait hooks).
 ///
 /// ```
@@ -95,8 +91,7 @@ pub fn fx_field(slot: u8, index: u8) -> anyhow::Result<String> {
     Ok(format!("fx{slot}_par{:02}", index + 1))
 }
 
-/// OSC address of the effect-type selector for one slot: `/fx/N/type`
-/// carries the loaded algorithm as an int `0..=60` (see module docs).
+/// Carries the loaded algorithm as an int.
 ///
 /// ```
 /// # use openfader_proto_xair::fx::fx_type;
@@ -125,9 +120,7 @@ pub fn fx_insert(slot: u8) -> anyhow::Result<String> {
     Ok(format!("/fx/{slot}/insert"))
 }
 
-/// Encode an effect-type index (`0..=60`, [`FX_TYPE_MIN`]..=[`FX_TYPE_MAX`])
-/// to the wire int. Validated BEFORE any I/O so out-of-range never hits
-/// the desk.
+/// Validated before any I/O so out-of-range never hits the desk.
 pub fn fx_type_to_arg(effect: u8) -> anyhow::Result<rosc::OscType> {
     if !(FX_TYPE_MIN..=FX_TYPE_MAX).contains(&effect) {
         anyhow::bail!("fx type {effect} out of range {FX_TYPE_MIN}..={FX_TYPE_MAX}");
@@ -138,12 +131,11 @@ pub fn fx_type_to_arg(effect: u8) -> anyhow::Result<rosc::OscType> {
 /// Lowest/highest slot, re-exported for driver bounds checks.
 pub use openfader_core::fx::FX_SLOT_MAX as SLOT_MAX;
 pub use openfader_core::fx::FX_SLOT_MIN as SLOT_MIN;
-/// Params per slot (0-based `0..FX_PARAM_COUNT`), re-exported for loops.
+/// Re-exported for loops.
 pub use openfader_core::fx::FX_PARAM_COUNT as PARAM_COUNT;
 
-/// Lowest effect-type index on `/fx/N/type`.
 pub const FX_TYPE_MIN: u8 = 0;
-/// Highest effect-type index on `/fx/N/type` (61 algorithms, `0..=60`).
+/// 61 algorithms, `0..=60`.
 pub const FX_TYPE_MAX: u8 = 60;
 
 /// Parse a `/fx/N/type` reply into an effect index. Accepts the documented
@@ -1144,9 +1136,6 @@ pub fn fx_effect_full_name(index: u8) -> Option<&'static str> {
     Some(full)
 }
 
-/// Number of meaningful (non-padding) pars for an effect-type index
-/// (`None` = undocumented index).
-///
 /// ```
 /// # use openfader_proto_xair::fx::fx_param_count;
 /// assert_eq!(fx_param_count(0), Some(12));
@@ -1334,7 +1323,6 @@ pub fn fx_param_def(index: u8, par: u8) -> Option<FxParamDef> {
 // Tap-tempo mapping (delay-type effects with a confident Time par only).
 // ---------------------------------------------------------------------------
 
-/// Tap-tempo subdivision: quarter-note or dotted-eighth.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TapSubdiv {
     Quarter,
@@ -1493,7 +1481,6 @@ mod tests {
 
     #[test]
     fn int_pars_decode_per_def_and_nan_is_absent() {
-        // VRM par 13 is Freeze (OFF/ON): hardware replies INT 0.
         let freeze = fx_param_def(7, 13);
         assert_eq!(freeze.unwrap().options, Some(OFF_ON));
         assert_eq!(
@@ -1511,7 +1498,6 @@ mod tests {
         assert!(parse_fx_param(&[OscType::Int(2)], freeze.as_ref()).is_err());
         assert!(parse_fx_param(&[OscType::Int(-1)], freeze.as_ref()).is_err());
 
-        // D/FL par 02 is Pattern (14 options): int is the option index.
         let pattern = fx_param_def(26, 2);
         assert_eq!(pattern.unwrap().options, Some(PATTERN14));
         assert_eq!(
@@ -1528,8 +1514,6 @@ mod tests {
         );
         assert!(parse_fx_param(&[OscType::Int(14)], pattern.as_ref()).is_err());
 
-        // Continuous def with an int wire value (D/FL par 08/09 reply INT
-        // 1): raw int, still range-checked.
         let depth = fx_param_def(26, 8);
         assert!(depth.unwrap().options.is_none());
         assert_eq!(
@@ -1542,7 +1526,6 @@ mod tests {
         );
         assert!(parse_fx_param(&[OscType::Int(2)], depth.as_ref()).is_err());
 
-        // Floats pass through validated; unknown def decodes raw too.
         let hall = fx_param_def(0, 1);
         assert_eq!(
             parse_fx_param(&[OscType::Float(0.5)], hall.as_ref()).unwrap(),
@@ -1574,7 +1557,6 @@ mod tests {
 
     #[test]
     fn effect_names_cover_wire_order() {
-        // 61 slots 0..=60, one undocumented gap at 15 → 60 names.
         let named: Vec<u8> = (0..=60).filter(|i| fx_effect_name(*i).is_some()).collect();
         assert_eq!(named.len(), 60);
         assert!(!named.contains(&15));
@@ -1593,8 +1575,6 @@ mod tests {
 
     #[test]
     fn full_names_cover_wire_order() {
-        // Every documented index has a full display name; the gap (15)
-        // and out-of-range indices have none. Spot-check the mapping.
         let named: Vec<u8> = (0..=60).filter(|i| fx_effect_full_name(*i).is_some()).collect();
         assert_eq!(named.len(), 60);
         assert!(!named.contains(&15));
@@ -1716,11 +1696,9 @@ mod tests {
 
     #[test]
     fn inferred_flags_match_notes() {
-        // Documented rows stay clean.
         assert!(!fx_param_def(0, 1).unwrap().inferred);
         assert!(!fx_param_def(49, 3).unwrap().inferred);
         assert!(!fx_param_def(56, 1).unwrap().inferred);
-        // Flagged rows carry the marker.
         assert!(fx_param_def(4, 16).unwrap().inferred); // CHAM ERLevelR
         assert!(fx_param_def(8, 4).unwrap().inferred); // GATE Density range
         assert!(fx_param_def(60, 3).unwrap().inferred); // PIT Delay range
@@ -1804,13 +1782,11 @@ mod tests {
                 };
                 for msg in osc::flatten(packet) {
                     let parts: Vec<&str> = msg.addr.split('/').collect();
-                    // `/fx/N/type`
                     if parts.len() == 4 && parts[1] == "fx" && parts[3] == "type" {
                         let Ok(slot) = parts[2].parse::<u8>() else {
                             continue;
                         };
                         match msg.args.first() {
-                            // Store type selects verbatim (int form).
                             Some(OscType::Int(i)) => {
                                 wtypes.lock().unwrap().insert(slot, *i);
                             }
@@ -1830,7 +1806,6 @@ mod tests {
                         }
                         continue;
                     }
-                    // `/fx/N/par/MM`
                     if parts.len() == 5 && parts[1] == "fx" && parts[3] == "par" {
                         match msg.args.first() {
                             Some(OscType::Float(f)) => {
@@ -1860,7 +1835,6 @@ mod tests {
         sock.connect(addr).await.unwrap();
         let session = OscSession::from_connected_socket(sock, None);
 
-        // Slot 1 loads DLY (10): type query → effect → labeled par defs.
         let reply = session.query(&fx_type(1).unwrap()).await.unwrap();
         let loaded = parse_fx_type(&reply.args).unwrap();
         assert_eq!(loaded, 10);
@@ -1869,14 +1843,12 @@ mod tests {
         assert_eq!(mode.label, "Mode");
         assert_eq!(mode.options, Some(DLY_MODE));
 
-        // Slot 2 loads PIT (60): 6 meaningful pars, rest padding.
         let reply = session.query(&fx_type(2).unwrap()).await.unwrap();
         let loaded = parse_fx_type(&reply.args).unwrap();
         assert_eq!(loaded, 60);
         assert_eq!(fx_param_count(loaded), Some(6));
         assert!(fx_param_def(loaded, 7).is_none());
 
-        // Labeled pars round-trip bit-exact like generic pars (baseline T8).
         session
             .send(&fx_param(1, 0).unwrap(), vec![OscType::Float(0.5)])
             .await
@@ -1889,14 +1861,12 @@ mod tests {
             .unwrap();
         let back = session.query(&fx_param(2, 2).unwrap()).await.unwrap();
         assert_eq!(osc::fader_value(&back).unwrap(), 0.25);
-        // Untouched labeled pars read back zero.
         let back = session.query(&fx_param(1, 5).unwrap()).await.unwrap();
         assert_eq!(osc::fader_value(&back).unwrap(), 0.0);
     }
 
     #[test]
     fn tap_targets_cover_confident_delays_only() {
-        // Wired: DLY par 2, combos + taps + MODD par 1, all 1..3000 ms.
         let dly = fx_tap_target(10).unwrap();
         assert_eq!(
             (dly.par, dly.min_ms, dly.max_ms, dly.subdiv),
@@ -1906,7 +1876,6 @@ mod tests {
             let t = fx_tap_target(index).unwrap();
             assert_eq!((t.par, t.min_ms, t.max_ms, t.subdiv), (1, 1.0, 3000.0, true));
         }
-        // No tap: reverbs, modulation, and inferred-range pitch delays.
         for index in [0u8, 1, 7, 13, 14, 16, 34, 59, 60, 15, 99] {
             assert!(fx_tap_target(index).is_none(), "index {index}");
         }
@@ -1921,10 +1890,8 @@ mod tests {
         assert!(tap_bpm_from_intervals_ms(&[0.0, 500.0, 500.0]).is_none());
         assert!(tap_bpm_from_intervals_ms(&[50.0, 50.0, 50.0]).is_none()); // >300 BPM
         assert!(tap_bpm_from_intervals_ms(&[5000.0, 5000.0, 5000.0]).is_none()); // <20 BPM
-        // Quarter vs dotted-eighth at 120 BPM: 500 ms vs 375 ms.
         assert!((tap_delay_ms(120.0, TapSubdiv::Quarter) - 500.0).abs() < 1e-9);
         assert!((tap_delay_ms(120.0, TapSubdiv::Dotted8th) - 375.0).abs() < 1e-9);
-        // Linear ms→01 over 1..3000, clamped; degenerate ranges stay safe.
         assert!((tap_ms_to_normalized(500.0, 1.0, 3000.0) - 499.0 / 2999.0) < 1e-6);
         assert_eq!(tap_ms_to_normalized(1.0, 1.0, 3000.0), 0.0);
         assert_eq!(tap_ms_to_normalized(3000.0, 1.0, 3000.0), 1.0);
@@ -1959,7 +1926,6 @@ mod tests {
                 for msg in osc::flatten(packet) {
                     let parts: Vec<&str> = msg.addr.split('/').collect();
                     if parts.len() == 4 && parts[1] == "fx" && parts[3] == "type" {
-                        // Fake serves DLY (10) on every slot.
                         if msg.args.is_empty() {
                             let bytes =
                                 osc::encode_message(&msg.addr, vec![OscType::Int(10)]).unwrap();
@@ -1996,13 +1962,11 @@ mod tests {
         sock.connect(addr).await.unwrap();
         let session = OscSession::from_connected_socket(sock, None);
 
-        // Fake type query → DLY (10) → tap target par 2 (0-based index 1).
         let reply = session.query(&fx_type(1).unwrap()).await.unwrap();
         let loaded = parse_fx_type(&reply.args).unwrap();
         assert_eq!(loaded, 10);
         let target = fx_tap_target(loaded).unwrap();
         assert_eq!(target.par, 2);
-        // 120 BPM quarter → 500 ms → linear 01 → bit-exact roundtrip.
         let ms = tap_delay_ms(120.0, TapSubdiv::Quarter);
         assert!((ms - 500.0).abs() < 1e-9);
         let v01 = tap_ms_to_normalized(ms, target.min_ms, target.max_ms);
@@ -2013,7 +1977,6 @@ mod tests {
             .unwrap();
         let back = session.query(&fx_param(1, idx).unwrap()).await.unwrap();
         assert_eq!(osc::fader_value(&back).unwrap(), v01);
-        // Dotted-eighth lands lower on the same fader, still exact.
         let vdot = tap_ms_to_normalized(
             tap_delay_ms(120.0, TapSubdiv::Dotted8th),
             target.min_ms,
@@ -2045,14 +2008,12 @@ mod tests {
         // Verbatim wire storage so ints stay ints and NaN stays NaN.
         let pars: Arc<StdMutex<HashMap<String, OscType>>> =
             Arc::new(StdMutex::new(HashMap::from([
-                // Slot 3 loads D/FL (26): live shape par 02/08/09 = INT 0/1/1.
                 ("/fx/3/par/01".to_string(), OscType::Float(0.5)),
                 ("/fx/3/par/02".to_string(), OscType::Int(0)),
                 ("/fx/3/par/08".to_string(), OscType::Int(1)),
                 ("/fx/3/par/09".to_string(), OscType::Int(1)),
                 ("/fx/3/par/13".to_string(), OscType::Float(0.75)),
                 ("/fx/3/par/14".to_string(), OscType::Float(f32::NAN)),
-                // Slot 1 loads VRM (7): par 13 Freeze = INT 0, par 14+ NaN.
                 ("/fx/1/par/13".to_string(), OscType::Int(0)),
                 ("/fx/1/par/14".to_string(), OscType::Float(f32::NAN)),
             ])));
@@ -2088,7 +2049,6 @@ mod tests {
                     }
                     if parts.len() == 5 && parts[1] == "fx" && parts[3] == "par" {
                         match msg.args.first() {
-                            // Store sends verbatim (int or float) — no coercion.
                             Some(arg @ (OscType::Float(_) | OscType::Int(_))) => {
                                 wpars.lock().unwrap().insert(msg.addr.clone(), arg.clone());
                             }
@@ -2114,7 +2074,6 @@ mod tests {
         sock.connect(addr).await.unwrap();
         let session = OscSession::from_connected_socket(sock, None);
 
-        // Slot 3 loads D/FL (26): int pars decode per def.
         let reply = session.query(&fx_type(3).unwrap()).await.unwrap();
         let loaded = parse_fx_type(&reply.args).unwrap();
         assert_eq!(loaded, 26);
@@ -2143,7 +2102,6 @@ mod tests {
         let err = parse_fx_param(&back.args, fx_param_def(loaded, 14).as_ref()).unwrap_err();
         assert!(err.to_string().contains("absent"), "unexpected: {err}");
 
-        // Bit-exact roundtrips: float par stores verbatim, int switch too.
         session
             .send(&fx_param(3, 0).unwrap(), vec![OscType::Float(0.5)])
             .await

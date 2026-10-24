@@ -1,6 +1,4 @@
-// H1 SceneButton: the header scene-dropdown button. Padded scene number +
-// scene name, chevron painted with a CustomPainter, highlighted when the
-// Scenes page is open.
+// Header scene button with a padded number, name, and chevron.
 library;
 
 import 'package:flutter/material.dart';
@@ -12,11 +10,9 @@ class U4SceneButton extends StatelessWidget {
   final String num;
   final String name;
 
-  /// aria label, e.g. 'Scene 5 Changeover, open scene list'.
   final String label;
   final bool active;
 
-  /// Phone density: cap width and ellipsize the scene name.
   final bool narrow;
   final VoidCallback? onOpen;
 
@@ -93,7 +89,6 @@ class U4SceneButton extends StatelessWidget {
   }
 }
 
-/// Down-chevron (inline SVG path `M6 9l6 6 6-6`).
 class _ChevronPainter extends CustomPainter {
   final ConsolePalette palette;
   const _ChevronPainter(this.palette);

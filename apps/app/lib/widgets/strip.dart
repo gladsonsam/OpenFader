@@ -1,7 +1,4 @@
-// Mixer strip: top→bottom MUTE → fader-area → NameBar (+ pan bar),
-// matching ui/layouts/strip.default.json order (pan, mute, fader-area,
-// name-wrap) with the phone-only preamp/proc sections omitted. Strip
-// frame: panel bg, 3px padding/gap, 8px radius on touch builds.
+// Order follows ui/layouts/strip.default.json; phone-only preamp/proc sections omitted.
 import 'package:flutter/material.dart';
 import '../palette.dart';
 
@@ -162,8 +159,7 @@ class U4MasterStrip extends StatelessWidget {
   }
 }
 
-/// SOLO button (SOF cyan): off is a dark well with grey text, on is cyan
-/// with dark ink. Same full-width touch shape as [U4MuteButton].
+/// Same full-width touch shape as [U4MuteButton]; keep the two in sync.
 class U4SoloButton extends StatelessWidget {
   final bool solo;
   final double height;

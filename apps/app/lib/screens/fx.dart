@@ -1,10 +1,5 @@
-// Area D: FX screen. 4-slot FX rack: slot cards with live meter, type grid,
-// on/bypass toggle, param drag bars, tap tempo on Delay.
-//
-// Wiring: everything flows through [FxStore] (constructor injection —
-// Area A implements it over the engine via cmdFxSetType/Param/Bypass/On;
-// this file only renders ui4 tokens, see lib/theme.dart). No Material
-// Card/AppBar/Switch/Slider; knobs are drag bars (GestureDetector).
+// FX rack: slot cards with meters, type grid, on and bypass toggles, and param drag bars.
+// Screens stay constructor-injected so Area A can implement the store.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -12,9 +7,6 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../palette.dart';
 
-/// Purple FX accent (design knobItem colour for the FX screen).
-
-/// One param row in the selected slot (stable param key + range + value).
 class FxKnobVm {
   final String id;
   final String label;
@@ -33,7 +25,6 @@ class FxKnobVm {
   });
 }
 
-/// One rack slot card.
 class FxSlotVm {
   final int slot;
   final String name; // `FX 1`..
@@ -52,9 +43,7 @@ class FxSlotVm {
   });
 }
 
-/// Minimal store contract the FX screen renders. Implemented by the
-/// shell/owner over the live engine or a fixture sim. Meters arrive via
-/// stable [ValueNotifier]s updated in place by [pollMeters].
+// Implemented by the shell over the engine or a fixture sim.
 abstract class FxStore extends ChangeNotifier {
   List<FxSlotVm> get slots;
   int get selected;
@@ -67,11 +56,11 @@ abstract class FxStore extends ChangeNotifier {
   Future<void> pollMeters();
 
   void selectSlot(int slot);
-  void setType(String type); // cmdFxSetType
-  void setParam(String id, double value); // cmdFxParam
-  void setOn(bool on); // cmdFxOn
-  void setBypass(bool bypass); // cmdFxBypass
-  void tap(); // tap tempo (Delay)
+  void setType(String type);
+  void setParam(String id, double value);
+  void setOn(bool on);
+  void setBypass(bool bypass);
+  void tap();
 }
 
 class U4FxPage extends StatefulWidget {
@@ -84,9 +73,7 @@ class U4FxPage extends StatefulWidget {
 }
 
 class _U4FxPageState extends State<U4FxPage> {
-  // Freshness comes from the single shell-owned 80 ms loop
-  // (AppShell -> AppStore.pollMeters); this page owns no timer and only
-  // listens to already-updating notifiers.
+  // This page owns no timer because the shell loop already updates the notifiers.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -400,8 +387,6 @@ class _DetailPanel extends StatelessWidget {
   }
 }
 
-/// One param drag bar (GestureDetector horizontal drag — no Material
-/// Slider). Disabled (dimmed, ignore) while the slot is bypassed/off.
 class _ParamBar extends StatelessWidget {
   final FxKnobVm knob;
   final bool enabled;

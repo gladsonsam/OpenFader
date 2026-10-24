@@ -1,17 +1,10 @@
-// Area D: routing screen. Patch matrix src -> strip: bank chips (Lcl/Net/USB), strip tiles, source
-// tiles with used-by labels. Direct writes: patch goes through
-// cmdPatchSet, unpatch through cmdPatchClear.
-//
-// Wiring: everything flows through [RoutingStore] (constructor injection —
-// Area A implements it over the engine; this file only renders ui4 tokens,
-// see lib/theme.dart). No Material Card/AppBar/Switch/Slider; plain text
-// buttons only.
+// Patch matrix: patch goes through cmdPatchSet, unpatch through cmdPatchClear.
+// Screens stay constructor-injected so Area A can implement the store.
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../palette.dart';
 
-/// One input strip row (id `in1`..`in48`, live source label wins online).
 class RouteStrip {
   final int strip;
   final String id;
@@ -26,13 +19,12 @@ class RouteStrip {
   });
 }
 
-/// One source tile in the selected patch group.
 class RouteSrcTile {
   final String label;
   final String group;
   final int index;
-  final String usedBy; // channel name using it, '' = free
-  final bool current; // == selected strip's source
+  final String usedBy;
+  final bool current;
 
   const RouteSrcTile({
     required this.label,
@@ -43,11 +35,10 @@ class RouteSrcTile {
   });
 }
 
-/// Minimal store contract the routing screen renders. Implemented by the
-/// shell/owner over the live engine or a fixture sim.
+// Implemented by the shell over the engine or a fixture sim.
 abstract class RoutingStore extends ChangeNotifier {
   List<RouteStrip> get strips;
-  List<String> get groups; // e.g. ['Lcl', 'Net', 'USB']
+  List<String> get groups;
   String get group;
   int? get selectedStrip;
   String get selectedName;
@@ -57,8 +48,8 @@ abstract class RoutingStore extends ChangeNotifier {
 
   void selectStrip(int strip);
   void selectGroup(String group);
-  void patch(RouteSrcTile tile); // cmdPatchSet
-  void clearPatch(int strip); // cmdPatchClear
+  void patch(RouteSrcTile tile);
+  void clearPatch(int strip);
 }
 
 class U4RoutingPage extends StatelessWidget {

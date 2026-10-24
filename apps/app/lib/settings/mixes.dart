@@ -1,7 +1,6 @@
-// Local mixes + backups on this device. Mixes arrive only through import
-// (there is no verified native over-the-wire mix format); each file is
-// validated before it is stored. Export/sharing uses the platform share
-// sheet and file picker — nothing here touches mixer hardware.
+// Local mixes and backups on this device. Mixes arrive only through import
+// (there is no verified over-the-wire mix format) and each file is validated
+// before it is stored. Nothing here touches mixer hardware.
 library;
 
 import 'dart:convert';
@@ -59,7 +58,7 @@ class LocalMixStore extends ChangeNotifier {
     return clean.length > 80 ? clean.substring(0, 80) : clean;
   }
 
-  /// JSON-object validation shared by mix + backup imports.
+  /// Validation shared by mix and backup imports.
   static MixValidation validateMix(dynamic decoded) {
     if (decoded is! Map<String, dynamic>) {
       return const MixValidation.bad('Not valid JSON.');
@@ -221,7 +220,7 @@ class LocalMixStore extends ChangeNotifier {
     return null;
   }
 
-  /// Returns the imported count, or a negative error code as string.
+  /// Returns the imported count as a string, or an error string.
   Future<String> importBackup() async {
     final picked = await FilePicker.pickFiles(
         type: FileType.custom, allowedExtensions: ['json']);
@@ -266,7 +265,7 @@ class LocalMixStore extends ChangeNotifier {
     return '$count';
   }
 
-  /// Bytes used by mixes + backup. Counts real files, not estimates.
+  /// Bytes used by mixes plus backup, counted from real files.
   Future<int> storageBytes() async {
     var total = 0;
     final dir = await _dir();
@@ -278,7 +277,7 @@ class LocalMixStore extends ChangeNotifier {
     return total;
   }
 
-  /// Clears temporary/cache files only. Mixes, recents and prefs stay.
+  /// Clears temporary and cache files only; mixes, recents, and prefs stay.
   Future<int> clearCache() async {
     var removed = 0;
     final tmp = await getTemporaryDirectory();

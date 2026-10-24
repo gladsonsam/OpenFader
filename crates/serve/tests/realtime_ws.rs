@@ -98,7 +98,6 @@ async fn hello_binary_meters_flow() {
     let addr = serve().await;
     let (mut tx, mut rx) = connect(&addr).await;
 
-    // Drain the attach snapshot (state/shows arrive before any binary).
     let _ = next_typed(&mut rx, "state").await;
 
     tx.send(Message::text(
@@ -109,7 +108,6 @@ async fn hello_binary_meters_flow() {
     let ack = next_typed(&mut rx, "hello").await;
     assert_eq!(ack.get("binary_meters"), Some(&json!(true)));
 
-    // First binary meters frame: header [type=1, version=1, n, seq, t_ms].
     let frame = timeout(Duration::from_secs(5), async {
         loop {
             let msg = rx.next().await.expect("stream") .expect("read");
@@ -129,7 +127,6 @@ async fn hello_binary_meters_flow() {
     let seq0 = u32::from_le_bytes([frame[4], frame[5], frame[6], frame[7]]);
     let t0 = u32::from_le_bytes([frame[8], frame[9], frame[10], frame[11]]);
 
-    // Second binary frame: seq advances, t_ms is monotonic.
     let frame2 = timeout(Duration::from_secs(5), async {
         loop {
             let msg = rx.next().await.expect("stream").expect("read");
@@ -145,7 +142,6 @@ async fn hello_binary_meters_flow() {
     assert!(seq1 > seq0, "seq advances ({seq0} -> {seq1})");
     assert!(t1 >= t0, "t_ms monotonic ({t0} -> {t1})");
 
-    // GR also arrives binary (type=2, n=1, 3-byte payload).
     let gr = timeout(Duration::from_secs(5), async {
         loop {
             let msg = rx.next().await.expect("stream").expect("read");
@@ -162,7 +158,6 @@ async fn hello_binary_meters_flow() {
     assert_eq!(u16::from_le_bytes([gr[2], gr[3]]), 1, "gr n=1");
     assert_eq!(gr.len(), 12 + 3, "gr payload is ch+gate+comp");
 
-    // JSON meters/gr stop in binary mode, but spectrum stays JSON text.
     let deadline = std::time::Instant::now() + Duration::from_millis(600);
     let mut saw_json_meters = false;
     let mut saw_json_gr = false;
@@ -218,8 +213,6 @@ async fn stats_reports_counters() {
     assert_eq!(st.get("binary"), Some(&json!(false)), "default is JSON");
     assert_eq!(st.get("type"), Some(&json!("stats")));
 
-    // Let meter traffic flow, then re-query: sends advance, drops stay 0
-    // on a fast client, queue stays drained.
     tokio::time::sleep(Duration::from_millis(300)).await;
     tx.send(Message::text(json!({"cmd":"stats"}).to_string()))
         .await
@@ -258,7 +251,6 @@ fn stats_golden_shape() {
     ] {
         assert!(v.get(key).is_some(), "golden stats carries {key}");
     }
-    // The live constructor produces the same key set (byte-stable order).
     let live: Value = serde_json::from_str(&openfader_serve::stats_json(
         &openfader_serve::StatsSnapshot {
             meters_sent: 1,

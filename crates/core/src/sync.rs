@@ -34,7 +34,6 @@ struct OpKey {
     target: OpTarget,
 }
 
-/// One queued mixer mutation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PendingOp {
     /// Monotonic sequence number (enqueue order).
@@ -43,7 +42,6 @@ pub struct PendingOp {
     pub kind: PendingOpKind,
 }
 
-/// The payload of a [`PendingOp`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum PendingOpKind {
     Fader { value: f32 },
@@ -64,7 +62,6 @@ impl PendingOp {
         }
     }
 
-    /// Human-readable one-liner; test-only helper (no non-test callers).
     #[cfg(test)]
     fn describe(&self) -> String {
         let what = match &self.kind {
@@ -94,18 +91,14 @@ pub struct Conflict {
     pub kept_seq: u64,
 }
 
-/// Outcome of one [`OpQueue::replay`].
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SyncReport {
-    /// Ops actually applied to the driver.
     pub applied: usize,
-    /// Queued ops superseded by a later op on the same target.
     pub coalesced: usize,
     /// Cumulative conflict log (all replays so far).
     pub conflicts: Vec<Conflict>,
 }
 
-/// FIFO pending-op queue with LWW replay.
 #[derive(Clone, Debug, Default)]
 pub struct OpQueue {
     ops: VecDeque<PendingOp>,
@@ -131,12 +124,10 @@ impl OpQueue {
         Ok(self.enqueue(strip, PendingOpKind::Fader { value }))
     }
 
-    /// Record a mute change.
     pub fn push_mute(&mut self, strip: StripId, muted: bool) -> u64 {
         self.enqueue(strip, PendingOpKind::Mute { muted })
     }
 
-    /// Record a generic param change.
     pub fn push_param(
         &mut self,
         strip: StripId,
@@ -164,7 +155,6 @@ impl OpQueue {
         &self.ops
     }
 
-    /// Cumulative conflict log across all replays.
     pub fn conflicts(&self) -> &[Conflict] {
         &self.conflicts
     }

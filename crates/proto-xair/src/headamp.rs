@@ -30,9 +30,6 @@ pub const GAIN_MIN_DB: f32 = -12.0;
 /// Highest headamp gain in dB (xair-api-python `HeadAmp.gain` upper bound).
 pub const GAIN_MAX_DB: f32 = 60.0;
 
-/// OSC address of one headamp gain: 1-based wire number, zero-padded
-/// (`HeadAmp.address` = `/headamp/{index+1:02d}` + `/gain`).
-///
 /// ```
 /// # use openfader_proto_xair::headamp::headamp_gain;
 /// assert_eq!(headamp_gain(1), "/headamp/01/gain");
@@ -42,8 +39,6 @@ pub fn headamp_gain(ch: u16) -> String {
     format!("/headamp/{ch:02}/gain")
 }
 
-/// OSC address of one headamp phantom switch (`…/phantom`, int `1`/`0`).
-///
 /// ```
 /// # use openfader_proto_xair::headamp::headamp_phantom;
 /// assert_eq!(headamp_phantom(1), "/headamp/01/phantom");
@@ -53,8 +48,7 @@ pub fn headamp_phantom(ch: u16) -> String {
     format!("/headamp/{ch:02}/phantom")
 }
 
-/// Map a gain in dB to the normalized wire float (`lin_set(-12, 60, db)`).
-/// Rejects NaN/infinite and out-of-range values before anything is sent.
+/// xair-api `lin_set(-12, 60, db)`.
 pub fn db_to_wire(db: f32) -> anyhow::Result<f32> {
     if !db.is_finite() {
         anyhow::bail!("headamp gain must be finite, got {db}");
@@ -65,8 +59,7 @@ pub fn db_to_wire(db: f32) -> anyhow::Result<f32> {
     Ok((db - GAIN_MIN_DB) / (GAIN_MAX_DB - GAIN_MIN_DB))
 }
 
-/// Map a normalized wire float back to dB (`lin_get(-12, 60, v)`).
-/// Rejects NaN and values outside `0..=1` — no clamping of desk replies.
+/// xair-api `lin_get(-12, 60, v)`.
 pub fn wire_to_db(v: f32) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("headamp gain wire value must be finite, got {v}");
@@ -100,14 +93,12 @@ mod tests {
 
     #[test]
     fn db_wire_mapping_is_linear() {
-        // lin_set/lin_get(-12, 60, …): endpoints + midpoint exact.
         assert_eq!(db_to_wire(-12.0).unwrap(), 0.0);
         assert_eq!(db_to_wire(60.0).unwrap(), 1.0);
         assert_eq!(db_to_wire(24.0).unwrap(), 0.5);
         assert_eq!(wire_to_db(0.0).unwrap(), -12.0);
         assert_eq!(wire_to_db(1.0).unwrap(), 60.0);
         assert_eq!(wire_to_db(0.5).unwrap(), 24.0);
-        // Round-trip across the range within f32 error.
         for db in [-12.0, -6.5, 0.0, 12.0, 24.0, 48.0, 60.0] {
             let back = wire_to_db(db_to_wire(db).unwrap()).unwrap();
             assert!((back - db).abs() < 1e-5, "round-trip {db} -> {back}");

@@ -1,16 +1,10 @@
-// H1 BankRail: the bank/layer rail. One continuous surface, not floating
-// cards: square segments with hairline dividers, the active bank flooded
-// with its colour edge-to-edge (console layer buttons).
-//
-// `orientation.side` is the desktop rail (w92 column); `orientation.bottom`
-// is the phone bar (h56 row). Colours come from the bank descriptors
-// (U4.banks); unselected tiles use the tint map, like the design.
+// Bank rail with square segments and a flooded active bank.
+// Side rail on desktop, bottom bar on phones. Unselected tiles use the tint map.
 library;
 
 import 'package:flutter/material.dart';
 import '../palette.dart';
 
-/// Unselected bank-rail label tints (shellStyle.ts BANK_TINT).
 Map<String, Color> _bankTint(ConsolePalette palette) => {
       'ch1': palette.meterGreen,
       'ch17': palette.meterGreen,

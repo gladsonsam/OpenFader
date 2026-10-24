@@ -1,21 +1,10 @@
-// Shared processor (EQ/gate/compressor) preset contracts + catalogue.
-//
+// Shared processor (EQ/gate/compressor) preset contracts and catalogue.
 // Pure Dart (only `Listenable` from foundation for the store contract).
-// No SharedPreferences, no timers, no hardware here: persistence lives in
-// `lib/settings/processor_presets.dart` (`ProcessorPresetLibrary`), and the
-// main `AppStore` implements `ProcessorPresetStore` over the engine + that
-// library. Settings `fullReset` clears the stored document via the library
-// (owned by the parent, not here).
 //
-// Design notes for the parent (Sol UI / state owner):
-// - Presets are per-device, per `driver` + `family` + `kind`. Raw `values`
-//   stay provider-specific (enum encodings differ per desk); the
-//   driver/family/kind scope stops cross-driver enum reuse.
-// - Bypass/on flags are never preset fields (any `*_on` / `eq_on`). Recall
-//   must leave bypass states alone; only the allow-listed DSP ids below are
-//   captured and recalled, filtered again by the live caps at recall time.
-// - No factory/built-in presets are invented here; an empty device library
-//   decodes to `[]`.
+// Presets are per-device, keyed by `driver` + `family` + `kind`, and raw
+// values stay provider-specific so enum encodings never cross drivers.
+// Bypass and on flags are never preset fields; recall leaves bypass states
+// alone. No factory presets are invented: an empty device library is `[]`.
 library;
 
 import 'dart:convert';
@@ -28,17 +17,15 @@ enum ProcessorPresetKind {
   gate,
   compressor;
 
-  /// UI label (`EQ`, `Gate`, `Compressor`).
   String get label => switch (this) {
         ProcessorPresetKind.eq => 'EQ',
         ProcessorPresetKind.gate => 'Gate',
         ProcessorPresetKind.compressor => 'Compressor',
       };
 
-  /// Stable wire name (`name`); used in stored JSON.
+  /// Stable wire name, used in stored JSON.
   String get wire => name;
 
-  /// Parse a stored wire name; throws [FormatException] when unknown.
   static ProcessorPresetKind fromWire(String wire) {
     for (final kind in ProcessorPresetKind.values) {
       if (kind.name == wire) return kind;
@@ -48,19 +35,16 @@ enum ProcessorPresetKind {
 }
 
 /// Where a preset operation applies. Built by the state owner from the
-/// active strip/connection; the device library itself is keyed only by the
-/// preset's `driver` + `family` + `kind` + `name`.
+/// active strip; the device library itself is keyed only by the preset's
+/// `driver` + `family` + `kind` + `name`.
 class ProcessorPresetTarget {
-  /// Opaque session index supplied by the owner (connection/session slot).
   final int session;
 
   /// Channel index the operation targets.
   final int channel;
 
-  /// Strip key (for example `ch/01`).
   final String key;
 
-  /// Engine driver id (for example `dl32s`, `xair`, `sim`).
   final String driver;
 
   /// Strip family (for example `in`, `bus`, `main`); scopes enum reuse.
@@ -85,24 +69,19 @@ class ProcessorPresetTarget {
 
 /// One stored device preset. Immutable; [values] is an unmodifiable copy.
 class ProcessorPreset {
-  /// Stable unique id (owner-generated; upsert key in the library).
   final String id;
 
-  /// Local display name (trimmed, Unicode-preserving; see
-  /// [validateProcessorPresetName]).
+  /// Local display name (trimmed, Unicode-preserving).
   final String name;
 
-  /// Engine driver id this preset was captured from.
   final String driver;
 
-  /// Strip family this preset applies to.
   final String family;
 
-  /// DSP block this preset holds.
   final ProcessorPresetKind kind;
 
-  /// Canonical DSP id -> finite primitive (`String | bool | num`).
-  /// Keys always satisfy [processorPresetField] for [kind].
+  /// Canonical DSP id to finite primitive. Keys always satisfy
+  /// [processorPresetField] for [kind].
   final Map<String, Object> values;
 
   final DateTime createdAt;
@@ -121,7 +100,6 @@ class ProcessorPreset {
           Map<String, Object>.of(values),
         );
 
-  /// Copy with a new display name / timestamps (used by rename).
   ProcessorPreset copyWith({
     String? name,
     DateTime? updatedAt,
@@ -138,8 +116,8 @@ class ProcessorPreset {
     );
   }
 
-  /// Strict decode; throws [FormatException] on any unknown field, bad
-  /// primitive, bad scope, bad kind, or bad timestamp.
+  /// Strict decode: any unknown field, bad primitive, bad scope, bad kind,
+  /// or bad timestamp throws [FormatException].
   factory ProcessorPreset.fromJson(Map<String, dynamic> json) {
     const keys = {
       'id',
@@ -223,7 +201,6 @@ class ProcessorPreset {
     );
   }
 
-  /// Encode for the versioned device document.
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -236,7 +213,7 @@ class ProcessorPreset {
       };
 }
 
-/// Recall outcome for the UI. `ok` is true when [error] is null.
+/// Recall outcome for the UI.
 class ProcessorPresetResult {
   final String? error;
   final int confirmed;
@@ -251,27 +228,24 @@ class ProcessorPresetResult {
   bool get ok => error == null;
 }
 
-/// Store contract the processor UI renders. Implemented by the main
-/// `AppStore` over the engine (capture/recall) + `ProcessorPresetLibrary`
-/// (device persistence). `String?` returns are user-facing errors (null =
-/// success); recall reports per-param confirmation counts instead.
+/// Store contract the processor UI renders. `String?` returns are
+/// user-facing errors (null means success); recall reports per-param
+/// confirmation counts instead.
 abstract class ProcessorPresetStore implements Listenable {
   /// Capture target for [kind] from the active strip, or null when the
   /// current selection cannot hold that block.
   ProcessorPresetTarget? capturePresetTarget(ProcessorPresetKind kind);
 
-  /// Validate a target before use (null = usable). Checks driver/family
-  /// scoping, not live caps; recall filters by live caps.
+  /// Validate a target before use (null means usable). Recall filters by
+  /// live caps.
   String? presetTargetError(ProcessorPresetTarget target);
 
-  /// Presets for the target scope (`driver` + `family` + `kind`), newest
-  /// last (library order).
+  /// Presets for the target scope, newest last (library order).
   Future<List<ProcessorPreset>> loadProcessorPresets(
     ProcessorPresetTarget target,
   );
 
-  /// Capture the live block at [target] into the device library under
-  /// [name]. Returns a user-facing error, or null on success.
+  /// Capture the live block at [target] into the device library.
   Future<String?> saveProcessorPreset(
     ProcessorPresetTarget target,
     String name,
@@ -283,14 +257,14 @@ abstract class ProcessorPresetStore implements Listenable {
     String id,
   );
 
-  /// Rename preset [id] in scope. Returns a user-facing error, or null.
+  /// Rename preset [id] in scope.
   Future<String?> renameProcessorPreset(
     ProcessorPresetTarget target,
     String id,
     String name,
   );
 
-  /// Delete preset [id] in scope. Returns a user-facing error, or null.
+  /// Delete preset [id] in scope.
   Future<String?> deleteProcessorPreset(
     ProcessorPresetTarget target,
     String id,
@@ -298,32 +272,33 @@ abstract class ProcessorPresetStore implements Listenable {
 }
 
 // ---------------------------------------------------------------------------
-// Catalogue: explicit allow-lists (never an arbitrary prefix).
+// Catalogue: explicit allow-lists, never an arbitrary prefix.
 // ---------------------------------------------------------------------------
 
-/// SharedPreferences key for the versioned device document.
+/// Storage key for the versioned device document.
 const String kProcessorPresetStorageKey = 'openfader.processorPresets';
 
-/// Version of the stored JSON document (`{version, presets}`).
+/// Stored document version (`{version, presets}`).
 const int kProcessorPresetDocVersion = 1;
 
-/// Bounds for the stored document (never silently grow/truncate).
+/// Bounds for the stored document, never silently grown or truncated.
 const int kProcessorPresetMaxPresets = 500;
 const int kProcessorPresetMaxValuesPerPreset = 64;
 const int kProcessorPresetMaxDocBytes = 262144; // 256 KiB.
 
-/// Display-name bound (shared by save/rename/decode).
+/// Display-name bound, shared by save, rename, and decode.
 const int kProcessorPresetMaxNameLength = 64;
 
 /// Id/scope bounds.
 const int kProcessorPresetMaxIdLength = 128;
 const int kProcessorPresetMaxScopeLength = 64;
 
-/// Stored string-value bound (DSP values are numbers/bools; text stays tiny).
+/// Stored string-value bound (DSP values are numbers or bools, so text
+/// stays tiny).
 const int kProcessorPresetMaxStringValueLength = 256;
 
 /// EQ block: band freq/gain/q/type (1..6; recall narrows by live caps) plus
-/// HPF freq/slope. `eq_on` / `hpf_on` are never preset fields.
+/// HPF freq/slope. `eq_on` and `hpf_on` are never preset fields.
 const Set<String> _eqPresetFields = {
   'eq_mode',
   'hpf_freq',
@@ -389,12 +364,9 @@ const Set<String> _compPresetFields = {
   'comp_filter_freq',
 };
 
-/// True when [field] is a storable preset field for [kind].
-///
-/// Explicit allow-list over the canonical catalogue
-/// (`crates/core/src/params.rs`); anything else — including every bypass/on
-/// flag (`eq_on`, `hpf_on`, `gate_on`, `gate_filter_on`, `comp_on`,
-/// `comp_filter_on`) — returns false.
+/// True when [field] is a storable preset field for [kind], per the
+/// canonical catalogue (`crates/core/src/params.rs`). Anything else,
+/// including every bypass and on flag, returns false.
 bool processorPresetField(ProcessorPresetKind kind, String field) {
   return switch (kind) {
     ProcessorPresetKind.eq => _eqPresetFields.contains(field),
@@ -403,8 +375,7 @@ bool processorPresetField(ProcessorPresetKind kind, String field) {
   };
 }
 
-/// Storable fields for [kind] (unmodifiable; same set as
-/// [processorPresetField]).
+/// Storable fields for [kind] (same set as [processorPresetField]).
 Set<String> processorPresetFields(ProcessorPresetKind kind) {
   return switch (kind) {
     ProcessorPresetKind.eq => _eqPresetFields,
@@ -440,9 +411,8 @@ bool _isToken(String value, int maxLength) {
   return true;
 }
 
-/// Shared display-name validation. Trims, requires non-empty, enforces the
-/// length bound, and rejects control characters. Unicode names are otherwise
-/// preserved verbatim. Returns a user-facing error, or null when valid.
+/// Display-name validation shared by save, rename, and decode. Returns a
+/// user-facing error, or null when valid.
 String? validateProcessorPresetName(String name) {
   final trimmed = name.trim();
   if (trimmed.isEmpty) return 'Enter a preset name.';
@@ -460,8 +430,8 @@ String? validateProcessorPresetName(String name) {
   return null;
 }
 
-/// Encode presets as the bounded versioned document. Throws [StateError] on
-/// bound violations (too many presets, duplicate ids, oversized document).
+/// Encode presets as the bounded versioned document. Throws [StateError]
+/// on bound violations (too many presets, duplicate ids, oversized doc).
 String encodeProcessorPresets(List<ProcessorPreset> presets) {
   if (presets.length > kProcessorPresetMaxPresets) {
     throw StateError(
@@ -485,9 +455,8 @@ String encodeProcessorPresets(List<ProcessorPreset> presets) {
 }
 
 /// Strict decode of the versioned document. Returns `[]` only when nothing
-/// was ever stored (`null`/empty). Any corruption — bad JSON, wrong version,
-/// bad shape, unknown field, bad primitive, duplicate id, over bounds —
-/// throws [FormatException]; callers must surface it, never silently reset.
+/// was ever stored (`null` or empty). Any corruption throws
+/// [FormatException]; callers must surface it, never silently reset.
 List<ProcessorPreset> decodeProcessorPresets(String? raw) {
   if (raw == null || raw.isEmpty) return <ProcessorPreset>[];
   if (utf8.encode(raw).length > kProcessorPresetMaxDocBytes) {

@@ -1,13 +1,5 @@
 import '../palette.dart';
-// Channel DSP widgets: custom-painted EQ curve + RTA overlay, dyn transfer
-// curves + GR meter, touch knobs and section cards. No Material form
-// widgets: every DSP control is a CustomPainter + GestureDetector in ui4
-// dark tokens (see lib/theme.dart).
-//
-// Contents:
-// - EQ graph + RTA overlay (log-freq curve, RTA area overlay)
-// - dyn transfer graph + GR bar (transfer curve, GR bar)
-// - Preamp / Band / Hpf knob rows (vertical-drag knobs)
+// Every DSP control is a CustomPainter + GestureDetector; no Material form widgets.
 
 import 'dart:math' as math;
 
@@ -25,7 +17,6 @@ import 'console_button.dart';
 // Section card + small building blocks
 // ---------------------------------------------------------------------------
 
-/// Shared rounded processing card on a graphite surface.
 class U4Section extends StatelessWidget {
   final String title;
   final Widget child;
@@ -66,7 +57,7 @@ class U4Section extends StatelessWidget {
   }
 }
 
-/// Small on/off chip (custom painted toggle — no Switch widget).
+/// Custom-painted toggle; do not replace with a Switch widget.
 class U4Chip extends StatelessWidget {
   final String label;
   final bool on;
@@ -99,8 +90,6 @@ class U4Chip extends StatelessWidget {
 // Touch knob (vertical drag + double-tap reset, no Slider)
 // ---------------------------------------------------------------------------
 
-/// Touch knob: vertical drag edits (spec math via [specFromDrag]), double-tap
-/// resets to [defaultValue]. Paints arc + pointer + value text.
 class U4Knob extends StatefulWidget {
   final String label;
   final double value;
@@ -259,9 +248,8 @@ class _KnobPainter extends CustomPainter {
 // EQ curve + RTA overlay
 // ---------------------------------------------------------------------------
 
-/// EQ response painter: grid + summed curve + band nodes + live RTA area
-/// overlay. Measured bands retain their frequency edges and dB scale;
-/// legacy synthetic magnitudes stay on their separate demo path.
+/// Measured bands keep their frequency edges and dB scale; synthetic demo
+/// magnitudes stay on their separate path.
 class EqCurvePainter extends CustomPainter {
   final ConsolePalette palette;
   final List<double> responseDb; // EqGraphGeom.n + 1 samples
@@ -513,7 +501,6 @@ class EqCurvePainter extends CustomPainter {
       old.rtaActive != rtaActive;
 }
 
-/// Interactive EQ graph: tap to select, drag frequency/gain, pinch Q.
 /// HPF drags edit frequency only.
 class U4EqGraph extends StatelessWidget {
   final ChannelEqVm eq;
@@ -783,8 +770,7 @@ class U4GraphTouchSurface extends StatelessWidget {
 // Dynamics transfer curve + GR bar
 // ---------------------------------------------------------------------------
 
-/// Transfer-curve painter (dynModel.ts: lo..0 axes, gold curve, threshold
-/// line + tag, operating dot, unity diagonal).
+/// Curve math comes from dynModel.ts; this only paints.
 class DynCurvePainter extends CustomPainter {
   final ConsolePalette palette;
   final ChannelDynVm dyn;
@@ -884,8 +870,7 @@ class DynCurvePainter extends CustomPainter {
       old.color != color;
 }
 
-/// Interactive transfer graph: horizontal drag edits threshold (both
-/// kinds); comp vertical drag edits ratio. No sliders.
+/// Vertical drag edits ratio on comp only; threshold edits work for both kinds.
 class U4DynGraph extends StatefulWidget {
   final ChannelDynVm dyn;
   final double? levelDb;
@@ -961,7 +946,7 @@ class _U4DynGraphState extends State<U4DynGraph> {
   }
 }
 
-/// GR meter bar: horizontal bar, 0..-24 dB scale.
+/// Full-scale at -24 dB.
 class U4GrBar extends StatelessWidget {
   final double grDb; // <= 0
   final Color color;
@@ -1039,7 +1024,6 @@ class _GrPainter extends CustomPainter {
 // Send row: level fader-strip + mute + tap cycle, no Slider
 // ---------------------------------------------------------------------------
 
-/// One send row: vertical mini-fader (drag), mute chip, tap cycler.
 class U4SendRow extends StatelessWidget {
   final ChannelSendVm send;
   final ValueChanged<double> onLevel;
@@ -1221,8 +1205,7 @@ class _MiniLevelPainter extends CustomPainter {
 // Input level hbar (hbar meter variant)
 // ---------------------------------------------------------------------------
 
-/// Horizontal input-level bar fed by a dB ValueNotifier (no animation
-/// widgets: repaints only via the notifier).
+/// Repaints only via the notifier; no animation widgets.
 class U4LevelHbar extends StatelessWidget {
   final ValueNotifier<double> levelDb;
 

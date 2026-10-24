@@ -15,8 +15,7 @@
 
 use rosc::OscType;
 
-/// Map an engineering value to a normalized wire float over `[min, max]`
-/// (firmware `lin(n)` leaves). Rejects NaN/infinite and out-of-range values.
+/// Firmware `lin(n)` leaves: linear over `[min, max]`.
 pub fn lin_to_wire(v: f32, min: f32, max: f32, tag: &str, what: &str) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("{tag} {what} must be finite, got {v}");
@@ -27,7 +26,7 @@ pub fn lin_to_wire(v: f32, min: f32, max: f32, tag: &str, what: &str) -> anyhow:
     Ok((v - min) / (max - min))
 }
 
-/// Map a normalized wire float back over `[min, max]` (firmware `lin(n)`).
+/// Firmware `lin(n)` leaves (decode direction).
 pub fn wire_to_lin(w: f32, min: f32, max: f32, tag: &str, what: &str) -> anyhow::Result<f32> {
     if !w.is_finite() {
         anyhow::bail!("{tag} {what} wire value must be finite, got {w}");
@@ -38,9 +37,7 @@ pub fn wire_to_lin(w: f32, min: f32, max: f32, tag: &str, what: &str) -> anyhow:
     Ok(min + (max - min) * w)
 }
 
-/// Map an engineering value to a normalized wire float over `[min, max]`
-/// (firmware `log(n)` leaves: `value = min * exp(log(max/min) * wire)`).
-/// Rejects NaN/infinite and out-of-range values.
+/// Firmware `log(n)` leaves: `value = min * exp(log(max/min) * wire)`.
 pub fn log_to_wire(v: f32, min: f32, max: f32, tag: &str, what: &str) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("{tag} {what} must be finite, got {v}");
@@ -51,7 +48,7 @@ pub fn log_to_wire(v: f32, min: f32, max: f32, tag: &str, what: &str) -> anyhow:
     Ok((v / min).ln() / (max / min).ln())
 }
 
-/// Map a normalized wire float back over `[min, max]` (firmware `log(n)`).
+/// Firmware `log(n)` leaves (decode direction).
 pub fn wire_to_log(w: f32, min: f32, max: f32, tag: &str, what: &str) -> anyhow::Result<f32> {
     if !w.is_finite() {
         anyhow::bail!("{tag} {what} wire value must be finite, got {w}");
@@ -62,8 +59,7 @@ pub fn wire_to_log(w: f32, min: f32, max: f32, tag: &str, what: &str) -> anyhow:
     Ok(min * (w * (max / min).ln()).exp())
 }
 
-/// Encode an int leaf (modes, sources, taps, filter types, enums):
-/// whole-number floats in `min..=max` become the wire int.
+/// Int leaf: whole-number floats in `min..=max` become the wire int.
 pub fn int_to_arg(v: f32, min: i32, max: i32, tag: &str, what: &str) -> anyhow::Result<OscType> {
     if !v.is_finite() || v.fract() != 0.0 {
         anyhow::bail!("{tag} {what} must be a whole number, got {v}");
@@ -75,7 +71,7 @@ pub fn int_to_arg(v: f32, min: i32, max: i32, tag: &str, what: &str) -> anyhow::
     Ok(OscType::Int(i))
 }
 
-/// Decode an int leaf reply (int kept, whole-number float accepted).
+/// Int leaf reply decode (whole-number floats accepted).
 pub fn int_from_msg(
     msg: &rosc::OscMessage,
     min: i32,
@@ -138,7 +134,6 @@ mod tests {
         assert_eq!(log_to_wire(0.02, 0.02, 2000.0, "gate", "hold").unwrap(), 0.0);
         assert_eq!(log_to_wire(2000.0, 0.02, 2000.0, "gate", "hold").unwrap(), 1.0);
         assert_eq!(wire_to_log(0.0, 0.02, 2000.0, "gate", "hold").unwrap(), 0.02);
-        // Live rig wire 0.76 -> ~126 ms.
         let live = wire_to_log(0.76, 0.02, 2000.0, "gate", "hold").unwrap();
         assert!((live - 126.0).abs() < 3.0, "live hold {live}");
         assert!(log_to_wire(0.019, 0.02, 2000.0, "gate", "hold").is_err());

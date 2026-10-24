@@ -28,25 +28,21 @@ use rosc::{OscMessage, OscType};
 
 /// EQ gain bounds in dB (firmware map `g lin(121) // -15..15`).
 pub const EQ_GAIN_MIN_DB: f32 = -15.0;
-/// EQ gain upper bound (see [`EQ_GAIN_MIN_DB`]).
 pub const EQ_GAIN_MAX_DB: f32 = 15.0;
 
 /// EQ corner bounds in Hz (firmware map `f log(201) // 20..20000`).
 pub const EQ_FREQ_MIN_HZ: f32 = 20.0;
-/// EQ corner upper bound (see [`EQ_FREQ_MIN_HZ`]).
 pub const EQ_FREQ_MAX_HZ: f32 = 20000.0;
 
 /// EQ Q bounds (firmware map `q log(72) // 10..0.3`; xair-api validates
 /// `0.3..=10`). Engineering direction is low→high; the WIRE runs high→low
 /// (wire 0 = Q 10), handled inside [`q_to_wire`]/[`wire_to_q`].
 pub const EQ_Q_MIN: f32 = 0.3;
-/// EQ Q upper bound (see [`EQ_Q_MIN`]).
 pub const EQ_Q_MAX: f32 = 10.0;
 
 /// EQ filter-type bounds (firmware map `type [0,5]`; Maillot X32 doc order
 /// LCut, LShv, PEQ, VEQ, HShv, HCut).
 pub const EQ_TYPE_MIN: i32 = 0;
-/// EQ filter-type upper bound (see [`EQ_TYPE_MIN`]).
 pub const EQ_TYPE_MAX: i32 = 5;
 
 /// Lowest EQ band (firmware map: ch/rtn bands `1..4`, bus/lr `1..6` —
@@ -58,22 +54,18 @@ pub const EQ_BAND_MIN: u8 = 1;
 pub fn eq_on_r(root: &str) -> String {
     format!("{root}/eq/on")
 }
-/// Root-parameterized EQ band gain address (`g`, linear `−15..+15` dB).
 pub fn eq_gain_r(root: &str, band: u8) -> anyhow::Result<String> {
     check_band_wide(band)?;
     Ok(format!("{root}/eq/{band}/g"))
 }
-/// Root-parameterized EQ band corner address (`f`, log `20..20000` Hz).
 pub fn eq_freq_r(root: &str, band: u8) -> anyhow::Result<String> {
     check_band_wide(band)?;
     Ok(format!("{root}/eq/{band}/f"))
 }
-/// Root-parameterized EQ band Q address (`q`, inverted-log `0.3..=10`).
 pub fn eq_q_r(root: &str, band: u8) -> anyhow::Result<String> {
     check_band_wide(band)?;
     Ok(format!("{root}/eq/{band}/q"))
 }
-/// Root-parameterized EQ band filter-type address (`type`, `0..=5`).
 pub fn eq_type_r(root: &str, band: u8) -> anyhow::Result<String> {
     check_band_wide(band)?;
     Ok(format!("{root}/eq/{band}/type"))
@@ -90,9 +82,7 @@ pub fn check_band_wide(band: u8) -> anyhow::Result<u8> {
     Ok(band)
 }
 
-/// Map an EQ gain in dB to the normalized wire float
-/// (`lin_set(-15, 15, db)`). Rejects NaN/infinite and out-of-range values
-/// before anything is sent.
+/// xair-api `lin_set(-15, 15, db)`.
 pub fn gain_db_to_wire(db: f32) -> anyhow::Result<f32> {
     if !db.is_finite() {
         anyhow::bail!("eq gain must be finite, got {db}");
@@ -103,7 +93,7 @@ pub fn gain_db_to_wire(db: f32) -> anyhow::Result<f32> {
     Ok((db - EQ_GAIN_MIN_DB) / (EQ_GAIN_MAX_DB - EQ_GAIN_MIN_DB))
 }
 
-/// Map a normalized wire float back to EQ gain dB (`lin_get(-15, 15, v)`).
+/// xair-api `lin_get(-15, 15, v)`.
 pub fn wire_to_gain_db(v: f32) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("eq gain wire value must be finite, got {v}");
@@ -114,9 +104,7 @@ pub fn wire_to_gain_db(v: f32) -> anyhow::Result<f32> {
     Ok(EQ_GAIN_MIN_DB + (EQ_GAIN_MAX_DB - EQ_GAIN_MIN_DB) * v)
 }
 
-/// Map an EQ corner in Hz to the normalized wire float
-/// (`log_set(20, 20000, hz)`). Rejects NaN/infinite and out-of-range values
-/// before anything is sent.
+/// xair-api `log_set(20, 20000, hz)`.
 pub fn freq_hz_to_wire(hz: f32) -> anyhow::Result<f32> {
     if !hz.is_finite() {
         anyhow::bail!("eq corner must be finite, got {hz}");
@@ -127,8 +115,7 @@ pub fn freq_hz_to_wire(hz: f32) -> anyhow::Result<f32> {
     Ok((hz / EQ_FREQ_MIN_HZ).ln() / (EQ_FREQ_MAX_HZ / EQ_FREQ_MIN_HZ).ln())
 }
 
-/// Map a normalized wire float back to the EQ corner in Hz
-/// (`log_get(20, 20000, v)`), rounded to 0.1 Hz like xair-api.
+/// xair-api `log_get(20, 20000, v)`, rounded to 0.1 Hz.
 pub fn wire_to_freq_hz(v: f32) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("eq freq wire value must be finite, got {v}");
@@ -139,10 +126,7 @@ pub fn wire_to_freq_hz(v: f32) -> anyhow::Result<f32> {
     Ok((EQ_FREQ_MIN_HZ * (v * (EQ_FREQ_MAX_HZ / EQ_FREQ_MIN_HZ).ln()).exp() * 10.0).round() / 10.0)
 }
 
-/// Map an EQ Q to the normalized wire float. The wire runs INVERTED
-/// (xair-api `quality` setter: `1.0 - log_set(0.3, 10, q)`; firmware map
-/// `q log(72) // 10..0.3`). Rejects NaN/infinite and out-of-range values
-/// before anything is sent.
+/// Wire runs INVERTED: xair-api `1.0 - log_set(0.3, 10, q)`, firmware `q log(72) // 10..0.3`.
 pub fn q_to_wire(q: f32) -> anyhow::Result<f32> {
     if !q.is_finite() {
         anyhow::bail!("eq Q must be finite, got {q}");
@@ -153,8 +137,7 @@ pub fn q_to_wire(q: f32) -> anyhow::Result<f32> {
     Ok(1.0 - (q / EQ_Q_MIN).ln() / (EQ_Q_MAX / EQ_Q_MIN).ln())
 }
 
-/// Map a normalized wire float back to EQ Q (`log_get(0.3, 10, 1 - v)`),
-/// rounded to 0.1 like xair-api.
+/// xair-api `log_get(0.3, 10, 1 - v)`, rounded to 0.1.
 pub fn wire_to_q(v: f32) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("eq Q wire value must be finite, got {v}");
@@ -165,9 +148,7 @@ pub fn wire_to_q(v: f32) -> anyhow::Result<f32> {
     Ok((EQ_Q_MIN * ((1.0 - v) * (EQ_Q_MAX / EQ_Q_MIN).ln()).exp() * 10.0).round() / 10.0)
 }
 
-/// Encode an EQ filter type: whole-number floats `0..=5` (the relay delivers
-/// UI numbers as [`openfader_core::ParamValue::Float`]) encode to the int the
-/// desk answers.
+/// Whole-number floats `0..=5` become the wire int.
 pub fn eqtype_to_arg(v: f32) -> anyhow::Result<OscType> {
     if !v.is_finite() || v.fract() != 0.0 {
         anyhow::bail!("eq type must be a whole number, got {v}");
@@ -179,9 +160,7 @@ pub fn eqtype_to_arg(v: f32) -> anyhow::Result<OscType> {
     Ok(OscType::Int(i))
 }
 
-/// Decode an EQ filter-type reply (int `0..=5` per firmware map; a
-/// whole-number float is accepted the way [`crate::fx::parse_fx_param`]
-/// accepts both wire shapes for enum pars).
+/// Int `0..=5`; whole-number floats accepted like [`crate::fx::parse_fx_param`].
 pub fn eqtype_from_msg(msg: &OscMessage) -> anyhow::Result<i32> {
     match msg.args.first() {
         Some(OscType::Int(i)) => {

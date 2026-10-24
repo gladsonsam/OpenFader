@@ -1,15 +1,6 @@
-// Channel screen: per-channel preamp / EQ / dynamics / inserts / sends /
-// groups / source / presets with the tab rail (input/eq/gate/comp/sends)
-//
-// Wiring: everything flows through [ChannelStore] (constructor injection —
-// no dependency on lib/core/store, lib/shell, lib/state or Area A). The
-// owner implements it over the engine (cmdParam/cmdFocus/cmdLock/
-// cmdUnlock/cmdSubgroupAssign/cmdMuteGroupAssign); this file only renders
-// ui4 tokens (see lib/theme.dart) with CustomPainter DSP controls.
-// Portrait-first: horizontal tab rail on top, single vertical scroll of
-// section cards. Freshness comes from the single shell-owned 80 ms loop
-// (AppShell -> AppStore.pollMeters); this page owns no timer and renders
-// levels + spectrum + GR in place via notifiers.
+// Channel screen: preamp, EQ, dynamics, sends, groups, and source tabs.
+// The owner implements the store over the engine. Freshness comes from the
+// single shell-owned 80 ms loop; this page owns no timer.
 
 import '../core/channel_name.dart';
 import '../core/processor_presets.dart';
@@ -38,21 +29,15 @@ part 'processing_workspace.dart';
 part 'processing_dynamics.dart';
 part 'processing_mobile.dart';
 
-/// Channel tabs (web CHANNEL_TAB_ORDER + groups/source/presets sections).
-/// New order: Input → Gate → Comp → EQ. Sends lives inside Input;
-/// groups/presets left the tab bar (presets is a per-processor dropdown).
+// Channel tabs: sends lives inside Input; presets is a per-processor dropdown.
 enum ChannelTab { input, gate, comp, eq }
 
-/// Minimal store contract the channel screen renders. Implemented by the
-/// shell/owner over the live engine or a fixture sim. Meters arrive via
-/// stable [ValueNotifier]s updated in place by [pollMeters]; DSP snapshots
-/// ([eq]/[gate]/[comp]/[sends]/...) notify through [ChangeNotifier].
+// Implemented by the shell over the engine or a fixture sim.
 abstract class ChannelStore extends ChangeNotifier
     implements ChannelNameStore, ProcessorPresetStore {
   String get stripKey;
   String get displayName;
 
-  /// 1-based channel number for the toolbar readout.
   String get channelNumber;
 
   /// Live fader notifier for the toolbar readout + typed entry.
@@ -66,7 +51,7 @@ abstract class ChannelStore extends ChangeNotifier
   bool? paramBool(String leaf);
   bool supports(String leaf);
 
-  /// Catalogue reads do not imply that a live value is hydrated/editable.
+  // Catalogue reads do not imply a hydrated or editable live value.
   bool get capabilitiesReady;
   Map<String, dynamic>? paramMetadata(String leaf);
 
@@ -80,17 +65,14 @@ abstract class ChannelStore extends ChangeNotifier
 
   // --- live feeds (80 ms loop target) ---
   ValueNotifier<double> get levelDb;
-  ValueNotifier<List<double>> get spectrum; // legacy demo magnitudes 0..1
-  /// Optional measured feed. Older/demo stores keep their legacy spectrum.
+  ValueNotifier<List<double>> get spectrum;
   ValueListenable<AudioSpectrumFrame?> get audioSpectrum =>
       const AlwaysStoppedAnimation<AudioSpectrumFrame?>(null);
 
-  /// Measured per-band dB maxima; demo/older stores safely omit peak hold.
   ValueListenable<AudioSpectrumPeaks> get audioSpectrumPeaks =>
       const AlwaysStoppedAnimation<AudioSpectrumPeaks>(
           AudioSpectrumPeaks.empty());
 
-  /// Presentation reset for the user's RTA visibility toggle; no desk writes.
   void resetAudioSpectrumPeaks() {}
   double? grDb(DynKind kind);
   Future<void> pollMeters();
@@ -101,8 +83,7 @@ abstract class ChannelStore extends ChangeNotifier
   void setSourceSelected(int selected);
   void setSendPan(int slot, double pan);
 
-  /// Stable per-channel/send feed for `level` (dB) or `pan` (-100..100).
-  /// Null means no value has arrived. The store owns the notifier.
+  // Stable per-channel feed for `level` or `pan`. Null means no value arrived.
   ValueNotifier<double?> sendParamNote(int slot, String param);
   bool? get mainAssigned;
   void setMainAssigned(bool on);
@@ -120,15 +101,14 @@ abstract class ChannelStore extends ChangeNotifier
   bool get locked;
   bool get focused;
 
-  // --- tab + selection state owned here until the Area A merge ---
+  // --- tab + selection state ---
   ChannelTab get tab;
   void setTab(ChannelTab tab);
   void selectEqBand(int band);
 
-  // --- edits (owner forwards through the 60 Hz coalescer) ---
+  // --- edits ---
   void setEqParam(int band, String param, double value);
 
-  /// Set an outer band's presentation shape; the store maps native enums.
   void setEqBandType(int band, EqFilterShape shape);
   void setEqOn(bool on);
   void setEqBandOn(int band, bool on);
@@ -146,8 +126,7 @@ abstract class ChannelStore extends ChangeNotifier
   void setPreamp(String leaf, double value);
 }
 
-/// One focused numeric control: the page's top readout renders [text]
-/// live and tapping it opens typed entry that flows back through [apply].
+// One focused numeric control: tapping the top readout opens typed entry.
 class ChannelFocus {
   final String title;
   final String label;
@@ -198,16 +177,11 @@ class _ChannelPageState extends State<ChannelPage> {
   double _swipeDistance = 0;
   ChannelTab? _swipeTab;
 
-  /// Focused numeric control; the slim bar under the tab rail renders it
-  /// live and tapping opens typed entry. Cleared on tab switch (EQ
-  /// re-focuses the selected band's frequency).
   late final _focus = widget.controlFocus ?? ValueNotifier<ChannelFocus?>(null);
 
   @override
   void initState() {
     super.initState();
-    // Keep the engine's persistent detail lane on this channel
-    // (web: w.setOpenChannel(bridgeStrip(w, id))).
     widget.store.cmdFocus();
   }
 
@@ -218,8 +192,6 @@ class _ChannelPageState extends State<ChannelPage> {
   }
 
   void _switchTab(ChannelStore store, ChannelTab tab) {
-    // EQ opens focused on the selected band's frequency (the top readout's
-    // default subject); other tabs clear the focus bar.
     _focus.value =
         tab == ChannelTab.eq ? eqFreqFocus(store, store.eq.selectedBand) : null;
     store.setTab(tab);
@@ -239,9 +211,8 @@ class _ChannelPageState extends State<ChannelPage> {
       },
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        // Directional recognition leaves vertical scrolling to the scroll
-        // view. Descendant graph/slider recognizers take precedence over
-        // this fallback, so editing a control cannot also change tabs.
+        // Descendant graph and slider recognizers win over this fallback
+        // so editing a control cannot also change tabs.
         onHorizontalDragStart: (_) {
           _swipeDistance = 0;
           _swipeTab = store.tab;
@@ -283,8 +254,6 @@ class _ChannelPageState extends State<ChannelPage> {
           listenable: Listenable.merge([widget.store, PrefsService.instance]),
           builder: (context, _) {
             final store = widget.store;
-            // The toolbar lives in the shell header now; this page owns
-            // the focus readout + processing navigation + content.
             final wide = MediaQuery.sizeOf(context).width >= 700;
             final tabContent = switch (store.tab) {
               ChannelTab.input =>
@@ -312,8 +281,6 @@ class _ChannelPageState extends State<ChannelPage> {
                           child: tabContent)),
             );
             return LayoutBuilder(builder: (context, bounds) {
-              // HTML phone: 362 / 466 processing, 104 / 466 selected strip.
-              // Tablet: selected-channel strip and mix/bank rail stay persistent.
               final stripWidth = wide
                   ? bounds.maxWidth * (192.2 + 93) / 1823
                   : bounds.maxWidth * 104 / 466;
@@ -348,14 +315,6 @@ class _ChannelPageState extends State<ChannelPage> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Focus readout bar: slim live row under the tab rail. Tapping opens typed
-// entry for the focused control.
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Processing navigation: tablet side menu with live previews, phone flush
-// bottom bar. Order is Input → Gate → Comp → EQ.
 const _tabOrder = [
   ChannelTab.input,
   ChannelTab.gate,
@@ -488,7 +447,6 @@ class _MenuRow extends StatelessWidget {
   }
 }
 
-/// Live processing preview thumbnails (interaction disabled).
 class _NavPreview extends StatelessWidget {
   final ChannelStore store;
   final ChannelTab tab;
@@ -561,7 +519,6 @@ class _NavPreview extends StatelessWidget {
   }
 }
 
-/// Phone flush bottom bar: four cells with mini previews.
 class _BottomNav extends StatelessWidget {
   final ChannelStore store;
   final ChannelTab tab;
@@ -655,11 +612,7 @@ class _BottomCell extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Focus builders: live text reads the store at render time (closures over
-// snapshots would go stale); apply mirrors the knob's write path.
-// ---------------------------------------------------------------------------
-
+// Live text reads the store at render time because closures over snapshots go stale.
 String _eqFreqText(ChannelStore store, int band) {
   if (band == 0) return '${store.eq.hpfF.toStringAsFixed(0)} Hz';
   final bands = store.eq.bands;
@@ -693,7 +646,6 @@ ChannelFocus _parameterFocus(ChannelStore store, String leaf, String title,
           update(next);
         });
 
-/// Frequency focus for an EQ band (0 = HPF).
 ChannelFocus eqFreqFocus(ChannelStore store, int band) {
   final b = band.clamp(0, 4);
   return _parameterFocus(
@@ -746,11 +698,6 @@ String _dynLiveText(ChannelStore store, DynKind kind, String prop) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Input tab: preamp + source
-// ---------------------------------------------------------------------------
-
-/// Gray/red text switch (48V rule): no box, 44pt target.
 class _TextSwitch extends StatelessWidget {
   final String label;
   final bool active;
@@ -786,15 +733,6 @@ class _TextSwitch extends StatelessWidget {
         ),
       );
 }
-
-// ---------------------------------------------------------------------------
-// Sends block (inside Input): one row per send slot.
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Shared boxed processor header: title + power toggle. ON is the lime
-// boxed style; bypassed is charcoal with gray text.
-// ---------------------------------------------------------------------------
 
 class _ProcessorHeader extends StatelessWidget {
   final String title;
@@ -911,7 +849,6 @@ class _KnobDef {
 List<_KnobDef> _dynKnobs(DynKind kind, ChannelDynVm d) {
   _KnobDef knob(String label, String prop, double value, String text) {
     final range = d.ranges[prop];
-    // Inert track coordinates when the value or range is unavailable.
     return _KnobDef(
         label, prop, value, range?.first ?? 0, range?.last ?? 1, text);
   }
@@ -934,8 +871,3 @@ List<_KnobDef> _dynKnobs(DynKind kind, ChannelDynVm d) {
     knob('Gain', 'makeup', d.makeup, '${d.makeup.toStringAsFixed(1)} dB'),
   ];
 }
-
-// ---------------------------------------------------------------------------
-// (Sends/groups/presets left the tab bar: sends + assignments live inside
-// Input above; presets is a per-processor dropdown in the settings row.)
-// ---------------------------------------------------------------------------

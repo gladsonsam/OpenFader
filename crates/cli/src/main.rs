@@ -202,7 +202,6 @@ fn make_driver(kind: &str, preset: openfader_sim::SimPreset) -> AnyDriver {
 async fn main() -> anyhow::Result<()> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
 
-    // Global flags (may appear before the command).
     let mut driver = "sim".to_string();
     let mut addr: Option<String> = None;
     let mut preset = openfader_sim::SimPreset::Generic;
@@ -264,7 +263,6 @@ async fn main() -> anyhow::Result<()> {
         std::process::exit(2);
     }
 
-    // `discover` needs no driver instance.
     if rest[0] == "discover" {
         let mut timeout = Duration::from_secs(2);
         if let Some(pos) = rest.iter().position(|a| a == "--timeout") {
@@ -293,7 +291,7 @@ async fn main() -> anyhow::Result<()> {
         }
     });
     if let Err(e) = drv.connect(&target).await {
-        // Hardware stubs bail until their protocol lands; report cleanly.
+        // A failed connect is fatal for the CLI; report it and exit.
         eprintln!("connect {driver} @ {target} failed: {e:#}");
         std::process::exit(1);
     }
@@ -303,7 +301,7 @@ async fn main() -> anyhow::Result<()> {
         "list" => {
             // Per-strip queries (fader/on/name reads), never `snapshot()`:
             // the xair driver has no snapshot impl, and this way `list`
-            // works against live hardware (T6). One row per channel strip.
+            // works against live hardware. One row per channel strip.
             for i in 0..count {
                 let strip = StripId(i as u16);
                 let name = drv.get_name(strip).await?;
@@ -311,7 +309,6 @@ async fn main() -> anyhow::Result<()> {
                 let mute = drv.get_mute(strip).await?;
                 println!(
                     "{:>3} {:<8} fader={:.2} {}",
-                    // `s.id.0 + 1` display numbering kept from snapshot form.
                     strip.0 + 1,
                     name,
                     fader,
@@ -415,7 +412,6 @@ mod tests {
 
     #[test]
     fn param_value_typing_follows_catalogue() {
-        // Float/enum ids take numbers (send tap is an enum → float).
         assert!(matches!(
             parse_param_value("pan", "25").unwrap(),
             ParamValue::Float(_)
@@ -424,7 +420,6 @@ mod tests {
             parse_param_value("send1_tap", "2").unwrap(),
             ParamValue::Float(_)
         ));
-        // Bool ids take on/off words.
         assert_eq!(
             parse_param_value("mute", "on").unwrap(),
             ParamValue::Bool(true)
@@ -433,7 +428,6 @@ mod tests {
             parse_param_value("phantom", "off").unwrap(),
             ParamValue::Bool(false)
         );
-        // Text ids keep the raw string.
         assert_eq!(
             parse_param_value("name", "TEST").unwrap(),
             ParamValue::Text("TEST".to_string())

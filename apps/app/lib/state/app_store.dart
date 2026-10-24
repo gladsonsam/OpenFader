@@ -1,33 +1,12 @@
-// Minimal central store: the live engine binding for the app, reduced to
-// what the app renders: connection state,
-// strips, meters and scenes over [EngineApi], with optimistic-write+confirm
-// (see `lib/core/store.dart`) and 60 Hz
-// coalesced sends (see `lib/core/coalescer.dart`).
-//
-// One [AppStore] implements the [MixerStore], [MetersStore] and
-// [ChannelStore] contracts (constructor injection — no global singleton,
-// so this never fights the screen workers). Freshness comes from the
-// single shell-owned 80 ms ticker (AppShell calls [pollMeters]); screens
-// own no timer and only listen to already-updating notifiers. Per-strip
-// control state (fader/mute/pan) rides stable [ValueNotifier]s updated in
-// place and never rebuilds sibling widgets, while structural state
-// (strips/bank/bus/connection, solo banner) notifies through
-// [ChangeNotifier]. Meter levels ride the same stable-notifier pattern.
-//
-// Mapping gaps (honest, not faked):
-// - Channel writes use canonical desk catalogue leaves
-//   (crates/core/src/params.rs: eqN_freq/gain/q, hpf_freq/hpf_on/hpf_slope,
-//   gate_/comp_*, sendN_level/tap/on, polarity — never invert/eqN_f/eqN_g/
-//   sendN_mute). Short UI leaves are translated in [AppStore.deskLeaf], the
-//   single choke point covering both direct cmdParam calls and the
-//   ChannelWrites queue. Neither hardware driver has per-band EQ bypass.
-// - EQ/dyn view fallbacks keep getter interfaces stable; hardware edits
-//   remain disabled until the corresponding desk value is received.
-// - Bus rows render the MAIN bus (+ known engine buses); the bus popup
-//   picks the master bus shown, it does not re-patch routing.
-// - Binary meter/GR/tap frames ride the hot path ([EngineApi.pollBinary]
-//   + [applyBinaryFrame]); [EngineApi.poll] stays the JSON fallback for
-//   control frames — and for meters when binary is unavailable.
+// Central store: live engine binding with optimistic-write plus confirm and coalesced sends.
+// One store implements the mixer, meters, and channel contracts over constructor
+// injection. The shell owns the single 80 ms ticker; screens own no timer.
+// Per-strip control state rides stable notifiers updated in place, while structural
+// state notifies through ChangeNotifier.
+// Mapping gaps, honest not faked: channel writes use canonical desk leaves translated
+// in deskLeaf; EQ and dynamics edits stay disabled until the desk value arrives;
+// the bus popup picks the master bus shown without re-patching routing; binary frames
+// ride the hot path while poll stays the JSON fallback.
 library;
 
 import 'dart:async';
@@ -56,8 +35,8 @@ double _linToDb(double l) => (l <= 0 || !l.isFinite)
     ? double.negativeInfinity
     : 20 * math.log(l) / math.ln10;
 
-// A recall owns its expectations independently of optimistic pending edits.
-// Deadlines are advanced only by the existing shell poll; no extra ticker.
+// A recall owns its expectations independently of pending edits because shell poll advances deadlines.
+
 class _PresetRecall {
   _PresetRecall(this.target, this.generation);
   final ProcessorPresetTarget target;
@@ -103,9 +82,8 @@ class AppStore extends ChangeNotifier
 
   final EngineState engine = EngineState();
   bool _polling = false;
-  // Binary meter path armed. A stale native library without `pollBinary`
-  // latches this off for the session (JSON meters from `poll` keep
-  // rendering); attach() re-arms so an upgraded library is picked up.
+  // A stale library without pollBinary latches binary off, so JSON meters keep rendering.
+
   bool _binaryMeters = true;
   final ps.StoreMaps _maps = ps.StoreMaps();
 
@@ -905,8 +883,8 @@ class AppStore extends ChangeNotifier
   List<BridgeGroup>? _groupsCache;
   List<ChannelSendVm>? _sendsCache;
 
-  /// Drop every derived-list cache. Call from any mutator that can affect
-  /// what the cached getters return (see call sites).
+  // Drop every derived-list cache after any mutator affecting the cached getters.
+
   void _invalidateDerived() {
     _bankRangesCache = null;
     _stripsCache = null;
@@ -920,7 +898,8 @@ class AppStore extends ChangeNotifier
   // Lifecycle
   // ------------------------------------------------------------------
 
-  /// Attach to a booted client id (after `api.boot()`), then resync.
+  // Attach to a booted client id, then resync.
+
   Future<void> attach(String clientId) async {
     _invalidatePresetOperations('Connection changed. Reopen presets.');
     _clientId = clientId;
@@ -946,20 +925,22 @@ class AppStore extends ChangeNotifier
   bool get onlineFlag => _online;
   String get statusMessage => _message;
 
-  /// Most recent poll/cmd transport failure, '' when none. Shown on the
-  /// Link tab alongside engine `error` frames.
+  // Most recent poll or cmd transport failure, or '' when none.
+
   String get transportError => _transportError;
   DateTime? get transportErrorAt => _transportErrorAt;
 
-  /// Each received failure is distinct even when its message is unchanged.
+  // Each received failure is distinct even when its message repeats.
+
   int get errorRevision => _errorRevision;
 
-  /// Preferred error string for UI: transport failure wins (it explains
-  /// silent probes), else the engine `error` frame. '' when healthy.
+  // Transport failure wins because it explains silent probes, else the engine error frame.
+
   String get visibleError =>
       _transportError.isNotEmpty ? _transportError : engine.error;
 
-  /// Timestamp of [visibleError], null when no error is shown.
+  // Timestamp of the visible error, or null when healthy.
+
   DateTime? get visibleErrorAt =>
       _transportError.isNotEmpty ? _transportErrorAt : _engineErrorAt;
 
@@ -973,8 +954,8 @@ class AppStore extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Clear both transport and engine error displays (engine re-sets its own
-  /// on the next `error` frame).
+  // Clear both error displays; the engine re-sets its own on the next error frame.
+
   void clearErrors() {
     _transportError = '';
     _transportErrorAt = null;
@@ -995,8 +976,8 @@ class AppStore extends ChangeNotifier
     }));
   }
 
-  /// Raw Cmd JSON write for the Area A router (D-screen commands that have
-  /// no dedicated AppStore method: scan/probe/connect/fx/scene/...).
+  // Raw Cmd JSON write for commands with no dedicated store method.
+
   void sendRaw(String json) {
     _prepareConnectionCommand(json);
     _send(json);
@@ -1038,10 +1019,8 @@ class AppStore extends ChangeNotifier
     await pollMeters();
   }
 
-  /// Short UI leaves (as queued by ChannelWrites/channel.dart) translated
-  /// to canonical desk catalogue ids (crates/core/src/params.rs, mirrored
-  /// by web engineBridge.ts bridgeEq: band 0 = HPF; 1..6 = eqN_freq/gain/q;
-  /// phase invert rides `polarity`).
+  // Short UI leaves translate to canonical desk ids with HPF on band 0 and polarity for invert.
+
   static final RegExp _eqShortLeaf = RegExp(r'^eq(\d+)_([fg])$');
 
   static String deskLeaf(String leaf) {
@@ -1203,10 +1182,7 @@ class AppStore extends ChangeNotifier
     if (dirty) notifyListeners();
   }
 
-  /// Binary fan-in for the meter hot path (`pollBinary` frames) and the
-  /// future WS-transport path (SPEC 2a seq/t_ms). Version-mismatched or
-  /// short frames decode to null and are skipped — JSON meters from the
-  /// fallback poll keep the ladders alive.
+  // Binary fan-in for the meter hot path; bad frames decode to null and are skipped.
   void applyBinaryFrame(Uint8List bytes) {
     final f = parseBinary(bytes);
     if (f == null) return;
@@ -1215,12 +1191,8 @@ class AppStore extends ChangeNotifier
     _syncMeters(_nowMs());
   }
 
-  /// True for engine frames that only move per-strip/master control state
-  /// (fader/mute/pan/send level/send pan/main/bus). These ride notifiers via
-  /// [_syncControlNotes] and must not set the global `dirty` rebuild flag.
-  /// Everything else (state/caps/link/scenes/..., plus param frames carrying
-  /// name/param-plane fields, plus solo which feeds the page solo banner)
-  /// stays structural and keeps the global notify.
+  // Control-only frames ride notifiers without setting the global dirty flag.
+
   static const _stripControlFields = {'fader', 'mute', 'muted', 'pan'};
 
   static final _sendHotField = RegExp(r'^send[1-9]\d*_(pan|level)$');
@@ -1910,10 +1882,12 @@ class AppStore extends ChangeNotifier
   // ------------------------------------------------------------------
   // ChannelStore
   // ------------------------------------------------------------------
-  /// Current open channel index (shell prev/next).
+  // Current open channel index.
+
   int get channelIndex => _channel;
 
-  /// Select the open channel (called by the shell on navigation).
+  // Select the open channel on shell navigation.
+
   void openChannel(int ch) {
     if (_channel == ch) return;
     _channel = ch;
@@ -2115,10 +2089,8 @@ class AppStore extends ChangeNotifier
     );
   }
 
-  /// A send-pan leaf alone does not prove a stereo destination. Use only
-  /// a reported link on the destination aux/bus strip, never the source
-  /// channel's link, a pan value, its name, or an assumed odd/even pair.
-  /// Providers without bus topology/link reports remain unknown (hidden).
+  // A send-pan leaf alone never proves stereo; only a reported link on the destination does.
+
   bool _sendDestinationIsStereoAux(int slot) {
     if (slot < 1) return false;
     for (final family in engine.topology) {
@@ -2139,7 +2111,8 @@ class AppStore extends ChangeNotifier
     return value == null ? null : value.clamp(-100, 100) / 100;
   }
 
-  /// DL32S source IDs remain opaque; only switch the verified A/B selector.
+  // DL32S source IDs stay opaque; only the verified A/B selector switches.
+
   @override
   void setSourceSelected(int selected) {
     if (selected == 0 || selected == 1) {

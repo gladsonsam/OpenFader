@@ -1,18 +1,11 @@
-// Area D: world-debug inspector. Raw engine
-// inspector (verification only, not design): connection/link/info/deny,
-// strip table, meter sparkline (CustomPainter), caps/counts, plus probe
-// buttons (fader/mute/hello/stats/scan/info).
-//
-// Wiring: everything flows through [DebugStore] (constructor injection —
-// Area A implements it over the engine via cmdStats/Hello; this file only
-// renders ui4 tokens, see lib/theme.dart). Monospace text, plain buttons.
+// Debug inspector: raw engine state for verification, not design display.
+// Screens stay constructor-injected so Area A can implement the store.
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
 import '../palette.dart';
 import '../widgets/console_button.dart';
 
-/// One inspector section (title + preformatted lines).
 class DebugSection {
   final String title;
   final List<String> lines;
@@ -20,20 +13,19 @@ class DebugSection {
   const DebugSection({required this.title, required this.lines});
 }
 
-/// Minimal store contract the debug screen renders. Implemented by the
-/// shell/owner over the live engine.
+// Implemented by the shell over the live engine.
 abstract class DebugStore extends ChangeNotifier {
   int get tick;
   List<DebugSection> get sections;
   List<double> get spark; // meter levels 0..1
 
-  Future<void> refresh(); // snapshot (+ sweep)
-  void sendHello(); // cmd hello
-  void sendStats(); // cmd stats
-  void nudgeFader(); // ch0 fader +0.05
-  void toggleMute(); // ch0 mute toggle
-  void scan(); // cmd scan
-  void requestInfo(); // cmd info
+  Future<void> refresh();
+  void sendHello();
+  void sendStats();
+  void nudgeFader();
+  void toggleMute();
+  void scan();
+  void requestInfo();
 }
 
 class U4DebugPage extends StatefulWidget {
@@ -144,7 +136,6 @@ class _Probe extends StatelessWidget {
   }
 }
 
-/// Meter sparkline: one bar per slot, red past 0.966, contrasting peak tick.
 class _SparkPainter extends CustomPainter {
   final List<double> levels;
 

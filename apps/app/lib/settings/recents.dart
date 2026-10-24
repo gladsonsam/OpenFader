@@ -1,5 +1,5 @@
-// Persisted recent mixers (name + address + driver), shared by the Connections
-// start screen and the Settings forget flows. Stored as one JSON list.
+// Persisted recent mixers (name, address, driver), shared by the Connections
+// screen and the Settings forget flows. One JSON list.
 library;
 
 import 'dart:convert';
@@ -71,7 +71,7 @@ class RecentMixers extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Separate from recents so reconnect-last keeps its type even when the
+  // Separate from recents: reconnect-last keeps its type even when the
   // user has disabled the recent-mixers list.
   static const _lastConnectionKey = 'openfader.lastConnectionType';
 
@@ -100,7 +100,7 @@ class RecentMixers extends ChangeNotifier {
     return 'auto';
   }
 
-  /// Add or rename (only when remembering is enabled by the caller).
+  /// Add or rename. The caller enables remembering.
   Future<void> remember(String name, String addr, {String? driver}) async {
     if (addr.isEmpty) return;
     final i = _items.indexWhere((r) => r.addr == addr);

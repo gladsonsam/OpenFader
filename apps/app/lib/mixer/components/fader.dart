@@ -151,7 +151,6 @@ class _FaderGeometry {
           (!compact && MixerDesign.largeTargets ? 1.08 : 1));
   double get capHeight => capWidth;
 
-  /// Touch padding around the cap (also grows with larger targets).
   double get touchPad => MixerDesign.largeTargets ? 10 : 6;
 }
 
@@ -251,7 +250,6 @@ class _CapPainter extends CustomPainter {
             radius: 1);
       }
     }
-    // Lime position line through the middle.
     final lineH = (s.height * .06).clamp(3.0, 6.0);
     mixerBox(
         c,

@@ -1,5 +1,4 @@
-// Shared graphite console toolbar for secondary pages: mixer return, page
-// title, channel navigation, and the same artwork as the main mixer.
+// Shared console toolbar for secondary pages.
 library;
 
 import 'package:flutter/material.dart';
@@ -8,7 +7,7 @@ import '../palette.dart';
 import '../theme.dart';
 import '../mixer/design.dart';
 
-/// Console toolbar modes (mirrors web `Mode` for the active-tile state).
+// Console toolbar modes for the active tile state.
 enum ShellMode { mixer, channel, scenes, fx, routing, connect, settings }
 
 class U4ShellHeader extends StatelessWidget {

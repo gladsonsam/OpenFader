@@ -1,10 +1,5 @@
 // Real transport: embedded `openfader-engine` via the FRB bindings in
-// `bridge/generated/` (see `bridge_stub.dart`). Same `EngineApi` surface
-// as `FakeSimEngine`, so the UI is transport-agnostic.
-//
-// Construction never throws: call `FfiEngine.create()` — it returns an
-// `FfiEngine` when the native bridge loads, else `null` and
-// the caller falls back to `FakeSimEngine` (demo still works without FFI).
+// `bridge/generated/`. Same `EngineApi` surface as the sim engine.
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -17,13 +12,11 @@ import 'engine.dart';
 class FfiEngine implements EngineApi {
   FfiEngine._();
 
-  /// Last FFI init failure (null when the last create() succeeded).
-  /// Read this after `create()` returns null to show WHY the sim fallback
-  /// won: missing native symbols vs init timeout matters on device.
+  /// Last FFI init failure, so the caller can report why sim fallback won.
   static Object? lastError;
 
-  /// Init the FRB binding (linked iOS archive or Android shared library).
-  /// Returns `null` when the native library is missing/broken.
+  /// Binds the FRB bridge (linked iOS archive or Android shared library).
+  /// Returns null when the native library is missing or broken.
   static Future<FfiEngine?> create() async {
     lastError = null;
     try {
@@ -62,9 +55,8 @@ class FfiEngine implements EngineApi {
   Future<List<String>> poll(String clientId, int cap) =>
       frb.poll(clientId: clientId, cap: cap);
 
-  /// Binary meter fan-out (`poll_binary` over FRB): length-prefixed
-  /// `Event::to_binary` frames; throws on a stale native library missing
-  /// the symbol (the caller falls back to JSON meters from [poll]).
+  /// Binary meter fan-out over FRB. Throws on a stale native library
+  /// missing the symbol, so the caller falls back to JSON meters.
   @override
   Future<Uint8List> pollBinary(String clientId, int cap) =>
       frb.pollBinary(clientId: clientId, cap: cap);

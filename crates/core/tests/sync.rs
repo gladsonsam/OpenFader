@@ -8,7 +8,6 @@ async fn replay_applies_lww_and_logs_conflict() {
     let d = SimDriver::new();
     d.connect("sim://local").await.unwrap();
     let mut q = OpQueue::new();
-    // 3 ops queued "offline".
     q.push_fader(StripId(0), 0.2).unwrap();
     q.push_fader(StripId(0), 0.8).unwrap();
     q.push_mute(StripId(1), true);
@@ -22,7 +21,6 @@ async fn replay_applies_lww_and_logs_conflict() {
     assert_eq!(report.conflicts[0].dropped_seq, 0);
     assert_eq!(report.conflicts[0].kept_seq, 1);
 
-    // Final state = last write per target.
     assert_eq!(d.get_fader(StripId(0)).await.unwrap(), 0.8);
     assert!(d.get_mute(StripId(1)).await.unwrap());
 }

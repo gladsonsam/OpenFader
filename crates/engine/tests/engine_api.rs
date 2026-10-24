@@ -49,7 +49,7 @@ async fn wait_for(handle: &mut ClientHandle, want: impl Fn(&Event) -> bool) -> S
 
 /// Drain the 6-frame attach snapshot (you/state/shows/clients/locks/caps),
 /// returning it in order. Fails when a params frame arrives first (cache
-/// must start empty) — snapshot order is part of the contract.
+/// must start empty), snapshot order is part of the contract.
 async fn drain_snapshot(handle: &mut ClientHandle) -> Vec<SharedEvent> {
     let mut out = Vec::new();
     for _ in 0..6 {
@@ -75,7 +75,6 @@ async fn attach_snapshot_order_and_self_id() {
     };
     assert_eq!(id, &client.id, "you id matches the handle id");
     assert!(!client.id.is_empty());
-    // State carries the sim default main fader (0.8).
     assert_eq!(ev_json(&snap[1]).get("driver"), Some(&json!("sim")));
 }
 
@@ -85,7 +84,6 @@ async fn connect_fader_mute_param_roundtrip() {
     let mut a = attach(&engine).await;
     drain_snapshot(&mut a).await;
 
-    // Explicit connect re-selects sim and unicasts our id back.
     a.send(Cmd::Connect {
         driver: "sim".to_string(),
         addr: None,
@@ -95,7 +93,6 @@ async fn connect_fader_mute_param_roundtrip() {
     let you = wait_for(&mut a, |e| matches!(e, Event::You { .. })).await;
     assert_eq!(ev_json(&you).get("id"), Some(&json!(a.id)));
 
-    // Fader: ch0 -> 0.5, writer-tagged.
     a.send(Cmd::Fader { ch: 0, value: 0.5, key: None}).await.unwrap();
     let st = wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
@@ -108,7 +105,6 @@ async fn connect_fader_mute_param_roundtrip() {
     let stv = ev_json(&st);
     assert_eq!(stv.get("by"), Some(&json!(a.id)));
 
-    // Mute on/off.
     a.send(Cmd::Mute { ch: 0, muted: true, key: None}).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
@@ -128,7 +124,6 @@ async fn connect_fader_mute_param_roundtrip() {
     })
     .await;
 
-    // Param write echoes the confirmed (re-read) value, writer-tagged.
     a.send(Cmd::Param {
         ch: 1,
         field: "gain".to_string(),
@@ -146,7 +141,6 @@ async fn connect_fader_mute_param_roundtrip() {
     .await;
     assert_eq!(ev_json(&echo).get("by"), Some(&json!(a.id)));
 
-    // Unknown driver errors to the sender only; the session stays alive.
     a.send(Cmd::Connect {
         driver: "nope".to_string(),
         addr: None,
@@ -166,7 +160,7 @@ async fn caps_and_params_snapshot() {
     let snap = drain_snapshot(&mut a).await;
     let caps = ev_json(&snap[5].clone());
     assert_eq!(caps.get("driver"), Some(&json!("sim")));
-    // Attach ships the slim caps (essentials lane only — first paint
+    // Attach ships the slim caps (essentials lane only, first paint
     // never waits for the catalogue); the full catalogue follows on the
     // first hello as a unicast rebroadcast.
     let params = caps.get("params").and_then(Value::as_array).unwrap();
@@ -193,14 +187,13 @@ async fn caps_and_params_snapshot() {
     let full_params = full_json.get("params").and_then(Value::as_array).unwrap();
     assert_eq!(full_params.len(), openfader_core::params::CATALOGUE.len() + 1, "hello completes the catalogue plus stereo balance");
     // The ack still follows, and a second hello is a pure re-ack (no
-    // second catalogue — the flag is per client).
+    // second catalogue, the flag is per client).
     wait_for(&mut a, |e| matches!(e, Event::Hello { .. })).await;
     a.send(Cmd::Hello { binary_meters: None, taps: None })
         .await
         .unwrap();
     wait_for(&mut a, |e| matches!(e, Event::Hello { .. })).await;
 
-    // A param write, then a second attach sees the full snapshot with it.
     a.send(Cmd::Param {
         ch: 0,
         field: "gain".to_string(),
@@ -277,7 +270,7 @@ async fn focus_prioritizes_channel() {
     .unwrap();
 
     // Merge params frames until ch5 is complete. Channels carry every
-    // in-scope id (bus/main-only EQ bands 5..6 never land on a channel —
+    // in-scope id (bus/main-only EQ bands 5..6 never land on a channel 
     // firmware band counts), so the target is the In-scoped catalogue set,
     // not the full catalogue.
     let mut seen: std::collections::HashMap<u16, std::collections::HashSet<String>> =
@@ -303,7 +296,6 @@ async fn focus_prioritizes_channel() {
     let ch0 = seen.get(&0).map(|s| s.len()).unwrap_or(0);
     assert!(ch0 < full, "ch5 completed ({full} params) while ch0 still partial ({ch0})");
 
-    // The `chs` array form focuses channel 7 the same way.
     a.send(Cmd::Focus {
         ch: None,
         chs: Some(vec![json!(7)]),
@@ -325,7 +317,6 @@ async fn focus_prioritizes_channel() {
         seen.entry(*ch).or_default().extend(values.keys().cloned());
     }
 
-    // Out-of-range focus: error event, session stays alive.
     a.send(Cmd::Focus {
         ch: Some(999),
         chs: None,
@@ -337,8 +328,6 @@ async fn focus_prioritizes_channel() {
     a.send(Cmd::ListShows).await.unwrap();
     wait_for(&mut a, |e| matches!(e, Event::Shows { .. })).await;
 
-    // Mixed valid + out-of-range: error names the ignored channel, the
-    // valid channel still jumps the queue.
     a.send(Cmd::Focus {
         ch: None,
         chs: Some(vec![json!(3), json!(999)]),
@@ -376,7 +365,6 @@ async fn locks_deny_allow_recall_disconnect() {
     drain_snapshot(&mut a).await;
     let mut b = attach(&engine).await;
     drain_snapshot(&mut b).await;
-    // Join roster: a sees the second attach.
     let joined = wait_for(&mut a, |e| match e {
         Event::Clients { count, .. } => *count == 2,
         _ => false,
@@ -385,7 +373,6 @@ async fn locks_deny_allow_recall_disconnect() {
     assert_eq!(ev_json(&joined).get("count"), Some(&json!(2)));
     let holder = a.id.clone();
 
-    // a locks ch0; both sides observe holds {"0": holder}.
     a.send(Cmd::Lock { ch: 0, key: None}).await.unwrap();
     let l1 = wait_for(&mut a, |e| match e {
         Event::Locks { holds } => holds.get("0") == Some(&holder),
@@ -402,7 +389,6 @@ async fn locks_deny_allow_recall_disconnect() {
     })
     .await;
 
-    // Locked strip rejects other writers with locked_by.
     for cmd in [
         Cmd::Fader { ch: 0, value: 0.9, key: None},
         Cmd::Mute { ch: 0, muted: true, key: None},
@@ -426,7 +412,6 @@ async fn locks_deny_allow_recall_disconnect() {
         );
     }
 
-    // Holder writes through; sibling sees it.
     a.send(Cmd::Fader { ch: 0, value: 0.6, key: None}).await.unwrap();
     wait_for(&mut b, |e| match e {
         Event::State { strips, .. } => strips
@@ -437,7 +422,6 @@ async fn locks_deny_allow_recall_disconnect() {
     })
     .await;
 
-    // Holder unlocks; both see the empty table; b writes freely.
     a.send(Cmd::Unlock { ch: 0, key: None}).await.unwrap();
     wait_for(&mut a, |e| matches!(e, Event::Locks { holds } if holds.is_empty())).await;
     wait_for(&mut b, |e| matches!(e, Event::Locks { holds } if holds.is_empty())).await;
@@ -451,7 +435,6 @@ async fn locks_deny_allow_recall_disconnect() {
     })
     .await;
 
-    // recall_scene bypasses locks but reports overrides.
     b.send(Cmd::Fader { ch: 1, value: 0.3, key: None}).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::State { strips, .. } => strips
@@ -505,8 +488,6 @@ async fn locks_deny_allow_recall_disconnect() {
     })
     .await;
 
-    // Disconnect auto-releases: dropping a (holder of ch1) lets b see the
-    // pin vanish and write the strip.
     drop(a);
     wait_for(&mut b, |e| match e {
         Event::Locks { holds } => holds.get("1").is_none(),
@@ -554,7 +535,6 @@ async fn locks_expire() {
     })
     .await;
 
-    // Still pinned: b is denied.
     b.send(Cmd::Fader { ch: 2, value: 0.9, key: None}).await.unwrap();
     wait_for(&mut b, |e| match e {
         Event::Error { locked_by, .. } => locked_by.as_deref() == Some(holder.as_str()),
@@ -562,7 +542,6 @@ async fn locks_expire() {
     })
     .await;
 
-    // After the TTL the sweeper releases + broadcasts; b writes freely.
     wait_for(&mut b, |e| match e {
         Event::Locks { holds } => holds.get("2").is_none(),
         _ => false,
@@ -629,7 +608,6 @@ async fn shows_capture_recall_delete() {
         "captured scene has a main_fader field"
     );
 
-    // Library survives a fresh attach (server-side, no local copy).
     let mut peer = attach(&engine).await;
     let peer_snap = drain_snapshot(&mut peer).await;
     assert!(
@@ -639,7 +617,6 @@ async fn shows_capture_recall_delete() {
         "second attach sees the server-side library"
     );
 
-    // Explicit pull also returns the library.
     a.send(Cmd::ListShows).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::Shows { shows } => shows.iter().any(|s| {
@@ -649,7 +626,6 @@ async fn shows_capture_recall_delete() {
     })
     .await;
 
-    // Move away, recall with fade 0: state snap-back + per-param echo.
     let moved = ((cap_fader + 0.3).min(1.0)) as f32;
     a.send(Cmd::Fader { ch: 0, value: moved, key: None}).await.unwrap();
     wait_for(&mut a, |e| match e {
@@ -697,7 +673,6 @@ async fn shows_capture_recall_delete() {
         }
     }
 
-    // Unknown scene errors; the session stays alive.
     a.send(Cmd::RecallScene {
         show: "gig".to_string(),
         name: "nope".to_string(),
@@ -708,7 +683,6 @@ async fn shows_capture_recall_delete() {
     let err = wait_for(&mut a, |e| matches!(e, Event::Error { .. })).await;
     assert!(ev_json(&err).get("message").is_some());
 
-    // Delete; the scene stays gone.
     a.send(Cmd::DeleteScene {
         show: "gig".to_string(),
         name: "verse".to_string(),
@@ -754,7 +728,6 @@ async fn main_fader_set_and_state() {
     .await;
     assert_eq!(ev_json(&st).get("by"), Some(&json!(a.id)));
 
-    // set_main_fader alias (legacy command name) works the same.
     a.send_json(r#"{"cmd":"set_main_fader","value":0.3}"#).await.unwrap();
     wait_for(&mut a, |e| match e {
         Event::State { main_fader, .. } => {
@@ -764,7 +737,6 @@ async fn main_fader_set_and_state() {
     })
     .await;
 
-    // Out-of-range is rejected and the fader does not move.
     a.send(Cmd::MainFader { value: 1.5 }).await.unwrap();
     let err = wait_for(&mut a, |e| matches!(e, Event::Error { .. })).await;
     assert!(ev_json(&err).get("message").is_some());
@@ -786,7 +758,6 @@ async fn main_fader_set_and_state() {
         "rejected value did not move the main fader"
     );
 
-    // Missing value errors too; the session stays alive.
     a.send_json(r#"{"cmd":"main_fader"}"#).await.unwrap();
     let err = wait_for(&mut a, |e| matches!(e, Event::Error { .. })).await;
     assert!(ev_json(&err).get("message").is_some());
@@ -800,7 +771,6 @@ async fn presence_writer_tag_and_unicast() {
     let mut b = attach(&engine).await;
     drain_snapshot(&mut b).await;
 
-    // a learns about the join via broadcast.
     let joined = wait_for(&mut a, |e| match e {
         Event::Clients { count, .. } => *count == 2,
         _ => false,
@@ -808,7 +778,6 @@ async fn presence_writer_tag_and_unicast() {
     .await;
     assert_eq!(ev_json(&joined).get("count"), Some(&json!(2)));
 
-    // Mutation from a arrives at b tagged with the writer id.
     a.send(Cmd::Fader { ch: 0, value: 0.5, key: None}).await.unwrap();
     let st = wait_for(&mut b, |e| match e {
         Event::State { strips, .. } => strips
@@ -820,7 +789,6 @@ async fn presence_writer_tag_and_unicast() {
     .await;
     assert_eq!(ev_json(&st).get("by"), Some(&json!(a.id)));
 
-    // Param echo carries the same writer.
     a.send(Cmd::Param {
         ch: 1,
         field: "fader".to_string(),
@@ -838,7 +806,6 @@ async fn presence_writer_tag_and_unicast() {
     .await;
     assert_eq!(ev_json(&echo).get("by"), Some(&json!(a.id)));
 
-    // A third attach observes a as a recent writer.
     let mut c = attach(&engine).await;
     let snap = drain_snapshot(&mut c).await;
     let writers = ev_json(&snap[3].clone());
@@ -847,7 +814,6 @@ async fn presence_writer_tag_and_unicast() {
         "writers include the recent mutator"
     );
 
-    // Errors unicast: b's bad command reaches b only.
     b.send_json(r#"{"cmd":"bogus"}"#).await.unwrap();
     wait_for(&mut b, |e| matches!(e, Event::Error { .. })).await;
     let quiet = tokio::time::timeout(Duration::from_millis(300), a.events.recv()).await;
@@ -856,7 +822,6 @@ async fn presence_writer_tag_and_unicast() {
         "a must not see b's error"
     );
 
-    // Leave broadcast: dropping b brings the roster back to 2.
     let b_id = b.id.clone();
     drop(b);
     let left = wait_for(&mut a, |e| match e {
@@ -879,14 +844,12 @@ async fn access_policy_musician_restrictions() {
     assert!(engine.set_client_policy(&mus.id, Policy::musician([0])));
     assert!(!engine.set_client_policy("client-999", Policy::musician([0])));
 
-    // Disallowed strip: fader + mute + param all denied.
     mus.send(Cmd::Fader { ch: 1, value: 0.5, key: None}).await.unwrap();
     let err = wait_for(&mut mus, |e| matches!(e, Event::Error { .. })).await;
     assert!(
         ev_json(&err).get("message").and_then(Value::as_str).is_some_and(|m| m.contains("not allowed")),
         "musician strip denial explains itself"
     );
-    // Admin on the same strip is unaffected.
     admin.send(Cmd::Fader { ch: 1, value: 0.5, key: None}).await.unwrap();
     wait_for(&mut admin, |e| match e {
         Event::State { strips, .. } => strips
@@ -897,14 +860,12 @@ async fn access_policy_musician_restrictions() {
     })
     .await;
 
-    // Fader cap: 0.9 exceeds the musician ceiling.
     mus.send(Cmd::Fader { ch: 0, value: 0.9, key: None}).await.unwrap();
     let err = wait_for(&mut mus, |e| matches!(e, Event::Error { .. })).await;
     assert!(
         ev_json(&err).get("message").and_then(Value::as_str).is_some_and(|m| m.contains("exceeds cap")),
         "musician cap denial explains itself"
     );
-    // Under the cap: allowed.
     mus.send(Cmd::Fader { ch: 0, value: 0.5, key: None}).await.unwrap();
     wait_for(&mut mus, |e| match e {
         Event::State { strips, .. } => strips
@@ -915,7 +876,6 @@ async fn access_policy_musician_restrictions() {
     })
     .await;
 
-    // Main LR is blocked for musicians.
     mus.send(Cmd::MainFader { value: 0.5 }).await.unwrap();
     let err = wait_for(&mut mus, |e| matches!(e, Event::Error { .. })).await;
     assert!(
@@ -923,7 +883,6 @@ async fn access_policy_musician_restrictions() {
         "musician main denial explains itself"
     );
 
-    // Scene recall is blocked for musicians (admin captures first).
     admin
         .send(Cmd::CaptureScene {
             show: "gig".to_string(),
@@ -944,7 +903,6 @@ async fn access_policy_musician_restrictions() {
         ev_json(&err).get("message").and_then(Value::as_str).is_some_and(|m| m.contains("recall")),
         "musician recall denial explains itself"
     );
-    // Admin recall works.
     admin
         .send(Cmd::RecallScene {
             show: "gig".to_string(),

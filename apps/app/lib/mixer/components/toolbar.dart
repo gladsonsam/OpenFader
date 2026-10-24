@@ -24,8 +24,6 @@ class MixerToolbar extends StatelessWidget {
       this.showBankControls = false});
   @override
   Widget build(BuildContext context) {
-    // Phone menu + layout sheet destinations (the connection shortcut was
-    // removed from the toolbar; the old Link screen lives here).
     final actions = <(String, MixerDestination)>[
       ('Effects', MixerDestination.fx),
       ('Settings', MixerDestination.settings),

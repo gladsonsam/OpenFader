@@ -2,7 +2,7 @@
 //!
 //! Black-box port of the proven Python client (`mackie_dl/client.py`) and its
 //! spec (`SPEC.md`): one client-initiated TCP connection, default port 50001,
-//! all values big-endian. This module owns everything on the wire — framing,
+//! all values big-endian. This module owns everything on the wire, framing,
 //! checksums, value-block encode/decode, the init handshake, the receive loop
 //! with request/response correlation, and the push-driven caches.
 //!
@@ -297,11 +297,9 @@ pub const VALUE_TYPE_SHOW: u8 = 3;
 /// File-CRC address space (set_file_crc uses type 4).
 pub const VALUE_TYPE_FILE: u8 = 4;
 
-/// Number of mute groups on the DL family.
 pub const MUTE_GROUP_COUNT: u32 = 6;
 /// Mute group N master mute, verified for all six on a DL32S.
 pub const MUTE_GROUP_BASE_ADDRESS: u32 = 10;
-/// Mute group N name slot in the flat CHANNEL_NAMES table.
 pub const MUTE_GROUP_NAME_SLOT_BASE: u32 = 63;
 
 /// Mute group N (1-based) master-mute address.
@@ -377,7 +375,6 @@ pub enum DecodedWord {
     I(u32),
 }
 
-/// Split a raw word into its float or integer reading.
 pub fn decode_word(raw: u32, is_float: bool) -> DecodedWord {
     if is_float {
         DecodedWord::F(f32::from_bits(raw))
@@ -419,9 +416,8 @@ pub fn build_multi_set(pairs: &[(u32, u32)], value_type: u8) -> anyhow::Result<V
     Ok(out)
 }
 
-/// Build a read request body: the two header chunks only (start + meta).
-/// The mixer answers read requests with an empty body — polling does not
-/// work, only listening to pushes does — so this is used for probing only.
+/// The mixer answers read requests with an empty body: polling does not
+/// work, only listening to pushes does, so this is used for probing only.
 pub fn build_read_request(start: u32, count: u32, value_type: u8) -> Vec<u8> {
     let meta = ((count & 0xFFFF) << 16) | ((value_type as u32) << 8);
     let mut out = Vec::with_capacity(8);
@@ -461,7 +457,7 @@ pub fn dl32_family_meter_addresses() -> Vec<i32> {
 /// DL32S-only 91-entry meter layout: the 60-entry family table above with
 /// 31 RTA addresses `3..=33` appended. The first 32 input words are
 /// unchanged; the RTA bins ride indices 60..90 of the pushed block.
-/// Per-client override — only the DL32S driver requests this (see
+/// Per-client override, only the DL32S driver requests this (see
 /// [`MackieSession::request_meter_layout`]); the shared init handshake and
 /// [`MackieSession::enable_meter_reports`] keep the 60-entry default so all
 /// other callers are unaffected.
@@ -508,7 +504,7 @@ pub const GENERAL_INFO_REPLY: [u8; 8] = [0, 0, 0, 2, 0, 0, 0x40, 0];
 /// The meta count bounds how many slots the push covers when nonzero: a
 /// single-slot rename then touches exactly its slot instead of also blanking
 /// the neighbour with padding NULs. A zero count (bulk table dump) takes
-/// every chunk, padding included — those land past the real 75-slot table
+/// every chunk, padding included, those land past the real 75-slot table
 /// and never surface through name lookups.
 pub fn parse_name_table(body: &[u8]) -> Option<Vec<(u32, String)>> {
     if body.len() < 8 || !body.len().is_multiple_of(4) {
@@ -578,7 +574,6 @@ pub fn build_snapshot_save(snapshot: u32, epoch_secs: u64, name: &str) -> Vec<u8
     let text = name.as_bytes();
     let clipped = &text[..text.len().min(63)];
     let mut padded = clipped.to_vec();
-    // NUL-terminate and pad to a whole word.
     padded.push(0);
     while !padded.len().is_multiple_of(4) {
         padded.push(0);
@@ -595,7 +590,6 @@ pub fn build_snapshot_save(snapshot: u32, epoch_secs: u64, name: &str) -> Vec<u8
 // Session: TCP connection + init + receive loop + push caches
 // ---------------------------------------------------------------------------
 
-/// Correlated-request failure delivered to the waiter.
 #[derive(Debug)]
 struct RequestFailed(String);
 
@@ -616,7 +610,7 @@ type PendingResult = Result<Message, RequestFailed>;
 /// pending mark absent, and a write can never interleave between another
 /// thread's provenance check and value read. Push ingest clears pending in
 /// the same critical section it inserts desk values. No second connection,
-/// no invented wire fields — provenance only, values unchanged.
+/// no invented wire fields, provenance only, values unchanged.
 struct ValueStore {
     values: HashMap<u32, u32>,
     pending: HashSet<u32>,
@@ -641,7 +635,7 @@ struct Caches {
     /// (`save_show_snapshot`'s optimistic insert, `delete_snapshot`'s
     /// removal) touch `snapshot_names` only and never these stores, so no
     /// readback path can mistake our own optimism for desk confirmation
-    /// — no future pending-cache laundering by construction (there is no
+    ///, no future pending-cache laundering by construction (there is no
     /// pending mark here at all: push writes are proof, everything else
     /// cannot write). A fresh session starts empty (a new connect means a
     /// new `Caches`), so stale desks never survive a session change.
@@ -676,7 +670,7 @@ pub enum PushEvent {
     },
     /// One `ChannelNames` table (`(slot, name)` pairs, 1-based slots).
     Names { pairs: Vec<(u32, String)> },
-    /// Snapshot recall relay (desk state changed wholesale — the poller
+    /// Snapshot recall relay (desk state changed wholesale, the poller
     /// converges; drivers do not fan this out as strip updates).
     SnapshotRecall(u32),
     /// Snapshot slot rename relay.
@@ -776,7 +770,7 @@ impl MackieSession {
 
     /// Task-liveness probe: true while BOTH background tasks are still
     /// running. Reports only that the rx and keepalive tasks have not
-    /// finished — no ACK, no RTT, no wire probe. Both tasks finish solely on
+    /// finished, no ACK, no RTT, no wire probe. Both tasks finish solely on
     /// fatal/close/drop paths (rx EOF/read error, keepalive send failure, or
     /// explicit close/drop abort), never on a transient healthy-init
     /// completion, so a finished handle means the transport is closed.
@@ -1065,7 +1059,7 @@ impl MackieSession {
     }
 
     /// Push-evidenced current snapshot marker: ONLY a genuine desk recall
-    /// relay sets this. `None` means no recall observed — never a slot-0
+    /// relay sets this. `None` means no recall observed, never a slot-0
     /// default. Passive read (no wire traffic).
     pub fn current_snapshot_pushed(&self) -> Option<u32> {
         self.caches.current_snapshot_pushed.lock().ok().and_then(|g| *g)
@@ -1172,7 +1166,7 @@ impl MackieSession {
 
     /// Per-client meter-layout override: replaces this connection's pushed
     /// meter block with `addresses` (one word per address, in order), then
-    /// re-enables broadcast reports — the same layout-then-broadcast pairing
+    /// re-enables broadcast reports, the same layout-then-broadcast pairing
     /// (same [`BROADCAST_CONTROL_BODY`], same [`REQUEST_TIMEOUT`] ordering)
     /// the shared init handshake and [`enable_meter_reports`](Self::enable_meter_reports)
     /// use, sourced from the native MeterLayout -> ack -> BroadcastControl
@@ -1260,7 +1254,6 @@ impl MackieSession {
             anyhow::bail!("snapshot number must be >= 1");
         }
         if address != 0 {
-            // legacy single write
             self.write_int(address, snapshot_1_based, VALUE_TYPE_PARAM).await?;
             return Ok(());
         }
@@ -1383,7 +1376,6 @@ impl MackieSession {
         let text = name.as_bytes();
         let clipped = &text[..text.len().min(1019)];
         let mut padded = clipped.to_vec();
-        // pad to word boundary with NUL
         while !padded.len().is_multiple_of(4) {
             padded.push(0);
         }
@@ -1478,7 +1470,6 @@ impl MackieSession {
         open_body.extend_from_slice(&word_swap(&padded));
         self.send_request(Command::FileOpen, open_body, timeout).await?;
 
-        // file info
         let info = self.send_request(Command::FileInfo, [2u32.to_be_bytes(), 0u32.to_be_bytes()].concat(), timeout).await?;
         if info.body.len() < 12 {
             anyhow::bail!("File info response too short");
@@ -1552,7 +1543,6 @@ impl MackieSession {
             }
             offset += length;
         }
-        // zero-length END chunk
         let mut end_body = Vec::with_capacity(16);
         end_body.extend_from_slice(&file_id.to_be_bytes());
         end_body.extend_from_slice(&(total as u32).to_be_bytes());
@@ -1568,8 +1558,6 @@ impl MackieSession {
 
     pub async fn set_file_crc(&self, address: u32, crc32: u32) -> anyhow::Result<()> {
         let body = build_single_set(address, RawValue::Int(crc32), VALUE_TYPE_FILE);
-        // build_single_set uses meta count 1 | type; but type must be 4. build_single_set takes value_type param. Good.
-        // However build_single_set sets meta = (1<<16) | (value_type<<8). For file crc we need 0x00010400 = count 1 type 4. Good.
         self.send_request(Command::ChannelValues, body, REQUEST_TIMEOUT).await?;
         Ok(())
     }
@@ -1604,7 +1592,6 @@ async fn rx_loop(
     let mut buf = Vec::with_capacity(65536);
     let mut tmp = [0u8; 4096];
     loop {
-        // Drain every complete frame before reading more.
         loop {
             match decode_one(&buf) {
                 Ok(Some((msg, used))) => {
@@ -1626,7 +1613,6 @@ async fn rx_loop(
             Err(_) => break,
         }
     }
-    // Connection lost: fail every waiter.
     let senders: Vec<oneshot::Sender<PendingResult>> = pending
         .lock()
         .map(|mut p| p.drain().map(|(_, tx)| tx).collect())
@@ -1961,7 +1947,7 @@ mod tests {
 
     #[test]
     fn name_table_keeps_blank_slots() {
-        // Slots 1-3: "Kick", "", "Snare" — the blank still consumes index 2.
+        // Slots 1-3: "Kick", "", "Snare", the blank still consumes index 2.
         let text = b"Kick\x00\x00Snare\x00\x00\x00";
         let mut padded = text.to_vec();
         while !padded.len().is_multiple_of(4) {
@@ -2094,7 +2080,6 @@ mod tests {
                         (Command::ChannelValues, MessageType::Request)
                             if req.body.len() > 8 =>
                         {
-                            // A write: record (address, raw) pairs.
                             if let Some(block) = parse_value_block(&req.body) {
                                 let mut w = fake.writes.lock().unwrap();
                                 for (i, raw) in block.raws.iter().enumerate() {
@@ -2110,8 +2095,6 @@ mod tests {
                             if req.command == Command::ChannelInfoControl {
                                 cic_count += 1;
                                 if cic_count == 2 {
-                                    // Bulk push: ch1 mute=1 (addr 8),
-                                    // ch1 fader=-15 dB float (addr 9).
                                     let mut body = vec![];
                                     body.extend_from_slice(&8u32.to_be_bytes());
                                     body.extend_from_slice(&0x00000500u32.to_be_bytes());
@@ -2124,8 +2107,6 @@ mod tests {
                                         body,
                                     };
                                     write_msg(&mut stream, &push).await.unwrap();
-                                    // Name table: slot 1 "Kick", slot 2 blank,
-                                    // slot 3 "Snare".
                                     let text = b"Kick\x00\x00Snare\x00\x00\x00";
                                     let mut padded = text.to_vec();
                                     while !padded.len().is_multiple_of(4) {
@@ -2142,7 +2123,6 @@ mod tests {
                                         body: nbody,
                                     };
                                     write_msg(&mut stream, &names).await.unwrap();
-                                    // Snapshot rename relay: slot 2 "Main".
                                     let mut sbody = vec![];
                                     sbody.extend_from_slice(&5u32.to_be_bytes());
                                     sbody.extend_from_slice(&2u32.to_be_bytes());
@@ -2182,7 +2162,6 @@ mod tests {
         }
         assert_eq!(session.cached(8), Some(1));
         assert_eq!(session.cached(9), Some((-15.0f32).to_bits()));
-        // No echo for our own writes yet; unknown address reads None.
         assert_eq!(session.cached(10), None);
 
         assert_eq!(session.name(1).as_deref(), Some("Kick"));
@@ -2193,7 +2172,6 @@ mod tests {
             Some("Main")
         );
 
-        // Writes go out as single-set frames and land in the fake's log.
         session.write_int(8, 0, VALUE_TYPE_PARAM).await.unwrap();
         session
             .write_float(9, -15.0)
@@ -2263,8 +2241,6 @@ mod tests {
                 }
                 fired = true;
                 push_ready.take().unwrap().await.expect("test subscribed");
-                // Broadcast values: ch2 mute (addr 114) = 1,
-                // ch2 fader (addr 115) = -15 dB float.
                 let mut body = vec![];
                 body.extend_from_slice(&114u32.to_be_bytes());
                 body.extend_from_slice(&0x00000500u32.to_be_bytes());
@@ -2277,7 +2253,6 @@ mod tests {
                     body,
                 };
                 write_msg(&mut stream, &push).await.unwrap();
-                // Mixer-initiated names request: slot 4 "Keys".
                 let padded = b"Keys".to_vec();
                 let mut nbody = vec![];
                 nbody.extend_from_slice(&4u32.to_be_bytes());
@@ -2290,7 +2265,6 @@ mod tests {
                     body: nbody,
                 };
                 write_msg(&mut stream, &names).await.unwrap();
-                // Snapshot recall relay: slot 7.
                 let sbody = vec![0, 0, 0, 1, 0, 0, 0, 7];
                 let snap = Message {
                     seq: next_seq(),
@@ -2334,7 +2308,6 @@ mod tests {
                 other => panic!("unexpected push event: {other:?}"),
             }
         }
-        // Cache and push feed agree.
         assert_eq!(session.cached(114), Some(1));
         assert_eq!(session.name(4).as_deref(), Some("Keys"));
 

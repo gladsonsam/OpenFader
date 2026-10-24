@@ -2,7 +2,6 @@
 //! UDP/OSC drivers don't use this; it lives here so a future TCP driver reuses
 //! it instead of duplicating framing code.
 
-/// Encode one frame as u32-BE length + payload.
 pub fn encode_frame(payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(4 + payload.len());
     out.extend_from_slice(&(payload.len() as u32).to_be_bytes());
@@ -10,7 +9,7 @@ pub fn encode_frame(payload: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Split a byte stream into (frames, leftover). Incomplete tail stays in leftover.
+/// Incomplete tail stays in `leftover`.
 pub fn split_frames(buf: &[u8]) -> (Vec<Vec<u8>>, Vec<u8>) {
     let mut frames = Vec::new();
     let mut i = 0;
@@ -33,7 +32,6 @@ mod tests {
     fn frame_roundtrip_with_split_tail() {
         let mut stream = encode_frame(b"hello");
         stream.extend_from_slice(&encode_frame(b" MeterFrame"));
-        // Truncate last byte to simulate a partial TCP read.
         let partial = &stream[..stream.len() - 1];
         let (frames, leftover) = split_frames(partial);
         assert_eq!(frames, vec![b"hello".to_vec()]);

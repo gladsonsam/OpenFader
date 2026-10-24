@@ -1,5 +1,3 @@
-// MUTE button: full-width h40 base (h48 on touch builds).
-// matching the strip phone variant).
 import 'package:flutter/material.dart';
 import '../palette.dart';
 

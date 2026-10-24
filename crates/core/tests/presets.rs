@@ -10,7 +10,6 @@ async fn every_preset_applies_to_sim() {
         apply_preset(&d, strip, p)
             .await
             .unwrap_or_else(|e| panic!("preset {}: {e}", p.id));
-        // Every field reads back exactly what the preset set.
         for s in p.settings {
             let got = d
                 .get_param(strip, s.field)
