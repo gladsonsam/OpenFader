@@ -356,6 +356,11 @@ class EqCurvePainter extends CustomPainter {
     if (rtaActive && bins != null && bins.isNotEmpty) {
       final count = math.min(32, bins.length);
       final width = size.width / count;
+      const rows = 48;
+      final step = size.height / rows;
+      final gap = (step * .18).clamp(.8, 1.8);
+      final columnGap = (width * .12).clamp(1.0, 2.0);
+      final blocks = Path();
       for (var bar = 0; bar < count; bar++) {
         final first = bar * bins.length ~/ count;
         final end = (bar + 1) * bins.length ~/ count;
@@ -363,19 +368,23 @@ class EqCurvePainter extends CustomPainter {
         for (var bin = first; bin < end; bin++) {
           peak = math.max(peak, bins[bin].clamp(0.0, 1.0));
         }
-        final height = peak * size.height * .63;
-        if (height <= 0) continue;
-        final rect = Rect.fromLTWH(
-            bar * width + .5, size.height - height, width - 1, height);
-        canvas.drawRect(rect,
-            Paint()..color = palette.eqPreviewFill.withValues(alpha: .28));
-        canvas.drawRect(
-            rect,
-            Paint()
-              ..color = palette.eqPreviewFill.withValues(alpha: .7)
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = .7);
+        final litRows = (peak * .63 * rows).floor();
+        for (var row = 0; row < litRows; row++) {
+          blocks.addRect(Rect.fromLTWH(
+              bar * width + columnGap / 2,
+              size.height - (row + 1) * step + gap / 2,
+              width - columnGap,
+              step - gap));
+        }
       }
+      canvas.drawPath(blocks,
+          Paint()..color = palette.eqPreviewFill.withValues(alpha: .45));
+      canvas.drawPath(
+          blocks,
+          Paint()
+            ..color = palette.eqPreviewFill.withValues(alpha: .7)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = .5);
     }
     // Summed curve + fill to 0 dB.
     if (responseDb.isNotEmpty) {
