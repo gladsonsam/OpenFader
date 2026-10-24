@@ -156,6 +156,7 @@ class AppStore extends ChangeNotifier
 
   final ValueNotifier<double> _levelDb = ValueNotifier(double.negativeInfinity);
   final ValueNotifier<List<double>> _spectrum = ValueNotifier(const []);
+  final ValueNotifier<AudioSpectrumFrame?> _audioSpectrum = ValueNotifier(null);
   final List<String> _presets = [];
   int? _focusCh;
 
@@ -272,6 +273,7 @@ class AppStore extends ChangeNotifier
     _busId = 'main';
     _focusCh = null;
     _spectrum.value = const [];
+    _audioSpectrum.value = null;
     _invalidateDerived();
   }
 
@@ -372,6 +374,7 @@ class AppStore extends ChangeNotifier
       frames = await _api.poll(_clientId, 512);
     } catch (e) {
       _noteTransportError(e);
+      _syncSpectrum();
       return; // never crash the meter loop on a transport hiccup
     }
     var dirty = false;
@@ -567,11 +570,22 @@ class AppStore extends ChangeNotifier
         ? engine.meters[ci].clamp(0.0, 1.0)
         : 0.0;
     _levelDb.value = _linToDb(lv);
-    final bins = engine.driver == 'sim' || engine.meterTaps.isNotEmpty
-        ? engine.spectrum[_channel]
-        : null;
+    _syncSpectrum();
+  }
+
+  void _syncSpectrum() {
+    // Legacy synthetic bins remain exclusively on the demo path.
+    final bins = engine.driver == 'sim' ? engine.spectrum[_channel] : null;
     _spectrum.value =
         engine.connected && bins != null ? List.of(bins) : const [];
+    final frame = engine.audioSpectrum;
+    if (frame != null && !frame.isFresh) engine.clearAudioSpectrum();
+    _audioSpectrum.value = engine.connected &&
+            frame != null &&
+            frame.isFresh &&
+            (frame.ch == null || frame.ch == _channel)
+        ? frame
+        : null;
   }
 
   // ------------------------------------------------------------------
@@ -1017,8 +1031,13 @@ class AppStore extends ChangeNotifier
 
   @override
   void setSpectrumTarget(int? ch) {
+    // DL32S analysis is passive: neither entry nor meter navigation acquires
+    // a named source or writes the desk's shared analyser selector.
+    if (engine.driver == 'dl32s') return;
+    engine.clearAudioSpectrum();
     engine.spectrum.clear();
     _spectrum.value = const [];
+    _audioSpectrum.value = null;
     _send(Cmds.spectrumTarget(ch));
   }
 
@@ -1032,8 +1051,10 @@ class AppStore extends ChangeNotifier
   void openChannel(int ch) {
     if (_channel == ch) return;
     _channel = ch;
+    engine.clearAudioSpectrum();
     engine.spectrum.clear();
     _spectrum.value = const [];
+    _audioSpectrum.value = null;
     cmdFocus();
     _invalidateDerived(); // sends are channel-scoped (sendN_on)
     notifyListeners();
@@ -1152,6 +1173,9 @@ class AppStore extends ChangeNotifier
 
   @override
   ValueNotifier<List<double>> get spectrum => _spectrum;
+
+  @override
+  ValueNotifier<AudioSpectrumFrame?> get audioSpectrum => _audioSpectrum;
 
   @override
   double? grDb(DynKind kind) {
@@ -1498,6 +1522,7 @@ class AppStore extends ChangeNotifier
     }
     _levelDb.dispose();
     _spectrum.dispose();
+    _audioSpectrum.dispose();
     for (final note in _controlReadyNotes.values) {
       note.dispose();
     }

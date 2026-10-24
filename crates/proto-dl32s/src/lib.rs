@@ -9,8 +9,8 @@ pub mod addrs;
 
 use addrs::{dl32s_inputs, INPUT_COUNT};
 use openfader_core::{
-    validate_fader, ChannelStrip, MeterFrame, MixerDriver, MixerInfo, MixerSnapshot, ParamUpdate,
-    ParamValue, StripId,
+    validate_fader, AudioSpectrum, ChannelStrip, MeterFrame, MixerDriver, MixerInfo, MixerSnapshot,
+    ParamUpdate, ParamValue, StripId,
 };
 use openfader_transport::mackie::{
     MackieSession, PushEvent, MUTE_GROUP_BASE_ADDRESS, MUTE_GROUP_COUNT, REQUEST_TIMEOUT,
@@ -396,6 +396,146 @@ fn decode_input_meters(push: &PushEvent) -> Option<Vec<f32>> {
     Some(out)
 }
 
+/// Shared RTA selector (type-2) address: the desk's RTA source selector.
+/// Rig r12 accepted: the initial bulk carries `5000` (Return 1–2) and
+/// `4006` was verified live as CH7. No other selector ids are known —
+/// unknown values report unavailable, never guessed. No selector writes in
+/// this stage: the source is passive (the MF app selects; we only follow).
+const RTA_SELECTOR_ADDR: u32 = 22;
+/// Confirmed shared source: Return 1–2 (global, `strip: None`).
+const RTA_SOURCE_RETURN_12: u32 = 5000;
+/// Verified shared source: CH7 (attributed to [`StripId`]`(6)`).
+const RTA_SOURCE_CH7: u32 = 4006;
+
+/// RTA meter-frame geometry: the DL32S-only 91-entry layout (see
+/// [`openfader_transport::mackie::dl32s_meter_addresses`]) pushes
+/// `start == 1` blocks of exactly 91 BE-f32 dB words, with the 31 RTA bins
+/// at indices 60..90. The first 32 input words are unchanged, so
+/// [`decode_input_meters`] keeps accepting both the old 60-word and the new
+/// 91-word frames. RTA decodes ONLY the exact 91-word shape — a 60-word
+/// frame never yields bins.
+const RTA_FRAME_LEN: usize = 91;
+const RTA_BIN_OFFSET: usize = 60;
+const RTA_BIN_COUNT: usize = 31;
+
+/// Transition sentinel: the desk parks all RTA bins at −999 dB while the
+/// shared source settles. An all-sentinel frame is dropped; finite quiet
+/// bins (real low-level signal) are valid and kept.
+const RTA_SENTINEL_DB: f32 = -999.0;
+
+/// Source-settle window: after a selector/generation change, frames are
+/// withheld this long so in-flight old-source words are never
+/// misattributed. Enforced in [`Dl32sDriver::poll_spectrum`] off the
+/// existing ingest/poll path — no extra timer.
+const RTA_SETTLE: Duration = Duration::from_millis(500);
+
+/// Nominal ISO 1/3-octave centers backing the 31-band RTA
+/// (rig-corroborated: an independent two-tone 220 Hz peaked addr 13/14 and
+/// 1 kHz addr 20, and the reference manual specifies 31 bands; the other 29
+/// bands were not individually excited). Positions are trusted; exact band
+/// shapes were not measured.
+const RTA_CENTERS_HZ: [f32; RTA_BIN_COUNT] = [
+    20.0, 25.0, 31.5, 40.0, 50.0, 63.0, 80.0, 100.0, 125.0, 160.0, 200.0, 250.0, 315.0,
+    400.0, 500.0, 630.0, 800.0, 1000.0, 1250.0, 1600.0, 2000.0, 2500.0, 3150.0, 4000.0,
+    5000.0, 6300.0, 8000.0, 10000.0, 12500.0, 16000.0, 20000.0,
+];
+
+/// Nominal 32 band edges for [`RTA_CENTERS_HZ`]: geometric midpoints
+/// between adjacent centers, ends geometrically extrapolated
+/// (`edge0 = c0²/mid0`, `edge31 = c30²/mid29`). Nominal — not measured on
+/// the desk; carried only because [`AudioSpectrum`] requires edges.
+fn rta_band_edges_hz() -> Vec<f32> {
+    let c = RTA_CENTERS_HZ;
+    let mut edges = Vec::with_capacity(RTA_BIN_COUNT + 1);
+    let mid0 = (c[0] * c[1]).sqrt();
+    edges.push(c[0] * c[0] / mid0);
+    for w in c.windows(2) {
+        edges.push((w[0] * w[1]).sqrt());
+    }
+    let mid_last = (c[RTA_BIN_COUNT - 2] * c[RTA_BIN_COUNT - 1]).sqrt();
+    edges.push(c[RTA_BIN_COUNT - 1] * c[RTA_BIN_COUNT - 1] / mid_last);
+    edges
+}
+
+/// Cached passive RTA frame (shared Return 1–2 source): written only by the
+/// connection ingest task, read by `poll_spectrum`. `selector` is the last
+/// type-2 addr-22 value; `epoch` is monotonic across source/generation
+/// changes (`generation << 32` base, +1 per source change); `switched_at`
+/// gates the [`RTA_SETTLE`] window; `updated_at`/`bins_db` are the last
+/// decoded 31-bin frame. Stale (>1 s, same bound as [`METER_STALE_AFTER`])
+/// reads unavailable (empty) instead of frozen session data.
+#[derive(Debug)]
+struct SpectrumState {
+    generation: u64,
+    selector: Option<u32>,
+    epoch: u64,
+    switched_at: Option<std::time::Instant>,
+    updated_at: Option<std::time::Instant>,
+    bins_db: Vec<f32>,
+}
+
+impl Default for SpectrumState {
+    fn default() -> Self {
+        Self {
+            generation: 0,
+            selector: None,
+            epoch: 0,
+            switched_at: None,
+            updated_at: None,
+            bins_db: Vec::new(),
+        }
+    }
+}
+
+/// Decode one meter push's RTA bins (indices 60..90, BE-f32 dB), or `None`
+/// when the shape is not the exact 91-word one, any bin is non-finite, or
+/// all bins sit at the [`RTA_SENTINEL_DB`] transition sentinel.
+fn decode_rta_bins(push: &PushEvent) -> Option<Vec<f32>> {
+    let (start, raws) = match push {
+        PushEvent::Values {
+            value_type,
+            start,
+            raws,
+        } if *value_type == VALUE_TYPE_METERS => (*start, raws),
+        _ => return None,
+    };
+    if start != METER_START || raws.len() != RTA_FRAME_LEN {
+        return None;
+    }
+    let mut out = Vec::with_capacity(RTA_BIN_COUNT);
+    for raw in raws.iter().skip(RTA_BIN_OFFSET).take(RTA_BIN_COUNT) {
+        let db = f32::from_bits(*raw);
+        if !db.is_finite() {
+            return None;
+        }
+        out.push(db);
+    }
+    if out.len() != RTA_BIN_COUNT {
+        return None;
+    }
+    if out.iter().all(|v| *v == RTA_SENTINEL_DB) {
+        return None;
+    }
+    Some(out)
+}
+
+/// Extract the shared RTA selector (type-2 addr 22) from a push that covers
+/// it. Mirrors the transport type-2 cache; the ingest task feeds this so
+/// source changes clear the cache/epoch without a session lock on the poll
+/// path.
+fn rta_selector_from_push(push: &PushEvent) -> Option<u32> {
+    let (start, raws) = match push {
+        PushEvent::Values {
+            value_type,
+            start,
+            raws,
+        } if *value_type == VALUE_TYPE_MUTE_GROUP => (*start, raws),
+        _ => return None,
+    };
+    let i = RTA_SELECTOR_ADDR.checked_sub(start)? as usize;
+    raws.get(i).copied()
+}
+
 /// Bulk-state readiness bound: prior hardware runs saw the whole-space
 /// push settle tens of seconds after init on a slow path, so 60 s keeps
 /// headroom without hanging `Cmd::Connect` forever.
@@ -448,6 +588,7 @@ pub struct Dl32sDriver {
     update_tx: broadcast::Sender<ParamUpdate>,
     generation: Arc<AtomicU64>,
     meters: Arc<std::sync::Mutex<MeterState>>,
+    spectrum: Arc<std::sync::Mutex<SpectrumState>>,
 }
 
 impl Default for Dl32sDriver {
@@ -465,6 +606,7 @@ impl Dl32sDriver {
             update_tx,
             generation: Arc::new(AtomicU64::new(0)),
             meters: Arc::new(std::sync::Mutex::new(MeterState::default())),
+            spectrum: Arc::new(std::sync::Mutex::new(SpectrumState::default())),
         }
     }
 
@@ -945,10 +1087,33 @@ impl MixerDriver for Dl32sDriver {
             m.updated_at = None;
             m.levels.clear();
         }
+        // DL32S-only 91-entry meter layout (per-client override through the
+        // transport layout hook): RTA bins ride indices 60..90 while the
+        // first 32 input words stay put. Best-effort — a refused layout just
+        // leaves RTA unavailable while input meters keep flowing.
+        let _ = session
+            .request_meter_layout(&openfader_transport::mackie::dl32s_meter_addresses())
+            .await;
+        // Initial shared-source read: the rig-confirmed initial bulk carries
+        // the type-2 addr-22 selector (5000 = Return 1–2). Treated as a
+        // source change (fresh settle window) so early frames are never
+        // misattributed.
+        // Subscribe before sampling the cache so a selector update cannot
+        // land between the initial read and the live subscription.
         let mut rx = session.subscribe_pushes();
+        let initial_selector = session.cached_type2(RTA_SELECTOR_ADDR);
+        if let Ok(mut s) = self.spectrum.lock() {
+            s.generation = generation;
+            s.selector = initial_selector;
+            s.epoch = generation << 32;
+            s.switched_at = Some(std::time::Instant::now());
+            s.updated_at = None;
+            s.bins_db.clear();
+        }
         let tx = self.update_tx.clone();
         let gen = self.generation.clone();
         let meters = self.meters.clone();
+        let spectrum = self.spectrum.clone();
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
@@ -956,11 +1121,37 @@ impl MixerDriver for Dl32sDriver {
                         if gen.load(Ordering::Acquire) != generation {
                             break;
                         }
+                        // Passive shared-source tracking (no writes): a
+                        // type-2 push covering addr 22 reselects the source —
+                        // clear the cache, bump the epoch, restart the
+                        // settle window.
+                        if let Some(sel) = rta_selector_from_push(&push) {
+                            if let Ok(mut s) = spectrum.lock() {
+                                if s.generation == generation && s.selector != Some(sel) {
+                                    s.selector = Some(sel);
+                                    s.epoch += 1;
+                                    s.bins_db.clear();
+                                    s.updated_at = None;
+                                    s.switched_at = Some(std::time::Instant::now());
+                                }
+                            }
+                        }
                         if let Some(levels) = decode_input_meters(&push) {
                             if let Ok(mut m) = meters.lock() {
                                 m.generation = generation;
                                 m.updated_at = Some(std::time::Instant::now());
                                 m.levels = levels;
+                            }
+                            // The 91-word frame carries both planes: meters
+                            // above, RTA bins at 60..90. A 60-word frame
+                            // yields meters only (exact-shape gate inside).
+                            if let Some(bins) = decode_rta_bins(&push) {
+                                if let Ok(mut s) = spectrum.lock() {
+                                    if s.generation == generation {
+                                        s.bins_db = bins;
+                                        s.updated_at = Some(std::time::Instant::now());
+                                    }
+                                }
                             }
                             continue;
                         }
@@ -1431,6 +1622,88 @@ impl MixerDriver for Dl32sDriver {
         }
     }
 
+    /// Passive shared RTA (Return 1–2): the desk's MF-selected source,
+    /// followed read-only — no acquisition, no restore writes. Returns the
+    /// global (`strip: None`) frame for the confirmed selector 5000
+    /// (`DL32S Return 1–2 (shared)` / `shared`); the verified 4006 selector
+    /// attributes to [`StripId`]`(6)` (`DL32S CH7 (shared)` / `shared`).
+    /// Unknown selectors (and the unsettled/stale windows) report empty —
+    /// unavailable, never fabricated. Source changes clear the cache, bump
+    /// the epoch (monotonic across source/generation changes) and withhold
+    /// frames for [`RTA_SETTLE`] so in-flight old-source words are never
+    /// misattributed. Stale (>1 s, same bound as input meters) reads
+    /// empty. Band edges are nominal (see [`rta_band_edges_hz`]). No
+    /// Return-strip id or param is invented here — return processing stays
+    /// a later slice.
+    fn poll_spectrum(&self) -> Vec<AudioSpectrum> {
+        let current = self.generation.load(Ordering::Acquire);
+        let (selector, epoch, bins_db) = match self.spectrum.lock() {
+            Ok(s) => {
+                if s.generation != current {
+                    return Vec::new();
+                }
+                match s.selector {
+                    Some(v) if v == RTA_SOURCE_RETURN_12 || v == RTA_SOURCE_CH7 => {}
+                    _ => return Vec::new(),
+                }
+                if s.switched_at.is_some_and(|t| t.elapsed() < RTA_SETTLE) {
+                    return Vec::new();
+                }
+                let at = match s.updated_at {
+                    Some(t) => t,
+                    None => return Vec::new(),
+                };
+                if at.elapsed() > METER_STALE_AFTER {
+                    return Vec::new();
+                }
+                if s.bins_db.len() != RTA_BIN_COUNT {
+                    return Vec::new();
+                }
+                (s.selector, s.epoch, s.bins_db.clone())
+            }
+            Err(_) => return Vec::new(),
+        };
+        let (strip, source, position) = match selector {
+            Some(v) if v == RTA_SOURCE_RETURN_12 => (
+                None,
+                "DL32S Return 1–2 (shared)".to_string(),
+                "shared".to_string(),
+            ),
+            Some(v) if v == RTA_SOURCE_CH7 => (
+                Some(StripId(6)),
+                "DL32S CH7 (shared)".to_string(),
+                "shared".to_string(),
+            ),
+            _ => return Vec::new(),
+        };
+        vec![AudioSpectrum {
+            strip,
+            bins_db,
+            band_edges_hz: rta_band_edges_hz(),
+            source,
+            position,
+            epoch,
+        }]
+    }
+
+    /// Passive shared RTA source: release (`None`) is a no-op Ok — there is
+    /// nothing owned to restore. A named acquire errors explicitly (no
+    /// default success pretence): the source is MF-selected and this stage
+    /// performs no selector writes. The frontend disables automatic DL32S
+    /// target requests.
+    async fn set_spectrum_target(
+        &self,
+        _owner: &str,
+        strip: Option<StripId>,
+    ) -> anyhow::Result<()> {
+        if strip.is_none() {
+            return Ok(());
+        }
+        anyhow::bail!(
+            "dl32s: RTA source is MF-selected (shared Return 1–2); automatic acquisition is disabled"
+        )
+    }
+
     async fn disconnect(&self) -> anyhow::Result<()> {
         if let Some(session) = self.session.lock().await.take() {
             session.close();
@@ -1439,6 +1712,10 @@ impl MixerDriver for Dl32sDriver {
         if let Ok(mut m) = self.meters.lock() {
             m.updated_at = None;
             m.levels.clear();
+        }
+        if let Ok(mut s) = self.spectrum.lock() {
+            s.updated_at = None;
+            s.bins_db.clear();
         }
         Ok(())
     }
