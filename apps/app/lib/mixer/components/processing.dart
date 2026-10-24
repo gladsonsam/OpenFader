@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../design.dart';
-import '../reference.dart';
+import '../demo.dart';
 
 /// Processing preview owns its rendering and gain gesture. Tapping its EQ
 /// opens the existing channel editor; hardware curves use actual parameters.
@@ -65,7 +65,7 @@ class MixerProcessingRack extends StatelessWidget {
                                       demo,
                                       gainRange)))))),
               place(channel.master ? 68 : 47, channel.master ? 58 : 79,
-                  MixerEqPreview(channel: channel, demo: demo, onOpen: onOpen)),
+                  MixerEqPreview(channel: channel, onOpen: onOpen)),
               place(
                   132,
                   62,
@@ -76,8 +76,7 @@ class MixerProcessingRack extends StatelessWidget {
                           demo &&
                                   !channel.params.containsKey('gate_gr') &&
                                   !channel.params.containsKey('comp_gr')
-                              ? masterFaderReference[channel.artwork]
-                                  .compression
+                              ? mixerDemoStrips[channel.artwork].compression
                               : null))),
             ]));
       });
@@ -87,12 +86,11 @@ class MixerProcessingRack extends StatelessWidget {
 /// channel processing without spending fader travel on gain/dynamics previews.
 class MixerEqPreview extends StatelessWidget {
   final MixerChannel channel;
-  final bool demo, compact;
+  final bool compact;
   final VoidCallback onOpen;
   const MixerEqPreview({
     super.key,
     required this.channel,
-    required this.demo,
     required this.onOpen,
     this.compact = false,
   });
@@ -106,16 +104,9 @@ class MixerEqPreview extends StatelessWidget {
           child: ClipRRect(
               borderRadius: BorderRadius.circular(6),
               child: Stack(fit: StackFit.expand, children: [
-                if (demo &&
-                    !channel.params.keys.any((key) => key.startsWith('eq')))
-                  MixerArtwork('eq_${channel.artwork}',
-                      width: double.infinity,
-                      height: double.infinity,
-                      fit: BoxFit.fill)
-                else
-                  CustomPaint(
-                      painter: _EqPainter(
-                          ConsolePalette.of(context), channel.params)),
+                CustomPaint(
+                    painter:
+                        _EqPainter(ConsolePalette.of(context), channel.params)),
                 if (compact)
                   Positioned(
                       top: 3,
