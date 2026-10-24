@@ -56,6 +56,7 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get knob => const Color(0xffd8d8d4);
   Color get panShape => pair(0xff4a4a4a, 0xffacb6bf);
   Color get chip => pair(0xff262626, 0xffcbd2d8);
+  Color get rtaOutline => pair(0xffa9ae98, 0xff66784c);
   Color get eqPreviewFill => pair(0xff8d9378, 0xff66784c);
   Color get eqPreviewCurve => pair(0xfff6f9e4, 0xff304022);
   Color get eqBg => pair(0xff1f2314, 0xffe9efdf);

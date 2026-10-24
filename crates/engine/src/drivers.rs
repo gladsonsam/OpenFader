@@ -323,9 +323,9 @@ pub trait DynDriver: Send + Sync {
     fn needs_hydration(&self) -> bool {
         false
     }
-    /// Envelope-spectrum visualizer (sim only, never a provider feed).
-    fn emits_envelope_spectrum(&self) -> bool {
-        false
+    /// Explicit demo visualization, never a provider's audio-frequency feed.
+    fn demo_spectrum(&self, _ch: usize) -> Option<Vec<f32>> {
+        None
     }
     /// Strip count behind GR broadcast.
     fn gr_channel_count(&self) -> usize {
@@ -745,8 +745,8 @@ impl_dyn_driver!(openfader_sim::SimDriver {
     fn group_assign_caps(&self) -> (bool, bool) {
         (true, true)
     }
-    fn emits_envelope_spectrum(&self) -> bool {
-        true
+    fn demo_spectrum(&self, ch: usize) -> Option<Vec<f32>> {
+        Some(openfader_sim::SimDriver::demo_spectrum(self, ch))
     }
     fn gr_channel_count(&self) -> usize {
         MixerDriver::strip_count(self).min(crate::engine::GR_CHANNELS)
