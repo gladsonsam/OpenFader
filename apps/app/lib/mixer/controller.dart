@@ -157,7 +157,8 @@ class MixerController extends ChangeNotifier {
   MixerChannel get master => MixerChannel(
       key: 'master',
       name: store.masterName == 'MAIN' ? 'Main' : store.masterName,
-      number: 'LR',
+      number:
+          store.masterName == 'MAIN' ? 'LR' : store.masterName.split(' ').last,
       channel: null,
       artwork: 8,
       fader: store.masterFader,
