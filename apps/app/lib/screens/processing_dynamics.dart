@@ -11,6 +11,9 @@ class _DynTab extends StatelessWidget {
     final d = kind == DynKind.gate ? store.gate : store.comp;
     final compact = MediaQuery.sizeOf(context).width < 700;
     final title = kind == DynKind.gate ? 'Gate' : 'Compressor';
+    final presetKind = kind == DynKind.gate
+        ? ProcessorPresetKind.gate
+        : ProcessorPresetKind.compressor;
     final knobs = _dynKnobs(kind, d).where((k) => k.prop != 'knee').toList();
     void apply(_KnobDef k, double v) {
       store.setDynParam(kind, k.prop, v);
@@ -140,12 +143,17 @@ class _DynTab extends StatelessWidget {
           if (!compact)
             SizedBox(
                 width: 420 * scale,
-                child: _PresetsButton(store: store, compact: false))
+                child: _PresetsButton(
+                    store: store, compact: false, kind: presetKind))
           else if (kind == DynKind.comp && compact)
             SizedBox(
-                width: 96, child: _PresetsButton(store: store, compact: true))
+                width: 96,
+                child: _PresetsButton(
+                    store: store, compact: true, kind: presetKind))
           else
-            Expanded(child: _PresetsButton(store: store, compact: compact)),
+            Expanded(
+                child: _PresetsButton(
+                    store: store, compact: compact, kind: presetKind)),
           if (kind == DynKind.comp) ...[
             const SizedBox(width: 8),
             Expanded(

@@ -1292,6 +1292,10 @@ class _SettingsStore extends _StoreBase implements SettingsStore {
   LocalMixStore get mixes => _mixes;
 
   @override
+  Future<int> appStorageBytes() async =>
+      await _mixes.storageBytes() + await app.processorPresetStorageBytes();
+
+  @override
   Future<String?> importMix() async {
     final err = await _mixes.importMix();
     if (err == null) {
@@ -1361,6 +1365,7 @@ class _SettingsStore extends _StoreBase implements SettingsStore {
 
   @override
   Future<void> fullReset() async {
+    await app.clearProcessorPresets();
     await _mixes.deleteAll();
     await _mixes.clearCache();
     await _recents.clear();

@@ -12,6 +12,7 @@
 // levels + spectrum + GR in place via notifiers.
 
 import '../core/channel_name.dart';
+import '../core/processor_presets.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -28,6 +29,7 @@ import '../u4law.dart';
 
 import '../widgets/channel_widgets.dart';
 import '../widgets/number_entry.dart';
+import '../widgets/processor_preset_library.dart';
 
 part 'processing_input.dart';
 part 'processing_eq.dart';
@@ -44,7 +46,8 @@ enum ChannelTab { input, gate, comp, eq }
 /// shell/owner over the live engine or a fixture sim. Meters arrive via
 /// stable [ValueNotifier]s updated in place by [pollMeters]; DSP snapshots
 /// ([eq]/[gate]/[comp]/[sends]/...) notify through [ChangeNotifier].
-abstract class ChannelStore extends ChangeNotifier implements ChannelNameStore {
+abstract class ChannelStore extends ChangeNotifier
+    implements ChannelNameStore, ProcessorPresetStore {
   String get stripKey;
   String get displayName;
 
@@ -105,7 +108,6 @@ abstract class ChannelStore extends ChangeNotifier implements ChannelNameStore {
   int get muteGroupCount;
   bool? subgroupAssigned(int g);
   bool? muteGroupAssigned(int g);
-  List<String> get presets;
   bool get locked;
   bool get focused;
 
@@ -133,8 +135,6 @@ abstract class ChannelStore extends ChangeNotifier implements ChannelNameStore {
   void togglePhantom();
   void toggleInvert();
   void setPreamp(String leaf, double value);
-  void recallPreset(String name);
-  void storePreset(String name);
 }
 
 /// One focused numeric control: the page's top readout renders [text]
@@ -854,45 +854,20 @@ class _ProcessorHeader extends StatelessWidget {
   }
 }
 
-/// Presets dropdown for the settings row (recall only; no new protocol).
+/// Local user library for the explicitly selected processor.
 class _PresetsButton extends StatelessWidget {
   final ChannelStore store;
   final bool compact;
-  const _PresetsButton({required this.store, required this.compact});
+  final ProcessorPresetKind kind;
+  const _PresetsButton(
+      {required this.store, required this.compact, required this.kind});
 
   @override
   Widget build(BuildContext context) {
     return TextButton(
-      onPressed: () async {
-        final box = context.findRenderObject() as RenderBox?;
-        final overlay =
-            Overlay.of(context).context.findRenderObject() as RenderBox?;
-        if (box == null || overlay == null) return;
-        final choice = await showMenu<String>(
-          context: context,
-          color: ConsolePalette.of(context).chip,
-          position: RelativeRect.fromRect(
-              Rect.fromPoints(
-                  box.localToGlobal(Offset.zero, ancestor: overlay),
-                  box.localToGlobal(box.size.bottomRight(Offset.zero),
-                      ancestor: overlay)),
-              Offset.zero & overlay.size),
-          items: [
-            if (store.presets.isEmpty)
-              const PopupMenuItem(
-                  enabled: false, child: Text('No presets stored')),
-            for (final p in store.presets)
-              PopupMenuItem(
-                  value: p,
-                  child: Text(p,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontFamily: U4.font,
-                          color: ConsolePalette.of(context).text1))),
-          ],
-        );
-        if (choice != null) store.recallPreset(choice);
+      onPressed: () {
+        final target = store.capturePresetTarget(kind);
+        showProcessorPresetLibrary(context, store, kind, target);
       },
       style: TextButton.styleFrom(
           foregroundColor: ConsolePalette.of(context).text1,
