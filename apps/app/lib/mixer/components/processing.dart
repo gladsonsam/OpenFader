@@ -274,11 +274,12 @@ class _EqPainter extends CustomPainter {
       ..lineTo(s.width, s.height)
       ..lineTo(0, s.height)
       ..close();
-    c.drawPath(fill, Paint()..color = palette.panFill.withValues(alpha: .71));
+    c.drawPath(
+        fill, Paint()..color = palette.eqPreviewFill.withValues(alpha: .85));
     c.drawPath(
         curve,
         Paint()
-          ..color = palette.text
+          ..color = palette.eqPreviewCurve
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.4);
   }

@@ -18,6 +18,7 @@ import 'package:flutter/material.dart';
 import '../core/channel_views.dart';
 import '../settings/prefs.dart';
 import '../theme.dart';
+import '../widgets/mobile_reference_width.dart';
 import '../palette.dart';
 import '../design.dart';
 import '../u4law.dart';
@@ -29,6 +30,7 @@ part 'processing_input.dart';
 part 'processing_eq.dart';
 part 'processing_workspace.dart';
 part 'processing_dynamics.dart';
+part 'processing_mobile.dart';
 
 /// Channel tabs (web CHANNEL_TAB_ORDER + groups/source/presets sections).
 /// New order: Input → Gate → Comp → EQ. Sends lives inside Input;
@@ -250,6 +252,7 @@ class _ChannelPageState extends State<ChannelPage> {
     return Scaffold(
       backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
+        bottom: MediaQuery.sizeOf(context).width >= 700,
         child: ListenableBuilder(
           listenable: Listenable.merge([widget.store, PrefsService.instance]),
           builder: (context, _) {
@@ -257,29 +260,36 @@ class _ChannelPageState extends State<ChannelPage> {
             // The toolbar lives in the shell header now; this page owns
             // the focus readout + processing navigation + content.
             final wide = MediaQuery.sizeOf(context).width >= 700;
+            final tabContent = switch (store.tab) {
+              ChannelTab.input => _InputTab(
+                  store: store,
+                  writes: _writes!,
+                  onFocus: (f) => _focus.value = f),
+              ChannelTab.eq => _EqTab(
+                  store: store,
+                  writes: _writes!,
+                  onFocus: (f) => _focus.value = f),
+              ChannelTab.gate => _DynTab(
+                  store: store,
+                  writes: _writes!,
+                  onFocus: (f) => _focus.value = f,
+                  kind: DynKind.gate),
+              ChannelTab.comp => _DynTab(
+                  store: store,
+                  writes: _writes!,
+                  onFocus: (f) => _focus.value = f,
+                  kind: DynKind.comp),
+            };
             final content = SingleChildScrollView(
               key: PageStorageKey('processing-${store.tab.name}'),
-              padding: EdgeInsets.all(wide ? 12 : 8),
-              child: switch (store.tab) {
-                ChannelTab.input => _InputTab(
-                    store: store,
-                    writes: _writes!,
-                    onFocus: (f) => _focus.value = f),
-                ChannelTab.eq => _EqTab(
-                    store: store,
-                    writes: _writes!,
-                    onFocus: (f) => _focus.value = f),
-                ChannelTab.gate => _DynTab(
-                    store: store,
-                    writes: _writes!,
-                    onFocus: (f) => _focus.value = f,
-                    kind: DynKind.gate),
-                ChannelTab.comp => _DynTab(
-                    store: store,
-                    writes: _writes!,
-                    onFocus: (f) => _focus.value = f,
-                    kind: DynKind.comp),
-              },
+              child: wide
+                  ? Padding(
+                      padding: const EdgeInsets.all(12), child: tabContent)
+                  : MobileReferenceWidth(
+                      referenceWidth: 362,
+                      child: Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 12, 8, 20),
+                          child: tabContent)),
             );
             return LayoutBuilder(builder: (context, bounds) {
               // HTML phone: 362 / 466 processing, 104 / 466 selected strip.
@@ -541,29 +551,31 @@ class _BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height:
-          (MediaQuery.sizeOf(context).height * 112 / 1000).clamp(88.0, 112.0),
-      decoration: BoxDecoration(
-        color: ConsolePalette.of(context).panel,
-        border: Border(top: BorderSide(color: ConsolePalette.of(context).line)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var i = 0; i < _tabOrder.length; i++) ...[
-            Expanded(
-                child: _BottomCell(
-                    store: store,
-                    tab: _tabOrder[i],
-                    active: _tabOrder[i] == tab,
-                    onTap: () => onTab(_tabOrder[i]))),
-            if (i < _tabOrder.length - 1)
-              Container(width: 1, color: ConsolePalette.of(context).line),
-          ],
-        ],
-      ),
-    );
+    return MobileReferenceWidth(
+        referenceWidth: 362,
+        child: Container(
+          height: 112,
+          decoration: BoxDecoration(
+            color: ConsolePalette.of(context).panel,
+            border:
+                Border(top: BorderSide(color: ConsolePalette.of(context).line)),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < _tabOrder.length; i++) ...[
+                Expanded(
+                    child: _BottomCell(
+                        store: store,
+                        tab: _tabOrder[i],
+                        active: _tabOrder[i] == tab,
+                        onTap: () => onTab(_tabOrder[i]))),
+                if (i < _tabOrder.length - 1)
+                  Container(width: 1, color: ConsolePalette.of(context).line),
+              ],
+            ],
+          ),
+        ));
   }
 }
 
@@ -590,8 +602,8 @@ class _BottomCell extends StatelessWidget {
         onTap: onTap,
         child: Container(
           color: active
-              ? ConsolePalette.of(context).selectionFill
-              : ConsolePalette.of(context).tileBg,
+              ? ConsolePalette.of(context).processingSelected
+              : ConsolePalette.of(context).navigationTile,
           padding: const EdgeInsets.fromLTRB(7, 9, 7, 5),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -608,12 +620,13 @@ class _BottomCell extends StatelessWidget {
                           : off
                               ? ConsolePalette.of(context).text7
                               : ConsolePalette.of(context).mutedText)),
-              const SizedBox(height: 4),
+              const SizedBox(height: 7),
               Expanded(
                   child: Opacity(
                       opacity:
                           off && !ConsolePalette.of(context).isLight ? 0.35 : 1,
-                      child: _NavPreview(store: store, tab: tab))),
+                      child: _PhoneNavPreview(
+                          store: store, tab: tab, active: active))),
             ],
           ),
         ),
@@ -804,7 +817,7 @@ class _ProcessorHeader extends StatelessWidget {
           padding: EdgeInsets.symmetric(horizontal: compact ? 12 : 16),
           decoration: BoxDecoration(
             color: on
-                ? ConsolePalette.of(context).selectionFill
+                ? ConsolePalette.of(context).processingSelected
                 : ConsolePalette.of(context).control,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
@@ -820,7 +833,7 @@ class _ProcessorHeader extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: compact ? 20 : 28 * scale,
+                      fontSize: compact ? 18 : 28 * scale,
                       fontWeight: FontWeight.w600,
                       color: on
                           ? ConsolePalette.of(context).cyan
