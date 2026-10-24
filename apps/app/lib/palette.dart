@@ -31,8 +31,9 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
       isLight ? const Color(0xffffffff) : const Color(0xff101510);
   Color get selectionFill => lime.withValues(alpha: isLight ? .12 : .09);
   Color get selectedLine => lime;
-  // Signal identities remain independent from the chosen interface accent.
-  Color get meter => pair(0xffa8e05f, 0xff3f7816);
+  // Physical controls and signal bars keep their console colors in both modes.
+  // Only the surrounding UI surfaces and readable text adapt to brightness.
+  Color get meter => const Color(0xffa8e05f);
   Color get amber => pair(0xffe0a400, 0xff8a5d00);
   Color get mute => pair(0xffd63a2c, 0xffb52520);
   Color get solo => const Color(0xfff5c542);
@@ -46,8 +47,8 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get greenBack => pair(0xff1a2a00, 0xffdbe9cc);
   Color get slot => pair(0xff161616, 0xffbac2ca);
   Color get slotBorder => pair(0xff2a2a2a, 0xff8895a0);
-  Color get cap => pair(0xff3a3a3a, 0xffc3cbd3);
-  Color get knob => pair(0xffd8d8d4, 0xff56616c);
+  Color get cap => const Color(0xff3a3a3a);
+  Color get knob => const Color(0xffd8d8d4);
   Color get panShape => pair(0xff4a4a4a, 0xffacb6bf);
   Color get chip => pair(0xff262626, 0xffe2e6ea);
   Color get eqBg => pair(0xff1f2314, 0xffe9efdf);
@@ -65,7 +66,14 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get overlay => text.withValues(alpha: .08);
   Color get panKnob => const Color(0xffd8d8d4);
   Color get panGrip => const Color(0xff8e8e8a);
-  Color get capBorder => pair(0xff555555, 0xff74818d);
+  Color get capBorder => const Color(0xff555555);
+  Color get faderSlot => const Color(0xff161616);
+  Color get faderSlotBorder => const Color(0xff2a2a2a);
+  Color get faderAccent => ConsolePalette(accent: accent).lime;
+  Color get meterClipBack => const Color(0xff3d1006);
+  Color get meterAmberBack => const Color(0xff3a2600);
+  Color get meterGreenBack => const Color(0xff1a2a00);
+  Color get meterReduction => const Color(0xffff4b06);
   Color get capHighlight => const Color(0xbfffffff);
   Color get capGrip => const Color(0xff151515);
   Color get capGripLight => const Color(0xff585858);
@@ -109,12 +117,12 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get cyan => lime;
   Color get masterLine => selectedLine;
   Color get meterGreen => meter;
-  Color get meterAmber => amber;
-  Color get meterRed => mute;
-  Color get meterCover => greenBack;
+  Color get meterAmber => const Color(0xffe0a400);
+  Color get meterRed => const Color(0xffd63a2c);
+  Color get meterCover => meterGreenBack;
   Color get peakLine => text;
-  Color get clipOn => mute;
-  Color get clipOff => over;
+  Color get clipOn => meterRed;
+  Color get clipOff => meterClipBack;
   Color get muteOffBg => control;
   Color get muteOffTx => text;
   Color get muteOffBd => line;

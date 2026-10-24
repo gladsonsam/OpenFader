@@ -164,9 +164,9 @@ class _ScalePainter extends CustomPainter {
   void paint(Canvas c, Size s) {
     mixerText(c, 'LR', const Offset(8, 10), 10,
         color: palette.mutedText, weight: FontWeight.w600);
-    mixerBox(
-        c, Rect.fromLTWH(g.x - 3, g.top - 3, 6, g.travel + 6), palette.slot,
-        radius: 3, border: palette.slotBorder);
+    mixerBox(c, Rect.fromLTWH(g.x - 3, g.top - 3, 6, g.travel + 6),
+        palette.faderSlot,
+        radius: 3, border: palette.faderSlotBorder);
     // Design number column (tablet+ only): 1-6 repeated in three banks.
     // The mock marks the third bank's "1" red on channel 1; replicate it.
     if (!g.compact) {
@@ -217,14 +217,14 @@ class _CapPainter extends CustomPainter {
       c.drawPath(
           Path()..addRRect(rect),
           Paint()
-            ..color = palette.lime.withValues(alpha: .4)
+            ..color = palette.faderAccent.withValues(alpha: .4)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
     }
     if (held) {
       c.drawPath(
           Path()..addRRect(rect),
           Paint()
-            ..color = palette.lime.withValues(alpha: .27)
+            ..color = palette.faderAccent.withValues(alpha: .27)
             ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
     }
     c.drawShadow(Path()..addRRect(rect), palette.shadow, 3, false);
@@ -256,7 +256,7 @@ class _CapPainter extends CustomPainter {
     mixerBox(
         c,
         Rect.fromLTWH(ix, s.height / 2 - lineH / 2, s.width - 2 * ix, lineH),
-        palette.lime,
+        palette.faderAccent,
         radius: 3);
   }
 

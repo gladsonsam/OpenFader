@@ -499,8 +499,10 @@ class _DynamicsPainter extends CustomPainter {
       final x = g.meterX(i);
       final w = size.width * (compact ? 26 / 752 : 24 / 1280);
       final rect = Rect.fromLTWH(x, g.top, w, g.height);
-      canvas.drawRRect(RRect.fromRectAndRadius(rect, const Radius.circular(2)),
-          Paint()..color = i == 1 ? palette.over : palette.greenBack);
+      canvas.drawRRect(
+          RRect.fromRectAndRadius(rect, const Radius.circular(2)),
+          Paint()
+            ..color = i == 1 ? palette.meterClipBack : palette.meterGreenBack);
       final value = values[i];
       if (value != null && value.isFinite) {
         final n = i == 1
@@ -510,7 +512,7 @@ class _DynamicsPainter extends CustomPainter {
             i == 1
                 ? Rect.fromLTWH(x, g.top, w, g.height * n)
                 : Rect.fromLTWH(x, g.top + g.height * (1 - n), w, g.height * n),
-            Paint()..color = i == 1 ? palette.comp : palette.meter);
+            Paint()..color = i == 1 ? palette.meterReduction : palette.meter);
       }
       text(['IN', 'GR', 'OUT'][i], Offset(x + w / 2, size.height * .89));
       text(value == null || !value.isFinite ? '—' : value.toStringAsFixed(1),

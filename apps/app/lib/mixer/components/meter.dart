@@ -106,17 +106,17 @@ class _MeterPainter extends CustomPainter {
           ? signal.peak >= .99
           : signal.source.value >= .99;
       mixerBox(c, Rect.fromLTWH(x, 0, w, clipHeight),
-          clipped ? palette.mute : palette.over,
+          clipped ? palette.meterRed : palette.meterClipBack,
           radius: 3);
       final unity = MixerFaderScale.positionForDb(0);
       final warning = MixerFaderScale.positionForDb(-12);
       mixerBox(
           c,
           Rect.fromLTWH(x, top + (1 - unity) * h, w, (unity - warning) * h),
-          palette.amberBack,
+          palette.meterAmberBack,
           radius: 3);
       mixerBox(c, Rect.fromLTWH(x, top + (1 - warning) * h, w, warning * h),
-          palette.greenBack,
+          palette.meterGreenBack,
           radius: 2);
       final level = MixerFaderScale.positionForLevel(signal.source.value);
       final peak = MixerFaderScale.positionForLevel(signal.peak);
@@ -126,8 +126,8 @@ class _MeterPainter extends CustomPainter {
             radius: 2);
       }
       if (peak > 0) {
-        mixerBox(
-            c, Rect.fromLTWH(x, top + (1 - peak) * h, w, 3), palette.amber);
+        mixerBox(c, Rect.fromLTWH(x, top + (1 - peak) * h, w, 3),
+            palette.meterAmber);
       }
     }
   }
