@@ -569,6 +569,13 @@ async fn wait_for_initial_state(session: &MackieSession) -> anyhow::Result<()> {
     ];
     let deadline = std::time::Instant::now() + INITIAL_STATE_TIMEOUT;
     loop {
+        // Liveness gate (r50): check BEFORE the sentinel-success test so a
+        // closed transport can never report ready from stale cache words.
+        if !session.is_alive() {
+            anyhow::bail!(
+                "dl32s: transport closed before initial mixer state arrived; reconnect once the mixer is reachable"
+            );
+        }
         if sentinels.iter().all(|(_, addr)| session.cached(*addr).is_some()) {
             return Ok(());
         }
@@ -673,6 +680,13 @@ impl Dl32sDriver {
         let guard = self.session.lock().await;
         if guard.is_none() {
             anyhow::bail!("not connected: call connect() first");
+        }
+        // Liveness gate (r50): a stored session whose transport tasks have
+        // finished is a closed TCP connection, not a live desk. Report it as
+        // a transport closure (wording avoids the engine's drop-class
+        // substrings) so callers reconnect instead of serving stale cache.
+        if !guard.as_ref().expect("checked above").is_alive() {
+            anyhow::bail!("dl32s: transport closed: connection lost; reconnect once the mixer is reachable");
         }
         Ok(guard)
     }
@@ -1230,12 +1244,6 @@ impl MixerDriver for Dl32sDriver {
         // X-Air session->driver forward path. Type-1 meter blocks ride a
         // separate branch into the input-meter cache (first 32 words only);
         // `decode_push` keeps dropping them as params.
-        let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
-        if let Ok(mut m) = self.meters.lock() {
-            m.generation = generation;
-            m.updated_at = None;
-            m.levels.clear();
-        }
         // DL32S-only 91-entry meter layout (per-client override through the
         // transport layout hook): RTA bins ride indices 60..90 while the
         // first 32 input words stay put. Best-effort — a refused layout just
@@ -1245,6 +1253,27 @@ impl MixerDriver for Dl32sDriver {
             .await
         {
             eprintln!("dl32s: RTA meter layout override failed (input meters continue, RTA unavailable): {e:#}");
+        }
+        // Liveness recheck (r50): the layout override above awaited two
+        // correlated round trips. Recheck BEFORE publishing the session or
+        // spawning ingest so a transport that died mid-await never becomes
+        // the stored session. Cleanup mirrors the readiness-gate failure:
+        // close the local session (aborts transport tasks on close/drop),
+        // spawn nothing, assign nothing.
+        if !session.is_alive() {
+            session.close();
+            anyhow::bail!(
+                "dl32s: transport closed before initial mixer state arrived; reconnect once the mixer is reachable"
+            );
+        }
+        // Retire the previous session's ingest/cache only after all
+        // fallible readiness checks succeed. A failed replacement must
+        // leave the retained session's generation and telemetry intact.
+        let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Ok(mut m) = self.meters.lock() {
+            m.generation = generation;
+            m.updated_at = None;
+            m.levels.clear();
         }
         // Initial shared-source read: the rig-confirmed initial bulk carries
         // the type-2 addr-22 selector (5000 = Return 1–2). Treated as a

@@ -2409,9 +2409,10 @@ impl Engine {
         self.link_message_cached()
     }
 
-    /// One round-trip latency sample in ms: OSC query timing on hardware
-    /// (a lightweight main-fader query), small deterministic jitter on
-    /// sim. Failures keep the last sample (never block the ticker).
+    /// Control-health sample duration in ms: an OSC main-fader round trip
+    /// on X-Air, a local session/cache check on DL32S, and deterministic
+    /// jitter on sim. DL32S samples are not network RTT. Failures keep the
+    /// last sample (never block the ticker).
     ///
     /// Liveness, not verification (R2 health contract): the probe reads the
     /// inclusive DISPLAY getter (`get_main_fader` serves own-write-pending
