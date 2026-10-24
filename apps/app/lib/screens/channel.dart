@@ -115,6 +115,9 @@ abstract class ChannelStore extends ChangeNotifier {
 
   // --- edits (owner forwards through the 60 Hz coalescer) ---
   void setEqParam(int band, String param, double value);
+
+  /// Set an outer band's presentation shape; the store maps native enums.
+  void setEqBandType(int band, EqFilterShape shape);
   void setEqOn(bool on);
   void setEqBandOn(int band, bool on);
   void setHpfSlope(int slope);

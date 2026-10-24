@@ -59,6 +59,7 @@ class FakeSimEngine implements EngineApi {
               'eq${band}_freq': [100.0, 2000.0, 5000.0, 10000.0][band - 1],
               'eq${band}_gain': 0.0,
               'eq${band}_q': 1.0,
+              'eq${band}_type': [1, 2, 2, 4][band - 1],
             },
             for (var slot = 1; slot <= 10; slot++) ...{
               'send${slot}_level': -90.0,

@@ -95,7 +95,7 @@ const fn field(
     }
 }
 
-/// The head of the strip (offsets 0-34), identical across DL16S/DL32S.
+/// The head of the strip (offsets 0-33), identical across DL16S/DL32S.
 fn input_head() -> Vec<Field> {
     use Encoding::*;
     vec![
@@ -135,17 +135,21 @@ fn input_head() -> Vec<Field> {
         field("comp_knee", 31, Enum, "Comp knee soft/hard", None, false),
         field("eq_mode", 32, Enum, "EQ modern/vintage", None, true),
         field("eq_on", 33, Bool, "EQ on", None, true),
-        field("eq_bands", 34, Int, "EQ band count", None, true),
     ]
 }
 
-/// EQ block: bands 4/3/2 of four words at 35/39/43, then band 1 with only
-/// three (gain, freq, Q) at 47-49 — the low band has no filter-type word.
+/// EQ block (offsets 34-49): four bands of four words, type word leads each
+/// band. B4 type 34 / gain 35 / freq 36 / Q 37; B3 type 38 / 39 / 40 / 41;
+/// B2 type 42 / 43 / 44 / 45; B1 type 46 / gain 47 / freq 48 / Q 49.
 /// Band 4 is the TOP band (seen at 17.25 kHz vs band 1 at 100 Hz).
+/// Hardware-verified 2026-10-24 (CH7 write+relay, net-zero restored, all 106
+/// words match baseline): B1 Bell raw 2 at addr 683, restore LowShelf raw 3;
+/// B4 Bell raw 2 at addr 671, restore HighShelf raw 4. Raw 2 = Bell,
+/// 3 = LowShelf, 4 = HighShelf verified; native 0/1/5 meanings unverified.
 fn input_eq() -> Vec<Field> {
     use Encoding::*;
-    let mut out = Vec::with_capacity(15);
-    for (band, base) in [(4, 35), (3, 39), (2, 43), (1, 47)] {
+    let mut out = Vec::with_capacity(16);
+    for (band, base) in [(4, 34), (3, 38), (2, 42), (1, 46)] {
         // `format!` is not const: leak a static id string per band field.
         // Field keys are looked up by content, so owned keys are fine.
         let key = |suffix: &str| -> &'static str {
@@ -154,9 +158,10 @@ fn input_eq() -> Vec<Field> {
         let label = |suffix: &str| -> &'static str {
             Box::leak(format!("EQ band {band} {suffix}").into_boxed_str())
         };
+        out.push(field(key("type"), base, Enum, label("filter type"), None, true));
         out.push(field(
             key("gain"),
-            base,
+            base + 1,
             Db,
             label("gain"),
             Some((-20.0, 20.0)),
@@ -164,7 +169,7 @@ fn input_eq() -> Vec<Field> {
         ));
         out.push(field(
             key("freq"),
-            base + 1,
+            base + 2,
             Float,
             label("frequency"),
             Some((20.0, 20000.0)),
@@ -172,15 +177,12 @@ fn input_eq() -> Vec<Field> {
         ));
         out.push(field(
             key("q"),
-            base + 2,
+            base + 3,
             Float,
             label("Q"),
             Some((0.1, 20.0)),
             true,
         ));
-        if band != 1 {
-            out.push(field(key("type"), base + 3, Enum, label("filter type"), None, true));
-        }
     }
     out
 }
@@ -419,8 +421,13 @@ mod tests {
         assert!(!dl32s_main().field("fader").unwrap().verified);
         assert!(!dl32s_auxmasters().field("mute").unwrap().verified);
         assert!(!dl32s_auxmasters().field("fader").unwrap().verified);
-        // Band 1 has no filter-type word.
-        assert!(block.field("eq1_type").is_err());
+        // EQ types lead each band (offsets 34/38/42/46); the old `eq_bands`
+        // count word at 34 was a misread of the B4 type word.
+        assert!(block.field("eq_bands").is_err());
+        assert_eq!(block.field("eq4_type").unwrap().offset, 34);
+        assert_eq!(block.field("eq3_type").unwrap().offset, 38);
+        assert_eq!(block.field("eq2_type").unwrap().offset, 42);
+        assert_eq!(block.field("eq1_type").unwrap().offset, 46);
         assert_eq!(block.field("eq1_q").unwrap().offset, 49);
     }
 
