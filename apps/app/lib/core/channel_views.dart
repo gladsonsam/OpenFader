@@ -480,7 +480,7 @@ class ChannelSendVm {
   final double level; // 0..1 fader pos
   final bool muted;
   final bool canMute;
-  final double? pan; // -1..1; null = unsupported or not yet reported.
+  final double? pan; // -1..1; null unless a stereo aux destination is known.
   final bool? grpon; // null = unsupported leaf
   final int? tap; // desk tap enum 0..5, null = unknown
   final List<int> tapOptions;
