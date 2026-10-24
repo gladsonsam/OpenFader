@@ -813,6 +813,25 @@ impl SimDriver {
         10.0_f32.powf(Self::input_db(i, tick) / 20.0) * strip.fader
     }
 
+    /// Demo-only frequency display: fixed logarithmic-band peaks with a slow
+    /// level envelope. Never FFT the handful of control-rate meter samples or
+    /// normalize each frame, which makes tiny timing differences look full scale.
+    pub fn demo_spectrum(&self, ch: usize) -> Vec<f32> {
+        let level = self.meter_level(ch, self.signal_tick());
+        if level <= 0.0 { return vec![0.0; 64]; }
+        let envelope = ((20.0 * level.log10() + 90.0) / 70.0).clamp(0.0, 1.0);
+        (0..64).map(|bin| {
+            let x = bin as f32;
+            let peak = |center: f32, width: f32| (-0.5 * ((x - center) / width).powi(2)).exp();
+            let profile = 0.012
+                + 0.92 * peak(12.0 + (ch % 3) as f32, 3.0)
+                + 0.55 * peak(23.0 + (ch % 4) as f32, 3.8)
+                + 0.20 * peak(34.0, 5.0);
+            let texture = 0.85 + 0.15 * (x * 1.9 + ch as f32 * 0.7).cos();
+            (profile * texture * envelope).clamp(0.0, 1.0)
+        }).collect()
+    }
+
     // ---- R2: FX rack (design types, [`SIM_FX_SLOTS`] slots) ----
 
     /// Design FX slot count (8; the XR18 desk has 4).
