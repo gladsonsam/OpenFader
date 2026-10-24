@@ -24,7 +24,8 @@
 //! client.send(Cmd::Fader { ch: 0, key: None, value: 0.5 }).await.unwrap();
 //! // `client.events` yields `SharedEvent`s: the initial snapshot first
 //! // (`you`, `state`, `shows`, `clients`, `locks`, `caps`, `devices`,
-//! // `link`, `info`?, `scenes`, `fx`, `routing`, `params`…),
+//! // `link`, `info`?, `scenes`, `fx`, `routing`, `params…`,
+//! // `native_snapshots`),
 //! // then every live broadcast. Dropping `client` detaches it.
 //! # }
 //! ```

@@ -506,6 +506,39 @@ pub struct FilesCaps {
     #[serde(default)]
     pub supported: bool,
 }
+
+/// `caps.native_snapshots`: read-only native desk snapshot slots behind the
+/// `native_snapshots` event (`supported:false` where the driver models no
+/// native slots — the block is skipped on the wire there, so old frames
+/// stay byte-identical). `read_only` is always true when supported: no
+/// native recall/save/delete, no `Show.zip` transfer, no slot allocator
+/// and no probe ride this surface.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NativeSnapshotsCaps {
+    #[serde(default)]
+    pub supported: bool,
+    #[serde(default)]
+    pub read_only: bool,
+}
+
+impl NativeSnapshotsCaps {
+    /// `skip_serializing_if` for the additive caps block (keeps
+    /// unsupported frames byte-identical while no driver models slots).
+    pub fn is_unsupported(v: &Self) -> bool {
+        !v.supported
+    }
+}
+
+/// One `native_snapshots` slot row: the desk's own slot id intact (raw
+/// `u32`, never remapped, never zero-defaulted) plus the desk-provided
+/// name. Slot ids carry no verified base (native `0` may exist as a
+/// Default — unverified) and no invented bounds/labels/count. Slots exist
+/// ONLY from desk push evidence.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NativeSnapshotEntry {
+    pub slot: u32,
+    pub name: String,
+}
 /// One `caps.routing` patch group (R2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingGroupCaps {
@@ -699,6 +732,10 @@ pub enum Event {
         /// R2 file-transfer support. Same back-compat default.
         #[serde(default)]
         files: FilesCaps,
+        /// Read-only native desk snapshot slots. Skipped on the wire while
+        /// unsupported (same back-compat default).
+        #[serde(default, skip_serializing_if = "NativeSnapshotsCaps::is_unsupported")]
+        native_snapshots: NativeSnapshotsCaps,
     },
     Params {
         ch: u16,
@@ -879,6 +916,34 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         data: Option<String>,
     },
+    /// Read-only native desk snapshot slots (DL32S push evidence; distinct
+    /// from the app-local numbered `scenes` library `001..999`).
+    /// `supported:false` where the driver models no native slots (sim,
+    /// xair — never faked); `read_only` is always true when supported.
+    /// `status` is `unsupported` (not modelled), `unavailable` (modelled
+    /// but no live desk session), `loading` (live session, no slot data
+    /// pushed yet) or `ready` (push-observed metadata — PARTIAL only:
+    /// `slots` empty with `current: Some(n)` proves only the last reported
+    /// recall, never a full inventory or a non-empty desk). `slots`
+    /// carries ONLY desk-pushed ids/names in id order (native raw `u32`
+    /// ids intact, no verified base, no invented bounds/labels/count);
+    /// `current` is the last desk-observed recall slot (`None` = no
+    /// recall observed, never a slot-0 default). `epoch` is the ENGINE
+    /// connection generation (`connection_gen`, the same barrier as
+    /// `SyncEpoch` — NOT the RTA `epoch`): the frontend must strictly
+    /// reject frames whose `epoch` is missing or mismatched. Read-only:
+    /// no command writes these slots.
+    /// Unicast in the attach/resume snapshots; broadcast on change (no
+    /// audio-param fanout — this frame carries no strip params).
+    NativeSnapshots {
+        driver: String,
+        supported: bool,
+        read_only: bool,
+        status: String,
+        slots: Vec<NativeSnapshotEntry>,
+        current: Option<u32>,
+        epoch: u64,
+    },
 /// Realtime negotiation ack (MR1): unicast reply to [`Cmd::Hello`],
     /// carrying the client's current binary-meter preference. Never
     /// broadcast. Old clients never see it (they never send `hello`).
@@ -928,6 +993,7 @@ impl Event {
             Event::Main { .. } => "main",
             Event::Solo { .. } => "solo",
             Event::File { .. } => "file",
+            Event::NativeSnapshots { .. } => "native_snapshots",
         }
     }
 

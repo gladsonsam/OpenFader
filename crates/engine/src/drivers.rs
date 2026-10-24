@@ -101,6 +101,13 @@ pub trait DynDriver: Send + Sync {
     fn subscribe_updates(&self) -> Option<tokio::sync::broadcast::Receiver<ParamUpdate>>;
     fn poll_meters(&self) -> MeterFrame;
     fn poll_spectrum(&self) -> Vec<openfader_core::AudioSpectrum>;
+    /// Read-only native desk snapshot view (see
+    /// [`MixerDriver::native_snapshots`](openfader_core::MixerDriver::native_snapshots)):
+    /// `None` = the driver does not model native slots (honest
+    /// `unsupported`, never faked). Sync lock-local read, no I/O.
+    fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
+        None
+    }
     async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()>;
     async fn connect(&self, addr: &str) -> anyhow::Result<()>;
     async fn disconnect(&self) -> anyhow::Result<()> { Ok(()) }
@@ -490,6 +497,9 @@ macro_rules! impl_dyn_driver {
         }
         fn meter_taps(&self) -> &'static [&'static str] {
             MixerDriver::meter_taps(self)
+        }
+        fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
+            MixerDriver::native_snapshots(self)
         }
         fn bus_count(&self) -> u8 {
             MixerDriver::bus_count(self)

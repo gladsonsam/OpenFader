@@ -793,6 +793,7 @@ class AppStore extends ChangeNotifier
   DateTime? _transportErrorAt;
   String _lastEngineError = '';
   DateTime? _engineErrorAt;
+  int _errorRevision = 0;
 
   // --- mixer control state ---
   final Map<int, double> _confirmedFader = {};
@@ -950,6 +951,9 @@ class AppStore extends ChangeNotifier
   String get transportError => _transportError;
   DateTime? get transportErrorAt => _transportErrorAt;
 
+  /// Each received failure is distinct even when its message is unchanged.
+  int get errorRevision => _errorRevision;
+
   /// Preferred error string for UI: transport failure wins (it explains
   /// silent probes), else the engine `error` frame. '' when healthy.
   String get visibleError =>
@@ -963,7 +967,7 @@ class AppStore extends ChangeNotifier
     _stopPresetRecalls('A connection error interrupted recall: $e. '
         'The last setting may have changed; its result is uncertain.');
     final s = '$e';
-    if (s == _transportError) return;
+    _errorRevision++;
     _transportError = s;
     _transportErrorAt = DateTime.now();
     notifyListeners();
@@ -1148,6 +1152,8 @@ class AppStore extends ChangeNotifier
         if (e['type'] == 'audio_spectrum') _syncSpectrum();
         _confirmEcho(e);
         if (e['type'] == 'error') {
+          _errorRevision++;
+          _engineErrorAt = DateTime.now();
           _stopPresetRecalls(
               'The mixer reported an error during recall: ${e['message'] ?? 'Unknown error'}. '
               'The last setting may have changed; its result is uncertain.');
