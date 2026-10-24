@@ -352,6 +352,47 @@ pub struct MixerSnapshot {
     pub strips: Vec<ChannelStrip>,
 }
 
+/// One native desk snapshot slot: the desk's own slot id intact (raw `u32`,
+/// never remapped, never zero-defaulted) plus the desk-provided name. No
+/// base, bounds, labels or counts are invented — native `0` may exist
+/// (Default?) but that is unverified, so no slot is assumed to be first.
+/// Slots exist ONLY from desk push evidence (see
+/// [`MixerDriver::native_snapshots`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NativeSnapshotSlot {
+    pub slot: u32,
+    pub name: String,
+}
+
+/// Read-only view of a desk's native snapshot slots, distinct from the
+/// engine's app-local numbered scene library (`scenes_lib`, slots
+/// `1..=999`).
+///
+/// Provenance contract: every entry is desk-observed push metadata — a
+/// snapshot recall or rename relay received on the live session. Own-write
+/// optimism (a local save accept, a delete) never populates this view, so
+/// it can never launder an unconfirmed write into a confirmed slot.
+/// `received` stays true once ANY genuine snapshot push has been observed
+/// this session, even when `slots` is empty — that is PARTIAL observed
+/// metadata only, never a full catalogue and never proof of an empty desk.
+/// `ready` therefore means "observed something", not "complete inventory":
+/// `slots` empty with `current: Some(n)` proves only the last reported
+/// recall, never a non-empty inventory. `connected` reports whether a
+/// live desk session backs this view; `current` is the last
+/// desk-observed recall slot — `None` means no recall observed, never a
+/// slot-0 default.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NativeSnapshots {
+    /// Push-evidenced slots in slot-id order.
+    pub slots: Vec<NativeSnapshotSlot>,
+    /// Last desk-evidenced recall slot (`None` = no recall observed).
+    pub current: Option<u32>,
+    /// Any genuine snapshot push observed this session (even empty).
+    pub received: bool,
+    /// A live desk session backs this view.
+    pub connected: bool,
+}
+
 /// Clamp a fader value into the canonical 0.0..=1.0 range.
 pub fn clamp_fader(v: f32) -> f32 {
     v.clamp(0.0, 1.0)
@@ -770,6 +811,21 @@ pub trait MixerDriver: Send + Sync {
     /// Non-blocking single-frame poll (fake meters, tests, headless use).
     fn poll_meters(&self) -> MeterFrame {
         MeterFrame::silent(self.channel_count())
+    }
+
+    /// Read-only view of the desk's native snapshot slots (see
+    /// [`NativeSnapshots`]): push-evidenced names plus the current-slot
+    /// marker from the current session. Default `None` = the driver does
+    /// not model native slots (honest `unsupported`, never faked — in
+    /// particular no simulator invents desk slots it does not model).
+    ///
+    /// There is deliberately NO write counterpart: native recall/save/
+    /// delete, `Show.zip` transfer, free-slot allocation and probing stay
+    /// out of this surface. The view is sync and lock-local (session-cache
+    /// reads only, no I/O) so the engine can sample it on its existing
+    /// ticker without a new task or timer.
+    fn native_snapshots(&self) -> Option<NativeSnapshots> {
+        None
     }
 }
 

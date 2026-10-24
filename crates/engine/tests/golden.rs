@@ -194,6 +194,12 @@ fn examples() -> Vec<(String, Value)> {
                     sub_assign: true,
                 },
                 files: openfader_engine::protocol::FilesCaps { supported: true },
+                // Native desk slots: unmodelled here (unsupported block is
+                // skipped on the wire, so the fixture stays byte-identical).
+                native_snapshots: openfader_engine::protocol::NativeSnapshotsCaps {
+                    supported: false,
+                    read_only: false,
+                },
             },
         ),
         (
