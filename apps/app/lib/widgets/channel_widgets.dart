@@ -335,6 +335,8 @@ class EqCurvePainter extends CustomPainter {
           Offset(x, size.height + 16),
           centered: true);
     }
+    canvas.save();
+    canvas.clipRect(Offset.zero & size);
     // Individual band contributions use the same DSP response as the sum.
     for (final band in eq.bands.where((b) => b.on)) {
       final samples = eqResponseDb(ChannelEqVm(bands: [band]));
@@ -352,17 +354,28 @@ class EqCurvePainter extends CustomPainter {
     // the owner hides it when bins carry no signal).
     final bins = rtaBins;
     if (rtaActive && bins != null && bins.isNotEmpty) {
-      final path = Path()..moveTo(0, size.height);
-      for (var i = 0; i < bins.length; i++) {
-        final f = 20 * math.pow(1000, i / (bins.length - 1)).toDouble();
-        final x = EqGraphGeom.xOf(f.clamp(20, 20000)) * sx;
-        final h = bins[i].clamp(0.0, 1.0) * size.height * 0.63;
-        path.lineTo(x, size.height - h);
+      final count = math.min(32, bins.length);
+      final width = size.width / count;
+      for (var bar = 0; bar < count; bar++) {
+        final first = bar * bins.length ~/ count;
+        final end = (bar + 1) * bins.length ~/ count;
+        var peak = 0.0;
+        for (var bin = first; bin < end; bin++) {
+          peak = math.max(peak, bins[bin].clamp(0.0, 1.0));
+        }
+        final height = peak * size.height * .63;
+        if (height <= 0) continue;
+        final rect = Rect.fromLTWH(
+            bar * width + .5, size.height - height, width - 1, height);
+        canvas.drawRect(rect,
+            Paint()..color = palette.eqPreviewFill.withValues(alpha: .28));
+        canvas.drawRect(
+            rect,
+            Paint()
+              ..color = palette.eqPreviewFill.withValues(alpha: .7)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = .7);
       }
-      path.lineTo(size.width, size.height);
-      path.close();
-      canvas.drawPath(
-          path, Paint()..color = palette.meter.withValues(alpha: .2));
     }
     // Summed curve + fill to 0 dB.
     if (responseDb.isNotEmpty) {
@@ -394,6 +407,7 @@ class EqCurvePainter extends CustomPainter {
           ..strokeWidth = 2,
       );
     }
+    canvas.restore();
     void node(Offset point, int band, bool on) {
       final color = palette.bandColor(band);
       final radius = size.width < 500 ? 15.0 : 22.0;
