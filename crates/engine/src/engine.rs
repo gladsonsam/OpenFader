@@ -1014,12 +1014,9 @@ impl Engine {
         self.param_cache.write().unwrap().clear();
         self.reads_suspended.store(false, Ordering::Release);
         // The FX cache mirrors the active driver (sim rows / xair
-        // placeholders); refresh it on every switch, including the boot
-        // connect — otherwise a hardware boot keeps the sim-seeded rows
-        // and the UI shows a fake rack. Connect-time seeding is type-only
-        // on numbered racks (4 queries, not ~1+N per slot): the deferred
-        // fill (`post_switch` -> fill worker) completes the params off the
-        // command path so first paint never waits for them.
+        // placeholders); refresh it on every switch, including boot.
+        // Seeding performs no hardware queries: actual FX types/params
+        // follow channel levels, masters, mutes, names and EQ in the fill.
         self.seed_fx_cache().await;
         // Hardware meter streams need an explicit subscribe per connection
         // generation (sim synthesizes its own levels via `poll_meters`).
@@ -2861,11 +2858,9 @@ impl Engine {
         *self.fx_cache.write().unwrap() = rows;
     }
 
-    /// Connect-time FX seed: full rows for in-memory (Design) racks,
-    /// type-only rows for numbered racks, honest
-    /// placeholders elsewhere. The command path never pays the ~1+N
-    /// per-slot param cost; the deferred fill + the FX poller complete the
-    /// params off the command path.
+    /// Connect-time FX seed: in-memory Design rows, honest placeholders
+    /// otherwise. No FX wire reads precede levels/mutes/names/EQ; the
+    /// deferred fill and FX poller supply types and params afterwards.
     async fn seed_fx_cache(&self) {
         let started = Instant::now();
         let generation = self.connection_gen.load(Ordering::Acquire);
@@ -2881,9 +2876,8 @@ impl Engine {
         }
     }
 
-    /// Seed rows for [`Engine::seed_fx_cache`]: Design racks read fully
-    /// (in-memory, no I/O); numbered racks read types only; rack-less
-    /// drivers keep placeholders.
+    /// Seed rows without I/O: Design racks read memory; other racks keep
+    /// placeholders until the deferred fill reads their actual state.
     async fn read_fx_seed_rows(&self) -> Vec<FxSlotRt> {
         let drv = self.active_drv();
         if drv.fx_flavor() == FxFlavor::Design {
@@ -2899,13 +2893,6 @@ impl Engine {
                     params: param_vec_to_map(&s.fx_type, &s.params),
                 })
                 .collect();
-        }
-        if drv.fx_flavor() == FxFlavor::Numbered {
-            let mut rows = Vec::new();
-            for slot in 1..=drv.fx_slot_count() as u8 {
-                rows.push(self.read_numbered_slot_type_only(slot).await);
-            }
-            return rows;
         }
         (1..=drv.fx_slot_count() as u8)
             .map(|slot| FxSlotRt {
@@ -3008,26 +2995,6 @@ impl Engine {
             on: true,
             bypass: false,
             params,
-        }
-    }
-
-    /// Type-only read of one numbered-rack FX slot (connect-time seed: 1 query;
-    /// params stay empty until the deferred fill or the FX poller reads
-    /// them). Same honest placeholder when the type is unreadable.
-    async fn read_numbered_slot_type_only(&self, slot: u8) -> FxSlotRt {
-        let name = self
-            .active_drv()
-            .fx_type_index(slot)
-            .await
-            .and_then(|i| self.active_drv().fx_type_name(i))
-            .unwrap_or("—")
-            .to_string();
-        FxSlotRt {
-            slot,
-            fx_type: name,
-            on: true,
-            bypass: false,
-            params: Default::default(),
         }
     }
 
@@ -4239,8 +4206,7 @@ impl Engine {
     }
 
     /// Shared post-switch flow for `connect` / `connect_device` / `offline`:
-    /// fast-first. Invalidate caches, seed the FX mirror (type-only on
-    /// numbered racks — 4 queries, not ~1+N per slot), and queue the
+    /// fast-first. Invalidate parameter caches and queue the
     /// paint-critical `state` + `caps` + cached `link` + `info` set
     /// immediately: caps needs no I/O at all, and state/info share one
     /// connect-burst budget (300 ms, not N x 2 s tails). The remainder
@@ -4261,10 +4227,14 @@ impl Engine {
         let driver = self.active_driver();
         self.param_dropped.write().unwrap().retain(|(d, _)| d != &driver);
         self.poll_timeouts.write().unwrap().retain(|(d, _), _| d != &driver);
-        if self.active_drv().needs_hydration() {
+        // Push-cache drivers need the same ordered publication as query
+        // drivers: reading their initial cache is cheap, but the normal
+        // background sweep would otherwise take minutes to expose DSP.
+        if self.active_drv().needs_hydration() || self.active_drv().is_hardware() {
             self.hydrating.store(self.connection_gen.load(Ordering::Acquire), Ordering::Release);
         }
-        self.seed_fx_cache().await;
+        // connect() already seeded FX for this session. Do not repeat its
+        // type queries ahead of channel levels and bus masters.
         self.note_write(writer);
         self.touch_holder_locks(writer);
         // Paint-critical frames first: caps + cached link need no I/O at
@@ -4319,9 +4289,9 @@ impl Engine {
         Ok(())
     }
 
-    /// Deferred remainder of [`Engine::post_switch`] (fill worker): state +
-    /// info refresh, full FX fill, routing, then masters — one broadcast
-    /// per frame as it lands. Idempotent (cache diffs keep repeats quiet);
+    /// Deferred remainder of [`Engine::post_switch`]: priority control fill
+    /// (including masters), state/info, then FX, routing and assignments.
+    /// Each phase streams as it lands. Idempotent (cache diffs keep repeats quiet);
     /// every section is best-effort so a silent desk never fails the fill.
     async fn deferred_fill(self: &Arc<Self>, generation: u64) {
         if self.connection_gen.load(Ordering::Acquire) != generation
@@ -4356,7 +4326,8 @@ impl Engine {
         if let Ok(info) = self.info_message().await {
             self.broadcast(info);
         }
-        // FX first (the rack the UI renders), then routing, then masters.
+        // Lower-priority rack/routing/assignment detail follows the controls;
+        // the initial fill already streamed bus/subgroup/main master levels.
         self.refresh_fx_cache().await;
         self.broadcast(self.fx_message().await);
         self.broadcast(self.routing_message().await);
@@ -4382,52 +4353,89 @@ impl Engine {
         generation
     }
 
-    /// One bounded, sequential LAN burst. The driver's session serializes
-    /// OSC queries, so adding concurrent tasks does not improve throughput.
-    /// All strips' paint-critical values precede focused details and FX.
-    /// Confirmed false/zero/empty values count as present, too.
+    /// Publish only under the session barrier, so a late read cannot refill
+    /// a frontend that has already cleared for a different connection.
+    fn publish_initial(&self, generation: u64, event: Event, sampled: Instant) -> bool {
+        let sync = self.sync_state.lock().unwrap();
+        if self.connection_gen.load(Ordering::Acquire) != generation
+            || self.reads_suspended.load(Ordering::Acquire)
+        {
+            return false;
+        }
+        self.broadcast(self.reconcile_event(event, &sync, sampled));
+        true
+    }
+
+    /// Bus/subgroup/main display pairs arrive before channel labels or DSP.
+    /// Publish each master immediately rather than waiting for assignments,
+    /// solo banks, FX, or the rest of the master's snapshot to finish.
+    async fn hydrate_master_levels(&self, driver: &str, generation: u64, deadline: Instant) {
+        let drv = self.drv(driver);
+        for bus in 0..drv.bus_count() {
+            let sampled = Instant::now();
+            let read = async { Ok::<_, anyhow::Error>((drv.get_bus_fader(bus).await?, drv.get_bus_mute(bus).await?)) };
+            if let Ok(Ok((fader, muted))) = tokio::time::timeout(deadline.saturating_duration_since(sampled), read).await {
+                if !self.publish_initial(generation, Event::Bus {
+                    bus, fader, muted,
+                    key: Some(openfader_core::strip_key("bus", bus.saturating_add(1) as u16)),
+                }, sampled) { return; }
+            }
+            if Instant::now() >= deadline { return; }
+        }
+        for group in 0..drv.subgroup_count() {
+            let sampled = Instant::now();
+            let read = async { Ok::<_, anyhow::Error>((drv.get_subgroup_fader(group).await?, drv.get_subgroup_mute(group).await?)) };
+            if let Ok(Ok((fader, muted))) = tokio::time::timeout(deadline.saturating_duration_since(sampled), read).await {
+                if !self.publish_initial(generation, Event::Subgroup {
+                    group, fader, muted, key: Some(format!("subgroup/{:02}", group.saturating_add(1))),
+                }, sampled) { return; }
+            }
+            if Instant::now() >= deadline { return; }
+        }
+        let sampled = Instant::now();
+        if let Ok((fader, muted)) = tokio::time::timeout(deadline.saturating_duration_since(sampled), async {
+            (drv.get_main_fader().await.ok(), drv.get_main_mute().await.ok())
+        }).await {
+            self.publish_initial(generation, Event::Main { fader, muted }, sampled);
+        }
+    }
+
+    /// Bounded sequential fill, field-major across the entire topology:
+    /// levels -> masters -> mutes -> names/look -> EQ -> remaining fields.
+    /// Provider scopes/capabilities still decide which leaves can be read.
+    /// A five-second burst never blocks the command path; unfinished fields
+    /// retain this order in the existing poller's queue, without a new timer.
     async fn hydrate_initial(&self, generation: u64) {
         let driver = self.active_driver();
         let start = Instant::now();
+        let deadline = start + Duration::from_secs(5);
+        let mut list = self.static_poll_list(&driver);
+        // Stable sorting preserves provider order within each channel/phase.
+        list.sort_by_key(|(ch, id)| (initial_load_priority(id), *ch));
         let mut reads = 0usize;
-        for (phase, list) in [self.core_poll_list(&driver), self.static_poll_list(&driver)]
-            .into_iter().enumerate()
-        {
-            for (ch, id) in list {
+        'fill: for phase in 0..=5 {
+            for &(ch, id) in list.iter().filter(|(_, id)| initial_load_priority(id) == phase) {
                 if self.connection_gen.load(Ordering::Acquire) != generation {
                     return;
                 }
-                // Solo is fetched as one bank below, never 16 identical queries.
+                // Fetch solo through the regular bank lane, after DSP.
                 if id == "solo" || self.param_cache.read().unwrap()
                     .get(&ch).is_some_and(|values| values.contains_key(id))
                     || self.param_dropped.read().unwrap().contains(&(driver.clone(), id.to_string()))
                 {
                     continue;
                 }
-                // Bound the burst on lossy wifi; normal polling keeps the
-                // existing two-second timeout and three-strike semantics.
-                if start.elapsed() >= Duration::from_secs(5) {
-                    eprintln!("engine: {driver} initial fill budget spent after {reads} reads");
-                    return;
-                }
+                if Instant::now() >= deadline { break 'fill; }
                 while Self::poller_yields(self.writes_in_flight.load(Ordering::Relaxed)) {
                     tokio::time::sleep(Duration::from_millis(5)).await;
-                    if self.connection_gen.load(Ordering::Acquire) != generation
-                        || start.elapsed() >= Duration::from_secs(5)
-                    {
-                        return;
-                    }
+                    if self.connection_gen.load(Ordering::Acquire) != generation { return; }
+                    if Instant::now() >= deadline { break 'fill; }
                 }
                 let started = Instant::now();
-                let remaining = Duration::from_secs(5).saturating_sub(start.elapsed());
                 let Ok(result) = tokio::time::timeout(
-                    remaining, self.read_param(&driver, StripId(ch), id)
-                ).await else {
-                    return;
-                };
-                if self.connection_gen.load(Ordering::Acquire) != generation {
-                    return;
-                }
+                    deadline.saturating_duration_since(started), self.read_param(&driver, StripId(ch), id)
+                ).await else { break 'fill; };
+                if self.connection_gen.load(Ordering::Acquire) != generation { return; }
                 match result {
                     Ok(value) => {
                         self.note_read_ok(&driver, ch, id);
@@ -4437,29 +4445,39 @@ impl Engine {
                 }
                 reads += 1;
             }
+            // Replay each completed phase from verified cache only. Individual
+            // reads already stream; this also covers attach/initial-caps gaps.
+            for event in self.params_snapshot() {
+                if !self.publish_initial(generation, event, start) { return; }
+            }
             if phase == 0 {
-                let drv = self.drv(&driver);
-                if let Ok(bank) = drv.solo_bank(drv.channel_count()).await {
-                    if self.connection_gen.load(Ordering::Acquire) != generation {
-                        return;
-                    }
-                    for (ch, on) in bank.into_iter().enumerate() {
-                        self.apply_inbound(ch as u16, "solo", &ParamValue::Bool(on));
-                    }
-                }
-                // A query reply can be ingested before the connect caps
-                // frame or before a newly attaching client is registered.
-                // Replay the confirmed cache without repeating wire reads.
-                for event in self.params_snapshot() {
-                    self.broadcast(event);
-                }
-                eprintln!("engine: {driver} all-strip essentials ready in {:?}", start.elapsed());
+                self.hydrate_master_levels(&driver, generation, deadline).await;
+                eprintln!("engine: {driver} initial levels ready in {:?}", start.elapsed());
             }
         }
-        for event in self.params_snapshot() {
-            self.broadcast(event);
+        // Do not strand unfilled EQ behind a strip-major background sweep.
+        // Preserve explicit focus ahead of this continuation and deduplicate
+        // against it. The regular poll budget/fairness/write priority applies.
+        let sync = self.sync_state.lock().unwrap();
+        if self.connection_gen.load(Ordering::Acquire) != generation
+            || self.reads_suspended.load(Ordering::Acquire) { return; }
+        let cache = self.param_cache.read().unwrap();
+        let dropped = self.param_dropped.read().unwrap();
+        let mut queue = self.focus_queue.write().unwrap();
+        for (ch, id) in list {
+            if id != "solo"
+                && !cache.get(&ch).is_some_and(|v| v.contains_key(id))
+                && !dropped.contains(&(driver.clone(), id.to_string()))
+                && !queue.iter().any(|(d, c, p, _)| d == &driver && *c == ch && p == id)
+            {
+                queue.push_back((driver.clone(), ch, id.to_string(), String::new()));
+            }
         }
-        eprintln!("engine: {driver} initial strip fill ready in {:?} ({reads} reads)", start.elapsed());
+        drop(queue);
+        drop(dropped);
+        drop(cache);
+        drop(sync);
+        eprintln!("engine: {driver} initial fill {:?} ({reads} reads); remainder streams via poller", start.elapsed());
     }
 
     /// Wake the fill worker for one [`Engine::deferred_fill`] pass
@@ -6741,6 +6759,18 @@ fn is_unsupported_error(e: &anyhow::Error) -> bool {
 /// evicts only after [`POLL_TIMEOUT_STRIKES`] in a row.
 fn is_timeout_error(e: &anyhow::Error) -> bool {
     format!("{e:#}").contains("timed out")
+}
+
+/// Connection-fill priority only; steady-state polling retains its lanes.
+fn initial_load_priority(id: &str) -> u8 {
+    match id {
+        "fader" => 0,
+        "mute" => 1,
+        "name" => 2,
+        "icon" | "color" => 3,
+        id if id.starts_with("eq") || id.starts_with("hpf_") => 4,
+        _ => 5,
+    }
 }
 
 /// R2 essentials-lane ids: strip basics + pan + look. Everything deeper
