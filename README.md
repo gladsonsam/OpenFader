@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="apps/app/assets/brand/open-fader-app-icon-1024.png" width="160" alt="OpenFader logo" />
+  <img src="apps/app/assets/brand/open-fader-logo-1024.png" width="160" alt="OpenFader logo" />
 </p>
 
 <h1 align="center">OpenFader</h1>
