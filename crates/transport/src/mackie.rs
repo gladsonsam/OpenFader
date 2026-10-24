@@ -774,6 +774,16 @@ impl MackieSession {
         self.fail_all_pending("session closed");
     }
 
+    /// Task-liveness probe: true while BOTH background tasks are still
+    /// running. Reports only that the rx and keepalive tasks have not
+    /// finished — no ACK, no RTT, no wire probe. Both tasks finish solely on
+    /// fatal/close/drop paths (rx EOF/read error, keepalive send failure, or
+    /// explicit close/drop abort), never on a transient healthy-init
+    /// completion, so a finished handle means the transport is closed.
+    pub fn is_alive(&self) -> bool {
+        !self.rx_task.is_finished() && !self.keepalive_task.is_finished()
+    }
+
     /// Tap the desk-originated push feed: every inbound value/name/snapshot
     /// frame is forwarded here as well as into the caches. Drivers decode
     /// these into `ParamUpdate`s for live ingest (another client's moves
