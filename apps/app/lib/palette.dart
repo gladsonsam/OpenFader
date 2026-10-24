@@ -13,14 +13,14 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   bool get isLight => brightness == Brightness.light;
   Color pair(int dark, int light) => Color(isLight ? light : dark);
 
-  Color get background => pair(0xff1c1c1c, 0xfff0f2f4);
-  Color get selected => pair(0xff232323, 0xffe2e6ea);
-  Color get well => pair(0xff080808, 0xfffafbfc);
-  Color get panel => pair(0xff0f0f0f, 0xffffffff);
-  Color get control => pair(0xff343434, 0xffdde2e7);
-  Color get line => pair(0xff2c2c2c, 0xffc4cbd2);
-  Color get text => pair(0xffebebeb, 0xff202830);
-  Color get mutedText => pair(0xffa0a0a0, 0xff56616c);
+  Color get background => pair(0xff1c1c1c, 0xffd7dce1);
+  Color get selected => pair(0xff232323, 0xffcbd2d8);
+  Color get well => pair(0xff080808, 0xffe9edf0);
+  Color get panel => pair(0xff0f0f0f, 0xffe4e9ed);
+  Color get control => pair(0xff343434, 0xffbfc8d0);
+  Color get line => pair(0xff2c2c2c, 0xff9aa6b1);
+  Color get text => pair(0xffebebeb, 0xff131c24);
+  Color get mutedText => pair(0xffa0a0a0, 0xff354350);
   Color get lime => switch (accent) {
         'ocean' => pair(0xff6bc9ff, 0xff00669a),
         'violet' => pair(0xffc5a4ff, 0xff7040b5),
@@ -50,7 +50,7 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get cap => const Color(0xff3a3a3a);
   Color get knob => const Color(0xffd8d8d4);
   Color get panShape => pair(0xff4a4a4a, 0xffacb6bf);
-  Color get chip => pair(0xff262626, 0xffe2e6ea);
+  Color get chip => pair(0xff262626, 0xffcbd2d8);
   Color get eqBg => pair(0xff1f2314, 0xffe9efdf);
   Color get comp => pair(0xffff4b06, 0xffbb3900);
   Color get phantom => pair(0xffef5548, 0xffb62820);
@@ -111,9 +111,9 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get tileBg => control;
   Color get tileBorder => line;
   Color get text1 => text;
-  Color get text4 => pair(0xffc8c8c8, 0xff3f4b57);
+  Color get text4 => pair(0xffc8c8c8, 0xff293743);
   Color get text7 => mutedText;
-  Color get text10 => pair(0xff808080, 0xff65717c);
+  Color get text10 => pair(0xff808080, 0xff475662);
   Color get cyan => lime;
   Color get masterLine => selectedLine;
   Color get meterGreen => meter;

@@ -445,7 +445,9 @@ class _MenuRow extends StatelessWidget {
                 const SizedBox(height: 8),
                 Expanded(
                     child: Opacity(
-                        opacity: off ? 0.35 : 1,
+                        opacity: off && !ConsolePalette.of(context).isLight
+                            ? 0.35
+                            : 1,
                         child: _NavPreview(store: store, tab: tab))),
               ],
             ),
@@ -609,7 +611,8 @@ class _BottomCell extends StatelessWidget {
               const SizedBox(height: 4),
               Expanded(
                   child: Opacity(
-                      opacity: off ? 0.35 : 1,
+                      opacity:
+                          off && !ConsolePalette.of(context).isLight ? 0.35 : 1,
                       child: _NavPreview(store: store, tab: tab))),
             ],
           ),
