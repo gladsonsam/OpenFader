@@ -7,9 +7,6 @@ import '../u4law.dart';
 import 'design.dart';
 import 'demo.dart';
 
-// Mixer view modes were removed: the rack (trim/EQ/dynamics) always shows
-// when the strip is tall enough, matching the design on every layout.
-
 enum MixerDestination {
   meters,
   channel,

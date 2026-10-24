@@ -46,7 +46,6 @@
 
 /// Channels covered by the ALL DYN blob (XR18: ch 1..16, T3).
 pub const DYN_CHANNELS: usize = 16;
-/// Bus dyn slots in the blob (bus 1..6).
 pub const DYN_BUSES: usize = 6;
 /// Total GR samples: 16 gate + 16 dyn + 6 bus + 1 LR.
 pub const DYN_SAMPLE_COUNT: usize = DYN_CHANNELS + DYN_CHANNELS + DYN_BUSES + 1;
@@ -87,10 +86,8 @@ impl DynMeters {
 }
 
 /// Decode a raw `/meters/6` blob payload into [`DynMeters`].
-///
-/// Shape: u32LE sample count (must be [`DYN_SAMPLE_COUNT`], else bail — no
-/// guessing at unknown layouts) + that many i16LE samples at 1/256 dB
-/// (`<= 0`; stored as reduction `>= 0`).
+/// Shape: u32LE count (must be [`DYN_SAMPLE_COUNT`], else bail) + i16LE
+/// samples at 1/256 dB (`<= 0`, stored as reduction `>= 0`).
 pub fn parse_dyn_blob(blob: &[u8]) -> anyhow::Result<DynMeters> {
     if blob.len() != DYN_BLOB_LEN {
         anyhow::bail!(
@@ -119,9 +116,7 @@ pub fn parse_dyn_blob(blob: &[u8]) -> anyhow::Result<DynMeters> {
     Ok(DynMeters { gate, comp, bus, lr })
 }
 
-/// Encode [`DynMeters`] in desk shape (u32LE count + i16LE @1/256 dB).
-/// Test/fake helper: mirrors the documented encoding so loopback tests
-/// prove the wire shape survives OSC blob encode/decode.
+/// Test/fake helper mirroring the documented encoding.
 pub fn build_dyn_blob(m: &DynMeters) -> Vec<u8> {
     let mut out = Vec::with_capacity(DYN_BLOB_LEN);
     out.extend_from_slice(&(DYN_SAMPLE_COUNT as u32).to_le_bytes());
@@ -170,9 +165,7 @@ mod tests {
 
     #[test]
     fn blob_rejects_wrong_shapes() {
-        // Short blob.
         assert!(parse_dyn_blob(&[0u8; 10]).is_err());
-        // Right length, wrong size word.
         let mut bad = build_dyn_blob(&sample());
         bad[0] = 0x07;
         assert!(parse_dyn_blob(&bad).is_err());
@@ -224,11 +217,9 @@ mod tests {
                 "size word {w} accepted"
             );
         }
-        // Exact-length garbage fills: size word never matches 39.
         assert!(parse_dyn_blob(&[0xABu8; DYN_BLOB_LEN]).is_err());
         assert!(parse_dyn_blob(&[0u8; DYN_BLOB_LEN]).is_err());
         assert!(parse_dyn_blob(&[]).is_err());
-        // The valid blob itself still decodes.
         assert_eq!(parse_dyn_blob(&good).unwrap(), sample());
     }
 }

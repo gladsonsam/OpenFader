@@ -23,7 +23,6 @@ const RECV_BUF: usize = 65535;
 /// safety: a slow gig reply must not drop a poll read).
 pub const CONNECT_BURST_TIMEOUT: Duration = Duration::from_millis(300);
 
-/// Keepalive config: re-send `addr` (usually `/xremote`) every `interval`.
 #[derive(Clone, Debug)]
 pub struct KeepaliveConfig {
     pub addr: String,
@@ -64,7 +63,6 @@ pub fn resolve_peer(addr: &str, default_port: u16) -> anyhow::Result<SocketAddr>
     if host.is_empty() {
         anyhow::bail!("empty mixer address");
     }
-    // Try host:port split; fall back to bare host + default port.
     if let Some((h, p)) = host.rsplit_once(':') {
         if let Ok(port) = p.parse::<u16>() {
             let candidate = format!("{h}:{port}");
@@ -193,7 +191,6 @@ impl OscSession {
         }
     }
 
-    /// Fire-and-forget send.
     pub async fn send(&self, addr: &str, args: Vec<OscType>) -> anyhow::Result<()> {
         let bytes = osc::encode_message(addr, args)?;
         self.socket.send(&bytes).await?;
@@ -230,7 +227,6 @@ impl OscSession {
         }
     }
 
-    /// Meter broadcast receiver (fed by the recv loop).
     pub fn subscribe_meters(&self) -> broadcast::Receiver<MeterFrame> {
         self.meter_tx.subscribe()
     }
@@ -253,7 +249,7 @@ impl OscSession {
     }
 
     /// App-style per-param push subscribe (VERIFIED live 2026-10-19, XR18
-    /// FW 1.20 — X-Air Edit protocol map §4): sends `/subscribe`
+    /// FW 1.20, X-Air Edit protocol map §4): sends `/subscribe`
     /// sends `/subscribe` with `sub_slot` (string, e.g. `"meters/9"`),
     /// `path` (string) and `long(1)`. The desk then streams that param's
     /// value at ~20/s addressed as the param itself; other-param changes
@@ -261,7 +257,7 @@ impl OscSession {
     /// [`unsubscribe`](Self::unsubscribe).
     ///
     /// NOTE: `/subscribe` with one string arg, or with a `/meters/N` path,
-    /// elicits NO meter flow — meter blobs need [`batchsubscribe`](Self::batchsubscribe).
+    /// elicits NO meter flow, meter blobs need [`batchsubscribe`](Self::batchsubscribe).
     pub async fn subscribe_param(&self, sub_slot: &str, path: &str) -> anyhow::Result<()> {
         self.send(
             "/subscribe",
@@ -275,7 +271,7 @@ impl OscSession {
     }
 
     /// App-style meter blob subscribe (VERIFIED live 2026-10-19, XR18 FW
-    /// 1.20 — X-Air Edit protocol map §4): sends `/batchsubscribe`
+    /// 1.20, X-Air Edit protocol map §4): sends `/batchsubscribe`
     /// sends `/batchsubscribe` with `sub_slot` (string, e.g.
     /// `"meters/1"`), `meter_path` (string, e.g. `"/meters/1"`) and `long`
     /// ×3 (zeros; trailing values do not gate the flow, their meaning is
@@ -303,10 +299,10 @@ impl OscSession {
     }
 
     /// App-style subscription renewal (VERIFIED live 2026-10-19, XR18 FW
-    /// 1.20 — X-Air Edit protocol map §4): sends `/renew` +
+    /// 1.20, X-Air Edit protocol map §4): sends `/renew` +
     /// `sub_slot` (string). Sent while the subscription is live it EXTENDS
     /// the stream (alive at t+14 s); sent after death it does NOT
-    /// resurrect — resubscribe instead.
+    /// resurrect, resubscribe instead.
     pub async fn renew(&self, sub_slot: &str) -> anyhow::Result<()> {
         self.send(
             "/renew",
@@ -315,7 +311,7 @@ impl OscSession {
         .await
     }
 
-    /// App-style subscription stop (VERIFIED live 2026-10-19, XR18 FW 1.20 —
+    /// App-style subscription stop (VERIFIED live 2026-10-19, XR18 FW 1.20 
     /// X-Air Edit protocol map §4): sends `/unsubscribe` +
     /// `sub_slot` (string). Expect a few in-flight residuals after the stop.
     pub async fn unsubscribe(&self, sub_slot: &str) -> anyhow::Result<()> {
@@ -345,10 +341,6 @@ impl Drop for OscSession {
 }
 
 // ---------------------------------------------------------------------------
-// UDP peer: bound socket with send/recv + timeouts. All socket setup lives
-// next to the session that wraps it; import via `crate::session::UdpPeer`
-// (or the crate root).
-//
 
 /// A bound UDP socket with convenience send/recv helpers.
 pub struct UdpPeer {
@@ -364,7 +356,6 @@ impl UdpPeer {
         Ok(Self { socket })
     }
 
-    /// Bind an ephemeral port with broadcast enabled (discovery default).
     pub async fn ephemeral() -> anyhow::Result<Self> {
         Self::bind("0.0.0.0:0").await
     }
@@ -377,12 +368,10 @@ impl UdpPeer {
         Ok(self.socket.send_to(data, target).await?)
     }
 
-    /// Receive one datagram, returning `(len, from)`. Data lands in `buf`.
     pub async fn recv_from(&self, buf: &mut [u8]) -> anyhow::Result<(usize, SocketAddr)> {
         Ok(self.socket.recv_from(buf).await?)
     }
 
-    /// Receive one datagram with a timeout.
     pub async fn recv_from_timeout(
         &self,
         buf: &mut [u8],
@@ -410,7 +399,6 @@ mod tests {
     async fn query_response_roundtrip() {
         let (session, mixer) = loopback_pair().await;
         let mixer_addr = session.socket().peer_addr().unwrap();
-        // Fake mixer: reply to /info with two strings.
         tokio::spawn(async move {
             let mut buf = vec![0u8; 2048];
             let (n, peer) = mixer.recv_from(&mut buf).await.unwrap();
@@ -442,7 +430,6 @@ mod tests {
         let cfg = KeepaliveConfig::xremote();
         assert_eq!(cfg.addr, "/xremote");
         assert_eq!(cfg.interval, Duration::from_secs(5));
-        // Wire shape of the keepalive packet itself.
         let bytes = osc::query_message(&cfg.addr).unwrap();
         let msgs = osc::flatten(osc::decode_packet(&bytes).unwrap());
         assert_eq!(msgs[0].addr, "/xremote");
@@ -454,7 +441,6 @@ mod tests {
     #[tokio::test]
     async fn query_timeout_is_clean_error() {
         let (session, _mixer) = loopback_pair().await;
-        // Nothing reads `_mixer`, so no reply ever arrives.
         let res = tokio::time::timeout(
             Duration::from_secs(5),
             session.query_timeout("/no/reply", Duration::from_millis(50)),
@@ -504,7 +490,6 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("timed out"));
-        // Attempt #2 must get its own reply, not hang on a stale slot.
         let reply = session
             .query_timeout("/info", Duration::from_secs(2))
             .await
@@ -545,7 +530,6 @@ mod tests {
                     interval: Duration::from_millis(10),
                 }),
             );
-            // Ours + session's + recv task's + keepalive task's.
             assert_eq!(Arc::strong_count(&sock), 4);
             drop(session);
         }
@@ -578,7 +562,6 @@ mod tests {
                 interval: Duration::from_millis(10),
             }),
         );
-        // Warm up: at least two pings arrive while the session lives.
         let mut buf = vec![0u8; 2048];
         let mut got = 0;
         while got < 2 {
@@ -589,7 +572,6 @@ mod tests {
             got += 1;
         }
         drop(session);
-        // Drain pings already in flight, then require silence.
         loop {
             match mixer.try_recv(&mut buf) {
                 Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
@@ -626,7 +608,6 @@ mod tests {
             start.elapsed() < Duration::from_secs(10),
             "reconnect storm hung"
         );
-        // A fresh session on a answering mixer still round-trips.
         let (session, mixer) = loopback_pair().await;
         tokio::spawn(async move {
             let mut buf = vec![0u8; 2048];
@@ -776,7 +757,7 @@ mod tests {
 
     /// Desk-addressed blobs WITHOUT the leading slash (`meters/1`, the
     /// `/batchsubscribe` reply form) must reach the meter channel exactly
-    /// like the slashed form — both through the session recv loop.
+    /// like the slashed form, both through the session recv loop.
     #[tokio::test]
     async fn no_slash_meter_blob_reaches_meter_channel() {
         let (session, mixer) = loopback_pair().await;

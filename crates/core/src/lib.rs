@@ -82,7 +82,7 @@ impl StripKind {
     }
 
     /// Parse a wire kind name back (caps round-trip / tests). Unknown names
-    /// return `None` — use [`StripKind::kind_from_str`] when provider kinds
+    /// return `None`, use [`StripKind::kind_from_str`] when provider kinds
     /// must resolve instead of failing.
     pub fn parse(s: &str) -> Option<Self> {
         match s {
@@ -101,7 +101,7 @@ impl StripKind {
     /// their variants, anything else becomes [`StripKind::Custom`] carrying
     /// the name verbatim (so a future desk's `"grp"` family round-trips
     /// through caps without a core edit). The input must be `'static`
-    /// because [`StripKind::Custom`] stores it by reference — string
+    /// because [`StripKind::Custom`] stores it by reference, string
     /// literals from provider topology tables qualify.
     pub fn kind_from_str(s: &'static str) -> Self {
         Self::parse(s).unwrap_or(StripKind::Custom(s))
@@ -129,12 +129,10 @@ pub struct StripFamily {
 }
 
 impl StripFamily {
-    /// One past the last strip index in this family.
     pub const fn end(self) -> usize {
         self.first + self.count
     }
 
-    /// Whether global strip index `i` belongs to this family.
     pub const fn contains(self, i: usize) -> bool {
         i >= self.first && i < self.first + self.count
     }
@@ -161,7 +159,7 @@ pub fn strip_key(family_key: &str, idx: u16) -> String {
 }
 
 /// Legacy family-key alias normalisation for strip keys: the sim bus family
-/// is keyed `mix` while xair keys it `bus` — both are kind `Bus` and the
+/// is keyed `mix` while xair keys it `bus`, both are kind `Bus` and the
 /// same masters. Keys always use the canonical `bus` spelling; the parser
 /// accepts both.
 pub fn strip_family_alias(family_key: &str) -> &str {
@@ -193,7 +191,6 @@ pub fn parse_strip_key(key: &str) -> Option<(String, u16)> {
     if num.trim().is_empty() {
         return None;
     }
-    // Reject anything past a single `fam/nn` shape.
     if num.contains('/') {
         return None;
     }
@@ -354,7 +351,7 @@ pub struct MixerSnapshot {
 
 /// One native desk snapshot slot: the desk's own slot id intact (raw `u32`,
 /// never remapped, never zero-defaulted) plus the desk-provided name. No
-/// base, bounds, labels or counts are invented — native `0` may exist
+/// base, bounds, labels or counts are invented, native `0` may exist
 /// (Default?) but that is unverified, so no slot is assumed to be first.
 /// Slots exist ONLY from desk push evidence (see
 /// [`MixerDriver::native_snapshots`]).
@@ -368,18 +365,18 @@ pub struct NativeSnapshotSlot {
 /// engine's app-local numbered scene library (`scenes_lib`, slots
 /// `1..=999`).
 ///
-/// Provenance contract: every entry is desk-observed push metadata — a
+/// Provenance contract: every entry is desk-observed push metadata, a
 /// snapshot recall or rename relay received on the live session. Own-write
 /// optimism (a local save accept, a delete) never populates this view, so
 /// it can never launder an unconfirmed write into a confirmed slot.
 /// `received` stays true once ANY genuine snapshot push has been observed
-/// this session, even when `slots` is empty — that is PARTIAL observed
+/// this session, even when `slots` is empty, that is PARTIAL observed
 /// metadata only, never a full catalogue and never proof of an empty desk.
 /// `ready` therefore means "observed something", not "complete inventory":
 /// `slots` empty with `current: Some(n)` proves only the last reported
 /// recall, never a non-empty inventory. `connected` reports whether a
 /// live desk session backs this view; `current` is the last
-/// desk-observed recall slot — `None` means no recall observed, never a
+/// desk-observed recall slot, `None` means no recall observed, never a
 /// slot-0 default.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NativeSnapshots {
@@ -393,12 +390,10 @@ pub struct NativeSnapshots {
     pub connected: bool,
 }
 
-/// Clamp a fader value into the canonical 0.0..=1.0 range.
 pub fn clamp_fader(v: f32) -> f32 {
     v.clamp(0.0, 1.0)
 }
 
-/// Validate a fader value; rejects NaN and out-of-range values.
 pub fn validate_fader(v: f32) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("fader must be finite, got {v}");
@@ -422,12 +417,12 @@ pub struct FaderScale {
 }
 
 impl FaderScale {
-    /// Build a scale from unit values at levels `i / (n-1)`. Needs >= 2 entries.
+    /// Needs >= 2 entries (unchecked).
     pub const fn from_uniform(units: &'static [f32]) -> Self {
         Self { units }
     }
 
-    /// Canonical 0.0..=1.0 level to engineering units. Clamps out-of-range.
+    /// Level to engineering units; out-of-range clamps.
     pub fn forward(&self, level: f32) -> f32 {
         let pts = self.units;
         if pts.is_empty() {
@@ -447,7 +442,7 @@ impl FaderScale {
         a + (b - a) * frac
     }
 
-    /// Engineering units back to canonical 0.0..=1.0 level. Clamps out-of-range.
+    /// Engineering units back to level; out-of-range clamps.
     pub fn inverse(&self, units: f32) -> f32 {
         let pts = self.units;
         if pts.is_empty() {
@@ -523,12 +518,11 @@ pub trait MixerDriver: Send + Sync {
         let _ = bus;
         anyhow::bail!("{}: bus faders not supported", self.name())
     }
-    /// Set a mix-bus master mute (0-based bus, `0..bus_count()`). Default: unsupported.
+    /// 0-based bus over `0..bus_count()`.
     async fn set_bus_mute(&self, bus: u8, muted: bool) -> anyhow::Result<()> {
         let _ = (bus, muted);
         anyhow::bail!("{}: bus mutes not supported", self.name())
     }
-    /// Read a mix-bus master mute. Default: unsupported.
     async fn get_bus_mute(&self, bus: u8) -> anyhow::Result<bool> {
         let _ = bus;
         anyhow::bail!("{}: bus mutes not supported", self.name())
@@ -539,7 +533,7 @@ pub trait MixerDriver: Send + Sync {
         0
     }
     // ---- subgroups (default: unsupported) ----
-    /// Subgroup master count (0-based `0..subgroup_count()`). Default 0.
+    /// 0-based `0..subgroup_count()`.
     fn subgroup_count(&self) -> u8 {
         0
     }
@@ -569,7 +563,7 @@ pub trait MixerDriver: Send + Sync {
         anyhow::bail!("{}: subgroup assign not supported", self.name())
     }
     // ---- mute groups (default: unsupported) ----
-    /// Mute-group master count (0-based `0..mute_group_count()`). Default 0.
+    /// 0-based `0..mute_group_count()`.
     fn mute_group_count(&self) -> u8 {
         0
     }
@@ -591,8 +585,7 @@ pub trait MixerDriver: Send + Sync {
         anyhow::bail!("{}: mute-group assign not supported", self.name())
     }
     // ---- file transfer (default: unsupported) ----
-    /// Desk file transfer (DL32S `Show.zip` up/download). Default false =
-    /// honest `unsupported`, never faked.
+    /// Desk file transfer (DL32S `Show.zip` up/download).
     fn file_transfer(&self) -> bool {
         false
     }
@@ -696,7 +689,7 @@ pub trait MixerDriver: Send + Sync {
     /// [`crate::params::ParamRegistry::override_range`]): each entry is
     /// `(canonical id, min, max)`; unknown ids are ignored. Default is
     /// empty (the driver serves canonical ranges). A driver whose desk
-    /// documents different native bounds returns them here — ranges only
+    /// documents different native bounds returns them here, ranges only
     /// (kinds, units, labels, scopes and defaults never change), so the
     /// canonical merge stays stable for every other driver.
     fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
@@ -816,7 +809,7 @@ pub trait MixerDriver: Send + Sync {
     /// Read-only view of the desk's native snapshot slots (see
     /// [`NativeSnapshots`]): push-evidenced names plus the current-slot
     /// marker from the current session. Default `None` = the driver does
-    /// not model native slots (honest `unsupported`, never faked — in
+    /// not model native slots (honest `unsupported`, never faked, in
     /// particular no simulator invents desk slots it does not model).
     ///
     /// There is deliberately NO write counterpart: native recall/save/
@@ -833,7 +826,6 @@ pub trait MixerDriver: Send + Sync {
 mod tests {
     use super::*;
 
-    // Small synthetic table: levels 0.0/0.5/1.0 map to -60/0/+10 units.
     const SYNTH: FaderScale = FaderScale::from_uniform(&[-60.0, 0.0, 10.0]);
 
     #[test]
@@ -848,7 +840,6 @@ mod tests {
 
     #[test]
     fn segments_interpolate() {
-        // First segment: level 0.25 -> -30.0; second: level 0.75 -> +5.0.
         assert!((SYNTH.forward(0.25) - -30.0).abs() < 1e-6);
         assert!((SYNTH.forward(0.75) - 5.0).abs() < 1e-6);
         assert!((SYNTH.inverse(-30.0) - 0.25).abs() < 1e-6);
@@ -866,19 +857,16 @@ mod tests {
 
     #[test]
     fn strip_key_format_and_parse() {
-        // Examples from the workstream brief.
         assert_eq!(super::strip_key("ch", 1), "ch/01");
         assert_eq!(super::strip_key("bus", 1), "bus/01");
         assert_eq!(super::strip_key("dca", 2), "dca/02");
         assert_eq!(super::strip_key("fxret", 1), "fxret/01");
         assert_eq!(super::strip_key("main", 1), "main");
-        // Unpadded singles parse to the same identity.
         assert_eq!(super::parse_strip_key("ch/01"), Some(("ch".to_string(), 1)));
         assert_eq!(super::parse_strip_key("bus/1"), Some(("bus".to_string(), 1)));
         assert_eq!(super::parse_strip_key("dca/2"), Some(("dca".to_string(), 2)));
         assert_eq!(super::parse_strip_key("main"), Some(("main".to_string(), 1)));
         assert_eq!(super::parse_strip_key("main/1"), Some(("main".to_string(), 1)));
-        // Legacy sim alias normalises.
         assert_eq!(super::strip_key("mix", 1), "bus/01");
         assert_eq!(super::parse_strip_key("mix/01"), Some(("bus".to_string(), 1)));
         // Malformed keys fail.
@@ -895,7 +883,6 @@ mod tests {
     #[test]
     fn strip_key_index_roundtrip_bus_alias() {
         use super::{strip_index_for_key, strip_key_for_index, StripFamily, StripKind};
-        // sim-shaped bus family keyed `mix`, xair-shaped keyed `bus`.
         let sim = [
             StripFamily { key: "ch", kind: StripKind::In, label: "Ch", first: 0, count: 2, name_prefix: "Ch", color_default: 2 },
             StripFamily { key: "mix", kind: StripKind::Bus, label: "Mix", first: 2, count: 2, name_prefix: "Mix", color_default: 6 },
@@ -905,15 +892,12 @@ mod tests {
             StripFamily { key: "ch", kind: StripKind::In, label: "Ch", first: 0, count: 2, name_prefix: "Ch", color_default: 2 },
             StripFamily { key: "bus", kind: StripKind::Bus, label: "Bus", first: 2, count: 2, name_prefix: "Mix", color_default: 6 },
         ];
-        // Canonical bus spelling on both desks.
         assert_eq!(strip_key_for_index(&sim, 2), Some("bus/01".to_string()));
         assert_eq!(strip_key_for_index(&xair, 2), Some("bus/01".to_string()));
         assert_eq!(strip_key_for_index(&sim, 4), Some("main".to_string()));
-        // Cross-desk resolve: a sim-captured bus key lands on the xair bus.
         assert_eq!(strip_index_for_key(&xair, "bus/01"), Some(2));
         assert_eq!(strip_index_for_key(&xair, "mix/01"), Some(2));
         assert_eq!(strip_index_for_key(&sim, "bus/02"), Some(3));
-        // Out-of-range / unknown families miss.
         assert_eq!(strip_index_for_key(&xair, "bus/03"), None);
         assert_eq!(strip_index_for_key(&xair, "dca/01"), None);
         assert_eq!(strip_key_for_index(&xair, 99), None);

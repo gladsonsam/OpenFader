@@ -1,11 +1,5 @@
 //! FRB entry points (`crate::api`): thin Cmd/Event JSON movers over the
 //! embedded `openfader-engine` session. No mixer logic lives here.
-//!
-//! TODO (before real use): meter collapse latest-only. [`poll`] currently
-//! drains everything up to `cap`; a stalled Dart poll loop gets a stale
-//! burst instead of the freshest frame per stream. Port the slot-of-1
-//! per-meter-stream outbox pattern (drops counted) before raising the
-//! poll rate past a smoke test.
 
 use crate::{BridgeClient, DRAIN_CAP_DEFAULT, DRAIN_CAP_MAX, clients, engine, rt, set_engine};
 use openfader_engine::{Engine, EngineConfig};
@@ -44,12 +38,12 @@ pub async fn cmd(client_id: String, json: String) {
 }
 
 /// Drain queued Event JSON frames (broadcast-time serialization shared
-/// across clients — byte-identical to the WS relay) for `client_id`, up to
+/// across clients, byte-identical to the WS relay) for `client_id`, up to
 /// `cap` frames (`0` = default). Overflow stays queued for the next call.
 /// Unknown clients get `[]`.
 ///
 /// Frames set aside by [`poll_binary`] (non-meter events seen while the
-/// Dart side drained the binary meter path) come first, in order — the
+/// Dart side drained the binary meter path) come first, in order, the
 /// JSON poll is the lossless fallback for everything binary does not
 /// carry.
 #[flutter_rust_bridge::frb]
@@ -64,7 +58,6 @@ pub async fn poll(client_id: String, cap: u32) -> Vec<String> {
         return Vec::new();
     };
     let mut out = Vec::new();
-    // Binary-path fallback first: non-meter frames set aside by poll_binary.
     while out.len() < cap {
         if let Some(json) = client.pending_json.pop_front() {
             out.push(json);
@@ -74,9 +67,7 @@ pub async fn poll(client_id: String, cap: u32) -> Vec<String> {
     }
     while out.len() < cap {
         match client.handle.events.try_recv() {
-            // Shared broadcast-time JSON: only the per-call `String` copy
-            // remains (the FRB boundary needs owned strings); no per-client
-            // `serde_json` run.
+            // The FRB boundary needs owned strings; no per-client `serde_json` run.
             Ok(frame) => out.push(frame.json.to_string()),
             Err(_) => break,
         }
@@ -161,7 +152,6 @@ mod tests {
         assert_eq!(n, 5);
         assert_eq!(seq, 7);
         assert_eq!(t_ms, 1234);
-        // Payload quantisation matches level_to_u16 (clamped, rounded).
         let payload = &frame[BIN_HEADER_LEN..];
         assert_eq!(payload.len(), 5 * 2);
         for (i, want) in [0.0f32, 0.5, 1.0, 1.0, 0.0].iter().enumerate() {
@@ -169,7 +159,6 @@ mod tests {
             assert_eq!(q, level_to_u16(*want), "sample {i}");
         }
 
-        // Length-prefix batch round-trip (the poll_binary wire format).
         let blob = encode_binary_batch(std::slice::from_ref(&frame));
         assert_eq!(&blob[0..4], &((frame.len() as u32).to_le_bytes()));
         let split = split_binary_batch(&blob);
@@ -205,9 +194,7 @@ mod tests {
 
     #[test]
     fn binary_skips_non_meter_events_for_json_fallback() {
-        // Control frames must never enter the binary path: to_binary is
-        // None for everything but meters/gr/taps, so poll_binary sets
-        // them aside for poll() instead of encoding them.
+        // Control frames must never enter the binary path.
         let state = Event::State {
             driver: "sim".to_string(),
             strips: vec![],
@@ -228,7 +215,7 @@ mod tests {
             .to_binary(0, 0)
             .expect("meters encode binary");
         let mut blob = encode_binary_batch(&[frame.clone(), frame.clone()]);
-        blob.truncate(blob.len() - 3); // hostile short read
+        blob.truncate(blob.len() - 3);
         let split = split_binary_batch(&blob);
         assert_eq!(split.len(), 1, "first frame survives, tail dropped");
         assert!(split_binary_batch(&blob[0..2]).is_empty());
@@ -237,9 +224,6 @@ mod tests {
 
     #[test]
     fn poll_binary_stashes_control_frames_for_poll_fallback() {
-        // Attach snapshot frames are all non-meter: poll_binary must vend
-        // an (empty-or-meters-only) blob while keeping every control frame
-        // available to the next JSON poll — the lossless fallback.
         let id = boot();
         let blob = rt().block_on(poll_binary(id.clone(), 512));
         for frame in split_binary_batch(&blob) {
@@ -269,7 +253,7 @@ mod tests {
 
 /// Edge stats: queue depth behind the push fan-out for `client_id`
 /// (same shape as the engine's `ipc_stats`, minus the counters the
-/// collapse layer will own — see the module TODO).
+/// collapse layer will own, see the module TODO).
 #[flutter_rust_bridge::frb(sync)]
 pub fn stats(client_id: String) -> String {
     let depth = clients()
@@ -298,7 +282,7 @@ pub fn stats(client_id: String) -> String {
 ///
 /// Framing/version compat: the Dart side splits on the `u32` length
 /// prefix and decodes each frame with the existing `parseBinary`
-/// counterpart of `to_binary` — same type bytes (`1=meters, 2=gr,
+/// counterpart of `to_binary`, same type bytes (`1=meters, 2=gr,
 /// 3=taps`), same `BIN_VERSION` gate (unknown versions decode to null
 /// and are skipped), same payload quantisation. A layout bump in
 /// protocol.rs only needs the Dart gate bumped to match; old frames
@@ -306,7 +290,7 @@ pub fn stats(client_id: String) -> String {
 ///
 /// Non-meter events drained by this call are NOT dropped: they are set
 /// aside as JSON text in the client's pending queue and come back first
-/// from the next [`poll`] — the hot meter path never loses control
+/// from the next [`poll`], the hot meter path never loses control
 /// frames. Unknown clients get `[]`.
 #[flutter_rust_bridge::frb]
 pub async fn poll_binary(client_id: String, cap: u32) -> Vec<u8> {

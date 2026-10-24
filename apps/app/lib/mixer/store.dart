@@ -19,7 +19,6 @@ class MixerBank {
   });
 }
 
-/// One bus-selector row.
 class MixerBusRow {
   final String id;
   final String name;
@@ -42,7 +41,7 @@ class MixerBusRow {
 /// shell/owner over the live engine or a fixture sim. Meters arrive via
 /// stable [ValueNotifier]s updated in place by [pollMeters] so the 80 ms
 /// loop never rebuilds widgets; per-strip control state (fader/mute/pan)
-/// rides the same pattern — one strip rebuilds from its own notifier while
+/// rides the same pattern so one strip rebuilds from its own notifier while
 /// the shell and siblings stay quiet. Structural state (strips/bank/bus,
 /// solo banner) notifies through [ChangeNotifier].
 abstract class MixerStore extends ChangeNotifier implements ChannelNameStore {

@@ -1,8 +1,7 @@
-// W2a param store: caps index + confirmed values + optimistic pending edits
-// (optimistic set, confirm-into-pending, timeout revert). Pure Dart: no
-// Flutter, no transport.
+// W2a param store: caps index plus confirmed values and optimistic pending
+// edits. Pure Dart: no Flutter, no transport.
 //
-// Confirmation epsilon covers the desk quantization quantum (~2e-3,
+// The confirmation epsilon covers the desk quantization quantum (~2e-3,
 // 10-bit fader steps): a confirmed echo must clear its optimistic edit.
 library;
 
@@ -49,10 +48,9 @@ class CapsSnapshot {
   });
 }
 
-/// Optimistic-write confirmation window before a revert.
 const int confirmTimeoutMs = 2000;
 
-/// Focus sends coalesce rapid scroll/layer changes into one frame.
+/// Rapid focus scroll/layer changes coalesce into one frame.
 const int focusDebounceMs = 150;
 
 CapsSnapshot emptyCaps() => const CapsSnapshot(
@@ -72,7 +70,7 @@ ParamValue _defOf(Object? raw) {
   return 0;
 }
 
-/// Index a caps frame. Unknown/malformed entries are skipped.
+/// Index a caps frame, skipping unknown or malformed entries.
 CapsSnapshot capsFromInput(Map<String, dynamic> input) {
   final defs = <String, CapsRow>{};
   final supported = <String>[];
@@ -138,8 +136,8 @@ String pendingKey(int ch, String id) => '$ch:$id';
 bool validValue(Object? v) =>
     v is String || v is bool || (v is num && v.isFinite);
 
-/// Merge a `params` diff/snapshot into the confirmed map. Invalid entries
-/// are skipped. Returns true when anything actually changed.
+/// Merge a `params` diff/snapshot into the confirmed map. Skips invalid
+/// entries; returns true when anything changed.
 bool applyParams(StoreMaps maps, int ch, Map<String, ParamValue> values) {
   if (ch < 0) return false;
   var changed = false;
@@ -155,14 +153,13 @@ bool applyParams(StoreMaps maps, int ch, Map<String, ParamValue> values) {
   return changed;
 }
 
-/// Numbers compare within the desk's quantization step; other types compare
+/// Numbers compare within the desk quantization step; other types compare
 /// by identity.
 bool valuesEqual(ParamValue? a, ParamValue b) {
   if (a is num && b is num) return (a - b).abs() < 2e-3;
   return a == b;
 }
 
-/// Drop a pending edit when the relay confirms the same value.
 bool confirmInto(PendingMap pending, String key, ParamValue value) {
   final edit = pending[key];
   if (edit == null) return false;
@@ -173,7 +170,7 @@ bool confirmInto(PendingMap pending, String key, ParamValue value) {
   return false;
 }
 
-/// Record an optimistic edit. The display shows the pending value at once.
+/// The display shows the pending value at once, before confirmation.
 String noteOptimistic(
     StoreMaps maps, int ch, String id, ParamValue value, double nowMs) {
   final key = pendingKey(ch, id);
@@ -181,7 +178,6 @@ String noteOptimistic(
   return key;
 }
 
-/// Drop pending edits older than [timeoutMs]; returns the expired keys.
 List<String> sweepPending(PendingMap pending, double nowMs, int timeoutMs) {
   final expired = <String>[];
   for (final e in pending.entries.toList()) {
@@ -193,7 +189,6 @@ List<String> sweepPending(PendingMap pending, double nowMs, int timeoutMs) {
   return expired;
 }
 
-/// Split a pending key back into channel + id (null when malformed).
 ({int ch, String id})? splitKey(String key) {
   final i = key.indexOf(':');
   if (i <= 0) return null;
@@ -203,20 +198,18 @@ List<String> sweepPending(PendingMap pending, double nowMs, int timeoutMs) {
   return (ch: ch, id: id);
 }
 
-/// Display value: pending optimistic edit wins, else the confirmed value.
+/// Pending optimistic edits win over confirmed values in the display.
 ParamValue? optimisticValue(StoreMaps maps, int ch, String id) =>
     maps.pending[pendingKey(ch, id)]?.value ?? maps.confirmed[ch]?[id];
 
-/// True when the channel/id pair holds an unconfirmed optimistic edit.
 bool isPending(StoreMaps maps, int ch, String id) =>
     maps.pending.containsKey(pendingKey(ch, id));
 
-/// True when the relay has confirmed any value for the channel/id pair.
 bool confirmedKnown(StoreMaps maps, int ch, String id) =>
     maps.confirmed[ch]?.containsKey(id) ?? false;
 
-/// Clamp/round a write into the caps row: floats clamp into range, enum-ish
-/// numbers round, unknown ids pass through untouched.
+/// Clamp or round a write into the caps row: floats clamp into range,
+/// enum-ish numbers round, unknown ids pass through untouched.
 ParamValue coerceWrite(Map<String, CapsRow> defs, String id, ParamValue v) {
   final row = defs[id];
   if (row == null) return v;

@@ -187,7 +187,6 @@ async fn ws_sim_connect_fader_mute() {
     let (mut tx, mut rx) = stream.split();
     use tokio_tungstenite::tungstenite::Message;
 
-    // Initial snapshot on connect.
     let state = next_typed(&mut rx, "state").await;
     assert_eq!(state.get("driver"), Some(&json!("sim")));
     assert!(
@@ -198,7 +197,6 @@ async fn ws_sim_connect_fader_mute() {
         "state carries strips"
     );
 
-    // Explicit connect command re-selects sim.
     tx.send(Message::text(
         json!({"cmd":"connect","driver":"sim"}).to_string(),
     ))
@@ -207,7 +205,6 @@ async fn ws_sim_connect_fader_mute() {
     let state = next_typed(&mut rx, "state").await;
     assert_eq!(state.get("driver"), Some(&json!("sim")));
 
-    // Fader: ch0 (0-based) -> 0.5.
     tx.send(Message::text(
         json!({"cmd":"fader","ch":0,"value":0.5}).to_string(),
     ))
@@ -221,7 +218,6 @@ async fn ws_sim_connect_fader_mute() {
     })
     .await;
 
-    // Mute on.
     tx.send(Message::text(
         json!({"cmd":"mute","ch":0,"muted":true}).to_string(),
     ))
@@ -284,7 +280,6 @@ async fn ws_sim_connect_fader_mute() {
         }
     }
 
-    // Bool + string params echo with identical ch/field/value.
     tx.send(Message::text(
         json!({"cmd":"param","ch":2,"field":"mute","value":true}).to_string(),
     ))
@@ -308,7 +303,6 @@ async fn ws_sim_connect_fader_mute() {
     let echo = wait_param(&mut rx, 3, "name", &json!("Vox")).await;
     assert_eq!(echo.get("value"), Some(&json!("Vox")));
 
-    // Meters tick at ~10 Hz.
     let meters = next_typed(&mut rx, "meters").await;
     assert!(
         meters
@@ -341,7 +335,7 @@ async fn ws_sim_connect_fader_mute() {
 
     // GR: one message per channel at ~5 Hz (every 2nd meter tick), first
     // 16 channels; gate/comp are dB reduction >= 0 (sim has no GR source,
-    // so the relay sends idle 0.0 — still proves the frames flow).
+    // so the relay sends idle 0.0, still proves the frames flow).
     let frame = next_typed(&mut rx, "gr").await;
     let ch = frame
         .get("ch")
@@ -358,7 +352,6 @@ async fn ws_sim_connect_fader_mute() {
             "gr {key} is dB reduction >= 0, got {v}"
         );
     }
-    // Bad command gets an error frame, connection stays alive.
     tx.send(Message::text(json!({"cmd":"bogus"}).to_string()))
         .await
         .unwrap();
@@ -387,7 +380,6 @@ async fn ws_scenes_capture_recall_delete() {
     let (mut tx, mut rx) = stream.split();
     use tokio_tungstenite::tungstenite::Message;
 
-    // Drain the initial snapshot pair (state + shows).
     let _ = next_typed(&mut rx, "state").await;
     let shows = next_typed(&mut rx, "shows").await;
     assert_eq!(shows.get("type"), Some(&json!("shows")));
@@ -430,7 +422,6 @@ async fn ws_scenes_capture_recall_delete() {
             .find(|s| s.get("name") == Some(&json!(scene)))
     }
 
-    // Pin ch0 to a known value, then capture it as gig/verse.
     tx.send(Message::text(
         json!({"cmd":"fader","ch":0,"value":0.5}).to_string(),
     ))
@@ -459,7 +450,6 @@ async fn ws_scenes_capture_recall_delete() {
         .expect("scene carries ch0 fader");
     assert!((cap_fader - 0.5).abs() < 1e-6, "captured live fader");
 
-    // Library survives a fresh connection (no localStorage round-trip).
     let (stream2, _) = tokio_tungstenite::connect_async(format!("ws://{addr}/ws"))
         .await
         .expect("second WS connect");
@@ -471,14 +461,12 @@ async fn ws_scenes_capture_recall_delete() {
         "second connection sees the server-side library"
     );
 
-    // Explicit pull also returns the library.
     tx.send(Message::text(json!({"cmd":"list_shows"}).to_string()))
         .await
         .unwrap();
     let listed = wait_shows(&mut rx, |s| find_scene(s, "gig", "verse").is_some()).await;
     assert!(find_scene(&listed, "gig", "verse").is_some());
 
-    // Move ch0 away, then recall with fade 0 (jump) and verify the snap-back.
     let moved = (cap_fader + 0.3).min(1.0);
     assert!((moved - cap_fader).abs() > 0.05, "moved value differs");
     tx.send(Message::text(
@@ -538,7 +526,6 @@ async fn ws_scenes_capture_recall_delete() {
         }
     }
 
-    // Unknown scene errors; connection stays alive.
     tx.send(Message::text(
         json!({"cmd":"recall_scene","show":"gig","name":"nope","fade_ms":0}).to_string(),
     ))
@@ -1205,7 +1192,7 @@ async fn ws_main_fader_set_and_state() {
         .unwrap();
     // Drain to a fresh shows frame, then confirm main is still 0.3 via
     // the next state tick (mutations only broadcast on success, so no
-    // state frame follows the rejected command — poll explicitly).
+    // state frame follows the rejected command, poll explicitly).
     let deadline = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         if std::time::Instant::now() > deadline {
@@ -1389,7 +1376,7 @@ async fn ws_caps_and_params_snapshot() {
         .expect("WS connect");
     let (mut tx, mut rx) = stream.split();
 
-    // Initial snapshot ships the slim caps (essentials lane only —
+    // Initial snapshot ships the slim caps (essentials lane only 
     // first paint never waits for the catalogue); hello completes the
     // full catalogue (unicast, before the ack).
     let caps = next_full_caps(&mut tx, &mut rx).await;
@@ -1409,7 +1396,7 @@ async fn ws_caps_and_params_snapshot() {
 
     // A `connect` command re-broadcasts caps to every client, plus the
     // state echo. State and caps ride separate broadcasts so their order
-    // is a race — collect both in either order instead of assuming caps
+    // is a race, collect both in either order instead of assuming caps
     // lands first (consuming the lone state echo while scanning for caps
     // would starve the drain below).
     {
@@ -1512,7 +1499,7 @@ async fn ws_params_diff_broadcast() {
     .unwrap();
     // The confirmed singular `param` echo for the write arrives first (the
     // write primes the poller cache, so no background `params` diff
-    // follows — same contract as `engine_api::params_diff_broadcast`)...
+    // follows, same contract as `engine_api::params_diff_broadcast`)...
     let echo = {
         let deadline = std::time::Instant::now() + Duration::from_secs(15);
         loop {
@@ -1585,7 +1572,7 @@ async fn ws_focus_prioritizes_channel() {
     // v2 catalogue size (was 54 in v1).
     assert_eq!(nparams, 184, "sim caps list the catalogue plus stereo balance");
     // Channel strips (ch5/ch7 below) only ever receive the In-scoped
-    // subset — bus/main-only EQ bands 5..6 never land on a channel
+    // subset, bus/main-only EQ bands 5..6 never land on a channel
     // (firmware band counts).
     let nchan = params
         .iter()
@@ -1696,7 +1683,7 @@ async fn ws_focus_prioritizes_channel() {
 }
 
 /// Focus flood over WS (CATALOGUE-V2 §5): 30 focus commands flood the
-/// queue, then focusing strip 33 makes its whole set drain first — ahead
+/// queue, then focusing strip 33 makes its whole set drain first, ahead
 /// of the flood backlog. A second phase at the default 50 ms budget shows
 /// the first focused params landing within ~3 s.
 #[tokio::test]

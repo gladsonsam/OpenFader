@@ -33,15 +33,12 @@ pub const SOLO_SOURCE: &str = "/config/solo/source";
 /// Solo source bounds (community table: OFF, LR, LRPFL, LRAFL, AUX, U1718,
 /// Bus1-6, Bus12, Bus34, Bus56; rig reads 3).
 pub const SOLO_SOURCE_MIN: u8 = 0;
-/// Solo source upper bound (see [`SOLO_SOURCE_MIN`]).
 pub const SOLO_SOURCE_MAX: u8 = 14;
 
 /// Solo level bounds (normalized wire float, unitless — no verified curve).
 pub const SOLO_LEVEL_MIN: f32 = 0.0;
-/// Solo level upper bound (see [`SOLO_LEVEL_MIN`]).
 pub const SOLO_LEVEL_MAX: f32 = 1.0;
 
-/// Encode a solo source index (whole `0..=14`) to the wire int.
 pub fn source_to_arg(v: u8) -> anyhow::Result<OscType> {
     if !(SOLO_SOURCE_MIN..=SOLO_SOURCE_MAX).contains(&v) {
         anyhow::bail!("solo source {v} out of range {SOLO_SOURCE_MIN}..={SOLO_SOURCE_MAX}");
@@ -49,7 +46,6 @@ pub fn source_to_arg(v: u8) -> anyhow::Result<OscType> {
     Ok(OscType::Int(v as i32))
 }
 
-/// Decode a solo source reply (int kept, whole-number float accepted).
 pub fn source_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<u8> {
     let i = crate::codec::int_from_msg(
         msg,
@@ -61,13 +57,11 @@ pub fn source_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<u8> {
     Ok(i as u8)
 }
 
-/// Map a solo level to the wire float (identity over `0..1`; rejects
-/// NaN/infinite and out-of-range values before anything is sent).
+/// Identity over `0..1` (no verified engineering curve).
 pub fn level_to_wire(v: f32) -> anyhow::Result<f32> {
     crate::codec::lin_to_wire(v, SOLO_LEVEL_MIN, SOLO_LEVEL_MAX, "solo", "level")
 }
 
-/// Map a wire float back to the solo level.
 pub fn wire_to_level(w: f32) -> anyhow::Result<f32> {
     crate::codec::wire_to_lin(w, SOLO_LEVEL_MIN, SOLO_LEVEL_MAX, "solo", "level")
 }

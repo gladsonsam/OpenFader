@@ -1,6 +1,6 @@
 //! Offline fake mixer for UI dev: full v2 topology (77 strips), fake meters.
 //!
-//! Strip index map (global, stable — indices 0..39 mean what they always
+//! Strip index map (global, stable, indices 0..39 mean what they always
 //! meant so existing UI/tests keep working; new families append after):
 //!
 //! | indices | family | kind  | label     | default names       | colour |
@@ -36,11 +36,8 @@ pub const SIM_INPUTS_EXT: usize = 16;
 pub const SIM_RETS: usize = 4;
 /// FX send masters.
 pub const SIM_FXSNDS: usize = 4;
-/// Matrix masters.
 pub const SIM_MTX: usize = 8;
-/// Main masters (LR only).
 pub const SIM_MAINS: usize = 1;
-/// DCA masters.
 pub const SIM_DCAS: usize = 4;
 /// R2 subgroup master count (matches the DL32S desk family).
 pub const SIM_SUBGROUPS: usize = 6;
@@ -50,7 +47,6 @@ pub const SIM_MUTE_GROUPS: usize = 6;
 pub const SIM_STRIPS: usize =
     SIM_CHANNELS + SIM_BUSES + SIM_INPUTS_EXT + SIM_RETS + SIM_FXSNDS + SIM_MTX + SIM_MAINS + SIM_DCAS;
 
-/// Ordered strip families (see module docs for the index map).
 pub const SIM_TOPOLOGY: [StripFamily; 8] = [
     StripFamily { key: "ch", kind: StripKind::In, label: "Ch 1-32", first: 0, count: SIM_CHANNELS, name_prefix: "Ch", color_default: 2 },
     StripFamily { key: "mix", kind: StripKind::Bus, label: "Mix 1-8", first: 32, count: SIM_BUSES, name_prefix: "Mix", color_default: 6 },
@@ -62,7 +58,6 @@ pub const SIM_TOPOLOGY: [StripFamily; 8] = [
     StripFamily { key: "dca", kind: StripKind::Dca, label: "DCA 1-4", first: 73, count: SIM_DCAS, name_prefix: "DCA", color_default: 0 },
 ];
 
-/// Strip kind for a global strip index (topology lookup).
 pub fn kind_of_strip(idx: usize) -> anyhow::Result<StripKind> {
     for f in SIM_TOPOLOGY {
         if f.contains(idx) {
@@ -93,7 +88,7 @@ pub enum SimPreset {
     Dl32s,
     /// Owner's XR18 desk as found (XR18 baseline notes §2): real
     /// scribbles/order (`BASS`, `VOX`, `GTR L/R`, `DRUM L/R`, `KEYS L/R`,
-    /// `AC GTR`, `Abelton` — desk spelling kept), bus scribbles
+    /// `AC GTR`, `Abelton`, desk spelling kept), bus scribbles
     /// (`COMP L/R`, `DRUM`, `KEYS`, `VOX`) and baseline faders/mutes.
     Studio,
 }
@@ -201,7 +196,7 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
                 .unwrap_or_else(|| format!("CH{:02}", i + 1)),
         };
         let mut s = ChannelStrip::new(i as u16, name);
-        // Engineering pan (catalogue `-100..=+100`, `0.0` = centre) — not
+        // Engineering pan (catalogue `-100..=+100`, `0.0` = centre), not
         // the legacy `0.5`-centre position scale; seeded with a spread so
         // the first poll already shows L/R placement.
         s.pan = seed_pan(i, &s.name);
@@ -218,7 +213,6 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
                 }
             }
             _ => {
-                // A pleasant default scene: unity-ish faders with variation.
                 s.fader = 0.7 + 0.1 * ((i % 5) as f32 / 4.0);
             }
         }
@@ -242,7 +236,6 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
             SimPreset::Studio => STUDIO_BUS_FADERS.get(b).copied().unwrap_or(0.75),
             _ => 0.75,
         };
-        // Desk buses read back ON/unmuted; spares park unmuted.
         s.mute = false;
         v.push(s);
     }
@@ -339,7 +332,7 @@ fn seed_pan(idx: usize, name: &str) -> f32 {
 
 /// Seeded param-plane state for one strip: every non-strip-backed catalogue
 /// id (`gain` … `fx4_mute`) gets a plausible live-desk value, so
-/// `get_param` answers from the first poll — no "unset optionals skipped".
+/// `get_param` answers from the first poll, no "unset optionals skipped".
 /// Strip-backed ids (`fader`/`mute`/`name`/`pan`) are NOT included here;
 /// they live in [`ChannelStrip`]. Writes via `set_param` overwrite these
 /// seeds and read back bit-exact.
@@ -502,7 +495,7 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
 
 /// Seeded param-plane state for a non-input strip (bus/ret/fxsnd/mtx/main):
 /// catalogue defaults plus a plausible mix scene (EQ on for most, comp on
-/// for alternate buses/matrices + main, sends untouched — out of scope).
+/// for alternate buses/matrices + main, sends untouched, out of scope).
 /// DCA strips only ever answer fader/mute/name/color (scopes); the extra
 /// seeds are harmless (hidden by the scope check in `get_param`).
 fn seed_params_for_family(idx: usize, name: &str, kind: StripKind) -> HashMap<String, ParamValue> {
@@ -550,14 +543,12 @@ fn seed_params_for_family(idx: usize, name: &str, kind: StripKind) -> HashMap<St
 /// params (values 0.0..=1.0, bit-exact like the param plane).
 #[derive(Clone, Debug)]
 pub struct SimFxSlot {
-    /// Display type label (`Hall`, `Plate`, `Room`, `Delay`, `Chorus`, `Flanger`).
     pub fx_type: String,
     /// Slot on (design `on`; false reads as bypassed on the FX screen).
     pub on: bool,
     /// Explicit bypass flag (design has no separate bypass; kept so
     /// `fx_bypass` round-trips).
     pub bypass: bool,
-    /// Normalized params in the type's table order.
     pub params: Vec<f32>,
 }
 
@@ -648,7 +639,7 @@ pub struct SimDriver {
     /// (`buildFx` order); writes overwrite and read back bit-exact.
     fx: RwLock<Vec<SimFxSlot>>,
     /// R2 subgroup masters: 6 × (fader 0..1, mute), in-memory (no desk
-    /// leaf on the sim model — the reference surface for the DL32S desk).
+    /// leaf on the sim model, the reference surface for the DL32S desk).
     subgroups: RwLock<[(f32, bool); SIM_SUBGROUPS]>,
     /// R2 mute-group masters: 6 × muted, in-memory.
     mute_groups: RwLock<[bool; SIM_MUTE_GROUPS]>,
@@ -711,7 +702,6 @@ impl SimDriver {
         }
     }
 
-    /// The preset this driver was built with.
     pub fn preset(&self) -> SimPreset {
         self.preset
     }
@@ -749,7 +739,7 @@ impl SimDriver {
 
     /// Bulk subgroup-assign snapshot for the engine's attach fast path:
     /// one lock acquisition instead of ~strips × groups awaits. Same
-    /// content `get_subgroup_assign` serves (absent entries read false —
+    /// content `get_subgroup_assign` serves (absent entries read false 
     /// callers filter or default identically).
     pub fn bulk_sub_assign(&self) -> HashMap<(u16, u8), bool> {
         self.sub_assign.read().expect("sim sub_assign poisoned").clone()
@@ -846,7 +836,6 @@ impl SimDriver {
         Ok((slot - 1) as usize)
     }
 
-    /// Whole-rack snapshot (cloned).
     pub fn fx_slots(&self) -> Vec<SimFxSlot> {
         self.fx.read().expect("sim fx poisoned").clone()
     }
@@ -940,7 +929,7 @@ impl SimDriver {
         Ok(label)
     }
 
-    /// Clear a strip's patch (source reads back `"—"`, the design's
+    /// Clear a strip's patch (source reads back `" "`, the design's
     /// unpatched tile).
     pub fn clear_patch(&self, strip: StripId) -> anyhow::Result<()> {
         let i = self.idx(strip)?;
@@ -1051,7 +1040,7 @@ impl MixerDriver for SimDriver {
     /// The whole MS param-plane catalogue: every id reads/writes bit-exact
     /// per-strip state (strip-backed `fader`/`mute`/`name`/`pan` live in
     /// [`ChannelStrip`]; the rest in the per-strip param map). Tests mutate
-    /// state desk-side through `set_param` — the sim has no separate desk,
+    /// state desk-side through `set_param`, the sim has no separate desk,
     /// so the set path IS the desk-mutation path the relay poller observes.
     fn capabilities(&self) -> &'static [&'static str] {
         static IDS: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
@@ -1285,7 +1274,6 @@ impl MixerDriver for SimDriver {
     ) -> anyhow::Result<()> {
         let i = self.idx(strip)?;
         let kind = kind_of_strip(i)?;
-        // Strip-backed params stay the single source of truth in ChannelStrip.
         match (param, &value) {
             ("fader", ParamValue::Float(v)) => return self.set_fader(strip, *v).await,
             ("mute", ParamValue::Bool(m)) => return self.set_mute(strip, *m).await,
@@ -1310,21 +1298,14 @@ impl MixerDriver for SimDriver {
             }
             _ => {}
         }
-        // Catalogue v2 ids: scope-checked (out-of-scope is a non-drop-class
-        // error — the engine pre-filters the poll set by scopes, so this
-        // only fires on direct misuse) and range-validated.
         if let Some(def) = openfader_core::params::find(param) {
             if !openfader_core::params::supports_kind(def, kind) {
                 anyhow::bail!("sim: {param} out of scope for {kind:?} strips");
             }
             openfader_core::params::validate(param, &value)?;
-            // Bit-exact store: no dB conversion, no quantization in sim.
             self.params.write().expect("sim params poisoned")[i].insert(param.to_string(), value);
             return Ok(());
         }
-        // Non-catalogue ids are unknown: the single catalogue flow above is
-        // the only param vocabulary (the pre-catalogue DL32S field-name
-        // fallback was removed; presets and tooling use catalogue ids).
         anyhow::bail!("sim: unknown param {param:?}")
     }
 
@@ -1359,23 +1340,12 @@ impl MixerDriver for SimDriver {
             if let Some(v) = self.params.read().expect("sim params poisoned")[i].get(param) {
                 return Ok(v.clone());
             }
-            // Catalogue ids always read back: the seeded scene covers every id
-            // from construction, and a catalogue default covers anything never
-            // written — the relay poller must never skip a supported param
-            // for lack of a value.
             return Ok(def.default.as_param_value());
         }
-        // Non-catalogue ids are unknown — same single-vocabulary rule as
-        // `set_param` above (never in the poll set).
         anyhow::bail!("sim: unknown param {param:?}")
     }
 
     async fn snapshot(&self) -> anyhow::Result<MixerSnapshot> {
-        // Strip-backed params (fader/mute/name/pan) ride along in the strips.
-        // Extended detail params (gain, phantom, …) are live driver state in
-        // the per-strip map: `MixerSnapshot` (a core type) carries strips
-        // only, so `recall` restores strips and leaves the map intact rather
-        // than clobbering detail state it cannot represent.
         Ok(MixerSnapshot {
             strips: self.read().clone(),
         })
@@ -1419,11 +1389,9 @@ mod tests {
 
     #[tokio::test]
     async fn studio_preset_mirrors_rig() {
-        // `--preset studio` parses (case-insensitive) and round-trips.
         assert_eq!(SimPreset::parse("studio"), Some(SimPreset::Studio));
         assert_eq!(SimPreset::parse("STUDIO"), Some(SimPreset::Studio));
         assert_eq!(SimPreset::Studio.name(), "studio");
-        // Existing presets keep their names.
         assert_eq!(SimPreset::parse("xr18"), Some(SimPreset::Xr18));
         assert_eq!(SimPreset::parse("dl32s"), Some(SimPreset::Dl32s));
         assert_eq!(SimPreset::parse("generic"), Some(SimPreset::Generic));
@@ -1431,8 +1399,6 @@ mod tests {
         let d = SimDriver::with_preset(SimPreset::Studio);
         assert_eq!(d.preset(), SimPreset::Studio);
 
-        // Channel scribbles in desk order (baseline §2; "" = empty desk
-        // scribble on 02/03/06/14; desk spelling `Abelton` kept).
         let names = async {
             let mut out = Vec::with_capacity(SIM_CHANNELS);
             for i in 0..SIM_CHANNELS {
@@ -1447,7 +1413,6 @@ mod tests {
             .chain((STUDIO_CHANNELS.len()..SIM_CHANNELS).map(|i| format!("CH{:02}", i + 1)))
             .collect();
         assert_eq!(names, expected);
-        // Spot names a demo viewer would recognise.
         assert_eq!(names[0], "BASS");
         assert_eq!(names[3], "VOX");
         assert_eq!(names[4], "VOX");
@@ -1456,18 +1421,15 @@ mod tests {
         assert_eq!(names[12], "AC GTR");
         assert_eq!(names[14], "Abelton");
 
-        // Desk-as-found faders/mutes on strips 1..16.
         for (i, (f, m)) in STUDIO_FADERS.iter().zip(STUDIO_MUTES.iter()).enumerate() {
             let got = d.get_fader(StripId(i as u16)).await.unwrap();
             assert!((got - f).abs() < 1e-6, "ch{} fader {got} != {f}", i + 1);
             assert_eq!(d.get_mute(StripId(i as u16)).await.unwrap(), *m, "ch{}", i + 1);
         }
-        // Spares past the 16-channel desk park silent.
         assert_eq!(names[16], "CH17");
         assert_eq!(d.get_fader(StripId(16)).await.unwrap(), 0.0);
         assert!(d.get_mute(StripId(16)).await.unwrap());
 
-        // Bus scribbles + faders as observed (bus 3 empty on the desk).
         for (b, name) in STUDIO_BUSES.iter().enumerate() {
             let strip = StripId((SIM_CHANNELS + b) as u16);
             assert_eq!(d.get_name(strip).await.unwrap(), *name, "bus{}", b + 1);
@@ -1476,23 +1438,19 @@ mod tests {
             assert!(!d.get_mute(strip).await.unwrap(), "bus{}", b + 1);
         }
 
-        // Main LR fader as observed.
         assert!((d.get_main_fader().await.unwrap() - STUDIO_MAIN).abs() < 1e-6);
-        // Reported model carries the preset name.
         let info = d.query_info().await.unwrap();
         assert!(info.model.contains("studio"), "model: {}", info.model);
     }
 
     #[tokio::test]
     async fn desk_presets_untouched() {
-        // Generic default is unchanged (CHxx/BUSx, unity-ish scene).
         let g = SimDriver::new();
         assert_eq!(g.preset(), SimPreset::Generic);
         assert_eq!(g.get_name(StripId(0)).await.unwrap(), "CH01");
         assert_eq!(g.get_name(StripId(32)).await.unwrap(), "BUS1");
         assert!((g.get_main_fader().await.unwrap() - 0.8).abs() < 1e-6);
 
-        // XR18/DL32S scribbles unchanged.
         let x = SimDriver::with_preset(SimPreset::Xr18);
         assert_eq!(x.get_name(StripId(0)).await.unwrap(), "Kick");
         assert_eq!(x.get_name(StripId(18)).await.unwrap(), "CH19");
@@ -1504,9 +1462,6 @@ mod tests {
     #[tokio::test]
     async fn param_roundtrip_float_gain() {
         let d = SimDriver::new();
-        // Bit-exact: values that dB quantization would mangle survive intact.
-        // (v2: -12 dB is the X-Air headamp floor, so the negative probe is
-        // -11.95 instead of the old out-of-range -19.95.)
         for v in [12.5f32, 0.1, -11.95, 60.0] {
             d.set_param(StripId(0), "gain", ParamValue::Float(v))
                 .await
@@ -1548,7 +1503,6 @@ mod tests {
             d.get_param(StripId(0), "name").await.unwrap(),
             ParamValue::Text("Kick".into())
         );
-        // Strip-backed: the generic param and the dedicated accessor agree.
         assert_eq!(d.get_name(StripId(0)).await.unwrap(), "Kick");
     }
 
@@ -1556,8 +1510,6 @@ mod tests {
     async fn param_covers_detail_panel_families() {
         let d = SimDriver::new();
         let s = StripId(1);
-        // One field per detail-panel family: hpf, gate, comp, eq, aux, fx,
-        // generic sends, plus pan and an enum-as-float (eq2_type).
         let fields: &[(&str, ParamValue)] = &[
             ("pan", ParamValue::Float(-25.0)),
             ("hpf_on", ParamValue::Bool(true)),
@@ -1589,8 +1541,6 @@ mod tests {
                 "roundtrip {f}"
             );
         }
-        // Pre-catalogue field names stay rejected: the single catalogue flow
-        // is the only vocabulary.
         for legacy in ["gate_threshold", "comp_threshold", "mutegroup1"] {
             let err = d
                 .set_param(s, legacy, ParamValue::Float(0.0))
@@ -1607,19 +1557,15 @@ mod tests {
     async fn r2_fx_rack_matches_design() {
         let d = SimDriver::new();
         assert_eq!(d.fx_slot_count(), SIM_FX_SLOTS);
-        // Seeded rack mirrors buildFx: 8 slots, Hall/Plate/Delay/Chorus/
-        // Room/Delay/Flanger/Hall, all on but the last.
         let slots = d.fx_slots();
         let types: Vec<&str> = slots.iter().map(|s| s.fx_type.as_str()).collect();
         assert_eq!(types, vec!["Hall", "Plate", "Delay", "Chorus", "Room", "Delay", "Flanger", "Hall"]);
         assert!(slots[..7].iter().all(|s| s.on));
         assert!(!slots[7].on);
         assert_eq!(slots[0].params, vec![0.42, 0.15, 0.6, 0.55, 1.0]);
-        // Type switch resets params to the new type's defaults.
         d.set_fx_type(1, "Chorus").unwrap();
         assert_eq!(d.get_fx_type(1).unwrap(), "Chorus");
         assert_eq!(d.get_fx_param(1, "rate").unwrap(), 0.4);
-        // Param set/get round-trips bit-exact; unknown ids rejected.
         d.set_fx_param(1, "rate", 0.75).unwrap();
         assert_eq!(d.get_fx_param(1, "rate").unwrap(), 0.75);
         assert!(d.set_fx_param(1, "decay", 0.5).is_err());
@@ -1627,7 +1573,6 @@ mod tests {
         assert!(d.set_fx_param(0, "rate", 0.5).is_err());
         assert!(d.set_fx_param(9, "rate", 0.5).is_err());
         assert!(d.set_fx_type(1, "Reverb").is_err());
-        // On/bypass round-trip.
         d.set_fx_on(8, true).unwrap();
         d.set_fx_bypass(8, true).unwrap();
         let slots = d.fx_slots();
@@ -1637,7 +1582,6 @@ mod tests {
     #[tokio::test]
     async fn r2_patch_roundtrip() {
         let d = SimDriver::new();
-        // Defaults mirror the design (Ch n <- Lcl n).
         assert_eq!(
             d.get_param(StripId(0), "source").await.unwrap(),
             ParamValue::Text("Lcl 01".into())
@@ -1653,12 +1597,10 @@ mod tests {
             d.get_param(StripId(0), "source").await.unwrap(),
             ParamValue::Text("—".into())
         );
-        // Only input strips patch; groups are Lcl/Net/USB × 32.
         assert!(d.set_patch(StripId(32), "Lcl", 1).is_err());
         assert!(d.set_patch(StripId(0), "AES", 1).is_err());
         assert!(d.set_patch(StripId(0), "Lcl", 0).is_err());
         assert!(d.set_patch(StripId(0), "Lcl", 33).is_err());
-        // Devices mirror the design's connection screen.
         assert_eq!(SIM_DEVICES.len(), 3);
         assert_eq!(SIM_DEVICES[0].ip, "192.168.1.20");
         assert_eq!(SIM_DEVICES[0].state, "connected");
@@ -1676,7 +1618,6 @@ mod tests {
             assert!((0.0..=1.0).contains(&t.post), "post {t:?}");
             assert!(t.gr_gate_db >= 0.0 && t.gr_comp_db >= 0.0, "gr {t:?}");
         }
-        // Muted strips read post 0 while in stays live (pre-fader).
         d.set_mute(StripId(0), true).await.unwrap();
         let taps = d.poll_taps();
         assert_eq!(taps[0].post, 0.0);
@@ -1700,11 +1641,8 @@ mod tests {
             .await
             .unwrap();
         let snap = d.snapshot().await.unwrap();
-        // Strip-backed params ride along in the snapshot strips, bit-exact.
         assert_eq!(snap.strips[0].name, "Kick");
         assert_eq!(snap.strips[0].pan, -25.0);
-        // A snapshot/recall cycle keeps detail params readable and exact
-        // (recall restores strips without clobbering the param map).
         d.recall(&snap).await.unwrap();
         assert_eq!(
             d.get_param(s, "gain").await.unwrap(),
@@ -1728,8 +1666,6 @@ mod tests {
     async fn param_rejects_unknown_and_wrong_kind() {
         let d = SimDriver::new();
         let s = StripId(0);
-        // Out-of-catalogue ids stay unknown (`eq7_gain` is past every
-        // catalogue band; `gate_key_filter` was removed from the catalogue).
         for bad in ["nope", "eq7_gain", "aux9_level", "fx5_mute", "gate_key_filter"] {
             let err = d
                 .set_param(s, bad, ParamValue::Float(1.0))
@@ -1740,7 +1676,6 @@ mod tests {
             let err = d.get_param(s, bad).await.unwrap_err().to_string();
             assert!(err.contains("unknown"), "{bad}: {err}");
         }
-        // Wrong value kind per field kind.
         let err = d
             .set_param(s, "gain", ParamValue::Bool(true))
             .await
@@ -1753,12 +1688,10 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("Bool"), "{err}");
-        // Non-finite floats rejected; unset params read back as missing.
         assert!(d
             .set_param(s, "gain", ParamValue::Float(f32::NAN))
             .await
             .is_err());
-        // Pan follows the catalogue engineering scale (-100..=+100).
         d.set_param(s, "pan", ParamValue::Float(-100.0))
             .await
             .unwrap();
@@ -1773,14 +1706,11 @@ mod tests {
             .set_param(s, "pan", ParamValue::Float(f32::NAN))
             .await
             .is_err());
-        // Catalogue ids always read back (seeded scene values, catalogue
-        // default for anything never written): no "no value yet".
         let g = d.get_param(StripId(5), "gain").await.unwrap();
         assert!(
             openfader_core::params::validate("gain", &g).is_ok(),
             "seeded gain validates: {g:?}"
         );
-        // Out-of-range strips still error.
         assert!(d
             .set_param(StripId(99), "gain", ParamValue::Float(1.0))
             .await
@@ -1811,9 +1741,6 @@ mod tests {
     async fn param_roundtrip_every_catalogue_id() {
         use openfader_core::params::ParamKind;
         let d = SimDriver::new();
-        // One representative value per kind, in catalogue range, on the
-        // first strip whose kind supports the id (scopes are the
-        // catalogue's call — e.g. eq5_* is bus/main-only).
         for def in openfader_core::params::CATALOGUE {
             let s = first_supporting_strip(def.id).expect("every id is supported somewhere");
             let v = match def.kind {
@@ -1832,8 +1759,6 @@ mod tests {
                 def.id
             );
         }
-        // Enum ids take the top of range too (whole numbers only).
-        // (usbreturn/eq1_type/eq2_type are input-scoped: strip 2 stands.)
         let s = StripId(2);
         for id in ["usbreturn", "eq1_type", "eq2_type"] {
             let def = openfader_core::params::find(id).unwrap();
@@ -1848,12 +1773,6 @@ mod tests {
     #[tokio::test]
     async fn every_catalogue_id_readable_from_first_poll() {
         use openfader_core::params;
-        // Fresh drivers answer get_param for every catalogue id on every
-        // strip whose kind supports it, before anything is written
-        // (seeded scene, catalogue defaults at minimum) — the relay
-        // poller must never skip a supported param for lack of a value.
-        // Out-of-scope pairs (e.g. eq5_* on inputs) keep erroring: the
-        // poller pre-filters by scopes, so it never asks.
         for preset in [
             SimPreset::Generic,
             SimPreset::Xr18,
@@ -1878,7 +1797,6 @@ mod tests {
                 }
             }
             assert!(checked > 100, "input strips carry the bulk of the catalogue");
-            // Bus/main-scoped ids (eq5_*) answer on their own families.
             for def in params::CATALOGUE {
                 if params::supports_kind(def, openfader_core::StripKind::In) {
                     continue;
@@ -1889,8 +1807,6 @@ mod tests {
                     .unwrap_or_else(|e| panic!("{preset:?} strip{} {}: {e}", s.0, def.id));
             }
         }
-        // Spot-checks on the seeded scene (studio): bass gain up, HPF off
-        // on bass but on for vox, gate on drums, pan spread, sends live.
         let d = SimDriver::with_preset(SimPreset::Studio);
         async fn gain_of(d: &SimDriver, ch: u16) -> f32 {
             match d.get_param(StripId(ch), "gain").await.unwrap() {
@@ -1924,7 +1840,6 @@ mod tests {
             "playback gain, got {}",
             gain_of(&d, 14).await
         );
-        // Writes persist and read back over the seeds.
         d.set_param(StripId(7), "gain", ParamValue::Float(33.0))
             .await
             .unwrap();
@@ -1936,8 +1851,6 @@ mod tests {
 
     #[test]
     fn topology_is_ordered_contiguous_and_stable() {
-        // Indices 0..40 keep their historic meaning (channels 0..32, buses
-        // 32..40); new families append after. Total 77 strips.
         assert_eq!(SIM_STRIPS, 77);
         let mut next = 0usize;
         for fam in SIM_TOPOLOGY {
@@ -1951,10 +1864,8 @@ mod tests {
         assert_eq!((SIM_TOPOLOGY[0].first, SIM_TOPOLOGY[0].count), (0, 32));
         assert_eq!(SIM_TOPOLOGY[1].kind, StripKind::Bus);
         assert_eq!((SIM_TOPOLOGY[1].first, SIM_TOPOLOGY[1].count), (32, 8));
-        // Colour defaults follow the design bank colours.
         let colours: Vec<u8> = SIM_TOPOLOGY.iter().map(|f| f.color_default).collect();
         assert_eq!(colours, vec![2, 6, 2, 6, 4, 11, 11, 0]);
-        // kind_of_strip agrees with the table on every strip.
         for (i, fam) in SIM_TOPOLOGY.iter().enumerate() {
             for s in fam.first..fam.end() {
                 assert_eq!(kind_of_strip(s).unwrap(), fam.kind, "strip {s}");
@@ -1967,9 +1878,6 @@ mod tests {
     #[tokio::test]
     async fn every_strip_answers_its_scoped_set() {
         use openfader_core::params;
-        // The ch30-class fix: after construction (no writes) every strip
-        // answers get_param for every catalogue id its kind supports, and
-        // the value validates. DCA strips answer only fader/mute/name/color.
         let d = SimDriver::new();
         for fam in SIM_TOPOLOGY {
             for s in fam.first..fam.end() {
@@ -1995,7 +1903,6 @@ mod tests {
                 }
             }
         }
-        // Writes read back on the new families too.
         d.set_param(StripId(56), "eq2_gain", ParamValue::Float(2.5))
             .await
             .unwrap();
@@ -2010,8 +1917,6 @@ mod tests {
             d.get_param(StripId(73), "fader").await.unwrap(),
             ParamValue::Float(0.5)
         );
-        // Out-of-scope ids fail without tripping the engine drop-class
-        // matchers ("not supported"/"unknown param"/"timed out").
         for (strip, id) in [(73u16, "gain"), (73, "pan"), (72, "pan"), (56, "gain")] {
             let err = d
                 .get_param(StripId(strip), id)

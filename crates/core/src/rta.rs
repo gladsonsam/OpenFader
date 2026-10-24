@@ -20,16 +20,12 @@ use crate::MeterFrame;
 /// Trailing history window (100 ms ≈ 2 frames at the 50 ms meter tick).
 pub const RTA_WINDOW: Duration = Duration::from_millis(100);
 
-/// Linear level at/above which the clip flag latches.
 pub const CLIP_LEVEL: f32 = 0.99;
 
-/// Zero-padded FFT length used by [`RtaProcessor::spectrum`].
 pub const SPECTRUM_FFT_LEN: usize = 128;
 
-/// Number of magnitude bins returned by [`RtaProcessor::spectrum`].
 pub const SPECTRUM_BINS: usize = 64;
 
-/// Per-channel stats over the current window.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ChannelStats {
     pub peak: f32,
@@ -48,7 +44,6 @@ pub struct RtaProcessor {
 }
 
 impl RtaProcessor {
-    /// Processor with the default 100 ms history window.
     pub fn new(channels: usize) -> Self {
         Self::with_window(channels, RTA_WINDOW)
     }
@@ -70,12 +65,10 @@ impl RtaProcessor {
         self.window
     }
 
-    /// Frames currently inside the window.
     pub fn history_len(&self) -> usize {
         self.frames.len()
     }
 
-    /// Accept one meter frame. Wider frames grow the channel count.
     pub fn push_frame(&mut self, frame: &MeterFrame) {
         let now = Instant::now();
         if frame.levels.len() > self.channels {
@@ -129,7 +122,6 @@ impl RtaProcessor {
         })
     }
 
-    /// Clear all latched clip flags.
     pub fn clear_clips(&mut self) {
         for c in self.clips.iter_mut() {
             *c = false;
@@ -298,10 +290,8 @@ mod tests {
             .unwrap();
         assert_eq!(peak, 4, "tone at 4 cycles/window must peak at bin 4");
         assert!((bins[4] - 1.0).abs() < 1e-5, "peak bin normalized to 1.0");
-        // DC offset must be gone: bin 0 well below the tone.
         assert!(bins[0] < 0.1, "mean removal must suppress DC, got {}", bins[0]);
 
-        // Flat channel: silent spectrum.
         let flat = rta.spectrum(1);
         assert_eq!(flat.len(), SPECTRUM_BINS);
         assert!(flat.iter().all(|&b| b == 0.0));

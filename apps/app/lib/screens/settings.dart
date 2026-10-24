@@ -1,10 +1,6 @@
-// Settings: six destinations with a tablet sidebar/detail split and phone
-// overview-list + subpages. All preferences are real (PrefsService),
-// mixes/backups are real files (LocalMixStore), discovery/help/links use
-// the live services. Prototype copy (sample devices, demo toasts) is gone.
-//
-// Wiring: everything flows through [SettingsStore] (constructor injection —
-// Area A implements it over prefs + recents + mixes + platform plugins).
+// Settings: tablet sidebar and detail split with a phone overview list and subpages.
+// All preferences and mixes use the real services.
+// Screens stay constructor-injected so Area A can implement the store.
 library;
 
 import 'dart:async';
@@ -31,8 +27,7 @@ enum SettingsSection {
   final IconData icon;
 }
 
-/// Minimal store contract the settings UI renders. Implemented by the
-/// shell/owner over prefs + recents + mixes + platform plugins.
+// Implemented by the shell over prefs, recents, mixes, and platform plugins.
 abstract class SettingsStore extends ChangeNotifier {
   PrefsService get prefs;
   RecentMixers get recents;
@@ -70,8 +65,6 @@ class U4SettingsPage extends StatefulWidget {
 }
 
 class _U4SettingsPageState extends State<U4SettingsPage> {
-  /// Tablet detail selection (default: connections). Phone subpage
-  /// (null = overview list).
   SettingsSection _sel = SettingsSection.connections;
   SettingsSection? _page;
 
@@ -169,10 +162,6 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
       ),
     );
   }
-
-  // -------------------------------------------------------------------------
-  // Chrome: topbar + sidebar + overview list.
-  // -------------------------------------------------------------------------
 
   Widget _topbar({required String title, required bool showBack}) {
     final wide = MediaQuery.sizeOf(context).width > 900;
@@ -293,10 +282,6 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
     });
   }
 
-  // -------------------------------------------------------------------------
-  // Details per destination.
-  // -------------------------------------------------------------------------
-
   Widget _detail(SettingsSection s) {
     return _SettingsLayout(section: s, child: _detailBody(s));
   }
@@ -336,10 +321,6 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// Shared chrome + row widgets.
-// ---------------------------------------------------------------------------
 
 class _IconBtn extends StatelessWidget {
   final String tooltip;
@@ -517,7 +498,6 @@ class _OverviewCard extends StatelessWidget {
               ]))));
 }
 
-/// Section heading + card group.
 class _Section extends StatelessWidget {
   final String title;
   final List<Widget> children;
@@ -592,7 +572,6 @@ class _Note extends StatelessWidget {
   }
 }
 
-/// Label/description/value row with a trailing control.
 class _PrefRow extends StatelessWidget {
   final String label;
   final String? desc;
@@ -745,7 +724,6 @@ class _Select extends StatelessWidget {
   }
 }
 
-/// Full-width chevron action row.
 class _ActionRow extends StatelessWidget {
   final String label;
   final String? desc;
@@ -823,10 +801,6 @@ class _ValueText extends StatelessWidget {
             fontFeatures: const [FontFeature.tabularFigures()]));
   }
 }
-
-// ---------------------------------------------------------------------------
-// Connections detail.
-// ---------------------------------------------------------------------------
 
 class _ConnectionsDetail extends StatelessWidget {
   final SettingsStore store;
@@ -987,10 +961,6 @@ class _IconBtnInline extends StatelessWidget {
                   child: _SettingsIcon(icon,
                       size: 22, color: ConsolePalette.of(context).text7)))));
 }
-
-// ---------------------------------------------------------------------------
-// Mixes detail.
-// ---------------------------------------------------------------------------
 
 class _MixesDetail extends StatelessWidget {
   final SettingsStore store;
@@ -1274,10 +1244,6 @@ class _PlainButton extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// App data detail.
-// ---------------------------------------------------------------------------
-
 class _DataDetail extends StatelessWidget {
   final SettingsStore store;
   final void Function(String) toast;
@@ -1385,10 +1351,6 @@ class _DataDetail extends StatelessWidget {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// Appearance detail.
-// ---------------------------------------------------------------------------
 
 class _AppearanceDetail extends StatelessWidget {
   final SettingsStore store;
@@ -1508,10 +1470,6 @@ class _AppearanceDetail extends StatelessWidget {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// About detail.
-// ---------------------------------------------------------------------------
 
 class _AboutDetail extends StatelessWidget {
   final SettingsStore store;
@@ -1781,7 +1739,6 @@ class _HelpAccordionState extends State<_HelpAccordion> {
   }
 }
 
-/// Page-specific reference geometry, shared by section headings and rows.
 class _SettingsLayout extends InheritedWidget {
   final SettingsSection section;
   const _SettingsLayout({required this.section, required super.child});
@@ -1803,7 +1760,7 @@ class _SettingsLayout extends InheritedWidget {
       section != oldWidget.section;
 }
 
-/// Keep asynchronous callbacks awaitable through gesture/semantics adapters.
+// Awaitable wrapper so gesture and semantics taps can call async actions.
 Future<void> _runSettingsAction(
     BuildContext context, FutureOr<void> Function() action) async {
   try {
@@ -1823,7 +1780,7 @@ Future<void> _runSettingsAction(
   }
 }
 
-/// Settings uses the handoff's 24-unit outline symbols, not filled platform glyphs.
+// Outline symbols match the handoff artwork instead of filled platform glyphs.
 class _SettingsIcon extends StatelessWidget {
   final IconData icon;
   final double size;

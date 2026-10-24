@@ -1,8 +1,6 @@
-// W2a transport: the socket seam under the store. One WS transport over
-// `package:web_socket_channel`:
-// auto-reconnect with backoff, `hello {binary_meters:true, taps:true}` on
-// every connect, and unconsumed mixer writes dropped on reconnect (only
-// connection/handshake intent survives an unopened link).
+// W2a transport: the socket seam under the store. One WS transport with
+// auto-reconnect and backoff; only connection and handshake intent is queued
+// across reconnects, mixer writes are dropped with the old epoch.
 library;
 
 import 'dart:async';
@@ -15,10 +13,10 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 typedef TransportMessage = Object; // String | Uint8List
 typedef Unsub = void Function();
 
-/// Minimal channel shape WsTransport drives (WebSocketChannel compatible).
+/// Channel shape WsTransport drives (WebSocketChannel compatible).
 typedef ChannelFactory = WebSocketChannel Function(Uri url);
 
-/// Only explicit connection/handshake intent survives an unopened link.
+/// Only connection and handshake intent survives an unopened link.
 /// Mixer writes belong to the old epoch and must never replay on reconnect.
 bool queueable(String json) {
   try {

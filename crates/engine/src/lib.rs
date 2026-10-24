@@ -1,12 +1,8 @@
 //! openfader-engine: the single transport-agnostic mixer session.
 //!
-//! Every frontend (native app via the bridge, CLI,
-//! future apps) gets the FULL mixer capability through this crate: driver
-//! sessions, strip state + param plane (caps, poller, focus, diff,
-//! confirmed-write refresh, unsupported dropout), meters/spectrum/GR
-//! aggregation, scenes/shows, strip locks + TTL sweeper, per-client access
-//! policy, client roster/writers and `by` attribution. A feature that is not
-//! in the engine does not exist.
+//! All mixer capability lives here (driver sessions, strip state, param
+//! plane, meters/spectrum/GR, scenes/shows, locks, per-client policy,
+//! roster). A feature that is not in the engine does not exist.
 //!
 //! The engine speaks exactly one protocol: [`Cmd`] in, [`Event`] out (see
 //! [`protocol`], specified in `crates/engine/README.md`). Adapters
