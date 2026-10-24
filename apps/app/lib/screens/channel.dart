@@ -59,6 +59,10 @@ abstract class ChannelStore extends ChangeNotifier {
   bool? paramBool(String leaf);
   bool supports(String leaf);
 
+  /// Catalogue reads do not imply that a live value is hydrated/editable.
+  bool get capabilitiesReady;
+  Map<String, dynamic>? paramMetadata(String leaf);
+
   // --- commands ---
   void cmdParam(String leaf, Object value);
   void cmdFocus();
@@ -250,6 +254,7 @@ class _ChannelPageState extends State<ChannelPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         bottom: MediaQuery.sizeOf(context).width >= 700,
