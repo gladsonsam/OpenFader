@@ -95,6 +95,16 @@ client.detach().await; // also runs on drop
 | `file_download` (R2) | `filename` | unicast `file` with base64 `data` |
 | `file_upload` (R2) | `filename`, `data` (base64, ≤16 MiB), `file_type` | broadcast `file` ack (`data` absent, `size` = bytes written) |
 
+Connection fills prioritize all topology strips' faders, then bus/subgroup/main
+masters, channel mutes, names, supported icons/colors, EQ/HPF, and remaining
+parameters. The initial read burst has a shared five-second budget; unfilled
+fields continue in priority order through the existing poller. Numbered FX racks
+start with unknown placeholders: FX type/parameter queries no longer delay the
+connection command or the initial control values. Push-cache providers publish
+initial parameters through the same ordered fill instead of waiting for a full
+background sweep. Only actual driver capabilities/scopes are read; this does not
+add icon support to drivers that do not advertise it.
+
 Driver coverage: mix-bus masters ride every driver (sim mix strips,
 XR18 `/bus/N`, DL32S aux masters). Subgroup / mute-group / file transfer
 are DL32S-native and sim-modelled in-memory; the XR18 has no subgroup,
