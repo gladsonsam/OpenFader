@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import '../engine.dart';
+import '../core/channel_views.dart' show canonicalSimDspRange;
 
 class FakeSimEngine implements EngineApi {
   final List<Strip> _strips = List.generate(
@@ -90,7 +91,24 @@ class FakeSimEngine implements EngineApi {
       'driver': 'sim',
       'groups': {'subgroups': _subgroupFaders.length},
       'params': [
-        for (final id in _params.first.keys) {'id': id}
+        for (final id in _params.first.keys)
+          {
+            'id': id,
+            if (canonicalSimDspRange(id) case final range?) ...{
+              'min': range.first,
+              'max': range.last,
+              'kind': 'float',
+              'unit': id.endsWith('_freq')
+                  ? 'Hz'
+                  : RegExp(r'_(att|hold|rel)$').hasMatch(id)
+                      ? 'ms'
+                      : id == 'gain' ||
+                              id == 'trim' ||
+                              RegExp(r'_(thr|range|makeup|gain)$').hasMatch(id)
+                          ? 'dB'
+                          : '',
+            },
+          }
       ],
     }));
     for (var group = 0; group < _subgroupFaders.length; group++) {

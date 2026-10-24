@@ -172,6 +172,7 @@ class _AppShellState extends State<AppShell> {
   Future<void> _tick() async {
     try {
       await widget.store.pollMeters();
+      if (mounted && _tab == AppTab.debug) _debug.captureFrame();
     } catch (_) {
       // Never crash the shell loop on a transport hiccup.
     }
@@ -1594,12 +1595,12 @@ class _DebugStore extends _StoreBase implements DebugStore {
 
   @override
   Future<void> refresh() async {
+    captureFrame();
+  }
+
+  /// Observe the shell's completed drain; debug must not own another poller.
+  void captureFrame() {
     _tick++;
-    try {
-      await app.pollMeters();
-    } catch (_) {
-      // Never crash the debug loop on a transport hiccup.
-    }
     notifyListeners();
   }
 

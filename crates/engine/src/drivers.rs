@@ -85,6 +85,14 @@ pub trait DynDriver: Send + Sync {
     fn param_defs(&self) -> &'static [ParamDef] {
         &[]
     }
+    /// Driver-specific canonical range overrides, merged into this
+    /// provider's [`ParamRegistry`](openfader_core::params::ParamRegistry)
+    /// at boot (see [`RegisteredDriver::param_registry`]). Defaults to
+    /// empty (canonical ranges); mirrors
+    /// [`MixerDriver::param_range_overrides`].
+    fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
+        &[]
+    }
     fn meter_taps(&self) -> &'static [&'static str];
     fn bus_count(&self) -> u8;
     fn subgroup_count(&self) -> u8;
@@ -437,6 +445,9 @@ macro_rules! impl_dyn_driver {
         }
         fn param_defs(&self) -> &'static [ParamDef] {
             MixerDriver::param_defs(self)
+        }
+        fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
+            MixerDriver::param_range_overrides(self)
         }
         async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()> {
             MixerDriver::set_spectrum_target(self, owner, strip).await
@@ -1058,13 +1069,20 @@ impl RegisteredDriver {
     /// Merged param registry for this provider: the canonical catalogue
     /// plus the driver's contributed [`DynDriver::param_defs`] rows
     /// (canonical ids win on collision — see
-    /// [`ParamRegistry::register`](openfader_core::params::ParamRegistry::register)).
-    /// The engine builds one per driver at boot and resolves every caps /
-    /// poll / snapshot / recall path through it, so a mixer with unique
-    /// DSP arrives without editing core.
+    /// [`ParamRegistry::register`](openfader_core::params::ParamRegistry::register)),
+    /// then the driver's
+    /// [`DynDriver::param_range_overrides`] bounds over the canonical rows
+    /// (ranges only — kinds, scopes and defaults are untouched, and every
+    /// other provider keeps canonical ranges). The engine builds one per
+    /// driver at boot and resolves every caps / poll / snapshot / recall
+    /// path through it, so a mixer with unique DSP arrives without editing
+    /// core.
     pub fn param_registry(&self) -> ParamRegistry {
         let mut reg = ParamRegistry::canonical();
         reg.register(self.driver.param_defs());
+        for (id, lo, hi) in self.driver.param_range_overrides() {
+            reg.override_range(id, *lo, *hi);
+        }
         reg
     }
 }

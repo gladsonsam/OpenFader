@@ -321,7 +321,7 @@ class AppStore extends ChangeNotifier
 
   static String deskLeaf(String leaf) {
     if (leaf == 'invert') return 'polarity';
-    if (leaf == 'eq_hpf_f') return 'hpf_freq';
+    if (leaf == 'eq_hpf_f' || leaf == 'eq0_f') return 'hpf_freq';
     final m = _eqShortLeaf.firstMatch(leaf);
     if (m != null) return 'eq${m[1]}_${m[2] == 'f' ? 'freq' : 'gain'}';
     return leaf;
@@ -1172,6 +1172,16 @@ class AppStore extends ChangeNotifier
   bool supports(String leaf) {
     final desk = deskLeaf(leaf);
     if (!engine.capsReady) return false;
+    // Master Fader's modern DL32S EQ disables Q while a shelf is selected
+    // (reference guide p101). Keep the stored value, but block every edit
+    // path, including pinch and a previously focused numeric readout.
+    final eqQ = RegExp(r'^eq([1-4])_q$').firstMatch(desk);
+    if (engine.driver == 'dl32s' &&
+        eqQ != null &&
+        EqFilterShape.fromValue(_eqPresentationType(int.parse(eqQ[1]!))) !=
+            EqFilterShape.bell) {
+      return false;
+    }
     return engine.supportedParams.contains(desk) &&
         (engine.driver == 'sim' ||
             (engine.connected && engine.valueKnown(_channel, desk)));
@@ -1182,7 +1192,17 @@ class AppStore extends ChangeNotifier
     final desk = deskLeaf(leaf);
     if (!supports(desk)) return;
     if (value is num && !value.isFinite) return;
-    final coerced = value;
+    // DSP edits (including delayed ChannelWrites flushes) use the current
+    // driver limits. Hydration remains untouched, even outside these limits.
+    final isDspRange = desk == 'hpf_freq' ||
+        RegExp(r'^eq[1-6]_(freq|gain|q)$').hasMatch(desk) ||
+        RegExp(r'^(gate|comp)_(thr|range|att|hold|rel|ratio|knee|makeup|filter_freq|mix)$')
+            .hasMatch(desk);
+    final range = isDspRange ? _editableRange(desk) : null;
+    if (isDspRange && (range == null || value is! num)) return;
+    final coerced = range == null
+        ? value
+        : (value as num).toDouble().clamp(range.first, range.last);
     // Capture at enqueue time: navigation must not retarget a queued edit.
     final ch = _channel;
     _maps.confirmed.putIfAbsent(ch, () => {});
@@ -1335,10 +1355,16 @@ class AppStore extends ChangeNotifier
     };
   }
 
+  List<double>? _editableRange(String leaf) {
+    if (!supports(leaf) || paramNum(leaf)?.isFinite != true) return null;
+    return parameterRange(paramMetadata(leaf));
+  }
+
   @override
   ChannelEqVm get eq => ChannelEqVm(
         on: paramBool('eq_on') ?? false,
         hpfF: paramNum('hpf_freq') ?? 80,
+        hpfRange: _editableRange('hpf_freq'),
         hpfOn: paramBool('hpf_on') ?? false,
         hpfSlope: 12,
         selectedBand: _eqBand,
@@ -1353,6 +1379,9 @@ class AppStore extends ChangeNotifier
               q: paramNum('eq${b}_q') ?? 1,
               on: true,
               type: _eqPresentationType(b),
+              fRange: _editableRange('eq${b}_freq'),
+              gRange: _editableRange('eq${b}_gain'),
+              qRange: _editableRange('eq${b}_q'),
             ),
         ],
       );
@@ -1361,6 +1390,21 @@ class AppStore extends ChangeNotifier
     final p = kind == DynKind.gate ? 'gate' : 'comp';
     return ChannelDynVm(
       kind: kind,
+      ranges: {
+        for (final prop in [
+          'thr',
+          'range',
+          'att',
+          'hold',
+          'rel',
+          'ratio',
+          'knee',
+          'makeup',
+          'filter_freq',
+          'mix'
+        ])
+          if (_editableRange('${p}_$prop') case final range?) prop: range,
+      },
       on: paramBool('${p}_on') ?? false,
       thr: paramNum('${p}_thr') ?? (kind == DynKind.gate ? -50 : -20),
       range: paramNum('${p}_range') ?? 40,
