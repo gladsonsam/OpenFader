@@ -61,6 +61,7 @@ fn examples() -> Vec<(String, Value)> {
                 field: "gain".to_string(),
                 value: json!(12.5),
                 by: Some("client-2".to_string()),
+                authority: None,
             },
         ),
         (
@@ -207,6 +208,7 @@ fn examples() -> Vec<(String, Value)> {
                 ]
                 .into_iter()
                 .collect::<BTreeMap<_, _>>(),
+                authority: None,
             },
         ),
         (

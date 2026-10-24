@@ -471,7 +471,7 @@ fn rta_band_edges_hz() -> Vec<f32> {
 /// gates the [`RTA_SETTLE`] window; `updated_at`/`bins_db` are the last
 /// decoded 31-bin frame. Stale (>1 s, same bound as [`METER_STALE_AFTER`])
 /// reads unavailable (empty) instead of frozen session data.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct SpectrumState {
     generation: u64,
     selector: Option<u32>,
@@ -479,19 +479,6 @@ struct SpectrumState {
     switched_at: Option<std::time::Instant>,
     updated_at: Option<std::time::Instant>,
     bins_db: Vec<f32>,
-}
-
-impl Default for SpectrumState {
-    fn default() -> Self {
-        Self {
-            generation: 0,
-            selector: None,
-            epoch: 0,
-            switched_at: None,
-            updated_at: None,
-            bins_db: Vec::new(),
-        }
-    }
 }
 
 /// Decode one meter push's RTA bins (indices 60..90, BE-f32 dB), or `None`
@@ -598,6 +585,7 @@ async fn wait_for_initial_state(session: &MackieSession) -> anyhow::Result<()> {
 /// - `eqN_q 0.5..16`: p103 Modern EQ (all four bands).
 /// - `comp_thr -80..0`: p112 Modern compressor.
 /// - `comp_makeup 0..20`: p112 Modern compressor gain.
+///
 /// EQ gains need no entry (canonical already documents ±15 per p103);
 /// `gate_thr` needs none (canonical already -80..0 per p112).
 static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
@@ -712,7 +700,14 @@ impl Dl32sDriver {
         }
     }
 
-    /// Read one table field back from the push cache.
+    /// Read one table field back from the desk-proven push cache.
+    ///
+    /// Uses [`cached_verified`](openfader_transport::mackie::MackieSession::cached_verified):
+    /// own-write-pending words are withheld (no desk proof), so a post-write
+    /// read reports "no desk-confirmed value yet" instead of echoing our own
+    /// optimism back as confirmation. The error text stays out of the
+    /// engine's drop-class substrings (`not supported`/`timed out`) so the
+    /// poller keeps polling instead of evicting the param.
     async fn get_field(&self, strip: StripId, key: &str) -> anyhow::Result<ParamValue> {
         let table = dl32s_inputs();
         let field = table.field(key)?;
@@ -721,8 +716,8 @@ impl Dl32sDriver {
         let raw = guard
             .as_ref()
             .expect("checked above")
-            .cached(addr)
-            .ok_or_else(|| anyhow::anyhow!("{key}: no value pushed yet"))?;
+            .cached_verified(addr)
+            .ok_or_else(|| anyhow::anyhow!("{key}: no desk-confirmed value yet"))?;
         if field.encoding.is_float() {
             Ok(ParamValue::Float(f32::from_bits(raw)))
         } else if field.encoding == addrs::Encoding::Bool {
@@ -730,6 +725,46 @@ impl Dl32sDriver {
         } else {
             Ok(ParamValue::Float(raw as f32))
         }
+    }
+
+    /// Desk-proven fader read (verification path): withholds own-write-pending
+    /// words. Display/health paths use the inclusive
+    /// [`MixerDriver::get_fader`] instead (continuity, no proof claimed).
+    async fn verified_fader(&self, addr: u32) -> anyhow::Result<f32> {
+        let guard = self.session().await?;
+        let raw = guard
+            .as_ref()
+            .expect("checked above")
+            .cached_verified(addr)
+            .ok_or_else(|| anyhow::anyhow!("fader: no desk-confirmed value yet"))?;
+        Ok(addrs::DL32S_FADER_SCALE.inverse(f32::from_bits(raw)))
+    }
+
+    /// Desk-proven mute read (verification path — see [`verified_fader`](Self::verified_fader)).
+    async fn verified_mute(&self, addr: u32) -> anyhow::Result<bool> {
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .expect("checked above")
+            .cached_verified(addr)
+            .map(|v| v != 0)
+            .ok_or_else(|| anyhow::anyhow!("mute: no desk-confirmed value yet"))
+    }
+
+    /// Desk-proven name read (verification path — see [`verified_fader`](Self::verified_fader)).
+    async fn verified_name(&self, ch: u32) -> anyhow::Result<String> {
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .expect("checked above")
+            .name_verified(ch)
+            .ok_or_else(|| anyhow::anyhow!("name: no desk-confirmed value yet"))
+    }
+
+    /// Desk-proven raw u32 read (verification path for assign membership).
+    /// Display paths use [`request_value_u32`](Self::request_value_u32).
+    async fn verified_value_u32(&self, address: u32) -> anyhow::Result<Option<u32>> {
+        self.request_value_verified_u32(address).await
     }
 
     /// Mute/unmute a mute group master (fixed protocol address, no table needed).
@@ -742,6 +777,9 @@ impl Dl32sDriver {
             .await
     }
 
+    /// Mute-group master state for DISPLAY continuity (attach/snapshot/health):
+    /// inclusive read — own-write-pending words included, no proof claimed.
+    /// Verification paths must use [`get_mute_group_verified`](Self::get_mute_group_verified).
     pub async fn get_mute_group(&self, group_1_based: u32) -> anyhow::Result<bool> {
         let guard = self.session().await?;
         guard
@@ -749,6 +787,27 @@ impl Dl32sDriver {
             .expect("checked above")
             .cached_mute_group(group_1_based)
             .ok_or_else(|| anyhow::anyhow!("mute group {group_1_based}: no value pushed yet"))
+    }
+
+    /// Desk-proven mute-group master (withholds own-write-pending values).
+    /// Verification/poll/readback paths must use this, never [`get_mute_group`](Self::get_mute_group).
+    pub async fn get_mute_group_verified(&self, group_1_based: u32) -> anyhow::Result<bool> {
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .expect("checked above")
+            .cached_mute_group_verified(group_1_based)
+            .ok_or_else(|| anyhow::anyhow!("mute group {group_1_based}: no desk-confirmed value yet"))
+    }
+
+    /// Desk-proven mute-group assign (withholds own-write-pending words).
+    /// Verification paths must use this, never the inclusive trait getter.
+    pub async fn get_mute_group_assign_verified(&self, ch: StripId, group_0_based: u8) -> anyhow::Result<bool> {
+        let g = Self::dl_check_mute_group(group_0_based)?;
+        let ch1 = Self::channel(ch)?;
+        let addr = dl32s_inputs().address(ch1, &format!("mutegroup{g}"))?;
+        let v = self.verified_value_u32(addr).await?.ok_or_else(|| anyhow::anyhow!("mute-group assign: no desk-confirmed value yet"))?;
+        Ok(v != 0)
     }
 
     /// Recall a mixer show snapshot the way the mixer app does (op 1 + ack).
@@ -991,6 +1050,14 @@ impl Dl32sDriver {
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
         Ok(session.cached(address))
+    }
+
+    /// Desk-proven variant of [`request_value_u32`](Self::request_value_u32):
+    /// withholds own-write-pending words (no desk proof).
+    pub async fn request_value_verified_u32(&self, address: u32) -> anyhow::Result<Option<u32>> {
+        let guard = self.session().await?;
+        let session = guard.as_ref().expect("checked above");
+        Ok(session.cached_verified(address))
     }
 }
 
@@ -1246,6 +1313,9 @@ impl MixerDriver for Dl32sDriver {
         guard.as_ref().expect("checked above").write_float(addr, db).await
     }
 
+    /// DISPLAY continuity read (attach/snapshot/health/state): inclusive —
+    /// own writes included, no proof claimed. Verification uses `get_param`
+    /// (desk-proven) instead.
     async fn get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
         let ch = Self::channel(strip)?;
         let addr = dl32s_inputs().address(ch, "fader")?;
@@ -1272,6 +1342,7 @@ impl MixerDriver for Dl32sDriver {
         let ch = Self::channel(strip)?;
         self.set_channel_name(ch, name).await
     }
+    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
     async fn get_name(&self, strip: StripId) -> anyhow::Result<String> {
         let ch = Self::channel(strip)?;
         let guard = self.session().await?;
@@ -1284,6 +1355,7 @@ impl MixerDriver for Dl32sDriver {
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
         self.set_main_fader_db(addrs::DL32S_FADER_SCALE.forward(value)).await
     }
+    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
     async fn get_main_fader(&self) -> anyhow::Result<f32> {
         let addr = addrs::dl32s_main().address(1, "fader")?;
         let guard = self.session().await?;
@@ -1301,6 +1373,7 @@ impl MixerDriver for Dl32sDriver {
         self.set_main_mute(muted).await
     }
 
+    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
     async fn get_main_mute(&self) -> anyhow::Result<bool> {
         let addr = addrs::dl32s_main().address(1, "mute")?;
         let guard = self.session().await?;
@@ -1312,6 +1385,7 @@ impl MixerDriver for Dl32sDriver {
             .ok_or_else(|| anyhow::anyhow!("main mute: no value pushed yet"))
     }
 
+    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
     async fn get_mute(&self, strip: StripId) -> anyhow::Result<bool> {
         let ch = Self::channel(strip)?;
         let addr = dl32s_inputs().address(ch, "mute")?;
@@ -1334,6 +1408,7 @@ impl MixerDriver for Dl32sDriver {
         self.set_auxmaster_fader_db(aux, addrs::DL32S_FADER_SCALE.forward(validate_fader(value)?)).await
     }
 
+    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
     async fn get_bus_fader(&self, bus: u8) -> anyhow::Result<f32> {
         let aux = Self::dl_check_bus(bus)?;
         let addr = addrs::dl32s_auxmasters().address(aux, "fader")?;
@@ -1373,6 +1448,7 @@ impl MixerDriver for Dl32sDriver {
         self.set_subgroup_fader_db(g, addrs::DL32S_FADER_SCALE.forward(validate_fader(value)?)).await
     }
 
+    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
     async fn get_subgroup_fader(&self, group: u8) -> anyhow::Result<f32> {
         let g = Self::dl_check_subgroup(group)?;
         let addr = addrs::dl32s_subgroups().address(g, "fader")?;
@@ -1390,6 +1466,7 @@ impl MixerDriver for Dl32sDriver {
         self.set_subgroup_mute(g, muted).await
     }
 
+    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
     async fn get_subgroup_mute(&self, group: u8) -> anyhow::Result<bool> {
         let g = Self::dl_check_subgroup(group)?;
         let addr = addrs::dl32s_subgroups().address(g, "mute")?;
@@ -1410,6 +1487,8 @@ impl MixerDriver for Dl32sDriver {
         guard.as_ref().expect("checked above").write_int(addr, u32::from(member), VALUE_TYPE_PARAM).await
     }
 
+    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive —
+    /// membership snapshot after local moves stays continuous.
     async fn get_subgroup_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
         let g = Self::dl_check_subgroup(group)?;
         let ch1 = Self::channel(ch)?;
@@ -1428,6 +1507,7 @@ impl MixerDriver for Dl32sDriver {
         self.set_mute_group(g, muted).await
     }
 
+    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
     async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool> {
         let g = Self::dl_check_mute_group(group)?;
         self.get_mute_group(g).await
@@ -1441,6 +1521,7 @@ impl MixerDriver for Dl32sDriver {
         guard.as_ref().expect("checked above").write_int(addr, u32::from(member), VALUE_TYPE_PARAM).await
     }
 
+    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
     async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
         let g = Self::dl_check_mute_group(group)?;
         let ch1 = Self::channel(ch)?;
@@ -1558,11 +1639,26 @@ impl MixerDriver for Dl32sDriver {
         }
     }
 
+    /// Authoritative param read (verification/poll/refresh path): desk-proven
+    /// only — own-write-pending words withheld. Deliberately NOT routed via
+    /// the inclusive display getters above (continuity without proof); each
+    /// arm reads the verified cache directly, including unit conversion.
     async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
         match param {
-            "fader" => self.get_fader(strip).await.map(ParamValue::Float),
-            "mute" => self.get_mute(strip).await.map(ParamValue::Bool),
-            "name" => self.get_name(strip).await.map(ParamValue::Text),
+            "fader" => {
+                let ch = Self::channel(strip)?;
+                let addr = dl32s_inputs().address(ch, "fader")?;
+                self.verified_fader(addr).await.map(ParamValue::Float)
+            }
+            "mute" => {
+                let ch = Self::channel(strip)?;
+                let addr = dl32s_inputs().address(ch, "mute")?;
+                self.verified_mute(addr).await.map(ParamValue::Bool)
+            }
+            "name" => {
+                let ch = Self::channel(strip)?;
+                self.verified_name(ch).await.map(ParamValue::Text)
+            }
             // Wire pan -1.0..+1.0 back out to canonical -100..+100.
             "pan" => match self.get_field(strip, "pan").await? {
                 ParamValue::Float(v) => Ok(ParamValue::Float(v * 100.0)),
@@ -1603,6 +1699,12 @@ impl MixerDriver for Dl32sDriver {
             // hasn't covered this strip yet, and reporting 0/unmuted as
             // real would paint the wrong desk state. Surface the read
             // error so callers hold their loading state instead.
+            // Continuity, not proof: this reads the optimistic-inclusive
+            // `cached` (own-write-pending words included) so a snapshot
+            // right after local moves still reflects them. Provenance for
+            // per-param confirmation lives one layer up (engine `authority`
+            // on `param`/`params`); the typed `get_*` display getters above
+            // are likewise inclusive, while `get_param` stays verified-only.
             let fader = session
                 .cached(fader_addr)
                 .map(|raw| addrs::DL32S_FADER_SCALE.inverse(f32::from_bits(raw)))

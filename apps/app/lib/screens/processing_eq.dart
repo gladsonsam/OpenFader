@@ -148,9 +148,12 @@ class _EqTabState extends State<_EqTab> {
           if (wide)
             SizedBox(
                 width: 460 * scale,
-                child: _PresetsButton(store: store, compact: false))
+                child: _PresetsButton(
+                    store: store, compact: false, kind: ProcessorPresetKind.eq))
           else
-            Expanded(child: _PresetsButton(store: store, compact: true)),
+            Expanded(
+                child: _PresetsButton(
+                    store: store, compact: true, kind: ProcessorPresetKind.eq)),
           const SizedBox(width: 8),
           SizedBox(
               width: wide ? 248 * scale : null,
