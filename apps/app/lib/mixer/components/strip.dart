@@ -1,4 +1,5 @@
 import '../../palette.dart';
+import '../../widgets/channel_name_editor.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../geometry.dart';
@@ -191,7 +192,21 @@ class MixerStrip extends StatelessWidget {
                               fontSize: g.nameText,
                               compact: compact,
                               onSelect: () => controller.select(ch),
-                              onOpen: onOpen)),
+                              onOpen: onOpen,
+                              onRename: isMaster ||
+                                      chIndex == null ||
+                                      controller.store
+                                              .captureNameTarget(chIndex) ==
+                                          null
+                                  ? null
+                                  : () {
+                                      final target = controller.store
+                                          .captureNameTarget(chIndex);
+                                      if (target != null) {
+                                        showChannelNameEditor(
+                                            context, controller.store, target);
+                                      }
+                                    })),
                     ]))));
       });
 
