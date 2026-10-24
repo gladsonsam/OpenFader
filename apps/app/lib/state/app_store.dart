@@ -131,18 +131,36 @@ class AppStore extends ChangeNotifier
   ValueNotifier<int> controlReadyNote(int ch) => _controlReadyNotes.putIfAbsent(
       ch, () => ValueNotifier(_controlReady(ch)));
 
-  bool masterControlKnown(String field) =>
-      engine.driver == 'sim' ||
-      (engine.connected &&
-          (_busId == 'main'
-              ? (field == 'fader'
-                  ? engine.mainFader != null
-                  : engine.mainMuted != null)
-              : (field == 'fader'
-                  ? engine.busFaders
-                      .containsKey(int.tryParse(_busId.replaceFirst('bus', '')))
-                  : engine.busMuted.containsKey(
-                      int.tryParse(_busId.replaceFirst('bus', ''))))));
+  int? get _selectedSubgroup => _busId.startsWith('subgroup')
+      ? int.tryParse(_busId.substring('subgroup'.length))
+      : null;
+
+  bool masterControlKnown(String field) {
+    final group = _selectedSubgroup;
+    if (group != null) {
+      // Capability establishes addressability; each echo hydrates only its
+      // own control, including in sim. Never enable from a fallback value.
+      return engine.connected &&
+          engine.capsReady &&
+          group >= 0 &&
+          group < engine.subgroupCount &&
+          (field == 'fader'
+              ? engine.subgroupFaders.containsKey(group)
+              : engine.subgroupMuted.containsKey(group));
+    }
+    return engine.driver == 'sim' ||
+        (engine.connected &&
+            (_busId == 'main'
+                ? (field == 'fader'
+                    ? engine.mainFader != null
+                    : engine.mainMuted != null)
+                : (field == 'fader'
+                    ? engine.busFaders.containsKey(
+                        int.tryParse(_busId.replaceFirst('bus', '')))
+                    : engine.busMuted.containsKey(
+                        int.tryParse(_busId.replaceFirst('bus', ''))))));
+  }
+
   final ValueNotifier<double> _masterFaderNote = ValueNotifier(0.75);
   final ValueNotifier<bool> _masterMutedNote = ValueNotifier(false);
 
@@ -463,6 +481,9 @@ class AppStore extends ChangeNotifier
         return values.keys.every((k) => k is String && _isHotControlField(k));
       case 'main':
       case 'bus':
+      case 'subgroup':
+        // Row status is cached, but control echoes stay on the notifier path.
+        _busRowsCache = null;
         return true;
       default:
         return false;
@@ -559,7 +580,9 @@ class AppStore extends ChangeNotifier
     }
     final masterKey = _busId == 'main'
         ? 'main'
-        : 'bus/${((int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
+        : _selectedSubgroup != null
+            ? 'subgroup/${(_selectedSubgroup! + 1).toString().padLeft(2, '0')}'
+            : 'bus/${((int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
     final masterIndex = engine.strips.indexWhere((s) => s.key == masterKey);
     _masterMeter.value = masterIndex >= 0 && masterIndex < engine.meters.length
         ? engine.meters[masterIndex].clamp(0.0, 1.0)
@@ -769,19 +792,27 @@ class AppStore extends ChangeNotifier
   }
 
   @override
-  double get masterFader => _protocolFaderToUi(_busId == 'main'
-      ? engine.mainFader ?? _masterFader
-      : engine.busFaders[int.tryParse(_busId.replaceFirst('bus', ''))] ?? 0);
+  double get masterFader => _protocolFaderToUi(_selectedSubgroup != null
+      ? engine.subgroupFaders[_selectedSubgroup] ?? 0
+      : _busId == 'main'
+          ? engine.mainFader ?? _masterFader
+          : engine.busFaders[int.tryParse(_busId.replaceFirst('bus', ''))] ??
+              0);
 
   @override
-  bool get masterMuted => _busId == 'main'
-      ? engine.mainMuted ?? _masterMuted
-      : engine.busMuted[int.tryParse(_busId.replaceFirst('bus', ''))] ?? false;
+  bool get masterMuted => _selectedSubgroup != null
+      ? engine.subgroupMuted[_selectedSubgroup] ?? false
+      : _busId == 'main'
+          ? engine.mainMuted ?? _masterMuted
+          : engine.busMuted[int.tryParse(_busId.replaceFirst('bus', ''))] ??
+              false;
 
   @override
-  String get masterName => _busId == 'main'
-      ? 'MAIN'
-      : 'BUS ${(int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1}';
+  String get masterName => _selectedSubgroup != null
+      ? 'SUBGROUP ${_selectedSubgroup! + 1}'
+      : _busId == 'main'
+          ? 'MAIN'
+          : 'BUS ${(int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1}';
 
   @override
   List<MixerBank> get banks {
@@ -816,7 +847,7 @@ class AppStore extends ChangeNotifier
         id: 'main',
         name: 'MAIN',
         sub: 'LR master',
-        muted: masterMuted,
+        muted: engine.mainMuted ?? _masterMuted,
         active: _busId == 'main',
         meter: _masterMeter,
       ),
@@ -829,6 +860,23 @@ class AppStore extends ChangeNotifier
           active: _busId == 'bus$b',
           meter: _busMeters.putIfAbsent('bus$b', () => ValueNotifier(0)),
         ),
+      if (engine.capsReady)
+        for (var group = 0; group < engine.subgroupCount; group++)
+          MixerBusRow(
+            id: 'subgroup$group',
+            name: 'SUBGROUP ${group + 1}',
+            sub: !engine.subgroupFaders.containsKey(group) ||
+                    !engine.subgroupMuted.containsKey(group)
+                ? 'Awaiting desk values'
+                : engine.subgroupMuted[group] == true
+                    ? 'muted'
+                    : 'open',
+            muted: engine.subgroupMuted[group] ?? false,
+            active: _busId == 'subgroup$group',
+            // Subgroups have no dedicated meter feed in the current protocol.
+            meter: _busMeters.putIfAbsent(
+                'subgroup$group', () => ValueNotifier(0)),
+          ),
     ]);
     _busRowsCache = built;
     return built;
@@ -925,6 +973,15 @@ class AppStore extends ChangeNotifier
     // Capture the driver's conversion now, before a queued send can run
     // after a driver/bus change. The UI bottom maps to the driver's floor.
     final protocolValue = _uiFaderToProtocol(nv);
+    final group = _selectedSubgroup;
+    if (group != null) {
+      engine.subgroupFaders[group] = protocolValue;
+      _masterFaderNote.value = nv;
+      _coalescer.offer('subgroup_fader:$group',
+          () => _send(Cmds.subgroupFader(group, protocolValue)));
+      _invalidateDerived();
+      return;
+    }
     _masterFader = protocolValue;
     if (_busId != 'main') {
       final bus = int.tryParse(_busId.replaceFirst('bus', ''));
@@ -953,6 +1010,15 @@ class AppStore extends ChangeNotifier
   @override
   void setMasterMuted(bool muted) {
     if (!masterControlKnown('mute')) return;
+    final group = _selectedSubgroup;
+    if (group != null) {
+      engine.subgroupMuted[group] = muted;
+      _masterMutedNote.value = muted;
+      _coalescer.offer(
+          'subgroup_mute:$group', () => _send(Cmds.subgroupMute(group, muted)));
+      _invalidateDerived();
+      return;
+    }
     _masterMuted = muted;
     if (_busId != 'main') {
       final bus = int.tryParse(_busId.replaceFirst('bus', ''));
@@ -973,7 +1039,10 @@ class AppStore extends ChangeNotifier
 
   @override
   void selectBus(String id) {
+    if (_busId == id || !busRows.any((row) => row.id == id)) return;
     _busId = id;
+    _syncControlNotes();
+    _syncMeters(_nowMs());
     _invalidateDerived();
     notifyListeners();
   }
@@ -1374,9 +1443,7 @@ class AppStore extends ChangeNotifier
   }
 
   @override
-  int get subgroupCount => engine.subgroupFaders.isEmpty
-      ? 0
-      : engine.subgroupFaders.keys.reduce(math.max) + 1;
+  int get subgroupCount => engine.subgroupCount;
 
   @override
   int get muteGroupCount => engine.muteGroupCount;
