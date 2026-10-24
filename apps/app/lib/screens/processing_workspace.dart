@@ -76,6 +76,7 @@ class _ProcessingSlider extends StatefulWidget {
   final Color? color;
   final Color? valueColor;
   final VoidCallback? onFocus;
+  final Future<void> Function()? onTypedEntry;
   final ValueChanged<double> onChanged;
   const _ProcessingSlider(
       {required this.label,
@@ -87,6 +88,7 @@ class _ProcessingSlider extends StatefulWidget {
       this.fontSize = 14,
       this.trailing,
       this.onFocus,
+      this.onTypedEntry,
       this.enabled = true,
       this.pan = false,
       this.showLabel = true,
@@ -103,6 +105,10 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
   double? _drag;
   Future<void> _type() async {
     widget.onFocus?.call();
+    if (widget.onTypedEntry != null) {
+      await widget.onTypedEntry!();
+      return;
+    }
     final v = await showNumberEntry(
         context: context,
         title: widget.label,

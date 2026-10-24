@@ -1072,6 +1072,13 @@ class AppStore extends ChangeNotifier
   }
 
   @override
+  bool get capabilitiesReady => engine.capsReady;
+
+  @override
+  Map<String, dynamic>? paramMetadata(String leaf) =>
+      engine.parameterMetadata[deskLeaf(leaf)];
+
+  @override
   bool supports(String leaf) {
     final desk = deskLeaf(leaf);
     if (!engine.capsReady) return false;
