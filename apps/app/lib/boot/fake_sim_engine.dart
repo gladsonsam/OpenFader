@@ -1,7 +1,4 @@
-// Offline sim fallback: answers the same Cmd/Event JSON the real engine
-// speaks. Same protocol surface as before, so the demo always boots when
-// the native library is missing (desktop `flutter run` without jniLibs,
-// or any FFI init failure).
+// Offline sim fallback answering the same Cmd and Event JSON as the real engine.
 library;
 
 import 'dart:collection';
@@ -21,8 +18,7 @@ class FakeSimEngine implements EngineApi {
           name: 'CH${(i + 1).toString().padLeft(2, '0')}',
           fader: 0.75,
           muted: false));
-  // An explicit offline capability subset. Every advertised leaf has an
-  // engineering-unit value and survives resync, like the native sim.
+  // Every advertised leaf carries an engineering-unit value and survives resync.
   static const _defaults = <String, Object>{
     'fader': 0.75,
     'mute': false,
@@ -70,7 +66,7 @@ class FakeSimEngine implements EngineApi {
               'send${slot}_on': true,
             },
           });
-  // Match native SimDriver's supported subgroup masters and initial values.
+  // Subgroup masters mirror the native sim initial values.
   final List<double> _subgroupFaders = List.filled(6, 0);
   final List<bool> _subgroupMuted = List.filled(6, false);
   final Queue<String> _mailbox = Queue<String>();
@@ -300,9 +296,8 @@ class FakeSimEngine implements EngineApi {
     _snapshot();
   }
 
-  // Latest-only 20 Hz source, sampled by the shell's existing poll loop.
-  // Both encodings drain this same source: extra control polls must neither
-  // accelerate the signal nor replay it through JSON after binary delivery.
+  // Latest-only 20 Hz source sampled by the existing shell poll loop.
+  // Both encodings drain this same source so extra polls never replay it.
   List<double>? _takeMeterLevels() {
     final tick = _signalClock.elapsedMilliseconds ~/ 50;
     if (tick == _lastMeterTick) return null;
@@ -324,7 +319,6 @@ class FakeSimEngine implements EngineApi {
   }
 
   double _inputLevel(int i, double t) {
-    // Same slow, staggered -36..-12 dB phrases as the native sim.
     final phase = i * 0.7;
     final rate = 0.65 + (i % 5) * 0.07;
     final phrase = (0.5 +
@@ -334,8 +328,7 @@ class FakeSimEngine implements EngineApi {
     return math.pow(10.0, (-36.0 + 24.0 * phrase) / 20.0).toDouble();
   }
 
-  // Keep synchronized with SimDriver.demo_spectrum. Fixed frequency peaks,
-  // slowly moving levels, no per-frame normalization of meter-envelope FFTs.
+  // Kept in sync with SimDriver.demo_spectrum.
   List<double> _demoSpectrum(int ch, double level) {
     if (level <= 0) return List.filled(64, 0);
     final envelope =
@@ -377,10 +370,7 @@ class FakeSimEngine implements EngineApi {
 
   @override
   Future<Uint8List> pollBinary(String clientId, int cap) async {
-    // Same synthetic 20 Hz meter frame as poll(), encoded in the compact
-    // `Event::to_binary` layout (protocol.rs: `[u8 type=1, u8 version=1,
-    // u16 n, u32 seq, u32 t_ms]` + `n x u16` levels, little-endian),
-    // wrapped in the `pollBinary` length prefix (`u32 LE len` + frame).
+    // Same synthetic meter frame as poll, in the compact binary layout.
     final levels = _takeMeterLevels();
     if (levels == null) return Uint8List(0);
     final n = levels.length;

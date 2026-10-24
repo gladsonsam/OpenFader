@@ -18,11 +18,9 @@
 
 /// Automix weight bounds (normalized wire float, unitless).
 pub const AUTOMIX_WEIGHT_MIN: f32 = 0.0;
-/// Automix weight upper bound (see [`AUTOMIX_WEIGHT_MIN`]).
 pub const AUTOMIX_WEIGHT_MAX: f32 = 1.0;
 
-/// OSC address of one channel automix container (`automix`, `(int, float)`
-/// = (enable, weight)).
+/// `(int, float)` = (enable, weight).
 ///
 /// ```
 /// # use openfader_proto_xair::automix::automix;
@@ -32,7 +30,6 @@ pub fn automix(root: &str) -> String {
     format!("{root}/automix")
 }
 
-/// Decode an automix container reply into `(enable, weight)`.
 pub fn automix_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<(bool, f32)> {
     match msg.args.as_slice() {
         [rosc::OscType::Int(on), rosc::OscType::Float(w)] => {
@@ -42,15 +39,12 @@ pub fn automix_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<(bool, f32)> {
     }
 }
 
-/// Encode an automix container write (enable int + verbatim weight float).
 pub fn automix_to_args(on: bool, weight: f32) -> anyhow::Result<Vec<rosc::OscType>> {
     Ok(vec![
         rosc::OscType::Int(i32::from(on)),
         rosc::OscType::Float(weight_to_wire(weight)?),
     ])
 }
-/// OSC address of one channel automix weight leaf (`automix/weight`).
-///
 /// ```
 /// # use openfader_proto_xair::automix::automix_weight;
 /// assert_eq!(automix_weight("/ch/01"), "/ch/01/automix/weight");
@@ -59,13 +53,11 @@ pub fn automix_weight(root: &str) -> String {
     format!("{root}/automix/weight")
 }
 
-/// Map a weight to the normalized wire float (identity over `0..1`;
-/// rejects NaN/infinite and out-of-range values before anything is sent).
+/// Identity over `0..1`.
 pub fn weight_to_wire(v: f32) -> anyhow::Result<f32> {
     crate::codec::lin_to_wire(v, AUTOMIX_WEIGHT_MIN, AUTOMIX_WEIGHT_MAX, "automix", "weight")
 }
 
-/// Map a normalized wire float back to the weight.
 pub fn wire_to_weight(w: f32) -> anyhow::Result<f32> {
     crate::codec::wire_to_lin(w, AUTOMIX_WEIGHT_MIN, AUTOMIX_WEIGHT_MAX, "automix", "weight")
 }

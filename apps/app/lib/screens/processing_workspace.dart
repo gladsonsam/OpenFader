@@ -66,7 +66,7 @@ class _ProcessingButton extends StatelessWidget {
                   ]))));
 }
 
-/// Relative horizontal drags, 44pt targets, and typed entry share one value.
+// Shared drag, tap, and typed-entry value for processor sliders.
 class _ProcessingSlider extends StatefulWidget {
   final String label, text;
   final double value, min, max;
@@ -217,8 +217,8 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
             Expanded(child: track),
           ]));
     }
-    // The label's 44pt entry target overlaps the track's identical tap action.
-    // Visual label spacing stays 20pt without shrinking touch targets.
+    // Label and track share one tap action, so the visual gap stays small
+    // while both keep full-height touch targets.
     return SizedBox(
         height: widget.compact ? 64 : 88,
         child: Stack(children: [

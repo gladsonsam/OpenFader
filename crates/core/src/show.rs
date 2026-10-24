@@ -17,10 +17,8 @@ use crate::{clamp_fader, MixerDriver, MixerSnapshot, ParamValue, StripId};
 
 /// Fade used by convenience wrappers (ms).
 pub const DEFAULT_FADE_MS: u64 = 400;
-/// Ramp steps per fade.
 pub const DEFAULT_FADE_STEPS: usize = 20;
 
-/// One strip's contribution to a scene.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SceneStrip {
     pub strip: StripId,
@@ -43,7 +41,6 @@ impl SceneStrip {
     }
 }
 
-/// A named, recallable scene.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Scene {
     pub name: String,
@@ -74,7 +71,6 @@ impl Scene {
         self.strips.iter().find(|s| s.strip == id)
     }
 
-    /// Namespaced note key: `"<driver>:<key>"`.
     pub fn note_key(driver: &str, key: &str) -> String {
         format!("{driver}:{key}")
     }
@@ -85,7 +81,6 @@ impl Scene {
             .insert(Self::note_key(driver, key), value.into());
     }
 
-    /// Fetch a driver-namespaced note.
     pub fn note(&self, driver: &str, key: &str) -> Option<&str> {
         self.notes.get(&Self::note_key(driver, key)).map(String::as_str)
     }
@@ -195,8 +190,6 @@ pub async fn fade_strips<D: FadeDriver + Sync + ?Sized>(
     Ok(())
 }
 
-/// Free-function form of [`Scene::recall_to`]; backs the default
-/// [`MixerDriver::recall_scene`] method.
 pub async fn recall_scene<D: MixerDriver + Sync + ?Sized>(
     driver: &D,
     scene: &Scene,
@@ -205,7 +198,7 @@ pub async fn recall_scene<D: MixerDriver + Sync + ?Sized>(
     scene.recall_to(driver, fade_ms).await
 }
 
-/// An ordered library of scenes (one per song / cue / service segment).
+/// An ordered library of scenes.
 #[derive(Clone, Debug, Default)]
 pub struct Show {
     pub name: String,
@@ -234,7 +227,6 @@ impl Show {
         self.scenes.iter().find(|s| s.name == name)
     }
 
-    /// Remove a scene by name; `true` when something was removed.
     pub fn remove(&mut self, name: &str) -> bool {
         let before = self.scenes.len();
         self.scenes.retain(|s| s.name != name);

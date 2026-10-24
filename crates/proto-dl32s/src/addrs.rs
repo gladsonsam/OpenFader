@@ -26,7 +26,6 @@ pub const DL32R_STRIDE: u32 = 132;
 /// Fader curve in dB, matching the mixer's own scale.
 pub const DB_POINTS: &[f32] = &[-120.0, -60.0, -40.0, -30.0, -20.0, -10.0, -5.0, 0.0, 5.0, 10.0];
 
-/// Canonical 0.0..=1.0 level to wire dB and back.
 pub static DL32S_FADER_SCALE: FaderScale = FaderScale::from_uniform(DB_POINTS);
 
 /// Gate a configured model name. Only the verified DL32S map is served;
@@ -269,7 +268,6 @@ pub struct ChannelBlock {
 }
 
 impl ChannelBlock {
-    /// 1-based channel index to absolute address.
     pub fn address(&self, index_1_based: u32, key: &str) -> anyhow::Result<u32> {
         if !(1..=self.count).contains(&index_1_based) {
             anyhow::bail!("{} index {index_1_based} out of range 1..={}", self.name, self.count);
@@ -287,7 +285,6 @@ impl ChannelBlock {
 }
 
 /// The verified DL32S input block: 106-word strips, 8 aux sends.
-/// Built once per process (field keys are interned statics).
 pub fn dl32s_inputs() -> &'static ChannelBlock {
     static INPUTS: OnceLock<ChannelBlock> = OnceLock::new();
     INPUTS.get_or_init(build_dl32s_inputs)
@@ -374,7 +371,6 @@ pub struct MixerMap {
     pub notes: &'static str,
 }
 
-/// Resolve a configured mixer model to its map. `auto` resolves to DL32S.
 pub fn get_map(model: &str) -> anyhow::Result<&'static MixerMap> {
     match model.trim().to_lowercase().as_str() {
         "dl32s" | "auto" | "" => Ok(DL32S_MAP.get_or_init(build_dl32s_map)),
@@ -428,7 +424,6 @@ mod tests {
     #[test]
     fn field_flags_mirror_provenance() {
         let block = dl32s_inputs();
-        // Observed-live fields are verified; inferred ones are flagged.
         assert!(block.field("gain").unwrap().verified);
         assert!(block.field("phantom").unwrap().verified);
         assert!(block.field("hpf_freq").unwrap().verified);

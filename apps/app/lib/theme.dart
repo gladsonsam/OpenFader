@@ -3,7 +3,7 @@ import 'design.dart';
 import 'palette.dart';
 
 /// Shared geometry and fixed channel identity colors. Runtime UI colors
-/// belong to ConsolePalette so light/dark and accent choices stay coherent.
+/// belong to ConsolePalette so light/dark and accent stay coherent.
 abstract final class U4 {
   static const font = AppDesign.font;
   static const headerH = 64.0;

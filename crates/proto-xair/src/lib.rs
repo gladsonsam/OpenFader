@@ -146,7 +146,6 @@ pub mod addrs {
     }
 
     impl XAirModel {
-        /// 0-based channel-strip bound for this model.
         pub const fn channels(self) -> u16 {
             match self {
                 XAirModel::Xr18 => XR18_CHANNELS,
@@ -444,7 +443,6 @@ fn check_eq_band(kind: openfader_core::StripKind, band: u8) -> anyhow::Result<()
     Ok(())
 }
 
-/// Parse an `aux{n}_level` param id into its 1-based send number.
 fn aux_send(param: &str) -> anyhow::Result<u8> {
     let rest = param
         .strip_prefix("aux")
@@ -485,7 +483,6 @@ fn generic_send(param: &str) -> anyhow::Result<(u8, &str)> {
     Ok((n, leaf))
 }
 
-/// Parse a `dcaN_assign` param id into its 0-based DCA group index.
 fn dca_assign(param: &str) -> anyhow::Result<u8> {
     let rest = param
         .strip_prefix("dca")
@@ -576,7 +573,6 @@ fn strip_mix_on(root: &str) -> String {
     format!("{root}/mix/on")
 }
 
-/// Config name address for one strip root.
 fn strip_config_name(root: &str) -> String {
     if root == "/lr" {
         return addrs::MAIN_NAME.to_string();
@@ -629,7 +625,8 @@ async fn probe_port(host: &str, port: u16) -> bool {
     )
 }
 
-/// Reverse of [`strip_root`]: an OSC root back to its global strip index./// Returns `None` for roots outside the XR18 map. The stereo aux input
+/// Reverse of [`strip_root`]: an OSC root back to its global strip index.
+/// Returns `None` for roots outside the XR18 map. The stereo aux input
 /// (`/rtn/aux`) is strip 35; numeric `/rtn/N` covers the four FX returns.
 fn strip_of_root(root: &str) -> Option<u16> {
     if root == "/rtn/aux" {
@@ -648,7 +645,6 @@ fn strip_of_root(root: &str) -> Option<u16> {
     }
 }
 
-/// Strip index of the `/lr` root (the main-LR family, one strip).
 const LR_STRIP: u16 = 30;
 
 /// Canonical catalogue id per send slot (bus slots 1..=6 ride `auxN_level`,
@@ -1024,7 +1020,6 @@ fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static str, ParamVal
     }
 }
 
-/// Parse an `fx{n}_level` param id into its 1-based send number.
 fn fx_send(param: &str) -> anyhow::Result<u8> {
     let rest = param
         .strip_prefix("fx")
@@ -1270,7 +1265,6 @@ impl XAirDriver {
         }
     }
 
-    /// Latest decoded ALL DYN frame, if any blob has been ingested yet.
     pub async fn last_dyn(&self) -> Option<dyn_gr::DynMeters> {
         self.dyn_cache.lock().await.as_ref().filter(|(at, _)| at.elapsed() <= std::time::Duration::from_millis(500)).map(|(_, meters)| meters.clone())
     }
@@ -2157,8 +2151,6 @@ impl MixerDriver for XAirDriver {
         if openfader_core::params::find(param).is_some() {
             check_scope(param, kind)?;
         }
-        // Channel wire number for channel-only leaves (headamp/input: the
-        // scope check above already rejected non-input strips).
         let ch = || self.check_channel(strip.0);
         match (param, value) {
             ("fader", ParamValue::Float(v)) => self.set_fader(strip, v).await,
@@ -2294,8 +2286,6 @@ impl MixerDriver for XAirDriver {
                 guard.as_ref().unwrap().send(&addr, vec![OscType::Float(wire)]).await
             }
             ("comp_ratio", ParamValue::Float(v)) => {
-                // Firmware step table: the UI ratio number must be an exact
-                // table entry; the wire is the INT index.
                 let idx = comp::ratio_to_index(v)?;
                 let guard = self.session().await?;
                 guard.as_ref().unwrap().send(&comp::comp_ratio(&root), vec![OscType::Int(idx)]).await
@@ -2947,7 +2937,6 @@ mod tests {
                                 worker.gains.lock().unwrap().insert(a.to_string(), *f);
                                 None
                             }
-                            // Headamp phantom stores the verbatim int.
                             (a, Some(OscType::Int(i)))
                                 if a.starts_with("/headamp/")
                                     && a.ends_with("/phantom") =>
@@ -3620,7 +3609,6 @@ mod tests {
     #[tokio::test]
     async fn driver_fader_mute_name_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // StripId is 0-based: strip 0 drives wire `/ch/01/…`.
         // Fader assert uses the hardware quantization epsilon (T8): the fake
         // quantizes like the desk, so exact equality would fail here.
         driver.set_fader(StripId(0), 0.42).await.unwrap();
@@ -3642,7 +3630,6 @@ mod tests {
     #[tokio::test]
     async fn driver_bus_main_info_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // Buses are 0-based too: bus 0 drives wire `/bus/1/…` (single digit, T2).
         driver.set_bus_fader(0, 0.33).await.unwrap();
         let b = driver.get_bus_fader(0).await.unwrap();
         assert!(
@@ -3686,7 +3673,6 @@ mod tests {
     #[tokio::test]
     async fn driver_assign_plane_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // DCA bits on strip 0 (wire `/ch/01/grp/dca`, untouched reads 0).
         assert!(matches!(
             driver.get_param(StripId(0), "dca1_assign").await.unwrap(),
             ParamValue::Bool(false)
@@ -3699,7 +3685,6 @@ mod tests {
             driver.get_param(StripId(0), "dca1_assign").await.unwrap(),
             ParamValue::Bool(true)
         ));
-        // Neighbouring bits stay clear; a second bit ORs in.
         assert!(matches!(
             driver.get_param(StripId(0), "dca2_assign").await.unwrap(),
             ParamValue::Bool(false)
@@ -3724,7 +3709,6 @@ mod tests {
             driver.get_param(StripId(0), "dca3_assign").await.unwrap(),
             ParamValue::Bool(true)
         ));
-        // Unknown DCA ids and out-of-scope strips bail locally.
         assert!(driver.get_param(StripId(0), "dca5_assign").await.is_err());
         assert!(
             driver
@@ -3732,7 +3716,6 @@ mod tests {
                 .await
                 .is_err()
         );
-        // LR assign round-trips (untouched strips read assigned).
         assert!(matches!(
             driver.get_param(StripId(0), "lr_assign").await.unwrap(),
             ParamValue::Bool(true)
@@ -3749,8 +3732,6 @@ mod tests {
             .set_param(StripId(0), "lr_assign", ParamValue::Bool(true))
             .await
             .unwrap();
-        // Mute-group membership via the driver methods (bit 1; bit 0
-        // stays clear; out-of-range groups bail locally).
         assert!(!driver.get_mute_group_assign(StripId(0), 0).await.unwrap());
         driver.set_mute_group_assign(StripId(0), 1, true).await.unwrap();
         assert!(driver.get_mute_group_assign(StripId(0), 1).await.unwrap());
@@ -3763,7 +3744,6 @@ mod tests {
         // leaf: local bail, never a hardware timeout.
         assert!(driver.get_mute_group_assign(StripId(30), 0).await.is_err());
         assert!(driver.set_mute_group_assign(StripId(31), 0, true).await.is_err());
-        // Automix enable preserves the weight (container RMW).
         driver
             .set_param(StripId(0), "automix_weight", ParamValue::Float(0.75))
             .await
@@ -3968,27 +3948,23 @@ mod tests {
             addr: addr.to_string(),
             args,
         };
-        // Bus-send slot 1 -> `aux1_level` (dB via the X-Air fader law).
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/01/mix/01/level",
             vec![OscType::Float(0.5)],
         )).into_iter().next().expect("send level parses");
         assert_eq!((strip, param), (0, "aux1_level"));
         assert!(matches!(value, ParamValue::Float(v) if (v - mix::wire_to_send_db(0.5).unwrap()).abs() < 1e-6));
-        // FX-send slot 7 -> `fx1_level`.
         let (strip, param, _) = parse_inbound(&msg(
             "/ch/02/mix/07/level",
             vec![OscType::Float(0.25)],
         )).into_iter().next().expect("fx send level parses");
         assert_eq!((strip, param), (1, "fx1_level"));
-        // Headamp gain -> dB like the `gain` arm.
         let (strip, param, value) = parse_inbound(&msg(
             "/headamp/01/gain",
             vec![OscType::Float(0.5)],
         )).into_iter().next().expect("headamp gain parses");
         assert_eq!((strip, param), (0, "gain"));
         assert!(matches!(value, ParamValue::Float(v) if (v - 24.0).abs() < 1e-5));
-        // Strip + LR color -> float enum like the `color` arm.
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/01/config/color",
             vec![OscType::Int(3)],
@@ -4048,19 +4024,16 @@ mod tests {
             addr: addr.to_string(),
             args,
         };
-        // LR assign -> bool like the `lr_assign` arm.
         let updates = parse_inbound(&msg("/ch/01/mix/lr", vec![OscType::Int(0)]));
         assert_eq!(updates.len(), 1);
         assert_eq!((updates[0].0, updates[0].1), (0, "lr_assign"));
         assert!(matches!(updates[0].2, ParamValue::Bool(false)));
-        // DCA bitmask -> one bool per DCA id (bits 0 + 2 set).
         let updates = parse_inbound(&msg("/ch/01/grp/dca", vec![OscType::Int(5)]));
         assert_eq!(updates.len(), 4);
         for (i, (strip, id, value)) in updates.iter().enumerate() {
             assert_eq!((*strip, *id), (0, DCA_ASSIGN_IDS[i]));
             assert!(matches!(value, ParamValue::Bool(b) if *b == (i == 0 || i == 2)));
         }
-        // Automix container -> enable + weight.
         let updates = parse_inbound(&msg(
             "/ch/01/automix",
             vec![OscType::Int(1), OscType::Float(0.75)],
@@ -4089,14 +4062,12 @@ mod tests {
             addr: addr.to_string(),
             args,
         };
-        // Channel band gain -> dB like the `eq{b}_gain` arm.
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/01/eq/1/g",
             vec![OscType::Float(0.75)],
         )).into_iter().next().expect("eq gain parses");
         assert_eq!((strip, param), (0, "eq1_gain"));
         assert!(matches!(value, ParamValue::Float(v) if (v - eq::wire_to_gain_db(0.75).unwrap()).abs() < 1e-6));
-        // Channel band freq/q/type ride their own codecs.
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/02/eq/2/f",
             vec![OscType::Float(0.5)],
@@ -4115,13 +4086,11 @@ mod tests {
         )).into_iter().next().expect("eq type parses");
         assert_eq!((strip, param), (3, "eq4_type"));
         assert!(matches!(value, ParamValue::Float(v) if v == 2.0));
-        // FX-return band gain (strip 16 = `/rtn/1`, 4-band family).
         let (strip, param, _) = parse_inbound(&msg(
             "/rtn/1/eq/1/g",
             vec![OscType::Float(0.5)],
         )).into_iter().next().expect("fxret eq gain parses");
         assert_eq!((strip, param), (16, "eq1_gain"));
-        // Bus bands 5+6 answer (strip 20 = `/bus/1`, 6-band family).
         let (strip, param, _) = parse_inbound(&msg(
             "/bus/1/eq/5/g",
             vec![OscType::Float(0.5)],
@@ -4132,13 +4101,11 @@ mod tests {
             vec![OscType::Int(5)],
         )).into_iter().next().expect("bus eq6 type parses");
         assert_eq!((strip, param), (20, "eq6_type"));
-        // Main LR EQ (strip 30 = `/lr`).
         let (strip, param, _) = parse_inbound(&msg(
             "/lr/eq/2/g",
             vec![OscType::Float(0.25)],
         )).into_iter().next().expect("lr eq gain parses");
         assert_eq!((strip, param), (LR_STRIP, "eq2_gain"));
-        // EQ on/off decodes like the `eq_on` arm.
         let (strip, param, value) = parse_inbound(&msg(
             "/ch/01/eq/on",
             vec![OscType::Int(1)],
@@ -4345,18 +4312,12 @@ mod tests {
 
     #[tokio::test]
     async fn driver_channel_count_is_per_model() {
-        // Default driver is the hardware-verified XR18 geometry: 16.
         let xr18 = XAirDriver::new();
         assert_eq!(xr18.channel_count(), 16);
-        // X32-kind maps keep the 32-channel bound (not hardware-verified).
         let x32kind = XAirDriver::with_model(addrs::XAirModel::X32Kind);
         assert_eq!(x32kind.channel_count(), 32);
 
         let (driver, _) = connected_driver().await;
-        // v2 topology (36 strips): strips 0..16 stay channels (`/ch/01..16`,
-        // rig T3); strips 16..35 are the FX-return (`/rtn/N`)/bus/FX-send/
-        // LR/DCA roots, all live-verified; strip 35 is the stereo aux
-        // input (`/rtn/aux`). The strip space now ends at 35 — not 15.
         assert!(driver.set_fader(StripId(15), 0.5).await.is_ok());
         assert!(driver.set_fader(StripId(16), 0.5).await.is_ok());
         assert!(driver.set_fader(StripId(34), 0.5).await.is_ok());
@@ -4370,8 +4331,6 @@ mod tests {
     #[tokio::test]
     async fn driver_rejects_out_of_range_strips() {
         let (driver, _) = connected_driver().await;
-        // v2: the strip space ends at 35 (16 ch + 4 ret + 6 bus + 4 fxsnd +
-        // LR + 4 DCA + aux); 32 is a DCA strip, 36+ is out of range.
         assert!(driver.set_fader(StripId(32), 0.5).await.is_ok());
         assert!(driver.set_fader(StripId(35), 0.5).await.is_ok());
         assert!(driver.set_fader(StripId(36), 0.5).await.is_err());
@@ -4516,7 +4475,6 @@ mod tests {
     #[tokio::test]
     async fn driver_headamp_gain_phantom_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // StripId is 0-based: strip 0 drives wire `/headamp/01/…`.
         driver
             .set_param(StripId(0), "gain", ParamValue::Float(24.0))
             .await
@@ -4528,7 +4486,6 @@ mod tests {
         // The fake stores verbatim; epsilon covers f32 conversion only —
         // hardware quantization is uncharacterized (see `crate::headamp`).
         assert!((db - 24.0).abs() < 0.05, "headamp gain readback {db}");
-        // Range and kind enforced locally, never sent.
         assert!(
             driver
                 .set_param(StripId(0), "gain", ParamValue::Float(61.0))
@@ -4600,8 +4557,6 @@ mod tests {
     #[tokio::test]
     async fn driver_input_routing_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // StripId is 0-based: strip 0 drives wire `/ch/01/…`.
-        // usbreturn: whole-number floats 0..=17 (firmware U01..U18).
         driver
             .set_param(StripId(0), "usbreturn", ParamValue::Float(17.0))
             .await
@@ -4757,12 +4712,10 @@ mod tests {
     #[tokio::test]
     async fn driver_fx_param_roundtrip() {
         let (driver, fake) = connected_driver().await;
-        // Slot is 1-based, index 0-based: (1, 0) drives `/fx/1/par/01`.
         driver.set_fx_param(1, 0, 0.5).await.unwrap();
         assert_eq!(driver.get_fx_param(1, 0).await.unwrap(), 0.5);
         driver.set_fx_param(4, 63, 1.0).await.unwrap();
         assert_eq!(driver.get_fx_param(4, 63).await.unwrap(), 1.0);
-        // Untouched params read back zero.
         assert_eq!(driver.get_fx_param(2, 10).await.unwrap(), 0.0);
         // Enum par with >2 options (DLY Mode ST/X/M on slot 1): INT wire
         // index 2 maps onto 1.0, not a range-check failure.
@@ -4786,7 +4739,6 @@ mod tests {
             .unwrap()
             .insert("/fx/3/par/02".to_string(), OscType::Int(14));
         assert!(driver.get_fx_param(3, 1).await.is_err());
-        // Out-of-range addresses/values rejected locally, never sent.
         assert!(driver.set_fx_param(0, 0, 0.5).await.is_err());
         assert!(driver.set_fx_param(5, 0, 0.5).await.is_err());
         assert!(driver.set_fx_param(1, 64, 0.5).await.is_err());
@@ -4822,7 +4774,6 @@ mod tests {
             }
         }
         assert_eq!(seen, 2, "expected two level frames");
-        // The fake only streams after the documented subscribe shape.
         let sub = fake.meter_subscribe.lock().unwrap();
         let sub = sub.as_ref().expect("fake saw no meter subscribe");
         assert_eq!(sub.addr, addrs::METER_REQUEST);
@@ -4838,7 +4789,6 @@ mod tests {
     async fn driver_meter_dyn_subscribe_shape() {
         let (driver, fake) = connected_driver().await;
         let _rx = driver.subscribe_meters().await.unwrap();
-        // Let the fake observe the (two) subscribes.
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let sub = fake.dyn_subscribe.lock().unwrap();
         let sub = sub.as_ref().expect("fake saw no dyn subscribe");
@@ -4904,8 +4854,6 @@ mod tests {
         assert!(driver.get_param(StripId(0), "gate_gr").await.is_err());
         assert!(driver.get_param(StripId(0), "comp_gr").await.is_err());
 
-        // Fake desk emits the documented shape: ch1 gate 6 dB, ch1 comp
-        // 12 dB, ch16 comp 3.5 dB, silence elsewhere.
         let mut m = dyn_gr::DynMeters {
             gate: [0.0; dyn_gr::DYN_CHANNELS],
             comp: [0.0; dyn_gr::DYN_CHANNELS],
@@ -4931,7 +4879,6 @@ mod tests {
         assert_eq!(msgs.len(), 1);
         driver.ingest_dyn_message(&msgs[0]).await.unwrap();
 
-        // Param path serves dB reduction >= 0 per channel.
         let gate = driver.get_param(StripId(0), "gate_gr").await.unwrap();
         let comp = driver.get_param(StripId(0), "comp_gr").await.unwrap();
         let comp16 = driver.get_param(StripId(15), "comp_gr").await.unwrap();
@@ -4947,16 +4894,13 @@ mod tests {
         assert!((gate - 6.0).abs() < 0.01, "gate_gr {gate}");
         assert!((comp - 12.0).abs() < 0.01, "comp_gr {comp}");
         assert!((comp16 - 3.5).abs() < 0.01, "comp_gr ch16 {comp16}");
-        // Silent channels read 0 reduction (real zero, post-blob).
         let ParamValue::Float(idle) = driver.get_param(StripId(1), "gate_gr").await.unwrap()
         else {
             panic!("gate_gr not a float");
         };
         assert_eq!(idle, 0.0);
-        // Phantom strips (T3) and unknown ids still bail.
         assert!(driver.get_param(StripId(16), "gate_gr").await.is_err());
         assert!(driver.get_param(StripId(0), "nope").await.is_err());
-        // Pre-existing arms survive the override.
         let ParamValue::Float(fader) = driver.get_param(StripId(0), "fader").await.unwrap()
         else {
             panic!("fader not a float");
@@ -4996,7 +4940,6 @@ mod tests {
         };
         m.gate[0] = 6.0;
         let good = dyn_gr::build_dyn_blob(&m);
-        // Every truncation of a valid blob bails.
         for len in 0..good.len() {
             let msg = OscMessage {
                 addr: addrs::METER_DYN_SUBSCRIBE.to_string(),
@@ -5007,7 +4950,6 @@ mod tests {
                 "truncated len {len} ingested"
             );
         }
-        // Garbage fills at exact length (wrong size word) bail.
         for fill in [0x00u8, 0xABu8, 0xFFu8] {
             let msg = OscMessage {
                 addr: addrs::METER_DYN_SUBSCRIBE.to_string(),
@@ -5015,7 +4957,6 @@ mod tests {
             };
             assert!(driver.ingest_dyn_message(&msg).await.is_err());
         }
-        // Non-blob args (swapped typetags on the wire) bail.
         for args in [
             vec![OscType::Float(0.5)],
             vec![OscType::String("garbage".into())],
@@ -5030,15 +4971,12 @@ mod tests {
             };
             assert!(driver.ingest_dyn_message(&msg).await.is_err());
         }
-        // Float/string-only payloads must not have poisoned the cache…
-        // (reset: only a valid blob fills it — proven below).
         let stringy = OscMessage {
             addr: addrs::METER_DYN_SUBSCRIBE.to_string(),
             args: vec![OscType::String("garbage".into())],
         };
         assert!(driver.ingest_dyn_message(&stringy).await.is_err());
         assert!(driver.last_dyn().await.is_none());
-        // …and a later valid blob still ingests cleanly.
         let valid = OscMessage {
             addr: addrs::METER_DYN_SUBSCRIBE.to_string(),
             args: vec![OscType::Blob(good)],
@@ -5152,7 +5090,6 @@ mod tests {
     #[tokio::test]
     async fn driver_pan_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // StripId is 0-based: strip 0 drives wire `/ch/01/mix/pan`.
         for (eng, wire) in [(-100.0, 0.0), (0.0, 0.5), (100.0, 1.0), (25.0, 0.625)] {
             driver
                 .set_param(StripId(0), "pan", ParamValue::Float(eng))
@@ -5165,7 +5102,6 @@ mod tests {
             assert!((back - eng).abs() < 1e-4, "pan {eng} -> {back}");
             let _ = wire;
         }
-        // Range and kind enforced locally, never sent.
         assert!(
             driver
                 .set_param(StripId(0), "pan", ParamValue::Float(100.1))
@@ -5178,8 +5114,6 @@ mod tests {
                 .await
                 .is_err()
         );
-        // v2: strip 16 is an FX return (pan applies there); the strip space
-        // ends at 35, so 40 is out of range.
         assert!(
             driver
                 .set_param(StripId(40), "pan", ParamValue::Float(0.0))
@@ -5193,7 +5127,6 @@ mod tests {
     #[tokio::test]
     async fn driver_eq_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // eq_on is a plain bool switch.
         driver
             .set_param(StripId(1), "eq_on", ParamValue::Bool(true))
             .await
@@ -5213,7 +5146,6 @@ mod tests {
                 .is_err()
         );
 
-        // Band 2: gain dB, freq Hz, Q and type round-trip.
         driver
             .set_param(StripId(1), "eq2_gain", ParamValue::Float(6.0))
             .await
@@ -5264,7 +5196,6 @@ mod tests {
             ParamValue::Float(1.0)
         );
 
-        // Range and kind enforced locally, never sent.
         assert!(
             driver
                 .set_param(StripId(1), "eq2_gain", ParamValue::Float(15.1))
@@ -5355,7 +5286,6 @@ mod tests {
     #[tokio::test]
     async fn driver_send_level_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // StripId is 0-based: strip 0 drives wire `/ch/01/mix/MM/level`.
         driver
             .set_param(StripId(0), "aux1_level", ParamValue::Float(-10.0))
             .await
@@ -5367,7 +5297,6 @@ mod tests {
         };
         assert!((db + 10.0).abs() < 1e-4, "aux1_level {db}");
 
-        // FX slot: fx1 → wire slot 07.
         driver
             .set_param(StripId(0), "fx1_level", ParamValue::Float(0.0))
             .await
@@ -5447,7 +5376,6 @@ mod tests {
         }
         driver.set_param(s, "gate_filter_on", ParamValue::Bool(true)).await.unwrap();
         assert_eq!(driver.get_param(s, "gate_filter_on").await.unwrap(), ParamValue::Bool(true));
-        // Range and out-of-scope enforced locally, never sent.
         assert!(driver.set_param(s, "gate_thr", ParamValue::Float(-80.1)).await.is_err());
         assert!(driver.set_param(s, "gate_range", ParamValue::Float(2.9)).await.is_err());
         assert!(driver.set_param(s, "gate_mode", ParamValue::Float(5.0)).await.is_err());
@@ -5536,7 +5464,6 @@ mod tests {
     async fn driver_send_tap_pan_on_roundtrip() {
         let (driver, _) = connected_driver().await;
         let s = StripId(0);
-        // Alias check: same wire slot as the legacy id.
         driver.set_param(s, "send1_level", ParamValue::Float(-10.0)).await.unwrap();
         let ParamValue::Float(db) = driver.get_param(s, "aux1_level").await.unwrap() else {
             panic!("aux1_level read back non-float");
@@ -5573,7 +5500,6 @@ mod tests {
     #[tokio::test]
     async fn driver_lr_assign_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // Rig defaults: channels and FX returns assigned (1), buses not (0).
         assert_eq!(
             driver.get_param(StripId(0), "lr_assign").await.unwrap(),
             ParamValue::Bool(true)
@@ -5602,7 +5528,6 @@ mod tests {
             driver.get_param(StripId(20), "lr_assign").await.unwrap(),
             ParamValue::Bool(true)
         );
-        // Wrong kind and out-of-scope strips error locally, never sent.
         assert!(
             driver
                 .set_param(StripId(0), "lr_assign", ParamValue::Float(1.0))
@@ -5639,7 +5564,6 @@ mod tests {
             driver.get_param(s, "send1_grpon").await.unwrap(),
             ParamValue::Bool(true)
         );
-        // FX slot (slot 10) rides the same leaf shape.
         driver
             .set_param(s, "send10_grpon", ParamValue::Bool(true))
             .await
@@ -5648,7 +5572,6 @@ mod tests {
             driver.get_param(s, "send10_grpon").await.unwrap(),
             ParamValue::Bool(true)
         );
-        // Wrong kind and unknown slots error locally, never sent.
         assert!(
             driver
                 .set_param(s, "send1_grpon", ParamValue::Float(1.0))
@@ -5678,7 +5601,6 @@ mod tests {
     async fn driver_automix_weight_roundtrip() {
         let (driver, _) = connected_driver().await;
         let s = StripId(2);
-        // Rig default reads back 0.5.
         let ParamValue::Float(w) = driver.get_param(s, "automix_weight").await.unwrap()
         else {
             panic!("automix_weight read back non-float");
@@ -5693,7 +5615,6 @@ mod tests {
             panic!("automix_weight read back non-float");
         };
         assert!((back - 0.7).abs() < 1e-6, "automix_weight {back}");
-        // Range and kind enforced locally, never sent.
         assert!(
             driver
                 .set_param(s, "automix_weight", ParamValue::Float(1.1))
@@ -5718,7 +5639,6 @@ mod tests {
     #[tokio::test]
     async fn driver_strip_insert_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // Channel, bus and main strips; untouched reads default off/0.
         for s in [StripId(0), StripId(20), StripId(30)] {
             assert_eq!(
                 driver.get_param(s, "insert_on").await.unwrap(),
@@ -5745,7 +5665,6 @@ mod tests {
             driver.get_param(StripId(0), "insert_sel").await.unwrap(),
             ParamValue::Float(7.0)
         );
-        // Main LR rides the same leaves.
         driver
             .set_param(StripId(30), "insert_on", ParamValue::Bool(true))
             .await
@@ -5754,7 +5673,6 @@ mod tests {
             driver.get_param(StripId(30), "insert_on").await.unwrap(),
             ParamValue::Bool(true)
         );
-        // Range and kind enforced locally, never sent.
         assert!(
             driver
                 .set_param(StripId(0), "insert_on", ParamValue::Float(1.0))
@@ -5808,7 +5726,6 @@ mod tests {
         assert!(!driver.get_solo_mute().await.unwrap());
         driver.set_solo_level(0.5).await.unwrap();
         assert!((driver.get_solo_level().await.unwrap() - 0.5).abs() < 1e-6);
-        // Range enforced locally, never sent.
         assert!(driver.set_solo_level(1.1).await.is_err());
         assert!(driver.set_solo_level(f32::NAN).await.is_err());
         driver.set_solo_source(0).await.unwrap();
@@ -5853,11 +5770,9 @@ mod tests {
     #[tokio::test]
     async fn driver_fx_type_write_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // Untouched slots read back 0 (HALL), like a freshly-booted desk.
         assert_eq!(driver.get_fx_type(1).await.unwrap(), 0);
         driver.set_fx_type(4, 60).await.unwrap();
         assert_eq!(driver.get_fx_type(4).await.unwrap(), 60);
-        // The rig-verified sweep shape: every written type reads back.
         for t in [0u8, 7, 26, 30, 56, 59, 60] {
             driver.set_fx_type(4, t).await.unwrap();
             assert_eq!(driver.get_fx_type(4).await.unwrap(), t, "type {t}");
@@ -5867,7 +5782,6 @@ mod tests {
         assert!(driver.set_fx_type(5, 7).await.is_err());
         assert!(driver.get_fx_type(0).await.is_err());
         assert!(driver.get_fx_type(5).await.is_err());
-        // FX params keep working after a type swap (slot-4 par write+read).
         driver.set_fx_param(4, 0, 0.25).await.unwrap();
         assert_eq!(driver.get_fx_param(4, 0).await.unwrap(), 0.25);
     }
@@ -5880,7 +5794,6 @@ mod tests {
     #[tokio::test]
     async fn driver_bus_ret_fxsnd_main_dca_strips_roundtrip() {
         let (driver, _) = connected_driver().await;
-        // Bus 1 (strip 20): fader/mute/name/colour/EQ/dynamics, no gate.
         let b = StripId(20);
         driver.set_fader(b, 0.6).await.unwrap();
         assert!((driver.get_fader(b).await.unwrap() - 0.6).abs() < addrs::FADER_READBACK_EPSILON);
@@ -5907,27 +5820,23 @@ mod tests {
         assert!(driver.get_param(b, "gate_thr").await.is_err());
         assert!(driver.get_param(b, "aux1_level").await.is_err());
 
-        // FX return 1 (strip 16, `/rtn/1`): fader + EQ answer.
         let r = StripId(16);
         driver.set_fader(r, 0.7).await.unwrap();
         assert!((driver.get_fader(r).await.unwrap() - 0.7).abs() < addrs::FADER_READBACK_EPSILON);
         driver.set_param(r, "eq_on", ParamValue::Bool(true)).await.unwrap();
         assert_eq!(driver.get_param(r, "eq_on").await.unwrap(), ParamValue::Bool(true));
 
-        // FX send master 1 (strip 26): basics only.
         let f = StripId(26);
         driver.set_fader(f, 0.5).await.unwrap();
         driver.set_param(f, "color", ParamValue::Float(4.0)).await.unwrap();
         assert!(driver.get_param(f, "eq_on").await.is_err());
         assert!(driver.get_param(f, "pan").await.is_err());
 
-        // Main LR (strip 30): fader + EQ answer; pan does not exist.
         let m = StripId(30);
         driver.set_fader(m, 0.8).await.unwrap();
         driver.set_param(m, "eq2_gain", ParamValue::Float(1.0)).await.unwrap();
         assert!(driver.get_param(m, "pan").await.is_err());
 
-        // DCA 1 (strip 31): basics only.
         let d = StripId(31);
         driver.set_fader(d, 0.75).await.unwrap();
         driver.set_mute(d, false).await.unwrap();

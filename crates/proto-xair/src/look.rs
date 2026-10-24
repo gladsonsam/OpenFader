@@ -21,15 +21,11 @@ use rosc::OscType;
 
 /// Desk channel-colour bounds (enum `0..=15`, name-bar colour).
 pub const COLOR_MIN: i32 = 0;
-/// Desk channel-colour upper bound (see [`COLOR_MIN`]).
 pub const COLOR_MAX: i32 = 15;
 /// Desk channel-icon bounds (enum `0..=31`).
 pub const ICON_MIN: i32 = 0;
-/// Desk channel-icon upper bound (see [`ICON_MIN`]).
 pub const ICON_MAX: i32 = 31;
 
-/// OSC address of one strip colour (`config/color`, int `0..=15`).
-///
 /// ```
 /// # use openfader_proto_xair::look::strip_color;
 /// assert_eq!(strip_color("/ch/01"), "/ch/01/config/color");
@@ -39,8 +35,6 @@ pub fn strip_color(root: &str) -> String {
     format!("{root}/config/color")
 }
 
-/// OSC address of one strip icon (`config/icon`, int `0..=31`).
-///
 /// ```
 /// # use openfader_proto_xair::look::strip_icon;
 /// assert_eq!(strip_icon("/ch/01"), "/ch/01/config/icon");
@@ -49,8 +43,6 @@ pub fn strip_icon(root: &str) -> String {
     format!("{root}/config/icon")
 }
 
-/// OSC address of one channel stereo-link switch (`config/link`, int `1`/`0`).
-///
 /// ```
 /// # use openfader_proto_xair::look::strip_link;
 /// assert_eq!(strip_link("/ch/01"), "/ch/01/config/link");
@@ -59,19 +51,17 @@ pub fn strip_link(root: &str) -> String {
     format!("{root}/config/link")
 }
 
-/// Encode a colour enum: whole-number floats `0..=15` to the int the desk answers.
+/// Whole-number floats `0..=15` become the wire int.
 pub fn color_to_arg(v: f32) -> anyhow::Result<OscType> {
     crate::codec::int_to_arg(v, COLOR_MIN, COLOR_MAX, "look", "color")
 }
 
-/// Encode an icon enum: whole-number floats `0..=31`.
+/// Whole-number floats `0..=31` become the wire int.
 pub fn icon_to_arg(v: f32) -> anyhow::Result<OscType> {
     crate::codec::int_to_arg(v, ICON_MIN, ICON_MAX, "look", "icon")
 }
 
-/// Decode a colour/int-enum reply (int kept, whole-number float accepted).
-/// (Link switches use the shared codec instead: [`crate::codec::bool_arg`]
-/// to encode, [`openfader_transport::osc::is_on`] to decode.)
+/// Whole-number floats accepted. Link switches use [`crate::codec::bool_arg`] instead.
 pub fn int_from_msg(msg: &rosc::OscMessage, min: i32, max: i32, what: &str) -> anyhow::Result<i32> {
     crate::codec::int_from_msg(msg, min, max, "look", what)
 }

@@ -10,14 +10,13 @@ pub fn encode_message(addr: &str, args: Vec<OscType>) -> anyhow::Result<Vec<u8>>
     encoder::encode(&packet).map_err(|e| anyhow::anyhow!("osc encode {addr}: {e:?}"))
 }
 
-/// Encode a no-arg message (queries, keepalive, subscribes).
 pub fn query_message(addr: &str) -> anyhow::Result<Vec<u8>> {
     encode_message(addr, vec![])
 }
 
 /// Decode one UDP datagram into a packet.
 ///
-/// Slashless fallback (rig-verified 2026-10-19, XR18 FW 1.20 — see
+/// Slashless fallback (rig-verified 2026-10-19, XR18 FW 1.20, see
 /// mixer control software protocol map §4): the desk addresses
 /// `/batchsubscribe` meter blobs as `meters/N` with NO leading slash,
 /// which the strict decoder rejects. When strict decode fails AND the
@@ -54,7 +53,6 @@ fn decode_slashless_meters(buf: &[u8]) -> Option<OscPacket> {
     decoder::decode_udp(&fixed).ok().map(|(_, p)| p)
 }
 
-/// Flatten a packet into its messages (bundles expand to N messages).
 pub fn flatten(packet: OscPacket) -> Vec<OscMessage> {
     match packet {
         OscPacket::Message(m) => vec![m],
@@ -62,12 +60,10 @@ pub fn flatten(packet: OscPacket) -> Vec<OscMessage> {
     }
 }
 
-/// Clamp a fader to the 0.0..1.0 wire range.
 pub fn clamp01(v: f32) -> f32 {
     v.clamp(0.0, 1.0)
 }
 
-/// Build a fader-set message value.
 pub fn fader_arg(value: f32) -> OscType {
     OscType::Float(clamp01(value))
 }
@@ -77,7 +73,6 @@ pub fn on_arg(muted: bool) -> OscType {
     OscType::Int(if muted { 0 } else { 1 })
 }
 
-/// Extract the first float arg (fader replies).
 pub fn fader_value(msg: &OscMessage) -> anyhow::Result<f32> {
     match msg.args.first() {
         Some(OscType::Float(f)) => Ok(*f),
@@ -87,7 +82,6 @@ pub fn fader_value(msg: &OscMessage) -> anyhow::Result<f32> {
     }
 }
 
-/// Extract the first int arg.
 pub fn int_arg(msg: &OscMessage) -> anyhow::Result<i32> {
     match msg.args.first() {
         Some(OscType::Int(i)) => Ok(*i),
@@ -96,12 +90,10 @@ pub fn int_arg(msg: &OscMessage) -> anyhow::Result<i32> {
     }
 }
 
-/// True when a `/mix/on`-style message means ON (unmuted).
 pub fn is_on(msg: &OscMessage) -> anyhow::Result<bool> {
     Ok(int_arg(msg)? != 0)
 }
 
-/// True when muted.
 pub fn mute_is_muted(msg: &OscMessage) -> anyhow::Result<bool> {
     Ok(!is_on(msg)?)
 }
@@ -188,18 +180,15 @@ mod tests {
                 "{n} zero bytes decoded"
             );
         }
-        // Unknown type tag: patch the `i` of an encoded Int message to `X`.
         let mut bad_tag = encode_message("/t", vec![OscType::Int(1)]).unwrap();
         let pos = bad_tag.iter().position(|&b| b == b'i').unwrap();
         bad_tag[pos] = b'X';
         assert!(decode_packet(&bad_tag).is_err());
-        // Tag claims an int arg but no payload follows.
         assert!(decode_packet(b"/t\0\0,i\0\0").is_err());
-        // Address without a type-tag section at all.
         assert!(decode_packet(b"/ab\0").is_err());
         // NOTE: rosc parses bundles with `many0`, so corrupt bundle
         // *content* (lying element sizes, trailing junk) decodes Ok with
-        // zero elements rather than Err — lenient, but safe: it flattens
+        // zero elements rather than Err, lenient, but safe: it flattens
         // to nothing and the recv loop ignores it. Assert exactly that
         // (and no panic) instead of Err here.
         for tail in [u32::MAX.to_be_bytes().to_vec(), b"junk".to_vec()] {
@@ -209,7 +198,6 @@ mod tests {
             let packet = decode_packet(&bundle).unwrap();
             assert!(flatten(packet).is_empty());
         }
-        // Plain non-OSC garbage in several shapes.
         for junk in [
             b"hello world, not osc......".to_vec(),
             vec![0xFFu8; 64],
@@ -268,10 +256,8 @@ mod tests {
         let msgs = flatten(decode_packet(&bytes).unwrap());
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0].addr, "/meters/1");
-        // Slashless non-meter traffic still errors.
         let other = encode_message("ch/01/mix/fader", vec![OscType::Float(0.5)]).unwrap();
         assert!(decode_packet(&other).is_err());
-        // Truncated slashless datagrams still error, never panic.
         for len in 0..bytes.len() {
             let _ = decode_packet(&bytes[..len]);
         }

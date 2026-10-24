@@ -1,4 +1,3 @@
-// The launch screen uses the same vector mark as the rest of the app.
 library;
 
 import 'package:flutter/material.dart';

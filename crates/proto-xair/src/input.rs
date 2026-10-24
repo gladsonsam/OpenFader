@@ -51,21 +51,17 @@ use rosc::{OscMessage, OscType};
 
 /// USB-return source index bounds (firmware map: `rtnsrc [0,17] // U01..U18`).
 pub const RTNSRC_MIN: i32 = 0;
-/// USB-return source index upper bound (see [`RTNSRC_MIN`]).
 pub const RTNSRC_MAX: i32 = 17;
 
 /// USB-return trim bounds in dB (firmware map + xair-api `usbtrim`).
 pub const RTNTRIM_MIN_DB: f32 = -18.0;
-/// USB-return trim upper bound (see [`RTNTRIM_MIN_DB`]).
 pub const RTNTRIM_MAX_DB: f32 = 18.0;
 
 /// HPF corner bounds in Hz (firmware map + xair-api `highpassfilter`).
 pub const HPF_MIN_HZ: f32 = 20.0;
-/// HPF corner upper bound (see [`HPF_MIN_HZ`]).
 pub const HPF_MAX_HZ: f32 = 400.0;
 
-/// OSC address of the USB-return source selector (firmware `rtnsrc`, xair-api
-/// `Config.usbreturn`): 1-based wire number, zero-padded.
+/// Firmware `rtnsrc`, xair-api `Config.usbreturn`.
 ///
 /// ```
 /// # use openfader_proto_xair::input::config_rtnsrc;
@@ -76,8 +72,7 @@ pub fn config_rtnsrc(ch: u16) -> String {
     format!("/ch/{ch:02}/config/rtnsrc")
 }
 
-/// OSC address of the USB-return trim (firmware `rtntrim`, xair-api
-/// `Preamp.usbtrim`): linear wire float `0..1` ↔ `−18..=+18` dB.
+/// Firmware `rtntrim`, xair-api `Preamp.usbtrim`.
 ///
 /// ```
 /// # use openfader_proto_xair::input::preamp_rtntrim;
@@ -87,8 +82,7 @@ pub fn preamp_rtntrim(ch: u16) -> String {
     format!("/ch/{ch:02}/preamp/rtntrim")
 }
 
-/// OSC address of the phase invert switch (firmware `invert`, xair-api
-/// `Preamp.invert`, int `1`/`0`).
+/// Firmware `invert`, xair-api `Preamp.invert`.
 ///
 /// ```
 /// # use openfader_proto_xair::input::preamp_invert;
@@ -98,8 +92,7 @@ pub fn preamp_invert(ch: u16) -> String {
     format!("/ch/{ch:02}/preamp/invert")
 }
 
-/// OSC address of the HPF on/off switch (firmware `hpon`, xair-api
-/// `Preamp.highpasson`, int `1`/`0`).
+/// Firmware `hpon`, xair-api `Preamp.highpasson`.
 ///
 /// ```
 /// # use openfader_proto_xair::input::preamp_hpf_on;
@@ -109,8 +102,7 @@ pub fn preamp_hpf_on(ch: u16) -> String {
     format!("/ch/{ch:02}/preamp/hpon")
 }
 
-/// OSC address of the HPF corner (firmware `hpf`, xair-api
-/// `Preamp.highpassfilter`): log wire float `0..1` ↔ `20..=400` Hz.
+/// Firmware `hpf`, xair-api `Preamp.highpassfilter`.
 ///
 /// ```
 /// # use openfader_proto_xair::input::preamp_hpf;
@@ -120,9 +112,7 @@ pub fn preamp_hpf(ch: u16) -> String {
     format!("/ch/{ch:02}/preamp/hpf")
 }
 
-/// Map a USB-return trim in dB to the normalized wire float
-/// (`lin_set(-18, 18, db)`). Rejects NaN/infinite and out-of-range values
-/// before anything is sent.
+/// xair-api `lin_set(-18, 18, db)`.
 pub fn rtntrim_db_to_wire(db: f32) -> anyhow::Result<f32> {
     if !db.is_finite() {
         anyhow::bail!("usb trim must be finite, got {db}");
@@ -133,8 +123,7 @@ pub fn rtntrim_db_to_wire(db: f32) -> anyhow::Result<f32> {
     Ok((db - RTNTRIM_MIN_DB) / (RTNTRIM_MAX_DB - RTNTRIM_MIN_DB))
 }
 
-/// Map a normalized wire float back to trim dB (`lin_get(-18, 18, v)`).
-/// Rejects NaN and values outside `0..=1` — no clamping of desk replies.
+/// xair-api `lin_get(-18, 18, v)`.
 pub fn rtntrim_wire_to_db(v: f32) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("usb trim wire value must be finite, got {v}");
@@ -145,9 +134,7 @@ pub fn rtntrim_wire_to_db(v: f32) -> anyhow::Result<f32> {
     Ok(RTNTRIM_MIN_DB + (RTNTRIM_MAX_DB - RTNTRIM_MIN_DB) * v)
 }
 
-/// Map an HPF corner in Hz to the normalized wire float
-/// (`log_set(20, 400, hz) = ln(hz/20)/ln(400/20)`). Rejects NaN/infinite and
-/// out-of-range values before anything is sent.
+/// xair-api `log_set(20, 400, hz)`.
 pub fn hpf_hz_to_wire(hz: f32) -> anyhow::Result<f32> {
     if !hz.is_finite() {
         anyhow::bail!("hpf corner must be finite, got {hz}");
@@ -158,9 +145,7 @@ pub fn hpf_hz_to_wire(hz: f32) -> anyhow::Result<f32> {
     Ok((hz / HPF_MIN_HZ).ln() / (HPF_MAX_HZ / HPF_MIN_HZ).ln())
 }
 
-/// Map a normalized wire float back to the HPF corner in Hz
-/// (`log_get(20, 400, v) = 20*exp(v*ln(20))`), rounded to whole Hz like
-/// xair-api (`int(…)`). Rejects NaN and values outside `0..=1`.
+/// xair-api `log_get(20, 400, v)`, rounded to whole Hz like xair-api (`int(...)`).
 pub fn hpf_wire_to_hz(v: f32) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("hpf wire value must be finite, got {v}");
@@ -171,10 +156,7 @@ pub fn hpf_wire_to_hz(v: f32) -> anyhow::Result<f32> {
     Ok((HPF_MIN_HZ * (v * (HPF_MAX_HZ / HPF_MIN_HZ).ln()).exp()).round())
 }
 
-/// Encode a USB-return source index: the relay delivers UI numbers as
-/// [`openfader_core::ParamValue::Float`], so whole-number floats in `0..=17`
-/// (firmware-doc range) encode to the int the desk answers (`U01 + index`).
-/// Rejects NaN, fractions, and out-of-range values before anything is sent.
+/// Whole-number floats `0..=17` become the wire int (`U01 + index`).
 pub fn usbreturn_to_arg(v: f32) -> anyhow::Result<OscType> {
     if !v.is_finite() || v.fract() != 0.0 {
         anyhow::bail!("usb return source must be a whole number, got {v}");
@@ -186,8 +168,7 @@ pub fn usbreturn_to_arg(v: f32) -> anyhow::Result<OscType> {
     Ok(OscType::Int(i))
 }
 
-/// Decode a USB-return source reply (`,i` per live reads) with the
-/// firmware-doc range enforced — no clamping of desk replies.
+/// `,i` reply; firmware-doc range enforced, never clamped.
 pub fn usbreturn_from_msg(msg: &OscMessage) -> anyhow::Result<i32> {
     let i = osc::int_arg(msg)?;
     if !(RTNSRC_MIN..=RTNSRC_MAX).contains(&i) {
@@ -216,7 +197,6 @@ mod tests {
 
     #[test]
     fn rtntrim_range_matches_firmware_map() {
-        // Firmware map: [0.0,1.0] lin ↔ -18..+18 dB.
         assert_eq!(RTNTRIM_MIN_DB, -18.0);
         assert_eq!(RTNTRIM_MAX_DB, 18.0);
         assert_eq!(rtntrim_db_to_wire(-18.0).unwrap(), 0.0);
@@ -225,7 +205,6 @@ mod tests {
         assert_eq!(rtntrim_wire_to_db(0.0).unwrap(), -18.0);
         assert_eq!(rtntrim_wire_to_db(1.0).unwrap(), 18.0);
         assert_eq!(rtntrim_wire_to_db(0.5).unwrap(), 0.0);
-        // Live ch01 read 0.5 wire = 0 dB trim — the desk default.
         assert_eq!(rtntrim_wire_to_db(0.5).unwrap(), 0.0);
         for db in [-18.0, -6.0, 0.0, 6.0, 18.0] {
             let back = rtntrim_wire_to_db(rtntrim_db_to_wire(db).unwrap()).unwrap();
@@ -246,7 +225,6 @@ mod tests {
 
     #[test]
     fn hpf_range_matches_firmware_map() {
-        // Firmware map: [0.0,1.0] log ↔ 20..400 Hz.
         assert_eq!(hpf_hz_to_wire(20.0).unwrap(), 0.0);
         assert_eq!(hpf_hz_to_wire(400.0).unwrap(), 1.0);
         assert_eq!(hpf_wire_to_hz(0.0).unwrap(), 20.0);
@@ -275,7 +253,6 @@ mod tests {
 
     #[test]
     fn usbreturn_codec_shapes() {
-        // Firmware map: [0,17] ↔ U01..U18.
         assert_eq!(RTNSRC_MIN, 0);
         assert_eq!(RTNSRC_MAX, 17);
         assert_eq!(usbreturn_to_arg(0.0).unwrap(), OscType::Int(0));

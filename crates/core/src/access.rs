@@ -47,7 +47,6 @@ pub struct Policy {
 }
 
 impl Policy {
-    /// Full access: everything allowed, faders to unity.
     pub fn admin() -> Self {
         Self {
             role: Role::Admin,
@@ -69,8 +68,6 @@ impl Policy {
         }
     }
 
-    /// Restricted operator: only `allowed` strips, no main LR, no scene
-    /// recall, no renames, no file uploads, faders capped at [`MUSICIAN_MAX_FADER`].
     pub fn musician(allowed: impl IntoIterator<Item = u16>) -> Self {
         Self {
             role: Role::Musician,
@@ -112,18 +109,15 @@ impl Policy {
         self.check_strip(strip)
     }
 
-    /// [`allow_strip`](Self::allow_strip), plus the role fader cap.
     pub fn allow_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
         self.check_strip(strip)?;
         self.check_level(value)
     }
 
-    /// [`allow_strip`](Self::allow_strip) for mute writes (no level cap).
     pub fn allow_mute(&self, strip: StripId) -> anyhow::Result<()> {
         self.check_strip(strip)
     }
 
-    /// [`allow_strip`](Self::allow_strip), plus the rename gate.
     pub fn allow_rename(&self, strip: StripId) -> anyhow::Result<()> {
         self.check_strip(strip)?;
         if !self.allow_rename {
@@ -132,7 +126,6 @@ impl Policy {
         Ok(())
     }
 
-    /// Main-LR gate plus the role fader cap.
     pub fn allow_main(&self, value: f32) -> anyhow::Result<()> {
         if !self.allow_main {
             anyhow::bail!("role {:?}: main LR is blocked", self.role);
@@ -140,7 +133,6 @@ impl Policy {
         self.check_level(value)
     }
 
-    /// Scene-recall gate.
     pub fn allow_recall(&self) -> anyhow::Result<()> {
         if !self.allow_recall {
             anyhow::bail!("role {:?}: scene recall is blocked", self.role);
@@ -164,7 +156,6 @@ impl Policy {
         self.check_level(value)
     }
 
-    /// Master mute write (bus / subgroup / mute group): master gate.
     pub fn allow_master_mute(&self) -> anyhow::Result<()> {
         self.allow_master()
     }
@@ -188,7 +179,7 @@ impl Policy {
 }
 
 /// [`MixerDriver`] wrapper enforcing a [`Policy`]. Reads pass through;
-/// disallowed writes fail. Construct with [`CheckedDriver::new`].
+/// disallowed writes fail.
 pub struct CheckedDriver<'a, D: MixerDriver> {
     inner: &'a D,
     policy: Policy,
@@ -249,8 +240,7 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
     }
 
     async fn set_bus_fader(&self, bus: u8, value: f32) -> anyhow::Result<()> {
-        // No per-bus mask yet (TODO): buses are shared mixes, so they stay
-        // adjustable within the role's fader cap.
+        // Buses are shared mixes, adjustable within the role fader cap.
         self.policy.check_level(value)?;
         self.inner.set_bus_fader(bus, value).await
     }

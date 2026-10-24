@@ -1,7 +1,6 @@
-// Typed app preferences over SharedPreferences. One instance lives for
-// the app session (`PrefsService.instance`); UI reads it directly and the
-// shell/pages listen for the knobs that need live apply (meter cadence,
-// wake lock, interface density).
+// Typed app preferences over SharedPreferences. One instance lives for the
+// app session (`PrefsService.instance`); UI reads it directly and listens
+// for the knobs that need live apply.
 library;
 
 import 'package:flutter/foundation.dart';
@@ -127,7 +126,7 @@ class PrefsService extends ChangeNotifier {
     WakelockPlus.toggle(enable: keepAwake);
   }
 
-  /// Restore all display/meter/connection defaults. Mixes, recents and
+  /// Restore display, meter, and connection defaults. Mixes, recents, and
   /// addresses are untouched (separate destructive actions own those).
   Future<void> resetToDefaults() async {
     final p = _prefs ?? await SharedPreferences.getInstance();
@@ -157,7 +156,7 @@ class PrefsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Full wipe of every openfader.* key (used by Reset all app data).
+  /// Full wipe of every openfader.* key (Reset all app data).
   Future<void> clearAll() async {
     final p = _prefs ?? await SharedPreferences.getInstance();
     _prefs ??= p;

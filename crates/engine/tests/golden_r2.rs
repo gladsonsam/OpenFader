@@ -2,7 +2,7 @@
 //! addition (devices/link/info/scenes/fx/routing/offline_diff/taps) plus
 //! the binary taps layout.
 //!
-//! Lives in `tests/golden_r2/` — NOT `tests/golden/`: that directory is
+//! Lives in `tests/golden_r2/`, NOT `tests/golden/`: that directory is
 //! consumed 1:1 by an out-of-tree parser test, which rejects
 //! unknown frame types. Same precedent as `tests/golden_bin/`.
 //! Regenerate with `R2GOLDEN_UPDATE=1`.
@@ -204,8 +204,8 @@ fn r2_golden_frames_validate() {
             .unwrap_or_else(|_| panic!("missing r2 golden fixture {name}.json (run with R2GOLDEN_UPDATE=1)"));
         let file: Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(file, example, "r2 golden fixture {name}.json matches the constructor");
-        // Commands carry `cmd` (an fx command also carries a `type` field —
-        // the FX type — so `cmd` wins, mirroring golden.test.ts).
+        // Commands carry `cmd` (an fx command also carries a `type` field 
+        // the FX type, so `cmd` wins, mirroring golden.test.ts).
         if file.get("cmd").and_then(Value::as_str).is_some() {
             let cmd: Cmd = serde_json::from_value(file.clone())
                 .unwrap_or_else(|e| panic!("r2 golden command {name}.json parses as Cmd: {e}"));
@@ -309,7 +309,6 @@ fn r2_binary_taps_golden() {
             .unwrap_or_else(|_| panic!("missing {name}.bin.hex (run with R2GOLDEN_UPDATE=1)"));
         assert_eq!(bytes_of(&raw), bytes, "{name}.bin.hex matches to_binary");
     }
-    // Decode round-trip through the reference decoder.
     let bytes = cases[0].1.to_binary(7, 1234).unwrap();
     let (ftype, n, seq, t_ms, tap, qs) = decode_taps(&bytes);
     assert_eq!((ftype, n, seq, t_ms), (BIN_TYPE_TAPS, 4, 7, 1234));

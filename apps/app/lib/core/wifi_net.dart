@@ -38,7 +38,6 @@ class WifiNet {
     }
   }
 
-  /// Acquire the Wi-Fi multicast lock around a scan window.
   static Future<bool> scanStart() async {
     try {
       final v = await _ch.invokeMethod<bool>('scanStart');

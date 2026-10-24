@@ -38,7 +38,6 @@ async fn live_inbound_leaves_read() {
     // (desk state drifts — no exact-value assert on non-baseline leaves).
     let v = d.get_param(StripId(1), "aux1_level").await.unwrap();
     assert!(matches!(v, ParamValue::Float(f) if (-90.0..=10.0).contains(&f)), "aux1_level: {v:?}");
-    // `/headamp/02/gain` answers (wire 0..1 -> dB).
     let v = d.get_param(StripId(1), "gain").await.unwrap();
     assert!(matches!(v, ParamValue::Float(f) if (-12.0..=60.0).contains(&f)), "gain: {v:?}");
     // `/ch/16/config/color` answers (baseline §7: 0).
@@ -72,7 +71,6 @@ async fn live_clear_solo() {
     }
     let d = connected().await;
     d.clear_solo().await.unwrap();
-    // Desk still answers immediately after the fire-and-forget.
     let f = d.get_fader(StripId(1)).await.unwrap();
     assert!((f - 0.0).abs() < 1e-6, "ch2 fader moved: {f}");
 }

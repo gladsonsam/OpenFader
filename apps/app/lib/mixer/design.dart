@@ -122,7 +122,6 @@ TextStyle mixerType(BuildContext context, double size,
     MixerDesign.type(size,
         color: color ?? ConsolePalette.of(context).text, weight: weight);
 
-/// Recolor authored vector roles while retaining contrasting instrument detail.
 /// Brand assets are loaded separately and never pass through this mapper.
 class _ArtworkColors extends ColorMapper {
   final ConsolePalette palette;

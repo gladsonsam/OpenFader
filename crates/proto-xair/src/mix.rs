@@ -36,7 +36,6 @@ use rosc::OscType;
 
 /// Pan bounds in the relay's engineering units (firmware map `-100..100`).
 pub const PAN_MIN: f32 = -100.0;
-/// Pan upper bound (see [`PAN_MIN`]).
 pub const PAN_MAX: f32 = 100.0;
 
 /// Bus sends per channel (firmware `01..n` with `10` on ch; xair-api
@@ -52,8 +51,6 @@ pub const SEND_MIN_DB: f32 = -90.0;
 /// Send-level upper bound in dB (see [`SEND_MIN_DB`]).
 pub const SEND_MAX_DB: f32 = 10.0;
 
-/// OSC address of the channel pan (`mix/pan`, linear wire `0..1`).
-///
 /// ```
 /// # use openfader_proto_xair::mix::mix_pan;
 /// assert_eq!(mix_pan(1), "/ch/01/mix/pan");
@@ -63,9 +60,7 @@ pub fn mix_pan(ch: u16) -> String {
     format!("/ch/{ch:02}/mix/pan")
 }
 
-/// OSC address of one channel send level (zero-padded two-digit slot, the
-/// xair-api `Send` shape `/ch/NN/mix/MM/level`). Slot `1..=6` are bus
-/// sends, `7..=10` are FX sends.
+/// Slot `1..=6` are bus sends, `7..=10` are FX sends.
 ///
 /// ```
 /// # use openfader_proto_xair::mix::send_level;
@@ -79,7 +74,6 @@ pub fn send_level(ch: u16, send: u8) -> anyhow::Result<String> {
     Ok(format!("/ch/{ch:02}/mix/{send:02}/level"))
 }
 
-/// Wire slot for `auxN_level` (`N = 1..=6` → slot `N`).
 pub fn aux_slot(n: u8) -> anyhow::Result<u8> {
     if !(1..=AUX_SENDS).contains(&n) {
         anyhow::bail!("aux send {n} out of range 1..={AUX_SENDS} (only 6 bus sends on X-Air)");
@@ -87,7 +81,6 @@ pub fn aux_slot(n: u8) -> anyhow::Result<u8> {
     Ok(n)
 }
 
-/// Wire slot for `fxN_level` (`N = 1..=4` → slot `6 + N`).
 pub fn fx_slot(n: u8) -> anyhow::Result<u8> {
     if !(1..=FX_SENDS).contains(&n) {
         anyhow::bail!("fx send {n} out of range 1..={FX_SENDS}");
@@ -95,9 +88,7 @@ pub fn fx_slot(n: u8) -> anyhow::Result<u8> {
     Ok(AUX_SENDS + n)
 }
 
-/// Map a pan in engineering units (`-100` = hard left … `+100` = hard
-/// right, firmware `lin(101)`) to the normalized wire float. Rejects
-/// NaN/infinite and out-of-range values before anything is sent.
+/// Firmware `lin(101)`: engineering `-100..=+100` to wire `0..1`.
 pub fn pan_to_wire(pan: f32) -> anyhow::Result<f32> {
     if !pan.is_finite() {
         anyhow::bail!("pan must be finite, got {pan}");
@@ -108,8 +99,7 @@ pub fn pan_to_wire(pan: f32) -> anyhow::Result<f32> {
     Ok((pan - PAN_MIN) / (PAN_MAX - PAN_MIN))
 }
 
-/// Map a normalized wire float back to engineering pan. Rejects NaN and
-/// values outside `0..=1` — no clamping of desk replies.
+/// Firmware `lin(101)` (decode direction).
 pub fn wire_to_pan(v: f32) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("pan wire value must be finite, got {v}");
@@ -120,10 +110,7 @@ pub fn wire_to_pan(v: f32) -> anyhow::Result<f32> {
     Ok(PAN_MIN + (PAN_MAX - PAN_MIN) * v)
 }
 
-/// Map a send level in dB to the normalized wire float via the X-Air fader
-/// law (mirrors xair-api `db_to` and UI spec §4 exactly:
-/// joints at `-60/-30/-10/0`, floor `-90` = `-inf`). Rejects NaN/infinite
-/// and out-of-range values before anything is sent.
+/// X-Air fader law (joints at `-60/-30/-10/0`, floor `-90` = `-inf`).
 pub fn send_db_to_wire(db: f32) -> anyhow::Result<f32> {
     if !db.is_finite() {
         anyhow::bail!("send level must be finite, got {db}");
@@ -144,8 +131,7 @@ pub fn send_db_to_wire(db: f32) -> anyhow::Result<f32> {
     })
 }
 
-/// Map a normalized wire float back to send-level dB (mirrors xair-api
-/// `db_from`: wire `0` reads `-90`, the `-inf` floor).
+/// X-Air fader law (decode direction); wire `0` reads `-90`, the `-inf` floor.
 pub fn wire_to_send_db(v: f32) -> anyhow::Result<f32> {
     if !v.is_finite() {
         anyhow::bail!("send level wire value must be finite, got {v}");
@@ -168,7 +154,6 @@ pub fn wire_to_send_db(v: f32) -> anyhow::Result<f32> {
     })
 }
 
-/// Decode a send-level reply float.
 pub fn send_level_value(msg: &rosc::OscMessage) -> anyhow::Result<f32> {
     osc::fader_value(msg)
 }
@@ -269,10 +254,8 @@ pub fn send_on(root: &str, send: u8) -> anyhow::Result<String> {
 /// Live defaults on the owner rig (XR18 FW 1.20): bus sends `2`, FX sends
 /// `4`.
 pub const TAP_MIN: i32 = 0;
-/// Send-tap upper bound (see [`TAP_MIN`]).
 pub const TAP_MAX: i32 = 5;
 
-/// Encode a send tap (whole-number floats `0..=5`, see [`TAP_MIN`]).
 pub fn tap_to_arg(v: f32) -> anyhow::Result<OscType> {
     if !v.is_finite() || v.fract() != 0.0 {
         anyhow::bail!("send tap must be a whole number, got {v}");
@@ -284,7 +267,6 @@ pub fn tap_to_arg(v: f32) -> anyhow::Result<OscType> {
     Ok(OscType::Int(i))
 }
 
-/// Decode a send-tap reply.
 pub fn tap_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<i32> {
     match msg.args.first() {
         Some(OscType::Int(i)) => {
@@ -297,10 +279,9 @@ pub fn tap_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<i32> {
     }
 }
 
-/// Wire slot for a generic `sendN_*` id (`N = 1..=10`): sends 1..6 are the
-/// bus sends, 7..10 the FX sends (same slots as `aux1..6` / `fx1..4`).
-/// (Send on/off switches use the shared codec: [`crate::codec::bool_arg`]
-/// to encode, [`openfader_transport::osc::is_on`] to decode.)
+/// Sends 1..6 are the bus sends, 7..10 the FX sends (same slots as
+/// `aux1..6` / `fx1..4`). Shared bool codec: [`crate::codec::bool_arg`]
+/// encode, [`openfader_transport::osc::is_on`] decode.
 pub fn generic_send_slot(n: u8) -> anyhow::Result<u8> {
     if !(1..=AUX_SENDS + FX_SENDS).contains(&n) {
         anyhow::bail!("send {n} out of range 1..={} (X-Air has 6 bus + 4 FX sends)", AUX_SENDS + FX_SENDS);

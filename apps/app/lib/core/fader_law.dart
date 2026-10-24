@@ -4,13 +4,11 @@
 // X-Air); UI dB readouts bound to the engine must follow the World's law so
 // the readout agrees with the engine round-trip exactly.
 
-/// Top of every fader scale in dB.
 const double topDb = 10;
 
-/// Design/X-Air floor in dB (DL32S uses -120, carried on its law).
+/// Design and X-Air floor in dB (DL32S uses -120, carried on its own law).
 const double floorDb = -90;
 
-/// One fader law: 0..1 position <-> dB.
 class FaderLaw {
   final String id;
   final String label;
@@ -161,7 +159,6 @@ const Map<String, FaderLaw> _laws = {
 FaderLaw lawForDriver(String? driver) =>
     (driver != null && _laws.containsKey(driver)) ? _laws[driver]! : xairLaw;
 
-/// dB readout: one decimal, `-inf` at/below the floor.
 String formatDb(double db) {
   if (!db.isFinite || db <= floorDb) return '-inf';
   final rounded = (db * 10).round() / 10;
@@ -169,7 +166,7 @@ String formatDb(double db) {
   return '${db >= 0 ? '+' : ''}${db.toStringAsFixed(1)}';
 }
 
-/// Max |design - xair| dB over a sweep (the mismatch report number).
+/// Max design-to-xair deviation in dB over a sweep (the mismatch report).
 ({double maxDb, double atF}) maxLawDeviation([int samples = 1001]) {
   var maxDb = 0.0;
   var atF = 0.0;

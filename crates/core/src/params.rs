@@ -5,7 +5,7 @@
 //! display label. Capabilities ([`MixerDriver::capabilities`](crate::MixerDriver::capabilities))
 //! are subsets of these ids; the relay `caps` frame renders this table
 //! filtered by the active driver, and `params` frames carry values in these
-//! engineering units (dB, Hz, ratio-as-number) — never wire floats.
+//! engineering units (dB, Hz, ratio-as-number), never wire floats.
 //!
 //! ## Scopes (v2)
 //!
@@ -27,23 +27,7 @@
 //! have no X-Air wire slot and are sim-only. Sim stores both id sets
 //! independently (both read/write); drivers document the alias.
 //!
-//! Ranges follow the real hardware (X-Air). Known divergences that older
-//! UI code had from this catalogue:
-//!
-//! * `gain`: `-12..=+60` dB (X-Air headamp floor).
-//! * `pan`: `-100..=+100` (X-Air `mix/pan`).
-//! * `eqN_gain`: `-15..=+15` dB (X-Air `eq/g`).
-//! * `eqN_q`: `0.3..=10` (X-Air `eq/q`).
-//! * `eq1_type`: exists here; X-Air and DL32S both carry four band-type
-//!   words. DL32S uses type-leading groups (verified against manufacturer mixer software).
-//! * `eqN_type`: `0..=5` here vs `0..=3` there (six X-Air filter types).
-//! * `auxN_level` / `fxN_level` / `sendN_level`: `-90..=+10` dB here vs
-//!   `-120..=+10` there (X-Air `level(161)` fader law; `-90` reads as `-inf`).
-//! * `comp_ratio`: `1.1..=100` here (desk step-table ratio number, float).
-//! * `color`: `0..=15` desk channel colour enum (name-bar colour).
-//! * `icon`: `0..=31` desk channel icon enum.
-//! * Gate/comp full sets: X-Air community-documented (firmware map + X32 OSC
-//!   doc + xair-api), UNVERIFIED-ON-RIG — see `crates/proto-xair` docs.
+//! Ranges follow the real hardware (X-Air).
 
 use crate::{ParamValue, StripKind};
 
@@ -138,14 +122,14 @@ pub const SCOPES_PAN: &[StripKind] = &[
 /// Generic sends originate from input channels (sim seeds them there).
 pub const SCOPES_SEND: &[StripKind] = &[StripKind::In];
 /// LR assignment: strips with a `{root}/mix/lr` leaf (channels, FX returns
-/// and buses — main LR carries no `lr` field and masters have none).
+/// and buses, main LR carries no `lr` field and masters have none).
 pub const SCOPES_LRASSIGN: &[StripKind] = &[
     StripKind::In,
     StripKind::Ret,
     StripKind::Bus,
 ];
 /// DCA assignment: strips with a `{root}/grp/dca` bitmask leaf (channels,
-/// FX returns and buses — rig-verified XR18 FW 1.20; main LR, DCA masters
+/// FX returns and buses, rig-verified XR18 FW 1.20; main LR, DCA masters
 /// and FX-send masters are silent there).
 pub const SCOPES_DCAASSIGN: &[StripKind] = &[
     StripKind::In,
@@ -153,7 +137,7 @@ pub const SCOPES_DCAASSIGN: &[StripKind] = &[
     StripKind::Bus,
 ];
 /// Channel insert: strips with a `{root}/insert` leaf (channels, buses and
-/// main LR — live-verified XR18 FW 1.20: `/ch/NN`, `/bus/N`, `/lr` answer
+/// main LR, live-verified XR18 FW 1.20: `/ch/NN`, `/bus/N`, `/lr` answer
 /// `insert/on` + `insert/sel`; `/rtn/*`, `/rtn/aux`, `/fxsend/*` and
 /// `/dca/*` are silent, so returns/sends/masters stay out).
 pub const SCOPES_INSERT: &[StripKind] = &[StripKind::In, StripKind::Bus, StripKind::Main];
@@ -325,7 +309,7 @@ pub const CATALOGUE: &[ParamDef] = &[
     f("automix_weight", 0.0, 1.0, "", 0.5, "automix", SCOPES_INPUT, ParamScope::Channel),
     // ---- assign plane (rig-verified XR18 FW 1.20, 2026-10-20) ----
     // Automix enable: pos0 int of the `{root}/automix` (int, float)
-    // container (channel strips only — the desk is silent on
+    // container (channel strips only, the desk is silent on
     // `{root}/automix/on`, which does not exist).
     b("automix_on", "automix on", SCOPES_INPUT, ParamScope::Channel, false),
     // DCA membership: bit `n - 1` of the `{root}/grp/dca` int bitmask
@@ -498,21 +482,20 @@ pub const CATALOGUE: &[ParamDef] = &[
     f("solo_level", 0.0, 1.0, "", 0.75, "solo level", SCOPES_MAIN, ParamScope::Main),
     e("solo_source", 0.0, 14.0, 3.0, "solo source", SCOPES_MAIN, ParamScope::Main),
     // ---- FX slot insert (rig-verified `/fx/N/insert`; slot-addressed via
-    // driver methods, not a strip send — SCOPES_SEND only satisfies the
+    // driver methods, not a strip send, SCOPES_SEND only satisfies the
     // send-family scope invariant below; out of strip caps, never polled) ----
     b("fx_insert", "fx insert", SCOPES_SEND, ParamScope::Channel, false),
     // ---- Channel insert (rig-verified `{root}/insert/on|sel` for
     // `/ch/NN`, `/bus/N`, `/lr` on XR18 FW 1.20: on = bypass switch,
-    // sel = inserted slot select, raw `0..=8` — the desk accepts 0..8 and
+    // sel = inserted slot select, raw `0..=8`, the desk accepts 0..8 and
     // ignores 9+; the values are NOT 1..4 FX slots, so no slot mapping is
     // asserted here) ----
     b("insert_on", "insert on", SCOPES_INSERT, ParamScope::Channel, false),
     e("insert_sel", 0.0, 8.0, 0.0, "insert select", SCOPES_INSERT, ParamScope::Channel),
 ];
 
-/// Look up one catalogue entry by id (canonical table only; the engine
-/// resolves through its per-driver [`ParamRegistry`] so provider
-/// contributions merge in — see [`register_catalogue`]).
+/// Look up one catalogue entry by id. The engine resolves through its
+/// per-driver [`ParamRegistry`] so provider contributions merge in.
 pub fn find(id: &str) -> Option<&'static ParamDef> {
     CATALOGUE.iter().find(|d| d.id == id)
 }
@@ -524,7 +507,7 @@ pub fn find(id: &str) -> Option<&'static ParamDef> {
 /// / snapshot / recall path resolves through it instead of the global
 /// static, so a mixer with unique DSP arrives without editing core.
 ///
-/// Merge rule: canonical rows are stable and always win — a provider row
+/// Merge rule: canonical rows are stable and always win, a provider row
 /// whose id collides with a canonical id is ignored. Provider rows keep
 /// their table order after the canonical rows, so `caps` output is
 /// byte-identical while no provider contributes extra rows.
@@ -562,7 +545,7 @@ impl ParamRegistry {
 
     /// Override one canonical row's engineering-unit range for the provider
     /// whose desk documents different native bounds. Only call with bounds
-    /// documented for that desk's own wire fields — live-verified or taken
+    /// documented for that desk's own wire fields, live-verified or taken
     /// from the desk's manual (documentation-based bounds must say so at
     /// the call site; endpoint hardware tests may still be pending).
     /// Kinds, units, labels, scopes and defaults never change here.
@@ -590,7 +573,7 @@ impl ParamRegistry {
     }
 
     /// Whether the registry holds no entries (never true for a merged
-    /// registry — the canonical table is always present).
+    /// registry, the canonical table is always present).
     pub fn is_empty(&self) -> bool {
         self.defs.is_empty()
     }
@@ -605,10 +588,8 @@ impl ParamRegistry {
     }
 }
 
-/// Build a merged registry: canonical [`CATALOGUE`] plus one provider's
-/// contributed table ([`crate::MixerDriver::param_defs`](crate::MixerDriver::param_defs)).
-/// This is the engine-boot merge; canonical rows are stable and win on id
-/// collision.
+/// Merged registry: canonical [`CATALOGUE`] plus one provider's contributed
+/// table. Canonical rows win on id collision.
 pub fn register_catalogue(provider: &[ParamDef]) -> ParamRegistry {
     let mut reg = ParamRegistry::canonical();
     reg.register(provider);
@@ -667,14 +648,7 @@ mod tests {
                 let _ = format!("{k:?}");
             }
         }
-        // v2 catalogue size: 54 v1 ids + 95 new (colour/icon/link/source,
-        // delay x2, hpf_slope, gate x8, comp x12, eq5 x4, send16 x64) = 149,
-        // then +11 firmware-truth ids (gate filter x3, comp key/filter x5,
-        // eq6 x4) − 1 removed id (gate_key_filter) = 159, then +17 v2b ids
-        // (lr_assign, solo dim/mute/level/source, send grpon x10, automix
-        // weight, fx insert) = 176, then +2 channel-insert ids (insert_on,
-        // insert_sel) = 178, then +5 assign-plane ids (automix_on,
-        // dca1..4_assign) = 183.
+        // Update the expected length when adding catalogue ids.
         assert_eq!(CATALOGUE.len(), 183, "catalogue grew/shrank unexpectedly");
     }
 
@@ -768,8 +742,7 @@ mod tests {
         assert!(validate("nope", &ParamValue::Float(0.0)).is_err());
     }
 
-    // Provider-contributed DSP rows for registry tests (never merged into
-    // CATALOGUE itself — the canonical table stays X-Air-shaped).
+    // Provider-contributed DSP rows for registry tests.
     const PROVIDER_TABLE: &[ParamDef] = &[
         ParamDef {
             id: "wing:stagebox_gain",
@@ -782,8 +755,7 @@ mod tests {
             default: ParamDefault::Float(0.0),
             label: "stagebox gain",
         },
-        // A colliding row: the merge must keep the canonical `gain`
-        // (stable range/label) and ignore this one.
+        // A colliding row: the merge keeps the canonical `gain`.
         ParamDef {
             id: "gain",
             kind: ParamKind::Float,
@@ -804,7 +776,6 @@ mod tests {
         for def in CATALOGUE {
             assert_eq!(reg.find(def.id).map(|d| d.id), Some(def.id));
         }
-        // Free `find` and the registry agree on the canonical table.
         assert_eq!(find("fader").unwrap().id, reg.find("fader").unwrap().id);
     }
 
@@ -812,22 +783,18 @@ mod tests {
     fn registry_merges_provider_rows_canonical_wins() {
         let reg = register_catalogue(PROVIDER_TABLE);
         assert_eq!(reg.len(), CATALOGUE.len() + 1);
-        // Namespaced provider id resolves with its own range.
         let extra = reg.find("wing:stagebox_gain").expect("provider row merges");
         assert_eq!((extra.min, extra.max), (-12.0, 60.0));
         assert!(reg.validate("wing:stagebox_gain", &ParamValue::Float(0.0)).is_ok());
         assert!(reg.validate("wing:stagebox_gain", &ParamValue::Float(61.0)).is_err());
         assert!(reg.validate("wing:stagebox_gain", &ParamValue::Bool(true)).is_err());
-        // Canonical `gain` is untouched by the colliding provider row.
         let gain = reg.find("gain").unwrap();
         assert_eq!((gain.min, gain.max), (-12.0, 60.0));
         assert_eq!(gain.label, "gain");
-        // Canonical fader/mute/name/pan stay stable through any merge.
         for id in ["fader", "mute", "name", "pan"] {
             assert_eq!(reg.find(id).map(|d| d.id), Some(id));
             assert_eq!(find(id).unwrap().id, reg.find(id).unwrap().id);
         }
-        // Unknown ids still fail.
         assert!(reg.validate("nope", &ParamValue::Float(0.0)).is_err());
     }
 
@@ -836,11 +803,9 @@ mod tests {
         let mut reg = ParamRegistry::canonical();
         reg.register(PROVIDER_TABLE);
         let n = reg.len();
-        // Re-registering (or registering canonical ids) changes nothing.
         reg.register(PROVIDER_TABLE);
         reg.register(CATALOGUE);
         assert_eq!(reg.len(), n);
-        // Canonical rows keep catalogue order; provider rows append after.
         let ids: Vec<&str> = reg.iter().map(|d| d.id).collect();
         assert_eq!(&ids[..CATALOGUE.len()], CATALOGUE.iter().map(|d| d.id).collect::<Vec<_>>());
         assert_eq!(ids[CATALOGUE.len()], "wing:stagebox_gain");
@@ -849,7 +814,6 @@ mod tests {
     #[test]
     fn strip_kind_wire_names_stable_and_extensible() {
         use crate::StripKind as K;
-        // The seven historical wire names are byte-identical.
         for (kind, wire) in [
             (K::In, "in"),
             (K::Ret, "ret"),
@@ -863,12 +827,10 @@ mod tests {
             assert_eq!(K::parse(wire), Some(kind));
             assert_eq!(K::kind_from_str(wire), kind);
         }
-        // Unknown wire names fail strict parse but resolve extensibly.
         assert_eq!(K::parse("grp"), None);
         let custom = K::kind_from_str("grp");
         assert_eq!(custom.as_str(), "grp");
         assert!(matches!(custom, K::Custom("grp")));
-        // Custom kinds participate in scopes like any other kind.
         let def = ParamDef {
             id: "wing:stagebox_gain",
             kind: ParamKind::Float,

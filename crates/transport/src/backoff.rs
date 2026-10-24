@@ -1,7 +1,6 @@
 //! Reconnect with exponential backoff.
 use std::time::Duration;
 
-/// Exponential backoff state: `initial * factor^attempt`, capped at `max`.
 pub struct Backoff {
     pub initial: Duration,
     pub max: Duration,
@@ -32,7 +31,6 @@ impl Backoff {
         self.attempts = 0;
     }
 
-    /// Next delay and advance the attempt counter (saturates at `max`).
     pub fn next_delay(&mut self) -> Duration {
         let exp = self.factor.powi(self.attempts.min(16) as i32);
         let delay = self.initial.mul_f64(exp).min(self.max);
@@ -96,7 +94,6 @@ mod tests {
         assert!(ds.iter().all(|d| *d <= Duration::from_secs(8)));
     }
 
-    /// Flaky link: two failures then success — retries and returns the value.
     #[tokio::test]
     async fn retries_then_succeeds() {
         let attempts = Arc::new(AtomicUsize::new(0));
@@ -123,8 +120,6 @@ mod tests {
         assert_eq!(attempts.load(Ordering::SeqCst), 3);
     }
 
-    /// Dead mixer: exhausts `max_attempts` and returns the last error
-    /// (bounded, never retries forever unless asked with 0).
     #[tokio::test]
     async fn exhaustion_returns_last_error() {
         let attempts = Arc::new(AtomicUsize::new(0));

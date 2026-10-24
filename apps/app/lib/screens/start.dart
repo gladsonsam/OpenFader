@@ -1,13 +1,6 @@
-// Connections starting screen: the app's front door (see
-// openfader-design-html/connections-*.html). Centered fader brand above one
-// compact recent-mixers box; corner help/settings; Work offline at bottom.
-//
-// Wiring: everything flows through [ConnectionStore] (same contract as the
-// Link tab) plus a small persisted recents list (SharedPreferences). No
-// fake devices: rows come from recents + live engine `devices`, Connect
-// probes with retry and surfaces real errors, manual add validates and
-// connects with the selected mixer type, Refresh/Discover call the real scan. Entering the mixer happens
-// only via an explicit user action or a user-initiated connect success.
+// Connections start screen: the app front door with a compact recent-mixers box.
+// Rows come from recents plus live engine devices. Entering the mixer happens
+// only through an explicit user action or a user-initiated connect success.
 library;
 
 import 'dart:async';
@@ -67,7 +60,6 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
   RecentMixers get _recentsBox => RecentMixers.instance;
   PrefsService get _prefs => PrefsService.instance;
 
-  /// Pending user-initiated connect target (addr), or null when idle.
   String? _pending;
   String? _pendingName;
   MixerType _pendingType = MixerType.automatic;
@@ -110,9 +102,6 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
         duration: const Duration(seconds: 3)));
   }
 
-  /// Merged rows: recents first, then engine-known devices not already
-  /// listed (marked discovered). Reachability comes from the live devices
-  /// list; the connected row opens the mixer.
   List<_Row> _rows() {
     final devices = _store.devices;
     final byHost = <String, ConnDevice>{};
@@ -171,8 +160,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
       }
     }
     final probing = _store.probing;
-    // A user-initiated probe that settles without reaching its target and
-    // without an engine error means the host stayed silent: say so.
+    // A settled probe with no target hit and no engine error means the host stayed silent.
     if (_wasProbing && !probing && _pending != null) {
       final addr = _pending!;
       final name = _pendingName ?? addr;
@@ -186,7 +174,6 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
       }
     }
     _wasProbing = probing;
-    // Successful user-initiated connect: persist + enter the mixer.
     if (_pending != null && !probing) {
       final addr = _pending!;
       final name = _pendingName ?? addr;
@@ -234,8 +221,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     }
     final host = row.addr;
     if (host.isEmpty) {
-      // Engine-known device without an IP: connect by id, then enter when
-      // the link reports it (errors surface via the store listener).
+      // Devices without an IP connect by id and enter when the link reports it.
       _pending = 'id:${row.key}';
       _pendingName = row.name;
       _store.connectDevice(_deviceIdFor(row));
@@ -361,10 +347,6 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Brand: approved logo mark + OpenFader name (Barlow Semibold).
-// ---------------------------------------------------------------------------
-
 class _Brand extends StatelessWidget {
   final bool wide;
   const _Brand({required this.wide});
@@ -386,10 +368,6 @@ class _Brand extends StatelessWidget {
         ],
       );
 }
-
-// ---------------------------------------------------------------------------
-// Recent-mixers box.
-// ---------------------------------------------------------------------------
 
 class _Box extends StatelessWidget {
   final bool wide;
@@ -684,10 +662,6 @@ class _WorkOffline extends StatelessWidget {
       );
 }
 
-// ---------------------------------------------------------------------------
-// Glyphs (Barlow-era line icons matching the mock SVGs).
-// ---------------------------------------------------------------------------
-
 class _HelpGlyph extends StatelessWidget {
   const _HelpGlyph();
   @override
@@ -785,10 +759,6 @@ class _IconButton extends StatelessWidget {
         ),
       );
 }
-
-// ---------------------------------------------------------------------------
-// Dialogs.
-// ---------------------------------------------------------------------------
 
 class _Dialog extends StatelessWidget {
   final String title;

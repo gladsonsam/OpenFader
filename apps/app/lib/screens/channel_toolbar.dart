@@ -1,7 +1,4 @@
-// Channel toolbar: approved 44px home button (returns to Mixer, state
-// retained) + shortened session readout (Ch / name / live fader dB, tap
-// to type) + the four FX/Settings/Routing/Layout tools on tablet, Menu
-// on phone. Mirrors the mixer toolbar geometry.
+// Channel toolbar: home returns to the mixer with state retained.
 library;
 
 import 'package:flutter/material.dart';
@@ -121,7 +118,6 @@ class ChannelToolbar extends StatelessWidget {
                                           color: ConsolePalette.of(context)
                                               .text7)),
                                 ]))),
-                    // Numeric center stays at the exact midpoint of the readout.
                     Center(
                         child: FractionallySizedBox(
                             widthFactor: .40,
@@ -273,8 +269,6 @@ String _toolLabel(ChannelTool t) => switch (t) {
       ChannelTool.scenes => 'Shows',
     };
 
-/// Approved 44px home button: charcoal, hairline edge, 10px radius, 22px
-/// house icon. Returns to the mixer with selection/bank/scroll retained.
 class _HomeButton extends StatelessWidget {
   final VoidCallback onHome;
   const _HomeButton({required this.onHome});
@@ -337,7 +331,6 @@ class _ToolButton extends StatelessWidget {
                       child: child)))));
 }
 
-/// Live fader readout with tap-to-type entry (dB, -inf allowed).
 class _FaderValue extends StatelessWidget {
   final ChannelStore store;
   final bool compact;

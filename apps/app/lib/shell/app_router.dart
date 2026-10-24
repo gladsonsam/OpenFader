@@ -1,24 +1,7 @@
-// Area A wire-up: app shell + router + D-screen store implementations.
-//
-// After boot (sim or FFI), main.dart creates one [AppStore] and pushes
-// [AppShell]. The shell owns:
-// - a shared 80 ms poll loop ([AppStore.pollMeters]) so every tab stays
-//   fresh from this single ticker. The A/B/C pages own no loop of their
-//   own; AppStore serializes mailbox drains and the _polling guard makes
-//   any stray overlap a no-op.
-// - bottom (narrow) / side (wide >= 720) rail across Mixer, Meters,
-//   Channel + the six Area D screens (read-only imports — this file never
-//   edits them);
-// - the header ([U4ShellHeader]) with tile jumps into the D tabs.
-//
-// The six `_*Store` classes below implement the Area D store contracts
-// over [AppStore.engine] (reads) + [AppStore.sendRaw] (writes). They
-// forward AppStore notifications so tab switches rebuild. Honest gaps
-// (documented, not faked):
-// - settings stats: `stats` frames are not parsed into EngineState; the
-//   request is sent and the Debug tab shows raw state instead.
-// - FX knobs render the slot `params` map generically (0..1) until
-//   caps.fx param tables are parsed; tap-tempo has no engine cmd.
+// Shell plus router plus store implementations over [AppStore.engine] and [AppStore.sendRaw].
+// The shell owns the single shared 80 ms poll loop so every tab stays fresh.
+// Honest gaps, not faked: stats frames are not parsed into EngineState,
+// and FX knobs render the generic params map until caps tables are parsed.
 library;
 
 import 'dart:async';
@@ -55,7 +38,6 @@ import '../screens/routing.dart';
 import '../screens/scenes.dart';
 import '../screens/settings.dart';
 
-/// Shell tabs in rail order.
 enum AppTab {
   mixer('Mixer'),
   meters('Meters'),
@@ -71,14 +53,13 @@ enum AppTab {
   final String label;
 }
 
-/// Post-boot shell: header + routed page + bottom/side rail.
 class AppShell extends StatefulWidget {
   final EngineApi api;
   final AppStore store;
   final AppTab initialTab;
 
-  /// True when main() won the real embedded engine; false = loud FAKE
-  /// sim fallback (native .so missing or FFI init failed). Never silent.
+  // True when main won the real engine; false is the loud FAKE sim fallback.
+
   final bool isRealEngine;
 
   const AppShell(
@@ -95,15 +76,13 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   late AppTab _tab;
 
-  /// Where Close on the Settings page returns (the tab that opened it).
+  // Where Settings Close returns.
   AppTab _prevTab = AppTab.mixer;
   Timer? _shellLoop;
   final _channelFocus = ValueNotifier<ChannelFocus?>(null);
 
-  /// The Connections start screen is the app's front door: shown first
-  /// after boot (unless the startup preference says Last mixer),
-  /// re-opened from the mixer brand button. The shell (header, rail,
-  /// poll loop) stays alive underneath so returning keeps state.
+  // Start screen is the front door; the shell stays alive underneath so returning keeps state.
+
   late bool _showStart;
 
   late final MixerController _mixer;
@@ -129,12 +108,12 @@ class _AppShellState extends State<AppShell> {
     _debug = _DebugStore(widget.store);
     _applyMeterTuning();
     PrefsService.instance.addListener(_onPrefs);
-    // Single shared freshness ticker: the ONLY poll loop in the app.
-    // Every tab (mixer/meters/channel/FX/...) renders from the notifiers
-    // this drain updates in place; pages own no timer of their own.
+    // Single shared ticker: the only poll loop in the app because pages own no timer.
+
     _restartLoop();
     _tick();
-    // Optional auto-reconnect to the last desk (off by default).
+    // Auto-reconnect stays off unless the preference enables it.
+
     final prefs = PrefsService.instance;
     if (prefs.reconnectLast && prefs.lastMixerAddr.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -148,7 +127,8 @@ class _AppShellState extends State<AppShell> {
     if (mounted) _conn.probe(addr, mixerType: MixerType.fromDriver(driver));
   }
 
-  /// Meter cadence + peak/clip behavior follow the Appearance prefs.
+  // Meter cadence and peak behavior follow the Appearance prefs.
+
   void _onPrefs() {
     if (!mounted) return;
     _applyMeterTuning();
@@ -174,7 +154,7 @@ class _AppShellState extends State<AppShell> {
       await widget.store.pollMeters();
       if (mounted && _tab == AppTab.debug) _debug.captureFrame();
     } catch (_) {
-      // Never crash the shell loop on a transport hiccup.
+      // A transport hiccup must not crash the shell loop.
     }
   }
 
@@ -220,8 +200,8 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     final store = widget.store;
-    // Front door first: the Connections start screen replaces all shell
-    // chrome until the user enters the mixer (connect, open, offline).
+    // Front door first: start screen replaces shell chrome until the user enters.
+
     if (_showStart && _tab != AppTab.settings) {
       return ListenableBuilder(
         listenable: store,
@@ -237,21 +217,17 @@ class _AppShellState extends State<AppShell> {
         ),
       );
     }
-    // Structural listener only: fader/mute/pan hot-path writes update
-    // per-strip ValueNotifiers in place (AppStore.faderOf/muteOf/panNoteOf)
-    // and never call notifyListeners(), so a fader drag rebuilds one
-    // MixerStrip instead of this whole shell + every strip. This builder
-    // fires for connection / strips add-remove / bank / bus / solo-banner
-    // changes.
+    // Structural listener only: hot-path writes update per-strip notifiers in place
+    // so a fader drag rebuilds one strip instead of the whole shell.
+
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
         final connected = store.engine.connected;
         final sim = store.engine.driver == 'sim';
 
-        // Never let "Connected · sim" read as a desk: SIM gets its own tag.
-        // Plus the boot-time backend verdict: real embedded engine vs the
-        // FAKE sim fallback. Loud on every path — never silent.
+        // SIM gets its own tag so it never reads as a desk; the backend verdict stays loud.
+
         final title = sim
             ? 'OpenFader · Demo desk'
             : '${store.engine.linkName.isEmpty ? 'OpenFader' : store.engine.linkName} · ${store.engine.linkState.isEmpty ? 'Not connected' : store.engine.linkState}';
@@ -261,8 +237,8 @@ class _AppShellState extends State<AppShell> {
             (connected || sim || store.engine.linkState == 'offline')) {
           return _mixerPage();
         }
-        // Settings and channel views carry their own approved top bars,
-        // so the shared shell header steps aside for them.
+        // Settings and channel views carry their own top bars, so the shared header steps aside.
+
         final Widget header = isChan
             ? ChannelToolbar(
                 controlFocus: _channelFocus,
@@ -485,7 +461,6 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
-/// Bottom (narrow) / side (wide) tab rail. Plain text buttons, ui4 tokens.
 class _NavRail extends StatelessWidget {
   final AppTab active;
   final ValueChanged<AppTab> onGo;
@@ -548,12 +523,8 @@ class _NavRail extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Engine backend banner: the boot-time verdict, loud on every tab that
-// matters (AppShell header carries it in the title; the Link tab gets
-// this full-width strip too). Green = real embedded engine, red = FAKE
-// sim fallback with the FFI failure reason inline.
-// ---------------------------------------------------------------------------
+// Backend banner: the boot-time verdict stays loud on the Link tab.
+
 
 class _EngineTagBanner extends StatelessWidget {
   final bool isReal;
@@ -603,9 +574,7 @@ class _EngineTagBanner extends StatelessWidget {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Shared base: forwards AppStore notifications, exposes send + engine.
-// ---------------------------------------------------------------------------
+
 
 abstract class _StoreBase extends ChangeNotifier {
   _StoreBase(this.app) {
@@ -630,9 +599,7 @@ abstract class _StoreBase extends ChangeNotifier {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Connection
-// ---------------------------------------------------------------------------
+
 
 class _ConnStore extends _StoreBase implements ConnectionStore {
   _ConnStore(super.app) {
@@ -644,8 +611,8 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   String _lastScan = 'never';
   Timer? _scanTimer;
 
-  // Probe retry state: the desk unicast can be lost (wrong interface,
-  // mobile data, ARP miss), so one shot is not enough.
+  // Desk unicast can be lost, so one probe shot is not enough.
+
   String _lastProbe = '';
   MixerType _lastMixerType = MixerType.automatic;
   String _connectionProgress = '';
@@ -653,9 +620,8 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   int _probeAttempt = 0;
   bool _probing = false;
 
-  // Settle tracking: scanning ends when the engine answers (devices list
-  // changes or an error frame/transport failure lands), not on a fixed
-  // timer. The timer below is only a fallback so the spinner cannot stick.
+  // Scanning ends on an engine answer; the timer is only a fallback so the spinner cannot stick.
+
   String _lastError = '';
   String? _deviceRequest;
   String? _operationError;
@@ -746,8 +712,8 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   @override
   String get lastScan => _lastScan;
 
-  /// Exact engine/transport failure + timestamp, persistent until cleared
-  /// by a good poll or the next scan/probe. Never hides the string.
+  // Failures persist until a good poll or the next scan or probe clears them.
+
   @override
   String? get scanError {
     if (_operationError != null) return _operationError;
@@ -891,15 +857,16 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
 
   @override
   void probe(String addr, {MixerType mixerType = MixerType.automatic}) {
-    // Ignore repeated submissions without changing the pending target/type.
+    // Ignore repeated submissions for the same pending target and type.
+
     if (_probing || addr.trim().isEmpty) return;
     _lastProbe = addr.trim();
     _lastMixerType = mixerType;
     unawaited(_probeLoop(_lastProbe));
   }
 
-  /// Explicit retries keep the original driver. DL32S connects once per user
-  /// attempt: replaying connect while it hydrates restarts the handshake.
+  // Retries keep the original driver because replaying a DL32S connect restarts its handshake.
+
   @override
   Future<void> retryProbe() => _probeLoop(_lastProbe);
 
@@ -928,7 +895,8 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
         }
         await WifiNet.bindWifi();
       }
-      // Direct TCP connections keep system routing, including VPN routes.
+      // Direct TCP keeps system routing, which includes VPN routes.
+
       if (cancelled()) return;
       if (InternetAddress.tryParse(addr) == null) {
         try {
@@ -955,8 +923,8 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
             : 'Checking $_lastProbe · attempt $_probeAttempt/3…';
         notifyListeners();
         send(direct ? Cmds.connect('dl32s', addr) : Cmds.probe(addr));
-        // Remote DL32S hydration can take many round trips. Never restart a
-        // live handshake automatically; only the user's Retry sends again.
+        // Never restart a live DL32S handshake automatically; only user Retry sends again.
+
         final deadline = DateTime.now().add(Duration(seconds: direct ? 90 : 3));
         while (!cancelled() && DateTime.now().isBefore(deadline)) {
           if (connected() || app.visibleError.isNotEmpty) break;
@@ -1017,9 +985,7 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Routing
-// ---------------------------------------------------------------------------
+
 
 class _RoutingStore extends _StoreBase implements RoutingStore {
   _RoutingStore(super.app);
@@ -1105,8 +1071,8 @@ class _RoutingStore extends _StoreBase implements RoutingStore {
     return '';
   }
 
-  // Honest until caps.routing is parsed into EngineState: the desk has
-  // answered caps, so patch commands are at least addressable.
+  // Patch commands are addressable once caps answers, even before routing is parsed.
+
   @override
   bool get routingSupported => engine.routingCaps['supported'] == true;
 
@@ -1132,9 +1098,7 @@ class _RoutingStore extends _StoreBase implements RoutingStore {
   void clearPatch(int strip) => send(Cmds.patchClear(strip));
 }
 
-// ---------------------------------------------------------------------------
-// Scenes
-// ---------------------------------------------------------------------------
+
 
 class _ScenesStore extends _StoreBase implements ScenesStore {
   _ScenesStore(super.app) {
@@ -1154,10 +1118,8 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
   bool Function()? _confirmed;
   String? _done;
 
-  // Libraries belong to OpenFader, not the desk's native show storage.
-  // EngineState replaces these collections for each scenes/shows event.
-  // Requiring a fresh collection prevents submission or an old matching
-  // library entry from being treated as a completed mutation.
+  // Libraries belong to OpenFader, so completion needs a fresh engine collection.
+
   Object get _context => (engine.session, _show, _newShow);
   Object get _errorContext =>
       (app.errorRevision, app.visibleError, app.visibleErrorAt, engine.error);
@@ -1229,7 +1191,8 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
     _confirmed = confirmed;
     _done = done;
     _status = pending;
-    // Keep existing engine/transport errors visible, including during a retry.
+    // Keep engine and transport errors visible during a retry.
+
     notifyListeners();
     try {
       if (_dead || run != _runId) return;
@@ -1240,12 +1203,11 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
       _submitted = true;
       _settle();
       if (_dead || run != _runId) return;
-      // Named recall has no correlated completion event in EngineState.
-      // Its receipt only permits "requested", never a mixer-value claim.
+      // Named recall has no completion event, so receipt only permits "requested".
+
       if (library == null) _finish(done);
-      // No per-poll deadline hook is exposed to this store. A missing library
-      // update stays pending on the existing structural listener; no timer
-      // or extra poller, and no success inferred from command submission.
+      // A missing library update stays pending with no timer and no success inferred from submission.
+
     } catch (error) {
       if (!_dead && run == _runId) {
         _finish('Scene command failed; result unconfirmed: $error');
@@ -1285,8 +1247,8 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
   @override
   bool get online => engine.connected;
 
-  // OpenFader's engine library explicitly supports 001..999. This domain
-  // does not describe manufacturer mixer software's native show/snapshot capacity.
+  // The 001..999 range is the OpenFader engine library, not native mixer capacity.
+
   int? _freeSlot() {
     final used = {for (final s in engine.scenes) s.number};
     for (var n = 1; n <= 999; n++) {
@@ -1432,9 +1394,7 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Settings: prefs + recents + local mixes over platform services.
-// ---------------------------------------------------------------------------
+
 
 class _SettingsStore extends _StoreBase implements SettingsStore {
   _SettingsStore(super.app) {
@@ -1592,14 +1552,12 @@ class _SettingsStore extends _StoreBase implements SettingsStore {
   }
 }
 
-// ---------------------------------------------------------------------------
-// FX (port of web fxModel FX_TYPES + generic param knobs)
-// ---------------------------------------------------------------------------
+
 
 class _FxStore extends _StoreBase implements FxStore {
   _FxStore(super.app) {
-    // FX meters ride the single shell-owned poll loop: every AppStore drain
-    // re-syncs the slot notifiers in place, so the FX page needs no timer.
+    // FX meters ride the shell poll loop, so the FX page needs no timer.
+
     app.addListener(_syncFxMeters);
   }
 
@@ -1728,15 +1686,13 @@ class _FxStore extends _StoreBase implements FxStore {
     send(Cmds.fxBypass(c.slot, bypass));
   }
 
-  // No tap-tempo cmd in the engine protocol; the TAP tile is shown for
-  // Delay types (web parity) but stays a no-op until the protocol grows one.
+  // No tap-tempo cmd exists, so the TAP tile stays a no-op until the protocol grows one.
+
   @override
   void tap() {}
 }
 
-// ---------------------------------------------------------------------------
-// Debug
-// ---------------------------------------------------------------------------
+
 
 class _DebugStore extends _StoreBase implements DebugStore {
   _DebugStore(super.app);
@@ -1781,7 +1737,8 @@ class _DebugStore extends _StoreBase implements DebugStore {
     captureFrame();
   }
 
-  /// Observe the shell's completed drain; debug must not own another poller.
+  // Debug observes the shell drain because it must not own another poller.
+
   void captureFrame() {
     _tick++;
     notifyListeners();

@@ -1,5 +1,5 @@
 //! R2 engine tests: drive the engine in-process (no sockets) through
-//! `attach`/`send`/`events` — devices/connection, info, numbered scenes
+//! `attach`/`send`/`events`, devices/connection, info, numbered scenes
 //! (roundtrip + persistence), FX, routing, offline editing, meter taps,
 //! and poller pipelining/ordering.
 
@@ -259,7 +259,7 @@ async fn connect_device_moves_link() {
     assert_eq!(v.get("ip"), Some(&json!("192.168.1.99")));
     assert_eq!(v.get("fs"), Some(&json!(48000)));
     // Fresh first paint carries the cached link (latency 0 until the ~2 s
-    // link ticker lands its first round-trip measurement — fast-first
+    // link ticker lands its first round-trip measurement, fast-first
     // connect never blocks the UI on the probe).
     assert!(v.get("latency_ms").and_then(Value::as_f64).unwrap_or(-1.0) >= 0.0);
     // Disconnect flips the link; the session survives.
@@ -351,7 +351,6 @@ async fn scene_save_recall_roundtrip_restores_plane() {
     let engine = new_engine().await;
     let mut client = engine.attach(None).await;
     drain_snapshot(&mut client).await;
-    // Live values to capture: fader + EQ gain + comp threshold + send.
     client.send(Cmd::Fader { ch: 0, value: 0.9, key: None}).await.unwrap();
     for (field, value) in [
         ("eq1_gain", json!(5.0)),
@@ -363,7 +362,6 @@ async fn scene_save_recall_roundtrip_restores_plane() {
             .await
             .unwrap();
     }
-    // Drain the write echoes.
     while client.events.try_recv().is_ok() {}
     client
         .send(Cmd::SceneSave { n: 1, name: "Set 1".to_string() })
@@ -376,7 +374,6 @@ async fn scene_save_recall_roundtrip_restores_plane() {
     assert_eq!(list[0].get("number"), Some(&json!(1)));
     assert_eq!(list[0].get("name"), Some(&json!("Set 1")));
     assert_eq!(list[0].get("current"), Some(&json!(false)));
-    // Move away, then recall with no fade.
     client.send(Cmd::Fader { ch: 0, value: 0.1, key: None}).await.unwrap();
     client
         .send(Cmd::Param { ch: 0, field: "eq1_gain".to_string(), value: json!(-5.0), key: None})
@@ -384,7 +381,6 @@ async fn scene_save_recall_roundtrip_restores_plane() {
         .unwrap();
     while client.events.try_recv().is_ok() {}
     client.send(Cmd::SceneRecall { n: 1, fade_ms: Some(0), scope: None }).await.unwrap();
-    // Recall applies every captured value (fader/mute echoes + params).
     let mut got: std::collections::HashMap<String, Value> = Default::default();
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     while !got.contains_key("eq1_gain") || !got.contains_key("comp_thr") || !got.contains_key("send1_level") {
@@ -401,14 +397,12 @@ async fn scene_save_recall_roundtrip_restores_plane() {
     assert_eq!(got.get("eq1_gain"), Some(&json!(5.0f32)));
     assert_eq!(got.get("comp_thr"), Some(&json!(-25.0f32)));
     assert_eq!(got.get("send1_level"), Some(&json!(-10.0f32)));
-    // Recalled slot is current.
     let scenes = wait_for(
         &mut client,
         |e| matches!(e, Event::Scenes { scenes } if scenes.iter().any(|s| s.number == 1 && s.current)),
     )
     .await;
     let _ = scenes;
-    // Rename + delete + clear flow.
     client.send(Cmd::SceneRename { n: 1, name: "Set 1b".to_string() }).await.unwrap();
     let scenes = wait_for(&mut client, |e| matches!(e, Event::Scenes { .. })).await;
     assert_eq!(
@@ -418,7 +412,6 @@ async fn scene_save_recall_roundtrip_restores_plane() {
     client.send(Cmd::SceneDelete { n: 1 }).await.unwrap();
     let scenes = wait_for(&mut client, |e| matches!(e, Event::Scenes { .. })).await;
     assert_eq!(ev_json(&scenes).get("scenes").and_then(Value::as_array).unwrap().len(), 0);
-    // Unknown slots + bad numbers error.
     client.send(Cmd::SceneRecall { n: 2, fade_ms: Some(0), scope: None }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "unknown scene"));
@@ -436,7 +429,6 @@ async fn scene_recall_scope_filters_axes() {
     let engine = new_engine().await;
     let mut client = engine.attach(None).await;
     let _snap = drain_snapshot(&mut client).await;
-    // Seed known state, then save as scene 5.
     client.send(Cmd::Fader { ch: 0, value: 0.9, key: None}).await.unwrap();
     client.send(Cmd::Mute { ch: 0, muted: true, key: None}).await.unwrap();
     client
@@ -447,7 +439,6 @@ async fn scene_recall_scope_filters_axes() {
     while client.events.try_recv().is_ok() {}
     client.send(Cmd::SceneSave { n: 5, name: "Scoped".to_string() }).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::Scenes { .. })).await;
-    // Move away everywhere.
     client.send(Cmd::Fader { ch: 0, value: 0.1, key: None}).await.unwrap();
     client.send(Cmd::Mute { ch: 0, muted: false, key: None}).await.unwrap();
     client
@@ -456,7 +447,6 @@ async fn scene_recall_scope_filters_axes() {
         .unwrap();
     client.send(Cmd::Fader { ch: 1, value: 0.8, key: None}).await.unwrap();
     while client.events.try_recv().is_ok() {}
-    // Scoped recall: mute group only, strip 0 only.
     client
         .send(Cmd::SceneRecall {
             n: 5,
@@ -516,7 +506,6 @@ async fn scenes_persist_across_restart() {
     assert!(dir.join("scenes.json").exists(), "scene file written");
     drop(client);
     drop(engine);
-    // A fresh engine on the same dir reloads the library.
     let engine2 = Engine::new(EngineConfig {
         data_dir: Some(dir.clone()),
         ..EngineConfig::default()
@@ -529,7 +518,6 @@ async fn scenes_persist_across_restart() {
     assert_eq!(list.len(), 1);
     assert_eq!(list[0].get("number"), Some(&json!(7)));
     assert_eq!(list[0].get("name"), Some(&json!("Persist")));
-    // And the restored fader value recalls.
     client2.send(Cmd::SceneRecall { n: 7, fade_ms: Some(0), scope: None }).await.unwrap();
     let echo = wait_for(
         &mut client2,
@@ -547,7 +535,6 @@ async fn fx_caps_state_and_commands() {
     let engine = new_engine().await;
     let mut client = engine.attach(None).await;
     let snap = drain_snapshot(&mut client).await;
-    // caps.fx: 8 slots + six design type tables with param rows.
     let caps = snap.iter().find(|e| matches!(&*e.event, Event::Caps { .. })).unwrap();
     let v = ev_json(caps);
     let fx = v.get("fx").expect("caps.fx");
@@ -563,14 +550,12 @@ async fn fx_caps_state_and_commands() {
     for key in ["id", "label", "unit", "min", "max", "default", "scale"] {
         assert!(params[0].get(key).is_some(), "fx param row carries {key}");
     }
-    // Snapshot fx: 8 design slots, first is Hall/on, last bypassed-off.
     let fx = snap.iter().find(|e| matches!(&*e.event, Event::Fx { .. })).unwrap();
     let slots = ev_json(fx).get("slots").and_then(Value::as_array).unwrap().clone();
     assert_eq!(slots.len(), 8);
     assert_eq!(slots[0].get("type"), Some(&json!("Hall")));
     assert_eq!(slots[0].get("ret_label"), Some(&json!("Ret 1/2")));
     assert_eq!(slots[7].get("on"), Some(&json!(false)));
-    // set type -> state event; param -> state event; bypass/on toggles.
     client.send(Cmd::FxSetType { slot: 1, fx_type: "Chorus".to_string() }).await.unwrap();
     let fx = wait_for(
         &mut client,
@@ -598,7 +583,6 @@ async fn fx_caps_state_and_commands() {
         |e| matches!(e, Event::Fx { slots } if slots.iter().any(|s| s.slot == 8 && s.on)),
     )
     .await;
-    // Errors: unknown type, unknown param id, bad slot, bad value.
     client.send(Cmd::FxSetType { slot: 1, fx_type: "Reverb".to_string() }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "unknown fx type"));
@@ -633,7 +617,6 @@ async fn routing_patch_roundtrip() {
     let patches = ev_json(routing).get("patches").and_then(Value::as_array).unwrap().clone();
     assert!(!patches.is_empty());
     assert!(patches.iter().any(|p| p.get("strip") == Some(&json!(0)) && p.get("label") == Some(&json!("Lcl 01"))));
-    // Patch + clear round-trip.
     client.send(Cmd::PatchSet { strip: 0, group: "Net".to_string(), index: 5, key: None}).await.unwrap();
     let routing = wait_for(
         &mut client,
@@ -647,7 +630,6 @@ async fn routing_patch_roundtrip() {
         |e| matches!(e, Event::Routing { patches } if patches.iter().all(|p| p.strip != 0)),
     )
     .await;
-    // Errors: unknown group, bad index, non-input strip.
     client.send(Cmd::PatchSet { strip: 0, group: "AES".to_string(), index: 1, key: None}).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "unknown patch group"));
@@ -666,7 +648,6 @@ async fn offline_diff_push_flow() {
     let engine = new_engine().await;
     let mut client = engine.attach(None).await;
     drain_snapshot(&mut client).await;
-    // Go offline on the xair model (sim-backed, no hardware).
     client.send(Cmd::Offline { model: "xair".to_string() }).await.unwrap();
     let link = wait_for(
         &mut client,
@@ -674,14 +655,12 @@ async fn offline_diff_push_flow() {
     )
     .await;
     assert_eq!(ev_json(&link).get("name"), Some(&json!("Offline (xair)")));
-    // Edit while offline: fader + param.
     client.send(Cmd::Fader { ch: 1, value: 0.55, key: None}).await.unwrap();
     client
         .send(Cmd::Param { ch: 1, field: "gain".to_string(), value: json!(33.0), key: None})
         .await
         .unwrap();
     while client.events.try_recv().is_ok() {}
-    // Reconnect: the change list arrives as offline_diff, nothing pushed.
     client.send(Cmd::Connect { driver: "sim".to_string(), addr: None }).await.unwrap();
     let diff = wait_for(&mut client, |e| matches!(e, Event::OfflineDiff { .. })).await;
     let v = ev_json(&diff);
@@ -693,7 +672,6 @@ async fn offline_diff_push_flow() {
         .collect();
     assert!(ids.contains(&"1:fader".to_string()), "{ids:?}");
     assert!(ids.contains(&"1:gain".to_string()), "{ids:?}");
-    // Push needs explicit confirm.
     client.send(Cmd::OfflinePush { confirm: false }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "confirm:true"));
@@ -704,14 +682,12 @@ async fn offline_diff_push_flow() {
     )
     .await;
     assert_eq!(ev_json(&echo).get("value"), Some(&json!(33.0f32)));
-    // Second push (or unknown model) errors; the session survives.
     client.send(Cmd::OfflinePush { confirm: true }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "no offline diff pending"));
     client.send(Cmd::Offline { model: "nope".to_string() }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "unknown driver"));
-    // Discard path: offline, edit, connect, discard.
     client.send(Cmd::Offline { model: "dl32s".to_string() }).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::Link { state, .. } if state == "offline")).await;
     client.send(Cmd::Fader { ch: 2, value: 0.11, key: None}).await.unwrap();
@@ -730,12 +706,10 @@ async fn taps_negotiation_and_frames() {
     let engine = new_engine().await;
     let mut client = engine.attach(None).await;
     drain_snapshot(&mut client).await;
-    // No taps by default; negotiate with hello.
     client.send_json(r#"{"cmd":"hello","taps":true}"#).await.unwrap();
     let ack = wait_for(&mut client, |e| matches!(e, Event::Hello { .. })).await;
     assert_eq!(ev_json(&ack).get("taps"), Some(&json!(true)));
     assert!(engine.client_taps(&client.id));
-    // One frame per tap per tick; sim covers all 77 strips.
     for want in ["in", "post", "gr_gate", "gr_comp"] {
         let frame = wait_for(
             &mut client,
@@ -748,7 +722,6 @@ async fn taps_negotiation_and_frames() {
             panic!("expected taps");
         }
     }
-    // Opt out again.
     client.send_json(r#"{"cmd":"hello","taps":false}"#).await.unwrap();
     let ack = wait_for(&mut client, |e| matches!(e, Event::Hello { .. })).await;
     assert_eq!(ev_json(&ack).get("taps"), None, "false taps stays off the wire");
@@ -823,7 +796,7 @@ async fn visible_lane_serves_focused_strips_first() {
     // Reconnect: cache cleared, focus backlog long gone, visible set kept.
     // The next batches come from the visible-group lane first (the
     // background keeps a reserved share, so it is a majority assertion,
-    // with the very first frame always visible — batch order).
+    // with the very first frame always visible, batch order).
     client.send(Cmd::Connect { driver: "sim".to_string(), addr: None }).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::Routing { .. })).await;
     while client.events.try_recv().is_ok() {}
@@ -852,7 +825,7 @@ async fn visible_lane_serves_focused_strips_first() {
 #[tokio::test(flavor = "multi_thread")]
 async fn pipelined_writes_still_preempt() {
     // 1 ms tick + sim inflight 4 (saturated poller): every write lane
-    // must still dispatch in <= 25 ms p99 — writes never queue behind
+    // must still dispatch in <= 25 ms p99, writes never queue behind
     // pipelined poll reads. The bound is deliberately loose: the failure
     // mode (writes queued behind poll ticks) shows up in the hundreds of
     // ms, while shared CI runners stall single dispatches by a few ms
@@ -906,8 +879,6 @@ async fn masters_groups_files_roundtrip() {
     let engine = new_engine().await;
     let mut client = engine.attach(None).await;
     let snap = drain_snapshot(&mut client).await;
-    // caps groups/files advertisement (sim: 8 buses, 6 subgroups, 6 mute
-    // groups, file transfer modeled in-memory).
     let caps = snap.iter().find(|e| matches!(&*e.event, Event::Caps { .. })).unwrap();
     let v = ev_json(caps);
     assert_eq!(v.get("groups"), Some(&json!({"buses": 8, "subgroups": 6, "mute_groups": 6, "mg_assign": true, "sub_assign": true})));
@@ -924,7 +895,6 @@ async fn masters_groups_files_roundtrip() {
     client.send(Cmd::BusMute { bus: 0, muted: false }).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::Bus { bus: 0, muted: false, .. })).await;
 
-    // Subgroup master round-trip.
     client.send(Cmd::SubgroupFader { group: 1, value: 0.7 }).await.unwrap();
     let sub = wait_for(&mut client, |e| matches!(e, Event::Subgroup { group: 1, .. })).await;
     let fader = ev_json(&sub).get("fader").and_then(Value::as_f64).unwrap();
@@ -932,7 +902,6 @@ async fn masters_groups_files_roundtrip() {
     client.send(Cmd::SubgroupMute { group: 1, muted: true }).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::Subgroup { group: 1, muted: true, .. })).await;
 
-    // Membership round-trips.
     client.send(Cmd::SubgroupAssign { ch: 0, group: 1, member: true, key: None}).await.unwrap();
     wait_for(
         &mut client,
@@ -948,14 +917,12 @@ async fn masters_groups_files_roundtrip() {
     )
     .await;
 
-    // Main LR master mute round-trip (sim in-memory).
     client.send(Cmd::MainMute { muted: true }).await.unwrap();
     let main = wait_for(&mut client, |e| matches!(e, Event::Main { muted: Some(true), .. })).await;
     assert_eq!(ev_json(&main).get("muted"), Some(&json!(true)));
     client.send(Cmd::MainMute { muted: false }).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::Main { muted: Some(false), .. })).await;
 
-    // Per-strip solo round-trip (sim in-memory; monitor bus only).
     client.send(Cmd::Solo { ch: 3, soloed: true, key: None}).await.unwrap();
     wait_for(&mut client, |e| matches!(e, Event::Solo { ch: 3, soloed: true, ..})).await;
     client.send(Cmd::Solo { ch: 3, soloed: false, key: None}).await.unwrap();
@@ -996,7 +963,6 @@ async fn masters_reject_out_of_range_and_bad_input() {
     client.send(Cmd::SubgroupMute { group: 6, muted: true }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "out of range"));
-    // Invalid base64 + missing file.
     client
         .send(Cmd::FileUpload {
             filename: "Show.zip".to_string(),
@@ -1013,7 +979,6 @@ async fn masters_reject_out_of_range_and_bad_input() {
     client.send(Cmd::FileDownload { filename: "missing.zip".to_string() }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "not found"));
-    // Restricted role: musician cannot move masters or upload files.
     engine.set_client_policy(&client.id, openfader_core::access::Policy::musician([0]));
     client.send(Cmd::BusFader { bus: 0, value: 0.5 }).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
@@ -1037,7 +1002,7 @@ async fn probe_from_sim_attempts_unicast() {
     // The embedded app boots on sim with no driver switch: probe must
     // ATTEMPT the unicast verify (xair table) instead of refusing.
     // 127.0.0.1 is the silent local UDP fixture: the datagram goes out, no
-    // reply ever comes back — an honest "no reply" naming the address,
+    // reply ever comes back, an honest "no reply" naming the address,
     // the list untouched, the session alive.
     let engine = new_engine_with(FakeScanner::empty()).await;
     let mut client = engine.attach(None).await;
@@ -1082,8 +1047,8 @@ async fn new_xair_strip_ids_roundtrip_on_sim() {
     let engine = new_engine().await;
     let mut client = engine.attach(None).await;
     let snap = drain_snapshot(&mut client).await;
-    // Attach ships the slim caps (essentials lane); the full catalogue —
-    // where the new strip ids live — follows on the first hello.
+    // Attach ships the slim caps (essentials lane); the full catalogue 
+    // where the new strip ids live, follows on the first hello.
     client
         .send(Cmd::Hello { binary_meters: None, taps: None })
         .await
@@ -1138,7 +1103,7 @@ async fn connect_silent_desk_fails_without_planting_addr() {
     // not plant the unreachable address: a later scan stays honest-empty
     // instead of unicast-probing a dead host on every scan.
     // 127.0.0.1 is the silent local UDP fixture: the datagrams go out, nothing
-    // ever answers — sweep (2x400ms) + verify (2x800ms) bound the wait.
+    // ever answers, sweep (2x400ms) + verify (2x800ms) bound the wait.
     let engine = new_engine_with(FakeScanner::empty()).await;
     let mut client = engine.attach(None).await;
     drain_snapshot(&mut client).await;
@@ -1150,7 +1115,7 @@ async fn connect_silent_desk_fails_without_planting_addr() {
     // The failed connect leaves the old driver active (retry-safe).
     assert_eq!(engine.active_driver(), "sim");
     // No phantom row: a scan still honestly reports nothing (and stays
-    // fast — no dead address to re-verify).
+    // fast, no dead address to re-verify).
     client.send(Cmd::Scan).await.unwrap();
     let event = wait_for(&mut client, |e| matches!(e, Event::Devices { .. })).await;
     let v = ev_json(&event);

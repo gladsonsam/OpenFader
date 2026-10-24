@@ -1,7 +1,5 @@
-// Channel identity bar. Neutral icon area (44px) above a solid colour name label (32px);
-// total 76px in the strip variant. The engine carries no icon or
-// tape colour, so the icon area stays empty and the tape colour comes
-// from the channel position (CHAN_TAPE, mod 8) via the parent.
+// The engine carries no icon or tape colour, so the icon area stays empty
+// and the tape comes from the parent (position mod 8).
 import 'package:flutter/material.dart';
 import '../palette.dart';
 
@@ -32,7 +30,6 @@ class U4NameBar extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Icon area: 44px neutral well (no icon data in the engine feed).
           const SizedBox(height: 44),
           Container(
             height: 32,

@@ -1,15 +1,7 @@
-// Meter-bridge screen: grouped 0..-50 dB ladders with bottom scribbles, peak-hold + clip where
-// the engine has the data. Read-only: ladders never dispatch, so this file
-// sends no fader/mute/pan commands.
-//
-// Wiring: renders through [MetersStore] (constructor injection — no global
-// singleton, so this never fights the Area A worker). Levels come ONLY
-// from the live engine path via the store: offline every ladder reads
-// -inf (dark, never sim-animated, never faked). The screen owns no meter
-// loop of its own; freshness comes from the single shell-owned 80 ms loop
-// (AppShell -> AppStore.pollMeters) and this page only sends
-// `spectrum_target` (the visible strip) while visible, clearing it on
-// dispose — mirroring the web overlay behaviour.
+// Meter bridge: read-only ladders, so this file sends no fader/mute/pan commands.
+// Offline ladders read -inf and render dark because levels come only from the live engine.
+// Freshness comes from the single shell-owned 80 ms loop; this page sends
+// spectrum_target for the visible strip while visible and clears it on dispose.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -17,21 +9,17 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../palette.dart';
 
-/// Meter scale (mixer control software pattern: 0..-50 dB).
 const bridgeTopDb = 0.0;
 const bridgeFloorDb = -50.0;
 
-/// One ladder: a global strip slot on the live world.
 class BridgeLadder {
   final int ch;
-  final String? label; // live strip name when online, null offline
-  final String sub; // family-relative number, e.g. `3`
+  final String? label;
+  final String sub;
 
   const BridgeLadder({required this.ch, this.label, required this.sub});
 }
 
-/// One pattern group: ladders when the desk has the strips, else collapsed
-/// with a reason (never phantom ladders).
 class BridgeGroup {
   final String key;
   final String title;
@@ -46,8 +34,7 @@ class BridgeGroup {
   });
 }
 
-/// Live tap for one strip. Level is dB; [double.negativeInfinity] means
-/// honestly no data (offline / no verified tap) and renders dark.
+// double.negativeInfinity means honestly no data, so the ladder renders dark.
 class BridgeTap {
   final ValueNotifier<double> db;
   final ValueNotifier<double> peakDb;
@@ -68,9 +55,7 @@ class BridgeTap {
   }
 }
 
-/// Minimal store contract the bridge renders. Implemented by the
-/// shell/owner over the live engine; offline the groups collapse and every
-/// tap reads -inf.
+// Implemented by the shell over the live engine; offline groups collapse.
 abstract class MetersStore extends ChangeNotifier {
   bool get online;
   bool get demo;
@@ -78,10 +63,8 @@ abstract class MetersStore extends ChangeNotifier {
   List<BridgeGroup> get groups;
   BridgeTap tapOf(int ch);
 
-  /// 80 ms meter-loop target: pull engine levels into the taps in place.
   Future<void> pollMeters();
 
-  /// `spectrum_target` cmd surface: the visible strip (or null to clear).
   void setSpectrumTarget(int? ch);
 }
 
@@ -105,7 +88,7 @@ class _U4MetersPageState extends State<U4MetersPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _retarget());
   }
 
-  /// Keep the spectrum target on the first visible ladder.
+  /// Analyser follows the first visible ladder.
   void _retarget() {
     int? first;
     for (final g in widget.store.groups) {
@@ -400,7 +383,6 @@ class _CollapsedGroup extends StatelessWidget {
   }
 }
 
-/// One read-only bridge ladder: CustomPainter column + scribble below.
 class _Ladder extends StatefulWidget {
   final BridgeLadder ladder;
   final BridgeTap tap;
@@ -519,11 +501,9 @@ class _LadderPainter extends CustomPainter {
     final hasData = db.isFinite;
     final lv = hasData ? db.clamp(bridgeFloorDb, bridgeTopDb) : bridgeFloorDb;
 
-    // Column well.
     canvas.drawRect(
         Rect.fromLTWH(colL, colTop, colW, h), Paint()..color = palette.well);
 
-    // Fill from the bottom up, banded red >= -6 / amber >= -12 / green.
     if (hasData && lv > bridgeFloorDb) {
       final fillY = _yOf(lv, colTop, h);
       for (final band in [
@@ -541,7 +521,6 @@ class _LadderPainter extends CustomPainter {
       }
     }
 
-    // Scale ticks + labels (0/-12/-24/-36/-50) in the left gutter.
     for (final mark in const [0.0, -12.0, -24.0, -36.0, -50.0]) {
       final y = _yOf(mark, colTop, h);
       canvas.drawRect(Rect.fromLTWH(colL - 4, y - 0.5, 4, 1),
@@ -550,7 +529,6 @@ class _LadderPainter extends CustomPainter {
       tp.paint(canvas, Offset(colL - 5 - tp.width, y - tp.height / 2));
     }
 
-    // Peak-hold line (2px), hidden without data.
     final peak = tap.peakDb.value;
     if (hasData && peak.isFinite && peak > bridgeFloorDb) {
       final py = _yOf(peak.clamp(bridgeFloorDb, bridgeTopDb), colTop, h)
@@ -559,7 +537,6 @@ class _LadderPainter extends CustomPainter {
           Rect.fromLTWH(colL, py, colW, 2), Paint()..color = palette.peakLine);
     }
 
-    // Clip square above the column.
     canvas.drawRect(
       Rect.fromLTWH(colL + 1, 0, clipS, clipS),
       Paint()..color = tap.clip.value ? palette.clipOn : palette.clipOff,

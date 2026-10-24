@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../palette.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-/// Outline artwork supplied in the final HTML handoff, in its 24-unit grid.
+/// Paths use a 24-unit grid (viewBox 0 0 24 24).
 enum DesignSymbol {
   menu,
   routing,

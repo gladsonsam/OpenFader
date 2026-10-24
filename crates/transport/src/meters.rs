@@ -14,13 +14,13 @@
 //!
 //! Address forms: driver-subscribes get blobs addressed `/meters/N`, while
 //! app-style `/batchsubscribe` gets the SAME blobs addressed `meters/N`
-//! (no leading slash — rig-verified 2026-10-19, XR18 FW 1.20; see
+//! (no leading slash, rig-verified 2026-10-19, XR18 FW 1.20; see
 //! mixer control software protocol map §4). Both forms route into the parse path.
 //!
 //! Blob census (rig lengths): m0:20B m1:84B m2:76B m3:116B m4:204B
 //! m5:92B m6:82B m7:36B m8:12B m9:12B; the first 4 bytes are the LE i32
 //! sample count on all ten (the old "first le16 = sample-count − 2, no
-//! header" reading saw the count word's low half — corrected 2026-10-20).
+//! header" reading saw the count word's low half, corrected 2026-10-20).
 //! Per-strip index mapping is claimed ONLY where live-verified (see the
 //! xair driver's `poll_meters`); this parser makes no per-strip claims.
 //!
@@ -45,7 +45,7 @@ pub const METER_CAPACITY: usize = 32;
 
 pub fn is_meter_addr(addr: &str) -> bool {
     // Level streams only: `/meters/4` is RTA100 audio-frequency data;
-    // `/meters/6` is the ALL DYN (GR) blob — signed
+    // `/meters/6` is the ALL DYN (GR) blob, signed
     // 1/256 dB samples behind a 4-byte size word, not levels. It must not
     // enter the level hub (it would decode as ~41 garbage levels and
     // clobber the level cache); GR arrives via `ingest_dyn_message`.
@@ -57,7 +57,7 @@ pub fn is_meter_addr(addr: &str) -> bool {
     addr == "/meters"
         || addr.starts_with("/meters/")
         // Desk-addressed meter blobs arrive WITHOUT the leading slash
-        // (`meters/N`, rig-verified 2026-10-19 — the `/batchsubscribe`
+        // (`meters/N`, rig-verified 2026-10-19, the `/batchsubscribe`
         // reply form). No-slash traffic has no other known source, and the
         // payload gate in `parse_meter_message` (blob/float args required)
         // keeps stray messages out anyway.
@@ -65,12 +65,10 @@ pub fn is_meter_addr(addr: &str) -> bool {
         || addr.starts_with("meters/")
 }
 
-/// Normalize one LE i16 sample to 0.0..1.0.
 fn sample_to_level(raw: i16) -> f32 {
     (raw as f32 / 32767.0).clamp(0.0, 1.0)
 }
 
-/// One X-Air dBFSx256 sample to linear 0.0..1.0.
 fn xair_sample_to_level(raw: i16) -> f32 {
     if raw == i16::MIN {
         return 0.0; // -128 dB floor sentinel = silence
@@ -102,7 +100,6 @@ pub fn parse_xair_meter_blob(blob: &[u8]) -> Option<Vec<f32>> {
     Some(out)
 }
 
-/// Parse a blob payload (LE i16 run) into levels.
 pub fn parse_meter_blob(blob: &[u8]) -> Vec<f32> {
     blob.as_chunks::<2>().0.iter()
         .map(|c| sample_to_level(i16::from_le_bytes([c[0], c[1]])))
@@ -191,7 +188,6 @@ impl MeterRing {
     }
 }
 
-/// Broadcast hub for meter frames.
 pub struct MeterHub {
     tx: broadcast::Sender<MeterFrame>,
 }
@@ -228,7 +224,6 @@ impl MeterHub {
         Ok(n)
     }
 
-    /// Best-effort push: ok when nobody listens (headless use).
     pub fn push_lossy(&self, frame: MeterFrame) {
         let _ = self.tx.send(frame);
     }
@@ -312,7 +307,6 @@ mod tests {
         assert_eq!(n, 1);
         let frame = rx.try_recv().unwrap();
         assert_eq!(frame.levels, vec![0.5, 0.25]);
-        // Lossy push never errors, even with nobody listening.
         drop(rx);
         hub.push_lossy(MeterFrame::silent(2));
     }
@@ -325,7 +319,6 @@ mod tests {
             let blob = vec![0xABu8; len];
             let _ = parse_meter_blob(&blob);
         }
-        // Odd length drops the trailing byte, keeps the rest.
         assert_eq!(parse_meter_blob(&[0xFF, 0x7F, 0x00]).len(), 1);
         assert!(parse_meter_blob(&[]).is_empty());
     }
@@ -334,19 +327,16 @@ mod tests {
     /// (non-meter addrs, empty payloads) stay `None`.
     #[test]
     fn garbage_meter_messages_never_panic() {
-        // Non-meter addr with garbage blob: None.
         let junk = OscMessage {
             addr: "/ch/01/mix/fader".into(),
             args: vec![OscType::Blob(vec![0xFFu8; 37])],
         };
         assert!(parse_meter_message(&junk).is_none());
-        // Meter addr, no args: None (empty payload).
         let bare = OscMessage {
             addr: "/meters/1".into(),
             args: vec![],
         };
         assert!(parse_meter_message(&bare).is_none());
-        // Meter addr with empty + odd + garbage blobs: no panic either way.
         for blob in [vec![], vec![0x00], vec![0xFFu8; 37], vec![0xABu8; 100]] {
             let msg = OscMessage {
                 addr: "/meters/1".into(),
@@ -354,7 +344,6 @@ mod tests {
             };
             let _ = parse_meter_message(&msg);
         }
-        // Meter addr with garbage strings/ints: no panic.
         let mixed = OscMessage {
             addr: "/meters/0".into(),
             args: vec![
@@ -373,13 +362,13 @@ mod tests {
 
     /// Blob census from mixer control software protocol map §4 (lengths
     /// rig-verified 2026-10-19; FORMAT corrected 2026-10-20: the first 4
-    /// bytes are a LE i32 sample count, samples are dBFSx256 — the old
+    /// bytes are a LE i32 sample count, samples are dBFSx256, the old
     /// "first le16 = count − 2, no header" reading saw the count word's
     /// low half). Census-shaped blobs take the X-Air path with exactly
     /// `count` levels; a −256 raw sample reads −1 dB; the floor sentinel
     /// reads silence; legacy/fake shapes must NOT match the X-Air form;
     /// both the slashed and the desk no-slash address forms route into
-    /// the parser — except the DYN `/meters/6` blob, which must stay out
+    /// the parser, except the DYN `/meters/6` blob, which must stay out
     /// of the level path in both forms.
     #[test]
     fn census_lengths_parse_count_word_form() {
@@ -440,8 +429,6 @@ mod tests {
         assert!(parse_xair_meter_blob(&[0xFFu8; 100]).is_none());
     }
 
-    /// No-slash address matching: the desk's `meters/N` form (and bare
-    /// `meters`) counts as a meter addr; anything else without a slash does not.
     #[test]
     fn no_slash_addr_matching() {
         assert!(is_meter_addr("meters"));

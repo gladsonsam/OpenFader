@@ -1,18 +1,12 @@
-// Area D: connection screen (scan/probe/connect/disconnect; reads
-// devices/link/info/clients). The relay
-// link itself never renders here — this screen is only about desks.
-//
-// Wiring: everything flows through [ConnectionStore] (constructor
-// injection — Area A implements it over the engine; this file only renders
-// ui4 tokens, see lib/theme.dart). No Material Card/AppBar/Switch/Slider;
-// plain text buttons only.
+// Connection screen: scan, probe, connect, and disconnect desks.
+// Screens stay constructor-injected so Area A can implement the store.
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../palette.dart';
 import '../widgets/console_button.dart';
 
-/// Manual connection choice. Automatic retains the existing X-Air probe path.
+// Automatic keeps the existing probe path.
 enum MixerType {
   automatic('Automatic', 'auto'),
   xair('Behringer X-Air', 'xair'),
@@ -26,7 +20,6 @@ enum MixerType {
       .firstWhere((type) => type.driver == driver, orElse: () => automatic);
 }
 
-/// Shared manual-entry field, using the current console palette.
 class MixerTypeField extends StatelessWidget {
   final MixerType value;
   final ValueChanged<MixerType>? onChanged;
@@ -65,7 +58,6 @@ class MixerTypeField extends StatelessWidget {
   }
 }
 
-/// One discovered desk row (engine `devices` event entry).
 class ConnDevice {
   final String id;
   final String name;
@@ -84,8 +76,7 @@ class ConnDevice {
   });
 }
 
-/// Minimal store contract the connection screen renders. Implemented by
-/// the shell/owner over the live engine.
+// Implemented by the shell over the live engine.
 abstract class ConnectionStore extends ChangeNotifier {
   String get title;
   String get sub;
@@ -100,30 +91,27 @@ abstract class ConnectionStore extends ChangeNotifier {
   List<ConnDevice> get devices;
   String? get emptyText;
 
-  /// IP/hostname of an engine-known device id, or '' when unknown.
-  /// Lets the start screen probe a row directly (with retry + errors)
-  /// instead of parsing the display string.
+  // Lets the start screen probe a row directly instead of parsing the display string.
   String hostOf(String id);
   String canonicalHost(String host);
 
-  /// IP/hostname of the current link, or '' when none/sim.
   String get connectedHost;
-  String get linkInfo; // link state/name/ip/rtt line
-  String get deskInfo; // info model/fw line
+  String get linkInfo;
+  String get deskInfo;
   int get clientCount;
   List<String> get writers;
 
-  void scan(); // network discovery
+  void scan();
   void refreshKnown(List<String> hosts);
   String? checkStatusOf(String host);
   MixerType get lastMixerType;
   String get connectionProgress;
   void probe(String addr, {MixerType mixerType = MixerType.automatic});
-  Future<void> retryProbe(); // retry the last address and mixer type
-  void connectDevice(String id); // cmd connect_device
-  void connectSim(); // offline demo desk
-  void disconnect(); // cmd disconnect
-  void requestInfo(); // cmd info
+  Future<void> retryProbe();
+  void connectDevice(String id);
+  void connectSim();
+  void disconnect();
+  void requestInfo();
   void clearError();
   Future<bool> ensurePermissions();
 }

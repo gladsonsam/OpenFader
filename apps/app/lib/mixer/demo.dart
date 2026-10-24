@@ -1,4 +1,3 @@
-// Demo seed and processing fallback extracted from the owner's HTML.
 // Live faders, meters and processing parameters come from the engine.
 class MixerDemoStrip {
   final String name;

@@ -2,7 +2,7 @@ import '../palette.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-/// Main scribble from the final HTML; the channel name belongs in its plate.
+/// The channel name stays in its plate, so this draws only the scribble mark.
 class MixerMainArtwork extends StatelessWidget {
   const MixerMainArtwork({super.key});
   @override

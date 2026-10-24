@@ -9,30 +9,25 @@
 //! `eq{1..4}_*`. Every id resolves on every driver whose capabilities cover
 //! it (sim covers the whole catalogue; X-Air covers the loopback-tested
 //! param plane). No sends (mix-dependent), no unverified comp/gate timing
-//! words — those stay the engineer's call on the desk.
+//! words, those stay the engineer's call on the desk.
 //!
 //! Values are STARTING POINTS, not targets: HPFs sit at the safe end,
 //! cuts are shallow (-2..-3 dB), boosts cap at +3 dB, ratios at 2:1..4:1.
 //! The engineer still dials in against the room and the source.
-//! These values ship to every client — keep them conservative.
+//! These values ship to every client, keep them conservative.
 
 use crate::{MixerDriver, ParamValue, StripId};
 
-/// One field assignment in a preset.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PresetSetting {
     pub field: &'static str,
     pub value: ParamValue,
 }
 
-/// A factory strip starting point.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChannelPreset {
-    /// Stable id (`"kick"`, `"vox"`, …).
     pub id: &'static str,
-    /// Display name.
     pub label: &'static str,
-    /// Family for the picker grouping (`"Drums"`, `"Instruments"`, …).
     pub group: &'static str,
     /// One-line conservative-use note shown in the preview.
     pub blurb: &'static str,
@@ -198,7 +193,7 @@ static PLAYBACK: &[PresetSetting] = &[
     f("eq4_freq", 12000.0),
 ];
 
-/// The ten factory presets, in picker order.
+/// Factory presets in picker order.
 pub static PRESETS: &[ChannelPreset] = &[
     ChannelPreset {
         id: "kick",
@@ -277,7 +272,7 @@ pub fn preset_by_id(id: &str) -> Option<&'static ChannelPreset> {
     PRESETS.iter().find(|p| p.id == id)
 }
 
-/// Apply a preset to one strip via the existing `set_param` path —
+/// Apply a preset to one strip via the existing `set_param` path 
 /// no driver changes. Bails on the first rejected field.
 pub async fn apply_preset<D: MixerDriver + Sync + ?Sized>(
     driver: &D,

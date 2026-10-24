@@ -13,12 +13,10 @@
 pub const FX_SLOT_COUNT: usize = 4;
 /// First slot number (wire convention is 1-based).
 pub const FX_SLOT_MIN: u8 = 1;
-/// Last slot number.
 pub const FX_SLOT_MAX: u8 = 4;
 /// Params per slot, 0-based indices `0..FX_PARAM_COUNT` (wire: +1).
 pub const FX_PARAM_COUNT: usize = 64;
 
-/// Validated FX slot number.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FxSlot(u8);
 
@@ -33,7 +31,6 @@ impl FxSlot {
     }
 }
 
-/// Validated (slot, param-index) address.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FxParamAddr {
     pub slot: FxSlot,
@@ -49,7 +46,6 @@ impl FxParamAddr {
     }
 }
 
-/// Slot number must be 1..=4.
 pub fn validate_slot(slot: u8) -> anyhow::Result<u8> {
     if !(FX_SLOT_MIN..=FX_SLOT_MAX).contains(&slot) {
         anyhow::bail!("fx slot {slot} out of range {FX_SLOT_MIN}..={FX_SLOT_MAX}");
@@ -57,7 +53,6 @@ pub fn validate_slot(slot: u8) -> anyhow::Result<u8> {
     Ok(slot)
 }
 
-/// Param index must be 0..64.
 pub fn validate_param_index(index: u8) -> anyhow::Result<u8> {
     if index as usize >= FX_PARAM_COUNT {
         anyhow::bail!("fx param index {index} out of range 0..{FX_PARAM_COUNT}");
@@ -65,7 +60,6 @@ pub fn validate_param_index(index: u8) -> anyhow::Result<u8> {
     Ok(index)
 }
 
-/// Param values are normalized 0.0..=1.0.
 pub fn validate_param_value(value: f32) -> anyhow::Result<f32> {
     if !value.is_finite() {
         anyhow::bail!("fx param must be finite, got {value}");
@@ -76,8 +70,6 @@ pub fn validate_param_value(value: f32) -> anyhow::Result<f32> {
     Ok(value)
 }
 
-/// In-memory rack: 4 × 64 normalized params. Drivers persist this to the
-/// mixer once address mapping lands.
 #[derive(Clone, Debug)]
 pub struct FxRack {
     values: [[f32; FX_PARAM_COUNT]; FX_SLOT_COUNT],
@@ -119,31 +111,24 @@ impl Default for FxRack {
 // the engineering range the UI formats into, `default` is the design's
 // seeded normalized value, `scale` hints the formatter law (`lin`/`log`).
 //
-// Ranges here are display strings from the design, NOT desk documents —
+// Ranges here are display strings from the design, NOT desk documents 
 // never assert them against hardware. Desk-native algorithms (X-Air 61
 // effect types) keep their own table in `crates/proto-xair/src/fx.rs`.
 // ---------------------------------------------------------------------------
 
-/// One FX param in a design type table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FxParamMeta {
-    /// Stable param id (e.g. `"decay"`, `"mix"`).
     pub id: &'static str,
-    /// Display label (e.g. `"Pre-delay"`, `"Hi Damp"`).
     pub label: &'static str,
-    /// Display unit (`"s"`, `"ms"`, `"Hz"`, `"%"`, `""` when unitless).
     pub unit: &'static str,
     /// Engineering range minimum (display only).
     pub min: f32,
     /// Engineering range maximum (display only).
     pub max: f32,
-    /// Design-seeded normalized default (0.0..=1.0).
     pub default: f32,
-    /// Formatter law hint (`"lin"` or `"log"`).
     pub scale: &'static str,
 }
 
-/// One design FX type: id + display label + param table.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct FxTypeMeta {
     pub id: &'static str,
@@ -235,7 +220,6 @@ mod tests {
         rack.set(4, 63, 1.0).unwrap();
         assert_eq!(rack.get(1, 0).unwrap(), 0.75);
         assert_eq!(rack.get(4, 63).unwrap(), 1.0);
-        // Untouched params read back zero.
         assert_eq!(rack.get(2, 10).unwrap(), 0.0);
     }
 
@@ -270,7 +254,6 @@ mod tests {
         // Six types in UI order; labels mirror design-logic fxDefs.
         let labels: Vec<&str> = FX_TYPES.iter().map(|t| t.label).collect();
         assert_eq!(labels, vec!["Hall", "Plate", "Room", "Delay", "Chorus", "Flanger"]);
-        // Reverb-likes carry Decay/Pre-delay/Size/Hi Damp/Mix.
         for id in ["Hall", "Plate", "Room"] {
             let t = fx_type_meta(id).unwrap();
             let labels: Vec<&str> = t.params.iter().map(|p| p.label).collect();
@@ -290,7 +273,6 @@ mod tests {
         assert_eq!(fx_default_params("Hall"), vec![0.42, 0.15, 0.6, 0.55, 1.0]);
         assert_eq!(fx_default_params("Chorus"), vec![0.4, 0.5, 0.6, 1.0]);
         assert_eq!(DESIGN_FX_DEFAULT_TYPES.len(), 8);
-        // Lookup is case-insensitive over id and label.
         assert_eq!(fx_type_meta("hall").unwrap().label, "Hall");
         assert!(fx_type_meta("Reverb").is_none());
     }

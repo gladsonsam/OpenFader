@@ -25,14 +25,10 @@
 //! catalogue row is a plain enum. Do not invent an FX-slot meaning here.
 use rosc::OscType;
 
-/// Lowest insert-select value on `{root}/insert/sel`.
 pub const INSERT_SEL_MIN: i32 = 0;
 /// Highest insert-select value (writes above this are ignored by the desk).
 pub const INSERT_SEL_MAX: i32 = 8;
 
-/// OSC address of one strip's insert bypass switch (`insert/on`, int
-/// `1` = inserted / `0` = bypassed).
-///
 /// ```
 /// # use openfader_proto_xair::insert::insert_on;
 /// assert_eq!(insert_on("/ch/01"), "/ch/01/insert/on");
@@ -43,8 +39,6 @@ pub fn insert_on(root: &str) -> String {
     format!("{root}/insert/on")
 }
 
-/// OSC address of one strip's insert select (`insert/sel`, int `0..=8`).
-///
 /// ```
 /// # use openfader_proto_xair::insert::insert_sel;
 /// assert_eq!(insert_sel("/ch/15"), "/ch/15/insert/sel");
@@ -54,8 +48,7 @@ pub fn insert_sel(root: &str) -> String {
     format!("{root}/insert/sel")
 }
 
-/// Encode an insert-select value (`0..=8`) to the wire int. Validated
-/// BEFORE any I/O so out-of-range never hits the desk.
+/// Validated before any I/O so out-of-range never hits the desk.
 pub fn sel_to_arg(v: f32) -> anyhow::Result<OscType> {
     if !v.is_finite() || v.fract() != 0.0 {
         anyhow::bail!("insert sel must be a whole number, got {v}");
@@ -67,7 +60,6 @@ pub fn sel_to_arg(v: f32) -> anyhow::Result<OscType> {
     Ok(OscType::Int(i))
 }
 
-/// Decode an `insert/sel` reply to its raw int value.
 pub fn sel_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<i32> {
     match msg.args.first() {
         Some(OscType::Int(i)) => {

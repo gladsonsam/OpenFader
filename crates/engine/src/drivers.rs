@@ -282,7 +282,7 @@ pub trait DynDriver: Send + Sync {
         false
     }
     /// Probe-table driver for manual add-by-IP (`None` = no probe table,
-    /// an honest error). The sim-backed relay probes with the xair table.
+    /// an honest error).
     fn probe_table(&self) -> Option<&'static str> {
         None
     }
@@ -340,7 +340,7 @@ pub trait DynDriver: Send + Sync {
     ///
     /// `false`: `get_param` serves the same push cache the writes populate
     /// (DL32S: the desk never echoes own writes and there is no per-param
-    /// query — only pushes). Any post-write "agreement" would be our own
+    /// query, only pushes). Any post-write "agreement" would be our own
     /// optimism, not the desk, so the engine must NOT treat it as
     /// confirmation: `refresh_param` short-circuits to `None` and the write
     /// echo goes out as `accepted` (write ACK, no value proof). Standard
@@ -461,7 +461,7 @@ pub trait DynDriver: Send + Sync {
 
 /// Implement [`DynDriver`] for one concrete driver: forward the whole
 /// [`MixerDriver`] surface (fully-qualified calls dodge inherent-method
-/// shadowing — some drivers expose native same-named methods with
+/// shadowing, some drivers expose native same-named methods with
 /// different signatures) plus the driver-specific `$ext` items. Emitted as
 /// a single `#[async_trait]` impl so the attribute sees every `async fn`.
 macro_rules! impl_dyn_driver {
@@ -827,7 +827,7 @@ impl_dyn_driver!(openfader_sim::SimDriver {
 impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 
     /// Mute-group membership rides the strip `{root}/grp/mute` bitmask
-    /// (rig-verified XR18 FW 1.20, 2026-10-20 — the driver serves
+    /// (rig-verified XR18 FW 1.20, 2026-10-20, the driver serves
     /// `get/set_mute_group_assign`, so attach snapshots and the
     /// `MuteGroupAssign` command work). No subgroup leaf exists on X-Air
     /// (subgroups are a DL32S/sim concept), so subgroup assign stays
@@ -991,7 +991,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
     }
     /// Desk-native type select (`/fx/N/type`, rig-verified 2026-10-19):
     /// resolve the caps-advertised name (short code `id` like `HALL`/`VRM`
-    /// or full display `label` like `Hall Reverb` — same `proto-xair`
+    /// or full display `label` like `Hall Reverb`, same `proto-xair`
     /// effect table behind `caps.fx`) to the firmware index, then write
     /// it. Unknown names bail locally, never hitting the desk.
     async fn fx_set_type(&self, slot: u8, fx_type: &str) -> anyhow::Result<()> {
@@ -1128,11 +1128,11 @@ pub struct RegisteredDriver {
 impl RegisteredDriver {
     /// Merged param registry for this provider: the canonical catalogue
     /// plus the driver's contributed [`DynDriver::param_defs`] rows
-    /// (canonical ids win on collision — see
+    /// (canonical ids win on collision, see
     /// [`ParamRegistry::register`](openfader_core::params::ParamRegistry::register)),
     /// then the driver's
     /// [`DynDriver::param_range_overrides`] bounds over the canonical rows
-    /// (ranges only — kinds, scopes and defaults are untouched, and every
+    /// (ranges only, kinds, scopes and defaults are untouched, and every
     /// other provider keeps canonical ranges). The engine builds one per
     /// driver at boot and resolves every caps / poll / snapshot / recall
     /// path through it, so a mixer with unique DSP arrives without editing

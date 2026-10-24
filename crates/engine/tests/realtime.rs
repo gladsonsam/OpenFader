@@ -66,7 +66,6 @@ async fn hello_negotiates_binary_meters() {
         "binary defaults off (JSON for old clients)"
     );
 
-    // Opt in: unicast ack carries the new preference, flag flips.
     a.send_json(r#"{"cmd":"hello","binary_meters":true}"#)
         .await
         .unwrap();
@@ -78,7 +77,6 @@ async fn hello_negotiates_binary_meters() {
     );
     assert!(engine.client_binary_meters(&a.id));
 
-    // Bare hello re-acks the current preference without changing it.
     a.send_json(r#"{"cmd":"hello"}"#).await.unwrap();
     let ack = wait_for(&mut a, |e| matches!(e, Event::Hello { .. })).await;
     assert_eq!(
@@ -87,7 +85,6 @@ async fn hello_negotiates_binary_meters() {
     );
     assert!(engine.client_binary_meters(&a.id));
 
-    // Opt out again.
     a.send_json(r#"{"cmd":"hello","binary_meters":false}"#)
         .await
         .unwrap();
@@ -98,7 +95,6 @@ async fn hello_negotiates_binary_meters() {
     );
     assert!(!engine.client_binary_meters(&a.id));
 
-    // Unknown clients read false; bad shapes stay unicast errors.
     assert!(!engine.client_binary_meters("client-999"));
     a.send_json(r#"{"cmd":"hello","binary_meters":"yes"}"#)
         .await
@@ -323,7 +319,6 @@ async fn write_latency_p99_under_saturation() {
     let mut me = engine.attach(Some("writer".to_string())).await;
     drain_snapshot(&mut me).await;
 
-    // Warm up (caches, allocator, runtime).
     for i in 0..50u16 {
         me.send(Cmd::Fader {
             ch: i % 32,
@@ -333,7 +328,6 @@ async fn write_latency_p99_under_saturation() {
     }
     while me.events.try_recv().is_ok() {}
 
-    // Measure all four write lanes round-robin.
     let n = 2000usize;
     let mut dts: Vec<Duration> = Vec::with_capacity(n);
     for i in 0..n {

@@ -1,7 +1,6 @@
-// Cmd JSON builders (client -> engine) and Event JSON parsers
-// (engine -> client). Same wire protocol as the WS relay:
-// `openfader_engine::protocol::{Cmd, Event}` serialization, byte
-// identical. Unknown event types are ignored so old/new engines interop.
+// Cmd builders (client -> engine) and Event parsers (engine -> client).
+// Same wire protocol as the WS relay (`openfader_engine::protocol`);
+// unknown event types are ignored for interop.
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -231,7 +230,7 @@ class AudioSpectrumFrame {
   }
 }
 
-/// One mixer strip as carried by the `state` event.
+/// One mixer strip as carried by the state event.
 class Strip {
   final int ch;
   final String key;
@@ -256,8 +255,8 @@ class Strip {
       );
 }
 
-/// Build the Cmd JSON strings the engine accepts (see
-/// `crates/engine/src/protocol.rs` `Cmd::known_tags`).
+/// Cmd JSON strings the engine accepts (see `Cmd::known_tags` in
+/// `crates/engine/src/protocol.rs`).
 class Cmds {
   static String connectSim() => '{"cmd":"connect","driver":"sim"}';
   static String connect([String driver = 'sim', String? addr]) => addr == null
@@ -353,23 +352,21 @@ class Cmds {
 }
 
 // ---------------------------------------------------------------------------
-// EngineApi: transport behind the UI. `FfiEngine` (see `ffi_engine.dart`)
-// drives the real embedded engine via the FRB bindings; `FakeSimEngine`
-// (in `boot/fake_sim_engine.dart`) drives the same Cmd/Event JSON in-memory so the UI
-// works even when the native library fails to load.
+// EngineApi: transport behind the UI. `FfiEngine` drives the real embedded
+// engine; the sim engine drives the same Cmd/Event JSON in memory.
 // ---------------------------------------------------------------------------
 abstract class EngineApi {
   Future<String> boot();
   Future<void> cmd(String clientId, String json);
   Future<List<String>> poll(String clientId, int cap);
-  // Hot meter path: length-prefixed binary frames (see [splitBinaryBatch]);
-  // non-meter events stay on [poll] (JSON fallback, never lost).
+  // Hot meter path: length-prefixed binary frames; non-meter events stay
+  // on [poll] (JSON fallback, never lost).
   Future<Uint8List> pollBinary(String clientId, int cap);
   Future<void> resync(String clientId);
 }
 
 // ---------------------------------------------------------------------------
-// Binary frames (SPEC 2a `seq`/`t_ms` header + protocol.rs constants).
+// Binary frames (SPEC 2a header + protocol.rs constants).
 // ---------------------------------------------------------------------------
 const int binTypeMeters = 1;
 const int binTypeGr = 2;
@@ -411,8 +408,7 @@ class BinaryFrame {
 
 const List<String> _tapNames = ['in', 'post', 'gr_gate', 'gr_comp'];
 
-/// Decode one WS BINARY frame. Returns null for short/unknown frames —
-/// never throws.
+/// Decode one WS BINARY frame. Returns null for short or unknown frames.
 BinaryFrame? parseBinary(Uint8List bytes) {
   if (bytes.length < binHeaderLen) return null;
   if (bytes[1] != binVersion) return null;
@@ -448,13 +444,9 @@ BinaryFrame? parseBinary(Uint8List bytes) {
   return null;
 }
 
-/// Split one `pollBinary` blob into its individual binary frames.
-///
 /// Inverse of the Rust `encode_binary_batch`
-/// (`crates/flutter_bridge/src/api.rs`): repeated
-/// `[u32 LE frame_len][frame bytes...]`, each frame decoded with
-/// [parseBinary]. A short/truncated tail is dropped — never throws — so a
-/// torn read degrades to fewer meter frames, never a crashed meter loop.
+/// (`crates/flutter_bridge/src/api.rs`): repeated `[u32 LE len][frame]`.
+/// A short trailing tail is dropped, so a torn read degrades gracefully.
 List<Uint8List> splitBinaryBatch(Uint8List blob) {
   final out = <Uint8List>[];
   if (blob.isEmpty) return out;
@@ -472,7 +464,7 @@ List<Uint8List> splitBinaryBatch(Uint8List blob) {
 
 // ---------------------------------------------------------------------------
 // EngineState: parsed snapshot of the engine frames the app renders.
-// Unknown event types are ignored so old/new engines interop.
+// Unknown event types are ignored for interop.
 // ---------------------------------------------------------------------------
 
 class SceneEntry {
@@ -546,7 +538,7 @@ class EngineState {
   double? mainFader;
   bool? mainMuted;
   Set<int> solos = {};
-  Map<int, Map<String, Object>> params = {}; // ch -> field -> value
+  Map<int, Map<String, Object>> params = {};
   Map<String, List<double>> taps = {}; // tap name -> levels
   Map<int, List<double>> spectrum = {}; // legacy demo magnitudes only
   AudioSpectrumFrame? audioSpectrum;
@@ -564,8 +556,8 @@ class EngineState {
   Map<int, double> subgroupFaders = {};
   Map<int, bool> subgroupMuted = {};
   Map<int, bool> muteGroups = {};
-  Map<String, bool> subgroupAssign = {}; // '$ch:$g'
-  Map<String, bool> muteGroupAssign = {}; // '$ch:$g'
+  Map<String, bool> subgroupAssign = {};
+  Map<String, bool> muteGroupAssign = {};
   Map<int, String> locks = {};
   List<SceneEntry> scenes = [];
   Map<String, List<String>> shows = {};

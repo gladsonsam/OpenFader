@@ -30,8 +30,6 @@ pub const MUTE_GROUPS: u8 = 4;
 /// Bitmask covering the valid group bits (both leaves).
 pub const GROUP_MASK: i32 = 0x0F;
 
-/// OSC address of one strip's DCA-assignment bitmask (`grp/dca`, int).
-///
 /// ```
 /// # use openfader_proto_xair::groups::grp_dca;
 /// assert_eq!(grp_dca("/ch/01"), "/ch/01/grp/dca");
@@ -41,9 +39,6 @@ pub fn grp_dca(root: &str) -> String {
     format!("{root}/grp/dca")
 }
 
-/// OSC address of one strip's mute-group-assignment bitmask
-/// (`grp/mute`, int).
-///
 /// ```
 /// # use openfader_proto_xair::groups::grp_mute;
 /// assert_eq!(grp_mute("/ch/01"), "/ch/01/grp/mute");
@@ -53,19 +48,15 @@ pub fn grp_mute(root: &str) -> String {
     format!("{root}/grp/mute")
 }
 
-/// Test bit `group` (0-based, `0..DCA_GROUPS` / `0..MUTE_GROUPS`) in a
-/// `grp/*` bitmask reply. Rejects out-of-range groups locally — the desk
-/// saturates out-of-range writes to all-bits, so an unchecked index would
-/// (mis)assign every group.
+/// Rejects out-of-range groups locally: the desk saturates them to
+/// all-bits, which would (mis)assign every group.
 pub fn mask_has(mask: i32, group: u8, what: &str) -> anyhow::Result<bool> {
     check_group(group, what)?;
     Ok(mask & (1 << group) != 0)
 }
 
-/// Set/clear bit `group` in a `grp/*` bitmask read-back (read-modify-write
-/// shape: the desk has no per-group leaf). Rejects out-of-range groups
-/// and masks the result to [`GROUP_MASK`] so upper bits never reach the
-/// desk.
+/// Read-modify-write (the desk has no per-group leaf); result masked to
+/// [`GROUP_MASK`] so upper bits never reach the desk.
 pub fn mask_with(mask: i32, group: u8, member: bool, what: &str) -> anyhow::Result<i32> {
     check_group(group, what)?;
     let bit = 1 << group;
@@ -79,7 +70,6 @@ fn check_group(group: u8, what: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Decode a `grp/*` bitmask reply (single int arg).
 pub fn mask_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<i32> {
     match msg.args.first() {
         Some(rosc::OscType::Int(i)) => Ok(*i),
@@ -102,7 +92,6 @@ mod tests {
 
     #[test]
     fn mask_bits_match_desk() {
-        // ch16 live shape: 0 → bit0 → 1; 0 + bits 0,2 → 5; 255 → 15.
         assert_eq!(mask_with(0, 0, true, "dca").unwrap(), 1);
         assert_eq!(mask_with(1, 2, true, "dca").unwrap(), 5);
         assert_eq!(mask_with(0, 0, false, "dca").unwrap(), 0);

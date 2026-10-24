@@ -1,22 +1,17 @@
-// Channel DSP view-models + write helpers:
+// Channel DSP view-models and write helpers (EQ, dynamics, sends, source).
 //
-// - EQ edits (eqParamFromDrag / eqNodeFromPos / reset tables)
-// - Dyn edits (specFromDrag / dynResetDefaults / DYN_RESET tables)
-// - View shapes (EQ_GRAPH_W/H/N, band colours/names;
-//   DYN_SIZE/LO/COLOR, 81-sample transfer curves)
-//
-// Pure Dart: no Flutter, no Area A store dependency. Writes go through an
-// injected [ChannelWrite] fn so the owner can attach its 60 Hz coalescer
-// (see [ChannelWrites]); this file never imports lib/core/store.
+// Pure Dart: no Flutter, no Area A store. Writes go through an injected
+// [ChannelWrite] so the owner can attach its own coalescing. This file never
+// imports lib/core/store.
 
 import 'dart:async';
 import 'dart:math' as math;
 
-/// Raw engine write: leaf + value (cmdParam equivalent).
+/// Raw engine write: leaf plus value.
 typedef ChannelWrite = void Function(String leaf, Object value);
 
-/// 60 Hz coalescing writer: at most one flush per [interval]; the last
-/// queued value per leaf wins. The owner passes its cmdParam as [write].
+/// Coalescing writer: at most one flush per [interval]; the last queued
+/// value per leaf wins.
 class ChannelWrites {
   final ChannelWrite _write;
   final Duration interval;
@@ -122,17 +117,15 @@ double specFromDrag(
   return min + (max - min) * n;
 }
 
-/// Normalised 0..1 position of [v] in [min]..[max].
 double toN(double min, double max, double v) =>
     ((v - min) / (max - min)).clamp(0.0, 1.0);
 
-/// Denormalise [n] (0..1) into [min]..[max].
 double fromN(double min, double max, double n) =>
     min + (max - min) * n.clamp(0.0, 1.0);
 
 enum EqBandType { low, mid, high, lowCut, highCut }
 
-/// Confirmed response shapes, using the canonical/XAir presentation values.
+/// Confirmed response shapes, using canonical/XAir presentation values.
 /// Driver-native values are translated only at the store boundary.
 enum EqFilterShape {
   lowShelf(1),
@@ -150,7 +143,7 @@ enum EqFilterShape {
   }
 }
 
-/// One EQ band view-model (bands 1..4 parametric + HPF handled separately).
+/// One EQ band view-model (bands 1..4 parametric; HPF handled separately).
 class EqBandVm {
   final int band; // 1..4
   final String name;
@@ -194,7 +187,6 @@ class EqBandVm {
       );
 }
 
-/// Full channel EQ snapshot the painters + cards render.
 class ChannelEqVm {
   final bool on;
   final double hpfF; // Hz
@@ -215,7 +207,7 @@ class ChannelEqVm {
   });
 }
 
-/// EQ graph geometry (eqModel.ts: viewBox 1000x300, N = 180 segments).
+/// EQ graph geometry (eqModel.ts viewBox 1000x300, N = 180 segments).
 class EqGraphGeom {
   static const double w = 1000;
   static const double h = 300;
@@ -225,7 +217,7 @@ class EqGraphGeom {
   static const double dbTop = 15;
   static const double dbBottom = -15;
 
-  /// Band node colours, index 0 = HPF (eqModel.ts EQ_BAND_COLORS).
+  /// Band node colours, index 0 is HPF (eqModel.ts EQ_BAND_COLORS).
   static const bandColors = <int>[
     0xFFD7DDE8,
     0xFFFF9F43,
@@ -245,7 +237,7 @@ class EqGraphGeom {
   static double dbOfY(double y) => dbTop - y / h * (dbTop - dbBottom);
 }
 
-// --- RBJ biquad magnitude response @ 48 kHz (designData.ts filters/resp) ---
+// --- RBJ biquad magnitude response at 48 kHz (designData.ts filters/resp) ---
 
 const double _fs = 48000;
 
@@ -283,7 +275,7 @@ double _peakingDb(double f0, double gainDb, double q, double f) {
 }
 
 double _shelfDb(bool high, double f0, double gainDb, double f) {
-  // S = 0.9 shelf slope (RBJ shelf, fixed slope for display).
+  // Fixed S = 0.9 shelf slope (RBJ shelf, display only).
   const s = 0.9;
   final a = math.pow(10, gainDb / 40).toDouble();
   final w0 = 2 * math.pi * f0 / _fs;
@@ -318,7 +310,7 @@ double _highpassDb(double f0, double f) {
       (1 + cw) / 2, -(1 + cw), (1 + cw) / 2, 1 + alpha, -2 * cw, 1 - alpha, f);
 }
 
-/// Summed EQ magnitude curve in dB, [EqGraphGeom.n] samples log 20..20k.
+/// Summed EQ magnitude curve in dB over [EqGraphGeom.n] log-spaced samples.
 List<double> eqResponseDb(ChannelEqVm eq) {
   final out = List<double>.filled(EqGraphGeom.n + 1, 0.0);
   if (!eq.on) return out;
@@ -352,7 +344,7 @@ List<double> eqResponseDb(ChannelEqVm eq) {
 
 enum DynKind { gate, comp }
 
-/// Dynamics snapshot for one gate/comp section.
+/// Dynamics snapshot for one gate or comp section.
 class ChannelDynVm {
   final DynKind kind;
   final Map<String, List<double>> ranges;
@@ -507,7 +499,6 @@ const tapLabels = <int, String>{
   5: 'GRP',
 };
 
-/// Preamp snapshot (preamp input-VM subset).
 class ChannelPreampVm {
   final bool hasInput;
   final double gain; // dB
@@ -530,7 +521,6 @@ class ChannelPreampVm {
   });
 }
 
-/// Source card snapshot (source input-VM subset).
 class ChannelSourceVm {
   final int? sourceA; // Opaque native routing IDs; do not infer patch labels.
   final int? sourceB;
@@ -551,25 +541,21 @@ class ChannelSourceVm {
   });
 }
 
-// --- Write helpers (leaf names match the desk param plane) ---
+// Write helpers. Leaf names match the desk param plane.
 
-/// Queue an EQ band param write through the coalescer.
 void writeEqParam(ChannelWrites w, int band, String param, double v) =>
     w.queue('eq${band}_$param', v);
 
-/// Queue a dynamics param write (gate_thr / comp_ratio / ...).
 void writeDynParam(ChannelWrites w, DynKind kind, String prop, double v) =>
     w.queue('${kind.name}_$prop', v);
 
-/// Queue a send level write.
 void writeSendLevel(ChannelWrites w, int slot, double v) =>
     w.queue('send${slot}_level', v);
 
-/// Queue a send tap write.
 void writeSendTap(ChannelWrites w, int slot, int tap) =>
     w.queue('send${slot}_tap', tap);
 
-/// Leaf names for subgroup / mute-group assignment (cmdSubgroupAssign /
+/// Leaf names for subgroup and mute-group assignment (cmdSubgroupAssign and
 /// cmdMuteGroupAssign equivalents on XR-style desks).
 String subgroupLeaf(int g) => 'subgroup_$g';
 String muteGroupLeaf(int g) => 'mute_group_$g';

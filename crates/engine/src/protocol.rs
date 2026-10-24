@@ -48,13 +48,12 @@ pub enum Cmd {
     Mute {
         ch: u16,
         muted: bool,
-        /// Stable strip key (see [`Cmd::Fader`]): authoritative when it
-        /// resolves; `ch` stays required for wire compat.
+        /// Stable strip key (see [`Cmd::Fader`]).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
     },
     /// R2 per-strip solo (`{"cmd":"solo","ch":0,"soloed":true}`, monitor
-    /// bus only — never touches the FOH mix). Sim in-memory; X-Air
+    /// bus only, never touches the FOH mix). Sim in-memory; X-Air
     /// `/-stat/solosw/NN` 1-based for channel strips (write + bank
     /// readback + clear live-verified XR18 FW 1.20 2026-10-18); honest
     /// `unsupported` elsewhere.
@@ -129,7 +128,7 @@ pub enum Cmd {
     /// discovery, but they DO answer unicast). On a reply the desk is
     /// upserted into the device list (`via: "manual"`), remembered
     /// (persisted for later scans) and the engine CONNECTS to it through
-    /// the same path as [`Cmd::ConnectDevice`] — Add-by-IP is a one-tap
+    /// the same path as [`Cmd::ConnectDevice`], Add-by-IP is a one-tap
     /// connect, and the refresh frames (`link`/`state`/`caps`/…) plus a
     /// [`Event::Devices`] frame go out. Silence is an honest error naming
     /// the address; a verified desk whose connect fails stays listed with a
@@ -254,7 +253,7 @@ pub enum Cmd {
     },
     /// R2 subgroup master fader (`{"cmd":"subgroup_fader","group":0,
     /// "value":0.75}`): 0-based over `0..subgroup_count()` (sim in-memory,
-    /// DL32S native; XR18 has no subgroups — honest `unsupported`).
+    /// DL32S native; XR18 has no subgroups, honest `unsupported`).
     SubgroupFader {
         group: u8,
         value: f32,
@@ -277,7 +276,7 @@ pub enum Cmd {
     /// R2 mute-group master mute (`{"cmd":"mute_group","group":0,
     /// "muted":true}`): 0-based over `0..mute_group_count()` (sim
     /// in-memory, DL32S native, X-Air `/config/mute/1..4` masters on XR18
-    /// FW 1.20 — assign path stays `unsupported` there, no desk leaf).
+    /// FW 1.20, assign path stays `unsupported` there, no desk leaf).
     MuteGroup {
         group: u8,
         muted: bool,
@@ -486,7 +485,7 @@ pub struct GroupsCaps {
     #[serde(default)]
     pub mute_groups: u8,
     /// Per-channel assign-leaf support: false where the desk has no
-    /// assign leaf (X-Air: no subgroup/mute-group membership leaves —
+    /// assign leaf (X-Air: no subgroup/mute-group membership leaves 
     /// masters only). The UI collapses assign toggles there (never faked).
     #[serde(default = "default_true")]
     pub mg_assign: bool,
@@ -499,8 +498,8 @@ fn default_true() -> bool {
 }
 
 /// `caps.files` (R2): desk file-transfer support behind `file_download` /
-/// `file_upload` (`supported:false` on sim? no — sim models it in-memory;
-/// false on XR18, whose OSC map has no file path).
+/// `file_upload` (sim models it in-memory; false on XR18, whose OSC map
+/// has no file path).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct FilesCaps {
     #[serde(default)]
@@ -509,7 +508,7 @@ pub struct FilesCaps {
 
 /// `caps.native_snapshots`: read-only native desk snapshot slots behind the
 /// `native_snapshots` event (`supported:false` where the driver models no
-/// native slots — the block is skipped on the wire there, so old frames
+/// native slots, the block is skipped on the wire there, so old frames
 /// stay byte-identical). `read_only` is always true when supported: no
 /// native recall/save/delete, no `Show.zip` transfer, no slot allocator
 /// and no probe ride this surface.
@@ -532,7 +531,7 @@ impl NativeSnapshotsCaps {
 /// One `native_snapshots` slot row: the desk's own slot id intact (raw
 /// `u32`, never remapped, never zero-defaulted) plus the desk-provided
 /// name. Slot ids carry no verified base (native `0` may exist as a
-/// Default — unverified) and no invented bounds/labels/count. Slots exist
+/// Default, unverified) and no invented bounds/labels/count. Slots exist
 /// ONLY from desk push evidence.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NativeSnapshotEntry {
@@ -669,7 +668,7 @@ pub enum Event {
         #[serde(skip_serializing_if = "Option::is_none", default)]
         by: Option<String>,
         /// Readback provenance for this value (R2 preset-truth contract):
-        /// - `"verified"`: the value carries desk evidence — a poll read, a
+        /// - `"verified"`: the value carries desk evidence, a poll read, a
         ///   desk push, or a post-write re-read that agreed with the write.
         ///   The engine only caches values with this provenance.
         /// - `"accepted"`: the write was accepted by the desk (or queued to
@@ -746,7 +745,7 @@ pub enum Event {
         /// Per-param readback provenance, same vocabulary as the `param`
         /// event's `authority` field: only the explicit value `"verified"`
         /// counts as desk proof (per-key: `authority[field] == "verified"`).
-        /// Absent (or absent for a key) means UNKNOWN provenance — never
+        /// Absent (or absent for a key) means UNKNOWN provenance, never
         /// verified (old engine frames predate the field). The field is
         /// optional only for backward compatibility. The engine always emits
         /// an explicit `"verified"` entry for every key it broadcasts from
@@ -919,10 +918,10 @@ pub enum Event {
     /// Read-only native desk snapshot slots (DL32S push evidence; distinct
     /// from the app-local numbered `scenes` library `001..999`).
     /// `supported:false` where the driver models no native slots (sim,
-    /// xair — never faked); `read_only` is always true when supported.
+    /// xair, never faked); `read_only` is always true when supported.
     /// `status` is `unsupported` (not modelled), `unavailable` (modelled
     /// but no live desk session), `loading` (live session, no slot data
-    /// pushed yet) or `ready` (push-observed metadata — PARTIAL only:
+    /// pushed yet) or `ready` (push-observed metadata, PARTIAL only:
     /// `slots` empty with `current: Some(n)` proves only the last reported
     /// recall, never a full inventory or a non-empty desk). `slots`
     /// carries ONLY desk-pushed ids/names in id order (native raw `u32`
@@ -930,11 +929,11 @@ pub enum Event {
     /// `current` is the last desk-observed recall slot (`None` = no
     /// recall observed, never a slot-0 default). `epoch` is the ENGINE
     /// connection generation (`connection_gen`, the same barrier as
-    /// `SyncEpoch` — NOT the RTA `epoch`): the frontend must strictly
+    /// `SyncEpoch`, NOT the RTA `epoch`): the frontend must strictly
     /// reject frames whose `epoch` is missing or mismatched. Read-only:
     /// no command writes these slots.
     /// Unicast in the attach/resume snapshots; broadcast on change (no
-    /// audio-param fanout — this frame carries no strip params).
+    /// audio-param fanout, this frame carries no strip params).
     NativeSnapshots {
         driver: String,
         supported: bool,
@@ -957,7 +956,6 @@ pub enum Event {
 }
 
 impl Event {
-    /// The `type` tag string.
     pub fn tag(&self) -> &'static str {
         match self {
             Event::You { .. } => "you",
@@ -1077,7 +1075,7 @@ impl Event {
 /// [`Event::to_binary`] per client only where the encoding is inherently
 /// per-client (binary meter frames carry a per-connection sequence
 /// number). Ordering and per-client filtering (unicast vs broadcast,
-/// `broadcast_except` skips) are unchanged — only the serialization and
+/// `broadcast_except` skips) are unchanged, only the serialization and
 /// the per-client `Event` clone are deduped.
 #[derive(Debug, Clone)]
 pub struct SharedEvent {
@@ -1116,7 +1114,7 @@ impl std::ops::Deref for SharedEvent {
 ///
 /// Unknown `cmd` tags keep the historical `unknown cmd "bogus"` message;
 /// other shape errors become `invalid command: ...`. Both are plain errors
-/// for the adapter to wrap in an [`Event::Error`] unicast — the connection
+/// for the adapter to wrap in an [`Event::Error`] unicast, the connection
 /// stays open either way.
 pub fn parse_cmd(text: &str) -> Result<Cmd, String> {
     let v: serde_json::Value =
@@ -1135,11 +1133,8 @@ pub fn is_false(v: &bool) -> bool {
     !*v
 }
 
-/// Binary meter frame: `meters` payload type byte.
 pub const BIN_TYPE_METERS: u8 = 1;
-/// Binary meter frame: `gr` payload type byte.
 pub const BIN_TYPE_GR: u8 = 2;
-/// Binary meter frame: `taps` payload type byte (R2).
 pub const BIN_TYPE_TAPS: u8 = 3;
 /// Binary meter frame layout version (bump on any layout change).
 pub const BIN_VERSION: u8 = 1;

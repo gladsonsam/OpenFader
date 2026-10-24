@@ -1,4 +1,3 @@
-// Startup header uses the shared console surfaces, typography and controls.
 import 'package:flutter/material.dart';
 import '../palette.dart';
 

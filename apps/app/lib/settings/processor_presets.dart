@@ -1,19 +1,12 @@
-// Device library for processor (EQ/gate/compressor) presets.
+// Device library for processor presets, over SharedPreferences and behind
+// the pure contracts in `lib/core/processor_presets.dart`.
 //
-// SharedPreferences-backed, per-device store behind the pure contracts in
-// `lib/core/processor_presets.dart`. No hardware, no network, no timers.
-// The main `AppStore` instantiates one `ProcessorPresetLibrary` and uses it
-// to implement `ProcessorPresetStore`; Settings `fullReset` clears it via
-// [clear] (owned by the parent, not done here).
-//
-// Guarantees:
 // - Empty until the user saves; no factory presets are invented.
-// - Reads/writes throw on persistence or corruption errors; corruption is
-//   never silently emptied or overwritten (mutations load first and abort).
-// - `save` upserts by id and rejects duplicate names within the same
-//   `driver` + `family` + `kind` scope (trimmed, case-insensitive).
-// - Concurrent mutations are serialized; every write awaits `setString` and
-//   throws on `false`.
+// - Reads and writes throw on persistence or corruption errors; corruption
+//   is never silently emptied or overwritten.
+// - `save` upserts by id and rejects duplicate names in the same scope
+//   (trimmed, case-insensitive).
+// - Concurrent mutations are serialized; every write awaits `setString`.
 library;
 
 import 'dart:async';
@@ -22,12 +15,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/processor_presets.dart';
 
-/// SharedPreferences-backed device library for [ProcessorPreset]s.
 class ProcessorPresetLibrary {
   ProcessorPresetLibrary();
 
-  // Serializes concurrent mutations so two saves/renames/deletes cannot
-  // interleave a load-modify-write cycle. Failures do not break the chain.
+  // Serializes concurrent mutations so two saves, renames, or deletes
+  // cannot interleave a load-modify-write cycle. Failures do not break it.
   Future<void> _tail = Future.value();
 
   Future<T> _serialized<T>(Future<T> Function() work) {
@@ -42,22 +34,21 @@ class ProcessorPresetLibrary {
   static bool _sameName(String a, String b) =>
       a.trim().toLowerCase() == b.trim().toLowerCase();
 
-  /// Load every stored preset (all scopes). Throws on persistence or
-  /// corruption errors; returns `[]` only when nothing was ever stored.
+  /// Loads every stored preset. Throws on persistence or corruption
+  /// errors; returns `[]` only when nothing was ever stored.
   Future<List<ProcessorPreset>> load() async {
     final prefs = await SharedPreferences.getInstance();
     return decodeProcessorPresets(prefs.getString(kProcessorPresetStorageKey));
   }
 
-  /// Insert or replace [preset] by id. Rejects duplicate display names
-  /// within the same `driver` + `family` + `kind` scope with [StateError].
-  /// Throws on validation, persistence, or corruption errors.
+  /// Insert or replace [preset] by id. Rejects duplicate display names in
+  /// the same scope with [StateError].
   Future<void> save(ProcessorPreset preset) {
     return _serialized(() async {
       final nameError = validateProcessorPresetName(preset.name);
       if (nameError != null) throw StateError(nameError);
-      // Re-validate through the strict codec so unknown fields and bad
-      // primitives can never be persisted, even from hand-built presets.
+      // Re-validate through the strict codec so hand-built presets can
+      // never persist unknown fields or bad primitives.
       final canonical = ProcessorPreset.fromJson(preset.toJson()).copyWith();
       final prefs = await SharedPreferences.getInstance();
       final current = decodeProcessorPresets(
@@ -80,9 +71,8 @@ class ProcessorPresetLibrary {
     });
   }
 
-  /// Rename preset [id] to [name] (trimmed, Unicode-preserving). Throws
-  /// [StateError] when the id is unknown, the name is invalid, or another
-  /// preset in the same `driver` + `family` + `kind` scope already uses it.
+  /// Rename preset [id] to [name]. Throws [StateError] when the id is
+  /// unknown, the name is invalid, or the scope already uses it.
   Future<void> rename(String id, String name) {
     return _serialized(() async {
       final nameError = validateProcessorPresetName(name);
@@ -120,7 +110,7 @@ class ProcessorPresetLibrary {
     });
   }
 
-  /// Delete preset [id]. No-op when the id is unknown.
+  /// Delete preset [id]; no-op when unknown.
   Future<void> delete(String id) {
     return _serialized(() async {
       final prefs = await SharedPreferences.getInstance();
@@ -138,8 +128,7 @@ class ProcessorPresetLibrary {
     });
   }
 
-  /// Remove every stored preset (used by Settings full reset). Throws on
-  /// persistence errors.
+  /// Remove every stored preset (Settings full reset).
   Future<void> clear() {
     return _serialized(() async {
       final prefs = await SharedPreferences.getInstance();

@@ -1,6 +1,5 @@
-//! [`Engine`]: the transport-agnostic mixer session, moved out of
-//! `crates/serve` (ME1). All session behaviour lives here; adapters only
-//! move [`Cmd`]/[`Event`](crate::protocol::Event) JSON.
+//! [`Engine`]: the transport-agnostic mixer session. All session behaviour
+//! lives here; adapters only move [`Cmd`]/[`Event`](crate::protocol::Event) JSON.
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet, VecDeque},
@@ -158,7 +157,7 @@ impl RecallScope {
     pub fn allows_strip(&self, strip: u16) -> bool {
         self.strips.as_ref().is_none_or(|s| s.contains(&strip))
     }
-    /// Key-aware strip match against the active topology: union semantics —
+    /// Key-aware strip match against the active topology: union semantics 
     /// both lists absent means all strips; otherwise a strip matches when
     /// its index is in `strips` OR its canonical key (see
     /// [`openfader_core::strip_key_for_index`]) is in `strip_keys`. Unknown
@@ -206,7 +205,7 @@ impl RecallScope {
 /// `link`/`color` ride Config; send ids split by slot number (1..6 bus,
 /// 7..10 FX) across all send suffixes (`level`, `tap`, `pan`, `on`);
 /// anything unrecognized falls back to Config (never silently dropped
-/// from a partial recall — Config off excludes it like the rest).
+/// from a partial recall, Config off excludes it like the rest).
 pub fn param_scope_group(id: &str) -> &'static str {
     if id == "fader" || id == "pan" || id == "balance" {
         return "fader_pan";
@@ -593,7 +592,7 @@ struct ClientEntry {
     /// default off so old clients see no new traffic.
     taps: bool,
     /// Whether this client already holds the full `caps` catalogue. Attach
-    /// queues the slim caps (essentials lane only — see
+    /// queues the slim caps (essentials lane only, see
     /// [`Engine::caps_slim_message`]); the first `hello` completes it with
     /// a unicast full `caps` and flips this. Later hellos are pure re-acks.
     caps_full: bool,
@@ -651,7 +650,7 @@ pub struct Engine {
     shows: RwLock<Vec<Show>>,
     /// Param-plane cache: channel -> catalogue id -> last broadcast
     /// engineering-unit JSON value. Provenance invariant (R2 preset-truth
-    /// contract): every entry is desk-evidenced — a poll read, a desk push,
+    /// contract): every entry is desk-evidenced, a poll read, a desk push,
     /// or a post-write re-read from a provider with genuine readback (see
     /// [`refresh_param`](Engine::refresh_param)). Write fallbacks (the
     /// `accepted` echo) never touch this map, so poll/params/snapshot paths
@@ -669,7 +668,7 @@ pub struct Engine {
     /// every tick and skips the tick (counting [`poll_skips`](Engine::poll_skips))
     /// while any write is in flight, so a fader/mute/param write is never
     /// queued behind a poll read. Writes themselves run inline on the
-    /// caller's task — they never wait on poller or meter state — and meter
+    /// caller's task, they never wait on poller or meter state, and meter
     /// fan-out is a third lane (read-only driver calls from the ticker
     /// task). See `crates/engine/README.md` "Write priority".
     writes_in_flight: AtomicU64,
@@ -706,7 +705,7 @@ pub struct Engine {
     boot: Instant,
     /// Focus queue: `(driver, ch, param, owner)` tuples pushed by the `focus`
     /// command, drained one per poll tick ahead of round-robin (same 20
-    /// q/s budget — focus is priority, not a faster lane). Most-recent
+    /// q/s budget, focus is priority, not a faster lane). Most-recent
     /// focus goes to the FRONT (a new focus supersedes older ones) with
     /// pending (strip, param) pairs de-duplicated; the queue is capped and
     /// a detached client's pending focus is dropped with it (see
@@ -749,7 +748,7 @@ pub struct Engine {
     repair_dirty: AtomicBool,
     /// Consecutive control-health query failures (see
     /// [`Engine::measure_latency`]): the `link` holds `connected` until
-    /// [`POLL_TIMEOUT_STRIKES`] in a row — one lost datagram on venue wifi
+    /// [`POLL_TIMEOUT_STRIKES`] in a row, one lost datagram on venue wifi
     /// must not flap the status UI while the independent meter stream stays
     /// live. Any success (or any link reset) clears the count, so a truly
     /// dead control path still surfaces as `reconnecting` after ~6 s and is
@@ -767,7 +766,7 @@ pub struct Engine {
     prio_taken: AtomicU64,
     /// Visible boost armed: the lane serves one full sweep of the visible
     /// strips' EQ/dyn/sends after each focus, then yields to the
-    /// background (one-shot — a perpetual round-robin would starve the
+    /// background (one-shot, a perpetual round-robin would starve the
     /// background sweep, since the cursor wraps without end).
     prio_armed: AtomicBool,
     /// Lane splitter tick: alternates the background reservation (see
@@ -783,7 +782,7 @@ pub struct Engine {
     /// Consecutive per-(driver, param) query timeouts (transient-loss
     /// tolerance: a param drops from the poll set only after
     /// [`POLL_TIMEOUT_STRIKES`] timeouts in a row; unknown/unsupported
-    /// drops immediately, successes clear the count — see
+    /// drops immediately, successes clear the count, see
     /// [`Engine::note_poll_error`]).
     poll_timeouts: RwLock<HashMap<(String, String), u8>>,
     /// R2 LAN scanner (real discovery or an injected fake).
@@ -812,7 +811,7 @@ pub struct Engine {
     /// and the attach snapshot). An edge-adapter `push_task` waits on this
     /// instead of a second 50 ms poll, so ticker frames go out in ~ms
     /// instead of up to 50 ms of phase-added age; the 50 ms interval stays
-    /// as a fallback ceiling. Coalescing is fine — receivers always drain.
+    /// as a fallback ceiling. Coalescing is fine, receivers always drain.
     notify: Arc<Notify>,
     /// Connect-fill generation (fast-first `post_switch`): bumped on every
     /// switch; the fill worker completes the deferred remainder (state +
@@ -931,13 +930,12 @@ impl Engine {
         engine
     }
 
-    /// Name of the active driver (`sim`/`xair`/`dl32s`).
     pub fn active_driver(&self) -> String {
         self.active.read().unwrap().clone()
     }
 
     /// Erased driver for `name` (falls back to `sim`, which is always
-    /// registered — `known` gates every path that reaches here).
+    /// registered, `known` gates every path that reaches here).
     fn drv(&self, name: &str) -> Arc<dyn DynDriver> {
         self.drivers
             .get(name)
@@ -1126,7 +1124,7 @@ impl Engine {
 
     /// Attach a client: allocate its id, register it, and queue the
     /// initial snapshot (`you`, `state`, `shows`, `clients`, `locks`,
-    /// slim `caps` (essentials lane — the full catalogue follows on the
+    /// slim `caps` (essentials lane, the full catalogue follows on the
     /// client's first `hello`, see
     /// [`caps_slim_message`](Engine::caps_slim_message)), `devices`,
     /// `link`, `info`?, `scenes`, `fx`, `routing`,
@@ -1151,7 +1149,7 @@ impl Engine {
 
             // Snapshot the world before registering, so no live broadcast can
             // overtake the initial frames in the newcomer's mailbox. The async
-            // pieces are independent reads — join them so the wall time is the
+            // pieces are independent reads, join them so the wall time is the
             // slowest, not the sum (on hardware drivers these are desk
             // queries); the sync pieces (shows/locks/caps/devices/link/params)
             // are lock-local and stay serial.
@@ -1206,7 +1204,7 @@ impl Engine {
                 // emitted native view so the ticker stays quiet until it
                 // changes. A push landing between the sample above and
                 // this record only delays one frame (views are cumulative
-                // state — nothing is lost).
+                // state, nothing is lost).
                 self.record_native_view();
             }
             // Siblings learn about the join; the newcomer already has it.
@@ -1221,11 +1219,11 @@ impl Engine {
         }
     }
 
-    /// Queue a FRESH snapshot into an already-attached client's mailbox —
+    /// Queue a FRESH snapshot into an already-attached client's mailbox 
     /// the resume path for adapters whose transport was suspended (mobile
     /// WebView backgrounded: the pushes stop, the world moves on). Same
     /// frame set an [`attach`](Engine::attach) snapshot carries, minus
-    /// `you` — but with the FULL `caps` catalogue (attach ships the slim
+    /// `you`, but with the FULL `caps` catalogue (attach ships the slim
     /// lane; a resumed UI already holds the catalogue and must never have
     /// it downgraded): `state`, `shows`, `clients`, `locks`, `caps`,
     /// `devices`, `link`, `info` (best-effort), `scenes`, `fx`, `routing`,
@@ -1325,7 +1323,7 @@ impl Engine {
         }
         // R2 desk-broadcast ingest: drivers that publish desk-originated
         // mix-surface updates (another client's moves, echoed to every
-        // subscriber) get one task each — apply them to the param cache
+        // subscriber) get one task each, apply them to the param cache
         // live as `params` diffs, no poll-sweep wait. While another driver
         // is active, a driver's updates never touch the cache.
         for name in self.driver_order.clone() {
@@ -1443,7 +1441,7 @@ impl Engine {
                         // instead of leaving the last levels frozen (stuck
                         // clip). One-shot; stays silent until live again.
                         // Mirrors the `had_audio_spectrum` clear below, on
-                        // the same tick — no new timers.
+                        // the same tick, no new timers.
                         meters_live = false;
                         engine.broadcast(Event::Meters { levels: Vec::new() });
                         if engine.any_taps_client() {
@@ -1522,7 +1520,7 @@ impl Engine {
                     // change or session-generation change. The generation
                     // is captured BEFORE the driver/view sampling, and the
                     // dedup + broadcast run under the `sync_state` barrier
-                    // with a final generation + `reads_suspended` recheck —
+                    // with a final generation + `reads_suspended` recheck 
                     // so an old sample can never land after a newer
                     // `SyncEpoch` (the frontend rejects a mismatched
                     // `epoch`). No audio-param fanout: the frame carries
@@ -1634,7 +1632,7 @@ impl Engine {
 
     /// Send an event to every connected client (skips closed mailboxes;
     /// the sweeper prunes them). Notifies [`tick_notify`](Engine::tick_notify)
-    /// waiters (edge push tasks) — one permit per call, coalesced by design.
+    /// waiters (edge push tasks), one permit per call, coalesced by design.
     ///
     /// The event is serialized once and shared: one [`SharedEvent`] (one
     /// `serde_json` run, one backing allocation) is built here and an `Arc`
@@ -1683,8 +1681,8 @@ impl Engine {
     /// params, roster, locks, errors, …) always queue reliably in order and
     /// are never dropped or coalesced. Meter-class frames queue directly on
     /// the fast path (no realtime backlog), but while a realtime frame is
-    /// still queued they collapse into that mailbox's latest-only slots —
-    /// the newer frame supersedes the older same-key one — so a stalled
+    /// still queued they collapse into that mailbox's latest-only slots 
+    /// the newer frame supersedes the older same-key one, so a stalled
     /// client accumulates at most one queued realtime frame plus one slot
     /// set no matter how fast the ticker runs.
     fn push_to(entry: &ClientEntry, frame: SharedEvent) {
@@ -1710,7 +1708,7 @@ impl Engine {
     /// write (broadcasts, unicasts, attach snapshot); the 50 ms interval
     /// stays as a fallback ceiling. [`Notify`] stores one permit while no
     /// waiter is parked, so a broadcast between drain and wait still wakes
-    /// the next wait (no lost wakeup — at most coalesced).
+    /// the next wait (no lost wakeup, at most coalesced).
     pub fn tick_notify(&self) -> Arc<Notify> {
         Arc::clone(&self.notify)
     }
@@ -1814,7 +1812,6 @@ impl Engine {
         locks.len() != before
     }
 
-    /// Holder of `ch`, or `None` when unlocked/expired.
     fn lock_holder(&self, ch: u16) -> Option<String> {
         let locks = self.locks.read().unwrap();
         let entry = locks.get(&ch)?;
@@ -1914,7 +1911,7 @@ impl Engine {
 
     /// Merged param registry of the named driver (canonical catalogue +
     /// that provider's contributed rows). Unknown drivers fall back to
-    /// `sim`, mirroring [`Engine::drv`] — `sim` is always registered.
+    /// `sim`, mirroring [`Engine::drv`], `sim` is always registered.
     fn registry(&self, driver: &str) -> &ParamRegistry {
         self.registries.get(driver).unwrap_or_else(|| {
             self.registries
@@ -1952,7 +1949,7 @@ impl Engine {
     }
 
     /// Resolve a strip-targeted command's `ch` + optional `key` against the
-    /// active topology: a resolvable key wins (desk-switch survival —
+    /// active topology: a resolvable key wins (desk-switch survival 
     /// profiles replay keys, not positions); otherwise `ch` is validated in
     /// range. An unresolvable key is an honest error naming the key.
     fn resolve_strip(&self, ch: u16, key: Option<&str>) -> anyhow::Result<u16> {
@@ -2025,10 +2022,10 @@ impl Engine {
             None => {
                 // Manual add-by-IP with no prior scan: resolve the steady-state
                 // name from the desk `/info` reply (index 1 = console name,
-                // e.g. `Studio`; index 2 = model, e.g. `XR18` — see
+                // e.g. `Studio`; index 2 = model, e.g. `XR18`, see
                 // `info_from_strings`). The console name wins; the model is
                 // only a degraded fallback, never the steady state when
-                // `/info` answered. Unverified `/info` paths are NOT probed —
+                // `/info` answered. Unverified `/info` paths are NOT probed 
                 // this reuses the single supported `query_info` codec.
                 let driver = self.active_driver();
                 match self.drv(&driver).query_info().await {
@@ -2062,7 +2059,7 @@ impl Engine {
     }
 
     /// Pre-write value for the offline change list (`None` unless offline
-    /// editing is active — avoids an extra desk query per write online).
+    /// editing is active, avoids an extra desk query per write online).
     async fn offline_from(&self, strip: StripId, id: &str) -> Option<Value> {
         if !self.offline.read().unwrap().active {
             return None;
@@ -2085,13 +2082,13 @@ impl Engine {
 
     /// Slim `caps` for the attach snapshot: identical to
     /// [`caps_message`](Engine::caps_message) except `params` carries only
-    /// the essentials lane (`fader`/`mute`/`name`/`pan`/`color` — the ids
+    /// the essentials lane (`fader`/`mute`/`name`/`pan`/`color`, the ids
     /// first paint and strip interaction resolve) instead of the ~180-row
     /// catalogue (~30 KB, three quarters of the snapshot). The full
     /// catalogue follows on the client's first `hello` (sent right after
-    /// subscribe on every transport) as a unicast `caps` rebroadcast — the
+    /// subscribe on every transport) as a unicast `caps` rebroadcast, the
     /// same frame shape as a param-drop caps update, which every consumer
-    /// already applies idempotently — and `push_snapshot` (resume) keeps
+    /// already applies idempotently, and `push_snapshot` (resume) keeps
     /// the full frame, so a resumed UI never downgrades its catalogue.
     fn caps_slim_message(&self) -> Event {
         self.caps_message_filtered(true)
@@ -2179,7 +2176,7 @@ impl Engine {
     }
 
     /// Adaptive effective inflight: halves while the batch-RTT EMA exceeds
-    /// the poll tick (the desk is saturated — back off instead of piling
+    /// the poll tick (the desk is saturated, back off instead of piling
     /// on), otherwise the configured max.
     pub fn effective_inflight(&self, driver: &str) -> usize {
         let max = self.max_inflight(driver);
@@ -2229,7 +2226,7 @@ impl Engine {
 
     /// Verified device entry for the relay's linked desk (hardware drivers
     /// only): the stored connect address answers the driver's own info
-    /// query. `None` when never connected, unconfigured, or unreachable —
+    /// query. `None` when never connected, unconfigured, or unreachable 
     /// a scan then honestly reports only what broadcast discovery found.
     async fn linked_desk_device(&self, driver: &str) -> Option<DeviceDesc> {
         if !self.drv(driver).is_hardware() {
@@ -2414,19 +2411,19 @@ impl Engine {
     /// Liveness, not verification (R2 health contract): the probe reads the
     /// inclusive DISPLAY getter (`get_main_fader` serves own-write-pending
     /// words for continuity), exactly as it did before the verified-only
-    /// split — a locally moved main fader must never read as a dead control
+    /// split, a locally moved main fader must never read as a dead control
     /// path. Cache provenance is never treated as transport failure; only a
     /// transport/session error arms strikes. No second connection is opened.
     ///
     /// Bounded failure policy (matches the poller's
     /// [`POLL_TIMEOUT_STRIKES`] tolerance): a single failed query only arms
-    /// the bounded `repair_dirty` reconciliation and keeps `connected` — one
+    /// the bounded `repair_dirty` reconciliation and keeps `connected`, one
     /// lost datagram must not flap the status UI while the independent UDP
     /// meter stream stays live. The `link` flips to `reconnecting` only
     /// after [`POLL_TIMEOUT_STRIKES`] consecutive failures (~6 s at the 2 s
     /// [`LINK_INTERVAL`]). The strike count resets on any success and on
     /// every link reset (connect/disconnect/offline), and fresh meters
-    /// NEVER reset it — so a dead control path always surfaces after ~6 s
+    /// NEVER reset it, so a dead control path always surfaces after ~6 s
     /// and cannot be masked indefinitely by live levels.
     async fn measure_latency(&self) -> f32 {
         let last = self.link.read().unwrap().latency_ms;
@@ -2538,7 +2535,7 @@ impl Engine {
                         continue;
                     }
                     if let Some(pv) = self.capture_read_param(&driver, strip, id).await {
-                        // Skip catalogue defaults? No — full plane means
+                        // Skip catalogue defaults? No, full plane means
                         // every value, so restores are exact.
                         params.insert(id.to_string(), param_value_json(&pv));
                     }
@@ -2743,7 +2740,7 @@ impl Engine {
     /// Current fader + mute of one strip (best-effort; failures read back
     /// subscriber silence so a scoped recall degrades to a no-op axis
     /// rather than failing the whole recall). Reads the inclusive display
-    /// getters (continuity: own writes included, no proof claimed) — never
+    /// getters (continuity: own writes included, no proof claimed), never
     /// the stale pre-write `param_cache` entry, which the accepted write
     /// already evicted and which would start an excluded-axis fade from the
     /// wrong pre-move state.
@@ -2759,7 +2756,7 @@ impl Engine {
     /// `caps.fx` for the named driver: slot count + type tables (design
     /// racks carry the six design tables from `core::fx`; numbered
     /// desk-native racks carry their documented algorithms with labeled
-    /// `parNN` params; rack-less drivers carry none — see README matrix).
+    /// `parNN` params; rack-less drivers carry none, see README matrix).
     fn fx_caps(&self, driver: &str) -> crate::protocol::FxCaps {
         let drv = self.drv(driver);
         let types = if drv.fx_flavor() == FxFlavor::Design {
@@ -2828,7 +2825,7 @@ impl Engine {
 
     /// Rebuild the FX cache from the active driver (Design: full rack;
     /// numbered: live types + used params; elsewhere: honest placeholder
-    /// rows — type unknown, no params).
+    /// rows, type unknown, no params).
     async fn refresh_fx_cache(&self) {
         if self.active_drv().fx_flavor() == FxFlavor::Numbered {
             let generation = self.connection_gen.load(Ordering::Acquire);
@@ -2926,7 +2923,7 @@ impl Engine {
 
     /// Read FX rows from the active driver (design racks fully mirrored;
     /// the desk-native numbered rack reads the live type + used params per
-    /// slot over the verified type + `parNN` path —
+    /// slot over the verified type + `parNN` path 
     /// best-effort, unreadable slots stay honest placeholders; rack-less
     /// drivers keep placeholders).
     async fn read_fx_rows(&self) -> Vec<FxSlotRt> {
@@ -2953,9 +2950,9 @@ impl Engine {
             return rows;
         }
         // Rack-less drivers are not polled (no verified state
-        // path — writes are fire-and-forget there). Placeholder rows stay
+        // path, writes are fire-and-forget there). Placeholder rows stay
         // placeholders: never inherit sim-seeded rows (or any unverified
-        // state) as `prev` — the UI renders "—" honestly.
+        // state) as `prev`, the UI renders " " honestly.
         (1..=drv.fx_slot_count() as u8)
             .map(|slot| FxSlotRt {
                 slot,
@@ -3000,7 +2997,7 @@ impl Engine {
 
     /// One FX poll read (round-robin over the design rack, or one live
     /// numbered-rack slot param per tick; silent unless a value changed).
-    /// Other rack-less racks are not polled (no verified state path —
+    /// Other rack-less racks are not polled (no verified state path 
     /// writes are fire-and-forget there).
     async fn fx_refresh_one(&self) {
         let drv = self.active_drv();
@@ -3143,7 +3140,7 @@ impl Engine {
     }
 
     /// `caps.native_snapshots`: read-only native slot support of the named
-    /// driver (`supported:false` where the driver models no native slots —
+    /// driver (`supported:false` where the driver models no native slots 
     /// skipped on the wire there, so old frames stay byte-identical).
     fn native_caps(&self, driver: &str) -> NativeSnapshotsCaps {
         match self.drv(driver).native_snapshots() {
@@ -3169,11 +3166,11 @@ impl Engine {
     }
 
     /// Build the `native_snapshots` event for `driver`'s hook view:
-    /// `unsupported` (not modelled — never faked), `unavailable`
+    /// `unsupported` (not modelled, never faked), `unavailable`
     /// (modelled but no live desk session), `loading` (live session, no
     /// slot data pushed yet) or `ready` (push-observed PARTIAL metadata
-    /// only — never a full inventory). `current` stays `None` until a
-    /// desk recall is observed — never a slot-0 default. `epoch` is the
+    /// only, never a full inventory). `current` stays `None` until a
+    /// desk recall is observed, never a slot-0 default. `epoch` is the
     /// ENGINE connection generation (matches `SyncEpoch`, NOT the RTA
     /// epoch) and is populated at every constructor. Read-only: no
     /// command path writes native slots.
@@ -3239,7 +3236,7 @@ impl Engine {
         })
     }
 
-    /// Full-state `subgroup` echo (DISPLAY continuity, not proof — see
+    /// Full-state `subgroup` echo (DISPLAY continuity, not proof, see
     /// [`bus_message`](Self::bus_message)).
     async fn subgroup_message(&self, group: u8) -> anyhow::Result<Event> {
         let drv = self.active_drv();
@@ -3258,7 +3255,7 @@ impl Engine {
     /// Full-state `main` echo (DISPLAY continuity, not proof): Main LR fader
     /// and mute re-read from the active driver inclusive getters (own writes
     /// included so a new attach sees locally moved masters). These frames
-    /// carry no `authority` field and are never used for preset capture —
+    /// carry no `authority` field and are never used for preset capture 
     /// see the `param` event for verified values.
     async fn main_message(&self) -> Event {
         let drv = self.active_drv();
@@ -3273,9 +3270,9 @@ impl Engine {
     /// continuity, not proof): every bus/subgroup/mute-group master re-read
     /// live via the inclusive display getters (own writes included so a new
     /// attach sees locally moved masters indefinitely), every known
-    /// membership (sparse — members only), Main LR, and sparse solos. These
+    /// membership (sparse, members only), Main LR, and sparse solos. These
     /// frames carry no `authority` field and are never used for preset
-    /// capture — see the `param`/`params` events for verified values. Fresh pages
+    /// capture, see the `param`/`params` events for verified values. Fresh pages
     /// learn existing assignments without a write (gap: the engine used to
     /// broadcast these only as write echoes). Assign/solo reads are
     /// driver-gated: sim/dl32s serve assigns from memory/cache (xair has
@@ -3511,7 +3508,7 @@ impl Engine {
     /// Per-tap level vectors for the active driver, in
     /// `caps.meter_taps` order filtered to known taps. Drivers with a tap
     /// source serve all their taps; hardware serves `post` from the meter
-    /// blob cache and GR from the DYN cache (`in` unavailable — no
+    /// blob cache and GR from the DYN cache (`in` unavailable, no
     /// `/meters/0` subscribe); tap-less drivers emit no tap frames. Every
     /// entry is best-effort: a tap with no source reads back silence,
     /// never an error.
@@ -3598,7 +3595,7 @@ impl Engine {
         let strict = self.active_drv().fx_flavor() == FxFlavor::Design;
         // Same provenance rule as recall: sim applies to real in-memory
         // state (`verified`); hardware pushes are write-ACK only
-        // (`accepted` — no readback on this path).
+        // (`accepted`, no readback on this path).
         let authority = || {
             Some(
                 if self.active_drv().is_hardware() {
@@ -3797,10 +3794,10 @@ impl Engine {
             return;
         }
         if changed {
-            // Desk-evidenced by construction (poll read or desk push —
+            // Desk-evidenced by construction (poll read or desk push 
             // `apply_received` is never called with a write fallback): every
             // emitted key is explicitly marked `verified` (see `authority`).
-            // Absent/unknown is NEVER verified — the field is optional only
+            // Absent/unknown is NEVER verified, the field is optional only
             // for backward compatibility with old frames.
             let authority = Some(
                 [(param.to_string(), "verified".to_string())]
@@ -3852,7 +3849,7 @@ impl Engine {
                 ch, field, value, authority, ..
             } => {
                 // A genuinely newer desk read (poll/push landing between
-                // the echo and this reconcile) replaces the value — and the
+                // the echo and this reconcile) replaces the value, and the
                 // provenance with it: the value is now desk-evidenced.
                 if let Some(v) = fresh(*ch, field) {
                     *value = v;
@@ -3932,7 +3929,7 @@ impl Engine {
 
     /// Visible-group lane: (strip, param) pairs serving the currently
     /// visible strips' EQ/dyn/sends first (R2 priority lane between focus
-    /// and background). One full sweep per focus (then disarms — see
+    /// and background). One full sweep per focus (then disarms, see
     /// `prio_armed`); `k` caps the take; the cursor round-robins within
     /// the sweep.
     fn pop_visible_batch(&self, driver: &str, k: usize) -> Vec<(u16, String)> {
@@ -3953,7 +3950,7 @@ impl Engine {
         while out.len() < k && skips <= list.len() {
             let i = self.prio_cursor.fetch_add(1, Ordering::Relaxed) as usize % list.len();
             // Sweep wrap (index 0 after serving ≥1 entry): the one-shot
-            // boost is done — disarm and yield to the background.
+            // boost is done, disarm and yield to the background.
             let taken = self.prio_taken.fetch_add(1, Ordering::Relaxed);
             if i == 0 && taken > 0 {
                 self.prio_armed.store(false, Ordering::Relaxed);
@@ -4049,7 +4046,7 @@ impl Engine {
                     out.push((s as u16, *id));
                 }
                 // Solo rides the essentials lane as its own id (same rule
-                // as the static list — see `static_poll_list`).
+                // as the static list, see `static_poll_list`).
                 for id in self.drv(driver).essentials_extra_ids(fam.kind) {
                     out.push((s as u16, id));
                 }
@@ -4060,8 +4057,8 @@ impl Engine {
     }
 
     /// Next `k` essentials entries (round-robin; drop-class pairs skipped in
-    /// place). The lane never disarms — it is the perpetual fast path for
-    /// fader/mute/name/pan/color/solo — so the background reservation in
+    /// place). The lane never disarms, it is the perpetual fast path for
+    /// fader/mute/name/pan/color/solo, so the background reservation in
     /// [`Engine::poll_tick`] is what keeps the background sweep alive.
     fn pop_core_batch(&self, driver: &str, k: usize) -> Vec<(u16, String)> {
         if k == 0 {
@@ -4096,10 +4093,10 @@ impl Engine {
     ///
     /// Fairness: the essentials cursor round-robins without end, so a
     /// perpetual essentials lane would starve the background sweep forever.
-    /// The background therefore keeps one slot every `max(2, n)` ticks — at
+    /// The background therefore keeps one slot every `max(2, n)` ticks, at
     /// xair/sim n=4 that is 20 q/s, exactly the pre-lane steady-state
     /// background rate, while the essentials lane takes the other ~60 q/s
-    /// (≈2–3 s per sweep of the ~150 fader/mute/name/pan/color/solo pairs).
+    /// (≈2-3 s per sweep of the ~150 fader/mute/name/pan/color/solo pairs).
     /// At n=1 whole ticks alternate (lanes one tick, background the next).
     ///
     /// Public so integration tests and diagnostics can drive (and time)
@@ -4258,7 +4255,7 @@ impl Engine {
             }
         }
         // Budget spent (slow venue wifi): the deferred fill re-emits
-        // both, so no frame is ever lost — first paint just waits for
+        // both, so no frame is ever lost, first paint just waits for
         // the fill instead of stalling the command on N x 2 s tails.
         // The read-only native slot frame is sync and needs no I/O, so it
         // always rides along (fresh status on every switch, never the
@@ -4481,7 +4478,7 @@ impl Engine {
     }
 
     /// Wake the fill worker for one [`Engine::deferred_fill`] pass
-    /// (coalesced by generation — see [`Engine::ensure_tasks`]).
+    /// (coalesced by generation, see [`Engine::ensure_tasks`]).
     fn kick_fill(&self) {
         self.fill_connection_gen.store(self.connection_gen.load(Ordering::Acquire), Ordering::Release);
         self.fill_gen.fetch_add(1, Ordering::AcqRel);
@@ -4509,7 +4506,7 @@ impl Engine {
                     key: openfader_core::strip_key_for_index(&topo, ch as usize),
                     // Snapshot of the verified-only cache: every emitted key
                     // is explicitly marked `verified`. Absent/unknown is
-                    // NEVER verified — the field is optional only for
+                    // NEVER verified, the field is optional only for
                     // backward compatibility with old frames.
                     authority: Some(
                         values
@@ -4570,7 +4567,7 @@ impl Engine {
                     out.push((s as u16, *id));
                 }
                 // Solo rides the poll set as its own id (never a catalogue
-                // param — a solosw bank has no per-strip query address,
+                // param, a solosw bank has no per-strip query address,
                 // so it can never enter `caps`): strips carrying the
                 // extra id re-read the bank via `get_solo`
                 // (`read_param` routes it). Appended to the strip's own block, so the list
@@ -4592,7 +4589,7 @@ impl Engine {
 
     /// Move `chs` to the front of the poll queue (the `focus` command,
     /// attributed to `writer`). Most-recent-first: pending entries for the
-    /// focused strips are dropped (a new focus supersedes older ones — this
+    /// focused strips are dropped (a new focus supersedes older ones, this
     /// also de-duplicates floods) and the fresh set is pushed at the FRONT
     /// in catalogue order, so it drains before everything queued before.
     /// The queue is capped (~4 sweeps, oldest dropped from the back). A
@@ -4837,7 +4834,7 @@ impl Engine {
     /// Handle one poll-read error: unknown/unsupported params drop from the
     /// poll set at once (rebroadcasting `caps` once); QUERY TIMEOUTS drop
     /// only after [`POLL_TIMEOUT_STRIKES`] consecutive timeouts with no
-    /// success in between — one lost datagram on venue wifi must not evict
+    /// success in between, one lost datagram on venue wifi must not evict
     /// a live param (eviction also flips `caps.unsupported`, hiding the
     /// control until reconnect). Everything else keeps polling silently.
     /// Returns true when the param was dropped.
@@ -4886,11 +4883,11 @@ impl Engine {
     /// Re-read one param after a client write, caching the confirmed value.
     /// Returns the confirmed JSON value (`None` when the re-read fails, in
     /// which case the caller falls back to echoing the written value as
-    /// `accepted` — see the `authority` field on [`Event::Param`]).
+    /// `accepted`, see the `authority` field on [`Event::Param`]).
     ///
     /// Provenance firewall (R2 preset-truth contract): providers whose
     /// `get_param` cannot see past their own writes (see
-    /// [`DynDriver::readback_confirms_writes`] — DL32S reads the same push
+    /// [`DynDriver::readback_confirms_writes`], DL32S reads the same push
     /// cache its writes populate, and the desk never echoes own writes)
     /// short-circuit to `None` WITHOUT reading. Their cache would agree
     /// with every write by construction, so treating that "agreement" as
@@ -4902,7 +4899,7 @@ impl Engine {
     ///
     /// The desk applies writes with a delay of tens of ms: an immediate
     /// re-read usually returns the PRE-write value (owner-rig measured on
-    /// XR18 FW 1.20 — every clip of `fader` echo read back the previous
+    /// XR18 FW 1.20, every clip of `fader` echo read back the previous
     /// value). A re-read that disagrees with what was just written is
     /// therefore treated as that stale pre-image: it is NOT cached (it
     /// would regress the broadcast-confirmed value) and the caller echoes
@@ -4912,7 +4909,7 @@ impl Engine {
     ///
     /// Superseded-entry eviction (R2 preset-truth contract): every `None`
     /// path evicts the pre-write `param_cache` entry (unless a genuinely
-    /// newer desk read landed after this write started — see
+    /// newer desk read landed after this write started, see
     /// [`evict_param_unless_fresh`](Self::evict_param_unless_fresh)), so
     /// `params_snapshot`/attach can never re-emit the stale pre-write value
     /// as verified proof after the frontend invalidated it. A genuine desk
@@ -4979,7 +4976,7 @@ impl Engine {
     /// first; on a miss, honest continuity for the display-basic leaves
     /// only (`fader`/`mute`/`name` via the inclusive display getters, which
     /// include own writes without claiming proof). Every other param returns
-    /// `None` on a miss — a capture omits unproven values rather than
+    /// `None` on a miss, a capture omits unproven values rather than
     /// laundering the stale pre-write cache entry (which the accepted write
     /// already evicted) as current desk state. Continuity values recorded
     /// here carry no provenance in the stored scene; the recall path re-emits
@@ -5104,7 +5101,7 @@ impl Engine {
     }
 
     /// Adapter entry: apply one raw JSON command line from `writer` without
-    /// a [`ClientHandle`] (the serve inbound task owns none — the outbound
+    /// a [`ClientHandle`] (the serve inbound task owns none, the outbound
     /// task owns the handle for `events`). Same semantics as
     /// [`ClientHandle::send_json`]: parse failures and domain errors arrive
     /// as unicast `error` events, never closing the connection.
@@ -5213,7 +5210,7 @@ impl Engine {
                 // frame alone cannot confirm the write on drivers whose
                 // snapshot is empty (xair), so re-read and broadcast what
                 // the desk reports, falling back to the written value
-                // (including when the re-read races the desk's apply lag —
+                // (including when the re-read races the desk's apply lag 
                 // see `refresh_param`). The echo carries readback
                 // provenance: `verified` when the desk confirmed it,
                 // `accepted` when the write landed without readback proof
@@ -5292,7 +5289,7 @@ impl Engine {
                 // already carry own writes, so `state` + this frame keep a
                 // new attach continuous. No fabrication: the fader IS the
                 // submitted value, and `main` frames carry no `authority`
-                // field — see the `param` event for verified values.
+                // field, see the `param` event for verified values.
                 self.push_state_with_by(writer, out).await;
                 let muted = self.active_drv().get_main_mute().await.ok();
                 out.push(Event::Main {
@@ -5336,7 +5333,7 @@ impl Engine {
                 // read falls back to the written value instead of flashing
                 // a phantom unsoloed. The write path itself is rig-verified:
                 // `/-stat/solosw/NN` 1-based sets the bank bit, `/-action/
-                // clearsolo` clears it — XR18 FW 1.20, 2026-10-18.)
+                // clearsolo` clears it, XR18 FW 1.20, 2026-10-18.)
                 //
                 // Cache alongside the echo (see `apply_inbound`): the poll
                 // diff then stays quiet instead of re-emitting this state.
@@ -5379,8 +5376,8 @@ impl Engine {
                 // Confirmed-value echo: re-read the param just written and
                 // broadcast what the driver reports (wire quantization may
                 // shift it); fall back to the written value when the
-                // re-read fails — or when it races the desk's apply lag
-                // (see `refresh_param`) — so the echo still lands. Provenance
+                // re-read fails, or when it races the desk's apply lag
+                // (see `refresh_param`), so the echo still lands. Provenance
                 // rides along (`verified` on desk agreement, `accepted`
                 // otherwise); frontends must not count `accepted` as recall
                 // confirmation.
@@ -5420,7 +5417,7 @@ impl Engine {
                 // Valid channels move to the front of the poll queue
                 // (re-read at the normal budget, then round-robin resumes);
                 // unknown/out-of-range channels are ignored with an `error`
-                // event — never a disconnect.
+                // event, never a disconnect.
                 let mut want: Vec<u16> = Vec::new();
                 match (ch, chs) {
                     (_, Some(list)) => {
@@ -5543,7 +5540,7 @@ impl Engine {
                 // Named-show recall provenance (same rule as numbered
                 // recall): the sim model applies writes to real in-memory
                 // state (`verified`); hardware fades are write-ACK only
-                // (`accepted` — no per-param readback on this path).
+                // (`accepted`, no per-param readback on this path).
                 let authority = || {
                     Some(
                         if self.active_drv().is_hardware() {
@@ -5734,7 +5731,7 @@ impl Engine {
                 // Real LAN discovery behind the trait (fake in tests),
                 // on EVERY driver: a sim-backed relay has no desks of its
                 // own, so scanning from sim must run the same broadcast
-                // discovery the phone uses — never the design seed rows.
+                // discovery the phone uses, never the design seed rows.
                 //
                 // Broadcast discovery and remembered-address verification
                 // run CONCURRENTLY: the UI budget is ~10 s, and serialising
@@ -5745,8 +5742,8 @@ impl Engine {
                 // (a) directed unicast verify of each address (broadcast
                 // never crosses subnets) with the linked-desk fast path,
                 // (b) ONE bounded /24 sweep per distinct remembered subnet
-                // so a desk whose DHCP lease moved — or a sibling desk on
-                // that subnet — is re-found across the router. Sweeps run
+                // so a desk whose DHCP lease moved, or a sibling desk on
+                // that subnet, is re-found across the router. Sweeps run
                 // in parallel and are capped, so they never delay the
                 // broadcast rows past the scan budget.
                 //
@@ -5939,7 +5936,7 @@ impl Engine {
                 }))
             }
             Cmd::Probe { addr } => {
-                // Manual add-by-IP: verify, then CONNECT immediately — the
+                // Manual add-by-IP: verify, then CONNECT immediately, the
                 // user typed the address to use this desk, not to file it in
                 // a list and tap Connect again. The embedded app boots on
                 // sim and the user has never switched drivers, so sim probes
@@ -5967,7 +5964,7 @@ impl Engine {
                 // Remember + persist the verified address under the table's
                 // driver so later scans (and a restart) re-verify it by
                 // directed unicast and re-find its /24 instead of dropping
-                // the row — broadcast never crosses subnets.
+                // the row, broadcast never crosses subnets.
                 self.remember_desk(table_driver, &found.ip);
                 // Claim the driver exactly like Cmd::ConnectDevice.
                 let mut claimed = "sim";
@@ -6115,7 +6112,7 @@ impl Engine {
                         .ok_or_else(|| anyhow::anyhow!("unknown fx type {fx_type:?}"))?;
                 } else if drv.fx_flavor() == FxFlavor::Numbered {
                     // Desk-native rack: names come from the desk type
-                    // table behind `caps.fx` — the short code (`id`, e.g.
+                    // table behind `caps.fx`, the short code (`id`, e.g.
                     // `HALL`) or the full display name (`label`, e.g.
                     // `Hall Reverb`); the UI sends the code. Unknown here
                     // means unknown there.
@@ -6431,7 +6428,7 @@ impl Engine {
                 // carries own writes, so fall back to the submitted value
                 // only when nothing was ever pushed (no fabrication: this IS
                 // the submitted value, and these frames carry no `authority`
-                // field — see the `param` event).
+                // field, see the `param` event).
                 let muted = self.active_drv().get_mute_group(group).await.unwrap_or(muted);
                 out.push(Event::MuteGroup {
                     group,
@@ -6486,7 +6483,7 @@ impl Engine {
                 Ok(None)
             }
             // R2 desk fire-and-forget action: clear all solos (monitoring-side
-            // only). No desk echo — the desk ACKs by silence — so fan out
+            // only). No desk echo, the desk ACKs by silence, so fan out
             // explicit unsoloed frames for every known-soloed strip and drop
             // them from the cache; otherwise the UI would stick on soloed.
             // (A surface clear arrives the same way, via `apply_inbound`
@@ -6583,7 +6580,6 @@ impl ClientMailbox {
             + self.rt.lock().map(|rt| rt.occupancy()).unwrap_or(0)
     }
 
-    /// True when nothing is queued and no slot is held.
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -6695,7 +6691,7 @@ impl openfader_core::show::FadeDriver for Engine {
 
     async fn fade_get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
         // Inclusive display getter (continuity: own writes included, no proof
-        // claimed) — never the stale pre-write cache entry, which would
+        // claimed), never the stale pre-write cache entry, which would
         // start a named-show fade from the wrong pre-move state.
         self.drv_get_fader(strip).await
     }
@@ -6745,17 +6741,17 @@ fn param_def_frame(def: &params::ParamDef) -> ParamDef {
 
 /// Drop-class poll errors: the param has no wire address on this driver
 /// (unknown/unsupported) or the desk never answers (timeouts). Everything
-/// else — empty sim slots (`no value yet`), unpushed dl32s cache
+/// else, empty sim slots (`no value yet`), unpushed dl32s cache
 /// (`no value pushed yet`), own-write-pending dl32s words with no desk
 /// proof (`no desk-confirmed value yet`), `not connected`, transient
-/// I/O — keeps polling.
+/// I/O, keeps polling.
 fn is_unsupported_error(e: &anyhow::Error) -> bool {
     let m = format!("{e:#}");
     m.contains("not supported") || m.contains("unknown param") || m.contains("timed out")
 }
 
 /// Timeout-class poll errors (a subset of [`is_unsupported_error`]): the
-/// desk never answered. Transient on wifi — [`Engine::note_poll_error`]
+/// desk never answered. Transient on wifi, [`Engine::note_poll_error`]
 /// evicts only after [`POLL_TIMEOUT_STRIKES`] in a row.
 fn is_timeout_error(e: &anyhow::Error) -> bool {
     format!("{e:#}").contains("timed out")
@@ -6774,7 +6770,7 @@ fn initial_load_priority(id: &str) -> u8 {
 }
 
 /// R2 essentials-lane ids: strip basics + pan + look. Everything deeper
-/// rides focus (visible strips) or the background sweep — see
+/// rides focus (visible strips) or the background sweep, see
 /// [`Engine::core_poll_list`].
 fn is_essentials_id(id: &str) -> bool {
     matches!(id, "fader" | "mute" | "name" | "pan" | "balance" | "color")
@@ -6844,7 +6840,7 @@ fn param_vec_to_map(fx_type: &str, values: &[f32]) -> BTreeMap<String, f32> {
 
 
 /// Parse a patch label (`Lcl 01`, `Net 12`, `USB 03`) into (group, 1-based
-/// index). The design's unpatched tile (`—`) and anything else → `None`.
+/// index). The design's unpatched tile (` `) and anything else → `None`.
 fn parse_source(label: &str) -> Option<(String, u8)> {
     let (group, num) = label.split_once(' ')?;
     if !["Lcl", "Net", "USB"].contains(&group) {
@@ -6872,7 +6868,7 @@ fn is_priority_id(id: &str) -> bool {
 }
 
 /// R2 focus core ids: the mixer strip essentials (`fader`+`mute` first
-/// wave, `name`+`pan` second — see [`Engine::request_focus`]). `first`
+/// wave, `name`+`pan` second, see [`Engine::request_focus`]). `first`
 /// selects the fader/mute wave; `false` the name/pan wave.
 fn is_core_id(id: &str, first: bool) -> bool {
     if first {
@@ -6927,7 +6923,7 @@ fn desk_file(data_dir: Option<&std::path::Path>) -> Option<PathBuf> {
 }
 
 /// Load the remembered driver -> desk address map (best-effort: a missing
-/// or corrupt file reads back empty — persistence must never block start).
+/// or corrupt file reads back empty, persistence must never block start).
 /// Broadcast discovery never crosses subnets, so without this a manually
 /// added desk vanishes from Scan after an app restart.
 fn load_desks(data_dir: Option<&std::path::Path>) -> HashMap<String, String> {
@@ -6955,7 +6951,7 @@ fn load_desks(data_dir: Option<&std::path::Path>) -> HashMap<String, String> {
 }
 
 /// Persist the remembered driver -> desk address map (best-effort:
-/// failures are swallowed — a read-only data dir must never break
+/// failures are swallowed, a read-only data dir must never break
 /// connect/probe). Mirrors [`persist_scenes`].
 fn persist_desks(data_dir: Option<&std::path::Path>, addrs: &HashMap<String, String>) {
     let Some(path) = desk_file(data_dir) else {
@@ -6971,7 +6967,7 @@ fn persist_desks(data_dir: Option<&std::path::Path>, addrs: &HashMap<String, Str
 }
 
 /// Load the persisted R2 scene library (best-effort: missing/corrupt
-/// files read back empty — a bad file must never block engine start).
+/// files read back empty, a bad file must never block engine start).
 fn load_scenes(data_dir: Option<&std::path::Path>) -> HashMap<u16, StoredScene> {
     let Some(path) = scene_file(data_dir) else {
         return HashMap::new();
@@ -7060,7 +7056,7 @@ fn load_scenes(data_dir: Option<&std::path::Path>) -> HashMap<u16, StoredScene> 
     out
 }
 
-/// Persist the R2 scene library (best-effort: failures are swallowed — a
+/// Persist the R2 scene library (best-effort: failures are swallowed, a
 /// read-only data dir must never break scene commands).
 fn persist_scenes(data_dir: Option<&std::path::Path>, lib: &HashMap<u16, StoredScene>) {
     let Some(path) = scene_file(data_dir) else {
@@ -7186,7 +7182,7 @@ mod tests {
 
     /// Remembered desk addresses survive a restart: `desks.json` under
     /// `data_dir` reloads into `desk_addrs` (scan re-verify + /24 sweep
-    /// need it — broadcast never crosses subnets). Missing/no data dir and
+    /// need it, broadcast never crosses subnets). Missing/no data dir and
     /// a corrupt file all degrade to empty, never to a boot failure.
     #[test]
     fn desks_persist_across_restart() {
@@ -7266,7 +7262,7 @@ mod tests {
     fn new_param_id_shapes_need_no_allowlist() {
         // New CATALOGUE ids (lr_assign, solo_*, sendN_grpon, automix_weight,
         // fx_insert, snap/scope, routing src) flow through the generic strip
-        // param path (`Cmd::Param` passes `field` straight to the driver —
+        // param path (`Cmd::Param` passes `field` straight to the driver 
         // no match-list gates it). These pure helpers must already classify
         // the new id shapes correctly so zero engine changes are needed:
         // `sendN_grpon` rides the send slot-number rule into the bus/FX
@@ -7290,7 +7286,7 @@ mod tests {
         assert_eq!(safe_order_key("lr_assign").0, 9);
         // Channel inserts (rig-verified 2026-10-20) need no allowlist either:
         // they fall back to the config recall group, drain on the background
-        // lane (never the essentials/focus fast path — first paint stays
+        // lane (never the essentials/focus fast path, first paint stays
         // faders/names), and sort last in the safe recall order.
         assert_eq!(param_scope_group("insert_on"), "config");
         assert_eq!(param_scope_group("insert_sel"), "config");
@@ -7840,7 +7836,7 @@ mod tests {
     #[tokio::test]
     async fn poll_list_carries_xair_solo_bank() {
         // Desk→app solo backstop: xair channel strips carry the `solo`
-        // poll id (bank re-read via `read_param`); nothing else does —
+        // poll id (bank re-read via `read_param`); nothing else does 
         // solo is not a catalogue param and never enters `caps`.
         let engine = Engine::new(EngineConfig::default());
         let list = engine.poll_list("xair").await;
@@ -8115,8 +8111,8 @@ mod tests {
     #[tokio::test]
     async fn inbound_solo_fans_out_solo_event() {
         // Desk-originated solo (ingest `solo` id, poll bank read) reaches
-        // clients as `Event::Solo` — the channel the UI solos view
-        // renders — while other params still ride `Params` frames.
+        // clients as `Event::Solo`, the channel the UI solos view
+        // renders, while other params still ride `Params` frames.
         // Parked poller: after the settle only `apply_inbound` moves the
         // mailbox, so the sequence below is exact.
         use tokio::sync::mpsc::error::TryRecvError;
@@ -8138,7 +8134,7 @@ mod tests {
             }
         }
         assert_eq!(found, Some((2, true)), "solo-in must fan out Solo");
-        // A repeat of the same state stays quiet (poll diff semantics —
+        // A repeat of the same state stays quiet (poll diff semantics 
         // no Solo echo storm every sweep).
         engine.apply_inbound(2, "solo", &ParamValue::Bool(true));
         let mut dup = false;
@@ -8204,8 +8200,8 @@ mod tests {
     /// the cursor/queue/cache, so exact broadcast-sequence assertions are
     /// deterministic even under workspace-parallel load. The immediate tick
     /// issues one full batch across the lanes (focus/visible/essentials/
-    /// background), so the total of the lane cursors — not the background
-    /// cursor alone — marks the fired tick.
+    /// background), so the total of the lane cursors, not the background
+    /// cursor alone, marks the fired tick.
     async fn settle_parked_poller(engine: &Engine, client: &mut ClientHandle) {
         let want = engine.effective_inflight(&engine.active_driver());
         let deadline = Instant::now() + Duration::from_secs(10);
@@ -8238,7 +8234,7 @@ mod tests {
         // Advance partway into channel 0's block. The parked tick already
         // warmed ch0's essentials through the core lane (fader/mute/name),
         // so 2 of these 10 round-robin reads are cache hits and stay
-        // quiet — 8 frames land.
+        // quiet, 8 frames land.
         for _ in 0..10 {
             engine.poll_once().await;
         }
@@ -8286,7 +8282,7 @@ mod tests {
     #[tokio::test]
     async fn sim_full_cycle_fills_every_strip() {
         // Engine invariant: after one full poll cycle every strip has a
-        // value for every supported scoped id — the poller never silently
+        // value for every supported scoped id, the poller never silently
         // skips a supported (strip, param) pair.
         let engine = Engine::new(EngineConfig::default());
         let list = engine.poll_list("sim").await;
@@ -8327,7 +8323,7 @@ mod tests {
     #[tokio::test]
     async fn focus_flood_superseded_by_latest() {
         // CATALOGUE-V2 §5: flood the queue with 30 focus commands, then
-        // focus strip N — N's full set drains first (most-recent-first),
+        // focus strip N, N's full set drains first (most-recent-first),
         // ahead of the flood backlog. Parked poller + settle: the live
         // poller would otherwise steal focus entries mid-test (see
         // `focus_jumps_queue`).
