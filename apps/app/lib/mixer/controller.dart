@@ -5,7 +5,7 @@ import '../core/channel_views.dart' show parameterRange;
 import '../state/app_store.dart';
 import '../u4law.dart';
 import 'design.dart';
-import 'reference.dart';
+import 'demo.dart';
 
 // Mixer view modes were removed: the rack (trim/EQ/dynamics) always shows
 // when the strip is tall enough, matching the design on every layout.
@@ -146,9 +146,8 @@ class MixerController extends ChangeNotifier {
       }));
   int _artwork(Strip s) {
     final name = s.name.toLowerCase().replaceAll(' ', '');
-    for (var i = 0; i < masterFaderReference.length - 1; i++) {
-      if (masterFaderReference[i].name.toLowerCase().replaceAll(' ', '') ==
-          name) {
+    for (var i = 0; i < mixerDemoStrips.length - 1; i++) {
+      if (mixerDemoStrips[i].name.toLowerCase().replaceAll(' ', '') == name) {
         return i;
       }
     }
@@ -226,7 +225,7 @@ class MixerController extends ChangeNotifier {
     final strips = store.strips.take(8).toList();
     for (var i = 0; i < strips.length; i++) {
       if (_disposed || !demo || !_allowDemoSeed) break;
-      final s = strips[i], ref = masterFaderReference[i];
+      final s = strips[i], ref = mixerDemoStrips[i];
       await store.sendCommand(Cmds.param(s.ch, 'name', ref.name));
       if (_disposed || !demo || !_allowDemoSeed) break;
       store.setFader(s.ch, MixerFaderScale.toEngine(ref.value));
@@ -234,8 +233,7 @@ class MixerController extends ChangeNotifier {
       store.setMute(s.ch, false);
     }
     if (!_disposed && demo && _allowDemoSeed) {
-      store.setMasterFader(
-          MixerFaderScale.toEngine(masterFaderReference[8].value));
+      store.setMasterFader(MixerFaderScale.toEngine(mixerDemoStrips[8].value));
       store.setMasterMuted(false);
       if (_selectedKey == null || _selectedKey == strips.first.key) {
         select(_channel(strips[1]));

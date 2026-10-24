@@ -30,7 +30,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/master_fader/
+    - assets/mixer/
     - assets/brand/open-fader-meter.svg
   fonts:
     - family: Barlow

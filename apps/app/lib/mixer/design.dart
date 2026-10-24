@@ -64,15 +64,11 @@ class MixerArtwork extends StatelessWidget {
       this.fit = BoxFit.contain});
   @override
   Widget build(BuildContext context) {
-    final (w, h) = name.startsWith('tab_')
-        ? (120.0, 60.0)
-        : name.startsWith('eq_')
-            ? (163.0, 58.0)
-            : name.startsWith('instrument_')
-                ? (120.0, 120.0)
-                : name == 'connection'
-                    ? (60.0, 70.0)
-                    : (60.0, 60.0);
+    final (w, h) = name.startsWith('instrument_')
+        ? (120.0, 120.0)
+        : name == 'connection'
+            ? (60.0, 70.0)
+            : (60.0, 60.0);
     return SizedBox(
         width: width,
         height: height,
@@ -80,11 +76,11 @@ class MixerArtwork extends StatelessWidget {
             fit: fit,
             child: SvgPicture.asset(
                 renderingStrategy: RenderingStrategy.raster,
-                'assets/master_fader/$name.svg',
+                'assets/mixer/$name.svg',
                 width: w,
                 height: h,
                 colorMapper: _ArtworkColors(ConsolePalette.of(context)),
-                colorFilter: name.startsWith('tab_') || name == 'connection'
+                colorFilter: name == 'connection'
                     ? ColorFilter.mode(
                         ConsolePalette.of(context).mutedText, BlendMode.srcIn)
                     : null)));
