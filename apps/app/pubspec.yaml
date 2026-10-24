@@ -31,7 +31,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/mixer/
-    - assets/brand/open-fader-meter.svg
+    - assets/brand/open-fader-logo.svg
   fonts:
     - family: Barlow
       fonts:

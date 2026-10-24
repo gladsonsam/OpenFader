@@ -403,7 +403,7 @@ class _BrandButton extends StatelessWidget {
     final logo = SizedBox(
         width: compact ? 44 : 52,
         height: compact ? 44 : 52,
-        child: SvgPicture.asset('assets/brand/open-fader-meter.svg',
+        child: SvgPicture.asset('assets/brand/open-fader-logo.svg',
             semanticsLabel: 'OpenFader'));
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Semantics(
