@@ -1,3 +1,4 @@
+import 'package:flutter/semantics.dart';
 import '../../palette.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
@@ -9,6 +10,7 @@ class MixerNameplate extends StatelessWidget {
   final double iconHeight, bottomInset, nameHeight, nameOffset, fontSize;
   final bool compact;
   final VoidCallback onSelect, onOpen;
+  final VoidCallback? onRename;
   const MixerNameplate(
       {super.key,
       required this.channel,
@@ -19,15 +21,22 @@ class MixerNameplate extends StatelessWidget {
       this.nameOffset = 86,
       this.fontSize = 17,
       required this.onSelect,
-      required this.onOpen});
+      required this.onOpen,
+      this.onRename});
   @override
   Widget build(BuildContext context) => Semantics(
       button: true,
       selected: channel.selected,
+      customSemanticsActions: onRename == null
+          ? null
+          : {
+              const CustomSemanticsAction(label: 'Rename channel'): onRename!,
+            },
       label: '${channel.name}, channel ${channel.number}',
       child: GestureDetector(
           onTap: onSelect,
           onDoubleTap: onOpen,
+          onLongPress: onRename,
           behavior: HitTestBehavior.opaque,
           child: LayoutBuilder(builder: (context, box) {
             final sx = box.maxWidth / (compact ? 104.2 : 192.2);

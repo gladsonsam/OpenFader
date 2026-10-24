@@ -37,6 +37,7 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 
 import '../core/channel_views.dart';
+import '../core/channel_name.dart';
 import '../core/coalescer.dart';
 import '../core/fader_law.dart' show lawForDriver;
 import '../core/store.dart' as ps;
@@ -67,6 +68,92 @@ class AppStore extends ChangeNotifier
   // rendering); attach() re-arms so an upgraded library is picked up.
   bool _binaryMeters = true;
   final ps.StoreMaps _maps = ps.StoreMaps();
+
+  final Map<String, Completer<String?>> _nameEdits = {};
+
+  @override
+  ChannelNameTarget? captureNameTarget([int? channel]) {
+    final ch = channel ?? _channel;
+    for (final strip in engine.strips) {
+      if (strip.ch != ch || !engine.valueKnown(ch, 'name')) continue;
+      final target =
+          ChannelNameTarget(engine.session, ch, strip.key, strip.name);
+      return nameEditError(target) == null ? target : null;
+    }
+    return null;
+  }
+
+  @override
+  String? nameEditError(ChannelNameTarget target) {
+    if (!engine.connected || engine.session != target.session) {
+      return 'Connection changed or lost. Reopen the name editor.';
+    }
+    if (!engine.capsReady || !engine.supportedParams.contains('name')) {
+      return 'Channel naming is unavailable on this connection.';
+    }
+    if (!engine.valueKnown(target.channel, 'name') ||
+        !engine.strips
+            .any((s) => s.ch == target.channel && s.key == target.key)) {
+      return 'The channel name is not available. Reopen the name editor.';
+    }
+    return null;
+  }
+
+  void _finishNameEdit(String key, String? error) {
+    final edit = _nameEdits.remove(key);
+    if (edit == null) return;
+    _maps.pending.remove(key);
+    edit.complete(error);
+  }
+
+  void _failNameEdits(String message) {
+    for (final key in _nameEdits.keys.toList()) {
+      _finishNameEdit(key, message);
+    }
+  }
+
+  @override
+  Future<String?> renameChannel(ChannelNameTarget target, String name) async {
+    final unavailable = nameEditError(target);
+    if (unavailable != null) return unavailable;
+    // Reject unsafe text, never silently normalize a user's channel identity.
+    if (name.trim().isEmpty ||
+        name.runes.any((r) =>
+            r < 32 || (r >= 127 && r <= 159) || (r >= 0xd800 && r <= 0xdfff))) {
+      return 'Enter a name without control characters or invalid Unicode.';
+    }
+    if (engine.driver == 'sim' && name.runes.length > 16) {
+      return 'Use 16 characters or fewer for an offline channel name.';
+    }
+    // This is the current Rust transport boundary, not a claimed
+    // desk/Master Fader text limit. Reject rather than send truncated UTF-8.
+    if (engine.driver == 'dl32s' &&
+        (utf8.encode(name).length > 63 || name != name.trim())) {
+      return name != name.trim()
+          ? 'Remove spaces at the beginning or end of the name.'
+          : 'This name is too long for this mixer. Try a shorter name.';
+    }
+    final current = engine.strips
+        .firstWhere((s) => s.ch == target.channel && s.key == target.key)
+        .name;
+    if (name == current) return 'The channel already has this name.';
+    final key = ps.pendingKey(target.channel, 'name');
+    if (_maps.pending.containsKey(key)) {
+      return 'A name change is already pending.';
+    }
+    final done = Completer<String?>();
+    _nameEdits[key] = done;
+    ps.noteOptimistic(_maps, target.channel, 'name', name, _nowMs());
+    unawaited(Future<void>.sync(
+            () => _api.cmd(_clientId, Cmds.param(target.channel, 'name', name)))
+        .then((_) {}, onError: (Object e) {
+      // A late transport failure must not cancel a newer edit of this channel.
+      if (identical(_nameEdits[key], done)) {
+        _finishNameEdit(key, 'Could not rename channel: $e');
+      }
+    }));
+    return done.future;
+  }
 
   // --- connection (phase/message/host, reduced) ---
   bool _online = false;
@@ -282,6 +369,7 @@ class AppStore extends ChangeNotifier
   }
 
   void _clearSessionValues() {
+    _failNameEdits('Connection changed or lost. Reopen the name editor.');
     _coalescer.clear();
     _maps.confirmed.clear();
     _maps.pending.clear();
@@ -348,6 +436,7 @@ class AppStore extends ChangeNotifier
     final expired = ps.sweepPending(_maps.pending, now, ps.confirmTimeoutMs);
     if (expired.isNotEmpty) {
       for (final key in expired) {
+        _finishNameEdit(key, 'The backend did not confirm the name change.');
         final split = ps.splitKey(key);
         if (split == null) continue;
         if (split.id == 'fader') {
@@ -391,6 +480,8 @@ class AppStore extends ChangeNotifier
     try {
       frames = await _api.poll(_clientId, 512);
     } catch (e) {
+      _failNameEdits(
+          'Connection lost while waiting for the name confirmation: $e');
       _noteTransportError(e);
       _syncSpectrum();
       return; // never crash the meter loop on a transport hiccup
@@ -409,6 +500,18 @@ class AppStore extends ChangeNotifier
           dirty = true;
         }
         _confirmEcho(e);
+        if (e['type'] == 'error') {
+          final ch = (e['ch'] as num?)?.toInt();
+          for (final key in _nameEdits.keys.toList()) {
+            if (ch == null || ps.splitKey(key)?.ch == ch) {
+              _finishNameEdit(key,
+                  'Backend rejected the name change: ${e['message'] ?? 'Unknown error'}');
+            }
+          }
+        }
+        for (final key in _nameEdits.keys.toList()) {
+          if (!_maps.pending.containsKey(key)) _finishNameEdit(key, null);
+        }
         if (controlOnly) {
           // Control echo (strip/send/main/bus): the strip
           // notifiers pick it up below, no global rebuild.
@@ -1190,6 +1293,7 @@ class AppStore extends ChangeNotifier
   @override
   void cmdParam(String leaf, Object value) {
     final desk = deskLeaf(leaf);
+    if (desk == 'name') return; // Use the captured-target rename contract.
     if (!supports(desk)) return;
     if (value is num && !value.isFinite) return;
     // DSP edits (including delayed ChannelWrites flushes) use the current
@@ -1634,6 +1738,7 @@ class AppStore extends ChangeNotifier
 
   @override
   void dispose() {
+    _failNameEdits('The connection was closed.');
     _coalescer.clear();
     for (final m in _meters) {
       m.dispose();
