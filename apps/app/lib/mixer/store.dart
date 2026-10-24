@@ -1,4 +1,5 @@
 // Mixer data/write contract, independent of any screen composition.
+import '../core/channel_name.dart';
 import 'dart:ui' show Color;
 import 'package:flutter/foundation.dart';
 import '../engine.dart';
@@ -44,7 +45,7 @@ class MixerBusRow {
 /// rides the same pattern — one strip rebuilds from its own notifier while
 /// the shell and siblings stay quiet. Structural state (strips/bank/bus,
 /// solo banner) notifies through [ChangeNotifier].
-abstract class MixerStore extends ChangeNotifier {
+abstract class MixerStore extends ChangeNotifier implements ChannelNameStore {
   List<Strip> get strips;
   double panOf(int ch);
   bool soloOf(int ch);

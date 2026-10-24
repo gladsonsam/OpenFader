@@ -55,6 +55,7 @@ class FakeSimEngine implements EngineApi {
       8,
       (ch) => {
             ..._defaults,
+            'name': 'CH${(ch + 1).toString().padLeft(2, '0')}',
             'source': 'Local ${ch + 1}',
             for (var band = 1; band <= 4; band++) ...{
               'eq${band}_freq': [100.0, 2000.0, 5000.0, 10000.0][band - 1],
@@ -161,6 +162,15 @@ class FakeSimEngine implements EngineApi {
         final field = c['field'];
         final value = c['value'];
         if (field is! String || !_params[ch].containsKey(field)) return;
+        if (field == 'name' &&
+            (value is! String || value.isEmpty || value.runes.length > 16)) {
+          _mailbox.add(jsonEncode({
+            'type': 'error',
+            'ch': ch,
+            'message': 'Channel names must contain 1–16 characters.',
+          }));
+          return;
+        }
         final current = _params[ch][field];
         if ((current is num && value is num && value.isFinite) ||
             (current is bool && value is bool) ||
@@ -169,6 +179,7 @@ class FakeSimEngine implements EngineApi {
           if (field == 'fader' && value is num) {
             _strips[ch].fader = value.toDouble();
           }
+          if (field == 'name' && value is String) _strips[ch].name = value;
           if (field == 'mute' && value is bool) _strips[ch].muted = value;
           _mailbox.add(jsonEncode(
               {'type': 'param', 'ch': ch, 'field': field, 'value': value}));

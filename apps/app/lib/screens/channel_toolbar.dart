@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../u4law.dart';
 import '../widgets/number_entry.dart';
+import '../widgets/channel_name_editor.dart';
 import 'channel.dart';
 
 enum ChannelTool { fx, settings, routing, layout, scenes }
@@ -79,13 +80,37 @@ class ChannelToolbar extends StatelessWidget {
                                 mainAxisAlignment: MainAxisAlignment.center,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                      'Ch ${store.channelNumber} · ${store.displayName}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: AppDesign.type(compact ? 12 : 14,
-                                          color: ConsolePalette.of(context)
-                                              .text7)),
+                                  Tooltip(
+                                      message: 'Rename channel',
+                                      child: Semantics(
+                                          button: true,
+                                          label:
+                                              'Rename channel ${store.channelNumber}',
+                                          child: InkWell(
+                                              onTap:
+                                                  store.captureNameTarget() ==
+                                                          null
+                                                      ? null
+                                                      : () {
+                                                          final target = store
+                                                              .captureNameTarget();
+                                                          if (target != null) {
+                                                            showChannelNameEditor(
+                                                                context,
+                                                                store,
+                                                                target);
+                                                          }
+                                                        },
+                                              child: Text(
+                                                  'Ch ${store.channelNumber} · ${store.displayName}',
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: AppDesign.type(
+                                                      compact ? 12 : 14,
+                                                      color: ConsolePalette.of(
+                                                              context)
+                                                          .text7))))),
                                   Text(
                                       focus == null
                                           ? 'Fader'
