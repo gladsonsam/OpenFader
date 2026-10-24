@@ -18,6 +18,7 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get well => pair(0xff080808, 0xffe9edf0);
   Color get panel => pair(0xff0f0f0f, 0xffe4e9ed);
   Color get control => pair(0xff343434, 0xffbfc8d0);
+  Color get stripDivider => pair(0xff101010, 0xff9aa6b1);
   Color get line => pair(0xff2c2c2c, 0xff9aa6b1);
   Color get text => pair(0xffebebeb, 0xff131c24);
   Color get mutedText => pair(0xffa0a0a0, 0xff354350);

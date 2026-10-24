@@ -55,7 +55,7 @@ class MixerStrip extends StatelessWidget {
                 decoration: BoxDecoration(
                     border: Border(
                         right: BorderSide(
-                            color: ConsolePalette.of(context).line))),
+                            color: ConsolePalette.of(context).stripDivider))),
                 child: Stack(children: [
                   place(
                       g.rackY,
