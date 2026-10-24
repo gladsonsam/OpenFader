@@ -15,6 +15,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../core/channel_views.dart';
+import '../engine.dart' show AudioSpectrumFrame;
 import '../design.dart';
 import '../theme.dart';
 import 'console_button.dart';
@@ -258,13 +259,17 @@ class _KnobPainter extends CustomPainter {
 // ---------------------------------------------------------------------------
 
 /// EQ response painter: grid + summed curve + band nodes + live RTA area
-/// overlay (rtaOverlay.ts: peak-hold handled by the owner feeding [rtaBins]).
+/// overlay. Measured bands retain their frequency edges and dB scale;
+/// legacy synthetic magnitudes stay on their separate demo path.
 class EqCurvePainter extends CustomPainter {
   final ConsolePalette palette;
   final List<double> responseDb; // EqGraphGeom.n + 1 samples
   final ChannelEqVm eq;
   final List<double>? rtaBins; // 0..1 magnitudes, RTA_BINS wide
   final bool rtaActive;
+  final AudioSpectrumFrame? audioSpectrum;
+  final double rtaFloorDb;
+  final double rtaCeilingDb;
 
   EqCurvePainter({
     required this.palette,
@@ -272,6 +277,9 @@ class EqCurvePainter extends CustomPainter {
     required this.eq,
     this.rtaBins,
     this.rtaActive = false,
+    this.audioSpectrum,
+    this.rtaFloorDb = -90,
+    this.rtaCeilingDb = 0,
   });
 
   static const _freqTicks = <double>[
@@ -353,8 +361,36 @@ class EqCurvePainter extends CustomPainter {
     // Reference HTML: adjacent outlined rectangles, one per frequency band.
     // The demo provides explicit synthetic bands; no smoothing or invented
     // frequency movement belongs in the painter.
+    final frame = audioSpectrum;
     final bins = rtaBins;
-    if (rtaActive && bins != null && bins.isNotEmpty) {
+    if (rtaActive && frame != null && rtaCeilingDb > rtaFloorDb) {
+      // One block per measured band, clipped to the graph's 20 Hz–20 kHz
+      // log-frequency axis. The analyser's dB scale is independent of EQ gain.
+      for (var i = 0; i < frame.binsDb.length; i++) {
+        final low = frame.bandEdgesHz[i].clamp(20.0, 20000.0);
+        final high = frame.bandEdgesHz[i + 1].clamp(20.0, 20000.0);
+        if (high <= low) continue;
+        final left = EqGraphGeom.xOf(low) * sx;
+        final right = EqGraphGeom.xOf(high) * sx;
+        final height =
+            ((frame.binsDb[i] - rtaFloorDb) / (rtaCeilingDb - rtaFloorDb))
+                    .clamp(0.0, 1.0) *
+                size.height;
+        final gap = math.min(1.0, (right - left) / 2);
+        final rect = RRect.fromRectAndRadius(
+            Rect.fromLTWH(left + gap / 2, size.height - height,
+                right - left - gap, height),
+            const Radius.circular(.7));
+        canvas.drawRRect(rect,
+            Paint()..color = palette.eqPreviewFill.withValues(alpha: .28));
+        canvas.drawRRect(
+            rect,
+            Paint()
+              ..color = palette.rtaOutline
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = .7);
+      }
+    } else if (rtaActive && bins != null && bins.isNotEmpty) {
       final count = math.min(32, bins.length);
       final width = size.width / count;
       for (var bar = 0; bar < count; bar++) {
@@ -445,6 +481,10 @@ class EqCurvePainter extends CustomPainter {
       old.palette != palette ||
       old.responseDb != responseDb ||
       old.eq != eq ||
+      old.audioSpectrum != audioSpectrum ||
+      old.audioSpectrum?.bandEdgesHz != audioSpectrum?.bandEdgesHz ||
+      old.rtaFloorDb != rtaFloorDb ||
+      old.rtaCeilingDb != rtaCeilingDb ||
       old.rtaBins != rtaBins ||
       old.rtaActive != rtaActive;
 }
@@ -456,6 +496,9 @@ class U4EqGraph extends StatelessWidget {
   final List<double> responseDb;
   final List<double>? rtaBins;
   final bool rtaActive;
+  final AudioSpectrumFrame? audioSpectrum;
+  final double rtaFloorDb;
+  final double rtaCeilingDb;
   final double height;
   final ValueChanged<int> onSelectBand;
   final void Function(int band, double f, double g) onNode;
@@ -467,6 +510,9 @@ class U4EqGraph extends StatelessWidget {
     required this.responseDb,
     this.rtaBins,
     this.rtaActive = false,
+    this.audioSpectrum,
+    this.rtaFloorDb = -90,
+    this.rtaCeilingDb = 0,
     this.height = 344,
     required this.onSelectBand,
     required this.onNode,
@@ -508,6 +554,9 @@ class U4EqGraph extends StatelessWidget {
                       responseDb: responseDb,
                       eq: eq,
                       rtaBins: rtaBins,
+                      audioSpectrum: audioSpectrum,
+                      rtaFloorDb: rtaFloorDb,
+                      rtaCeilingDb: rtaCeilingDb,
                       rtaActive: rtaActive,
                     ),
                   ),

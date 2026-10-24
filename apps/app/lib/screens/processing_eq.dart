@@ -159,29 +159,44 @@ class _EqTabState extends State<_EqTab> {
           const SizedBox(width: 8),
           SizedBox(
               width: wide ? 248 * scale : null,
-              child: ValueListenableBuilder<List<double>>(
-                  valueListenable: store.spectrum,
-                  builder: (context, bins, _) => Semantics(
-                      toggled: _showRta && bins.isNotEmpty,
-                      child: _ProcessingButton(
-                          label: bins.isEmpty ? 'RTA unavailable' : 'RTA',
-                          active: _showRta && bins.isNotEmpty,
-                          onTap: bins.isEmpty
-                              ? null
-                              : () => setState(() => _showRta = !_showRta))))),
+              child: ListenableBuilder(
+                  listenable:
+                      Listenable.merge([store.spectrum, store.audioSpectrum]),
+                  builder: (context, _) {
+                    final available = store.audioSpectrum.value != null ||
+                        store.spectrum.value.isNotEmpty;
+                    return Semantics(
+                        toggled: _showRta && available,
+                        child: _ProcessingButton(
+                            label: !available
+                                ? 'RTA unavailable'
+                                : store.audioSpectrum.value?.isShared == true
+                                    ? 'RTA · shared'
+                                    : 'RTA',
+                            active: _showRta && available,
+                            onTap: !available
+                                ? null
+                                : () => setState(() => _showRta = !_showRta)));
+                  })),
           if (wide) const Spacer(),
         ]),
         const SizedBox(height: 8),
         Opacity(
             opacity: eq.on || ConsolePalette.of(context).isLight ? 1 : .55,
-            child: ValueListenableBuilder<List<double>>(
-                valueListenable: store.spectrum,
-                builder: (context, bins, _) => U4EqGraph(
+            child: ListenableBuilder(
+                listenable:
+                    Listenable.merge([store.spectrum, store.audioSpectrum]),
+                builder: (context, _) {
+                  final bins = store.spectrum.value;
+                  final frame = store.audioSpectrum.value;
+                  return Stack(children: [
+                    U4EqGraph(
                       height: wide ? 665 * scale : bounds.maxWidth * 344 / 346,
                       eq: eq,
                       responseDb: eqResponseDb(eq),
                       rtaBins: bins,
-                      rtaActive: _showRta && bins.any((b) => b > .02),
+                      audioSpectrum: frame,
+                      rtaActive: _showRta && (frame != null || bins.isNotEmpty),
                       onSelectBand: _pick,
                       onNode: (band, f, g) {
                         if (band == 0) {
@@ -199,7 +214,29 @@ class _EqTabState extends State<_EqTab> {
                         widget.writes.queue('eq${band}_q', q);
                         store.setEqParam(band, 'q', q);
                       },
-                    ))),
+                    ),
+                    if (frame != null)
+                      Positioned(
+                          top: 4,
+                          left: 40,
+                          right: 14,
+                          child: IgnorePointer(
+                              child: Align(
+                                  alignment: Alignment.topLeft,
+                                  child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 6, vertical: 3),
+                                      decoration: BoxDecoration(
+                                          color:
+                                              ConsolePalette.of(context).chip,
+                                          borderRadius: U4.rBtn),
+                                      child: Text(frame.label,
+                                          style: AppDesign.type(14,
+                                              color: ConsolePalette.of(context)
+                                                  .cyan,
+                                              weight: FontWeight.w600))))))
+                  ]);
+                })),
         const SizedBox(height: 8),
         if (wide)
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

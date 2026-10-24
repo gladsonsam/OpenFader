@@ -13,9 +13,11 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
 import '../core/channel_views.dart';
+import '../engine.dart' show AudioSpectrumFrame;
 import '../settings/prefs.dart';
 import '../theme.dart';
 import '../widgets/mobile_reference_width.dart';
@@ -73,7 +75,10 @@ abstract class ChannelStore extends ChangeNotifier {
 
   // --- live feeds (80 ms loop target) ---
   ValueNotifier<double> get levelDb;
-  ValueNotifier<List<double>> get spectrum; // RTA_BINS magnitudes 0..1
+  ValueNotifier<List<double>> get spectrum; // legacy demo magnitudes 0..1
+  /// Optional measured feed. Older/demo stores keep their legacy spectrum.
+  ValueListenable<AudioSpectrumFrame?> get audioSpectrum =>
+      const AlwaysStoppedAnimation<AudioSpectrumFrame?>(null);
   double? grDb(DynKind kind);
   Future<void> pollMeters();
 
