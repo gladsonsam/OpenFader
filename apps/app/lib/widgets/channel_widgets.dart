@@ -15,6 +15,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../core/channel_views.dart';
+import '../core/audio_spectrum_peaks.dart';
 import '../engine.dart' show AudioSpectrumFrame;
 import '../design.dart';
 import '../theme.dart';
@@ -268,6 +269,7 @@ class EqCurvePainter extends CustomPainter {
   final List<double>? rtaBins; // 0..1 magnitudes, RTA_BINS wide
   final bool rtaActive;
   final AudioSpectrumFrame? audioSpectrum;
+  final AudioSpectrumPeaks audioSpectrumPeaks;
   final double rtaFloorDb;
   final double rtaCeilingDb;
 
@@ -278,6 +280,7 @@ class EqCurvePainter extends CustomPainter {
     this.rtaBins,
     this.rtaActive = false,
     this.audioSpectrum,
+    this.audioSpectrumPeaks = const AudioSpectrumPeaks.empty(),
     this.rtaFloorDb = -90,
     this.rtaCeilingDb = 0,
   });
@@ -390,6 +393,26 @@ class EqCurvePainter extends CustomPainter {
               ..style = PaintingStyle.stroke
               ..strokeWidth = .7);
       }
+      if (audioSpectrumPeaks.matches(frame)) {
+        final marker = Paint()
+          ..color = palette.text1
+          ..strokeWidth = 1;
+        for (var i = 0; i < audioSpectrumPeaks.binsDb.length; i++) {
+          final low = frame.bandEdgesHz[i].clamp(20.0, 20000.0);
+          final high = frame.bandEdgesHz[i + 1].clamp(20.0, 20000.0);
+          if (high <= low) continue;
+          final left = EqGraphGeom.xOf(low) * sx;
+          final right = EqGraphGeom.xOf(high) * sx;
+          final gap = math.min(1.0, (right - left) / 2);
+          final height = ((audioSpectrumPeaks.binsDb[i] - rtaFloorDb) /
+                      (rtaCeilingDb - rtaFloorDb))
+                  .clamp(0.0, 1.0) *
+              size.height;
+          final y = size.height - height;
+          canvas.drawLine(
+              Offset(left + gap / 2, y), Offset(right - gap / 2, y), marker);
+        }
+      }
     } else if (rtaActive && bins != null && bins.isNotEmpty) {
       final count = math.min(32, bins.length);
       final width = size.width / count;
@@ -482,6 +505,7 @@ class EqCurvePainter extends CustomPainter {
       old.responseDb != responseDb ||
       old.eq != eq ||
       old.audioSpectrum != audioSpectrum ||
+      old.audioSpectrumPeaks != audioSpectrumPeaks ||
       old.audioSpectrum?.bandEdgesHz != audioSpectrum?.bandEdgesHz ||
       old.rtaFloorDb != rtaFloorDb ||
       old.rtaCeilingDb != rtaCeilingDb ||
@@ -497,6 +521,7 @@ class U4EqGraph extends StatelessWidget {
   final List<double>? rtaBins;
   final bool rtaActive;
   final AudioSpectrumFrame? audioSpectrum;
+  final AudioSpectrumPeaks audioSpectrumPeaks;
   final double rtaFloorDb;
   final double rtaCeilingDb;
   final double height;
@@ -511,6 +536,7 @@ class U4EqGraph extends StatelessWidget {
     this.rtaBins,
     this.rtaActive = false,
     this.audioSpectrum,
+    this.audioSpectrumPeaks = const AudioSpectrumPeaks.empty(),
     this.rtaFloorDb = -90,
     this.rtaCeilingDb = 0,
     this.height = 344,
@@ -555,6 +581,7 @@ class U4EqGraph extends StatelessWidget {
                       eq: eq,
                       rtaBins: rtaBins,
                       audioSpectrum: audioSpectrum,
+                      audioSpectrumPeaks: audioSpectrumPeaks,
                       rtaFloorDb: rtaFloorDb,
                       rtaCeilingDb: rtaCeilingDb,
                       rtaActive: rtaActive,

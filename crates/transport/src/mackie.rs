@@ -1132,15 +1132,26 @@ impl MackieSession {
     // ---- meters ----
 
     /// Per-client meter-layout override: replaces this connection's pushed
-    /// meter block with `addresses` (one word per address, in order). The
-    /// DL32S driver uses this to request its 91-entry RTA layout
-    /// ([`dl32s_meter_addresses`]); the shared init handshake keeps the
-    /// 60-entry family default. Broadcast reports are already enabled by
-    /// the init handshake, so only the layout itself is re-sent here.
+    /// meter block with `addresses` (one word per address, in order), then
+    /// re-enables broadcast reports — the same layout-then-broadcast pairing
+    /// (same [`BROADCAST_CONTROL_BODY`], same [`REQUEST_TIMEOUT`] ordering)
+    /// the shared init handshake and [`enable_meter_reports`](Self::enable_meter_reports)
+    /// use, sourced from the native MeterLayout -> ack -> BroadcastControl
+    /// -> ack activation order. The DL32S driver uses this to request its
+    /// 91-entry RTA layout ([`dl32s_meter_addresses`]); the shared init
+    /// handshake keeps the 60-entry family default. Each request error is
+    /// propagated (no layout-success pretence); the caller decides whether
+    /// the override is optional.
     pub async fn request_meter_layout(&self, addresses: &[i32]) -> anyhow::Result<()> {
         self.send_request(
             Command::MeterLayout,
             build_meter_layout(addresses),
+            REQUEST_TIMEOUT,
+        )
+        .await?;
+        self.send_request(
+            Command::BroadcastControl,
+            BROADCAST_CONTROL_BODY.to_vec(),
             REQUEST_TIMEOUT,
         )
         .await?;
