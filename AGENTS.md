@@ -1,28 +1,28 @@
 # OpenFader agent rules
 
-Flutter mixer app (`apps/app`) over an embedded Rust engine (`crates/`).
+Flutter mixer app (`app`) over an embedded Rust engine (`crates/`).
 Brand is **OpenFader**, one word. License GPL-3.0-or-later.
 
 ## Layout
 
-- `apps/app/lib/main.dart` — entry; `BootGate` runs staged boot, then `AppShell`.
-- `apps/app/lib/boot/` — `boot_controller.dart` (staged boot), `launch_screen.dart`,
+- `app/lib/main.dart` — entry; `BootGate` runs staged boot, then `AppShell`.
+- `app/lib/boot/` — `boot_controller.dart` (staged boot), `launch_screen.dart`,
   `fake_sim_engine.dart` (offline sim backend), `ffi_engine.dart` (real engine).
-- `apps/app/lib/shell/app_router.dart` — navigation + all store implementations.
-- `apps/app/lib/screens/` — `start.dart` (Connections front door), `channel.dart`
+- `app/lib/shell/app_router.dart` — navigation + all store implementations.
+- `app/lib/screens/` — `start.dart` (Connections front door), `channel.dart`
   + `channel_toolbar.dart`, `connection.dart`, `fx/meters/routing/scenes/settings/debug.dart`.
-- `apps/app/lib/mixer/` — mixer `page.dart`, `controller.dart`, `store.dart`,
+- `app/lib/mixer/` — mixer `page.dart`, `controller.dart`, `store.dart`,
   shared tokens in `design.dart`, widgets in `components/`.
-- `apps/app/lib/state/app_store.dart` — the single store (engine reads, `sendRaw` writes).
-- `apps/app/lib/palette.dart` — immutable `ConsolePalette` theme extension. Resolve
+- `app/lib/state/app_store.dart` — the single store (engine reads, `sendRaw` writes).
+- `app/lib/palette.dart` — immutable `ConsolePalette` theme extension. Resolve
   with `ConsolePalette.of(context)` in widgets; pass snapshots into painters and
   compare them in `shouldRepaint`. UI colors must not be global mutable state.
-- `apps/app/lib/{theme.dart,design.dart,u4law.dart}` — shared geometry/type (`U4`/`AppDesign`),
+- `app/lib/{theme.dart,design.dart,u4law.dart}` — shared geometry/type (`U4`/`AppDesign`),
   fader law. Never hardcode colors; never touch the fader law casually
   (protocol values depend on it).
-- `apps/app/lib/engine.dart` — `Cmds` protocol + `EngineState`. `FakeSimEngine`
+- `app/lib/engine.dart` — `Cmds` protocol + `EngineState`. `FakeSimEngine`
   must speak the same protocol as the native engine.
-- `apps/app/assets/brand/` — approved logo SVG/PNGs + opaque app icon source.
+- `app/assets/brand/` — approved logo SVG/PNGs + opaque app icon source.
 - `crates/` — `engine core transport flutter_bridge proto-xair proto-dl32s sim serve cli`.
 - `scripts/` — `ci-build-app.py`, `flutter-rust-ios.sh`, `flutter-rust-macos.sh`
   (Xcode build phases), `sync-version.mjs` (keeps `VERSION` + manifests in sync).
@@ -45,14 +45,14 @@ Brand is **OpenFader**, one word. License GPL-3.0-or-later.
   (iPad Pro 13-inch + iPhone 18 Pro), screenshot-compare against the design
   mock at its specified dimensions, then commit.
 - Simulators: build with `flutter build ios --simulator --debug` in
-  `apps/app`, install/launch via simctl or the MobileBuildMCP tools,
+  `app`, install/launch via simctl or the MobileBuildMCP tools,
   capture with `xcrun simctl io <udid> screenshot`.
 - The app boots into the Connections start screen; use Work offline to
   reach the mixer on sims.
 
 ## Gates (binding)
 
-- `flutter analyze` in `apps/app` must be clean — no exceptions.
+- `flutter analyze` in `app` must be clean — no exceptions.
 - `cargo test --workspace --locked` must stay green. It guards the desk
   protocol; do not expand it without being asked.
 - Do NOT write frontend tests (widget/interaction/screenshot-diff suites)
