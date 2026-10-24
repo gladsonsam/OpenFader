@@ -68,6 +68,9 @@ class FakeSimEngine implements EngineApi {
               'send${slot}_on': true,
             },
           });
+  // Match native SimDriver's supported subgroup masters and initial values.
+  final List<double> _subgroupFaders = List.filled(6, 0);
+  final List<bool> _subgroupMuted = List.filled(6, false);
   final Queue<String> _mailbox = Queue<String>();
   final Map<int, String> _pendingSpectra = {};
   final Stopwatch _signalClock = Stopwatch()..start();
@@ -85,10 +88,14 @@ class FakeSimEngine implements EngineApi {
     _mailbox.add(jsonEncode({
       'type': 'caps',
       'driver': 'sim',
+      'groups': {'subgroups': _subgroupFaders.length},
       'params': [
         for (final id in _params.first.keys) {'id': id}
       ],
     }));
+    for (var group = 0; group < _subgroupFaders.length; group++) {
+      _echoSubgroup(group);
+    }
     for (var ch = 0; ch < _params.length; ch++) {
       _mailbox
           .add(jsonEncode({'type': 'params', 'ch': ch, 'values': _params[ch]}));
@@ -172,6 +179,25 @@ class FakeSimEngine implements EngineApi {
         }
         _snapshot();
         return;
+      case 'subgroup_fader':
+      case 'subgroup_mute':
+        final group = c['group'];
+        if (group is! int || group < 0 || group >= _subgroupFaders.length) {
+          return;
+        }
+        if (c['cmd'] == 'subgroup_fader') {
+          final value = c['value'];
+          if (value is! num || !value.isFinite || value < 0 || value > 1) {
+            return;
+          }
+          _subgroupFaders[group] = value.toDouble();
+        } else {
+          final muted = c['muted'];
+          if (muted is! bool) return;
+          _subgroupMuted[group] = muted;
+        }
+        _echoSubgroup(group);
+        return;
       case 'fader':
         final ch = (c['ch'] as num).toInt();
         _strips[ch].fader = ((c['value'] as num)).toDouble();
@@ -185,6 +211,16 @@ class FakeSimEngine implements EngineApi {
         _echo(ch, 'mute', _strips[ch].muted);
         return;
     }
+  }
+
+  void _echoSubgroup(int group) {
+    _mailbox.add(jsonEncode({
+      'type': 'subgroup',
+      'group': group,
+      'fader': _subgroupFaders[group],
+      'muted': _subgroupMuted[group],
+      'key': 'subgroup/${(group + 1).toString().padLeft(2, '0')}',
+    }));
   }
 
   void _echo(int ch, String field, Object value) {
