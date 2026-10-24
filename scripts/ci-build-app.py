@@ -12,7 +12,7 @@ import tarfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
-APP = ROOT / 'apps/app'
+APP = ROOT / 'app'
 OUT = ROOT / 'artifacts'
 
 

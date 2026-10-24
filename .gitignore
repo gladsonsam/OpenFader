@@ -31,4 +31,4 @@ scripts/flutter-mac-dev.sh
 /artifacts/
 
 # Design references and verification records live in private docs
-/apps/app/design/
+/app/design/

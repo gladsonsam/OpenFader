@@ -92,7 +92,7 @@ function syncPubspec(rel) {
 }
 
 syncToml('Cargo.toml', 'workspace.package');
-syncPubspec('apps/app/pubspec.yaml');
+syncPubspec('app/pubspec.yaml');
 
 if (CHECK && dirty) {
   console.error('sync-version: drift detected (run without --check to fix)');
