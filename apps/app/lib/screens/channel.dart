@@ -19,6 +19,7 @@ import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 
 import '../core/channel_views.dart';
+import '../core/audio_spectrum_peaks.dart';
 import '../engine.dart' show AudioSpectrumFrame;
 import '../settings/prefs.dart';
 import '../theme.dart';
@@ -83,6 +84,14 @@ abstract class ChannelStore extends ChangeNotifier
   /// Optional measured feed. Older/demo stores keep their legacy spectrum.
   ValueListenable<AudioSpectrumFrame?> get audioSpectrum =>
       const AlwaysStoppedAnimation<AudioSpectrumFrame?>(null);
+
+  /// Measured per-band dB maxima; demo/older stores safely omit peak hold.
+  ValueListenable<AudioSpectrumPeaks> get audioSpectrumPeaks =>
+      const AlwaysStoppedAnimation<AudioSpectrumPeaks>(
+          AudioSpectrumPeaks.empty());
+
+  /// Presentation reset for the user's RTA visibility toggle; no desk writes.
+  void resetAudioSpectrumPeaks() {}
   double? grDb(DynKind kind);
   Future<void> pollMeters();
 

@@ -174,7 +174,10 @@ class _EqTabState extends State<_EqTab> {
                             active: _showRta && available,
                             onTap: !available
                                 ? null
-                                : () => setState(() => _showRta = !_showRta)));
+                                : () {
+                                    store.resetAudioSpectrumPeaks();
+                                    setState(() => _showRta = !_showRta);
+                                  }));
                   })),
           if (wide) const Spacer(),
         ]),
@@ -182,8 +185,11 @@ class _EqTabState extends State<_EqTab> {
         Opacity(
             opacity: eq.on || ConsolePalette.of(context).isLight ? 1 : .55,
             child: ListenableBuilder(
-                listenable:
-                    Listenable.merge([store.spectrum, store.audioSpectrum]),
+                listenable: Listenable.merge([
+                  store.spectrum,
+                  store.audioSpectrum,
+                  store.audioSpectrumPeaks,
+                ]),
                 builder: (context, _) {
                   final bins = store.spectrum.value;
                   final frame = store.audioSpectrum.value;
@@ -194,6 +200,7 @@ class _EqTabState extends State<_EqTab> {
                       responseDb: eqResponseDb(eq),
                       rtaBins: bins,
                       audioSpectrum: frame,
+                      audioSpectrumPeaks: store.audioSpectrumPeaks.value,
                       rtaActive: _showRta && (frame != null || bins.isNotEmpty),
                       onSelectBand: _pick,
                       onNode: (band, f, g) {
