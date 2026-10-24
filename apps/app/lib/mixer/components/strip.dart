@@ -67,10 +67,7 @@ class MixerStrip extends StatelessWidget {
                           g.rackH,
                           compact
                               ? MixerEqPreview(
-                                  channel: ch,
-                                  demo: controller.demo,
-                                  compact: true,
-                                  onOpen: onOpen)
+                                  channel: ch, compact: true, onOpen: onOpen)
                               : MixerProcessingRack(
                                   channel: ch,
                                   gainRange: controller.gainRangeOf(ch),
