@@ -286,7 +286,11 @@ pub const VALUE_TYPE_PARAM: u8 = 5;
 /// Mute-group master address space (kept in a separate cache: address 11 is
 /// input 1's `main_assign` under type 5 and mute group 1's master under type 2).
 pub const VALUE_TYPE_MUTE_GROUP: u8 = 2;
-/// Meter address space (pushed periodically; value encoding unconfirmed, ignored).
+/// Meter address space, pushed periodically once the meter-layout /
+/// broadcast-control init runs. Words are big-endian IEEE-754 dB; on the
+/// DL32S the first 32 words of a `start == 1` block are the ordered input
+/// meters (rig-verified; decoded in `proto-dl32s`, not here). Transport
+/// stays encoding-agnostic and forwards every block via `PushEvent::Values`.
 pub const VALUE_TYPE_METERS: u8 = 1;
 /// Show-parameter address space (set_show_parameter uses type 3).
 pub const VALUE_TYPE_SHOW: u8 = 3;
@@ -610,7 +614,8 @@ struct Caches {
 #[derive(Clone, Debug)]
 pub enum PushEvent {
     /// One `ChannelValues` block: `value_type` 5 = params, 2 = mute-group
-    /// masters, 1 = meters (encoding unconfirmed — drivers skip it).
+    /// masters, 1 = meters (BE-f32 dB; the DL32S driver decodes the first
+    /// 32 words as input meters, other drivers skip it).
     Values {
         value_type: u8,
         start: u32,

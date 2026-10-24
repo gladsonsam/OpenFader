@@ -50,6 +50,9 @@ class U4Shell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // Modal editors handle keyboard insets on their own route. Keep the
+      // console workspace at its normal size behind them.
+      resizeToAvoidBottomInset: false,
       backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
         bottom: bottomSafeArea,

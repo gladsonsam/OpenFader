@@ -9,17 +9,18 @@ pub mod addrs;
 
 use addrs::{dl32s_inputs, INPUT_COUNT};
 use openfader_core::{
-    validate_fader, ChannelStrip, MixerDriver, MixerInfo, MixerSnapshot, ParamUpdate, ParamValue,
-    StripId,
+    validate_fader, ChannelStrip, MeterFrame, MixerDriver, MixerInfo, MixerSnapshot, ParamUpdate,
+    ParamValue, StripId,
 };
 use openfader_transport::mackie::{
     MackieSession, PushEvent, MUTE_GROUP_BASE_ADDRESS, MUTE_GROUP_COUNT, REQUEST_TIMEOUT,
-    VALUE_TYPE_MUTE_GROUP, VALUE_TYPE_PARAM,
+    VALUE_TYPE_METERS, VALUE_TYPE_MUTE_GROUP, VALUE_TYPE_PARAM,
 };
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use std::time::Duration;
 use tokio::sync::{broadcast, Mutex, MutexGuard};
 
 /// Wave-1+2 canonical surface: every id below names a DL32S leaf whose
@@ -341,6 +342,60 @@ fn decode_push(push: PushEvent) -> Vec<ParamUpdate> {
     }
 }
 
+/// Observed input-meter push shape (type-1 `Values`): `start == 1` with at
+/// least 32 words, where the first 32 words are the ordered input meters as
+/// big-endian IEEE-754 dB. Rig-verified 2026-10-24 (CH7 A->B flip moved only
+/// word 7 by >10 dB; word 7 restored with all 106 CH7 words): structurally
+/// upstream, CH7 live-pinned. Words past the first 32 ride the rest of the
+/// meter layout (returns, aux masters, mains) — unmodelled, never cached.
+const METER_START: u32 = 1;
+
+/// Staleness bound for the input-meter cache: the desk pushes at ~11 Hz, so
+/// 1 s is ~11 missed frames — long enough to ride out jitter, short enough
+/// that a dead stream reads unavailable (empty) instead of frozen session data.
+const METER_STALE_AFTER: Duration = Duration::from_secs(1);
+
+/// Cached pre-fader input levels (linear amplitude, one entry per input).
+/// Written only by the connection ingest task, read by `poll_meters`; the
+/// generation ties each sample to its connection (a new connect or a
+/// disconnect clears it, so stale data never survives a session change).
+#[derive(Debug, Default)]
+struct MeterState {
+    generation: u64,
+    updated_at: Option<std::time::Instant>,
+    levels: Vec<f32>,
+}
+
+/// Decode one meter push (type-1 `Values`) into the 32 linear input levels,
+/// or `None` when the shape is not the observed one (wrong start, short
+/// block) or any of the first 32 words is non-finite dB. Conversion is
+/// `10^(db/20)` amplitude: valid 0 dB reads back 1, and an exact `0.0` word
+/// is 0 dB (unity) — never silence-mapped. Only the first-32 scope keeps
+/// phantom aux slots out; nothing here multiplies by fader state, so no
+/// post-fader level is ever inferred.
+fn decode_input_meters(push: &PushEvent) -> Option<Vec<f32>> {
+    let (start, raws) = match push {
+        PushEvent::Values {
+            value_type,
+            start,
+            raws,
+        } if *value_type == VALUE_TYPE_METERS => (*start, raws),
+        _ => return None,
+    };
+    if start != METER_START || raws.len() < INPUT_COUNT as usize {
+        return None;
+    }
+    let mut out = Vec::with_capacity(INPUT_COUNT as usize);
+    for raw in raws.iter().take(INPUT_COUNT as usize) {
+        let db = f32::from_bits(*raw);
+        if !db.is_finite() {
+            return None;
+        }
+        out.push(10f32.powf(db / 20.0).clamp(0.0, 1.0));
+    }
+    Some(out)
+}
+
 /// Bulk-state readiness bound: prior hardware runs saw the whole-space
 /// push settle tens of seconds after init on a slow path, so 60 s keeps
 /// headroom without hanging `Cmd::Connect` forever.
@@ -392,6 +447,7 @@ pub struct Dl32sDriver {
     addr: Mutex<Option<String>>,
     update_tx: broadcast::Sender<ParamUpdate>,
     generation: Arc<AtomicU64>,
+    meters: Arc<std::sync::Mutex<MeterState>>,
 }
 
 impl Default for Dl32sDriver {
@@ -408,6 +464,7 @@ impl Dl32sDriver {
             addr: Mutex::new(None),
             update_tx,
             generation: Arc::new(AtomicU64::new(0)),
+            meters: Arc::new(std::sync::Mutex::new(MeterState::default())),
         }
     }
 
@@ -791,10 +848,6 @@ impl Dl32sDriver {
 }
 
 impl MixerDriver for Dl32sDriver {
-    fn meter_taps(&self) -> &'static [&'static str] {
-        &[]
-    }
-
     fn name(&self) -> &'static str {
         "dl32s"
     }
@@ -883,17 +936,33 @@ impl MixerDriver for Dl32sDriver {
         // Desk-broadcast ingest: decode every pushed frame into the stable
         // update channel (one task per connection; it exits when the next
         // connect bumps the generation or the session drops). Mirrors the
-        // X-Air session->driver forward path.
+        // X-Air session->driver forward path. Type-1 meter blocks ride a
+        // separate branch into the input-meter cache (first 32 words only);
+        // `decode_push` keeps dropping them as params.
         let generation = self.generation.fetch_add(1, Ordering::SeqCst) + 1;
+        if let Ok(mut m) = self.meters.lock() {
+            m.generation = generation;
+            m.updated_at = None;
+            m.levels.clear();
+        }
         let mut rx = session.subscribe_pushes();
         let tx = self.update_tx.clone();
         let gen = self.generation.clone();
+        let meters = self.meters.clone();
         tokio::spawn(async move {
             loop {
                 match rx.recv().await {
                     Ok(push) => {
                         if gen.load(Ordering::Acquire) != generation {
                             break;
+                        }
+                        if let Some(levels) = decode_input_meters(&push) {
+                            if let Ok(mut m) = meters.lock() {
+                                m.generation = generation;
+                                m.updated_at = Some(std::time::Instant::now());
+                                m.levels = levels;
+                            }
+                            continue;
                         }
                         for update in decode_push(push) {
                             let _ = tx.send(update);
@@ -1329,9 +1398,53 @@ impl MixerDriver for Dl32sDriver {
             addr,
         })
     }
+
+    /// Only the verified pre-fader input tap: the first 32 meter words are
+    /// hardware-pinned input dB (see [`decode_input_meters`]). No `post`
+    /// (never `in` x fader — unconfirmed), no GR, no RTA.
+    fn meter_taps(&self) -> &'static [&'static str] {
+        &["in"]
+    }
+
+    /// Non-blocking input-meter sample: the cached linear levels (one per
+    /// input strip), or empty when no fresh push backs this generation —
+    /// empty means unavailable, never a fabricated silence row. The engine
+    /// skips both the `meters` and the `in` tap frames on empty, so a dead
+    /// stream goes quiet instead of frozen. No polling here: pushes arrive
+    /// on the existing broadcast feed, and the shell's 80 ms ticker stays
+    /// the only meter clock.
+    fn poll_meters(&self) -> MeterFrame {
+        let current = self.generation.load(Ordering::Acquire);
+        let fresh = self.meters.lock().ok().and_then(|m| {
+            if m.generation != current || m.levels.len() != INPUT_COUNT as usize {
+                return None;
+            }
+            let at = m.updated_at?;
+            if at.elapsed() > METER_STALE_AFTER {
+                return None;
+            }
+            Some(m.levels.clone())
+        });
+        match fresh {
+            Some(levels) => MeterFrame { levels },
+            None => MeterFrame { levels: Vec::new() },
+        }
+    }
+
+    async fn disconnect(&self) -> anyhow::Result<()> {
+        if let Some(session) = self.session.lock().await.take() {
+            session.close();
+        }
+        *self.addr.lock().await = None;
+        if let Ok(mut m) = self.meters.lock() {
+            m.updated_at = None;
+            m.levels.clear();
+        }
+        Ok(())
+    }
     // Buses / main / meter subscribe keep the core defaults (unsupported):
     // output-strip fields are structurally mapped but deliberately unlabelled
-    // per SPEC, and meter value encoding is unconfirmed.
+    // per SPEC.
 }
 
 #[cfg(test)]
