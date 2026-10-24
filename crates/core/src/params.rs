@@ -560,6 +560,20 @@ impl ParamRegistry {
         }
     }
 
+    /// Override one canonical row's engineering-unit range for the provider
+    /// whose desk documents different native bounds. Only call with bounds
+    /// documented for that desk's own wire fields — live-verified or taken
+    /// from the desk's manual (documentation-based bounds must say so at
+    /// the call site; endpoint hardware tests may still be pending).
+    /// Kinds, units, labels, scopes and defaults never change here.
+    /// Unknown ids are ignored so a typo can never invent a control.
+    pub fn override_range(&mut self, id: &str, min: f32, max: f32) {
+        if let Some(def) = self.defs.iter_mut().find(|d| d.id == id) {
+            def.min = min;
+            def.max = max;
+        }
+    }
+
     /// Look up one entry by id (canonical + contributed).
     pub fn find(&self, id: &str) -> Option<&ParamDef> {
         self.defs.iter().find(|d| d.id == id)

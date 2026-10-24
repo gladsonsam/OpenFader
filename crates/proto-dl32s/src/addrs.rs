@@ -69,6 +69,8 @@ pub struct Field {
     pub key: &'static str,
     pub offset: u32,
     /// Natural-unit bounds for validation; `None` means unbounded.
+    /// Per-field comments identify documentation-based bounds. `verified`
+    /// does not establish that both endpoints were exercised on hardware.
     pub limits: Option<(f32, f32)>,
     pub encoding: Encoding,
     pub label: &'static str,
@@ -102,7 +104,10 @@ fn input_head() -> Vec<Field> {
         field("source_a", 0, Int, "Input A source", None, true),
         field("source_b", 1, Int, "Input B source", None, true),
         field("source_select", 2, Enum, "Source A/B", None, true),
-        field("trim", 3, Db, "Trim", Some((-30.0, 30.0)), true),
+        // Master Fader 5.1 p91 documents trim -40..+20 dB (the inherited
+        // -30..+30 was not established by endpoint tests). Documentation-based: endpoint
+        // hardware tests pending.
+        field("trim", 3, Db, "Trim", Some((-40.0, 20.0)), true),
         field("icon", 4, Int, "Icon", None, true),
         field("colour", 5, Int, "Colour", None, true),
         field("polarity", 6, Bool, "Polarity invert", None, true),
@@ -111,13 +116,25 @@ fn input_head() -> Vec<Field> {
         field("pan", 9, Float, "Pan", Some((-1.0, 1.0)), true),
         field("main_assign", 10, Bool, "Assign to main", None, true),
         field("stereo_link", 11, Bool, "Stereo link", None, true),
+        // Master Fader 5.1 p90: mic/balanced gain slider 0..60 dB; 1/4-inch
+        // line inputs attenuate -20..40 effective. No input-socket
+        // detection exists, so the wire bound stays the union (-20..60) —
+        // both ends documented; the mic-side caps contract is 0..60 via
+        // `param_range_overrides` (CH7 MicPre native 0 observed).
         field("gain", 12, Db, "Preamp gain", Some((-20.0, 60.0)), true),
         field("phantom", 13, Bool, "48V phantom", None, true),
         field("hpf_on", 14, Bool, "HPF on", None, true),
-        field("hpf_freq", 15, Float, "HPF frequency", Some((20.0, 400.0)), true),
+        // Master Fader 5.1 p103 Modern EQ documents HPF 20..700 Hz (the
+        // previous table stopped at 400). Documentation-based:
+        // endpoint hardware tests pending.
+        field("hpf_freq", 15, Float, "HPF frequency", Some((20.0, 700.0)), true),
         field("hpf_slope", 16, Int, "HPF slope", None, false),
         field("gate_mode", 17, Enum, "Gate modern/vintage", None, true),
         field("gate_on", 18, Bool, "Gate on", None, true),
+        // Master Fader 5.1 p112 documents gate threshold -80..0 dB. The
+        // existing raw table bound stays (-120, 0); the canonical control
+        // range remains the documented -80..0. Neither endpoint nor
+        // out-of-range clamp behavior is established by these limits.
         field("gate_threshold", 19, Db, "Gate threshold", Some((-120.0, 0.0)), true),
         field("gate_attack", 20, Float, "Gate attack ms", None, false),
         field("gate_release", 21, Float, "Gate release ms", None, false),
@@ -125,10 +142,14 @@ fn input_head() -> Vec<Field> {
         field("gate_hold", 23, Float, "Gate hold ms", None, false),
         field("comp_mode", 24, Enum, "Comp modern/vintage", None, true),
         field("comp_on", 25, Bool, "Comp on", None, true),
-        field("comp_gain", 26, Db, "Comp makeup gain", None, false),
-        // Live survey 2026-10-20 (32 channels, read-only): -36.8..0.0.
-        // The inherited +20 top is unobserved; the desk-facing bound is 0.
-        field("comp_threshold", 27, Db, "Comp threshold", Some((-60.0, 0.0)), false),
+        // Master Fader 5.1 p112 documents comp gain 0..20 dB (the absent
+        // bound was inherited, not measured). Documentation-based: meaning
+        // inferred, endpoint hardware tests pending.
+        field("comp_gain", 26, Db, "Comp makeup gain", Some((0.0, 20.0)), false),
+        // Master Fader 5.1 p112 documents comp threshold -80..0 dB (the
+        // previous table stopped at -60). Documentation-based:
+        // live survey 2026-10-20 saw -36.8..0.0, endpoint tests pending.
+        field("comp_threshold", 27, Db, "Comp threshold", Some((-80.0, 0.0)), false),
         field("comp_attack", 28, Float, "Comp attack ms", None, false),
         field("comp_release", 29, Float, "Comp release ms", None, false),
         field("comp_ratio", 30, Float, "Comp ratio", None, false),
@@ -159,12 +180,15 @@ fn input_eq() -> Vec<Field> {
             Box::leak(format!("EQ band {band} {suffix}").into_boxed_str())
         };
         out.push(field(key("type"), base, Enum, label("filter type"), None, true));
+        // Master Fader 5.1 p103 Modern EQ documents band gain ±15 dB (the
+        // previous table allowed ±20). Documentation-based: endpoint
+        // hardware tests pending.
         out.push(field(
             key("gain"),
             base + 1,
             Db,
             label("gain"),
-            Some((-20.0, 20.0)),
+            Some((-15.0, 15.0)),
             true,
         ));
         out.push(field(
@@ -175,12 +199,15 @@ fn input_eq() -> Vec<Field> {
             Some((20.0, 20000.0)),
             true,
         ));
+        // Master Fader 5.1 p103 Modern EQ documents Q 0.5..16 (the
+        // previous table allowed 0.1..20). Documentation-based:
+        // endpoint hardware tests pending.
         out.push(field(
             key("q"),
             base + 3,
             Float,
             label("Q"),
-            Some((0.1, 20.0)),
+            Some((0.5, 16.0)),
             true,
         ));
     }

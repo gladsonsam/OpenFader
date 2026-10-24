@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../engine.dart';
+import '../core/channel_views.dart' show parameterRange;
 import '../state/app_store.dart';
 import '../u4law.dart';
 import 'design.dart';
@@ -294,11 +295,26 @@ class MixerController extends ChangeNotifier {
     store.setPan(ch.channel!, value);
   }
 
+  List<double>? gainRangeOf(MixerChannel ch) {
+    final index = ch.channel;
+    if (ch.master ||
+        index == null ||
+        !store.engine.capsReady ||
+        !store.engine.supportedParams.contains('gain') ||
+        (store.engine.driver != 'sim' &&
+            (!store.engine.connected ||
+                !store.engine.valueKnown(index, 'gain')))) {
+      return null;
+    }
+    return parameterRange(store.paramMetadata('gain'));
+  }
+
   void setGain(MixerChannel ch, double value) {
-    if (ch.master) return;
+    final range = gainRangeOf(ch);
+    if (range == null || !value.isFinite) return;
     _focusReadout(ch, MixerReadoutControl.gain);
     store.openChannel(ch.channel!);
-    store.cmdParam('gain', value.clamp(-12, 60));
+    store.cmdParam('gain', value.clamp(range.first, range.last));
   }
 
   void nextPage(int delta) {

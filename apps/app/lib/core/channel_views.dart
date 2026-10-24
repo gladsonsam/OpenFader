@@ -49,6 +49,43 @@ class ChannelWrites {
   }
 }
 
+/// Finite engineering-unit limits advertised by the active driver.
+List<double>? parameterRange(Map<String, dynamic>? metadata) {
+  final min = metadata?['min'];
+  final max = metadata?['max'];
+  if (min is! num ||
+      max is! num ||
+      !min.isFinite ||
+      !max.isFinite ||
+      min >= max) {
+    return null;
+  }
+  return [min.toDouble(), max.toDouble()];
+}
+
+/// Offline simulator DSP limits, matching crates/core/src/params.rs.
+/// These are simulator catalogue values, never a hardware fallback.
+List<double>? canonicalSimDspRange(String leaf) {
+  if (RegExp(r'^eq[1-6]_freq$').hasMatch(leaf)) return [20, 20000];
+  if (RegExp(r'^eq[1-6]_gain$').hasMatch(leaf)) return [-15, 15];
+  if (RegExp(r'^eq[1-6]_q$').hasMatch(leaf)) return [.3, 10];
+  return switch (leaf) {
+    'gain' => [-12, 60],
+    'trim' => [-18, 18],
+    'hpf_freq' => [20, 400],
+    'gate_thr' => [-80, 0],
+    'comp_thr' => [-60, 0],
+    'gate_range' => [3, 60],
+    'gate_att' || 'comp_att' => [0, 120],
+    'gate_hold' || 'comp_hold' => [.02, 2000],
+    'gate_rel' || 'comp_rel' => [5, 4000],
+    'comp_ratio' => [1.1, 100],
+    'comp_knee' => [0, 5],
+    'comp_makeup' => [0, 24],
+    _ => null,
+  };
+}
+
 /// EQ drag math port (eq.ts eqParamFromDrag).
 double eqParamFromDrag(
   String param,
@@ -56,27 +93,16 @@ double eqParamFromDrag(
   double start,
   double dyPx,
   bool fine, {
-  List<double>? range,
+  required List<double> range,
 }) {
   final dy = dyPx * (fine ? 0.25 : 1.0);
-  final lo = range != null
-      ? range[0]
-      : (param == 'f'
-          ? 20.0
-          : param == 'g'
-              ? -15.0
-              : 0.3);
-  final hi = range != null
-      ? range[1]
-      : (param == 'f'
-          ? (band == 0 ? 1000.0 : 20000.0)
-          : param == 'g'
-              ? 15.0
-              : 16.0);
+  final lo = range.first;
+  final hi = range.last;
   double clamp(double v) => v < lo ? lo : (v > hi ? hi : v);
   if (param == 'f') return clamp(start * math.pow(2, dy / 30).toDouble());
-  if (param == 'g') return (clamp(start + dy * 0.1) * 10).round() / 10;
-  return (clamp(start * math.pow(2, dy / 60).toDouble()) * 100).round() / 100;
+  if (param == 'g') return clamp((clamp(start + dy * 0.1) * 10).round() / 10);
+  return clamp(
+      (clamp(start * math.pow(2, dy / 60).toDouble()) * 100).round() / 100);
 }
 
 /// Graph-node drag port (eq.ts eqNodeFromPos): unit plot pos -> freq/gain.
@@ -173,6 +199,7 @@ class ChannelEqVm {
   final bool on;
   final double hpfF; // Hz
   final bool hpfOn;
+  final List<double>? hpfRange;
   final int hpfSlope; // 12 | 24
   final List<EqBandVm> bands; // 4 parametric bands
   final int selectedBand; // 0 = HPF, 1..4 bands
@@ -181,6 +208,7 @@ class ChannelEqVm {
     this.on = true,
     this.hpfF = 80,
     this.hpfOn = false,
+    this.hpfRange,
     this.hpfSlope = 12,
     this.bands = const [],
     this.selectedBand = 1,
@@ -327,6 +355,7 @@ enum DynKind { gate, comp }
 /// Dynamics snapshot for one gate/comp section.
 class ChannelDynVm {
   final DynKind kind;
+  final Map<String, List<double>> ranges;
   final bool on;
   final double thr; // dB
   final double range; // gate only, dB
@@ -349,6 +378,7 @@ class ChannelDynVm {
 
   const ChannelDynVm({
     required this.kind,
+    this.ranges = const {},
     this.on = true,
     this.thr = -50,
     this.range = 40,

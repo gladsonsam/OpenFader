@@ -2,10 +2,8 @@ part of 'channel.dart';
 
 class _EqTab extends StatefulWidget {
   final ChannelStore store;
-  final ChannelWrites writes;
   final ValueChanged<ChannelFocus> onFocus;
-  const _EqTab(
-      {required this.store, required this.writes, required this.onFocus});
+  const _EqTab({required this.store, required this.onFocus});
   @override
   State<_EqTab> createState() => _EqTabState();
 }
@@ -15,7 +13,7 @@ class _EqTabState extends State<_EqTab> {
 
   void _pick(int band) {
     widget.store.selectEqBand(band);
-    widget.onFocus(eqFreqFocus(widget.store, widget.writes, band));
+    widget.onFocus(eqFreqFocus(widget.store, band));
   }
 
   Widget _slider(EqBandVm band, String prop, String label) {
@@ -25,14 +23,12 @@ class _EqTabState extends State<_EqTab> {
       _ => band.qRange,
     };
     final value = switch (prop) { 'g' => band.g, 'f' => band.f, _ => band.q };
-    final min =
-        range?.first ?? switch (prop) { 'g' => -15.0, 'f' => 20.0, _ => .3 };
-    final max =
-        range?.last ?? switch (prop) { 'g' => 15.0, 'f' => 20000.0, _ => 16.0 };
+    final min = range?.first ?? 0;
+    final max = range?.last ?? 1;
     final focus = switch (prop) {
-      'g' => _eqGainFocus(widget.store, widget.writes, band.band),
-      'f' => eqFreqFocus(widget.store, widget.writes, band.band),
-      _ => _eqQFocus(widget.store, widget.writes, band.band),
+      'g' => _eqGainFocus(widget.store, band.band),
+      'f' => eqFreqFocus(widget.store, band.band),
+      _ => _eqQFocus(widget.store, band.band),
     };
     return Padding(
         padding: const EdgeInsets.only(top: 6),
@@ -45,13 +41,12 @@ class _EqTabState extends State<_EqTab> {
             compact: true,
             inlineLabel: MediaQuery.sizeOf(context).width < 700,
             color: ConsolePalette.of(context).bandColor(band.band),
-            enabled: widget.store.supports('eq${band.band}_$prop'),
+            enabled: range != null,
             onFocus: () {
               _pick(band.band);
               widget.onFocus(focus);
             },
             onChanged: (v) {
-              widget.writes.queue('eq${band.band}_$prop', v);
               widget.store.setEqParam(band.band, prop, v);
             }));
   }
@@ -76,15 +71,13 @@ class _EqTabState extends State<_EqTab> {
                   label: 'HPF frequency',
                   text: '${eq.hpfF.toStringAsFixed(0)} Hz',
                   value: eq.hpfF,
-                  min: 20,
-                  max: 1000,
+                  min: eq.hpfRange?.first ?? 0,
+                  max: eq.hpfRange?.last ?? 1,
                   showLabel: false,
                   color: ConsolePalette.of(context).bandColor(0),
-                  enabled: store.supports('eq_hpf_f'),
-                  onFocus: () =>
-                      widget.onFocus(eqFreqFocus(store, widget.writes, 0)),
+                  enabled: eq.hpfRange != null,
+                  onFocus: () => widget.onFocus(eqFreqFocus(store, 0)),
                   onChanged: (v) {
-                    widget.writes.queue('eq_hpf_f', v);
                     store.setEqParam(0, 'f', v);
                   })),
         ]));
@@ -202,18 +195,14 @@ class _EqTabState extends State<_EqTab> {
                       onSelectBand: _pick,
                       onNode: (band, f, g) {
                         if (band == 0) {
-                          widget.writes.queue('eq_hpf_f', f.clamp(20, 1000));
-                          store.setEqParam(0, 'f', f.clamp(20, 1000));
+                          store.setEqParam(0, 'f', f);
                         } else {
-                          widget.writes.queue('eq${band}_f', f);
-                          widget.writes.queue('eq${band}_g', g);
                           store.setEqParam(band, 'f', f);
                           store.setEqParam(band, 'g', g);
                         }
                       },
                       onQ: (band, q) {
-                        widget.onFocus(_eqQFocus(store, widget.writes, band));
-                        widget.writes.queue('eq${band}_q', q);
+                        widget.onFocus(_eqQFocus(store, band));
                         store.setEqParam(band, 'q', q);
                       },
                     ),

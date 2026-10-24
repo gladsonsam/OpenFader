@@ -13,10 +13,8 @@ class ProcessingSource {
 
 class _InputTab extends StatelessWidget {
   final ChannelStore store;
-  final ChannelWrites writes;
   final ValueChanged<ChannelFocus> onFocus;
-  const _InputTab(
-      {required this.store, required this.writes, required this.onFocus});
+  const _InputTab({required this.store, required this.onFocus});
 
   @override
   Widget build(BuildContext context) {
