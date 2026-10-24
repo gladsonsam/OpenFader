@@ -159,12 +159,16 @@ class _EqTabState extends State<_EqTab> {
           const SizedBox(width: 8),
           SizedBox(
               width: wide ? 248 * scale : null,
-              child: Semantics(
-                  toggled: _showRta,
-                  child: _ProcessingButton(
-                      label: 'RTA',
-                      active: _showRta,
-                      onTap: () => setState(() => _showRta = !_showRta)))),
+              child: ValueListenableBuilder<List<double>>(
+                  valueListenable: store.spectrum,
+                  builder: (context, bins, _) => Semantics(
+                      toggled: _showRta && bins.isNotEmpty,
+                      child: _ProcessingButton(
+                          label: bins.isEmpty ? 'RTA unavailable' : 'RTA',
+                          active: _showRta && bins.isNotEmpty,
+                          onTap: bins.isEmpty
+                              ? null
+                              : () => setState(() => _showRta = !_showRta))))),
           if (wide) const Spacer(),
         ]),
         const SizedBox(height: 8),
