@@ -37,6 +37,7 @@ abstract class SettingsStore extends ChangeNotifier {
   PrefsService get prefs;
   RecentMixers get recents;
   LocalMixStore get mixes;
+  Future<int> appStorageBytes();
 
   Future<String?> importMix();
   Future<void> exportMix(LocalMix mix);
@@ -1133,7 +1134,7 @@ class _MixesDetail extends StatelessWidget {
               ]),
         ),
         const _Note(
-            'Keep an exported backup somewhere safe before deleting local mixes or resetting app data.'),
+            'Backups contain local mixes. Processor presets are stored separately on this device and are not included. Keep an exported backup somewhere safe before deleting mixes or resetting app data.'),
       ],
     );
   }
@@ -1307,7 +1308,7 @@ class _DataDetail extends StatelessWidget {
           _PrefRow(
               label: 'App storage',
               trailing: FutureBuilder<int>(
-                  future: store.mixes.storageBytes(),
+                  future: store.appStorageBytes(),
                   builder: (context, snap) => _ValueText(snap.hasError
                       ? 'Unavailable'
                       : (snap.hasData ? _bytes(snap.data!) : 'Calculating')))),
@@ -1366,12 +1367,12 @@ class _DataDetail extends StatelessWidget {
                   })),
           _ActionRow(
               label: 'Reset all app data',
-              desc: 'Remove local mixes, saved mixers and preferences.',
+              desc: 'Remove local mixes, processor presets and preferences.',
               danger: true,
               onTap: () => confirm(
                   title: 'Reset all app data?',
                   body:
-                      'Local mixes, backups, saved mixers, cache and preferences will be removed. A connected mixer will not be reset.',
+                      'Local mixes, backups, processor presets, saved mixers, cache and preferences will be removed. A connected mixer will not be reset.',
                   action: 'Reset app data',
                   onConfirm: () async {
                     await store.fullReset();

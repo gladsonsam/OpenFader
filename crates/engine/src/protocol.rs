@@ -635,6 +635,21 @@ pub enum Event {
         key: Option<String>,
         #[serde(skip_serializing_if = "Option::is_none", default)]
         by: Option<String>,
+        /// Readback provenance for this value (R2 preset-truth contract):
+        /// - `"verified"`: the value carries desk evidence — a poll read, a
+        ///   desk push, or a post-write re-read that agreed with the write.
+        ///   The engine only caches values with this provenance.
+        /// - `"accepted"`: the write was accepted by the desk (or queued to
+        ///   it) but no readback proves the value. DL32S writes always land
+        ///   here: the desk never echoes own writes and its `get_param`
+        ///   reads the same push cache the write just populated, so any
+        ///   "agreement" would be our own optimism, not the desk. Frontends
+        ///   must NOT count `accepted` echoes as recall/save confirmation;
+        ///   report them as uncertain instead of claiming complete.
+        ///
+        /// Absent on old frames: unknown provenance, never verified.
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        authority: Option<String>,
     },
     Shows {
         shows: Vec<Show>,
@@ -691,6 +706,16 @@ pub enum Event {
         /// Stable strip key (see [`StateStrip::key`]).
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
+        /// Per-param readback provenance, same vocabulary as the `param`
+        /// event's `authority` field: only the explicit value `"verified"`
+        /// counts as desk proof (per-key: `authority[field] == "verified"`).
+        /// Absent (or absent for a key) means UNKNOWN provenance — never
+        /// verified (old engine frames predate the field). The field is
+        /// optional only for backward compatibility. The engine always emits
+        /// an explicit `"verified"` entry for every key it broadcasts from
+        /// the verified-only cache (poll/push/snapshot paths).
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        authority: Option<BTreeMap<String, String>>,
     },
     Locks {
         holds: BTreeMap<String, String>,

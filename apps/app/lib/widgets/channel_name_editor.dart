@@ -64,6 +64,8 @@ class _NameEditorState extends State<_NameEditor> {
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 TextField(
                   controller: _text,
+                  autocorrect: false,
+                  enableSuggestions: false,
                   autofocus: true,
                   enabled: !_pending && unavailable == null,
                   style: AppDesign.type(18, color: p.text7),

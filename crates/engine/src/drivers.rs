@@ -323,6 +323,39 @@ pub trait DynDriver: Send + Sync {
         anyhow::bail!("{}: clear solo not supported", self.name())
     }
     // ---- provider tuning (defaults keep session logic brand-free) ----
+    /// Whether this provider's `get_param` reads back genuine desk state
+    /// after a write (R2 preset-truth contract).
+    ///
+    /// `true` (default): the read path is independent of the write path
+    /// (live OSC query on X-Air, in-memory model on sim), so a post-write
+    /// re-read that agrees with the write is desk evidence and the engine
+    /// may cache/broadcast it as `verified`.
+    ///
+    /// `false`: `get_param` serves the same push cache the writes populate
+    /// (DL32S: the desk never echoes own writes and there is no per-param
+    /// query — only pushes). Any post-write "agreement" would be our own
+    /// optimism, not the desk, so the engine must NOT treat it as
+    /// confirmation: `refresh_param` short-circuits to `None` and the write
+    /// echo goes out as `accepted` (write ACK, no value proof). Standard
+    /// providers keep the default; only push-cache-only drivers override.
+    fn readback_confirms_writes(&self) -> bool {
+        true
+    }
+    /// Desk-proven mute-group master for verification paths (`read_param`
+    /// `_mute_group`, poll/refresh): withholds own-write-pending values.
+    /// Default forwards to the display getter (providers with genuine
+    /// readback); push-cache-only drivers override to their verified read.
+    /// Display/snapshot/health paths keep using [`get_mute_group`](Self::get_mute_group)
+    /// (continuity, no proof claimed).
+    async fn get_mute_group_verified(&self, group: u8) -> anyhow::Result<bool> {
+        self.get_mute_group(group).await
+    }
+    /// Desk-proven mute-group assign for verification paths (`read_param`
+    /// `_mgN`): withholds own-write-pending words. Same default/override
+    /// contract as [`get_mute_group_verified`](Self::get_mute_group_verified).
+    async fn get_mute_group_assign_verified(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        self.get_mute_group_assign(ch, group).await
+    }
     /// Display name for a discovered device.
     fn display_name(&self, model: &str) -> String {
         format!("{} {model}", self.name())
@@ -1038,6 +1071,23 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
     fn claims_device(&self, id: &str, model: &str) -> bool {
         let m = model.to_lowercase();
         id.starts_with("dl32s-") || m.contains("dl32s") || m.contains("dl ")
+    }
+    /// DL32S `get_param` reads the same push cache its writes populate and
+    /// the desk never echoes own writes: no readback can confirm a write.
+    /// Post-write echoes stay `accepted` (see
+    /// [`DynDriver::readback_confirms_writes`]).
+    fn readback_confirms_writes(&self) -> bool {
+        false
+    }
+    /// Desk-proven mute-group master (see [`DynDriver::get_mute_group_verified`]):
+    /// withholds own-write-pending masters so `read_param` can never launder
+    /// our own write as poll proof. Display paths keep the inclusive getter.
+    async fn get_mute_group_verified(&self, group: u8) -> anyhow::Result<bool> {
+        self.get_mute_group_verified(group as u32 + 1).await
+    }
+    /// Desk-proven mute-group assign (see [`DynDriver::get_mute_group_assign_verified`]).
+    async fn get_mute_group_assign_verified(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
+        self.get_mute_group_assign_verified(ch, group).await
     }
     fn is_hardware(&self) -> bool {
         true

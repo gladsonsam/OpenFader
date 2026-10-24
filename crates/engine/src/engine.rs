@@ -650,8 +650,14 @@ pub struct Engine {
     locks: RwLock<HashMap<u16, StripLock>>,
     shows: RwLock<Vec<Show>>,
     /// Param-plane cache: channel -> catalogue id -> last broadcast
-    /// engineering-unit JSON value. Updated by the poller and by the
-    /// `param`-write refresh; cleared on driver switch.
+    /// engineering-unit JSON value. Provenance invariant (R2 preset-truth
+    /// contract): every entry is desk-evidenced — a poll read, a desk push,
+    /// or a post-write re-read from a provider with genuine readback (see
+    /// [`refresh_param`](Engine::refresh_param)). Write fallbacks (the
+    /// `accepted` echo) never touch this map, so poll/params/snapshot paths
+    /// cannot launder an unverified write into a confirmed value. Updated
+    /// by the poller and by the `param`-write refresh; cleared on driver
+    /// switch.
     param_cache: RwLock<HashMap<u16, HashMap<String, Value>>>,
     /// (`driver`, `param`) pairs dropped from the poll set after an
     /// unsupported/unknown/timeout read, reported in `caps.unsupported`.
@@ -2339,6 +2345,13 @@ impl Engine {
     /// (a lightweight main-fader query), small deterministic jitter on
     /// sim. Failures keep the last sample (never block the ticker).
     ///
+    /// Liveness, not verification (R2 health contract): the probe reads the
+    /// inclusive DISPLAY getter (`get_main_fader` serves own-write-pending
+    /// words for continuity), exactly as it did before the verified-only
+    /// split — a locally moved main fader must never read as a dead control
+    /// path. Cache provenance is never treated as transport failure; only a
+    /// transport/session error arms strikes. No second connection is opened.
+    ///
     /// Bounded failure policy (matches the poller's
     /// [`POLL_TIMEOUT_STRIKES`] tolerance): a single failed query only arms
     /// the bounded `repair_dirty` reconciliation and keeps `connected` — one
@@ -2438,9 +2451,14 @@ impl Engine {
         for fam in &topo {
             for s in fam.first..fam.first + fam.count {
                 let strip = StripId(s as u16);
-                let fader = self.read_param(&driver, strip, "fader").await.ok();
-                let mute = self.read_param(&driver, strip, "mute").await.ok();
-                let name_v = self.read_param(&driver, strip, "name").await.ok();
+                // Capture reads (see `capture_read_param`): verified proof
+                // first, honest display continuity for fader/mute/name right
+                // after local moves. Params with no proof at all are omitted
+                // (never fabricated); fader/mute keep their historical
+                // silence defaults only when nothing ever proved them.
+                let fader = self.capture_read_param(&driver, strip, "fader").await;
+                let mute = self.capture_read_param(&driver, strip, "mute").await;
+                let name_v = self.capture_read_param(&driver, strip, "name").await;
                 let mut params = HashMap::new();
                 for id in &caps {
                     if *id == "fader" || *id == "mute" || *id == "name" {
@@ -2453,7 +2471,7 @@ impl Engine {
                     if !scoped {
                         continue;
                     }
-                    if let Ok(pv) = self.read_param(&driver, strip, id).await {
+                    if let Some(pv) = self.capture_read_param(&driver, strip, id).await {
                         // Skip catalogue defaults? No — full plane means
                         // every value, so restores are exact.
                         params.insert(id.to_string(), param_value_json(&pv));
@@ -2533,6 +2551,13 @@ impl Engine {
         // index (desk-switch survival); key-less rows and unresolvable keys
         // fall back to the positional strip (back-compat). Scope matching
         // runs on the resolved index (`strip_keys` name the same strips).
+        //
+        // Recall-path provenance: no per-param readback on this path
+        // (best-effort fan-out on hardware), so hardware echoes are
+        // `accepted` (write ACK, no value proof). The sim model applies
+        // writes to real in-memory state, so its echoes are `verified`.
+        let proven = !self.active_drv().is_hardware();
+        let authority = || Some(if proven { "verified" } else { "accepted" }.to_string());
         let strips: Vec<(&StoredStrip, u16)> = scene
             .strips
             .iter()
@@ -2561,12 +2586,15 @@ impl Engine {
             }
             let key = openfader_core::strip_key_for_index(&topo, *r as usize);
             if scope.is_none_or(|sc| sc.allows_param("fader")) {
+                // No per-param readback on the recall path (best-effort fan
+                // out on hardware): provenance per the `proven` flag above.
                 out.push(Event::Param {
                     ch: *r,
                     field: "fader".to_string(),
                     value: json!(s.fader),
                     by: Some(writer.to_string()),
                     key: key.clone(),
+                    authority: authority(),
                 });
             }
             if want_mute {
@@ -2576,6 +2604,7 @@ impl Engine {
                     value: json!(s.mute),
                     by: Some(writer.to_string()),
                     key: key.clone(),
+                    authority: authority(),
                 });
             }
         }
@@ -2598,12 +2627,15 @@ impl Engine {
                 if strict {
                     rr?;
                 }
+                // Recall-path echo: provenance per the `proven` flag above
+                // (no readback on this path).
                 out.push(Event::Param {
                     ch: *r,
                     field: (*id).clone(),
                     value: value.clone(),
                     by: Some(writer.to_string()),
                     key: openfader_core::strip_key_for_index(&topo, *r as usize),
+                    authority: authority(),
                 });
             }
             if s.name.is_empty() || scope.is_some_and(|sc| !sc.allows_param("name")) {
@@ -2644,7 +2676,11 @@ impl Engine {
 
     /// Current fader + mute of one strip (best-effort; failures read back
     /// subscriber silence so a scoped recall degrades to a no-op axis
-    /// rather than failing the whole recall).
+    /// rather than failing the whole recall). Reads the inclusive display
+    /// getters (continuity: own writes included, no proof claimed) — never
+    /// the stale pre-write `param_cache` entry, which the accepted write
+    /// already evicted and which would start an excluded-axis fade from the
+    /// wrong pre-move state.
     async fn current_fader_mute(&self, strip: StripId) -> (f32, bool) {
         let drv = self.active_drv();
         let fader = drv.get_fader(strip).await.ok().unwrap_or(0.0);
@@ -3070,7 +3106,9 @@ impl Engine {
         crate::protocol::FilesCaps { supported }
     }
 
-    /// Full-state `bus` echo: both master fields re-read after the write.
+    /// Full-state `bus` echo (DISPLAY continuity, not proof): both master
+    /// fields re-read via the inclusive display getters. No `authority`
+    /// field; never used for preset capture.
     async fn bus_message(&self, bus: u8) -> anyhow::Result<Event> {
         let drv = self.active_drv();
         let (fader, muted) = (drv.get_bus_fader(bus).await?, drv.get_bus_mute(bus).await?);
@@ -3082,8 +3120,8 @@ impl Engine {
         })
     }
 
-    /// Full-state `subgroup` echo (drivers with subgroup masters in
-    /// memory or native).
+    /// Full-state `subgroup` echo (DISPLAY continuity, not proof — see
+    /// [`bus_message`](Self::bus_message)).
     async fn subgroup_message(&self, group: u8) -> anyhow::Result<Event> {
         let drv = self.active_drv();
         let (fader, muted) = (
@@ -3098,8 +3136,11 @@ impl Engine {
         })
     }
 
-    /// Full-state `main` echo: Main LR fader + mute re-read from the
-    /// active driver (`None` fields where the driver has no master).
+    /// Full-state `main` echo (DISPLAY continuity, not proof): Main LR fader
+    /// and mute re-read from the active driver inclusive getters (own writes
+    /// included so a new attach sees locally moved masters). These frames
+    /// carry no `authority` field and are never used for preset capture —
+    /// see the `param` event for verified values.
     async fn main_message(&self) -> Event {
         let drv = self.active_drv();
         let (fader, muted) = (
@@ -3109,9 +3150,13 @@ impl Engine {
         Event::Main { fader, muted }
     }
 
-    /// Master-section + membership snapshot for attach/post_switch: every
-    /// bus/subgroup/mute-group master re-read live, every known membership
-    /// (sparse — members only), Main LR, and sparse solos. Fresh pages
+    /// Master-section + membership snapshot for attach/post_switch (DISPLAY
+    /// continuity, not proof): every bus/subgroup/mute-group master re-read
+    /// live via the inclusive display getters (own writes included so a new
+    /// attach sees locally moved masters indefinitely), every known
+    /// membership (sparse — members only), Main LR, and sparse solos. These
+    /// frames carry no `authority` field and are never used for preset
+    /// capture — see the `param`/`params` events for verified values. Fresh pages
     /// learn existing assignments without a write (gap: the engine used to
     /// broadcast these only as write echoes). Assign/solo reads are
     /// driver-gated: sim/dl32s serve assigns from memory/cache (xair has
@@ -3432,6 +3477,19 @@ impl Engine {
     async fn offline_push_apply(&self, writer: &str, out: &mut Vec<Event>) -> anyhow::Result<()> {
         let changes = self.offline.read().unwrap().changes.clone();
         let strict = self.active_drv().fx_flavor() == FxFlavor::Design;
+        // Same provenance rule as recall: sim applies to real in-memory
+        // state (`verified`); hardware pushes are write-ACK only
+        // (`accepted` — no readback on this path).
+        let authority = || {
+            Some(
+                if self.active_drv().is_hardware() {
+                    "accepted"
+                } else {
+                    "verified"
+                }
+                .to_string(),
+            )
+        };
         let mut failures = Vec::new();
         for c in &changes {
             let r = self.offline_apply_one(c).await;
@@ -3455,6 +3513,8 @@ impl Engine {
                 value: c.to.clone(),
                 by: Some(writer.to_string()),
                 key: self.active_strip_key(ch),
+                // Offline-push echo: provenance per the flag above.
+                authority: authority(),
             });
         }
         {
@@ -3618,7 +3678,17 @@ impl Engine {
             return;
         }
         if changed {
-            self.broadcast(Event::Params { ch, values: [(param.to_string(), v)].into_iter().collect(), key: self.active_strip_key(ch) });
+            // Desk-evidenced by construction (poll read or desk push —
+            // `apply_received` is never called with a write fallback): every
+            // emitted key is explicitly marked `verified` (see `authority`).
+            // Absent/unknown is NEVER verified — the field is optional only
+            // for backward compatibility with old frames.
+            let authority = Some(
+                [(param.to_string(), "verified".to_string())]
+                    .into_iter()
+                    .collect(),
+            );
+            self.broadcast(Event::Params { ch, values: [(param.to_string(), v)].into_iter().collect(), key: self.active_strip_key(ch), authority });
         }
         // Main/bus library mirrors must follow exactly the same canonical cache.
         if matches!(param, "fader" | "mute") {
@@ -3660,10 +3730,14 @@ impl Engine {
                 }
             }
             Event::Param {
-                ch, field, value, ..
+                ch, field, value, authority, ..
             } => {
+                // A genuinely newer desk read (poll/push landing between
+                // the echo and this reconcile) replaces the value — and the
+                // provenance with it: the value is now desk-evidenced.
                 if let Some(v) = fresh(*ch, field) {
                     *value = v;
+                    *authority = Some("verified".to_string());
                 }
             }
             Event::Solo { ch, soloed, .. } => {
@@ -4258,6 +4332,17 @@ impl Engine {
                     ch,
                     values: values.iter().filter(|(k, _)| !k.starts_with('_')).map(|(k, v)| (k.clone(), v.clone())).collect(),
                     key: openfader_core::strip_key_for_index(&topo, ch as usize),
+                    // Snapshot of the verified-only cache: every emitted key
+                    // is explicitly marked `verified`. Absent/unknown is
+                    // NEVER verified — the field is optional only for
+                    // backward compatibility with old frames.
+                    authority: Some(
+                        values
+                            .keys()
+                            .filter(|k| !k.starts_with('_'))
+                            .map(|k| (k.clone(), "verified".to_string()))
+                            .collect(),
+                    ),
                 })
             })
             .collect()
@@ -4509,9 +4594,9 @@ impl Engine {
             anyhow::bail!("read in scoped retry cooldown");
         }
         let drv = self.drv(driver);
-        if param == "_mute_group" { return drv.get_mute_group(ch.0 as u8).await.map(ParamValue::Bool); }
+        if param == "_mute_group" { return drv.get_mute_group_verified(ch.0 as u8).await.map(ParamValue::Bool); }
         if let Some(group) = param.strip_prefix("_mg").and_then(|g| g.parse::<u8>().ok()) {
-            return drv.get_mute_group_assign(ch, group - 1).await.map(ParamValue::Bool);
+            return drv.get_mute_group_assign_verified(ch, group - 1).await.map(ParamValue::Bool);
         }
         if param == "solo" {
             return drv.get_solo(ch).await.map(ParamValue::Bool);
@@ -4625,7 +4710,20 @@ impl Engine {
 
     /// Re-read one param after a client write, caching the confirmed value.
     /// Returns the confirmed JSON value (`None` when the re-read fails, in
-    /// which case the caller falls back to echoing the written value).
+    /// which case the caller falls back to echoing the written value as
+    /// `accepted` — see the `authority` field on [`Event::Param`]).
+    ///
+    /// Provenance firewall (R2 preset-truth contract): providers whose
+    /// `get_param` cannot see past their own writes (see
+    /// [`DynDriver::readback_confirms_writes`] — DL32S reads the same push
+    /// cache its writes populate, and the desk never echoes own writes)
+    /// short-circuit to `None` WITHOUT reading. Their cache would agree
+    /// with every write by construction, so treating that "agreement" as
+    /// confirmation would launder accepted-but-unverified writes into
+    /// verified state (and let preset recall count desk clamps/failures as
+    /// genuine). The engine `param_cache` therefore holds only
+    /// desk-evidenced values: poll reads, desk pushes, and re-reads from
+    /// providers with genuine readback. Write fallbacks never touch it.
     ///
     /// The desk applies writes with a delay of tens of ms: an immediate
     /// re-read usually returns the PRE-write value (owner-rig measured on
@@ -4636,18 +4734,92 @@ impl Engine {
     /// the written value instead; the desk's own change broadcast confirms
     /// within ~100 ms. Floats agree within the desk's ~10-bit quantization
     /// step; bools/text must match exactly.
+    ///
+    /// Superseded-entry eviction (R2 preset-truth contract): every `None`
+    /// path evicts the pre-write `param_cache` entry (unless a genuinely
+    /// newer desk read landed after this write started — see
+    /// [`evict_param_unless_fresh`](Self::evict_param_unless_fresh)), so
+    /// `params_snapshot`/attach can never re-emit the stale pre-write value
+    /// as verified proof after the frontend invalidated it. A genuine desk
+    /// push re-inserts proof via `apply_received`.
     async fn refresh_param(&self, ch: StripId, param: &str, written: &Value) -> Option<Value> {
+        let write_started = Instant::now();
+        if !self.active_drv().readback_confirms_writes() {
+            self.evict_param_unless_fresh(ch, param, write_started);
+            return None;
+        }
         let driver = self.active_driver();
         let started = Instant::now();
         let generation = self.connection_gen.load(Ordering::Acquire);
-        let pv = self.read_param(&driver, ch, param).await.ok()?;
-        if generation != self.connection_gen.load(Ordering::Acquire) { return None; }
+        let pv = match self.read_param(&driver, ch, param).await {
+            Ok(pv) => pv,
+            Err(_) => {
+                self.evict_param_unless_fresh(ch, param, write_started);
+                return None;
+            }
+        };
+        if generation != self.connection_gen.load(Ordering::Acquire) {
+            self.evict_param_unless_fresh(ch, param, write_started);
+            return None;
+        }
         let v = param_value_json(&pv);
         if !refresh_agrees(&v, written) {
+            self.evict_param_unless_fresh(ch, param, write_started);
             return None;
         }
         self.apply_received(ch.0, param, &pv, Instant::now(), Some(started));
         self.param_cache.read().unwrap().get(&ch.0).and_then(|values| values.get(param)).cloned()
+    }
+
+    /// Evict one superseded `param_cache` entry after an accepted
+    /// (unverified) write, unless a genuinely newer desk read already
+    /// re-proved it: `sync.received` timestamps newer than this write's
+    /// start mean a poll/push landed after the write began, and that proof
+    /// must survive. Lock order is sync-then-cache (never nested), matching
+    /// `apply_received`/`reconcile_event`, so concurrent ingest cannot be
+    /// starved or inverted: a push that lands before the evict check is kept,
+    /// one that lands after re-inserts via `apply_received`.
+    fn evict_param_unless_fresh(&self, ch: StripId, param: &str, write_started: Instant) {
+        let fresh = self
+            .sync_state
+            .lock()
+            .unwrap()
+            .received
+            .get(&(ch.0, param.to_string()))
+            .is_some_and(|(at, _)| *at > write_started);
+        if fresh {
+            return;
+        }
+        if let Ok(mut cache) = self.param_cache.write() {
+            if let Some(values) = cache.get_mut(&ch.0) {
+                values.remove(param);
+                if values.is_empty() {
+                    cache.remove(&ch.0);
+                }
+            }
+        }
+    }
+
+    /// Capture read (R2 preset-truth contract): desk-verified live read
+    /// first; on a miss, honest continuity for the display-basic leaves
+    /// only (`fader`/`mute`/`name` via the inclusive display getters, which
+    /// include own writes without claiming proof). Every other param returns
+    /// `None` on a miss — a capture omits unproven values rather than
+    /// laundering the stale pre-write cache entry (which the accepted write
+    /// already evicted) as current desk state. Continuity values recorded
+    /// here carry no provenance in the stored scene; the recall path re-emits
+    /// hardware echoes as `accepted`.
+    async fn capture_read_param(&self, driver: &str, ch: StripId, param: &str) -> Option<ParamValue> {
+        if let Ok(pv) = self.read_param(driver, ch, param).await {
+            return Some(pv);
+        }
+        let drv = self.drv(driver);
+        match param {
+            "fader" => drv.get_fader(ch).await.ok().map(ParamValue::Float),
+            "mute" => drv.get_mute(ch).await.ok().map(ParamValue::Bool),
+            "name" => drv.get_name(ch).await.ok().map(ParamValue::Text),
+            _ => None,
+        }
     }
 
     /// Snapshot the active driver (used by `capture_scene`). Drivers with
@@ -4668,14 +4840,14 @@ impl Engine {
         for family in self.driver_topology(&driver) {
             for index in family.first..family.first + family.count {
                 let id = StripId(index as u16);
-                let (fader, mute, name) = tokio::try_join!(
-                    self.read_param(&driver, id, "fader"),
-                    self.read_param(&driver, id, "mute"),
-                    self.read_param(&driver, id, "name"),
-                )?;
-                let (ParamValue::Float(fader), ParamValue::Bool(mute), ParamValue::Text(name)) =
+                let (fader, mute, name) = tokio::join!(
+                    self.capture_read_param(&driver, id, "fader"),
+                    self.capture_read_param(&driver, id, "mute"),
+                    self.capture_read_param(&driver, id, "name"),
+                );
+                let (Some(ParamValue::Float(fader)), Some(ParamValue::Bool(mute)), Some(ParamValue::Text(name))) =
                     (fader, mute, name) else {
-                        anyhow::bail!("{driver}: invalid snapshot values for strip {index}");
+                        anyhow::bail!("{driver}: no snapshot values for strip {index}");
                     };
                 anyhow::ensure!(self.connection_gen.load(Ordering::Acquire) == generation,
                     "desk changed during scene capture");
@@ -4867,17 +5039,24 @@ impl Engine {
                 // snapshot is empty (xair), so re-read and broadcast what
                 // the desk reports, falling back to the written value
                 // (including when the re-read races the desk's apply lag —
-                // see `refresh_param`).
-                let confirmed = self
+                // see `refresh_param`). The echo carries readback
+                // provenance: `verified` when the desk confirmed it,
+                // `accepted` when the write landed without readback proof
+                // (DL32S always: no echo, no independent query).
+                let (value, authority) = match self
                     .refresh_param(StripId(ch), "fader", &json!(value))
                     .await
-                    .unwrap_or(json!(value));
+                {
+                    Some(v) => (v, Some("verified".to_string())),
+                    None => (json!(value), Some("accepted".to_string())),
+                };
                 out.push(Event::Param {
                     ch,
                     field: "fader".to_string(),
-                    value: confirmed,
+                    value,
                     by: Some(writer.to_string()),
                     key: self.active_strip_key(ch),
+                    authority,
                 });
                 self.push_state_with_by(writer, out).await;
                 Ok(None)
@@ -4897,17 +5076,22 @@ impl Engine {
                 }
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
-                // Confirmed-value echo (same rationale as `fader` above).
-                let confirmed = self
+                // Confirmed-value echo (same rationale as `fader` above, with
+                // the same `verified`/`accepted` provenance on the echo).
+                let (value, authority) = match self
                     .refresh_param(StripId(ch), "mute", &json!(muted))
                     .await
-                    .unwrap_or(json!(muted));
+                {
+                    Some(v) => (v, Some("verified".to_string())),
+                    None => (json!(muted), Some("accepted".to_string())),
+                };
                 out.push(Event::Param {
                     ch,
                     field: "mute".to_string(),
-                    value: confirmed,
+                    value,
                     by: Some(writer.to_string()),
                     key: self.active_strip_key(ch),
+                    authority,
                 });
                 self.push_state_with_by(writer, out).await;
                 Ok(None)
@@ -4929,7 +5113,17 @@ impl Engine {
                 }
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
+                // `main` echo (R2 display continuity): the inclusive getters
+                // already carry own writes, so `state` + this frame keep a
+                // new attach continuous. No fabrication: the fader IS the
+                // submitted value, and `main` frames carry no `authority`
+                // field — see the `param` event for verified values.
                 self.push_state_with_by(writer, out).await;
+                let muted = self.active_drv().get_main_mute().await.ok();
+                out.push(Event::Main {
+                    fader: Some(value),
+                    muted,
+                });
                 Ok(None)
             }
             // R2 Main LR master mute (all drivers via `get_main_mute`;
@@ -4940,7 +5134,12 @@ impl Engine {
                 self.active_drv().set_main_mute(muted).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
-                out.push(self.main_message().await);
+                // `main` echo (same display-continuity rationale as above).
+                let fader = self.active_drv().get_main_fader().await.ok();
+                out.push(Event::Main {
+                    fader,
+                    muted: Some(muted),
+                });
                 self.push_state_with_by(writer, out).await;
                 Ok(None)
             }
@@ -5006,20 +5205,25 @@ impl Engine {
                 // broadcast what the driver reports (wire quantization may
                 // shift it); fall back to the written value when the
                 // re-read fails — or when it races the desk's apply lag
-                // (see `refresh_param`) — so the echo still lands.
-                let confirmed = self
-                    .refresh_param(StripId(ch), &field, &value)
-                    .await
-                    .unwrap_or(value);
+                // (see `refresh_param`) — so the echo still lands. Provenance
+                // rides along (`verified` on desk agreement, `accepted`
+                // otherwise); frontends must not count `accepted` as recall
+                // confirmation.
+                let refreshed = self.refresh_param(StripId(ch), &field, &value).await;
+                let (value, authority) = match refreshed {
+                    Some(v) => (v, Some("verified".to_string())),
+                    None => (value, Some("accepted".to_string())),
+                };
                 if let Some(from) = from {
-                    self.offline_note(ch, &field, from, confirmed.clone()).await;
+                    self.offline_note(ch, &field, from, value.clone()).await;
                 }
                 out.push(Event::Param {
                     ch,
                     field,
-                    value: confirmed,
+                    value,
                     by: Some(writer.to_string()),
                     key: self.active_strip_key(ch),
+                    authority,
                 });
                 self.push_state_with_by(writer, out).await;
                 Ok(None)
@@ -5161,6 +5365,20 @@ impl Engine {
                     }
                 }
                 overrode.sort_unstable();
+                // Named-show recall provenance (same rule as numbered
+                // recall): the sim model applies writes to real in-memory
+                // state (`verified`); hardware fades are write-ACK only
+                // (`accepted` — no per-param readback on this path).
+                let authority = || {
+                    Some(
+                        if self.active_drv().is_hardware() {
+                            "accepted"
+                        } else {
+                            "verified"
+                        }
+                        .to_string(),
+                    )
+                };
                 for s in &scene.strips {
                     out.push(Event::Param {
                         ch: s.strip.0,
@@ -5168,6 +5386,7 @@ impl Engine {
                         value: json!(s.fader),
                         by: Some(writer.to_string()),
                         key: None,
+                        authority: authority(),
                     });
                     out.push(Event::Param {
                         ch: s.strip.0,
@@ -5175,6 +5394,7 @@ impl Engine {
                         value: json!(s.mute),
                         by: Some(writer.to_string()),
                         key: None,
+                        authority: authority(),
                     });
                     for (field, val) in &s.params {
                         out.push(Event::Param {
@@ -5183,6 +5403,7 @@ impl Engine {
                             value: param_value_json(val),
                             by: Some(writer.to_string()),
                             key: None,
+                            authority: authority(),
                         });
                     }
                 }
@@ -5931,36 +6152,80 @@ impl Engine {
             Cmd::BusFader { bus, value } => {
                 let value = openfader_core::validate_fader(value)?;
                 policy.allow_master_fader(value)?;
+                // Sibling before the write for the accepted-echo fallback
+                // below: the inclusive re-read in `bus_message` already
+                // carries continuity (own writes included), so the fallback
+                // only fires when nothing ever proved the sibling.
+                let muted = self.active_drv().get_bus_mute(bus).await.ok();
                 self.active_drv().set_bus_fader(bus, value).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
-                out.push(self.bus_message(bus).await?);
+                out.push(match (self.bus_message(bus).await, muted) {
+                    (Ok(m), _) => m,
+                    (Err(_), Some(muted)) => Event::Bus {
+                        bus,
+                        fader: value,
+                        muted,
+                        key: Some(openfader_core::strip_key("bus", bus.saturating_add(1) as u16)),
+                    },
+                    (Err(e), None) => return Err(e),
+                });
                 Ok(None)
             }
             Cmd::BusMute { bus, muted } => {
                 policy.allow_master_mute()?;
+                let fader = self.active_drv().get_bus_fader(bus).await.ok();
                 self.active_drv().set_bus_mute(bus, muted).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
-                out.push(self.bus_message(bus).await?);
+                out.push(match (self.bus_message(bus).await, fader) {
+                    (Ok(m), _) => m,
+                    (Err(_), Some(fader)) => Event::Bus {
+                        bus,
+                        fader,
+                        muted,
+                        key: Some(openfader_core::strip_key("bus", bus.saturating_add(1) as u16)),
+                    },
+                    (Err(e), None) => return Err(e),
+                });
                 Ok(None)
             }
             // R2 subgroup masters (0-based `group` over `0..subgroup_count()`).
             Cmd::SubgroupFader { group, value } => {
                 let value = openfader_core::validate_fader(value)?;
                 policy.allow_master_fader(value)?;
+                let muted = self.active_drv().get_subgroup_mute(group).await.ok();
                 self.active_drv().set_subgroup_fader(group, value).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
-                out.push(self.subgroup_message(group).await?);
+                out.push(match (self.subgroup_message(group).await, muted) {
+                    (Ok(m), _) => m,
+                    (Err(_), Some(muted)) => Event::Subgroup {
+                        group,
+                        fader: value,
+                        muted,
+                        key: Some(format!("subgroup/{:02}", group.saturating_add(1))),
+                    },
+                    (Err(e), None) => return Err(e),
+                });
                 Ok(None)
             }
             Cmd::SubgroupMute { group, muted } => {
                 policy.allow_master_mute()?;
+                let fader = self.active_drv().get_subgroup_fader(group).await.ok();
                 self.active_drv().set_subgroup_mute(group, muted).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
-                out.push(self.subgroup_message(group).await?);
+                out.push(match (self.subgroup_message(group).await, fader) {
+                    (Ok(m), _) => m,
+                    (Err(_), Some(fader)) => Event::Subgroup {
+                        group,
+                        fader,
+                        muted,
+                        key: Some(format!("subgroup/{:02}", group.saturating_add(1))),
+                    },
+                    (Err(e), None) => return Err(e),
+                });
                 Ok(None)
             }
             // R2 group membership (channel-scoped lock + master gate).
@@ -5983,7 +6248,12 @@ impl Engine {
                 self.active_drv().set_mute_group(group, muted).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
-                let muted = self.active_drv().get_mute_group(group).await?;
+                // Display-continuity echo: the inclusive getter already
+                // carries own writes, so fall back to the submitted value
+                // only when nothing was ever pushed (no fabrication: this IS
+                // the submitted value, and these frames carry no `authority`
+                // field — see the `param` event).
+                let muted = self.active_drv().get_mute_group(group).await.unwrap_or(muted);
                 out.push(Event::MuteGroup {
                     group,
                     muted,
@@ -6245,6 +6515,9 @@ impl openfader_core::show::FadeDriver for Engine {
     }
 
     async fn fade_get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
+        // Inclusive display getter (continuity: own writes included, no proof
+        // claimed) — never the stale pre-write cache entry, which would
+        // start a named-show fade from the wrong pre-move state.
         self.drv_get_fader(strip).await
     }
 
@@ -6294,7 +6567,9 @@ fn param_def_frame(def: &params::ParamDef) -> ParamDef {
 /// Drop-class poll errors: the param has no wire address on this driver
 /// (unknown/unsupported) or the desk never answers (timeouts). Everything
 /// else — empty sim slots (`no value yet`), unpushed dl32s cache
-/// (`no value pushed yet`), `not connected`, transient I/O — keeps polling.
+/// (`no value pushed yet`), own-write-pending dl32s words with no desk
+/// proof (`no desk-confirmed value yet`), `not connected`, transient
+/// I/O — keeps polling.
 fn is_unsupported_error(e: &anyhow::Error) -> bool {
     let m = format!("{e:#}");
     m.contains("not supported") || m.contains("unknown param") || m.contains("timed out")
@@ -6973,6 +7248,7 @@ mod tests {
                     value: json!(0.5),
                     key: None,
                     by: None,
+                    authority: None,
                 }),
             );
         }
