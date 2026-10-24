@@ -166,8 +166,9 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   `scan`; unicast in the attach snapshot.
 - `link` (R2): `{"type":"link","state":"connected|disconnected|offline",
   "name","ip","fs":48000,"latency_ms":1.2}` — re-emitted on every link
-  change and every ~2 s (`LINK_INTERVAL`) with a fresh round-trip sample
-  (OSC query timing on hardware, deterministic jitter on sim). The hardware
+  change and every ~2 s (`LINK_INTERVAL`). `latency_ms` times the health
+  operation: an OSC round trip on X-Air, a local session/cache check on
+  DL32S (not network RTT), and deterministic jitter on sim. The hardware
   probe is liveness, not verification: it reads the inclusive display
   getter, so a locally moved main fader never counts as a dead control
   path and cache provenance is never treated as transport failure.
