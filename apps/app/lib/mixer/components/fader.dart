@@ -148,7 +148,7 @@ class _FaderGeometry {
       34,
       size.width *
           (compact ? 54 / 96.2 : 84 / 178.2) *
-          (MixerDesign.largeTargets ? 1.08 : 1));
+          (!compact && MixerDesign.largeTargets ? 1.08 : 1));
   double get capHeight => capWidth;
 
   /// Touch padding around the cap (also grows with larger targets).
