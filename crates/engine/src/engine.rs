@@ -1374,6 +1374,8 @@ impl Engine {
             let weak: Weak<Self> = Arc::downgrade(self);
             tokio::spawn(async move {
                 let mut had_audio_spectrum = false;
+                let mut audio_spectrum_generation = 0;
+                let mut last_audio_spectrum_epoch = 0;
                 let mut meters_live = false;
                 let mut last_level_sample = None;
                 let mut last_gr_sample = None;
@@ -1434,11 +1436,17 @@ impl Engine {
                         }
                     }
                     let drv = engine.active_drv();
+                    let spectrum_generation = engine.connection_gen.load(Ordering::Acquire);
+                    if spectrum_generation != audio_spectrum_generation {
+                        audio_spectrum_generation = spectrum_generation;
+                        had_audio_spectrum = false;
+                        last_audio_spectrum_epoch = 0;
+                    }
                     let mut supplied = std::collections::HashSet::new();
                     let frames = if engine.reads_suspended.load(Ordering::Acquire) { Vec::new() } else { drv.poll_spectrum() };
                     if frames.is_empty() && had_audio_spectrum {
                         engine.broadcast(Event::AudioSpectrum { ch: None, bins_db: Vec::new(),
-                            band_edges_hz: Vec::new(), source: "unavailable".into(), position: String::new(), epoch: 0 });
+                            band_edges_hz: Vec::new(), source: "unavailable".into(), position: String::new(), epoch: last_audio_spectrum_epoch });
                     }
                     had_audio_spectrum = !frames.is_empty();
                     {
@@ -1450,6 +1458,7 @@ impl Engine {
                                 || frame.band_edges_hz.iter().any(|v| !v.is_finite() || *v <= 0.0)
                                 || frame.band_edges_hz.windows(2).any(|w| w[0] >= w[1]) { continue; }
                             if let Some(strip) = frame.strip { supplied.insert(usize::from(strip.0)); }
+                            last_audio_spectrum_epoch = frame.epoch;
                             engine.broadcast(Event::AudioSpectrum {
                                 ch: frame.strip.map(|s| s.0), bins_db: frame.bins_db,
                                 band_edges_hz: frame.band_edges_hz, source: frame.source,

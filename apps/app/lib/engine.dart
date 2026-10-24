@@ -5,6 +5,76 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+/// Measured audio bands with explicit provenance. Never infer a channel from
+/// the current selection: a null [ch] is a shared/global analyser feed.
+class AudioSpectrumFrame {
+  final int? ch;
+  final List<double> binsDb;
+  final List<double> bandEdgesHz;
+  final String source;
+  final String position;
+  final int epoch;
+  final DateTime receivedAt;
+
+  AudioSpectrumFrame._(
+      {required this.ch,
+      required List<double> binsDb,
+      required List<double> bandEdgesHz,
+      required this.source,
+      required this.position,
+      required this.epoch,
+      required this.receivedAt})
+      : binsDb = List.unmodifiable(binsDb),
+        bandEdgesHz = List.unmodifiable(bandEdgesHz);
+
+  static const maxBins = 1024;
+  static const expiry = Duration(milliseconds: 1500);
+  bool get isShared => ch == null || position == 'shared';
+  bool get isFresh => DateTime.now().difference(receivedAt) < expiry;
+
+  /// Provider human text supplies the source name; no selector mapping here.
+  String get label {
+    final name = source
+        .replaceFirst(RegExp(r'^DL32S\s+'), '')
+        .replaceFirst(RegExp(r'\s*\(shared\)$'), '');
+    return 'RTA · $name${isShared ? ' · shared' : ''}';
+  }
+
+  static AudioSpectrumFrame? fromJson(Map<String, dynamic> e) {
+    final bins = e['bins_db'], edges = e['band_edges_hz'];
+    final channel = e['ch'], epoch = e['epoch'];
+    final source = e['source'], position = e['position'];
+    if (bins is! List ||
+        bins.isEmpty ||
+        bins.length > maxBins ||
+        edges is! List ||
+        edges.length != bins.length + 1 ||
+        epoch is! int ||
+        epoch < 0 ||
+        (channel != null && (channel is! int || channel < 0)) ||
+        source is! String ||
+        source.trim().isEmpty ||
+        source == 'unavailable' ||
+        position is! String ||
+        bins.any((v) => v is! num || !v.isFinite) ||
+        edges.any((v) => v is! num || !v.isFinite || v <= 0)) {
+      return null;
+    }
+    final frequencies = [for (final v in edges) (v as num).toDouble()];
+    for (var i = 1; i < frequencies.length; i++) {
+      if (frequencies[i] <= frequencies[i - 1]) return null;
+    }
+    return AudioSpectrumFrame._(
+        ch: channel as int?,
+        binsDb: [for (final v in bins) (v as num).toDouble()],
+        bandEdgesHz: frequencies,
+        source: source.trim(),
+        position: position,
+        epoch: epoch,
+        receivedAt: DateTime.now());
+  }
+}
+
 /// One mixer strip as carried by the `state` event.
 class Strip {
   final int ch;
@@ -322,7 +392,15 @@ class EngineState {
   Set<int> solos = {};
   Map<int, Map<String, Object>> params = {}; // ch -> field -> value
   Map<String, List<double>> taps = {}; // tap name -> levels
-  Map<int, List<double>> spectrum = {}; // ch -> bins (latest)
+  Map<int, List<double>> spectrum = {}; // legacy demo magnitudes only
+  AudioSpectrumFrame? audioSpectrum;
+  int? _audioSpectrumEpoch;
+
+  /// Clear presentation without forgetting the source epoch watermark.
+  void clearAudioSpectrum() {
+    audioSpectrum = null;
+  }
+
   Map<int, double> grGate = {};
   Map<int, double> grComp = {};
   Map<int, double> busFaders = {};
@@ -393,6 +471,8 @@ class EngineState {
     params.clear();
     taps.clear();
     spectrum.clear();
+    audioSpectrum = null;
+    _audioSpectrumEpoch = null;
     grGate.clear();
     grComp.clear();
     busFaders.clear();
@@ -576,6 +656,16 @@ class EngineState {
         final raw = (e['levels'] as List?) ?? const [];
         meters = [for (final v in raw) ((v as num?) ?? 0.0).toDouble()];
         return false; // meter frames ride notifiers, never rebuild
+      case 'audio_spectrum':
+        final epoch = e['epoch'];
+        if (epoch is! int ||
+            epoch < 0 ||
+            (_audioSpectrumEpoch != null && epoch < _audioSpectrumEpoch!)) {
+          return false;
+        }
+        _audioSpectrumEpoch = epoch;
+        audioSpectrum = AudioSpectrumFrame.fromJson(e);
+        return false; // measured frames ride their own presentation notifier
       case 'spectrum':
         final ch = (e['ch'] as num?)?.toInt();
         final bins = e['bins'];
