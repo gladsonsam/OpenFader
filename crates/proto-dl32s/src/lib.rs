@@ -52,6 +52,10 @@ use tokio::sync::{broadcast, Mutex, MutexGuard};
 /// - `sendN_tap`/`sendN_grpon`/`sendN_on` — no confirmed leaf (the desk is
 ///   silent; the UI collapses them, never faked).
 /// - `hpf_slope` — reads constant 2, meaning inferred.
+///
+/// Per-provider caps ranges ride `param_range_overrides` (documented
+/// modern-DL32S bounds, see `DL32S_RANGE_OVERRIDES`); the canonical
+/// catalogue is untouched.
 pub const DL32S_CAPABILITIES: &[&str] = &[
     "fader",
     "mute",
@@ -584,6 +588,30 @@ async fn wait_for_initial_state(session: &MackieSession) -> anyhow::Result<()> {
     }
 }
 
+/// Canonical id -> documented modern-DL32S `(min, max)`, served through
+/// [`MixerDriver::param_range_overrides`](openfader_core::MixerDriver::param_range_overrides).
+/// Provenance per entry (all manufacturer mixer software 5.1 manual, documentation-based —
+/// endpoint hardware tests pending):
+/// - `gain 0..60`: p90 mic/balanced slider (CH7 MicPre native 0 observed).
+/// - `trim -40..+20`: p91.
+/// - `hpf_freq 20..700`: p103 Modern EQ (canonical/wire 400 is X-Air-shaped).
+/// - `eqN_q 0.5..16`: p103 Modern EQ (all four bands).
+/// - `comp_thr -80..0`: p112 Modern compressor.
+/// - `comp_makeup 0..20`: p112 Modern compressor gain.
+/// EQ gains need no entry (canonical already documents ±15 per p103);
+/// `gate_thr` needs none (canonical already -80..0 per p112).
+static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
+    ("gain", 0.0, 60.0),
+    ("trim", -40.0, 20.0),
+    ("hpf_freq", 20.0, 700.0),
+    ("eq1_q", 0.5, 16.0),
+    ("eq2_q", 0.5, 16.0),
+    ("eq3_q", 0.5, 16.0),
+    ("eq4_q", 0.5, 16.0),
+    ("comp_thr", -80.0, 0.0),
+    ("comp_makeup", 0.0, 20.0),
+];
+
 /// Live DL32S-class mixer on TCP 50001.
 pub struct Dl32sDriver {
     session: Mutex<Option<MackieSession>>,
@@ -1061,6 +1089,36 @@ impl MixerDriver for Dl32sDriver {
                 source("source_select", 1.0, "Input A/B"),
             ]
         })
+    }
+
+    /// Documented modern-DL32S engineering-unit ranges (manufacturer mixer software 5.1
+    /// manual; the desk runs native manufacturer mixer software 5.2 / mixer firmware 1.6).
+    /// Applied over the canonical (X-Air-shaped) catalogue in this
+    /// provider's registry only — sim and xair keep canonical ranges.
+    /// Every entry below has known units and a direct wire encoding (dB
+    /// leaves ride `Encoding::Db`, Hz/unitless leaves ride
+    /// `Encoding::Float`); kinds, scopes, labels and defaults are
+    /// untouched. Bounds are documentation-based, NOT live
+    /// endpoint-tested (hardware write tests pending) — the desk is
+    /// believed to clamp outside its maxima.
+    /// Deliberately absent (canonical kept, with reason):
+    /// - Line-input `-20..40` effective attenuation (p90): no
+    ///   input-socket detection exists, so the single mic/balanced `0..60`
+    ///   slider is served (CH7 MicPre native 0 observed, consistent); the
+    ///   existing wire bound is retained without assuming how the physical
+    ///   offset is represented.
+    /// - Timing leaves (`gate_att/hold/rel`, `comp_att/hold/rel`): wire
+    ///   floats with no confirmed ms mapping — canonical domains kept.
+    /// - `gate_range` `0..60` (p112): wire `Float` (not `Db`), unit mapping
+    ///   unconfirmed — canonical `3..60` kept.
+    /// - `comp_ratio` `1..INF` (p112): no known INF wire encoding — no
+    ///   sentinel invented; finite canonical `1.1..=100` kept (the desk
+    ///   clamps above its max; direct floats 1.68..20.2 observed).
+    /// - Mode leaves (`gate_mode/comp_mode/comp_knee/eq_mode`):
+    ///   modern/vintage and soft/hard polarities assumed per Mackie
+    ///   convention, labels unverified — no mode-aware switching fabricated.
+    fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
+        DL32S_RANGE_OVERRIDES
     }
 
     async fn connect(&self, addr: &str) -> anyhow::Result<()> {

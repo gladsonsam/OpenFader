@@ -72,6 +72,7 @@ class MixerStrip extends StatelessWidget {
                                   onOpen: onOpen)
                               : MixerProcessingRack(
                                   channel: ch,
+                                  gainRange: controller.gainRangeOf(ch),
                                   demo: controller.demo,
                                   onOpen: onOpen,
                                   onGain: (v) => controller.setGain(ch, v))),

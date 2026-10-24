@@ -170,15 +170,17 @@ class _FocusedValue extends StatelessWidget {
   const _FocusedValue({required this.focus, required this.compact});
   @override
   Widget build(BuildContext context) => InkWell(
-      onTap: () async {
-        final v = await showNumberEntry(
-            context: context,
-            title: '${focus.title} · ${focus.label}',
-            initial: focus.text(),
-            min: focus.min,
-            max: focus.max);
-        if (v != null) focus.apply(v);
-      },
+      onTap: !focus.enabled
+          ? null
+          : () async {
+              final v = await showNumberEntry(
+                  context: context,
+                  title: '${focus.title} · ${focus.label}',
+                  initial: focus.text(),
+                  min: focus.min,
+                  max: focus.max);
+              if (v != null && focus.enabled) focus.apply(v);
+            },
       child: SizedBox(
           height: 44,
           child: Center(

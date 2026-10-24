@@ -216,6 +216,9 @@ class _SelectedLevel extends StatelessWidget {
     final ch = channel;
     if (ch == null) return _value(context, '—');
     if (control == MixerReadoutControl.gain) {
+      if (controller.gainRangeOf(ch) == null) {
+        return _value(context, '—', enabled: false);
+      }
       final gain = (ch.params['gain'] as num?)?.toDouble() ?? 0;
       return _value(context, '${gain.toStringAsFixed(1)} dB');
     }
@@ -281,13 +284,17 @@ Future<void> _typeControl(BuildContext context, MixerController controller,
   }
   final volume = control == MixerReadoutControl.volume;
   final pan = control == MixerReadoutControl.pan;
+  final gainRange = control == MixerReadoutControl.gain
+      ? controller.gainRangeOf(channel)
+      : null;
+  if (control == MixerReadoutControl.gain && gainRange == null) return;
   final value = await showNumberEntry(
       context: context,
       title:
           '${_targetLabel(channel)} ${_controlLabel(control)}${pan ? ' (−100 L … +100 R)' : ''}',
       initial: volume ? fmtDb(initial) : initial.toStringAsFixed(1),
-      min: volume ? -60 : (pan ? -100 : -12),
-      max: volume ? 10 : (pan ? 100 : 60),
+      min: volume ? -60 : (pan ? -100 : gainRange!.first),
+      max: volume ? 10 : (pan ? 100 : gainRange!.last),
       allowNegInf: volume,
       negInfValue: double.negativeInfinity);
   if (value == null) return;
