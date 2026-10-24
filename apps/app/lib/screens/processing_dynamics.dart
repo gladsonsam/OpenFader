@@ -32,7 +32,8 @@ class _DynTab extends StatelessWidget {
         padding: EdgeInsets.symmetric(
             horizontal: compact ? 12 : 16, vertical: compact ? 8 : 16),
         decoration: BoxDecoration(
-            color: ConsolePalette.of(context).tileBg, borderRadius: U4.rWell),
+            color: ConsolePalette.of(context).processingPanel,
+            borderRadius: U4.rWell),
         child: _ProcessingSlider(
             label: k.label,
             text: k.text,
@@ -57,7 +58,8 @@ class _DynTab extends StatelessWidget {
     Widget secondary(_KnobDef k) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-            color: ConsolePalette.of(context).tileBg, borderRadius: U4.rWell),
+            color: ConsolePalette.of(context).processingPanel,
+            borderRadius: U4.rWell),
         child: Row(children: [
           Text(k.label,
               style:
@@ -88,7 +90,7 @@ class _DynTab extends StatelessWidget {
           child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                  color: ConsolePalette.of(context).tileBg,
+                  color: ConsolePalette.of(context).processingPanel,
                   borderRadius: U4.rWell),
               child: _ProcessingSlider(
                   label: 'Temperature',
@@ -105,7 +107,7 @@ class _DynTab extends StatelessWidget {
           child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                  color: ConsolePalette.of(context).tileBg,
+                  color: ConsolePalette.of(context).processingPanel,
                   borderRadius: U4.rWell),
               child: _ProcessingSlider(
                   label: 'Delay',
@@ -212,7 +214,7 @@ class _DynTab extends StatelessWidget {
           Container(
               height: (200 * scale).clamp(128.0, 200.0),
               decoration: BoxDecoration(
-                  color: ConsolePalette.of(context).tileBg,
+                  color: ConsolePalette.of(context).processingPanel,
                   borderRadius: U4.rWell),
               padding: const EdgeInsets.symmetric(vertical: 16),
               child: Row(children: [
@@ -466,7 +468,7 @@ class _DynamicsPainter extends CustomPainter {
       ..lineTo(dyn.kind == DynKind.gate ? g.x(dyn.thr) : g.x(-80), g.y(-80))
       ..close();
     canvas.drawPath(
-        fill, Paint()..color = palette.meter.withValues(alpha: .22));
+        fill, Paint()..color = palette.eqPreviewFill.withValues(alpha: .85));
     canvas.drawPath(
         curve,
         Paint()
@@ -561,11 +563,11 @@ class _EqPreviewPainter extends CustomPainter {
       ..lineTo(0, size.height)
       ..close();
     canvas.drawPath(
-        fill, Paint()..color = palette.meter.withValues(alpha: .22));
+        fill, Paint()..color = palette.eqPreviewFill.withValues(alpha: .85));
     canvas.drawPath(
         curve,
         Paint()
-          ..color = palette.text1
+          ..color = palette.eqPreviewCurve
           ..strokeWidth = 1.6
           ..style = PaintingStyle.stroke);
   }
