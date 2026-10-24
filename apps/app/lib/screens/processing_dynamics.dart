@@ -2,14 +2,10 @@ part of 'channel.dart';
 
 class _DynTab extends StatelessWidget {
   final ChannelStore store;
-  final ChannelWrites writes;
   final DynKind kind;
   final ValueChanged<ChannelFocus> onFocus;
   const _DynTab(
-      {required this.store,
-      required this.writes,
-      required this.kind,
-      required this.onFocus});
+      {required this.store, required this.kind, required this.onFocus});
   @override
   Widget build(BuildContext context) {
     final d = kind == DynKind.gate ? store.gate : store.comp;
@@ -17,17 +13,16 @@ class _DynTab extends StatelessWidget {
     final title = kind == DynKind.gate ? 'Gate' : 'Compressor';
     final knobs = _dynKnobs(kind, d).where((k) => k.prop != 'knee').toList();
     void apply(_KnobDef k, double v) {
-      writes.queue('${kind.name}_${k.prop}', v);
       store.setDynParam(kind, k.prop, v);
     }
 
-    void focus(_KnobDef k) => onFocus(ChannelFocus(
-        title: title,
-        label: k.label,
-        text: () => _dynLiveText(store, kind, k.prop),
-        min: k.min,
-        max: k.max,
-        apply: (v) => apply(k, v)));
+    void focus(_KnobDef k) => onFocus(_parameterFocus(
+        store,
+        '${kind.name}_${k.prop}',
+        title,
+        k.label,
+        () => _dynLiveText(store, kind, k.prop),
+        (v) => store.setDynParam(kind, k.prop, v)));
     Widget control(_KnobDef k, {bool threshold = false}) => Container(
         padding: EdgeInsets.symmetric(
             horizontal: compact ? 12 : 16, vertical: compact ? 8 : 16),
@@ -52,7 +47,7 @@ class _DynTab extends StatelessWidget {
             valueColor: threshold
                 ? ConsolePalette.of(context).cyan
                 : ConsolePalette.of(context).text1,
-            enabled: store.supports('${kind.name}_${k.prop}'),
+            enabled: d.ranges[k.prop] != null,
             onFocus: () => focus(k),
             onChanged: (v) => apply(k, v)));
     Widget secondary(_KnobDef k) => Container(
@@ -77,7 +72,7 @@ class _DynTab extends StatelessWidget {
                       ? ConsolePalette.of(context).processingBlue
                       : ConsolePalette.of(context).processingPurple,
                   solidFill: true,
-                  enabled: store.supports('${kind.name}_${k.prop}'),
+                  enabled: d.ranges[k.prop] != null,
                   onFocus: () => focus(k),
                   onChanged: (v) => apply(k, v))),
           const SizedBox(width: 16),
@@ -187,7 +182,7 @@ class _DynTab extends StatelessWidget {
                     reduction: store.grDb(kind),
                     height: compact ? 282 : 700 * scale,
                     compact: compact,
-                    enabled: (prop) => store.supports('${kind.name}_$prop'),
+                    enabled: (prop) => d.ranges[prop] != null,
                     onFocus: (prop) =>
                         focus(knobs.firstWhere((k) => k.prop == prop)),
                     onChanged: (prop, v) =>
@@ -373,22 +368,17 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
                                       _drag == null) {
                                     return;
                                   }
+                                  final range = widget.dyn.ranges[prop];
+                                  if (range == null) return;
                                   final delta = prop == 'thr'
                                       ? event.delta.dx / geom.width * 80
                                       : -event.delta.dy /
                                           geom.height *
-                                          (prop == 'ratio' ? -19 : 80);
-                                  final min = prop == 'thr'
-                                      ? widget.dyn.lo
-                                      : prop == 'ratio'
-                                          ? 1.0
-                                          : 0.0;
-                                  final max = prop == 'thr'
-                                      ? 0.0
-                                      : prop == 'ratio'
-                                          ? 20.0
-                                          : 24.0;
-                                  _drag = (_drag! + delta).clamp(min, max);
+                                          (prop == 'ratio'
+                                              ? -(range.last - range.first)
+                                              : 80);
+                                  _drag = (_drag! + delta)
+                                      .clamp(range.first, range.last);
                                   widget.onChanged(prop, _drag!);
                                 },
                                 onUp: (event) {

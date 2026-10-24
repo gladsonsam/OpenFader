@@ -11,12 +11,14 @@ import '../reference.dart';
 class MixerProcessingRack extends StatelessWidget {
   final MixerChannel channel;
   final bool demo;
+  final List<double>? gainRange;
   final VoidCallback onOpen;
   final ValueChanged<double> onGain;
   const MixerProcessingRack(
       {super.key,
       required this.channel,
       required this.demo,
+      this.gainRange,
       required this.onOpen,
       required this.onGain});
   @override
@@ -42,22 +44,26 @@ class MixerProcessingRack extends StatelessWidget {
                       builder: (context, gainBox) => Semantics(
                           container: true,
                           label: '${channel.name} gain',
-                          slider: !channel.master,
+                          slider: !channel.master && gainRange != null,
+                          enabled: channel.master || gainRange != null,
                           child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
-                              onHorizontalDragUpdate: channel.master
+                              onHorizontalDragUpdate: channel.master ||
+                                      gainRange == null
                                   ? null
-                                  : (d) => onGain(
-                                      ((channel.params['gain'] as num?)
-                                                  ?.toDouble() ??
-                                              0) +
-                                          d.delta.dx / gainBox.maxWidth * 72),
+                                  : (d) => onGain(((channel.params['gain'] as num?)
+                                              ?.toDouble() ??
+                                          0) +
+                                      d.delta.dx /
+                                          gainBox.maxWidth *
+                                          (gainRange!.last - gainRange!.first)),
                               child: CustomPaint(
                                   painter: _GainPainter(
                                       ConsolePalette.of(context),
                                       channel.params,
                                       channel.master,
-                                      demo)))))),
+                                      demo,
+                                      gainRange)))))),
               place(channel.master ? 68 : 47, channel.master ? 58 : 79,
                   MixerEqPreview(channel: channel, demo: demo, onOpen: onOpen)),
               place(
@@ -163,7 +169,9 @@ class _GainPainter extends CustomPainter {
   final ConsolePalette palette;
   final Map<String, Object> params;
   final bool master, demo;
-  _GainPainter(this.palette, this.params, this.master, this.demo);
+  final List<double>? gainRange;
+  _GainPainter(
+      this.palette, this.params, this.master, this.demo, this.gainRange);
   @override
   void paint(Canvas c, Size s) {
     c.save();
@@ -183,8 +191,12 @@ class _GainPainter extends CustomPainter {
     final width = s.width * .7;
     mixerBox(c, Rect.fromLTWH(3, 7, width, 11), palette.control,
         radius: 3, border: palette.lineCtl);
-    final amount = ((((params['gain'] as num?)?.toDouble() ?? 0) + 12) / 72)
-        .clamp(0.0, 1.0);
+    final amount = gainRange == null
+        ? 0.0
+        : ((((params['gain'] as num?)?.toDouble() ?? gainRange!.first) -
+                    gainRange!.first) /
+                (gainRange!.last - gainRange!.first))
+            .clamp(0.0, 1.0);
     mixerBox(
         c, Rect.fromLTWH(6, 10, (width - 7) * amount, 5), palette.meterCover,
         radius: 2, border: palette.lime);
@@ -203,6 +215,7 @@ class _GainPainter extends CustomPainter {
       old.palette != palette ||
       old.master != master ||
       old.demo != demo ||
+      !listEquals(old.gainRange, gainRange) ||
       !mapEquals(old.params, params);
 }
 

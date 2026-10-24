@@ -142,17 +142,24 @@ class ChannelFocus {
   final String title;
   final String label;
   final String Function() text;
-  final double min;
-  final double max;
+  final double _min;
+  final double _max;
+  final List<double>? Function()? resolveRange;
+  bool get enabled => resolveRange == null || resolveRange!() != null;
+  double get min => resolveRange?.call()?.first ?? _min;
+  double get max => resolveRange?.call()?.last ?? _max;
   final ValueChanged<double> apply;
 
   const ChannelFocus(
       {required this.title,
       required this.label,
       required this.text,
-      required this.min,
-      required this.max,
-      required this.apply});
+      required double min,
+      required double max,
+      this.resolveRange,
+      required this.apply})
+      : _min = min,
+        _max = max;
 }
 
 class ChannelPage extends StatefulWidget {
@@ -176,7 +183,6 @@ class ChannelPage extends StatefulWidget {
 }
 
 class _ChannelPageState extends State<ChannelPage> {
-  ChannelWrites? _writes;
   final _swipePointers = <int>{};
   bool _swipeMultiTouch = false;
   double _swipeDistance = 0;
@@ -190,7 +196,6 @@ class _ChannelPageState extends State<ChannelPage> {
   @override
   void initState() {
     super.initState();
-    _writes = ChannelWrites(widget.store.cmdParam);
     // Keep the engine's persistent detail lane on this channel
     // (web: w.setOpenChannel(bridgeStrip(w, id))).
     widget.store.cmdFocus();
@@ -198,7 +203,6 @@ class _ChannelPageState extends State<ChannelPage> {
 
   @override
   void dispose() {
-    _writes?.dispose();
     if (widget.controlFocus == null) _focus.dispose();
     super.dispose();
   }
@@ -206,9 +210,8 @@ class _ChannelPageState extends State<ChannelPage> {
   void _switchTab(ChannelStore store, ChannelTab tab) {
     // EQ opens focused on the selected band's frequency (the top readout's
     // default subject); other tabs clear the focus bar.
-    _focus.value = tab == ChannelTab.eq
-        ? eqFreqFocus(store, _writes!, store.eq.selectedBand)
-        : null;
+    _focus.value =
+        tab == ChannelTab.eq ? eqFreqFocus(store, store.eq.selectedBand) : null;
     store.setTab(tab);
   }
 
@@ -274,22 +277,16 @@ class _ChannelPageState extends State<ChannelPage> {
             // the focus readout + processing navigation + content.
             final wide = MediaQuery.sizeOf(context).width >= 700;
             final tabContent = switch (store.tab) {
-              ChannelTab.input => _InputTab(
-                  store: store,
-                  writes: _writes!,
-                  onFocus: (f) => _focus.value = f),
-              ChannelTab.eq => _EqTab(
-                  store: store,
-                  writes: _writes!,
-                  onFocus: (f) => _focus.value = f),
+              ChannelTab.input =>
+                _InputTab(store: store, onFocus: (f) => _focus.value = f),
+              ChannelTab.eq =>
+                _EqTab(store: store, onFocus: (f) => _focus.value = f),
               ChannelTab.gate => _DynTab(
                   store: store,
-                  writes: _writes!,
                   onFocus: (f) => _focus.value = f,
                   kind: DynKind.gate),
               ChannelTab.comp => _DynTab(
                   store: store,
-                  writes: _writes!,
                   onFocus: (f) => _focus.value = f,
                   kind: DynKind.comp),
             };
@@ -663,69 +660,57 @@ String _eqFreqText(ChannelStore store, int band) {
       : '${f.toStringAsFixed(0)} Hz';
 }
 
-/// Frequency focus for an EQ band (0 = HPF). Used when a band is pressed
-/// on the graph/dots and when switching to the EQ tab.
-ChannelFocus eqFreqFocus(ChannelStore store, ChannelWrites writes, int band) {
-  final b = band.clamp(0, 4);
-  if (b == 0) {
-    return ChannelFocus(
-        title: 'EQ HPF',
-        label: 'Frequency',
-        text: () => _eqFreqText(store, 0),
-        min: 20,
-        max: 1000,
-        apply: (v) {
-          writes.queue('eq_hpf_f', v);
-          store.setEqParam(0, 'f', v);
-        });
+List<double>? _controlRange(ChannelStore store, String leaf) {
+  if (!store.supports(leaf) || store.paramNum(leaf)?.isFinite != true) {
+    return null;
   }
-  return ChannelFocus(
-      title: 'EQ Band $b',
-      label: 'Frequency',
-      text: () => _eqFreqText(store, b),
-      min: b == 1 ? 20 : 100,
-      max: b == 4 ? 20000 : 16000,
-      apply: (v) {
-        writes.queue('eq${b}_f', v);
-        store.setEqParam(b, 'f', v);
-      });
+  return parameterRange(store.paramMetadata(leaf));
 }
 
-ChannelFocus _eqGainFocus(ChannelStore store, ChannelWrites writes, int band) {
-  return ChannelFocus(
-      title: 'EQ Band $band',
-      label: 'Gain',
-      text: () {
-        final bands = store.eq.bands;
-        final b =
-            bands.firstWhere((x) => x.band == band, orElse: () => bands.first);
-        return '${b.g.toStringAsFixed(1)} dB';
-      },
-      min: -15,
-      max: 15,
-      apply: (v) {
-        writes.queue('eq${band}_g', v);
-        store.setEqParam(band, 'g', v);
-      });
+ChannelFocus _parameterFocus(ChannelStore store, String leaf, String title,
+        String label, String Function() text, ValueChanged<double> update) =>
+    ChannelFocus(
+        title: title,
+        label: label,
+        text: text,
+        min: 0,
+        max: 1,
+        resolveRange: () => _controlRange(store, leaf),
+        apply: (v) {
+          final range = _controlRange(store, leaf);
+          if (range == null || !v.isFinite) return;
+          final next = v.clamp(range.first, range.last);
+          update(next);
+        });
+
+/// Frequency focus for an EQ band (0 = HPF).
+ChannelFocus eqFreqFocus(ChannelStore store, int band) {
+  final b = band.clamp(0, 4);
+  return _parameterFocus(
+      store,
+      b == 0 ? 'eq_hpf_f' : 'eq${b}_f',
+      b == 0 ? 'EQ HPF' : 'EQ Band $b',
+      'Frequency',
+      () => _eqFreqText(store, b),
+      (v) => store.setEqParam(b, 'f', v));
 }
 
-ChannelFocus _eqQFocus(ChannelStore store, ChannelWrites writes, int band) {
-  return ChannelFocus(
-      title: 'EQ Band $band',
-      label: 'Q',
-      text: () {
-        final bands = store.eq.bands;
-        final b =
-            bands.firstWhere((x) => x.band == band, orElse: () => bands.first);
-        return b.q.toStringAsFixed(2);
-      },
-      min: 0.3,
-      max: 16,
-      apply: (v) {
-        writes.queue('eq${band}_q', v);
-        store.setEqParam(band, 'q', v);
-      });
-}
+ChannelFocus _eqGainFocus(ChannelStore store, int band) => _parameterFocus(
+    store,
+    'eq${band}_g',
+    'EQ Band $band',
+    'Gain',
+    () =>
+        '${store.eq.bands.firstWhere((b) => b.band == band).g.toStringAsFixed(1)} dB',
+    (v) => store.setEqParam(band, 'g', v));
+
+ChannelFocus _eqQFocus(ChannelStore store, int band) => _parameterFocus(
+    store,
+    'eq${band}_q',
+    'EQ Band $band',
+    'Q',
+    () => store.eq.bands.firstWhere((b) => b.band == band).q.toStringAsFixed(2),
+    (v) => store.setEqParam(band, 'q', v));
 
 String _dynLiveText(ChannelStore store, DynKind kind, String prop) {
   final d = kind == DynKind.gate ? store.gate : store.comp;
@@ -934,39 +919,34 @@ class _KnobDef {
   final double min;
   final double max;
   final String text;
-  final double dflt;
-  const _KnobDef(this.label, this.prop, this.value, this.min, this.max,
-      this.text, this.dflt);
+  const _KnobDef(
+      this.label, this.prop, this.value, this.min, this.max, this.text);
 }
 
 List<_KnobDef> _dynKnobs(DynKind kind, ChannelDynVm d) {
+  _KnobDef knob(String label, String prop, double value, String text) {
+    final range = d.ranges[prop];
+    // Inert track coordinates when the value or range is unavailable.
+    return _KnobDef(
+        label, prop, value, range?.first ?? 0, range?.last ?? 1, text);
+  }
+
   if (kind == DynKind.gate) {
     return [
-      _KnobDef('Threshold', 'thr', d.thr, -80, 0,
-          '${d.thr.toStringAsFixed(1)} dB', -50),
-      _KnobDef('Range', 'range', d.range, 0, 60,
-          '${d.range.toStringAsFixed(0)} dB', 40),
-      _KnobDef('Attack', 'att', d.att, 0.1, 100,
-          '${d.att.toStringAsFixed(1)} ms', 0.5),
-      _KnobDef('Hold', 'hold', d.hold, 0, 500,
-          '${d.hold.toStringAsFixed(0)} ms', 50),
-      _KnobDef('Release', 'rel', d.rel, 10, 1000,
-          '${d.rel.toStringAsFixed(0)} ms', 150),
+      knob('Threshold', 'thr', d.thr, '${d.thr.toStringAsFixed(1)} dB'),
+      knob('Range', 'range', d.range, '${d.range.toStringAsFixed(0)} dB'),
+      knob('Attack', 'att', d.att, '${d.att.toStringAsFixed(1)} ms'),
+      knob('Hold', 'hold', d.hold, '${d.hold.toStringAsFixed(0)} ms'),
+      knob('Release', 'rel', d.rel, '${d.rel.toStringAsFixed(0)} ms'),
     ];
   }
   return [
-    _KnobDef('Threshold', 'thr', d.thr, -60, 0,
-        '${d.thr.toStringAsFixed(1)} dB', -20),
-    _KnobDef(
-        'Ratio', 'ratio', d.ratio, 1, 20, '${d.ratio.toStringAsFixed(1)}:1', 3),
-    _KnobDef(
-        'Knee', 'knee', d.knee, 0, 6, '${d.knee.toStringAsFixed(1)} dB', 3),
-    _KnobDef(
-        'Attack', 'att', d.att, 0.1, 100, '${d.att.toStringAsFixed(1)} ms', 10),
-    _KnobDef('Release', 'rel', d.rel, 10, 1000,
-        '${d.rel.toStringAsFixed(0)} ms', 120),
-    _KnobDef('Gain', 'makeup', d.makeup, 0, 24,
-        '${d.makeup.toStringAsFixed(1)} dB', 0),
+    knob('Threshold', 'thr', d.thr, '${d.thr.toStringAsFixed(1)} dB'),
+    knob('Ratio', 'ratio', d.ratio, '${d.ratio.toStringAsFixed(1)}:1'),
+    knob('Knee', 'knee', d.knee, '${d.knee.toStringAsFixed(1)} dB'),
+    knob('Attack', 'att', d.att, '${d.att.toStringAsFixed(1)} ms'),
+    knob('Release', 'rel', d.rel, '${d.rel.toStringAsFixed(0)} ms'),
+    knob('Gain', 'makeup', d.makeup, '${d.makeup.toStringAsFixed(1)} dB'),
   ];
 }
 

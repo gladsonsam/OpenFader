@@ -6,8 +6,6 @@
 // Wiring: everything flows through [DebugStore] (constructor injection —
 // Area A implements it over the engine via cmdStats/Hello; this file only
 // renders ui4 tokens, see lib/theme.dart). Monospace text, plain buttons.
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
@@ -48,20 +46,10 @@ class U4DebugPage extends StatefulWidget {
 }
 
 class _U4DebugPageState extends State<U4DebugPage> {
-  Timer? _loop;
-
   @override
   void initState() {
     super.initState();
     widget.store.refresh();
-    _loop = Timer.periodic(
-        const Duration(milliseconds: 500), (_) => widget.store.refresh());
-  }
-
-  @override
-  void dispose() {
-    _loop?.cancel();
-    super.dispose();
   }
 
   @override

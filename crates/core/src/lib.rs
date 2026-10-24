@@ -649,6 +649,19 @@ pub trait MixerDriver: Send + Sync {
         &[]
     }
 
+    /// Driver-specific engineering-unit range overrides, applied over the
+    /// canonical [`crate::params::CATALOGUE`] in this provider's merged
+    /// [`crate::params::ParamRegistry`] (see
+    /// [`crate::params::ParamRegistry::override_range`]): each entry is
+    /// `(canonical id, min, max)`; unknown ids are ignored. Default is
+    /// empty (the driver serves canonical ranges). A driver whose desk
+    /// documents different native bounds returns them here — ranges only
+    /// (kinds, units, labels, scopes and defaults never change), so the
+    /// canonical merge stays stable for every other driver.
+    fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
+        &[]
+    }
+
     /// Ordered strip families in the global strip index space
     /// (`caps.topology`). Default is one `in` family covering
     /// [`MixerDriver::channel_count`] so drivers that have not grown

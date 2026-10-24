@@ -470,7 +470,7 @@ class EqCurvePainter extends CustomPainter {
           band.on);
     }
     node(
-        Offset(EqGraphGeom.xOf(eq.hpfF.clamp(20, 1000)) * sx,
+        Offset(EqGraphGeom.xOf(eq.hpfF.clamp(20, 20000)) * sx,
             EqGraphGeom.yOf(0) * sy),
         0,
         eq.hpfOn);
@@ -619,7 +619,7 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
       }
     }
     final hpf = Offset(
-      EqGraphGeom.xOf(widget.eq.hpfF.clamp(20, 1000)) /
+      EqGraphGeom.xOf(widget.eq.hpfF.clamp(20, 20000)) /
           EqGraphGeom.w *
           widget.width,
       widget.height / 2,
@@ -667,23 +667,24 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
       _span = span;
       if (band == 0 || oldSpan == null || oldSpan < 1 || span < 1) return;
       final range = _band?.qRange;
+      if (range == null) return;
       // Spread fingers to broaden the band (lower Q).
-      _q = (_q * oldSpan / span).clamp(range?[0] ?? 0.3, range?[1] ?? 16.0);
+      _q = (_q * oldSpan / span).clamp(range.first, range.last);
       widget.onQ(band, _q);
     } else if (_pointers.length == 1 && widget.width > 0 && widget.height > 0) {
       final delta = event.localPosition - previous;
-      final fRange = _band?.fRange;
-      final gRange = _band?.gRange;
-      _f = (_f * math.pow(1000, delta.dx / widget.width))
-          .clamp(
-            band == 0 ? 20.0 : (fRange?[0] ?? 20.0),
-            band == 0 ? 1000.0 : (fRange?[1] ?? 20000.0),
-          )
-          .toDouble();
-      _g = band == 0
-          ? 0
-          : (_g - delta.dy / widget.height * 30)
-              .clamp(gRange?[0] ?? -15.0, gRange?[1] ?? 15.0);
+      final fRange = band == 0 ? widget.eq.hpfRange : _band?.fRange;
+      final gRange = band == 0 ? null : _band?.gRange;
+      if (fRange == null && gRange == null) return;
+      if (fRange != null) {
+        _f = (_f * math.pow(1000, delta.dx / widget.width))
+            .clamp(fRange.first, fRange.last)
+            .toDouble();
+      }
+      if (gRange != null) {
+        _g = (_g - delta.dy / widget.height * 30)
+            .clamp(gRange.first, gRange.last);
+      }
       widget.onNode(band, _f, _g);
     }
   }
