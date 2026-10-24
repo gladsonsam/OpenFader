@@ -980,6 +980,10 @@ impl Engine {
             // Updates suppressed during verification belong to a live old
             // session. Repair it instead of silently losing that interval.
             self.repair_dirty.store(true, Ordering::Release);
+            // The epoch already went out (clients cleared on it) while the
+            // previous driver/session is retained: refill it so clients do
+            // not strand empty.
+            self.replay_retained_session(generation).await;
             return Err(e);
         }
         let previous = self.active_driver();
@@ -1033,6 +1037,54 @@ impl Engine {
             *self.meter_driver.write().unwrap() = None;
         }
         Ok(())
+    }
+
+    /// Replay the retained session after a failed [`Engine::connect`]: the
+    /// generation was already invalidated (clients cleared on its `SyncEpoch`)
+    /// but the previous driver stays active with its caches intact. Re-emit
+    /// its `caps` + cached `link` + fresh `state` + `masters` + cached
+    /// `params` so clients refill instead of stranding empty. Generation-
+    /// gated like [`Engine::deferred_fill`]: a racing switch wins and this
+    /// replay stays silent; live reads are best-effort (a silent desk drops
+    /// frames, never the caller's error).
+    async fn replay_retained_session(&self, generation: u64) {
+        if self.connection_gen.load(Ordering::Acquire) != generation {
+            return;
+        }
+        let sampled = Instant::now();
+        let state = self.state_message(None).await;
+        if self.connection_gen.load(Ordering::Acquire) != generation {
+            return;
+        }
+        {
+            let sync = self.sync_state.lock().unwrap();
+            if self.connection_gen.load(Ordering::Acquire) != generation {
+                return;
+            }
+            self.broadcast(self.reconcile_event(self.caps_message(), &sync, sampled));
+            self.broadcast(self.reconcile_event(self.link_message_cached(), &sync, sampled));
+            self.broadcast(self.reconcile_event(state, &sync, sampled));
+        }
+        let masters = self.masters_snapshot().await;
+        let info = self.info_message().await.ok();
+        let routing = self.routing_message().await;
+        if self.connection_gen.load(Ordering::Acquire) != generation {
+            return;
+        }
+        {
+            let sync = self.sync_state.lock().unwrap();
+            if self.connection_gen.load(Ordering::Acquire) != generation {
+                return;
+            }
+            for frame in info.into_iter()
+                .chain([self.fx_message_cached(), routing, self.scenes_message()])
+                .chain(masters) {
+                self.broadcast(self.reconcile_event(frame, &sync, sampled));
+            }
+            for frame in self.params_snapshot() {
+                self.broadcast(self.reconcile_event(frame, &sync, sampled));
+            }
+        }
     }
 
     /// Remember a verified desk address under `driver` and persist the map

@@ -47,118 +47,151 @@ class MixerStrip extends StatelessWidget {
         final ch = channel;
         final isMaster = ch.master;
         final chIndex = ch.channel;
-        return ColoredBox(
-            color: ch.selected
-                ? ConsolePalette.of(context).selected
-                : ConsolePalette.of(context).background,
-            child: DecoratedBox(
-                decoration: BoxDecoration(
-                    border: Border(
-                        right: BorderSide(
-                            color: ConsolePalette.of(context).stripDivider))),
-                child: Stack(children: [
-                  place(
-                      g.rackY,
-                      g.rackH,
-                      compact
-                          ? MixerEqPreview(
-                              channel: ch,
-                              demo: controller.demo,
-                              compact: true,
-                              onOpen: onOpen)
-                          : MixerProcessingRack(
-                              channel: ch,
-                              demo: controller.demo,
-                              onOpen: onOpen,
-                              onGain: (v) => controller.setGain(ch, v))),
-                  place(
-                      g.panY,
-                      g.panH,
-                      isMaster || chIndex == null
-                          ? MixerPan(
-                              name: ch.name,
-                              value: 0,
-                              visualHeight: g.panH,
-                              onChanged: null)
-                          : ValueListenableBuilder<double>(
-                              valueListenable: controller.panNoteOf(chIndex),
-                              builder: (context, pan, _) => MixerPan(
+        return ValueListenableBuilder<int>(
+            valueListenable: controller.store
+                .controlReadyNote(isMaster ? -1 : chIndex ?? -1),
+            builder: (context, ready, _) => ColoredBox(
+                color: ch.selected
+                    ? ConsolePalette.of(context).selected
+                    : ConsolePalette.of(context).background,
+                child: DecoratedBox(
+                    decoration: BoxDecoration(
+                        border: Border(
+                            right: BorderSide(
+                                color:
+                                    ConsolePalette.of(context).stripDivider))),
+                    child: Stack(children: [
+                      place(
+                          g.rackY,
+                          g.rackH,
+                          compact
+                              ? MixerEqPreview(
+                                  channel: ch,
+                                  demo: controller.demo,
+                                  compact: true,
+                                  onOpen: onOpen)
+                              : MixerProcessingRack(
+                                  channel: ch,
+                                  demo: controller.demo,
+                                  onOpen: onOpen,
+                                  onGain: (v) => controller.setGain(ch, v))),
+                      place(
+                          g.panY,
+                          g.panH,
+                          isMaster || chIndex == null
+                              ? MixerPan(
                                   name: ch.name,
-                                  value: pan,
+                                  value: 0,
                                   visualHeight: g.panH,
-                                  onChanged: (v) => controller.setPan(ch, v))),
-                      touch: true),
-                  place(
-                      g.muteY,
-                      g.muteH,
-                      ValueListenableBuilder<bool>(
-                          valueListenable:
-                              controller.muteNoteOf(chIndex, isMaster),
-                          builder: (context, muted, _) => MixerToggle(
-                              label: 'Mute',
-                              visualHeight: g.muteH,
-                              fontSize: g.x(compact ? 20 : 32),
-                              channelName: ch.name,
-                              on: muted,
-                              activeColor: ConsolePalette.of(context).mute,
-                              activeForeground:
-                                  ConsolePalette.of(context).onDanger,
-                              onPressed: () => controller.toggleMute(ch))),
-                      touch: true),
-                  place(
-                      g.faderY,
-                      g.faderH,
-                      ValueListenableBuilder<double>(
-                          valueListenable:
-                              controller.faderNoteOf(chIndex, isMaster),
-                          builder: (context, fader, _) => MixerFader(
-                              channel: _withFader(ch, fader),
-                              compact: compact,
-                              onPosition: (v) => controller.setPosition(ch, v),
-                              onSelect: () => controller.select(ch),
-                              onUnity: () => controller.unity(ch)))),
-                  place(
-                      g.soloY,
-                      g.soloH,
-                      isMaster || chIndex == null
-                          ? MixerToggle(
-                              label: 'Solo',
-                              channelName: ch.name,
-                              on: false,
-                              visualHeight: g.soloH,
-                              fontSize: g.x(compact ? 20 : 32),
-                              activeColor: ConsolePalette.of(context).solo,
-                              activeForeground:
-                                  ConsolePalette.of(context).onSolo,
-                              onPressed: null)
-                          : ValueListenableBuilder<bool>(
-                              valueListenable: controller.soloNoteOf(chIndex),
-                              builder: (context, solo, _) => MixerToggle(
-                                  label: 'Solo',
-                                  visualHeight: g.soloH,
+                                  onChanged: null)
+                              : ValueListenableBuilder<double>(
+                                  valueListenable:
+                                      controller.panNoteOf(chIndex),
+                                  builder: (context, pan, _) => ready & 4 == 0
+                                      ? const Center(child: Text('Pan · —'))
+                                      : MixerPan(
+                                          name: ch.name,
+                                          value: pan,
+                                          visualHeight: g.panH,
+                                          onChanged: ready & 4 != 0
+                                              ? (v) => controller.setPan(ch, v)
+                                              : null)),
+                          touch: true),
+                      place(
+                          g.muteY,
+                          g.muteH,
+                          ValueListenableBuilder<bool>(
+                              valueListenable:
+                                  controller.muteNoteOf(chIndex, isMaster),
+                              builder: (context, muted, _) => MixerToggle(
+                                  label: ready & 2 != 0 ? 'Mute' : 'Mute · —',
+                                  visualHeight: g.muteH,
                                   fontSize: g.x(compact ? 20 : 32),
                                   channelName: ch.name,
-                                  on: solo,
+                                  on: ready & 2 != 0 && muted,
+                                  activeColor: ConsolePalette.of(context).mute,
+                                  activeForeground:
+                                      ConsolePalette.of(context).onDanger,
+                                  onPressed: ready & 2 != 0
+                                      ? () => controller.toggleMute(ch)
+                                      : null)),
+                          touch: true),
+                      place(
+                          g.faderY,
+                          g.faderH,
+                          ValueListenableBuilder<double>(
+                              valueListenable:
+                                  controller.faderNoteOf(chIndex, isMaster),
+                              builder: (context, fader, _) => Stack(children: [
+                                    ExcludeSemantics(
+                                        excluding: ready & 1 == 0,
+                                        child: IgnorePointer(
+                                            ignoring: ready & 1 == 0,
+                                            child: Opacity(
+                                                opacity: ready & 1 != 0 ? 1 : 0,
+                                                child: MixerFader(
+                                                    channel:
+                                                        _withFader(ch, fader),
+                                                    compact: compact,
+                                                    onPosition: (v) =>
+                                                        controller.setPosition(
+                                                            ch, v),
+                                                    onSelect: () =>
+                                                        controller.select(ch),
+                                                    onUnity: () => controller
+                                                        .unity(ch))))),
+                                    if (ready & 1 == 0)
+                                      const Center(child: Text('Loading…')),
+                                  ]))),
+                      place(
+                          g.soloY,
+                          g.soloH,
+                          isMaster || chIndex == null
+                              ? MixerToggle(
+                                  label: 'Solo',
+                                  channelName: ch.name,
+                                  on: false,
+                                  visualHeight: g.soloH,
+                                  fontSize: g.x(compact ? 20 : 32),
                                   activeColor: ConsolePalette.of(context).solo,
                                   activeForeground:
                                       ConsolePalette.of(context).onSolo,
-                                  onPressed: () => controller.toggleSolo(ch))),
-                      touch: true),
-                  Positioned(
-                      left: 0,
-                      right: 0,
-                      top: g.scribbleY,
-                      bottom: 0,
-                      child: MixerNameplate(
-                          channel: ch,
-                          iconHeight: g.scribbleH,
-                          nameHeight: g.nameH,
-                          nameOffset: g.nameY - g.scribbleY,
-                          fontSize: g.nameText,
-                          compact: compact,
-                          onSelect: () => controller.select(ch),
-                          onOpen: onOpen)),
-                ])));
+                                  onPressed: null)
+                              : ValueListenableBuilder<bool>(
+                                  valueListenable:
+                                      controller.soloNoteOf(chIndex),
+                                  builder: (context, solo, _) => MixerToggle(
+                                      label: 'Solo',
+                                      unavailableReason: ready & 8 != 0
+                                          ? null
+                                          : 'Solo unavailable',
+                                      visualHeight: g.soloH,
+                                      fontSize: g.x(compact ? 20 : 32),
+                                      channelName: ch.name,
+                                      on: ready & 8 != 0 && solo,
+                                      activeColor:
+                                          ConsolePalette.of(context).solo,
+                                      activeForeground:
+                                          ConsolePalette.of(context).onSolo,
+                                      onPressed: ready & 8 != 0
+                                          ? () => controller.toggleSolo(ch)
+                                          : null)),
+                          touch: true),
+                      Positioned(
+                          left: 0,
+                          right: 0,
+                          top: g.scribbleY,
+                          bottom: 0,
+                          child: MixerNameplate(
+                              channel: ch,
+                              iconHeight: g.scribbleH,
+                              nameHeight: g.nameH,
+                              nameOffset: g.nameY - g.scribbleY,
+                              fontSize: g.nameText,
+                              compact: compact,
+                              onSelect: () => controller.select(ch),
+                              onOpen: onOpen)),
+                    ]))));
       });
 
   /// Snapshot copy carrying the live fader value for [MixerFader] (level

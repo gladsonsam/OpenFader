@@ -1,4 +1,4 @@
-// Persisted recent mixers (name + address), shared by the Connections
+// Persisted recent mixers (name + address + driver), shared by the Connections
 // start screen and the Settings forget flows. Stored as one JSON list.
 library;
 
@@ -10,7 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 class RecentMixerEntry {
   final String name;
   final String addr;
-  const RecentMixerEntry({required this.name, required this.addr});
+  final String driver;
+  const RecentMixerEntry(
+      {required this.name, required this.addr, this.driver = 'auto'});
 }
 
 class RecentMixers extends ChangeNotifier {
@@ -43,7 +45,9 @@ class RecentMixers extends ChangeNotifier {
         for (final e in list)
           if (e is Map<String, dynamic> && '${e['addr'] ?? ''}'.isNotEmpty)
             RecentMixerEntry(
-                name: '${e['name'] ?? ''}', addr: '${e['addr'] ?? ''}'),
+                name: '${e['name'] ?? ''}',
+                addr: '${e['addr'] ?? ''}',
+                driver: '${e['driver'] ?? 'auto'}'),
       ];
     } catch (_) {
       return [];
@@ -55,7 +59,8 @@ class RecentMixers extends ChangeNotifier {
     final saved = await prefs.setString(
         key,
         jsonEncode([
-          for (final r in _items) {'name': r.name, 'addr': r.addr}
+          for (final r in _items)
+            {'name': r.name, 'addr': r.addr, 'driver': r.driver}
         ]));
     if (!saved) {
       await prefs.reload();
@@ -66,18 +71,51 @@ class RecentMixers extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Separate from recents so reconnect-last keeps its type even when the
+  // user has disabled the recent-mixers list.
+  static const _lastConnectionKey = 'openfader.lastConnectionType';
+
+  static Future<void> rememberLastConnection(String addr, String driver) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!await prefs.setString(
+        _lastConnectionKey, jsonEncode({'addr': addr, 'driver': driver}))) {
+      throw StateError('The last mixer type could not be saved.');
+    }
+  }
+
+  static Future<String> savedDriverFor(String addr) async {
+    final prefs = await SharedPreferences.getInstance();
+    final host = addr.trim().toLowerCase();
+    try {
+      final last = jsonDecode(prefs.getString(_lastConnectionKey) ?? '{}');
+      if (last is Map && '${last['addr']}'.trim().toLowerCase() == host) {
+        return '${last['driver'] ?? 'auto'}';
+      }
+    } catch (_) {
+      // Older installs have no separate last-connection record.
+    }
+    for (final entry in _decode(prefs.getString(key))) {
+      if (entry.addr.trim().toLowerCase() == host) return entry.driver;
+    }
+    return 'auto';
+  }
+
   /// Add or rename (only when remembering is enabled by the caller).
-  Future<void> remember(String name, String addr) async {
+  Future<void> remember(String name, String addr, {String? driver}) async {
     if (addr.isEmpty) return;
     final i = _items.indexWhere((r) => r.addr == addr);
-    if (i >= 0) {
-      if (name.isNotEmpty && _items[i].name != name) {
-        _items[i] = RecentMixerEntry(name: name, addr: addr);
-      } else {
+    final previous = i < 0 ? null : _items[i];
+    final entry = RecentMixerEntry(
+        name: name.isEmpty ? previous?.name ?? '' : name,
+        addr: addr,
+        driver: driver ?? previous?.driver ?? 'auto');
+    if (previous != null) {
+      if (previous.name == entry.name && previous.driver == entry.driver) {
         return;
       }
+      _items[i] = entry;
     } else {
-      _items.add(RecentMixerEntry(name: name, addr: addr));
+      _items.add(entry);
     }
     await _save();
   }

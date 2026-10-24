@@ -12,6 +12,59 @@ import '../theme.dart';
 import '../palette.dart';
 import '../widgets/console_button.dart';
 
+/// Manual connection choice. Automatic retains the existing X-Air probe path.
+enum MixerType {
+  automatic('Automatic', 'auto'),
+  xair('Behringer X-Air', 'xair'),
+  dl32s('Mackie DL32S', 'dl32s');
+
+  const MixerType(this.label, this.driver);
+  final String label;
+  final String driver;
+
+  static MixerType fromDriver(String driver) => values
+      .firstWhere((type) => type.driver == driver, orElse: () => automatic);
+}
+
+/// Shared manual-entry field, using the current console palette.
+class MixerTypeField extends StatelessWidget {
+  final MixerType value;
+  final ValueChanged<MixerType>? onChanged;
+  const MixerTypeField({super.key, required this.value, this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    return DropdownButtonFormField<MixerType>(
+      initialValue: value,
+      isExpanded: true,
+      dropdownColor: palette.chip,
+      style: TextStyle(fontSize: 17, color: palette.text),
+      decoration: InputDecoration(
+        labelText: 'Mixer type',
+        labelStyle: TextStyle(color: palette.mutedText),
+        filled: true,
+        fillColor: palette.well,
+        enabledBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: palette.lineCtl),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderSide: BorderSide(color: palette.lime),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      ),
+      items: [
+        for (final type in MixerType.values)
+          DropdownMenuItem(value: type, child: Text(type.label)),
+      ],
+      onChanged: onChanged == null ? null : (type) => onChanged!(type!),
+    );
+  }
+}
+
 /// One discovered desk row (engine `devices` event entry).
 class ConnDevice {
   final String id;
@@ -19,6 +72,7 @@ class ConnDevice {
   final String sub; // model · ip · fw
   final String state;
   final bool connected;
+  final MixerType mixerType;
 
   const ConnDevice({
     required this.id,
@@ -26,6 +80,7 @@ class ConnDevice {
     required this.sub,
     this.state = '',
     this.connected = false,
+    this.mixerType = MixerType.automatic,
   });
 }
 
@@ -61,8 +116,10 @@ abstract class ConnectionStore extends ChangeNotifier {
   void scan(); // network discovery
   void refreshKnown(List<String> hosts);
   String? checkStatusOf(String host);
-  void probe(String addr); // cmd probe (+connect on verify)
-  Future<void> retryProbe(); // re-send last probe up to 3 attempts
+  MixerType get lastMixerType;
+  String get connectionProgress;
+  void probe(String addr, {MixerType mixerType = MixerType.automatic});
+  Future<void> retryProbe(); // retry the last address and mixer type
   void connectDevice(String id); // cmd connect_device
   void connectSim(); // offline demo desk
   void disconnect(); // cmd disconnect
@@ -83,6 +140,7 @@ class U4ConnectionPage extends StatefulWidget {
 
 class _U4ConnectionPageState extends State<U4ConnectionPage> {
   final _ipCtl = TextEditingController();
+  MixerType _mixerType = MixerType.automatic;
 
   @override
   void dispose() {
@@ -175,6 +233,13 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                           fontWeight: FontWeight.w700,
                           color: ConsolePalette.of(context).text4)),
                   const SizedBox(height: 6),
+                  MixerTypeField(
+                    value: _mixerType,
+                    onChanged: store.probing
+                        ? null
+                        : (type) => setState(() => _mixerType = type),
+                  ),
+                  const SizedBox(height: 8),
                   Row(
                     children: [
                       Expanded(
@@ -211,7 +276,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                               final a = v.trim();
                               if (a.isNotEmpty) {
                                 FocusScope.of(context).unfocus();
-                                store.probe(a);
+                                store.probe(a, mixerType: _mixerType);
                               }
                             },
                           ),
@@ -219,19 +284,26 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                       ),
                       const SizedBox(width: 6),
                       _Btn(
-                        label: store.probing
-                            ? 'Probing ${store.probeAttempt}/3…'
-                            : 'Probe',
+                        label: store.probing ? 'Connecting…' : 'Connect',
+                        enabled: !store.probing,
                         onTap: () {
                           final a = _ipCtl.text.trim();
                           if (a.isNotEmpty) {
                             FocusScope.of(context).unfocus();
-                            store.probe(a);
+                            store.probe(a, mixerType: _mixerType);
                           }
                         },
                       ),
                     ],
                   ),
+                  if (store.probing)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(store.connectionProgress,
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: ConsolePalette.of(context).text4)),
+                    ),
                   const SizedBox(height: 10),
                   _InfoCard(store: store, onOpenDebug: widget.onOpenDebug),
                 ],
@@ -280,7 +352,7 @@ class _ErrorBanner extends StatelessWidget {
                 Expanded(
                   child: _Btn(
                     label:
-                        'Retry probe ${store.lastProbe} (${store.probeAttempt}/3)',
+                        'Retry ${store.lastMixerType.label} · ${store.lastProbe}',
                     primary: true,
                     onTap: store.retryProbe,
                   ),

@@ -21,8 +21,8 @@
 //   sendN_mute). Short UI leaves are translated in [AppStore.deskLeaf], the
 //   single choke point covering both direct cmdParam calls and the
 //   ChannelWrites queue. Neither hardware driver has per-band EQ bypass.
-// - EQ/dyn/send snapshots still start from fixture defaults until the
-//   param-plane cache fills them from desk echoes.
+// - EQ/dyn view fallbacks keep getter interfaces stable; hardware edits
+//   remain disabled until the corresponding desk value is received.
 // - Bus rows render the MAIN bus (+ known engine buses); the bus popup
 //   picks the master bus shown, it does not re-patch routing.
 // - Binary meter/GR/tap frames ride the hot path ([EngineApi.pollBinary]
@@ -38,6 +38,7 @@ import 'package:flutter/foundation.dart';
 
 import '../core/channel_views.dart';
 import '../core/coalescer.dart';
+import '../core/fader_law.dart' show lawForDriver;
 import '../core/store.dart' as ps;
 import '../engine.dart';
 import '../palette.dart';
@@ -108,6 +109,40 @@ class AppStore extends ChangeNotifier
   final Map<int, ValueNotifier<bool>> _muteNotes = {};
   final Map<int, ValueNotifier<double>> _panNotes = {};
   final Map<int, ValueNotifier<bool>> _soloNotes = {};
+  final Map<int, ValueNotifier<int>> _controlReadyNotes = {};
+
+  // Solo is a dedicated protocol event, absent from the param catalogue.
+  // A real solo echo establishes availability; caps alone never enables it.
+  bool canEditControl(int ch, String field) =>
+      engine.driver == 'sim' ||
+      (engine.connected &&
+          engine.capsReady &&
+          (engine.supportedParams.contains(field) || field == 'solo') &&
+          engine.valueKnown(ch, field));
+
+  int _controlReady(int ch) => ch < 0
+      ? ((masterControlKnown('fader') ? 1 : 0) |
+          (masterControlKnown('mute') ? 2 : 0))
+      : (canEditControl(ch, 'fader') ? 1 : 0) |
+          (canEditControl(ch, 'mute') ? 2 : 0) |
+          (canEditControl(ch, 'pan') ? 4 : 0) |
+          (canEditControl(ch, 'solo') ? 8 : 0);
+
+  ValueNotifier<int> controlReadyNote(int ch) => _controlReadyNotes.putIfAbsent(
+      ch, () => ValueNotifier(_controlReady(ch)));
+
+  bool masterControlKnown(String field) =>
+      engine.driver == 'sim' ||
+      (engine.connected &&
+          (_busId == 'main'
+              ? (field == 'fader'
+                  ? engine.mainFader != null
+                  : engine.mainMuted != null)
+              : (field == 'fader'
+                  ? engine.busFaders
+                      .containsKey(int.tryParse(_busId.replaceFirst('bus', '')))
+                  : engine.busMuted.containsKey(
+                      int.tryParse(_busId.replaceFirst('bus', ''))))));
   final ValueNotifier<double> _masterFaderNote = ValueNotifier(0.75);
   final ValueNotifier<bool> _masterMutedNote = ValueNotifier(false);
 
@@ -222,9 +257,38 @@ class AppStore extends ChangeNotifier
 
   /// Raw Cmd JSON write for the Area A router (D-screen commands that have
   /// no dedicated AppStore method: scan/probe/connect/fx/scene/...).
-  void sendRaw(String json) => _send(json);
+  void sendRaw(String json) {
+    _prepareConnectionCommand(json);
+    _send(json);
+  }
+
+  void _clearSessionValues() {
+    _coalescer.clear();
+    _maps.confirmed.clear();
+    _maps.pending.clear();
+    _confirmedFader.clear();
+    _confirmedMute.clear();
+    _bank = 'ch1';
+    _busId = 'main';
+    _focusCh = null;
+    _spectrum.value = const [];
+    _invalidateDerived();
+  }
+
+  void _prepareConnectionCommand(String json) {
+    final command = jsonDecode(json);
+    if (command is! Map ||
+        (command['cmd'] != 'connect' && command['cmd'] != 'disconnect')) {
+      return;
+    }
+    engine.resetSession();
+    _clearSessionValues();
+    _syncControlNotes();
+    notifyListeners();
+  }
 
   Future<void> sendCommand(String json) async {
+    _prepareConnectionCommand(json);
     await _api.cmd(_clientId, json);
     await pollMeters();
   }
@@ -316,19 +380,11 @@ class AppStore extends ChangeNotifier
       try {
         final e = jsonDecode(f);
         if (e is! Map<String, dynamic>) continue;
-        final previousDriver = engine.driver;
+        final previousSession = engine.session;
         final controlOnly = _controlOnlyFrame(e);
         final frameDirty = engine.applyFrame(e);
-        if (previousDriver != engine.driver) {
-          _coalescer.clear();
-          _maps.confirmed.clear();
-          _maps.pending.clear();
-          _confirmedFader.clear();
-          _confirmedMute.clear();
-          _bank = 'ch1';
-          _busId = 'main';
-          _focusCh = null;
-          _invalidateDerived();
+        if (previousSession != engine.session) {
+          _clearSessionValues();
           dirty = true;
         }
         _confirmEcho(e);
@@ -440,7 +496,8 @@ class AppStore extends ChangeNotifier
         if (pv['fader'] is num) {
           _confirmedFader[ch] = (pv['fader'] as num).toDouble();
         }
-        if (pv['mute'] is bool) _confirmedMute[ch] = pv['mute'] as bool;
+        final mute = pv['mute'] ?? pv['muted'];
+        if (mute is bool) _confirmedMute[ch] = mute;
         for (final kv in pv.entries) {
           ps.confirmInto(_maps.pending, ps.pendingKey(ch, kv.key), kv.value);
         }
@@ -453,6 +510,10 @@ class AppStore extends ChangeNotifier
           final ch = (s['ch'] as num?)?.toInt();
           if (ch == null) continue;
           final f = s['fader'], m = (s['muted'] ?? s['mute']);
+          ps.applyParams(_maps, ch, {
+            if (f is num) 'fader': f,
+            if (m is bool) 'mute': m,
+          });
           if (f is num) {
             _confirmedFader[ch] = f.toDouble();
             ps.confirmInto(
@@ -506,8 +567,11 @@ class AppStore extends ChangeNotifier
         ? engine.meters[ci].clamp(0.0, 1.0)
         : 0.0;
     _levelDb.value = _linToDb(lv);
-    final bins = engine.spectrum[_channel];
-    if (bins != null) _spectrum.value = List.of(bins);
+    final bins = engine.driver == 'sim' || engine.meterTaps.isNotEmpty
+        ? engine.spectrum[_channel]
+        : null;
+    _spectrum.value =
+        engine.connected && bins != null ? List.of(bins) : const [];
   }
 
   // ------------------------------------------------------------------
@@ -574,6 +638,17 @@ class AppStore extends ChangeNotifier
   // Strips listen to their own ch only; the hot drag path never calls
   // notifyListeners() so the shell + sibling strips are not rebuilt.
   // ------------------------------------------------------------------
+  // Engine state, confirmations and pending edits stay in protocol units.
+  // Only UI exposure/writes cross this boundary. SIM already uses the UI
+  // law; lawForDriver('sim') would incorrectly select the X-Air fallback.
+  double _protocolFaderToUi(double value) => engine.driver == 'sim'
+      ? value
+      : dbToPos(lawForDriver(engine.driver).toDb(value));
+
+  double _uiFaderToProtocol(double value) => engine.driver == 'sim'
+      ? value
+      : lawForDriver(engine.driver).fromDb(posToDb(value));
+
   void _ensureStripNotes(int ch) {
     _faderNotes.putIfAbsent(ch, () {
       double v = 0;
@@ -582,7 +657,7 @@ class AppStore extends ChangeNotifier
       }
       final opt = ps.optimisticValue(_maps, ch, 'fader');
       if (opt is num) v = opt.toDouble().clamp(0.0, 1.0);
-      return ValueNotifier(v);
+      return ValueNotifier(_protocolFaderToUi(v));
     });
     _muteNotes.putIfAbsent(ch, () {
       bool m = false;
@@ -628,11 +703,13 @@ class AppStore extends ChangeNotifier
   ValueNotifier<bool> get masterMutedNote => _masterMutedNote;
 
   void _pushStripNote(int ch) {
+    controlReadyNote(ch).value = _controlReady(ch);
     _ensureStripNotes(ch);
     for (final s in engine.strips) {
       if (s.ch != ch) continue;
       final f = _faderNotes[ch]!;
-      if (f.value != s.fader) f.value = s.fader;
+      final uiFader = _protocolFaderToUi(s.fader);
+      if (f.value != uiFader) f.value = uiFader;
       final m = _muteNotes[ch]!;
       if (m.value != s.muted) m.value = s.muted;
     }
@@ -665,6 +742,9 @@ class AppStore extends ChangeNotifier
 
   void _syncControlNotes() {
     _syncSendParamNotes();
+    for (final entry in _controlReadyNotes.entries) {
+      entry.value.value = _controlReady(entry.key);
+    }
     for (final s in engine.strips) {
       _pushStripNote(s.ch);
     }
@@ -675,9 +755,9 @@ class AppStore extends ChangeNotifier
   }
 
   @override
-  double get masterFader => _busId == 'main'
+  double get masterFader => _protocolFaderToUi(_busId == 'main'
       ? engine.mainFader ?? _masterFader
-      : engine.busFaders[int.tryParse(_busId.replaceFirst('bus', ''))] ?? 0;
+      : engine.busFaders[int.tryParse(_busId.replaceFirst('bus', ''))] ?? 0);
 
   @override
   bool get masterMuted => _busId == 'main'
@@ -742,15 +822,17 @@ class AppStore extends ChangeNotifier
 
   @override
   void setFader(int ch, double v) {
+    if (!canEditControl(ch, 'fader')) return;
     final nv = v.clamp(0.0, 1.0);
+    final protocolValue = _uiFaderToProtocol(nv);
     for (final s in engine.strips) {
-      if (s.ch == ch) s.fader = nv;
+      if (s.ch == ch) s.fader = protocolValue;
     }
-    ps.noteOptimistic(_maps, ch, 'fader', nv, _nowMs());
+    ps.noteOptimistic(_maps, ch, 'fader', protocolValue, _nowMs());
     _ensureStripNotes(ch);
     final n = _faderNotes[ch]!;
     if (n.value != nv) n.value = nv;
-    _coalescer.offer('fader:$ch', () => _send(Cmds.fader(ch, nv)));
+    _coalescer.offer('fader:$ch', () => _send(Cmds.fader(ch, protocolValue)));
     // Hot path: no notifyListeners(). The dragged strip rebuilds from
     // faderOf(ch) alone; shell + siblings stay quiet. Caches invalidated
     // so the next structural rebuild sees fresh values.
@@ -759,6 +841,7 @@ class AppStore extends ChangeNotifier
 
   @override
   void setMute(int ch, bool muted) {
+    if (!canEditControl(ch, 'mute')) return;
     for (final s in engine.strips) {
       if (s.ch == ch) s.muted = muted;
     }
@@ -774,6 +857,7 @@ class AppStore extends ChangeNotifier
 
   @override
   void toggleSolo(int ch) {
+    if (!canEditControl(ch, 'solo')) return;
     final on = !engine.solos.contains(ch);
     if (on) {
       engine.solos.add(ch);
@@ -791,6 +875,12 @@ class AppStore extends ChangeNotifier
 
   @override
   void clearSolos() {
+    if (engine.driver != 'sim' &&
+        (!engine.connected ||
+            !engine.knownValues.keys
+                .any((ch) => engine.valueKnown(ch, 'solo')))) {
+      return;
+    }
     engine.solos.clear();
     for (final n in _soloNotes.values) {
       if (n.value) n.value = false;
@@ -802,6 +892,7 @@ class AppStore extends ChangeNotifier
 
   @override
   void setPan(int ch, double v) {
+    if (!canEditControl(ch, 'pan')) return;
     final nv = v.clamp(-1.0, 1.0);
     ps.noteOptimistic(_maps, ch, 'pan', nv * 100, _nowMs());
     _ensureStripNotes(ch);
@@ -815,25 +906,31 @@ class AppStore extends ChangeNotifier
 
   @override
   void setMasterFader(double v) {
-    _masterFader = v.clamp(0.0, 1.0);
+    if (!masterControlKnown('fader')) return;
+    final nv = v.clamp(0.0, 1.0);
+    // Capture the driver's conversion now, before a queued send can run
+    // after a driver/bus change. The UI bottom maps to the driver's floor.
+    final protocolValue = _uiFaderToProtocol(nv);
+    _masterFader = protocolValue;
     if (_busId != 'main') {
       final bus = int.tryParse(_busId.replaceFirst('bus', ''));
       if (bus == null) return;
       engine.busFaders[bus] = _masterFader;
-      if (_masterFaderNote.value != _masterFader) {
-        _masterFaderNote.value = _masterFader;
+      if (_masterFaderNote.value != nv) {
+        _masterFaderNote.value = nv;
       }
-      _coalescer.offer('bus_fader:$bus', () => _send(Cmds.busFader(bus, v)));
+      _coalescer.offer(
+          'bus_fader:$bus', () => _send(Cmds.busFader(bus, protocolValue)));
       // Hot path: master strip rebuilds from masterFaderNote alone.
       // No global notify; caches invalidated for the next structural pass.
       _invalidateDerived();
       return;
     }
     engine.mainFader = _masterFader;
-    if (_masterFaderNote.value != _masterFader) {
-      _masterFaderNote.value = _masterFader;
+    if (_masterFaderNote.value != nv) {
+      _masterFaderNote.value = nv;
     }
-    _coalescer.offer('main_fader', () => _send(Cmds.mainFader(_masterFader)));
+    _coalescer.offer('main_fader', () => _send(Cmds.mainFader(protocolValue)));
     // Hot path: master strip rebuilds from masterFaderNote alone.
     // No global notify; caches invalidated for the next structural pass.
     _invalidateDerived();
@@ -841,6 +938,7 @@ class AppStore extends ChangeNotifier
 
   @override
   void setMasterMuted(bool muted) {
+    if (!masterControlKnown('mute')) return;
     _masterMuted = muted;
     if (_busId != 'main') {
       final bus = int.tryParse(_busId.replaceFirst('bus', ''));
@@ -918,7 +1016,11 @@ class AppStore extends ChangeNotifier
   BridgeTap tapOf(int ch) => _taps.putIfAbsent(ch, () => BridgeTap());
 
   @override
-  void setSpectrumTarget(int? ch) => _send(Cmds.spectrumTarget(ch));
+  void setSpectrumTarget(int? ch) {
+    engine.spectrum.clear();
+    _spectrum.value = const [];
+    _send(Cmds.spectrumTarget(ch));
+  }
 
   // ------------------------------------------------------------------
   // ChannelStore
@@ -930,6 +1032,8 @@ class AppStore extends ChangeNotifier
   void openChannel(int ch) {
     if (_channel == ch) return;
     _channel = ch;
+    engine.spectrum.clear();
+    _spectrum.value = const [];
     cmdFocus();
     _invalidateDerived(); // sends are channel-scoped (sendN_on)
     notifyListeners();
@@ -971,7 +1075,9 @@ class AppStore extends ChangeNotifier
   bool supports(String leaf) {
     final desk = deskLeaf(leaf);
     if (!engine.capsReady) return false;
-    return engine.supportedParams.contains(desk);
+    return engine.supportedParams.contains(desk) &&
+        (engine.driver == 'sim' ||
+            (engine.connected && engine.valueKnown(_channel, desk)));
   }
 
   @override
@@ -1008,6 +1114,12 @@ class AppStore extends ChangeNotifier
 
   @override
   void cmdSubgroupAssign(int g, bool on) {
+    if (!engine.connected ||
+        g < 0 ||
+        g >= subgroupCount ||
+        subgroupAssigned(g) == null) {
+      return;
+    }
     engine.subgroupAssign['$_channel:$g'] = on;
     _send(Cmds.subgroupAssign(_channel, g, on));
     _invalidateDerived();
@@ -1016,6 +1128,12 @@ class AppStore extends ChangeNotifier
 
   @override
   void cmdMuteGroupAssign(int g, bool on) {
+    if (!engine.connected ||
+        g < 0 ||
+        g >= muteGroupCount ||
+        muteGroupAssigned(g) == null) {
+      return;
+    }
     engine.muteGroupAssign['$_channel:$g'] = on;
     _send(Cmds.muteGroupAssign(_channel, g, on));
     _invalidateDerived();
@@ -1050,11 +1168,18 @@ class AppStore extends ChangeNotifier
   @override
   ChannelSourceVm get source {
     final raw = ps.optimisticValue(_maps, _channel, 'source');
+    final selected = paramNum('source_select')?.toInt();
     return ChannelSourceVm(
       srcName: raw is String ? raw : '—',
       sourceA: paramNum('source_a')?.toInt(),
       sourceB: paramNum('source_b')?.toInt(),
-      selected: paramNum('source_select')?.toInt(),
+      // DL32S wire selector is 1=A / 0=B, verified against Master Fader.
+      // The view model uses the displayed A/B index, 0=A / 1=B.
+      selected: selected == null
+          ? null
+          : engine.driver == 'dl32s'
+              ? 1 - selected
+              : selected,
       usbReturn: paramNum('usbreturn')?.toInt(),
       levelDb: _levelDb.value,
     );
@@ -1069,7 +1194,10 @@ class AppStore extends ChangeNotifier
   /// DL32S source IDs remain opaque; only switch the verified A/B selector.
   @override
   void setSourceSelected(int selected) {
-    if (selected == 0 || selected == 1) cmdParam('source_select', selected);
+    if (selected == 0 || selected == 1) {
+      cmdParam(
+          'source_select', engine.driver == 'dl32s' ? 1 - selected : selected);
+    }
   }
 
   @override
@@ -1083,7 +1211,7 @@ class AppStore extends ChangeNotifier
   @override
   int get dcaCount => [
         for (var n = 1; n <= 16; n++)
-          if (supports('dca${n}_assign')) n
+          if (engine.supportedParams.contains('dca${n}_assign')) n
       ].fold(0, math.max);
   @override
   bool? dcaAssigned(int group) => paramBool('dca${group + 1}_assign');
@@ -1159,7 +1287,7 @@ class AppStore extends ChangeNotifier
     if (cached != null) return cached;
     final built = List<ChannelSendVm>.unmodifiable([
       for (var slot = 1; slot <= 16; slot++)
-        if (supports('send${slot}_level'))
+        if (engine.supportedParams.contains('send${slot}_level'))
           ChannelSendVm(
             slot: slot,
             destName: _sendName(slot),
@@ -1363,6 +1491,9 @@ class AppStore extends ChangeNotifier
     }
     _levelDb.dispose();
     _spectrum.dispose();
+    for (final note in _controlReadyNotes.values) {
+      note.dispose();
+    }
     super.dispose();
   }
 }
