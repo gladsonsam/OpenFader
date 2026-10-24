@@ -114,11 +114,20 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   `by` tags carry. Distinct per client.
 - `state`: `{"type":"state","driver":"sim","strips":[{"ch","key"?,"name",
   "fader","muted"}],"main_fader":0.8|null,"by":"client-1"?}` — full snapshot on
-  attach/connect and after every mutation. `main_fader` is `null` when the
+  attach/connect and after every mutation. Display continuity, not proof:
+  strip/master values ride the inclusive display getters (own writes
+  included), carry no `authority`, and are never used for preset capture.
+  `main_fader` is `null` when the
   driver has none; `by` is absent on snapshots.
 - `param`: `{"type":"param","ch":1,"key"?,"field":"gain","value":12.5,
-  "by":"client-1"?}` — the confirmed (re-read) value after a `param`
-  write, and once per applied value on `recall_scene`.
+  "by":"client-1"?,"authority":"verified"|"accepted"?}` — the confirmed
+  (re-read) value after a `param` write, and once per applied value on
+  `recall_scene`. `authority` is the readback provenance: `"verified"` =
+  desk evidence (poll/push/agreeing re-read — the only values the engine
+  caches); `"accepted"` = the write landed but nothing proves the value
+  (DL32S always: no echo, no independent query). Absent on old frames
+  (unknown, never verified). Frontends must not count `"accepted"` as
+  recall/save confirmation — report it as uncertain.
 - `shows`: `{"type":"shows","shows":[{"name":"gig","scenes":[{"name":
   "verse","main_fader":0.8,"strips":[{...}]}]}]}` — server-side library
   (survives reloads); sent on attach, as the `list_shows` reply, and after
@@ -158,7 +167,10 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
 - `link` (R2): `{"type":"link","state":"connected|disconnected|offline",
   "name","ip","fs":48000,"latency_ms":1.2}` — re-emitted on every link
   change and every ~2 s (`LINK_INTERVAL`) with a fresh round-trip sample
-  (OSC query timing on hardware, deterministic jitter on sim).
+  (OSC query timing on hardware, deterministic jitter on sim). The hardware
+  probe is liveness, not verification: it reads the inclusive display
+  getter, so a locally moved main fader never counts as a dead control
+  path and cache provenance is never treated as transport failure.
 - `info` (R2): `{"type":"info","model","firmware","sample_rate",
   "console_name","driver"}` — desk identity, on connect and as the `info`
   reply. Errors (unicast) when the driver cannot answer (hardware while
@@ -221,9 +233,15 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   later hellos are pure re-acks. Resume (`push_snapshot`) and all other
   paths carry the full shape.
   Additive: old fields are byte-identical.
-- `params`: `{"type":"params","ch":3,"key"?,"values":{"gain":12.5,...}}` —
+- `params`: `{"type":"params","ch":3,"key"?,"values":{"gain":12.5,...},
+  "authority"?:{"gain":"verified",...}}` —
   engineering units (dB, Hz, whole-number enums), diff-only after the
-  attach snapshot (one frame per cached channel).
+  attach snapshot (one frame per cached channel). `authority` marks every
+  key explicitly: only `"verified"` counts as desk proof (absent, or absent
+  for a key, means UNKNOWN provenance — never verified; old frames predate
+  the field, and the field stays optional only for backward compatibility).
+  The engine always emits `"verified"` for every key it broadcasts from the
+  verified-only cache (poll/push/snapshot paths).
 - `locks`: `{"type":"locks","holds":{"0":"client-1"}}` — channel keys are
   strings; broadcast on every change including expiry.
 - `clients`: `{"type":"clients","count":2,"writers":["client-1"]}` —
@@ -237,14 +255,16 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   (recall bypasses pins).
 - `bus`: `{"type":"bus","bus":0,"fader":0.75,"muted":false}` — full
   master state after a `bus_fader`/`bus_mute` write (both fields re-read).
+  Display continuity, not proof: no `authority` field, never used for preset
+  capture.
 - `subgroup`: `{"type":"subgroup","group":1,"fader":0.7,"muted":true}` —
-  subgroup master echo.
+  subgroup master echo. Display continuity, not proof (see `bus`).
 - `subgroup_assign`: `{"type":"subgroup_assign","ch":0,"group":1,
-  "member":true}` — membership echo.
+  "member":true}` — membership echo. Display continuity, not proof.
 - `mute_group`: `{"type":"mute_group","group":0,"muted":true}` — mute-group
-  master echo (re-read).
+  master echo (re-read). Display continuity, not proof (see `bus`).
 - `mute_group_assign`: `{"type":"mute_group_assign","ch":5,"group":2,
-  "member":false}` — membership echo.
+  "member":false}` — membership echo. Display continuity, not proof.
 - `file`: `{"type":"file","filename":"Show.zip","size":4,
   "file_type":0,"data":"AAECAw=="?}` — `file_download` replies carry
   base64 `data` (`size` = decoded bytes); `file_upload` replies are acks
@@ -387,7 +407,19 @@ total) at default pipelining. The poll list is built once per driver
 (topology × capabilities × catalogue scopes) and drains strip-major:
 every param of strip N before N+1, so one strip's whole set lands as a
 block. Only changed values broadcast (diff); after a `param` write the
-value is re-read and the confirmed value broadcast (`by` = writer). A
+value is re-read and the confirmed value broadcast (`by` = writer). The
+re-read is a provenance firewall, not just quantization handling: providers
+whose `get_param` cannot see past their own writes (DL32S reads the same
+push cache its writes populate — see `DynDriver::readback_confirms_writes`)
+short-circuit it, so the echo goes out as `"accepted"` and the write is
+never cached as `"verified"`. Own-write-pending words share ONE lock with
+the cached value in the transport (`ValueStore`/`NameStore`: insert+mark and
+check+read are each atomic, as are push ingest+clear), and are withheld
+from verified reads until a desk push covers
+the address. Every accepted write also evicts its superseded `param_cache`
+entry (unless a genuinely newer desk read already re-proved it), so
+attach/snapshot can never re-emit the stale pre-write value as verified.
+A
 read failing as unsupported/unknown/timed-out drops that (driver, param)
 pair from the poll set (skipped in place — one tick — never rebuilt) and
 rebroadcasts `caps` once with it in `unsupported` (no spam). Timeouts are

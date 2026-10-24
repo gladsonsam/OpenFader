@@ -12,7 +12,7 @@
 //! Mute-group masters and the meter/output-strip lists are fixed protocol
 //! addresses shared by the whole DL family, so they live here.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
@@ -610,12 +610,40 @@ impl std::error::Error for RequestFailed {}
 type PendingResult = Result<Message, RequestFailed>;
 
 /// Push caches shared between the session struct and its rx task.
+/// Value words with own-write provenance under ONE lock (R2 TOCTOU fix):
+/// the cached word and its pending mark update/read atomically, so a
+/// verified reader can never observe our own just-written value with the
+/// pending mark absent, and a write can never interleave between another
+/// thread's provenance check and value read. Push ingest clears pending in
+/// the same critical section it inserts desk values. No second connection,
+/// no invented wire fields — provenance only, values unchanged.
+struct ValueStore {
+    values: HashMap<u32, u32>,
+    pending: HashSet<u32>,
+}
+
+/// Channel-name slots with own-write provenance under ONE lock (same
+/// atomicity contract as [`ValueStore`]).
+struct NameStore {
+    names: HashMap<u32, String>,
+    pending: HashSet<u32>,
+}
+
 struct Caches {
-    values: StdMutex<HashMap<u32, u32>>,
-    type2_values: StdMutex<HashMap<u32, u32>>,
-    names: StdMutex<HashMap<u32, String>>,
+    values: StdMutex<ValueStore>,
+    type2_values: StdMutex<ValueStore>,
+    names: StdMutex<NameStore>,
     snapshot_names: StdMutex<HashMap<u32, String>>,
     current_snapshot: StdMutex<Option<u32>>,
+    /// Own-write provenance: words/slots whose cached entry came from a
+    /// local `write_*`/`set_channel_name` instead of a desk push live in the
+    /// same [`ValueStore`]/[`NameStore`] lock as the value itself (see the
+    /// store docs). The mixer never echoes our own writes back, so a desk
+    /// push covering the address (someone else moved the same leaf, or a
+    /// fresh bulk) is the only thing that clears an entry. Until then the
+    /// word is accepted-but-unverified and the `*_verified` accessors
+    /// withhold it, so no readback path can mistake our own optimism for
+    /// desk confirmation.
     push_tx: broadcast::Sender<PushEvent>,
 }
 
@@ -647,9 +675,9 @@ impl Caches {
     fn fresh() -> Self {
         let (push_tx, _) = broadcast::channel(256);
         Self {
-            values: StdMutex::new(HashMap::new()),
-            type2_values: StdMutex::new(HashMap::new()),
-            names: StdMutex::new(HashMap::new()),
+            values: StdMutex::new(ValueStore { values: HashMap::new(), pending: HashSet::new() }),
+            type2_values: StdMutex::new(ValueStore { values: HashMap::new(), pending: HashSet::new() }),
+            names: StdMutex::new(NameStore { names: HashMap::new(), pending: HashSet::new() }),
             snapshot_names: StdMutex::new(HashMap::new()),
             current_snapshot: StdMutex::new(None),
             push_tx,
@@ -868,51 +896,60 @@ impl MackieSession {
     // ---- raw value access (driver maps fields to addresses) ----
 
     /// Write one address as a raw u32 (bools, enums, ints, mute group).
+    ///
+    /// The write ACK only proves the desk accepted the frame. The mixer
+    /// never echoes our own writes back, so the word is cached for
+    /// continuity but marked as own-write-pending: `cached` still serves it
+    /// (snapshots stay continuous) while `cached_verified` withholds it
+    /// until a desk push covers the address.
     pub async fn write_int(&self, address: u32, value: u32, value_type: u8) -> anyhow::Result<()> {
         let body = build_single_set(address, RawValue::Int(value), value_type);
         self.send_request(Command::ChannelValues, body, REQUEST_TIMEOUT)
             .await?;
-        // The mixer never echoes our own writes back; cache them locally.
         if value_type == VALUE_TYPE_MUTE_GROUP {
             self.caches.type2_values
                 .lock()
-                .map(|mut c| c.insert(address, value))
+                .map(|mut s| { s.values.insert(address, value); s.pending.insert(address); })
                 .expect("type2 cache poisoned");
         } else {
             self.caches.values
                 .lock()
-                .map(|mut c| c.insert(address, value))
+                .map(|mut s| { s.values.insert(address, value); s.pending.insert(address); })
                 .expect("value cache poisoned");
         }
         Ok(())
     }
 
     /// Write one address as a big-endian float (dB faders, gains, freqs).
+    /// Same accepted-but-unverified provenance as [`write_int`](Self::write_int).
     pub async fn write_float(&self, address: u32, value: f32) -> anyhow::Result<()> {
         let body = build_single_set(address, RawValue::Float(value), VALUE_TYPE_PARAM);
         self.send_request(Command::ChannelValues, body, REQUEST_TIMEOUT)
             .await?;
         self.caches.values
             .lock()
-            .map(|mut c| c.insert(address, value.to_bits()))
+            .map(|mut s| { s.values.insert(address, value.to_bits()); s.pending.insert(address); })
             .expect("value cache poisoned");
         Ok(())
     }
 
     /// App-style multi-address write of raw u32 pairs.
+    /// Same accepted-but-unverified provenance as [`write_int`](Self::write_int).
     pub async fn write_multi(&self, pairs: &[(u32, u32)], value_type: u8) -> anyhow::Result<()> {
         let body = build_multi_set(pairs, value_type)?;
         self.send_request(Command::ChannelValues, body, REQUEST_TIMEOUT)
             .await?;
         if value_type == VALUE_TYPE_MUTE_GROUP {
-            if let Ok(mut c) = self.caches.type2_values.lock() {
+            if let Ok(mut s) = self.caches.type2_values.lock() {
                 for (addr, raw) in pairs {
-                    c.insert(*addr, *raw);
+                    s.values.insert(*addr, *raw);
+                    s.pending.insert(*addr);
                 }
             }
-        } else if let Ok(mut c) = self.caches.values.lock() {
+        } else if let Ok(mut s) = self.caches.values.lock() {
             for (addr, raw) in pairs {
-                c.insert(*addr, *raw);
+                s.values.insert(*addr, *raw);
+                s.pending.insert(*addr);
             }
         }
         Ok(())
@@ -929,23 +966,62 @@ impl MackieSession {
     }
 
     /// Cached type-5 word, if a push (or our own write) has populated it.
+    /// Includes own-write-pending words (continuity for snapshots); use
+    /// [`cached_verified`](Self::cached_verified) when desk proof is needed.
     pub fn cached(&self, address: u32) -> Option<u32> {
-        self.caches.values.lock().ok()?.get(&address).copied()
+        self.caches.values.lock().ok()?.values.get(&address).copied()
     }
 
-    /// Cached type-2 word (mute-group masters).
+    /// Cached type-5 word with desk provenance: `Some` only when a desk push
+    /// covered the address after our last own write. `None` means no proof
+    /// (never pushed, or only our own unverified write is cached). Callers
+    /// mapping this to an error must avoid the engine's drop-class
+    /// substrings (`not supported` / `timed out`) so pollers keep polling
+    /// instead of evicting the param. Atomic with [`cached`](Self::cached):
+    /// one lock covers the pending check and the value read.
+    pub fn cached_verified(&self, address: u32) -> Option<u32> {
+        let s = self.caches.values.lock().ok()?;
+        if s.pending.contains(&address) {
+            return None;
+        }
+        s.values.get(&address).copied()
+    }
+
+    /// Cached type-2 word (mute-group masters). See [`cached`](Self::cached)
+    /// for the provenance split.
     pub fn cached_type2(&self, address: u32) -> Option<u32> {
-        self.caches.type2_values.lock().ok()?.get(&address).copied()
+        self.caches.type2_values.lock().ok()?.values.get(&address).copied()
+    }
+
+    /// Desk-proven type-2 word (see [`cached_verified`](Self::cached_verified)).
+    /// One lock covers the pending check and the value read.
+    pub fn cached_type2_verified(&self, address: u32) -> Option<u32> {
+        let s = self.caches.type2_values.lock().ok()?;
+        if s.pending.contains(&address) {
+            return None;
+        }
+        s.values.get(&address).copied()
     }
 
     /// Cached channel name slot (empty/unknown slots report `None`).
     pub fn name(&self, slot: u32) -> Option<String> {
-        let name = self.caches.names.lock().ok()?.get(&slot).cloned()?;
+        let name = self.caches.names.lock().ok()?.names.get(&slot).cloned()?;
         if name.is_empty() {
             None
         } else {
             Some(name)
         }
+    }
+
+    /// Desk-proven channel name (withholds own-write-pending renames).
+    /// One lock covers the pending check and the value read.
+    pub fn name_verified(&self, slot: u32) -> Option<String> {
+        let s = self.caches.names.lock().ok()?;
+        if s.pending.contains(&slot) {
+            return None;
+        }
+        let name = s.names.get(&slot).cloned()?;
+        if name.is_empty() { None } else { Some(name) }
     }
 
     pub fn snapshot_names(&self) -> HashMap<u32, String> {
@@ -967,6 +1043,12 @@ impl MackieSession {
     pub fn cached_mute_group(&self, group_1_based: u32) -> Option<bool> {
         let address = mute_group_master_address(group_1_based).ok()?;
         self.cached_type2(address).map(|v| v != 0)
+    }
+
+    /// Desk-proven mute-group master (withholds own-write-pending values).
+    pub fn cached_mute_group_verified(&self, group_1_based: u32) -> Option<bool> {
+        let address = mute_group_master_address(group_1_based).ok()?;
+        self.cached_type2_verified(address).map(|v| v != 0)
     }
 
     // ---- show snapshots (command-level, no address table needed) ----
@@ -1035,8 +1117,12 @@ impl MackieSession {
         body.extend_from_slice(&word_swap(&padded));
         self.send_request(Command::ChannelNames, body, REQUEST_TIMEOUT)
             .await?;
-        if let Ok(mut c) = self.caches.names.lock() {
-            c.insert(slot, name.trim().to_string());
+        // Own rename: cached for continuity but marked pending (no desk echo
+        // comes back); `name_verified` withholds it until a push covers it.
+        // One lock: value insert and pending mark are atomic.
+        if let Ok(mut s) = self.caches.names.lock() {
+            s.names.insert(slot, name.trim().to_string());
+            s.pending.insert(slot);
         }
         Ok(())
     }
@@ -1514,24 +1600,41 @@ async fn send_frame(
     Ok(())
 }
 
-fn ingest_values(cache: &StdMutex<HashMap<u32, u32>>, block: &ValueBlock) {
+fn ingest_values(store: &StdMutex<ValueStore>, block: &ValueBlock) {
     if block.value_type != VALUE_TYPE_PARAM {
         return;
     }
-    if let Ok(mut c) = cache.lock() {
+    // One lock: desk insert + pending clear are atomic, so a concurrent
+    // verified read can never see a half-ingested block and a concurrent
+    // own-write can never interleave between the two steps.
+    if let Ok(mut s) = store.lock() {
         for (i, raw) in block.raws.iter().enumerate() {
-            c.insert(block.start + i as u32, *raw);
+            let addr = block.start + i as u32;
+            s.values.insert(addr, *raw);
+            s.pending.remove(&addr);
         }
     }
 }
 
-fn ingest_type2(cache: &StdMutex<HashMap<u32, u32>>, block: &ValueBlock) {
+fn ingest_type2(store: &StdMutex<ValueStore>, block: &ValueBlock) {
     if block.value_type != VALUE_TYPE_MUTE_GROUP {
         return;
     }
-    if let Ok(mut c) = cache.lock() {
+    if let Ok(mut s) = store.lock() {
         for (i, raw) in block.raws.iter().enumerate() {
-            c.insert(block.start + i as u32, *raw);
+            let addr = block.start + i as u32;
+            s.values.insert(addr, *raw);
+            s.pending.remove(&addr);
+        }
+    }
+}
+
+fn ingest_names(store: &StdMutex<NameStore>, pairs: &[(u32, String)]) {
+    // One lock: desk insert + pending clear are atomic (same contract).
+    if let Ok(mut s) = store.lock() {
+        for (slot, name) in pairs {
+            s.names.insert(*slot, name.clone());
+            s.pending.remove(slot);
         }
     }
 }
@@ -1599,11 +1702,7 @@ async fn dispatch(
                 }
                 Command::ChannelNames => {
                     if let Some(pairs) = parse_name_table(&msg.body) {
-                        if let Ok(mut c) = names.lock() {
-                            for (slot, name) in &pairs {
-                                c.insert(*slot, name.clone());
-                            }
-                        }
+                        ingest_names(names, &pairs);
                         let _ = caches.push_tx.send(PushEvent::Names { pairs });
                     }
                     Vec::new()

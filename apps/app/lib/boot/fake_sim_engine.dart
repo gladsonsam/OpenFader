@@ -90,11 +90,37 @@ class FakeSimEngine implements EngineApi {
     _mailbox.add(jsonEncode({
       'type': 'caps',
       'driver': 'sim',
+      'topology': [
+        {
+          'key': 'ch',
+          'kind': 'in',
+          'label': 'Inputs',
+          'name_prefix': 'CH',
+          'first': 0,
+          'count': _strips.length,
+        }
+      ],
       'groups': {'subgroups': _subgroupFaders.length},
       'params': [
         for (final id in _params.first.keys)
           {
             'id': id,
+            'scope': 'channel',
+            'scopes': ['in'],
+            'kind': _params.first[id] is bool
+                ? 'bool'
+                : _params.first[id] is String
+                    ? 'text'
+                    : id.endsWith('_type') ||
+                            id.endsWith('_tap') ||
+                            id == 'usbreturn'
+                        ? 'enum'
+                        : 'float',
+            if (RegExp(r'^eq[1-4]_type$').hasMatch(id)) ...{
+              'min': 0,
+              'max': 5,
+              'unit': '',
+            },
             if (canonicalSimDspRange(id) case final range?) ...{
               'min': range.first,
               'max': range.last,
@@ -116,8 +142,12 @@ class FakeSimEngine implements EngineApi {
       _echoSubgroup(group);
     }
     for (var ch = 0; ch < _params.length; ch++) {
-      _mailbox
-          .add(jsonEncode({'type': 'params', 'ch': ch, 'values': _params[ch]}));
+      _mailbox.add(jsonEncode({
+        'type': 'params',
+        'ch': ch,
+        'values': _params[ch],
+        'authority': {for (final field in _params[ch].keys) field: 'verified'},
+      }));
     }
     _mailbox.add(jsonEncode({
       'type': 'state',
@@ -181,8 +211,13 @@ class FakeSimEngine implements EngineApi {
           }
           if (field == 'name' && value is String) _strips[ch].name = value;
           if (field == 'mute' && value is bool) _strips[ch].muted = value;
-          _mailbox.add(jsonEncode(
-              {'type': 'param', 'ch': ch, 'field': field, 'value': value}));
+          _mailbox.add(jsonEncode({
+            'type': 'param',
+            'ch': ch,
+            'field': field,
+            'value': value,
+            'authority': 'verified'
+          }));
         }
         return;
       case 'scan':
@@ -254,7 +289,13 @@ class FakeSimEngine implements EngineApi {
 
   void _echo(int ch, String field, Object value) {
     _mailbox.add(
-      jsonEncode({'type': 'param', 'ch': ch, 'field': field, 'value': value}),
+      jsonEncode({
+        'type': 'param',
+        'ch': ch,
+        'field': field,
+        'value': value,
+        'authority': 'verified'
+      }),
     );
     _snapshot();
   }
