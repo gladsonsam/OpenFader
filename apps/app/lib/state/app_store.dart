@@ -1972,6 +1972,11 @@ class AppStore extends ChangeNotifier
     if (!engine.capsReady || _presetEditingBlocked(_channel, desk)) {
       return false;
     }
+    final sendPan = RegExp(r'^send([1-9]\d*)_pan$').firstMatch(desk);
+    if (sendPan != null &&
+        !_sendDestinationIsStereoAux(int.parse(sendPan[1]!))) {
+      return false;
+    }
     // Master Fader's modern DL32S EQ disables Q while a shelf is selected
     // (reference guide p101). Keep the stored value, but block every edit
     // path, including pinch and a previously focused numeric readout.
@@ -2108,6 +2113,24 @@ class AppStore extends ChangeNotifier
       usbReturn: paramNum('usbreturn')?.toInt(),
       levelDb: _levelDb.value,
     );
+  }
+
+  /// A send-pan leaf alone does not prove a stereo destination. Use only
+  /// a reported link on the destination aux/bus strip, never the source
+  /// channel's link, a pan value, its name, or an assumed odd/even pair.
+  /// Providers without bus topology/link reports remain unknown (hidden).
+  bool _sendDestinationIsStereoAux(int slot) {
+    if (slot < 1) return false;
+    for (final family in engine.topology) {
+      if (family['kind'] != 'bus') continue;
+      final first = family['first'];
+      final count = family['count'];
+      if (first is! num || count is! num || slot > count.toInt()) continue;
+      final destination = first.toInt() + slot - 1;
+      return engine.valueKnown(destination, 'link') &&
+          engine.params[destination]?['link'] == true;
+    }
+    return false;
   }
 
   double? sendPan(int slot) {
