@@ -10,7 +10,7 @@ class AppLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SvgPicture.asset(
-        'assets/brand/open-fader-meter.svg',
+        'assets/brand/open-fader-logo.svg',
         width: size,
         height: size,
         semanticsLabel: 'OpenFader',
