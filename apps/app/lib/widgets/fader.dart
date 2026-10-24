@@ -1,8 +1,3 @@
-// Vertical fader (strip variant, 36x50 cap): scale marks 10/5/0/-5/-10/
-// -20/-30/-50, 4px black rail + #1f2a3a ring, metal-gradient cap with
-// grip lines + centre line (white chan / gold master), dB readout above.
-// Gesture: cap-only grab (+8px pad) with a 10px direction lock -
-// horizontal intent aborts without touching the value.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -195,7 +190,6 @@ class _U4FaderState extends State<U4Fader> {
                         _down = null;
                         return;
                       }
-                      // Still in slop: no value change.
                       if (ay <= StripFaderGeo.lockV || ay <= ax) return;
                       _active = true;
                     }
@@ -226,8 +220,6 @@ class _U4FaderState extends State<U4Fader> {
                           ),
                         ),
                       ),
-                      // Strip meter column at the right (strip
-                      // variant: right:1, width 14, 6px column + clip square).
                       Positioned(
                         right: 1,
                         top: 0,
@@ -266,7 +258,6 @@ class _FaderPainter extends CustomPainter {
     if (trackH <= 0) return;
     final trackBottom = size.height - StripFaderGeo.insetB;
 
-    // Scale labels (17px gutter, right-aligned) + ticks.
     for (final m in scaleMarks) {
       final y = trackBottom - (m.pct / 100) * trackH;
       final tp = labels[m.label]!;
@@ -276,7 +267,6 @@ class _FaderPainter extends CustomPainter {
       canvas.drawRect(Rect.fromLTWH(19, y - 0.5, 7, 1), tick);
     }
 
-    // Rail: 4px black + inset ring #1f2a3a, centred.
     final cx = size.width / 2;
     final rail = RRect.fromRectAndRadius(
         Rect.fromLTWH(cx - 2, trackTop, 4, trackH), const Radius.circular(2));
@@ -288,7 +278,6 @@ class _FaderPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1);
 
-    // Cap: 36x50 metal gradient, grip lines, centre line + glow.
     final capY = trackBottom - value * trackH;
     final cap = RRect.fromRectAndRadius(
         Rect.fromCenter(
@@ -296,7 +285,6 @@ class _FaderPainter extends CustomPainter {
             width: StripFaderGeo.capW,
             height: StripFaderGeo.capH),
         const Radius.circular(3));
-    // Drop shadow.
     canvas.drawRRect(
         cap.shift(const Offset(0, 4)),
         Paint()
@@ -326,7 +314,6 @@ class _FaderPainter extends CustomPainter {
           ..color = palette.knob.withValues(alpha: .28)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1);
-    // Grip lines (top + bottom bands).
     for (final top in [
       cap.outerRect.top + StripFaderGeo.gripTB,
       cap.outerRect.bottom - StripFaderGeo.gripTB - StripFaderGeo.gripH
@@ -343,7 +330,6 @@ class _FaderPainter extends CustomPainter {
               ..strokeWidth = 1);
       }
     }
-    // Centre line + glow.
     final line =
         accent == FaderAccent.master ? palette.masterLine : palette.text1;
     canvas.drawRect(

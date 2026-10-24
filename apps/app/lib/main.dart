@@ -1,12 +1,5 @@
-// App entry: first frame is the launch screen, boot runs behind it.
-//
-// Previously `main()` awaited `FfiEngine.create()` (up to the 5 s FRB
-// timeout on failure) *before* `runApp`, so startup sat on the OS splash
-// with no feedback. After the lightweight preference read, [BootGate] drives
-// the staged boot ([BootController]: interface → native engine → engine
-// boot → state sync) with a logo + name + live step status, then replaces
-// itself with the full-port shell. Desk discovery still lives in the
-// Link tab after boot — there is no manual boot screen any more.
+// BootGate drives staged boot behind the launch screen, then swaps in
+// the full-port shell. Desk discovery lives in the Link tab.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -18,11 +11,9 @@ import 'theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Resolve saved appearance before the first Flutter frame.
   try {
     await PrefsService.ensureInitialized();
   } catch (error) {
-    // Storage failure must not strand the app on its native launch screen.
     debugPrint('Preferences unavailable; using defaults: $error');
   }
   runApp(const OpenfaderApp());
@@ -78,8 +69,8 @@ class OpenfaderApp extends StatelessWidget {
   }
 }
 
-/// First-frame gate: paints [LaunchScreen] instantly, kicks the staged
-/// boot after layout, and swaps in [AppShell] once the store is synced.
+/// First-frame gate: paints [LaunchScreen], then swaps in [AppShell]
+/// once the store is synced.
 class BootGate extends StatefulWidget {
   const BootGate({super.key});
 

@@ -1,8 +1,4 @@
-// Pan bar (strip variant, h30 base): two triangles meeting at centre, centre-out fill
-// showing direction + amount, white position marker, centre detent notch.
-// Touch builds use the 44px minimum from the ui4 touch rules; double-tap
-// resets to centre. Horizontal intent locks the pan drag, vertical intent
-// aborts so the surrounding scroll keeps working.
+// Vertical intent aborts the drag so the surrounding scroll keeps working.
 import 'package:flutter/material.dart';
 import '../palette.dart';
 
@@ -104,7 +100,6 @@ class _PanPainter extends CustomPainter {
     canvas.save();
     canvas.translate(padH, padV);
 
-    // Twin-triangle backdrop (notch colour at 40%).
     final notch = Paint()..color = palette.panNotch.withValues(alpha: 0.4);
     final left = Path()
       ..moveTo(0, 1)
@@ -119,7 +114,6 @@ class _PanPainter extends CustomPainter {
     canvas.drawPath(left, notch);
     canvas.drawPath(right, notch);
 
-    // Centre-out fill from 50% to the marker.
     final fillL = 50 + (value < 0 ? value : 0) * 50;
     final fillW = value.abs() * 50;
     if (fillW > 0.5) {
@@ -130,7 +124,6 @@ class _PanPainter extends CustomPainter {
       canvas.restore();
     }
 
-    // Centre detent notch (glows when centred).
     final centred = value.abs() < 0.04;
     canvas.drawRect(
       Rect.fromLTWH(

@@ -1,11 +1,5 @@
-// H1 Shell: AppFrame + header + routed content + bank rail. The header
-// fills the rest, and the bank rail docks right on wide builds / bottoms
-// on phones (LayoutBuilder, same 600 px breakpoint the screens use for
-// their grid switch). No Material AppBar anywhere — [U4ShellHeader] only.
-//
-// The shell never imports engine or transport code: navigation state
-// (`mode`, bank, meters overlay) is owned by the caller (the future
-// Area B router or `main.dart`).
+// Shell frame: header plus routed content and bank rail.
+// The bank rail belongs to the mixer only and is owned by the caller.
 library;
 
 import 'package:flutter/material.dart';
@@ -22,7 +16,7 @@ class U4Shell extends StatelessWidget {
   final Widget child;
   final bool bottomSafeArea;
 
-  /// Bank rail (mixer only — the shell owns the condition, like the web).
+  /// Bank rail for the mixer only.
   final List<BankRailBank> banks;
   final String activeBank;
   final ValueChanged<String>? onBank;
@@ -50,8 +44,7 @@ class U4Shell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Modal editors handle keyboard insets on their own route. Keep the
-      // console workspace at its normal size behind them.
+      // Modal editors carry their own keyboard insets, so the console keeps its size.
       resizeToAvoidBottomInset: false,
       backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(

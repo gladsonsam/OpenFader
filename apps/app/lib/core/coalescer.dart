@@ -1,22 +1,21 @@
-// W2a write coalescer: SPEC 2a leading-edge send + latest-wins coalescing.
+// Write coalescer: leading-edge send plus latest-wins coalescing.
 //
-// A fader drag fires dozens of writes per second; the engine accepts <= 60/s
-// per control. First write of a burst goes out immediately (local-first
-// latency); writes inside the 1/60 s window collapse to the latest value,
-// flushed by one timer per key. Timer + clock are injected for tests.
+// A fader drag fires dozens of writes per second; the engine accepts limited
+// per-control throughput. The first write of a burst goes out at once and
+// writes inside the window collapse to the latest value, flushed by one
+// timer per key.
 import 'dart:async';
 
-/// SPEC 2a minimum interval between sends for one control.
+/// Minimum interval between sends for one control (SPEC 2a).
 const double minIntervalMs = 1000 / 60;
 
-/// Injectable clock + timers (mirrors the TS `CoalescerClock`).
+/// Injectable clock and timers (mirrors the TS CoalescerClock).
 abstract class CoalescerClock {
   double nowMs();
   Object? setTimer(void Function() fn, int ms);
   void clearTimer(Object? t);
 }
 
-/// Default clock: Stopwatch + dart:async Timer.
 class TimerCoalescerClock implements CoalescerClock {
   final Stopwatch _sw = Stopwatch()..start();
 
@@ -31,7 +30,6 @@ class TimerCoalescerClock implements CoalescerClock {
   void clearTimer(Object? t) => (t as Timer?)?.cancel();
 }
 
-/// Result of [WriteCoalescer.offer].
 enum CoalesceResult { sent, coalesced }
 
 class WriteCoalescer {
@@ -42,9 +40,8 @@ class WriteCoalescer {
   final Map<String, void Function()> _queued = {};
   final Map<String, Object?> _timers = {};
 
-  /// Offer one write. [send] runs immediately on the leading edge, else the
-  /// write is held and only the latest per key is sent when the window
-  /// lapses. Returns [CoalesceResult.sent] or [CoalesceResult.coalesced].
+  /// Offer one write. Runs [send] at once on the leading edge, else holds
+  /// it and sends only the latest per key when the window lapses.
   CoalesceResult offer(String key, void Function() send) {
     final now = _clock.nowMs();
     final last = _lastSentAt[key];
@@ -69,17 +66,14 @@ class WriteCoalescer {
     return CoalesceResult.coalesced;
   }
 
-  /// Send the held write for [key] now, if any.
   void flush(String key) {
     final send = _queued.remove(key);
     _cancelLocked(key);
     send?.call();
   }
 
-  /// Drop the held write (and its send timestamp) for [key].
   void cancel(String key) => _cancelLocked(key);
 
-  /// Drop all held writes (e.g. on disconnect).
   void clear() {
     for (final t in _timers.values) {
       _clock.clearTimer(t);

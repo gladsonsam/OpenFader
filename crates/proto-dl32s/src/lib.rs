@@ -171,7 +171,6 @@ fn alias_target(param: &str) -> Option<&'static str> {
     })
 }
 
-/// Reverse of [`alias_target`]: native table key -> canonical id.
 fn canonical_for_table_key(key: &str) -> Option<&'static str> {
     Some(match key {
         "main_assign" => "lr_assign",
@@ -264,8 +263,6 @@ fn decode_push_value(addr: u32, raw: u32) -> Vec<(StripId, String, ParamValue)> 
     out
 }
 
-/// Reverse of [`send_table_key`]: native send leaf -> (generic 1-based
-/// slot, leaf name).
 fn send_slot_for_table_key(key: &str) -> Option<(u32, &'static str)> {
     if let Some(rest) = key.strip_prefix("aux") {
         let (n, leaf) = rest.split_once('_')?;
@@ -657,7 +654,6 @@ impl Dl32sDriver {
         }
     }
 
-    /// Core [`StripId`] is 0-based; the mixer table is 1-based channels.
     fn channel(strip: StripId) -> anyhow::Result<u32> {
         let ch = strip.0 as u32 + 1;
         if !(1..=INPUT_COUNT).contains(&ch) {
@@ -692,8 +688,6 @@ impl Dl32sDriver {
     }
 
     /// Write one table field, encoding the value per its wire type.
-    /// Mirrors the proven `set_parameter` rules: bool/1-0 ints as u32,
-    /// enums/ints as u32, dB/floats as BE floats with limit checks.
     /// Value-shape mistakes are reported before the connection is touched,
     /// so mapping bugs surface even offline.
     async fn set_field(&self, strip: StripId, key: &str, value: ParamValue) -> anyhow::Result<()> {
@@ -1458,7 +1452,7 @@ impl MixerDriver for Dl32sDriver {
         let ch = Self::channel(strip)?;
         self.set_channel_name(ch, name).await
     }
-    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
+    /// DISPLAY continuity read (inclusive).
     async fn get_name(&self, strip: StripId) -> anyhow::Result<String> {
         let ch = Self::channel(strip)?;
         let guard = self.session().await?;
@@ -1471,7 +1465,7 @@ impl MixerDriver for Dl32sDriver {
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
         self.set_main_fader_db(addrs::DL32S_FADER_SCALE.forward(value)).await
     }
-    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
+    /// DISPLAY continuity read (inclusive).
     async fn get_main_fader(&self) -> anyhow::Result<f32> {
         let addr = addrs::dl32s_main().address(1, "fader")?;
         let guard = self.session().await?;
@@ -1489,7 +1483,7 @@ impl MixerDriver for Dl32sDriver {
         self.set_main_mute(muted).await
     }
 
-    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
+    /// DISPLAY continuity read (inclusive).
     async fn get_main_mute(&self) -> anyhow::Result<bool> {
         let addr = addrs::dl32s_main().address(1, "mute")?;
         let guard = self.session().await?;
@@ -1501,7 +1495,7 @@ impl MixerDriver for Dl32sDriver {
             .ok_or_else(|| anyhow::anyhow!("main mute: no value pushed yet"))
     }
 
-    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
+    /// DISPLAY continuity read (inclusive).
     async fn get_mute(&self, strip: StripId) -> anyhow::Result<bool> {
         let ch = Self::channel(strip)?;
         let addr = dl32s_inputs().address(ch, "mute")?;
@@ -1524,7 +1518,7 @@ impl MixerDriver for Dl32sDriver {
         self.set_auxmaster_fader_db(aux, addrs::DL32S_FADER_SCALE.forward(validate_fader(value)?)).await
     }
 
-    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
+    /// DISPLAY continuity read (inclusive).
     async fn get_bus_fader(&self, bus: u8) -> anyhow::Result<f32> {
         let aux = Self::dl_check_bus(bus)?;
         let addr = addrs::dl32s_auxmasters().address(aux, "fader")?;
@@ -1564,7 +1558,7 @@ impl MixerDriver for Dl32sDriver {
         self.set_subgroup_fader_db(g, addrs::DL32S_FADER_SCALE.forward(validate_fader(value)?)).await
     }
 
-    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
+    /// DISPLAY continuity read (inclusive).
     async fn get_subgroup_fader(&self, group: u8) -> anyhow::Result<f32> {
         let g = Self::dl_check_subgroup(group)?;
         let addr = addrs::dl32s_subgroups().address(g, "fader")?;
@@ -1582,7 +1576,7 @@ impl MixerDriver for Dl32sDriver {
         self.set_subgroup_mute(g, muted).await
     }
 
-    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
+    /// DISPLAY continuity read (inclusive).
     async fn get_subgroup_mute(&self, group: u8) -> anyhow::Result<bool> {
         let g = Self::dl_check_subgroup(group)?;
         let addr = addrs::dl32s_subgroups().address(g, "mute")?;
@@ -1603,8 +1597,7 @@ impl MixerDriver for Dl32sDriver {
         guard.as_ref().expect("checked above").write_int(addr, u32::from(member), VALUE_TYPE_PARAM).await
     }
 
-    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive —
-    /// membership snapshot after local moves stays continuous.
+    /// DISPLAY continuity read (inclusive).
     async fn get_subgroup_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
         let g = Self::dl_check_subgroup(group)?;
         let ch1 = Self::channel(ch)?;
@@ -1623,7 +1616,7 @@ impl MixerDriver for Dl32sDriver {
         self.set_mute_group(g, muted).await
     }
 
-    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
+    /// DISPLAY continuity read (inclusive).
     async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool> {
         let g = Self::dl_check_mute_group(group)?;
         self.get_mute_group(g).await
@@ -1637,7 +1630,7 @@ impl MixerDriver for Dl32sDriver {
         guard.as_ref().expect("checked above").write_int(addr, u32::from(member), VALUE_TYPE_PARAM).await
     }
 
-    /// DISPLAY continuity read (see [`get_fader`](Self::get_fader)): inclusive.
+    /// DISPLAY continuity read (inclusive).
     async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
         let g = Self::dl_check_mute_group(group)?;
         let ch1 = Self::channel(ch)?;
@@ -1723,7 +1716,6 @@ impl MixerDriver for Dl32sDriver {
                 self.set_field(strip, param, ParamValue::Float(v)).await
             }
             (key, ParamValue::Float(v)) => {
-                // Pure renames ride the table key directly.
                 if let Some(alias) = alias_target(key) {
                     return self.set_field(strip, alias, ParamValue::Float(v)).await;
                 }
@@ -1736,7 +1728,6 @@ impl MixerDriver for Dl32sDriver {
                 self.set_field(strip, key, ParamValue::Float(v)).await
             }
             (key, v) => {
-                // Pure renames ride the table key directly.
                 if let Some(alias) = alias_target(key) {
                     return self.set_field(strip, alias, v).await;
                 }
@@ -1781,8 +1772,7 @@ impl MixerDriver for Dl32sDriver {
                 other => Ok(other),
             },
             key => {
-                // Pure renames (link/lr_assign/color/gate_thr/…), then generic send slots (with pan
-                // unit conversion), then the raw table key.
+                // Renames, then send slots, then the raw table key.
                 if let Some(alias) = alias_target(key) {
                     return self.get_field(strip, alias).await;
                 }
@@ -2076,11 +2066,6 @@ mod tests {
 
     #[test]
     fn capabilities_are_wave1_verified_set() {
-        // Wave 1+2: every advertised id names a confirmed DL32S leaf.
-        // `fader`/`mute`/`name` ride the native methods; the rest map to
-        // table keys in `set_param`/`get_param` (renames + pan units +
-        // send slots + binary-guarded modes). Unadvertised on purpose, see
-        // the `DL32S_CAPABILITIES` doc comment.
         let caps = Dl32sDriver::new().capabilities();
         for id in [
             "fader", "mute", "name", "pan", "gain", "phantom", "trim", "polarity",
@@ -2348,7 +2333,6 @@ mod tests {
                 if cic < 2 {
                     continue;
                 }
-                // Init is done: repeat the desk's relay until the test ends.
                 // Repeating (not one-shot) keeps this race-free — pushes
                 // sent before the test subscribes are missed by broadcast
                 // semantics, so a later repetition must follow.
@@ -2364,7 +2348,6 @@ mod tests {
                 if stream.write_all(&push.encode()).await.is_err() {
                     break;
                 }
-                // ... and renamed slot 1 to "Vox".
                 let mut padded = b"Vox\x00".to_vec();
                 while !padded.len().is_multiple_of(4) {
                     padded.push(0);
@@ -2430,7 +2413,6 @@ mod tests {
                 got_name = true;
             }
         }
-        // Cache converged too: get_param reads the pushed values.
         assert!(matches!(
             d.get_param(StripId(0), "fader").await.unwrap(),
             ParamValue::Float(v) if (v - 0.5).abs() < 1e-6

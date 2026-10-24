@@ -171,7 +171,7 @@ class _InputTab extends StatelessWidget {
   }
 }
 
-/// A missing range never grants an invented editing surface.
+// A missing range never enables an editing surface.
 ({double min, double max})? _inputRange(Map<String, dynamic>? metadata) {
   final min = metadata?['min'], max = metadata?['max'];
   if (min is! num ||
@@ -218,7 +218,6 @@ class _InputPreampControl extends StatelessWidget {
         label: label,
         compact: true,
         color: ConsolePalette.of(context).cyan,
-        // Inert track coordinates only; missing metadata cannot enable edits.
         value: value ?? range?.min ?? 0,
         min: range?.min ?? 0,
         max: range?.max ?? 1,

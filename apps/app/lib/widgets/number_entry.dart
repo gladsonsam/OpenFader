@@ -1,5 +1,3 @@
-// Shared numeric entry sheet: tap a readout value, type the number.
-// Used by the mixer toolbar (fader dB) and the channel focus bar.
 library;
 
 import 'package:flutter/material.dart';

@@ -5,13 +5,13 @@
 //! decode to [`Cmd`](openfader_engine::Cmd), live
 //! [`Event`](openfader_engine::Event)s encode back to text (or to WS BINARY
 //! frames for meter fan-out when the client opted in via `hello`). No mixer
-//! state lives here — sessions, the driver bank, the poller, shows, pins
+//! state lives here, sessions, the driver bank, the poller, shows, pins
 //! and the roster all live in the engine. The wire protocol is specified in
 //! `crates/engine/README.md`.
 //!
 //! Realtime duties of this adapter (MR1):
 //! - `TCP_NODELAY` on every accepted socket ([`configure_accepted`], wired
-//!   into the accept loop below); no permessage-deflate anywhere — the
+//!   into the accept loop below); no permessage-deflate anywhere, the
 //!   upgrade path (`axum` over a raw hyper connection) never negotiates
 //!   extensions, so frames go out uncompressed.
 //! - Latest-only meter delivery: per client, per stream (`meters`, `gr`,
@@ -49,7 +49,6 @@ use tokio::sync::{mpsc, Mutex, Notify};
 
 pub use openfader_engine::{LOCK_TTL, PARAM_POLL_INTERVAL};
 
-/// Startup options for [`run`].
 #[derive(Clone, Debug)]
 pub struct ServeOptions {
     /// Restrict this relay to in-memory simulation; disable LAN discovery.
@@ -205,7 +204,6 @@ impl Outbox {
         }
     }
 
-    /// Currently held frames (occupied stream slots + pending control).
     fn queue_depth(&self) -> usize {
         self.control.len()
             + usize::from(self.meters.is_some())
@@ -244,7 +242,6 @@ impl Outbox {
         engine: &openfader_engine::Engine,
     ) -> Option<(Message, StreamKind)> {
         if let Some(frame) = self.control.pop_front() {
-            // Shared broadcast-time serialization: no per-client serde run.
             return Some((Message::Text(frame.json.to_string().into()), StreamKind::Control));
         }
         let t_ms = engine.now_ms();
@@ -441,8 +438,7 @@ async fn handle_socket(
                         }
                     }
                     Ok(Message::Close(_)) => break,
-                    // Ignore binary/ping/pong frames and read errors,
-                    // like the pre-MR1 loop did.
+                    // Ignore binary/ping/pong frames and read errors.
                     _ => {}
                 }
             }
@@ -664,8 +660,6 @@ pub async fn run(
     run_with_lock_ttl(listener, opts, LOCK_TTL).await
 }
 
-/// [`run`] with an explicit strip-pin TTL.
-///
 /// Production passes [`LOCK_TTL`] (60 s); tests pass a short TTL (e.g.
 /// 200 ms) to cover expiry without waiting a minute.
 pub async fn run_with_lock_ttl(
@@ -676,8 +670,6 @@ pub async fn run_with_lock_ttl(
     run_with_poll(listener, opts, lock_ttl, PARAM_POLL_INTERVAL).await
 }
 
-/// [`run_with_lock_ttl`] with an explicit engine tick.
-///
 /// Production passes [`PARAM_POLL_INTERVAL`] (one driver query per 50 ms =
 /// 20 queries/s total); tests pass a short interval (e.g. 1 ms) so a full
 /// sweep finishes in milliseconds.
@@ -690,9 +682,6 @@ pub async fn run_with_poll(
     run_with_full(listener, opts, lock_ttl, poll_interval, None, None).await
 }
 
-/// [`run_with_poll`] with explicit R2 engine options: poller pipelining
-/// (`--poll-inflight`, `None` = per-driver default) and the scene library
-/// directory (`--data-dir`, `None` = in-memory scenes).
 pub async fn run_with_full(
     listener: tokio::net::TcpListener,
     opts: ServeOptions,
@@ -772,7 +761,6 @@ mod tests {
         );
     }
 
-    /// `stats` shape: required keys with the right JSON types.
     #[test]
     fn stats_json_shape() {
         let s = StatsSnapshot {
@@ -804,7 +792,6 @@ mod tests {
         assert_eq!(v.get("binary"), Some(&serde_json::json!(true)));
     }
 
-    /// `stats` detection: only the `stats` command is answered locally.
     #[test]
     fn stats_request_detection() {
         assert!(is_stats_request(r#"{"cmd":"stats"}"#));
@@ -817,7 +804,7 @@ mod tests {
     /// first (drop counted); control stays FIFO and reliable; the sender
     /// drains control first, then one stream frame per pass.
     /// R2 taps slots: one latest-only slot per tap id (replacement counts
-    /// into the meters drop counter — the `stats` shape is pinned), and
+    /// into the meters drop counter, the `stats` shape is pinned), and
     /// taps frames go binary (type 3) only for taps-negotiated clients.
     #[test]
     fn outbox_taps_latest_only_and_binary() {
@@ -829,7 +816,6 @@ mod tests {
         o.store(shared(Event::Taps { tap: "in".into(), levels: vec![0.1] }));
         o.store(shared(Event::Taps { tap: "post".into(), levels: vec![0.2] }));
         assert_eq!(o.queue_depth(), 2);
-        // Same tap replaces: one drop folded into the meters counter.
         o.store(shared(Event::Taps { tap: "in".into(), levels: vec![0.3] }));
         assert_eq!(o.meters_dropped, 1);
         assert_eq!(o.queue_depth(), 2);

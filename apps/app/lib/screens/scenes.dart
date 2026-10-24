@@ -1,11 +1,5 @@
-// Area D: scenes screen. Numbered snapshot library (save/recall/rename/
-// delete/clear via cmd scene_*) plus named show capture/recall/delete
-// (cmd capture_scene/recall_scene/delete_scene, list via list_shows).
-//
-// Wiring: everything flows through [ScenesStore] (constructor injection —
-// Area A implements it over the engine; this file only renders ui4 tokens,
-// see lib/theme.dart). No Material Card/AppBar/Switch/Slider; plain text
-// buttons only.
+// Snapshot library plus named show capture and recall.
+// Screens stay constructor-injected so Area A can implement the store.
 import 'package:flutter/material.dart';
 
 import '../engine.dart' show NativeSnapshotsVm, NativeSnapshotsStatus;
@@ -13,7 +7,6 @@ import '../theme.dart';
 import '../palette.dart';
 import '../widgets/console_button.dart';
 
-/// One numbered snapshot (engine `scenes` event entry).
 class SceneEntryVm {
   final int number;
   final String name;
@@ -26,8 +19,7 @@ class SceneEntryVm {
   });
 }
 
-/// Minimal store contract the scenes screen renders. Implemented by the
-/// shell/owner over the live engine or a fixture sim.
+// Implemented by the shell over the engine or a fixture sim.
 abstract class ScenesStore extends ChangeNotifier {
   List<SceneEntryVm> get entries;
   List<String> get shows;
@@ -41,22 +33,21 @@ abstract class ScenesStore extends ChangeNotifier {
   NativeSnapshotsVm get nativeSnapshots =>
       const NativeSnapshotsVm.unsupported();
 
-  /// Captures the session, selection, and library revision before a dialog
-  /// or inline edit. Validation rejects stale targets without sending.
+  // Validation rejects stale targets without sending.
   Object get actionContext;
   bool validateActionContext(Object captured);
   bool captureWillOverwrite(String name);
 
-  void save(String name); // scene_save into first free slot
-  void recall(int number); // scene_recall
-  void rename(int number, String name); // scene_rename
-  void remove(int number); // scene_delete
-  void clearAll(); // scene_clear
+  void save(String name);
+  void recall(int number);
+  void rename(int number, String name);
+  void remove(int number);
+  void clearAll();
   void selectShow(String show);
   void beginShow();
-  void captureShow(String name); // capture_scene(show, name)
-  void recallShow(String name); // recall_scene(show, name)
-  void deleteShow(String name); // delete_scene(show, name)
+  void captureShow(String name);
+  void recallShow(String name);
+  void deleteShow(String name);
 }
 
 class U4ScenesPage extends StatefulWidget {

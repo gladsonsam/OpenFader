@@ -76,7 +76,7 @@ pub struct DiscoveredDevice {
 /// Wire shape (captured from an XR18, FW 1.20):
 /// `/xinfo` + `,ssss` + `[ip, name, model, fw]`; `/info` + `,ssss` +
 /// `[ver, name, model, fw]`. The console NAME may contain spaces ("Home
-/// Studio"), so the model is the second-to-last string arg — positional
+/// Studio"), so the model is the second-to-last string arg, positional
 /// `nth(2)` reads the IP instead. Bare replies (one or zero args) fall
 /// back to the single arg / `"unknown"`, the old behaviour.
 pub fn parse_info_reply(buf: &[u8], reply_prefix: &str) -> Option<(String, String)> {
@@ -115,7 +115,7 @@ pub fn parse_info_reply(buf: &[u8], reply_prefix: &str) -> Option<(String, Strin
 /// 2. one socket bound to EACH local IPv4 address (port 0, broadcast
 ///    enabled) that owns that interface's directed broadcast (and the
 ///    limited broadcast again). A phone with VPN/cellular/Wi-Fi interfaces
-///    may route `255.255.255.255` out the wrong radio — a socket pinned to
+///    may route `255.255.255.255` out the wrong radio, a socket pinned to
 ///    the interface address can only leave through that interface, so the
 ///    datagram reaches the Wi-Fi subnet the desk is actually on.
 ///
@@ -127,21 +127,19 @@ pub fn parse_info_reply(buf: &[u8], reply_prefix: &str) -> Option<(String, Strin
 /// route) never aborts the scan.
 ///
 /// Replies are unicast to our ephemeral ports, so no multicast lock or
-/// extra permission is needed to receive them — plain `INTERNET` covers
+/// extra permission is needed to receive them, plain `INTERNET` covers
 /// send + receive on Android.
 pub async fn probe(spec: &ProbeSpec, timeout: Duration) -> anyhow::Result<Vec<DiscoveredDevice>> {
     let spec = *spec;
     let mut set = tokio::task::JoinSet::new();
 
-    // 1. Shared socket: limited broadcast + every local directed broadcast.
     let peer = UdpPeer::ephemeral().await?;
     let global_targets = probe_targets(&subnet_broadcasts_v4(), spec.port);
     set.spawn(async move { probe_on(&peer, &global_targets, &spec, timeout).await });
 
-    // 2. One pinned socket per local IPv4 address.
     for iface in local_ipv4_interfaces() {
         let Ok(sock) = UdpPeer::bind(&format!("{}:0", iface.ip)).await else {
-            continue; // interface cannot send (VPN alias, gone) — best-effort
+            continue; // interface cannot send (VPN alias, gone), best-effort
         };
         let broadcasts: Vec<Ipv4Addr> = iface.broadcast().into_iter().collect();
         let targets = probe_targets(&broadcasts, spec.port);
@@ -182,7 +180,6 @@ async fn probe_on(
         }
         sent += 1;
         let next_send = tokio::time::Instant::now() + spacing;
-        // Collect until the next send round or the deadline.
         loop {
             let now = tokio::time::Instant::now();
             let until = next_send.min(deadline);
@@ -234,7 +231,6 @@ fn collect_reply(
 /// Spacing between probe attempts for `timeout`: the configured
 /// [`PROBE_ATTEMPT_SPACING`] when all attempts fit, otherwise the budget
 /// split evenly so short test/scan budgets still send every attempt.
-/// Pure: unit-tested below.
 pub fn attempt_spacing(timeout: Duration) -> Duration {
     let needed = PROBE_ATTEMPT_SPACING * PROBE_ATTEMPTS as u32;
     if timeout >= needed {
@@ -245,8 +241,7 @@ pub fn attempt_spacing(timeout: Duration) -> Duration {
 }
 
 /// Broadcast destinations for one socket: the limited broadcast first,
-/// then each directed broadcast (deduped, order preserved). Pure:
-/// unit-tested below.
+/// then each directed broadcast (deduped, order preserved).
 pub fn probe_targets(broadcasts: &[Ipv4Addr], port: u16) -> Vec<String> {
     let mut out = vec![format!("255.255.255.255:{port}")];
     for b in broadcasts {
@@ -261,7 +256,7 @@ pub fn probe_targets(broadcasts: &[Ipv4Addr], port: u16) -> Vec<String> {
 /// Directed unicast probe for a single address: send `spec.payload` to
 /// `ip:port` (NOT broadcast) and collect matching replies until `timeout`.
 /// Cross-subnet desks never answer broadcast discovery, but they DO answer
-/// a unicast `/xinfo` — this is the manual-add and linked-desk verify path.
+/// a unicast `/xinfo`, this is the manual-add and linked-desk verify path.
 pub async fn probe_addr(
     spec: &ProbeSpec,
     ip: std::net::IpAddr,
@@ -295,7 +290,7 @@ pub async fn probe_addr(
 }
 
 /// Directed broadcast for one interface (`192.168.1.20` + `255.255.255.0`
-/// -> `192.168.1.255`). Pure bit math, no I/O — unit-tested below.
+/// -> `192.168.1.255`). Pure bit math, no I/O, unit-tested below.
 pub fn directed_broadcast(ip: std::net::Ipv4Addr, mask: std::net::Ipv4Addr) -> std::net::Ipv4Addr {
     let b = u32::from(ip) | !u32::from(mask);
     std::net::Ipv4Addr::from(b)
@@ -354,7 +349,7 @@ pub fn local_ipv4_interfaces() -> Vec<LocalIfaceV4> {
 /// one `ip | !mask` per up IPv4 interface, loopback included (so
 /// loopback self-tests exercise the same fan-out the phone uses).
 /// Interfaces that fail to enumerate yield an empty list and the caller
-/// still sends the limited broadcast — discovery degrades, never dies.
+/// still sends the limited broadcast, discovery degrades, never dies.
 pub fn subnet_broadcasts() -> Vec<std::net::IpAddr> {
     subnet_broadcasts_v4()
         .into_iter()
@@ -379,13 +374,12 @@ fn subnet_broadcasts_v4() -> Vec<Ipv4Addr> {
 
 /// The /24 prefix of an address: `192.168.1.123` -> `192.168.1.0`.
 /// Accepts a known desk IP or an already-masked prefix (idempotent).
-/// Pure: unit-tested below.
 pub fn subnet24(ip: Ipv4Addr) -> Ipv4Addr {
     Ipv4Addr::from(u32::from(ip) & 0xFFFF_FF00)
 }
 
 /// Hosts `.1`..=`.254` of a /24, minus `exclude` (this host's own
-/// addresses). Pure: unit-tested below.
+/// addresses).
 pub fn sweep_targets(prefix: Ipv4Addr, exclude: &[Ipv4Addr]) -> Vec<Ipv4Addr> {
     let base = u32::from(prefix) & 0xFFFF_FF00;
     (1..=254u32)
@@ -396,8 +390,8 @@ pub fn sweep_targets(prefix: Ipv4Addr, exclude: &[Ipv4Addr]) -> Vec<Ipv4Addr> {
 
 /// Whether a /24 is worth sweeping at all: not the unspecified block,
 /// not loopback, not multicast/reserved (`>= 224.0.0.0`), not the
-/// limited-broadcast address. Link-local (169.254/16) is kept — a desk
-/// with a failed DHCP lease can live there. Pure: unit-tested below.
+/// limited-broadcast address. Link-local (169.254/16) is kept, a desk
+/// with a failed DHCP lease can live there.
 pub fn sweepable_prefix(prefix: Ipv4Addr) -> bool {
     let o = prefix.octets();
     if o[0] == 0 || o[0] == 127 || o[0] >= 224 {
@@ -412,7 +406,7 @@ pub fn sweepable_prefix(prefix: Ipv4Addr) -> bool {
 /// ([`SWEEP_TIMEOUT`] for scans).
 ///
 /// This is how a scan re-finds a desk whose DHCP lease moved (same /24,
-/// different host) and finds sibling desks on a known desk subnet — even
+/// different host) and finds sibling desks on a known desk subnet, even
 /// when broadcast discovery cannot cross the router. It is deliberately
 /// NEVER called without a known desk address: no arbitrary range scans.
 /// IPv6 seeds, loopback/reserved prefixes and hostnames yield nothing.
@@ -479,7 +473,7 @@ async fn sweep_hosts(
 
 /// X-Air discovery: run every X-Air row of [`PROBE_TABLE`] concurrently,
 /// dedupe by addr. Rows run in parallel (one task each) so a two-row table
-/// costs one timeout, not two — a phone scan budget is seconds, and a slow
+/// costs one timeout, not two, a phone scan budget is seconds, and a slow
 /// row must not double it. Row errors propagate (bind failure); a row that
 /// answers nothing simply contributes nothing.
 pub async fn discover_xair(timeout: Duration) -> anyhow::Result<Vec<DiscoveredDevice>> {
@@ -593,7 +587,7 @@ mod tests {
     }
 
     /// Real captured replies (XR18 FW 1.20, console named "Studio"):
-    /// the model is the second-to-last string arg — positional `nth(2)`
+    /// the model is the second-to-last string arg, positional `nth(2)`
     /// would read the IP ("192.168.1.123") or version ("V0.04") instead.
     #[test]
     fn parse_info_reply_reads_model_not_ip() {
@@ -604,7 +598,6 @@ mod tests {
         let info = b"/info\x00\x00\x00,ssss\x00\x00\x00V0.04\x00\x00\x00Studio\x00XR18\x00\x00\x00\x001.20\x00\x00\x00\x00";
         let (model, _) = parse_info_reply(info, "/info").unwrap();
         assert_eq!(model, "XR18");
-        // Wrong prefix never matches; bare replies keep the old fallback.
         assert!(parse_info_reply(xinfo, "/info").is_none());
         assert_eq!(
             parse_info_reply(b"/xinfo\x00\x00,", "/xinfo").unwrap().0,
@@ -613,7 +606,7 @@ mod tests {
     }
 
     /// End-to-end over loopback: a fake X-Air answering `/xinfo` is found
-    /// by `discover_xair` through the broadcast fan-out — the same
+    /// by `discover_xair` through the broadcast fan-out, the same
     /// send/receive path the phone uses, minus the radio. The fake binds
     /// 0.0.0.0 (like a real desk): a 127.0.0.1-bound socket never sees
     /// broadcast datagrams, only unicast.
@@ -622,7 +615,6 @@ mod tests {
         let sock = tokio::net::UdpSocket::bind("0.0.0.0:10024").await.unwrap();
         let task = tokio::spawn(async move {
             let mut buf = [0u8; 2048];
-            // Answer up to a few probes (/xinfo + /info rows + fan-out).
             for _ in 0..8 {
                 let res =
                     tokio::time::timeout(Duration::from_secs(5), sock.recv_from(&mut buf)).await;
@@ -651,7 +643,7 @@ mod tests {
     }
 
     /// Directed unicast over loopback: `probe_addr` reaches one address
-    /// without any broadcast — the manual add-by-IP path.
+    /// without any broadcast, the manual add-by-IP path.
     #[tokio::test]
     async fn probe_addr_reaches_loopback_desk() {
         let sock = tokio::net::UdpSocket::bind("127.0.0.1:10025")
@@ -702,7 +694,6 @@ mod tests {
                 "192.168.40.255:10024".to_string(),
             ]
         );
-        // Per-interface list (one directed broadcast) is the same shape.
         assert_eq!(
             probe_targets(&[Ipv4Addr::new(10, 0, 5, 255)], 9000),
             vec![
@@ -739,7 +730,6 @@ mod tests {
         let desk: Ipv4Addr = "192.168.40.123".parse().unwrap();
         let prefix = subnet24(desk);
         assert_eq!(prefix, Ipv4Addr::new(192, 168, 40, 0));
-        // Idempotent on an already-masked prefix.
         assert_eq!(subnet24(prefix), prefix);
         let own = [Ipv4Addr::new(192, 168, 40, 10)];
         let targets = sweep_targets(prefix, &own);
@@ -768,7 +758,7 @@ mod tests {
 
     /// Bounded sweep over loopback: the fake desk answers on the loopback
     /// host while the sweep target list came from a /24 (a moved DHCP
-    /// lease) — the sweep still finds it. This is the cross-subnet re-find
+    /// lease), the sweep still finds it. This is the cross-subnet re-find
     /// path, minus the radio.
     #[tokio::test]
     async fn sweep_finds_desk_on_same_24_as_moved_seed() {
@@ -777,8 +767,6 @@ mod tests {
             .unwrap();
         let task = tokio::spawn(async move {
             let mut buf = [0u8; 2048];
-            // Answer only the first datagram: the reply lands on the sweep
-            // socket regardless of which host in the /24 was probed.
             let res = tokio::time::timeout(Duration::from_secs(5), sock.recv_from(&mut buf)).await;
             let Ok(Ok((n, peer))) = res else {
                 return;

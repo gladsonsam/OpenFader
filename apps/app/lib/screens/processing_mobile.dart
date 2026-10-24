@@ -1,7 +1,6 @@
 part of 'channel.dart';
 
-/// The mobile HTML uses compact schematic previews, without graph axes or
-/// readouts. Keep these separate from the tablet's larger live graph previews.
+// Phone previews stay schematic without axes or readouts, unlike the tablet graphs.
 class _PhoneNavPreview extends StatelessWidget {
   final ChannelStore store;
   final ChannelTab tab;

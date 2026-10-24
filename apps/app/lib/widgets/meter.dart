@@ -1,7 +1,3 @@
-// Signal meter (strip variant): 6px column, gradient bands (green 0-66% / amber 66-84% /
-// red 84-100%), dark cover above the fill line, 2px peak-hold line and a
-// square clip light above the column. Single CustomPainter inside a
-// RepaintBoundary; levels arrive as 0..1 fractions from the engine poll.
 import 'package:flutter/material.dart';
 import '../palette.dart';
 
@@ -122,7 +118,6 @@ class _MeterPainter extends CustomPainter {
     canvas.drawRect(Rect.fromLTWH(0, meterTop, mw, yAmber - meterTop),
         _fill(palette.meterRed));
 
-    // Dark cover above the fill line.
     final fillY = meterTop + h * (1 - lv);
     if (fillY > meterTop) {
       canvas.drawRect(Rect.fromLTWH(0, meterTop, mw, fillY - meterTop),
@@ -133,7 +128,6 @@ class _MeterPainter extends CustomPainter {
       final py = (meterTop + h * (1 - peak)).clamp(meterTop, meterTop + h - 2);
       canvas.drawRect(Rect.fromLTWH(0, py, mw, 2), _fill(palette.peakLine));
     }
-    // Clip square above the column (design: square clip light).
     canvas.drawRect(
       Rect.fromLTWH(0, 0, mw, mw),
       _fill(clip ? palette.clipOn : palette.clipOff),

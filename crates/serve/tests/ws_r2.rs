@@ -110,7 +110,6 @@ async fn ws_r2_devices_link_info() {
             > 0
     );
 
-    // Unknown device ids error without dropping the session.
     send(&mut tx, json!({"cmd":"connect_device","id":"mon"})).await;
     let err = next_typed(&mut rx, "error").await;
     assert!(err
@@ -118,7 +117,6 @@ async fn ws_r2_devices_link_info() {
         .and_then(Value::as_str)
         .unwrap_or("")
         .contains("unknown device"));
-    // The session survives: fader + info still work.
     send(&mut tx, json!({"cmd":"fader","ch":0,"value":0.5})).await;
     next_typed(&mut rx, "state").await;
     send(&mut tx, json!({"cmd":"info"})).await;
@@ -132,7 +130,6 @@ async fn ws_r2_scene_fx_routing_roundtrip() {
     let url = serve().await;
     let (mut tx, mut rx) = connect(&url).await;
     drain_snapshot(&mut rx).await;
-    // Scene: set fader + EQ, save, move, recall.
     send(&mut tx, json!({"cmd":"fader","ch":0,"value":0.9})).await;
     next_typed(&mut rx, "state").await;
     send(&mut tx, json!({"cmd":"param","ch":0,"field":"eq1_gain","value":5.0})).await;
@@ -148,7 +145,6 @@ async fn ws_r2_scene_fx_routing_roundtrip() {
     send(&mut tx, json!({"cmd":"fader","ch":0,"value":0.1})).await;
     next_typed(&mut rx, "state").await;
     send(&mut tx, json!({"cmd":"scene_recall","n":4,"fade_ms":0})).await;
-    // Recall echoes the captured fader back.
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
         if std::time::Instant::now() > deadline {
@@ -164,7 +160,6 @@ async fn ws_r2_scene_fx_routing_roundtrip() {
             break;
         }
     }
-    // FX set/param over the socket.
     send(&mut tx, json!({"cmd":"fx_set_type","slot":2,"type":"Delay"})).await;
     let fx = next_typed(&mut rx, "fx").await;
     let slots = fx.get("slots").and_then(Value::as_array).unwrap();
@@ -176,7 +171,6 @@ async fn ws_r2_scene_fx_routing_roundtrip() {
         slots[1].get("params").and_then(|p| p.get("mix")),
         Some(&json!(0.25f32))
     );
-    // Routing patch over the socket.
     send(&mut tx, json!({"cmd":"patch_set","strip":3,"group":"USB","index":7})).await;
     let routing = next_typed(&mut rx, "routing").await;
     assert!(routing

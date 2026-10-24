@@ -8,7 +8,7 @@
 //! The full `openfader-engine` mixer session runs in this process (in-process
 //! engine, no IPC hop): the Dart side sends one Cmd JSON
 //! per [`cmd`] and drains Event JSON frames via [`poll`]. No mixer logic
-//! lives here — this crate only moves Cmd/Event JSON, exactly like the WS
+//! lives here, this crate only moves Cmd/Event JSON, exactly like the WS
 //! relay.
 //!
 //! FRB-compatible signatures only (`String`, `Vec<String>`, `Vec<u8>`,
@@ -21,14 +21,9 @@
 //! the compact `Event::to_binary` encoding (protocol.rs `BIN_VERSION`
 //! layout) as length-prefixed frames (`u32 LE len` + frame bytes,
 //! concatenated); every other event is set aside as JSON text in the
-//! client's pending queue, which [`poll`](api::poll) drains first — so
+//! client's pending queue, which [`poll`](api::poll) drains first, so
 //! the JSON control path is a lossless fallback for non-meter events.
 //!
-//! TODO (before real use): meter collapse latest-only. [`poll`] currently
-//! drains everything up to `cap`; a stalled Dart poll loop gets a stale
-//! burst instead of the freshest frame per stream. Port the slot-of-1
-//! per-meter-stream outbox pattern (drops counted) before raising the
-//! poll rate past a smoke test.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -96,5 +91,3 @@ impl BridgeClient {
     }
 }
 
-// FRB entry points live in [`api`] (`crate::api`): `boot`, `cmd`, `poll`,
-// `poll_binary`, `resync`, `stats`.

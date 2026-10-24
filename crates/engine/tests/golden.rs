@@ -368,7 +368,6 @@ fn examples() -> Vec<(String, Value)> {
     .into_iter()
     .map(|(name, v)| (format!("cmd_{name}"), v))
     .collect();
-    // Every command example must parse as a Cmd (validates the fixtures).
     for (name, v) in &commands {
         let text = serde_json::to_string(v).unwrap();
         openfader_engine::parse_cmd(&text)
@@ -401,7 +400,6 @@ fn golden_frames_validate() {
             file, example,
             "golden fixture {name}.json matches the constructor"
         );
-        // Frames round-trip through the protocol types.
         if file.get("type").is_some() {
             let event: Event = serde_json::from_value(file.clone()).unwrap_or_else(|e| {
                 panic!("golden frame {name}.json parses as Event: {e}")

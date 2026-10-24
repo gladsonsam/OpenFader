@@ -40,7 +40,6 @@ async fn recall_fade_converges_to_targets() {
     for s in scene.strips.iter_mut().take(4) {
         s.fader = 0.1;
     }
-    // Short fade keeps the test fast; final snap must hit targets exactly.
     scene.recall_to(&d, 30).await.unwrap();
     for i in 0..4 {
         assert_eq!(d.get_fader(StripId(i)).await.unwrap(), 0.1);

@@ -1,6 +1,4 @@
-// Pure fader/pan/meter math for the ui4 layer:
-// law/posToDb/dbToPos/fmtDb/panText, faderFromDrag/panFromDrag,
-// SCALE_MARKS, panMarkerLeft, fader insets.
+// Pure fader/pan/meter math for the ui4 layer.
 import 'dart:math' as math;
 
 /// Fader law table (designData.ts `law`): [pos, dB] control points.
