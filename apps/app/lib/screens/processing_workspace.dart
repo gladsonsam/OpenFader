@@ -28,7 +28,7 @@ class _ProcessingButton extends StatelessWidget {
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                   color: active
-                      ? ConsolePalette.of(context).selectionFill
+                      ? ConsolePalette.of(context).processingSelected
                       : ConsolePalette.of(context).chip,
                   borderRadius: U4.rBtn,
                   border: Border.all(
@@ -71,7 +71,7 @@ class _ProcessingSlider extends StatefulWidget {
   final String label, text;
   final double value, min, max;
   final double fontSize;
-  final bool enabled, pan, showLabel, compact, solidFill;
+  final bool enabled, pan, showLabel, compact, solidFill, inlineLabel;
   final Widget? trailing;
   final Color? color;
   final Color? valueColor;
@@ -92,6 +92,7 @@ class _ProcessingSlider extends StatefulWidget {
       this.showLabel = true,
       this.compact = false,
       this.solidFill = false,
+      this.inlineLabel = false,
       this.valueColor,
       this.color});
   @override
@@ -171,6 +172,7 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                                       .clamp(0, 1),
                                   color: color,
                                   solidFill: widget.solidFill,
+                                  bipolar: widget.min == -widget.max,
                                   pan: widget.pan))))))),
       if (widget.trailing != null) ...[
         const SizedBox(width: 6),
@@ -194,6 +196,21 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                       weight: FontWeight.w600)),
             ])));
     if (!widget.showLabel) return track;
+    if (widget.inlineLabel) {
+      return SizedBox(
+          height: 46,
+          child: Row(children: [
+            SizedBox(
+                width: 20,
+                child: InkWell(
+                    onTap: widget.enabled ? _type : null,
+                    child: Text(widget.label,
+                        style: AppDesign.type(18,
+                            color: ConsolePalette.of(context).text7)))),
+            const SizedBox(width: 10),
+            Expanded(child: track),
+          ]));
+    }
     // The label's 44pt entry target overlaps the track's identical tap action.
     // Visual label spacing stays 20pt without shrinking touch targets.
     return SizedBox(
@@ -214,12 +231,13 @@ class _ProcessingTrackPainter extends CustomPainter {
   final ConsolePalette palette;
   final double n;
   final Color color;
-  final bool pan, solidFill;
+  final bool pan, solidFill, bipolar;
   const _ProcessingTrackPainter(
       {required this.palette,
       required this.n,
       required this.color,
       this.pan = false,
+      this.bipolar = false,
       this.solidFill = false});
   @override
   void paint(Canvas canvas, Size size) {
@@ -245,7 +263,12 @@ class _ProcessingTrackPainter extends CustomPainter {
     } else {
       canvas.drawRRect(
           RRect.fromRectAndRadius(
-              Rect.fromLTRB(6, 6, x, 38), const Radius.circular(6)),
+              Rect.fromLTRB(
+                  bipolar ? (x < size.width / 2 ? x : size.width / 2) : 6,
+                  6,
+                  bipolar ? (x > size.width / 2 ? x : size.width / 2) : x,
+                  38),
+              const Radius.circular(6)),
           Paint()..color = solidFill ? color : color.withValues(alpha: .34));
     }
     final cap = RRect.fromRectAndRadius(
@@ -269,5 +292,6 @@ class _ProcessingTrackPainter extends CustomPainter {
       old.n != n ||
       old.color != color ||
       old.pan != pan ||
+      old.bipolar != bipolar ||
       old.solidFill != solidFill;
 }
