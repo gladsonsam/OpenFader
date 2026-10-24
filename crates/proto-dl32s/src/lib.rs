@@ -13,7 +13,8 @@ use openfader_core::{
     StripId,
 };
 use openfader_transport::mackie::{
-    MackieSession, PushEvent, MUTE_GROUP_COUNT, REQUEST_TIMEOUT, VALUE_TYPE_PARAM,
+    MackieSession, PushEvent, MUTE_GROUP_BASE_ADDRESS, MUTE_GROUP_COUNT, REQUEST_TIMEOUT,
+    VALUE_TYPE_MUTE_GROUP, VALUE_TYPE_PARAM,
 };
 use std::sync::{
     atomic::{AtomicU64, Ordering},
@@ -293,6 +294,28 @@ fn decode_push(push: PushEvent) -> Vec<ParamUpdate> {
             start,
             raws,
         } => {
+            // Mute-group masters ride their own address space (type 2):
+            // master for 1-based group g lives at
+            // MUTE_GROUP_BASE_ADDRESS + g. The engine already routes
+            // `_mute_group` ingest updates to MuteGroup events (same
+            // strip convention as `get_mute_group`), so another client's
+            // master change converges live instead of waiting for the
+            // next masters refresh.
+            if value_type == VALUE_TYPE_MUTE_GROUP {
+                let mut out = Vec::new();
+                for (i, raw) in raws.iter().enumerate() {
+                    let group0 = (start + i as u32).wrapping_sub(MUTE_GROUP_BASE_ADDRESS + 1);
+                    if group0 < MUTE_GROUP_COUNT {
+                        out.push(ParamUpdate {
+                            received_at,
+                            strip: StripId(group0 as u16),
+                            param: "_mute_group".to_string(),
+                            value: ParamValue::Bool(*raw != 0),
+                        });
+                    }
+                }
+                return out;
+            }
             if value_type != VALUE_TYPE_PARAM {
                 return Vec::new();
             }
@@ -315,6 +338,51 @@ fn decode_push(push: PushEvent) -> Vec<ParamUpdate> {
             })
             .collect(),
         PushEvent::SnapshotRecall(_) | PushEvent::SnapshotRename { .. } => Vec::new(),
+    }
+}
+
+/// Bulk-state readiness bound: prior hardware runs saw the whole-space
+/// push settle tens of seconds after init on a slow path, so 60 s keeps
+/// headroom without hanging `Cmd::Connect` forever.
+const INITIAL_STATE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Wait until the mixer's initial bulk push has populated the session
+/// cache. Sentinel choice is deliberate: CH1 and CH32 mute+fader are
+/// verified input leaves at opposite ends of the bulk, so their presence
+/// proves both chunks landed; the main fader word proves the master
+/// block did (its field domain is unverified, but the word itself is
+/// expected in the whole-space push). Returns an `awaiting initial mixer
+/// state` error on timeout — never TCP-success with zero audio data.
+async fn wait_for_initial_state(session: &MackieSession) -> anyhow::Result<()> {
+    let table = dl32s_inputs();
+    let sentinels: [(&str, u32); 5] = [
+        ("ch1 mute", table.address(1, "mute").expect("table static")),
+        ("ch1 fader", table.address(1, "fader").expect("table static")),
+        ("ch32 mute", table.address(32, "mute").expect("table static")),
+        ("ch32 fader", table.address(32, "fader").expect("table static")),
+        (
+            "main fader",
+            addrs::dl32s_main().address(1, "fader").expect("table static"),
+        ),
+    ];
+    let deadline = std::time::Instant::now() + INITIAL_STATE_TIMEOUT;
+    loop {
+        if sentinels.iter().all(|(_, addr)| session.cached(*addr).is_some()) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            let missing: Vec<String> = sentinels
+                .iter()
+                .filter(|(_, addr)| session.cached(*addr).is_none())
+                .map(|(name, addr)| format!("{name} ({addr})"))
+                .collect();
+            anyhow::bail!(
+                "dl32s: awaiting initial mixer state: no bulk push for {} after {:?}; reconnect once the mixer is broadcasting",
+                missing.join(", "),
+                INITIAL_STATE_TIMEOUT
+            );
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
 }
 
@@ -800,6 +868,18 @@ impl MixerDriver for Dl32sDriver {
     async fn connect(&self, addr: &str) -> anyhow::Result<()> {
         addrs::model_status("dl32s")?;
         let session = MackieSession::connect(addr).await?;
+        // Readiness gate: the wire init handshake is best-effort and
+        // returns once the TCP exchange completes, but the live value
+        // space only lands in the push cache as the mixer broadcasts it
+        // (bulk chunks arrive seconds later on a slow path). Exposing the
+        // session before that serves fabricated snapshot defaults as real
+        // state, so wait for the sentinel words before publishing. On
+        // timeout the session is closed (transport tasks abort on close /
+        // drop) and no ingest task is spawned, so nothing leaks.
+        if let Err(e) = wait_for_initial_state(&session).await {
+            session.close();
+            return Err(e);
+        }
         // Desk-broadcast ingest: decode every pushed frame into the stable
         // update channel (one task per connection; it exits when the next
         // connect bumps the generation or the session drops). Mirrors the
@@ -1072,7 +1152,7 @@ impl MixerDriver for Dl32sDriver {
         match (param, value) {
             ("source_select", ParamValue::Float(v)) => {
                 if v != 0.0 && v != 1.0 {
-                    anyhow::bail!("dl32s: source_select must be 0 (A) or 1 (B), got {v}");
+                    anyhow::bail!("dl32s: source_select must be 1 (A) or 0 (B), got {v}");
                 }
                 self.set_field(strip, "source_select", ParamValue::Float(v))
                     .await
@@ -1198,15 +1278,22 @@ impl MixerDriver for Dl32sDriver {
             let fader_addr = table.address(ch, "fader").expect("table static");
             let mute_addr = table.address(ch, "mute").expect("table static");
             let pan_addr = table.address(ch, "pan").expect("table static");
+            // No fabricated defaults: a missing word means the bulk push
+            // hasn't covered this strip yet, and reporting 0/unmuted as
+            // real would paint the wrong desk state. Surface the read
+            // error so callers hold their loading state instead.
             let fader = session
                 .cached(fader_addr)
                 .map(|raw| addrs::DL32S_FADER_SCALE.inverse(f32::from_bits(raw)))
-                .unwrap_or(0.0);
-            let mute = session.cached(mute_addr).map(|v| v != 0).unwrap_or(false);
+                .ok_or_else(|| anyhow::anyhow!("snapshot: ch{ch} fader: no value pushed yet"))?;
+            let mute = session
+                .cached(mute_addr)
+                .map(|v| v != 0)
+                .ok_or_else(|| anyhow::anyhow!("snapshot: ch{ch} mute: no value pushed yet"))?;
             let pan = session
                 .cached(pan_addr)
                 .map(|raw| f32::from_bits(raw) * 100.0)
-                .unwrap_or(0.0);
+                .ok_or_else(|| anyhow::anyhow!("snapshot: ch{ch} pan: no value pushed yet"))?;
             let name = session
                 .name(ch)
                 .unwrap_or_else(|| format!("CH{ch:02}"));
@@ -1600,6 +1687,25 @@ mod tests {
                     .unwrap();
                 if stream.write_all(&names.encode()).await.is_err() {
                     break;
+                }
+                // Readiness sentinels: the driver's connect gate waits for
+                // the bulk-state words a real desk's whole-space push
+                // delivers (CH1 mute at 8, CH32 mute/fader at 3294/3295,
+                // main fader at 4347) before reporting ready.
+                for (addr, raw) in [
+                    (8, RawValue::Int(0)),
+                    (3294, RawValue::Int(0)),
+                    (3295, RawValue::Float(-120.0)),
+                    (4347, RawValue::Float(-15.0)),
+                ] {
+                    let body = openfader_transport::mackie::build_single_set(addr, raw, 5);
+                    seq = seq.wrapping_add(1);
+                    let push =
+                        Message::new(seq, MessageType::Broadcast, Command::ChannelValues, body)
+                            .unwrap();
+                    if stream.write_all(&push.encode()).await.is_err() {
+                        break;
+                    }
                 }
                 // Pause before the next relay round (post-init the client
                 // only sends no-reply keepalives, so nothing needs an

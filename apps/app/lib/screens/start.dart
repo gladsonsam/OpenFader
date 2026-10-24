@@ -6,7 +6,7 @@
 // Link tab) plus a small persisted recents list (SharedPreferences). No
 // fake devices: rows come from recents + live engine `devices`, Connect
 // probes with retry and surfaces real errors, manual add validates and
-// probes, Refresh/Discover call the real scan. Entering the mixer happens
+// connects with the selected mixer type, Refresh/Discover call the real scan. Entering the mixer happens
 // only via an explicit user action or a user-initiated connect success.
 library;
 
@@ -52,13 +52,15 @@ class _Row {
   final bool discovered;
   final bool connected;
   final bool reachable;
+  final MixerType mixerType;
   const _Row(
       {required this.key,
       required this.name,
       required this.addr,
       required this.discovered,
       required this.connected,
-      required this.reachable});
+      required this.reachable,
+      this.mixerType = MixerType.automatic});
 }
 
 class _ConnectionsStartState extends State<ConnectionsStartScreen> {
@@ -68,6 +70,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
   /// Pending user-initiated connect target (addr), or null when idle.
   String? _pending;
   String? _pendingName;
+  MixerType _pendingType = MixerType.automatic;
   bool _wasProbing = false;
   String? _lastError;
   bool _scannedOnce = false;
@@ -126,8 +129,13 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
           key: 'recent:${r.addr}',
           name: r.name.isEmpty ? r.addr : r.name,
           addr: r.addr,
+          mixerType: r.driver == 'auto' && d != null
+              ? d.mixerType
+              : MixerType.fromDriver(r.driver),
           discovered: false,
-          connected: d?.connected ?? false,
+          connected: d?.connected ??
+              (_store.isConnected &&
+                  _store.connectedHost == _store.canonicalHost(r.addr)),
           reachable: _store.checkStatusOf(r.addr) == 'available' ||
               (_store.checkStatusOf(r.addr) == null && d != null)));
     }
@@ -139,6 +147,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
           key: 'dev:${d.id}',
           name: d.name.isEmpty ? host : d.name,
           addr: host,
+          mixerType: d.mixerType,
           discovered: true,
           connected: d.connected,
           reachable: true));
@@ -149,13 +158,14 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
   void _onStore() {
     if (!mounted) return;
     final err = _store.scanError;
+    if (err == null || err.isEmpty) _lastError = null;
     if (err != null && err.isNotEmpty && err != _lastError) {
       _lastError = err;
       if (_pending != null) {
         final target = _pendingName ?? _pending!;
         _pending = null;
         _pendingName = null;
-        _toast('Could not reach $target');
+        _toast('Could not connect to $target: $err');
       } else {
         _toast(err);
       }
@@ -186,16 +196,17 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
       if (hit) {
         _pending = null;
         _pendingName = null;
-        unawaited(_persistAndEnter(name, addr));
+        unawaited(_persistAndEnter(name, addr, _pendingType));
         return;
       }
     }
     setState(() {});
   }
 
-  Future<void> _persistAndEnter(String name, String addr) async {
+  Future<void> _persistAndEnter(
+      String name, String addr, MixerType mixerType) async {
     try {
-      await _persistConnection(name, addr);
+      await _persistConnection(name, addr, mixerType);
       if (mounted) widget.onEnterMixer();
     } catch (error) {
       _toast(
@@ -203,15 +214,20 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     }
   }
 
-  Future<void> _persistConnection(String name, String addr) async {
+  Future<void> _persistConnection(
+      String name, String addr, MixerType mixerType) async {
     if (addr.isEmpty || addr.startsWith('id:')) return;
+    await RecentMixers.rememberLastConnection(addr, mixerType.driver);
     await PrefsService.instance.setLastMixerAddr(addr);
     if (PrefsService.instance.rememberRecents) {
-      await RecentMixers.instance.remember(name, addr);
+      await RecentMixers.instance
+          .remember(name, addr, driver: mixerType.driver);
     }
   }
 
   void _connectRow(_Row row) {
+    if (_store.probing) return;
+    _pendingType = row.mixerType;
     if (row.connected) {
       widget.onEnterMixer();
       return;
@@ -228,7 +244,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     }
     _pending = host;
     _pendingName = row.name;
-    _store.probe(host);
+    _store.probe(host, mixerType: row.mixerType);
   }
 
   String _deviceIdFor(_Row row) {
@@ -268,7 +284,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
                           title: _rows().any((r) => r.discovered)
                               ? 'Mixers'
                               : 'Recent mixers',
-                          onRefresh: _store.scanning
+                          onRefresh: _store.scanning || _store.probing
                               ? null
                               : () => _store.refreshKnown(_recentsBox.items
                                   .map((r) => r.addr)
@@ -279,6 +295,11 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
                               : _store.scanError,
                           rows: _rows(),
                           pending: _pending,
+                          progress:
+                              _store.probing ? _store.connectionProgress : null,
+                          onRetry: !_store.probing && _store.lastProbe != null
+                              ? _retryConnection
+                              : null,
                           onConnect: _connectRow,
                           onDiscover: () => _store.scan(),
                           onAdd: _showManualAdd,
@@ -315,14 +336,25 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
     );
   }
 
+  void _retryConnection() {
+    if (_store.probing || _store.lastProbe == null) return;
+    _pending = _store.lastProbe;
+    _pendingName = _store.lastProbe;
+    _pendingType = _store.lastMixerType;
+    unawaited(_store.retryProbe());
+  }
+
   void _showManualAdd() {
+    if (_store.probing) return;
     showDialog<void>(
       context: context,
       builder: (context) => _ManualAddDialog(
-        onSubmit: (addr, name) {
+        onSubmit: (addr, name, mixerType) {
+          if (_store.probing) return;
+          _pendingType = mixerType;
           _pending = addr;
           _pendingName = name.isEmpty ? addr : name;
-          _store.probe(addr);
+          _store.probe(addr, mixerType: mixerType);
         },
       ),
     );
@@ -367,6 +399,8 @@ class _Box extends StatelessWidget {
   final String? error;
   final List<_Row> rows;
   final String? pending;
+  final String? progress;
+  final VoidCallback? onRetry;
   final ValueChanged<_Row> onConnect;
   final VoidCallback onDiscover;
   final VoidCallback onAdd;
@@ -379,6 +413,8 @@ class _Box extends StatelessWidget {
       required this.error,
       required this.rows,
       required this.pending,
+      required this.progress,
+      required this.onRetry,
       required this.onConnect,
       required this.onDiscover,
       required this.onAdd});
@@ -415,13 +451,33 @@ class _Box extends StatelessWidget {
                 ),
               ),
               Divider(color: ConsolePalette.of(context).line, height: 1),
+              if (progress != null)
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                      horizontal: wide ? 28 : 20, vertical: 10),
+                  child: Text(progress!,
+                      style: AppDesign.type(wide ? 18 : 15,
+                          color: ConsolePalette.of(context).mutedText)),
+                ),
               if (error != null)
                 Padding(
                   padding: EdgeInsets.symmetric(
                       horizontal: wide ? 28 : 20, vertical: 10),
-                  child: Text(error!,
-                      style: AppDesign.type(wide ? 18 : 15,
-                          color: ConsolePalette.of(context).mute)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(error!,
+                          style: AppDesign.type(wide ? 18 : 15,
+                              color: ConsolePalette.of(context).mute)),
+                      if (onRetry != null)
+                        TextButton(
+                          onPressed: onRetry,
+                          style: TextButton.styleFrom(
+                              foregroundColor: ConsolePalette.of(context).lime),
+                          child: const Text('Retry connection'),
+                        ),
+                    ],
+                  ),
                 ),
               if (rows.isEmpty)
                 Padding(
@@ -492,7 +548,12 @@ class _DeviceRow extends StatelessWidget {
                         weight: FontWeight.w500,
                         color: ConsolePalette.of(context).text)),
                 SizedBox(height: wide ? 8 : 7),
-                Text(row.discovered ? 'Discovered — ${row.addr}' : row.addr,
+                Text(
+                    row.mixerType == MixerType.dl32s
+                        ? 'Mackie DL32S · ${row.addr}'
+                        : row.discovered
+                            ? 'Discovered — ${row.addr}'
+                            : row.addr,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppDesign.type(wide ? 23 : 17,
@@ -742,27 +803,29 @@ class _Dialog extends StatelessWidget {
             side: BorderSide(color: ConsolePalette.of(context).lineCtl)),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 480),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(children: [
-                  Expanded(
-                      child: Text(title,
-                          style: AppDesign.type(24,
-                              weight: FontWeight.w600,
-                              color: ConsolePalette.of(context).text))),
-                  _IconButton(
-                      tooltip: 'Close',
-                      onTap: () => Navigator.pop(context),
-                      child: Icon(Icons.close,
-                          size: 24, color: ConsolePalette.of(context).text7)),
-                ]),
-                const SizedBox(height: 12),
-                child,
-              ],
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    Expanded(
+                        child: Text(title,
+                            style: AppDesign.type(24,
+                                weight: FontWeight.w600,
+                                color: ConsolePalette.of(context).text))),
+                    _IconButton(
+                        tooltip: 'Close',
+                        onTap: () => Navigator.pop(context),
+                        child: Icon(Icons.close,
+                            size: 24, color: ConsolePalette.of(context).text7)),
+                  ]),
+                  const SizedBox(height: 12),
+                  child,
+                ],
+              ),
             ),
           ),
         ),
@@ -781,7 +844,7 @@ bool _validHost(String v) {
 }
 
 class _ManualAddDialog extends StatefulWidget {
-  final void Function(String addr, String name) onSubmit;
+  final void Function(String addr, String name, MixerType mixerType) onSubmit;
   const _ManualAddDialog({required this.onSubmit});
 
   @override
@@ -792,6 +855,7 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
   final _addr = TextEditingController();
   final _name = TextEditingController();
   String? _error;
+  MixerType _mixerType = MixerType.automatic;
 
   @override
   void dispose() {
@@ -806,7 +870,7 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
       setState(() => _error = 'Enter a valid IP address or hostname.');
       return;
     }
-    widget.onSubmit(addr, _name.text.trim());
+    widget.onSubmit(addr, _name.text.trim(), _mixerType);
     Navigator.pop(context);
   }
 
@@ -817,6 +881,19 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            MixerTypeField(
+              value: _mixerType,
+              onChanged: (type) => setState(() => _mixerType = type),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _mixerType == MixerType.dl32s
+                  ? 'Connects directly. Loading mixer state can take up to 90 seconds.'
+                  : 'Automatic checks X-Air mixers. For Mackie, select Mackie DL32S.',
+              style: AppDesign.type(14,
+                  color: ConsolePalette.of(context).mutedText),
+            ),
+            const SizedBox(height: 14),
             Text('IP address or hostname',
                 style: AppDesign.type(18,
                     color: ConsolePalette.of(context).mutedText)),

@@ -109,7 +109,7 @@ class _InputTab extends StatelessWidget {
           value: trim,
           min: -18,
           max: 18,
-          text: '${trim.toStringAsFixed(1)} dB',
+          text: store.supports('trim') ? '${trim.toStringAsFixed(1)} dB' : '—',
           enabled: store.supports('trim'),
           onFocus: () => onFocus(ChannelFocus(
               title: 'Input',
@@ -202,9 +202,9 @@ class _InputAssignments extends StatelessWidget {
                 : () => store.setMainAssigned(!store.mainAssigned!))
       ],
       'Sub': [
-        for (var g = 1; g <= store.subgroupCount; g++)
+        for (var g = 0; g < store.subgroupCount; g++)
           _ProcessingButton(
-              label: 'Sub $g',
+              label: 'Sub ${g + 1}',
               active: store.subgroupAssigned(g) == true,
               onTap: store.subgroupAssigned(g) == null
                   ? null
@@ -221,9 +221,9 @@ class _InputAssignments extends StatelessWidget {
                   : () => store.setDcaAssigned(g, !store.dcaAssigned(g)!))
       ],
       'Mute': [
-        for (var g = 1; g <= store.muteGroupCount; g++)
+        for (var g = 0; g < store.muteGroupCount; g++)
           _ProcessingButton(
-              label: 'Mute $g',
+              label: 'Mute ${g + 1}',
               active: store.muteGroupAssigned(g) == true,
               onTap: store.muteGroupAssigned(g) == null
                   ? null
@@ -233,12 +233,12 @@ class _InputAssignments extends StatelessWidget {
     };
     final selected = [
       if (store.mainAssigned == true) 'Main',
-      for (var g = 1; g <= store.subgroupCount; g++)
-        if (store.subgroupAssigned(g) == true) 'Sub $g',
+      for (var g = 0; g < store.subgroupCount; g++)
+        if (store.subgroupAssigned(g) == true) 'Sub ${g + 1}',
       for (var g = 0; g < store.dcaCount; g++)
         if (store.dcaAssigned(g) == true) 'VCA ${g + 1}',
-      for (var g = 1; g <= store.muteGroupCount; g++)
-        if (store.muteGroupAssigned(g) == true) 'Mute $g'
+      for (var g = 0; g < store.muteGroupCount; g++)
+        if (store.muteGroupAssigned(g) == true) 'Mute ${g + 1}'
     ].join(' / ');
     final columns = [
       for (final entry in groups.entries)
@@ -314,7 +314,8 @@ class _ProcessingSend extends StatelessWidget {
                 value: level,
                 min: 0,
                 max: 1,
-                text: '${fmtDb(level)} dB',
+                text: db == null ? 'Loading…' : '${fmtDb(level)} dB',
+                enabled: db != null && store.supports('send${send.slot}_level'),
                 onChanged: (v) => store.setSendLevel(send.slot, v),
                 trailing: _ProcessingButton(
                     label: 'M',

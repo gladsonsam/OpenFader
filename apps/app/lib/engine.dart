@@ -349,15 +349,38 @@ class EngineState {
   /// request_id; unrelated or old operations cannot complete their spinner.
   Map<String, dynamic>? deviceOperationComplete;
 
+  // Incremented when a desk session ends, including same-driver reconnects.
+  int session = 0;
+  int? _syncEpoch;
+  final Map<int, Set<String>> knownValues = {};
+
+  bool valueKnown(int ch, String field) =>
+      knownValues[ch]?.contains(field == 'muted' ? 'mute' : field) ?? false;
+
+  void _noteKnown(int ch, Iterable<String> fields) {
+    knownValues
+        .putIfAbsent(ch, () => {})
+        .addAll(fields.map((field) => field == 'muted' ? 'mute' : field));
+  }
+
   bool capsReady = false;
   int muteGroupCount = 0;
   Set<String> supportedParams = {};
+  Set<String> meterTaps = {};
   int meterSeq = 0;
 
   bool get connected =>
       driver == 'sim' ? strips.isNotEmpty : linkState == 'connected';
 
+  /// Discard values before a new connection, even to the same driver/IP.
+  void resetSession() => _resetDesk();
+
   void _resetDesk() {
+    session++;
+    knownValues.clear();
+    capsReady = false;
+    supportedParams.clear();
+    meterTaps.clear();
     strips = [];
     topology = [];
     routingCaps = {};
@@ -391,7 +414,16 @@ class EngineState {
   }
 
   void _applyStripValues(int ch, Map<String, Object> values) {
+    _noteKnown(ch, values.keys);
     params.putIfAbsent(ch, () => {}).addAll(values);
+    final solo = values['solo'];
+    if (solo is bool) {
+      if (solo) {
+        solos.add(ch);
+      } else {
+        solos.remove(ch);
+      }
+    }
     for (final strip in strips) {
       if (strip.ch != ch) continue;
       final fader = values['fader'];
@@ -410,6 +442,16 @@ class EngineState {
   /// Apply one decoded Event frame. Returns true when the UI should rebuild.
   bool applyFrame(Map<String, dynamic> e) {
     switch (e['type']) {
+      case 'sync_epoch':
+        final epoch = (e['epoch'] as num?)?.toInt();
+        if (epoch == null || epoch == _syncEpoch) return false;
+        // A new client's first epoch terminates its initial state replay.
+        // Only a later epoch invalidates state from an older connection.
+        final hadEpoch = _syncEpoch != null;
+        _syncEpoch = epoch;
+        if (!hadEpoch) return false;
+        _resetDesk();
+        return true;
       case 'you':
         clientId = (e['id'] as String?) ?? clientId;
         return false;
@@ -425,6 +467,18 @@ class EngineState {
             for (final row in raw)
               if (row is Map<String, dynamic>) Strip.fromJson(row)
           ];
+          // Snapshot values supersede older cached echoes. Keep unrelated
+          // param-plane fields while hydrating the values actually present.
+          for (final row in raw) {
+            if (row is! Map || row['ch'] is! num) continue;
+            final ch = (row['ch'] as num).toInt();
+            _applyStripValues(ch, {
+              if (row['fader'] is num) 'fader': row['fader'] as num,
+              if ((row['muted'] ?? row['mute']) is bool)
+                'mute': (row['muted'] ?? row['mute']) as bool,
+              if (row['name'] is String) 'name': row['name'] as String,
+            });
+          }
           for (final entry in params.entries.toList()) {
             _applyStripValues(entry.key, entry.value);
           }
@@ -458,6 +512,10 @@ class EngineState {
         if (nextDriver != driver) _resetDesk();
         driver = nextDriver;
         capsReady = true;
+        meterTaps = {
+          for (final tap in e['meter_taps'] as List? ?? const [])
+            if (tap is String) tap,
+        };
         final groups = e['groups'];
         muteGroupCount =
             groups is Map ? (groups['mute_groups'] as num?)?.toInt() ?? 0 : 0;
@@ -569,6 +627,7 @@ class EngineState {
       case 'solo':
         final ch = (e['ch'] as num?)?.toInt();
         if (ch == null) return false;
+        _noteKnown(ch, ['solo']);
         if ((e['soloed'] as bool?) ?? false) {
           solos.add(ch);
         } else {

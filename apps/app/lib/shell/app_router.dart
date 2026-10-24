@@ -138,9 +138,14 @@ class _AppShellState extends State<AppShell> {
     final prefs = PrefsService.instance;
     if (prefs.reconnectLast && prefs.lastMixerAddr.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _conn.probe(prefs.lastMixerAddr);
+        unawaited(_reconnectLast(prefs.lastMixerAddr));
       });
     }
+  }
+
+  Future<void> _reconnectLast(String addr) async {
+    final driver = await RecentMixers.savedDriverFor(addr);
+    if (mounted) _conn.probe(addr, mixerType: MixerType.fromDriver(driver));
   }
 
   /// Meter cadence + peak/clip behavior follow the Appearance prefs.
@@ -641,6 +646,9 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   // Probe retry state: the desk unicast can be lost (wrong interface,
   // mobile data, ARP miss), so one shot is not enough.
   String _lastProbe = '';
+  MixerType _lastMixerType = MixerType.automatic;
+  String _connectionProgress = '';
+  int _connectionRun = 0;
   int _probeAttempt = 0;
   bool _probing = false;
 
@@ -655,6 +663,7 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
 
   @override
   void dispose() {
+    _connectionRun++;
     app.removeListener(_settle);
     _scanTimer?.cancel();
     super.dispose();
@@ -698,6 +707,7 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
 
   @override
   String get title {
+    if (_probing) return 'Connecting · ${_lastMixerType.label}';
     if (!isConnected) {
       return _isSim
           ? 'Not connected · sim (demo — not a desk)'
@@ -711,9 +721,10 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
 
   @override
   String get sub {
+    if (_probing) return _connectionProgress;
     if (!isConnected) {
       return _isSim
-          ? 'Simulator only — no desk hardware. Scan/probe on desk Wi-Fi to find the XR18.'
+          ? 'Simulator only — no desk hardware. Find a mixer or add one manually.'
           : 'driver=${engine.driver} — scan/probe the desk Wi-Fi.';
     }
     if (_isSim) {
@@ -759,6 +770,12 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   int get probeAttempt => _probeAttempt;
 
   @override
+  MixerType get lastMixerType => _lastMixerType;
+
+  @override
+  String get connectionProgress => _connectionProgress;
+
+  @override
   bool get probing => _probing;
 
   @override
@@ -767,6 +784,9 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
           ConnDevice(
             id: d.id,
             name: d.name,
+            mixerType: '${d.id} ${d.model}'.toLowerCase().contains('dl32s')
+                ? MixerType.dl32s
+                : MixerType.automatic,
             sub: [d.model, d.ip, d.firmware]
                 .where((s) => s.isNotEmpty)
                 .join(' · '),
@@ -796,7 +816,8 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
       _canonicalHosts[host.trim().toLowerCase()] ?? host.trim().toLowerCase();
 
   @override
-  String get connectedHost => engine.driver == 'sim' ? '' : engine.linkIp;
+  String get connectedHost =>
+      engine.driver == 'sim' || !engine.connected ? '' : engine.linkIp;
 
   @override
   String get linkInfo {
@@ -833,7 +854,7 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   String? checkStatusOf(String host) => _checks[host.trim().toLowerCase()];
 
   void _findDevices({List<String>? hosts}) {
-    if (_scanning) return;
+    if (_scanning || _probing) return;
     _scanning = true;
     _operationError = null;
     _lastError = app.visibleError;
@@ -868,31 +889,50 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   }
 
   @override
-  void probe(String addr) {
+  void probe(String addr, {MixerType mixerType = MixerType.automatic}) {
+    // Ignore repeated submissions without changing the pending target/type.
+    if (_probing || addr.trim().isEmpty) return;
     _lastProbe = addr.trim();
+    _lastMixerType = mixerType;
     unawaited(_probeLoop(_lastProbe));
   }
 
-  /// Re-send the unicast probe up to 3 attempts (~900 ms apart) until the
-  /// engine shows strips from a non-sim driver or reports devices. The
-  /// exact engine error string stays visible via [scanError] throughout.
+  /// Explicit retries keep the original driver. DL32S connects once per user
+  /// attempt: replaying connect while it hydrates restarts the handshake.
   @override
-  Future<void> retryProbe() =>
-      _probeLoop(_lastProbe, attempts: _lastProbe.isEmpty ? 0 : 3);
+  Future<void> retryProbe() => _probeLoop(_lastProbe);
 
-  Future<void> _probeLoop(String addr, {int attempts = 3}) async {
-    if (addr.isEmpty || _probing) return;
+  Future<void> _probeLoop(String addr) async {
+    if (addr.isEmpty || _probing || _dead) return;
+    final run = ++_connectionRun;
+    final direct = _lastMixerType == MixerType.dl32s;
+    bool cancelled() => _dead || run != _connectionRun;
+    bool connected() =>
+        engine.connected &&
+        engine.linkIp == addr &&
+        (!direct || engine.driver == 'dl32s');
     _probing = true;
     _operationError = null;
     _probeAttempt = 0;
+    _connectionProgress = 'Preparing connection to $_lastProbe…';
+    app.clearErrors();
     notifyListeners();
     try {
-      await WifiNet.ensureScanPermissions();
-      await WifiNet.bindWifi();
+      if (direct) {
+        await WifiNet.unbindWifi();
+      } else {
+        if (!await WifiNet.ensureScanPermissions()) {
+          _operationError = 'Local network permission is required.';
+          return;
+        }
+        await WifiNet.bindWifi();
+      }
+      // Direct TCP connections keep system routing, including VPN routes.
+      if (cancelled()) return;
       if (InternetAddress.tryParse(addr) == null) {
         try {
           final resolved = await InternetAddress.lookup(addr)
-              .timeout(const Duration(seconds: 3));
+              .timeout(const Duration(seconds: 5));
           if (resolved.isEmpty) throw StateError('No address found');
           final target = resolved
               .firstWhere((ip) => ip.type == InternetAddressType.IPv4,
@@ -905,39 +945,65 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
           return;
         }
       }
+      if (cancelled()) return;
+      final attempts = direct ? 1 : 3;
       for (var i = 0; i < attempts; i++) {
         _probeAttempt = i + 1;
-        app.clearErrors();
+        _connectionProgress = direct
+            ? 'Connecting to $_lastProbe · waiting for mixer state (up to 90 seconds)…'
+            : 'Checking $_lastProbe · attempt $_probeAttempt/3…';
         notifyListeners();
-        send(Cmds.probe(addr));
-        // Give the current request time to finish before retrying. Repeated
-        // probes restart hardware hydration and used to keep the mixer empty.
-        for (var wait = 0; wait < 30 && !_dead; wait++) {
-          await Future.delayed(const Duration(milliseconds: 100));
-          if ((engine.connected && engine.linkIp == addr) ||
-              app.visibleError.isNotEmpty) {
-            break;
-          }
+        send(direct ? Cmds.connect('dl32s', addr) : Cmds.probe(addr));
+        // Remote DL32S hydration can take many round trips. Never restart a
+        // live handshake automatically; only the user's Retry sends again.
+        final deadline = DateTime.now().add(Duration(seconds: direct ? 90 : 3));
+        while (!cancelled() && DateTime.now().isBefore(deadline)) {
+          if (connected() || app.visibleError.isNotEmpty) break;
+          await Future<void>.delayed(const Duration(milliseconds: 100));
         }
-        if (_dead || (engine.connected && engine.linkIp == addr)) break;
+        if (cancelled() || connected() || app.visibleError.isNotEmpty) break;
       }
+      if (!cancelled() && !connected() && app.visibleError.isEmpty) {
+        _operationError = direct
+            ? 'Still waiting for Mackie DL32S at $_lastProbe after 90 seconds. '
+                'The connection may still complete; Retry starts a new connection.'
+            : 'No response from $_lastProbe after $_probeAttempt attempts.';
+      }
+    } catch (error) {
+      if (!cancelled()) _operationError = 'Connection failed: $error';
     } finally {
-      _probing = false;
-      if (!_dead) notifyListeners();
+      if (!cancelled()) {
+        _probing = false;
+        _connectionProgress = '';
+        notifyListeners();
+      }
     }
+  }
+
+  void _cancelConnection() {
+    _connectionRun++;
+    _probing = false;
+    _connectionProgress = '';
   }
 
   @override
   void connectDevice(String id) {
+    if (_probing) return;
     WifiNet.bindWifi();
     send(Cmds.connectDevice(id));
   }
 
   @override
-  void connectSim() => send(Cmds.connectSim());
+  void connectSim() {
+    _cancelConnection();
+    send(Cmds.connectSim());
+  }
 
   @override
-  void disconnect() => send(Cmds.disconnect());
+  void disconnect() {
+    _cancelConnection();
+    send(Cmds.disconnect());
+  }
 
   @override
   void requestInfo() => send(Cmds.info());
