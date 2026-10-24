@@ -30,5 +30,5 @@ scripts/flutter-mac-dev.sh
 # Packaged manual-build artifacts
 /artifacts/
 
-# Design HTML references are kept outside the repository
-/apps/app/design/reference-html/**/*.html
+# Design references and verification records live in private docs
+/apps/app/design/
