@@ -191,7 +191,7 @@ class MixerToolbar extends StatelessWidget {
 }
 
 String _targetLabel(MixerChannel channel) =>
-    channel.master ? 'Main LR' : channel.name;
+    channel.master && channel.name == 'Main' ? 'Main LR' : channel.name;
 
 String _controlLabel(MixerReadoutControl control) => switch (control) {
       MixerReadoutControl.volume => 'Volume',
@@ -219,20 +219,30 @@ class _SelectedLevel extends StatelessWidget {
       final gain = (ch.params['gain'] as num?)?.toDouble() ?? 0;
       return _value(context, '${gain.toStringAsFixed(1)} dB');
     }
-    return ValueListenableBuilder<double>(
-        valueListenable: control == MixerReadoutControl.pan
-            ? controller.panNoteOf(ch.channel!)
-            : controller.faderNoteOf(ch.channel, ch.master),
-        builder: (context, value, _) => _value(
-            context,
-            control == MixerReadoutControl.pan
-                ? panText(value)
-                : '${fmtDb(value)} dB'));
+    if (ch.master && control == MixerReadoutControl.volume) {
+      return ValueListenableBuilder<int>(
+          valueListenable: controller.store.controlReadyNote(-1),
+          builder: (context, ready, _) => ready & 1 == 0
+              ? _value(context, '—', enabled: false)
+              : _liveValue(context, ch));
+    }
+    return _liveValue(context, ch);
   }
 
-  Widget _value(BuildContext context, String text) {
+  Widget _liveValue(BuildContext context, MixerChannel ch) =>
+      ValueListenableBuilder<double>(
+          valueListenable: control == MixerReadoutControl.pan
+              ? controller.panNoteOf(ch.channel!)
+              : controller.faderNoteOf(ch.channel, ch.master),
+          builder: (context, value, _) => _value(
+              context,
+              control == MixerReadoutControl.pan
+                  ? panText(value)
+                  : '${fmtDb(value)} dB'));
+
+  Widget _value(BuildContext context, String text, {bool enabled = true}) {
     final ch = channel;
-    final onEdit = ch == null
+    final onEdit = ch == null || !enabled
         ? null
         : () => _typeControl(context, controller, ch, control);
     return Semantics(
@@ -281,6 +291,7 @@ Future<void> _typeControl(BuildContext context, MixerController controller,
       allowNegInf: volume,
       negInfValue: double.negativeInfinity);
   if (value == null) return;
+  if (channel.master && channel.name != controller.master.name) return;
   switch (control) {
     case MixerReadoutControl.volume:
       controller.setPosition(

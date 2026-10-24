@@ -443,6 +443,7 @@ class EngineState {
 
   bool capsReady = false;
   int muteGroupCount = 0;
+  int subgroupCount = 0;
   Set<String> supportedParams = {};
 
   /// Full advertised catalogue rows; availability is separate from hydration.
@@ -483,6 +484,7 @@ class EngineState {
     muteGroupAssign.clear();
     muteGroups.clear();
     muteGroupCount = 0;
+    subgroupCount = 0;
     solos.clear();
     locks.clear();
     fx = [];
@@ -603,6 +605,9 @@ class EngineState {
         final groups = e['groups'];
         muteGroupCount =
             groups is Map ? (groups['mute_groups'] as num?)?.toInt() ?? 0 : 0;
+        subgroupCount = groups is Map
+            ? ((groups['subgroups'] as num?)?.toInt() ?? 0).clamp(0, 255)
+            : 0;
         routingCaps = e['routing'] is Map<String, dynamic>
             ? e['routing'] as Map<String, dynamic>
             : {};

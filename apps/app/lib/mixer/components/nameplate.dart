@@ -77,7 +77,7 @@ class MixerNameplate extends StatelessWidget {
                             padding: EdgeInsets.fromLTRB(18 * sx, 0, 9 * sx, 0),
                             height: (compact ? 18 : 26) * sx,
                             alignment: Alignment.center,
-                            child: Text('LR',
+                            child: Text(channel.number,
                                 style: mixerType(
                                     context, (compact ? 10 : 14) * sx,
                                     color:
