@@ -176,7 +176,7 @@ class _DynTab extends StatelessWidget {
         ]),
         const SizedBox(height: 8),
         Opacity(
-            opacity: d.on ? 1 : .55,
+            opacity: d.on || ConsolePalette.of(context).isLight ? 1 : .55,
             child: ValueListenableBuilder<double>(
                 valueListenable: store.levelDb,
                 builder: (context, db, _) => _DynamicsGraph(
@@ -419,8 +419,8 @@ class _DynamicsPainter extends CustomPainter {
       final t = TextPainter(
           text: TextSpan(
               text: value,
-              style: AppDesign.type(font ?? (compact ? 8 : 12),
-                  color: color ?? palette.text7)),
+              style: AppDesign.type(font ?? (compact ? 10 : 14),
+                  color: color ?? palette.text7, weight: FontWeight.w500)),
           textDirection: TextDirection.ltr)
         ..layout();
       t.paint(canvas, at - Offset(t.width / 2, t.height / 2));
@@ -433,8 +433,10 @@ class _DynamicsPainter extends CustomPainter {
           Offset(g.left, g.y(db)),
           Offset(g.left + g.width, g.y(db)),
           Paint()..color = palette.linePanel);
-      text('${db.toInt()}${db == 0 ? ' dB' : ''}',
-          Offset(g.x(db), size.height * .94));
+      if (!compact || db % 20 == 0) {
+        text('${db.toInt()}${db == 0 ? ' dB' : ''}',
+            Offset(g.x(db), size.height * .94));
+      }
       text(
           '${db.toInt()}', Offset(size.width * (compact ? .71 : .80), g.y(db)));
     }
@@ -515,7 +517,10 @@ class _DynamicsPainter extends CustomPainter {
             Paint()..color = i == 1 ? palette.meterReduction : palette.meter);
       }
       text(['IN', 'GR', 'OUT'][i], Offset(x + w / 2, size.height * .89));
-      text(value == null || !value.isFinite ? '—' : value.toStringAsFixed(1),
+      text(
+          value == null || !value.isFinite
+              ? '—'
+              : value.toStringAsFixed(compact ? 0 : 1),
           Offset(x + w / 2, size.height * .95),
           color: palette.text1);
     }

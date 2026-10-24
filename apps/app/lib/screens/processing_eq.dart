@@ -168,7 +168,7 @@ class _EqTabState extends State<_EqTab> {
         ]),
         const SizedBox(height: 8),
         Opacity(
-            opacity: eq.on ? 1 : .55,
+            opacity: eq.on || ConsolePalette.of(context).isLight ? 1 : .55,
             child: ValueListenableBuilder<List<double>>(
                 valueListenable: store.spectrum,
                 builder: (context, bins, _) => U4EqGraph(
