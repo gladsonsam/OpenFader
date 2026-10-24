@@ -34,8 +34,8 @@
 //! * `pan`: `-100..=+100` (X-Air `mix/pan`).
 //! * `eqN_gain`: `-15..=+15` dB (X-Air `eq/g`).
 //! * `eqN_q`: `0.3..=10` (X-Air `eq/q`).
-//! * `eq1_type`: exists here (X-Air bands 1..4 all carry `type 0..=5`);
-//!   sections.ts omits band 1 (true only of the DL32S layout).
+//! * `eq1_type`: exists here; X-Air and DL32S both carry four band-type
+//!   words. DL32S uses type-leading groups (verified against Master Fader).
 //! * `eqN_type`: `0..=5` here vs `0..=3` there (six X-Air filter types).
 //! * `auxN_level` / `fxN_level` / `sendN_level`: `-90..=+10` dB here vs
 //!   `-120..=+10` there (X-Air `level(161)` fader law; `-90` reads as `-inf`).

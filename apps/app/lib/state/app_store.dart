@@ -1254,6 +1254,18 @@ class AppStore extends ChangeNotifier
   void setCompSoftKnee(bool soft) => cmdParam(
       'comp_knee', engine.driver == 'dl32s' ? (soft ? 0 : 1) : (soft ? 3 : 0));
 
+  int? _eqPresentationType(int band) {
+    final native = paramNum('eq${band}_type')?.toInt();
+    if (engine.driver != 'dl32s') return native;
+    // Only live-verified DL32S shapes. Preserve raw values in the engine.
+    return switch (native) {
+      2 => EqFilterShape.bell.value,
+      3 => EqFilterShape.lowShelf.value,
+      4 => EqFilterShape.highShelf.value,
+      _ => null,
+    };
+  }
+
   @override
   ChannelEqVm get eq => ChannelEqVm(
         on: paramBool('eq_on') ?? false,
@@ -1271,7 +1283,7 @@ class AppStore extends ChangeNotifier
               g: paramNum('eq${b}_gain') ?? 0,
               q: paramNum('eq${b}_q') ?? 1,
               on: true,
-              type: paramNum('eq${b}_type')?.toInt(),
+              type: _eqPresentationType(b),
             ),
         ],
       );
@@ -1402,6 +1414,25 @@ class AppStore extends ChangeNotifier
   @override
   void setEqParam(int band, String param, double value) =>
       cmdParam('eq${band}_$param', value);
+
+  @override
+  void setEqBandType(int band, EqFilterShape shape) {
+    if (band != 1 && band != 4) return;
+    if (shape != EqFilterShape.bell &&
+        shape !=
+            (band == 1 ? EqFilterShape.lowShelf : EqFilterShape.highShelf)) {
+      return;
+    }
+    final leaf = 'eq${band}_type';
+    if (!supports(leaf) ||
+        EqFilterShape.fromValue(_eqPresentationType(band)) == null) {
+      return;
+    }
+    final native = engine.driver == 'dl32s' && shape == EqFilterShape.lowShelf
+        ? 3
+        : shape.value;
+    cmdParam(leaf, native);
+  }
 
   @override
   void setEqOn(bool on) => cmdParam('eq_on', on);

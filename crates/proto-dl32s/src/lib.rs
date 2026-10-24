@@ -39,9 +39,11 @@ use tokio::sync::{broadcast, Mutex, MutexGuard};
 ///   rejected, not faked).
 /// - `comp_ratio` — direct floats confirmed (1.68..20.2 observed); canonical
 ///   allows to 100, desk clamps above its max.
-/// - `eqN_type` — 0-5 write+relay proven on all three bands; int->filter
-///   label mapping follows Mackie convention pending an app cross-check
-///   (values relay exact, labels may swap).
+/// - `eqN_type` — all four bands carry a leading type word (offsets
+///   34/38/42/46). Raw 2 = Bell, 3 = LowShelf, 4 = HighShelf verified live
+///   on B1/B4 (CH7 write+relay, net-zero restored 2026-10-24); native 0/1/5
+///   meanings unverified, values relay exact, no Rust canonical remap
+///   (frontend translates presentation LowShelf canonical 1 <-> native 3).
 /// - `viewN`/`vcaN`/`mutegroupN`/`subN` membership — write-proven live, but
 ///   served through the engine group `Cmd`s, not strip caps.
 /// - `source_a`/`source_b` — opaque native routing IDs (1000+/2000+).
@@ -87,6 +89,7 @@ pub const DL32S_CAPABILITIES: &[&str] = &[
     "eq1_gain",
     "eq1_freq",
     "eq1_q",
+    "eq1_type",
     "eq2_gain",
     "eq2_freq",
     "eq2_q",
@@ -1458,7 +1461,7 @@ impl MixerDriver for Dl32sDriver {
                 }
                 self.set_field(strip, "eq_mode", ParamValue::Float(v)).await
             }
-            ("eq2_type" | "eq3_type" | "eq4_type", ParamValue::Float(v)) => {
+            ("eq1_type" | "eq2_type" | "eq3_type" | "eq4_type", ParamValue::Float(v)) => {
                 if !(0.0..=5.0).contains(&v) {
                     anyhow::bail!("dl32s: {param} must be 0..=5, got {v}");
                 }
@@ -1787,7 +1790,7 @@ mod tests {
             "gate_range", "gate_hold",
             "comp_on", "comp_mode", "comp_thr", "comp_ratio", "comp_knee",
             "comp_att", "comp_rel", "comp_makeup", "eq_on", "eq_mode",
-            "eq1_gain", "eq1_freq", "eq1_q",
+            "eq1_gain", "eq1_freq", "eq1_q", "eq1_type",
             "eq2_gain", "eq2_freq", "eq2_q", "eq2_type",
             "eq3_gain", "eq3_freq", "eq3_q", "eq3_type",
             "eq4_gain", "eq4_freq", "eq4_q", "eq4_type",
@@ -1800,7 +1803,6 @@ mod tests {
         }
         for id in [
             "icon", // live domain is ~1000+, unmapped
-            "eq1_type", // band 1 has no type word
             "comp_auto",
             "comp_det",
             "comp_env",
@@ -1910,7 +1912,7 @@ mod tests {
                 .to_string();
             assert!(err.contains("must be 0"), "{id}: {err}");
         }
-        // EQ types: 0..=5 proven live.
+        // EQ types: 0..=5 accepted (raw 2/3/4 meanings verified, 0/1/5 relay exact).
         let err = d
             .set_param(StripId(0), "eq2_type", ParamValue::Float(6.0))
             .await
@@ -1966,7 +1968,7 @@ mod tests {
         assert_eq!(got[0].1, "gate_att");
         let got = decode_push_value(47, 2.0f32.to_bits());
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].1, "eq2_type");
+        assert_eq!(got[0].1, "eq1_type");
         // Unadvertised + out-of-range leaves decode to nothing.
         assert!(decode_push_value(1 + 4, 1005).is_empty()); // icon
         assert!(decode_push_value(4041, 1).is_empty()); // subgroup master: no strip
