@@ -123,7 +123,7 @@ class MixerController extends ChangeNotifier {
       .take(_pageSize)
       .map(_channel)
       .toList(growable: false);
-  MixerChannel _channel(Strip s) => MixerChannel(
+  MixerChannel _channel(Strip s, {bool? selected}) => MixerChannel(
       key: s.key,
       name: s.name.isEmpty ? s.key.toUpperCase() : s.name,
       number: '${s.ch + 1}',
@@ -133,7 +133,7 @@ class MixerController extends ChangeNotifier {
       pan: store.panOf(s.ch),
       muted: s.muted,
       solo: store.soloOf(s.ch),
-      selected: _selectedKey == s.key,
+      selected: selected ?? _selectedKey == s.key,
       master: false,
       meter: store.meterOf(s.ch),
       params: Map.unmodifiable({
@@ -174,6 +174,17 @@ class MixerController extends ChangeNotifier {
       if (s.key == _selectedKey) return _channel(s);
     }
     return channels.firstOrNull;
+  }
+
+  /// Processing follows the store's open channel, including direct navigation.
+  /// Highlight its real strip without changing mixer selection or bank/scroll.
+  MixerChannel? get selectedProcessing {
+    for (final strip in store.engine.strips) {
+      if (strip.key != 'main' && strip.ch == store.channelIndex) {
+        return _channel(strip, selected: true);
+      }
+    }
+    return null;
   }
 
   void _changed() {
@@ -241,10 +252,12 @@ class MixerController extends ChangeNotifier {
 
   void select(MixerChannel channel) {
     _focusReadout(channel, MixerReadoutControl.volume);
-    if (_selectedKey == channel.key) return;
+    final selectionChanged = _selectedKey != channel.key;
     _selectedKey = channel.key;
+    // A driver change or direct navigation can leave the open channel behind
+    // the mixer selection. openChannel is a no-op when already aligned.
     if (channel.channel != null) store.openChannel(channel.channel!);
-    notifyListeners();
+    if (selectionChanged) notifyListeners();
   }
 
   void setPosition(MixerChannel ch, double position) {
