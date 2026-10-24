@@ -1219,9 +1219,12 @@ impl MixerDriver for Dl32sDriver {
         // transport layout hook): RTA bins ride indices 60..90 while the
         // first 32 input words stay put. Best-effort — a refused layout just
         // leaves RTA unavailable while input meters keep flowing.
-        let _ = session
+        if let Err(e) = session
             .request_meter_layout(&openfader_transport::mackie::dl32s_meter_addresses())
-            .await;
+            .await
+        {
+            eprintln!("dl32s: RTA meter layout override failed (input meters continue, RTA unavailable): {e:#}");
+        }
         // Initial shared-source read: the rig-confirmed initial bulk carries
         // the type-2 addr-22 selector (5000 = Return 1–2). Treated as a
         // source change (fresh settle window) so early frames are never

@@ -38,6 +38,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/channel_views.dart';
+import '../core/audio_spectrum_peaks.dart';
 import '../core/channel_name.dart';
 import '../core/coalescer.dart';
 import '../core/processor_presets.dart';
@@ -885,6 +886,9 @@ class AppStore extends ChangeNotifier
   final ValueNotifier<double> _levelDb = ValueNotifier(double.negativeInfinity);
   final ValueNotifier<List<double>> _spectrum = ValueNotifier(const []);
   final ValueNotifier<AudioSpectrumFrame?> _audioSpectrum = ValueNotifier(null);
+  final ValueNotifier<AudioSpectrumPeaks> _audioSpectrumPeaks =
+      ValueNotifier(const AudioSpectrumPeaks.empty());
+  AudioSpectrumFrame? _lastPeakFrame;
   int? _focusCh;
 
   // --- derived-list cache (no per-build allocations) ---
@@ -1008,6 +1012,7 @@ class AppStore extends ChangeNotifier
     _focusCh = null;
     _spectrum.value = const [];
     _audioSpectrum.value = null;
+    _clearAudioSpectrumPeaks();
     _invalidateDerived();
   }
 
@@ -1138,6 +1143,9 @@ class AppStore extends ChangeNotifier
           _clearSessionValues();
           dirty = true;
         }
+        // Preserve maxima from every accepted measured frame in this batch,
+        // including source/unavailable transitions before its final frame.
+        if (e['type'] == 'audio_spectrum') _syncSpectrum();
         _confirmEcho(e);
         if (e['type'] == 'error') {
           _stopPresetRecalls(
@@ -1363,6 +1371,34 @@ class AppStore extends ChangeNotifier
             (frame.ch == null || frame.ch == _channel)
         ? frame
         : null;
+    final measured = _audioSpectrum.value;
+    if (measured == null) {
+      _clearAudioSpectrumPeaks();
+    } else if (!identical(measured, _lastPeakFrame)) {
+      final previous = _lastPeakFrame;
+      // A gap can outlast expiry between polls even if a fresh frame has
+      // already replaced the old one. Do not carry peaks across that gap.
+      if (previous != null &&
+          measured.receivedAt.difference(previous.receivedAt) >=
+              AudioSpectrumFrame.expiry) {
+        _clearAudioSpectrumPeaks();
+      }
+      _lastPeakFrame = measured;
+      _audioSpectrumPeaks.value = _audioSpectrumPeaks.value.include(measured);
+    }
+  }
+
+  void _clearAudioSpectrumPeaks() {
+    _lastPeakFrame = null;
+    _audioSpectrumPeaks.value = const AudioSpectrumPeaks.empty();
+  }
+
+  @override
+  void resetAudioSpectrumPeaks() {
+    _clearAudioSpectrumPeaks();
+    // A visibility change starts a new hold with the next incoming frame,
+    // rather than seeding it again from the cached pre-toggle measurement.
+    _lastPeakFrame = engine.audioSpectrum;
   }
 
   // ------------------------------------------------------------------
@@ -1861,6 +1897,7 @@ class AppStore extends ChangeNotifier
     engine.spectrum.clear();
     _spectrum.value = const [];
     _audioSpectrum.value = null;
+    _clearAudioSpectrumPeaks();
     _send(Cmds.spectrumTarget(ch));
   }
 
@@ -1878,6 +1915,7 @@ class AppStore extends ChangeNotifier
     engine.spectrum.clear();
     _spectrum.value = const [];
     _audioSpectrum.value = null;
+    _clearAudioSpectrumPeaks();
     cmdFocus();
     _invalidateDerived(); // sends are channel-scoped (sendN_on)
     notifyListeners();
@@ -2022,6 +2060,10 @@ class AppStore extends ChangeNotifier
 
   @override
   ValueNotifier<AudioSpectrumFrame?> get audioSpectrum => _audioSpectrum;
+
+  @override
+  ValueNotifier<AudioSpectrumPeaks> get audioSpectrumPeaks =>
+      _audioSpectrumPeaks;
 
   @override
   double? grDb(DynKind kind) {
@@ -2408,6 +2450,7 @@ class AppStore extends ChangeNotifier
     _levelDb.dispose();
     _spectrum.dispose();
     _audioSpectrum.dispose();
+    _audioSpectrumPeaks.dispose();
     for (final note in _controlReadyNotes.values) {
       note.dispose();
     }
