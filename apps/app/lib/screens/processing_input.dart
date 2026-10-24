@@ -39,7 +39,6 @@ class _InputTab extends StatelessWidget {
       ],
     ];
     final pre = store.preamp;
-    final trim = store.paramNum('trim') ?? pre.trim;
     final source =
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (!wide)
@@ -102,24 +101,14 @@ class _InputTab extends StatelessWidget {
           ]
         ]),
       SizedBox(height: wide ? 88 : 14),
-      _ProcessingSlider(
+      _InputPreampControl(
+          store: store, leaf: 'gain', label: 'Gain', onFocus: onFocus),
+      const SizedBox(height: 7),
+      _InputPreampControl(
+          store: store,
+          leaf: 'trim',
           label: 'Trim',
-          compact: !wide,
-          color: ConsolePalette.of(context).cyan,
-          value: trim,
-          min: -18,
-          max: 18,
-          text: store.supports('trim') ? '${trim.toStringAsFixed(1)} dB' : '—',
-          enabled: store.supports('trim'),
-          onFocus: () => onFocus(ChannelFocus(
-              title: 'Input',
-              label: 'Trim',
-              text: () =>
-                  '${(store.paramNum('trim') ?? store.preamp.trim).toStringAsFixed(1)} dB',
-              min: -18,
-              max: 18,
-              apply: (v) => store.setPreamp('trim', v))),
-          onChanged: (v) => store.setPreamp('trim', v),
+          onFocus: onFocus,
           trailing: _ProcessingButton(
               label: 'Ø',
               active: pre.invert,
@@ -181,6 +170,88 @@ class _InputTab extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: sends)),
     ]);
+  }
+}
+
+/// A missing range never grants an invented editing surface.
+({double min, double max})? _inputRange(Map<String, dynamic>? metadata) {
+  final min = metadata?['min'], max = metadata?['max'];
+  if (min is! num ||
+      max is! num ||
+      !min.isFinite ||
+      !max.isFinite ||
+      min >= max) {
+    return null;
+  }
+  return (min: min.toDouble(), max: max.toDouble());
+}
+
+class _InputPreampControl extends StatelessWidget {
+  final ChannelStore store;
+  final String leaf, label;
+  final ValueChanged<ChannelFocus> onFocus;
+  final Widget? trailing;
+  const _InputPreampControl(
+      {required this.store,
+      required this.leaf,
+      required this.label,
+      required this.onFocus,
+      this.trailing});
+
+  @override
+  Widget build(BuildContext context) {
+    final metadata = store.paramMetadata(leaf);
+    final range = _inputRange(metadata);
+    final value = store.paramNum(leaf);
+    final unit = metadata?['unit'] as String? ?? '';
+    String readout(double v) =>
+        '${v.toStringAsFixed(1)}${unit.isEmpty ? '' : ' $unit'}';
+    final enabled = store.supports(leaf) && value != null && range != null;
+    final text = !store.capabilitiesReady
+        ? 'Loading…'
+        : metadata == null
+            ? 'Not supported'
+            : value == null || !store.supports(leaf)
+                ? 'Loading…'
+                : range == null
+                    ? '${readout(value)} · range unavailable'
+                    : readout(value);
+    return _ProcessingSlider(
+        label: label,
+        compact: true,
+        color: ConsolePalette.of(context).cyan,
+        // Inert track coordinates only; missing metadata cannot enable edits.
+        value: value ?? range?.min ?? 0,
+        min: range?.min ?? 0,
+        max: range?.max ?? 1,
+        text: text,
+        enabled: enabled,
+        onFocus: enabled
+            ? () => onFocus(ChannelFocus(
+                title: 'Input',
+                label: label,
+                text: () {
+                  final live = store.paramNum(leaf);
+                  return live == null ? 'Loading…' : readout(live);
+                },
+                min: range.min,
+                max: range.max,
+                apply: (v) =>
+                    store.setPreamp(leaf, v.clamp(range.min, range.max))))
+            : null,
+        onTypedEntry: enabled
+            ? () async {
+                final next = await showNumberEntry(
+                    context: context,
+                    title: unit.isEmpty ? label : '$label ($unit)',
+                    initial: value.toStringAsFixed(1),
+                    min: range.min,
+                    max: range.max);
+                if (next != null) store.setPreamp(leaf, next);
+              }
+            : null,
+        onChanged: (v) => store.setPreamp(leaf, v),
+        trailing: trailing);
   }
 }
 
@@ -308,12 +379,33 @@ class _ProcessingSend extends StatelessWidget {
           valueListenable: store.sendParamNote(send.slot, 'level'),
           builder: (context, db, _) {
             final level = dbToPos(db ?? -90);
+            final range =
+                _inputRange(store.paramMetadata('send${send.slot}_level'));
+            // The normalized slider retains the shared fader law. Entry uses
+            // engineering dB, bounded by both that law and advertised caps.
+            final minDb = (range?.min ?? -90).clamp(-90.0, 10.0);
+            final maxDb = (range?.max ?? 10).clamp(-90.0, 10.0);
             return _ProcessingSlider(
                 label: send.destName,
                 compact: !wide,
                 value: level,
                 min: 0,
                 max: 1,
+                onTypedEntry: () async {
+                  final next = await showNumberEntry(
+                      context: context,
+                      title: '${send.destName} (dB)',
+                      initial: db == null
+                          ? ''
+                          : db.clamp(minDb, maxDb).toStringAsFixed(1),
+                      min: minDb,
+                      max: maxDb,
+                      allowNegInf: minDb == -90,
+                      negInfValue: minDb);
+                  if (next != null) {
+                    store.setSendLevel(send.slot, dbToPos(next));
+                  }
+                },
                 text: db == null ? 'Loading…' : '${fmtDb(level)} dB',
                 enabled: db != null && store.supports('send${send.slot}_level'),
                 onChanged: (v) => store.setSendLevel(send.slot, v),

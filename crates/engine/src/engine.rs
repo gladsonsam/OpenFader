@@ -1374,6 +1374,7 @@ impl Engine {
             let weak: Weak<Self> = Arc::downgrade(self);
             tokio::spawn(async move {
                 let mut had_audio_spectrum = false;
+                let mut meters_live = false;
                 let mut last_level_sample = None;
                 let mut last_gr_sample = None;
                 let mut tick =
@@ -1393,8 +1394,35 @@ impl Engine {
                     if let Some((levels, gr)) = stamps { last_level_sample = levels; last_gr_sample = gr; }
                     let levels = engine.meter_levels().await;
                     let frame = MeterFrame { levels };
-                    if level_updated && !frame.levels.is_empty() {
-                        engine.broadcast(Event::Meters { levels: frame.levels.clone() });
+                    if !frame.levels.is_empty() {
+                        if level_updated {
+                            engine.broadcast(Event::Meters { levels: frame.levels.clone() });
+                        }
+                        meters_live = true;
+                    } else if meters_live {
+                        // Fresh -> unavailable transition (DL32S stale >1 s,
+                        // disconnect, or suspended switch): clear the UI once
+                        // instead of leaving the last levels frozen (stuck
+                        // clip). One-shot; stays silent until live again.
+                        // Mirrors the `had_audio_spectrum` clear below, on
+                        // the same tick — no new timers.
+                        meters_live = false;
+                        engine.broadcast(Event::Meters { levels: Vec::new() });
+                        if engine.any_taps_client() {
+                            let tap_drv = engine.active_drv();
+                            // Fallback taps only: `poll_taps` drivers keep
+                            // serving their own tap frames, so only clear the
+                            // meter-derived tap here, mirroring the
+                            // `tap_frames` fallback name (`in` for DL32S,
+                            // else `post`). Tap-less drivers emit nothing.
+                            if tap_drv.poll_taps().is_none() && !tap_drv.meter_taps().is_empty() {
+                                let tap = if tap_drv.meter_taps() == ["in"] { "in" } else { "post" };
+                                engine.broadcast(Event::Taps {
+                                    tap: tap.to_string(),
+                                    levels: Vec::new(),
+                                });
+                            }
+                        }
                     }
                     if engine.any_taps_client() && (level_updated || gr_updated) {
                         for (tap, tap_levels) in engine.tap_frames().await {
@@ -3329,7 +3357,14 @@ impl Engine {
         if drv.meter_taps().is_empty() { return Vec::new(); }
         let n = self.driver_strips(&self.active_driver());
         let mut out = Vec::new();
-        if !post.is_empty() { out.push(("post".to_string(), post)); }
+        if !post.is_empty() {
+            // A driver declaring only the pre-fader `in` tap (dl32s: the
+            // meter words are verified input dB) serves it through
+            // `poll_meters`; labelling it `post` would invent an unverified
+            // tap. Anything else keeps the historical `post` label.
+            let tap = if drv.meter_taps() == ["in"] { "in" } else { "post" };
+            out.push((tap.to_string(), post));
+        }
         if drv.dyn_gr() {
             let mut gr_gate = vec![0.0f32; n];
             let mut gr_comp = vec![0.0f32; n];

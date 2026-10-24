@@ -366,6 +366,9 @@ class EngineState {
   bool capsReady = false;
   int muteGroupCount = 0;
   Set<String> supportedParams = {};
+
+  /// Full advertised catalogue rows; availability is separate from hydration.
+  Map<String, Map<String, dynamic>> parameterMetadata = {};
   Set<String> meterTaps = {};
   int meterSeq = 0;
 
@@ -380,6 +383,7 @@ class EngineState {
     knownValues.clear();
     capsReady = false;
     supportedParams.clear();
+    parameterMetadata = {};
     meterTaps.clear();
     strips = [];
     topology = [];
@@ -559,10 +563,13 @@ class EngineState {
         }
         final ps = e['params'];
         if (ps is List) {
-          supportedParams = {
+          parameterMetadata = Map.unmodifiable({
             for (final p in ps)
-              if (p is Map && p['id'] is String) p['id'] as String
-          };
+              if (p is Map && p['id'] is String)
+                p['id'] as String: Map<String, dynamic>.unmodifiable(
+                    Map<String, dynamic>.from(p)),
+          });
+          supportedParams = parameterMetadata.keys.toSet();
         }
         return true;
       case 'meters':
