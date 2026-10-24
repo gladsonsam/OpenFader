@@ -6,6 +6,7 @@ import '../design.dart';
 /// the strip density, and screen readers receive both name and toggle state.
 class MixerToggle extends StatelessWidget {
   final String label, channelName;
+  final String? unavailableReason;
   final bool on;
   final Color activeColor, activeForeground;
   final double visualHeight, fontSize;
@@ -14,6 +15,7 @@ class MixerToggle extends StatelessWidget {
       {super.key,
       required this.label,
       required this.channelName,
+      this.unavailableReason,
       required this.on,
       this.visualHeight = 44,
       this.fontSize = 21,
@@ -28,9 +30,10 @@ class MixerToggle extends StatelessWidget {
       enabled: onPressed != null,
       onTap: onPressed,
       toggled: on,
-      label: '$channelName $label',
+      label:
+          '$channelName $label${unavailableReason == null ? '' : ', $unavailableReason'}',
       child: Tooltip(
-          message: '$label $channelName',
+          message: unavailableReason ?? '$label $channelName',
           child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onPressed,

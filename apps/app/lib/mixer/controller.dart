@@ -129,7 +129,7 @@ class MixerController extends ChangeNotifier {
       number: '${s.ch + 1}',
       channel: s.ch,
       artwork: _artwork(s),
-      fader: s.fader,
+      fader: store.faderOf(s.ch).value,
       pan: store.panOf(s.ch),
       muted: s.muted,
       solo: store.soloOf(s.ch),

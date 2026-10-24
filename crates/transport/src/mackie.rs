@@ -37,8 +37,14 @@ pub const HEADER_LEN: usize = 6;
 pub const FRAME_PREFIX_LEN: usize = 8;
 /// Keepalive period: the mixer expects a ping roughly every 2.5 s.
 pub const KEEPALIVE_INTERVAL: Duration = Duration::from_millis(2500);
-/// Request timeout for correlated request/response exchanges.
+/// Request timeout for correlated request/response exchanges. Generous for
+/// a ~500 ms relay path (6x headroom per round trip); the init handshake
+/// runs several of these in sequence, so a relayed connect takes seconds.
 pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+/// TCP dial timeout: a blackhole route (dead relay leg) must fail fast
+/// instead of hanging `Cmd::Connect` on OS SYN retries. Generous for a
+/// ~500 ms relay path, far below platform defaults.
+pub const DIAL_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Frame direction/kind on the wire.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -647,9 +653,13 @@ pub struct MackieSession {
 impl MackieSession {
     /// Connect to `host[:port]` (default port 50001) and run the init
     /// handshake. Resolves via the shared [`crate::session::resolve_peer`].
+    /// The dial itself is bounded by [`DIAL_TIMEOUT`]: without it a
+    /// blackhole relay leg hangs the connect on OS SYN retries.
     pub async fn connect(addr: &str) -> anyhow::Result<Self> {
         let peer: SocketAddr = crate::session::resolve_peer(addr, DEFAULT_PORT)?;
-        let stream = TcpStream::connect(peer).await?;
+        let stream = tokio::time::timeout(DIAL_TIMEOUT, TcpStream::connect(peer))
+            .await
+            .map_err(|_| anyhow::anyhow!("connect to {peer} timed out after {DIAL_TIMEOUT:?}"))??;
         stream.set_nodelay(true)?;
         Self::from_connected_stream(stream).await
     }
