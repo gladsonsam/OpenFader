@@ -408,7 +408,7 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
     );
     m.insert("eq2_freq".into(), f(800.0 + (idx % 4) as f32 * 100.0));
     m.insert("eq2_q".into(), f(1.2));
-    m.insert("eq2_type".into(), f(0.0));
+    m.insert("eq2_type".into(), f(2.0));
     m.insert(
         "eq3_gain".into(),
         f(if matches!(role, "gtr" | "keys") {
@@ -419,14 +419,14 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
     );
     m.insert("eq3_freq".into(), f(3000.0));
     m.insert("eq3_q".into(), f(1.4));
-    m.insert("eq3_type".into(), f(0.0));
+    m.insert("eq3_type".into(), f(2.0));
     m.insert(
         "eq4_gain".into(),
         f(if role == "vox" { 1.0 } else { 0.0 }),
     );
     m.insert("eq4_freq".into(), f(12000.0));
     m.insert("eq4_q".into(), f(0.7));
-    m.insert("eq4_type".into(), f(2.0));
+    m.insert("eq4_type".into(), f(4.0));
     // A few sends non-zero (vox to monitors/FX, band to monitors);
     // everything else parks at -inf (-90 dB). Mutes stay off. The generic
     // `sendN_*` ids mirror the legacy aux/fx slots (send1..6 = aux1..6 bus

@@ -90,6 +90,27 @@ class _EqTabState extends State<_EqTab> {
         ]));
   }
 
+  Widget _shapeChoices(EqBandVm band, {bool compact = false}) {
+    final shelf =
+        band.band == 1 ? EqFilterShape.lowShelf : EqFilterShape.highShelf;
+    final current = EqFilterShape.fromValue(band.type);
+    final enabled =
+        current != null && widget.store.supports('eq${band.band}_type');
+    return Row(children: [
+      for (final shape in [shelf, EqFilterShape.bell])
+        Expanded(
+            child: _ProcessingButton(
+                label: shape == EqFilterShape.bell ? 'Bell' : 'Shelf',
+                semanticsLabel:
+                    'Band ${band.band} ${shape == EqFilterShape.bell ? 'Bell' : 'Shelf'}',
+                fontSize: compact ? 14 : 16,
+                active: band.type == shape.value,
+                onTap: enabled
+                    ? () => widget.store.setEqBandType(band.band, shape)
+                    : null)),
+    ]);
+  }
+
   Widget _panel(EqBandVm band, double height) => Container(
       height: height,
       padding: const EdgeInsets.all(10),
@@ -105,28 +126,7 @@ class _EqTabState extends State<_EqTab> {
                 ? () => widget.store.setEqBandOn(band.band, !band.on)
                 : null),
         const Spacer(),
-        if (band.band == 1 || band.band == 4)
-          Row(children: [
-            for (final type in ['Shelf', 'Bell'])
-              Expanded(
-                  child: _ProcessingButton(
-                      label: type,
-                      active: band.type ==
-                          (type == 'Bell'
-                              ? 2
-                              : band.band == 1
-                                  ? 1
-                                  : 4),
-                      onTap: widget.store.supports('eq${band.band}_type')
-                          ? () => widget.store.cmdParam(
-                              'eq${band.band}_type',
-                              type == 'Bell'
-                                  ? 2
-                                  : band.band == 1
-                                      ? 1
-                                      : 4)
-                          : null)),
-          ]),
+        if (band.band == 1 || band.band == 4) _shapeChoices(band),
         _slider(band, 'g', 'G'),
         _slider(band, 'f', 'F'),
         _slider(band, 'q', 'Q'),
@@ -140,6 +140,8 @@ class _EqTabState extends State<_EqTab> {
     final selected =
         eq.bands.where((b) => b.band == eq.selectedBand).firstOrNull ??
             eq.bands.firstOrNull;
+    final showMobileShapes =
+        selected != null && (selected.band == 1 || selected.band == 4);
     return LayoutBuilder(builder: (context, bounds) {
       final scale = bounds.maxWidth / 1443;
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -247,37 +249,49 @@ class _EqTabState extends State<_EqTab> {
             ],
           ])
         else ...[
-          Container(
-              height: 40,
-              decoration: BoxDecoration(
-                  color: ConsolePalette.of(context).chip,
-                  borderRadius: U4.rBtn),
-              padding: const EdgeInsets.all(3),
-              child: Row(children: [
-                for (final band in eq.bands)
-                  Expanded(
-                      child: Semantics(
-                          button: true,
-                          selected: eq.selectedBand == band.band,
-                          label: 'EQ Band ${band.band}',
-                          child: InkWell(
-                              onTap: () => _pick(band.band),
-                              child: Container(
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                      color: eq.selectedBand == band.band
-                                          ? ConsolePalette.of(context)
-                                              .processingSelected
-                                          : null,
-                                      borderRadius: U4.rBtn),
-                                  child: Text('Band ${band.band}',
-                                      style: AppDesign.type(15,
-                                          color: eq.selectedBand == band.band
-                                              ? ConsolePalette.of(context).cyan
-                                              : ConsolePalette.of(context)
-                                                  .text7,
-                                          weight: FontWeight.w600)))))),
-              ])),
+          Row(children: [
+            Expanded(
+                child: Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                        color: ConsolePalette.of(context).chip,
+                        borderRadius: U4.rBtn),
+                    padding: const EdgeInsets.all(3),
+                    child: Row(children: [
+                      for (final band in eq.bands)
+                        Expanded(
+                            child: Semantics(
+                                button: true,
+                                selected: eq.selectedBand == band.band,
+                                label: 'EQ Band ${band.band}',
+                                child: InkWell(
+                                    onTap: () => _pick(band.band),
+                                    child: Container(
+                                        alignment: Alignment.center,
+                                        decoration: BoxDecoration(
+                                            color: eq.selectedBand == band.band
+                                                ? ConsolePalette.of(context)
+                                                    .processingSelected
+                                                : null,
+                                            borderRadius: U4.rBtn),
+                                        child: Text(
+                                            showMobileShapes
+                                                ? '${band.band}'
+                                                : 'Band ${band.band}',
+                                            style: AppDesign.type(15,
+                                                color: eq.selectedBand == band.band
+                                                    ? ConsolePalette.of(context)
+                                                        .cyan
+                                                    : ConsolePalette.of(context)
+                                                        .text7,
+                                                weight: FontWeight.w600)))))),
+                    ]))),
+            if (showMobileShapes) ...[
+              const SizedBox(width: 8),
+              SizedBox(
+                  width: 128, child: _shapeChoices(selected, compact: true)),
+            ],
+          ]),
           if (selected != null) ...[
             _slider(selected, 'g', 'G'),
             _slider(selected, 'f', 'F'),

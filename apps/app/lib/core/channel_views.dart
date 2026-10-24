@@ -106,6 +106,24 @@ double fromN(double min, double max, double n) =>
 
 enum EqBandType { low, mid, high, lowCut, highCut }
 
+/// Confirmed response shapes, using the canonical/XAir presentation values.
+/// Driver-native values are translated only at the store boundary.
+enum EqFilterShape {
+  lowShelf(1),
+  bell(2),
+  highShelf(4);
+
+  const EqFilterShape(this.value);
+  final int value;
+
+  static EqFilterShape? fromValue(int? value) {
+    for (final shape in values) {
+      if (shape.value == value) return shape;
+    }
+    return null;
+  }
+}
+
 /// One EQ band view-model (bands 1..4 parametric + HPF handled separately).
 class EqBandVm {
   final int band; // 1..4
@@ -114,7 +132,11 @@ class EqBandVm {
   final double g; // dB
   final double q;
   final bool on;
-  final int? type; // Native filter enum; null until reported by the desk.
+
+  /// Canonical/XAir presentation enum: 1 = low shelf, 2 = bell,
+  /// 4 = high shelf. Other canonical values retain their driver meaning;
+  /// null means unreported or an unverified native shape. Never a DL32S enum.
+  final int? type;
   final List<double>? fRange;
   final List<double>? gRange;
   final List<double>? qRange;
@@ -281,12 +303,16 @@ List<double> eqResponseDb(ChannelEqVm eq) {
     }
     for (final b in eq.bands) {
       if (!b.on) continue;
-      if (b.band == 1) {
-        db += _shelfDb(false, b.f, b.g, f);
-      } else if (b.band == 4) {
-        db += _shelfDb(true, b.f, b.g, f);
-      } else {
-        db += _peakingDb(b.f, b.g, b.q <= 0 ? 1 : b.q, f);
+      switch (EqFilterShape.fromValue(b.type)) {
+        case EqFilterShape.lowShelf:
+          db += _shelfDb(false, b.f, b.g, f);
+        case EqFilterShape.bell:
+          db += _peakingDb(b.f, b.g, b.q <= 0 ? 1 : b.q, f);
+        case EqFilterShape.highShelf:
+          db += _shelfDb(true, b.f, b.g, f);
+        case null:
+          // No verified response to draw until the shape is known.
+          break;
       }
     }
     out[i] = db.clamp(-18.0, 18.0);

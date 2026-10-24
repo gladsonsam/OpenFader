@@ -441,7 +441,7 @@ class _AppShellState extends State<AppShell> {
         return ListenableBuilder(
             listenable: _mixer,
             builder: (context, _) {
-              final selected = _mixer.selected;
+              final selected = _mixer.selectedProcessing;
               Widget strip(MixerChannel ch) => MixerStrip(
                   channel: ch,
                   controller: _mixer,
