@@ -458,6 +458,19 @@ pub fn dl32_family_meter_addresses() -> Vec<i32> {
     addrs
 }
 
+/// DL32S-only 91-entry meter layout: the 60-entry family table above with
+/// 31 RTA addresses `3..=33` appended. The first 32 input words are
+/// unchanged; the RTA bins ride indices 60..90 of the pushed block.
+/// Per-client override — only the DL32S driver requests this (see
+/// [`MackieSession::request_meter_layout`]); the shared init handshake and
+/// [`MackieSession::enable_meter_reports`] keep the 60-entry default so all
+/// other callers are unaffected.
+pub fn dl32s_meter_addresses() -> Vec<i32> {
+    let mut addrs = dl32_family_meter_addresses();
+    addrs.extend(3..=33);
+    addrs
+}
+
 /// METER_LAYOUT body: a flag word with byte 3 set, then each address as BE i32.
 pub fn build_meter_layout(addresses: &[i32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(4 + addresses.len() * 4);
@@ -1023,6 +1036,22 @@ impl MackieSession {
     // ---- mute groups already in separate methods; expose alias ----
 
     // ---- meters ----
+
+    /// Per-client meter-layout override: replaces this connection's pushed
+    /// meter block with `addresses` (one word per address, in order). The
+    /// DL32S driver uses this to request its 91-entry RTA layout
+    /// ([`dl32s_meter_addresses`]); the shared init handshake keeps the
+    /// 60-entry family default. Broadcast reports are already enabled by
+    /// the init handshake, so only the layout itself is re-sent here.
+    pub async fn request_meter_layout(&self, addresses: &[i32]) -> anyhow::Result<()> {
+        self.send_request(
+            Command::MeterLayout,
+            build_meter_layout(addresses),
+            REQUEST_TIMEOUT,
+        )
+        .await?;
+        Ok(())
+    }
 
     pub async fn enable_meter_reports(&self) -> anyhow::Result<()> {
         let addrs = dl32_family_meter_addresses();
