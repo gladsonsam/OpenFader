@@ -1015,8 +1015,16 @@ impl MackieSession {
             anyhow::bail!("slot must be >= 1");
         }
         let text = name.as_bytes();
-        let clipped = &text[..text.len().min(63)];
-        let mut padded = clipped.to_vec();
+        // Keep the complete UTF-8 string and its cached readback identical.
+        // Byte clipping could split a codepoint; an embedded NUL would make
+        // the desk read only a prefix of the value cached below.
+        if text.len() > 63 {
+            anyhow::bail!("channel name must not exceed 63 UTF-8 bytes");
+        }
+        if text.contains(&0) {
+            anyhow::bail!("channel name must not contain NUL");
+        }
+        let mut padded = text.to_vec();
         padded.push(0);
         while !padded.len().is_multiple_of(4) {
             padded.push(0);

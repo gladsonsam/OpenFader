@@ -11,6 +11,7 @@
 // (AppShell -> AppStore.pollMeters); this page owns no timer and renders
 // levels + spectrum + GR in place via notifiers.
 
+import '../core/channel_name.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
@@ -43,7 +44,7 @@ enum ChannelTab { input, gate, comp, eq }
 /// shell/owner over the live engine or a fixture sim. Meters arrive via
 /// stable [ValueNotifier]s updated in place by [pollMeters]; DSP snapshots
 /// ([eq]/[gate]/[comp]/[sends]/...) notify through [ChangeNotifier].
-abstract class ChannelStore extends ChangeNotifier {
+abstract class ChannelStore extends ChangeNotifier implements ChannelNameStore {
   String get stripKey;
   String get displayName;
 
