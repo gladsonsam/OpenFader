@@ -20,6 +20,7 @@ export 'scene_button.dart';
 class U4Shell extends StatelessWidget {
   final Widget header;
   final Widget child;
+  final bool bottomSafeArea;
 
   /// Bank rail (mixer only — the shell owns the condition, like the web).
   final List<BankRailBank> banks;
@@ -37,6 +38,7 @@ class U4Shell extends StatelessWidget {
     super.key,
     required this.header,
     required this.child,
+    this.bottomSafeArea = true,
     this.banks = const [],
     this.activeBank = '',
     this.onBank,
@@ -50,6 +52,7 @@ class U4Shell extends StatelessWidget {
     return Scaffold(
       backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
+        bottom: bottomSafeArea,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final narrow = constraints.maxWidth < narrowBelow;

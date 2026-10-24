@@ -43,6 +43,7 @@ class _EqTabState extends State<_EqTab> {
             min: min,
             max: max,
             compact: true,
+            inlineLabel: MediaQuery.sizeOf(context).width < 700,
             color: ConsolePalette.of(context).bandColor(band.band),
             enabled: widget.store.supports('eq${band.band}_$prop'),
             onFocus: () {
@@ -206,6 +207,7 @@ class _EqTabState extends State<_EqTab> {
           ])
         else ...[
           Container(
+              height: 40,
               decoration: BoxDecoration(
                   color: ConsolePalette.of(context).chip,
                   borderRadius: U4.rBtn),
@@ -213,10 +215,27 @@ class _EqTabState extends State<_EqTab> {
               child: Row(children: [
                 for (final band in eq.bands)
                   Expanded(
-                      child: _ProcessingButton(
-                          label: 'Band ${band.band}',
-                          active: eq.selectedBand == band.band,
-                          onTap: () => _pick(band.band))),
+                      child: Semantics(
+                          button: true,
+                          selected: eq.selectedBand == band.band,
+                          label: 'EQ Band ${band.band}',
+                          child: InkWell(
+                              onTap: () => _pick(band.band),
+                              child: Container(
+                                  alignment: Alignment.center,
+                                  decoration: BoxDecoration(
+                                      color: eq.selectedBand == band.band
+                                          ? ConsolePalette.of(context)
+                                              .processingSelected
+                                          : null,
+                                      borderRadius: U4.rBtn),
+                                  child: Text('Band ${band.band}',
+                                      style: AppDesign.type(15,
+                                          color: eq.selectedBand == band.band
+                                              ? ConsolePalette.of(context).cyan
+                                              : ConsolePalette.of(context)
+                                                  .text7,
+                                          weight: FontWeight.w600)))))),
               ])),
           if (selected != null) ...[
             _slider(selected, 'g', 'G'),

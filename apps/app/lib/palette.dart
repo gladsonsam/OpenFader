@@ -18,6 +18,10 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get well => pair(0xff080808, 0xffe9edf0);
   Color get panel => pair(0xff0f0f0f, 0xffe4e9ed);
   Color get control => pair(0xff343434, 0xffbfc8d0);
+  Color get processingPanel => pair(0xff242424, 0xffbfc8d0);
+  Color get navigationTile => pair(0xff181818, 0xffbfc8d0);
+  Color get processingSelected =>
+      !isLight && accent == 'lime' ? const Color(0xff262b14) : selectionFill;
   Color get stripDivider => pair(0xff101010, 0xff9aa6b1);
   Color get line => pair(0xff2c2c2c, 0xff9aa6b1);
   Color get text => pair(0xffebebeb, 0xff131c24);
@@ -52,6 +56,8 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get knob => const Color(0xffd8d8d4);
   Color get panShape => pair(0xff4a4a4a, 0xffacb6bf);
   Color get chip => pair(0xff262626, 0xffcbd2d8);
+  Color get eqPreviewFill => pair(0xff8d9378, 0xff66784c);
+  Color get eqPreviewCurve => pair(0xfff6f9e4, 0xff304022);
   Color get eqBg => pair(0xff1f2314, 0xffe9efdf);
   Color get comp => pair(0xffff4b06, 0xffbb3900);
   Color get phantom => pair(0xffef5548, 0xffb62820);
@@ -83,11 +89,11 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
       : const Color(0xffebebeb);
   Color get shadow => const Color(0x66000000);
   Color bandColor(int band) => switch (band) {
-        0 => mutedText,
-        1 => pair(0xffffa24b, 0xff995000),
-        2 => pair(0xfff1d447, 0xff7c6400),
-        3 => pair(0xff3ec9df, 0xff00758a),
-        _ => pair(0xffb99aff, 0xff7545b7),
+        0 => pair(0xffa8e05f, 0xff507d12),
+        1 => pair(0xff59b0c4, 0xff995000),
+        2 => pair(0xff6f8be0, 0xff7c6400),
+        3 => pair(0xffa285d6, 0xff00758a),
+        _ => pair(0xffc779c0, 0xff7545b7),
       };
   List<Color> get tapes => const [
         Color(0xffcc7e5b),

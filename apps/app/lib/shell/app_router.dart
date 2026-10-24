@@ -328,7 +328,8 @@ class _AppShellState extends State<AppShell> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [Expanded(child: page), rail],
                   );
-        return U4Shell(header: header, child: body);
+        return U4Shell(
+            header: header, bottomSafeArea: !(isChan && narrow), child: body);
       },
     );
   }
