@@ -1137,35 +1137,127 @@ class _RoutingStore extends _StoreBase implements RoutingStore {
 // ---------------------------------------------------------------------------
 
 class _ScenesStore extends _StoreBase implements ScenesStore {
-  _ScenesStore(super.app);
+  _ScenesStore(super.app) {
+    app.addListener(_settle);
+  }
 
   String? _show;
   bool _newShow = false;
   bool _busy = false;
+  bool _submitted = false;
   String? _status;
+  int _runId = 0;
+  Object? _pendingContext;
+  Object? _errorBefore;
+  Object? _libraryBefore;
+  Object Function()? _library;
+  bool Function()? _confirmed;
+  String? _done;
+
+  // Libraries belong to OpenFader, not the desk's native show storage.
+  // EngineState replaces these collections for each scenes/shows event.
+  // Requiring a fresh collection prevents submission or an old matching
+  // library entry from being treated as a completed mutation.
+  Object get _context => (engine.session, _show, _newShow);
+  Object get _errorContext =>
+      (app.errorRevision, app.visibleError, app.visibleErrorAt, engine.error);
+  bool get _canRun => !_dead && !_busy && online;
+
+  @override
+  Object get actionContext => (_context, show, engine.scenes, engine.shows);
+
+  @override
+  bool validateActionContext(Object captured) {
+    if (_dead) return false;
+    if (!_canRun || captured != actionContext) {
+      _status = 'Scene action cancelled: the connection, selection, or '
+          'library changed. Review the target and try again.';
+      notifyListeners();
+      return false;
+    }
+    return true;
+  }
 
   @override
   bool get busy => _busy;
 
   @override
-  String? get status =>
-      app.visibleError.isNotEmpty ? app.visibleError : _status;
+  String? get status {
+    final error = app.visibleError;
+    if (error.isEmpty) return _status;
+    if (_status == null || _status!.contains(error)) return _status ?? error;
+    return '$error\n$_status';
+  }
 
-  Future<void> _run(String command, String pending, String done) async {
-    if (_busy || !online) return;
+  void _finish(String message) {
+    _runId++;
+    _busy = false;
+    _pendingContext = null;
+    _library = null;
+    _libraryBefore = null;
+    _confirmed = null;
+    _done = null;
+    _status = message;
+    if (!_dead) notifyListeners();
+  }
+
+  void _settle() {
+    if (_dead || !_busy) return;
+    if (!online || _pendingContext != _context) {
+      _finish('Connection or selection changed. The scene operation result '
+          'is unconfirmed; it may already have taken effect.');
+    } else if (app.visibleError.isNotEmpty && _errorBefore != _errorContext) {
+      _finish('Scene operation result unconfirmed: ${app.visibleError}');
+    } else if (_submitted &&
+        _library != null &&
+        !identical(_libraryBefore, _library!()) &&
+        _confirmed!()) {
+      _finish(_done!);
+    }
+  }
+
+  Future<void> _run(String command, String pending, String done,
+      {Object Function()? library, bool Function()? confirmed}) async {
+    if (!_canRun) return;
+    final run = ++_runId;
     _busy = true;
+    _submitted = false;
+    _pendingContext = _context;
+    _errorBefore = _errorContext;
+    _library = library;
+    _libraryBefore = library?.call();
+    _confirmed = confirmed;
+    _done = done;
     _status = pending;
-    app.clearErrors();
+    // Keep existing engine/transport errors visible, including during a retry.
     notifyListeners();
     try {
+      if (_dead || run != _runId) return;
+      _settle();
+      if (_dead || run != _runId) return;
       await app.sendCommand(command);
-      _status = done;
+      if (_dead || run != _runId) return;
+      _submitted = true;
+      _settle();
+      if (_dead || run != _runId) return;
+      // Named recall has no correlated completion event in EngineState.
+      // Its receipt only permits "requested", never a mixer-value claim.
+      if (library == null) _finish(done);
+      // No per-poll deadline hook is exposed to this store. A missing library
+      // update stays pending on the existing structural listener; no timer
+      // or extra poller, and no success inferred from command submission.
     } catch (error) {
-      _status = 'Scene command failed: $error';
-    } finally {
-      _busy = false;
-      if (!_dead) notifyListeners();
+      if (!_dead && run == _runId) {
+        _finish('Scene command failed; result unconfirmed: $error');
+      }
     }
+  }
+
+  @override
+  void dispose() {
+    _runId++;
+    app.removeListener(_settle);
+    super.dispose();
   }
 
   @override
@@ -1173,6 +1265,9 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
         for (final s in engine.scenes)
           SceneEntryVm(number: s.number, name: s.name, current: s.current),
       ];
+
+  @override
+  NativeSnapshotsVm get nativeSnapshots => engine.nativeSnapshots;
 
   @override
   List<String> get shows => engine.shows.keys.toList();
@@ -1190,38 +1285,87 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
   @override
   bool get online => engine.connected;
 
-  int _freeSlot() {
+  // OpenFader's engine library explicitly supports 001..999. This domain
+  // does not describe Master Fader's native show/snapshot capacity.
+  int? _freeSlot() {
     final used = {for (final s in engine.scenes) s.number};
-    for (var n = 1; n <= 99; n++) {
+    for (var n = 1; n <= 999; n++) {
       if (!used.contains(n)) return n;
     }
-    return 99;
+    return null;
   }
 
   @override
-  void save(String name) => unawaited(_run(Cmds.sceneSave(_freeSlot(), name),
-      'Saving snapshot…', 'Snapshot saved.'));
+  void save(String name) {
+    if (!_canRun || name.trim().isEmpty) return;
+    final slot = _freeSlot();
+    if (slot == null) {
+      _status = 'OpenFader snapshot library full (001–999). Delete a snapshot '
+          'before saving; nothing was overwritten.';
+      notifyListeners();
+      return;
+    }
+    name = name.trim();
+    unawaited(_run(
+        Cmds.sceneSave(slot, name),
+        'Saving snapshot $slot… Awaiting engine library confirmation.',
+        'Snapshot $slot is present in the OpenFader engine library.',
+        library: () => engine.scenes,
+        confirmed: () =>
+            engine.scenes.any((s) => s.number == slot && s.name == name)));
+  }
 
   @override
-  void recall(int number) => unawaited(_run(
-      Cmds.sceneRecall(number), 'Recalling snapshot…', 'Snapshot recalled.'));
+  void recall(int number) {
+    if (!engine.scenes.any((s) => s.number == number)) return;
+    unawaited(_run(
+        Cmds.sceneRecall(number),
+        'Snapshot $number recall requested… Awaiting engine library marker.',
+        'Engine library marked snapshot $number current. Recall accepted; '
+            'mixer value verification is unavailable here.',
+        library: () => engine.scenes,
+        confirmed: () =>
+            engine.scenes.any((s) => s.number == number && s.current)));
+  }
 
   @override
-  void rename(int number, String name) => unawaited(_run(
-      Cmds.sceneRename(number, name),
-      'Renaming snapshot…',
-      'Snapshot renamed.'));
+  void rename(int number, String name) {
+    name = name.trim();
+    if (name.isEmpty || !engine.scenes.any((s) => s.number == number)) return;
+    unawaited(_run(
+        Cmds.sceneRename(number, name),
+        'Renaming snapshot $number… Awaiting engine library confirmation.',
+        'Snapshot $number name confirmed in the OpenFader engine library.',
+        library: () => engine.scenes,
+        confirmed: () =>
+            engine.scenes.any((s) => s.number == number && s.name == name)));
+  }
 
   @override
-  void remove(int number) => unawaited(_run(
-      Cmds.sceneDelete(number), 'Deleting snapshot…', 'Snapshot deleted.'));
+  void remove(int number) {
+    if (!engine.scenes.any((s) => s.number == number)) return;
+    unawaited(_run(
+        Cmds.sceneDelete(number),
+        'Deleting snapshot $number… Awaiting engine library confirmation.',
+        'Snapshot $number removed from the OpenFader engine library.',
+        library: () => engine.scenes,
+        confirmed: () => !engine.scenes.any((s) => s.number == number)));
+  }
 
   @override
-  void clearAll() => unawaited(
-      _run(Cmds.sceneClear(), 'Clearing snapshots…', 'Snapshots cleared.'));
+  void clearAll() {
+    if (engine.scenes.isEmpty) return;
+    unawaited(_run(
+        Cmds.sceneClear(),
+        'Clearing snapshots… Awaiting engine library confirmation.',
+        'OpenFader numbered snapshot library is empty.',
+        library: () => engine.scenes,
+        confirmed: () => engine.scenes.isEmpty));
+  }
 
   @override
   void selectShow(String show) {
+    if (_dead || _busy) return;
     _newShow = false;
     _show = show;
     send(Cmds.listShows());
@@ -1230,28 +1374,62 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
 
   @override
   void beginShow() {
+    if (_dead || _busy) return;
     _newShow = true;
     notifyListeners();
   }
 
   @override
+  bool captureWillOverwrite(String name) =>
+      engine.shows[show ?? name]?.contains(name) ?? false;
+
+  @override
   void captureShow(String name) {
+    name = name.trim();
+    if (!_canRun || name.isEmpty) return;
     final selected = show ?? name;
+    final overwrite = captureWillOverwrite(name);
     _newShow = false;
     _show = selected;
-    unawaited(_run(Cmds.captureScene(selected, name), 'Capturing scene…',
-        'Scene captured.'));
+    unawaited(_run(
+        Cmds.captureScene(selected, name),
+        'Capturing “$name” in “$selected”… Awaiting engine library confirmation.',
+        overwrite
+            ? 'Engine library refreshed for “$selected” / “$name”. '
+                'Replacement contents are not verified here.'
+            : 'Scene “$name” is listed in OpenFader show “$selected”.',
+        library: () => engine.shows,
+        confirmed: () => engine.shows[selected]?.contains(name) ?? false));
   }
 
   @override
-  void recallShow(String name) => unawaited(_run(
-      Cmds.recallScene(show ?? name, name), 'Loading scene…', 'Scene loaded.'));
+  void recallShow(String name) {
+    final selected = show;
+    if (selected == null ||
+        !(engine.shows[selected]?.contains(name) ?? false)) {
+      return;
+    }
+    unawaited(_run(
+        Cmds.recallScene(selected, name),
+        'Requesting recall of “$selected” / “$name”…',
+        'Recall requested for “$selected” / “$name”. '
+            'Completion and mixer value verification are unavailable here.'));
+  }
 
   @override
-  void deleteShow(String name) => unawaited(_run(
-      Cmds.deleteScene(show ?? name, name),
-      'Deleting scene…',
-      'Scene deleted.'));
+  void deleteShow(String name) {
+    final selected = show;
+    if (selected == null ||
+        !(engine.shows[selected]?.contains(name) ?? false)) {
+      return;
+    }
+    unawaited(_run(
+        Cmds.deleteScene(selected, name),
+        'Deleting “$selected” / “$name”… Awaiting engine library confirmation.',
+        'Scene “$name” removed from OpenFader show “$selected”.',
+        library: () => engine.shows,
+        confirmed: () => !(engine.shows[selected]?.contains(name) ?? false)));
+  }
 }
 
 // ---------------------------------------------------------------------------

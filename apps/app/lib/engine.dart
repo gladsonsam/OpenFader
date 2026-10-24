@@ -5,6 +5,162 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+/// Passive native desk reports, separate from OpenFader's local scene library.
+/// `ready` means some push evidence arrived, never a complete slot inventory.
+enum NativeSnapshotsStatus { unknown, unsupported, unavailable, loading, ready }
+
+class NativeSnapshotSlotVm {
+  final int slot;
+  final String name;
+
+  const NativeSnapshotSlotVm._(this.slot, this.name);
+
+  @override
+  bool operator ==(Object other) =>
+      other is NativeSnapshotSlotVm && slot == other.slot && name == other.name;
+
+  @override
+  int get hashCode => Object.hash(slot, name);
+}
+
+class NativeSnapshotsVm {
+  final String driver;
+
+  /// Engine connection epoch, matching `sync_epoch`, not the RTA source epoch.
+  final int? epoch;
+  final bool supported;
+  final bool readOnly;
+  final NativeSnapshotsStatus status;
+  final List<NativeSnapshotSlotVm> slots;
+
+  /// Last reported native recall id, not confirmation of mixer audio state.
+  final int? current;
+
+  const NativeSnapshotsVm.unknown({this.driver = ''})
+      : epoch = null,
+        supported = false,
+        readOnly = false,
+        status = NativeSnapshotsStatus.unknown,
+        slots = const [],
+        current = null;
+
+  const NativeSnapshotsVm.unsupported({this.driver = ''})
+      : epoch = null,
+        supported = false,
+        readOnly = false,
+        status = NativeSnapshotsStatus.unsupported,
+        slots = const [],
+        current = null;
+
+  NativeSnapshotsVm._({
+    required this.driver,
+    this.epoch,
+    required this.supported,
+    required this.readOnly,
+    required this.status,
+    List<NativeSnapshotSlotVm> slots = const [],
+    this.current,
+  }) : slots = List.unmodifiable(slots);
+
+  static NativeSnapshotsVm fromCaps(String driver, Object? raw) {
+    if (raw is! Map || raw['supported'] is! bool || raw['read_only'] is! bool) {
+      return NativeSnapshotsVm.unknown(driver: driver);
+    }
+    if (raw['supported'] == false) {
+      return NativeSnapshotsVm.unsupported(driver: driver);
+    }
+    if (raw['read_only'] != true) {
+      return NativeSnapshotsVm.unknown(driver: driver);
+    }
+    return NativeSnapshotsVm._(
+        driver: driver,
+        supported: true,
+        readOnly: true,
+        status: NativeSnapshotsStatus.loading);
+  }
+
+  NativeSnapshotsVm waiting({required bool connected}) => NativeSnapshotsVm._(
+      driver: driver,
+      supported: supported,
+      readOnly: readOnly,
+      status: connected
+          ? NativeSnapshotsStatus.loading
+          : NativeSnapshotsStatus.unavailable);
+
+  static bool _isSlot(Object? value) =>
+      value is int && value >= 0 && value <= 0xffffffff;
+
+  /// Reject malformed or contradictory frames atomically. Native u32 ids
+  /// (including zero) stay intact; no local library numbering or labels apply.
+  static NativeSnapshotsVm? fromJson(Map<String, dynamic> e) {
+    final driver = e['driver'];
+    final epoch = e['epoch'];
+    final supported = e['supported'], readOnly = e['read_only'];
+    final rawSlots = e['slots'], current = e['current'];
+    final status = switch (e['status']) {
+      'unsupported' => NativeSnapshotsStatus.unsupported,
+      'unavailable' => NativeSnapshotsStatus.unavailable,
+      'loading' => NativeSnapshotsStatus.loading,
+      'ready' => NativeSnapshotsStatus.ready,
+      _ => null,
+    };
+    if (driver is! String ||
+        driver.trim().isEmpty ||
+        epoch is! int ||
+        epoch < 0 ||
+        supported is! bool ||
+        readOnly is! bool ||
+        status == null ||
+        rawSlots is! List ||
+        (current != null && !_isSlot(current)) ||
+        (supported &&
+            (!readOnly || status == NativeSnapshotsStatus.unsupported)) ||
+        (!supported && status != NativeSnapshotsStatus.unsupported)) {
+      return null;
+    }
+    final slots = <NativeSnapshotSlotVm>[];
+    final ids = <int>{};
+    for (final row in rawSlots) {
+      if (row is! Map || !_isSlot(row['slot']) || row['name'] is! String) {
+        return null;
+      }
+      final slot = row['slot'] as int;
+      if (!ids.add(slot)) return null;
+      slots.add(NativeSnapshotSlotVm._(slot, row['name'] as String));
+    }
+    if (status != NativeSnapshotsStatus.ready &&
+        (slots.isNotEmpty || current != null)) {
+      return null;
+    }
+    slots.sort((a, b) => a.slot.compareTo(b.slot));
+    return NativeSnapshotsVm._(
+        driver: driver,
+        epoch: epoch,
+        supported: supported,
+        readOnly: readOnly,
+        status: status,
+        slots: slots,
+        current: current as int?);
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is NativeSnapshotsVm &&
+      driver == other.driver &&
+      epoch == other.epoch &&
+      supported == other.supported &&
+      readOnly == other.readOnly &&
+      status == other.status &&
+      current == other.current &&
+      slots.length == other.slots.length &&
+      Iterable<int>.generate(slots.length)
+          .every((i) => slots[i] == other.slots[i]);
+
+  @override
+  int get hashCode => Object.hash(driver, epoch, supported, readOnly, status,
+      current, Object.hashAll(slots));
+}
+
 /// Measured audio bands with explicit provenance. Never infer a channel from
 /// the current selection: a null [ch] is a shared/global analyser feed.
 class AudioSpectrumFrame {
@@ -413,6 +569,20 @@ class EngineState {
   Map<int, String> locks = {};
   List<SceneEntry> scenes = [];
   Map<String, List<String>> shows = {};
+  NativeSnapshotsVm? _nativeSnapshots;
+  NativeSnapshotsVm? _nativeSnapshotsCaps;
+
+  NativeSnapshotsVm get nativeSnapshots {
+    if (driver == 'sim') {
+      return const NativeSnapshotsVm.unsupported(driver: 'sim');
+    }
+    if (_nativeSnapshots != null) return _nativeSnapshots!;
+    final caps = _nativeSnapshotsCaps;
+    return caps?.supported == true
+        ? caps!.waiting(connected: connected)
+        : caps ?? NativeSnapshotsVm.unknown(driver: driver);
+  }
+
   List<FxSlot> fx = [];
   List<Map<String, dynamic>> routing = [];
   List<DeviceEntry> devices = [];
@@ -459,6 +629,8 @@ class EngineState {
 
   void _resetDesk() {
     session++;
+    _nativeSnapshots = null;
+    _nativeSnapshotsCaps = null;
     knownValues.clear();
     capsReady = false;
     supportedParams.clear();
@@ -535,7 +707,15 @@ class EngineState {
         // Only a later epoch invalidates state from an older connection.
         final hadEpoch = _syncEpoch != null;
         _syncEpoch = epoch;
-        if (!hadEpoch) return false;
+        if (!hadEpoch) {
+          // Initial attach publishes native observations before its epoch.
+          // Preserve only observations belonging to that same replay.
+          if (_nativeSnapshots != null && _nativeSnapshots!.epoch != epoch) {
+            _nativeSnapshots = null;
+            return true;
+          }
+          return false;
+        }
         _resetDesk();
         return true;
       case 'you':
@@ -598,6 +778,10 @@ class EngineState {
         if (nextDriver != driver) _resetDesk();
         driver = nextDriver;
         capsReady = true;
+        final nativeCaps =
+            NativeSnapshotsVm.fromCaps(driver, e['native_snapshots']);
+        if (!nativeCaps.supported) _nativeSnapshots = null;
+        _nativeSnapshotsCaps = nativeCaps;
         meterTaps = {
           for (final tap in e['meter_taps'] as List? ?? const [])
             if (tap is String) tap,
@@ -747,6 +931,29 @@ class EngineState {
               ],
         };
         return true;
+      case 'native_snapshots':
+        final native = NativeSnapshotsVm.fromJson(e);
+        if (native == null ||
+            native.driver != driver ||
+            (_syncEpoch != null && native.epoch != _syncEpoch)) {
+          return false;
+        }
+        // Attach/resume send link before native reports. Ignore late live
+        // observations after disconnect; only a new connected session may
+        // establish them again. Epoch equality also rejects a late frame
+        // from an earlier connection to the same driver.
+        if (!connected &&
+            (native.status == NativeSnapshotsStatus.ready ||
+                native.status == NativeSnapshotsStatus.loading)) {
+          return false;
+        }
+        if (driver == 'sim' && native.supported) return false;
+        final before = nativeSnapshots;
+        _nativeSnapshots = native;
+        _nativeSnapshotsCaps = native.supported
+            ? native.waiting(connected: connected)
+            : NativeSnapshotsVm.unsupported(driver: driver);
+        return nativeSnapshots != before;
       case 'scenes':
         final raw = (e['scenes'] as List?) ?? const [];
         scenes = [
@@ -819,6 +1026,7 @@ class EngineState {
       case 'link':
         linkIp = e['ip'] as String? ?? '';
         linkState = (e['state'] as String?) ?? linkState;
+        if (linkState != 'connected') _nativeSnapshots = null;
         linkName = (e['name'] as String?) ?? linkName;
         return true;
       case 'locks':

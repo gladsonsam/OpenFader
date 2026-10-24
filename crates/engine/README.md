@@ -178,6 +178,8 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
 - `scenes` (R2): `{"type":"scenes","scenes":[{number,name,current,
   saved_at}...]}` — numbered library slots `001..999` in number order.
   Broadcast after every scene mutation; unicast in the attach snapshot.
+  (Desk-native slots are a separate read-only surface — see
+  `native_snapshots` below and "Native desk snapshots vs app scenes".)
 - `fx` (R2): `{"type":"fx","slots":[{slot,type,on,bypass,ret_label,level,
   params:{id:value}}...]}` — whole-rack state (the rack is small; diffs
   ride the same frame). `params` maps design param ids to normalized
@@ -206,7 +208,8 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   "fx":{`slots`,`types`:[{`id`,`label`,`params`:[{`id`,`label`,`unit`,
   `min`,`max`,`default`,`scale`}]}]},"routing":{`groups`:[{`key`,
   `label`,`count`}],`per_strip`,`supported`},"groups":{`buses`,
-  `subgroups`,`mute_groups`},"files":{`supported`}}`
+  `subgroups`,`mute_groups`},"files":{`supported`},
+  "native_snapshots":{`supported`,`read_only`}? (skipped while unsupported)}`
   — supported catalogue entries (v2: 176 ids) plus the rest in catalogue
   order; `scope` is the legacy single-scope tag (kept for back-compat),
   `scopes` the v2 strip-kind set the id applies to (the poller filters on
@@ -270,6 +273,21 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   base64 `data` (`size` = decoded bytes); `file_upload` replies are acks
   (`data` absent, `size` = bytes written). `data` is skipped on the wire
   while absent.
+- `native_snapshots`: `{"type":"native_snapshots","driver","supported",
+  "read_only","status","slots":[{"slot","name"}...],"current":N|null,
+  "epoch":G}` — read-only native desk snapshot slots (`unsupported`|
+  `unavailable`|`loading`|`ready`; `read_only` always true when
+  supported; `current` `null` until a desk recall is observed, never
+  slot 0). `epoch` is the ENGINE connection generation (matches the
+  `SyncEpoch` barrier, NOT the RTA epoch): the frontend strictly rejects
+  missing/mismatched epochs, so a stale sample racing a newer
+  `SyncEpoch` is dropped, never applied. Slot ids are raw native `u32`
+  (no verified base — native `0` may exist as Default, unverified; no
+  invented bounds/labels/count). `ready` means PARTIAL observed metadata
+  only — never a full inventory. Unicast in the
+  attach/resume snapshots (after the param plane); broadcast on change
+  from the meter ticker (no param fanout). See "Native desk snapshots
+  vs app scenes" — never confuse with the app-local `scenes` library.
 
 Unicast vs broadcast: `you`, `list_shows` replies, denials, `recalled`,
 command errors → sender only. Everything else → every client.
@@ -277,7 +295,7 @@ command errors → sender only. Everything else → every client.
 ## Ordering guarantees
 - Attach snapshot order: `you`, `state`, `shows`, `clients`, `locks`,
   slim `caps` (full catalogue on first `hello`), `devices`, `link`, `info` (when the driver answers), `scenes`,
-  `fx`, `routing`, `params…`. The R1 six-frame prefix is unchanged.
+  `fx`, `routing`, `params…`, `native_snapshots`. The R1 six-frame prefix is unchanged.
 - A command's unicast reply (or error) is delivered to the sender *before*
   that command's broadcasts (mirrors the relay socket, which sent the
   reply inline before flushing broadcasts). Broadcasts from one command
@@ -536,6 +554,46 @@ under `EngineConfig::data_dir` (`--data-dir` on the relay; created on
 first save, reloaded in `Engine::new`, corrupt files read back empty);
 without a data dir scenes are in-memory only. The design's
 Confirm/Instant recall mode is a UI concern (no engine state).
+
+### Native desk snapshots vs app scenes (read-only)
+
+Separate from the app-local library above, a driver that models the
+desk's own snapshot slots exposes them read-only through the
+`native_snapshots` event:
+`{"type":"native_snapshots","driver","supported","read_only":true,
+"status","slots":[{"slot","name"}...],"current":N|null,"epoch":G}`.
+`caps.native_snapshots` carries `{supported, read_only}` alongside
+(skipped on the wire while unsupported, so old `caps` frames stay
+byte-identical). `status` is `unsupported` (driver models no native
+slots — sim and xair: never faked), `unavailable` (modelled but no
+live desk session, e.g. after `disconnect`), `loading` (live session
+but no slot data pushed yet) or `ready` (push-observed PARTIAL metadata
+only: `slots` empty with `current: Some(n)` proves only the last
+reported recall, never a full inventory or a non-empty desk — ANY push
+means partial observed metadata, never an evidenced-empty desk or a
+full catalogue). `slots`
+holds ONLY desk-pushed ids/names in id order (native raw `u32` ids
+intact — no verified base, native `0` unverified, no invented
+bounds/labels/count); `current` is the
+last desk-observed recall slot (`null` = no recall observed, never a
+slot-0 default). `epoch` is the ENGINE connection generation (the same
+barrier as `sync_epoch`, NOT the RTA epoch): the frontend strictly
+rejects missing/mismatched epochs, and the ticker broadcasts under the
+`sync_state` barrier so an old sample never lands after a newer
+`SyncEpoch`. There is deliberately NO write path: no
+recall/save/delete command, no `Show.zip` transfer (the driver's
+`refresh_snapshot_names` side effect stays uncalled), no free-slot
+allocator, no probe — the UI renders this surface as read-only status.
+The frame rides the attach/resume snapshots (after the param plane)
+and re-broadcasts on change from the existing meter ticker only (no
+new timer/task; no audio-param fanout — it carries no strip params).
+Unverified hardware limits (DL32S): slot names arrive only when the
+desk pushes a rename relay, and the current marker only on a recall
+relay — a fresh connect normally reads `loading` until someone
+recalls/renames on the desk or in Master Fader (the init bulk carries
+no slot table, and the engine never downloads `Show.zip` to fill the
+gap). Own saves are acceptance-only and never populate this view, so
+an optimistic local save must not be read as desk proof.
 
 ## FX racks (R2)
 
