@@ -62,7 +62,9 @@ class MixerToolbar extends StatelessWidget {
                             children: [
                               Text(
                                   channel == null
-                                      ? 'Connecting…'
+                                      ? controller.connected
+                                          ? 'No channel selected'
+                                          : 'Connecting…'
                                       : _targetLabel(channel),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -249,7 +251,9 @@ class _SelectedLevel extends StatelessWidget {
     return Semantics(
         button: onEdit != null,
         label: ch == null
-            ? 'Connecting'
+            ? controller.connected
+                ? 'No channel selected'
+                : 'Connecting'
             : '${_targetLabel(ch)} ${_controlLabel(control)}, $text, activate to type a value',
         onTap: onEdit,
         child: GestureDetector(
