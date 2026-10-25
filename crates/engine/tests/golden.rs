@@ -128,6 +128,7 @@ fn examples() -> Vec<(String, Value)> {
                         unit: "dB".to_string(),
                         default: json!(20.0),
                         label: "Gain".to_string(),
+                        presentations: Vec::new(),
                     },
                     openfader_engine::protocol::ParamDef {
                         id: "phantom".to_string(),
@@ -139,6 +140,7 @@ fn examples() -> Vec<(String, Value)> {
                         unit: String::new(),
                         default: json!(false),
                         label: "Phantom".to_string(),
+                        presentations: Vec::new(),
                     },
                 ],
                 unsupported: vec!["usbreturn".to_string()],

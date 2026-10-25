@@ -104,6 +104,9 @@ pub trait DynDriver: Send + Sync {
     fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
         &[]
     }
+    fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
+        &[]
+    }
     fn meter_taps(&self) -> &'static [&'static str];
     fn bus_count(&self) -> u8;
     fn subgroup_count(&self) -> u8;
@@ -499,6 +502,9 @@ macro_rules! impl_dyn_driver {
         }
         fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
             MixerDriver::param_range_overrides(self)
+        }
+        fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
+            MixerDriver::param_presentations(self)
         }
         async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()> {
             MixerDriver::set_spectrum_target(self, owner, strip).await

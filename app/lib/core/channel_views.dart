@@ -58,6 +58,52 @@ List<double>? parameterRange(Map<String, dynamic>? metadata) {
   return [min.toDouble(), max.toDouble()];
 }
 
+typedef ParameterChoice = ({double value, String label});
+
+List<ParameterChoice> parameterChoices(Map<String, dynamic>? metadata) {
+  final rows = metadata?['choices'];
+  if (rows is! List) return const [];
+  return [
+    for (final row in rows)
+      if (row is Map &&
+          row['value'] is num &&
+          (row['value'] as num).isFinite &&
+          row['label'] is String)
+        (
+          value: (row['value'] as num).toDouble(),
+          label: row['label'] as String
+        ),
+  ];
+}
+
+/// Resolve provider presentations against this strip's current values.
+/// Unknown model state disables edits until hydration supplies it.
+Map<String, dynamic>? parameterPresentation(
+    Map<String, dynamic>? metadata, double? Function(String) value) {
+  if (metadata == null) return null;
+  final rows = metadata['presentations'];
+  if (rows is! List || rows.isEmpty) return metadata;
+  final result = Map<String, dynamic>.of(metadata);
+  for (final row in rows) {
+    if (row is! Map) continue;
+    final when = row['when'];
+    if (when is Map) {
+      final id = when['id'];
+      final expected = when['value'];
+      if (id is! String || expected is! num) continue;
+      final actual = value(id);
+      if (actual == null) {
+        result['available'] = false;
+        continue;
+      }
+      if ((actual - expected).abs() > .0001) continue;
+    }
+    result['hidden'] = row['hidden'] == true;
+    result['choices'] = row['choices'];
+  }
+  return result;
+}
+
 /// Offline simulator DSP limits, matching crates/core/src/params.rs.
 /// These are simulator catalogue values, never a hardware fallback.
 List<double>? canonicalSimDspRange(String leaf) {

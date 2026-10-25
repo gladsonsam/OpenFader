@@ -2206,9 +2206,20 @@ impl Engine {
             .filter(|id| !dropped.contains(&(driver.clone(), id.to_string())))
             .filter(|id| !slim || is_essentials_id(id))
             .collect();
+        let presentations = self.drv(&driver).param_presentations();
         let params: Vec<ParamDef> = live
             .iter()
-            .filter_map(|id| reg.find(id).map(param_def_frame))
+            .filter_map(|id| reg.find(id).map(|def| {
+                let mut frame = param_def_frame(def);
+                frame.presentations = presentations.iter().filter(|p| p.id == def.id).map(|p| {
+                    json!({
+                        "when": p.when.map(|(id, value)| json!({"id": id, "value": value})),
+                        "hidden": p.hidden,
+                        "choices": p.choices.iter().map(|c| json!({"value": c.value, "label": c.label})).collect::<Vec<_>>()
+                    })
+                }).collect();
+                frame
+            }))
             .collect();
         let mut unsupported: Vec<String> = reg
             .iter()
@@ -7337,6 +7348,7 @@ fn param_def_frame(def: &params::ParamDef) -> ParamDef {
         unit: def.unit.to_string(),
         default: param_value_json(&def.default.as_param_value()),
         label: def.label.to_string(),
+        presentations: Vec::new(),
     }
 }
 
