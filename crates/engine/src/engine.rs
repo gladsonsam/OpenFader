@@ -2215,6 +2215,7 @@ impl Engine {
                     json!({
                         "when": p.when.map(|(id, value)| json!({"id": id, "value": value})),
                         "hidden": p.hidden,
+                        "curve": p.curve,
                         "choices": p.choices.iter().map(|c| json!({"value": c.value, "label": c.label})).collect::<Vec<_>>()
                     })
                 }).collect();

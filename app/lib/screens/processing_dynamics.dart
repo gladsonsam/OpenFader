@@ -416,8 +416,19 @@ class _DynamicsGeometry {
         'thr' =>
           Offset(x(d.thr), y(d.thr + (d.kind == DynKind.comp ? d.makeup : 0))),
         'ratio' => Offset(x(0), y(compOut(d, 0))),
+        'range' => Offset(x(d.thr), y(d.thr - d.range)),
         _ => Offset(x(-80), y(-80 + d.makeup)),
       };
+  List<String> handles(ChannelDynVm d) => [
+        if (d.kind == DynKind.gate &&
+            d.responseCurve == 'gate_attenuation' &&
+            d.ranges['range'] != null &&
+            d.thr - d.range >= -80 &&
+            d.range / 80 * height >= 44)
+          'range',
+        'thr',
+        if (d.kind == DynKind.comp) ...['makeup', 'ratio'],
+      ];
   double meterX(int i) =>
       size.width *
       (compact
@@ -469,10 +480,7 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
                           widget.reduction,
                           widget.compact,
                           ConsolePalette.of(context)))),
-              for (final prop in [
-                'thr',
-                if (widget.dyn.kind == DynKind.comp) ...['ratio', 'makeup']
-              ])
+              for (final prop in geom.handles(widget.dyn))
                 Positioned(
                     left: (geom.node(widget.dyn, prop).dx - 22)
                         .clamp(0, size.width - 44),
@@ -485,11 +493,13 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
                         label: switch (prop) {
                           'thr' => 'Threshold',
                           'ratio' => 'Ratio',
+                          'range' => 'Range',
                           _ => 'Gain'
                         },
                         value: switch (prop) {
                           'thr' => '${widget.dyn.thr} dB',
                           'ratio' => '${widget.dyn.ratio}:1',
+                          'range' => '${widget.dyn.range} dB',
                           _ => '${widget.dyn.makeup} dB'
                         },
                         enabled: widget.enabled(prop),
@@ -507,6 +517,7 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
                                   _drag = switch (prop) {
                                     'thr' => widget.dyn.thr,
                                     'ratio' => widget.dyn.ratio,
+                                    'range' => widget.dyn.range,
                                     _ => widget.dyn.makeup,
                                   };
                                 },
@@ -519,11 +530,13 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
                                   if (range == null) return;
                                   final delta = prop == 'thr'
                                       ? event.delta.dx / geom.width * 80
-                                      : -event.delta.dy /
-                                          geom.height *
-                                          (prop == 'ratio'
-                                              ? -(range.last - range.first)
-                                              : 80);
+                                      : prop == 'range'
+                                          ? event.delta.dy / geom.height * 80
+                                          : -event.delta.dy /
+                                              geom.height *
+                                              (prop == 'ratio'
+                                                  ? -(range.last - range.first)
+                                                  : 80);
                                   _drag = (_drag! + delta)
                                       .clamp(range.first, range.last);
                                   widget.onChanged(prop, _drag!);
@@ -586,7 +599,13 @@ class _DynamicsPainter extends CustomPainter {
           ..color = palette.panShape
           ..strokeWidth = 1.5);
     final curve = Path();
-    if (dyn.kind == DynKind.gate) {
+    if (dyn.kind == DynKind.gate && dyn.responseCurve == 'gate_attenuation') {
+      final points = dynCurve(dyn);
+      curve.moveTo(g.x(points.first.$1), g.y(points.first.$2));
+      for (final point in points.skip(1)) {
+        curve.lineTo(g.x(point.$1), g.y(point.$2));
+      }
+    } else if (dyn.kind == DynKind.gate) {
       curve.moveTo(g.x(dyn.thr), g.y((dyn.thr - dyn.range).clamp(-80, 0)));
       curve.lineTo(g.x(dyn.thr), g.y(dyn.thr));
       curve.lineTo(g.x(0), g.y(0));
@@ -602,20 +621,20 @@ class _DynamicsPainter extends CustomPainter {
     }
     final fill = Path.from(curve)
       ..lineTo(g.x(0), g.y(-80))
-      ..lineTo(dyn.kind == DynKind.gate ? g.x(dyn.thr) : g.x(-80), g.y(-80))
+      ..lineTo(
+          dyn.kind == DynKind.gate && dyn.responseCurve != 'gate_attenuation'
+              ? g.x(dyn.thr)
+              : g.x(-80),
+          g.y(-80))
       ..close();
-    canvas.drawPath(
-        fill, Paint()..color = palette.eqPreviewFill.withValues(alpha: .85));
+    canvas.drawPath(fill, Paint()..color = palette.dynamicsFill);
     canvas.drawPath(
         curve,
         Paint()
           ..color = palette.cyan
           ..strokeWidth = 2
           ..style = PaintingStyle.stroke);
-    for (final prop in [
-      'thr',
-      if (dyn.kind == DynKind.comp) ...['makeup', 'ratio']
-    ]) {
+    for (final prop in g.handles(dyn)) {
       final p = g.node(dyn, prop);
       final r = compact ? 21.0 : (size.width * 48 / 1280).clamp(22.0, 48.0);
       canvas.drawCircle(p, r, Paint()..color = palette.chip);
@@ -626,7 +645,8 @@ class _DynamicsPainter extends CustomPainter {
             ..color = palette.cyan
             ..strokeWidth = 2
             ..style = PaintingStyle.stroke);
-      text(switch (prop) { 'thr' => 'T', 'ratio' => 'R', _ => 'G' }, p,
+      text(switch (prop) { 'thr' => 'T', 'ratio' || 'range' => 'R', _ => 'G' },
+          p,
           color: palette.text1, font: compact ? 17 : r * .8);
     }
     // No synthetic detector: missing GR also leaves derived OUT unavailable.
