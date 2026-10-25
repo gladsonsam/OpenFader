@@ -2811,15 +2811,33 @@ class AppStore extends ChangeNotifier
   @override
   void setMainAssigned(bool on) => cmdParam('lr_assign', on);
   @override
-  int get dcaCount => [
-        for (var n = 1; n <= 16; n++)
-          if (engine.supportedParams.contains('dca${n}_assign')) n
-      ].fold(0, math.max);
+  int get dcaCount => _assignmentCount('dca');
+
+  int _assignmentCount(String family) {
+    final pattern = RegExp('^$family([1-9][0-9]*)_assign\$');
+    return engine.supportedParams
+        .map((id) => int.tryParse(pattern.firstMatch(id)?.group(1) ?? ''))
+        .whereType<int>()
+        .fold(0, math.max);
+  }
+
   @override
   bool? dcaAssigned(int group) => paramBool('dca${group + 1}_assign');
   @override
   void setDcaAssigned(int group, bool on) =>
       cmdParam('dca${group + 1}_assign', on);
+
+  @override
+  int get viewGroupCount => _assignmentCount('view');
+  @override
+  bool? viewGroupAssigned(int group) => paramBool('view${group + 1}_assign');
+  @override
+  String viewGroupLabel(int group) =>
+      paramMetadata('view${group + 1}_assign')?['label'] as String? ??
+      'View ${group + 1}';
+  @override
+  void setViewGroupAssigned(int group, bool on) =>
+      cmdParam('view${group + 1}_assign', on);
 
   @override
   void setCompSoftKnee(bool soft) => cmdParam(
