@@ -6,6 +6,11 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val ciDevelopmentKeystore = providers.environmentVariable("OPENFADER_ANDROID_DEVELOPMENT_KEYSTORE").orNull
+if (System.getenv("GITHUB_ACTIONS") == "true" && ciDevelopmentKeystore.isNullOrBlank()) {
+    error("Android CI requires the persistent development signer; run the signer restore step first.")
+}
+
 android {
     namespace = "com.openfader.app"
     // permission_handler_android 13.x metadata requires API 37.
@@ -32,11 +37,23 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (!ciDevelopmentKeystore.isNullOrBlank()) {
+            create("ciDevelopment") {
+                storeFile = file(ciDevelopmentKeystore)
+                storePassword = "android"
+                keyAlias = "androiddebugkey"
+                keyPassword = "android"
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // CI retains its dedicated development certificate across runners.
+            // Local builds keep the developer's existing debug signer.
+            signingConfig = signingConfigs.getByName(
+                if (ciDevelopmentKeystore.isNullOrBlank()) "debug" else "ciDevelopment")
         }
     }
 }
