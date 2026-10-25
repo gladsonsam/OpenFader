@@ -135,10 +135,10 @@ fn input_head() -> Vec<Field> {
         // range remains the documented -80..0. Neither endpoint nor
         // out-of-range clamp behavior is established by these limits.
         field("gate_threshold", 19, Db, "Gate threshold", Some((-120.0, 0.0)), true),
-        field("gate_attack", 20, Float, "Gate attack ms", None, false),
-        field("gate_release", 21, Float, "Gate release ms", None, false),
-        field("gate_range", 22, Float, "Gate range", None, false),
-        field("gate_hold", 23, Float, "Gate hold ms", None, false),
+        field("gate_attack", 20, Float, "Gate attack ms", Some((0.1, 300.0)), true),
+        field("gate_release", 21, Float, "Gate release ms", Some((50.0, 3000.0)), true),
+        field("gate_range", 22, Float, "Gate range dB", Some((0.0, 60.0)), true),
+        field("gate_hold", 23, Float, "Gate hold ms", Some((0.0, 5000.0)), true),
         field("comp_mode", 24, Enum, "Comp modern/vintage", None, true),
         field("comp_on", 25, Bool, "Comp on", None, true),
         // Master Fader 5.1 p112 documents comp gain 0..20 dB (the absent
@@ -428,7 +428,7 @@ mod tests {
         assert!(block.field("phantom").unwrap().verified);
         assert!(block.field("hpf_freq").unwrap().verified);
         assert!(block.field("gate_threshold").unwrap().verified);
-        assert!(!block.field("gate_attack").unwrap().verified);
+        assert!(block.field("gate_attack").unwrap().verified);
         assert!(!block.field("comp_gain").unwrap().verified);
         assert!(block.field("eq4_gain").unwrap().verified);
         assert!(block.field("aux8_mute").unwrap().verified);

@@ -31,6 +31,24 @@
 
 use crate::{ParamValue, StripKind};
 
+/// A provider-labelled value. Values retain their native engineering units.
+#[derive(Clone, Copy, Debug)]
+pub struct ParamChoice {
+    pub value: f32,
+    pub label: &'static str,
+}
+
+/// Optional presentation for a parameter, selected by another parameter's
+/// value on the same strip. Providers own model names and model-specific
+/// controls; consumers must not infer them from a provider name.
+#[derive(Clone, Copy, Debug)]
+pub struct ParamPresentation {
+    pub id: &'static str,
+    pub when: Option<(&'static str, f32)>,
+    pub choices: &'static [ParamChoice],
+    pub hidden: bool,
+}
+
 /// Value kind of one catalogue entry, as rendered in the relay `caps` frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParamKind {

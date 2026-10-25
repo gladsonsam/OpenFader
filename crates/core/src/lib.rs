@@ -696,6 +696,11 @@ pub trait MixerDriver: Send + Sync {
         &[]
     }
 
+    /// Provider-owned labels and conditional choices for model-specific DSP.
+    fn param_presentations(&self) -> &'static [crate::params::ParamPresentation] {
+        &[]
+    }
+
     /// Ordered strip families in the global strip index space
     /// (`caps.topology`). Default is one `in` family covering
     /// [`MixerDriver::channel_count`] so drivers that have not grown

@@ -628,6 +628,7 @@ String _eqFreqText(ChannelStore store, int band) {
 }
 
 List<double>? _controlRange(ChannelStore store, String leaf) {
+  if (parameterChoices(store.paramMetadata(leaf)).isNotEmpty) return null;
   if (!store.supports(leaf) || store.paramNum(leaf)?.isFinite != true) {
     return null;
   }
@@ -680,6 +681,13 @@ ChannelFocus _eqQFocus(ChannelStore store, int band) => _parameterFocus(
     (v) => store.setEqParam(band, 'q', v));
 
 String _dynLiveText(ChannelStore store, DynKind kind, String prop) {
+  final value = store.paramNum('${kind.name}_$prop');
+  for (final choice
+      in parameterChoices(store.paramMetadata('${kind.name}_$prop'))) {
+    if (value != null && (choice.value - value).abs() < .0001) {
+      return choice.label;
+    }
+  }
   final d = kind == DynKind.gate ? store.gate : store.comp;
   switch (prop) {
     case 'thr':
