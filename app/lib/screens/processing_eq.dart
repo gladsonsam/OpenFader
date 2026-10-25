@@ -25,7 +25,7 @@ class _EqTabState extends State<_EqTab> {
     final value = switch (prop) { 'g' => band.g, 'f' => band.f, _ => band.q };
     final min = range?.first ?? 0;
     final max = range?.last ?? 1;
-    final focus = switch (prop) {
+    ChannelFocus focus() => switch (prop) {
       'g' => _eqGainFocus(widget.store, band.band),
       'f' => eqFreqFocus(widget.store, band.band),
       _ => _eqQFocus(widget.store, band.band),
@@ -34,7 +34,7 @@ class _EqTabState extends State<_EqTab> {
         padding: const EdgeInsets.only(top: 6),
         child: _ProcessingSlider(
             label: label,
-            text: focus.text(),
+            text: focus().text(),
             value: value,
             min: min,
             max: max,
@@ -44,10 +44,11 @@ class _EqTabState extends State<_EqTab> {
             enabled: range != null,
             onFocus: () {
               _pick(band.band);
-              widget.onFocus(focus);
+              widget.onFocus(focus());
             },
             onChanged: (v) {
               widget.store.setEqParam(band.band, prop, v);
+              widget.onFocus(focus());
             }));
   }
 
@@ -79,6 +80,7 @@ class _EqTabState extends State<_EqTab> {
                   onFocus: () => widget.onFocus(eqFreqFocus(store, 0)),
                   onChanged: (v) {
                     store.setEqParam(0, 'f', v);
+                    widget.onFocus(eqFreqFocus(store, 0));
                   })),
         ]));
   }
@@ -210,10 +212,11 @@ class _EqTabState extends State<_EqTab> {
                           store.setEqParam(band, 'f', f);
                           store.setEqParam(band, 'g', g);
                         }
+                        widget.onFocus(eqFreqFocus(store, band));
                       },
                       onQ: (band, q) {
-                        widget.onFocus(_eqQFocus(store, band));
                         store.setEqParam(band, 'q', q);
+                        widget.onFocus(_eqQFocus(store, band));
                       },
                     ),
                     if (frame != null)

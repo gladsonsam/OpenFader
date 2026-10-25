@@ -15,10 +15,6 @@ class _DynTab extends StatelessWidget {
         ? ProcessorPresetKind.gate
         : ProcessorPresetKind.compressor;
     final knobs = _dynKnobs(kind, d).where((k) => k.prop != 'knee').toList();
-    void apply(_KnobDef k, double v) {
-      store.setDynParam(kind, k.prop, v);
-    }
-
     void focus(_KnobDef k) => onFocus(_parameterFocus(
         store,
         '${kind.name}_${k.prop}',
@@ -26,6 +22,19 @@ class _DynTab extends StatelessWidget {
         k.label,
         () => _dynLiveText(store, kind, k.prop),
         (v) => store.setDynParam(kind, k.prop, v)));
+    void apply(_KnobDef k, double v) {
+      store.setDynParam(kind, k.prop, v);
+      focus(k);
+    }
+
+    void focusDelay() => onFocus(ChannelFocus(
+        title: 'Compressor',
+        label: 'Delay',
+        text: () => '${store.preamp.delayMs.toStringAsFixed(1)} ms',
+        entryText: () => store.preamp.delayMs.toStringAsFixed(1),
+        min: 0,
+        max: 100,
+        apply: (v) => store.setPreamp('delay_ms', v)));
     Widget control(_KnobDef k, {bool threshold = false}) => Container(
         padding: EdgeInsets.symmetric(
             horizontal: compact ? 12 : 16, vertical: compact ? 8 : 16),
@@ -120,15 +129,11 @@ class _DynTab extends StatelessWidget {
                   color: ConsolePalette.of(context).processingPurple,
                   solidFill: true,
                   valueColor: ConsolePalette.of(context).text1,
-                  onFocus: () => onFocus(ChannelFocus(
-                      title: 'Compressor',
-                      label: 'Delay',
-                      text: () =>
-                          '${store.preamp.delayMs.toStringAsFixed(1)} ms',
-                      min: 0,
-                      max: 100,
-                      apply: (v) => store.setPreamp('delay_ms', v))),
-                  onChanged: (v) => store.setPreamp('delay_ms', v)))),
+                  onFocus: focusDelay,
+                  onChanged: (v) {
+                    store.setPreamp('delay_ms', v);
+                    focusDelay();
+                  }))),
     ]);
     return LayoutBuilder(builder: (context, bounds) {
       final scale = bounds.maxWidth / 1292;
