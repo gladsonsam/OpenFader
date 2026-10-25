@@ -839,7 +839,9 @@ class AppStore extends ChangeNotifier
           key: strip.key,
           driver: engine.driver,
           family: family,
-          name: strip.name,
+          name: strip.name.isEmpty
+              ? strip.key.replaceAll('/', '').toUpperCase()
+              : strip.name,
           kind: kind);
       _presetTargets[target] = _presetGeneration;
       return presetTargetError(target) == null ? target : null;
