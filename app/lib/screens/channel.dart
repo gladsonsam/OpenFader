@@ -682,6 +682,9 @@ ChannelFocus _eqQFocus(ChannelStore store, int band) => _parameterFocus(
 
 String _dynLiveText(ChannelStore store, DynKind kind, String prop) {
   final value = store.paramNum('${kind.name}_$prop');
+  final label =
+      parameterValueLabel(store.paramMetadata('${kind.name}_$prop'), value);
+  if (label != null) return label;
   for (final choice
       in parameterChoices(store.paramMetadata('${kind.name}_$prop'))) {
     if (value != null && (choice.value - value).abs() < .0001) {

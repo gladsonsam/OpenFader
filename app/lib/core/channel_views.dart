@@ -76,6 +76,16 @@ List<ParameterChoice> parameterChoices(Map<String, dynamic>? metadata) {
   ];
 }
 
+/// Special numeric labels do not turn a continuous field into an enum.
+String? parameterValueLabel(Map<String, dynamic>? metadata, double? value) {
+  if (value == null) return null;
+  for (final label
+      in parameterChoices({'choices': metadata?['value_labels']})) {
+    if ((label.value - value).abs() < .0001) return label.label;
+  }
+  return null;
+}
+
 /// Resolve provider presentations against this strip's current values.
 /// Unknown model state disables edits until hydration supplies it.
 Map<String, dynamic>? parameterPresentation(
@@ -100,6 +110,7 @@ Map<String, dynamic>? parameterPresentation(
     }
     result['hidden'] = row['hidden'] == true;
     result['choices'] = row['choices'];
+    result['value_labels'] = row['value_labels'];
     result['curve'] = row['curve'];
   }
   return result;
