@@ -589,7 +589,6 @@ class ChannelPreampVm {
   final double gain; // dB
   final double trim; // dB
   final bool phantom;
-  final bool phantomArmed;
   final bool invert;
   final double delayMs;
   final bool delayOn;
@@ -599,7 +598,6 @@ class ChannelPreampVm {
     this.gain = 30,
     this.trim = 0,
     this.phantom = false,
-    this.phantomArmed = false,
     this.invert = false,
     this.delayMs = 0,
     this.delayOn = false,

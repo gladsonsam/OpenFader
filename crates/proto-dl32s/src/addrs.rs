@@ -103,9 +103,8 @@ fn input_head() -> Vec<Field> {
         field("source_a", 0, Int, "Input A source", None, true),
         field("source_b", 1, Int, "Input B source", None, true),
         field("source_select", 2, Enum, "Source A/B", None, true),
-        // manufacturer mixer software 5.1 p91 documents trim -40..+20 dB (the inherited
-        // -30..+30 was not established by endpoint tests). Documentation-based: endpoint
-        // hardware tests pending.
+        // CH7 trim endpoints -40..+20 dB independently read and restored
+        // against native manufacturer mixer software, 2026-10-25 (manual 5.1 p91).
         field("trim", 3, Db, "Trim", Some((-40.0, 20.0)), true),
         field("icon", 4, Int, "Icon", None, true),
         field("colour", 5, Int, "Colour", None, true),

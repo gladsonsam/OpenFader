@@ -35,6 +35,7 @@ enum ChannelTab { input, gate, comp, eq }
 abstract class ChannelStore extends ChangeNotifier
     implements ChannelNameStore, ProcessorPresetStore {
   String get stripKey;
+  int get connectionEpoch;
   String get displayName;
 
   String get channelNumber;
