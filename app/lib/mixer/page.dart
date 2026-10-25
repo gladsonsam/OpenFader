@@ -191,7 +191,8 @@ class _MixerPageState extends State<MixerPage> {
                                       child: channels.isEmpty
                                           ? Center(
                                               child: Text(
-                                                  'Waiting for channels…',
+                                                  controller
+                                                      .store.emptyBankMessage,
                                                   style:
                                                       mixerType(context, 16)))
                                           : ScrollConfiguration(

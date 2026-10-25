@@ -1783,7 +1783,13 @@ class AppStore extends ChangeNotifier
     // Push any control traffic (local optimistic writes already did; echoes
     // land here) into the stable per-strip notifiers. ValueNotifiers only
     // wake their own strip; the shell/page ListenableBuilders stay quiet.
-    if (dirty) _invalidateDerived();
+    if (dirty) {
+      _invalidateDerived();
+      if (_bank.startsWith('view:') && !banks.any((b) => b.key == _bank)) {
+        _bank = _bankRanges.keys.firstOrNull ?? 'ch1';
+        _invalidateDerived();
+      }
+    }
     if (controlsTouched || dirty) _syncControlNotes();
     if (dirty) notifyListeners();
   }
@@ -2004,9 +2010,19 @@ class AppStore extends ChangeNotifier
     final cached = _stripsCache;
     if (cached != null) return cached;
     final range = _bankRanges[_bank];
-    final visible = range == null
-        ? engine.strips
-        : engine.strips.where((s) => s.ch >= range.$1 && s.ch < range.$2);
+    final leaf = _selectedViewLeaf;
+    final Iterable<Strip> visible;
+    if (leaf != null) {
+      visible = _viewMembershipReady(leaf)
+          ? _viewCandidates(leaf).where((s) => _viewMember(s.ch, leaf) == true)
+          : const <Strip>[];
+    } else if (_bank == 'view:all') {
+      visible = engine.strips;
+    } else {
+      visible = range == null
+          ? engine.strips
+          : engine.strips.where((s) => s.ch >= range.$1 && s.ch < range.$2);
+    }
     final built = List<Strip>.unmodifiable(visible.map((s) => Strip(
           ch: s.ch,
           key: s.key,
@@ -2016,6 +2032,68 @@ class AppStore extends ChangeNotifier
         )));
     _stripsCache = built;
     return built;
+  }
+
+  List<String> get _viewLeaves {
+    final pattern = RegExp(r'^view([1-9][0-9]*)_assign$');
+    final leaves = engine.supportedParams.where(pattern.hasMatch).toList();
+    leaves.sort((a, b) => int.parse(pattern.firstMatch(a)![1]!)
+        .compareTo(int.parse(pattern.firstMatch(b)![1]!)));
+    return leaves;
+  }
+
+  String? get _selectedViewLeaf =>
+      _bank.startsWith('view:') && _bank != 'view:all'
+          ? _bank.substring(5)
+          : null;
+
+  String _viewLabel(String leaf) =>
+      engine.parameterMetadata[leaf]?['label'] as String? ??
+      'View ${RegExp(r'\d+').firstMatch(leaf)?.group(0) ?? ''}';
+
+  // A provider may expose View memberships on only some strip families.
+  // Hydration/readiness must not wait for unsupported leaves on other families.
+  Iterable<Strip> _viewCandidates(String leaf) {
+    final scopes = engine.parameterMetadata[leaf]?['scopes'];
+    return engine.strips.where((strip) {
+      if (strip.key == 'main') return false;
+      if (scopes is! List || scopes.isEmpty) return true;
+      for (final family in engine.topology) {
+        final first = (family['first'] as num?)?.toInt() ?? 0;
+        final count = (family['count'] as num?)?.toInt() ?? 0;
+        if (strip.ch < first || strip.ch >= first + count) continue;
+        final tags = family['params_scope'];
+        return tags is List
+            ? tags.any(scopes.contains)
+            : scopes.contains(family['kind']);
+      }
+      return false;
+    });
+  }
+
+  bool? _viewMember(int ch, String leaf) {
+    if (!engine.valueKnown(ch, leaf)) return null;
+    final value = ps.optimisticValue(_maps, ch, leaf);
+    return value is bool ? value : null;
+  }
+
+  bool _viewMembershipReady(String leaf) =>
+      engine.connected &&
+      engine.capsReady &&
+      engine.supportedParams.contains(leaf) &&
+      engine.strips.isNotEmpty &&
+      _viewCandidates(leaf).every((s) => _viewMember(s.ch, leaf) != null);
+
+  @override
+  String get emptyBankMessage {
+    final leaf = _selectedViewLeaf;
+    if (leaf == null) return 'Waiting for channels…';
+    final label = _viewLabel(leaf);
+    if (!_viewMembershipReady(leaf)) return 'Waiting for $label membership…';
+    final scopes = engine.parameterMetadata[leaf]?['scopes'];
+    final inputs =
+        scopes is List && scopes.isNotEmpty && scopes.every((s) => s == 'in');
+    return 'No ${inputs ? 'input channels' : 'channels'} in $label.';
   }
 
   Map<String, (int, int)> get _bankRanges {
@@ -2230,6 +2308,19 @@ class AppStore extends ChangeNotifier
                         entry.value.$1)['label'] as String,
             color: const ConsolePalette().lime,
             text: const ConsolePalette().onAccent),
+      if (_viewLeaves.isNotEmpty) ...[
+        MixerBank(
+            key: 'view:all',
+            label: 'All channels',
+            color: const ConsolePalette().lime,
+            text: const ConsolePalette().onAccent),
+        for (final leaf in _viewLeaves)
+          MixerBank(
+              key: 'view:$leaf',
+              label: _viewLabel(leaf),
+              color: const ConsolePalette().lime,
+              text: const ConsolePalette().onAccent),
+      ],
     ]);
     _banksCache = built;
     return built;
@@ -2449,6 +2540,7 @@ class AppStore extends ChangeNotifier
 
   @override
   void setBank(String key) {
+    if (!banks.any((bank) => bank.key == key)) return;
     _bank = key;
     _invalidateDerived();
     notifyListeners();

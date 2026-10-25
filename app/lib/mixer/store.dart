@@ -57,6 +57,7 @@ abstract class MixerStore extends ChangeNotifier implements ChannelNameStore {
   String get masterName;
   List<MixerBank> get banks;
   String get bank;
+  String get emptyBankMessage;
   List<MixerBusRow> get busRows;
 
   /// Stable per-strip control notifiers, updated in place on the hot path
