@@ -312,6 +312,9 @@ class _InputAssignments extends StatelessWidget {
   final bool wide;
   const _InputAssignments({required this.store, required this.wide});
 
+  String _summaryLabel(String family, String label) =>
+      label.startsWith('$family ') ? label : '$family: $label';
+
   @override
   Widget build(BuildContext context) {
     final assignmentFont = wide && store.viewGroupCount > 0 ? 14.0 : 16.0;
@@ -341,7 +344,7 @@ class _InputAssignments extends StatelessWidget {
         for (var g = 0; g < store.dcaCount; g++)
           _ProcessingButton(
               fontSize: assignmentFont,
-              label: 'VCA ${g + 1}',
+              label: store.dcaGroupLabel(g),
               active: store.dcaAssigned(g) == true,
               onTap: store.dcaAssigned(g) == null
                   ? null
@@ -376,11 +379,13 @@ class _InputAssignments extends StatelessWidget {
       for (var g = 0; g < store.subgroupCount; g++)
         if (store.subgroupAssigned(g) == true) 'Sub ${g + 1}',
       for (var g = 0; g < store.dcaCount; g++)
-        if (store.dcaAssigned(g) == true) 'VCA ${g + 1}',
+        if (store.dcaAssigned(g) == true)
+          _summaryLabel('VCA', store.dcaGroupLabel(g)),
       for (var g = 0; g < store.muteGroupCount; g++)
         if (store.muteGroupAssigned(g) == true) 'Mute ${g + 1}',
       for (var g = 0; g < store.viewGroupCount; g++)
-        if (store.viewGroupAssigned(g) == true) store.viewGroupLabel(g)
+        if (store.viewGroupAssigned(g) == true)
+          _summaryLabel('View', store.viewGroupLabel(g))
     ].join(' / ');
     final columns = [
       for (final entry in groups.entries)
