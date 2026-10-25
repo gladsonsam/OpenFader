@@ -1387,10 +1387,16 @@ class AppStore extends ChangeNotifier
     final cached = _stripsCache;
     if (cached != null) return cached;
     final range = _bankRanges[_bank];
-    final built = range == null
-        ? List<Strip>.unmodifiable(engine.strips)
-        : List<Strip>.unmodifiable(
-            engine.strips.where((s) => s.ch >= range.$1 && s.ch < range.$2));
+    final visible = range == null
+        ? engine.strips
+        : engine.strips.where((s) => s.ch >= range.$1 && s.ch < range.$2);
+    final built = List<Strip>.unmodifiable(visible.map((s) => Strip(
+          ch: s.ch,
+          key: s.key,
+          name: s.name,
+          fader: _stripFaderValue(s.ch, s.fader),
+          muted: _stripMuteValue(s.ch, s.muted),
+        )));
     _stripsCache = built;
     return built;
   }
@@ -1454,24 +1460,32 @@ class AppStore extends ChangeNotifier
       ? value
       : lawForDriver(engine.driver).fromDb(posToDb(value));
 
+  // Presentation resolves pending edits before confirmed values, even when an
+  // older echo has already replaced the engine strip. Keep protocol units here.
+  double _stripFaderValue(int ch, double fallback) {
+    final value = ps.optimisticValue(_maps, ch, 'fader');
+    return value is num ? value.toDouble().clamp(0.0, 1.0) : fallback;
+  }
+
+  bool _stripMuteValue(int ch, bool fallback) {
+    final value = ps.optimisticValue(_maps, ch, 'mute');
+    return value is bool ? value : fallback;
+  }
+
   void _ensureStripNotes(int ch) {
     _faderNotes.putIfAbsent(ch, () {
       double v = 0;
       for (final s in engine.strips) {
         if (s.ch == ch) v = s.fader;
       }
-      final opt = ps.optimisticValue(_maps, ch, 'fader');
-      if (opt is num) v = opt.toDouble().clamp(0.0, 1.0);
-      return ValueNotifier(_protocolFaderToUi(v));
+      return ValueNotifier(_protocolFaderToUi(_stripFaderValue(ch, v)));
     });
     _muteNotes.putIfAbsent(ch, () {
       bool m = false;
       for (final s in engine.strips) {
         if (s.ch == ch) m = s.muted;
       }
-      final opt = ps.optimisticValue(_maps, ch, 'mute');
-      if (opt is bool) m = opt;
-      return ValueNotifier(m);
+      return ValueNotifier(_stripMuteValue(ch, m));
     });
     _panNotes.putIfAbsent(ch, () => ValueNotifier(panOf(ch)));
     _soloNotes.putIfAbsent(ch, () => ValueNotifier(engine.solos.contains(ch)));
@@ -1513,10 +1527,11 @@ class AppStore extends ChangeNotifier
     for (final s in engine.strips) {
       if (s.ch != ch) continue;
       final f = _faderNotes[ch]!;
-      final uiFader = _protocolFaderToUi(s.fader);
+      final uiFader = _protocolFaderToUi(_stripFaderValue(ch, s.fader));
       if (f.value != uiFader) f.value = uiFader;
       final m = _muteNotes[ch]!;
-      if (m.value != s.muted) m.value = s.muted;
+      final muted = _stripMuteValue(ch, s.muted);
+      if (m.value != muted) m.value = muted;
     }
     final p = _panNotes[ch]!;
     final pv = panOf(ch);

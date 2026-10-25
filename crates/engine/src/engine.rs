@@ -4947,15 +4947,13 @@ impl Engine {
     /// (unverified) write, unless a genuinely newer desk read already
     /// re-proved it: `sync.received` timestamps newer than this write's
     /// start mean a poll/push landed after the write began, and that proof
-    /// must survive. Lock order is sync-then-cache (never nested), matching
-    /// `apply_received`/`reconcile_event`, so concurrent ingest cannot be
-    /// starved or inverted: a push that lands before the evict check is kept,
-    /// one that lands after re-inserts via `apply_received`.
+    /// must survive. Hold the sync guard through cache deletion, matching
+    /// the sync-then-cache lock order of `apply_received`/`reconcile_event`:
+    /// a push that lands before the evict check is kept, one that lands
+    /// after re-inserts via `apply_received`.
     fn evict_param_unless_fresh(&self, ch: StripId, param: &str, write_started: Instant) {
-        let fresh = self
-            .sync_state
-            .lock()
-            .unwrap()
+        let sync = self.sync_state.lock().unwrap();
+        let fresh = sync
             .received
             .get(&(ch.0, param.to_string()))
             .is_some_and(|(at, _)| *at > write_started);
@@ -6328,16 +6326,26 @@ impl Engine {
             Cmd::BusFader { bus, value } => {
                 let value = openfader_core::validate_fader(value)?;
                 policy.allow_master_fader(value)?;
-                // Sibling before the write for the accepted-echo fallback
-                // below: the inclusive re-read in `bus_message` already
-                // carries continuity (own writes included), so the fallback
-                // only fires when nothing ever proved the sibling.
+                // Preserve the sibling for read failures. As in
+                // `refresh_param`, a disagreeing immediate read can be the
+                // desk's pre-write value; echo the submitted value instead.
+                // This bus display frame does not establish verified proof.
                 let muted = self.active_drv().get_bus_mute(bus).await.ok();
                 self.active_drv().set_bus_fader(bus, value).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 out.push(match (self.bus_message(bus).await, muted) {
-                    (Ok(m), _) => m,
+                    (Ok(mut m), _) => {
+                        match &mut m {
+                            Event::Bus { fader, .. }
+                                if !refresh_agrees(&json!(*fader), &json!(value)) =>
+                            {
+                                *fader = value;
+                            }
+                            _ => {}
+                        }
+                        m
+                    }
                     (Err(_), Some(muted)) => Event::Bus {
                         bus,
                         fader: value,
@@ -6355,7 +6363,14 @@ impl Engine {
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 out.push(match (self.bus_message(bus).await, fader) {
-                    (Ok(m), _) => m,
+                    (Ok(mut m), _) => {
+                        // Bool agreement is exact; retain the accepted
+                        // write on a stale read, without caching it as proof.
+                        if let Event::Bus { muted: read, .. } = &mut m {
+                            *read = muted;
+                        }
+                        m
+                    }
                     (Err(_), Some(fader)) => Event::Bus {
                         bus,
                         fader,
@@ -6491,12 +6506,17 @@ impl Engine {
             Cmd::ClearSolo => {
                 self.active_drv().clear_solo().await?;
                 let cleared: Vec<u16> = {
+                    let mut sync = self.sync_state.lock().unwrap();
                     let mut cache = self.param_cache.write().unwrap();
                     let mut cleared = Vec::new();
                     for (ch, map) in cache.iter_mut() {
                         if map.get("solo") == Some(&json!(true)) {
                             cleared.push(*ch);
                             map.remove("solo");
+                            // Attach must not replay superseded Solo(true).
+                            // The false echo below is display continuity,
+                            // not a desk-verified replacement cache entry.
+                            sync.typed.remove(&format!("{ch}/solo"));
                         }
                     }
                     cleared

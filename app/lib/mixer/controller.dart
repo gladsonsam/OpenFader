@@ -129,13 +129,16 @@ class MixerController extends ChangeNotifier {
       artwork: _artwork(s),
       fader: store.faderOf(s.ch).value,
       pan: store.panOf(s.ch),
-      muted: s.muted,
+      muted: store.muteOf(s.ch).value,
       solo: store.soloOf(s.ch),
       selected: selected ?? _selectedKey == s.key,
       master: false,
       meter: store.meterOf(s.ch),
       params: Map.unmodifiable({
         ...?store.engine.params[s.ch],
+        // Gain edits are optimistic; engine snapshots lag behind the drag.
+        if (store.channelIndex == s.ch && store.paramNum('gain') != null)
+          'gain': store.paramNum('gain')!,
         if (store.engine.grGate.containsKey(s.ch))
           'gate_gr': store.engine.grGate[s.ch]!,
         if (store.engine.grComp.containsKey(s.ch))

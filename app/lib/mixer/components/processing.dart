@@ -8,7 +8,7 @@ import '../demo.dart';
 
 /// Processing preview owns its rendering and gain gesture. Tapping its EQ
 /// opens the existing channel editor; hardware curves use actual parameters.
-class MixerProcessingRack extends StatelessWidget {
+class MixerProcessingRack extends StatefulWidget {
   final MixerChannel channel;
   final bool demo;
   final List<double>? gainRange;
@@ -21,6 +21,22 @@ class MixerProcessingRack extends StatelessWidget {
       this.gainRange,
       required this.onOpen,
       required this.onGain});
+  @override
+  State<MixerProcessingRack> createState() => _MixerProcessingRackState();
+}
+
+class _MixerProcessingRackState extends State<MixerProcessingRack> {
+  double? _gainDrag;
+
+  @override
+  void didUpdateWidget(covariant MixerProcessingRack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.channel.key != widget.channel.key ||
+        widget.gainRange == null) {
+      _gainDrag = null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         final sy = box.maxHeight / 202;
@@ -39,44 +55,66 @@ class MixerProcessingRack extends StatelessWidget {
             child: Stack(children: [
               place(
                   5,
-                  channel.master ? 57 : 36,
+                  widget.channel.master ? 57 : 36,
                   LayoutBuilder(
                       builder: (context, gainBox) => Semantics(
                           container: true,
-                          label: '${channel.name} gain',
-                          slider: !channel.master && gainRange != null,
-                          enabled: channel.master || gainRange != null,
+                          label: '${widget.channel.name} gain',
+                          slider: !widget.channel.master &&
+                              widget.gainRange != null,
+                          enabled:
+                              widget.channel.master || widget.gainRange != null,
                           child: GestureDetector(
                               behavior: HitTestBehavior.opaque,
-                              onHorizontalDragUpdate: channel.master ||
-                                      gainRange == null
+                              onHorizontalDragStart: widget.channel.master ||
+                                      widget.gainRange == null
                                   ? null
-                                  : (d) => onGain(((channel.params['gain'] as num?)
+                                  : (_) => _gainDrag =
+                                      (widget.channel.params['gain'] as num?)
                                               ?.toDouble() ??
-                                          0) +
-                                      d.delta.dx /
-                                          gainBox.maxWidth *
-                                          (gainRange!.last - gainRange!.first)),
+                                          0,
+                              onHorizontalDragUpdate: widget.channel.master ||
+                                      widget.gainRange == null
+                                  ? null
+                                  : (d) {
+                                      final current = _gainDrag;
+                                      if (current == null) return;
+                                      final range = widget.gainRange!;
+                                      final next = (current +
+                                              d.delta.dx /
+                                                  gainBox.maxWidth *
+                                                  (range.last - range.first))
+                                          .clamp(range.first, range.last);
+                                      _gainDrag = next;
+                                      widget.onGain(next);
+                                    },
+                              onHorizontalDragEnd: (_) => _gainDrag = null,
+                              onHorizontalDragCancel: () => _gainDrag = null,
                               child: CustomPaint(
                                   painter: _GainPainter(
                                       ConsolePalette.of(context),
-                                      channel.params,
-                                      channel.master,
-                                      demo,
-                                      gainRange)))))),
-              place(channel.master ? 68 : 47, channel.master ? 58 : 79,
-                  MixerEqPreview(channel: channel, onOpen: onOpen)),
+                                      widget.channel.params,
+                                      widget.channel.master,
+                                      widget.demo,
+                                      widget.gainRange)))))),
+              place(
+                  widget.channel.master ? 68 : 47,
+                  widget.channel.master ? 58 : 79,
+                  MixerEqPreview(
+                      channel: widget.channel, onOpen: widget.onOpen)),
               place(
                   132,
                   62,
                   CustomPaint(
                       painter: _DynamicsPainter(
                           ConsolePalette.of(context),
-                          channel.params,
-                          demo &&
-                                  !channel.params.containsKey('gate_gr') &&
-                                  !channel.params.containsKey('comp_gr')
-                              ? mixerDemoStrips[channel.artwork].compression
+                          widget.channel.params,
+                          widget.demo &&
+                                  !widget.channel.params
+                                      .containsKey('gate_gr') &&
+                                  !widget.channel.params.containsKey('comp_gr')
+                              ? mixerDemoStrips[widget.channel.artwork]
+                                  .compression
                               : null))),
             ]));
       });
