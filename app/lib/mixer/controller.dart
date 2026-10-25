@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../engine.dart';
+import '../core/channel_name.dart';
 import '../core/channel_views.dart' show parameterRange;
 import '../state/app_store.dart';
 import '../u4law.dart';
@@ -28,6 +29,7 @@ class MixerChannel {
   final String key, name, number;
   final int? channel;
   final int artwork;
+  final ChannelColorChoice? colorChoice;
   final double fader, pan;
   final bool muted, solo, selected, master;
   final ValueListenable<double> meter;
@@ -38,6 +40,7 @@ class MixerChannel {
       required this.number,
       required this.channel,
       required this.artwork,
+      this.colorChoice,
       required this.fader,
       required this.pan,
       required this.muted,
@@ -127,6 +130,7 @@ class MixerController extends ChangeNotifier {
       number: '${s.ch + 1}',
       channel: s.ch,
       artwork: _artwork(s),
+      colorChoice: store.channelColorChoice(s.ch),
       fader: store.faderOf(s.ch).value,
       pan: store.panOf(s.ch),
       muted: store.muteOf(s.ch).value,

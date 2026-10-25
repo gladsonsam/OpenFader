@@ -701,6 +701,10 @@ pub trait MixerDriver: Send + Sync {
         &[]
     }
 
+    fn param_swatches(&self, _param: &str) -> &'static [crate::params::ParamSwatch] {
+        &[]
+    }
+
     /// Ordered strip families in the global strip index space
     /// (`caps.topology`). Default is one `in` family covering
     /// [`MixerDriver::channel_count`] so drivers that have not grown

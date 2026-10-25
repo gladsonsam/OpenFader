@@ -654,6 +654,28 @@ async fn wait_for_initial_state(session: &MackieSession) -> anyhow::Result<()> {
     }
 }
 
+// Native input palette order; CH7 endpoints and None verified 2026-10-26.
+static DL32S_COLOR_SWATCHES: &[openfader_core::params::ParamSwatch] = &[
+    openfader_core::params::ParamSwatch { value: -1.0, label: "None", rgb: None },
+    openfader_core::params::ParamSwatch { value: 0.0, label: "Pink", rgb: Some(0xed1176) },
+    openfader_core::params::ParamSwatch { value: 1.0, label: "Coral", rgb: Some(0xf16464) },
+    openfader_core::params::ParamSwatch { value: 2.0, label: "Red", rgb: Some(0xee3b25) },
+    openfader_core::params::ParamSwatch { value: 3.0, label: "Orange", rgb: Some(0xf56522) },
+    openfader_core::params::ParamSwatch { value: 4.0, label: "Amber", rgb: Some(0xffb52d) },
+    openfader_core::params::ParamSwatch { value: 5.0, label: "Gold", rgb: Some(0xffd100) },
+    openfader_core::params::ParamSwatch { value: 6.0, label: "Yellow", rgb: Some(0xf9ef42) },
+    openfader_core::params::ParamSwatch { value: 7.0, label: "Lime", rgb: Some(0xa8d25d) },
+    openfader_core::params::ParamSwatch { value: 8.0, label: "Green", rgb: Some(0x54bf79) },
+    openfader_core::params::ParamSwatch { value: 9.0, label: "Mint", rgb: Some(0x8fd3b2) },
+    openfader_core::params::ParamSwatch { value: 10.0, label: "Teal", rgb: Some(0x22bcb5) },
+    openfader_core::params::ParamSwatch { value: 11.0, label: "Cyan", rgb: Some(0x65cee3) },
+    openfader_core::params::ParamSwatch { value: 12.0, label: "Sky blue", rgb: Some(0x1baed1) },
+    openfader_core::params::ParamSwatch { value: 13.0, label: "Blue", rgb: Some(0x357dbe) },
+    openfader_core::params::ParamSwatch { value: 14.0, label: "Lavender", rgb: Some(0xa782ba) },
+    openfader_core::params::ParamSwatch { value: 15.0, label: "Purple", rgb: Some(0x9156a5) },
+    openfader_core::params::ParamSwatch { value: 16.0, label: "White", rgb: Some(0xffffff) },
+];
+
 /// Canonical id -> documented modern-DL32S `(min, max)`, served through
 /// [`MixerDriver::param_range_overrides`](openfader_core::MixerDriver::param_range_overrides).
 /// Provenance per entry (manufacturer mixer software 5.1 manual unless noted):
@@ -1504,6 +1526,10 @@ impl MixerDriver for Dl32sDriver {
     /// EQ mode labels and curve semantics remain unverified.
     fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
         DL32S_RANGE_OVERRIDES
+    }
+
+    fn param_swatches(&self, param: &str) -> &'static [openfader_core::params::ParamSwatch] {
+        if param == "color" { DL32S_COLOR_SWATCHES } else { &[] }
     }
 
     fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {

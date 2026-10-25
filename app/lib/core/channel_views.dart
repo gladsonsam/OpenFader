@@ -140,6 +140,7 @@ Map<String, dynamic>? parameterPresentation(
       if (!match) continue;
     }
     result['hidden'] = row['hidden'] == true;
+    if (row.containsKey('swatches')) result['swatches'] = row['swatches'];
     result['choices'] = row['choices'];
     result['value_labels'] = row['value_labels'];
     result['limiter_value'] = row['limiter_value'];
