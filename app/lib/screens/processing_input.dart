@@ -145,9 +145,11 @@ class _InputTab extends StatelessWidget {
           ]
         ]),
       SizedBox(height: wide ? 88 : 14),
-      _InputPreampControl(
-          store: store, leaf: 'gain', label: 'Gain', onFocus: onFocus),
-      const SizedBox(height: 7),
+      if (store.paramMetadata('gain')?['hidden'] != true) ...[
+        _InputPreampControl(
+            store: store, leaf: 'gain', label: 'Gain', onFocus: onFocus),
+        const SizedBox(height: 7),
+      ],
       _InputPreampControl(
           store: store,
           leaf: 'trim',
@@ -159,19 +161,20 @@ class _InputTab extends StatelessWidget {
               semanticsLabel: 'Invert polarity',
               onTap: store.supports('polarity') ? store.toggleInvert : null)),
       const SizedBox(height: 7),
-      Row(children: [
-        SizedBox(
-            width: 64,
-            child: _TextSwitch(
-                label: '48V',
-                active: pre.phantom,
-                enabled: store.supports('phantom'),
-                onTap: () => _confirmPhantom(context))),
-        Expanded(
-            child: Text('Phantom power',
-                style: AppDesign.type(14,
-                    color: ConsolePalette.of(context).text7)))
-      ]),
+      if (store.paramMetadata('phantom')?['hidden'] != true)
+        Row(children: [
+          SizedBox(
+              width: 64,
+              child: _TextSwitch(
+                  label: '48V',
+                  active: pre.phantom,
+                  enabled: store.supports('phantom'),
+                  onTap: () => _confirmPhantom(context))),
+          Expanded(
+              child: Text('Phantom power',
+                  style: AppDesign.type(14,
+                      color: ConsolePalette.of(context).text7)))
+        ]),
       SizedBox(height: wide ? 24 : 14),
       _InputAssignments(store: store, wide: wide),
     ]);
