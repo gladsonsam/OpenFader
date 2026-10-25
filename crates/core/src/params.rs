@@ -48,9 +48,12 @@ pub struct ParamPresentation {
     pub choices: &'static [ParamChoice],
     /// Labels for special numeric values without restricting continuous edits.
     pub value_labels: &'static [ParamChoice],
+    /// Native finite ratio value that means limiting (zero output slope).
+    pub limiter_value: Option<f32>,
     pub hidden: bool,
     /// Optional verified transfer-curve model for this processor mode.
     /// `gate_attenuation` means input minus Range below Threshold.
+    /// `hard_knee` means an abrupt compressor threshold (zero knee width).
     pub curve: Option<&'static str>,
 }
 

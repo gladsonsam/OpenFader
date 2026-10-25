@@ -651,34 +651,48 @@ static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
 // to a named selection merely by displaying this metadata.
 static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] = &[
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
         id: "comp_mode", when: None, hidden: false, curve: None, value_labels: &[],
         choices: &[openfader_core::params::ParamChoice { value: 0.0, label: "Modern" }, openfader_core::params::ParamChoice { value: 1.0, label: "Vintage" }],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
         id: "comp_knee", when: None, hidden: false, curve: None, value_labels: &[],
         choices: &[openfader_core::params::ParamChoice { value: 0.0, label: "Soft Knee" }, openfader_core::params::ParamChoice { value: 1.0, label: "Hard Knee" }],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
         id: "comp_att", when: Some(("comp_mode", 1.0)), hidden: false, curve: None, value_labels: &[],
         choices: &[openfader_core::params::ParamChoice { value: 0.1, label: "Fast" }, openfader_core::params::ParamChoice { value: 50.0, label: "Medium" }, openfader_core::params::ParamChoice { value: 300.0, label: "Slow" }],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
         id: "comp_rel", when: Some(("comp_mode", 1.0)), hidden: false, curve: None, value_labels: &[],
         choices: &[openfader_core::params::ParamChoice { value: 50.0, label: "Fast" }, openfader_core::params::ParamChoice { value: 500.0, label: "Medium" }, openfader_core::params::ParamChoice { value: 3000.0, label: "Slow" }],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
         id: "comp_ratio", when: Some(("comp_mode", 1.0)), hidden: false, curve: None, value_labels: &[],
         choices: &[openfader_core::params::ParamChoice { value: 2.0, label: "2:1" }, openfader_core::params::ParamChoice { value: 4.0, label: "4:1" }, openfader_core::params::ParamChoice { value: 8.0, label: "8:1" }, openfader_core::params::ParamChoice { value: 12.0, label: "12:1" }, openfader_core::params::ParamChoice { value: 20.0, label: "20:1" }],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
+        id: "comp_knee", when: Some(("comp_knee", 1.0)), hidden: false,
+        curve: Some("hard_knee"), value_labels: &[],
+        choices: &[openfader_core::params::ParamChoice { value: 0.0, label: "Soft Knee" }, openfader_core::params::ParamChoice { value: 1.0, label: "Hard Knee" }],
+    },
+    openfader_core::params::ParamPresentation {
+        limiter_value: None,
         id: "comp_knee", when: Some(("comp_mode", 1.0)), hidden: true, curve: None, value_labels: &[],
         choices: &[],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: Some(101.0),
         id: "comp_ratio", when: Some(("comp_mode", 0.0)), hidden: false, curve: None,
         choices: &[], value_labels: &[openfader_core::params::ParamChoice { value: 101.0, label: "∞:1" }],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
         value_labels: &[],
         id: "gate_mode", when: None, hidden: false, curve: None,
         choices: &[
@@ -687,6 +701,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
         ],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
         value_labels: &[],
         id: "gate_mode", when: Some(("gate_mode", 0.0)), hidden: false,
         curve: Some("gate_attenuation"), choices: &[
@@ -695,6 +710,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
         ],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
         value_labels: &[],
         id: "gate_att", when: Some(("gate_mode", 1.0)), hidden: false, curve: None,
         choices: &[
@@ -704,6 +720,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
         ],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
         value_labels: &[],
         id: "gate_rel", when: Some(("gate_mode", 1.0)), hidden: false, curve: None,
         choices: &[
@@ -713,6 +730,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
         ],
     },
     openfader_core::params::ParamPresentation {
+        limiter_value: None,
         value_labels: &[],
         id: "gate_range", when: Some(("gate_mode", 1.0)), hidden: true, choices: &[], curve: None,
     },
