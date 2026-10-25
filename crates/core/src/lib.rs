@@ -10,6 +10,7 @@
 //! "unsupported", so stub drivers keep compiling while they grow.
 
 pub mod access;
+pub mod destinations;
 pub mod fx;
 pub mod params;
 pub mod presets;
@@ -861,6 +862,21 @@ pub trait MixerDriver: Send + Sync {
     /// ticker without a new task or timer.
     fn native_snapshots(&self) -> Option<NativeSnapshots> {
         None
+    }
+
+    /// Lock-local destination-wide control metadata and observed values.
+    /// Empty means unsupported; never infer this from strip-local send taps.
+    fn destination_controls(&self) -> Vec<destinations::DestinationControl> {
+        Vec::new()
+    }
+
+    /// Compare the captured display value and write against one live session.
+    /// Implementations must reject unknown targets/domains and stale context.
+    async fn set_destination_control(
+        &self, target: &str, control: &str, value: f32, expected: f32,
+    ) -> anyhow::Result<()> {
+        let _ = (target, control, value, expected);
+        anyhow::bail!("{}: destination controls not supported", self.name())
     }
 }
 

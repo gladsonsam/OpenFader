@@ -37,6 +37,13 @@ double _linToDb(double l) => (l <= 0 || !l.isFinite)
 
 // A recall owns its expectations independently of pending edits because shell poll advances deadlines.
 
+class _DestinationEdit {
+  _DestinationEdit(this.target, this.deadline);
+  final DestinationControlVm target;
+  final double deadline;
+  final done = Completer<String?>();
+}
+
 class _PresetRecall {
   _PresetRecall(this.target, this.generation);
   final ProcessorPresetTarget target;
@@ -1333,6 +1340,8 @@ class AppStore extends ChangeNotifier
   String _lastEngineError = '';
   DateTime? _engineErrorAt;
   int _errorRevision = 0;
+  int _destinationRequestSequence = 0;
+  final Map<String, _DestinationEdit> _destinationEdits = {};
 
   // --- mixer control state ---
   final Map<int, double> _confirmedFader = {};
@@ -1514,6 +1523,7 @@ class AppStore extends ChangeNotifier
       _transportError.isNotEmpty ? _transportErrorAt : _engineErrorAt;
 
   void _noteTransportError(Object e) {
+    _interruptDestinationEdits('Connection error; the destination setting may have changed.');
     _interruptForgetSavedMixers(
         'A transport error interrupted address clearing: $e.');
     _interruptAllLibrary(
@@ -1557,6 +1567,7 @@ class AppStore extends ChangeNotifier
   }
 
   void _clearSessionValues() {
+    _interruptDestinationEdits('Connection changed; the destination setting may have changed.');
     _interruptAllLibrary(
         'Connection changed while waiting for the library result.');
     _interruptForgetSavedMixers('Connection changed during address clearing.');
@@ -1628,6 +1639,7 @@ class AppStore extends ChangeNotifier
 
   Future<void> _pollOnce() async {
     final now = _nowMs();
+    _pollDestinationEdits(now);
     for (final key in _nameEdits.keys.toList()) {
       if (now >= (_nameEditDeadlines[key] ?? double.negativeInfinity)) {
         _finishNameEdit(key,
@@ -1708,6 +1720,9 @@ class AppStore extends ChangeNotifier
         final previousSession = engine.session;
         final controlOnly = _controlOnlyFrame(e);
         var frameDirty = engine.applyFrame(e);
+        if (e['type'] == 'destination_control_result') {
+          _receiveDestinationResult(e);
+        }
         if (e['type'] == 'local_library_result') {
           _receiveLibraryResult(e);
           frameDirty = true;
@@ -3049,6 +3064,8 @@ class AppStore extends ChangeNotifier
       for (var slot = 1; slot <= 16; slot++)
         if (engine.supportedParams.contains('send${slot}_level'))
           ChannelSendVm(
+            destinationControls: List.unmodifiable(engine.destinationControls
+                .where((control) => control.sendSlot == slot)),
             slot: slot,
             destName: _sendName(slot),
             level: dbToPos(paramNum('send${slot}_level') ?? -90),
@@ -3201,6 +3218,68 @@ class AppStore extends ChangeNotifier
   void setSendTap(int slot, int tap) => cmdParam('send${slot}_tap', tap);
 
   @override
+  bool destinationControlIsCurrent(DestinationControlVm control) =>
+      !_presetDisposed && _online && engine.connected && engine.capsReady &&
+      !locked && control.available && engine.destinationControls.contains(control);
+
+  @override
+  Future<String?> setDestinationControl(
+      DestinationControlVm control, double value) {
+    if (!destinationControlIsCurrent(control)) {
+      return Future.value('Connection or setting changed. Reopen this control.');
+    }
+    if (!value.isFinite || !control.choices.any((choice) => choice.value == value)) {
+      return Future.value('This setting is unavailable.');
+    }
+    if (value == control.value) return Future.value(null);
+    if (_destinationEdits.values.any((edit) =>
+        edit.target.target == control.target && edit.target.id == control.id)) {
+      return Future.value('A change to this destination is already pending.');
+    }
+    final id = 'destination-${engine.session}-${++_destinationRequestSequence}';
+    final edit = _DestinationEdit(control, _nowMs() + 15000);
+    _destinationEdits[id] = edit;
+    unawaited(_api.cmd(_clientId, Cmds.destinationParam(id, control, value))
+        .then((_) {}, onError: (Object error) {
+      if (!_presetDisposed) _noteTransportError(error);
+    }));
+    return edit.done.future;
+  }
+
+  void _finishDestinationEdit(String id, String? error) {
+    final edit = _destinationEdits.remove(id);
+    if (edit != null && !edit.done.isCompleted) edit.done.complete(error);
+  }
+
+  void _interruptDestinationEdits(String error) {
+    for (final id in _destinationEdits.keys.toList()) {
+      _finishDestinationEdit(id, error);
+    }
+  }
+
+  void _pollDestinationEdits(double now) {
+    if (!_online || !engine.connected) {
+      _interruptDestinationEdits('Connection lost; the destination setting may have changed.');
+    }
+    for (final entry in _destinationEdits.entries.toList()) {
+      if (now >= entry.value.deadline) {
+        _finishDestinationEdit(entry.key,
+            'No command result arrived. The destination setting may have changed.');
+      }
+    }
+  }
+
+  void _receiveDestinationResult(Map<String, dynamic> frame) {
+    _pollDestinationEdits(_nowMs());
+    final id = frame['request_id'];
+    final edit = _destinationEdits[id];
+    if (id is! String || edit == null || frame['epoch'] != edit.target.epoch) return;
+    final message = frame['message'];
+    _finishDestinationEdit(id, message is String ? message :
+        frame['accepted'] == true ? null : 'The mixer rejected this change.');
+  }
+
+  @override
   void setSendMute(int slot, bool muted) {
     if (supports('send${slot}_on')) {
       cmdParam('send${slot}_on', !muted);
@@ -3221,6 +3300,7 @@ class AppStore extends ChangeNotifier
 
   @override
   void dispose() {
+    _interruptDestinationEdits('Connection closed; the destination setting may have changed.');
     _libraryDisposed = true;
     _interruptAllLibrary('The engine was closed.');
     _interruptForgetSavedMixers('The engine was closed.');

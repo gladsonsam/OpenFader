@@ -6,6 +6,7 @@
 
 import 'dart:async';
 import 'dart:math' as math;
+import 'destination_controls.dart';
 
 /// Raw engine write: leaf plus value.
 typedef ChannelWrite = void Function(String leaf, Object value);
@@ -611,6 +612,7 @@ double dynReductionDb(ChannelDynVm p, double levelDb) {
 
 /// One aux/FX send row (channelModel.ts sendRowsVm shape).
 class ChannelSendVm {
+  final List<DestinationControlVm> destinationControls;
   final int slot; // 1..16 desk slot
   final String destName;
   final double level; // 0..1 fader pos
@@ -622,6 +624,7 @@ class ChannelSendVm {
   final List<int> tapOptions;
 
   const ChannelSendVm({
+    this.destinationControls = const [],
     required this.slot,
     required this.destName,
     this.level = 0.75,

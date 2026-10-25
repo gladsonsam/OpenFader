@@ -250,6 +250,14 @@ class FakeSimEngine implements EngineApi {
           'error': 'Hardware discovery is unavailable in the offline fallback',
         }));
         return;
+      case 'destination_param':
+        _mailbox.add(jsonEncode({
+          'type': 'destination_control_result',
+          'request_id': c['request_id'], 'epoch': c['epoch'],
+          'accepted': false,
+          'message': 'Destination controls are unavailable in the offline fallback.',
+        }));
+        return;
       case 'param':
       case 'param_guarded':
         if (ch == null) return;
