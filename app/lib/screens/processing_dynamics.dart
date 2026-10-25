@@ -475,7 +475,9 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
                         },
                         value: switch (prop) {
                           'thr' => '${widget.dyn.thr} dB',
-                          'ratio' => '${widget.dyn.ratio}:1',
+                          'ratio' => widget.dyn.ratioIsLimit
+                              ? '∞:1'
+                              : '${widget.dyn.ratio}:1',
                           'range' => '${widget.dyn.range} dB',
                           _ => '${widget.dyn.makeup} dB'
                         },
