@@ -150,6 +150,10 @@ class EqBandVm {
   final double f; // Hz
   final double g; // dB
   final double q;
+
+  /// Whether shelf response uses Q. DL32S modern shelves have fixed slope;
+  /// their stored bell Q must not change the shelf preview.
+  final bool shelfUsesQ;
   final bool on;
 
   /// Canonical/XAir presentation enum: 1 = low shelf, 2 = bell,
@@ -166,6 +170,7 @@ class EqBandVm {
     required this.f,
     required this.g,
     required this.q,
+    this.shelfUsesQ = true,
     this.on = true,
     this.type,
     this.fRange,
@@ -179,6 +184,7 @@ class EqBandVm {
         f: f ?? this.f,
         g: g ?? this.g,
         q: q ?? this.q,
+        shelfUsesQ: shelfUsesQ,
         on: on ?? this.on,
         type: type,
         fRange: fRange,
@@ -274,13 +280,16 @@ double _peakingDb(double f0, double gainDb, double q, double f) {
       -2 * cw, 1 - alpha / a, f);
 }
 
-double _shelfDb(bool high, double f0, double gainDb, double f) {
-  // Fixed S = 0.9 shelf slope (RBJ shelf, display only).
+double _shelfDb(bool high, double f0, double gainDb, double? q, double f) {
+  // RBJ shelf response, display only. Q controls transition/resonance where
+  // supported; retain the fixed S = 0.9 approximation for fixed-slope desks.
   const s = 0.9;
   final a = math.pow(10, gainDb / 40).toDouble();
   final w0 = 2 * math.pi * f0 / _fs;
   final cw = math.cos(w0);
-  final alpha = math.sin(w0) / 2 * math.sqrt((a + 1 / a) * (1 / s - 1) + 2);
+  final alpha = q == null
+      ? math.sin(w0) / 2 * math.sqrt((a + 1 / a) * (1 / s - 1) + 2)
+      : math.sin(w0) / (2 * (q.isFinite && q > 0 ? q : 1));
   final sq = 2 * math.sqrt(a) * alpha;
   if (high) {
     return _biquadDb(
@@ -325,11 +334,11 @@ List<double> eqResponseDb(ChannelEqVm eq) {
       if (!b.on) continue;
       switch (EqFilterShape.fromValue(b.type)) {
         case EqFilterShape.lowShelf:
-          db += _shelfDb(false, b.f, b.g, f);
+          db += _shelfDb(false, b.f, b.g, b.shelfUsesQ ? b.q : null, f);
         case EqFilterShape.bell:
           db += _peakingDb(b.f, b.g, b.q <= 0 ? 1 : b.q, f);
         case EqFilterShape.highShelf:
-          db += _shelfDb(true, b.f, b.g, f);
+          db += _shelfDb(true, b.f, b.g, b.shelfUsesQ ? b.q : null, f);
         case null:
           // No verified response to draw until the shape is known.
           break;

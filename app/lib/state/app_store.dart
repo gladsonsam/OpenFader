@@ -2178,6 +2178,7 @@ class AppStore extends ChangeNotifier
                   [80.0, 400.0, 1200.0, 6000.0][b - 1],
               g: paramNum('eq${b}_gain') ?? 0,
               q: paramNum('eq${b}_q') ?? 1,
+              shelfUsesQ: engine.driver != 'dl32s',
               on: true,
               type: _eqPresentationType(b),
               fRange: _editableRange('eq${b}_freq'),
