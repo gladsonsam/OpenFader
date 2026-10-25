@@ -1084,6 +1084,12 @@ class _RoutingStore extends _StoreBase implements RoutingStore {
           ),
       ];
 
+  String _sourceLabel(String group, int index) {
+    if (group.isEmpty && index == 0) return '—';
+    final count = _groups.where((g) => g['key'] == group).firstOrNull?['count'];
+    return count == 1 ? groupLabel(group) : '${groupLabel(group)} $index';
+  }
+
   String _srcOf(int ch) {
     for (final p in engine.routing) {
       final strip = (p['strip'] as num?)?.toInt();
@@ -1093,7 +1099,7 @@ class _RoutingStore extends _StoreBase implements RoutingStore {
           final group = p['group'];
           final index = p['index'];
           return group is String && index is num
-              ? '${groupLabel(group)} ${index.toInt()}'
+              ? _sourceLabel(group, index.toInt())
               : src;
         }
       }
@@ -1136,7 +1142,7 @@ class _RoutingStore extends _StoreBase implements RoutingStore {
                     0);
             i++)
           RouteSrcTile(
-            label: '${groupLabel(group)} $i',
+            label: _sourceLabel(group, i),
             group: group,
             index: i,
             usedBy: _usedBy(group, i),
