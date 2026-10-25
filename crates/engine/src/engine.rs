@@ -45,6 +45,11 @@ pub const FILE_MAX_BYTES: usize = 16 << 20;
 /// stretching a scan past the broadcast budget (the UI allows ~10 s).
 const SCAN_VERIFY_TIMEOUT: Duration = Duration::from_millis(2200);
 
+// A directed address may traverse a relay. Budget the complete protocol
+// identification (TCP dial plus correlated reply), not just one local RTT.
+// All registered providers share the bound; port reachability is never proof.
+const DIRECT_IDENTIFY_TIMEOUT: Duration = Duration::from_secs(10);
+
 /// Validate a desk filename for `file_download` / `file_upload` (mirrors
 /// the driver-side rules so bad names fail before touching the desk).
 pub fn check_filename(name: &str) -> anyhow::Result<String> {
@@ -2396,14 +2401,13 @@ impl Engine {
         ips.find(|s| s.is_ipv4()).or_else(|| ips.next()).map(|s| s.ip())
     }
 
-    async fn identify_registered(&self, addr: &str) -> Option<DeviceDesc> {
+    async fn identify_registered(&self, addr: &str, budget: Duration) -> Option<DeviceDesc> {
         use futures::{stream::FuturesUnordered, StreamExt};
         let ip = Self::discovery_ip(addr).await?;
         let mut probes: FuturesUnordered<_> = self.driver_order.iter()
             .map(|name| self.drv(name)).filter(|driver| driver.is_hardware())
             .map(|driver| async move {
-                tokio::time::timeout(Duration::from_millis(1800),
-                    driver.identify(ip, Duration::from_millis(1800)))
+                tokio::time::timeout(budget, driver.identify(ip, budget))
                     .await.ok().flatten()
             }).collect();
         while let Some(result) = probes.next().await {
@@ -2423,7 +2427,7 @@ impl Engine {
             || Self::discovery_ip(raw).await.is_none() {
             return DeviceCheck { addr, status: "invalid".into(), device: None };
         }
-        let device = self.identify_registered(raw).await;
+        let device = self.identify_registered(raw, DIRECT_IDENTIFY_TIMEOUT).await;
         DeviceCheck {
             addr,
             status: if device.is_some() { "available" } else { "no_reply" }.into(),
@@ -6322,7 +6326,7 @@ impl Engine {
                     async {
                         let (mut rows, known) = tokio::join!(
                             self.scanner.scan(&display, Duration::from_secs(2)),
-                            futures::future::join_all(remembered.iter().map(|host| self.identify_registered(host)))
+                            futures::future::join_all(remembered.iter().map(|host| self.identify_registered(host, Duration::from_secs(3))))
                         );
                         for row in known.into_iter().flatten() { push_row(&mut rows, row); }
                         rows
@@ -6562,7 +6566,7 @@ impl Engine {
             Cmd::Probe { addr } => {
                 // Ask every registered hardware provider; never infer the
                 // protocol from whichever desk happened to be active before.
-                let Some(found) = self.identify_registered(&addr).await else {
+                let Some(found) = self.identify_registered(&addr, DIRECT_IDENTIFY_TIMEOUT).await else {
                     anyhow::bail!("no reply from {addr} — no supported mixer identified; check the IP and local network access");
                 };
                 // The verified row is visible even if the connect fails.
