@@ -5,7 +5,9 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'core/local_library.dart';
+import 'core/destination_controls.dart';
 export 'core/local_library.dart';
+export 'core/destination_controls.dart';
 
 /// Passive native desk reports, separate from OpenFader's local scene library.
 /// `ready` means some push evidence arrived, never a complete slot inventory.
@@ -300,6 +302,12 @@ class Cmds {
   static String clearSolo() => '{"cmd":"clear_solo"}';
   static String param(int ch, String field, Object value) =>
       '{"cmd":"param","ch":$ch,"field":${_q(field)},"value":${jsonEncode(value)}}';
+  static String destinationParam(String requestId,
+      DestinationControlVm target, double value) => jsonEncode({
+        'cmd': 'destination_param', 'request_id': requestId,
+        'target': target.target, 'control': target.id, 'epoch': target.epoch,
+        'expected': target.value, 'value': value,
+      });
   static String paramGuarded(
           int ch, String field, Object value, Map<String, Object> expect) =>
       jsonEncode({
@@ -663,6 +671,7 @@ class EngineState {
 
   /// Full advertised catalogue rows; availability is separate from hydration.
   Map<String, Map<String, dynamic>> parameterMetadata = {};
+  List<DestinationControlVm> destinationControls = const [];
   Set<String> meterTaps = {};
   int meterSeq = 0;
 
@@ -680,6 +689,7 @@ class EngineState {
     capsReady = false;
     supportedParams.clear();
     parameterMetadata = {};
+    destinationControls = const [];
     meterTaps.clear();
     strips = [];
     topology = [];
@@ -768,6 +778,26 @@ class EngineState {
       case 'you':
         clientId = (e['id'] as String?) ?? clientId;
         return false;
+      case 'destination_controls':
+        final epoch = e['epoch'];
+        final rows = e['controls'];
+        if (epoch is! int || epoch != _syncEpoch || rows is! List) return false;
+        final controls = <DestinationControlVm>[];
+        for (final row in rows) {
+          if (row is! Map) return false;
+          final control = DestinationControlVm.fromJson(epoch, row);
+          if (control == null || controls.any((c) =>
+              c.target == control.target && c.id == control.id)) {
+            return false;
+          }
+          controls.add(control);
+        }
+        if (controls.length == destinationControls.length &&
+            Iterable.generate(controls.length).every((i) => controls[i] == destinationControls[i])) {
+          return false;
+        }
+        destinationControls = List.unmodifiable(controls);
+        return true;
       case 'state':
         final nextDriver = e['driver'] as String? ?? driver;
         if (nextDriver != driver) _resetDesk();

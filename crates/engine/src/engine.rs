@@ -1149,6 +1149,7 @@ impl Engine {
             }
             for frame in info.into_iter()
                 .chain([self.fx_message_cached(), routing, self.scenes_message(), self.native_snapshots_message()])
+                .chain(self.destination_controls_message())
                 .chain(masters) {
                 self.broadcast(self.reconcile_event(frame, &sync, sampled));
             }
@@ -1305,6 +1306,7 @@ impl Engine {
                     .chain(self.device_library_status())
                     .chain(sync.typed.values().cloned())
                     .chain(std::iter::once(Event::SyncEpoch { epoch: generation }))
+                    .chain(self.destination_controls_message())
                 {
                     Self::push_to(
                         entry,
@@ -1398,6 +1400,7 @@ impl Engine {
             .chain(self.device_library_status())
             .chain(sync.typed.values().cloned())
             .chain(std::iter::once(Event::SyncEpoch { epoch: generation }))
+            .chain(self.destination_controls_message())
         {
             self.unicast(client_id, self.reconcile_event(event, &sync, snapshot_started));
         }
@@ -1526,6 +1529,7 @@ impl Engine {
                 let mut meters_live = false;
                 let mut dynamics_live = false;
                 let mut parameter_labels_last = None;
+                let mut destination_controls_last = None;
                 let mut last_level_sample = None;
                 let mut last_gr_sample = None;
                 let mut tick =
@@ -1659,12 +1663,25 @@ impl Engine {
                         let driver = engine.active_driver();
                         let view = engine.drv(&driver).native_snapshots();
                         let labels = engine.drv(&driver).param_label_overrides();
+                        let destination_controls = engine.drv(&driver).destination_controls();
                         // Held to the end of the block: the barrier shared
                         // with `invalidate_connection`.
                         let _sync = engine.sync_state.lock().unwrap();
                         if engine.connection_gen.load(Ordering::Acquire) == generation
                             && !engine.reads_suspended.load(Ordering::Acquire)
                         {
+                            let destination_key = (generation, destination_controls);
+                            if destination_controls_last.as_ref() != Some(&destination_key) {
+                                let emit = !destination_key.1.is_empty()
+                                    || destination_controls_last.as_ref().is_some_and(|last| !last.1.is_empty());
+                                if emit {
+                                    engine.broadcast(Event::DestinationControls {
+                                        epoch: generation,
+                                        controls: Self::destination_rows(&destination_key.1),
+                                    });
+                                }
+                                destination_controls_last = Some(destination_key);
+                            }
                             // Existing metadata frames carry dynamic provider
                             // names; no separate UI timer or parameter writes.
                             let labels_key = (generation, driver.clone(), labels);
@@ -3737,10 +3754,25 @@ impl Engine {
         }
     }
 
-    /// Current `native_snapshots` event for the active driver (see
-    /// [`native_message_for`](Engine::native_message_for)). The `epoch`
-    /// is the actual current engine generation, sampled BEFORE the driver
-    /// view so a racing connect invalidates this sample.
+    /// Serialize provider-owned destination domains without mixer-name logic.
+    fn destination_rows(controls: &[openfader_core::destinations::DestinationControl]) -> Vec<Value> {
+        controls.iter().map(|control| json!({
+            "target": control.target, "target_label": control.target_label,
+            "target_name": control.target_name, "send_slot": control.send_slot,
+            "id": control.id, "label": control.label, "scope": "destination",
+            "choices": control.choices.iter().map(|choice| json!({"value": choice.value, "label": choice.label})).collect::<Vec<_>>(),
+            "value": control.current.as_ref().map(|value| value.value),
+            "authority": control.current.as_ref().map(|value| if value.verified { "verified" } else { "accepted" }),
+        })).collect()
+    }
+
+    fn destination_controls_message(&self) -> Option<Event> {
+        let epoch = self.connection_gen.load(Ordering::Acquire);
+        let controls = self.active_drv().destination_controls();
+        (!controls.is_empty()).then(|| Event::DestinationControls { epoch, controls: Self::destination_rows(&controls) })
+    }
+
+    /// Current native slot view, with the engine epoch sampled first.
     fn native_snapshots_message(&self) -> Event {
         let generation = self.connection_gen.load(Ordering::Acquire);
         let driver = self.active_driver();
@@ -4469,6 +4501,11 @@ impl Engine {
                 .and_then(|_| cache.get(&ch)?.get(id)).cloned()
         };
         match &mut event {
+            Event::DestinationControls { epoch, controls } => {
+                if *epoch == self.connection_gen.load(Ordering::Acquire) {
+                    *controls = Self::destination_rows(&self.active_drv().destination_controls());
+                }
+            }
             Event::State { strips, main_fader, .. } => {
                 for row in strips {
                     if let Some(v) = fresh(row.ch, "fader").and_then(|v| v.as_f64()) { row.fader = v as f32; }
@@ -4898,6 +4935,7 @@ impl Engine {
         // always rides along (fresh status on every switch, never the
         // last desk's slots).
         out.push(self.native_snapshots_message());
+        out.extend(self.destination_controls_message());
         self.record_native_view();
         if entering_offline {
             self.kick_fill();
@@ -6705,6 +6743,7 @@ impl Engine {
                 // The desk is gone: native slots read unavailable (the
                 // driver reset its view on disconnect), never stale.
                 out.push(self.native_snapshots_message());
+                out.extend(self.destination_controls_message());
                 self.record_native_view();
                 Ok(None)
             }
@@ -7046,6 +7085,35 @@ impl Engine {
                 Ok(None)
             }
             // R2 mix-bus masters (0-based `bus` over `0..bus_count()`).
+            Cmd::DestinationParam { request_id, target, control, value, expected, epoch } => {
+                let result: anyhow::Result<()> = async {
+                    anyhow::ensure!(!request_id.is_empty() && request_id.len() <= 128, "Invalid destination request ID.");
+                    policy.allow_master()?;
+                    anyhow::ensure!(!self.reads_suspended.load(Ordering::Acquire) && epoch == self.connection_gen.load(Ordering::Acquire), "Destination connection changed; reopen the control.");
+                    anyhow::ensure!(value.is_finite() && expected.is_finite(), "Destination values must be finite.");
+                    let driver = self.active_drv();
+                    let controls = driver.destination_controls();
+                    let row = controls.iter().find(|row| row.target == target && row.id == control)
+                        .ok_or_else(|| anyhow::anyhow!("Destination control unavailable."))?;
+                    anyhow::ensure!(row.choices.iter().any(|choice| choice.value == value), "Destination value is not advertised.");
+                    anyhow::ensure!(row.current.as_ref().is_some_and(|current| current.value == expected), "Destination changed; reopen the control.");
+                    driver.set_destination_control(&target, &control, value, expected).await?;
+                    anyhow::ensure!(epoch == self.connection_gen.load(Ordering::Acquire), "Destination connection changed while writing; result uncertain.");
+                    self.note_write(writer);
+                    self.touch_holder_locks(writer);
+                    out.extend(self.destination_controls_message());
+                    Ok(())
+                }.await;
+                let accepted = result.is_ok();
+                let mut message = result.err().map(|error| error.to_string());
+                if accepted && self.active_drv().destination_controls().iter().any(|row| {
+                    row.target == target && row.id == control && row.current.as_ref()
+                        .is_some_and(|current| current.verified && current.value != value)
+                }) {
+                    message = Some("Command accepted, but the latest mixer value differs. Reopen the control.".to_string());
+                }
+                Ok(Some(Event::DestinationControlResult { request_id, epoch, accepted, message }))
+            }
             Cmd::BusFader { bus, value } => {
                 let value = openfader_core::validate_fader(value)?;
                 policy.allow_master_fader(value)?;

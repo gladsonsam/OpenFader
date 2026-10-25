@@ -200,6 +200,15 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.name()
     }
 
+    fn destination_controls(&self) -> Vec<crate::destinations::DestinationControl> {
+        self.inner.destination_controls()
+    }
+
+    async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
+        self.policy.allow_master()?;
+        self.inner.set_destination_control(target, control, value, expected).await
+    }
+
     fn channel_count(&self) -> usize {
         self.inner.channel_count()
     }
