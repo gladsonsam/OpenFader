@@ -627,8 +627,7 @@ pub struct SimDriver {
     /// reads those from the strip so the two views cannot disagree.
     params: RwLock<Vec<HashMap<String, ParamValue>>>,
     main: RwLock<f32>,
-    /// R2 Main LR master mute + per-strip solo (monitor bus), in-memory.
-    main_muted: RwLock<bool>,
+    /// Per-strip solo (monitor bus), in-memory.
     solos: RwLock<HashMap<u16, bool>>,
     signal_started: Instant,
     tick_offset: AtomicU64,
@@ -687,7 +686,6 @@ impl SimDriver {
             strips: RwLock::new(strips),
             params: RwLock::new(params),
             main: RwLock::new(main),
-            main_muted: RwLock::new(false),
             solos: RwLock::new(HashMap::new()),
             signal_started: Instant::now(),
             tick_offset: AtomicU64::new(0),
@@ -1247,12 +1245,13 @@ impl MixerDriver for SimDriver {
     }
 
     async fn set_main_mute(&self, muted: bool) -> anyhow::Result<()> {
-        *self.main_muted.write().expect("sim main mute poisoned") = muted;
-        Ok(())
+        // Share the Main strip with snapshots, param reads and meters.
+        // A separate mute bit lets the next state frame undo the main echo.
+        self.set_mute(StripId(SIM_TOPOLOGY[6].first as u16), muted).await
     }
 
     async fn get_main_mute(&self) -> anyhow::Result<bool> {
-        Ok(*self.main_muted.read().expect("sim main mute poisoned"))
+        self.get_mute(StripId(SIM_TOPOLOGY[6].first as u16)).await
     }
 
     async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
