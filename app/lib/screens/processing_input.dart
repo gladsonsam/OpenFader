@@ -147,7 +147,8 @@ class _InputTab extends StatelessWidget {
         Padding(
             padding:
                 EdgeInsets.only(top: wide ? 24 : 14, bottom: wide ? 16 : 0),
-            child: _ProcessingSend(store: store, send: send, wide: wide)),
+            child: _ProcessingSend(
+                store: store, send: send, wide: wide, onFocus: onFocus)),
     ]);
     if (!wide) {
       return Column(
@@ -369,8 +370,12 @@ class _ProcessingSend extends StatelessWidget {
   final ChannelStore store;
   final ChannelSendVm send;
   final bool wide;
+  final ValueChanged<ChannelFocus> onFocus;
   const _ProcessingSend(
-      {required this.store, required this.send, required this.wide});
+      {required this.store,
+      required this.send,
+      required this.wide,
+      required this.onFocus});
 
   @override
   Widget build(BuildContext context) {
@@ -385,12 +390,30 @@ class _ProcessingSend extends StatelessWidget {
             // engineering dB, bounded by both that law and advertised caps.
             final minDb = (range?.min ?? -90).clamp(-90.0, 10.0);
             final maxDb = (range?.max ?? 10).clamp(-90.0, 10.0);
+            void focusSend() => onFocus(ChannelFocus(
+                title: 'Sends',
+                label: send.destName,
+                text: () {
+                  final live = store.sendParamNote(send.slot, 'level').value;
+                  return live == null
+                      ? 'Loading…'
+                      : '${fmtDb(dbToPos(live))} dB';
+                },
+                min: minDb,
+                max: maxDb,
+                apply: (v) {
+                  store.setSendLevel(send.slot, dbToPos(v.clamp(minDb, maxDb)));
+                  focusSend();
+                }));
+
             return _ProcessingSlider(
                 label: send.destName,
                 compact: !wide,
+                showValue: false,
                 value: level,
                 min: 0,
                 max: 1,
+                onFocus: focusSend,
                 onTypedEntry: () async {
                   final next = await showNumberEntry(
                       context: context,
@@ -404,11 +427,15 @@ class _ProcessingSend extends StatelessWidget {
                       negInfValue: minDb);
                   if (next != null) {
                     store.setSendLevel(send.slot, dbToPos(next));
+                    focusSend();
                   }
                 },
                 text: db == null ? 'Loading…' : '${fmtDb(level)} dB',
                 enabled: db != null && store.supports('send${send.slot}_level'),
-                onChanged: (v) => store.setSendLevel(send.slot, v),
+                onChanged: (v) {
+                  store.setSendLevel(send.slot, v);
+                  focusSend();
+                },
                 trailing: _ProcessingButton(
                     label: 'M',
                     active: send.muted,
