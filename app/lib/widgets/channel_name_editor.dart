@@ -56,6 +56,9 @@ class _NameEditorState extends State<_NameEditor> {
       builder: (context, _) {
         final p = ConsolePalette.of(context);
         final unavailable = widget.store.nameEditError(widget.target);
+        final canRename = !_pending &&
+            unavailable == null &&
+            _text.text != widget.target.name;
         return PopScope(
           canPop: !_pending,
           child: AlertDialog(
@@ -64,7 +67,8 @@ class _NameEditorState extends State<_NameEditor> {
                 style: AppDesign.type(18, color: p.text7)),
             content: SizedBox(
               width: 320,
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
+              child: SingleChildScrollView(
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
                 TextField(
                   controller: _text,
                   autocorrect: false,
@@ -87,14 +91,31 @@ class _NameEditorState extends State<_NameEditor> {
                   ),
                   onChanged: (_) => setState(() => _error = null),
                   onSubmitted: (_) {
-                    if (unavailable == null) _save();
+                    if (unavailable == null &&
+                        _text.text != widget.target.name) {
+                      _save();
+                    }
                   },
                 ),
                 if (_pending)
                   Padding(
                       padding: const EdgeInsets.only(top: 12),
-                      child: Text('Waiting for name confirmation…',
+                      child: Text('Sending name…',
                           style: AppDesign.type(14, color: p.mutedText))),
+                if (widget.store.nameCanBeEmpty(widget.target))
+                  Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton(
+                        onPressed: _pending ||
+                                unavailable != null ||
+                                _text.text.isEmpty
+                            ? null
+                            : () => setState(() {
+                                  _text.clear();
+                                  _error = null;
+                                }),
+                        child: const Text('Default name'),
+                      )),
                 if (widget.store.colorsForChannel(widget.target).isNotEmpty)
                   Align(
                     alignment: Alignment.centerLeft,
@@ -143,7 +164,7 @@ class _NameEditorState extends State<_NameEditor> {
                           : 'Channel icon'),
                     ),
                   ),
-              ]),
+              ])),
             ),
             actions: [
               TextButton(
@@ -151,9 +172,10 @@ class _NameEditorState extends State<_NameEditor> {
                   child: Text('Cancel',
                       style: AppDesign.type(16, color: p.mutedText))),
               TextButton(
-                  onPressed: _pending || unavailable != null ? null : _save,
-                  child:
-                      Text('Rename', style: AppDesign.type(16, color: p.cyan))),
+                  onPressed: canRename ? _save : null,
+                  child: Text('Rename',
+                      style: AppDesign.type(16,
+                          color: canRename ? p.cyan : p.mutedText))),
             ],
           ),
         );

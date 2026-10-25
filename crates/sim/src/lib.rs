@@ -1048,6 +1048,12 @@ impl MixerDriver for SimDriver {
         })
     }
 
+    fn param_text_rules(&self, param: &str) -> Option<openfader_core::params::ParamTextRules> {
+        (param == "name").then_some(openfader_core::params::ParamTextRules {
+            max_utf8_bytes: Some(16), allow_empty: false, allow_edge_whitespace: true,
+        })
+    }
+
     fn channel_count(&self) -> usize {
         SIM_CHANNELS
     }

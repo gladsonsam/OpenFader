@@ -56,6 +56,14 @@ pub struct ParamSymbol {
     pub symbol: &'static str,
 }
 
+/// Text boundaries owned by the provider, not inferred from its name by UI.
+#[derive(Clone, Copy, Debug)]
+pub struct ParamTextRules {
+    pub max_utf8_bytes: Option<usize>,
+    pub allow_empty: bool,
+    pub allow_edge_whitespace: bool,
+}
+
 /// Provider-owned conditions over parameters on the current strip.
 /// Compound conditions keep routing-dependent controls independent of driver names.
 #[derive(Clone, Copy, Debug)]

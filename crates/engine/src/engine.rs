@@ -2221,6 +2221,7 @@ impl Engine {
                 let mut frame = param_def_frame(def);
                 let swatches = self.drv(&driver).param_swatches(def.id);
                 let symbols = self.drv(&driver).param_symbols(def.id);
+                let text = self.drv(&driver).param_text_rules(def.id);
                 frame.presentations = presentations.iter().filter(|p| p.id == def.id).map(|p| {
                     json!({
                         "when": p.when.map(presentation_condition_frame),
@@ -2243,6 +2244,13 @@ impl Engine {
                         "symbols": symbols.iter().map(|s| json!({
                             "value": s.value, "label": s.label, "symbol": s.symbol,
                         })).collect::<Vec<_>>()
+                    }));
+                }
+                if let Some(text) = text {
+                    frame.presentations.insert(0, json!({
+                        "text": { "max_utf8_bytes": text.max_utf8_bytes,
+                            "allow_empty": text.allow_empty,
+                            "allow_edge_whitespace": text.allow_edge_whitespace }
                     }));
                 }
                 frame
