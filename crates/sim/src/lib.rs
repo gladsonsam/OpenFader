@@ -273,7 +273,10 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
     {
         let mut s = ChannelStrip::new(72, "MAIN".to_string());
         s.pan = 0.0;
-        s.fader = 0.8;
+        s.fader = match preset {
+            SimPreset::Studio => STUDIO_MAIN,
+            _ => 0.8,
+        };
         s.mute = false;
         v.push(s);
     }
@@ -626,7 +629,6 @@ pub struct SimDriver {
     /// [`ChannelStrip`] and are intentionally NOT mirrored here; `get_param`
     /// reads those from the strip so the two views cannot disagree.
     params: RwLock<Vec<HashMap<String, ParamValue>>>,
-    main: RwLock<f32>,
     /// Per-strip solo (monitor bus), in-memory.
     solos: RwLock<HashMap<u16, bool>>,
     signal_started: Instant,
@@ -660,10 +662,6 @@ impl SimDriver {
     /// Geometry is unchanged (32ch + 8 buses); only scribbles differ
     /// (studio additionally mirrors desk-as-found faders/mutes + main).
     pub fn with_preset(preset: SimPreset) -> Self {
-        let main = match preset {
-            SimPreset::Studio => STUDIO_MAIN,
-            _ => 0.8,
-        };
         let strips = default_strips_for(preset);
         // Seed the param-plane map from the strip scribbles so every
         // catalogue id reads back a plausible live-desk value from the
@@ -685,7 +683,6 @@ impl SimDriver {
         Self {
             strips: RwLock::new(strips),
             params: RwLock::new(params),
-            main: RwLock::new(main),
             solos: RwLock::new(HashMap::new()),
             signal_started: Instant::now(),
             tick_offset: AtomicU64::new(0),
@@ -1109,19 +1106,19 @@ impl MixerDriver for SimDriver {
 
     async fn set_bus_fader(&self, bus: u8, value: f32) -> anyhow::Result<()> {
         let v = validate_fader(value)?;
-        let i = SIM_CHANNELS + bus as usize;
-        if i >= SIM_STRIPS {
+        if bus as usize >= SIM_BUSES {
             anyhow::bail!("sim: bus {bus} out of range 0..{}", SIM_BUSES);
         }
+        let i = SIM_CHANNELS + bus as usize;
         self.write()[i].fader = v;
         Ok(())
     }
 
     async fn get_bus_fader(&self, bus: u8) -> anyhow::Result<f32> {
-        let i = SIM_CHANNELS + bus as usize;
-        if i >= SIM_STRIPS {
+        if bus as usize >= SIM_BUSES {
             anyhow::bail!("sim: bus {bus} out of range 0..{}", SIM_BUSES);
         }
+        let i = SIM_CHANNELS + bus as usize;
         Ok(self.read()[i].fader)
     }
 
@@ -1235,13 +1232,13 @@ impl MixerDriver for SimDriver {
     }
 
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
-        let v = validate_fader(value)?;
-        *self.main.write().expect("sim main poisoned") = v;
-        Ok(())
+        // Master commands, strip params, snapshots, recall and meters all
+        // address the same LR fader, just as they do for the LR mute.
+        self.set_fader(StripId(SIM_TOPOLOGY[6].first as u16), value).await
     }
 
     async fn get_main_fader(&self) -> anyhow::Result<f32> {
-        Ok(*self.main.read().expect("sim main poisoned"))
+        self.get_fader(StripId(SIM_TOPOLOGY[6].first as u16)).await
     }
 
     async fn set_main_mute(&self, muted: bool) -> anyhow::Result<()> {

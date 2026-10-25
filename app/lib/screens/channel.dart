@@ -131,7 +131,7 @@ class ChannelFocus {
   final String label;
   final String Function() text;
   final String Function()? entryText;
-  final ValueListenable<double>? valueListenable;
+  final Listenable? valueListenable;
   final double _min;
   final double _max;
   final List<double>? Function()? resolveRange;
@@ -195,9 +195,9 @@ class _ChannelPageState extends State<ChannelPage> {
   }
 
   void _switchTab(ChannelStore store, ChannelTab tab) {
+    store.setTab(tab);
     _focus.value =
         tab == ChannelTab.eq ? eqFreqFocus(store, store.eq.selectedBand) : null;
-    store.setTab(tab);
   }
 
   Widget _swipeNavigation(ChannelStore store, Widget child) {
@@ -273,14 +273,16 @@ class _ChannelPageState extends State<ChannelPage> {
             };
             final content = SingleChildScrollView(
               key: PageStorageKey('processing-${store.tab.name}'),
-              child: wide
-                  ? Padding(
-                      padding: const EdgeInsets.all(12), child: tabContent)
-                  : MobileReferenceWidth(
-                      referenceWidth: 362,
-                      child: Padding(
-                          padding: const EdgeInsets.fromLTRB(8, 12, 8, 20),
-                          child: tabContent)),
+              child: KeyedSubtree(
+                  key: ValueKey((store.stripKey, store.tab)),
+                  child: wide
+                      ? Padding(
+                          padding: const EdgeInsets.all(12), child: tabContent)
+                      : MobileReferenceWidth(
+                          referenceWidth: 362,
+                          child: Padding(
+                              padding: const EdgeInsets.fromLTRB(8, 12, 8, 20),
+                              child: tabContent))),
             );
             return LayoutBuilder(builder: (context, bounds) {
               final stripWidth = wide

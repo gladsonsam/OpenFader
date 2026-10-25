@@ -66,7 +66,9 @@ class FakeSimEngine implements EngineApi {
               'send${slot}_on': true,
             },
           });
+  double _mainFader = 0.8;
   bool _mainMuted = false;
+  final List<bool> _solos = List.filled(8, false);
 
   // Subgroup masters mirror the native sim initial values.
   final List<double> _subgroupFaders = List.filled(6, 0);
@@ -119,6 +121,16 @@ class FakeSimEngine implements EngineApi {
               'max': 5,
               'unit': '',
             },
+            if (RegExp(r'^send\d+_level$').hasMatch(id)) ...{
+              'min': -90,
+              'max': 10,
+              'unit': 'dB',
+            },
+            if (RegExp(r'^send\d+_pan$').hasMatch(id)) ...{
+              'min': -100,
+              'max': 100,
+              'unit': '%',
+            },
             if (canonicalSimDspRange(id) case final range?) ...{
               'min': range.first,
               'max': range.last,
@@ -141,6 +153,7 @@ class FakeSimEngine implements EngineApi {
       _echoSubgroup(group);
     }
     for (var ch = 0; ch < _params.length; ch++) {
+      _echoSolo(ch);
       _mailbox.add(jsonEncode({
         'type': 'params',
         'ch': ch,
@@ -242,11 +255,32 @@ class FakeSimEngine implements EngineApi {
         }
         _snapshot();
         return;
+      case 'main_fader':
+        final value = c['value'];
+        if (value is! num || !value.isFinite || value < 0 || value > 1) {
+          return;
+        }
+        _mainFader = value.toDouble();
+        _echoMain();
+        return;
       case 'main_mute':
         final muted = c['muted'];
         if (muted is! bool) return;
         _mainMuted = muted;
         _echoMain();
+        return;
+      case 'solo':
+        final soloed = c['soloed'];
+        if (ch == null || soloed is! bool) return;
+        _solos[ch] = soloed;
+        _echoSolo(ch);
+        return;
+      case 'clear_solo':
+        for (var ch = 0; ch < _solos.length; ch++) {
+          if (!_solos[ch]) continue;
+          _solos[ch] = false;
+          _echoSolo(ch);
+        }
         return;
       case 'subgroup_fader':
       case 'subgroup_mute':
@@ -283,7 +317,20 @@ class FakeSimEngine implements EngineApi {
   }
 
   void _echoMain() {
-    _mailbox.add(jsonEncode({'type': 'main', 'muted': _mainMuted}));
+    _mailbox.add(jsonEncode({
+      'type': 'main',
+      'fader': _mainFader,
+      'muted': _mainMuted,
+    }));
+  }
+
+  void _echoSolo(int ch) {
+    _mailbox.add(jsonEncode({
+      'type': 'solo',
+      'ch': ch,
+      'key': _strips[ch].key,
+      'soloed': _solos[ch],
+    }));
   }
 
   void _echoSubgroup(int group) {

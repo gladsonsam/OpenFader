@@ -124,7 +124,10 @@ class ChannelToolbar extends StatelessWidget {
                             child: focus == null
                                 ? _FaderValue(store: store, compact: compact)
                                 : _FocusedValue(
-                                    focus: focus, compact: compact))),
+                                    focus: focus,
+                                    compact: compact,
+                                    isCurrent: () => identical(
+                                        controlFocus?.value, focus)))),
                   ]))),
           Positioned(
               left: toolsLeft,
@@ -188,14 +191,15 @@ class ChannelToolbar extends StatelessWidget {
 class _FocusedValue extends StatelessWidget {
   final ChannelFocus focus;
   final bool compact;
-  const _FocusedValue({required this.focus, required this.compact});
+  final bool Function() isCurrent;
+  const _FocusedValue(
+      {required this.focus, required this.compact, required this.isCurrent});
   @override
   Widget build(BuildContext context) {
     final live = focus.valueListenable;
     if (live == null) return _value(context);
-    return ValueListenableBuilder<double>(
-        valueListenable: live,
-        builder: (context, value, child) => _value(context));
+    return ListenableBuilder(
+        listenable: live, builder: (context, child) => _value(context));
   }
 
   Widget _value(BuildContext context) => InkWell(
@@ -208,7 +212,12 @@ class _FocusedValue extends StatelessWidget {
                   initial: focus.entryText?.call() ?? focus.text(),
                   min: focus.min,
                   max: focus.max);
-              if (v != null && focus.enabled) focus.apply(v);
+              if (v != null &&
+                  context.mounted &&
+                  isCurrent() &&
+                  focus.enabled) {
+                focus.apply(v);
+              }
             },
       child: SizedBox(
           height: 44,
@@ -376,6 +385,7 @@ class _FaderValue extends StatelessWidget {
   }
 
   Future<void> _type(BuildContext context) async {
+    final target = store.stripKey;
     final v = await showNumberEntry(
         context: context,
         title: 'Ch ${store.channelNumber} fader',
@@ -384,7 +394,7 @@ class _FaderValue extends StatelessWidget {
         max: 10,
         allowNegInf: true,
         negInfValue: double.negativeInfinity);
-    if (v == null) return;
+    if (v == null || !context.mounted || store.stripKey != target) return;
     store.setFaderDb(v.isFinite ? v : -90);
   }
 }
