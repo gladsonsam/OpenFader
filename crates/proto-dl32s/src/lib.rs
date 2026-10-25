@@ -411,7 +411,7 @@ fn decode_push(push: PushEvent) -> Vec<ParamUpdate> {
 /// big-endian IEEE-754 dB. Rig-verified 2026-10-24 (CH7 A->B flip moved only
 /// word 7 by >10 dB; word 7 restored with all 106 CH7 words): structurally
 /// upstream, CH7 live-pinned. Words past the first 32 ride the rest of the
-/// meter layout (returns, aux masters, mains) — unmodelled, never cached.
+/// meter layout; the extended layout appends measured processor telemetry.
 const METER_START: u32 = 1;
 
 /// Staleness bound for the input-meter cache: the desk pushes at ~11 Hz, so
@@ -428,6 +428,8 @@ struct MeterState {
     generation: u64,
     updated_at: Option<std::time::Instant>,
     levels: Vec<f32>,
+    dynamics_at: Option<std::time::Instant>,
+    dynamics: Vec<openfader_core::DynamicsMeterFrame>,
 }
 
 /// Decode one meter push (type-1 `Values`) into the 32 linear input levels,
@@ -458,6 +460,25 @@ fn decode_input_meters(push: &PushEvent) -> Option<Vec<f32>> {
         out.push(10f32.powf(db / 20.0).clamp(0.0, 1.0));
     }
     Some(out)
+}
+
+// The 91-word input/RTA prefix is unchanged. Each appended six-word row
+// is gate IN/positive GR/OUT then compressor IN/positive GR/OUT.
+const DYNAMICS_OFFSET: usize = 91;
+const DYNAMICS_FRAME_LEN: usize = DYNAMICS_OFFSET + 32 * 6;
+fn decode_dynamics_meters(push: &PushEvent) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
+    let PushEvent::Values { value_type: VALUE_TYPE_METERS, start: METER_START, raws } = push else { return None; };
+    if raws.len() != DYNAMICS_FRAME_LEN { return None; }
+    let mut frames = Vec::with_capacity(32);
+    for (ch, row) in raws[DYNAMICS_OFFSET..].as_chunks::<6>().0.iter().enumerate() {
+        let v: Vec<f32> = row.iter().map(|r| f32::from_bits(*r)).collect();
+        if v.iter().any(|v| !v.is_finite()) || v[1] < -0.001 || v[4] < -0.001 { return None; }
+        frames.push(openfader_core::DynamicsMeterFrame {
+            ch: ch as u16, gate_in: v[0], gate_reduction: v[1].max(0.0), gate_out: v[2],
+            comp_in: v[3], comp_reduction: v[4].max(0.0), comp_out: v[5],
+        });
+    }
+    Some(frames)
 }
 
 /// Shared RTA selector (type-2) address: the desk's RTA source selector.
@@ -563,7 +584,7 @@ fn decode_rta_bins(push: &PushEvent) -> Option<Vec<f32>> {
         } if *value_type == VALUE_TYPE_METERS => (*start, raws),
         _ => return None,
     };
-    if start != METER_START || raws.len() != RTA_FRAME_LEN {
+    if start != METER_START || !matches!(raws.len(), RTA_FRAME_LEN | DYNAMICS_FRAME_LEN) {
         return None;
     }
     let mut out = Vec::with_capacity(RTA_BIN_COUNT);
@@ -1612,17 +1633,16 @@ impl MixerDriver for Dl32sDriver {
         // update channel (one task per connection; it exits when the next
         // connect bumps the generation or the session drops). Mirrors the
         // X-Air session->driver forward path. Type-1 meter blocks ride a
-        // separate branch into the input-meter cache (first 32 words only);
-        // `decode_push` keeps dropping them as params.
-        // DL32S-only 91-entry meter layout (per-client override through the
-        // transport layout hook): RTA bins ride indices 60..90 while the
-        // first 32 input words stay put. Best-effort — a refused layout just
-        // leaves RTA unavailable while input meters keep flowing.
+        // separate telemetry branch; `decode_push` never treats them as params.
+        // The per-client 283-entry layout preserves the input/RTA prefix
+        // (input0..31, RTA60..90) and appends six dynamics words per input.
+        // A refused override leaves extended telemetry unavailable while
+        // the default input stream can continue.
         if let Err(e) = session
-            .request_meter_layout(&openfader_transport::mackie::dl32s_meter_addresses())
+            .request_meter_layout(&openfader_transport::mackie::dl32s_dynamics_meter_addresses())
             .await
         {
-            eprintln!("dl32s: RTA meter layout override failed (input meters continue, RTA unavailable): {e:#}");
+            eprintln!("dl32s: dynamics/RTA meter layout override failed (input meters continue, extended telemetry unavailable): {e:#}");
         }
         // Liveness recheck (r50): the layout override above awaited two
         // correlated round trips. Recheck BEFORE publishing the session or
@@ -1644,6 +1664,8 @@ impl MixerDriver for Dl32sDriver {
             m.generation = generation;
             m.updated_at = None;
             m.levels.clear();
+            m.dynamics_at = None;
+            m.dynamics.clear();
         }
         // Initial shared-source read: the rig-confirmed initial bulk carries
         // the type-2 addr-22 selector (5000 = Return 1–2). Treated as a
@@ -1712,10 +1734,15 @@ impl MixerDriver for Dl32sDriver {
                                 m.generation = generation;
                                 m.updated_at = Some(std::time::Instant::now());
                                 m.levels = levels;
+                                if let Some(frames) = decode_dynamics_meters(&push) {
+                                    m.dynamics_at = Some(std::time::Instant::now());
+                                    m.dynamics = frames;
+                                }
+
                             }
-                            // The 91-word frame carries both planes: meters
+                            // The 283-word frame retains the input/RTA prefix: meters
                             // above, RTA bins at 60..90. A 60-word frame
-                            // yields meters only (exact-shape gate inside).
+                            // yields input meters only (exact-shape gate inside).
                             if let Some(bins) = decode_rta_bins(&push) {
                                 if let Ok(mut s) = spectrum.lock() {
                                     if s.generation == generation {
@@ -2311,6 +2338,13 @@ impl MixerDriver for Dl32sDriver {
         }
     }
 
+    fn poll_dynamics_meters(&self) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
+        let current = self.generation.load(Ordering::Acquire);
+        Some(self.meters.lock().ok().filter(|m| m.generation == current &&
+            m.dynamics_at.is_some_and(|at| at.elapsed() <= METER_STALE_AFTER))
+            .map(|m| m.dynamics.clone()).unwrap_or_default())
+    }
+
     /// Passive shared RTA (Return 1–2): the desk's MF-selected source,
     /// followed read-only — no acquisition, no restore writes. Returns the
     /// global (`strip: None`) frame for the confirmed selector 5000
@@ -2394,6 +2428,7 @@ impl MixerDriver for Dl32sDriver {
     }
 
     async fn disconnect(&self) -> anyhow::Result<()> {
+        self.generation.fetch_add(1, Ordering::SeqCst);
         if let Some(session) = self.session.lock().await.take() {
             session.close();
         }
@@ -2401,6 +2436,8 @@ impl MixerDriver for Dl32sDriver {
         if let Ok(mut m) = self.meters.lock() {
             m.updated_at = None;
             m.levels.clear();
+            m.dynamics_at = None;
+            m.dynamics.clear();
         }
         if let Ok(mut s) = self.spectrum.lock() {
             s.updated_at = None;

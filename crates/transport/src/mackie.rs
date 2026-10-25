@@ -495,6 +495,17 @@ pub fn dl32s_meter_addresses() -> Vec<i32> {
     addrs
 }
 
+/// Existing input/RTA prefix plus six measured dynamics words per input.
+/// CH7 gate range8/20 and compressor reduction/makeup probes pin the order:
+/// gate IN/GR/OUT, compressor IN/GR/OUT. This layout is per-client only.
+pub fn dl32s_dynamics_meter_addresses() -> Vec<i32> {
+    let mut addrs = dl32s_meter_addresses();
+    for z in 0..32 {
+        addrs.extend(35 + z * 7..=40 + z * 7);
+    }
+    addrs
+}
+
 /// METER_LAYOUT body: a flag word with byte 3 set, then each address as BE i32.
 pub fn build_meter_layout(addresses: &[i32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(4 + addresses.len() * 4);

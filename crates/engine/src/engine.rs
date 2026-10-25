@@ -487,6 +487,7 @@ enum RtSlot {
     Spectrum(u16),
     Audio(u16),
     Gr(u16),
+    Dynamics,
 }
 
 /// Classify a frame: `Some` key for supersede-by-newer meter-class frames
@@ -501,6 +502,7 @@ fn rt_slot_key(event: &Event) -> Option<RtSlot> {
         Event::Spectrum { ch, .. } => Some(RtSlot::Spectrum(*ch)),
         Event::AudioSpectrum { ch, .. } => Some(RtSlot::Audio(ch.unwrap_or(u16::MAX))),
         Event::Gr { ch, .. } => Some(RtSlot::Gr(*ch)),
+        Event::DynamicsMeters { .. } => Some(RtSlot::Dynamics),
         _ => None,
     }
 }
@@ -520,6 +522,7 @@ struct RtSlots {
     /// A realtime frame is currently queued in the channel.
     inflight: bool,
     meters: Option<SharedEvent>,
+    dynamics: Option<SharedEvent>,
     taps: HashMap<String, SharedEvent>,
     spectrum: HashMap<u16, SharedEvent>,
     audio: HashMap<u16, SharedEvent>,
@@ -531,6 +534,7 @@ impl RtSlots {
     /// frame is superseded and dropped).
     fn store(&mut self, key: RtSlot, frame: SharedEvent) {
         match key {
+            RtSlot::Dynamics => { self.dynamics = Some(frame); }
             RtSlot::Meters => {
                 self.meters = Some(frame);
             }
@@ -556,6 +560,7 @@ impl RtSlots {
         if let Some(frame) = self.meters.take() {
             out.push(frame);
         }
+        if let Some(frame) = self.dynamics.take() { out.push(frame); }
         let mut taps: Vec<_> = std::mem::take(&mut self.taps).into_iter().collect();
         taps.sort_by(|a, b| a.0.cmp(&b.0));
         out.extend(taps.into_iter().map(|(_, frame)| frame));
@@ -574,6 +579,7 @@ impl RtSlots {
     /// Frames currently held outside the channel.
     fn occupancy(&self) -> usize {
         usize::from(self.meters.is_some())
+            + usize::from(self.dynamics.is_some())
             + self.taps.len()
             + self.spectrum.len()
             + self.audio.len()
@@ -1518,6 +1524,7 @@ impl Engine {
                 let mut audio_spectrum_generation = 0;
                 let mut last_audio_spectrum_epoch = 0;
                 let mut meters_live = false;
+                let mut dynamics_live = false;
                 let mut last_level_sample = None;
                 let mut last_gr_sample = None;
                 let mut tick =
@@ -1614,6 +1621,17 @@ impl Engine {
                         if let Some(bins) = drv.demo_spectrum(ch) {
                             engine.broadcast(Event::Spectrum { ch: ch as u16, bins });
                         }
+                    }
+                    let dynamics = if engine.reads_suspended.load(Ordering::Acquire) {
+                        Vec::new()
+                    } else { drv.poll_dynamics_meters().unwrap_or_default() };
+                    if !dynamics.is_empty() || dynamics_live {
+                        dynamics_live = !dynamics.is_empty();
+                        engine.broadcast(Event::DynamicsMeters { frames: dynamics.into_iter().map(|m| json!({
+                            "ch": m.ch, "gate_in": m.gate_in, "gate_reduction": m.gate_reduction,
+                            "gate_out": m.gate_out, "comp_in": m.comp_in,
+                            "comp_reduction": m.comp_reduction, "comp_out": m.comp_out,
+                        })).collect() });
                     }
                     let gr_count = drv.gr_channel_count();
                     for ch in 0..if gr_updated { gr_count } else { 0 } {
@@ -2288,6 +2306,7 @@ impl Engine {
             unsupported,
             topology,
             meter_taps: self.driver_meter_taps(&driver),
+            dynamics_meters: self.drv(&driver).poll_dynamics_meters().is_some(),
             fx: self.fx_caps(&driver),
             routing: self.routing_caps(&driver),
             groups: self.groups_caps(&driver),

@@ -459,6 +459,18 @@ List<double> eqResponseDb(ChannelEqVm eq) {
 
 enum DynKind { gate, comp }
 
+/// Independent measured processor input/output and positive reduction dB.
+class ChannelDynamicsMetersVm {
+  final double gateIn, gateReduction, gateOut, compIn, compReduction, compOut;
+  const ChannelDynamicsMetersVm(
+      {required this.gateIn,
+      required this.gateReduction,
+      required this.gateOut,
+      required this.compIn,
+      required this.compReduction,
+      required this.compOut});
+}
+
 /// Dynamics snapshot for one gate or comp section.
 class ChannelDynVm {
   final DynKind kind;

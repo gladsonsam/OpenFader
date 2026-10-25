@@ -809,6 +809,7 @@ pub enum Event {
         position: String,
         epoch: u64,
     },
+    DynamicsMeters { frames: Vec<serde_json::Value> },
     Gr {
         ch: u16,
         gate: f32,
@@ -822,6 +823,8 @@ pub enum Event {
         topology: Vec<TopologyFamily>,
         #[serde(default)]
         meter_taps: Vec<String>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        dynamics_meters: bool,
         /// R2 FX family (`slots` + type tables). `#[serde(default)]` so old
         /// `caps` fixtures still parse.
         #[serde(default)]
@@ -1110,6 +1113,7 @@ impl Event {
             Event::Spectrum { .. } => "spectrum",
             Event::AudioSpectrum { .. } => "audio_spectrum",
             Event::Gr { .. } => "gr",
+            Event::DynamicsMeters { .. } => "dynamics_meters",
             Event::Caps { .. } => "caps",
             Event::Params { .. } => "params",
             Event::Locks { .. } => "locks",
