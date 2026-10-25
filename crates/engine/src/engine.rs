@@ -21,12 +21,14 @@ use openfader_core::{
     MeterFrame, NativeSnapshots, ParamValue, StripId,
 };
 use serde_json::{json, Value};
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{mpsc, Mutex, Notify};
 
 use crate::drivers::{driver_names, DynDriver, FxFlavor, RegisteredDriver};
+use crate::local_library::{self, LibraryHealth, LibraryMode, LibraryStatus};
 use crate::protocol::{
-    Cmd, DeviceCheck, DeviceDesc, Event, FxSlotState, NativeSnapshotEntry, NativeSnapshotsCaps,
-    OfflineChange, ParamDef, PatchEntry, Scene as SceneFrame, SharedEvent, Show as ShowFrame,
+    Cmd, DeviceCheck, DeviceDesc, Event, FxSlotState, LibraryAction, NativeSnapshotEntry,
+    NativeSnapshotsCaps, OfflineChange, ParamDef, PatchEntry, Scene as SceneFrame, SharedEvent,
+    Show as ShowFrame,
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 
@@ -125,6 +127,15 @@ pub struct StoredRoute {
     pub key: Option<String>,
     pub group: String,
     pub index: u8,
+}
+
+/// Outcome of a serialized library commit (see
+/// [`Engine::commit_locked`]): memory was swapped in both cases —
+/// committed durably, or renamed-but-unproven. Callers publish success
+/// frames only on `Committed`.
+enum CommitDisposition {
+    Committed { revision: u64 },
+    Uncertain { revision: u64, error: String },
 }
 
 /// Scoped recall: which strips / param groups / globals a `scene_recall`
@@ -425,10 +436,12 @@ pub struct EngineConfig {
     pub poll_interval: Duration,
     /// Optional sim desk preset (hardware drivers ignore it).
     pub preset: Option<openfader_sim::SimPreset>,
-    /// R2 scene library directory: numbered scenes persist as
-    /// `scenes.json` here and reload on the next [`Engine::new`].
-    /// `None` = in-memory only (tests default here and pass a temp dir
-    /// when they want persistence).
+    /// R2 scene library directory: the combined numbered+named library
+    /// persists as `scenes.json` (v2) here and reloads on the next
+    /// [`Engine::new`]. Load is strict whole-document: a corrupt file
+    /// latches a visible library error and blocks overwriting writes
+    /// until reset or restart. `None` = in-memory only (tests default
+    /// here and pass a temp dir when they want persistence).
     pub data_dir: Option<PathBuf>,
     /// R2 poller pipelining: max concurrent driver queries per tick.
     /// `None` in config = per-driver default (see [`DynDriver::poll_inflight`]).
@@ -722,9 +735,24 @@ pub struct Engine {
     /// R2 link state behind the `link` event.
     link: RwLock<LinkState>,
     /// R2 numbered scene library (slot -> scene) + current slot marker.
-    /// Persisted as `scenes.json` under `data_dir` when configured.
+    /// Persisted as `scenes.json` under `data_dir` when configured, through
+    /// the durable kernel (`crate::local_library`): strict whole-document
+    /// v2 load, serialized atomic commits. The current slot stays
+    /// session-only (loading never recalls audio).
     scenes_lib: RwLock<HashMap<u16, StoredScene>>,
     scenes_current: RwLock<Option<u16>>,
+    /// Serializes ALL numbered/named library mutations (one engine-owned
+    /// async lock; never a `std` lock across `.await`).
+    lib_lock: Mutex<()>,
+    /// Durability health of the local library (ready/error/uncertain +
+    /// mode + latch message + owned file bytes).
+    lib_health: RwLock<LibraryHealth>,
+    /// Monotonic library revision (bumped on every committed/uncertain
+    /// replace; `expected_revision` rejects stale dialogs).
+    lib_revision: AtomicU64,
+    /// Temp-file uniqueness counter for atomic commits (serialized by
+    /// `lib_lock`).
+    lib_temp: AtomicU64,
     /// Last broadcast read-only native snapshot view: (connection
     /// generation, driver view). The meter ticker re-samples the driver
     /// hook every tick and broadcasts only on change (or generation
@@ -836,7 +864,14 @@ impl Engine {
     /// first [`attach`](Engine::attach).
     pub fn new(config: EngineConfig) -> Arc<Self> {
         let data_dir = config.data_dir.clone();
-        let scenes_lib = load_scenes(data_dir.as_deref());
+        // Strict whole-document load of the combined v2 library (numbered +
+        // named). Failures latch a visible error, empty the in-memory
+        // libraries, keep the source file untouched, and block overwriting
+        // writes until reset or restart. `None` stays valid in-memory.
+        let loaded = local_library::load_library(data_dir.as_deref());
+        let scenes_lib = loaded.numbered;
+        let shows_lib = loaded.shows;
+        let lib_health = loaded.health;
         // Remembered desk addresses survive a restart (scan re-verify +
         // directed unicast sweep need them; broadcast never crosses
         // subnets). In-memory only when no data dir is configured.
@@ -869,7 +904,7 @@ impl Engine {
             clients: RwLock::new(HashMap::new()),
             next_client: AtomicU64::new(1),
             locks: RwLock::new(HashMap::new()),
-            shows: RwLock::new(Vec::new()),
+            shows: RwLock::new(shows_lib),
             param_cache: RwLock::new(HashMap::new()),
             param_dropped: RwLock::new(HashSet::new()),
             poll_cursor: AtomicU64::new(0),
@@ -891,6 +926,10 @@ impl Engine {
             link: RwLock::new(LinkState::default()),
             scenes_lib: RwLock::new(scenes_lib),
             scenes_current: RwLock::new(None),
+            lib_lock: Mutex::new(()),
+            lib_health: RwLock::new(lib_health),
+            lib_revision: AtomicU64::new(0),
+            lib_temp: AtomicU64::new(0),
             native_last: RwLock::new((1, None)),
             data_dir,
             fx_cache: RwLock::new(Vec::new()),
@@ -1105,21 +1144,66 @@ impl Engine {
     /// (best-effort). Only successful connects/probes reach here, so a scan
     /// never unicast-probes a dead host it invented. Sim addresses are not
     /// desks (a scan skips them anyway), so they never touch `desks.json`.
+    /// Holds the `desk_addrs` write lock across the synchronous atomic
+    /// persist (never across `.await`) so a racing `forget_saved_mixers`
+    /// clear cannot interleave between the map insert and the disk write;
+    /// failures only log and never fail the connect/probe.
     fn remember_desk(&self, driver: &str, addr: &str) {
         if !self.drv(driver).is_hardware() {
             return;
         }
-        {
-            let mut addrs = self.desk_addrs.write().unwrap();
-            addrs.insert(driver.to_string(), addr.to_string());
-        }
-        self.save_desks();
+        let mut addrs = self.desk_addrs.write().unwrap();
+        addrs.insert(driver.to_string(), addr.to_string());
+        let Some(dir) = self.data_dir.clone() else {
+            return;
+        };
+        // Best-effort atomic persist while holding the write lock (never
+        // across `.await`): `persist_desks` only logs on failure, so a
+        // read-only data dir never fails the connect/probe.
+        persist_desks(Some(dir.as_path()), &addrs);
     }
 
-    /// Persist remembered desk addresses (`desks.json`; in-memory when no
-    /// data dir). Best-effort, mirroring [`Engine::save_scenes`].
-    fn save_desks(&self) {
-        persist_desks(self.data_dir.as_deref(), &self.desk_addrs.read().unwrap());
+    /// Pure-local forget of every saved mixer address: clears the in-memory
+    /// remembered desk map and durably persists the empty map. No driver,
+    /// query, connect, disconnect, probe, scan or native-view work; no
+    /// library revision, health, generation, caps or meter changes. Sync
+    /// (no `.await` inside, no `std` lock held across `.await`) so tests
+    /// and the `forget_saved_mixers` command share one path.
+    pub fn forget_saved_mixers(&self, request_id: String) -> Event {
+        const OP: &str = "forget_saved_mixers";
+        let ok = |request_id: String| Event::DeviceOperationComplete {
+            request_id,
+            operation: OP.to_string(),
+            results: Vec::new(),
+            error: None,
+        };
+        let err = |request_id: String, message: String| Event::DeviceOperationComplete {
+            request_id,
+            operation: OP.to_string(),
+            results: Vec::new(),
+            error: Some(message),
+        };
+        let Some(dir) = self.data_dir.clone() else {
+            self.desk_addrs.write().unwrap().clear();
+            return ok(request_id);
+        };
+        let mut addrs = self.desk_addrs.write().unwrap();
+        let empty: HashMap<String, String> = HashMap::new();
+        match write_desks_atomic(&dir, &empty) {
+            Ok(DesksWriteOutcome::Committed) => {
+                addrs.clear();
+                drop(addrs);
+                ok(request_id)
+            }
+            Ok(DesksWriteOutcome::Uncertain(message)) => {
+                // Rename landed but the directory sync did not prove
+                // durability: memory matches the (possibly unproven) disk.
+                addrs.clear();
+                drop(addrs);
+                err(request_id, message)
+            }
+            Err(message) => err(request_id, message),
+        }
     }
 
     /// Attach a client: allocate its id, register it, and queue the
@@ -1130,7 +1214,8 @@ impl Engine {
     /// `link`, `info`?, `scenes`, `fx`, `routing`,
     /// master-section frames (`bus`/`subgroup`/`mute_group` + sparse
     /// assigns + `main` + sparse `solo`), then one `params` frame per
-    /// cached channel) into the new
+    /// cached channel, then the read-only `native_snapshots` frame, then
+    /// (device mode only) the `local_library_status` frame) into the new
     /// mailbox before any live broadcast can reach it. The join roster
     /// update goes to the already-connected siblings only.
     ///
@@ -1197,8 +1282,14 @@ impl Engine {
                 for frame in [you, state, shows, roster, locks, caps, devices, link].into_iter()
                     .chain(info).chain([scenes, fx, routing]).chain(masters).chain(params)
                     .chain(std::iter::once(native))
-                    .chain(sync.typed.values().cloned()).chain(std::iter::once(Event::SyncEpoch { epoch: generation })) {
-                    Self::push_to(entry, SharedEvent::new(self.reconcile_event(frame, &sync, snapshot_started)));
+                    .chain(self.device_library_status())
+                    .chain(sync.typed.values().cloned())
+                    .chain(std::iter::once(Event::SyncEpoch { epoch: generation }))
+                {
+                    Self::push_to(
+                        entry,
+                        SharedEvent::new(self.reconcile_event(frame, &sync, snapshot_started)),
+                    );
                 }
                 // Lock-free (no client/sync locks held): remember the
                 // emitted native view so the ticker stays quiet until it
@@ -1228,7 +1319,8 @@ impl Engine {
     /// it downgraded): `state`, `shows`, `clients`, `locks`, `caps`,
     /// `devices`, `link`, `info` (best-effort), `scenes`, `fx`, `routing`,
     /// `masters_snapshot`, then one `params` frame per cached channel,
-    /// then the read-only `native_snapshots` frame.
+    /// then the read-only `native_snapshots` frame, then (device mode
+    /// only) the `local_library_status` frame.
     ///
     /// Never re-inserts the client, never touches locks/roles, and no-ops
     /// when the id is not attached. Cheap enough to be idempotent: adapters
@@ -1283,6 +1375,7 @@ impl Engine {
             .chain(masters)
             .chain(params)
             .chain(std::iter::once(native))
+            .chain(self.device_library_status())
             .chain(sync.typed.values().cloned())
             .chain(std::iter::once(Event::SyncEpoch { epoch: generation }))
         {
@@ -2498,15 +2591,458 @@ impl Engine {
         Event::Scenes { scenes }
     }
 
-    /// Persist the scene library (best-effort; in-memory when no data dir).
-    fn save_scenes(&self) {
-        persist_scenes(self.data_dir.as_deref(), &self.scenes_lib.read().unwrap());
+    /// Synchronous read-only view of the local-library durability state
+    /// (mode, status, monotonic revision, latch error, owned file bytes).
+    /// Later FRB boot calls this before publishing the singleton and
+    /// rejects on `error`/`uncertain` instead of serving a silently empty
+    /// library.
+    pub fn local_library_status(&self) -> local_library::LibraryStatusView {
+        let h = self.lib_health.read().unwrap().clone();
+        let bytes =
+            local_library::storage_bytes(self.data_dir.as_deref()).unwrap_or_else(|error| {
+                eprintln!("engine: storage accounting unavailable: {error}");
+                None
+            });
+        local_library::LibraryStatusView {
+            mode: h.mode.as_str().to_string(),
+            status: h.state.as_str().to_string(),
+            revision: self.lib_revision.load(Ordering::Relaxed),
+            error: h.error.clone(),
+            bytes,
+        }
     }
 
-    /// Capture the FULL param plane: every catalogue value of every strip
-    /// (topology × scoped capabilities) + main + FX + routing.
-    async fn capture_full(&self, number: u16, name: &str) -> anyhow::Result<StoredScene> {
-        let driver = self.active_driver();
+    /// Current `local_library_status` event (explicit queries, device-mode
+    /// snapshots, and post-commit broadcasts share this constructor).
+    fn local_library_status_message(&self) -> Event {
+        let v = self.local_library_status();
+        Event::LocalLibraryStatus {
+            mode: v.mode,
+            status: v.status,
+            revision: v.revision,
+            error: v.error,
+            bytes: v.bytes,
+        }
+    }
+
+    /// `local_library_status` for the attach/resume snapshots: `Some` in
+    /// device mode only, so the default memory snapshots stay
+    /// byte-identical for existing goldens (an explicit status query still
+    /// answers in memory mode).
+    fn device_library_status(&self) -> Option<Event> {
+        self.data_dir
+            .as_ref()
+            .map(|_| self.local_library_status_message())
+    }
+
+    /// Writes-blocked check: a latched `error`/`uncertain` library refuses
+    /// every overwriting write until an explicit reset (or a restart, which
+    /// re-reads the file). `reset` itself always passes.
+    fn ensure_library_writable(&self, is_reset: bool) -> anyhow::Result<()> {
+        if is_reset {
+            return Ok(());
+        }
+        let h = self.lib_health.read().unwrap();
+        if h.state != LibraryStatus::Ready {
+            anyhow::bail!(
+                "local library {}: {}; writes blocked until reset or restart",
+                h.state.as_str(),
+                h.error.as_deref().unwrap_or("unavailable")
+            );
+        }
+        Ok(())
+    }
+
+    /// r58 P2(2): capture pin for `Save`/`Capture` actions. Samples the
+    /// engine connection generation + active driver + `reads_suspended`
+    /// under the existing `sync_state` barrier (brief, never across
+    /// `.await`). `gen`-only checks are insufficient: a capture sampled
+    /// after `invalidate_connection` but before the active-driver swap
+    /// would see the new generation on the old desk, so `suspended` must
+    /// gate too. Pure-local actions (rename/delete/reset) never take a
+    /// pin and are never blocked by desk state.
+    ///
+    /// Lock order: `lib_lock` (caller, async) -> `sync_state` (here,
+    /// briefly) -> `active` (read). Matches the existing
+    /// `sync_state` -> `active` direction in `reconcile_event` /
+    /// `deferred_fill`; no path acquires `sync_state` while holding
+    /// `scenes_lib`/`shows`/`active`, so no inversion.
+    fn sample_capture_pin(&self) -> (u64, String, bool) {
+        let sync = self.sync_state.lock().unwrap();
+        let generation = self.connection_gen.load(Ordering::Acquire);
+        let driver = self.active.read().unwrap().clone();
+        let suspended = self.reads_suspended.load(Ordering::Acquire);
+        drop(sync);
+        (generation, driver, suspended)
+    }
+
+    /// Whether a library action reads the desk (`Save` captures the full
+    /// plane, `Capture` snapshots it). All other actions are pure-local.
+    fn action_needs_capture_pin(action: &LibraryAction) -> bool {
+        matches!(
+            action,
+            LibraryAction::Save { .. } | LibraryAction::Capture { .. }
+        )
+    }
+
+    /// Recheck the capture pin and commit under the SAME `sync_state`
+    /// barrier, so `invalidate_connection` cannot slip between the check
+    /// and the publish. Call with [`Engine::lib_lock`] held; `None` pin
+    /// (pure-local actions) commits exactly like before. Synchronous
+    /// disk commit may hold the barrier briefly, never across `.await`.
+    /// Preserves the retained session on failed connects: only a
+    /// mid-capture desk change rejects, never a steady state.
+    fn commit_with_capture_guard(
+        &self,
+        pin: Option<(u64, String)>,
+        numbered: HashMap<u16, StoredScene>,
+        shows: Vec<Show>,
+        current: Option<u16>,
+    ) -> Result<CommitDisposition, String> {
+        if let Some((pin_gen, pin_driver)) = pin {
+            let sync = self.sync_state.lock().unwrap();
+            let cur_gen = self.connection_gen.load(Ordering::Acquire);
+            let cur_driver = self.active.read().unwrap().clone();
+            let suspended = self.reads_suspended.load(Ordering::Acquire);
+            if suspended {
+                drop(sync);
+                return Err(
+                    "scene capture rejected: desk session changed (reads suspended)".to_string(),
+                );
+            }
+            if cur_gen != pin_gen || cur_driver != pin_driver {
+                drop(sync);
+                return Err("scene capture rejected: desk changed during capture".to_string());
+            }
+            let res = self.commit_locked(numbered, shows, current);
+            drop(sync);
+            res
+        } else {
+            self.commit_locked(numbered, shows, current)
+        }
+    }
+
+    /// Validate + durably commit candidate libraries, then swap memory.
+    /// Call with [`Engine::lib_lock`] held. Pre-replace failures return
+    /// `Err` with disk AND memory untouched; post-replace directory-sync /
+    /// stat failures still swap (the rename landed) but latch `uncertain`
+    /// and block further writes — never a silent rollback. Memory was
+    /// swapped in both success cases, so callers publish success frames
+    /// only on [`CommitDisposition::Committed`].
+    fn commit_locked(
+        &self,
+        numbered: HashMap<u16, StoredScene>,
+        shows: Vec<Show>,
+        current: Option<u16>,
+    ) -> Result<CommitDisposition, String> {
+        let mode = self.lib_health.read().unwrap().mode;
+        if mode == LibraryMode::Device {
+            let Some(data_dir) = self.data_dir.clone() else {
+                return Err("local library device mode without a data dir".to_string());
+            };
+            let temp_id = self.lib_temp.fetch_add(1, Ordering::Relaxed);
+            match local_library::commit_file(&data_dir, &numbered, &shows, temp_id) {
+                Err(e) => Err(e),
+                Ok(local_library::CommitResult::Committed { bytes }) => {
+                    *self.scenes_lib.write().unwrap() = numbered;
+                    *self.shows.write().unwrap() = shows;
+                    *self.scenes_current.write().unwrap() = current;
+                    let revision = self.lib_revision.fetch_add(1, Ordering::Relaxed) + 1;
+                    *self.lib_health.write().unwrap() = LibraryHealth {
+                        mode,
+                        state: LibraryStatus::Ready,
+                        error: None,
+                        bytes: Some(bytes),
+                    };
+                    Ok(CommitDisposition::Committed { revision })
+                }
+                Ok(local_library::CommitResult::Uncertain { bytes, error }) => {
+                    *self.scenes_lib.write().unwrap() = numbered;
+                    *self.shows.write().unwrap() = shows;
+                    *self.scenes_current.write().unwrap() = current;
+                    let revision = self.lib_revision.fetch_add(1, Ordering::Relaxed) + 1;
+                    *self.lib_health.write().unwrap() = LibraryHealth {
+                        mode,
+                        state: LibraryStatus::Uncertain,
+                        error: Some(error.clone()),
+                        bytes,
+                    };
+                    Ok(CommitDisposition::Uncertain { revision, error })
+                }
+            }
+        } else {
+            local_library::validate_candidate(&numbered, &shows)?;
+            *self.scenes_lib.write().unwrap() = numbered;
+            *self.shows.write().unwrap() = shows;
+            *self.scenes_current.write().unwrap() = current;
+            let revision = self.lib_revision.fetch_add(1, Ordering::Relaxed) + 1;
+            debug_assert_eq!(
+                self.lib_health.read().unwrap().state,
+                LibraryStatus::Ready,
+                "memory mode never latches"
+            );
+            Ok(CommitDisposition::Committed { revision })
+        }
+    }
+
+    /// Build the commit candidate for one library action (legacy and new
+    /// commands share this): clones live memory and applies the mutation.
+    /// Capture actions read the driver here, under the caller's `lib_lock`,
+    /// pinned to the `pin` desk session (generation + driver sampled under
+    /// the `sync_state` barrier before the build); preflight/capture errors
+    /// leave disk and memory untouched. `reset` makes no driver call.
+    async fn build_library_candidate(
+        &self,
+        action: &LibraryAction,
+        pin: Option<(u64, String)>,
+    ) -> anyhow::Result<(HashMap<u16, StoredScene>, Vec<Show>, Option<u16>)> {
+        let mut numbered = self.scenes_lib.read().unwrap().clone();
+        let mut shows = self.shows.read().unwrap().clone();
+        let mut current = *self.scenes_current.read().unwrap();
+        match action {
+            LibraryAction::Save { n, name } => {
+                let n = validate_scene_n(*n)?;
+                let name = clean_name(name, "name")?;
+                let (pin_gen, pin_driver) = pin
+                    .as_ref()
+                    .map(|(g, d)| (*g, d.clone()))
+                    .unwrap_or_else(|| {
+                        (
+                            self.connection_gen.load(Ordering::Acquire),
+                            self.active_driver(),
+                        )
+                    });
+                let scene = self.capture_full_on(n, &name, &pin_driver, pin_gen).await?;
+                numbered.insert(n, scene);
+            }
+            LibraryAction::Rename { n, name } => {
+                let n = validate_scene_n(*n)?;
+                let name = clean_name(name, "name")?;
+                let slot = numbered
+                    .get_mut(&n)
+                    .ok_or_else(|| anyhow::anyhow!("unknown scene {n:03}"))?;
+                slot.name = name;
+                slot.saved_at = now_unix();
+            }
+            LibraryAction::Delete { n } => {
+                let n = validate_scene_n(*n)?;
+                if numbered.remove(&n).is_none() {
+                    anyhow::bail!("unknown scene {n:03}");
+                }
+                if current == Some(n) {
+                    current = None;
+                }
+            }
+            LibraryAction::ClearNumbered => {
+                numbered.clear();
+                current = None;
+            }
+            LibraryAction::Capture { show, name } => {
+                let show = clean_name(show, "show")?;
+                let name = clean_name(name, "name")?;
+                let (pin_gen, pin_driver) = pin
+                    .as_ref()
+                    .map(|(g, d)| (*g, d.clone()))
+                    .unwrap_or_else(|| {
+                        (
+                            self.connection_gen.load(Ordering::Acquire),
+                            self.active_driver(),
+                        )
+                    });
+                let snap = self.active_snapshot_on(&pin_driver, pin_gen).await?;
+                let mut scene = Scene::capture(&name, &snap);
+                scene.main_fader = self.main_fader_on(&pin_driver).await;
+                match shows.iter_mut().find(|s| s.name == show) {
+                    Some(slot) => slot.add_scene(scene),
+                    None => {
+                        let mut fresh = Show::new(&show);
+                        fresh.add_scene(scene);
+                        shows.push(fresh);
+                    }
+                }
+            }
+            LibraryAction::DeleteNamed { show, name } => {
+                let show = clean_name(show, "show")?;
+                let name = clean_name(name, "name")?;
+                let slot = shows
+                    .iter_mut()
+                    .find(|s| s.name == show)
+                    .ok_or_else(|| anyhow::anyhow!("unknown show {show:?}"))?;
+                if !slot.remove(&name) {
+                    anyhow::bail!("unknown scene {name:?} in show {show:?}");
+                }
+            }
+            LibraryAction::Reset => {
+                numbered.clear();
+                shows.clear();
+                current = None;
+            }
+        }
+        Ok((numbered, shows, current))
+    }
+
+    /// Run one library action through the serialized candidate commit:
+    /// lock, block-check, build, commit-and-swap. Pre-replace failures are
+    /// `Err` with disk AND memory untouched.
+    async fn library_apply_action(
+        &self,
+        action: &LibraryAction,
+    ) -> anyhow::Result<CommitDisposition> {
+        let _guard = self.lib_lock.lock().await;
+        self.ensure_library_writable(action.is_reset())?;
+        // r58 P2(2): capture actions bind to one desk session. The pin is
+        // sampled under the `sync_state` barrier; a suspended read lane
+        // fails fast before any driver I/O. Pure-local actions skip this.
+        let pin_full = Self::action_needs_capture_pin(action).then(|| self.sample_capture_pin());
+        if let Some((_, _, suspended)) = &pin_full {
+            if *suspended {
+                anyhow::bail!("scene capture rejected: desk session changed (reads suspended)");
+            }
+        }
+        let pin = pin_full.map(|(g, d, _)| (g, d));
+        let (numbered, shows, current) = self.build_library_candidate(action, pin.clone()).await?;
+        self.commit_with_capture_guard(pin, numbered, shows, current)
+            .map_err(|e| anyhow::anyhow!("{e}"))
+    }
+
+    /// Explicit durable mutation: revision-guarded serialized commit with a
+    /// correlated unicast result on EVERY path (including preflight and
+    /// capture errors — a list refresh never counts as success). Committed
+    /// broadcasts the `scenes`, `shows` and status frames; rejected sends
+    /// no broadcasts; uncertain broadcasts only the latched status.
+    async fn library_mutate(
+        &self,
+        request_id: String,
+        expected_revision: u64,
+        action: LibraryAction,
+        writer: &str,
+        out: &mut Vec<Event>,
+    ) {
+        let operation = action.op_name().to_string();
+        let mode = self.lib_health.read().unwrap().mode.as_str().to_string();
+        let rq = request_id.clone();
+        let op = operation.clone();
+        let md = mode.clone();
+        let reject = |error: String| {
+            let revision = self.lib_revision.load(Ordering::Relaxed);
+            self.unicast(
+                writer,
+                Event::LocalLibraryResult {
+                    request_id: rq.clone(),
+                    operation: op.clone(),
+                    revision,
+                    status: "rejected".to_string(),
+                    mode: md.clone(),
+                    error: Some(error.clone()),
+                },
+            );
+            self.unicast(
+                writer,
+                Event::Error {
+                    message: error,
+                    locked_by: None,
+                    ch: None,
+                },
+            );
+        };
+        let current = self.lib_revision.load(Ordering::Relaxed);
+        if expected_revision != current {
+            reject(format!(
+                "stale revision: expected {expected_revision}, current {current}"
+            ));
+            return;
+        }
+        let _guard = self.lib_lock.lock().await;
+        // Re-check under the lock: legacy commands share the revision.
+        let current = self.lib_revision.load(Ordering::Relaxed);
+        if expected_revision != current {
+            reject(format!(
+                "stale revision: expected {expected_revision}, current {current}"
+            ));
+            return;
+        }
+        if let Err(e) = self.ensure_library_writable(action.is_reset()) {
+            reject(format!("{e:#}"));
+            return;
+        }
+        // r58 P2(2): same desk-session binding as the legacy path. The pin
+        // is sampled under the `sync_state` barrier while holding `lib_lock`;
+        // suspension fails fast with the correlated result+error preserved.
+        // Pure-local actions skip the pin entirely.
+        let pin_full = Self::action_needs_capture_pin(&action).then(|| self.sample_capture_pin());
+        if let Some((_, _, suspended)) = &pin_full {
+            if *suspended {
+                reject(
+                    "scene capture rejected: desk session changed (reads suspended)".to_string(),
+                );
+                return;
+            }
+        }
+        let pin = pin_full.map(|(g, d, _)| (g, d));
+        let candidate = self.build_library_candidate(&action, pin.clone()).await;
+        let (numbered, shows, current_slot) = match candidate {
+            Ok(v) => v,
+            Err(e) => {
+                reject(format!("{e:#}"));
+                return;
+            }
+        };
+        match self.commit_with_capture_guard(pin, numbered, shows, current_slot) {
+            Ok(CommitDisposition::Committed { revision }) => {
+                self.unicast(
+                    writer,
+                    Event::LocalLibraryResult {
+                        request_id,
+                        operation,
+                        revision,
+                        status: "committed".to_string(),
+                        mode,
+                        error: None,
+                    },
+                );
+                out.push(self.scenes_message());
+                out.push(self.shows_message());
+                out.push(self.local_library_status_message());
+            }
+            Ok(CommitDisposition::Uncertain { revision, error }) => {
+                self.unicast(
+                    writer,
+                    Event::LocalLibraryResult {
+                        request_id,
+                        operation,
+                        revision,
+                        status: "uncertain".to_string(),
+                        mode,
+                        error: Some(error.clone()),
+                    },
+                );
+                self.unicast(
+                    writer,
+                    Event::Error {
+                        message: format!("local library uncertain: {error}"),
+                        locked_by: None,
+                        ch: None,
+                    },
+                );
+                out.push(self.local_library_status_message());
+            }
+            Err(e) => reject(e),
+        }
+    }
+
+    /// Pinned full-plane capture (r58 P2(2)): every driver read binds to
+    /// `pin_driver` + `generation` — strips, routing and main alike — so a
+    /// mid-capture connect cannot commit a mixed document. Per-strip
+    /// fail-fast plus the commit-time barrier re-validation (see
+    /// [`Engine::commit_with_capture_guard`]).
+    async fn capture_full_on(
+        &self,
+        number: u16,
+        name: &str,
+        pin_driver: &str,
+        generation: u64,
+    ) -> anyhow::Result<StoredScene> {
+        let driver = pin_driver.to_string();
         let topo = self.driver_topology(&driver);
         let caps = self.driver_capabilities(&driver);
         let reg = self.registry(&driver);
@@ -2554,6 +3090,16 @@ impl Engine {
                     mute: matches!(mute, Some(ParamValue::Bool(true))),
                     params,
                 });
+                // r58: fail fast when the desk changes mid-capture (the
+                // commit barrier re-validates before publish in any case).
+                anyhow::ensure!(
+                    self.connection_gen.load(Ordering::Acquire) == generation,
+                    "desk changed during scene capture"
+                );
+                anyhow::ensure!(
+                    !self.reads_suspended.load(Ordering::Acquire),
+                    "desk session changed during scene capture (reads suspended)"
+                );
             }
         }
         let fx = self
@@ -2569,12 +3115,12 @@ impl Engine {
                 params: s.params.clone(),
             })
             .collect();
-        let routing = self.routing_snapshot().await;
+        let routing = self.routing_snapshot_on(&driver).await;
         Ok(StoredScene {
             number,
             name: name.to_string(),
             saved_at: now_unix(),
-            main_fader: self.active_main_fader().await,
+            main_fader: self.main_fader_on(&driver).await,
             strips,
             fx,
             routing,
@@ -3446,7 +3992,15 @@ impl Engine {
 
     /// (strip + stable key, group, 1-based index) rows for patched inputs.
     async fn routing_snapshot(&self) -> Vec<StoredRoute> {
-        let drv = self.active_drv();
+        let driver = self.active_driver();
+        self.routing_snapshot_on(&driver).await
+    }
+
+    /// Pinned routing snapshot (r58 P2(2)): same rows as
+    /// [`Engine::routing_snapshot`] but read from `driver`, so a numbered
+    /// save cannot mix one desk's strips with another's routing.
+    async fn routing_snapshot_on(&self, driver: &str) -> Vec<StoredRoute> {
+        let drv = self.drv(driver);
         if drv.routing_groups().is_empty() {
             return Vec::new();
         }
@@ -4992,48 +5546,81 @@ impl Engine {
         }
     }
 
-    /// Snapshot the active driver (used by `capture_scene`). Drivers with
-    /// no native bulk snapshot but a live param plane opt in via
-    /// [`DynDriver::param_plane_snapshot`]: the engine captures the
-    /// canonical strip basics used by its live param plane, without
-    /// inventing values when the desk fails to answer.
-    async fn active_snapshot(&self) -> anyhow::Result<openfader_core::MixerSnapshot> {
-        let driver = self.active_driver();
-        match self.active_drv().snapshot().await {
-            Ok(snapshot) => Ok(snapshot),
+    /// Pinned snapshot (r58 P2(2)): the bulk read and the param-plane
+    /// fallback both bind to `pin_driver` + `generation`, with a fail-fast
+    /// check after the bulk read and per strip in the fallback. The commit
+    /// barrier re-validates before publish in any case.
+    async fn active_snapshot_on(
+        &self,
+        pin_driver: &str,
+        generation: u64,
+    ) -> anyhow::Result<openfader_core::MixerSnapshot> {
+        let driver = pin_driver.to_string();
+        match self.drv(&driver).snapshot().await {
+            Ok(snapshot) => {
+                anyhow::ensure!(
+                    self.connection_gen.load(Ordering::Acquire) == generation,
+                    "desk changed during scene capture"
+                );
+                anyhow::ensure!(
+                    !self.reads_suspended.load(Ordering::Acquire),
+                    "desk session changed during scene capture (reads suspended)"
+                );
+                Ok(snapshot)
+            }
             Err(first) => {
-                if !self.active_drv().param_plane_snapshot() {
+                if !self.drv(&driver).param_plane_snapshot() {
                     return Err(first);
                 }
-        let generation = self.connection_gen.load(Ordering::Acquire);
-        let mut snapshot = openfader_core::MixerSnapshot::default();
-        for family in self.driver_topology(&driver) {
-            for index in family.first..family.first + family.count {
-                let id = StripId(index as u16);
-                let (fader, mute, name) = tokio::join!(
-                    self.capture_read_param(&driver, id, "fader"),
-                    self.capture_read_param(&driver, id, "mute"),
-                    self.capture_read_param(&driver, id, "name"),
-                );
-                let (Some(ParamValue::Float(fader)), Some(ParamValue::Bool(mute)), Some(ParamValue::Text(name))) =
-                    (fader, mute, name) else {
-                        anyhow::bail!("{driver}: no snapshot values for strip {index}");
-                    };
-                anyhow::ensure!(self.connection_gen.load(Ordering::Acquire) == generation,
-                    "desk changed during scene capture");
-                snapshot.strips.push(openfader_core::ChannelStrip {
-                    id, name, fader, mute, pan: 0.5,
-                });
-            }
-        }
-        Ok(snapshot)
+                let mut snapshot = openfader_core::MixerSnapshot::default();
+                for family in self.driver_topology(&driver) {
+                    for index in family.first..family.first + family.count {
+                        let id = StripId(index as u16);
+                        let (fader, mute, name) = tokio::join!(
+                            self.capture_read_param(&driver, id, "fader"),
+                            self.capture_read_param(&driver, id, "mute"),
+                            self.capture_read_param(&driver, id, "name"),
+                        );
+                        let (
+                            Some(ParamValue::Float(fader)),
+                            Some(ParamValue::Bool(mute)),
+                            Some(ParamValue::Text(name)),
+                        ) = (fader, mute, name)
+                        else {
+                            anyhow::bail!("{driver}: no snapshot values for strip {index}");
+                        };
+                        anyhow::ensure!(
+                            self.connection_gen.load(Ordering::Acquire) == generation,
+                            "desk changed during scene capture"
+                        );
+                        anyhow::ensure!(
+                            !self.reads_suspended.load(Ordering::Acquire),
+                            "desk session changed during scene capture (reads suspended)"
+                        );
+                        snapshot.strips.push(openfader_core::ChannelStrip {
+                            id,
+                            name,
+                            fader,
+                            mute,
+                            pan: 0.5,
+                        });
+                    }
+                }
+                Ok(snapshot)
             }
         }
     }
 
     /// Main fader of the active driver, `None` when the driver has none.
     async fn active_main_fader(&self) -> Option<f32> {
-        self.active_drv().get_main_fader().await.ok()
+        let driver = self.active_driver();
+        self.main_fader_on(&driver).await
+    }
+
+    /// Pinned main-fader read (r58 P2(2)): the capture's desk, not
+    /// whatever is active when the await lands.
+    async fn main_fader_on(&self, driver: &str) -> Option<f32> {
+        self.drv(driver).get_main_fader().await.ok()
     }
 
     /// Recall `scene` on the active driver, ramping over `fade_ms`.
@@ -5485,23 +6072,22 @@ impl Engine {
             // driver switches with no localStorage round-trip.
             Cmd::ListShows => Ok(Some(self.shows_message())),
             Cmd::CaptureScene { show, name } => {
-                let show = clean_name(&show, "show")?;
-                let name = clean_name(&name, "name")?;
-                let snap = self.active_snapshot().await?;
-                let mut scene = Scene::capture(&name, &snap);
-                scene.main_fader = self.active_main_fader().await;
-                let mut shows = self.shows.write().unwrap();
-                match shows.iter_mut().find(|s| s.name == show) {
-                    Some(slot) => slot.add_scene(scene),
-                    None => {
-                        let mut fresh = Show::new(&show);
-                        fresh.add_scene(scene);
-                        shows.push(fresh);
+                // Named capture through the SAME serialized candidate
+                // commit as the durable API: same tags, same rendered
+                // collection frames, plus the status frame.
+                let action = LibraryAction::Capture { show, name };
+                match self.library_apply_action(&action).await {
+                    Ok(CommitDisposition::Committed { .. }) => {
+                        out.push(self.shows_message());
+                        out.push(self.local_library_status_message());
+                        Ok(None)
                     }
+                    Ok(CommitDisposition::Uncertain { error, .. }) => {
+                        out.push(self.local_library_status_message());
+                        anyhow::bail!("local library uncertain: {error}")
+                    }
+                    Err(e) => Err(e),
                 }
-                drop(shows);
-                out.push(self.shows_message());
-                Ok(None)
             }
             Cmd::RecallScene {
                 show,
@@ -5587,20 +6173,19 @@ impl Engine {
                 }
             }
             Cmd::DeleteScene { show, name } => {
-                let show = clean_name(&show, "show")?;
-                let name = clean_name(&name, "name")?;
-                {
-                    let mut shows = self.shows.write().unwrap();
-                    let slot = shows
-                        .iter_mut()
-                        .find(|s| s.name == show)
-                        .ok_or_else(|| anyhow::anyhow!("unknown show {show:?}"))?;
-                    if !slot.remove(&name) {
-                        anyhow::bail!("unknown scene {name:?} in show {show:?}");
+                let action = LibraryAction::DeleteNamed { show, name };
+                match self.library_apply_action(&action).await {
+                    Ok(CommitDisposition::Committed { .. }) => {
+                        out.push(self.shows_message());
+                        out.push(self.local_library_status_message());
+                        Ok(None)
                     }
+                    Ok(CommitDisposition::Uncertain { error, .. }) => {
+                        out.push(self.local_library_status_message());
+                        anyhow::bail!("local library uncertain: {error}")
+                    }
+                    Err(e) => Err(e),
                 }
-                out.push(self.shows_message());
-                Ok(None)
             }
             // MR1 realtime negotiation: store the per-client binary-meter
             // preference and unicast the current value back (never
@@ -5999,6 +6584,13 @@ impl Engine {
                     }
                 }
             }
+            Cmd::ForgetSavedMixers { request_id } => {
+                // Pure-local saved-mixer forget: no driver/query/connect/
+                // disconnect/probe/scan/native-view work, no broadcasts —
+                // the correlated `device_operation_complete` ack is the
+                // unicast direct reply (`apply_cmd` unicasts it).
+                Ok(Some(self.forget_saved_mixers(request_id)))
+            }
             Cmd::Disconnect => {
                 // A missing readback cannot prevent local disconnect cleanup.
                 let _ = self.active_drv().set_spectrum_target("", None).await;
@@ -6025,18 +6617,36 @@ impl Engine {
             }
             Cmd::Info => Ok(Some(self.info_message().await?)),
             Cmd::SceneSave { n, name } => {
-                let n = validate_scene_n(n)?;
-                let name = clean_name(&name, "name")?;
-                let scene = self.capture_full(n, &name).await?;
-                self.scenes_lib.write().unwrap().insert(n, scene);
-                self.save_scenes();
-                out.push(self.scenes_message());
-                Ok(None)
+                // Numbered save through the SAME serialized candidate
+                // commit: capture, validate, durably commit, then swap.
+                let action = LibraryAction::Save { n, name };
+                match self.library_apply_action(&action).await {
+                    Ok(CommitDisposition::Committed { .. }) => {
+                        out.push(self.scenes_message());
+                        out.push(self.local_library_status_message());
+                        Ok(None)
+                    }
+                    Ok(CommitDisposition::Uncertain { error, .. }) => {
+                        out.push(self.local_library_status_message());
+                        anyhow::bail!("local library uncertain: {error}")
+                    }
+                    Err(e) => Err(e),
+                }
             }
             Cmd::SceneRecall { n, fade_ms, scope } => {
                 policy.allow_recall()?;
                 let n = validate_scene_n(n)?;
                 let fade_ms = fade_ms.unwrap_or(DEFAULT_FADE_MS);
+                // r58 P2(1): the numbered recall holds the existing async
+                // `lib_lock` from the slot clone through the current-marker
+                // publication, so a racing Clear/Delete/Reset (which commit
+                // under the same lock) cannot interleave between the clone
+                // and the marker and resurrect `current` on a deleted slot.
+                // The fade itself runs under the lock — mutations waiting
+                // out a recall fade is the accepted serialization (no new
+                // audio controls). No `std` lock is held across `.await`;
+                // write provenance and audio-echo ordering below are exact.
+                let _lib_guard = self.lib_lock.lock().await;
                 let scene = {
                     self.scenes_lib
                         .read()
@@ -6060,40 +6670,58 @@ impl Engine {
                 }
             }
             Cmd::SceneRename { n, name } => {
-                let n = validate_scene_n(n)?;
-                let name = clean_name(&name, "name")?;
-                {
-                    let mut lib = self.scenes_lib.write().unwrap();
-                    let slot = lib
-                        .get_mut(&n)
-                        .ok_or_else(|| anyhow::anyhow!("unknown scene {n:03}"))?;
-                    slot.name = name;
-                    slot.saved_at = now_unix();
+                let action = LibraryAction::Rename { n, name };
+                match self.library_apply_action(&action).await {
+                    Ok(CommitDisposition::Committed { .. }) => {
+                        out.push(self.scenes_message());
+                        out.push(self.local_library_status_message());
+                        Ok(None)
+                    }
+                    Ok(CommitDisposition::Uncertain { error, .. }) => {
+                        out.push(self.local_library_status_message());
+                        anyhow::bail!("local library uncertain: {error}")
+                    }
+                    Err(e) => Err(e),
                 }
-                self.save_scenes();
-                out.push(self.scenes_message());
-                Ok(None)
             }
             Cmd::SceneDelete { n } => {
-                let n = validate_scene_n(n)?;
-                {
-                    let mut lib = self.scenes_lib.write().unwrap();
-                    if lib.remove(&n).is_none() {
-                        anyhow::bail!("unknown scene {n:03}");
+                let action = LibraryAction::Delete { n };
+                match self.library_apply_action(&action).await {
+                    Ok(CommitDisposition::Committed { .. }) => {
+                        out.push(self.scenes_message());
+                        out.push(self.local_library_status_message());
+                        Ok(None)
                     }
+                    Ok(CommitDisposition::Uncertain { error, .. }) => {
+                        out.push(self.local_library_status_message());
+                        anyhow::bail!("local library uncertain: {error}")
+                    }
+                    Err(e) => Err(e),
                 }
-                if *self.scenes_current.read().unwrap() == Some(n) {
-                    *self.scenes_current.write().unwrap() = None;
-                }
-                self.save_scenes();
-                out.push(self.scenes_message());
-                Ok(None)
             }
             Cmd::SceneClear => {
-                self.scenes_lib.write().unwrap().clear();
-                *self.scenes_current.write().unwrap() = None;
-                self.save_scenes();
-                out.push(self.scenes_message());
+                let action = LibraryAction::ClearNumbered;
+                match self.library_apply_action(&action).await {
+                    Ok(CommitDisposition::Committed { .. }) => {
+                        out.push(self.scenes_message());
+                        out.push(self.local_library_status_message());
+                        Ok(None)
+                    }
+                    Ok(CommitDisposition::Uncertain { error, .. }) => {
+                        out.push(self.local_library_status_message());
+                        anyhow::bail!("local library uncertain: {error}")
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+            Cmd::LocalLibraryStatus => Ok(Some(self.local_library_status_message())),
+            Cmd::LocalLibraryMutate {
+                request_id,
+                expected_revision,
+                action,
+            } => {
+                self.library_mutate(request_id, expected_revision, action, writer, out)
+                    .await;
                 Ok(None)
             }
             Cmd::FxSetType { slot, fx_type } => {
@@ -6540,7 +7168,8 @@ impl Engine {
 ///
 /// `events` first yields the attach snapshot (`you`, `state`, `shows`,
 /// `clients`, `locks`, `caps`, `devices`, `link`, `info`?, `scenes`,
-/// `fx`, `routing`, then one `params` frame per cached channel)
+/// `fx`, `routing`, then one `params` frame per cached channel,
+/// `native_snapshots`, then `local_library_status` in device mode only)
 /// in that order, then every live broadcast. Unicast frames (`you` replies,
 /// `list_shows` replies, denials, `recalled` reports, command errors) arrive
 /// only in the offending/sender's mailbox.
@@ -6932,11 +7561,6 @@ fn json_to_param_value(v: &Value) -> anyhow::Result<ParamValue> {
     }
 }
 
-/// Scene library file (`scenes.json`) under the data dir.
-fn scene_file(data_dir: Option<&std::path::Path>) -> Option<PathBuf> {
-    data_dir.map(|d| d.join("scenes.json"))
-}
-
 /// Known desk addresses file (`desks.json`) under the data dir.
 fn desk_file(data_dir: Option<&std::path::Path>) -> Option<PathBuf> {
     data_dir.map(|d| d.join("desks.json"))
@@ -6971,157 +7595,130 @@ fn load_desks(data_dir: Option<&std::path::Path>) -> HashMap<String, String> {
 }
 
 /// Persist the remembered driver -> desk address map (best-effort:
-/// failures are swallowed, a read-only data dir must never break
-/// connect/probe). Mirrors [`persist_scenes`].
+/// failures are logged and swallowed — a read-only data dir must never
+/// break connect/probe). Atomic temp-file + rename (no direct truncate)
+/// so a racing `forget_saved_mixers` clear never sees a torn file.
+/// Untouched by the local-library kernel, which owns `scenes.json`
+/// alone.
 fn persist_desks(data_dir: Option<&std::path::Path>, addrs: &HashMap<String, String>) {
-    let Some(path) = desk_file(data_dir) else {
+    let Some(dir) = data_dir else {
         return;
     };
-    if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
-            return;
+    match write_desks_atomic(dir, addrs) {
+        Ok(DesksWriteOutcome::Committed) => {}
+        Ok(DesksWriteOutcome::Uncertain(error)) | Err(error) => {
+            eprintln!("engine: desks persist failed: {error}");
         }
     }
+}
+
+enum DesksWriteOutcome {
+    Committed,
+    Uncertain(String),
+}
+
+/// Atomic durable write of the remembered desk map (`desks.json`):
+/// serialize, `create_new` a unique owned sibling temp
+/// (`.desks.json.tmp-<pid>-<nanos>-<attempt>`), hold that handle through
+/// `write_all` + `flush` + `sync_all`, rename over the target, then sync
+/// the directory where supported. Pre-replace failures return `Err` with
+/// map and disk preserved (temp cleanup errors are appended, never
+/// silently dropped); the single post-replace failure (directory sync)
+/// returns an explicit `Uncertain` outcome (the rename landed — no
+/// rollback claim). No caller infers write provenance from error text.
+fn write_desks_atomic(
+    dir: &std::path::Path,
+    addrs: &HashMap<String, String>,
+) -> Result<DesksWriteOutcome, String> {
     let doc = json!({ "version": 1, "desks": addrs });
-    let _ = std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap_or_default());
+    let bytes = serde_json::to_vec_pretty(&doc)
+        .map_err(|e| format!("saved mixers serialize failed: {e}"))?;
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        return Err(format!(
+            "saved mixers dir {} not creatable: {e}",
+            dir.display()
+        ));
+    }
+    let target = dir.join("desks.json");
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let mut temp_path: Option<PathBuf> = None;
+    let mut temp_file: Option<std::fs::File> = None;
+    for attempt in 0..8u64 {
+        let candidate = dir.join(format!(".desks.json.tmp-{pid}-{nanos}-{attempt}"));
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&candidate)
+        {
+            Ok(f) => {
+                temp_path = Some(candidate);
+                temp_file = Some(f);
+                break;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => {
+                return Err(format!(
+                    "saved mixers temp {} not creatable: {e}",
+                    candidate.display()
+                ));
+            }
+        }
+    }
+    let (Some(temp), Some(mut f)) = (temp_path, temp_file) else {
+        return Err("saved mixers temp file not creatable (name collision)".to_string());
+    };
+    let remove_temp = |temp: &std::path::Path| {
+        if let Err(e) = std::fs::remove_file(temp) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return format!("; temp cleanup {} failed: {e}", temp.display());
+            }
+        }
+        String::new()
+    };
+    if let Err(e) = (|| -> std::io::Result<()> {
+        use std::io::Write as _;
+        f.write_all(&bytes)?;
+        f.flush()?;
+        f.sync_all()?;
+        Ok(())
+    })() {
+        let tail = remove_temp(&temp);
+        return Err(format!(
+            "saved mixers temp write {} failed: {e}{tail}",
+            temp.display()
+        ));
+    }
+    drop(f);
+    if let Err(e) = std::fs::rename(&temp, &target) {
+        let tail = remove_temp(&temp);
+        return Err(format!(
+            "saved mixers rename {} -> {} failed: {e}{tail}",
+            temp.display(),
+            target.display()
+        ));
+    }
+    if let Err(e) = sync_desks_dir(dir) {
+        return Ok(DesksWriteOutcome::Uncertain(format!(
+            "saved mixers dir sync {} failed (saved mixers may have cleared): {e}",
+            dir.display()
+        )));
+    }
+    Ok(DesksWriteOutcome::Committed)
 }
 
-/// Load the persisted R2 scene library (best-effort: missing/corrupt
-/// files read back empty, a bad file must never block engine start).
-fn load_scenes(data_dir: Option<&std::path::Path>) -> HashMap<u16, StoredScene> {
-    let Some(path) = scene_file(data_dir) else {
-        return HashMap::new();
-    };
-    let raw = std::fs::read_to_string(&path).unwrap_or_default();
-    if raw.trim().is_empty() {
-        return HashMap::new();
-    }
-    let v: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
-    let mut out = HashMap::new();
-    let scenes = v.get("scenes").and_then(Value::as_array).cloned().unwrap_or_default();
-    for s in scenes {
-        let number = s.get("number").and_then(Value::as_u64).unwrap_or(0) as u16;
-        if validate_scene_n(number).is_err() {
-            continue;
-        }
-        let name = s.get("name").and_then(Value::as_str).unwrap_or("").to_string();
-        if name.trim().is_empty() {
-            continue;
-        }
-        let saved_at = s.get("saved_at").and_then(Value::as_u64).unwrap_or(0);
-        let main_fader = s.get("main_fader").and_then(Value::as_f64).map(|f| f as f32);
-        let mut strips = Vec::new();
-        for st in s.get("strips").and_then(Value::as_array).cloned().unwrap_or_default() {
-            let strip = st.get("strip").and_then(Value::as_u64).unwrap_or(0) as u16;
-            let mut params = HashMap::new();
-            if let Some(obj) = st.get("params").and_then(Value::as_object) {
-                for (k, val) in obj {
-                    if val.is_number() || val.is_boolean() || val.is_string() {
-                        params.insert(k.clone(), val.clone());
-                    }
-                }
-            }
-            strips.push(StoredStrip {
-                strip,
-                key: st.get("key").and_then(Value::as_str).map(str::to_string),
-                name: st.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
-                fader: st.get("fader").and_then(Value::as_f64).unwrap_or(0.0) as f32,
-                mute: st.get("mute").and_then(Value::as_bool).unwrap_or(false),
-                params,
-            });
-        }
-        let mut fx = Vec::new();
-        for f in s.get("fx").and_then(Value::as_array).cloned().unwrap_or_default() {
-            let mut params = BTreeMap::new();
-            if let Some(obj) = f.get("params").and_then(Value::as_object) {
-                for (k, val) in obj {
-                    if let Some(n) = val.as_f64() {
-                        params.insert(k.clone(), n as f32);
-                    }
-                }
-            }
-            fx.push(StoredFx {
-                slot: f.get("slot").and_then(Value::as_u64).unwrap_or(0) as u8,
-                fx_type: f.get("type").and_then(Value::as_str).unwrap_or("").to_string(),
-                on: f.get("on").and_then(Value::as_bool).unwrap_or(true),
-                bypass: f.get("bypass").and_then(Value::as_bool).unwrap_or(false),
-                params,
-            });
-        }
-        let mut routing = Vec::new();
-        for r in s.get("routing").and_then(Value::as_array).cloned().unwrap_or_default() {
-            let strip = r.get("strip").and_then(Value::as_u64).unwrap_or(0) as u16;
-            let group = r.get("group").and_then(Value::as_str).unwrap_or("").to_string();
-            let index = r.get("index").and_then(Value::as_u64).unwrap_or(0) as u8;
-            routing.push(StoredRoute {
-                strip,
-                key: r.get("key").and_then(Value::as_str).map(str::to_string),
-                group,
-                index,
-            });
-        }
-        out.insert(
-            number,
-            StoredScene {
-                number,
-                name,
-                saved_at,
-                main_fader,
-                strips,
-                fx,
-                routing,
-            },
-        );
-    }
-    out
+#[cfg(unix)]
+fn sync_desks_dir(dir: &std::path::Path) -> std::io::Result<()> {
+    let f = std::fs::File::open(dir)?;
+    f.sync_all()
 }
 
-/// Persist the R2 scene library (best-effort: failures are swallowed, a
-/// read-only data dir must never break scene commands).
-fn persist_scenes(data_dir: Option<&std::path::Path>, lib: &HashMap<u16, StoredScene>) {
-    let Some(path) = scene_file(data_dir) else {
-        return;
-    };
-    if let Some(parent) = path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
-            return;
-        }
-    }
-    let mut scenes: Vec<Value> = lib
-        .values()
-        .map(|s| {
-            json!({
-                "number": s.number,
-                "name": s.name,
-                "saved_at": s.saved_at,
-                "main_fader": s.main_fader,
-                "strips": s.strips.iter().map(|st| json!({
-                    "strip": st.strip,
-                    "key": st.key,
-                    "name": st.name,
-                    "fader": st.fader,
-                    "mute": st.mute,
-                    "params": st.params,
-                })).collect::<Vec<_>>(),
-                "fx": s.fx.iter().map(|f| json!({
-                    "slot": f.slot,
-                    "type": f.fx_type,
-                    "on": f.on,
-                    "bypass": f.bypass,
-                    "params": f.params,
-                })).collect::<Vec<_>>(),
-                "routing": s.routing.iter().map(|r| json!({
-                    "strip": r.strip,
-                    "key": r.key,
-                    "group": r.group,
-                    "index": r.index,
-                })).collect::<Vec<_>>(),
-            })
-        })
-        .collect();
-    scenes.sort_by_key(|s| s.get("number").and_then(Value::as_u64).unwrap_or(0));
-    let doc = json!({ "version": 1, "scenes": scenes });
-    let _ = std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap_or_default());
+#[cfg(not(unix))]
+fn sync_desks_dir(_dir: &std::path::Path) -> std::io::Result<()> {
+    Ok(())
 }
 
 /// Trimmed non-empty arg (`"show"` / `"name"` for scene ops).

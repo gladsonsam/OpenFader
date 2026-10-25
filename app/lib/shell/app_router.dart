@@ -188,12 +188,13 @@ class _AppShellState extends State<AppShell> {
 
   void _go(AppTab t) {
     if (t != _tab) _channelFocus.value = null;
+    if (t == AppTab.scenes) widget.store.refreshLocalLibrary();
     setState(() {
-        if (t == AppTab.settings && _tab != AppTab.settings) {
-          _prevTab = _tab;
-        }
-        _tab = t;
-      });
+      if (t == AppTab.settings && _tab != AppTab.settings) {
+        _prevTab = _tab;
+      }
+      _tab = t;
+    });
   }
 
   SettingsSection? _settingsSection;
@@ -1147,25 +1148,22 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
   String? _show;
   bool _newShow = false;
   bool _busy = false;
-  bool _submitted = false;
   String? _status;
   int _runId = 0;
   Object? _pendingContext;
-  Object? _errorBefore;
-  Object? _libraryBefore;
-  Object Function()? _library;
-  bool Function()? _confirmed;
-  String? _done;
-
-  // Libraries belong to OpenFader, so completion needs a fresh engine collection.
 
   Object get _context => (engine.session, _show, _newShow);
-  Object get _errorContext =>
-      (app.errorRevision, app.visibleError, app.visibleErrorAt, engine.error);
-  bool get _canRun => !_dead && !_busy && online;
+  bool get _canRun => !_dead && !_busy && online && app.libraryWritable;
 
   @override
-  Object get actionContext => (_context, show, engine.scenes, engine.shows);
+  Object get actionContext => (
+        _context,
+        app.libraryGeneration,
+        show,
+        engine.localLibrary?.revision,
+        engine.scenes,
+        engine.shows
+      );
 
   @override
   bool validateActionContext(Object captured) {
@@ -1180,76 +1178,88 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
   }
 
   @override
-  bool get busy => _busy;
+  bool get busy => _busy || app.libraryResetting || app.libraryActive;
+
+  @override
+  String get libraryDescription {
+    final library = engine.localLibrary;
+    if (library == null) {
+      return 'Local library durability is not yet proven. '
+          'It is not a native mixer backup.';
+    }
+    final storage = library.mode == LocalLibraryMode.device
+        ? library.status == LocalLibraryHealth.ready
+            ? 'Local scenes and shows are stored on this device.'
+            : 'Local library uses device storage; current contents are not confirmed.'
+        : 'Local library is in memory only and lasts until the engine restarts.';
+    final health = switch (library.status) {
+      LocalLibraryHealth.ready => '',
+      LocalLibraryHealth.error =>
+        ' Library unavailable: ${library.error ?? 'load failed'}. Writes are blocked until an explicit reset.',
+      LocalLibraryHealth.uncertain =>
+        ' Library state is uncertain: ${library.error ?? 'commit could not be confirmed'}. Changes may have taken effect; writes are blocked until an explicit reset.',
+    };
+    return '$storage$health It is not a native mixer backup.';
+  }
 
   @override
   String? get status {
+    // Global errors remain visible as separate context, never evidence for
+    // the outcome of a particular library request.
     final error = app.visibleError;
     if (error.isEmpty) return _status;
-    if (_status == null || _status!.contains(error)) return _status ?? error;
-    return '$error\n$_status';
+    return _status == null ? error : 'Engine/transport: $error\n$_status';
   }
 
   void _finish(String message) {
     _runId++;
     _busy = false;
     _pendingContext = null;
-    _library = null;
-    _libraryBefore = null;
-    _confirmed = null;
-    _done = null;
     _status = message;
     if (!_dead) notifyListeners();
   }
 
   void _settle() {
     if (_dead || !_busy) return;
-    if (!online || _pendingContext != _context) {
+    if (!engine.connected || _pendingContext != _context) {
+      app.cancelLocalLibraryOperations(this,
+          'Connection or selection changed while waiting for the library result.');
       _finish('Connection or selection changed. The scene operation result '
           'is unconfirmed; it may already have taken effect.');
-    } else if (app.visibleError.isNotEmpty && _errorBefore != _errorContext) {
-      _finish('Scene operation result unconfirmed: ${app.visibleError}');
-    } else if (_submitted &&
-        _library != null &&
-        !identical(_libraryBefore, _library!()) &&
-        _confirmed!()) {
-      _finish(_done!);
     }
   }
 
-  Future<void> _run(String command, String pending, String done,
-      {Object Function()? library, bool Function()? confirmed}) async {
+  Future<void> _mutate(LocalLibraryAction action, String pending) async {
+    if (!_canRun) return;
+    final revision = engine.localLibrary!.revision;
+    final run = ++_runId;
+    _busy = true;
+    _pendingContext = _context;
+    _status = pending;
+    notifyListeners();
+    final result = await app.mutateLocalLibrary(action,
+        expectedRevision: revision, owner: this);
+    if (!_dead && run == _runId) _finish(result.message);
+  }
+
+  Future<void> _recall(String command, String pending, String requested) async {
     if (!_canRun) return;
     final run = ++_runId;
     _busy = true;
-    _submitted = false;
     _pendingContext = _context;
-    _errorBefore = _errorContext;
-    _library = library;
-    _libraryBefore = library?.call();
-    _confirmed = confirmed;
-    _done = done;
     _status = pending;
-    // Keep engine and transport errors visible during a retry.
-
     notifyListeners();
     try {
-      if (_dead || run != _runId) return;
-      _settle();
-      if (_dead || run != _runId) return;
-      await app.sendCommand(command);
-      if (_dead || run != _runId) return;
-      _submitted = true;
-      _settle();
-      if (_dead || run != _runId) return;
-      // Named recall has no completion event, so receipt only permits "requested".
-
-      if (library == null) _finish(done);
-      // A missing library update stays pending with no timer and no success inferred from submission.
-
+      final error = await app.requestLocalLibraryRecall(command, this);
+      if (!_dead && run == _runId) {
+        _finish(error == null
+            ? requested
+            : '$error The mixer may have changed; its state is unverified.');
+      }
     } catch (error) {
       if (!_dead && run == _runId) {
-        _finish('Scene command failed; result unconfirmed: $error');
+        _finish(
+            'Recall result unconfirmed; the mixer may have changed: $error');
       }
     }
   }
@@ -1257,6 +1267,7 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
   @override
   void dispose() {
     _runId++;
+    app.cancelLocalLibraryOperations(this, 'The scenes screen was closed.');
     app.removeListener(_settle);
     super.dispose();
   }
@@ -1284,7 +1295,7 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
           : shows.firstOrNull;
 
   @override
-  bool get online => engine.connected;
+  bool get online => engine.connected && app.libraryWritable;
 
   // The 001..999 range is the OpenFader engine library, not native mixer capacity.
 
@@ -1307,61 +1318,40 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
       return;
     }
     name = name.trim();
-    unawaited(_run(
-        Cmds.sceneSave(slot, name),
-        'Saving snapshot $slot… Awaiting engine library confirmation.',
-        'Snapshot $slot is present in the OpenFader engine library.',
-        library: () => engine.scenes,
-        confirmed: () =>
-            engine.scenes.any((s) => s.number == slot && s.name == name)));
+    unawaited(_mutate(LocalLibraryAction.save(slot, name),
+        'Saving snapshot $slot… Awaiting a correlated engine commit result.'));
   }
 
   @override
   void recall(int number) {
     if (!engine.scenes.any((s) => s.number == number)) return;
-    unawaited(_run(
+    unawaited(_recall(
         Cmds.sceneRecall(number),
-        'Snapshot $number recall requested… Awaiting engine library marker.',
-        'Engine library marked snapshot $number current. Recall accepted; '
-            'mixer value verification is unavailable here.',
-        library: () => engine.scenes,
-        confirmed: () =>
-            engine.scenes.any((s) => s.number == number && s.current)));
+        'Requesting snapshot $number recall…',
+        'Snapshot $number recall requested. Completion and mixer value '
+            'verification are unavailable here.'));
   }
 
   @override
   void rename(int number, String name) {
     name = name.trim();
     if (name.isEmpty || !engine.scenes.any((s) => s.number == number)) return;
-    unawaited(_run(
-        Cmds.sceneRename(number, name),
-        'Renaming snapshot $number… Awaiting engine library confirmation.',
-        'Snapshot $number name confirmed in the OpenFader engine library.',
-        library: () => engine.scenes,
-        confirmed: () =>
-            engine.scenes.any((s) => s.number == number && s.name == name)));
+    unawaited(_mutate(LocalLibraryAction.rename(number, name),
+        'Renaming snapshot $number… Awaiting a correlated engine commit result.'));
   }
 
   @override
   void remove(int number) {
     if (!engine.scenes.any((s) => s.number == number)) return;
-    unawaited(_run(
-        Cmds.sceneDelete(number),
-        'Deleting snapshot $number… Awaiting engine library confirmation.',
-        'Snapshot $number removed from the OpenFader engine library.',
-        library: () => engine.scenes,
-        confirmed: () => !engine.scenes.any((s) => s.number == number)));
+    unawaited(_mutate(LocalLibraryAction.delete(number),
+        'Deleting snapshot $number… Awaiting a correlated engine commit result.'));
   }
 
   @override
   void clearAll() {
     if (engine.scenes.isEmpty) return;
-    unawaited(_run(
-        Cmds.sceneClear(),
-        'Clearing snapshots… Awaiting engine library confirmation.',
-        'OpenFader numbered snapshot library is empty.',
-        library: () => engine.scenes,
-        confirmed: () => engine.scenes.isEmpty));
+    unawaited(_mutate(const LocalLibraryAction.clearNumbered(),
+        'Clearing snapshots… Awaiting a correlated engine commit result.'));
   }
 
   @override
@@ -1389,18 +1379,10 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
     name = name.trim();
     if (!_canRun || name.isEmpty) return;
     final selected = show ?? name;
-    final overwrite = captureWillOverwrite(name);
     _newShow = false;
     _show = selected;
-    unawaited(_run(
-        Cmds.captureScene(selected, name),
-        'Capturing “$name” in “$selected”… Awaiting engine library confirmation.',
-        overwrite
-            ? 'Engine library refreshed for “$selected” / “$name”. '
-                'Replacement contents are not verified here.'
-            : 'Scene “$name” is listed in OpenFader show “$selected”.',
-        library: () => engine.shows,
-        confirmed: () => engine.shows[selected]?.contains(name) ?? false));
+    unawaited(_mutate(LocalLibraryAction.capture(selected, name),
+        'Capturing “$name” in “$selected”… Awaiting a correlated engine commit result.'));
   }
 
   @override
@@ -1410,7 +1392,7 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
         !(engine.shows[selected]?.contains(name) ?? false)) {
       return;
     }
-    unawaited(_run(
+    unawaited(_recall(
         Cmds.recallScene(selected, name),
         'Requesting recall of “$selected” / “$name”…',
         'Recall requested for “$selected” / “$name”. '
@@ -1424,12 +1406,8 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
         !(engine.shows[selected]?.contains(name) ?? false)) {
       return;
     }
-    unawaited(_run(
-        Cmds.deleteScene(selected, name),
-        'Deleting “$selected” / “$name”… Awaiting engine library confirmation.',
-        'Scene “$name” removed from OpenFader show “$selected”.',
-        library: () => engine.shows,
-        confirmed: () => !(engine.shows[selected]?.contains(name) ?? false)));
+    unawaited(_mutate(LocalLibraryAction.deleteNamed(selected, name),
+        'Deleting “$selected” / “$name”… Awaiting a correlated engine commit result.'));
   }
 }
 
@@ -1470,7 +1448,9 @@ class _SettingsStore extends _StoreBase implements SettingsStore {
 
   @override
   Future<int> appStorageBytes() async =>
-      await _mixes.storageBytes() + await app.processorPresetStorageBytes();
+      await _mixes.storageBytes() +
+      await app.processorPresetStorageBytes() +
+      await app.localLibraryStorageBytes();
 
   @override
   Future<String?> importMix() async {
@@ -1524,6 +1504,7 @@ class _SettingsStore extends _StoreBase implements SettingsStore {
 
   @override
   Future<void> forgetMixers() async {
+    await app.forgetSavedMixers();
     await _recents.clear();
     notifyListeners();
   }
@@ -1541,14 +1522,15 @@ class _SettingsStore extends _StoreBase implements SettingsStore {
   }
 
   @override
-  Future<void> fullReset() async {
-    await app.clearProcessorPresets();
-    await _mixes.deleteAll();
-    await _mixes.clearCache();
-    await _recents.clear();
-    await prefs.clearAll();
-    notifyListeners();
-  }
+  Future<void> fullReset() => app.resetLocalLibraryThen(() async {
+        await app.forgetSavedMixers();
+        await app.clearProcessorPresets();
+        await _mixes.deleteAll();
+        await _mixes.clearCache();
+        await _recents.clear();
+        await prefs.clearAll();
+        notifyListeners();
+      });
 
   @override
   Future<void> exportDiagnostics() async {

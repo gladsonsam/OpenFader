@@ -1,4 +1,5 @@
 // Snapshot library plus named show capture and recall.
+// Writes use correlated local-library results; native snapshots remain read-only.
 // Screens stay constructor-injected so Area A can implement the store.
 import 'package:flutter/material.dart';
 
@@ -26,6 +27,9 @@ abstract class ScenesStore extends ChangeNotifier {
   List<String> get showScenes;
   bool get busy;
   String? get status;
+  String get libraryDescription =>
+      'Local library durability is not yet proven. '
+      'It is not a native mixer backup.';
   String? get show; // active show for capture/recall, null = numbered only
   bool get online;
 
@@ -180,19 +184,6 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                   _NativeSnapshotsSection(view: store.nativeSnapshots),
                   const SizedBox(height: 16),
                   const _SectionTitle('OpenFader local library'),
-                  Padding(
-                    padding: EdgeInsets.only(top: 6),
-                    child: Text(
-                      store.online
-                          ? 'Local library lasts for this app session. '
-                              'It is not a native mixer backup.'
-                          : 'Offline · local library lasts for this app '
-                              'session. It is not a native mixer backup.',
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: ConsolePalette.of(context).text7),
-                    ),
-                  ),
                   if (store.status != null)
                     Padding(
                         padding: const EdgeInsets.only(top: 8),
@@ -217,7 +208,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                         ? 'New show name…'
                         : 'Scene name in ${store.show}…',
                     actionLabel: store.busy ? 'Working…' : 'Capture',
-                    onAction: _captureShow,
+                    onAction: store.busy || !store.online ? null : _captureShow,
                   ),
                   const SizedBox(height: 6),
                   if (store.shows.isEmpty)
@@ -310,14 +301,16 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                     controller: _saveCtl,
                     hint: 'Snapshot name…',
                     actionLabel: store.busy ? 'Working…' : 'Save',
-                    onAction: () {
-                      final v = _saveCtl.text.trim();
-                      if (v.isNotEmpty && !store.busy && store.online) {
-                        FocusScope.of(context).unfocus();
-                        store.save(v);
-                        if (store.busy) _saveCtl.clear();
-                      }
-                    },
+                    onAction: store.busy || !store.online
+                        ? null
+                        : () {
+                            final v = _saveCtl.text.trim();
+                            if (v.isNotEmpty && !store.busy && store.online) {
+                              FocusScope.of(context).unfocus();
+                              store.save(v);
+                              if (store.busy) _saveCtl.clear();
+                            }
+                          },
                   ),
                   const SizedBox(height: 6),
                   if (store.entries.isEmpty)
@@ -519,14 +512,12 @@ class _NativeSnapshotsSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
     final message = switch (view.status) {
-      NativeSnapshotsStatus.unknown =>
-        'This engine has not advertised native snapshot reports.',
+      NativeSnapshotsStatus.unknown => 'Snapshot support not reported',
       NativeSnapshotsStatus.unsupported => view.driver == 'sim'
-          ? 'Native mixer snapshots are unavailable in the simulator.'
-          : 'Native snapshot reports are unavailable for this driver.',
-      NativeSnapshotsStatus.unavailable =>
-        'Mixer snapshot reports are unavailable while disconnected.',
-      NativeSnapshotsStatus.loading => 'Waiting for mixer snapshot reports',
+          ? 'Unavailable in simulator'
+          : 'Snapshot reports unsupported',
+      NativeSnapshotsStatus.unavailable => 'Unavailable while disconnected',
+      NativeSnapshotsStatus.loading => 'Waiting for snapshot reports',
       NativeSnapshotsStatus.ready => 'Observed slots',
     };
     String? reportedName;
@@ -557,9 +548,6 @@ class _NativeSnapshotsSection extends StatelessWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: palette.text1)),
-            const SizedBox(height: 4),
-            Text('Last reported recall only; mixer audio state is unconfirmed.',
-                style: TextStyle(fontSize: 12, color: palette.text7)),
             const SizedBox(height: 8),
             if (view.slots.isEmpty)
               Text('No slot names reported yet.',
@@ -583,14 +571,6 @@ class _NativeSnapshotsSection extends StatelessWidget {
                       ),
                     ]),
               ),
-          ],
-          if (view.supported) ...[
-            const SizedBox(height: 8),
-            Text(
-                'Only mixer-pushed reports are shown. Names may be from '
-                'earlier reports in this session; this is not a complete '
-                'or current inventory.',
-                style: TextStyle(fontSize: 12, color: palette.text7)),
           ],
         ],
       ),
@@ -619,7 +599,7 @@ class _NameRow extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
   final String actionLabel;
-  final VoidCallback onAction;
+  final VoidCallback? onAction;
 
   const _NameRow({
     required this.controller,
@@ -657,7 +637,7 @@ class _NameRow extends StatelessWidget {
                 hintText: hint,
                 hintStyle: TextStyle(color: ConsolePalette.of(context).text10),
               ),
-              onSubmitted: (_) => onAction(),
+              onSubmitted: onAction == null ? null : (_) => onAction?.call(),
             ),
           ),
         ),

@@ -12,10 +12,10 @@
 //! relay.
 //!
 //! FRB-compatible signatures only (`String`, `Vec<String>`, `Vec<u8>`,
-//! `u32`, `()`); no engine types are exposed. [`boot`] is sync (it
-//! block_on's the runtime it owns); [`cmd`]/[`poll`]/[`poll_binary`]/
-//! [`resync`] are async so Dart gets Futures without blocking the UI
-//! thread.
+//! `u32`, `()`); no engine types are exposed. [`boot`] loads device-local
+//! storage asynchronously on the bridge-owned runtime; [`cmd`]/[`poll`]/
+//! [`poll_binary`]/[`resync`] are async so Dart gets Futures without
+//! blocking the UI thread.
 //!
 //! Binary meter fan-out ([`api::poll_binary`]): meter-class events ride
 //! the compact `Event::to_binary` encoding (protocol.rs `BIN_VERSION`

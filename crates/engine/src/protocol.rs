@@ -136,6 +136,20 @@ pub enum Cmd {
     Probe {
         addr: String,
     },
+    /// R2: forget saved mixer addresses
+    /// (`{"cmd":"forget_saved_mixers","request_id":"…"}`): pure-local
+    /// metadata clear — empties the in-memory remembered desk map and
+    /// durably persists the empty map (`desks.json`) without any
+    /// driver/query/connect/disconnect/probe/scan/native-view work.
+    /// The correlated [`Event::DeviceOperationComplete`] (`operation:
+    /// "forget_saved_mixers"`) always acks a valid `request_id`; without
+    /// a data dir memory still clears with no error. Failures name only
+    /// local storage (never audio state); pre-replace failures preserve
+    /// map and disk, post-replace directory-sync failures report that
+    /// saved mixers may have cleared.
+    ForgetSavedMixers {
+        request_id: String,
+    },
     /// R2: drop the desk link (`{"cmd":"disconnect"}`); the engine keeps
     /// serving the last model read-only until the next connect.
     Disconnect,
@@ -173,6 +187,24 @@ pub enum Cmd {
     },
     /// R2: delete the whole numbered scene library.
     SceneClear,
+    /// R2 local-library status query (`{"cmd":"local_library_status"}`):
+    /// unicasts a [`Event::LocalLibraryStatus`] with the durability health
+    /// (`mode` memory|device, `status` ready|error|uncertain, monotonic
+    /// `revision`, `error`, `bytes`). Works in memory mode too.
+    LocalLibraryStatus,
+    /// R2 durable local-library mutation (`{"cmd":"local_library_mutate",
+    /// `"request_id":"…","expected_revision":N,
+    /// `"action":{"op":"save","n":1,"name":"Set 1"}}`): every numbered and
+    /// named library write through one serialized atomic commit. The
+    /// `expected_revision` must match the engine's current revision (stale
+    /// dialogs are rejected); the result always arrives as a unicast
+    /// [`Event::LocalLibraryResult`] correlated by `request_id`, plus
+    /// `scenes`/`shows`/`local_library_status` broadcasts on success.
+    LocalLibraryMutate {
+        request_id: String,
+        expected_revision: u64,
+        action: LibraryAction,
+    },
     /// R2: switch an FX slot's design type
     /// (`{"cmd":"fx_set_type","slot":1,"type":"Hall"}`).
     FxSetType {
@@ -336,6 +368,7 @@ impl Cmd {
             "discover_devices",
             "connect_device",
             "probe",
+            "forget_saved_mixers",
             "disconnect",
             "info",
             "scene_save",
@@ -343,6 +376,8 @@ impl Cmd {
             "scene_rename",
             "scene_delete",
             "scene_clear",
+            "local_library_status",
+            "local_library_mutate",
             "fx_set_type",
             "fx_param",
             "fx_bypass",
@@ -363,6 +398,47 @@ impl Cmd {
             "file_upload",
             "clear_solo",
         ]
+    }
+}
+
+/// One durable local-library mutation action (the `action` payload of
+/// [`Cmd::LocalLibraryMutate`]). Internally tagged on `"op"`: exactly one
+/// of `save` / `rename` / `delete` / `clear_numbered` / `capture` /
+/// `delete_named` / `reset` — no nested generic or arbitrary commands.
+/// `save`/`rename`/`delete`/`clear_numbered` target the numbered slots
+/// `001..=999`; `capture`/`delete_named` target the named show library;
+/// `reset` durably empties BOTH libraries plus the current-slot marker
+/// without touching the mixer, and is the only overwrite path while the
+/// library health latches `error`/`uncertain`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "op", rename_all = "snake_case")]
+pub enum LibraryAction {
+    Save { n: u16, name: String },
+    Rename { n: u16, name: String },
+    Delete { n: u16 },
+    ClearNumbered,
+    Capture { show: String, name: String },
+    DeleteNamed { show: String, name: String },
+    Reset,
+}
+
+impl LibraryAction {
+    /// Wire/stable operation name for [`Event::LocalLibraryResult`].
+    pub fn op_name(&self) -> &'static str {
+        match self {
+            LibraryAction::Save { .. } => "save",
+            LibraryAction::Rename { .. } => "rename",
+            LibraryAction::Delete { .. } => "delete",
+            LibraryAction::ClearNumbered => "clear_numbered",
+            LibraryAction::Capture { .. } => "capture",
+            LibraryAction::DeleteNamed { .. } => "delete_named",
+            LibraryAction::Reset => "reset",
+        }
+    }
+
+    /// Only `reset` may overwrite a latched `error`/`uncertain` store.
+    pub fn is_reset(&self) -> bool {
+        matches!(self, LibraryAction::Reset)
     }
 }
 
@@ -818,6 +894,44 @@ pub enum Event {
     Scenes {
         scenes: Vec<SceneEntry>,
     },
+    /// R2 local-library durability status: `mode` is `memory` (no data
+    /// dir: valid in-memory commands) or `device` (backed by
+    /// `scenes.json`); `status` is `ready`, `error` (load failure latched:
+    /// writes that would overwrite are blocked until reset or restart) or
+    /// `uncertain` (post-replace sync/stat failure latched: same block).
+    /// `revision` is the monotonic engine library revision
+    /// (`expected_revision` guards stale dialogs); `error` carries the
+    /// latch message; `bytes` is the owned library file size (`None` in
+    /// memory mode, or when the stat itself failed). Unicasts on
+    /// `local_library_status`; rides attach/resume only in device mode
+    /// (memory snapshots stay byte-identical); broadcasts after every
+    /// successful or uncertain commit.
+    LocalLibraryStatus {
+        mode: String,
+        status: String,
+        revision: u64,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        error: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        bytes: Option<u64>,
+    },
+    /// R2 durable-mutation result (unicast, always correlated by
+    /// `request_id`): `operation` names the mutation (`save`, `rename`,
+    /// `delete`, `clear_numbered`, `capture`, `delete_named`, `reset`);
+    /// `status` is `committed`, `rejected` or `uncertain`; `revision` is
+    /// the current revision (bumped on committed/uncertain, unchanged on
+    /// rejected). Rejections and uncertain outcomes also arrive as a
+    /// unicast `error`; success additionally broadcasts the `scenes`,
+    /// `shows` and `local_library_status` frames.
+    LocalLibraryResult {
+        request_id: String,
+        operation: String,
+        revision: u64,
+        status: String,
+        mode: String,
+        #[serde(skip_serializing_if = "Option::is_none", default)]
+        error: Option<String>,
+    },
     /// R2 FX rack state: one row per slot (type/on/bypass/return/level/
     /// params). Broadcast on every FX mutation; diffs ride the same
     /// frame (the whole rack is small).
@@ -979,6 +1093,8 @@ impl Event {
             Event::Link { .. } => "link",
             Event::Info { .. } => "info",
             Event::Scenes { .. } => "scenes",
+            Event::LocalLibraryStatus { .. } => "local_library_status",
+            Event::LocalLibraryResult { .. } => "local_library_result",
             Event::Fx { .. } => "fx",
             Event::Routing { .. } => "routing",
             Event::OfflineDiff { .. } => "offline_diff",

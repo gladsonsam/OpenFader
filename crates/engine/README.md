@@ -73,9 +73,11 @@ client.detach().await; // also runs on drop
 | `info` (R2) | — | unicast `info` |
 | `scene_save` (R2) | `n` (1..=999), `name` | broadcast `scenes` |
 | `scene_recall` (R2) | `n`, `fade_ms?` (default 400, 0 jumps), `scope?` (`strips?`, `strip_keys?`, `groups?`, `globals?`) | broadcast `param` (every applied value) + `state` + `scenes`; unicast `recalled` when foreign pins were overridden |
-| `scene_rename` (R2) | `n`, `name` | broadcast `scenes` |
-| `scene_delete` (R2) | `n` | broadcast `scenes` |
-| `scene_clear` (R2) | — | broadcast `scenes` (library emptied) |
+| `scene_rename` (R2) | `n`, `name` | broadcast `scenes` + `local_library_status` |
+| `scene_delete` (R2) | `n` | broadcast `scenes` + `local_library_status` |
+| `scene_clear` (R2) | — | broadcast `scenes` (library emptied) + `local_library_status` |
+| `local_library_status` (R2) | — | unicast `local_library_status` (works in memory mode too) |
+| `local_library_mutate` (R2) | `request_id`, `expected_revision`, `action` (`{"op":"save"‖"rename"‖"delete"‖"clear_numbered"‖"capture"‖"delete_named"‖"reset",…}`) | unicast `local_library_result` (always, correlated by `request_id`) + `error` on failure; broadcast `scenes` + `shows` + `local_library_status` on success |
 | `fx_set_type` (R2) | `slot`, `type` | broadcast `fx` |
 | `fx_param` (R2) | `slot`, `id`, `value` 0.0..=1.0 | broadcast `fx` |
 | `fx_bypass` (R2) | `slot`, `bypass` | broadcast `fx` |
@@ -191,6 +193,24 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   Broadcast after every scene mutation; unicast in the attach snapshot.
   (Desk-native slots are a separate read-only surface — see
   `native_snapshots` below and "Native desk snapshots vs app scenes".)
+- `local_library_status` (R2): `{"type":"local_library_status",
+  "mode":"memory"|"device","status":"ready"|"error"|"uncertain",
+  "revision":N,"error"?,"bytes"?}` — durability health of the combined
+  local library. Unicast on `local_library_status` (memory mode included);
+  rides the attach/resume snapshots only in device mode (memory snapshots
+  stay byte-identical), after `native_snapshots` and before the epoch
+  barrier; broadcasts after every successful or uncertain commit.
+  `revision` is the monotonic engine revision (`expected_revision` guards
+  stale dialogs); `bytes` is the owned `scenes.json` size (`None` in
+  memory mode, or when the stat itself failed).
+- `local_library_result` (R2): `{"type":"local_library_result",
+  "request_id","operation","revision","status":"committed"|"rejected"|
+  "uncertain","mode","error"?}` — unicast outcome of one
+  `local_library_mutate`, always correlated by `request_id` (even for
+  preflight/capture errors — a list refresh never counts as success).
+  Rejections and uncertain outcomes also arrive as a unicast `error`;
+  success additionally broadcasts `scenes`, `shows` and
+  `local_library_status`.
 - `fx` (R2): `{"type":"fx","slots":[{slot,type,on,bypass,ret_label,level,
   params:{id:value}}...]}` — whole-rack state (the rack is small; diffs
   ride the same frame). `params` maps design param ids to normalized
@@ -306,7 +326,8 @@ command errors → sender only. Everything else → every client.
 ## Ordering guarantees
 - Attach snapshot order: `you`, `state`, `shows`, `clients`, `locks`,
   slim `caps` (full catalogue on first `hello`), `devices`, `link`, `info` (when the driver answers), `scenes`,
-  `fx`, `routing`, `params…`, `native_snapshots`. The R1 six-frame prefix is unchanged.
+  `fx`, `routing`, `params…`, `native_snapshots`, then (device mode only)
+  `local_library_status`. The R1 six-frame prefix is unchanged.
 - A command's unicast reply (or error) is delivered to the sender *before*
   that command's broadcasts (mirrors the relay socket, which sent the
   reply inline before flushing broadcasts). Broadcasts from one command
@@ -560,11 +581,55 @@ reported (`recalled.overrode_locks`, like legacy) — direct writes keep
 the existing deny semantics. The legacy show commands
 (`capture_scene`/`recall_scene`/`delete_scene`, fader/mute only) keep
 working unchanged on the same engine; scenes share nothing with shows
-except the fade math. Persistence: the library lives in `scenes.json`
-under `EngineConfig::data_dir` (`--data-dir` on the relay; created on
-first save, reloaded in `Engine::new`, corrupt files read back empty);
-without a data dir scenes are in-memory only. The design's
+except the fade math. The design's
 Confirm/Instant recall mode is a UI concern (no engine state).
+
+### Durable local library (R2: one versioned combined document)
+
+Numbered slots AND the named show library persist together as one
+strict transaction in `scenes.json` under `EngineConfig::data_dir`
+(`crates/engine/src/local_library.rs` — the durability kernel):
+
+- Document: `{version: 2, scenes: [...full numbered DTO...],
+  shows: [...full named Show/Scene/SceneStrip DTOs, including primitive
+  params, main fader and notes...]}`. The `shows` wire event still carries
+  the legacy fader/mute-only shape; durability stores the full core state.
+  Raw params and stable strip keys are preserved verbatim; no core serde
+  changes.
+- Load is strict whole-document: unknown or newer `version` values,
+  unknown fields, duplicate numbers/names/strips, integer overflow,
+  non-finite or out-of-domain normalized faders, and malformed required
+  values fail the load. A failed load latches a visible library error
+  (`local_library_status`: `error`), empties the in-memory libraries, keeps
+  the source file byte-identical, and BLOCKS every write that would
+  overwrite it. Missing file means empty (`ready`). A valid version-1
+  numbered-only file still loads, but is never rewritten on load — it
+  migrates to v2 only on the next successful mutation commit.
+- Validation is structural only: provider parameter IDs are never dropped
+  for belonging to another driver, and no tight driver geometry is
+  enforced (recall still validates against the destination driver). The
+  byte/count caps are explicit generous resource guards that ERROR, never
+  silently truncate.
+- Every numbered/named mutation serializes on one engine-owned async lock:
+  build the candidate, validate it, write a sibling temp file
+  (`create_new` + `write_all` + `flush` + `sync_all`), atomically rename it
+  over the library, sync the directory where supported — and only then swap
+  both in-memory libraries and publish success (temp names are unique per
+  serialized commit; cleanup failures are surfaced). Pre-replace failures
+  preserve disk and memory; a post-replace directory-sync/stat failure
+  swaps memory (the rename landed) but latches `uncertain` and blocks
+  further writes — never a silent rollback, never a silent reset.
+- Health is synchronous and read-only: `Engine::local_library_status()`
+  (`mode`/`status`/`revision`/`error`/`bytes`) for the later FRB boot gate,
+  and the `local_library_status` / `local_library_result` events on the
+  wire. `revision` is monotonic per engine; `local_library_mutate` carries
+  `expected_revision` and stale dialogs are rejected. `reset` durably
+  empties BOTH libraries plus the current-slot marker without any driver
+  call, and is the only overwrite path while `error`/`uncertain` is
+  latched. The current-number marker stays session-only; loading never
+  recalls audio. Without a data dir everything stays valid in-memory
+  (`mode: memory`) with the pre-existing behavior.
+- Saved mixers (`desks.json`) sit outside this kernel: `forget_saved_mixers` is a pure-local metadata clear — it empties the remembered desk map and atomically persists the empty map without any driver/query/connect/probe/scan work or audio-state change.
 
 ### Native desk snapshots vs app scenes (read-only)
 
