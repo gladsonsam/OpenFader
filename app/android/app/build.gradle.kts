@@ -1,3 +1,5 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
@@ -48,3 +50,40 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// A normal `flutter build apk` must include the engine too. Previously only
+// the packaging script built it, so local APKs silently used FakeSimEngine.
+val bridgeAbis = (providers.gradleProperty("target-platform").orNull
+    ?: "android-arm,android-arm64,android-x64").split(",").map {
+    when (it) {
+        "android-arm" -> "armeabi-v7a"
+        "android-arm64" -> "arm64-v8a"
+        "android-x64" -> "x86_64"
+        else -> error("Unsupported Rust bridge target: $it")
+    }
+}
+val repoRoot = rootProject.projectDir.resolve("../..").canonicalFile
+val bridgeOutput = layout.buildDirectory.dir("rustJniLibs")
+val bridgeNdk = androidComponents.sdkComponents.ndkDirectory
+android.sourceSets.getByName("main").jniLibs.setSrcDirs(listOf(bridgeOutput))
+val buildRustBridge = tasks.register<Exec>("buildRustBridge") {
+    workingDir(repoRoot)
+    inputs.files(fileTree(repoRoot.resolve("crates")) {
+        include("**/*.rs", "**/Cargo.toml", "**/build.rs")
+    }, repoRoot.resolve("Cargo.toml"), repoRoot.resolve("Cargo.lock"))
+    inputs.property("abis", bridgeAbis)
+    inputs.property("ndkVersion", android.ndkVersion)
+    outputs.files(bridgeAbis.map {
+        bridgeOutput.map { dir -> dir.file("$it/libopenfader_flutter_bridge.so") }
+    })
+    doFirst {
+        environment("ANDROID_NDK_HOME", bridgeNdk.get().asFile)
+        val cargo = File(System.getProperty("user.home"),
+            ".cargo/bin/" + if (System.getProperty("os.name").startsWith("Windows")) "cargo.exe" else "cargo")
+        commandLine(listOf(if (cargo.isFile) cargo.absolutePath else "cargo", "ndk") +
+            bridgeAbis.flatMap { listOf("-t", it) } +
+            listOf("-o", bridgeOutput.get().asFile.absolutePath, "build", "--locked",
+                "--release", "-p", "openfader-flutter-bridge"))
+    }
+}
+tasks.named("preBuild") { dependsOn(buildRustBridge) }

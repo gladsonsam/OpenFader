@@ -37,7 +37,7 @@ def main():
     platform = parser.parse_args().platform
     expected = {'ios': 'darwin', 'macos': 'darwin', 'linux': 'linux',
                 'windows': 'win32', 'android': 'linux'}[platform]
-    if sys.platform != expected:
+    if sys.platform != expected and not (platform == 'android' and sys.platform == 'darwin'):
         parser.error(f'{platform} builds require a {expected} host')
     OUT.mkdir(exist_ok=True)
     version = (ROOT / 'VERSION').read_text().strip()
@@ -102,10 +102,8 @@ def main():
                 shutil.copy2(library, bundle)
             zip_tree(bundle, output('openfader-windows-x64.zip'), prefix='openfader')
     else:
-        # Overwrite the checked-in bridge libraries: never ship stale engine code.
-        run('cargo', 'ndk', '-t', 'arm64-v8a', '-t', 'armeabi-v7a', '-t', 'x86_64',
-            '-o', APP / 'android/app/src/main/jniLibs', 'build', '--locked',
-            '--release', '-p', 'openfader-flutter-bridge', cwd=ROOT)
+        # Gradle builds the Rust bridge for every packaged ABI, including local
+        # Flutter builds. One path prevents missing or stale native engines.
         run(flutter, 'build', 'apk', '--release', *flags)
         shutil.copy2(APP / 'build/app/outputs/flutter-apk/app-release.apk', output('openfader-android-dev-signed.apk'))
         run(flutter, 'build', 'appbundle', '--release', *flags)
