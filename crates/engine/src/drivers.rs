@@ -1057,7 +1057,10 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                     min: 0.0,
                     max: 1.0,
                     default: 0.5,
-                    scale: "lin".to_string(),
+                    // The desk's engineering conversion is unmeasured.
+                    // Retain labels/units without presenting normalized
+                    // values as seconds, Hertz or decibels in clients.
+                    scale: "normalized".to_string(),
                 });
             }
             out.push(crate::protocol::FxTypeCaps {
