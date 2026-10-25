@@ -155,6 +155,10 @@ pub trait DynDriver: Send + Sync {
     async fn get_main_mute(&self) -> anyhow::Result<bool>;
     async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()>;
     async fn get_solo(&self, strip: StripId) -> anyhow::Result<bool>;
+    /// Verification/poll read: push-cache providers must withhold own writes.
+    async fn get_solo_verified(&self, strip: StripId) -> anyhow::Result<bool> {
+        self.get_solo(strip).await
+    }
     async fn set_param(&self, strip: StripId, param: &str, value: ParamValue) -> anyhow::Result<()>;
     async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue>;
     async fn snapshot(&self) -> anyhow::Result<MixerSnapshot>;
@@ -1105,6 +1109,34 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
 
+    fn essentials_extra_ids(&self, kind: StripKind) -> &'static [&'static str] {
+        if matches!(kind, StripKind::In) { &["solo"] } else { &[] }
+    }
+    async fn get_solo_verified(&self, strip: StripId) -> anyhow::Result<bool> {
+        self.get_solo_verified(strip).await
+    }
+    fn live_solo_bank(&self) -> bool { true }
+    async fn solo_bank(&self, channels: usize) -> anyhow::Result<Vec<bool>> {
+        // Never turn a missing/pending word into a confirmed Solo OFF.
+        let mut bank = Vec::with_capacity(channels);
+        for ch in 0..channels as u16 {
+            bank.push(self.get_solo_verified(StripId(ch)).await?);
+        }
+        Ok(bank)
+    }
+
+    async fn clear_solo(&self) -> anyhow::Result<()> {
+        // Clear the supported input bank. Read it completely before writing,
+        // so unavailable state cannot silently masquerade as Solo OFF.
+        let mut active = Vec::new();
+        for ch in 0..MixerDriver::channel_count(self) as u16 {
+            if MixerDriver::get_solo(self, StripId(ch)).await? { active.push(ch); }
+        }
+        for ch in active {
+            MixerDriver::set_solo(self, StripId(ch), false).await?;
+        }
+        Ok(())
+    }
     fn discovered_name(&self, device: &openfader_transport::discovery::DiscoveredDevice) -> String {
         if device.raw.trim().is_empty() { "Mackie DL mixer".into() } else { device.raw.clone() }
     }
