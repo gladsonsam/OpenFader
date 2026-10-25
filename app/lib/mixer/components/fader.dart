@@ -13,12 +13,14 @@ class MixerFader extends StatefulWidget {
   final bool compact;
   final ValueChanged<double> onPosition;
   final VoidCallback onSelect, onUnity;
+  final VoidCallback? onTouch;
   const MixerFader(
       {super.key,
       required this.channel,
       this.compact = false,
       required this.onPosition,
       required this.onSelect,
+      this.onTouch,
       required this.onUnity});
   @override
   State<MixerFader> createState() => _MixerFaderState();
@@ -83,8 +85,10 @@ class _MixerFaderState extends State<MixerFader> {
                           message: '${ch.levelLabel} · double-tap for unity',
                           triggerMode: TooltipTriggerMode.manual,
                           child: Listener(
-                              onPointerDown: (_) =>
-                                  setState(() => _held = true),
+                              onPointerDown: (_) {
+                                widget.onTouch?.call();
+                                setState(() => _held = true);
+                              },
                               onPointerUp: (_) => _release(),
                               onPointerCancel: (_) => _release(),
                               child: GestureDetector(

@@ -22,6 +22,7 @@ import '../settings/prefs.dart';
 import '../settings/recents.dart';
 import '../state/app_store.dart';
 import '../theme.dart';
+import '../u4law.dart' show panText;
 import 'shell.dart';
 import '../screens/channel.dart';
 import '../mixer/components/banks.dart';
@@ -419,11 +420,32 @@ class _AppShellState extends State<AppShell> {
             listenable: _mixer,
             builder: (context, _) {
               final selected = _mixer.selectedProcessing;
-              Widget strip(MixerChannel ch) => MixerStrip(
-                  channel: ch,
-                  controller: _mixer,
-                  compact: !wide,
-                  onOpen: () {});
+              Widget strip(MixerChannel ch) {
+                final pan = ch.master || ch.channel == null
+                    ? null
+                    : _mixer.panNoteOf(ch.channel!);
+                final panFocus = pan == null
+                    ? null
+                    : ChannelFocus(
+                        title: 'Pan',
+                        label: 'L/R',
+                        text: () => panText(pan.value),
+                        entryText: () => (pan.value * 100).toStringAsFixed(0),
+                        valueListenable: pan,
+                        min: -100,
+                        max: 100,
+                        apply: (v) => _mixer.setPan(ch, v / 100));
+                return MixerStrip(
+                    channel: ch,
+                    controller: _mixer,
+                    onControlFocus: (control) {
+                      // Null restores the toolbar's live per-strip fader readout.
+                      _channelFocus.value =
+                          control == MixerReadoutControl.pan ? panFocus : null;
+                    },
+                    compact: !wide,
+                    onOpen: () {});
+              }
               if (!wide) {
                 return selected == null
                     ? const SizedBox.shrink()

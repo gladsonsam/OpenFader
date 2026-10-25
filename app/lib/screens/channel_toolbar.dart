@@ -190,7 +190,15 @@ class _FocusedValue extends StatelessWidget {
   final bool compact;
   const _FocusedValue({required this.focus, required this.compact});
   @override
-  Widget build(BuildContext context) => InkWell(
+  Widget build(BuildContext context) {
+    final live = focus.valueListenable;
+    if (live == null) return _value(context);
+    return ValueListenableBuilder<double>(
+        valueListenable: live,
+        builder: (context, value, child) => _value(context));
+  }
+
+  Widget _value(BuildContext context) => InkWell(
       onTap: !focus.enabled
           ? null
           : () async {
