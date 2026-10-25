@@ -58,6 +58,7 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   Color get chip => pair(0xff262626, 0xffcbd2d8);
   Color get rtaOutline => pair(0xffa9ae98, 0xff66784c);
   Color get eqPreviewFill => pair(0xff8d9378, 0xff66784c);
+  Color get dynamicsFill => success.withValues(alpha: .18);
   Color get eqPreviewCurve => pair(0xfff6f9e4, 0xff304022);
   Color get eqBg => pair(0xff1f2314, 0xffe9efdf);
   Color get comp => pair(0xffff4b06, 0xffbb3900);
