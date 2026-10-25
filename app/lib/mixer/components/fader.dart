@@ -38,12 +38,8 @@ class _MixerFaderState extends State<MixerFader> {
         final geometry = _FaderGeometry(box.biggest, widget.compact);
         final position = _drag ?? MixerFaderScale.fromEngine(ch.fader);
         final y = geometry.top + (1 - position) * geometry.travel;
-        // Design: selected cap grows (1.4x tablet) with a lime glow.
-        final scale = ch.selected
-            ? (widget.compact ? 1.25 : 1.4)
-            : _held
-                ? 1.15
-                : 1.0;
+        // Enlarge only during a drag; selection keeps its border and glow.
+        final scale = _drag != null ? (widget.compact ? 1.25 : 1.4) : 1.0;
         return Semantics(
             label: '${ch.name} level',
             value: ch.levelLabel,
