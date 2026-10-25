@@ -34,9 +34,6 @@ const INPUT_SOLO_FIRST_ADDRESS: u32 = 23;
 /// See DL32S protocol notes and the `verified` flags in [`addrs`].
 ///
 /// Deliberately absent (reachable only by raw table key for experts):
-/// - `icon` — position verified, but the live domain is ~1000+ (app icon
-///   table ids), not the canonical 0..31. Unmapped until the icon table is
-///   reversed (Wave-2 REA residue).
 /// - `gate_mode`: native CH7 Modern=0/Vintage=1 verified with independent
 ///   readback and exact restore on 2026-10-25. Vintage uses discrete
 ///   attack/release controls; modern timing units must not be assumed.
@@ -77,6 +74,7 @@ pub const DL32S_CAPABILITIES: &[&str] = &[
     "lr_assign",
     "link",
     "color",
+    "icon",
     "gate_on",
     "gate_thr",
     "gate_att",
@@ -654,6 +652,45 @@ async fn wait_for_initial_state(session: &MackieSession) -> anyhow::Result<()> {
     }
 }
 
+// Native row-major stock table. Clear is separate from the crossed-circle
+// stock icon. Endpoints, keyboard and clear verified on CH7, 2026-10-26.
+static DL32S_ICON_SYMBOLS: &[openfader_core::params::ParamSymbol] = &[
+    openfader_core::params::ParamSymbol { value: 0.0, label: "Clear image", symbol: "none" },
+    openfader_core::params::ParamSymbol { value: 1000.0, label: "Kick drum", symbol: "kick" },
+    openfader_core::params::ParamSymbol { value: 1001.0, label: "Snare drum", symbol: "snare" },
+    openfader_core::params::ParamSymbol { value: 1002.0, label: "Tom drum", symbol: "tom" },
+    openfader_core::params::ParamSymbol { value: 1003.0, label: "Hi-hat", symbol: "hihat" },
+    openfader_core::params::ParamSymbol { value: 1004.0, label: "Cymbals", symbol: "cymbals" },
+    openfader_core::params::ParamSymbol { value: 1005.0, label: "Drum kit", symbol: "drumkit" },
+    openfader_core::params::ParamSymbol { value: 1006.0, label: "Cowbell", symbol: "cowbell" },
+    openfader_core::params::ParamSymbol { value: 1007.0, label: "Bass guitar 1", symbol: "bass1" },
+    openfader_core::params::ParamSymbol { value: 1008.0, label: "Bass guitar 2", symbol: "bass2" },
+    openfader_core::params::ParamSymbol { value: 1009.0, label: "Guitar 1", symbol: "guitar1" },
+    openfader_core::params::ParamSymbol { value: 1010.0, label: "Guitar 2", symbol: "guitar2" },
+    openfader_core::params::ParamSymbol { value: 1011.0, label: "Guitar 3", symbol: "guitar3" },
+    openfader_core::params::ParamSymbol { value: 1012.0, label: "Acoustic guitar 1", symbol: "acoustic1" },
+    openfader_core::params::ParamSymbol { value: 1013.0, label: "Acoustic guitar 2", symbol: "acoustic2" },
+    openfader_core::params::ParamSymbol { value: 1014.0, label: "Bowed strings 1", symbol: "strings1" },
+    openfader_core::params::ParamSymbol { value: 1015.0, label: "Bowed strings 2", symbol: "strings2" },
+    openfader_core::params::ParamSymbol { value: 1016.0, label: "Trumpet", symbol: "trumpet" },
+    openfader_core::params::ParamSymbol { value: 1017.0, label: "Grand piano", symbol: "piano" },
+    openfader_core::params::ParamSymbol { value: 1018.0, label: "Keyboards", symbol: "keyboards" },
+    openfader_core::params::ParamSymbol { value: 1019.0, label: "Synthesizer", symbol: "synth" },
+    openfader_core::params::ParamSymbol { value: 1020.0, label: "Amplifier", symbol: "amp" },
+    openfader_core::params::ParamSymbol { value: 1021.0, label: "Vocalist 1", symbol: "vocal1" },
+    openfader_core::params::ParamSymbol { value: 1022.0, label: "Vocalist 2", symbol: "vocal2" },
+    openfader_core::params::ParamSymbol { value: 1023.0, label: "Vocal group", symbol: "group" },
+    openfader_core::params::ParamSymbol { value: 1024.0, label: "Phone", symbol: "phone" },
+    openfader_core::params::ParamSymbol { value: 1025.0, label: "Wedge monitor 1", symbol: "wedge" },
+    openfader_core::params::ParamSymbol { value: 1026.0, label: "Wedge monitor 2", symbol: "wedges" },
+    openfader_core::params::ParamSymbol { value: 1027.0, label: "Mixer", symbol: "mixer" },
+    openfader_core::params::ParamSymbol { value: 1028.0, label: "Arches", symbol: "arches" },
+    openfader_core::params::ParamSymbol { value: 1029.0, label: "Clock", symbol: "clock" },
+    openfader_core::params::ParamSymbol { value: 1030.0, label: "PA speakers", symbol: "pa" },
+    openfader_core::params::ParamSymbol { value: 1031.0, label: "Speaker", symbol: "speaker" },
+    openfader_core::params::ParamSymbol { value: 1032.0, label: "Crossed circle", symbol: "prohibited" },
+];
+
 // Native input palette order; CH7 endpoints and None verified 2026-10-26.
 static DL32S_COLOR_SWATCHES: &[openfader_core::params::ParamSwatch] = &[
     openfader_core::params::ParamSwatch { value: -1.0, label: "None", rgb: None },
@@ -695,6 +732,7 @@ static DL32S_COLOR_SWATCHES: &[openfader_core::params::ParamSwatch] = &[
 /// EQ gains need no entry (canonical already documents ±15 per p103);
 /// `gate_thr` needs none (canonical already -80..0 per p112).
 static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
+    ("icon", 0.0, 1032.0), // 0 clears; stock symbols use 1000..1032
     ("color", -1.0, 16.0), // None plus 17 native swatches; CH7 verified 2026-10-26
     ("gain", 0.0, 60.0),
     ("trim", -40.0, 20.0),
@@ -956,6 +994,12 @@ impl Dl32sDriver {
             Float(f32),
         }
         let out = match (field.encoding, value) {
+            (addrs::Encoding::Int, ParamValue::Float(v)) if key == "icon" => {
+                anyhow::ensure!(v.is_finite() && v.fract() == 0.0 &&
+                    (v == 0.0 || (1000.0..=1032.0).contains(&v)),
+                    "icon must be Clear (0) or a stock symbol 1000..1032, got {v}");
+                Out::Int(v as u32)
+            }
             (addrs::Encoding::Int, ParamValue::Float(v)) if key == "colour" => {
                 anyhow::ensure!(v.is_finite() && v.fract() == 0.0 && (-1.0..=16.0).contains(&v),
                     "colour must be None (-1) or an integer swatch 0..16, got {v}");
@@ -1526,6 +1570,10 @@ impl MixerDriver for Dl32sDriver {
     /// EQ mode labels and curve semantics remain unverified.
     fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
         DL32S_RANGE_OVERRIDES
+    }
+
+    fn param_symbols(&self, param: &str) -> &'static [openfader_core::params::ParamSymbol] {
+        if param == "icon" { DL32S_ICON_SYMBOLS } else { &[] }
     }
 
     fn param_swatches(&self, param: &str) -> &'static [openfader_core::params::ParamSwatch] {
@@ -2416,7 +2464,7 @@ mod tests {
         let caps = Dl32sDriver::new().capabilities();
         for id in [
             "fader", "mute", "name", "pan", "gain", "phantom", "trim", "polarity",
-            "hpf_on", "hpf_freq", "lr_assign", "link", "color",
+            "hpf_on", "hpf_freq", "lr_assign", "link", "color", "icon",
             "gate_on", "gate_thr", "gate_att", "gate_mode", "gate_rel",
             "gate_range", "gate_hold",
             "comp_on", "comp_mode", "comp_thr", "comp_ratio", "comp_knee",
@@ -2433,7 +2481,6 @@ mod tests {
             assert!(caps.contains(&id), "caps miss {id}");
         }
         for id in [
-            "icon", // live domain is ~1000+, unmapped
             "comp_auto",
             "comp_det",
             "comp_env",
@@ -2600,8 +2647,10 @@ mod tests {
         let got = decode_push_value(47, 2.0f32.to_bits());
         assert_eq!(got.len(), 1);
         assert_eq!(got[0].1, "eq1_type");
+        // Icon preserves the provider-owned numeric domain.
+        assert_eq!(decode_push_value(1 + 4, 1005),
+            vec![(StripId(0), "icon".to_string(), ParamValue::Float(1005.0))]);
         // Unadvertised + out-of-range leaves decode to nothing.
-        assert!(decode_push_value(1 + 4, 1005).is_empty()); // icon
         assert!(decode_push_value(4041, 1).is_empty()); // subgroup master: no strip
         assert!(decode_push_value(4347, 0).is_empty()); // main: no strip
         assert!(decode_push_value(99999, 0).is_empty()); // unknown space

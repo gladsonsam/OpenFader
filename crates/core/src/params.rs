@@ -47,6 +47,15 @@ pub struct ParamSwatch {
     pub rgb: Option<u32>,
 }
 
+/// Provider-owned numeric identity and a semantic symbol key. Consumers use
+/// their own artwork for the key, never assume another mixer's icon IDs.
+#[derive(Clone, Copy, Debug)]
+pub struct ParamSymbol {
+    pub value: f32,
+    pub label: &'static str,
+    pub symbol: &'static str,
+}
+
 /// Provider-owned conditions over parameters on the current strip.
 /// Compound conditions keep routing-dependent controls independent of driver names.
 #[derive(Clone, Copy, Debug)]
