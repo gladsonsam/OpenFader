@@ -66,7 +66,7 @@ class _ProcessingButton extends StatelessWidget {
                   ]))));
 }
 
-// Shared drag, tap, and typed-entry value for processor sliders.
+// Focus-aware sliders hand typed entry to the page's topbar.
 class _ProcessingSlider extends StatefulWidget {
   final String label, text;
   final double value, min, max;
@@ -78,7 +78,6 @@ class _ProcessingSlider extends StatefulWidget {
       compact,
       solidFill,
       fillFromStart,
-      focusOnly,
       inlineLabel;
   final Widget? trailing;
   final Color? color;
@@ -102,7 +101,6 @@ class _ProcessingSlider extends StatefulWidget {
       this.compact = false,
       this.solidFill = false,
       this.fillFromStart = false,
-      this.focusOnly = false,
       this.inlineLabel = false,
       this.valueColor,
       this.color});
@@ -112,17 +110,7 @@ class _ProcessingSlider extends StatefulWidget {
 
 class _ProcessingSliderState extends State<_ProcessingSlider> {
   double? _drag;
-  Future<void> _type() async {
-    widget.onFocus?.call();
-    if (widget.focusOnly) return;
-    final v = await showNumberEntry(
-        context: context,
-        title: widget.label,
-        initial: widget.value.toStringAsFixed(2),
-        min: widget.min,
-        max: widget.max);
-    if (v != null) widget.onChanged(v);
-  }
+  void _focusControl() => widget.onFocus?.call();
 
   @override
   Widget build(BuildContext context) {
@@ -137,18 +125,22 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                   label: widget.label,
                   value: widget.text,
                   onIncrease: widget.enabled
-                      ? () => widget.onChanged(
-                          (v + (widget.max - widget.min) / 100)
-                              .clamp(widget.min, widget.max))
+                      ? () {
+                          widget.onFocus?.call();
+                          widget.onChanged((v + (widget.max - widget.min) / 100)
+                              .clamp(widget.min, widget.max));
+                        }
                       : null,
                   onDecrease: widget.enabled
-                      ? () => widget.onChanged(
-                          (v - (widget.max - widget.min) / 100)
-                              .clamp(widget.min, widget.max))
+                      ? () {
+                          widget.onFocus?.call();
+                          widget.onChanged((v - (widget.max - widget.min) / 100)
+                              .clamp(widget.min, widget.max));
+                        }
                       : null,
                   child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
-                      onTap: widget.enabled ? _type : null,
+                      onTap: widget.enabled ? _focusControl : null,
                       onHorizontalDragStart: widget.enabled
                           ? (_) {
                               widget.onFocus?.call();
@@ -180,11 +172,13 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                               size: Size(box.maxWidth, 44),
                               painter: _ProcessingTrackPainter(
                                   palette: ConsolePalette.of(context),
-                                  n: ((v - widget.min) / (widget.max - widget.min))
+                                  n: ((v - widget.min) /
+                                          (widget.max - widget.min))
                                       .clamp(0, 1),
                                   color: color,
                                   solidFill: widget.solidFill,
-                                  bipolar: !widget.fillFromStart && widget.min == -widget.max,
+                                  bipolar: !widget.fillFromStart &&
+                                      widget.min == -widget.max,
                                   pan: widget.pan))))))),
       if (widget.trailing != null) ...[
         const SizedBox(width: 6),
@@ -192,7 +186,7 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
       ],
     ]);
     final label = InkWell(
-        onTap: widget.enabled ? _type : null,
+        onTap: widget.enabled ? _focusControl : null,
         child: Align(
             alignment: Alignment.topCenter,
             child: Row(children: [
@@ -216,7 +210,7 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
             SizedBox(
                 width: 20,
                 child: InkWell(
-                    onTap: widget.enabled ? _type : null,
+                    onTap: widget.enabled ? _focusControl : null,
                     child: Text(widget.label,
                         style: AppDesign.type(18,
                             color: ConsolePalette.of(context).text7)))),
