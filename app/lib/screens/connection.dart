@@ -6,7 +6,7 @@ import '../theme.dart';
 import '../palette.dart';
 import '../widgets/console_button.dart';
 
-// Automatic keeps the existing probe path.
+// Automatic asks every registered hardware driver to identify the host.
 enum MixerType {
   automatic('Automatic', 'auto'),
   xair('Behringer X-Air', 'xair'),

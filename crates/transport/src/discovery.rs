@@ -345,6 +345,43 @@ pub fn local_ipv4_interfaces() -> Vec<LocalIfaceV4> {
     out
 }
 
+/// Bounded fallback for providers without a verified broadcast protocol.
+/// Search at most four directly attached /24s (or the actual narrower
+/// subnet), excluding loopback, point-to-point/VPN and this host. At most
+/// 64 sockets run at once; the whole operation shares one deadline.
+pub async fn discover_local<F, Fut>(budget: Duration, identify: F) -> Vec<DiscoveredDevice>
+where
+    F: Fn(IpAddr, Duration) -> Fut,
+    Fut: std::future::Future<Output = Option<DiscoveredDevice>>,
+{
+    use futures::{stream, StreamExt};
+    let interfaces = local_ipv4_interfaces();
+    let own: Vec<_> = interfaces.iter().map(|i| i.ip).collect();
+    let mut prefixes = Vec::new();
+    let mut hosts = Vec::new();
+    for iface in interfaces {
+        let prefix = subnet24(iface.ip);
+        if !sweepable_prefix(prefix) || prefix_len(iface.netmask) >= 31
+            || prefixes.contains(&prefix) || prefixes.len() >= 4 { continue; }
+        prefixes.push(prefix);
+        let mask = u32::from(iface.netmask);
+        let network = u32::from(iface.ip) & mask;
+        hosts.extend(sweep_targets(prefix, &own).into_iter().filter(|ip| {
+            let value = u32::from(*ip);
+            value & mask == network && value != network && value != network | !mask
+        }));
+    }
+    let deadline = tokio::time::Instant::now() + budget;
+    let mut pending = stream::iter(hosts.into_iter().map(|ip| {
+        identify(IpAddr::V4(ip), Duration::from_millis(400).min(budget))
+    })).buffer_unordered(64);
+    let mut out = Vec::new();
+    while let Ok(Some(reply)) = tokio::time::timeout_at(deadline, pending.next()).await {
+        if let Some(device) = reply { out.push(device); }
+    }
+    out
+}
+
 /// Every local subnet's directed broadcast address (deduped, sorted):
 /// one `ip | !mask` per up IPv4 interface, loopback included (so
 /// loopback self-tests exercise the same fan-out the phone uses).

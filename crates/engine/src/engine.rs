@@ -345,11 +345,11 @@ pub trait DeviceScanner: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Vec<DeviceDesc>> + Send + 'a>>;
 }
 
-/// Production LAN scanner: broadcast probes for every row of the
-/// transport [`PROBE_TABLE`](openfader_transport::discovery::PROBE_TABLE)
-/// via `crates/transport`. UNVERIFIED-ON-RIG: mapping replies to devices
-/// has only ever run against the fake in tests.
-pub struct RealScanner;
+/// Production scanner: every registered hardware provider contributes its
+/// read-only discovery method. Searches share a bounded deadline.
+pub struct RealScanner {
+    drivers: Vec<Arc<dyn DynDriver>>,
+}
 
 impl DeviceScanner for RealScanner {
     fn scan<'a>(
@@ -359,9 +359,13 @@ impl DeviceScanner for RealScanner {
     ) -> Pin<Box<dyn Future<Output = Vec<DeviceDesc>> + Send + 'a>> {
         Box::pin(async move {
             let mut out = Vec::new();
-            if let Ok(devs) = openfader_transport::discovery::discover_all(timeout).await {
+            let searches = self.drivers.iter().map(|d| async move {
+                tokio::time::timeout(timeout, d.discover(timeout)).await.unwrap_or_default()
+            });
+            for devs in futures::future::join_all(searches).await {
                 for d in devs {
-                    let name = display(d.driver, &d.model);
+                    let name = self.drivers.iter().find(|driver| driver.name() == d.driver)
+                        .map_or_else(|| display(d.driver, &d.model), |driver| driver.discovered_name(&d));
                     push_row(&mut out, device_row(d, "broadcast", name));
                 }
             }
@@ -879,6 +883,10 @@ impl Engine {
         // Registry definition order is the device-claim precedence
         // (sim fallback first, then hardware in priority order).
         let rows = crate::drivers::registered_drivers(config.preset);
+        let scanner = config.scanner.clone().unwrap_or_else(|| Arc::new(RealScanner {
+            drivers: rows.iter().filter(|r| r.driver.is_hardware())
+                .map(|r| r.driver.clone()).collect(),
+        }));
         let driver_order: Vec<String> = rows.iter().map(|r| r.name.to_string()).collect();
         // Merged param registries (canonical + provider rows) ride the same
         // definition order; unknown drivers fall back to `sim` (see
@@ -948,9 +956,7 @@ impl Engine {
             lane_tick: AtomicU64::new(0),
             poll_inflight: config.poll_inflight,
             rtt_ema_us: AtomicU64::new(0),
-            scanner: config
-                .scanner
-                .unwrap_or_else(|| Arc::new(RealScanner)),
+            scanner,
             meter_driver: RwLock::new(None),
             meter_guard: RwLock::new(None),
             desk_addrs: RwLock::new(desk_addrs),
@@ -2357,107 +2363,57 @@ impl Engine {
     /// silence. Broadcast discovery never crosses subnets; this is the
     /// manual-add and cross-subnet path (read-only on the desk).
     async fn probe_desk(&self, driver: &str, addr: &str) -> Option<DeviceDesc> {
-        use openfader_transport::discovery::{probe_addr, PROBE_TABLE};
-        let raw = addr.trim().to_string();
-        // Accept `ip`, `ip:port`, or a hostname; resolve to one IP.
-        let ip: IpAddr = raw
-            .parse()
-            .ok()
-            .or_else(|| {
-                raw.rsplit_once(':')
-                    .and_then(|(h, _)| h.trim_matches(|c| c == '[' || c == ']').parse().ok())
-            })
-            .or_else(|| {
-                std::net::ToSocketAddrs::to_socket_addrs(
-                    format!("{raw}:{}", openfader_transport::discovery::XAIR_PORT).as_str(),
-                )
-                .ok()?
-                .next()
-                .map(|s| s.ip())
-            })?;
-        let mut answered_model: Option<String> = None;
-        for spec in PROBE_TABLE.iter().filter(|s| s.driver == driver) {
-            if let Ok(devs) = probe_addr(spec, ip, Duration::from_millis(900)).await {
-                if let Some(d) = devs.into_iter().next() {
-                    answered_model = Some(d.model);
-                    break;
-                }
+        let ip = Self::discovery_ip(addr).await?;
+        let reply = self.drv(driver).identify(ip, Duration::from_millis(1800)).await?;
+        let name = self.drv(driver).discovered_name(&reply);
+        Some(device_row(reply, "manual", name))
+    }
+
+    async fn discovery_ip(raw: &str) -> Option<IpAddr> {
+        if raw.is_empty() || raw.len() > 255 || raw.chars().any(char::is_whitespace) { return None; }
+        if let Ok(ip) = raw.parse() { return Some(ip); }
+        if let Ok(socket) = raw.parse::<std::net::SocketAddr>() { return Some(socket.ip()); }
+        let host = raw.rsplit_once(':').map_or(raw, |(h, _)| h);
+        let mut ips = tokio::time::timeout(Duration::from_secs(2), tokio::net::lookup_host((host, 0)))
+            .await.ok()?.ok()?;
+        ips.find(|s| s.is_ipv4()).or_else(|| ips.next()).map(|s| s.ip())
+    }
+
+    async fn identify_registered(&self, addr: &str) -> Option<DeviceDesc> {
+        use futures::{stream::FuturesUnordered, StreamExt};
+        let ip = Self::discovery_ip(addr).await?;
+        let mut probes: FuturesUnordered<_> = self.driver_order.iter()
+            .map(|name| self.drv(name)).filter(|driver| driver.is_hardware())
+            .map(|driver| async move {
+                tokio::time::timeout(Duration::from_millis(1800),
+                    driver.identify(ip, Duration::from_millis(1800)))
+                    .await.ok().flatten()
+            }).collect();
+        while let Some(result) = probes.next().await {
+            if let Some(reply) = result {
+                let name = self.drv(reply.driver).discovered_name(&reply);
+                return Some(device_row(reply, "manual", name));
             }
         }
-        let model = answered_model?;
-        let ip_s = ip.to_string();
-        Some(DeviceDesc {
-            id: format!("{driver}-{ip_s}"),
-            name: self.drv(driver).display_name(&model),
-            model,
-            ip: ip_s,
-            kind: "console".to_string(),
-            state: "available".to_string(),
-            fw: None,
-            via: Some("manual".to_string()),
-        })
+        None
     }
 
     /// Probe a supplied host with only verified discovery protocols. DNS and
     /// socket waits are async and bounded by the caller; no driver is linked.
     async fn check_recent_host(&self, addr: String) -> DeviceCheck {
-        use openfader_transport::discovery::{probe_addr, PROBE_TABLE};
         let raw = addr.trim();
-        let invalid = || DeviceCheck {
-            addr: addr.clone(),
-            status: "invalid".into(),
-            device: None,
-        };
-        if raw.is_empty() || raw.len() > 255 || raw.chars().any(char::is_whitespace) {
-            return invalid();
+        if raw.is_empty() || raw.len() > 255 || raw.chars().any(char::is_whitespace)
+            || Self::discovery_ip(raw).await.is_none() {
+            return DeviceCheck { addr, status: "invalid".into(), device: None };
         }
-        let ip = if let Ok(ip) = raw.parse::<IpAddr>() {
-            ip
-        } else if let Ok(socket) = raw.parse::<std::net::SocketAddr>() {
-            socket.ip()
-        } else {
-            let host = raw.rsplit_once(':').map_or(raw, |(host, _)| host);
-            match tokio::net::lookup_host((host, 0)).await {
-                Ok(mut ips) => match ips.find(|s| s.is_ipv4()).or_else(|| ips.next()) {
-                    Some(socket) => socket.ip(),
-                    None => return invalid(),
-                },
-                Err(_) => return invalid(),
-            }
-        };
-        // DL32S has no verified discovery handshake. In particular its
-        // query_info is static identity metadata, not a network health check.
-        if self.devices.read().unwrap().iter().any(|d| {
-            d.model.to_ascii_lowercase().contains("dl32")
-                && (d.ip == raw || d.ip.parse::<IpAddr>().ok() == Some(ip))
-        }) {
-            return DeviceCheck {
-                addr,
-                status: "unsupported".into(),
-                device: None,
-            };
-        }
-        for spec in PROBE_TABLE {
-            if let Ok(rows) = probe_addr(spec, ip, Duration::from_millis(900)).await {
-                if let Some(reply) = rows.into_iter().next() {
-                    let name = self.drv(reply.driver).display_name(&reply.model);
-                    return DeviceCheck {
-                        addr,
-                        status: "available".into(),
-                        device: Some(device_row(reply, "refresh", name)),
-                    };
-                }
-            }
-        }
+        let device = self.identify_registered(raw).await;
         DeviceCheck {
             addr,
-            status: "no_reply".into(),
-            device: None,
+            status: if device.is_some() { "available" } else { "no_reply" }.into(),
+            device,
         }
     }
 
-    /// New operations preserve existing rows and upsert canonical identities
-    /// (driver + resolved IP). Legacy scan retains its replace semantics.
     fn merge_device_rows(&self, rows: impl IntoIterator<Item = DeviceDesc>) {
         let mut devices = self.devices.write().unwrap();
         for row in rows {
@@ -6282,9 +6238,18 @@ impl Engine {
             }
             Cmd::DiscoverDevices { request_id } => {
                 let display = |k: &str, m: &str| self.drv(k).display_name(m);
+                let remembered: Vec<String> = self.desk_addrs.read().unwrap()
+                    .values().cloned().collect();
                 let (rows, error) = match tokio::time::timeout(
                     Duration::from_secs(4),
-                    self.scanner.scan(&display, Duration::from_secs(2)),
+                    async {
+                        let (mut rows, known) = tokio::join!(
+                            self.scanner.scan(&display, Duration::from_secs(2)),
+                            futures::future::join_all(remembered.iter().map(|host| self.identify_registered(host)))
+                        );
+                        for row in known.into_iter().flatten() { push_row(&mut rows, row); }
+                        rows
+                    },
                 )
                 .await
                 {
@@ -6372,8 +6337,7 @@ impl Engine {
                                 if let Some(linked) = self.linked_desk_device(drv_name).await {
                                     return Some(linked);
                                 }
-                                let table = self.drv(drv_name).probe_table()?;
-                                self.probe_desk(table, ip).await
+                                self.probe_desk(drv_name, ip).await
                             })
                             .await
                             .ok()
@@ -6519,23 +6483,10 @@ impl Engine {
                 }))
             }
             Cmd::Probe { addr } => {
-                // Manual add-by-IP: verify, then CONNECT immediately, the
-                // user typed the address to use this desk, not to file it in
-                // a list and tap Connect again. The embedded app boots on
-                // sim and the user has never switched drivers, so sim probes
-                // with the aliased probe table (xair) and the verified row's
-                // id/name claims the hardware driver below. A driver with no
-                // probe table is an honest error, never a blind row.
-                let driver = self.active_driver();
-                let Some(table_driver) = self.drv(&driver).probe_table() else {
-                    anyhow::bail!(
-                        "probe needs a driver with a probe table (relay runs {driver}) — switch drivers first"
-                    );
-                };
-                let Some(found) = self.probe_desk(table_driver, &addr).await else {
-                    anyhow::bail!(
-                        "no reply from {addr} — check the IP (desks on another subnet never answer broadcast; unicast to this address got nothing back)"
-                    );
+                // Ask every registered hardware provider; never infer the
+                // protocol from whichever desk happened to be active before.
+                let Some(found) = self.identify_registered(&addr).await else {
+                    anyhow::bail!("no reply from {addr} — no supported mixer identified; check the IP and local network access");
                 };
                 // The verified row is visible even if the connect fails.
                 {
@@ -6548,6 +6499,7 @@ impl Engine {
                 // driver so later scans (and a restart) re-verify it by
                 // directed unicast and re-find its /24 instead of dropping
                 // the row, broadcast never crosses subnets.
+                let table_driver = found.id.split('-').next().unwrap_or("");
                 self.remember_desk(table_driver, &found.ip);
                 // Claim the driver exactly like Cmd::ConnectDevice.
                 let mut claimed = "sim";

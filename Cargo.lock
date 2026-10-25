@@ -961,6 +961,7 @@ name = "openfader-transport"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "futures",
  "if-addrs",
  "openfader-core",
  "rosc",
