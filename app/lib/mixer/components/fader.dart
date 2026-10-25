@@ -161,7 +161,7 @@ class _ScalePainter extends CustomPainter {
   const _ScalePainter(this.palette, this.g, this.number);
   @override
   void paint(Canvas c, Size s) {
-    mixerText(c, 'LR', const Offset(8, 10), 10,
+    mixerText(c, 'LR', const Offset(4, 10), 8,
         color: palette.mutedText, weight: FontWeight.w600);
     mixerBox(c, Rect.fromLTWH(g.x - 3, g.top - 3, 6, g.travel + 6),
         palette.faderSlot,
