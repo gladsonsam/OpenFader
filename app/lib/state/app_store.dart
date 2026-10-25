@@ -2573,7 +2573,7 @@ class AppStore extends ChangeNotifier
     return value == null ? null : value.clamp(-100, 100) / 100;
   }
 
-  // DL32S source IDs stay opaque; only the verified A/B selector switches.
+  // A/B selects the active slot; the Routing page edits each slot separately.
 
   @override
   void setSourceSelected(int selected) {

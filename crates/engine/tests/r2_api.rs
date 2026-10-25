@@ -617,26 +617,26 @@ async fn routing_patch_roundtrip() {
     let patches = ev_json(routing).get("patches").and_then(Value::as_array).unwrap().clone();
     assert!(!patches.is_empty());
     assert!(patches.iter().any(|p| p.get("strip") == Some(&json!(0)) && p.get("label") == Some(&json!("Lcl 01"))));
-    client.send(Cmd::PatchSet { strip: 0, group: "Net".to_string(), index: 5, key: None}).await.unwrap();
+    client.send(Cmd::PatchSet { target: String::new(), strip: 0, group: "Net".to_string(), index: 5, key: None}).await.unwrap();
     let routing = wait_for(
         &mut client,
         |e| matches!(e, Event::Routing { patches } if patches.iter().any(|p| p.strip == 0 && p.label == "Net 05")),
     )
     .await;
     let _ = routing;
-    client.send(Cmd::PatchClear { strip: 0, key: None}).await.unwrap();
+    client.send(Cmd::PatchClear { target: String::new(), strip: 0, key: None}).await.unwrap();
     wait_for(
         &mut client,
         |e| matches!(e, Event::Routing { patches } if patches.iter().all(|p| p.strip != 0)),
     )
     .await;
-    client.send(Cmd::PatchSet { strip: 0, group: "AES".to_string(), index: 1, key: None}).await.unwrap();
+    client.send(Cmd::PatchSet { target: String::new(), strip: 0, group: "AES".to_string(), index: 1, key: None}).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "unknown patch group"));
-    client.send(Cmd::PatchSet { strip: 0, group: "Lcl".to_string(), index: 33, key: None}).await.unwrap();
+    client.send(Cmd::PatchSet { target: String::new(), strip: 0, group: "Lcl".to_string(), index: 33, key: None}).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "out of range"));
-    client.send(Cmd::PatchSet { strip: 32, group: "Lcl".to_string(), index: 1, key: None}).await.unwrap();
+    client.send(Cmd::PatchSet { target: String::new(), strip: 32, group: "Lcl".to_string(), index: 1, key: None}).await.unwrap();
     let err = wait_for(&mut client, |e| matches!(e, Event::Error { .. })).await;
     assert!(is_error_containing(&err, "input strips"));
 }

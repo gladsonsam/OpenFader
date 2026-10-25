@@ -232,6 +232,8 @@ pub enum Cmd {
     /// R2: patch an input strip to a source socket
     /// (`{"cmd":"patch_set","strip":0,"group":"Lcl","index":1}`).
     PatchSet {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        target: String,
         strip: u16,
         group: String,
         index: u8,
@@ -241,6 +243,8 @@ pub enum Cmd {
     },
     /// R2: clear one strip's patch (source reads back unpatched).
     PatchClear {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        target: String,
         strip: u16,
         /// Stable strip key (see [`Cmd::Fader`]).
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -625,12 +629,22 @@ pub struct RoutingGroupCaps {
     pub count: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingTargetCaps {
+    pub key: String,
+    pub label: String,
+    #[serde(default)]
+    pub clearable: bool,
+}
+
 /// `caps.routing` (R2): source-patch support of the active driver.
-/// `supported:false` (XR18: `insrc` is live-silent on FW 1.20; DL32S: no
-/// patch path) means the UI hides patching; `source` stays a read-only
-/// label there.
+/// `supported:false` means the UI hides patching (e.g. XR18 insrc is
+/// live-silent on FW 1.20). Optional targets describe independent patches
+/// within each input; an absent list retains the legacy single target.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RoutingCaps {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub targets: Vec<RoutingTargetCaps>,
     #[serde(default)]
     pub groups: Vec<RoutingGroupCaps>,
     #[serde(default)]
@@ -697,6 +711,8 @@ pub struct FxSlotState {
 /// One `routing` patch row (R2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchEntry {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub target: String,
     pub strip: u16,
     /// Stable strip key (see [`StateStrip::key`]).
     #[serde(default, skip_serializing_if = "Option::is_none")]
