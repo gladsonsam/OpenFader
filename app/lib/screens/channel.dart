@@ -251,7 +251,6 @@ class _ChannelPageState extends State<ChannelPage> {
       resizeToAvoidBottomInset: false,
       backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
-        bottom: MediaQuery.sizeOf(context).width >= 700,
         child: ListenableBuilder(
           listenable: Listenable.merge([widget.store, PrefsService.instance]),
           builder: (context, _) {
