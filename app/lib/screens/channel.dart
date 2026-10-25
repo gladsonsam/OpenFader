@@ -74,6 +74,9 @@ abstract class ChannelStore extends ChangeNotifier
           AudioSpectrumPeaks.empty());
 
   void resetAudioSpectrumPeaks() {}
+  bool get hasDynamicsMeters => false;
+  ValueListenable<ChannelDynamicsMetersVm?> get dynamicsMeters =>
+      const AlwaysStoppedAnimation<ChannelDynamicsMetersVm?>(null);
   double? grDb(DynKind kind);
   Future<void> pollMeters();
 

@@ -212,19 +212,34 @@ class _DynTab extends StatelessWidget {
         const SizedBox(height: 8),
         Opacity(
             opacity: d.on || ConsolePalette.of(context).isLight ? 1 : .55,
-            child: ValueListenableBuilder<double>(
-                valueListenable: store.levelDb,
-                builder: (context, db, _) => _DynamicsGraph(
-                    dyn: d,
-                    level: db,
-                    reduction: store.grDb(kind),
-                    height: compact ? 282 : 700 * scale,
-                    compact: compact,
-                    enabled: (prop) => d.ranges[prop] != null,
-                    onFocus: (prop) =>
-                        focus(knobs.firstWhere((k) => k.prop == prop)),
-                    onChanged: (prop, v) =>
-                        apply(knobs.firstWhere((k) => k.prop == prop), v)))),
+            child: AnimatedBuilder(
+                animation:
+                    Listenable.merge([store.levelDb, store.dynamicsMeters]),
+                builder: (context, _) {
+                  final meters = store.dynamicsMeters.value;
+                  final gate = kind == DynKind.gate;
+                  return _DynamicsGraph(
+                      dyn: d,
+                      measured: store.hasDynamicsMeters,
+                      level: store.hasDynamicsMeters
+                          ? (gate ? meters?.gateIn : meters?.compIn)
+                          : store.levelDb.value,
+                      output: gate ? meters?.gateOut : meters?.compOut,
+                      reduction: store.hasDynamicsMeters
+                          ? (meters == null
+                              ? null
+                              : -(gate
+                                  ? meters.gateReduction
+                                  : meters.compReduction))
+                          : store.grDb(kind),
+                      height: compact ? 282 : 700 * scale,
+                      compact: compact,
+                      enabled: (prop) => d.ranges[prop] != null,
+                      onFocus: (prop) =>
+                          focus(knobs.firstWhere((k) => k.prop == prop)),
+                      onChanged: (prop, v) =>
+                          apply(knobs.firstWhere((k) => k.prop == prop), v));
+                })),
         SizedBox(height: compact ? 8 : 20 * scale),
         if (compact) ...[
           SizedBox(height: 80, child: control(knobs.first, threshold: true)),
@@ -415,8 +430,9 @@ class _DynamicsGeometry {
 
 class _DynamicsGraph extends StatefulWidget {
   final ChannelDynVm dyn;
-  final double level, height;
-  final double? reduction;
+  final double height;
+  final double? level, output, reduction;
+  final bool measured;
   final bool compact;
   final bool Function(String) enabled;
   final ValueChanged<String> onFocus;
@@ -424,6 +440,8 @@ class _DynamicsGraph extends StatefulWidget {
   const _DynamicsGraph(
       {required this.dyn,
       required this.level,
+      this.output,
+      this.measured = false,
       required this.reduction,
       required this.height,
       required this.compact,
@@ -455,6 +473,8 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
                           widget.dyn,
                           widget.level,
                           widget.reduction,
+                          widget.output,
+                          widget.measured,
                           widget.compact,
                           ConsolePalette.of(context)))),
               for (final prop in geom.handles(widget.dyn))
@@ -538,11 +558,10 @@ class _DynamicsGraphState extends State<_DynamicsGraph> {
 class _DynamicsPainter extends CustomPainter {
   final ConsolePalette palette;
   final ChannelDynVm dyn;
-  final double level;
-  final double? reduction;
-  final bool compact;
-  const _DynamicsPainter(
-      this.dyn, this.level, this.reduction, this.compact, this.palette);
+  final double? level, reduction, output;
+  final bool measured, compact;
+  const _DynamicsPainter(this.dyn, this.level, this.reduction, this.output,
+      this.measured, this.compact, this.palette);
   @override
   void paint(Canvas canvas, Size size) {
     final g = _DynamicsGeometry(size, compact);
@@ -629,11 +648,13 @@ class _DynamicsPainter extends CustomPainter {
           color: palette.text1, font: compact ? 17 : r * .8);
     }
     // No synthetic detector: missing GR also leaves derived OUT unavailable.
-    final out = reduction == null
-        ? null
-        : level +
-            reduction! +
-            (dyn.kind == DynKind.comp && dyn.on ? dyn.makeup : 0);
+    final out = measured
+        ? output
+        : (reduction == null || level == null
+            ? null
+            : level! +
+                reduction! +
+                (dyn.kind == DynKind.comp && dyn.on ? dyn.makeup : 0));
     final values = [level, reduction, out];
     for (var i = 0; i < 3; i++) {
       final x = g.meterX(i);
@@ -669,6 +690,8 @@ class _DynamicsPainter extends CustomPainter {
       old.palette != palette ||
       old.dyn != dyn ||
       old.level != level ||
+      old.output != output ||
+      old.measured != measured ||
       old.reduction != reduction ||
       old.compact != compact;
 }
