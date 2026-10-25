@@ -180,6 +180,7 @@ fn examples() -> Vec<(String, Value)> {
                     }],
                 },
                 routing: openfader_engine::protocol::RoutingCaps {
+                    targets: vec![],
                     groups: vec![openfader_engine::protocol::RoutingGroupCaps {
                         key: "Lcl".to_string(),
                         label: "Local".to_string(),

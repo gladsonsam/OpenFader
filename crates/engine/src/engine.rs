@@ -123,6 +123,7 @@ pub struct StoredStrip {
 /// [`StoredStrip::key`]). The `group`/`index` are 1-based desk sockets.
 #[derive(Clone, Debug)]
 pub struct StoredRoute {
+    pub target: String,
     pub strip: u16,
     pub key: Option<String>,
     pub group: String,
@@ -675,6 +676,7 @@ pub struct Engine {
     /// by the poller and by the `param`-write refresh; cleared on driver
     /// switch.
     param_cache: RwLock<HashMap<u16, HashMap<String, Value>>>,
+    routing_dirty: AtomicBool,
     /// (`driver`, `param`) pairs dropped from the poll set after an
     /// unsupported/unknown/timeout read, reported in `caps.unsupported`.
     param_dropped: RwLock<HashSet<(String, String)>>,
@@ -914,6 +916,7 @@ impl Engine {
             locks: RwLock::new(HashMap::new()),
             shows: RwLock::new(shows_lib),
             param_cache: RwLock::new(HashMap::new()),
+            routing_dirty: AtomicBool::new(false),
             param_dropped: RwLock::new(HashSet::new()),
             poll_cursor: AtomicU64::new(0),
             writes_in_flight: AtomicU64::new(0),
@@ -3627,6 +3630,7 @@ impl Engine {
             .collect();
         let supported = !groups.is_empty();
         crate::protocol::RoutingCaps {
+            targets: self.drv(driver).routing_targets().iter().filter(|t| !t.key.is_empty()).map(|t| crate::protocol::RoutingTargetCaps { key: t.key.to_string(), label: t.label.to_string(), clearable: t.clearable }).collect(),
             groups,
             per_strip: supported,
             supported,
@@ -3941,8 +3945,9 @@ impl Engine {
         })
     }
 
-    /// Current `routing` event: one row per patched input strip (sim reads
-    /// the `source` param plane; elsewhere the list is empty).
+    /// Current routing display: one row per input and named patch target.
+    /// Providers may retain accepted-write continuity; this is not verified
+    /// parameter evidence (that remains in the provenance-aware param plane).
     async fn routing_message(&self) -> Event {
         Event::Routing {
             patches: self
@@ -3950,6 +3955,7 @@ impl Engine {
                 .await
                 .into_iter()
                 .map(|r| PatchEntry {
+                    target: r.target,
                     strip: r.strip,
                     key: r.key.clone(),
                     label: format!("{} {:02}", r.group, r.index),
@@ -3984,21 +3990,23 @@ impl Engine {
                 continue;
             }
             for s in fam.first..fam.first + fam.count {
-                let label: Option<String> = match &bulk {
-                    Some(map) => map.get(&(s as u16)).cloned(),
-                    None => match drv.get_param(StripId(s as u16), "source").await {
-                        Ok(ParamValue::Text(label)) => Some(label),
-                        _ => None,
-                    },
-                };
-                let Some(label) = label else { continue };
-                if let Some((group, index)) = parse_source(&label) {
-                    out.push(StoredRoute {
-                        strip: s as u16,
-                        key: openfader_core::strip_key_for_index(&topo, s),
-                        group,
-                        index,
-                    });
+                for target in drv.routing_targets() {
+                    let label = if target.key.is_empty() {
+                        match &bulk {
+                            Some(map) => map.get(&(s as u16)).cloned(),
+                            None => drv.routing_source(StripId(s as u16), target.key).await.ok(),
+                        }
+                    } else { drv.routing_source(StripId(s as u16), target.key).await.ok() };
+                    let Some(label) = label else { continue };
+                    if let Some((group, index)) = parse_source(&label) {
+                        out.push(StoredRoute {
+                            target: target.key.to_string(),
+                            strip: s as u16,
+                            key: openfader_core::strip_key_for_index(&topo, s),
+                            group,
+                            index,
+                        });
+                    }
                 }
             }
         }
@@ -4022,7 +4030,7 @@ impl Engine {
                 .and_then(|k| openfader_core::strip_index_for_key(&topo, k))
                 .map(|i| i as u16)
                 .unwrap_or(row.strip);
-            drv.patch_set(StripId(strip), &row.group, row.index)?;
+            drv.patch_target_set(StripId(strip), &row.target, &row.group, row.index).await?;
         }
         Ok(())
     }
@@ -4192,7 +4200,8 @@ impl Engine {
             })
             .map(|i| i as u16)
             .unwrap_or(c.strip);
-        if c.id == "patch" {
+        if c.id == "patch" || c.id.starts_with("patch/") {
+            let target = c.id.strip_prefix("patch/").unwrap_or("");
             let drv = self.active_drv();
             if drv.routing_groups().is_empty() {
                 anyhow::bail!("patch push not supported here");
@@ -4201,12 +4210,12 @@ impl Engine {
                 anyhow::bail!("patch push value must be a label")
             };
             if label == "—" {
-                return drv.patch_clear(StripId(strip));
+                return drv.patch_target_clear(StripId(strip), target).await;
             }
             let Some((group, index)) = parse_source(label) else {
                 anyhow::bail!("unparseable patch label {label:?}")
             };
-            drv.patch_set(StripId(strip), &group, index)?;
+            drv.patch_target_set(StripId(strip), target, &group, index).await?;
             return Ok(());
         }
         if let Some(param) = c.id.strip_prefix("fx/") {
@@ -4305,6 +4314,9 @@ impl Engine {
         }
         let v = param_value_json(pv);
         let changed = cache_store(&mut self.param_cache.write().unwrap(), ch, param, v.clone());
+        if changed && self.active_drv().routing_param_ids().contains(&param) {
+            self.routing_dirty.store(true, Ordering::Release);
+        }
         let event = if param == "_mute_group" {
             pv_bool(pv).map(|muted| Event::MuteGroup { group: ch as u8, muted, key: Some(format!("mgroup/{:02}", ch + 1)) })
         } else if let Some(group) = param.strip_prefix("_mg").and_then(|s| s.parse::<u8>().ok()) {
@@ -4636,6 +4648,9 @@ impl Engine {
         if Self::poller_yields(self.writes_in_flight.load(Ordering::Relaxed)) {
             self.poll_skips.fetch_add(1, Ordering::Relaxed);
             return;
+        }
+        if self.routing_dirty.swap(false, Ordering::AcqRel) {
+            self.broadcast(self.routing_message().await);
         }
         let driver = self.active_driver();
         let n = self.effective_inflight(&driver);
@@ -6814,7 +6829,7 @@ impl Engine {
                 out.push(self.fx_message().await);
                 Ok(None)
             }
-            Cmd::PatchSet { strip, group, index, key } => {
+            Cmd::PatchSet { strip, group, index, key, target } => {
                 let strip = self.resolve_strip(strip, key.as_deref())?;
                 policy.allow_strip(StripId(strip))?;
                 if let Some(holder) = self.lock_holder(strip) {
@@ -6826,19 +6841,28 @@ impl Engine {
                 let mut from = Value::Null;
                 if !drv.routing_groups().is_empty() {
                     from = drv
-                        .get_param(StripId(strip), "source")
+                        .routing_source(StripId(strip), &target)
                         .await
-                        .map(|pv| param_value_json(&pv))
+                        .map(Value::String)
                         .unwrap_or(Value::Null);
                 }
-                let label = drv.patch_set(StripId(strip), &group, index)?;
-                self.offline_note(strip, "patch", from, json!(label)).await;
+                let patch = drv.patch_target_set(StripId(strip), &target, &group, index).await?;
+                if let Some((field, written)) = patch.param {
+                    let written = param_value_json(&written);
+                    let refreshed = self.refresh_param(StripId(strip), field, &written).await;
+                    let (value, authority) = match refreshed {
+                        Some(v) => (v, "verified"), None => (written, "accepted"),
+                    };
+                    out.push(Event::Param { ch: strip, field: field.to_string(), value,
+                        by: Some(writer.to_string()), key: self.active_strip_key(strip), authority: Some(authority.to_string()) });
+                }
+                self.offline_note(strip, &if target.is_empty() { "patch".to_string() } else { format!("patch/{target}") }, from, json!(patch.label)).await;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 out.push(self.routing_message().await);
                 Ok(None)
             }
-            Cmd::PatchClear { strip, key } => {
+            Cmd::PatchClear { strip, key, target } => {
                 let strip = self.resolve_strip(strip, key.as_deref())?;
                 policy.allow_strip(StripId(strip))?;
                 if let Some(holder) = self.lock_holder(strip) {
@@ -6850,13 +6874,13 @@ impl Engine {
                 let mut from = Value::Null;
                 if !drv.routing_groups().is_empty() {
                     from = drv
-                        .get_param(StripId(strip), "source")
+                        .routing_source(StripId(strip), &target)
                         .await
-                        .map(|pv| param_value_json(&pv))
+                        .map(Value::String)
                         .unwrap_or(Value::Null);
                 }
-                drv.patch_clear(StripId(strip))?;
-                self.offline_note(strip, "patch", from, json!("—")).await;
+                drv.patch_target_clear(StripId(strip), &target).await?;
+                self.offline_note(strip, &if target.is_empty() { "patch".to_string() } else { format!("patch/{target}") }, from, json!("—")).await;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 out.push(self.routing_message().await);
@@ -7470,11 +7494,11 @@ fn param_vec_to_map(fx_type: &str, values: &[f32]) -> BTreeMap<String, f32> {
 /// index). The design's unpatched tile (` `) and anything else → `None`.
 fn parse_source(label: &str) -> Option<(String, u8)> {
     let (group, num) = label.split_once(' ')?;
-    if !["Lcl", "Net", "USB"].contains(&group) {
+    if group.is_empty() || group.len() > 64 {
         return None;
     }
     let index: u8 = num.parse().ok()?;
-    if (1..=32).contains(&index) {
+    if index > 0 {
         Some((group.to_string(), index))
     } else {
         None

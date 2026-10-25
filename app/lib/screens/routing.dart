@@ -35,9 +35,20 @@ class RouteSrcTile {
   });
 }
 
+class RoutePatchTarget {
+  final String key, label;
+  final bool clearable;
+  const RoutePatchTarget(this.key, this.label, this.clearable);
+}
+
 // Implemented by the shell over the engine or a fixture sim.
 abstract class RoutingStore extends ChangeNotifier {
   List<RouteStrip> get strips;
+  List<RoutePatchTarget> get targets;
+  String get target;
+  bool get canClear;
+  void selectTarget(String target);
+  String groupLabel(String group);
   List<String> get groups;
   String get group;
   int? get selectedStrip;
@@ -79,11 +90,23 @@ class U4RoutingPage extends StatelessWidget {
                 _Header(
                   selectedName: store.selectedName,
                   selectedSrc: store.selectedSrc,
-                  onClear: store.selectedStrip == null
+                  onClear: store.selectedStrip == null || !store.canClear
                       ? null
                       : () => store.clearPatch(store.selectedStrip!),
                 ),
+                if (store.targets.length > 1)
+                  _GroupChips(
+                    groups: [for (final t in store.targets) t.key],
+                    labels: {
+                      for (final t in store.targets) t.key: 'Input ${t.label}'
+                    },
+                    active: store.target,
+                    onPick: store.selectTarget,
+                  ),
                 _GroupChips(
+                  labels: {
+                    for (final g in store.groups) g: store.groupLabel(g)
+                  },
                   groups: store.groups,
                   active: store.group,
                   onPick: store.selectGroup,
@@ -103,7 +126,8 @@ class U4RoutingPage extends StatelessWidget {
                           itemBuilder: (context, i) {
                             final s = store.strips[i];
                             final on = s.strip == store.selectedStrip;
-                            return GestureDetector(
+                            return _RoutingTap(
+                              selected: on,
                               onTap: () => store.selectStrip(s.strip),
                               child: Container(
                                 padding: const EdgeInsets.symmetric(
@@ -154,80 +178,85 @@ class U4RoutingPage extends StatelessWidget {
                         ),
                 ),
                 Divider(color: ConsolePalette.of(context).divider, height: 1),
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: store.srcTiles.isEmpty
-                      ? Text('no sources in this group',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: ConsolePalette.of(context).text7))
-                      : GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          gridDelegate:
-                              const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 4,
-                            mainAxisSpacing: 4,
-                            crossAxisSpacing: 4,
-                            childAspectRatio: 2.2,
-                          ),
-                          itemCount: store.srcTiles.length,
-                          itemBuilder: (context, i) {
-                            final t = store.srcTiles[i];
-                            final free = t.usedBy.isEmpty && !t.current;
-                            return GestureDetector(
-                              onTap: () => store.patch(t),
-                              child: Container(
-                                alignment: Alignment.center,
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 4),
-                                decoration: BoxDecoration(
-                                  color: t.current
-                                      ? ConsolePalette.of(context).cyan
-                                      : free
-                                          ? ConsolePalette.of(context).well
-                                          : ConsolePalette.of(context).control,
-                                  border: Border.all(
-                                      color: t.current
-                                          ? ConsolePalette.of(context).cyan
-                                          : ConsolePalette.of(context)
-                                              .tileBorder),
-                                  borderRadius: U4.rBtn,
-                                ),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      t.label,
-                                      textAlign: TextAlign.center,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: store.srcTiles.isEmpty
+                        ? Text('no sources in this group',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: ConsolePalette.of(context).text7))
+                        : GridView.builder(
+                            gridDelegate:
+                                const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 4,
+                              mainAxisSpacing: 4,
+                              crossAxisSpacing: 4,
+                              mainAxisExtent: 52,
+                            ),
+                            itemCount: store.srcTiles.length,
+                            itemBuilder: (context, i) {
+                              final t = store.srcTiles[i];
+                              final free = t.usedBy.isEmpty && !t.current;
+                              return _RoutingTap(
+                                selected: t.current,
+                                onTap: store.selectedStrip == null
+                                    ? null
+                                    : () => store.patch(t),
+                                child: Container(
+                                  alignment: Alignment.center,
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 4),
+                                  decoration: BoxDecoration(
+                                    color: t.current
+                                        ? ConsolePalette.of(context).cyan
+                                        : free
+                                            ? ConsolePalette.of(context).well
+                                            : ConsolePalette.of(context)
+                                                .control,
+                                    border: Border.all(
                                         color: t.current
-                                            ? ConsolePalette.of(context)
-                                                .onAccent
-                                            : ConsolePalette.of(context).text1,
-                                      ),
-                                    ),
-                                    if (!t.current && t.usedBy.isNotEmpty)
+                                            ? ConsolePalette.of(context).cyan
+                                            : ConsolePalette.of(context)
+                                                .tileBorder),
+                                    borderRadius: U4.rBtn,
+                                  ),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
                                       Text(
-                                        '→ ${t.usedBy}',
+                                        t.label,
                                         textAlign: TextAlign.center,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                            fontSize: 10,
-                                            color: ConsolePalette.of(context)
-                                                .text7),
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: t.current
+                                              ? ConsolePalette.of(context)
+                                                  .onAccent
+                                              : ConsolePalette.of(context)
+                                                  .text1,
+                                        ),
                                       ),
-                                  ],
+                                      if (!t.current && t.usedBy.isNotEmpty)
+                                        Text(
+                                          '→ ${t.usedBy}',
+                                          textAlign: TextAlign.center,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                              fontSize: 10,
+                                              color: ConsolePalette.of(context)
+                                                  .text7),
+                                        ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            );
-                          },
-                        ),
+                              );
+                            },
+                          ),
+                  ),
                 ),
               ],
             );
@@ -278,7 +307,7 @@ class _Header extends StatelessWidget {
             ),
           ),
           if (onClear != null)
-            GestureDetector(
+            _RoutingTap(
               onTap: onClear,
               child: Container(
                 padding:
@@ -306,11 +335,13 @@ class _Header extends StatelessWidget {
 
 class _GroupChips extends StatelessWidget {
   final List<String> groups;
+  final Map<String, String> labels;
   final String active;
   final ValueChanged<String> onPick;
 
   const _GroupChips({
     required this.groups,
+    this.labels = const {},
     required this.active,
     required this.onPick,
   });
@@ -319,10 +350,12 @@ class _GroupChips extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-      child: Row(
+      child: Wrap(
+        runSpacing: 6,
         children: [
           for (final g in groups) ...[
-            GestureDetector(
+            _RoutingTap(
+              selected: g == active,
               onTap: () => onPick(g),
               child: Container(
                 margin: const EdgeInsets.only(right: 6),
@@ -339,7 +372,7 @@ class _GroupChips extends StatelessWidget {
                           : ConsolePalette.of(context).railBorder),
                 ),
                 child: Text(
-                  g,
+                  labels[g] ?? g,
                   textAlign: TextAlign.center,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -358,4 +391,18 @@ class _GroupChips extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RoutingTap extends StatelessWidget {
+  final Widget child;
+  final VoidCallback? onTap;
+  final bool? selected;
+  const _RoutingTap({required this.child, required this.onTap, this.selected});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+      button: true,
+      enabled: onTap != null,
+      selected: selected,
+      child: GestureDetector(onTap: onTap, child: child));
 }

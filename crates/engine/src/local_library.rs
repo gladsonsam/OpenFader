@@ -317,6 +317,8 @@ struct FxDoc {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RouteDoc {
+    #[serde(default)]
+    target: String,
     strip: u16,
     #[serde(default)]
     key: Option<String>,
@@ -523,6 +525,7 @@ fn parse_numbered(scenes: &[Value]) -> Result<HashMap<u16, StoredScene>, String>
         for (j, r) in doc.routing.iter().enumerate() {
             let what = format!("scenes[{i}].routing[{j}]");
             check_key(r.key.as_deref(), &format!("{what}.key"))?;
+            if !r.target.is_empty() { check_name(&r.target, &format!("{what}.target"))?; }
             check_name(&r.group, &format!("{what}.group"))?;
             if r.group.len() > MAX_ROUTE_GROUP_LEN {
                 return Err(format!(
@@ -531,6 +534,7 @@ fn parse_numbered(scenes: &[Value]) -> Result<HashMap<u16, StoredScene>, String>
                 ));
             }
             routing.push(StoredRoute {
+                target: r.target.clone(),
                 strip: r.strip,
                 key: r.key.clone(),
                 group: r.group.clone(),
@@ -856,6 +860,7 @@ pub fn validate_candidate(
         }
         for r in &s.routing {
             check_key(r.key.as_deref(), &format!("{what}.routing key"))?;
+            if !r.target.is_empty() { check_name(&r.target, &format!("{what}.routing target"))?; }
             check_name(&r.group, &format!("{what}.routing group"))?;
         }
     }
@@ -979,12 +984,13 @@ pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -
                     "bypass": f.bypass,
                     "params": f.params,
                 })).collect::<Vec<_>>(),
-                "routing": s.routing.iter().map(|r| serde_json::json!({
-                    "strip": r.strip,
-                    "key": r.key,
-                    "group": r.group,
-                    "index": r.index,
-                })).collect::<Vec<_>>(),
+                "routing": s.routing.iter().map(|r| {
+                    let mut row = serde_json::json!({
+                        "strip": r.strip, "key": r.key, "group": r.group, "index": r.index,
+                    });
+                    if !r.target.is_empty() { row["target"] = serde_json::json!(r.target); }
+                    row
+                }).collect::<Vec<_>>(),
             })
         })
         .collect();
