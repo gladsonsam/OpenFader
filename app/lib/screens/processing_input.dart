@@ -215,40 +215,46 @@ class _InputPreampControl extends StatelessWidget {
                 : range == null
                     ? '${readout(value)} · range unavailable'
                     : readout(value);
+    void focusPreamp() {
+      if (!enabled) return;
+      onFocus(ChannelFocus(
+          title: 'Input',
+          label: label,
+          text: () {
+            final live = store.paramNum(leaf);
+            return live == null ? 'Loading…' : readout(live);
+          },
+          entryText: () {
+            final live = store.paramNum(leaf);
+            return live == null ? 'Loading…' : live.toStringAsFixed(1);
+          },
+          min: range.min,
+          max: range.max,
+          apply: (v) {
+            store.setPreamp(leaf, v.clamp(range.min, range.max));
+            focusPreamp();
+          }));
+    }
+
     return _ProcessingSlider(
         label: label,
         compact: true,
-        color: ConsolePalette.of(context).cyan,
+        color: leaf == 'gain'
+            ? ConsolePalette.of(context).mute
+            : ConsolePalette.of(context).success,
+        fillFromStart: true,
+        solidFill: true,
+        focusOnly: true,
         value: value ?? range?.min ?? 0,
         min: range?.min ?? 0,
         max: range?.max ?? 1,
         text: text,
         enabled: enabled,
-        onFocus: enabled
-            ? () => onFocus(ChannelFocus(
-                title: 'Input',
-                label: label,
-                text: () {
-                  final live = store.paramNum(leaf);
-                  return live == null ? 'Loading…' : readout(live);
-                },
-                min: range.min,
-                max: range.max,
-                apply: (v) =>
-                    store.setPreamp(leaf, v.clamp(range.min, range.max))))
-            : null,
-        onTypedEntry: enabled
-            ? () async {
-                final next = await showNumberEntry(
-                    context: context,
-                    title: unit.isEmpty ? label : '$label ($unit)',
-                    initial: value.toStringAsFixed(1),
-                    min: range.min,
-                    max: range.max);
-                if (next != null) store.setPreamp(leaf, next);
-              }
-            : null,
-        onChanged: (v) => store.setPreamp(leaf, v),
+        onFocus: enabled ? focusPreamp : null,
+        onChanged: (v) {
+          store.setPreamp(leaf, v);
+          focusPreamp();
+        },
         trailing: trailing);
   }
 }
@@ -399,6 +405,10 @@ class _ProcessingSend extends StatelessWidget {
                       ? 'Loading…'
                       : '${fmtDb(dbToPos(live))} dB';
                 },
+                entryText: () {
+                  final live = store.sendParamNote(send.slot, 'level').value;
+                  return live == null ? 'Loading…' : live.toStringAsFixed(1);
+                },
                 min: minDb,
                 max: maxDb,
                 apply: (v) {
@@ -414,22 +424,7 @@ class _ProcessingSend extends StatelessWidget {
                 min: 0,
                 max: 1,
                 onFocus: focusSend,
-                onTypedEntry: () async {
-                  final next = await showNumberEntry(
-                      context: context,
-                      title: '${send.destName} (dB)',
-                      initial: db == null
-                          ? ''
-                          : db.clamp(minDb, maxDb).toStringAsFixed(1),
-                      min: minDb,
-                      max: maxDb,
-                      allowNegInf: minDb == -90,
-                      negInfValue: minDb);
-                  if (next != null) {
-                    store.setSendLevel(send.slot, dbToPos(next));
-                    focusSend();
-                  }
-                },
+                focusOnly: true,
                 text: db == null ? 'Loading…' : '${fmtDb(level)} dB',
                 enabled: db != null && store.supports('send${send.slot}_level'),
                 onChanged: (v) {
@@ -450,18 +445,46 @@ class _ProcessingSend extends StatelessWidget {
             builder: (context, value, _) {
               if (value == null) return const SizedBox.shrink();
               final pan = value.clamp(-100, 100) / 100;
+              final range =
+                  _inputRange(store.paramMetadata('send${send.slot}_pan'));
+              final minPan = (range?.min ?? -100).clamp(-100.0, 100.0);
+              final maxPan = (range?.max ?? 100).clamp(-100.0, 100.0);
+              void focusPan() => onFocus(ChannelFocus(
+                  title: 'Sends',
+                  label: '${send.destName} pan (−100 L / +100 R)',
+                  text: () {
+                    final live = store.sendParamNote(send.slot, 'pan').value;
+                    return live == null ? 'Loading…' : panText(live / 100);
+                  },
+                  entryText: () {
+                    final live = store.sendParamNote(send.slot, 'pan').value;
+                    return live == null ? 'Loading…' : live.toStringAsFixed(0);
+                  },
+                  min: minPan,
+                  max: maxPan,
+                  apply: (v) {
+                    store.setSendPan(send.slot, v.clamp(minPan, maxPan) / 100);
+                    focusPan();
+                  }));
+
               return Padding(
                   padding: EdgeInsets.only(top: wide ? 7 : 0, right: 50),
                   child: _ProcessingSlider(
                       label: '${send.destName} pan',
                       value: pan,
-                      min: -1,
-                      max: 1,
+                      min: minPan / 100,
+                      max: maxPan / 100,
                       text: panText(pan),
                       pan: true,
                       compact: !wide,
                       showLabel: false,
-                      onChanged: (v) => store.setSendPan(send.slot, v)));
+                      showValue: false,
+                      focusOnly: true,
+                      onFocus: focusPan,
+                      onChanged: (v) {
+                        store.setSendPan(send.slot, v);
+                        focusPan();
+                      }));
             }),
     ]);
   }
