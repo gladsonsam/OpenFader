@@ -86,8 +86,42 @@ String? parameterValueLabel(Map<String, dynamic>? metadata, double? value) {
   return null;
 }
 
+// Three-valued evaluation: an unread dependency never authorizes an edit.
+// False branches of All and true branches of Any settle without requiring
+// values from inactive source slots.
+bool? _presentationCondition(
+    Object? condition, double? Function(String) value) {
+  if (condition is! Map) return null;
+  for (final key in ['all', 'any']) {
+    final children = condition[key];
+    if (children is! List) continue;
+    if (children.isEmpty) return null;
+    var unknown = false;
+    for (final child in children) {
+      final match = _presentationCondition(child, value);
+      if (key == 'all' && match == false) return false;
+      if (key == 'any' && match == true) return true;
+      unknown |= match == null;
+    }
+    return unknown ? null : key == 'all';
+  }
+  final id = condition['id'];
+  if (id is! String) return null;
+  final actual = value(id);
+  if (actual == null || !actual.isFinite) return null;
+  final expected = condition['value'];
+  if (expected is num && expected.isFinite) {
+    return (actual - expected).abs() <= .0001;
+  }
+  final min = condition['min'], max = condition['max'];
+  if (min is num && max is num && min.isFinite && max.isFinite && min <= max) {
+    return actual >= min && actual <= max;
+  }
+  return null;
+}
+
 /// Resolve provider presentations against this strip's current values.
-/// Unknown model state disables edits until hydration supplies it.
+/// Unknown dependencies disable edits until hydration supplies them.
 Map<String, dynamic>? parameterPresentation(
     Map<String, dynamic>? metadata, double? Function(String) value) {
   if (metadata == null) return null;
@@ -97,16 +131,13 @@ Map<String, dynamic>? parameterPresentation(
   for (final row in rows) {
     if (row is! Map) continue;
     final when = row['when'];
-    if (when is Map) {
-      final id = when['id'];
-      final expected = when['value'];
-      if (id is! String || expected is! num) continue;
-      final actual = value(id);
-      if (actual == null) {
+    if (when != null) {
+      final match = _presentationCondition(when, value);
+      if (match == null) {
         result['available'] = false;
         continue;
       }
-      if ((actual - expected).abs() > .0001) continue;
+      if (!match) continue;
     }
     result['hidden'] = row['hidden'] == true;
     result['choices'] = row['choices'];

@@ -38,13 +38,23 @@ pub struct ParamChoice {
     pub label: &'static str,
 }
 
+/// Provider-owned conditions over parameters on the current strip.
+/// Compound conditions keep routing-dependent controls independent of driver names.
+#[derive(Clone, Copy, Debug)]
+pub enum ParamCondition {
+    Equals { id: &'static str, value: f32 },
+    Range { id: &'static str, min: f32, max: f32 },
+    All { all: &'static [ParamCondition] },
+    Any { any: &'static [ParamCondition] },
+}
+
 /// Optional presentation for a parameter, selected by another parameter's
 /// value on the same strip. Providers own model names and model-specific
 /// controls; consumers must not infer them from a provider name.
 #[derive(Clone, Copy, Debug)]
 pub struct ParamPresentation {
     pub id: &'static str,
-    pub when: Option<(&'static str, f32)>,
+    pub when: Option<ParamCondition>,
     pub choices: &'static [ParamChoice],
     /// Labels for special numeric values without restricting continuous edits.
     pub value_labels: &'static [ParamChoice],

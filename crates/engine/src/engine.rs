@@ -2213,7 +2213,7 @@ impl Engine {
                 let mut frame = param_def_frame(def);
                 frame.presentations = presentations.iter().filter(|p| p.id == def.id).map(|p| {
                     json!({
-                        "when": p.when.map(|(id, value)| json!({"id": id, "value": value})),
+                        "when": p.when.map(presentation_condition_frame),
                         "hidden": p.hidden,
                         "curve": p.curve,
                         "limiter_value": p.limiter_value,
@@ -7331,6 +7331,17 @@ async fn snapshot_strips(d: &dyn DynDriver) -> Vec<crate::protocol::StateStrip> 
             })
             .collect(),
         Err(_) => Vec::new(),
+    }
+}
+
+/// Serialize provider conditions without coupling the core catalogue to JSON.
+fn presentation_condition_frame(condition: params::ParamCondition) -> Value {
+    use params::ParamCondition::*;
+    match condition {
+        Equals { id, value } => json!({"id": id, "value": value}),
+        Range { id, min, max } => json!({"id": id, "min": min, "max": max}),
+        All { all } => json!({"all": all.iter().copied().map(presentation_condition_frame).collect::<Vec<_>>()}),
+        Any { any } => json!({"any": any.iter().copied().map(presentation_condition_frame).collect::<Vec<_>>()}),
     }
 }
 
