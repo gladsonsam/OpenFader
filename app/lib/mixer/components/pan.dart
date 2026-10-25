@@ -8,11 +8,13 @@ class MixerPan extends StatefulWidget {
   final double value;
   final double visualHeight;
   final ValueChanged<double>? onChanged;
+  final VoidCallback? onTouch;
   const MixerPan(
       {super.key,
       required this.name,
       required this.value,
       this.visualHeight = 44,
+      this.onTouch,
       this.onChanged});
   @override
   State<MixerPan> createState() => _MixerPanState();
@@ -24,7 +26,12 @@ class _MixerPanState extends State<MixerPan> {
   void _release() => setState(() => _drag = null);
   void _send(double value) => widget.onChanged?.call(_snap(value));
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
+  Widget build(BuildContext context) => Listener(
+      onPointerDown:
+          widget.onChanged == null ? null : (_) => widget.onTouch?.call(),
+      child: _pan(context));
+
+  Widget _pan(BuildContext context) => LayoutBuilder(
       builder: (context, box) => Semantics(
           label: '${widget.name} pan',
           value: panText(widget.value),
