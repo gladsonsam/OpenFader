@@ -3,6 +3,7 @@
 // single shell-owned 80 ms loop; this page owns no timer.
 
 import '../core/channel_name.dart';
+import '../core/destination_controls.dart';
 import '../core/processor_presets.dart';
 import 'dart:async';
 
@@ -103,6 +104,10 @@ abstract class ChannelStore extends ChangeNotifier
   ChannelDynVm get gate;
   ChannelDynVm get comp;
   List<ChannelSendVm> get sends;
+  bool destinationControlIsCurrent(DestinationControlVm control) => false;
+  Future<String?> setDestinationControl(
+      DestinationControlVm control, double value) async =>
+      'Destination control unavailable.';
   int get subgroupCount;
   int get muteGroupCount;
   bool? subgroupAssigned(int g);

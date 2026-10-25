@@ -153,6 +153,13 @@ pub trait DynDriver: Send + Sync {
     fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
         None
     }
+    fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
+        Vec::new()
+    }
+    async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
+        let _ = (target, control, value, expected);
+        anyhow::bail!("{}: destination controls not supported", self.name())
+    }
     async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()>;
     async fn connect(&self, addr: &str) -> anyhow::Result<()>;
     async fn disconnect(&self) -> anyhow::Result<()> { Ok(()) }
@@ -590,6 +597,12 @@ macro_rules! impl_dyn_driver {
         }
         fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
             MixerDriver::native_snapshots(self)
+        }
+        fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
+            MixerDriver::destination_controls(self)
+        }
+        async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
+            MixerDriver::set_destination_control(self, target, control, value, expected).await
         }
         fn bus_count(&self) -> u8 {
             MixerDriver::bus_count(self)

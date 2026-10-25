@@ -284,6 +284,16 @@ pub enum Cmd {
         #[serde(default)]
         taps: Option<bool>,
     },
+    /// Captured destination-wide edit; distinct from strip-local send taps.
+    DestinationParam {
+        request_id: String,
+        target: String,
+        control: String,
+        value: f32,
+        expected: f32,
+        /// Captured SyncEpoch; stale dialogs cannot edit another session.
+        epoch: u64,
+    },
     /// R2 mix-bus master fader (`{"cmd":"bus_fader","bus":0,"value":0.75}`):
     /// 0-based bus over `0..bus_count()` (sim/XR18 bus strips, DL32S aux
     /// masters). Honest `unsupported` where the driver has no bus masters.
@@ -402,6 +412,7 @@ impl Cmd {
             "offline_push",
             "offline_discard",
             "bus_fader",
+            "destination_param",
             "bus_mute",
             "subgroup_fader",
             "subgroup_mute",
@@ -793,6 +804,14 @@ pub enum Event {
     },
     /// Additive connection-generation barrier. Never a parameter reset in steady state.
     SyncEpoch { epoch: u64 },
+    /// Provider-described controls shared by all sends to a destination.
+    DestinationControls { epoch: u64, controls: Vec<serde_json::Value> },
+    DestinationControlResult {
+        request_id: String,
+        epoch: u64,
+        accepted: bool,
+        message: Option<String>,
+    },
     Meters {
         levels: Vec<f32>,
     },
@@ -1109,6 +1128,8 @@ impl Event {
             Event::Param { .. } => "param",
             Event::Shows { .. } => "shows",
             Event::SyncEpoch { .. } => "sync_epoch",
+            Event::DestinationControls { .. } => "destination_controls",
+            Event::DestinationControlResult { .. } => "destination_control_result",
             Event::Meters { .. } => "meters",
             Event::Spectrum { .. } => "spectrum",
             Event::AudioSpectrum { .. } => "audio_spectrum",
