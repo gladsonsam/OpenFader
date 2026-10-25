@@ -77,12 +77,13 @@ class _ProcessingSlider extends StatefulWidget {
       showValue,
       compact,
       solidFill,
+      fillFromStart,
+      focusOnly,
       inlineLabel;
   final Widget? trailing;
   final Color? color;
   final Color? valueColor;
   final VoidCallback? onFocus;
-  final Future<void> Function()? onTypedEntry;
   final ValueChanged<double> onChanged;
   const _ProcessingSlider(
       {required this.label,
@@ -94,13 +95,14 @@ class _ProcessingSlider extends StatefulWidget {
       this.fontSize = 14,
       this.trailing,
       this.onFocus,
-      this.onTypedEntry,
       this.enabled = true,
       this.pan = false,
       this.showLabel = true,
       this.showValue = true,
       this.compact = false,
       this.solidFill = false,
+      this.fillFromStart = false,
+      this.focusOnly = false,
       this.inlineLabel = false,
       this.valueColor,
       this.color});
@@ -112,10 +114,7 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
   double? _drag;
   Future<void> _type() async {
     widget.onFocus?.call();
-    if (widget.onTypedEntry != null) {
-      await widget.onTypedEntry!();
-      return;
-    }
+    if (widget.focusOnly) return;
     final v = await showNumberEntry(
         context: context,
         title: widget.label,
@@ -185,7 +184,7 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                                       .clamp(0, 1),
                                   color: color,
                                   solidFill: widget.solidFill,
-                                  bipolar: widget.min == -widget.max,
+                                  bipolar: !widget.fillFromStart && widget.min == -widget.max,
                                   pan: widget.pan))))))),
       if (widget.trailing != null) ...[
         const SizedBox(width: 6),
