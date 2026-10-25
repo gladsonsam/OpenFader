@@ -197,7 +197,7 @@ class _FocusedValue extends StatelessWidget {
               final v = await showNumberEntry(
                   context: context,
                   title: '${focus.title} · ${focus.label}',
-                  initial: focus.text(),
+                  initial: focus.entryText?.call() ?? focus.text(),
                   min: focus.min,
                   max: focus.max);
               if (v != null && focus.enabled) focus.apply(v);

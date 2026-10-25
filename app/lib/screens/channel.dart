@@ -131,6 +131,7 @@ class ChannelFocus {
   final String title;
   final String label;
   final String Function() text;
+  final String Function()? entryText;
   final double _min;
   final double _max;
   final List<double>? Function()? resolveRange;
@@ -143,6 +144,7 @@ class ChannelFocus {
       {required this.title,
       required this.label,
       required this.text,
+      this.entryText,
       required double min,
       required double max,
       this.resolveRange,
