@@ -1,12 +1,13 @@
 // Shell plus router plus store implementations over [AppStore.engine] and [AppStore.sendRaw].
 // The shell owns the single shared 80 ms poll loop so every tab stays fresh.
-// Honest gaps, not faked: stats frames are not parsed into EngineState,
-// and FX knobs render the generic params map until caps tables are parsed.
+// FX labels and engineering readouts come from provider caps.
+// Stats frames are not yet parsed into EngineState.
 library;
 
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import '../palette.dart';
@@ -1665,7 +1666,8 @@ class _FxStore extends _StoreBase implements FxStore {
           FxSlotVm(
             slot: s.slot,
             name: 'FX ${s.slot}',
-            type: s.type.isEmpty ? '—' : s.type,
+            type: _typeMetadata(s.type)?['id'] as String? ??
+                (s.type.isEmpty ? '—' : s.type),
             on: s.on,
             bypass: s.bypass,
             ret: s.returnLabel,
@@ -1681,6 +1683,48 @@ class _FxStore extends _StoreBase implements FxStore {
           (type['id'] ?? type['label']) as String
       ];
 
+  Map<String, dynamic>? _typeMetadata(String type) {
+    for (final metadata in engine.fxTypes) {
+      final id = metadata['id'] as String?;
+      final label = metadata['label'] as String?;
+      if (id?.toLowerCase() == type.toLowerCase() ||
+          label?.toLowerCase() == type.toLowerCase()) {
+        return metadata;
+      }
+    }
+    return null;
+  }
+
+  @override
+  String typeLabel(String type) =>
+      _typeMetadata(type)?['label'] as String? ?? type;
+
+  String _parameterText(double normalized, Map<String, dynamic>? metadata) {
+    final min = (metadata?['min'] as num?)?.toDouble();
+    final max = (metadata?['max'] as num?)?.toDouble();
+    if (min == null ||
+        max == null ||
+        !min.isFinite ||
+        !max.isFinite ||
+        max <= min) {
+      return '${(normalized * 100).toStringAsFixed(0)}%';
+    }
+    final scale = metadata?['scale'];
+    if (scale != 'lin' && scale != 'log' || scale == 'log' && min <= 0) {
+      return '${(normalized * 100).toStringAsFixed(0)}%';
+    }
+    final value = scale == 'log'
+        ? min * math.pow(max / min, normalized)
+        : min + (max - min) * normalized;
+    final unit = metadata?['unit'] as String? ?? '';
+    if (unit == 'Hz' && value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(2)} kHz';
+    }
+    final text = value.toStringAsFixed(
+        unit == '%' || unit == 'ms' || value.abs() >= 100 ? 0 : 1);
+    return unit.isEmpty ? text : '$text${unit == '%' ? '' : ' '}$unit';
+  }
+
   FxSlot? get _cur =>
       _raw.isEmpty ? null : _raw[selected.clamp(0, _raw.length - 1)];
 
@@ -1688,23 +1732,37 @@ class _FxStore extends _StoreBase implements FxStore {
   List<FxKnobVm> get knobs {
     final c = _cur;
     if (c == null) return const [];
-    final ps = c.params.entries.toList()
-      ..sort((a, b) => a.key.compareTo(b.key));
+    final definitions = <String, Map<String, dynamic>>{
+      for (final parameter
+          in _typeMetadata(c.type)?['params'] as List? ?? const [])
+        if (parameter is Map<String, dynamic> && parameter['id'] is String)
+          parameter['id'] as String: parameter,
+    };
+    final unknownIds = c.params.keys
+        .where((id) => !definitions.containsKey(id))
+        .toList()
+      ..sort();
+    final ids = [
+      for (final id in definitions.keys)
+        if (c.params.containsKey(id)) id,
+      ...unknownIds,
+    ];
     return [
-      for (final e in ps)
+      for (final id in ids)
         FxKnobVm(
-          id: e.key,
-          label: e.key,
+          id: id,
+          label: definitions[id]?['label'] as String? ?? id,
           min: 0,
           max: 1,
-          value: e.value.clamp(0.0, 1.0),
-          text: '${(e.value.clamp(0.0, 1.0) * 100).toStringAsFixed(0)}%',
+          value: c.params[id]!.clamp(0.0, 1.0),
+          text: _parameterText(c.params[id]!.clamp(0.0, 1.0), definitions[id]),
         ),
     ];
   }
 
   @override
-  bool get tapVisible => (_cur?.type ?? '').toLowerCase().contains('delay');
+  // The engine has no tap command/capability yet; do not offer a no-op.
+  bool get tapVisible => false;
 
   @override
   String get tapLabel => 'TAP';
