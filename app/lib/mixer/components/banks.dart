@@ -197,86 +197,93 @@ class MixerBanks extends StatelessWidget {
                                             ConsolePalette.of(context)
                                                 .mutedText,
                                     weight: weight))));
-                return SingleChildScrollView(
-                    child: Column(children: [
-                  title('MUTE', 58),
-                  Container(
-                      constraints: BoxConstraints(minHeight: 256 * sy),
-                      color: ConsolePalette.of(context).background,
-                      child: Column(children: [
-                        for (var g = 0; g < count; g++)
-                          button(
-                              '${g + 1}', () => controller.toggleMuteGroup(g),
-                              active: controller.store.engine.muteGroups[g] ==
-                                  true),
-                      ])),
-                  title('MIX', 49),
-                  SizedBox(
-                      height:
-                          (149 * sy).clamp(59 * sy + h(54), double.infinity),
-                      width: double.infinity,
-                      child: ColoredBox(
-                          color: ConsolePalette.of(context).background,
-                          child: Stack(children: [
-                            Positioned(
-                                left: 7 * sx,
-                                top: 8 * sy,
-                                right: 7 * sx,
-                                child: Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: fittedLabel('LR', 16,
-                                        color: ConsolePalette.of(context).bus,
-                                        weight: FontWeight.w700))),
-                            Positioned(
-                                top: 59 * sy,
-                                left: 0,
-                                right: 0,
-                                child: button(controller.master.name,
-                                    () => showMixerBuses(context, controller),
-                                    size: 36,
-                                    height: 54,
-                                    color: ConsolePalette.of(context).text,
-                                    weight: FontWeight.w600)),
-                          ]))),
-                  Container(
-                      width: double.infinity,
-                      constraints: BoxConstraints(minHeight: 360 * sy),
-                      padding: EdgeInsets.symmetric(vertical: 6 * sy),
-                      decoration: BoxDecoration(
-                          color: ConsolePalette.of(context).background,
-                          border: Border.all(
-                              color: ConsolePalette.of(context).cap, width: 2),
-                          borderRadius: BorderRadius.circular(14 * sx)),
-                      child: Column(children: [
-                        for (final bank in banks)
-                          button(bank.label, () => controller.setBank(bank.key),
-                              active: bank.key == controller.store.bank,
-                              size: 31),
-                      ])),
-                  for (final bus in controller.store.busRows)
-                    button(bus.name, () => controller.store.selectBus(bus.id),
-                        active: bus.active, size: 31),
-                  if (controller.pageCount > 1) ...[
-                    button(
-                        '‹',
-                        controller.page > 0
-                            ? () => controller.nextPage(-1)
-                            : null),
-                    title(
-                        '${controller.page + 1}/${controller.pageCount.clamp(1, 999)}',
-                        24,
-                        size: 16),
-                    button(
-                        '›',
-                        controller.page + 1 < controller.pageCount
-                            ? () => controller.nextPage(1)
-                            : null),
-                  ],
+                return Column(children: [
+                  Expanded(
+                      child: SingleChildScrollView(
+                          child: Column(children: [
+                    title('MUTE', 58),
+                    Container(
+                        constraints: BoxConstraints(minHeight: 256 * sy),
+                        color: ConsolePalette.of(context).background,
+                        child: Column(children: [
+                          for (var g = 0; g < count; g++)
+                            button(
+                                '${g + 1}', () => controller.toggleMuteGroup(g),
+                                active: controller.store.engine.muteGroups[g] ==
+                                    true),
+                        ])),
+                    title('MIX', 49),
+                    SizedBox(
+                        height:
+                            (149 * sy).clamp(59 * sy + h(54), double.infinity),
+                        width: double.infinity,
+                        child: ColoredBox(
+                            color: ConsolePalette.of(context).background,
+                            child: Stack(children: [
+                              Positioned(
+                                  left: 7 * sx,
+                                  top: 8 * sy,
+                                  right: 7 * sx,
+                                  child: Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: fittedLabel('LR', 16,
+                                          color: ConsolePalette.of(context).bus,
+                                          weight: FontWeight.w700))),
+                              Positioned(
+                                  top: 59 * sy,
+                                  left: 0,
+                                  right: 0,
+                                  child: button(controller.master.name,
+                                      () => showMixerBuses(context, controller),
+                                      size: 36,
+                                      height: 54,
+                                      color: ConsolePalette.of(context).text,
+                                      weight: FontWeight.w600)),
+                            ]))),
+                    Container(
+                        width: double.infinity,
+                        constraints: BoxConstraints(minHeight: 360 * sy),
+                        padding: EdgeInsets.symmetric(vertical: 6 * sy),
+                        decoration: BoxDecoration(
+                            color: ConsolePalette.of(context).background,
+                            border: Border.all(
+                                color: ConsolePalette.of(context).cap,
+                                width: 2),
+                            borderRadius: BorderRadius.circular(14 * sx)),
+                        child: Column(children: [
+                          for (final bank in banks)
+                            button(
+                                bank.label, () => controller.setBank(bank.key),
+                                active: bank.key == controller.store.bank,
+                                size: 31),
+                        ])),
+                    for (final bus in controller.store.busRows)
+                      button(bus.name, () => controller.store.selectBus(bus.id),
+                          active: bus.active, size: 31),
+                    if (controller.pageCount > 1) ...[
+                      button(
+                          '‹',
+                          controller.page > 0
+                              ? () => controller.nextPage(-1)
+                              : null),
+                      title(
+                          '${controller.page + 1}/${controller.pageCount.clamp(1, 999)}',
+                          24,
+                          size: 16),
+                      button(
+                          '›',
+                          controller.page + 1 < controller.pageCount
+                              ? () => controller.nextPage(1)
+                              : null),
+                    ],
+                    title('MASTERS', 31, size: 16),
+                  ]))),
+                  // Keep monitoring recovery reachable even when the provider
+                  // exposes enough banks/buses to fill the scrolling rail.
                   if (controller.hasSolo)
                     button('Clear solos', controller.store.clearSolos,
-                        size: 18),
-                  title('MASTERS', 31, size: 16),
-                ]));
+                        size: 18, color: ConsolePalette.of(context).solo),
+                ]);
               })
             : SizedBox(
                 height: 54,
