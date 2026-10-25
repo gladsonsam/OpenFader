@@ -105,6 +105,16 @@ class FakeSimEngine implements EngineApi {
         for (final id in _params.first.keys)
           {
             'id': id,
+            if (id == 'name')
+              'presentations': [
+                {
+                  'text': {
+                    'max_utf8_bytes': 16,
+                    'allow_empty': false,
+                    'allow_edge_whitespace': true,
+                  }
+                }
+              ],
             'scope': 'channel',
             'scopes': ['in'],
             'kind': _params.first[id] is bool
@@ -261,11 +271,14 @@ class FakeSimEngine implements EngineApi {
         final value = c['value'];
         if (field is! String || !_params[ch].containsKey(field)) return;
         if (field == 'name' &&
-            (value is! String || value.isEmpty || value.runes.length > 16)) {
+            (value is! String ||
+                value.isEmpty ||
+                utf8.encode(value).length > 16)) {
           _mailbox.add(jsonEncode({
             'type': 'error',
             'ch': ch,
-            'message': 'Channel names must contain 1–16 characters.',
+            'message':
+                'This channel name is empty or too long. Try a shorter name.',
           }));
           return;
         }

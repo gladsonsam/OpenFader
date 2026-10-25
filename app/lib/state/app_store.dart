@@ -508,8 +508,9 @@ class AppStore extends ChangeNotifier
     final ch = channel ?? _channel;
     for (final strip in engine.strips) {
       if (strip.ch != ch) continue;
-      final target =
-          ChannelNameTarget(engine.session, ch, strip.key, strip.name);
+      final rawName = ps.optimisticValue(_maps, ch, 'name');
+      final target = ChannelNameTarget(
+          engine.session, ch, strip.key, rawName is String ? rawName : null);
       return nameEditError(target) == null ||
               colorEditError(target) == null ||
               iconEditError(target) == null
@@ -527,7 +528,9 @@ class AppStore extends ChangeNotifier
     if (!engine.capsReady || !engine.supportedParams.contains('name')) {
       return 'Channel naming is unavailable on this connection.';
     }
-    if (!engine.valueKnown(target.channel, 'name') ||
+    if (target.name == null ||
+        ps.optimisticValue(_maps, target.channel, 'name') is! String ||
+        !engine.valueKnown(target.channel, 'name') ||
         !engine.strips
             .any((s) => s.ch == target.channel && s.key == target.key)) {
       return 'The channel name is not available. Reopen the name editor.';
@@ -668,29 +671,30 @@ class AppStore extends ChangeNotifier
   }
 
   @override
+  bool nameCanBeEmpty(ChannelNameTarget target) =>
+      parameterTextRules(engine.parameterMetadata['name'])?['allow_empty'] ==
+      true;
+
+  @override
   Future<String?> renameChannel(ChannelNameTarget target, String name) async {
     final unavailable = nameEditError(target);
     if (unavailable != null) return unavailable;
-    // Reject unsafe text, never silently normalize a user's channel identity.
-    if (name.trim().isEmpty ||
+    final rules = parameterTextRules(engine.parameterMetadata['name']);
+    if ((!nameCanBeEmpty(target) && name.trim().isEmpty) ||
         name.runes.any((r) =>
             r < 32 || (r >= 127 && r <= 159) || (r >= 0xd800 && r <= 0xdfff))) {
       return 'Enter a name without control characters or invalid Unicode.';
     }
-    if (engine.driver == 'sim' && name.runes.length > 16) {
-      return 'Use 16 characters or fewer for an offline channel name.';
+    final maxBytes = rules?['max_utf8_bytes'];
+    if (maxBytes is num &&
+        maxBytes.isFinite &&
+        utf8.encode(name).length > maxBytes) {
+      return 'This name is too long for this mixer. Try a shorter name.';
     }
-    // This is the current Rust transport boundary, not a claimed
-    // desk/Master Fader text limit. Reject rather than send truncated UTF-8.
-    if (engine.driver == 'dl32s' &&
-        (utf8.encode(name).length > 63 || name != name.trim())) {
-      return name != name.trim()
-          ? 'Remove spaces at the beginning or end of the name.'
-          : 'This name is too long for this mixer. Try a shorter name.';
+    if (rules?['allow_edge_whitespace'] == false && name != name.trim()) {
+      return 'Remove spaces at the beginning or end of the name.';
     }
-    final current = engine.strips
-        .firstWhere((s) => s.ch == target.channel && s.key == target.key)
-        .name;
+    final current = ps.optimisticValue(_maps, target.channel, 'name');
     if (name == current) return 'The channel already has this name.';
     final key = ps.pendingKey(target.channel, 'name');
     if (_maps.pending.containsKey(key) || _nameEdits.containsKey(key)) {
@@ -743,19 +747,23 @@ class AppStore extends ChangeNotifier
             key, _appearanceEditError(edit.target, edit.field));
       }
     }
+    if (field == 'name') {
+      final key = ps.pendingKey(channel, field);
+      final value = event['type'] == 'param'
+          ? event['value']
+          : (event['values'] as Map?)?[field];
+      final provenance = event['type'] == 'param'
+          ? authority
+          : (authority is Map ? authority[field] : null);
+      if ((provenance == 'accepted' || provenance == 'verified') &&
+          _nameEditValues[key] == value &&
+          _nowMs() < (_nameEditDeadlines[key] ?? double.negativeInfinity)) {
+        _finishNameEdit(key, null);
+      }
+    }
     final fields = _presetVerifiedFields.putIfAbsent(channel, () => {});
     if (verified) {
       fields.add(field);
-      if (field == 'name') {
-        final key = ps.pendingKey(channel, field);
-        final value = event['type'] == 'param'
-            ? event['value']
-            : (event['values'] as Map?)?[field];
-        if (_nameEditValues[key] == value &&
-            _nowMs() < (_nameEditDeadlines[key] ?? double.negativeInfinity)) {
-          _finishNameEdit(key, null);
-        }
-      }
     } else {
       fields.remove(field);
     }
@@ -1620,7 +1628,7 @@ class AppStore extends ChangeNotifier
     for (final key in _nameEdits.keys.toList()) {
       if (now >= (_nameEditDeadlines[key] ?? double.negativeInfinity)) {
         _finishNameEdit(key,
-            'The mixer did not provide a verified name readback. The name may have changed.');
+            'The mixer did not acknowledge the name change. It may have changed.');
       }
     }
     for (final entry in _appearanceEdits.entries.toList()) {
