@@ -23,6 +23,10 @@ use std::sync::{
 use std::time::Duration;
 use tokio::sync::{broadcast, Mutex, MutexGuard};
 
+// Type-2 input Solo: CH7=29 and CH8=30 independently verified against
+// Master Fader, 2026-10-25. The contiguous input bank starts at CH1=23.
+const INPUT_SOLO_FIRST_ADDRESS: u32 = 23;
+
 /// Wave-1+2 canonical surface: every id below names a DL32S leaf whose
 /// position was confirmed on hardware AND whose value domain was confirmed
 /// live — by the read-only push-cache survey (varied values prove the desk
@@ -312,7 +316,17 @@ fn decode_push(push: PushEvent) -> Vec<ParamUpdate> {
             if value_type == VALUE_TYPE_MUTE_GROUP {
                 let mut out = Vec::new();
                 for (i, raw) in raws.iter().enumerate() {
-                    let group0 = (start + i as u32).wrapping_sub(MUTE_GROUP_BASE_ADDRESS + 1);
+                    let address = start + i as u32;
+                    let input0 = address.wrapping_sub(INPUT_SOLO_FIRST_ADDRESS);
+                    if input0 < INPUT_COUNT {
+                        out.push(ParamUpdate {
+                            received_at,
+                            strip: StripId(input0 as u16),
+                            param: "solo".to_string(),
+                            value: ParamValue::Bool(*raw != 0),
+                        });
+                    }
+                    let group0 = address.wrapping_sub(MUTE_GROUP_BASE_ADDRESS + 1);
                     if group0 < MUTE_GROUP_COUNT {
                         out.push(ParamUpdate {
                             received_at,
@@ -846,6 +860,16 @@ impl Dl32sDriver {
     /// Display paths use [`request_value_u32`](Self::request_value_u32).
     async fn verified_value_u32(&self, address: u32) -> anyhow::Result<Option<u32>> {
         self.request_value_verified_u32(address).await
+    }
+
+    /// Desk-proven input Solo; pending own writes are withheld from polling.
+    pub async fn get_solo_verified(&self, strip: StripId) -> anyhow::Result<bool> {
+        let address = INPUT_SOLO_FIRST_ADDRESS + Self::channel(strip)? - 1;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above")
+            .cached_type2_verified(address)
+            .map(|raw| raw != 0)
+            .ok_or_else(|| anyhow::anyhow!("solo: no desk-confirmed value yet"))
     }
 
     /// Mute/unmute a mute group master (fixed protocol address, no table needed).
@@ -1492,6 +1516,23 @@ impl MixerDriver for Dl32sDriver {
             .cached(addr)
             .ok_or_else(|| anyhow::anyhow!("fader: no value pushed yet"))?;
         Ok(addrs::DL32S_FADER_SCALE.inverse(f32::from_bits(raw)))
+    }
+
+    async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
+        let address = INPUT_SOLO_FIRST_ADDRESS + Self::channel(strip)? - 1;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above")
+            .write_int(address, u32::from(soloed), VALUE_TYPE_MUTE_GROUP).await
+    }
+
+    /// Display continuity only; polling uses `get_solo_verified`.
+    async fn get_solo(&self, strip: StripId) -> anyhow::Result<bool> {
+        let address = INPUT_SOLO_FIRST_ADDRESS + Self::channel(strip)? - 1;
+        let guard = self.session().await?;
+        guard.as_ref().expect("checked above")
+            .cached_type2(address)
+            .map(|raw| raw != 0)
+            .ok_or_else(|| anyhow::anyhow!("solo: no value pushed yet"))
     }
 
     async fn set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {

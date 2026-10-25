@@ -5293,7 +5293,7 @@ impl Engine {
             return drv.get_mute_group_assign_verified(ch, group - 1).await.map(ParamValue::Bool);
         }
         if param == "solo" {
-            return drv.get_solo(ch).await.map(ParamValue::Bool);
+            return drv.get_solo_verified(ch).await.map(ParamValue::Bool);
         }
         drv.get_param(ch, param).await
     }
@@ -8418,7 +8418,7 @@ mod tests {
     #[tokio::test]
     async fn poll_list_carries_xair_solo_bank() {
         // Desk→app solo backstop: xair channel strips carry the `solo`
-        // poll id (bank re-read via `read_param`); nothing else does 
+        // poll id (bank re-read via `read_param`); DL32S also supplies it.
         // solo is not a catalogue param and never enters `caps`.
         let engine = Engine::new(EngineConfig::default());
         let list = engine.poll_list("xair").await;
@@ -8438,7 +8438,7 @@ mod tests {
                 );
             }
         }
-        for driver in ["sim", "dl32s"] {
+        for driver in ["sim"] {
             let list = engine.poll_list(driver).await;
             assert!(
                 !list.iter().any(|(_, id)| id == "solo"),
