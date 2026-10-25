@@ -604,9 +604,16 @@ struct NativeCache {
     parameter_labels: std::collections::BTreeMap<&'static str, String>,
 }
 
-/// Native View A..F names occupy slots70..75 (read-only rig evidence).
-fn view_name_parameter(slot: u32) -> Option<&'static str> {
+/// Native VCA1..6 names occupy slots58..63; View A..F uses70..75.
+/// Both banks were matched read-only against Master Fader.
+fn assignment_name_parameter(slot: u32) -> Option<&'static str> {
     match slot {
+        58 => Some("dca1_assign"),
+        59 => Some("dca2_assign"),
+        60 => Some("dca3_assign"),
+        61 => Some("dca4_assign"),
+        62 => Some("dca5_assign"),
+        63 => Some("dca6_assign"),
         70 => Some("view1_assign"),
         71 => Some("view2_assign"),
         72 => Some("view3_assign"),
@@ -615,6 +622,13 @@ fn view_name_parameter(slot: u32) -> Option<&'static str> {
         75 => Some("view6_assign"),
         _ => None,
     }
+}
+
+fn assignment_name_label(slot: u32, name: &str) -> Option<String> {
+    if !name.is_empty() { return Some(name.to_string()); }
+    // Canonical DCA rows use DCA labels; a known blank on this desk is
+    // displayed as VCA N, matching its native naming convention.
+    (58..=63).contains(&slot).then(|| format!("VCA {}", slot - 57))
 }
 
 /// Decode one meter push's RTA bins (indices 60..90, BE-f32 dB), or `None`
@@ -1769,9 +1783,10 @@ impl MixerDriver for Dl32sDriver {
                 .collect();
             slots.sort_by_key(|s| s.slot);
             n.generation = generation;
-            n.parameter_labels = (70..=75).filter_map(|slot| {
+            n.parameter_labels = (58..=75).filter_map(|slot| {
+                let id = assignment_name_parameter(slot)?;
                 let name = session.name_slot_verified(slot)?;
-                (!name.is_empty()).then(|| (view_name_parameter(slot).expect("View slot"), name))
+                Some((id, assignment_name_label(slot, &name)?))
             }).collect();
             n.view.slots = slots;
             n.view.current = session.current_snapshot_pushed();
@@ -1842,9 +1857,10 @@ impl MixerDriver for Dl32sDriver {
                                     if v.generation != generation { break; }
                                     if v.view.connected {
                                         for (slot, name) in pairs {
-                                            if let Some(id) = view_name_parameter(*slot) {
-                                                if name.is_empty() { v.parameter_labels.remove(id); }
-                                                else { v.parameter_labels.insert(id, name.clone()); }
+                                            if let Some(id) = assignment_name_parameter(*slot) {
+                                                if let Some(label) = assignment_name_label(*slot, name) {
+                                                    v.parameter_labels.insert(id, label);
+                                                } else { v.parameter_labels.remove(id); }
                                             }
                                         }
                                     }
