@@ -47,6 +47,21 @@ pub struct RoutingGroup {
     pub count: usize,
 }
 
+/// Accepted route plus its parameter-plane projection, when one exists.
+/// The engine uses its normal accepted/verified provenance for that projection.
+pub struct RoutingPatch {
+    pub label: String,
+    pub param: Option<(&'static str, ParamValue)>,
+}
+
+/// A provider-named patch destination within each input (e.g. A/B).
+#[derive(Clone, Debug)]
+pub struct RoutingTarget {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub clearable: bool,
+}
+
 /// Neutral meter taps behind the `taps` frames (sim `poll_taps` projected
 /// off the sim type).
 #[derive(Clone, Debug)]
@@ -280,6 +295,28 @@ pub trait DynDriver: Send + Sync {
     fn routing_groups(&self) -> Vec<RoutingGroup> {
         Vec::new()
     }
+    fn routing_targets(&self) -> Vec<RoutingTarget> {
+        if self.routing_groups().is_empty() { Vec::new() } else {
+            vec![RoutingTarget { key: "", label: "Input", clearable: true }]
+        }
+    }
+    async fn routing_source(&self, strip: StripId, target: &str) -> anyhow::Result<String> {
+        anyhow::ensure!(target.is_empty(), "unknown routing target {target:?}");
+        match self.get_param(strip, "source").await? {
+            ParamValue::Text(label) => Ok(label),
+            _ => anyhow::bail!("routing source is not a label"),
+        }
+    }
+    async fn patch_target_set(&self, strip: StripId, target: &str, group: &str, index: u8) -> anyhow::Result<RoutingPatch> {
+        anyhow::ensure!(target.is_empty(), "unknown routing target {target:?}");
+        self.patch_set(strip, group, index).map(|label| RoutingPatch { label, param: None })
+    }
+    async fn patch_target_clear(&self, strip: StripId, target: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(target.is_empty(), "unknown routing target {target:?}");
+        self.patch_clear(strip)
+    }
+    /// Param changes that also invalidate the routing frame.
+    fn routing_param_ids(&self) -> &'static [&'static str] { &[] }
     /// Per-strip meter taps behind the `taps` frames (`None` = synthesize
     /// from `poll_meters`, like hardware does).
     fn poll_taps(&self) -> Option<Vec<TapLevels>> {
@@ -1109,6 +1146,31 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
 
+    fn routing_groups(&self) -> Vec<RoutingGroup> {
+        vec![RoutingGroup { key: "Mic", label: "Mic Pre", count: 32 },
+             RoutingGroup { key: "USB", label: "USB", count: 32 }]
+    }
+    fn routing_targets(&self) -> Vec<RoutingTarget> {
+        vec![RoutingTarget { key: "a", label: "A", clearable: false },
+             RoutingTarget { key: "b", label: "B", clearable: false }]
+    }
+    fn routing_param_ids(&self) -> &'static [&'static str] { &["source_a", "source_b"] }
+    async fn routing_source(&self, strip: StripId, target: &str) -> anyhow::Result<String> {
+        let raw = self.input_source_display(strip, target).await?;
+        let (group, index) = match raw {
+            v @ 1000..=1031 => ("Mic", v - 999),
+            v @ 2000..=2031 => ("USB", v - 1999),
+            _ => anyhow::bail!("dl32s: unlabelled source ID {raw}"),
+        };
+        Ok(format!("{group} {index}"))
+    }
+    async fn patch_target_set(&self, strip: StripId, target: &str, group: &str, index: u8) -> anyhow::Result<RoutingPatch> {
+        anyhow::ensure!((1..=32).contains(&index), "dl32s: source socket must be 1..32");
+        let leaf = match target { "a" => "source_a", "b" => "source_b", _ => anyhow::bail!("dl32s: choose routing target A or B") };
+        let base = match group { "Mic" => 999, "USB" => 1999, _ => anyhow::bail!("dl32s: unknown source group {group:?}") };
+        MixerDriver::set_param(self, strip, leaf, ParamValue::Float((base + u32::from(index)) as f32)).await?;
+        Ok(RoutingPatch { label: format!("{group} {index}"), param: Some((leaf, ParamValue::Float((base + u32::from(index)) as f32))) })
+    }
     fn essentials_extra_ids(&self, kind: StripKind) -> &'static [&'static str] {
         if matches!(kind, StripKind::In) { &["solo"] } else { &[] }
     }

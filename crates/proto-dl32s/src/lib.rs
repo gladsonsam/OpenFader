@@ -51,7 +51,7 @@ const INPUT_SOLO_FIRST_ADDRESS: u32 = 23;
 /// - `viewN`/`vcaN`/`mutegroupN`/`subN` membership — write-proven live, but
 ///   served through the engine group `Cmd`s, not strip caps.
 /// - `source_a`/`source_b` — opaque native routing IDs (1000+/2000+).
-///   Exposed as provider rows without inventing routing labels.
+///   Provider-labelled physical/USB routing IDs; unknown IDs remain opaque.
 /// - `source_select` — native A/B selector, 0/1, exposed as a provider row.
 /// - `sendN_tap`/`sendN_grpon`/`sendN_on` — no confirmed leaf (the desk is
 ///   silent; the UI collapses them, never faked).
@@ -1265,6 +1265,14 @@ impl Dl32sDriver {
         let guard = self.session().await?;
         guard.as_ref().expect("checked above").write_float(address, value).await
     }
+    /// Display/snapshot continuity for routing. Includes an acknowledged
+    /// own write; get_param remains desk-evidenced and withholds pending words.
+    pub async fn input_source_display(&self, strip: StripId, target: &str) -> anyhow::Result<u32> {
+        let leaf = match target { "a" => "source_a", "b" => "source_b", _ => anyhow::bail!("dl32s: choose routing target A or B") };
+        let address = dl32s_inputs().address(Self::channel(strip)?, leaf)?;
+        self.request_value_u32(address).await?.ok_or_else(|| anyhow::anyhow!("dl32s: source unavailable"))
+    }
+
     pub async fn request_value_u32(&self, address: u32) -> anyhow::Result<Option<u32>> {
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
@@ -1368,8 +1376,8 @@ impl MixerDriver for Dl32sDriver {
                     default: openfader_core::params::ParamDefault::Float(0.0),
                     label: "EQ modern/vintage",
                 },
-                // The source IDs are opaque native integers; the app only reads
-                // these two rows, preserving the desk's actual patch labels/IDs.
+                // Source IDs remain native integers; routing writes are restricted
+                // to verified physical-preamp and USB namespaces.
                 source("source_a", u32::MAX as f32, "Input A source ID"),
                 source("source_b", u32::MAX as f32, "Input B source ID"),
                 source("source_select", 1.0, "Input A/B"),
@@ -1868,6 +1876,12 @@ impl MixerDriver for Dl32sDriver {
         value: ParamValue,
     ) -> anyhow::Result<()> {
         match (param, value) {
+            (leaf @ ("source_a" | "source_b"), ParamValue::Float(v)) => {
+                anyhow::ensure!(v.is_finite() && v.fract() == 0.0 &&
+                    ((1000.0..=1031.0).contains(&v) || (2000.0..=2031.0).contains(&v)),
+                    "dl32s: source must be a verified mic preamp or USB socket");
+                self.set_field(strip, leaf, ParamValue::Float(v)).await
+            }
             ("source_select", ParamValue::Float(v)) => {
                 if v != 0.0 && v != 1.0 {
                     anyhow::bail!("dl32s: source_select must be 1 (A) or 0 (B), got {v}");

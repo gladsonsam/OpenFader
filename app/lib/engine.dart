@@ -344,9 +344,11 @@ class Cmds {
       '{"cmd":"fx_bypass","slot":$slot,"bypass":$bypass}';
   static String fxOn(int slot, bool on) =>
       '{"cmd":"fx_on","slot":$slot,"on":$on}';
-  static String patchSet(int strip, String group, int index) =>
-      '{"cmd":"patch_set","strip":$strip,"group":${_q(group)},"index":$index}';
-  static String patchClear(int strip) => '{"cmd":"patch_clear","strip":$strip}';
+  static String patchSet(int strip, String group, int index,
+          {String target = ''}) =>
+      '{"cmd":"patch_set","strip":$strip,"group":${_q(group)},"index":$index,"target":${_q(target)}}';
+  static String patchClear(int strip, {String target = ''}) =>
+      '{"cmd":"patch_clear","strip":$strip,"target":${_q(target)}}';
   static String offline(String model) =>
       '{"cmd":"offline","model":${_q(model)}}';
   static String offlinePush(bool confirm) =>
