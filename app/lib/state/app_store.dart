@@ -2352,6 +2352,8 @@ class AppStore extends ChangeNotifier
 
   @override
   String get stripKey => 'ch/${(_channel + 1).toString().padLeft(2, '0')}';
+  @override
+  int get connectionEpoch => engine.session;
 
   @override
   String get displayName {

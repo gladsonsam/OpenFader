@@ -16,6 +16,48 @@ class _InputTab extends StatelessWidget {
   final ValueChanged<ChannelFocus> onFocus;
   const _InputTab({required this.store, required this.onFocus});
 
+  Future<void> _confirmPhantom(BuildContext context) async {
+    final current = store.paramBool('phantom');
+    if (!store.supports('phantom') || current == null) return;
+    final epoch = store.connectionEpoch;
+    final key = store.stripKey;
+    final name = store.displayName;
+    bool targetCurrent() =>
+        store.connectionEpoch == epoch &&
+        store.stripKey == key &&
+        store.supports('phantom') &&
+        store.paramBool('phantom') == current;
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => ListenableBuilder(
+            listenable: store,
+            builder: (context, _) {
+              final palette = ConsolePalette.of(context);
+              return AlertDialog(
+                  backgroundColor: palette.panel,
+                  title: Text(current ? 'Turn off 48V?' : 'Turn on 48V?',
+                      style: AppDesign.type(18, color: palette.text1)),
+                  content: Text(
+                      targetCurrent()
+                          ? '${current ? 'Disable' : 'Enable'} phantom power for $name?'
+                          : 'The channel or connection changed. Reopen this confirmation.',
+                      style: AppDesign.type(16, color: palette.text7)),
+                  actions: [
+                    TextButton(
+                        onPressed: () => Navigator.pop(dialogContext, false),
+                        child: const Text('Cancel')),
+                    TextButton(
+                        onPressed: targetCurrent()
+                            ? () => Navigator.pop(dialogContext, true)
+                            : null,
+                        child: Text(current ? 'Turn off' : 'Turn on')),
+                  ]);
+            }));
+    if (confirmed == true && context.mounted && targetCurrent()) {
+      store.togglePhantom();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 700;
@@ -117,13 +159,12 @@ class _InputTab extends StatelessWidget {
         SizedBox(
             width: 64,
             child: _TextSwitch(
-                label: pre.phantomArmed ? '48V · tap again' : '48V',
+                label: '48V',
                 active: pre.phantom,
                 enabled: store.supports('phantom'),
-                onTap: store.togglePhantom)),
+                onTap: () => _confirmPhantom(context))),
         Expanded(
-            child: Text(
-                pre.phantomArmed ? 'Confirm phantom power' : 'Phantom power',
+            child: Text('Phantom power',
                 style: AppDesign.type(14,
                     color: ConsolePalette.of(context).text7)))
       ]),
