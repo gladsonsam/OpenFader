@@ -21,12 +21,14 @@ class MixerStrip extends StatelessWidget {
   final MixerChannel channel;
   final MixerController controller;
   final VoidCallback onOpen;
+  final ValueChanged<MixerReadoutControl>? onControlFocus;
   final bool compact;
   final double bottomInset;
   const MixerStrip(
       {super.key,
       required this.channel,
       required this.controller,
+      this.onControlFocus,
       this.compact = false,
       this.bottomInset = 0,
       required this.onOpen});
@@ -91,9 +93,15 @@ class MixerStrip extends StatelessWidget {
                                       : MixerPan(
                                           name: ch.name,
                                           value: pan,
+                                          onTouch: () => onControlFocus
+                                              ?.call(MixerReadoutControl.pan),
                                           visualHeight: g.panH,
                                           onChanged: ready & 4 != 0
-                                              ? (v) => controller.setPan(ch, v)
+                                              ? (v) {
+                                                  onControlFocus?.call(
+                                                      MixerReadoutControl.pan);
+                                                  controller.setPan(ch, v);
+                                                }
                                               : null)),
                           touch: true),
                       place(
@@ -132,13 +140,29 @@ class MixerStrip extends StatelessWidget {
                                                     channel:
                                                         _withFader(ch, fader),
                                                     compact: compact,
-                                                    onPosition: (v) =>
-                                                        controller.setPosition(
-                                                            ch, v),
-                                                    onSelect: () =>
-                                                        controller.select(ch),
-                                                    onUnity: () => controller
-                                                        .unity(ch))))),
+                                                    onTouch: () =>
+                                                        onControlFocus?.call(
+                                                            MixerReadoutControl
+                                                                .volume),
+                                                    onPosition: (v) {
+                                                      onControlFocus?.call(
+                                                          MixerReadoutControl
+                                                              .volume);
+                                                      controller.setPosition(
+                                                          ch, v);
+                                                    },
+                                                    onSelect: () {
+                                                      onControlFocus?.call(
+                                                          MixerReadoutControl
+                                                              .volume);
+                                                      controller.select(ch);
+                                                    },
+                                                    onUnity: () {
+                                                      onControlFocus?.call(
+                                                          MixerReadoutControl
+                                                              .volume);
+                                                      controller.unity(ch);
+                                                    })))),
                                     if (ready & 1 == 0)
                                       const Center(child: Text('Loading…')),
                                   ]))),
