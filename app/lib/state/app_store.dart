@@ -2652,7 +2652,8 @@ class AppStore extends ChangeNotifier
     final p = kind == DynKind.gate ? 'gate' : 'comp';
     return ChannelDynVm(
       kind: kind,
-      responseCurve: paramMetadata('${p}_mode')?['curve'] as String?,
+      responseCurve: (paramMetadata('${p}_knee')?['curve'] ??
+          paramMetadata('${p}_mode')?['curve']) as String?,
       ranges: {
         for (final prop in [
           'thr',
@@ -2674,6 +2675,9 @@ class AppStore extends ChangeNotifier
       att: paramNum('${p}_att') ?? (kind == DynKind.gate ? 0.5 : 10),
       hold: paramNum('${p}_hold') ?? 50,
       rel: paramNum('${p}_rel') ?? (kind == DynKind.gate ? 150 : 120),
+      ratioIsLimit: paramNum('${p}_ratio') != null &&
+          paramNum('${p}_ratio') ==
+              paramMetadata('${p}_ratio')?['limiter_value'],
       ratio: paramNum('${p}_ratio') ?? 3,
       knee: paramNum('${p}_knee') ?? 3,
       makeup: paramNum('${p}_makeup') ?? 0,

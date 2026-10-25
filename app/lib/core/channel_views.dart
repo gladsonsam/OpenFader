@@ -111,6 +111,7 @@ Map<String, dynamic>? parameterPresentation(
     result['hidden'] = row['hidden'] == true;
     result['choices'] = row['choices'];
     result['value_labels'] = row['value_labels'];
+    result['limiter_value'] = row['limiter_value'];
     result['curve'] = row['curve'];
   }
   return result;
@@ -422,6 +423,7 @@ class ChannelDynVm {
   final double att; // ms
   final double hold; // gate only, ms
   final double rel; // ms
+  final bool ratioIsLimit;
   final double ratio; // comp only
   final double knee; // comp only, dB
   final double makeup; // comp only, dB
@@ -446,6 +448,7 @@ class ChannelDynVm {
     this.att = 0.5,
     this.hold = 50,
     this.rel = 150,
+    this.ratioIsLimit = false,
     this.ratio = 3,
     this.knee = 3,
     this.makeup = 0,
@@ -500,16 +503,17 @@ double gateOut(ChannelDynVm p, double x) {
 
 /// Comp output level for input [x] dB (soft-knee + makeup).
 double compOut(ChannelDynVm p, double x) {
-  final k = p.knee <= 0 ? 0.0 : p.knee;
+  final k = p.responseCurve == 'hard_knee' || p.knee <= 0 ? 0.0 : p.knee;
+  final inverseRatio = p.ratioIsLimit ? 0.0 : 1 / p.ratio;
   final yNoMake = x < p.thr - k / 2
       ? x
       : x < p.thr + k / 2
           ? x +
-              (1 / p.ratio - 1) *
+              (inverseRatio - 1) *
                   (x - p.thr + k / 2) *
                   (x - p.thr + k / 2) /
                   (2 * k)
-          : p.thr + (x - p.thr) / p.ratio;
+          : p.thr + (x - p.thr) * inverseRatio;
   return yNoMake + p.makeup;
 }
 
