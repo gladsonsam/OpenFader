@@ -19,8 +19,6 @@ class _DynTab extends StatelessWidget {
             k.prop != 'knee' &&
             store.paramMetadata('${kind.name}_${k.prop}')?['hidden'] != true)
         .toList();
-    final modelLeaf = '${kind.name}_mode';
-    final models = parameterChoices(store.paramMetadata(modelLeaf));
     void focus(_KnobDef k) => onFocus(_parameterFocus(
         store,
         '${kind.name}_${k.prop}',
@@ -41,11 +39,15 @@ class _DynTab extends StatelessWidget {
         'Delay',
         () => '${store.preamp.delayMs.toStringAsFixed(1)} ms',
         (v) => store.setPreamp('delay_ms', v)));
+    String controlText(_KnobDef k) =>
+        parameterValueLabel(
+            store.paramMetadata('${kind.name}_${k.prop}'), k.value) ??
+        k.text;
     Widget choiceControl(_KnobDef k) => _ParameterChoices(
         store: store,
         leaf: '${kind.name}_${k.prop}',
         label: k.label,
-        fallback: k.text,
+        fallback: controlText(k),
         compact: compact,
         onChanged: (v) => apply(k, v));
     Widget control(_KnobDef k, {bool threshold = false}) =>
@@ -60,7 +62,7 @@ class _DynTab extends StatelessWidget {
                     borderRadius: U4.rWell),
                 child: _ProcessingSlider(
                     label: k.label,
-                    text: k.text,
+                    text: controlText(k),
                     value: k.value,
                     min: k.min,
                     max: k.max,
@@ -97,7 +99,7 @@ class _DynTab extends StatelessWidget {
                   Expanded(
                       child: _ProcessingSlider(
                           label: k.label,
-                          text: k.text,
+                          text: controlText(k),
                           value: k.value,
                           min: k.min,
                           max: k.max,
@@ -110,7 +112,7 @@ class _DynTab extends StatelessWidget {
                           onFocus: () => focus(k),
                           onChanged: (v) => apply(k, v))),
                   const SizedBox(width: 16),
-                  Text(k.text,
+                  Text(controlText(k),
                       style: AppDesign.type(16,
                           color: ConsolePalette.of(context).text1)),
                 ]));
@@ -167,28 +169,6 @@ class _DynTab extends StatelessWidget {
             onToggle: () => store.setDynOn(kind, !d.on)),
         const SizedBox(height: 8),
         Row(children: [
-          if (models.isNotEmpty) ...[
-            SizedBox(
-                width: compact ? 130 : 260 * scale,
-                child: _ParameterChoices(
-                    store: store,
-                    leaf: modelLeaf,
-                    label: 'Model',
-                    showLabel: false,
-                    fallback: '—',
-                    compact: compact,
-                    onChanged: (v) {
-                      store.setDynParam(kind, 'mode', v);
-                      onFocus(_parameterFocus(
-                          store,
-                          modelLeaf,
-                          title,
-                          'Model',
-                          () => _choiceText(store, modelLeaf, '—'),
-                          (v) => store.setDynParam(kind, 'mode', v)));
-                    })),
-            const SizedBox(width: 8),
-          ],
           if (!compact)
             SizedBox(
                 width: 420 * scale,
@@ -203,7 +183,8 @@ class _DynTab extends StatelessWidget {
             Expanded(
                 child: _PresetsButton(
                     store: store, compact: compact, kind: presetKind)),
-          if (kind == DynKind.comp) ...[
+          if (kind == DynKind.comp &&
+              store.paramMetadata('comp_knee')?['hidden'] != true) ...[
             const SizedBox(width: 8),
             Expanded(
                 child: Container(
@@ -332,7 +313,6 @@ class _ParameterChoices extends StatelessWidget {
   final ChannelStore store;
   final String leaf, label, fallback;
   final bool compact;
-  final bool showLabel;
   final ValueChanged<double> onChanged;
   const _ParameterChoices(
       {required this.store,
@@ -340,7 +320,6 @@ class _ParameterChoices extends StatelessWidget {
       required this.label,
       required this.fallback,
       required this.compact,
-      this.showLabel = true,
       required this.onChanged});
 
   @override
@@ -375,8 +354,7 @@ class _ParameterChoices extends StatelessWidget {
                       style: AppDesign.type(16, color: palette.text1))),
           ],
           child: Container(
-              constraints:
-                  BoxConstraints(minHeight: showLabel && !compact ? 64 : 44),
+              constraints: BoxConstraints(minHeight: !compact ? 64 : 44),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                   color: palette.processingPanel, borderRadius: U4.rWell),
@@ -386,10 +364,9 @@ class _ParameterChoices extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                      if (showLabel)
-                        Text(label,
-                            style: AppDesign.type(compact ? 12 : 14,
-                                color: palette.text7)),
+                      Text(label,
+                          style: AppDesign.type(compact ? 12 : 14,
+                              color: palette.text7)),
                       Text(_choiceText(store, leaf, fallback),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
