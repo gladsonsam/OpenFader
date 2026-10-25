@@ -116,6 +116,7 @@ fn examples() -> Vec<(String, Value)> {
         (
             "caps",
             Event::Caps {
+                dynamics_meters: false,
                 driver: "sim".to_string(),
                 params: vec![
                     openfader_engine::protocol::ParamDef {

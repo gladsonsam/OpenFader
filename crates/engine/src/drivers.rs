@@ -336,6 +336,7 @@ pub trait DynDriver: Send + Sync {
         None
     }
     /// Serves gate/comp GR over the `gate_gr`/`comp_gr` param path.
+    fn poll_dynamics_meters(&self) -> Option<Vec<openfader_core::DynamicsMeterFrame>> { None }
     fn dyn_gr(&self) -> bool {
         false
     }
@@ -571,6 +572,9 @@ macro_rules! impl_dyn_driver {
         }
         async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()> {
             MixerDriver::set_spectrum_target(self, owner, strip).await
+        }
+        fn poll_dynamics_meters(&self) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
+            MixerDriver::poll_dynamics_meters(self)
         }
         fn poll_spectrum(&self) -> Vec<openfader_core::AudioSpectrum> {
             MixerDriver::poll_spectrum(self)

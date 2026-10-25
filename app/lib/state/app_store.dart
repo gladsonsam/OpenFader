@@ -1421,6 +1421,7 @@ class AppStore extends ChangeNotifier
   ChannelTab _tab = ChannelTab.input;
   int _eqBand = 1;
 
+  final _dynamicsMeters = ValueNotifier<ChannelDynamicsMetersVm?>(null);
   final ValueNotifier<double> _levelDb = ValueNotifier(double.negativeInfinity);
   final ValueNotifier<List<double>> _spectrum = ValueNotifier(const []);
   final ValueNotifier<AudioSpectrumFrame?> _audioSpectrum = ValueNotifier(null);
@@ -1938,6 +1939,17 @@ class AppStore extends ChangeNotifier
         ? engine.meters[ci].clamp(0.0, 1.0)
         : 0.0;
     _levelDb.value = _linToDb(lv);
+    final dynamics = engine.dynamicsMeters[_channel];
+    _dynamicsMeters.value = dynamics == null
+        ? null
+        : ChannelDynamicsMetersVm(
+            gateIn: dynamics['gate_in']!,
+            gateReduction: dynamics['gate_reduction']!,
+            gateOut: dynamics['gate_out']!,
+            compIn: dynamics['comp_in']!,
+            compReduction: dynamics['comp_reduction']!,
+            compOut: dynamics['comp_out']!);
+
     _syncSpectrum();
   }
 
@@ -2713,11 +2725,18 @@ class AppStore extends ChangeNotifier
       _audioSpectrumPeaks;
 
   @override
+  bool get hasDynamicsMeters => engine.dynamicsMetersSupported;
+
+  @override
+  ValueListenable<ChannelDynamicsMetersVm?> get dynamicsMeters =>
+      _dynamicsMeters;
+
+  @override
   double? grDb(DynKind kind) {
     final m = kind == DynKind.gate
         ? engine.grGate[_channel]
         : engine.grComp[_channel];
-    return m != null && m.isFinite ? m : null;
+    return m != null && m.isFinite ? -math.max(0.0, m) : null;
   }
 
   @override
@@ -3122,6 +3141,7 @@ class AppStore extends ChangeNotifier
     for (final b in _busMeters.values) {
       b.dispose();
     }
+    _dynamicsMeters.dispose();
     _levelDb.dispose();
     _spectrum.dispose();
     _audioSpectrum.dispose();

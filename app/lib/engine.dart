@@ -584,6 +584,8 @@ class EngineState {
     audioSpectrum = null;
   }
 
+  bool dynamicsMetersSupported = false;
+  Map<int, Map<String, double>> dynamicsMeters = {};
   Map<int, double> grGate = {};
   Map<int, double> grComp = {};
   Map<int, double> busFaders = {};
@@ -689,6 +691,8 @@ class EngineState {
     spectrum.clear();
     audioSpectrum = null;
     _audioSpectrumEpoch = null;
+    dynamicsMetersSupported = false;
+    dynamicsMeters.clear();
     grGate.clear();
     grComp.clear();
     busFaders.clear();
@@ -825,6 +829,7 @@ class EngineState {
             NativeSnapshotsVm.fromCaps(driver, e['native_snapshots']);
         if (!nativeCaps.supported) _nativeSnapshots = null;
         _nativeSnapshotsCaps = nativeCaps;
+        dynamicsMetersSupported = e['dynamics_meters'] == true;
         meterTaps = {
           for (final tap in e['meter_taps'] as List? ?? const [])
             if (tap is String) tap,
@@ -903,6 +908,41 @@ class EngineState {
         final bins = e['bins'];
         if (ch == null || bins is! List) return false;
         spectrum[ch] = [for (final v in bins) ((v as num?) ?? 0.0).toDouble()];
+        return false;
+      case 'dynamics_meters':
+        for (final ch in dynamicsMeters.keys) {
+          grGate.remove(ch);
+          grComp.remove(ch);
+        }
+        dynamicsMeters.clear();
+        for (final row in e['frames'] as List? ?? const []) {
+          if (row is! Map || row['ch'] is! num) continue;
+          final values = <String, double>{};
+          for (final key in [
+            'gate_in',
+            'gate_reduction',
+            'gate_out',
+            'comp_in',
+            'comp_reduction',
+            'comp_out'
+          ]) {
+            final value = row[key];
+            if (value is num && value.isFinite) values[key] = value.toDouble();
+          }
+          if (values.length != 6 ||
+              values['gate_reduction']! < 0 ||
+              values['comp_reduction']! < 0) {
+            continue;
+          }
+          final rawChannel = row['ch'] as num;
+          if (!rawChannel.isFinite || rawChannel < 0 || rawChannel % 1 != 0) {
+            continue;
+          }
+          final ch = rawChannel.toInt();
+          dynamicsMeters[ch] = values;
+          grGate[ch] = values['gate_reduction']!;
+          grComp[ch] = values['comp_reduction']!;
+        }
         return false;
       case 'gr':
         final ch = (e['ch'] as num?)?.toInt();

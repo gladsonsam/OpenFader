@@ -257,6 +257,19 @@ pub struct MeterFrame {
     pub levels: Vec<f32>,
 }
 
+/// Measured processor telemetry, independent of fader/input meter taps.
+/// Reduction is positive dB; input/output are measured dBFS, never inferred.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DynamicsMeterFrame {
+    pub ch: u16,
+    pub gate_in: f32,
+    pub gate_reduction: f32,
+    pub gate_out: f32,
+    pub comp_in: f32,
+    pub comp_reduction: f32,
+    pub comp_out: f32,
+}
+
 impl MeterFrame {
     pub fn silent(channels: usize) -> Self {
         Self {
@@ -746,6 +759,11 @@ pub trait MixerDriver: Send + Sync {
     /// the param poller is never used for meters.
     fn meter_taps(&self) -> &'static [&'static str] {
         &["in", "post", "gr_gate", "gr_comp"]
+    }
+
+    /// None: unsupported; Some(empty): supported but no fresh measurement.
+    fn poll_dynamics_meters(&self) -> Option<Vec<DynamicsMeterFrame>> {
+        None
     }
 
     // ---- snapshot / info ----
