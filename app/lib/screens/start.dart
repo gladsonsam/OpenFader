@@ -557,7 +557,9 @@ class _DeviceRow extends StatelessWidget {
                   textStyle: AppDesign.type(wide ? 24 : 18,
                       weight: FontWeight.w600,
                       color: ConsolePalette.of(context).text)),
-              child: Text(label),
+              child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(label, maxLines: 1, softWrap: false)),
             ),
           ),
         ],

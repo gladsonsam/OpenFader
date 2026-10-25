@@ -69,45 +69,40 @@ class WifiNet {
     }
   }
 
-  /// Runtime grants needed for LAN discovery on Android:
-  /// location (scan) + nearby Wi-Fi devices (API 33+). Returns true when
-  /// scanning may proceed. Never throws; desktop/test returns true.
+  /// Android 13+ separates nearby Wi-Fi access from physical location.
+  /// Keep the existing legacy grant on older Android versions; requesting
+  /// Location on a modern device must not gate LAN discovery.
+  static Future<Permission?> _scanPermission() async {
+    final sdk = await _ch.invokeMethod<int>('sdkInt');
+    if (sdk == null) return null;
+    return sdk >= 33 ? Permission.nearbyWifiDevices : Permission.location;
+  }
+
+  static bool _granted(PermissionStatus status) =>
+      status.isGranted || status.isLimited || status.isProvisional;
+
+  /// Request only the runtime grant appropriate to this Android version.
+  /// Never throws; other platforms have their own network permission flow.
   static Future<bool> ensureScanPermissions() async {
     if (defaultTargetPlatform != TargetPlatform.android) return true;
     try {
-      // Nearby-devices first where it exists; requesting an unavailable
-      // permission is a no-op grant on older APIs.
-      final nearby = await Permission.nearbyWifiDevices.request();
-      final loc = await Permission.location.request();
-      final okNearby =
-          nearby.isGranted || nearby.isLimited || nearby.isProvisional;
-      final okLoc = loc.isGranted || loc.isLimited || loc.isProvisional;
-      // Pre-Android-13 devices have no nearby-devices permission: location
-      // alone gates the scan there.
-      if (!await Permission.nearbyWifiDevices.shouldShowRequestRationale) {
-        // Cannot reliably detect absence; accept location-only as OK when
-        // the nearby status is restricted (never asked / not applicable).
-        if (nearby.isRestricted && okLoc) return true;
-      }
-      return okNearby && okLoc;
+      final permission = await _scanPermission();
+      return permission != null && _granted(await permission.request());
     } catch (_) {
       return false;
     }
   }
 
-  /// Human-readable denial hint for the Link tab / boot screen.
+  /// Discovery guidance; directed connections do not require Location.
   static Future<String?> permissionHint() async {
     if (defaultTargetPlatform != TargetPlatform.android) return null;
     try {
-      final nearby = await Permission.nearbyWifiDevices.status;
-      final loc = await Permission.location.status;
-      final missing = <String>[];
-      if (!nearby.isGranted && !nearby.isLimited && !nearby.isRestricted) {
-        missing.add('Nearby Wi-Fi devices');
-      }
-      if (!loc.isGranted && !loc.isLimited) missing.add('Location');
-      if (missing.isEmpty) return null;
-      return 'Grant ${missing.join(' + ')} to scan/probe the desk '
+      final permission = await _scanPermission();
+      if (permission == null || _granted(await permission.status)) return null;
+      final name = permission == Permission.nearbyWifiDevices
+          ? 'Nearby Wi-Fi devices'
+          : 'Location';
+      return 'Allow $name to discover mixers '
           '(Android Settings → Apps → OpenFader → Permissions).';
     } catch (_) {
       return null;

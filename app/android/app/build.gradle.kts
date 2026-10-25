@@ -62,6 +62,11 @@ val bridgeAbis = (providers.gradleProperty("target-platform").orNull
         else -> error("Unsupported Rust bridge target: $it")
     }
 }
+// Dependencies and previous builds can supply libraries for other ABIs.
+// A targeted APK must package the same ABIs for Flutter, plugins, and Rust.
+for (abi in listOf("armeabi-v7a", "arm64-v8a", "x86_64")) {
+    if (abi !in bridgeAbis) android.packaging.jniLibs.excludes.add("lib/$abi/**")
+}
 val repoRoot = rootProject.projectDir.resolve("../..").canonicalFile
 val bridgeOutput = layout.buildDirectory.dir("rustJniLibs")
 val bridgeNdk = androidComponents.sdkComponents.ndkDirectory
