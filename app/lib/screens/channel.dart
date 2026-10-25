@@ -20,7 +20,6 @@ import '../design.dart';
 import '../u4law.dart';
 
 import '../widgets/channel_widgets.dart';
-import '../widgets/number_entry.dart';
 import '../widgets/processor_preset_library.dart';
 
 part 'processing_input.dart';
@@ -639,6 +638,7 @@ ChannelFocus _parameterFocus(ChannelStore store, String leaf, String title,
         title: title,
         label: label,
         text: text,
+        entryText: () => store.paramNum(leaf)?.toString() ?? '',
         min: 0,
         max: 1,
         resolveRange: () => _controlRange(store, leaf),

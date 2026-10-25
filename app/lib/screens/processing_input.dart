@@ -244,7 +244,6 @@ class _InputPreampControl extends StatelessWidget {
             : ConsolePalette.of(context).success,
         fillFromStart: true,
         solidFill: true,
-        focusOnly: true,
         value: value ?? range?.min ?? 0,
         min: range?.min ?? 0,
         max: range?.max ?? 1,
@@ -424,7 +423,6 @@ class _ProcessingSend extends StatelessWidget {
                 min: 0,
                 max: 1,
                 onFocus: focusSend,
-                focusOnly: true,
                 text: db == null ? 'Loading…' : '${fmtDb(level)} dB',
                 enabled: db != null && store.supports('send${send.slot}_level'),
                 onChanged: (v) {
@@ -479,7 +477,6 @@ class _ProcessingSend extends StatelessWidget {
                       compact: !wide,
                       showLabel: false,
                       showValue: false,
-                      focusOnly: true,
                       onFocus: focusPan,
                       onChanged: (v) {
                         store.setSendPan(send.slot, v);
