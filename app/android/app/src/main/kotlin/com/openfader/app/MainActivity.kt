@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import android.os.Build
 import java.net.InetAddress
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -22,6 +23,7 @@ class MainActivity : FlutterActivity() {
             "openfader/wifi_net"
         ).setMethodCallHandler { call, result ->
             when (call.method) {
+                "sdkInt" -> result.success(Build.VERSION.SDK_INT)
                 "bindWifi" -> result.success(bindWifi())
                 "unbindWifi" -> result.success(unbindWifi())
                 "prepareConnection" -> result.success(prepareConnection(call.argument<String>("host")))
