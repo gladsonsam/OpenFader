@@ -331,6 +331,9 @@ class _InputAssignments extends StatelessWidget {
     return Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+            // Keep the bool expansion state separate from the enclosing
+            // processing scroll view's double scroll offset in PageStorage.
+            key: PageStorageKey('input-assignments-${store.stripKey}'),
             minTileHeight: 44,
             dense: true,
             tilePadding: const EdgeInsets.symmetric(horizontal: 10),
