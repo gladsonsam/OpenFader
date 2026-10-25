@@ -183,6 +183,47 @@ class FakeSimEngine implements EngineApi {
     final ch = (c['ch'] as num?)?.toInt();
     if (ch != null && (ch < 0 || ch >= _strips.length)) return;
     switch (c['cmd']) {
+      case 'local_library_status':
+        _mailbox.add(jsonEncode({
+          'type': 'local_library_status',
+          'mode': 'memory',
+          'status': 'error',
+          'revision': 0,
+          'error':
+              'Local scenes/shows are unsupported in the offline fallback. No durable library is available.',
+        }));
+        return;
+      case 'local_library_mutate':
+        final action = c['action'];
+        if (c['request_id'] is String &&
+            action is Map &&
+            LocalLibraryAction.operations.contains(action['op'])) {
+          _mailbox.add(jsonEncode({
+            'type': 'local_library_result',
+            'request_id': c['request_id'],
+            'operation': action['op'],
+            'revision': 0,
+            'status': 'rejected',
+            'mode': 'memory',
+            'error':
+                'Local scenes/shows and library reset are unsupported in the offline fallback. Nothing was changed.',
+          }));
+        }
+        return;
+      case 'forget_saved_mixers':
+        // This fallback has no remembered-address map or durable storage.
+        // Clearing its empty memory-only map performs no hardware action.
+        if (c['request_id'] is String &&
+            (c['request_id'] as String).isNotEmpty) {
+          _mailbox.add(jsonEncode({
+            'type': 'device_operation_complete',
+            'request_id': c['request_id'],
+            'operation': 'forget_saved_mixers',
+            'results': [],
+            'error': null,
+          }));
+        }
+        return;
       case 'refresh_devices':
       case 'discover_devices':
         _mailbox

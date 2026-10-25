@@ -23,6 +23,7 @@ class BootController extends ChangeNotifier {
   int _step = 0;
   bool _running = false;
   bool _done = false;
+  bool _disposed = false;
   String? _error;
 
   EngineApi? _api;
@@ -56,44 +57,73 @@ class BootController extends ChangeNotifier {
     return _isRealEngine ? 'embedded engine' : 'sim fallback';
   }
 
-  // Safe to call again after a failure; state resets and stages re-run from the top.
+  /// Run all stages in order. Safe to call again after a failure (Retry):
+  /// progress resets, retaining the loaded API and its successful boot client.
   Future<void> start() async {
-    if (_running) return;
+    if (_running || _done || _disposed) return;
     _running = true;
     _done = false;
     _error = null;
     _step = 0;
     notifyListeners();
+    AppStore? pendingStore;
     try {
       // Let the launch screen paint before the slow work starts.
       await Future<void>.delayed(Duration.zero);
+      if (_disposed) return;
 
       _step = 1;
       notifyListeners();
-      final ffi = await FfiEngine.create();
-      _isRealEngine = ffi != null;
-      _api = ffi ?? FakeSimEngine();
+      if (_api == null) {
+        final ffi = await FfiEngine.create();
+        if (_disposed) return;
+        _isRealEngine = ffi != null;
+        _api = ffi ?? FakeSimEngine();
+      }
+      final api = _api!;
 
       _step = 2;
       notifyListeners();
-      final id = await _api!.boot();
+      final id = await api.boot();
+      if (_disposed) return;
 
       _step = 3;
       notifyListeners();
-      final store = AppStore(_api!, id);
+      final store = AppStore(api, id);
+      pendingStore = store;
       await store.attach(id);
+      if (_disposed) return;
+      // AppStore records transport failures instead of throwing so the shell's
+      // live poll loop can recover. During boot they must keep Retry visible.
+      if (store.transportError.isNotEmpty) {
+        throw StateError('Could not sync mixer state: ${store.transportError}');
+      }
       store.setOnline(true);
       // One upfront drain paints strips on arrival instead of flashing one empty frame first.
       await store.pollMeters();
+      if (_disposed) return;
+      if (store.transportError.isNotEmpty) {
+        throw StateError('Could not sync mixer state: ${store.transportError}');
+      }
       _store = store;
+      pendingStore = null; // The shell owns the successfully synced store.
 
       _done = true;
     } catch (e) {
-      _error = '$e';
+      if (!_disposed) _error = '$e';
     } finally {
+      pendingStore?.dispose();
       _running = false;
-      // One terminal notify covers both outcomes because Retry must rebuild after _running clears.
-      notifyListeners();
+      // One terminal notify covers both outcomes after _running clears so Retry rebuilds.
+      if (!_disposed) notifyListeners();
     }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    // An in-flight start disposes its pending store once the awaited work ends.
+    // A successful store has already been handed to AppShell by BootGate.
+    super.dispose();
   }
 }

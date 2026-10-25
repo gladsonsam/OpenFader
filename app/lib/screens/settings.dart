@@ -1104,7 +1104,7 @@ class _MixesDetail extends StatelessWidget {
               ]),
         ),
         const _Note(
-            'Backups contain local mixes. Processor presets are stored separately on this device and are not included. Keep an exported backup somewhere safe before deleting mixes or resetting app data.'),
+            'Backups contain local mixes only. Processor presets and local scenes/shows are not included. Keep an exported backup somewhere safe before deleting mixes or resetting app data.'),
       ],
     );
   }
@@ -1286,7 +1286,7 @@ class _DataDetail extends StatelessWidget {
               onTap: () => confirm(
                   title: 'Clear cache?',
                   body:
-                      'Temporary app files will be removed. Local mixes, saved mixers and preferences will stay.',
+                      'Temporary app files will be removed. Local mixes, scenes/shows, saved mixers and preferences will stay.',
                   action: 'Clear cache',
                   onConfirm: () async {
                     await store.clearCache();
@@ -1320,12 +1320,13 @@ class _DataDetail extends StatelessWidget {
         _Section(title: 'Reset', children: [
           _ActionRow(
               label: 'Delete local mixes',
-              desc: 'Remove all mixes and local backups from this device.',
+              desc:
+                  'Remove local mixes and backups; keep scenes/shows and processor presets.',
               danger: true,
               onTap: () => confirm(
                   title: 'Delete local mixes?',
                   body:
-                      '${store.mixes.mixes.length} local mix(es) and local backups will be removed. Export a backup first if you want to keep them.',
+                      '${store.mixes.mixes.length} local mix(es) and local backups will be removed. Scenes/shows and processor presets will stay. Export a backup first if you want to keep them.',
                   action: 'Delete mixes',
                   onConfirm: () async {
                     await store.deleteMixes();
@@ -1333,12 +1334,13 @@ class _DataDetail extends StatelessWidget {
                   })),
           _ActionRow(
               label: 'Reset all app data',
-              desc: 'Remove local mixes, processor presets and preferences.',
+              desc:
+                  'Remove local mixes, scenes/shows, processor presets and preferences.',
               danger: true,
               onTap: () => confirm(
                   title: 'Reset all app data?',
                   body:
-                      'Local mixes, backups, processor presets, saved mixers, cache and preferences will be removed. A connected mixer will not be reset.',
+                      'Local scenes/shows will be reset through the engine first, then local mixes, backups, processor presets, saved mixers, cache and preferences will be removed. A connected mixer will not be reset.',
                   action: 'Reset app data',
                   onConfirm: () async {
                     await store.fullReset();

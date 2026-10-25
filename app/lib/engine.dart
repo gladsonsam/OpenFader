@@ -4,6 +4,9 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'core/local_library.dart';
+export 'core/local_library.dart';
+
 /// Passive native desk reports, separate from OpenFader's local scene library.
 /// `ready` means some push evidence arrived, never a complete slot inventory.
 enum NativeSnapshotsStatus { unknown, unsupported, unavailable, loading, ready }
@@ -266,6 +269,13 @@ class Cmds {
   static String refreshDevices(String requestId, List<String> hosts) =>
       jsonEncode(
           {'cmd': 'refresh_devices', 'request_id': requestId, 'hosts': hosts});
+
+  /// Local storage only; does not probe, connect, or disconnect a mixer.
+  static String forgetSavedMixers(String requestId) {
+    if (requestId.isEmpty) throw ArgumentError.value(requestId, 'requestId');
+    return jsonEncode({'cmd': 'forget_saved_mixers', 'request_id': requestId});
+  }
+
   static String discoverDevices(String requestId) =>
       jsonEncode({'cmd': 'discover_devices', 'request_id': requestId});
   static String probe(String addr) => '{"cmd":"probe","addr":${_q(addr)}}';
@@ -298,6 +308,20 @@ class Cmds {
   static String lock(int ch) => '{"cmd":"lock","ch":$ch}';
   static String unlock(int ch) => '{"cmd":"unlock","ch":$ch}';
   static String listShows() => '{"cmd":"list_shows"}';
+  static String localLibraryStatus() => '{"cmd":"local_library_status"}';
+  static String localLibraryMutate(
+      String requestId, int expectedRevision, LocalLibraryAction action) {
+    if (requestId.isEmpty || expectedRevision < 0) {
+      throw ArgumentError('A request id and current revision are required');
+    }
+    return jsonEncode({
+      'cmd': 'local_library_mutate',
+      'request_id': requestId,
+      'expected_revision': expectedRevision,
+      'action': action.toJson(),
+    });
+  }
+
   static String captureScene(String show, String name) =>
       '{"cmd":"capture_scene","show":${_q(show)},"name":${_q(name)}}';
   static String recallScene(String show, String name, [double? fadeMs]) =>
@@ -559,6 +583,22 @@ class EngineState {
   Map<String, bool> subgroupAssign = {};
   Map<String, bool> muteGroupAssign = {};
   Map<int, String> locks = {};
+  LocalLibraryStatus? localLibrary;
+  int _localLibraryRevision = 0;
+
+  /// Called for engine attachment only, never for desk or channel changes.
+  void resetLocalLibraryStatus() {
+    localLibrary = null;
+    _localLibraryRevision = 0;
+  }
+
+  void invalidateLocalLibraryStatus(int revision) {
+    if (revision > _localLibraryRevision) _localLibraryRevision = revision;
+    if (localLibrary != null && localLibrary!.revision < revision) {
+      localLibrary = null;
+    }
+  }
+
   List<SceneEntry> scenes = [];
   Map<String, List<String>> shows = {};
   NativeSnapshotsVm? _nativeSnapshots;
@@ -912,6 +952,15 @@ class EngineState {
           solos.remove(ch);
         }
         return true;
+      case 'local_library_status':
+        final library = LocalLibraryStatus.fromJson(e);
+        if (library == null || library.revision < _localLibraryRevision) {
+          return false;
+        }
+        final changed = localLibrary != library;
+        _localLibraryRevision = library.revision;
+        localLibrary = library;
+        return changed;
       case 'shows':
         shows = {
           for (final show in e['shows'] as List? ?? const [])

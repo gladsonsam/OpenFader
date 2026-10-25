@@ -1,30 +1,110 @@
 //! FRB entry points (`crate::api`): thin Cmd/Event JSON movers over the
 //! embedded `openfader-engine` session. No mixer logic lives here.
 
-use crate::{BridgeClient, DRAIN_CAP_DEFAULT, DRAIN_CAP_MAX, clients, engine, rt, set_engine};
+use crate::{clients, engine, rt, set_engine, BridgeClient, DRAIN_CAP_DEFAULT, DRAIN_CAP_MAX};
 use openfader_engine::{Engine, EngineConfig};
+use std::path::PathBuf;
+use std::sync::OnceLock;
 
-/// Boot the embedded engine on `sim` (idempotent) and attach the
-/// `app` client. Returns the client id Dart passes to every other
-/// call. Repeat calls attach a NEW client on the same session.
-#[flutter_rust_bridge::frb(sync)]
-pub fn boot() -> String {
+#[flutter_rust_bridge::frb(ignore)]
+#[derive(Default)]
+struct BootState {
+    directory: Option<PathBuf>,
+    client_id: Option<String>,
+}
+
+fn boot_state() -> &'static tokio::sync::Mutex<BootState> {
+    static STATE: OnceLock<tokio::sync::Mutex<BootState>> = OnceLock::new();
+    STATE.get_or_init(|| tokio::sync::Mutex::new(BootState::default()))
+}
+
+/// Boot the device-local engine on `sim`, with durable libraries under
+/// the application-support directory supplied by Dart. Storage failures
+/// propagate before the engine is published. Repeated calls reuse the app
+/// client and replay state; they never attach another client or change the
+/// singleton's directory. No mixer connection is made here.
+#[flutter_rust_bridge::frb]
+pub async fn boot(data_dir: String) -> anyhow::Result<String> {
+    // Keep the engine's background tasks on the bridge-owned runtime,
+    // independent of the FRB executor running this call.
+    rt().spawn(boot_inner(data_dir)).await?
+}
+
+async fn boot_inner(data_dir: String) -> anyhow::Result<String> {
+    let mut state = boot_state().lock().await;
+    let requested = PathBuf::from(&data_dir);
+    if !requested.is_absolute() {
+        anyhow::bail!("Local library directory must be an absolute application-support path");
+    }
+    let prepare_directory = state.directory.is_none();
+    let directory = tokio::task::spawn_blocking(move || -> anyhow::Result<PathBuf> {
+        // Once booted, validate a repeated path without creating another
+        // directory before rejecting a request to change storage roots.
+        if prepare_directory {
+            std::fs::create_dir_all(&requested).map_err(|e| {
+                anyhow::anyhow!(
+                    "Cannot prepare local library directory {}: {e}",
+                    requested.display()
+                )
+            })?;
+        }
+        std::fs::canonicalize(&requested).map_err(|e| {
+            anyhow::anyhow!(
+                "Cannot resolve local library directory {}: {e}",
+                requested.display()
+            )
+        })
+    })
+    .await??;
+    if state
+        .directory
+        .as_ref()
+        .is_some_and(|known| known != &directory)
+    {
+        anyhow::bail!(
+            "Embedded engine already uses a different local library directory; restart the app before changing it"
+        );
+    }
     let eng = match engine() {
         Some(e) => e,
         None => {
-            let e = Engine::new(EngineConfig::default());
-            // Sim boot has no network: a failure means the engine itself is
-            // broken (loud-propagate: fail fast).
-            rt().block_on(e.connect("sim", None))
-                .expect("openfader_flutter_bridge: embedded sim boot");
+            let e = Engine::new(EngineConfig {
+                data_dir: Some(directory.clone()),
+                ..EngineConfig::default()
+            });
+            // The strict library loader retains an actionable error rather
+            // than replacing unreadable data with an empty library. Keep
+            // this check before both connect and singleton publication.
+            let library = e.local_library_status();
+            if library.status != "ready" {
+                anyhow::bail!(
+                    "Cannot load device-local scene library: {}",
+                    library.error.as_deref().unwrap_or(&library.status)
+                );
+            }
+            e.connect("sim", None).await?;
             set_engine(e.clone());
             e
         }
     };
-    let handle = rt().block_on(eng.attach(Some("app".to_string())));
+    state.directory = Some(directory);
+    let existing = state
+        .client_id
+        .as_ref()
+        .filter(|id| clients().lock().unwrap().contains_key(*id))
+        .cloned();
+    if let Some(id) = existing {
+        eng.push_snapshot(&id).await;
+        return Ok(id);
+    }
+    let handle = eng.attach(Some("app".to_string())).await;
     let id = handle.id.clone();
-    clients().lock().unwrap().insert(id.clone(), BridgeClient::new(handle));
-    id
+    clients()
+        .lock()
+        .unwrap()
+        .insert(id.clone(), BridgeClient::new(handle));
+    state.client_id = Some(id.clone());
+    Ok(id)
 }
 
 /// Send one engine Cmd JSON (`{"cmd":...}`, the WS relay spelling).
@@ -125,8 +205,8 @@ pub async fn resync(client_id: String) {
 mod tests {
     use super::*;
     use openfader_engine::protocol::{
-        BIN_HEADER_LEN, BIN_TYPE_GR, BIN_TYPE_METERS, BIN_TYPE_TAPS, BIN_VERSION, Event,
-        level_to_u16,
+        level_to_u16, Event, BIN_HEADER_LEN, BIN_TYPE_GR, BIN_TYPE_METERS, BIN_TYPE_TAPS,
+        BIN_VERSION,
     };
 
     fn header_of(frame: &[u8]) -> (u8, u8, u16, u32, u32) {
@@ -224,15 +304,22 @@ mod tests {
 
     #[test]
     fn poll_binary_stashes_control_frames_for_poll_fallback() {
-        let id = boot();
+        // Attach snapshot frames are all non-meter: poll_binary must vend
+        // an (empty-or-meters-only) blob while keeping every control frame
+        // available to the next JSON poll — the lossless fallback.
+        let directory = std::env::temp_dir().join(format!(
+            "openfader-bridge-binary-poll-{}",
+            std::process::id()
+        ));
+        let id = rt()
+            .block_on(boot(directory.to_string_lossy().into_owned()))
+            .expect("embedded engine boot");
         let blob = rt().block_on(poll_binary(id.clone(), 512));
         for frame in split_binary_batch(&blob) {
             assert!(frame.len() >= BIN_HEADER_LEN);
             assert_eq!(frame[1], BIN_VERSION, "binary gate version");
             assert!(
-                frame[0] == BIN_TYPE_METERS
-                    || frame[0] == BIN_TYPE_GR
-                    || frame[0] == BIN_TYPE_TAPS,
+                frame[0] == BIN_TYPE_METERS || frame[0] == BIN_TYPE_GR || frame[0] == BIN_TYPE_TAPS,
                 "only meter-class frames go binary"
             );
         }
@@ -326,4 +413,3 @@ pub async fn poll_binary(client_id: String, cap: u32) -> Vec<u8> {
     }
     encode_binary_batch(&frames)
 }
-
