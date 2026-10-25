@@ -39,11 +39,15 @@ def android_signer(apk):
     executable = shutil.which('apksigner') or (str(candidates[-1]) if candidates else None)
     if not executable:
         raise RuntimeError('apksigner is required to verify the Android artifact certificate.')
-    report = subprocess.check_output([executable, 'verify', '--print-certs', str(apk)], text=True)
-    certificates = re.findall(r'Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]{64})', report)
-    if len(certificates) != 1:
+    report = subprocess.check_output([executable, 'verify', '--print-certs-pem', str(apk)], text=True)
+    certificates = re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----', report, re.S)
+    fingerprints = {
+        hashlib.sha256(ssl.PEM_cert_to_DER_cert(certificate)).hexdigest()
+        for certificate in certificates
+    }
+    if len(fingerprints) != 1:
         raise RuntimeError('Expected exactly one verified Android development signer.')
-    fingerprint = certificates[0].lower()
+    fingerprint = fingerprints.pop()
     expected = os.environ.get('OPENFADER_ANDROID_EXPECTED_CERT_SHA256')
     if os.environ.get('GITHUB_ACTIONS') == 'true' and not expected:
         raise RuntimeError('Android CI has no expected development certificate fingerprint.')
