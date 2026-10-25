@@ -33,7 +33,10 @@ use tokio::sync::{broadcast, Mutex, MutexGuard};
 /// - `icon` — position verified, but the live domain is ~1000+ (app icon
 ///   table ids), not the canonical 0..31. Unmapped until the icon table is
 ///   reversed (Wave-2 REA residue).
-/// - `comp_mode`/`comp_knee`/`gate_mode`/`eq_mode` polarity labels assumed
+/// - `gate_mode`: native CH7 Modern=0/Vintage=1 verified with independent
+///   readback and exact restore on 2026-10-25. Vintage uses discrete
+///   attack/release controls; modern timing units must not be assumed.
+/// - `comp_mode`/`comp_knee`/`eq_mode` polarity labels assumed
 ///   modern=0/vintage=1, soft=0/hard=1 per Mackie convention — both states
 ///   relay live for each; labels may swap (out-of-domain writes are
 ///   rejected, not faked).
@@ -594,11 +597,13 @@ async fn wait_for_initial_state(session: &MackieSession) -> anyhow::Result<()> {
 
 /// Canonical id -> documented modern-DL32S `(min, max)`, served through
 /// [`MixerDriver::param_range_overrides`](openfader_core::MixerDriver::param_range_overrides).
-/// Provenance per entry (all Master Fader 5.1 manual, documentation-based —
-/// endpoint hardware tests pending):
+/// Provenance per entry (Master Fader 5.1 manual unless noted):
 /// - `gain 0..60`: p90 mic/balanced slider (CH7 MicPre native 0 observed).
 /// - `trim -40..+20`: p91.
-/// - `hpf_freq 20..700`: p103 Modern EQ (canonical/wire 400 is X-Air-shaped).
+/// - `hpf_freq 20..700`: p103 Modern EQ; CH7 endpoints verified against
+///   Master Fader 5.2 with independent readback and restore 2026-10-25.
+/// - `gate_mode 0..1`: CH7 native Modern/Vintage selector verified with
+///   independent readback and restore 2026-10-25 (canonical has five modes).
 /// - `eqN_q 0.5..16`: p103 Modern EQ (all four bands).
 /// - `comp_thr -80..0`: p112 Modern compressor.
 /// - `comp_makeup 0..20`: p112 Modern compressor gain.
@@ -609,6 +614,7 @@ static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
     ("gain", 0.0, 60.0),
     ("trim", -40.0, 20.0),
     ("hpf_freq", 20.0, 700.0),
+    ("gate_mode", 0.0, 1.0),
     ("eq1_q", 0.5, 16.0),
     ("eq2_q", 0.5, 16.0),
     ("eq3_q", 0.5, 16.0),
@@ -1194,9 +1200,10 @@ impl MixerDriver for Dl32sDriver {
     /// Every entry below has known units and a direct wire encoding (dB
     /// leaves ride `Encoding::Db`, Hz/unitless leaves ride
     /// `Encoding::Float`); kinds, scopes, labels and defaults are
-    /// untouched. Bounds are documentation-based, NOT live
-    /// endpoint-tested (hardware write tests pending) — the desk is
-    /// believed to clamp outside its maxima.
+    /// untouched. Except for the live-verified HPF endpoints and Gate mode
+    /// domain noted in `DL32S_RANGE_OVERRIDES`, bounds are documentation-
+    /// based (hardware endpoint writes pending); the desk is believed to
+    /// clamp outside its maxima.
     /// Deliberately absent (canonical kept, with reason):
     /// - Line-input `-20..40` effective attenuation (p90): no
     ///   input-socket detection exists, so the single mic/balanced `0..60`
@@ -1210,9 +1217,10 @@ impl MixerDriver for Dl32sDriver {
     /// - `comp_ratio` `1..INF` (p112): no known INF wire encoding — no
     ///   sentinel invented; finite canonical `1.1..=100` kept (the desk
     ///   clamps above its max; direct floats 1.68..20.2 observed).
-    /// - Mode leaves (`gate_mode/comp_mode/comp_knee/eq_mode`):
+    /// - Other mode leaves (`comp_mode/comp_knee/eq_mode`):
     ///   modern/vintage and soft/hard polarities assumed per Mackie
     ///   convention, labels unverified — no mode-aware switching fabricated.
+    ///   Gate Modern=0/Vintage=1 is live-verified; its range is overridden.
     fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
         DL32S_RANGE_OVERRIDES
     }
