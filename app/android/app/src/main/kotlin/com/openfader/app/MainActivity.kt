@@ -6,6 +6,7 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import java.net.InetAddress
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -23,6 +24,7 @@ class MainActivity : FlutterActivity() {
             when (call.method) {
                 "bindWifi" -> result.success(bindWifi())
                 "unbindWifi" -> result.success(unbindWifi())
+                "prepareConnection" -> result.success(prepareConnection(call.argument<String>("host")))
                 "scanStart" -> result.success(scanStart())
                 "scanStop" -> result.success(scanStop())
                 else -> result.notImplemented()
@@ -32,6 +34,29 @@ class MainActivity : FlutterActivity() {
 
     private fun connectivity(): ConnectivityManager? =
         getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+
+    // Resolve routing before opening any Rust sockets. Keep VPN routing for
+    // remote desks; pin an on-link Wi-Fi desk even when Android prefers mobile
+    // data because that venue Wi-Fi has no Internet. This applies to every driver.
+    private fun prepareConnection(host: String?): Boolean {
+        unbindWifi()
+        return try {
+            val cm = connectivity() ?: return false
+            val target = InetAddress.getByName(host ?: return false)
+            if (cm.getNetworkCapabilities(cm.activeNetwork)
+                    ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) return true
+            val wifi = cm.allNetworks.firstOrNull { network ->
+                cm.getNetworkCapabilities(network)
+                    ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true &&
+                    cm.getLinkProperties(network)?.routes?.any {
+                        !it.isDefaultRoute && it.matches(target)
+                    } == true
+            }
+            wifi == null || cm.bindProcessToNetwork(wifi)
+        } catch (_: Exception) {
+            false
+        }
+    }
 
     // Pin process traffic to a Wi-Fi network before probe/connect so the
     // desk unicast does not route out the mobile interface.

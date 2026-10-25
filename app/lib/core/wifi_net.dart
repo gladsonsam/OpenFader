@@ -3,7 +3,7 @@
 // The desk lives on Wi-Fi (e.g. 192.168.1.120) while the phone may also
 // have mobile data. Without binding, Android can route the probe/scan out
 // the mobile interface and the desk silently never replies. These helpers
-// pin the process to Wi-Fi before probe/connect ([bindWifi]), hold a
+// choose the route before probe/connect ([prepareConnection]), hold a
 // multicast lock around scan ([scanStart]/[scanStop]) so discovery replies
 // are delivered, and request the runtime grants discovery needs
 // ([ensureScanPermissions]).
@@ -18,6 +18,19 @@ import 'package:permission_handler/permission_handler.dart';
 
 class WifiNet {
   static const _ch = MethodChannel('openfader/wifi_net');
+
+  /// Choose the route for a resolved numeric host before opening sockets.
+  /// Unicast identification needs INTERNET, not location/nearby scan grants.
+  static Future<bool> prepareConnection(String host) async {
+    if (defaultTargetPlatform != TargetPlatform.android) return true;
+    try {
+      return await _ch
+              .invokeMethod<bool>('prepareConnection', {'host': host}) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
 
   /// Pin process traffic to Wi-Fi before probe/connect. No-op off Android.
   static Future<bool> bindWifi() async {

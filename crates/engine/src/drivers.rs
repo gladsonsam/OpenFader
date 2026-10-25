@@ -72,6 +72,17 @@ pub enum FxFlavor {
 /// Defaults are honestly unsupported; providers override what they serve.
 #[async_trait::async_trait]
 pub trait DynDriver: Send + Sync {
+    /// Read-only identification, independent of the active mixer session.
+    /// New providers implement this and discovery alongside their driver.
+    async fn identify(&self, _ip: IpAddr, _budget: std::time::Duration) -> Option<openfader_transport::discovery::DiscoveredDevice> {
+        None
+    }
+    async fn discover(&self, _budget: std::time::Duration) -> Vec<openfader_transport::discovery::DiscoveredDevice> {
+        Vec::new()
+    }
+    fn discovered_name(&self, device: &openfader_transport::discovery::DiscoveredDevice) -> String {
+        self.display_name(&device.model)
+    }
     // ---- MixerDriver mirror (every provider forwards these) ----
     fn name(&self) -> &'static str;
     fn channel_count(&self) -> usize;
@@ -825,6 +836,16 @@ impl_dyn_driver!(openfader_sim::SimDriver {
 });
 
 impl_dyn_driver!(openfader_proto_xair::XAirDriver {
+    async fn identify(&self, ip: IpAddr, budget: std::time::Duration) -> Option<openfader_transport::discovery::DiscoveredDevice> {
+        use openfader_transport::discovery::{probe_addr, PROBE_TABLE};
+        let probes = PROBE_TABLE.iter().filter(|s| s.driver == DynDriver::name(self))
+            .map(|s| probe_addr(s, ip, budget));
+        futures::future::join_all(probes).await.into_iter()
+            .filter_map(Result::ok).flatten().next()
+    }
+    async fn discover(&self, budget: std::time::Duration) -> Vec<openfader_transport::discovery::DiscoveredDevice> {
+        openfader_transport::discovery::discover_xair(budget).await.unwrap_or_default()
+    }
 
     /// Mute-group membership rides the strip `{root}/grp/mute` bitmask
     /// (rig-verified XR18 FW 1.20, 2026-10-20, the driver serves
@@ -1077,6 +1098,25 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 });
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
+
+    fn discovered_name(&self, device: &openfader_transport::discovery::DiscoveredDevice) -> String {
+        if device.raw.trim().is_empty() { "Mackie DL mixer".into() } else { device.raw.clone() }
+    }
+
+    async fn identify(&self, ip: IpAddr, budget: std::time::Duration) -> Option<openfader_transport::discovery::DiscoveredDevice> {
+        let name = openfader_transport::mackie::identify(ip, budget).await.ok()?;
+        Some(openfader_transport::discovery::DiscoveredDevice {
+            driver: DynDriver::name(self),
+            addr: SocketAddr::new(ip, openfader_transport::mackie::DEFAULT_PORT),
+            model: "Mackie DL series".into(),
+            raw: name,
+        })
+    }
+    async fn discover(&self, budget: std::time::Duration) -> Vec<openfader_transport::discovery::DiscoveredDevice> {
+        // No captured DL broadcast protocol yet. Search bounded directly
+        // attached subnets with protocol identification, never an OUI guess.
+        openfader_transport::discovery::discover_local(budget, |ip, wait| self.identify(ip, wait)).await
+    }
 
     fn claims_device(&self, id: &str, model: &str) -> bool {
         let m = model.to_lowercase();

@@ -859,7 +859,7 @@ class _ManualAddDialogState extends State<_ManualAddDialog> {
             Text(
               _mixerType == MixerType.dl32s
                   ? 'Connects directly. Loading mixer state can take up to 90 seconds.'
-                  : 'Automatic checks X-Air mixers. For Mackie, select Mackie DL32S.',
+                  : 'Automatically identifies supported mixers at this address.',
               style: AppDesign.type(14,
                   color: ConsolePalette.of(context).mutedText),
             ),

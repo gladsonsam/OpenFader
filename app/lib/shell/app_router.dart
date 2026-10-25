@@ -869,7 +869,7 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
     final request = 'devices-${DateTime.now().microsecondsSinceEpoch}';
     _deviceRequest = request;
     notifyListeners();
-    WifiNet.ensureScanPermissions().then((granted) {
+    WifiNet.ensureScanPermissions().then((granted) async {
       if (_dead || _deviceRequest != request) return;
       if (!granted) {
         _scanning = false;
@@ -878,20 +878,26 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
         notifyListeners();
         return;
       }
-      WifiNet.scanStart();
+      await WifiNet.scanStart();
+      if (_dead || _deviceRequest != request) {
+        await WifiNet.scanStop();
+        return;
+      }
       send(hosts == null
           ? Cmds.discoverDevices(request)
           : Cmds.refreshDevices(request, hosts));
-    });
-    _scanTimer?.cancel();
-    _scanTimer = Timer(const Duration(seconds: 10), () {
-      if (_scanning && _deviceRequest == request) {
-        _scanning = false;
-        _deviceRequest = null;
-        _operationError = 'The mixer check did not complete. Try again.';
-        WifiNet.scanStop();
-        notifyListeners();
-      }
+      // Permission dialogs can take arbitrarily long. Start the network
+      // budget only after the user grants access and the request is sent.
+      _scanTimer?.cancel();
+      _scanTimer = Timer(const Duration(seconds: 10), () {
+        if (_scanning && _deviceRequest == request) {
+          _scanning = false;
+          _deviceRequest = null;
+          _operationError = 'The mixer check did not complete. Try again.';
+          WifiNet.scanStop();
+          notifyListeners();
+        }
+      });
     });
   }
 
@@ -913,12 +919,12 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   Future<void> _probeLoop(String addr) async {
     if (addr.isEmpty || _probing || _dead) return;
     final run = ++_connectionRun;
-    final direct = _lastMixerType == MixerType.dl32s;
+    final direct = _lastMixerType != MixerType.automatic;
     bool cancelled() => _dead || run != _connectionRun;
     bool connected() =>
         engine.connected &&
         engine.linkIp == addr &&
-        (!direct || engine.driver == 'dl32s');
+        (!direct || engine.driver == _lastMixerType.driver);
     _probing = true;
     _operationError = null;
     _probeAttempt = 0;
@@ -926,17 +932,6 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
     app.clearErrors();
     notifyListeners();
     try {
-      if (direct) {
-        await WifiNet.unbindWifi();
-      } else {
-        if (!await WifiNet.ensureScanPermissions()) {
-          _operationError = 'Local network permission is required.';
-          return;
-        }
-        await WifiNet.bindWifi();
-      }
-      // Direct TCP keeps system routing, which includes VPN routes.
-
       if (cancelled()) return;
       if (InternetAddress.tryParse(addr) == null) {
         try {
@@ -955,17 +950,26 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
         }
       }
       if (cancelled()) return;
-      final attempts = direct ? 1 : 3;
+      if (!await WifiNet.prepareConnection(addr)) {
+        _operationError =
+            'Could not prepare the network connection to $addr. Check Wi-Fi or VPN access.';
+        return;
+      }
+      // One handshake only: restarting while a desk streams its initial state
+      // prevents slower protocols from ever finishing (including auto-detected ones).
+      const attempts = 1;
       for (var i = 0; i < attempts; i++) {
         _probeAttempt = i + 1;
         _connectionProgress = direct
             ? 'Connecting to $_lastProbe · waiting for mixer state (up to 90 seconds)…'
-            : 'Checking $_lastProbe · attempt $_probeAttempt/3…';
+            : 'Identifying $_lastProbe · waiting for mixer state (up to 90 seconds)…';
         notifyListeners();
-        send(direct ? Cmds.connect('dl32s', addr) : Cmds.probe(addr));
+        send(direct
+            ? Cmds.connect(_lastMixerType.driver, addr)
+            : Cmds.probe(addr));
         // Never restart a live DL32S handshake automatically; only user Retry sends again.
 
-        final deadline = DateTime.now().add(Duration(seconds: direct ? 90 : 3));
+        final deadline = DateTime.now().add(const Duration(seconds: 90));
         while (!cancelled() && DateTime.now().isBefore(deadline)) {
           if (connected() || app.visibleError.isNotEmpty) break;
           await Future<void>.delayed(const Duration(milliseconds: 100));
@@ -974,9 +978,9 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
       }
       if (!cancelled() && !connected() && app.visibleError.isEmpty) {
         _operationError = direct
-            ? 'Still waiting for Mackie DL32S at $_lastProbe after 90 seconds. '
+            ? 'Still waiting for ${_lastMixerType.label} at $_lastProbe after 90 seconds. '
                 'The connection may still complete; Retry starts a new connection.'
-            : 'No response from $_lastProbe after $_probeAttempt attempts.';
+            : 'Still waiting for a supported mixer at $_lastProbe after 90 seconds. Retry starts a new connection.';
       }
     } catch (error) {
       if (!cancelled()) _operationError = 'Connection failed: $error';
@@ -998,7 +1002,12 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   @override
   void connectDevice(String id) {
     if (_probing) return;
-    WifiNet.bindWifi();
+    final host = hostOf(id);
+    if (host.isNotEmpty) {
+      final device = devices.firstWhere((d) => d.id == id);
+      probe(host, mixerType: device.mixerType);
+      return;
+    }
     send(Cmds.connectDevice(id));
   }
 
