@@ -208,6 +208,11 @@ class MixerController extends ChangeNotifier {
       _allowDemoSeed = false;
     }
     if (_page >= pageCount) _page = 0;
+    if (_selectedKey != null &&
+        _selectedKey != 'master' &&
+        !store.strips.any((s) => s.key == _selectedKey)) {
+      _selectedKey = channels.firstOrNull?.key;
+    }
     _selectedKey ??= channels.firstOrNull?.key;
     final focusKey = readoutFocus.value.key;
     if (focusKey != null &&
