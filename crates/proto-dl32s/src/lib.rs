@@ -247,6 +247,10 @@ fn affects_preamp_binding(push: &PushEvent) -> bool {
     })
 }
 
+fn decode_colour(raw: u32) -> f32 {
+    if raw == u32::MAX { -1.0 } else { raw as f32 }
+}
+
 /// Decode one pushed raw into canonical `(strip, param, value)` triples,
 /// mirroring `get_param` exactly (fader dB->level, pan x100, renames, send
 /// mirrors). Only [`DL32S_CAPABILITIES`] ids are emitted — the push plane
@@ -276,6 +280,8 @@ fn decode_push_value(addr: u32, raw: u32) -> Vec<(StripId, String, ParamValue)> 
         "fader" => push("fader".to_string(), ParamValue::Float(addrs::DL32S_FADER_SCALE.inverse(f))),
         "mute" => push("mute".to_string(), ParamValue::Bool(raw != 0)),
         "pan" => push("pan".to_string(), ParamValue::Float(f * 100.0)),
+        // Native None is u32::MAX, which cannot round-trip through f32.
+        "colour" => push("color".to_string(), ParamValue::Float(decode_colour(raw))),
         key => {
             // Pure renames ride the canonical id.
             if let Some(canonical) = canonical_for_table_key(key) {
@@ -667,6 +673,7 @@ async fn wait_for_initial_state(session: &MackieSession) -> anyhow::Result<()> {
 /// EQ gains need no entry (canonical already documents ±15 per p103);
 /// `gate_thr` needs none (canonical already -80..0 per p112).
 static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
+    ("color", -1.0, 16.0), // None plus 17 native swatches; CH7 verified 2026-10-26
     ("gain", 0.0, 60.0),
     ("trim", -40.0, 20.0),
     ("hpf_freq", 20.0, 700.0),
@@ -927,6 +934,11 @@ impl Dl32sDriver {
             Float(f32),
         }
         let out = match (field.encoding, value) {
+            (addrs::Encoding::Int, ParamValue::Float(v)) if key == "colour" => {
+                anyhow::ensure!(v.is_finite() && v.fract() == 0.0 && (-1.0..=16.0).contains(&v),
+                    "colour must be None (-1) or an integer swatch 0..16, got {v}");
+                Out::Int(if v == -1.0 { u32::MAX } else { v as u32 })
+            }
             (addrs::Encoding::Bool, ParamValue::Bool(b)) => Out::Int(u32::from(b)),
             (addrs::Encoding::Enum | addrs::Encoding::Int, ParamValue::Float(v)) => {
                 if !v.is_finite() {
@@ -997,7 +1009,9 @@ impl Dl32sDriver {
         let addr = table.address(physical, key)?;
         let raw = if verified { session.cached_verified(addr) } else { session.cached(addr) }
             .ok_or_else(|| anyhow::anyhow!("{key}: no desk-confirmed value yet"))?;
-        if field.encoding.is_float() {
+        if key == "colour" {
+            Ok(ParamValue::Float(decode_colour(raw)))
+        } else if field.encoding.is_float() {
             Ok(ParamValue::Float(f32::from_bits(raw)))
         } else if field.encoding == addrs::Encoding::Bool {
             Ok(ParamValue::Bool(raw != 0))
