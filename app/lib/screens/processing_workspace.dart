@@ -71,7 +71,13 @@ class _ProcessingSlider extends StatefulWidget {
   final String label, text;
   final double value, min, max;
   final double fontSize;
-  final bool enabled, pan, showLabel, compact, solidFill, inlineLabel;
+  final bool enabled,
+      pan,
+      showLabel,
+      showValue,
+      compact,
+      solidFill,
+      inlineLabel;
   final Widget? trailing;
   final Color? color;
   final Color? valueColor;
@@ -92,6 +98,7 @@ class _ProcessingSlider extends StatefulWidget {
       this.enabled = true,
       this.pan = false,
       this.showLabel = true,
+      this.showValue = true,
       this.compact = false,
       this.solidFill = false,
       this.inlineLabel = false,
@@ -194,12 +201,13 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                   child: Text(widget.label,
                       style: AppDesign.type(widget.fontSize,
                           color: ConsolePalette.of(context).text7))),
-              Text(widget.text,
-                  style: AppDesign.type(widget.fontSize,
-                      color: widget.enabled
-                          ? (widget.valueColor ?? color)
-                          : ConsolePalette.of(context).text7,
-                      weight: FontWeight.w600)),
+              if (widget.showValue)
+                Text(widget.text,
+                    style: AppDesign.type(widget.fontSize,
+                        color: widget.enabled
+                            ? (widget.valueColor ?? color)
+                            : ConsolePalette.of(context).text7,
+                        weight: FontWeight.w600)),
             ])));
     if (!widget.showLabel) return track;
     if (widget.inlineLabel) {
