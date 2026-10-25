@@ -241,7 +241,22 @@ class FakeSimEngine implements EngineApi {
         }));
         return;
       case 'param':
+      case 'param_guarded':
         if (ch == null) return;
+        if (c['cmd'] == 'param_guarded') {
+          final expected = c['expect'];
+          if (expected is! Map ||
+              expected.isEmpty ||
+              expected.length > 8 ||
+              expected.entries.any((e) => _params[ch][e.key] != e.value)) {
+            _mailbox.add(jsonEncode({
+              'type': 'error',
+              'ch': ch,
+              'message': 'Input source changed; reopen the control.'
+            }));
+            return;
+          }
+        }
         final field = c['field'];
         final value = c['value'];
         if (field is! String || !_params[ch].containsKey(field)) return;

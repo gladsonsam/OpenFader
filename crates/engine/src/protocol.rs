@@ -72,6 +72,15 @@ pub enum Cmd {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         key: Option<String>,
     },
+    /// Apply only while captured parameter context still matches.
+    ParamGuarded {
+        ch: u16,
+        field: String,
+        value: serde_json::Value,
+        #[serde(default)]
+        key: Option<String>,
+        expect: std::collections::BTreeMap<String, serde_json::Value>,
+    },
     /// Shared desk RTA interest while EQ is visible; null releases this client.
     SpectrumTarget { ch: Option<u16> },
     Focus {
@@ -358,6 +367,7 @@ impl Cmd {
             "mute",
             "solo",
             "param",
+            "param_guarded",
             "focus",
             "spectrum_target",
             "lock",

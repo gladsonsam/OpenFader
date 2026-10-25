@@ -3945,6 +3945,17 @@ impl Engine {
         })
     }
 
+    async fn project_param_dependents(&self, strip: u16, field: &str, writer: &str, out: &mut Vec<Event>) {
+        let drv = self.active_drv();
+        for id in drv.param_dependents(field) {
+            self.evict_param_unless_fresh(StripId(strip), id, Instant::now());
+            if let Ok(value) = drv.get_param_display(StripId(strip), id).await {
+                out.push(Event::Param { ch: strip, field: id.to_string(), value: param_value_json(&value),
+                    by: Some(writer.to_string()), key: self.active_strip_key(strip), authority: Some("accepted".to_string()) });
+            }
+        }
+    }
+
     /// Share the parameter projection for patch and clear writes without
     /// promoting an acknowledged cache word into mixer verification.
     async fn project_routing_patch(&self, strip: u16, writer: &str, patch: &crate::drivers::RoutingPatch, out: &mut Vec<Event>) {
@@ -3956,6 +3967,7 @@ impl Engine {
             };
             out.push(Event::Param { ch: strip, field: field.to_string(), value,
                 by: Some(writer.to_string()), key: self.active_strip_key(strip), authority: Some(authority.to_string()) });
+            self.project_param_dependents(strip, field, writer, out).await;
         }
     }
 
@@ -5772,6 +5784,14 @@ impl Engine {
             out.push(self.locks_message_inner());
         }
         let policy = self.policy_of(writer);
+        let (cmd, expected) = match cmd {
+            Cmd::ParamGuarded { ch, field, value, key, expect } => {
+                anyhow::ensure!(!expect.is_empty() && expect.len() <= 8, "parameter context needs 1..8 fields");
+                let expected = expect.into_iter().map(|(k,v)| Ok((k, json_to_param_value(&v)?))).collect::<anyhow::Result<BTreeMap<_,_>>>()?;
+                (Cmd::Param { ch, field, value, key }, Some(expected))
+            }
+            other => (other, None),
+        };
         match cmd {
             Cmd::Connect { driver, addr } => {
                 self.connect(&driver, addr.as_deref()).await?;
@@ -5964,7 +5984,9 @@ impl Engine {
                     }
                 }
                 let from = self.offline_from(StripId(ch), &field).await;
-                self.drv_set_param(StripId(ch), &field, pv).await?;
+                if let Some(expected) = &expected {
+                    self.active_drv().set_param_guarded(StripId(ch), &field, pv, expected).await?;
+                } else { self.drv_set_param(StripId(ch), &field, pv).await?; }
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 // Confirmed-value echo: re-read the param just written and
@@ -5985,15 +6007,17 @@ impl Engine {
                 }
                 out.push(Event::Param {
                     ch,
-                    field,
+                    field: field.clone(),
                     value,
                     by: Some(writer.to_string()),
                     key: self.active_strip_key(ch),
                     authority,
                 });
+                self.project_param_dependents(ch, &field, writer, out).await;
                 self.push_state_with_by(writer, out).await;
                 Ok(None)
             }
+            Cmd::ParamGuarded { .. } => unreachable!("guarded parameter normalized above"),
             Cmd::SpectrumTarget { ch } => {
                 if ch.is_some() && self.reads_suspended.load(Ordering::Acquire) {
                     anyhow::bail!("RTA unavailable while disconnected");

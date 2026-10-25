@@ -300,6 +300,15 @@ class Cmds {
   static String clearSolo() => '{"cmd":"clear_solo"}';
   static String param(int ch, String field, Object value) =>
       '{"cmd":"param","ch":$ch,"field":${_q(field)},"value":${jsonEncode(value)}}';
+  static String paramGuarded(
+          int ch, String field, Object value, Map<String, Object> expect) =>
+      jsonEncode({
+        'cmd': 'param_guarded',
+        'ch': ch,
+        'field': field,
+        'value': value,
+        'expect': expect
+      });
   static String spectrumTarget(int? ch) =>
       '{"cmd":"spectrum_target","ch":${ch ?? 'null'}}';
   static String focus(List<int> chs) => chs.length == 1

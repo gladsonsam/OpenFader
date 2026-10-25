@@ -22,9 +22,23 @@ class _InputTab extends StatelessWidget {
     final epoch = store.connectionEpoch;
     final key = store.stripKey;
     final name = store.displayName;
+    Object sourceContext() {
+      final source = store.source;
+      return (
+        source.sourceA,
+        source.sourceB,
+        source.selected,
+        source.usbReturn,
+        source.srcName,
+        source.srcGroup
+      );
+    }
+
+    final target = sourceContext();
     bool targetCurrent() =>
         store.connectionEpoch == epoch &&
         store.stripKey == key &&
+        sourceContext() == target &&
         store.supports('phantom') &&
         store.paramBool('phantom') == current;
     final confirmed = await showDialog<bool>(
@@ -40,7 +54,7 @@ class _InputTab extends StatelessWidget {
                   content: Text(
                       targetCurrent()
                           ? '${current ? 'Disable' : 'Enable'} phantom power for $name?'
-                          : 'The channel or connection changed. Reopen this confirmation.',
+                          : 'The channel, source, or connection changed. Reopen this confirmation.',
                       style: AppDesign.type(16, color: palette.text7)),
                   actions: [
                     TextButton(

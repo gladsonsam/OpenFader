@@ -2422,6 +2422,19 @@ class AppStore extends ChangeNotifier
             (engine.connected && engine.valueKnown(_channel, desk)));
   }
 
+  Map<String, Object> _preampExpect(int channel) => {
+        for (final field in [
+          'source_a',
+          'source_b',
+          'source_select',
+          'source',
+          'usbreturn'
+        ])
+          if (engine.supportedParams.contains(field) &&
+              ps.optimisticValue(_maps, channel, field) != null)
+            field: ps.optimisticValue(_maps, channel, field)!,
+      };
+
   @override
   void cmdParam(String leaf, Object value) {
     final desk = deskLeaf(leaf);
@@ -2449,8 +2462,24 @@ class AppStore extends ChangeNotifier
     final ch = _channel;
     _maps.confirmed.putIfAbsent(ch, () => {});
     ps.noteOptimistic(_maps, ch, desk, coerced, _nowMs());
-    _coalescer.offer(
-        'param:$ch:$desk', () => _send(Cmds.param(ch, desk, coerced)));
+    final epoch = engine.session;
+    final expected = desk == 'gain' || desk == 'phantom'
+        ? _preampExpect(ch)
+        : <String, Object>{};
+    _coalescer.offer('param:$ch:$desk', () {
+      if (expected.isNotEmpty &&
+          (engine.session != epoch ||
+              expected.entries.any(
+                  (e) => ps.optimisticValue(_maps, ch, e.key) != e.value))) {
+        if (_maps.pending[ps.pendingKey(ch, desk)]?.value == coerced) {
+          _maps.pending.remove(ps.pendingKey(ch, desk));
+        }
+        return;
+      }
+      _send(expected.isEmpty
+          ? Cmds.param(ch, desk, coerced)
+          : Cmds.paramGuarded(ch, desk, coerced, expected));
+    });
     _invalidateDerived(); // optimistic send reads feed sends
     if (_sendHotField.hasMatch(desk)) {
       _syncSendParamNotes();
