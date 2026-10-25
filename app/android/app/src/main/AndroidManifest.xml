@@ -4,9 +4,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
-    <!-- Console discovery replies: scanned rows need nearby-device visibility. -->
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-    <!-- Nearby-device visibility on API 31+ (scan/probe replies). -->
+    <!-- Legacy Wi-Fi discovery grants; modern Android uses Nearby devices. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"
+        android:maxSdkVersion="32" />
+    <!-- Nearby Wi-Fi devices on API 33+, without deriving physical location. -->
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES"
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
