@@ -239,6 +239,7 @@ class MixerStrip extends StatelessWidget {
       number: ch.number,
       channel: ch.channel,
       artwork: ch.artwork,
+      colorChoice: ch.colorChoice,
       fader: fader,
       pan: ch.pan,
       muted: ch.muted,

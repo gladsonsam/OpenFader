@@ -2219,6 +2219,7 @@ impl Engine {
             .iter()
             .filter_map(|id| reg.find(id).map(|def| {
                 let mut frame = param_def_frame(def);
+                let swatches = self.drv(&driver).param_swatches(def.id);
                 frame.presentations = presentations.iter().filter(|p| p.id == def.id).map(|p| {
                     json!({
                         "when": p.when.map(presentation_condition_frame),
@@ -2229,6 +2230,13 @@ impl Engine {
                         "choices": p.choices.iter().map(|c| json!({"value": c.value, "label": c.label})).collect::<Vec<_>>()
                     })
                 }).collect();
+                if !swatches.is_empty() {
+                    frame.presentations.insert(0, json!({
+                        "swatches": swatches.iter().map(|s| json!({
+                            "value": s.value, "label": s.label, "rgb": s.rgb,
+                        })).collect::<Vec<_>>()
+                    }));
+                }
                 frame
             }))
             .collect();

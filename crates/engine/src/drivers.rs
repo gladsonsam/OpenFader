@@ -122,6 +122,7 @@ pub trait DynDriver: Send + Sync {
     fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
         &[]
     }
+    fn param_swatches(&self, _param: &str) -> &'static [openfader_core::params::ParamSwatch] { &[] }
     fn param_dependents(&self, _param: &str) -> &'static [&'static str] { &[] }
     async fn get_param_display(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
         self.get_param(strip, param).await
@@ -556,6 +557,9 @@ macro_rules! impl_dyn_driver {
         }
         fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
             MixerDriver::param_presentations(self)
+        }
+        fn param_swatches(&self, param: &str) -> &'static [openfader_core::params::ParamSwatch] {
+            MixerDriver::param_swatches(self, param)
         }
         async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()> {
             MixerDriver::set_spectrum_target(self, owner, strip).await

@@ -38,6 +38,15 @@ pub struct ParamChoice {
     pub label: &'static str,
 }
 
+/// A device palette entry. None has no RGB and uses the consumer's neutral
+/// theme surface. Values belong to the provider, not a shared color index.
+#[derive(Clone, Copy, Debug)]
+pub struct ParamSwatch {
+    pub value: f32,
+    pub label: &'static str,
+    pub rgb: Option<u32>,
+}
+
 /// Provider-owned conditions over parameters on the current strip.
 /// Compound conditions keep routing-dependent controls independent of driver names.
 #[derive(Clone, Copy, Debug)]
