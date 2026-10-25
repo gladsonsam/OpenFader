@@ -66,6 +66,8 @@ class FakeSimEngine implements EngineApi {
               'send${slot}_on': true,
             },
           });
+  bool _mainMuted = false;
+
   // Subgroup masters mirror the native sim initial values.
   final List<double> _subgroupFaders = List.filled(6, 0);
   final List<bool> _subgroupMuted = List.filled(6, false);
@@ -134,6 +136,7 @@ class FakeSimEngine implements EngineApi {
           }
       ],
     }));
+    _echoMain();
     for (var group = 0; group < _subgroupFaders.length; group++) {
       _echoSubgroup(group);
     }
@@ -239,6 +242,12 @@ class FakeSimEngine implements EngineApi {
         }
         _snapshot();
         return;
+      case 'main_mute':
+        final muted = c['muted'];
+        if (muted is! bool) return;
+        _mainMuted = muted;
+        _echoMain();
+        return;
       case 'subgroup_fader':
       case 'subgroup_mute':
         final group = c['group'];
@@ -271,6 +280,10 @@ class FakeSimEngine implements EngineApi {
         _echo(ch, 'mute', _strips[ch].muted);
         return;
     }
+  }
+
+  void _echoMain() {
+    _mailbox.add(jsonEncode({'type': 'main', 'muted': _mainMuted}));
   }
 
   void _echoSubgroup(int group) {
