@@ -62,18 +62,22 @@ class _InputTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width >= 700;
     final src = store.source;
+    String sourceName(String leaf, int? value) => value == null
+        ? '—'
+        : parameterValueLabel(store.paramMetadata(leaf), value.toDouble()) ??
+            'Source $value';
     final sources = <ProcessingSource>[
       if (store.supports('source_select')) ...[
         ProcessingSource(
             id: '0',
             label: 'A',
-            name: src.sourceA == null ? '—' : 'Source ${src.sourceA}',
+            name: sourceName('source_a', src.sourceA),
             selected: src.selected == 0,
             enabled: src.selected != null),
         ProcessingSource(
             id: '1',
             label: 'B',
-            name: src.sourceB == null ? '—' : 'Source ${src.sourceB}',
+            name: sourceName('source_b', src.sourceB),
             selected: src.selected == 1,
             enabled: src.selected != null),
       ],

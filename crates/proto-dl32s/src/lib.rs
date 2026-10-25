@@ -646,10 +646,39 @@ static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
     ("comp_makeup", 0.0, 20.0),
 ];
 
+// Physical preamp and USB source namespaces from the captured input bank.
+// Source labels describe the routed ID, never the destination strip number.
+macro_rules! input_source_labels {
+    ($($index:literal => $number:literal),+ $(,)?) => {
+        &[
+            $(openfader_core::params::ParamChoice {
+                value: (1000 + $index) as f32, label: concat!("Mic Pre ", $number),
+            }, openfader_core::params::ParamChoice {
+                value: (2000 + $index) as f32, label: concat!("USB ", $number),
+            },)+
+        ]
+    };
+}
+
+static DL32S_SOURCE_LABELS: &[openfader_core::params::ParamChoice] = input_source_labels!(
+    0 => 1, 1 => 2, 2 => 3, 3 => 4, 4 => 5, 5 => 6, 6 => 7, 7 => 8,
+    8 => 9, 9 => 10, 10 => 11, 11 => 12, 12 => 13, 13 => 14, 14 => 15, 15 => 16,
+    16 => 17, 17 => 18, 18 => 19, 19 => 20, 20 => 21, 21 => 22, 22 => 23, 23 => 24,
+    24 => 25, 25 => 26, 26 => 27, 27 => 28, 28 => 29, 29 => 30, 30 => 31, 31 => 32,
+);
+
 // Native CH7 selections, independently read and restored 2026-10-25.
 // Unmatched timings retain their exact value; clients must not snap them
 // to a named selection merely by displaying this metadata.
 static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] = &[
+    openfader_core::params::ParamPresentation {
+        id: "source_a", when: None, hidden: false, curve: None, limiter_value: None,
+        choices: &[], value_labels: DL32S_SOURCE_LABELS,
+    },
+    openfader_core::params::ParamPresentation {
+        id: "source_b", when: None, hidden: false, curve: None, limiter_value: None,
+        choices: &[], value_labels: DL32S_SOURCE_LABELS,
+    },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
         id: "comp_mode", when: None, hidden: false, curve: None, value_labels: &[],
