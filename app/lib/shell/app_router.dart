@@ -81,6 +81,15 @@ class _AppShellState extends State<AppShell> {
   AppTab _prevTab = AppTab.mixer;
   Timer? _shellLoop;
   final _channelFocus = ValueNotifier<ChannelFocus?>(null);
+  Object? _channelFocusTarget;
+
+  void _syncChannelFocus() {
+    final store = widget.store;
+    final target = (store.stripKey, store.bank, store.engine.driver, store.tab);
+    if (_channelFocusTarget == target) return;
+    _channelFocusTarget = target;
+    _channelFocus.value = null;
+  }
 
   // Start screen is the front door; the shell stays alive underneath so returning keeps state.
 
@@ -98,6 +107,8 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
     _tab = widget.initialTab;
+    _syncChannelFocus();
+    widget.store.addListener(_syncChannelFocus);
     _showStart = PrefsService.instance.startupDest != 'last';
     _mixer = MixerController(widget.store,
         seedReferenceDemo: widget.initialTab == AppTab.mixer);
@@ -163,6 +174,7 @@ class _AppShellState extends State<AppShell> {
   void dispose() {
     _shellLoop?.cancel();
     PrefsService.instance.removeListener(_onPrefs);
+    widget.store.removeListener(_syncChannelFocus);
     _mixer.dispose();
     _channelFocus.dispose();
     _conn.dispose();
@@ -174,12 +186,15 @@ class _AppShellState extends State<AppShell> {
     super.dispose();
   }
 
-  void _go(AppTab t) => setState(() {
+  void _go(AppTab t) {
+    if (t != _tab) _channelFocus.value = null;
+    setState(() {
         if (t == AppTab.settings && _tab != AppTab.settings) {
           _prevTab = _tab;
         }
         _tab = t;
       });
+  }
 
   SettingsSection? _settingsSection;
 
@@ -242,6 +257,7 @@ class _AppShellState extends State<AppShell> {
 
         final Widget header = isChan
             ? ChannelToolbar(
+                key: ValueKey((store.stripKey, store.bank, store.engine.driver)),
                 controlFocus: _channelFocus,
                 store: store,
                 compact: MediaQuery.sizeOf(context).width < 600,
@@ -382,6 +398,7 @@ class _AppShellState extends State<AppShell> {
       AppTab.meters =>
         U4MetersPage(store: store, onClose: () => _go(AppTab.mixer)),
       AppTab.channel => ChannelPage(
+          key: ValueKey((store.stripKey, store.bank, store.engine.driver)),
           stripKey: store.stripKey,
           store: store,
           mixerControls: _processingMixerControls(),

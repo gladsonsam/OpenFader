@@ -27,14 +27,14 @@ class _DynTab extends StatelessWidget {
       focus(k);
     }
 
-    void focusDelay() => onFocus(ChannelFocus(
-        title: 'Compressor',
-        label: 'Delay',
-        text: () => '${store.preamp.delayMs.toStringAsFixed(1)} ms',
-        entryText: () => store.preamp.delayMs.toStringAsFixed(1),
-        min: 0,
-        max: 100,
-        apply: (v) => store.setPreamp('delay_ms', v)));
+    final delayRange = _controlRange(store, 'delay_ms');
+    void focusDelay() => onFocus(_parameterFocus(
+        store,
+        'delay_ms',
+        'Compressor',
+        'Delay',
+        () => '${store.preamp.delayMs.toStringAsFixed(1)} ms',
+        (v) => store.setPreamp('delay_ms', v)));
     Widget control(_KnobDef k, {bool threshold = false}) => Container(
         padding: EdgeInsets.symmetric(
             horizontal: compact ? 12 : 16, vertical: compact ? 8 : 16),
@@ -118,13 +118,13 @@ class _DynTab extends StatelessWidget {
                   borderRadius: U4.rWell),
               child: _ProcessingSlider(
                   label: 'Delay',
-                  text: store.supports('delay_ms')
+                  text: delayRange != null
                       ? '${store.preamp.delayMs.toStringAsFixed(1)} ms'
                       : '—',
                   value: store.preamp.delayMs,
-                  min: 0,
-                  max: 100,
-                  enabled: store.supports('delay_ms'),
+                  min: delayRange?.first ?? 0,
+                  max: delayRange?.last ?? 1,
+                  enabled: delayRange != null,
                   compact: true,
                   color: ConsolePalette.of(context).processingPurple,
                   solidFill: true,
@@ -253,6 +253,7 @@ class _DynTab extends StatelessWidget {
                 data: Theme.of(context)
                     .copyWith(dividerColor: Colors.transparent),
                 child: ExpansionTile(
+                    key: PageStorageKey('comp-supplemental-${store.stripKey}'),
                     title: Text('Temperature & Delay',
                         style: AppDesign.type(14,
                             color: ConsolePalette.of(context).text7)),

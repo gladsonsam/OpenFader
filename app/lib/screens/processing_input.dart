@@ -217,23 +217,10 @@ class _InputPreampControl extends StatelessWidget {
                     : readout(value);
     void focusPreamp() {
       if (!enabled) return;
-      onFocus(ChannelFocus(
-          title: 'Input',
-          label: label,
-          text: () {
-            final live = store.paramNum(leaf);
-            return live == null ? 'Loading…' : readout(live);
-          },
-          entryText: () {
-            final live = store.paramNum(leaf);
-            return live == null ? 'Loading…' : live.toStringAsFixed(1);
-          },
-          min: range.min,
-          max: range.max,
-          apply: (v) {
-            store.setPreamp(leaf, v.clamp(range.min, range.max));
-            focusPreamp();
-          }));
+      onFocus(_parameterFocus(store, leaf, 'Input', label, () {
+        final live = store.paramNum(leaf);
+        return live == null ? 'Loading…' : readout(live);
+      }, (v) => store.setPreamp(leaf, v)));
     }
 
     return _ProcessingSlider(
@@ -371,6 +358,17 @@ class _InputAssignments extends StatelessWidget {
   }
 }
 
+List<double>? _sendControlRange(
+    ChannelStore store, int slot, String param, double min, double max) {
+  final range = _controlRange(store, 'send${slot}_$param');
+  if (range == null || store.sendParamNote(slot, param).value == null) {
+    return null;
+  }
+  final low = range.first.clamp(min, max);
+  final high = range.last.clamp(min, max);
+  return low < high ? [low, high] : null;
+}
+
 class _ProcessingSend extends StatelessWidget {
   final ChannelStore store;
   final ChannelSendVm send;
@@ -389,15 +387,16 @@ class _ProcessingSend extends StatelessWidget {
           valueListenable: store.sendParamNote(send.slot, 'level'),
           builder: (context, db, _) {
             final level = dbToPos(db ?? -90);
-            final range =
-                _inputRange(store.paramMetadata('send${send.slot}_level'));
+            final note = store.sendParamNote(send.slot, 'level');
+            final range = _sendControlRange(store, send.slot, 'level', -90, 10);
             // The normalized slider retains the shared fader law. Entry uses
             // engineering dB, bounded by both that law and advertised caps.
-            final minDb = (range?.min ?? -90).clamp(-90.0, 10.0);
-            final maxDb = (range?.max ?? 10).clamp(-90.0, 10.0);
+            final minDb = range?.first ?? -90;
+            final maxDb = range?.last ?? 10;
             void focusSend() => onFocus(ChannelFocus(
                 title: 'Sends',
                 label: send.destName,
+                valueListenable: note,
                 text: () {
                   final live = store.sendParamNote(send.slot, 'level').value;
                   return live == null
@@ -410,9 +409,14 @@ class _ProcessingSend extends StatelessWidget {
                 },
                 min: minDb,
                 max: maxDb,
+                resolveRange: () =>
+                    _sendControlRange(store, send.slot, 'level', -90, 10),
                 apply: (v) {
-                  store.setSendLevel(send.slot, dbToPos(v.clamp(minDb, maxDb)));
-                  focusSend();
+                  final live =
+                      _sendControlRange(store, send.slot, 'level', -90, 10);
+                  if (live == null || !v.isFinite) return;
+                  store.setSendLevel(
+                      send.slot, dbToPos(v.clamp(live.first, live.last)));
                 }));
 
             return _ProcessingSlider(
@@ -420,11 +424,11 @@ class _ProcessingSend extends StatelessWidget {
                 compact: !wide,
                 showValue: false,
                 value: level,
-                min: 0,
-                max: 1,
+                min: dbToPos(minDb.toDouble()),
+                max: dbToPos(maxDb.toDouble()),
                 onFocus: focusSend,
                 text: db == null ? 'Loading…' : '${fmtDb(level)} dB',
-                enabled: db != null && store.supports('send${send.slot}_level'),
+                enabled: range != null,
                 onChanged: (v) {
                   store.setSendLevel(send.slot, v);
                   focusSend();
@@ -443,13 +447,15 @@ class _ProcessingSend extends StatelessWidget {
             builder: (context, value, _) {
               if (value == null) return const SizedBox.shrink();
               final pan = value.clamp(-100, 100) / 100;
+              final note = store.sendParamNote(send.slot, 'pan');
               final range =
-                  _inputRange(store.paramMetadata('send${send.slot}_pan'));
-              final minPan = (range?.min ?? -100).clamp(-100.0, 100.0);
-              final maxPan = (range?.max ?? 100).clamp(-100.0, 100.0);
+                  _sendControlRange(store, send.slot, 'pan', -100, 100);
+              final minPan = range?.first ?? -100;
+              final maxPan = range?.last ?? 100;
               void focusPan() => onFocus(ChannelFocus(
                   title: 'Sends',
                   label: '${send.destName} pan (−100 L / +100 R)',
+                  valueListenable: note,
                   text: () {
                     final live = store.sendParamNote(send.slot, 'pan').value;
                     return live == null ? 'Loading…' : panText(live / 100);
@@ -460,9 +466,14 @@ class _ProcessingSend extends StatelessWidget {
                   },
                   min: minPan,
                   max: maxPan,
+                  resolveRange: () =>
+                      _sendControlRange(store, send.slot, 'pan', -100, 100),
                   apply: (v) {
-                    store.setSendPan(send.slot, v.clamp(minPan, maxPan) / 100);
-                    focusPan();
+                    final live =
+                        _sendControlRange(store, send.slot, 'pan', -100, 100);
+                    if (live == null || !v.isFinite) return;
+                    store.setSendPan(
+                        send.slot, v.clamp(live.first, live.last) / 100);
                   }));
 
               return Padding(
@@ -470,6 +481,7 @@ class _ProcessingSend extends StatelessWidget {
                   child: _ProcessingSlider(
                       label: '${send.destName} pan',
                       value: pan,
+                      enabled: range != null,
                       min: minPan / 100,
                       max: maxPan / 100,
                       text: panText(pan),
