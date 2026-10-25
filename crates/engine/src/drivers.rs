@@ -122,6 +122,9 @@ pub trait DynDriver: Send + Sync {
     fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
         &[]
     }
+    fn param_label_overrides(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
     fn param_swatches(&self, _param: &str) -> &'static [openfader_core::params::ParamSwatch] { &[] }
     fn param_symbols(&self, _param: &str) -> &'static [openfader_core::params::ParamSymbol] { &[] }
     fn param_text_rules(&self, _param: &str) -> Option<openfader_core::params::ParamTextRules> { None }
@@ -560,6 +563,9 @@ macro_rules! impl_dyn_driver {
         }
         fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
             MixerDriver::param_presentations(self)
+        }
+        fn param_label_overrides(&self) -> Vec<(&'static str, String)> {
+            MixerDriver::param_label_overrides(self)
         }
         fn param_swatches(&self, param: &str) -> &'static [openfader_core::params::ParamSwatch] {
             MixerDriver::param_swatches(self, param)

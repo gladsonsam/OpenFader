@@ -1525,6 +1525,7 @@ impl Engine {
                 let mut last_audio_spectrum_epoch = 0;
                 let mut meters_live = false;
                 let mut dynamics_live = false;
+                let mut parameter_labels_last = None;
                 let mut last_level_sample = None;
                 let mut last_gr_sample = None;
                 let mut tick =
@@ -1657,12 +1658,22 @@ impl Engine {
                         let generation = engine.connection_gen.load(Ordering::Acquire);
                         let driver = engine.active_driver();
                         let view = engine.drv(&driver).native_snapshots();
+                        let labels = engine.drv(&driver).param_label_overrides();
                         // Held to the end of the block: the barrier shared
                         // with `invalidate_connection`.
                         let _sync = engine.sync_state.lock().unwrap();
                         if engine.connection_gen.load(Ordering::Acquire) == generation
                             && !engine.reads_suspended.load(Ordering::Acquire)
                         {
+                            // Existing metadata frames carry dynamic provider
+                            // names; no separate UI timer or parameter writes.
+                            let labels_key = (generation, driver.clone(), labels);
+                            if parameter_labels_last.as_ref() != Some(&labels_key) {
+                                let has_labels = !labels_key.2.is_empty()
+                                    || parameter_labels_last.as_ref().is_some_and(|last| !last.2.is_empty());
+                                parameter_labels_last = Some(labels_key);
+                                if has_labels { engine.broadcast(engine.caps_message()); }
+                            }
                             let key = (generation, view);
                             let changed = *engine.native_last.read().unwrap() != key;
                             if changed {
@@ -2233,10 +2244,14 @@ impl Engine {
             .filter(|id| !slim || is_essentials_id(id))
             .collect();
         let presentations = self.drv(&driver).param_presentations();
+        let labels = self.drv(&driver).param_label_overrides();
         let params: Vec<ParamDef> = live
             .iter()
             .filter_map(|id| reg.find(id).map(|def| {
                 let mut frame = param_def_frame(def);
+                if let Some((_, label)) = labels.iter().find(|(id, label)| *id == def.id && !label.is_empty()) {
+                    frame.label.clone_from(label);
+                }
                 let swatches = self.drv(&driver).param_swatches(def.id);
                 let symbols = self.drv(&driver).param_symbols(def.id);
                 let text = self.drv(&driver).param_text_rules(def.id);
@@ -6668,6 +6683,7 @@ impl Engine {
                 Ok(Some(self.forget_saved_mixers(request_id)))
             }
             Cmd::Disconnect => {
+                let had_parameter_labels = !self.active_drv().param_label_overrides().is_empty();
                 // A missing readback cannot prevent local disconnect cleanup.
                 let _ = self.active_drv().set_spectrum_target("", None).await;
                 self.invalidate_connection();
@@ -6685,6 +6701,7 @@ impl Engine {
                     link.state = "disconnected".to_string();
                 }
                 out.push(self.link_message_cached());
+                if had_parameter_labels { out.push(self.caps_message()); }
                 // The desk is gone: native slots read unavailable (the
                 // driver reset its view on disconnect), never stale.
                 out.push(self.native_snapshots_message());
