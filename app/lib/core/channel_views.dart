@@ -100,6 +100,7 @@ Map<String, dynamic>? parameterPresentation(
     }
     result['hidden'] = row['hidden'] == true;
     result['choices'] = row['choices'];
+    result['curve'] = row['curve'];
   }
   return result;
 }
@@ -402,6 +403,7 @@ enum DynKind { gate, comp }
 /// Dynamics snapshot for one gate or comp section.
 class ChannelDynVm {
   final DynKind kind;
+  final String? responseCurve;
   final Map<String, List<double>> ranges;
   final bool on;
   final double thr; // dB
@@ -425,6 +427,7 @@ class ChannelDynVm {
 
   const ChannelDynVm({
     required this.kind,
+    this.responseCurve,
     this.ranges = const {},
     this.on = true,
     this.thr = -50,
@@ -474,9 +477,11 @@ const dynResetComp = <String, double>{
   'makeup': 0,
 };
 
-/// Gate output level for input [x] dB (downward expander with floor).
+/// Configured Gate output for input [x] dB. Providers may advertise a
+/// verified attenuation response; otherwise retain the legacy expander preview.
 double gateOut(ChannelDynVm p, double x) {
   if (x >= p.thr) return x;
+  if (p.responseCurve == 'gate_attenuation') return x - p.range;
   final floor = (p.thr - p.range).clamp(p.lo, 0.0);
   final t = ((x - p.lo) / (p.thr - p.lo)).clamp(0.0, 1.0);
   return (floor + (p.thr - floor) * t * t).clamp(p.lo, x);
@@ -500,9 +505,19 @@ double compOut(ChannelDynVm p, double x) {
 double dynOut(ChannelDynVm p, double x) =>
     p.kind == DynKind.gate ? gateOut(p, x) : compOut(p, x);
 
-/// 81-sample transfer curve, unit plot coords (dynModel.ts pts loop).
+/// Transfer curve in dB. Verified step responses preserve the threshold jump;
+/// other responses use the existing 81-sample curve.
 List<(double, double)> dynCurve(ChannelDynVm p) {
   final lo = p.lo;
+  if (p.kind == DynKind.gate && p.responseCurve == 'gate_attenuation') {
+    final start = lo + p.range;
+    return [
+      if (start < p.thr) ...[(start, lo), (p.thr, p.thr - p.range)] else
+        (p.thr, lo),
+      (p.thr, p.thr),
+      (0, 0),
+    ];
+  }
   final pts = <(double, double)>[];
   for (var i = 0; i <= 80; i++) {
     final x = lo + (-lo) * i / 80;

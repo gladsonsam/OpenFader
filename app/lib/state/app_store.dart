@@ -2396,7 +2396,8 @@ class AppStore extends ChangeNotifier
       return false;
     }
     final presentation = paramMetadata(desk);
-    if (presentation?['hidden'] == true || presentation?['available'] == false) {
+    if (presentation?['hidden'] == true ||
+        presentation?['available'] == false) {
       return false;
     }
     final sendPan = RegExp(r'^send([1-9]\d*)_pan$').firstMatch(desk);
@@ -2427,7 +2428,8 @@ class AppStore extends ChangeNotifier
     if (value is num && !value.isFinite) return;
     final choices = parameterChoices(paramMetadata(desk));
     if (choices.isNotEmpty &&
-        (value is! num || !choices.any((c) => (c.value - value).abs() < .0001))) {
+        (value is! num ||
+            !choices.any((c) => (c.value - value).abs() < .0001))) {
       return;
     }
     // DSP edits (including delayed ChannelWrites flushes) use the current
@@ -2650,6 +2652,7 @@ class AppStore extends ChangeNotifier
     final p = kind == DynKind.gate ? 'gate' : 'comp';
     return ChannelDynVm(
       kind: kind,
+      responseCurve: paramMetadata('${p}_mode')?['curve'] as String?,
       ranges: {
         for (final prop in [
           'thr',

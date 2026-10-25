@@ -47,6 +47,9 @@ pub struct ParamPresentation {
     pub when: Option<(&'static str, f32)>,
     pub choices: &'static [ParamChoice],
     pub hidden: bool,
+    /// Optional verified transfer-curve model for this processor mode.
+    /// `gate_attenuation` means input minus Range below Threshold.
+    pub curve: Option<&'static str>,
 }
 
 /// Value kind of one catalogue entry, as rendered in the relay `caps` frame.

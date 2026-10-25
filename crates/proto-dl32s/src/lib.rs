@@ -635,14 +635,21 @@ static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
 // to a named selection merely by displaying this metadata.
 static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] = &[
     openfader_core::params::ParamPresentation {
-        id: "gate_mode", when: None, hidden: false,
+        id: "gate_mode", when: None, hidden: false, curve: None,
         choices: &[
             openfader_core::params::ParamChoice { value: 0.0, label: "Modern" },
             openfader_core::params::ParamChoice { value: 1.0, label: "Vintage" },
         ],
     },
     openfader_core::params::ParamPresentation {
-        id: "gate_att", when: Some(("gate_mode", 1.0)), hidden: false,
+        id: "gate_mode", when: Some(("gate_mode", 0.0)), hidden: false,
+        curve: Some("gate_attenuation"), choices: &[
+            openfader_core::params::ParamChoice { value: 0.0, label: "Modern" },
+            openfader_core::params::ParamChoice { value: 1.0, label: "Vintage" },
+        ],
+    },
+    openfader_core::params::ParamPresentation {
+        id: "gate_att", when: Some(("gate_mode", 1.0)), hidden: false, curve: None,
         choices: &[
             openfader_core::params::ParamChoice { value: 0.1, label: "Fast" },
             openfader_core::params::ParamChoice { value: 50.0, label: "Medium" },
@@ -650,7 +657,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
         ],
     },
     openfader_core::params::ParamPresentation {
-        id: "gate_rel", when: Some(("gate_mode", 1.0)), hidden: false,
+        id: "gate_rel", when: Some(("gate_mode", 1.0)), hidden: false, curve: None,
         choices: &[
             openfader_core::params::ParamChoice { value: 50.0, label: "Fast" },
             openfader_core::params::ParamChoice { value: 500.0, label: "Medium" },
@@ -658,7 +665,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
         ],
     },
     openfader_core::params::ParamPresentation {
-        id: "gate_range", when: Some(("gate_mode", 1.0)), hidden: true, choices: &[],
+        id: "gate_range", when: Some(("gate_mode", 1.0)), hidden: true, choices: &[], curve: None,
     },
 ];
 
