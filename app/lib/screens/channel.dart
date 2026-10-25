@@ -92,6 +92,7 @@ abstract class ChannelStore extends ChangeNotifier
   void setMainAssigned(bool on);
   int get dcaCount;
   bool? dcaAssigned(int group);
+  String dcaGroupLabel(int group) => 'VCA ${group + 1}';
   void setDcaAssigned(int group, bool on);
   int get viewGroupCount => 0;
   bool? viewGroupAssigned(int group) => null;

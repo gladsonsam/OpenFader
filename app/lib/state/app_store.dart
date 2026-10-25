@@ -2916,6 +2916,10 @@ class AppStore extends ChangeNotifier
   @override
   bool? dcaAssigned(int group) => paramBool('dca${group + 1}_assign');
   @override
+  String dcaGroupLabel(int group) =>
+      paramMetadata('dca${group + 1}_assign')?['label'] as String? ??
+      'VCA ${group + 1}';
+  @override
   void setDcaAssigned(int group, bool on) =>
       cmdParam('dca${group + 1}_assign', on);
 
