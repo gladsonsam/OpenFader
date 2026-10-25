@@ -1018,6 +1018,14 @@ impl MackieSession {
         self.caches.values.lock().ok()?.values.get(&address).copied()
     }
 
+    /// Atomic display/intent snapshot of adjacent parameter words.
+    /// Includes acknowledged own writes; this never supplies verification.
+    pub fn cached_range<const N: usize>(&self, start: u32) -> Option<[u32; N]> {
+        let store = self.caches.values.lock().ok()?;
+        (0..N).map(|i| store.values.get(&(start + i as u32)).copied())
+            .collect::<Option<Vec<_>>>()?.try_into().ok()
+    }
+
     /// Cached type-5 word with desk provenance: `Some` only when a desk push
     /// covered the address after our last own write. `None` means no proof
     /// (never pushed, or only our own unverified write is cached). Callers

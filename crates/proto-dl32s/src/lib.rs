@@ -207,6 +207,46 @@ fn send_table_key(param: &str) -> Option<String> {
     Some(native)
 }
 
+// Routing is a display/accepted-intent context. The physical preamp words
+// themselves still require desk evidence; own preamp writes remain pending.
+fn selected_preamp(session: &MackieSession, channel: u32) -> anyhow::Result<u32> {
+    let base = dl32s_inputs().address(channel, "source_a")?;
+    let [a, b, selected] = session.cached_range::<3>(base)
+        .ok_or_else(|| anyhow::anyhow!("preamp routing context is unavailable"))?;
+    let source = match selected { 1 => a, 0 => b, _ => anyhow::bail!("preamp source selection is unavailable") };
+    anyhow::ensure!((1000..=1031).contains(&source), "preamp unavailable for selected input source");
+    Ok(source - 999)
+}
+
+fn routed_preamp_updates(session: &MackieSession, push: &PushEvent) -> Vec<ParamUpdate> {
+    let PushEvent::Values { value_type: VALUE_TYPE_PARAM, start, raws } = push else { return Vec::new() };
+    let touched = |addr: u32| addr >= *start && (addr - *start) < raws.len() as u32;
+    let mut out = Vec::new();
+    let received_at = std::time::Instant::now();
+    for channel in 1..=INPUT_COUNT {
+        let Ok(preamp) = selected_preamp(session, channel) else { continue };
+        let Ok(source_base) = dl32s_inputs().address(channel, "source_a") else { continue };
+        let route_changed = (0..3).any(|i| touched(source_base + i));
+        for key in ["gain", "phantom"] {
+            let Ok(addr) = dl32s_inputs().address(preamp, key) else { continue };
+            if !route_changed && !touched(addr) { continue; }
+            let Some(raw) = session.cached_verified(addr) else { continue };
+            out.push(ParamUpdate { strip: StripId((channel - 1) as u16), param: key.to_string(),
+                value: if key == "gain" { ParamValue::Float(f32::from_bits(raw)) } else { ParamValue::Bool(raw != 0) }, received_at });
+        }
+    }
+    out
+}
+
+fn affects_preamp_binding(push: &PushEvent) -> bool {
+    let PushEvent::Values { value_type: VALUE_TYPE_PARAM, start, raws } = push else { return false };
+    raws.iter().enumerate().any(|(i, _)| {
+        let addr = *start + i as u32;
+        (addrs::INPUT_BASE..addrs::INPUT_BASE + INPUT_COUNT * addrs::INPUT_STRIDE).contains(&addr)
+            && matches!((addr - addrs::INPUT_BASE) % addrs::INPUT_STRIDE, 0..=2 | 12 | 13)
+    })
+}
+
 /// Decode one pushed raw into canonical `(strip, param, value)` triples,
 /// mirroring `get_param` exactly (fader dB->level, pan x100, renames, send
 /// mirrors). Only [`DL32S_CAPABILITIES`] ids are emitted — the push plane
@@ -231,6 +271,8 @@ fn decode_push_value(addr: u32, raw: u32) -> Vec<(StripId, String, ParamValue)> 
         out.push((strip, param, value));
     };
     match field.key {
+        // Physical preamp addresses need routing-aware fanout, not ch=socket.
+        "gain" | "phantom" => return out,
         "fader" => push("fader".to_string(), ParamValue::Float(addrs::DL32S_FADER_SCALE.inverse(f))),
         "mute" => push("mute".to_string(), ParamValue::Bool(raw != 0)),
         "pan" => push("pan".to_string(), ParamValue::Float(f * 100.0)),
@@ -801,7 +843,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
 
 /// Live DL32S-class mixer on TCP 50001.
 pub struct Dl32sDriver {
-    session: Mutex<Option<MackieSession>>,
+    session: Arc<Mutex<Option<MackieSession>>>,
     addr: Mutex<Option<String>>,
     update_tx: broadcast::Sender<ParamUpdate>,
     generation: Arc<AtomicU64>,
@@ -826,7 +868,7 @@ impl Dl32sDriver {
     pub fn new() -> Self {
         let (update_tx, _) = broadcast::channel(256);
         Self {
-            session: Mutex::new(None),
+            session: Arc::new(Mutex::new(None)),
             addr: Mutex::new(None),
             update_tx,
             generation: Arc::new(AtomicU64::new(0)),
@@ -873,9 +915,13 @@ impl Dl32sDriver {
     /// Value-shape mistakes are reported before the connection is touched,
     /// so mapping bugs surface even offline.
     async fn set_field(&self, strip: StripId, key: &str, value: ParamValue) -> anyhow::Result<()> {
+        self.set_field_checked(strip, key, value, None).await
+    }
+
+    async fn set_field_checked(&self, strip: StripId, key: &str, value: ParamValue, expected: Option<&std::collections::BTreeMap<String, ParamValue>>) -> anyhow::Result<()> {
         let table = dl32s_inputs();
         let field = table.field(key)?;
-        let addr = table.address(Self::channel(strip)?, key)?;
+        let channel = Self::channel(strip)?;
         enum Out {
             Int(u32),
             Float(f32),
@@ -905,6 +951,24 @@ impl Dl32sDriver {
         };
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
+        let route = if matches!(key, "gain" | "phantom") {
+            Some(session.cached_range::<3>(table.address(channel, "source_a")?)
+                .ok_or_else(|| anyhow::anyhow!("preamp routing context is unavailable"))?)
+        } else { None };
+        if let Some(expected) = expected {
+            let route = route.ok_or_else(|| anyhow::anyhow!("guarded preamp control requires gain or phantom"))?;
+            for (id, wanted) in expected {
+                let i = match id.as_str() { "source_a" => 0, "source_b" => 1, "source_select" => 2, _ => anyhow::bail!("invalid preamp context field {id}") };
+                anyhow::ensure!(*wanted == ParamValue::Float(route[i] as f32), "Input source changed; reopen the control.");
+            }
+        }
+        let physical = if let Some([a,b,selected]) = route {
+            let source = match selected { 1 => a, 0 => b, _ => anyhow::bail!("preamp source selection is unavailable") };
+            anyhow::ensure!((1000..=1031).contains(&source), "preamp unavailable for selected input source");
+            source - 999
+        } else { channel };
+        let addr = table.address(physical, key)?;
+
         match out {
             Out::Int(v) => session.write_int(addr, v, VALUE_TYPE_PARAM).await,
             Out::Float(v) => session.write_float(addr, v).await,
@@ -920,14 +984,18 @@ impl Dl32sDriver {
     /// engine's drop-class substrings (`not supported`/`timed out`) so the
     /// poller keeps polling instead of evicting the param.
     async fn get_field(&self, strip: StripId, key: &str) -> anyhow::Result<ParamValue> {
+        self.get_field_mode(strip, key, true).await
+    }
+
+    async fn get_field_mode(&self, strip: StripId, key: &str, verified: bool) -> anyhow::Result<ParamValue> {
         let table = dl32s_inputs();
         let field = table.field(key)?;
-        let addr = table.address(Self::channel(strip)?, key)?;
+        let channel = Self::channel(strip)?;
         let guard = self.session().await?;
-        let raw = guard
-            .as_ref()
-            .expect("checked above")
-            .cached_verified(addr)
+        let session = guard.as_ref().expect("checked above");
+        let physical = if matches!(key, "gain" | "phantom") { selected_preamp(session, channel)? } else { channel };
+        let addr = table.address(physical, key)?;
+        let raw = if verified { session.cached_verified(addr) } else { session.cached(addr) }
             .ok_or_else(|| anyhow::anyhow!("{key}: no desk-confirmed value yet"))?;
         if field.encoding.is_float() {
             Ok(ParamValue::Float(f32::from_bits(raw)))
@@ -1267,6 +1335,17 @@ impl Dl32sDriver {
         let guard = self.session().await?;
         guard.as_ref().expect("checked above").write_float(address, value).await
     }
+    /// Display continuity for the routed physical preamp, including pending writes.
+    pub async fn preamp_display(&self, strip: StripId, key: &str) -> anyhow::Result<ParamValue> {
+        anyhow::ensure!(matches!(key, "gain" | "phantom"), "display projection requires a preamp control");
+        self.get_field_mode(strip, key, false).await
+    }
+
+    pub async fn set_preamp_guarded(&self, strip: StripId, key: &str, value: ParamValue, expected: &std::collections::BTreeMap<String, ParamValue>) -> anyhow::Result<()> {
+        anyhow::ensure!(matches!(key, "gain" | "phantom"), "guarded write requires a preamp control");
+        self.set_field_checked(strip, key, value, Some(expected)).await
+    }
+
     /// Display/snapshot continuity for routing. Includes an acknowledged
     /// own write; get_param remains desk-evidenced and withholds pending words.
     pub async fn input_source_display(&self, strip: StripId, target: &str) -> anyhow::Result<u32> {
@@ -1486,6 +1565,7 @@ impl MixerDriver for Dl32sDriver {
             s.bins_db.clear();
         }
         let tx = self.update_tx.clone();
+        let routed_session = Arc::downgrade(&self.session);
         let gen = self.generation.clone();
         let meters = self.meters.clone();
         let spectrum = self.spectrum.clone();
@@ -1593,9 +1673,16 @@ impl MixerDriver for Dl32sDriver {
                             }
                             _ => {}
                         }
-                        for update in decode_push(push) {
-                            let _ = tx.send(update);
+                        let refresh_preamp = affects_preamp_binding(&push);
+                        let mut updates = Vec::new();
+                        if refresh_preamp {
+                            if let Some(sessions) = routed_session.upgrade() {
+                                let guard = sessions.lock().await;
+                                if gen.load(Ordering::Acquire) != generation { break; }
+                                if let Some(session) = guard.as_ref() { updates.extend(routed_preamp_updates(session, &push)); }
+                            }
                         }
+                        for update in decode_push(push).into_iter().chain(updates) { let _ = tx.send(update); }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
                     Err(broadcast::error::RecvError::Closed) => break,

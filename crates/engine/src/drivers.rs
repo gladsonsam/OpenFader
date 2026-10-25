@@ -122,6 +122,16 @@ pub trait DynDriver: Send + Sync {
     fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
         &[]
     }
+    fn param_dependents(&self, _param: &str) -> &'static [&'static str] { &[] }
+    async fn get_param_display(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
+        self.get_param(strip, param).await
+    }
+    async fn set_param_guarded(&self, strip: StripId, param: &str, value: ParamValue, expected: &BTreeMap<String, ParamValue>) -> anyhow::Result<()> {
+        for (id, wanted) in expected {
+            anyhow::ensure!(self.get_param_display(strip, id).await? == *wanted, "Input source changed; reopen the control.");
+        }
+        self.set_param(strip, param, value).await
+    }
     fn meter_taps(&self) -> &'static [&'static str];
     fn bus_count(&self) -> u8;
     fn subgroup_count(&self) -> u8;
@@ -1146,6 +1156,16 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
 
+    fn param_dependents(&self, param: &str) -> &'static [&'static str] {
+        if matches!(param, "source_a" | "source_b" | "source_select") { &["gain", "phantom"] } else { &[] }
+    }
+    async fn get_param_display(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
+        if matches!(param, "gain" | "phantom") { self.preamp_display(strip, param).await }
+        else { MixerDriver::get_param(self, strip, param).await }
+    }
+    async fn set_param_guarded(&self, strip: StripId, param: &str, value: ParamValue, expected: &BTreeMap<String, ParamValue>) -> anyhow::Result<()> {
+        self.set_preamp_guarded(strip, param, value, expected).await
+    }
     fn routing_groups(&self) -> Vec<RoutingGroup> {
         vec![RoutingGroup { key: "Mic", label: "Mic Pre", count: 32 },
              RoutingGroup { key: "USB", label: "USB", count: 32 },

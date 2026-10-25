@@ -637,21 +637,46 @@ List<double>? _controlRange(ChannelStore store, String leaf) {
 }
 
 ChannelFocus _parameterFocus(ChannelStore store, String leaf, String title,
-        String label, String Function() text, ValueChanged<double> update) =>
-    ChannelFocus(
-        title: title,
-        label: label,
-        text: text,
-        entryText: () => store.paramNum(leaf)?.toString() ?? '',
-        min: 0,
-        max: 1,
-        resolveRange: () => _controlRange(store, leaf),
-        apply: (v) {
-          final range = _controlRange(store, leaf);
-          if (range == null || !v.isFinite) return;
-          final next = v.clamp(range.first, range.last);
-          update(next);
-        });
+    String label, String Function() text, ValueChanged<double> update) {
+  final epoch = store.connectionEpoch;
+  final key = store.stripKey;
+  Object sourceContext() {
+    final source = store.source;
+    return (
+      source.sourceA,
+      source.sourceB,
+      source.selected,
+      source.usbReturn,
+      source.srcName,
+      source.srcGroup
+    );
+  }
+
+  final target = leaf == 'gain' || leaf == 'phantom' ? sourceContext() : null;
+  List<double>? range() {
+    if (target != null &&
+        (store.connectionEpoch != epoch ||
+            store.stripKey != key ||
+            sourceContext() != target)) {
+      return null;
+    }
+    return _controlRange(store, leaf);
+  }
+
+  return ChannelFocus(
+      title: title,
+      label: label,
+      text: text,
+      entryText: () => store.paramNum(leaf)?.toString() ?? '',
+      min: 0,
+      max: 1,
+      resolveRange: range,
+      apply: (v) {
+        final bounds = range();
+        if (bounds == null || !v.isFinite) return;
+        update(v.clamp(bounds.first, bounds.last));
+      });
+}
 
 ChannelFocus eqFreqFocus(ChannelStore store, int band) {
   final b = band.clamp(0, 4);
