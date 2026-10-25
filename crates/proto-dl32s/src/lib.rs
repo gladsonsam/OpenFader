@@ -40,12 +40,9 @@ const INPUT_SOLO_FIRST_ADDRESS: u32 = 23;
 /// - `gate_mode`: native CH7 Modern=0/Vintage=1 verified with independent
 ///   readback and exact restore on 2026-10-25. Vintage uses discrete
 ///   attack/release controls; modern timing units must not be assumed.
-/// - `comp_mode`/`comp_knee`/`eq_mode` polarity labels assumed
-///   modern=0/vintage=1, soft=0/hard=1 per Mackie convention — both states
-///   relay live for each; labels may swap (out-of-domain writes are
-///   rejected, not faked).
-/// - `comp_ratio` — direct floats confirmed (1.68..20.2 observed); canonical
-///   allows to 100, desk clamps above its max.
+/// - `eq_mode` labels remain unverified. Compressor model/knee enums,
+///   Modern ranges and Vintage selections verified on CH7, 2026-10-25;
+///   native inf:1 is wire value 101 (see provider presentations).
 /// - `eqN_type` — all four bands carry a leading type word (offsets
 ///   34/38/42/46). Raw 2 = Bell, 3 = LowShelf, 4 = HighShelf verified live
 ///   on B1/B4 (CH7 write+relay, net-zero restored 2026-10-24); native 0/1/5
@@ -640,6 +637,11 @@ static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
     ("eq2_q", 0.5, 16.0),
     ("eq3_q", 0.5, 16.0),
     ("eq4_q", 0.5, 16.0),
+    ("comp_mode", 0.0, 1.0),
+    ("comp_knee", 0.0, 1.0),
+    ("comp_att", 0.1, 300.0),
+    ("comp_rel", 50.0, 3000.0),
+    ("comp_ratio", 1.0, 101.0), // native 101 = inf:1, verified 2026-10-25
     ("comp_thr", -80.0, 0.0),
     ("comp_makeup", 0.0, 20.0),
 ];
@@ -649,6 +651,35 @@ static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
 // to a named selection merely by displaying this metadata.
 static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] = &[
     openfader_core::params::ParamPresentation {
+        id: "comp_mode", when: None, hidden: false, curve: None, value_labels: &[],
+        choices: &[openfader_core::params::ParamChoice { value: 0.0, label: "Modern" }, openfader_core::params::ParamChoice { value: 1.0, label: "Vintage" }],
+    },
+    openfader_core::params::ParamPresentation {
+        id: "comp_knee", when: None, hidden: false, curve: None, value_labels: &[],
+        choices: &[openfader_core::params::ParamChoice { value: 0.0, label: "Soft Knee" }, openfader_core::params::ParamChoice { value: 1.0, label: "Hard Knee" }],
+    },
+    openfader_core::params::ParamPresentation {
+        id: "comp_att", when: Some(("comp_mode", 1.0)), hidden: false, curve: None, value_labels: &[],
+        choices: &[openfader_core::params::ParamChoice { value: 0.1, label: "Fast" }, openfader_core::params::ParamChoice { value: 50.0, label: "Medium" }, openfader_core::params::ParamChoice { value: 300.0, label: "Slow" }],
+    },
+    openfader_core::params::ParamPresentation {
+        id: "comp_rel", when: Some(("comp_mode", 1.0)), hidden: false, curve: None, value_labels: &[],
+        choices: &[openfader_core::params::ParamChoice { value: 50.0, label: "Fast" }, openfader_core::params::ParamChoice { value: 500.0, label: "Medium" }, openfader_core::params::ParamChoice { value: 3000.0, label: "Slow" }],
+    },
+    openfader_core::params::ParamPresentation {
+        id: "comp_ratio", when: Some(("comp_mode", 1.0)), hidden: false, curve: None, value_labels: &[],
+        choices: &[openfader_core::params::ParamChoice { value: 2.0, label: "2:1" }, openfader_core::params::ParamChoice { value: 4.0, label: "4:1" }, openfader_core::params::ParamChoice { value: 8.0, label: "8:1" }, openfader_core::params::ParamChoice { value: 12.0, label: "12:1" }, openfader_core::params::ParamChoice { value: 20.0, label: "20:1" }],
+    },
+    openfader_core::params::ParamPresentation {
+        id: "comp_knee", when: Some(("comp_mode", 1.0)), hidden: true, curve: None, value_labels: &[],
+        choices: &[],
+    },
+    openfader_core::params::ParamPresentation {
+        id: "comp_ratio", when: Some(("comp_mode", 0.0)), hidden: false, curve: None,
+        choices: &[], value_labels: &[openfader_core::params::ParamChoice { value: 101.0, label: "∞:1" }],
+    },
+    openfader_core::params::ParamPresentation {
+        value_labels: &[],
         id: "gate_mode", when: None, hidden: false, curve: None,
         choices: &[
             openfader_core::params::ParamChoice { value: 0.0, label: "Modern" },
@@ -656,6 +687,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
         ],
     },
     openfader_core::params::ParamPresentation {
+        value_labels: &[],
         id: "gate_mode", when: Some(("gate_mode", 0.0)), hidden: false,
         curve: Some("gate_attenuation"), choices: &[
             openfader_core::params::ParamChoice { value: 0.0, label: "Modern" },
@@ -663,6 +695,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
         ],
     },
     openfader_core::params::ParamPresentation {
+        value_labels: &[],
         id: "gate_att", when: Some(("gate_mode", 1.0)), hidden: false, curve: None,
         choices: &[
             openfader_core::params::ParamChoice { value: 0.1, label: "Fast" },
@@ -671,6 +704,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
         ],
     },
     openfader_core::params::ParamPresentation {
+        value_labels: &[],
         id: "gate_rel", when: Some(("gate_mode", 1.0)), hidden: false, curve: None,
         choices: &[
             openfader_core::params::ParamChoice { value: 50.0, label: "Fast" },
@@ -679,6 +713,7 @@ static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] =
         ],
     },
     openfader_core::params::ParamPresentation {
+        value_labels: &[],
         id: "gate_range", when: Some(("gate_mode", 1.0)), hidden: true, choices: &[], curve: None,
     },
 ];
@@ -1280,15 +1315,11 @@ impl MixerDriver for Dl32sDriver {
     ///   slider is served (CH7 MicPre native 0 observed, consistent); the
     ///   existing wire bound is retained without assuming how the physical
     ///   offset is represented.
-    /// - Compressor timing leaves (`comp_att/hold/rel`): wire floats with
-    ///   no confirmed endpoint mapping — canonical domains kept.
-    /// - `comp_ratio` `1..INF` (p112): no known INF wire encoding — no
-    ///   sentinel invented; finite canonical `1.1..=100` kept (the desk
-    ///   clamps above its max; direct floats 1.68..20.2 observed).
-    /// - Other mode leaves (`comp_mode/comp_knee/eq_mode`):
-    ///   modern/vintage and soft/hard polarities assumed per Mackie
-    ///   convention, labels unverified — no mode-aware switching fabricated.
-    ///   Gate Modern=0/Vintage=1 is live-verified; its range is overridden.
+    ///
+    /// Compressor endpoints, model/knee enums and Vintage choices are
+    /// independently hardware-verified on CH7, 2026-10-25. Native inf:1 is
+    /// the finite wire value 101, labelled through presentation metadata.
+    /// EQ mode labels and curve semantics remain unverified.
     fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
         DL32S_RANGE_OVERRIDES
     }
