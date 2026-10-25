@@ -601,6 +601,20 @@ struct SpectrumState {
 struct NativeCache {
     generation: u64,
     view: openfader_core::NativeSnapshots,
+    parameter_labels: std::collections::BTreeMap<&'static str, String>,
+}
+
+/// Native View A..F names occupy slots70..75 (read-only rig evidence).
+fn view_name_parameter(slot: u32) -> Option<&'static str> {
+    match slot {
+        70 => Some("view1_assign"),
+        71 => Some("view2_assign"),
+        72 => Some("view3_assign"),
+        73 => Some("view4_assign"),
+        74 => Some("view5_assign"),
+        75 => Some("view6_assign"),
+        _ => None,
+    }
 }
 
 /// Decode one meter push's RTA bins (indices 60..90, BE-f32 dB), or `None`
@@ -1561,6 +1575,14 @@ impl MixerDriver for Dl32sDriver {
         DL32S_CAPABILITIES
     }
 
+    fn param_label_overrides(&self) -> Vec<(&'static str, String)> {
+        let generation = self.generation.load(Ordering::Acquire);
+        self.native.lock().ok().filter(|n| {
+            n.generation == generation && n.view.connected
+        }).map(|n| n.parameter_labels.iter().map(|(id, name)| (*id, name.clone())).collect())
+            .unwrap_or_default()
+    }
+
     /// Provider rows extend the canonical catalogue with source IDs,
     /// model selection and additional assignment groups. Canonical IDs
     /// retain precedence when a future catalogue adds an equivalent row.
@@ -1747,6 +1769,10 @@ impl MixerDriver for Dl32sDriver {
                 .collect();
             slots.sort_by_key(|s| s.slot);
             n.generation = generation;
+            n.parameter_labels = (70..=75).filter_map(|slot| {
+                let name = session.name_slot_verified(slot)?;
+                (!name.is_empty()).then(|| (view_name_parameter(slot).expect("View slot"), name))
+            }).collect();
             n.view.slots = slots;
             n.view.current = session.current_snapshot_pushed();
             n.view.received = !n.view.slots.is_empty() || n.view.current.is_some();
@@ -1811,6 +1837,19 @@ impl MixerDriver for Dl32sDriver {
                         // check above must not write into the newer
                         // session's view.
                         match &push {
+                            openfader_transport::mackie::PushEvent::Names { pairs } => {
+                                if let Ok(mut v) = native.lock() {
+                                    if v.generation != generation { break; }
+                                    if v.view.connected {
+                                        for (slot, name) in pairs {
+                                            if let Some(id) = view_name_parameter(*slot) {
+                                                if name.is_empty() { v.parameter_labels.remove(id); }
+                                                else { v.parameter_labels.insert(id, name.clone()); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             openfader_transport::mackie::PushEvent::SnapshotRecall(n) => {
                                 if let Ok(mut v) = native.lock() {
                                     if v.generation != generation {
