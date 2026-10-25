@@ -142,12 +142,26 @@ Map<String, dynamic>? parameterPresentation(
     result['hidden'] = row['hidden'] == true;
     if (row.containsKey('swatches')) result['swatches'] = row['swatches'];
     if (row.containsKey('symbols')) result['symbols'] = row['symbols'];
+    if (row.containsKey('text')) result['text'] = row['text'];
     result['choices'] = row['choices'];
     result['value_labels'] = row['value_labels'];
     result['limiter_value'] = row['limiter_value'];
     result['curve'] = row['curve'];
   }
   return result;
+}
+
+Map<String, dynamic>? parameterTextRules(Map<String, dynamic>? metadata) {
+  final presentations = metadata?['presentations'];
+  final text = metadata?['text'] ??
+      (presentations is List
+          ? presentations
+              .whereType<Map>()
+              .map((p) => p['text'])
+              .whereType<Map>()
+              .firstOrNull
+          : null);
+  return text is Map ? Map<String, dynamic>.from(text) : null;
 }
 
 /// Offline simulator DSP limits, matching crates/core/src/params.rs.

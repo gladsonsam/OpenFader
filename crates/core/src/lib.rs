@@ -709,6 +709,10 @@ pub trait MixerDriver: Send + Sync {
         &[]
     }
 
+    fn param_text_rules(&self, _param: &str) -> Option<crate::params::ParamTextRules> {
+        None
+    }
+
     /// Ordered strip families in the global strip index space
     /// (`caps.topology`). Default is one `in` family covering
     /// [`MixerDriver::channel_count`] so drivers that have not grown

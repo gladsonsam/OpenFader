@@ -3,7 +3,10 @@ import 'package:flutter/foundation.dart';
 /// Captured identity; selection changes must never retarget an open editor.
 class ChannelNameTarget {
   final int session, channel;
-  final String key, name;
+  final String key;
+
+  /// Actual parameter value; null means it was not available at capture.
+  final String? name;
   const ChannelNameTarget(this.session, this.channel, this.key, this.name);
 }
 
@@ -74,8 +77,9 @@ abstract class ChannelNameStore implements Listenable {
   ChannelNameTarget? captureNameTarget([int? channel]);
   String? nameEditError(ChannelNameTarget target);
 
-  /// Null only after a matching backend echo. Errors remain visible in editor.
+  /// Null after a matching accepted/verified receipt. Readback authority stays separate.
   Future<String?> renameChannel(ChannelNameTarget target, String name);
+  bool nameCanBeEmpty(ChannelNameTarget target);
   List<ChannelColorChoice> colorsForChannel(ChannelNameTarget target);
   double? colorForChannel(ChannelNameTarget target);
   String? colorEditError(ChannelNameTarget target);

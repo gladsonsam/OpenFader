@@ -1059,23 +1059,29 @@ impl MackieSession {
 
     /// Cached channel name slot (empty/unknown slots report `None`).
     pub fn name(&self, slot: u32) -> Option<String> {
-        let name = self.caches.names.lock().ok()?.names.get(&slot).cloned()?;
-        if name.is_empty() {
-            None
-        } else {
-            Some(name)
-        }
+        self.name_slot(slot).filter(|name| !name.is_empty())
+    }
+
+    /// Inclusive slot value. A pushed empty string is a known unnamed slot;
+    /// None means no value has arrived. Own writes remain display-only.
+    pub fn name_slot(&self, slot: u32) -> Option<String> {
+        self.caches.names.lock().ok()?.names.get(&slot).cloned()
     }
 
     /// Desk-proven channel name (withholds own-write-pending renames).
     /// One lock covers the pending check and the value read.
     pub fn name_verified(&self, slot: u32) -> Option<String> {
+        self.name_slot_verified(slot).filter(|name| !name.is_empty())
+    }
+
+    /// Desk-proven slot value, preserving known blanks and withholding own
+    /// pending writes. This is the parameter plane's actual string value.
+    pub fn name_slot_verified(&self, slot: u32) -> Option<String> {
         let s = self.caches.names.lock().ok()?;
         if s.pending.contains(&slot) {
             return None;
         }
-        let name = s.names.get(&slot).cloned()?;
-        if name.is_empty() { None } else { Some(name) }
+        s.names.get(&slot).cloned()
     }
 
     pub fn snapshot_names(&self) -> HashMap<u32, String> {

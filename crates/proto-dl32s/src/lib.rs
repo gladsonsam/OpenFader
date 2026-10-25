@@ -1116,7 +1116,7 @@ impl Dl32sDriver {
         guard
             .as_ref()
             .expect("checked above")
-            .name_verified(ch)
+            .name_slot_verified(ch)
             .ok_or_else(|| anyhow::anyhow!("name: no desk-confirmed value yet"))
     }
 
@@ -1272,6 +1272,9 @@ impl Dl32sDriver {
     // ---- rename (channel names) ----
 
     pub async fn set_channel_name(&self, slot: u32, name: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(name.len() <= 63, "channel name must not exceed 63 UTF-8 bytes");
+        anyhow::ensure!(!name.chars().any(char::is_control), "channel name must not contain control characters");
+        anyhow::ensure!(name == name.trim(), "channel name must not start or end with whitespace");
         let guard = self.session().await?;
         guard.as_ref().expect("checked above").set_channel_name(slot, name).await
     }
@@ -1576,6 +1579,12 @@ impl MixerDriver for Dl32sDriver {
         if param == "icon" { DL32S_ICON_SYMBOLS } else { &[] }
     }
 
+    fn param_text_rules(&self, param: &str) -> Option<openfader_core::params::ParamTextRules> {
+        (param == "name").then_some(openfader_core::params::ParamTextRules {
+            max_utf8_bytes: Some(63), allow_empty: true, allow_edge_whitespace: false,
+        })
+    }
+
     fn param_swatches(&self, param: &str) -> &'static [openfader_core::params::ParamSwatch] {
         if param == "color" { DL32S_COLOR_SWATCHES } else { &[] }
     }
@@ -1851,7 +1860,7 @@ impl MixerDriver for Dl32sDriver {
         guard
             .as_ref()
             .expect("checked above")
-            .name(ch)
+            .name_slot(ch)
             .ok_or_else(|| anyhow::anyhow!("name: no value pushed yet"))
     }
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
@@ -2219,7 +2228,7 @@ impl MixerDriver for Dl32sDriver {
                 .map(|raw| f32::from_bits(raw) * 100.0)
                 .ok_or_else(|| anyhow::anyhow!("snapshot: ch{ch} pan: no value pushed yet"))?;
             let name = session
-                .name(ch)
+                .name_slot(ch)
                 .unwrap_or_else(|| format!("CH{ch:02}"));
             strips.push(ChannelStrip {
                 id: StripId(i as u16),
