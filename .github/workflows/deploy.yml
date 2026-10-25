@@ -63,6 +63,11 @@ jobs:
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
           cargo install cargo-ndk --version 4.1.2 --locked
+      - name: Restore Android development signer
+        if: matrix.platform == 'android'
+        env:
+          OPENFADER_ANDROID_DEV_KEYSTORE_BASE64: ${{ secrets.OPENFADER_ANDROID_DEV_KEYSTORE_BASE64 }}
+        run: python scripts/restore-android-development-signer.py
       - name: Build and package native app
         # The script embeds a fresh engine in every platform bundle.
         shell: bash

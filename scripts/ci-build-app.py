@@ -5,7 +5,9 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
+import ssl
 import subprocess
 import sys
 import tarfile
@@ -31,6 +33,40 @@ def zip_tree(source, destination, prefix=None):
                     archive.write(path, Path(prefix or source.name) / path.relative_to(source))
 
 
+def android_signer(apk):
+    sdk = os.environ.get('ANDROID_HOME') or os.environ.get('ANDROID_SDK_ROOT')
+    candidates = sorted((Path(sdk) / 'build-tools').glob('*/apksigner')) if sdk else []
+    executable = shutil.which('apksigner') or (str(candidates[-1]) if candidates else None)
+    if not executable:
+        raise RuntimeError('apksigner is required to verify the Android artifact certificate.')
+    report = subprocess.check_output([executable, 'verify', '--print-certs', str(apk)], text=True)
+    certificates = re.findall(r'Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]{64})', report)
+    if len(certificates) != 1:
+        raise RuntimeError('Expected exactly one verified Android development signer.')
+    fingerprint = certificates[0].lower()
+    expected = os.environ.get('OPENFADER_ANDROID_EXPECTED_CERT_SHA256')
+    if os.environ.get('GITHUB_ACTIONS') == 'true' and not expected:
+        raise RuntimeError('Android CI has no expected development certificate fingerprint.')
+    if expected and fingerprint != expected.lower():
+        raise RuntimeError('APK certificate does not match the restored development signer.')
+    return {'certificate_sha256': fingerprint, 'persistent_ci': bool(expected)}
+
+
+def verify_android_bundle(bundle, fingerprint):
+    report = subprocess.check_output(['jarsigner', '-J-Duser.language=en', '-verify', str(bundle)], text=True)
+    if 'jar verified.' not in report:
+        raise RuntimeError('Android app bundle signature could not be verified.')
+    certificate = subprocess.check_output([
+        'keytool', '-printcert', '-jarfile', str(bundle), '-rfc'], text=True)
+    certificates = re.findall(r'-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----', certificate, re.S)
+    if len(certificates) != 1:
+        raise RuntimeError('Expected exactly one Android app bundle development certificate.')
+    digest = hashlib.sha256(ssl.PEM_cert_to_DER_cert(certificates[0])).hexdigest()
+    if digest != fingerprint:
+        raise RuntimeError('Android app bundle and APK signing certificates differ.')
+    return digest
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('platform', choices=['ios', 'macos', 'linux', 'windows', 'android'])
@@ -49,6 +85,7 @@ def main():
     run(flutter, 'pub', 'get', '--enforce-lockfile')
     flags = [f'--build-name={version}', f'--build-number={number}', '--no-pub']
     outputs = []
+    signing = None
 
     def output(name):
         path = OUT / name
@@ -105,9 +142,13 @@ def main():
         # Gradle builds the Rust bridge for every packaged ABI, including local
         # Flutter builds. One path prevents missing or stale native engines.
         run(flutter, 'build', 'apk', '--release', *flags)
-        shutil.copy2(APP / 'build/app/outputs/flutter-apk/app-release.apk', output('openfader-android-dev-signed.apk'))
+        apk = APP / 'build/app/outputs/flutter-apk/app-release.apk'
+        signing = android_signer(apk)
+        shutil.copy2(apk, output('openfader-android-dev-signed.apk'))
         run(flutter, 'build', 'appbundle', '--release', *flags)
-        shutil.copy2(APP / 'build/app/outputs/bundle/release/app-release.aab', output('openfader-android-dev-signed.aab'))
+        bundle = APP / 'build/app/outputs/bundle/release/app-release.aab'
+        signing['bundle_certificate_sha256'] = verify_android_bundle(bundle, signing['certificate_sha256'])
+        shutil.copy2(bundle, output('openfader-android-dev-signed.aab'))
 
     metadata = {
         'platform': platform, 'version': version, 'build_number': number,
@@ -115,6 +156,8 @@ def main():
         'flutter': json.loads(subprocess.check_output([flutter, '--version', '--machine'], cwd=APP, text=True)),
         'signing': 'development only; no distribution signing or store upload',
     }
+    if signing is not None:
+        metadata['android_signing'] = signing
     output(f'{platform}-build.json').write_text(json.dumps(metadata, indent=2) + '\n')
     checksums = []
     for path in outputs:
