@@ -127,10 +127,11 @@ class AppStore extends ChangeNotifier
       String,
       ({
         ChannelNameTarget target,
+        String field,
         double value,
         double deadline,
         Completer<String?> done
-      })> _colorEdits = {};
+      })> _appearanceEdits = {};
   final Map<String, Completer<String?>> _nameEdits = {};
   final Map<String, String> _nameEditValues = {};
   final Map<String, double> _nameEditDeadlines = {};
@@ -509,7 +510,9 @@ class AppStore extends ChangeNotifier
       if (strip.ch != ch) continue;
       final target =
           ChannelNameTarget(engine.session, ch, strip.key, strip.name);
-      return nameEditError(target) == null || colorEditError(target) == null
+      return nameEditError(target) == null ||
+              colorEditError(target) == null ||
+              iconEditError(target) == null
           ? target
           : null;
     }
@@ -550,56 +553,94 @@ class AppStore extends ChangeNotifier
   }
 
   @override
-  String? colorEditError(ChannelNameTarget target) {
+  List<ChannelIconChoice> iconsForChannel(ChannelNameTarget target) =>
+      channelIconChoices(engine.parameterMetadata['icon']);
+
+  @override
+  double? iconForChannel(ChannelNameTarget target) {
+    final value = ps.optimisticValue(_maps, target.channel, 'icon');
+    return value is num && value.isFinite ? value.toDouble() : null;
+  }
+
+  bool get hasChannelIconChoices =>
+      channelIconChoices(engine.parameterMetadata['icon']).isNotEmpty;
+
+  ChannelIconChoice? channelIconChoice(int channel) {
+    final value = ps.optimisticValue(_maps, channel, 'icon');
+    return channelIconChoices(engine.parameterMetadata['icon'])
+        .where((c) => value is num && (c.value - value).abs() < .0001)
+        .firstOrNull;
+  }
+
+  Iterable<double> _appearanceChoices(ChannelNameTarget target, String field) =>
+      field == 'icon'
+          ? iconsForChannel(target).map((c) => c.value)
+          : colorsForChannel(target).map((c) => c.value);
+
+  @override
+  String? colorEditError(ChannelNameTarget target) =>
+      _appearanceEditError(target, 'color');
+  @override
+  String? iconEditError(ChannelNameTarget target) =>
+      _appearanceEditError(target, 'icon');
+
+  String? _appearanceEditError(ChannelNameTarget target, String field) {
     if (!engine.connected ||
         engine.session != target.session ||
         !engine.strips
             .any((s) => s.ch == target.channel && s.key == target.key)) {
-      return 'Connection changed or lost. Reopen the color editor.';
+      return 'Connection changed or lost. Reopen the $field editor.';
     }
     if (!engine.capsReady ||
-        !engine.supportedParams.contains('color') ||
-        !engine.valueKnown(target.channel, 'color') ||
-        colorsForChannel(target).isEmpty ||
-        _presetEditingBlocked(target.channel, 'color')) {
-      return 'Channel colors are unavailable on this connection.';
+        !engine.supportedParams.contains(field) ||
+        !engine.valueKnown(target.channel, field) ||
+        _appearanceChoices(target, field).isEmpty ||
+        _presetEditingBlocked(target.channel, field)) {
+      return 'Channel ${field}s are unavailable on this connection.';
     }
     return null;
   }
 
-  void _finishColorEdit(String key, String? error) {
-    final edit = _colorEdits.remove(key);
+  void _finishAppearanceEdit(String key, String? error) {
+    final edit = _appearanceEdits.remove(key);
     if (edit == null) return;
     _maps.pending.remove(key);
     edit.done.complete(error);
   }
 
   @override
-  Future<String?> colorChannel(ChannelNameTarget target, double value) async {
-    final error = colorEditError(target);
+  Future<String?> colorChannel(ChannelNameTarget target, double value) =>
+      _appearanceChannel(target, 'color', value);
+  @override
+  Future<String?> iconChannel(ChannelNameTarget target, double value) =>
+      _appearanceChannel(target, 'icon', value);
+
+  Future<String?> _appearanceChannel(
+      ChannelNameTarget target, String field, double value) async {
+    final error = _appearanceEditError(target, field);
     if (error != null) return error;
-    if (!value.isFinite ||
-        !colorsForChannel(target).any((c) => c.value == value)) {
-      return 'Choose a color provided by this mixer.';
+    if (!value.isFinite || !_appearanceChoices(target, field).contains(value)) {
+      return 'Choose from the $field choices provided by this mixer.';
     }
-    final key = ps.pendingKey(target.channel, 'color');
-    if (_colorEdits.containsKey(key) || _maps.pending.containsKey(key)) {
-      return 'A color change is already pending.';
+    final key = ps.pendingKey(target.channel, field);
+    if (_appearanceEdits.containsKey(key) || _maps.pending.containsKey(key)) {
+      return 'A $field change is already pending.';
     }
     final done = Completer<String?>();
-    _colorEdits[key] = (
+    _appearanceEdits[key] = (
       target: target,
+      field: field,
       value: value,
       deadline: _nowMs() + ps.confirmTimeoutMs,
       done: done
     );
-    ps.noteOptimistic(_maps, target.channel, 'color', value, _nowMs());
+    ps.noteOptimistic(_maps, target.channel, field, value, _nowMs());
     notifyListeners();
-    unawaited(Future<void>.sync(() =>
-            _api.cmd(_clientId, Cmds.param(target.channel, 'color', value)))
+    unawaited(Future<void>.sync(
+            () => _api.cmd(_clientId, Cmds.param(target.channel, field, value)))
         .then((_) {}, onError: (Object e) {
-      if (identical(_colorEdits[key]?.done, done)) {
-        _finishColorEdit(key, 'Could not send channel color: $e');
+      if (identical(_appearanceEdits[key]?.done, done)) {
+        _finishAppearanceEdit(key, 'Could not send channel $field: $e');
       }
     }));
     return done.future;
@@ -615,8 +656,11 @@ class AppStore extends ChangeNotifier
   }
 
   void _failNameEdits(String message) {
-    for (final key in _colorEdits.keys.toList()) {
-      _finishColorEdit(key, message.replaceAll('name editor', 'color editor'));
+    for (final key in _appearanceEdits.keys.toList()) {
+      _finishAppearanceEdit(
+          key,
+          message.replaceAll(
+              'name editor', '${_appearanceEdits[key]!.field} editor'));
     }
     for (final key in _nameEdits.keys.toList()) {
       _finishNameEdit(key, message);
@@ -681,9 +725,9 @@ class AppStore extends ChangeNotifier
     final verified = event['type'] == 'param'
         ? authority == 'verified'
         : authority is Map && authority[field] == 'verified';
-    if (field == 'color') {
+    if (field == 'color' || field == 'icon') {
       final key = ps.pendingKey(channel, field);
-      final edit = _colorEdits[key];
+      final edit = _appearanceEdits[key];
       final value = event['type'] == 'param'
           ? event['value']
           : (event['values'] as Map?)?[field];
@@ -695,7 +739,8 @@ class AppStore extends ChangeNotifier
           (provenance == 'accepted' || provenance == 'verified') &&
           value is num &&
           (edit.value - value).abs() < .0001) {
-        _finishColorEdit(key, colorEditError(edit.target));
+        _finishAppearanceEdit(
+            key, _appearanceEditError(edit.target, edit.field));
       }
     }
     final fields = _presetVerifiedFields.putIfAbsent(channel, () => {});
@@ -1578,13 +1623,13 @@ class AppStore extends ChangeNotifier
             'The mixer did not provide a verified name readback. The name may have changed.');
       }
     }
-    for (final entry in _colorEdits.entries.toList()) {
-      final error = colorEditError(entry.value.target);
+    for (final entry in _appearanceEdits.entries.toList()) {
+      final error = _appearanceEditError(entry.value.target, entry.value.field);
       if (error != null || now >= entry.value.deadline) {
-        _finishColorEdit(
+        _finishAppearanceEdit(
             entry.key,
             error ??
-                'The mixer did not acknowledge the color change. It may have changed.');
+                'The mixer did not acknowledge the ${entry.value.field} change. It may have changed.');
       }
     }
     _pollLibrary(now);
@@ -1682,10 +1727,10 @@ class AppStore extends ChangeNotifier
               'The mixer reported an error during recall: ${e['message'] ?? 'Unknown error'}. '
               'The last setting may have changed; its result is uncertain.');
           final ch = (e['ch'] as num?)?.toInt();
-          for (final key in _colorEdits.keys.toList()) {
+          for (final key in _appearanceEdits.keys.toList()) {
             if (ch == null || ps.splitKey(key)?.ch == ch) {
-              _finishColorEdit(key,
-                  'Backend rejected the color change: ${e['message'] ?? 'Unknown error'}');
+              _finishAppearanceEdit(key,
+                  'Backend rejected the ${_appearanceEdits[key]!.field} change: ${e['message'] ?? 'Unknown error'}');
             }
           }
           for (final key in _nameEdits.keys.toList()) {

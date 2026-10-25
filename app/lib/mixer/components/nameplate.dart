@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../design.dart';
 import '../icons.dart';
+import '../../widgets/channel_symbol.dart';
 
 class MixerNameplate extends StatelessWidget {
   final MixerChannel channel;
@@ -64,8 +65,10 @@ class MixerNameplate extends StatelessWidget {
                   height: iconHeight * (compact ? 60 / 86 : 98 / 122),
                   child: channel.master
                       ? const MixerMainArtwork()
-                      : MixerArtwork('instrument_${channel.artwork}',
-                          width: double.infinity, height: double.infinity)),
+                      : channel.hasIconChoices
+                          ? ChannelSymbol(channel.iconChoice?.symbol)
+                          : MixerArtwork('instrument_${channel.artwork}',
+                              width: double.infinity, height: double.infinity)),
               Positioned(
                   left: 0,
                   right: 0,

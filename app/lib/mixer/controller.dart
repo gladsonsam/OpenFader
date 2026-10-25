@@ -30,6 +30,8 @@ class MixerChannel {
   final int? channel;
   final int artwork;
   final ChannelColorChoice? colorChoice;
+  final ChannelIconChoice? iconChoice;
+  final bool hasIconChoices;
   final double fader, pan;
   final bool muted, solo, selected, master;
   final ValueListenable<double> meter;
@@ -41,6 +43,8 @@ class MixerChannel {
       required this.channel,
       required this.artwork,
       this.colorChoice,
+      this.iconChoice,
+      this.hasIconChoices = false,
       required this.fader,
       required this.pan,
       required this.muted,
@@ -126,11 +130,13 @@ class MixerController extends ChangeNotifier {
       .toList(growable: false);
   MixerChannel _channel(Strip s, {bool? selected}) => MixerChannel(
       key: s.key,
-      name: s.name.isEmpty ? s.key.toUpperCase() : s.name,
+      name: s.name.isEmpty ? s.key.replaceAll('/', '').toUpperCase() : s.name,
       number: '${s.ch + 1}',
       channel: s.ch,
       artwork: _artwork(s),
       colorChoice: store.channelColorChoice(s.ch),
+      iconChoice: store.channelIconChoice(s.ch),
+      hasIconChoices: store.hasChannelIconChoices,
       fader: store.faderOf(s.ch).value,
       pan: store.panOf(s.ch),
       muted: store.muteOf(s.ch).value,

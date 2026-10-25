@@ -141,6 +141,7 @@ Map<String, dynamic>? parameterPresentation(
     }
     result['hidden'] = row['hidden'] == true;
     if (row.containsKey('swatches')) result['swatches'] = row['swatches'];
+    if (row.containsKey('symbols')) result['symbols'] = row['symbols'];
     result['choices'] = row['choices'];
     result['value_labels'] = row['value_labels'];
     result['limiter_value'] = row['limiter_value'];
