@@ -3236,7 +3236,7 @@ impl Engine {
             self.recall_fx(&scene.fx).await?;
         }
         if scope.is_none_or(|sc| sc.allows_global("routing")) {
-            self.recall_routing(&scene.routing).await?;
+            self.recall_routing(&scene.routing, writer, out).await?;
         }
         if scope.is_none_or(|sc| sc.allows_global("main")) {
             if let Some(m) = scene.main_fader {
@@ -3945,6 +3945,20 @@ impl Engine {
         })
     }
 
+    /// Share the parameter projection for patch and clear writes without
+    /// promoting an acknowledged cache word into mixer verification.
+    async fn project_routing_patch(&self, strip: u16, writer: &str, patch: &crate::drivers::RoutingPatch, out: &mut Vec<Event>) {
+        if let Some((field, written)) = &patch.param {
+            let written = param_value_json(written);
+            let refreshed = self.refresh_param(StripId(strip), field, &written).await;
+            let (value, authority) = match refreshed {
+                Some(v) => (v, "verified"), None => (written, "accepted"),
+            };
+            out.push(Event::Param { ch: strip, field: field.to_string(), value,
+                by: Some(writer.to_string()), key: self.active_strip_key(strip), authority: Some(authority.to_string()) });
+        }
+    }
+
     /// Current routing display: one row per input and named patch target.
     /// Providers may retain accepted-write continuity; this is not verified
     /// parameter evidence (that remains in the provenance-aware param plane).
@@ -3954,11 +3968,14 @@ impl Engine {
                 .routing_snapshot()
                 .await
                 .into_iter()
+                // Legacy single-target clients use absence to mean unpatched.
+                // Named targets retain an explicit row so A and B stay distinct.
+                .filter(|r| !r.target.is_empty() || !r.group.is_empty() || r.index != 0)
                 .map(|r| PatchEntry {
                     target: r.target,
                     strip: r.strip,
                     key: r.key.clone(),
-                    label: format!("{} {:02}", r.group, r.index),
+                    label: if r.group.is_empty() && r.index == 0 { "—".to_string() } else { format!("{} {:02}", r.group, r.index) },
                     group: r.group,
                     index: r.index,
                 })
@@ -3998,7 +4015,8 @@ impl Engine {
                         }
                     } else { drv.routing_source(StripId(s as u16), target.key).await.ok() };
                     let Some(label) = label else { continue };
-                    if let Some((group, index)) = parse_source(&label) {
+                    let route = if label == "—" { Some((String::new(), 0)) } else { parse_source(&label) };
+                    if let Some((group, index)) = route {
                         out.push(StoredRoute {
                             target: target.key.to_string(),
                             strip: s as u16,
@@ -4016,7 +4034,7 @@ impl Engine {
     /// Recall routing snapshot rows (routing-capable drivers only;
     /// skipped elsewhere). Rows resolve their stable key first (desk-switch
     /// survival) and fall back to the positional strip.
-    async fn recall_routing(&self, routing: &[StoredRoute]) -> anyhow::Result<()> {
+    async fn recall_routing(&self, routing: &[StoredRoute], writer: &str, out: &mut Vec<Event>) -> anyhow::Result<()> {
         let drv = self.active_drv();
         if drv.routing_groups().is_empty() {
             return Ok(());
@@ -4030,8 +4048,14 @@ impl Engine {
                 .and_then(|k| openfader_core::strip_index_for_key(&topo, k))
                 .map(|i| i as u16)
                 .unwrap_or(row.strip);
-            drv.patch_target_set(StripId(strip), &row.target, &row.group, row.index).await?;
+            let patch = if row.group.is_empty() && row.index == 0 {
+                drv.patch_target_clear(StripId(strip), &row.target).await?
+            } else {
+                drv.patch_target_set(StripId(strip), &row.target, &row.group, row.index).await?
+            };
+            self.project_routing_patch(strip, writer, &patch, out).await;
         }
+        out.push(self.routing_message().await);
         Ok(())
     }
 
@@ -4210,7 +4234,7 @@ impl Engine {
                 anyhow::bail!("patch push value must be a label")
             };
             if label == "—" {
-                return drv.patch_target_clear(StripId(strip), target).await;
+                return drv.patch_target_clear(StripId(strip), target).await.map(|_| ());
             }
             let Some((group, index)) = parse_source(label) else {
                 anyhow::bail!("unparseable patch label {label:?}")
@@ -6847,15 +6871,7 @@ impl Engine {
                         .unwrap_or(Value::Null);
                 }
                 let patch = drv.patch_target_set(StripId(strip), &target, &group, index).await?;
-                if let Some((field, written)) = patch.param {
-                    let written = param_value_json(&written);
-                    let refreshed = self.refresh_param(StripId(strip), field, &written).await;
-                    let (value, authority) = match refreshed {
-                        Some(v) => (v, "verified"), None => (written, "accepted"),
-                    };
-                    out.push(Event::Param { ch: strip, field: field.to_string(), value,
-                        by: Some(writer.to_string()), key: self.active_strip_key(strip), authority: Some(authority.to_string()) });
-                }
+                self.project_routing_patch(strip, writer, &patch, out).await;
                 self.offline_note(strip, &if target.is_empty() { "patch".to_string() } else { format!("patch/{target}") }, from, json!(patch.label)).await;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
@@ -6879,7 +6895,8 @@ impl Engine {
                         .map(Value::String)
                         .unwrap_or(Value::Null);
                 }
-                drv.patch_target_clear(StripId(strip), &target).await?;
+                let patch = drv.patch_target_clear(StripId(strip), &target).await?;
+                self.project_routing_patch(strip, writer, &patch, out).await;
                 self.offline_note(strip, &if target.is_empty() { "patch".to_string() } else { format!("patch/{target}") }, from, json!("—")).await;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
