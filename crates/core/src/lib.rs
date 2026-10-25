@@ -714,6 +714,13 @@ pub trait MixerDriver: Send + Sync {
         &[]
     }
 
+    /// Desk-confirmed display labels for advertised parameters, such as
+    /// named View memberships. Empty/unknown labels retain the static label.
+    /// Cache-only; providers must clear labels across connection changes.
+    fn param_label_overrides(&self) -> Vec<(&'static str, String)> {
+        Vec::new()
+    }
+
     fn param_swatches(&self, _param: &str) -> &'static [crate::params::ParamSwatch] {
         &[]
     }
