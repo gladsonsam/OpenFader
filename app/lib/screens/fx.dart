@@ -48,6 +48,7 @@ abstract class FxStore extends ChangeNotifier {
   List<FxSlotVm> get slots;
   int get selected;
   List<String> get typeOptions;
+  String typeLabel(String type);
   List<FxKnobVm> get knobs;
   bool get tapVisible;
   String get tapLabel;
@@ -115,7 +116,7 @@ class _U4FxPageState extends State<U4FxPage> {
                       final stateOn = s.on && !s.bypass;
                       return RepaintBoundary(
                         child: GestureDetector(
-                          onTap: () => store.selectSlot(i),
+                          onTap: () => store.selectSlot(s.slot),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 8),
@@ -160,7 +161,7 @@ class _U4FxPageState extends State<U4FxPage> {
                                     ),
                                   ],
                                 ),
-                                Text(s.type,
+                                Text(store.typeLabel(s.type),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -244,7 +245,7 @@ class _DetailPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('FX ${slot.slot} · ${slot.type}',
+          Text('FX ${slot.slot} · ${store.typeLabel(slot.type)}',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
@@ -359,7 +360,7 @@ class _DetailPanel extends StatelessWidget {
                           : ConsolePalette.of(context).well,
                       borderRadius: U4.rBtn,
                     ),
-                    child: Text(t,
+                    child: Text(store.typeLabel(t),
                         textAlign: TextAlign.center,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
