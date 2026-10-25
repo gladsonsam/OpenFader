@@ -646,11 +646,13 @@ static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
     ("comp_makeup", 0.0, 20.0),
 ];
 
-// Physical preamp and USB source namespaces from the captured input bank.
+// Input labels from native routing captures (physical, USB, oscillator, None).
 // Source labels describe the routed ID, never the destination strip number.
 macro_rules! input_source_labels {
     ($($index:literal => $number:literal),+ $(,)?) => {
         &[
+            openfader_core::params::ParamChoice { value: 0.0, label: "None" },
+            openfader_core::params::ParamChoice { value: 17000.0, label: "Oscillator" },
             $(openfader_core::params::ParamChoice {
                 value: (1000 + $index) as f32, label: concat!("Mic Pre ", $number),
             }, openfader_core::params::ParamChoice {
@@ -1377,7 +1379,7 @@ impl MixerDriver for Dl32sDriver {
                     label: "EQ modern/vintage",
                 },
                 // Source IDs remain native integers; routing writes are restricted
-                // to verified physical-preamp and USB namespaces.
+                // to verified physical-preamp, USB, oscillator and None values.
                 source("source_a", u32::MAX as f32, "Input A source ID"),
                 source("source_b", u32::MAX as f32, "Input B source ID"),
                 source("source_select", 1.0, "Input A/B"),
@@ -1878,8 +1880,8 @@ impl MixerDriver for Dl32sDriver {
         match (param, value) {
             (leaf @ ("source_a" | "source_b"), ParamValue::Float(v)) => {
                 anyhow::ensure!(v.is_finite() && v.fract() == 0.0 &&
-                    ((1000.0..=1031.0).contains(&v) || (2000.0..=2031.0).contains(&v)),
-                    "dl32s: source must be a verified mic preamp or USB socket");
+                    (v == 0.0 || v == 17000.0 || (1000.0..=1031.0).contains(&v) || (2000.0..=2031.0).contains(&v)),
+                    "dl32s: source must be None, Oscillator, or a verified mic preamp/USB socket");
                 self.set_field(strip, leaf, ParamValue::Float(v)).await
             }
             ("source_select", ParamValue::Float(v)) => {

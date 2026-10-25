@@ -311,9 +311,9 @@ pub trait DynDriver: Send + Sync {
         anyhow::ensure!(target.is_empty(), "unknown routing target {target:?}");
         self.patch_set(strip, group, index).map(|label| RoutingPatch { label, param: None })
     }
-    async fn patch_target_clear(&self, strip: StripId, target: &str) -> anyhow::Result<()> {
+    async fn patch_target_clear(&self, strip: StripId, target: &str) -> anyhow::Result<RoutingPatch> {
         anyhow::ensure!(target.is_empty(), "unknown routing target {target:?}");
-        self.patch_clear(strip)
+        self.patch_clear(strip).map(|()| RoutingPatch { label: "—".to_string(), param: None })
     }
     /// Param changes that also invalidate the routing frame.
     fn routing_param_ids(&self) -> &'static [&'static str] { &[] }
@@ -1148,16 +1148,19 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
 
     fn routing_groups(&self) -> Vec<RoutingGroup> {
         vec![RoutingGroup { key: "Mic", label: "Mic Pre", count: 32 },
-             RoutingGroup { key: "USB", label: "USB", count: 32 }]
+             RoutingGroup { key: "USB", label: "USB", count: 32 },
+             RoutingGroup { key: "Osc", label: "Oscillator", count: 1 }]
     }
     fn routing_targets(&self) -> Vec<RoutingTarget> {
-        vec![RoutingTarget { key: "a", label: "A", clearable: false },
-             RoutingTarget { key: "b", label: "B", clearable: false }]
+        vec![RoutingTarget { key: "a", label: "A", clearable: true },
+             RoutingTarget { key: "b", label: "B", clearable: true }]
     }
     fn routing_param_ids(&self) -> &'static [&'static str] { &["source_a", "source_b"] }
     async fn routing_source(&self, strip: StripId, target: &str) -> anyhow::Result<String> {
         let raw = self.input_source_display(strip, target).await?;
         let (group, index) = match raw {
+            0 => return Ok("—".to_string()),
+            17000 => ("Osc", 1),
             v @ 1000..=1031 => ("Mic", v - 999),
             v @ 2000..=2031 => ("USB", v - 1999),
             _ => anyhow::bail!("dl32s: unlabelled source ID {raw}"),
@@ -1165,11 +1168,20 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
         Ok(format!("{group} {index}"))
     }
     async fn patch_target_set(&self, strip: StripId, target: &str, group: &str, index: u8) -> anyhow::Result<RoutingPatch> {
-        anyhow::ensure!((1..=32).contains(&index), "dl32s: source socket must be 1..32");
         let leaf = match target { "a" => "source_a", "b" => "source_b", _ => anyhow::bail!("dl32s: choose routing target A or B") };
-        let base = match group { "Mic" => 999, "USB" => 1999, _ => anyhow::bail!("dl32s: unknown source group {group:?}") };
-        MixerDriver::set_param(self, strip, leaf, ParamValue::Float((base + u32::from(index)) as f32)).await?;
-        Ok(RoutingPatch { label: format!("{group} {index}"), param: Some((leaf, ParamValue::Float((base + u32::from(index)) as f32))) })
+        let raw = match (group, index) {
+            ("Mic", 1..=32) => 999 + u32::from(index),
+            ("USB", 1..=32) => 1999 + u32::from(index),
+            ("Osc", 1) => 17000,
+            _ => anyhow::bail!("dl32s: invalid source socket {group:?}/{index}"),
+        };
+        MixerDriver::set_param(self, strip, leaf, ParamValue::Float(raw as f32)).await?;
+        Ok(RoutingPatch { label: format!("{group} {index}"), param: Some((leaf, ParamValue::Float(raw as f32))) })
+    }
+    async fn patch_target_clear(&self, strip: StripId, target: &str) -> anyhow::Result<RoutingPatch> {
+        let leaf = match target { "a" => "source_a", "b" => "source_b", _ => anyhow::bail!("dl32s: choose routing target A or B") };
+        MixerDriver::set_param(self, strip, leaf, ParamValue::Float(0.0)).await?;
+        Ok(RoutingPatch { label: "—".to_string(), param: Some((leaf, ParamValue::Float(0.0))) })
     }
     fn essentials_extra_ids(&self, kind: StripKind) -> &'static [&'static str] {
         if matches!(kind, StripKind::In) { &["solo"] } else { &[] }
