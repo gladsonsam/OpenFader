@@ -14,7 +14,13 @@ class _DynTab extends StatelessWidget {
     final presetKind = kind == DynKind.gate
         ? ProcessorPresetKind.gate
         : ProcessorPresetKind.compressor;
-    final knobs = _dynKnobs(kind, d).where((k) => k.prop != 'knee').toList();
+    final knobs = _dynKnobs(kind, d)
+        .where((k) =>
+            k.prop != 'knee' &&
+            store.paramMetadata('${kind.name}_${k.prop}')?['hidden'] != true)
+        .toList();
+    final modelLeaf = '${kind.name}_mode';
+    final models = parameterChoices(store.paramMetadata(modelLeaf));
     void focus(_KnobDef k) => onFocus(_parameterFocus(
         store,
         '${kind.name}_${k.prop}',
@@ -35,63 +41,79 @@ class _DynTab extends StatelessWidget {
         'Delay',
         () => '${store.preamp.delayMs.toStringAsFixed(1)} ms',
         (v) => store.setPreamp('delay_ms', v)));
-    Widget control(_KnobDef k, {bool threshold = false}) => Container(
-        padding: EdgeInsets.symmetric(
-            horizontal: compact ? 12 : 16, vertical: compact ? 8 : 16),
-        decoration: BoxDecoration(
-            color: ConsolePalette.of(context).processingPanel,
-            borderRadius: U4.rWell),
-        child: _ProcessingSlider(
-            label: k.label,
-            text: k.text,
-            value: k.value,
-            min: k.min,
-            max: k.max,
-            compact: true,
-            fontSize: compact
-                ? 15
-                : (MediaQuery.sizeOf(context).width / 2048 * 22)
-                    .clamp(14.0, 22.0),
-            color: kind == DynKind.gate
-                ? ConsolePalette.of(context).processingBlue
-                : ConsolePalette.of(context).processingPurple,
-            solidFill: true,
-            valueColor: threshold
-                ? ConsolePalette.of(context).cyan
-                : ConsolePalette.of(context).text1,
-            enabled: d.ranges[k.prop] != null,
-            onFocus: () => focus(k),
-            onChanged: (v) => apply(k, v)));
-    Widget secondary(_KnobDef k) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-            color: ConsolePalette.of(context).processingPanel,
-            borderRadius: U4.rWell),
-        child: Row(children: [
-          Text(k.label,
-              style:
-                  AppDesign.type(16, color: ConsolePalette.of(context).text7)),
-          const SizedBox(width: 16),
-          Expanded(
-              child: _ProcessingSlider(
-                  label: k.label,
-                  text: k.text,
-                  value: k.value,
-                  min: k.min,
-                  max: k.max,
-                  showLabel: false,
-                  color: kind == DynKind.gate
-                      ? ConsolePalette.of(context).processingBlue
-                      : ConsolePalette.of(context).processingPurple,
-                  solidFill: true,
-                  enabled: d.ranges[k.prop] != null,
-                  onFocus: () => focus(k),
-                  onChanged: (v) => apply(k, v))),
-          const SizedBox(width: 16),
-          Text(k.text,
-              style:
-                  AppDesign.type(16, color: ConsolePalette.of(context).text1)),
-        ]));
+    Widget choiceControl(_KnobDef k) => _ParameterChoices(
+        store: store,
+        leaf: '${kind.name}_${k.prop}',
+        label: k.label,
+        fallback: k.text,
+        compact: compact,
+        onChanged: (v) => apply(k, v));
+    Widget control(_KnobDef k, {bool threshold = false}) =>
+        parameterChoices(store.paramMetadata('${kind.name}_${k.prop}'))
+                .isNotEmpty
+            ? choiceControl(k)
+            : Container(
+                padding: EdgeInsets.symmetric(
+                    horizontal: compact ? 12 : 16, vertical: compact ? 8 : 16),
+                decoration: BoxDecoration(
+                    color: ConsolePalette.of(context).processingPanel,
+                    borderRadius: U4.rWell),
+                child: _ProcessingSlider(
+                    label: k.label,
+                    text: k.text,
+                    value: k.value,
+                    min: k.min,
+                    max: k.max,
+                    compact: true,
+                    fontSize: compact
+                        ? 15
+                        : (MediaQuery.sizeOf(context).width / 2048 * 22)
+                            .clamp(14.0, 22.0),
+                    color: kind == DynKind.gate
+                        ? ConsolePalette.of(context).processingBlue
+                        : ConsolePalette.of(context).processingPurple,
+                    solidFill: true,
+                    valueColor: threshold
+                        ? ConsolePalette.of(context).cyan
+                        : ConsolePalette.of(context).text1,
+                    enabled: d.ranges[k.prop] != null,
+                    onFocus: () => focus(k),
+                    onChanged: (v) => apply(k, v)));
+    Widget secondary(_KnobDef k) =>
+        parameterChoices(store.paramMetadata('${kind.name}_${k.prop}'))
+                .isNotEmpty
+            ? choiceControl(k)
+            : Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                    color: ConsolePalette.of(context).processingPanel,
+                    borderRadius: U4.rWell),
+                child: Row(children: [
+                  Text(k.label,
+                      style: AppDesign.type(16,
+                          color: ConsolePalette.of(context).text7)),
+                  const SizedBox(width: 16),
+                  Expanded(
+                      child: _ProcessingSlider(
+                          label: k.label,
+                          text: k.text,
+                          value: k.value,
+                          min: k.min,
+                          max: k.max,
+                          showLabel: false,
+                          color: kind == DynKind.gate
+                              ? ConsolePalette.of(context).processingBlue
+                              : ConsolePalette.of(context).processingPurple,
+                          solidFill: true,
+                          enabled: d.ranges[k.prop] != null,
+                          onFocus: () => focus(k),
+                          onChanged: (v) => apply(k, v))),
+                  const SizedBox(width: 16),
+                  Text(k.text,
+                      style: AppDesign.type(16,
+                          color: ConsolePalette.of(context).text1)),
+                ]));
     final supplemental = Row(children: [
       Expanded(
           child: Container(
@@ -145,6 +167,28 @@ class _DynTab extends StatelessWidget {
             onToggle: () => store.setDynOn(kind, !d.on)),
         const SizedBox(height: 8),
         Row(children: [
+          if (models.isNotEmpty) ...[
+            SizedBox(
+                width: compact ? 130 : 260 * scale,
+                child: _ParameterChoices(
+                    store: store,
+                    leaf: modelLeaf,
+                    label: 'Model',
+                    showLabel: false,
+                    fallback: '—',
+                    compact: compact,
+                    onChanged: (v) {
+                      store.setDynParam(kind, 'mode', v);
+                      onFocus(_parameterFocus(
+                          store,
+                          modelLeaf,
+                          title,
+                          'Model',
+                          () => _choiceText(store, modelLeaf, '—'),
+                          (v) => store.setDynParam(kind, 'mode', v)));
+                    })),
+            const SizedBox(width: 8),
+          ],
           if (!compact)
             SizedBox(
                 width: 420 * scale,
@@ -207,13 +251,16 @@ class _DynTab extends StatelessWidget {
           SizedBox(
               height: 216,
               child: Column(children: [
-                for (var row = 0; row < 2; row++) ...[
+                for (var row = 0; row < (knobs.length - 1 + 1) ~/ 2; row++) ...[
                   if (row > 0) const SizedBox(height: 8),
                   Expanded(
                       child: Row(children: [
                     for (var col = 0; col < 2; col++) ...[
                       if (col > 0) const SizedBox(width: 8),
-                      Expanded(child: control(knobs[1 + row * 2 + col])),
+                      Expanded(
+                          child: 1 + row * 2 + col < knobs.length
+                              ? control(knobs[1 + row * 2 + col])
+                              : const SizedBox.shrink()),
                     ]
                   ])),
                 ]
@@ -237,12 +284,13 @@ class _DynTab extends StatelessWidget {
                   Expanded(child: control(knobs[i], threshold: i == 0)),
                 ]
               ])),
-          if (kind == DynKind.gate) ...[
+          if (kind == DynKind.gate && knobs.length > 3) ...[
             SizedBox(height: 20 * scale),
             Row(children: [
-              Expanded(child: secondary(knobs[3])),
-              SizedBox(width: 20 * scale),
-              Expanded(child: secondary(knobs[4])),
+              for (var i = 3; i < knobs.length; i++) ...[
+                if (i > 3) SizedBox(width: 20 * scale),
+                Expanded(child: secondary(knobs[i])),
+              ],
             ]),
           ],
         ],
@@ -266,6 +314,91 @@ class _DynTab extends StatelessWidget {
         ],
       ]);
     });
+  }
+}
+
+String _choiceText(ChannelStore store, String leaf, String fallback) {
+  final value = store.paramNum(leaf);
+  for (final choice in parameterChoices(store.paramMetadata(leaf))) {
+    if (value != null && (value - choice.value).abs() < .0001) {
+      return choice.label;
+    }
+  }
+  return fallback;
+}
+
+/// Shared choice control: labels and values come entirely from the provider.
+class _ParameterChoices extends StatelessWidget {
+  final ChannelStore store;
+  final String leaf, label, fallback;
+  final bool compact;
+  final bool showLabel;
+  final ValueChanged<double> onChanged;
+  const _ParameterChoices(
+      {required this.store,
+      required this.leaf,
+      required this.label,
+      required this.fallback,
+      required this.compact,
+      this.showLabel = true,
+      required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    final choices = parameterChoices(store.paramMetadata(leaf));
+    final enabled = store.supports(leaf);
+    final stripKey = store.stripKey;
+    return Semantics(
+        label: label,
+        value: _choiceText(store, leaf, fallback),
+        button: true,
+        enabled: enabled,
+        child: PopupMenuButton<double>(
+          enabled: enabled,
+          tooltip: label,
+          color: palette.processingPanel,
+          onSelected: (value) {
+            // A menu may outlive a model change or a channel switch.
+            if (store.stripKey == stripKey &&
+                store.supports(leaf) &&
+                parameterChoices(store.paramMetadata(leaf))
+                    .any((c) => (c.value - value).abs() < .0001)) {
+              onChanged(value);
+            }
+          },
+          itemBuilder: (context) => [
+            for (final choice in choices)
+              PopupMenuItem(
+                  value: choice.value,
+                  child: Text(choice.label,
+                      style: AppDesign.type(16, color: palette.text1))),
+          ],
+          child: Container(
+              constraints:
+                  BoxConstraints(minHeight: showLabel && !compact ? 64 : 44),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                  color: palette.processingPanel, borderRadius: U4.rWell),
+              child: Row(children: [
+                Expanded(
+                    child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                      if (showLabel)
+                        Text(label,
+                            style: AppDesign.type(compact ? 12 : 14,
+                                color: palette.text7)),
+                      Text(_choiceText(store, leaf, fallback),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppDesign.type(compact ? 15 : 18,
+                              color: palette.text1)),
+                    ])),
+                Icon(Icons.arrow_drop_down, color: palette.text7),
+              ])),
+        ));
   }
 }
 

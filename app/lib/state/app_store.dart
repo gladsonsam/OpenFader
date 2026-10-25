@@ -2387,12 +2387,16 @@ class AppStore extends ChangeNotifier
 
   @override
   Map<String, dynamic>? paramMetadata(String leaf) =>
-      engine.parameterMetadata[deskLeaf(leaf)];
+      parameterPresentation(engine.parameterMetadata[deskLeaf(leaf)], paramNum);
 
   @override
   bool supports(String leaf) {
     final desk = deskLeaf(leaf);
     if (!engine.capsReady || _presetEditingBlocked(_channel, desk)) {
+      return false;
+    }
+    final presentation = paramMetadata(desk);
+    if (presentation?['hidden'] == true || presentation?['available'] == false) {
       return false;
     }
     final sendPan = RegExp(r'^send([1-9]\d*)_pan$').firstMatch(desk);
@@ -2421,6 +2425,11 @@ class AppStore extends ChangeNotifier
     if (desk == 'name') return; // Use the captured-target rename contract.
     if (!supports(desk)) return;
     if (value is num && !value.isFinite) return;
+    final choices = parameterChoices(paramMetadata(desk));
+    if (choices.isNotEmpty &&
+        (value is! num || !choices.any((c) => (c.value - value).abs() < .0001))) {
+      return;
+    }
     // DSP edits (including delayed ChannelWrites flushes) use the current
     // driver limits. Hydration remains untouched, even outside these limits.
     final isDspRange = desk == 'hpf_freq' ||

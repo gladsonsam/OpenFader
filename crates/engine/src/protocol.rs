@@ -496,6 +496,9 @@ pub struct ParamDef {
     pub unit: String,
     pub default: serde_json::Value,
     pub label: String,
+    /// Ordered provider presentations; conditional entries override base labels.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub presentations: Vec<serde_json::Value>,
 }
 
 /// One `caps.topology` family: an ordered strip family in the global strip

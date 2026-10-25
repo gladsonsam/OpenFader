@@ -602,6 +602,9 @@ async fn wait_for_initial_state(session: &MackieSession) -> anyhow::Result<()> {
 /// - `trim -40..+20`: p91.
 /// - `hpf_freq 20..700`: p103 Modern EQ; CH7 endpoints verified against
 ///   manufacturer mixer software 5.2 with independent readback and restore 2026-10-25.
+/// - `gate_att 0.1..300`, `gate_hold 0..5000`, `gate_rel 50..3000` ms,
+///   `gate_range 0..60` dB: native CH7 endpoints independently read and
+///   restored 2026-10-25. Vintage timing selections share these values.
 /// - `gate_mode 0..1`: CH7 native Modern/Vintage selector verified with
 ///   independent readback and restore 2026-10-25 (canonical has five modes).
 /// - `eqN_q 0.5..16`: p103 Modern EQ (all four bands).
@@ -615,12 +618,48 @@ static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
     ("trim", -40.0, 20.0),
     ("hpf_freq", 20.0, 700.0),
     ("gate_mode", 0.0, 1.0),
+    ("gate_att", 0.1, 300.0),
+    ("gate_hold", 0.0, 5000.0),
+    ("gate_rel", 50.0, 3000.0),
+    ("gate_range", 0.0, 60.0),
     ("eq1_q", 0.5, 16.0),
     ("eq2_q", 0.5, 16.0),
     ("eq3_q", 0.5, 16.0),
     ("eq4_q", 0.5, 16.0),
     ("comp_thr", -80.0, 0.0),
     ("comp_makeup", 0.0, 20.0),
+];
+
+// Native CH7 selections, independently read and restored 2026-10-25.
+// Unmatched timings retain their exact value; clients must not snap them
+// to a named selection merely by displaying this metadata.
+static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] = &[
+    openfader_core::params::ParamPresentation {
+        id: "gate_mode", when: None, hidden: false,
+        choices: &[
+            openfader_core::params::ParamChoice { value: 0.0, label: "Modern" },
+            openfader_core::params::ParamChoice { value: 1.0, label: "Vintage" },
+        ],
+    },
+    openfader_core::params::ParamPresentation {
+        id: "gate_att", when: Some(("gate_mode", 1.0)), hidden: false,
+        choices: &[
+            openfader_core::params::ParamChoice { value: 0.1, label: "Fast" },
+            openfader_core::params::ParamChoice { value: 50.0, label: "Medium" },
+            openfader_core::params::ParamChoice { value: 300.0, label: "Slow" },
+        ],
+    },
+    openfader_core::params::ParamPresentation {
+        id: "gate_rel", when: Some(("gate_mode", 1.0)), hidden: false,
+        choices: &[
+            openfader_core::params::ParamChoice { value: 50.0, label: "Fast" },
+            openfader_core::params::ParamChoice { value: 500.0, label: "Medium" },
+            openfader_core::params::ParamChoice { value: 3000.0, label: "Slow" },
+        ],
+    },
+    openfader_core::params::ParamPresentation {
+        id: "gate_range", when: Some(("gate_mode", 1.0)), hidden: true, choices: &[],
+    },
 ];
 
 /// Live DL32S-class mixer on TCP 50001.
@@ -1200,7 +1239,7 @@ impl MixerDriver for Dl32sDriver {
     /// Every entry below has known units and a direct wire encoding (dB
     /// leaves ride `Encoding::Db`, Hz/unitless leaves ride
     /// `Encoding::Float`); kinds, scopes, labels and defaults are
-    /// untouched. Except for the live-verified HPF endpoints and Gate mode
+    /// untouched. Except for the live-verified HPF endpoints and Gate controls
     /// domain noted in `DL32S_RANGE_OVERRIDES`, bounds are documentation-
     /// based (hardware endpoint writes pending); the desk is believed to
     /// clamp outside its maxima.
@@ -1210,10 +1249,8 @@ impl MixerDriver for Dl32sDriver {
     ///   slider is served (CH7 MicPre native 0 observed, consistent); the
     ///   existing wire bound is retained without assuming how the physical
     ///   offset is represented.
-    /// - Timing leaves (`gate_att/hold/rel`, `comp_att/hold/rel`): wire
-    ///   floats with no confirmed ms mapping — canonical domains kept.
-    /// - `gate_range` `0..60` (p112): wire `Float` (not `Db`), unit mapping
-    ///   unconfirmed — canonical `3..60` kept.
+    /// - Compressor timing leaves (`comp_att/hold/rel`): wire floats with
+    ///   no confirmed endpoint mapping — canonical domains kept.
     /// - `comp_ratio` `1..INF` (p112): no known INF wire encoding — no
     ///   sentinel invented; finite canonical `1.1..=100` kept (the desk
     ///   clamps above its max; direct floats 1.68..20.2 observed).
@@ -1223,6 +1260,10 @@ impl MixerDriver for Dl32sDriver {
     ///   Gate Modern=0/Vintage=1 is live-verified; its range is overridden.
     fn param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {
         DL32S_RANGE_OVERRIDES
+    }
+
+    fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
+        DL32S_PARAM_PRESENTATIONS
     }
 
     async fn connect(&self, addr: &str) -> anyhow::Result<()> {
@@ -1700,11 +1741,8 @@ impl MixerDriver for Dl32sDriver {
                 }
                 self.set_field(strip, "comp_knee", ParamValue::Float(v)).await
             }
-            // Write-proven 2026-10-20 (live relay, net-zero restored):
-            // gate attack, gate modern/vintage, EQ modern/vintage.
-            ("gate_att", ParamValue::Float(v)) => {
-                self.set_field(strip, "gate_att", ParamValue::Float(v)).await
-            }
+            // Gate attack uses the canonical alias path below (gate_attack
+            // in the native table); modes retain their explicit domain guards.
             ("gate_mode", ParamValue::Float(v)) => {
                 if v != 0.0 && v != 1.0 {
                     anyhow::bail!("dl32s: gate_mode must be 0 or 1, got {v}");
