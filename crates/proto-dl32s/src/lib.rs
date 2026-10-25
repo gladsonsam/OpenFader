@@ -45,8 +45,8 @@ const INPUT_SOLO_FIRST_ADDRESS: u32 = 23;
 ///   on B1/B4 (CH7 write+relay, net-zero restored 2026-10-24); native 0/1/5
 ///   meanings unverified, values relay exact, no Rust canonical remap
 ///   (frontend translates presentation LowShelf canonical 1 <-> native 3).
-/// - `viewN`/`vcaN`/`mutegroupN`/`subN` membership — write-proven live, but
-///   served through the engine group `Cmd`s, not strip caps.
+/// - Mute/subgroup membership uses engine group commands rather than strip
+///   caps; VCA/View membership uses the advertised assignment bool leaves.
 /// - `source_a`/`source_b` — opaque native routing IDs (1000+/2000+).
 ///   Provider-labelled physical/USB routing IDs; unknown IDs remain opaque.
 /// - `source_select` — native A/B selector, 0/1, exposed as a provider row.
@@ -72,6 +72,18 @@ pub const DL32S_CAPABILITIES: &[&str] = &[
     "hpf_on",
     "hpf_freq",
     "lr_assign",
+    "dca1_assign",
+    "dca2_assign",
+    "dca3_assign",
+    "dca4_assign",
+    "dca5_assign",
+    "dca6_assign",
+    "view1_assign",
+    "view2_assign",
+    "view3_assign",
+    "view4_assign",
+    "view5_assign",
+    "view6_assign",
     "link",
     "color",
     "icon",
@@ -154,10 +166,28 @@ pub const DL32S_CAPABILITIES: &[&str] = &[
     "send12_level",
 ];
 
+// Canonical assignment leaves map to provider membership words; group count
+// is advertised by the actual leaf set rather than inferred by the frontend.
+const MEMBERSHIP_ALIASES: &[(&str, &str)] = &[
+    ("dca1_assign", "vca1"),
+    ("dca2_assign", "vca2"),
+    ("dca3_assign", "vca3"),
+    ("dca4_assign", "vca4"),
+    ("dca5_assign", "vca5"),
+    ("dca6_assign", "vca6"),
+    ("view1_assign", "view1"),
+    ("view2_assign", "view2"),
+    ("view3_assign", "view3"),
+    ("view4_assign", "view4"),
+    ("view5_assign", "view5"),
+    ("view6_assign", "view6"),
+];
+
 /// Canonical id -> native table key for renamed leaves (`None` = same name).
 /// Pure renames only — unit conversions (pan) and domain guards (modes)
 /// stay as explicit arms in `set_param`/`get_param`/decode.
 fn alias_target(param: &str) -> Option<&'static str> {
+    if let Some((_, native)) = MEMBERSHIP_ALIASES.iter().find(|(id, _)| *id == param) { return Some(*native); }
     Some(match param {
         "lr_assign" => "main_assign",
         "link" => "stereo_link",
@@ -174,6 +204,7 @@ fn alias_target(param: &str) -> Option<&'static str> {
 }
 
 fn canonical_for_table_key(key: &str) -> Option<&'static str> {
+    if let Some((id, _)) = MEMBERSHIP_ALIASES.iter().find(|(_, native)| *native == key) { return Some(*id); }
     Some(match key {
         "main_assign" => "lr_assign",
         "stereo_link" => "link",
@@ -1530,12 +1561,11 @@ impl MixerDriver for Dl32sDriver {
         DL32S_CAPABILITIES
     }
 
-    /// Provider rows for confirmed leaves with no canonical equivalent:
-    /// `eq_mode` (write-proven 0/1, modern/vintage per Mackie convention).
-    /// Canonical ids win on collision, so a future canonical `eq_mode`
-    /// upgrades this row seamlessly.
+    /// Provider rows extend the canonical catalogue with source IDs,
+    /// model selection and additional assignment groups. Canonical IDs
+    /// retain precedence when a future catalogue adds an equivalent row.
     fn param_defs(&self) -> &'static [openfader_core::params::ParamDef] {
-        static DEFS: std::sync::OnceLock<[openfader_core::params::ParamDef; 4]> =
+        static DEFS: std::sync::OnceLock<Vec<openfader_core::params::ParamDef>> =
             std::sync::OnceLock::new();
         DEFS.get_or_init(|| {
             let source = |id, max, label| openfader_core::params::ParamDef {
@@ -1549,7 +1579,7 @@ impl MixerDriver for Dl32sDriver {
                 default: openfader_core::params::ParamDefault::Float(0.0),
                 label,
             };
-            [
+            let mut defs = vec![
                 openfader_core::params::ParamDef {
                     id: "eq_mode",
                     kind: openfader_core::params::ParamKind::Enum,
@@ -1566,7 +1596,22 @@ impl MixerDriver for Dl32sDriver {
                 source("source_a", u32::MAX as f32, "Input A source ID"),
                 source("source_b", u32::MAX as f32, "Input B source ID"),
                 source("source_select", 1.0, "Input A/B"),
-            ]
+            ];
+            for (id, label) in [
+                ("dca5_assign", "VCA 5"), ("dca6_assign", "VCA 6"),
+                ("view1_assign", "View A"), ("view2_assign", "View B"),
+                ("view3_assign", "View C"), ("view4_assign", "View D"),
+                ("view5_assign", "View E"), ("view6_assign", "View F"),
+            ] {
+                defs.push(openfader_core::params::ParamDef { id, label,
+                    kind: openfader_core::params::ParamKind::Bool,
+                    scope: openfader_core::params::ParamScope::Channel,
+                    scopes: openfader_core::params::SCOPES_INPUT,
+                    min: 0.0, max: 1.0, unit: "",
+                    default: openfader_core::params::ParamDefault::Bool(false),
+                });
+            }
+            defs
         })
     }
 

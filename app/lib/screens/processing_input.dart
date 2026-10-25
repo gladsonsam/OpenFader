@@ -314,9 +314,11 @@ class _InputAssignments extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final assignmentFont = wide && store.viewGroupCount > 0 ? 14.0 : 16.0;
     final groups = <String, List<Widget>>{
       'Main': [
         _ProcessingButton(
+            fontSize: assignmentFont,
             label: 'Main',
             detail: wide ? 'LR' : null,
             active: store.mainAssigned == true,
@@ -327,6 +329,7 @@ class _InputAssignments extends StatelessWidget {
       'Sub': [
         for (var g = 0; g < store.subgroupCount; g++)
           _ProcessingButton(
+              fontSize: assignmentFont,
               label: 'Sub ${g + 1}',
               active: store.subgroupAssigned(g) == true,
               onTap: store.subgroupAssigned(g) == null
@@ -337,6 +340,7 @@ class _InputAssignments extends StatelessWidget {
       'VCA': [
         for (var g = 0; g < store.dcaCount; g++)
           _ProcessingButton(
+              fontSize: assignmentFont,
               label: 'VCA ${g + 1}',
               active: store.dcaAssigned(g) == true,
               onTap: store.dcaAssigned(g) == null
@@ -346,6 +350,7 @@ class _InputAssignments extends StatelessWidget {
       'Mute': [
         for (var g = 0; g < store.muteGroupCount; g++)
           _ProcessingButton(
+              fontSize: assignmentFont,
               label: 'Mute ${g + 1}',
               active: store.muteGroupAssigned(g) == true,
               onTap: store.muteGroupAssigned(g) == null
@@ -353,6 +358,18 @@ class _InputAssignments extends StatelessWidget {
                   : () =>
                       store.cmdMuteGroupAssign(g, !store.muteGroupAssigned(g)!))
       ],
+      if (store.viewGroupCount > 0)
+        'View': [
+          for (var g = 0; g < store.viewGroupCount; g++)
+            _ProcessingButton(
+                fontSize: assignmentFont,
+                label: store.viewGroupLabel(g),
+                active: store.viewGroupAssigned(g) == true,
+                onTap: store.viewGroupAssigned(g) == null
+                    ? null
+                    : () => store.setViewGroupAssigned(
+                        g, !store.viewGroupAssigned(g)!)),
+        ],
     };
     final selected = [
       if (store.mainAssigned == true) 'Main',
@@ -361,7 +378,9 @@ class _InputAssignments extends StatelessWidget {
       for (var g = 0; g < store.dcaCount; g++)
         if (store.dcaAssigned(g) == true) 'VCA ${g + 1}',
       for (var g = 0; g < store.muteGroupCount; g++)
-        if (store.muteGroupAssigned(g) == true) 'Mute ${g + 1}'
+        if (store.muteGroupAssigned(g) == true) 'Mute ${g + 1}',
+      for (var g = 0; g < store.viewGroupCount; g++)
+        if (store.viewGroupAssigned(g) == true) store.viewGroupLabel(g)
     ].join(' / ');
     final columns = [
       for (final entry in groups.entries)
@@ -410,12 +429,14 @@ class _InputAssignments extends StatelessWidget {
                           color: ConsolePalette.of(context).text7))),
             ]),
             children: [
-              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                for (var i = 0; i < columns.length; i++) ...[
-                  if (i > 0) const SizedBox(width: 6),
-                  Expanded(child: columns[i])
-                ]
-              ])
+              LayoutBuilder(builder: (context, box) {
+                final count = (box.maxWidth / 88).floor().clamp(1, 3);
+                final width = (box.maxWidth - 6 * (count - 1)) / count;
+                return Wrap(spacing: 6, runSpacing: 12, children: [
+                  for (final column in columns)
+                    SizedBox(width: width, child: column),
+                ]);
+              })
             ]));
   }
 }
