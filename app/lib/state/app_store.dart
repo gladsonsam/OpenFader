@@ -123,6 +123,14 @@ class AppStore extends ChangeNotifier
   bool _binaryMeters = true;
   final ps.StoreMaps _maps = ps.StoreMaps();
 
+  final Map<
+      String,
+      ({
+        ChannelNameTarget target,
+        double value,
+        double deadline,
+        Completer<String?> done
+      })> _colorEdits = {};
   final Map<String, Completer<String?>> _nameEdits = {};
   final Map<String, String> _nameEditValues = {};
   final Map<String, double> _nameEditDeadlines = {};
@@ -498,10 +506,12 @@ class AppStore extends ChangeNotifier
   ChannelNameTarget? captureNameTarget([int? channel]) {
     final ch = channel ?? _channel;
     for (final strip in engine.strips) {
-      if (strip.ch != ch || !engine.valueKnown(ch, 'name')) continue;
+      if (strip.ch != ch) continue;
       final target =
           ChannelNameTarget(engine.session, ch, strip.key, strip.name);
-      return nameEditError(target) == null ? target : null;
+      return nameEditError(target) == null || colorEditError(target) == null
+          ? target
+          : null;
     }
     return null;
   }
@@ -522,6 +532,79 @@ class AppStore extends ChangeNotifier
     return null;
   }
 
+  @override
+  List<ChannelColorChoice> colorsForChannel(ChannelNameTarget target) =>
+      channelColorChoices(engine.parameterMetadata['color']);
+
+  @override
+  double? colorForChannel(ChannelNameTarget target) {
+    final value = ps.optimisticValue(_maps, target.channel, 'color');
+    return value is num && value.isFinite ? value.toDouble() : null;
+  }
+
+  ChannelColorChoice? channelColorChoice(int channel) {
+    final value = ps.optimisticValue(_maps, channel, 'color');
+    return channelColorChoices(engine.parameterMetadata['color'])
+        .where((c) => value is num && (c.value - value).abs() < .0001)
+        .firstOrNull;
+  }
+
+  @override
+  String? colorEditError(ChannelNameTarget target) {
+    if (!engine.connected ||
+        engine.session != target.session ||
+        !engine.strips
+            .any((s) => s.ch == target.channel && s.key == target.key)) {
+      return 'Connection changed or lost. Reopen the color editor.';
+    }
+    if (!engine.capsReady ||
+        !engine.supportedParams.contains('color') ||
+        !engine.valueKnown(target.channel, 'color') ||
+        colorsForChannel(target).isEmpty ||
+        _presetEditingBlocked(target.channel, 'color')) {
+      return 'Channel colors are unavailable on this connection.';
+    }
+    return null;
+  }
+
+  void _finishColorEdit(String key, String? error) {
+    final edit = _colorEdits.remove(key);
+    if (edit == null) return;
+    _maps.pending.remove(key);
+    edit.done.complete(error);
+  }
+
+  @override
+  Future<String?> colorChannel(ChannelNameTarget target, double value) async {
+    final error = colorEditError(target);
+    if (error != null) return error;
+    if (!value.isFinite ||
+        !colorsForChannel(target).any((c) => c.value == value)) {
+      return 'Choose a color provided by this mixer.';
+    }
+    final key = ps.pendingKey(target.channel, 'color');
+    if (_colorEdits.containsKey(key) || _maps.pending.containsKey(key)) {
+      return 'A color change is already pending.';
+    }
+    final done = Completer<String?>();
+    _colorEdits[key] = (
+      target: target,
+      value: value,
+      deadline: _nowMs() + ps.confirmTimeoutMs,
+      done: done
+    );
+    ps.noteOptimistic(_maps, target.channel, 'color', value, _nowMs());
+    notifyListeners();
+    unawaited(Future<void>.sync(() =>
+            _api.cmd(_clientId, Cmds.param(target.channel, 'color', value)))
+        .then((_) {}, onError: (Object e) {
+      if (identical(_colorEdits[key]?.done, done)) {
+        _finishColorEdit(key, 'Could not send channel color: $e');
+      }
+    }));
+    return done.future;
+  }
+
   void _finishNameEdit(String key, String? error) {
     final edit = _nameEdits.remove(key);
     if (edit == null) return;
@@ -532,6 +615,9 @@ class AppStore extends ChangeNotifier
   }
 
   void _failNameEdits(String message) {
+    for (final key in _colorEdits.keys.toList()) {
+      _finishColorEdit(key, message.replaceAll('name editor', 'color editor'));
+    }
     for (final key in _nameEdits.keys.toList()) {
       _finishNameEdit(key, message);
     }
@@ -595,6 +681,23 @@ class AppStore extends ChangeNotifier
     final verified = event['type'] == 'param'
         ? authority == 'verified'
         : authority is Map && authority[field] == 'verified';
+    if (field == 'color') {
+      final key = ps.pendingKey(channel, field);
+      final edit = _colorEdits[key];
+      final value = event['type'] == 'param'
+          ? event['value']
+          : (event['values'] as Map?)?[field];
+      final provenance = event['type'] == 'param'
+          ? authority
+          : (authority is Map ? authority[field] : null);
+      if (edit != null &&
+          _nowMs() < edit.deadline &&
+          (provenance == 'accepted' || provenance == 'verified') &&
+          value is num &&
+          (edit.value - value).abs() < .0001) {
+        _finishColorEdit(key, colorEditError(edit.target));
+      }
+    }
     final fields = _presetVerifiedFields.putIfAbsent(channel, () => {});
     if (verified) {
       fields.add(field);
@@ -1475,6 +1578,15 @@ class AppStore extends ChangeNotifier
             'The mixer did not provide a verified name readback. The name may have changed.');
       }
     }
+    for (final entry in _colorEdits.entries.toList()) {
+      final error = colorEditError(entry.value.target);
+      if (error != null || now >= entry.value.deadline) {
+        _finishColorEdit(
+            entry.key,
+            error ??
+                'The mixer did not acknowledge the color change. It may have changed.');
+      }
+    }
     _pollLibrary(now);
     _pollPresetRecalls(now);
     final expired = ps.sweepPending(_maps.pending, now, ps.confirmTimeoutMs);
@@ -1570,6 +1682,12 @@ class AppStore extends ChangeNotifier
               'The mixer reported an error during recall: ${e['message'] ?? 'Unknown error'}. '
               'The last setting may have changed; its result is uncertain.');
           final ch = (e['ch'] as num?)?.toInt();
+          for (final key in _colorEdits.keys.toList()) {
+            if (ch == null || ps.splitKey(key)?.ch == ch) {
+              _finishColorEdit(key,
+                  'Backend rejected the color change: ${e['message'] ?? 'Unknown error'}');
+            }
+          }
           for (final key in _nameEdits.keys.toList()) {
             if (ch == null || ps.splitKey(key)?.ch == ch) {
               _finishNameEdit(key,

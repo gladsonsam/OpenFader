@@ -23,6 +23,7 @@ class _NameEditorState extends State<_NameEditor> {
   late final _text = TextEditingController(text: widget.target.name);
   bool _pending = false;
   String? _error;
+  bool _colorSent = false;
   @override
   void dispose() {
     _text.dispose();
@@ -92,6 +93,29 @@ class _NameEditorState extends State<_NameEditor> {
                       padding: const EdgeInsets.only(top: 12),
                       child: Text('Waiting for name confirmation…',
                           style: AppDesign.type(14, color: p.mutedText))),
+                if (widget.store.colorsForChannel(widget.target).isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: _pending ||
+                              widget.store.colorEditError(widget.target) != null
+                          ? null
+                          : () async {
+                              final sent = await showDialog<bool>(
+                                  context: context,
+                                  barrierDismissible: false,
+                                  builder: (_) => _ColorEditor(
+                                      store: widget.store,
+                                      target: widget.target));
+                              if (mounted && sent == true) {
+                                setState(() => _colorSent = true);
+                              }
+                            },
+                      child: Text(_colorSent
+                          ? 'Color sent to mixer · Edit color'
+                          : 'Channel color'),
+                    ),
+                  ),
               ]),
             ),
             actions: [
@@ -107,4 +131,134 @@ class _NameEditorState extends State<_NameEditor> {
           ),
         );
       });
+}
+
+class _ColorEditor extends StatefulWidget {
+  final ChannelNameStore store;
+  final ChannelNameTarget target;
+  const _ColorEditor({required this.store, required this.target});
+  @override
+  State<_ColorEditor> createState() => _ColorEditorState();
+}
+
+class _ColorEditorState extends State<_ColorEditor> {
+  late double? _selected = widget.store.colorForChannel(widget.target);
+  bool _pending = false;
+  String? _error;
+
+  Future<void> _save() async {
+    final selected = _selected;
+    if (_pending || selected == null) return;
+    setState(() {
+      _pending = true;
+      _error = null;
+    });
+    final error = await widget.store.colorChannel(widget.target, selected);
+    if (!mounted) return;
+    if (error == null) {
+      Navigator.pop(context, true);
+    } else {
+      setState(() {
+        _pending = false;
+        _error = error;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: widget.store,
+        builder: (context, _) {
+          final p = ConsolePalette.of(context);
+          final choices = widget.store.colorsForChannel(widget.target);
+          final unavailable = widget.store.colorEditError(widget.target);
+          final enabled = !_pending && unavailable == null;
+          return PopScope(
+            canPop: !_pending,
+            child: AlertDialog(
+              backgroundColor: p.panel,
+              title: Text('Channel ${widget.target.channel + 1} color',
+                  style: AppDesign.type(18, color: p.text7)),
+              content: SizedBox(
+                width: 320,
+                child: SingleChildScrollView(
+                    child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Wrap(spacing: 8, runSpacing: 8, children: [
+                      for (final choice in choices)
+                        Semantics(
+                          label: choice.label,
+                          button: true,
+                          selected: _selected == choice.value,
+                          child: Tooltip(
+                            message: choice.label,
+                            child: InkWell(
+                              onTap: enabled
+                                  ? () => setState(() {
+                                        _selected = choice.value;
+                                        _error = null;
+                                      })
+                                  : null,
+                              child: Container(
+                                width: 48,
+                                height: 48,
+                                decoration: BoxDecoration(
+                                    color: choice.rgb == null
+                                        ? p.well
+                                        : Color(0xff000000 | choice.rgb!),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                        color: _selected == choice.value
+                                            ? p.cyan
+                                            : p.line,
+                                        width:
+                                            _selected == choice.value ? 3 : 1)),
+                                child: choice.rgb == null
+                                    ? Center(
+                                        child: Text(choice.label,
+                                            style: AppDesign.type(11,
+                                                color: p.text7)))
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ]),
+                    const SizedBox(height: 12),
+                    Text(
+                        _pending
+                            ? 'Sending color…'
+                            : _error ??
+                                unavailable ??
+                                choices
+                                    .where((c) => c.value == _selected)
+                                    .firstOrNull
+                                    ?.label ??
+                                'Choose a color',
+                        style: AppDesign.type(14,
+                            color: _error != null || unavailable != null
+                                ? p.mute
+                                : p.mutedText)),
+                  ],
+                )),
+              ),
+              actions: [
+                TextButton(
+                    onPressed: _pending ? null : () => Navigator.pop(context),
+                    child: const Text('Cancel')),
+                TextButton(
+                    onPressed: enabled &&
+                            choices.any((c) => c.value == _selected) &&
+                            _selected !=
+                                widget.store.colorForChannel(widget.target)
+                        ? _save
+                        : null,
+                    child: const Text('Apply')),
+              ],
+            ),
+          );
+        },
+      );
 }

@@ -42,7 +42,12 @@ class MixerNameplate extends StatelessWidget {
             final sx = box.maxWidth / (compact ? 104.2 : 192.2);
             final tape = channel.master
                 ? ConsolePalette.of(context).bus
-                : ConsolePalette.of(context).tapes[(channel.channel ?? 0) % 8];
+                : channel.colorChoice != null
+                    ? channel.colorChoice!.rgb == null
+                        ? ConsolePalette.of(context).panel
+                        : Color(0xff000000 | channel.colorChoice!.rgb!)
+                    : ConsolePalette.of(context)
+                        .tapes[(channel.channel ?? 0) % 8];
             return Stack(clipBehavior: Clip.none, children: [
               if (!channel.master)
                 Positioned(
