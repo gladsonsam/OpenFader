@@ -31,16 +31,6 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
-Android builds also require Java 17, the Android SDK/NDK, `cargo-ndk` 4.1.2,
-and Rust targets `aarch64-linux-android`, `armv7-linux-androideabi`, and
-`x86_64-linux-android`. Gradle compiles and packages the Rust engine when
-running `flutter build apk` or `flutter build appbundle` from `app/`.
-Use `python3 scripts/ci-build-app.py android` from the root to package both
-release artifacts on Linux or macOS. For a remote DL32S, connect the phone
-to Tailscale with access to the mixer subnet, then add its IP address manually.
-Automatic identification and Find mixers ask every registered hardware driver;
-new mixer providers supply discovery alongside their protocol implementation.
-
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE).
