@@ -279,6 +279,7 @@ mod tests {
             driver: "sim".to_string(),
             strips: vec![],
             main_fader: None,
+            output_meter_targets: Vec::new(),
             by: None,
         };
         assert!(state.to_binary(0, 0).is_none());

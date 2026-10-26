@@ -160,6 +160,8 @@ impl Dl32sDriver {
             m.generation = generation;
             m.updated_at = None;
             m.levels.clear();
+            m.outputs_at = None;
+            m.outputs.clear();
             m.dynamics_at = None;
             m.dynamics.clear();
         }
@@ -220,6 +222,10 @@ impl Dl32sDriver {
                                 m.generation = generation;
                                 m.updated_at = Some(std::time::Instant::now());
                                 m.levels = levels;
+                                if let Some(outputs) = crate::output_meters::decode(&push) {
+                                    m.outputs_at = Some(std::time::Instant::now());
+                                    m.outputs = outputs;
+                                }
                                 if let Some(frames) = decode_dynamics_meters(&push) {
                                     m.dynamics_at = Some(std::time::Instant::now());
                                     m.dynamics = frames;
@@ -227,7 +233,7 @@ impl Dl32sDriver {
                             }
                             // The 283-word frame retains the input/RTA prefix: meters
                             // above, RTA bins at 60..90. A 60-word frame
-                            // yields input meters only (exact-shape gate inside).
+                            // also carries output levels, but no RTA bins.
                             if let Some(bins) = decode_rta_bins(&push) {
                                 if let Ok(mut s) = spectrum.lock() {
                                     if s.generation == generation {
@@ -289,6 +295,8 @@ impl Dl32sDriver {
         if let Ok(mut m) = self.meters.lock() {
             m.updated_at = None;
             m.levels.clear();
+            m.outputs_at = None;
+            m.outputs.clear();
             m.dynamics_at = None;
             m.dynamics.clear();
         }

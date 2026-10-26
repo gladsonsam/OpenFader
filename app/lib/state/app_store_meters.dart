@@ -25,6 +25,12 @@ mixin _AppStoreMeters on _AppStoreContext {
   final Map<String, ValueNotifier<double>> _busMeters = {};
   final Map<int, double> _peakAtMs = {};
 
+  final Map<String, ValueNotifier<OutputMeterVm>> _outputMeters = {};
+
+  @override
+  ValueListenable<OutputMeterVm> outputMeterFor(String target) => _outputMeters
+      .putIfAbsent(target, () => ValueNotifier(engine.outputMeter(target)));
+
   final _dynamicsMeters = ValueNotifier<ChannelDynamicsMetersVm?>(null);
   @override
   final ValueNotifier<double> _levelDb = ValueNotifier(double.negativeInfinity);
@@ -67,10 +73,17 @@ mixin _AppStoreMeters on _AppStoreContext {
         : _selectedSubgroup != null
             ? 'subgroup/${(_selectedSubgroup! + 1).toString().padLeft(2, '0')}'
             : 'bus/${((int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
-    final masterIndex = engine.strips.indexWhere((s) => s.key == masterKey);
-    _masterMeter.value = masterIndex >= 0 && masterIndex < engine.meters.length
-        ? engine.meters[masterIndex].clamp(0.0, 1.0)
-        : 0;
+    _masterMeter.value = engine.outputMeter(masterKey).peak;
+    for (final entry in _busMeters.entries) {
+      final id = entry.key;
+      final target = id.startsWith('subgroup')
+          ? 'subgroup/${((int.tryParse(id.substring(8)) ?? 0) + 1).toString().padLeft(2, '0')}'
+          : 'bus/${((int.tryParse(id.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
+      entry.value.value = engine.outputMeter(target).peak;
+    }
+    for (final entry in _outputMeters.entries) {
+      entry.value.value = engine.outputMeter(entry.key);
+    }
     // Open-channel feeds.
     final ci = engine.strips.indexWhere((s) => s.ch == _channel);
     final lv = ci >= 0 && ci < engine.meters.length

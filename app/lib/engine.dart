@@ -4,6 +4,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'core/output_meters.dart';
 import 'core/local_library.dart';
 import 'core/destination_controls.dart';
 export 'core/local_library.dart';
@@ -574,6 +575,22 @@ class EngineState {
   String driver = 'sim';
   List<Strip> strips = [];
   List<double> meters = [];
+  List<String> outputMeterTargets = const [];
+  final _outputTelemetry = OutputMeterTelemetry();
+
+  OutputMeterVm outputMeter(String target) {
+    if (!connected) return const OutputMeterVm();
+    if (outputMeterTargets.contains(target)) {
+      final sample = _outputTelemetry.samples[target];
+      return sample != null && sample.isFresh ? sample.meter : const OutputMeterVm();
+    }
+    // Existing flat topology meters remain the fallback for other providers.
+    final index = strips.indexWhere((strip) => strip.key == target);
+    if (index < 0 || index >= meters.length || !meters[index].isFinite) {
+      return const OutputMeterVm();
+    }
+    return OutputMeterVm(levels: [meters[index].clamp(0.0, 1.0)]);
+  }
   List<Map<String, dynamic>> topology = [];
   List<List<int>> stereoPairs = const [];
   Map<String, dynamic> routingCaps = {};
@@ -707,6 +724,8 @@ class EngineState {
     fxTypes = [];
     fxStateControls = false;
     meters = [];
+    outputMeterTargets = const [];
+    _outputTelemetry.reset();
     params.clear();
     taps.clear();
     spectrum.clear();
@@ -815,6 +834,11 @@ class EngineState {
         final nextDriver = e['driver'] as String? ?? driver;
         if (nextDriver != driver) _resetDesk();
         driver = nextDriver;
+        outputMeterTargets = List.unmodifiable([
+          for (final target in (e['output_meter_targets'] as List? ?? const []))
+            if (target is String) target,
+        ]);
+        _outputTelemetry.samples.removeWhere((key, _) => !outputMeterTargets.contains(key));
         final raw = (e['strips'] as List?) ?? const [];
         // Hardware drivers publish geometry in caps and live values in
         // params. An empty legacy snapshot must not erase that surface.
@@ -954,6 +978,9 @@ class EngineState {
           supportedParams = parameterMetadata.keys.toSet();
         }
         return true;
+      case 'output_meters':
+        _outputTelemetry.apply(e, epoch: _syncEpoch, targets: outputMeterTargets);
+        return false;
       case 'meters':
         final raw = (e['levels'] as List?) ?? const [];
         meters = [for (final v in raw) ((v as num?) ?? 0.0).toDouble()];
@@ -1188,7 +1215,10 @@ class EngineState {
         }
         linkIp = e['ip'] as String? ?? '';
         linkState = (e['state'] as String?) ?? linkState;
-        if (linkState != 'connected') _nativeSnapshots = null;
+        if (linkState != 'connected') {
+          _nativeSnapshots = null;
+          _outputTelemetry.reset();
+        }
         linkName = (e['name'] as String?) ?? linkName;
         return true;
       case 'locks':

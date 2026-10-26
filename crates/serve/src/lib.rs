@@ -136,6 +136,7 @@ struct Outbox {
     gr: HashMap<u16, openfader_engine::SharedEvent>,
     gr_sent: u64,
     gr_dropped: u64,
+    outputs: Option<openfader_engine::SharedEvent>,
     control: VecDeque<openfader_engine::SharedEvent>,
     pump_closed: bool,
 }
@@ -156,6 +157,7 @@ impl Outbox {
             gr: HashMap::new(),
             gr_sent: 0,
             gr_dropped: 0,
+            outputs: None,
             control: VecDeque::new(),
             pump_closed: false,
         }
@@ -172,6 +174,7 @@ impl Outbox {
     fn store(&mut self, frame: openfader_engine::SharedEvent) {
         use openfader_engine::Event as E;
         match &*frame.event {
+            E::OutputMeters { .. } => { self.outputs = Some(frame); }
             E::Meters { .. } => {
                 if self.meters.replace(frame).is_some() {
                     self.meters_dropped += 1;
@@ -205,7 +208,7 @@ impl Outbox {
     }
 
     fn queue_depth(&self) -> usize {
-        self.control.len()
+        self.control.len() + usize::from(self.outputs.is_some())
             + usize::from(self.meters.is_some())
             + self.taps.len()
             + self.spectrum.len()
@@ -243,6 +246,9 @@ impl Outbox {
     ) -> Option<(Message, StreamKind)> {
         if let Some(frame) = self.control.pop_front() {
             return Some((Message::Text(frame.json.to_string().into()), StreamKind::Control));
+        }
+        if let Some(frame) = self.outputs.take() {
+            return Some((Message::Text(frame.json.to_string().into()), StreamKind::Meters));
         }
         let t_ms = engine.now_ms();
         if let Some(event) = self.meters.take() {
