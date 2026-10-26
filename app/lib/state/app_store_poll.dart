@@ -108,6 +108,7 @@ mixin _AppStorePoll on _AppStoreContext {
         final previousSession = engine.session;
         final controlOnly = _controlOnlyFrame(e);
         var frameDirty = engine.applyFrame(e);
+        _observeOutputProcessingContext();
         if (e['type'] == 'destination_control_result') {
           _receiveDestinationResult(e);
         }

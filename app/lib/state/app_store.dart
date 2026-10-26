@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/channel_views.dart';
 import '../core/output_processing.dart';
 import '../core/output_presets.dart';
+import '../core/output_geq.dart';
 import '../core/audio_spectrum_peaks.dart';
 import '../core/channel_name.dart';
 import '../core/coalescer.dart';
