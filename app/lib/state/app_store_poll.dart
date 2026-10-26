@@ -28,6 +28,7 @@ mixin _AppStorePoll on _AppStoreContext {
   Future<void> _pollOnce() async {
     final now = _nowMs();
     _pollDestinationEdits(now);
+    _pollAssignmentEdit(now);
     for (final key in _nameEdits.keys.toList()) {
       if (now >= (_nameEditDeadlines[key] ?? double.negativeInfinity)) {
         _finishNameEdit(key,
@@ -93,6 +94,8 @@ mixin _AppStorePoll on _AppStoreContext {
       frames = await _api.poll(_clientId, 512);
     } catch (e) {
       _stopPresetRecalls('Could not read mixer confirmations: $e');
+      _interruptAssignmentEdit(
+          'Connection lost. The assignment result is uncertain.');
       _failNameEdits(
           'Connection lost while waiting for the name confirmation: $e');
       _noteTransportError(e);
@@ -134,6 +137,7 @@ mixin _AppStorePoll on _AppStoreContext {
         // Preserve maxima from every accepted measured frame in this batch,
         // including source/unavailable transitions before its final frame.
         if (e['type'] == 'audio_spectrum') _syncSpectrum();
+        _receiveAssignmentEvent(e);
         _confirmEcho(e);
         if (e['type'] == 'error') {
           _errorRevision++;

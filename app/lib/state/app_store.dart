@@ -42,6 +42,7 @@ part 'app_store_access.dart';
 
 part 'app_store_library.dart';
 part 'app_store_appearance.dart';
+part 'app_store_assignments.dart';
 part 'app_store_presets.dart';
 part 'app_store_session.dart';
 part 'app_store_poll.dart';
@@ -70,6 +71,7 @@ abstract class _AppStoreContext extends ChangeNotifier
         _AppStoreCoreContract,
         _AppStoreLibraryContract,
         _AppStoreAppearanceContract,
+        _AppStoreAssignmentsContract,
         _AppStorePresetsContract,
         _AppStoreSessionContract,
         _AppStorePollContract,
@@ -113,6 +115,7 @@ class AppStore extends _AppStoreContext
         _AppStoreAccess,
         _AppStoreLibrary,
         _AppStoreAppearance,
+        _AppStoreAssignments,
         _AppStorePresets,
         _AppStoreSession,
         _AppStorePoll,
@@ -206,6 +209,7 @@ class AppStore extends _AppStoreContext
     _libraryRecalls.clear();
     _presetDisposed = true;
     _invalidatePresetOperations('The connection was closed.');
+    _interruptAssignmentEdit('The connection was closed.');
     _failNameEdits('The connection was closed.');
     _coalescer.clear();
     for (final m in _meters) {

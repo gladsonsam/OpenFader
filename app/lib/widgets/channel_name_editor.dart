@@ -3,6 +3,7 @@ import '../core/channel_name.dart';
 import '../design.dart';
 import '../palette.dart';
 import 'channel_symbol.dart';
+import 'channel_quick_assign.dart';
 
 Future<void> showChannelNameEditor(BuildContext context, ChannelNameStore store,
         ChannelNameTarget target) =>
@@ -212,6 +213,20 @@ class _NameEditorState extends State<_NameEditor> {
                     ]),
                   ),
                 ),
+                if (widget.store.assignmentsForChannel(widget.target).isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: _pending ? null : () => showChannelQuickAssign(
+                          context, widget.store, widget.target),
+                      child: const Row(children: [
+                        Icon(Icons.playlist_add_check, size: 20),
+                        SizedBox(width: 12),
+                        Expanded(child: Text('Quick Assign')),
+                        Icon(Icons.chevron_right, size: 20),
+                      ]),
+                    ),
+                  ),
                 Divider(color: p.line),
                 SwitchListTile.adaptive(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),

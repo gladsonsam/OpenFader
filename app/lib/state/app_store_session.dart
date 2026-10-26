@@ -160,6 +160,7 @@ mixin _AppStoreSession on _AppStoreContext {
     _interruptForgetSavedMixers('Connection changed during address clearing.');
     _presetVerifiedFields.clear();
     _invalidatePresetOperations('Connection changed or lost. Reopen presets.');
+    _interruptAssignmentEdit('Connection changed or lost. Reopen Quick Assign.');
     _failNameEdits('Connection changed or lost. Reopen the name editor.');
     _coalescer.clear();
     _maps.confirmed.clear();
