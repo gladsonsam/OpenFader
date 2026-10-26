@@ -107,6 +107,20 @@ class MainActivity : FlutterActivity() {
 
     private fun scanStart(): Boolean {
         return try {
+            // Venue Wi-Fi often has no Internet, so Android may prefer mobile
+            // data. Discovery opens new Rust sockets after this call returns;
+            // pin them synchronously to the existing Wi-Fi network. A VPN or
+            // an Ethernet-only device retains its normal routing. No MAC/SSID
+            // access or network configuration changes are needed.
+            val cm = connectivity() ?: return false
+            if (cm.getNetworkCapabilities(cm.activeNetwork)
+                    ?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != true) {
+                val wifi = cm.allNetworks.firstOrNull { network ->
+                    cm.getNetworkCapabilities(network)
+                        ?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+                }
+                if (wifi != null && !cm.bindProcessToNetwork(wifi)) return false
+            }
             val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
                 ?: return false
             val lock = multicastLock ?: wm.createMulticastLock("openfader_scan").also {
@@ -128,6 +142,12 @@ class MainActivity : FlutterActivity() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    override fun onDestroy() {
+        scanStop()
+        unbindWifi()
+        super.onDestroy()
     }
 
     override fun onPause() {

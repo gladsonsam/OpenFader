@@ -921,13 +921,14 @@ pub enum Event {
     /// disconnected|offline","name","ip","fs":48000,"latency_ms":1.2}`.
     /// `reconnecting` = the control-health query failed
     /// [`POLL_TIMEOUT_STRIKES`](crate::engine::POLL_TIMEOUT_STRIKES) times in
-    /// a row (~6 s); a single miss holds `connected` while arming the bounded
+    /// a row (provider query timeout + link cadence); a single miss holds
+    /// `connected` while arming the bounded
     /// poller reconciliation. Steady-state `name` is the console name from
     /// `/info` (or the discovered device name); the bare model (`XR18`) only
     /// appears as a degraded fallback when `/info` did not answer. Re-emitted on
     /// every link change and every ~2 s. `latency_ms` measures the health
-    /// operation: an OSC round trip on X-Air, a local session/cache check
-    /// on DL32S (NOT network RTT), and deterministic jitter on sim.
+    /// operation: a read-only round trip on hardware (a correlated device-name
+    /// query for push-cache providers), and deterministic jitter on sim.
     Link {
         state: String,
         name: String,

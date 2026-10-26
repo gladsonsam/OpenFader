@@ -139,8 +139,11 @@ class _AppShellState extends State<AppShell> {
   }
 
   Future<void> _reconnectLast(String addr) async {
+    final run = _conn.connectionRun;
     final driver = await RecentMixers.savedDriverFor(addr);
-    if (mounted) _conn.probe(addr, mixerType: MixerType.fromDriver(driver));
+    if (mounted && run == _conn.connectionRun) {
+      _conn.probe(addr, mixerType: MixerType.fromDriver(driver));
+    }
   }
 
   // Meter cadence and peak behavior follow the Appearance prefs.
@@ -168,6 +171,7 @@ class _AppShellState extends State<AppShell> {
   Future<void> _tick() async {
     try {
       await widget.store.pollMeters();
+      _conn.tickRecovery();
       if (mounted && _tab == AppTab.debug) _debug.captureFrame();
     } catch (_) {
       // A transport hiccup must not crash the shell loop.

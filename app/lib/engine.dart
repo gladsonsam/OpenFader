@@ -1179,6 +1179,11 @@ class EngineState {
         ];
         return true;
       case 'link':
+        if (linkState == 'connected' && e['state'] != 'connected') {
+          // Invalidate pending edits/dialog targets as soon as control health
+          // is lost, before an optional reconnect establishes its new epoch.
+          session++;
+        }
         linkIp = e['ip'] as String? ?? '';
         linkState = (e['state'] as String?) ?? linkState;
         if (linkState != 'connected') _nativeSnapshots = null;

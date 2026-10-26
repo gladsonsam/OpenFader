@@ -26,6 +26,7 @@
 //! # }
 //! ```
 
+mod connection_lifecycle;
 pub mod drivers;
 pub mod engine;
 pub mod local_library;
