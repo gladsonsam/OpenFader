@@ -48,15 +48,15 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
           ),
           const SizedBox(height: 12),
           const Text(
-            'Turn on a limit to prevent edits from this installation. Limits persist across mixers and offline sessions. Existing mixer permissions still apply.',
+            'Turn on a limit to block edits on this device. Limits are remembered across mixers and offline sessions.',
           ),
           const SizedBox(height: 12),
           const Text(
-            'These are local UI limits, not authenticated remote security. Settings remains accessible to change them. No passcode lock is provided.',
+            'Anyone with access to Settings can change these limits. Passcode locking is not available.',
           ),
           const SizedBox(height: 12),
           const Text(
-            'While any limit is active, bulk scene/show recalls, library mutations, uploads and offline pushes are blocked because they can change restricted controls.',
+            'Scene and show recalls, library changes, uploads and offline pushes are blocked while a limit is active.',
           ),
           if (_error != null)
             Padding(
