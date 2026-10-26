@@ -8,12 +8,17 @@ Brand is **OpenFader**, one word. License GPL-3.0-or-later.
 - `app/lib/main.dart` — entry; `BootGate` runs staged boot, then `AppShell`.
 - `app/lib/boot/` — `boot_controller.dart` (staged boot), `launch_screen.dart`,
   `fake_sim_engine.dart` (offline sim backend), `ffi_engine.dart` (real engine).
-- `app/lib/shell/app_router.dart` — navigation + all store implementations.
+- `app/lib/shell/app_router.dart` — navigation and the single shell poll loop;
+  sibling `*_store.dart` adapters implement the screen contracts.
 - `app/lib/screens/` — `start.dart` (Connections front door), `channel.dart`
   + `channel_toolbar.dart`, `connection.dart`, `fx/meters/routing/scenes/settings/debug.dart`.
 - `app/lib/mixer/` — mixer `page.dart`, `controller.dart`, `store.dart`,
   shared tokens in `design.dart`, widgets in `components/`.
-- `app/lib/state/app_store.dart` — the single store (engine reads, `sendRaw` writes).
+- `app/lib/state/app_store.dart` — composition of the single store; sibling
+  `app_store_*.dart` parts separate session, strips, processing, appearance,
+  telemetry, destinations, libraries and presets by responsibility.
+- `app/lib/core/output_*.dart` — injected output processing/preset contracts;
+  output screens and widgets consume provider descriptors.
 - `app/lib/palette.dart` — immutable `ConsolePalette` theme extension. Resolve
   with `ConsolePalette.of(context)` in widgets; pass snapshots into painters and
   compare them in `shouldRepaint`. UI colors must not be global mutable state.
@@ -24,6 +29,9 @@ Brand is **OpenFader**, one word. License GPL-3.0-or-later.
   must speak the same protocol as the native engine.
 - `app/assets/brand/` — approved logo SVG/PNGs + opaque app icon source.
 - `crates/` — `engine core transport flutter_bridge proto-xair proto-dl32s sim serve cli`.
+- `crates/proto-dl32s/src/lib.rs` — driver composition; sibling modules own
+  lifecycle, inputs, assignments, preamps, metadata, telemetry, FX, destinations
+  and output processing. Keep protocol mappings beside their owning module.
 - `scripts/` — `ci-build-app.py`, `flutter-rust-ios.sh`, `flutter-rust-macos.sh`
   (Xcode build phases), `sync-version.mjs` (keeps `VERSION` + manifests in sync).
 - `.github/workflows/ci.yml` — version check, `cargo check/clippy/test`, `flutter analyze`.
