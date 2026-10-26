@@ -10,7 +10,7 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
   final Expando<int> _outputPresetTargets = Expando<int>();
   ProcessorPreset? _outputClipboard;
   OutputPresetTarget? _outputRecall;
-  bool _outputRecallCancelled = false;
+  int _outputRecallCancellation = 0;
   int _outputPresetSequence = 0;
 
   @override
@@ -64,7 +64,10 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
         .where((c) => c.target == target.target && c.surface == target.surface)
         .toList();
     if (snapshot.length != live.length ||
-        snapshot.any((c) => c.revision == null || c.generation == null || !live.contains(c))) {
+        snapshot.any(
+          (c) =>
+              c.revision == null || c.generation == null || !live.contains(c),
+        )) {
       return 'Output processor changed. Reopen presets; no further settings were sent.';
     }
     return null;
@@ -214,7 +217,7 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
 
   @override
   void cancelOutputPresetRecall() {
-    _outputRecallCancelled = true;
+    _outputRecallCancellation++;
   }
 
   @override
@@ -222,6 +225,7 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
     OutputPresetTarget target,
     String? id,
   ) async {
+    final cancellation = _outputRecallCancellation;
     var total = 0;
     var confirmed = 0;
     var sent = 0;
@@ -230,8 +234,12 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
     try {
       final ready = outputPresetTargetError(target);
       if (ready != null) throw StateError(ready);
-      final preset =
-          id == null ? _outputClipboard : await _findOutputPreset(target, id);
+      final preset = id == null
+          ? _outputClipboard
+          : await _findOutputPreset(target, id);
+      if (cancellation != _outputRecallCancellation) {
+        throw StateError('Recall cancelled.');
+      }
       final changed = outputPresetTargetError(target);
       if (changed != null) throw StateError(changed);
       if (preset == null || !_outputCompatible(target, preset)) {
@@ -255,10 +263,11 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
       final snapshot = List<DestinationControlVm>.of(target.controls);
       _outputRecall = target;
       acquired = true;
-      _outputRecallCancelled = false;
       notifyListeners();
       for (final field in fields) {
-        if (_outputRecallCancelled) throw StateError('Recall cancelled.');
+        if (cancellation != _outputRecallCancellation) {
+          throw StateError('Recall cancelled.');
+        }
         final stale = _outputSnapshotError(target, snapshot);
         if (stale != null) throw StateError(stale);
         final index = snapshot.indexWhere((c) => c.id == field.id);
@@ -299,7 +308,9 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
         }
         if (snapshot[index].authority == 'verified') confirmed++;
       }
-      if (_outputRecallCancelled) throw StateError('Recall cancelled.');
+      if (cancellation != _outputRecallCancellation) {
+        throw StateError('Recall cancelled.');
+      }
       return ProcessorPresetResult(
         error: confirmed == total
             ? null
