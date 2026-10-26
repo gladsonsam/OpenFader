@@ -350,30 +350,36 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  Widget _withQuickAccess(Widget child) => Stack(children: [
-        Positioned.fill(child: child),
-        Positioned(
-          right: 12,
-          bottom: 12,
-          child: SafeArea(
-            child: FloatingActionButton.small(
-              heroTag: 'quick-access',
-              tooltip: 'Quick Access',
-              backgroundColor: ConsolePalette.of(context).control,
-              foregroundColor: ConsolePalette.of(context).cyan,
-              onPressed: () => showModalBottomSheet<void>(
-                context: context,
-                isScrollControlled: true,
-                useSafeArea: true,
-                builder: (context) => ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-                    maxWidth: 640,
+  Widget _withQuickAccess(Widget child) => Column(children: [
+        Expanded(child: child),
+        // Reserve the launcher's hit area: overlaying the bottom-right corner
+        // hides the master nameplate on phones and Clear solos on the rail.
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Align(
+              alignment: Alignment.centerRight,
+              heightFactor: 1,
+              child: FloatingActionButton.small(
+                heroTag: 'quick-access',
+                tooltip: 'Quick Access',
+                backgroundColor: ConsolePalette.of(context).control,
+                foregroundColor: ConsolePalette.of(context).cyan,
+                onPressed: () => showModalBottomSheet<void>(
+                  context: context,
+                  isScrollControlled: true,
+                  useSafeArea: true,
+                  builder: (context) => ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+                      maxWidth: 640,
+                    ),
+                    child: SafeArea(child: QuickAccessPanel(store: _quickAccess)),
                   ),
-                  child: SafeArea(child: QuickAccessPanel(store: _quickAccess)),
                 ),
+                child: const Icon(Icons.bolt),
               ),
-              child: const Icon(Icons.bolt),
             ),
           ),
         ),

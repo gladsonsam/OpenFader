@@ -22,19 +22,26 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
     final key = '${control.target}/${control.id}';
     if (_session != widget.store.session || !_pending.add(key)) return;
     setState(() => _error = null);
-    final error = tap
-        ? await widget.store.tapControl(control)
-        : await widget.store.setControl(
-            control,
-            control.value == control.choices.first.value
-                ? control.choices.last.value
-                : control.choices.first.value,
-          );
-    if (!mounted) return;
-    setState(() {
-      _pending.remove(key);
-      _error = error;
-    });
+    String? error;
+    try {
+      error = tap
+          ? await widget.store.tapControl(control)
+          : await widget.store.setControl(
+              control,
+              control.value == control.choices.first.value
+                  ? control.choices.last.value
+                  : control.choices.first.value,
+            );
+    } catch (failure) {
+      error = 'Could not send this setting: $failure. Its result is uncertain.';
+    } finally {
+      if (mounted) {
+        setState(() {
+          _pending.remove(key);
+          _error = error;
+        });
+      }
+    }
   }
 
   @override
