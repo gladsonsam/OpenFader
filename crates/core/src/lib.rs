@@ -493,6 +493,26 @@ pub trait MixerDriver: Send + Sync {
         32
     }
 
+    /// Provider-declared channel pairs. Empty means that stereo linking is
+    /// not available through the shared surface. Indices are zero-based.
+    fn stereo_pairs(&self) -> Vec<[u16; 2]> { Vec::new() }
+    /// All strips affected by a shared linked control. Providers keep
+    /// independent input controls local; the engine checks every member
+    /// before any write. An unavailable link state must fail closed.
+    async fn control_members(&self, strip: StripId, _param: &str) -> anyhow::Result<Vec<StripId>> {
+        Ok(vec![strip])
+    }
+
+
+    /// Directional copy-and-link operation. Returned changes are accepted
+    /// writes, never desk-originated readback. The engine authorizes both
+    /// members before calling and publishes these with accepted provenance.
+    async fn set_stereo_link(&self, source: StripId, linked: bool)
+        -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+        let _ = (source, linked);
+        anyhow::bail!("{}: stereo linking unavailable", self.name())
+    }
+
     // ---- connection ----
     async fn connect(&self, addr: &str) -> anyhow::Result<()>;
     /// Release the current transport and its subscription tasks.

@@ -113,6 +113,18 @@ pub trait DynDriver: Send + Sync {
     fn channel_count(&self) -> usize;
     fn strip_count(&self) -> usize;
     fn topology(&self) -> Vec<StripFamily>;
+    fn stereo_pairs(&self) -> Vec<[u16; 2]> { Vec::new() }
+    /// All strips affected by a shared linked control. Providers keep
+    /// independent input controls local; the engine checks every member
+    /// before any write. An unavailable link state must fail closed.
+    async fn control_members(&self, strip: StripId, _param: &str) -> anyhow::Result<Vec<StripId>> {
+        Ok(vec![strip])
+    }
+
+    async fn set_stereo_link(&self, _source: StripId, _linked: bool)
+        -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+        anyhow::bail!("stereo linking unavailable")
+    }
     fn capabilities(&self) -> &'static [&'static str];
     /// Provider-contributed param definitions, merged with the canonical
     /// catalogue at engine boot (see [`RegisteredDriver::param_registry`]).
@@ -588,6 +600,14 @@ macro_rules! impl_dyn_driver {
         }
         fn topology(&self) -> Vec<StripFamily> {
             MixerDriver::topology(self)
+        }
+        fn stereo_pairs(&self) -> Vec<[u16; 2]> { MixerDriver::stereo_pairs(self) }
+        async fn control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Vec<StripId>> {
+            MixerDriver::control_members(self, strip, param).await
+        }
+        async fn set_stereo_link(&self, source: StripId, linked: bool)
+            -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+            MixerDriver::set_stereo_link(self, source, linked).await
         }
         fn capabilities(&self) -> &'static [&'static str] {
             MixerDriver::capabilities(self)

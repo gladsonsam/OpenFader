@@ -69,6 +69,16 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3637, id: "er_level", label: "ER Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
     FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
         address: 3638, id: "lr_level", label: "LR Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
+    // Native slider endpoints independently verified as normalized0..1,
+    // despite the reference guide describing modulation depth in percent.
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3639, id: "mod_depth", label: "Mod Depth", min: 0.0, max: 1.0, unit: "", decimals: 1 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3640, id: "er_rolloff", label: "ER Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3641, id: "mod_rate", label: "Mod Rate", min: 0.0, max: 20.0, unit: "Hz", decimals: 2 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3642, id: "lf_damping", label: "LF Damping", min: 20.0, max: 20000.0, unit: "Hz", decimals: 1 },
     FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
         address: 3662, id: "time", label: "Delay time", min: 10.0, max: 1600.0, unit: "ms", decimals: 0 },
     FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
@@ -91,6 +101,14 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3699, id: "er_level", label: "ER Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
     FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
         address: 3700, id: "lr_level", label: "LR Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3701, id: "mod_depth", label: "Mod Depth", min: 0.0, max: 1.0, unit: "", decimals: 1 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3702, id: "er_rolloff", label: "ER Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3703, id: "mod_rate", label: "Mod Rate", min: 0.0, max: 20.0, unit: "Hz", decimals: 2 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3704, id: "lf_damping", label: "LF Damping", min: 20.0, max: 20000.0, unit: "Hz", decimals: 1 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
         address: 3724, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
@@ -107,15 +125,64 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3730, id: "er_level", label: "ER Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
         address: 3731, id: "lr_level", label: "LR Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3732, id: "mod_depth", label: "Mod Depth", min: 0.0, max: 1.0, unit: "", decimals: 1 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3733, id: "er_rolloff", label: "ER Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3734, id: "mod_rate", label: "Mod Rate", min: 0.0, max: 20.0, unit: "Hz", decimals: 2 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3735, id: "lf_damping", label: "LF Damping", min: 20.0, max: 20000.0, unit: "Hz", decimals: 1 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3755, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
+        address: 3827, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3899, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3971, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3756, id: "main_return", label: "Main return", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
+        address: 3828, id: "main_return", label: "Main return", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3900, id: "main_return", label: "Main return", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3972, id: "main_return", label: "Main return", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3584, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
+        address: 3596, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3608, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3620, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3583, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
+        address: 3595, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3607, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3619, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
 ];
 
 impl FxParameterSpec {
+    fn is_binary(&self) -> bool {
+        matches!(self.id, "mute" | "send_mute")
+    }
+
     fn allows(&self, value: f32) -> bool {
         value.is_finite() && (self.min..=self.max).contains(&value)
+            && (!self.is_binary() || matches!(value, 0.0 | 1.0))
+    }
+
+    fn raw_value(&self, value: f32) -> u32 {
+        if self.is_binary() { value as u32 } else { value.to_bits() }
     }
 
     fn read_value(&self, raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
-        let value = f32::from_bits(raw);
+        let value = if self.is_binary() { raw as f32 } else { f32::from_bits(raw) };
         self.allows(value).then_some(openfader_core::destinations::DestinationValue { value, verified: true })
     }
 }
@@ -408,6 +475,13 @@ fn decode_push_value(addr: u32, raw: u32) -> Vec<(StripId, String, ParamValue)> 
         "fader" => push("fader".to_string(), ParamValue::Float(addrs::DL32S_FADER_SCALE.inverse(f))),
         "mute" => push("mute".to_string(), ParamValue::Bool(raw != 0)),
         "pan" => push("pan".to_string(), ParamValue::Float(f * 100.0)),
+        "stereo_link" => {
+            if ch0.is_multiple_of(2) {
+                return vec![(strip, "link".to_string(), ParamValue::Bool(raw != 0)),
+                    (StripId(ch0 + 1), "link".to_string(), ParamValue::Bool(raw != 0))];
+            }
+            return out;
+        }
         // Native None is u32::MAX, which cannot round-trip through f32.
         "colour" => push("color".to_string(), ParamValue::Float(decode_colour(raw))),
         key => {
@@ -1266,7 +1340,9 @@ impl Dl32sDriver {
         let channel = Self::channel(strip)?;
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
-        let physical = if matches!(key, "gain" | "phantom") { selected_preamp(session, channel)? } else { channel };
+        let physical = if key == "stereo_link" {
+            if !channel.is_multiple_of(2) { channel } else { channel - 1 }
+        } else if matches!(key, "gain" | "phantom") { selected_preamp(session, channel)? } else { channel };
         let addr = table.address(physical, key)?;
         let raw = if verified { session.cached_verified(addr) } else { session.cached(addr) }
             .ok_or_else(|| anyhow::anyhow!("{key}: no desk-confirmed value yet"))?;
@@ -1726,6 +1802,7 @@ impl MixerDriver for Dl32sDriver {
                 surface: "send".to_string(),
                 description: format!("Applies to every input feeding Aux {slot}. Changing this can alter that monitor mix."),
                 label: "Send source".to_string(),
+                tap_tempo: false,
                 choices: vec![
                     DestinationChoice { value: 2.0, label: "Pre DSP".to_string() },
                     DestinationChoice { value: 1.0, label: "Pre Fader".to_string() },
@@ -1739,8 +1816,27 @@ impl MixerDriver for Dl32sDriver {
                 target: format!("fx/{:02}", spec.slot), target_label: format!("FX {}", spec.slot),
                 target_name: Some(spec.algorithm_name.to_string()), send_slot: None,
                 surface: "fx".to_string(), id: spec.id.to_string(), label: spec.label.to_string(),
-                description: format!("Changes {} for every route through FX {}. Mute, returns and routing are separate controls.", spec.label.to_lowercase(), spec.slot),
-                choices: Vec::new(), range: Some(DestinationRange { min: spec.min, max: spec.max, unit: spec.unit.to_string(), decimals: spec.decimals }),
+                // Native Tape Echo tapping changes only this delay-time word.
+                tap_tempo: spec.slot == 2 && spec.algorithm == 12 && spec.id == "time",
+                description: if spec.id == "mute" {
+                    format!("Changes the mute state of FX {}.", spec.slot)
+                } else if spec.id == "send_mute" {
+                    format!("Mutes the FX {} send master. Turning this off does not clear mute groups.", spec.slot)
+                } else if spec.id == "send_master" {
+                    format!("Changes the master send level feeding FX {}. Return levels and mute are separate controls.", spec.slot)
+                } else if spec.id == "main_return" {
+                    format!("Changes the FX {} return level feeding Main. Other destinations and mute are separate controls.", spec.slot)
+                } else {
+                    format!("Changes {} for every route through FX {}. Mute, returns and routing are separate controls.", spec.label.to_lowercase(), spec.slot)
+                },
+                choices: if spec.id == "send_mute" { vec![
+                    DestinationChoice { value: 0.0, label: "Off".to_string() },
+                    DestinationChoice { value: 1.0, label: "On".to_string() },
+                ] } else if spec.id == "mute" { vec![
+                    DestinationChoice { value: 0.0, label: "Unmuted".to_string() },
+                    DestinationChoice { value: 1.0, label: "Muted".to_string() },
+                ] } else { Vec::new() },
+                range: (!spec.is_binary()).then(|| DestinationRange { min: spec.min, max: spec.max, unit: spec.unit.to_string(), decimals: spec.decimals }),
                 current: parameter.current.clone(),
             });
         }
@@ -1761,12 +1857,12 @@ impl MixerDriver for Dl32sDriver {
                 anyhow::ensure!(parameter.algorithm == Some(spec.algorithm) && session.cached_verified(spec.algorithm_address) == Some(spec.algorithm), "FX algorithm changed; reopen the control.");
                 anyhow::ensure!(parameter.current.as_ref().is_some_and(|current| current.value == expected), "FX value changed; reopen the control.");
                 if let Some(raw) = session.cached_verified(spec.address) {
-                    anyhow::ensure!(raw == expected.to_bits(), "FX value changed; reopen the control.");
+                    anyhow::ensure!(raw == spec.raw_value(expected), "FX value changed; reopen the control.");
                 }
                 parameter.current = None;
                 parameter.revision
             };
-            session.write_float(spec.address, value).await?;
+            session.write_int(spec.address, spec.raw_value(value), VALUE_TYPE_PARAM).await?;
             let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("FX cache unavailable"))?;
             anyhow::ensure!(self.generation.load(Ordering::Acquire) == generation && native.generation == generation && native.view.connected, "FX connection changed while writing; result uncertain.");
             let parameter = native.fx_parameters.get_mut(&spec.address).ok_or_else(|| anyhow::anyhow!("FX parameter unavailable."))?;
@@ -2447,6 +2543,102 @@ impl MixerDriver for Dl32sDriver {
         self.upload_file(filename, data, file_type).await
     }
 
+    fn stereo_pairs(&self) -> Vec<[u16; 2]> {
+        (0..INPUT_COUNT as u16).step_by(2).map(|left| [left, left + 1]).collect()
+    }
+
+    async fn control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Vec<StripId>> {
+        if matches!(param, "link" | "stereo_link" | "source" | "source_a" | "source_b" | "source_select" | "trim" | "gain" | "phantom" | "usbreturn") {
+            return Ok(vec![strip]);
+        }
+        let channel = Self::channel(strip)?;
+        let left = if channel.is_multiple_of(2) { channel - 1 } else { channel };
+        let guard = self.session().await?;
+        let session = guard.as_ref().expect("checked above");
+        let address = dl32s_inputs().address(left, "stereo_link")?;
+        let raw = session.cached(address)
+            .ok_or_else(|| anyhow::anyhow!("Stereo link state is not confirmed; reopen the control."))?;
+        anyhow::ensure!(raw <= 1, "Unknown stereo link state");
+        // Own accepted writes are intentionally absent from the verified
+        // cache. Keep both members protected while that state is pending.
+        Ok(if raw == 1 || session.cached_verified(address).is_none() {
+            vec![StripId((left - 1) as u16), StripId(left as u16)]
+        } else { vec![strip] })
+    }
+
+    async fn set_stereo_link(&self, source: StripId, linked: bool)
+        -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+        let channel = Self::channel(source)?;
+        let left = if !channel.is_multiple_of(2) { channel } else { channel - 1 };
+        let right = left + 1;
+        let peer = if channel == left { right } else { left };
+        let table = dl32s_inputs();
+        let guard = self.session().await?;
+        let session = guard.as_ref().expect("checked above");
+        let left_link = table.address(left, "stereo_link")?;
+        let right_link = table.address(right, "stereo_link")?;
+        // Use the inclusive snapshot so recent accepted edits can be
+        // copied and link/unlink can repeat on a desk with no own-write
+        // echo. Returned changes remain accepted, never readback proof.
+        let current = session.cached(left_link)
+            .ok_or_else(|| anyhow::anyhow!("Stereo link state is not available; reopen the control."))?;
+        anyhow::ensure!(current <= 1, "Unknown stereo link state");
+        let direction = session.cached(right_link)
+            .ok_or_else(|| anyhow::anyhow!("Partner link state is not available; reopen the control."))?;
+        anyhow::ensure!(direction <= 1, "Unknown stereo link direction");
+        let mut changes = Vec::new();
+        if linked && current == 0 {
+            let mut writes = Vec::new();
+            // Native copy excludes source A/B, selection, trim, gain and
+            // phantom. Pan is the combined strip's balance, centered below.
+            // Both directions and name ownership were independently probed.
+            for offset in 0..addrs::INPUT_STRIDE {
+                if matches!(offset, 0..=3 | 9 | 11..=13) { continue; }
+                let from = addrs::INPUT_BASE + (channel - 1) * addrs::INPUT_STRIDE + offset;
+                let to = addrs::INPUT_BASE + (peer - 1) * addrs::INPUT_STRIDE + offset;
+                let value = session.cached(from)
+                    .ok_or_else(|| anyhow::anyhow!("Source setting {offset} is not available; reopen the control."))?;
+                let old = session.cached(to)
+                    .ok_or_else(|| anyhow::anyhow!("Partner setting {offset} is not available; reopen the control."))?;
+                if value != old { writes.push((to, value)); }
+            }
+            let name = session.name_slot(channel)
+                .ok_or_else(|| anyhow::anyhow!("Source name is not available; reopen the control."))?;
+            let old_name = session.name_slot(peer)
+                .ok_or_else(|| anyhow::anyhow!("Partner name is not available; reopen the control."))?;
+            let balance = table.address(left, "pan")?;
+            session.cached(balance)
+                .ok_or_else(|| anyhow::anyhow!("Balance is not available; reopen the control."))?;
+            session.cached(right_link)
+                .ok_or_else(|| anyhow::anyhow!("Partner link state is not available; reopen the control."))?;
+            writes.push((balance, 0.0f32.to_bits()));
+            writes.push((right_link, u32::from(channel == right)));
+            writes.push((left_link, 1));
+            // Validate the entire capture before the first mutation.
+            if name != old_name {
+                session.set_channel_name(peer, &name).await?;
+                changes.push((StripId((peer - 1) as u16), "name".to_string(), ParamValue::Text(name)));
+            }
+            // DL32S firmware can acknowledge multi-address frames without
+            // applying every pair. Use the established single-write path;
+            // activate the pair only after copying its shared settings.
+            for &(address, raw) in &writes {
+                session.write_int(address, raw, VALUE_TYPE_PARAM).await?;
+            }
+            for (address, raw) in writes {
+                if address == left_link || address == right_link { continue; }
+                changes.extend(decode_push_value(address, raw));
+            }
+        } else if !linked && current != 0 {
+            session.write_int(left_link, 0, VALUE_TYPE_PARAM).await?;
+            session.write_int(right_link, 0, VALUE_TYPE_PARAM).await?;
+        }
+        for member in [left, right] {
+            changes.push((StripId((member - 1) as u16), "link".to_string(), ParamValue::Bool(linked)));
+        }
+        Ok(changes)
+    }
+
     async fn set_param(
         &self,
         strip: StripId,
@@ -2454,6 +2646,7 @@ impl MixerDriver for Dl32sDriver {
         value: ParamValue,
     ) -> anyhow::Result<()> {
         match (param, value) {
+            ("link", ParamValue::Bool(linked)) => self.set_stereo_link(strip, linked).await.map(|_| ()),
             (leaf @ ("source_a" | "source_b"), ParamValue::Float(v)) => {
                 anyhow::ensure!(v.is_finite() && v.fract() == 0.0 &&
                     (v == 0.0 || v == 17000.0 || (1000.0..=1031.0).contains(&v) || (2000.0..=2031.0).contains(&v)),

@@ -26,6 +26,7 @@ class DestinationControlVm {
   final String description;
   final String id;
   final String label;
+  final bool tapTempo;
   final List<DestinationChoiceVm> choices;
   final double? min;
   final double? max;
@@ -44,6 +45,7 @@ class DestinationControlVm {
       this.description,
       this.id,
       this.label,
+      this.tapTempo,
       this.choices,
       this.min,
       this.max,
@@ -66,6 +68,22 @@ class DestinationControlVm {
   }
 
   bool get numeric => min != null && max != null;
+  bool get canTapTempo =>
+      tapTempo &&
+      numeric &&
+      const ['ms', 's', 'bpm'].contains(unit.toLowerCase());
+
+  double? valueForTapPeriod(int microseconds) {
+    if (!canTapTempo || microseconds <= 0) return null;
+    final value = switch (unit.toLowerCase()) {
+      'ms' => microseconds / 1000,
+      's' => microseconds / 1000000,
+      'bpm' => 60000000 / microseconds,
+      _ => double.nan,
+    };
+    return allowsValue(value) ? value : null;
+  }
+
   bool allowsValue(double candidate) {
     if (!candidate.isFinite) return false;
     if (choices.any((choice) => choice.value == candidate)) return true;
@@ -84,6 +102,7 @@ class DestinationControlVm {
     final id = data['id'];
     final label = data['label'];
     final rawChoices = data['choices'];
+    final tapTempo = data['tap_tempo'];
     if (data['scope'] != 'destination' ||
         target is! String ||
         target.isEmpty ||
@@ -93,7 +112,8 @@ class DestinationControlVm {
         id.isEmpty ||
         label is! String ||
         label.isEmpty ||
-        rawChoices is! List) {
+        rawChoices is! List ||
+        (tapTempo != null && tapTempo is! bool)) {
       return null;
     }
     final choices = <DestinationChoiceVm>[];
@@ -159,6 +179,7 @@ class DestinationControlVm {
             : 'Applies to every input feeding $targetLabel. Changing this can alter that mix.',
         id,
         label,
+        tapTempo == true,
         List.unmodifiable(choices),
         min,
         max,
@@ -180,6 +201,7 @@ class DestinationControlVm {
       description == other.description &&
       id == other.id &&
       label == other.label &&
+      tapTempo == other.tapTempo &&
       value == other.value &&
       authority == other.authority &&
       min == other.min &&
@@ -200,6 +222,7 @@ class DestinationControlVm {
       description,
       id,
       label,
+      tapTempo,
       value,
       authority,
       min,
