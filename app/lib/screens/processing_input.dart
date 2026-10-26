@@ -462,15 +462,16 @@ class _InputPreampControl extends StatelessWidget {
     String readout(double v) =>
         '${v.toStringAsFixed(1)}${unit.isEmpty ? '' : ' $unit'}';
     final enabled = store.supports(leaf) && value != null && range != null;
-    final text = !store.capabilitiesReady
-        ? 'Loading…'
-        : metadata == null
-            ? 'Not supported'
-            : value == null || !store.supports(leaf)
-                ? 'Loading…'
-                : range == null
-                    ? '${readout(value)} · range unavailable'
-                    : readout(value);
+    final text = store.localAccessMessage(leaf) ??
+        (!store.capabilitiesReady
+            ? 'Loading…'
+            : metadata == null
+                ? 'Not supported'
+                : value == null || !store.supports(leaf)
+                    ? 'Loading…'
+                    : range == null
+                        ? '${readout(value)} · range unavailable'
+                        : readout(value));
     void focusPreamp() {
       if (!enabled) return;
       onFocus(_parameterFocus(store, leaf, section, label, () {
