@@ -100,10 +100,17 @@ mixin _AppStoreChannel on _AppStoreContext {
   }
 
   @override
+  String? localAccessMessage(String leaf) =>
+      _accessParamAllowed(_channel, AppStore.deskLeaf(leaf))
+          ? null
+          : 'Limited on this device';
+
+  @override
   bool supports(String leaf) {
     final desk = AppStore.deskLeaf(leaf);
     if (!_accessParamAllowed(_channel, desk) ||
-        !engine.capsReady || _presetEditingBlocked(_channel, desk)) {
+        !engine.capsReady ||
+        _presetEditingBlocked(_channel, desk)) {
       return false;
     }
     final presentation = paramMetadata(desk);
@@ -281,7 +288,8 @@ mixin _AppStoreChannel on _AppStoreContext {
       cmdParam('send${slot}_pan', pan.clamp(-1.0, 1.0) * 100);
 
   @override
-  bool? get mainAssigned => supports('lr_assign') ? paramBool('lr_assign') : null;
+  bool? get mainAssigned =>
+      supports('lr_assign') ? paramBool('lr_assign') : null;
   @override
   void setMainAssigned(bool on) => cmdParam('lr_assign', on);
   @override
@@ -297,7 +305,8 @@ mixin _AppStoreChannel on _AppStoreContext {
 
   @override
   bool? dcaAssigned(int group) => supports('dca${group + 1}_assign')
-      ? paramBool('dca${group + 1}_assign') : null;
+      ? paramBool('dca${group + 1}_assign')
+      : null;
   @override
   String dcaGroupLabel(int group) =>
       paramMetadata('dca${group + 1}_assign')?['label'] as String? ??
@@ -566,9 +575,10 @@ mixin _AppStoreChannel on _AppStoreContext {
   int get muteGroupCount => engine.muteGroupCount;
 
   @override
-  bool? subgroupAssigned(int g) => accessTargetAllowed(
-      'subgroup/${(g + 1).toString().padLeft(2, '0')}')
-      ? engine.subgroupAssign['$_channel:$g'] : null;
+  bool? subgroupAssigned(int g) =>
+      accessTargetAllowed('subgroup/${(g + 1).toString().padLeft(2, '0')}')
+          ? engine.subgroupAssign['$_channel:$g']
+          : null;
 
   @override
   bool? muteGroupAssigned(int g) => engine.muteGroupAssign['$_channel:$g'];
