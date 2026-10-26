@@ -2337,6 +2337,7 @@ impl Engine {
             params,
             unsupported,
             topology,
+            stereo_pairs: self.drv(&driver).stereo_pairs(),
             meter_taps: self.driver_meter_taps(&driver),
             dynamics_meters: self.drv(&driver).poll_dynamics_meters().is_some(),
             fx: self.fx_caps(&driver),
@@ -5916,6 +5917,12 @@ impl Engine {
                         return Ok(Some(Self::locked_error(ch, &holder)));
                     }
                 }
+                for member in self.active_drv().control_members(StripId(ch), "fader").await? {
+                    policy.allow_fader(member, value)?;
+                    if let Some(holder) = self.lock_holder(member.0) {
+                        if holder != writer { return Ok(Some(Self::locked_error(member.0, &holder))); }
+                    }
+                }
                 let from = self.offline_from(StripId(ch), "fader").await;
                 self.drv_set_fader(StripId(ch), value).await?;
                 if let Some(from) = from {
@@ -5956,6 +5963,12 @@ impl Engine {
                 if let Some(holder) = self.lock_holder(ch) {
                     if holder != writer {
                         return Ok(Some(Self::locked_error(ch, &holder)));
+                    }
+                }
+                for member in self.active_drv().control_members(StripId(ch), "mute").await? {
+                    policy.allow_mute(member)?;
+                    if let Some(holder) = self.lock_holder(member.0) {
+                        if holder != writer { return Ok(Some(Self::locked_error(member.0, &holder))); }
                     }
                 }
                 let from = self.offline_from(StripId(ch), "mute").await;
@@ -6042,6 +6055,12 @@ impl Engine {
                         return Ok(Some(Self::locked_error(ch, &holder)));
                     }
                 }
+                for member in self.active_drv().control_members(StripId(ch), "solo").await? {
+                    policy.allow_strip(member)?;
+                    if let Some(holder) = self.lock_holder(member.0) {
+                        if holder != writer { return Ok(Some(Self::locked_error(member.0, &holder))); }
+                    }
+                }
                 self.active_drv().set_solo(StripId(ch), soloed).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
@@ -6084,6 +6103,48 @@ impl Engine {
                 if let Some(holder) = self.lock_holder(ch) {
                     if holder != writer {
                         return Ok(Some(Self::locked_error(ch, &holder)));
+                    }
+                }
+                if field == "link" {
+                    let linked = match pv { ParamValue::Bool(value) => value, _ => anyhow::bail!("stereo link requires a boolean") };
+                    let pair = self.active_drv().stereo_pairs().into_iter()
+                        .find(|pair| pair.contains(&ch))
+                        .ok_or_else(|| anyhow::anyhow!("stereo pairing unavailable for this channel"))?;
+                    for member in pair {
+                        // Linking can replace names, levels and assignments,
+                        // so a strip-only grant is insufficient.
+                        policy.allow_assign(StripId(member))?;
+                        if linked { policy.allow_rename(StripId(member))?; }
+                        if let Some(holder) = self.lock_holder(member) {
+                            if holder != writer { return Ok(Some(Self::locked_error(member, &holder))); }
+                        }
+                    }
+                    if linked {
+                        let level = self.active_drv().get_fader(StripId(ch)).await?;
+                        for member in pair { policy.allow_fader(StripId(member), level)?; }
+                    }
+                    let changes = self.active_drv().set_stereo_link(StripId(ch), linked).await?;
+                    self.note_write(writer);
+                    self.touch_holder_locks(writer);
+                    for (strip, field, value) in changes {
+                        out.push(Event::Param {
+                            ch: strip.0, field, value: param_value_json(&value),
+                            by: Some(writer.to_string()), key: self.active_strip_key(strip.0),
+                            authority: Some("accepted".to_string()),
+                        });
+                    }
+                    self.push_state_with_by(writer, out).await;
+                    return Ok(None);
+                }
+                for member in self.active_drv().control_members(StripId(ch), &field).await? {
+                    match (field.as_str(), &pv) {
+                        ("fader", ParamValue::Float(v)) => policy.allow_fader(member, *v)?,
+                        ("mute", _) => policy.allow_mute(member)?,
+                        ("name", _) => policy.allow_rename(member)?,
+                        _ => policy.allow_strip(member)?,
+                    }
+                    if let Some(holder) = self.lock_holder(member.0) {
+                        if holder != writer { return Ok(Some(Self::locked_error(member.0, &holder))); }
                     }
                 }
                 let from = self.offline_from(StripId(ch), &field).await;
