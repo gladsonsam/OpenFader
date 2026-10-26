@@ -167,6 +167,7 @@ mixin _AppStoreSession on _AppStoreContext {
     _confirmedFader.clear();
     _confirmedMute.clear();
     _bank = 'ch1';
+    _outputProcessingTarget = null;
     _busId = 'main';
     _focusCh = null;
     _spectrum.value = const [];
