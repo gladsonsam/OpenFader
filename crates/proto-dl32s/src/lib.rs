@@ -6,6 +6,8 @@
 //! exactly like this one: table + mapping, zero core changes.
 
 pub mod addrs;
+mod destination;
+mod fx;
 
 use addrs::{dl32s_inputs, INPUT_COUNT};
 use openfader_core::{
@@ -26,172 +28,6 @@ use tokio::sync::{broadcast, Mutex, MutexGuard};
 // Type-2 input Solo: CH7=29 and CH8=30 independently verified against
 // Master Fader, 2026-10-25. The contiguous input bank starts at CH1=23.
 const INPUT_SOLO_FIRST_ADDRESS: u32 = 23;
-
-// Each Aux1..8 address was independently changed in Master Fader from
-// Pre Fader1 -> Pre DSP2 and restored against the complete bank. Other
-// tap values and the separate Use LR Mute flag remain unverified.
-const AUX_SEND_SOURCE_ADDRESSES: [u32; 8] = [4434, 4524, 4614, 4704, 4794, 4884, 4974, 5064];
-// Each listed parameter address was independently changed, observed in
-// Master Fader and restored against the complete mixer bank. Algorithm
-// guards intentionally cover only the observed slot/algorithm pairs.
-// Engineering domains: Master Fader 5.1 reference guide pp165,167.
-// Decay bounds additionally verified at both native slider endpoints for
-// each listed slot/algorithm: Plate1..3 s, Hall2..6 s, Spring0.1..10 s.
-#[derive(Debug)]
-struct FxParameterSpec {
-    slot: u16,
-    algorithm_address: u32,
-    algorithm: u32,
-    algorithm_name: &'static str,
-    address: u32,
-    id: &'static str,
-    label: &'static str,
-    min: f32,
-    max: f32,
-    unit: &'static str,
-    decimals: u8,
-}
-
-const FX_PARAMETERS: &[FxParameterSpec] = &[
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3631, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3632, id: "decay", label: "Decay", min: 1.0, max: 3.0, unit: "s", decimals: 1 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3633, id: "diffusion", label: "Diffusion", min: 0.0, max: 10.0, unit: "", decimals: 1 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3634, id: "hf_damping", label: "HF Damping", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3635, id: "lr_rolloff", label: "LR Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3636, id: "lr_bass_boost", label: "LR Bass Boost", min: -15.0, max: 15.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3637, id: "er_level", label: "ER Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3638, id: "lr_level", label: "LR Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
-    // Native slider endpoints independently verified as normalized0..1,
-    // despite the reference guide describing modulation depth in percent.
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3639, id: "mod_depth", label: "Mod Depth", min: 0.0, max: 1.0, unit: "", decimals: 1 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3640, id: "er_rolloff", label: "ER Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3641, id: "mod_rate", label: "Mod Rate", min: 0.0, max: 20.0, unit: "Hz", decimals: 2 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3642, id: "lf_damping", label: "LF Damping", min: 20.0, max: 20000.0, unit: "Hz", decimals: 1 },
-    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
-        address: 3662, id: "time", label: "Delay time", min: 10.0, max: 1600.0, unit: "ms", decimals: 0 },
-    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
-        address: 3664, id: "feedback", label: "Feedback", min: 0.0, max: 100.0, unit: "%", decimals: 0 },
-    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
-        address: 3665, id: "hf_damping", label: "HF Damping", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3693, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3694, id: "decay", label: "Decay", min: 2.0, max: 6.0, unit: "s", decimals: 1 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3695, id: "diffusion", label: "Diffusion", min: 0.0, max: 10.0, unit: "", decimals: 1 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3696, id: "hf_damping", label: "HF Damping", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3697, id: "lr_rolloff", label: "LR Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3698, id: "lr_bass_boost", label: "LR Bass Boost", min: -15.0, max: 15.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3699, id: "er_level", label: "ER Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3700, id: "lr_level", label: "LR Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3701, id: "mod_depth", label: "Mod Depth", min: 0.0, max: 1.0, unit: "", decimals: 1 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3702, id: "er_rolloff", label: "ER Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3703, id: "mod_rate", label: "Mod Rate", min: 0.0, max: 20.0, unit: "Hz", decimals: 2 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3704, id: "lf_damping", label: "LF Damping", min: 20.0, max: 20000.0, unit: "Hz", decimals: 1 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3724, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3725, id: "decay", label: "Decay", min: 0.1, max: 10.0, unit: "s", decimals: 1 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3726, id: "diffusion", label: "Diffusion", min: 0.0, max: 10.0, unit: "", decimals: 1 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3727, id: "hf_damping", label: "HF Damping", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3728, id: "lr_rolloff", label: "LR Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3729, id: "lr_bass_boost", label: "LR Bass Boost", min: -15.0, max: 15.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3730, id: "er_level", label: "ER Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3731, id: "lr_level", label: "LR Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3732, id: "mod_depth", label: "Mod Depth", min: 0.0, max: 1.0, unit: "", decimals: 1 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3733, id: "er_rolloff", label: "ER Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3734, id: "mod_rate", label: "Mod Rate", min: 0.0, max: 20.0, unit: "Hz", decimals: 2 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3735, id: "lf_damping", label: "LF Damping", min: 20.0, max: 20000.0, unit: "Hz", decimals: 1 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3755, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
-    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
-        address: 3827, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3899, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3971, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3756, id: "main_return", label: "Main return", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
-        address: 3828, id: "main_return", label: "Main return", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3900, id: "main_return", label: "Main return", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3972, id: "main_return", label: "Main return", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3584, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
-        address: 3596, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3608, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3620, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
-    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
-        address: 3583, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
-    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
-        address: 3595, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
-    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
-        address: 3607, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
-    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
-        address: 3619, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
-];
-
-impl FxParameterSpec {
-    fn is_binary(&self) -> bool {
-        matches!(self.id, "mute" | "send_mute")
-    }
-
-    fn allows(&self, value: f32) -> bool {
-        value.is_finite() && (self.min..=self.max).contains(&value)
-            && (!self.is_binary() || matches!(value, 0.0 | 1.0))
-    }
-
-    fn raw_value(&self, value: f32) -> u32 {
-        if self.is_binary() { value as u32 } else { value.to_bits() }
-    }
-
-    fn read_value(&self, raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
-        let value = if self.is_binary() { raw as f32 } else { f32::from_bits(raw) };
-        self.allows(value).then_some(openfader_core::destinations::DestinationValue { value, verified: true })
-    }
-}
-
-fn aux_tap_value(raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
-    matches!(raw, 1 | 2).then_some(openfader_core::destinations::DestinationValue {
-        value: raw as f32, verified: true,
-    })
-}
 
 /// Wave-1+2 canonical surface: every id below names a DL32S leaf whose
 /// position was confirmed on hardware AND whose value domain was confirmed
@@ -763,20 +599,6 @@ struct SpectrumState {
     bins_db: Vec<f32>,
 }
 
-#[derive(Debug, Default)]
-struct AuxTapCache {
-    name: Option<String>,
-    current: Option<openfader_core::destinations::DestinationValue>,
-    revision: u64,
-}
-
-#[derive(Debug, Default)]
-struct FxParameterCache {
-    algorithm: Option<u32>,
-    current: Option<openfader_core::destinations::DestinationValue>,
-    revision: u64,
-}
-
 /// Private generation-tagged wrapper around the public
 /// [`openfader_core::NativeSnapshots`] view: `generation` names the
 /// connection that owns `view` (same pattern as [`MeterState`] /
@@ -789,8 +611,8 @@ struct NativeCache {
     generation: u64,
     view: openfader_core::NativeSnapshots,
     parameter_labels: std::collections::BTreeMap<&'static str, String>,
-    aux_taps: std::collections::BTreeMap<u16, AuxTapCache>,
-    fx_parameters: std::collections::BTreeMap<u32, FxParameterCache>,
+    destinations: destination::DestinationState,
+    fx: fx::FxState,
 }
 
 /// Native VCA1..6 names occupy slots58..63; View A..F uses70..75.
@@ -1789,121 +1611,14 @@ impl MixerDriver for Dl32sDriver {
     }
 
     fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
-        use openfader_core::destinations::{DestinationChoice, DestinationControl, DestinationRange};
-        let generation = self.generation.load(Ordering::Acquire);
-        let native = self.native.lock().ok().filter(|n| {
-            n.generation == generation && n.view.connected
-        });
-        let mut controls: Vec<_> = (1..=AUX_SEND_SOURCE_ADDRESSES.len() as u16).map(|slot| {
-            let tap = native.as_ref().and_then(|n| n.aux_taps.get(&slot));
-            DestinationControl {
-                target: format!("bus/{slot:02}"), target_label: format!("Aux {slot}"),
-                target_name: tap.and_then(|tap| tap.name.clone()), send_slot: Some(slot), id: "tap".to_string(),
-                surface: "send".to_string(),
-                description: format!("Applies to every input feeding Aux {slot}. Changing this can alter that monitor mix."),
-                label: "Send source".to_string(),
-                tap_tempo: false,
-                choices: vec![
-                    DestinationChoice { value: 2.0, label: "Pre DSP".to_string() },
-                    DestinationChoice { value: 1.0, label: "Pre Fader".to_string() },
-                ], range: None, current: tap.and_then(|tap| tap.current.clone()),
-            }
-        }).collect();
-        for spec in FX_PARAMETERS {
-            let Some(parameter) = native.as_ref().and_then(|n| n.fx_parameters.get(&spec.address))
-                .filter(|parameter| parameter.algorithm == Some(spec.algorithm)) else { continue; };
-            controls.push(DestinationControl {
-                target: format!("fx/{:02}", spec.slot), target_label: format!("FX {}", spec.slot),
-                target_name: Some(spec.algorithm_name.to_string()), send_slot: None,
-                surface: "fx".to_string(), id: spec.id.to_string(), label: spec.label.to_string(),
-                // Native Tape Echo tapping changes only this delay-time word.
-                tap_tempo: spec.slot == 2 && spec.algorithm == 12 && spec.id == "time",
-                description: if spec.id == "mute" {
-                    format!("Changes the mute state of FX {}.", spec.slot)
-                } else if spec.id == "send_mute" {
-                    format!("Mutes the FX {} send master. Turning this off does not clear mute groups.", spec.slot)
-                } else if spec.id == "send_master" {
-                    format!("Changes the master send level feeding FX {}. Return levels and mute are separate controls.", spec.slot)
-                } else if spec.id == "main_return" {
-                    format!("Changes the FX {} return level feeding Main. Other destinations and mute are separate controls.", spec.slot)
-                } else {
-                    format!("Changes {} for every route through FX {}. Mute, returns and routing are separate controls.", spec.label.to_lowercase(), spec.slot)
-                },
-                choices: if spec.id == "send_mute" { vec![
-                    DestinationChoice { value: 0.0, label: "Off".to_string() },
-                    DestinationChoice { value: 1.0, label: "On".to_string() },
-                ] } else if spec.id == "mute" { vec![
-                    DestinationChoice { value: 0.0, label: "Unmuted".to_string() },
-                    DestinationChoice { value: 1.0, label: "Muted".to_string() },
-                ] } else { Vec::new() },
-                range: (!spec.is_binary()).then(|| DestinationRange { min: spec.min, max: spec.max, unit: spec.unit.to_string(), decimals: spec.decimals }),
-                current: parameter.current.clone(),
-            });
-        }
-        controls
+        self.collect_destination_controls()
     }
 
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
-        if let Some(spec) = FX_PARAMETERS.iter().find(|spec| target == format!("fx/{:02}", spec.slot) && control == spec.id) {
-            anyhow::ensure!(spec.allows(value) && spec.allows(expected), "dl32s: FX parameter outside documented range");
-            let guard = self.session().await?;
-            let session = guard.as_ref().expect("checked above");
-            anyhow::ensure!(session.is_alive(), "dl32s: FX session unavailable");
-            let generation = self.generation.load(Ordering::Acquire);
-            let revision = {
-                let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("FX cache unavailable"))?;
-                anyhow::ensure!(native.generation == generation && native.view.connected, "FX connection changed.");
-                let parameter = native.fx_parameters.get_mut(&spec.address).ok_or_else(|| anyhow::anyhow!("FX parameter unavailable."))?;
-                anyhow::ensure!(parameter.algorithm == Some(spec.algorithm) && session.cached_verified(spec.algorithm_address) == Some(spec.algorithm), "FX algorithm changed; reopen the control.");
-                anyhow::ensure!(parameter.current.as_ref().is_some_and(|current| current.value == expected), "FX value changed; reopen the control.");
-                if let Some(raw) = session.cached_verified(spec.address) {
-                    anyhow::ensure!(raw == spec.raw_value(expected), "FX value changed; reopen the control.");
-                }
-                parameter.current = None;
-                parameter.revision
-            };
-            session.write_int(spec.address, spec.raw_value(value), VALUE_TYPE_PARAM).await?;
-            let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("FX cache unavailable"))?;
-            anyhow::ensure!(self.generation.load(Ordering::Acquire) == generation && native.generation == generation && native.view.connected, "FX connection changed while writing; result uncertain.");
-            let parameter = native.fx_parameters.get_mut(&spec.address).ok_or_else(|| anyhow::anyhow!("FX parameter unavailable."))?;
-            anyhow::ensure!(parameter.algorithm == Some(spec.algorithm), "FX algorithm changed while writing; result uncertain.");
-            if parameter.revision == revision {
-                parameter.current = Some(openfader_core::destinations::DestinationValue { value, verified: false });
-            }
+        if self.write_fx_control(target, control, value, expected).await? {
             return Ok(());
         }
-        let slot = (1..=AUX_SEND_SOURCE_ADDRESSES.len() as u16)
-            .find(|slot| target == format!("bus/{slot:02}"))
-            .ok_or_else(|| anyhow::anyhow!("dl32s: unverified destination control"))?;
-        anyhow::ensure!(control == "tap", "dl32s: unverified destination control");
-        let address = AUX_SEND_SOURCE_ADDRESSES[slot as usize - 1];
-        anyhow::ensure!(matches!(value, 1.0 | 2.0) && matches!(expected, 1.0 | 2.0), "dl32s: unverified destination tap value");
-        let guard = self.session().await?;
-        let session = guard.as_ref().expect("checked above");
-        anyhow::ensure!(session.is_alive(), "dl32s: destination session unavailable");
-        let generation = self.generation.load(Ordering::Acquire);
-        // Display continuity permits an exact restore after an accepted own
-        // write. This comparison is a guard, never claimed as verification.
-        let revision = {
-            let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("destination cache unavailable"))?;
-            anyhow::ensure!(native.generation == generation && native.view.connected, "Destination connection changed.");
-            let tap = native.aux_taps.get_mut(&slot).ok_or_else(|| anyhow::anyhow!("Destination unavailable."))?;
-            anyhow::ensure!(tap.current.as_ref().is_some_and(|current| current.value == expected), "Destination changed; reopen the control.");
-            if let Some(raw) = session.cached_verified(address) {
-                anyhow::ensure!(raw == expected as u32, "Destination changed; reopen the control.");
-            }
-            tap.current = None; // failed/uncertain writes cannot retain old proof
-            tap.revision
-        };
-        session.write_int(address, value as u32, VALUE_TYPE_PARAM).await?;
-        let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("destination cache unavailable"))?;
-        anyhow::ensure!(self.generation.load(Ordering::Acquire) == generation && native.generation == generation && native.view.connected, "Destination connection changed while writing; result uncertain.");
-        // A genuine newer push wins over accepted intent, even if it disagrees.
-        let tap = native.aux_taps.get_mut(&slot).ok_or_else(|| anyhow::anyhow!("Destination unavailable."))?;
-        if tap.revision == revision {
-            tap.current = Some(openfader_core::destinations::DestinationValue { value, verified: false });
-        }
-        Ok(())
+        self.write_aux_control(target, control, value, expected).await
     }
 
     /// Provider rows extend the canonical catalogue with source IDs,
@@ -2092,23 +1807,8 @@ impl MixerDriver for Dl32sDriver {
                 .collect();
             slots.sort_by_key(|s| s.slot);
             n.generation = generation;
-            n.aux_taps = AUX_SEND_SOURCE_ADDRESSES.iter().enumerate().map(|(index, address)| {
-                let slot = index as u16 + 1;
-                (slot, AuxTapCache {
-                    name: session.name_slot_verified(49 + slot as u32).filter(|name| !name.is_empty()),
-                    current: session.cached_verified(*address).and_then(aux_tap_value),
-                    revision: 0,
-                })
-            }).collect();
-            n.fx_parameters = FX_PARAMETERS.iter().map(|spec| {
-                let algorithm = session.cached_verified(spec.algorithm_address);
-                (spec.address, FxParameterCache {
-                    algorithm,
-                    current: (algorithm == Some(spec.algorithm))
-                        .then(|| session.cached_verified(spec.address).and_then(|raw| spec.read_value(raw))).flatten(),
-                    revision: 0,
-                })
-            }).collect();
+            n.destinations.seed(&session);
+            n.fx.seed(&session);
             n.parameter_labels = (58..=75).filter_map(|slot| {
                 let id = assignment_name_parameter(slot)?;
                 let name = session.name_slot_verified(slot)?;
@@ -2182,29 +1882,8 @@ impl MixerDriver for Dl32sDriver {
                                 if let Ok(mut v) = native.lock() {
                                     if v.generation != generation { break; }
                                     if v.view.connected {
-                                        for (index, address) in AUX_SEND_SOURCE_ADDRESSES.iter().enumerate() {
-                                            if *address < *start || (*address - *start) >= raws.len() as u32 { continue; }
-                                            if let Some(tap) = v.aux_taps.get_mut(&(index as u16 + 1)) {
-                                                tap.revision = tap.revision.wrapping_add(1);
-                                                tap.current = aux_tap_value(raws[(*address - *start) as usize]);
-                                            }
-                                        }
-                                        let raw_at = |address: u32| address.checked_sub(*start).and_then(|offset| raws.get(offset as usize)).copied();
-                                        for spec in FX_PARAMETERS {
-                                            let Some(parameter) = v.fx_parameters.get_mut(&spec.address) else { continue; };
-                                            if let Some(algorithm) = raw_at(spec.algorithm_address) {
-                                                if parameter.algorithm != Some(algorithm) {
-                                                    parameter.algorithm = Some(algorithm);
-                                                    parameter.current = None;
-                                                    parameter.revision = parameter.revision.wrapping_add(1);
-                                                }
-                                            }
-                                            if let Some(raw) = raw_at(spec.address) {
-                                                parameter.revision = parameter.revision.wrapping_add(1);
-                                                parameter.current = (parameter.algorithm == Some(spec.algorithm))
-                                                    .then(|| spec.read_value(raw)).flatten();
-                                            }
-                                        }
+                                        v.destinations.ingest(*start, raws);
+                                        v.fx.ingest(*start, raws);
                                     }
                                 }
                             }
@@ -2213,11 +1892,7 @@ impl MixerDriver for Dl32sDriver {
                                     if v.generation != generation { break; }
                                     if v.view.connected {
                                         for (slot, name) in pairs {
-                                            if (50..=57).contains(slot) {
-                                                if let Some(tap) = v.aux_taps.get_mut(&((*slot - 49) as u16)) {
-                                                    tap.name = (!name.is_empty()).then(|| name.clone());
-                                                }
-                                            }
+                                            v.destinations.name(*slot, name);
                                             if let Some(id) = assignment_name_parameter(*slot) {
                                                 if let Some(label) = assignment_name_label(*slot, name) {
                                                     v.parameter_labels.insert(id, label);
