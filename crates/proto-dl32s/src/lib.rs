@@ -73,6 +73,12 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
     // despite the reference guide describing modulation depth in percent.
     FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
         address: 3639, id: "mod_depth", label: "Mod Depth", min: 0.0, max: 1.0, unit: "", decimals: 1 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3640, id: "er_rolloff", label: "ER Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3641, id: "mod_rate", label: "Mod Rate", min: 0.0, max: 20.0, unit: "Hz", decimals: 2 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3642, id: "lf_damping", label: "LF Damping", min: 20.0, max: 20000.0, unit: "Hz", decimals: 1 },
     FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
         address: 3662, id: "time", label: "Delay time", min: 10.0, max: 1600.0, unit: "ms", decimals: 0 },
     FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
