@@ -12,6 +12,15 @@ mixin _AppStoreAssignments on _AppStoreContext {
   static final _membership = RegExp(r'^(dca|view)([1-9][0-9]*)_assign$');
   static final _group = RegExp(r'^(subgroup|mute_group):([0-9]+)$');
 
+  String _assignmentLabel(String id) {
+    if (id == 'lr_assign') return 'Main LR';
+    final member = _membership.firstMatch(id)!;
+    final family = member[1] == 'view' ? 'View' : 'Control group';
+    final label = engine.parameterMetadata[id]?['label'] as String?;
+    final identity = '$family ${member[2]}';
+    return label == null || label == id ? identity : '$identity · $label';
+  }
+
   bool _assignmentParamApplies(ChannelNameTarget target, String id) {
     final metadata = engine.parameterMetadata[id];
     final family = _presetFamily(target.channel);
@@ -45,7 +54,7 @@ mixin _AppStoreAssignments on _AppStoreContext {
             assignmentForChannel(target, id) != null)
           ChannelAssignmentChoice(
             id,
-            engine.parameterMetadata[id]?['label'] as String? ?? id,
+            _assignmentLabel(id),
           ),
       // Group capability counts alone do not imply this strip is assignable:
       // require its membership snapshot, including false, from the backend.

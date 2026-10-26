@@ -36,7 +36,7 @@ class _QuickAssignState extends State<_QuickAssign> {
     setState(() {
       _pending = false;
       _status = result.error ??
-          'Matching backend state observed. Command receipt and desk readback are not confirmed.';
+          'Assignment matches your choice. Mixer confirmation is unavailable.';
     });
   }
 
@@ -85,7 +85,7 @@ class _QuickAssignState extends State<_QuickAssign> {
                         _pending
                             ? 'Sending assignment…'
                             : _status ??
-                                'Change one membership at a time. Switches show the latest backend state.',
+                                'Change one membership at a time. Switches show the latest assignment state.',
                         style: AppDesign.type(14, color: p.mutedText)),
                   ]),
                 ),
