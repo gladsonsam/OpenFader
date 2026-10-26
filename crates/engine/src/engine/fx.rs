@@ -15,12 +15,14 @@ impl Engine {
             openfader_core::fx::FX_TYPES
                 .iter()
                 .map(|t| crate::protocol::FxTypeCaps {
+                    slots: Vec::new(),
                     id: t.id.to_string(),
                     label: t.label.to_string(),
                     params: t
                         .params
                         .iter()
                         .map(|p| crate::protocol::FxParamCaps {
+                            choices: Vec::new(),
                             id: p.id.to_string(),
                             label: p.label.to_string(),
                             unit: p.unit.to_string(),

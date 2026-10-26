@@ -62,6 +62,16 @@ impl Engine {
                         "choices": p.choices.iter().map(|c| json!({"value": c.value, "label": c.label})).collect::<Vec<_>>()
                     })
                 }).collect();
+                if let Some(slot) = def.id.strip_prefix("send").and_then(|id| id.strip_suffix("_level")).and_then(|id| id.parse::<u16>().ok()) {
+                    if let Some(destination) = self.drv(&driver).send_destination(slot) {
+                        frame.presentations.insert(0, json!({ "destination": {
+                            "key": destination.key, "label": destination.label, "stereo": destination.stereo, "allow_self": destination.allow_self,
+                        }}));
+                    }
+                }
+                if let Some(group) = self.drv(&driver).param_recall_group(def.id) {
+                    frame.presentations.insert(0, json!({ "recall_group": group }));
+                }
                 if !swatches.is_empty() {
                     frame.presentations.insert(0, json!({
                         "swatches": swatches.iter().map(|s| json!({

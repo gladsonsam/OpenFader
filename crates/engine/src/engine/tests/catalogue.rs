@@ -392,3 +392,240 @@ async fn poll_list_carries_xair_solo_bank() {
         );
     }
 }
+
+#[test]
+fn wing_caps_name_matrix_and_main_send_destinations_and_scope_their_controls() {
+    let engine = Engine::new(EngineConfig::default());
+    *engine.active.write().unwrap() = "wing".into();
+    let Event::Caps { params, .. } = engine.caps_message() else {
+        panic!("caps frame expected")
+    };
+    let parameter = |id: &str| params.iter().find(|p| p.id == id).unwrap();
+    for (id, key, label) in [
+        ("send1_level", "bus/01", "Bus 1"),
+        ("send17_level", "mtx/01", "Matrix 1"),
+        ("send24_level", "mtx/08", "Matrix 8"),
+        ("send25_level", "main/01", "Main 1"),
+        ("send28_level", "main/04", "Main 4"),
+    ] {
+        let destination = parameter(id)
+            .presentations
+            .iter()
+            .find_map(|p| p.get("destination"))
+            .unwrap();
+        assert_eq!(destination["key"], key);
+        assert_eq!(destination["label"], label);
+        assert_eq!(destination["stereo"], true);
+        assert_eq!(destination["allow_self"], false);
+    }
+    assert!(parameter("send17_level").scopes.iter().any(|s| s == "main"));
+    assert!(!parameter("send25_level").scopes.iter().any(|s| s == "main"));
+    assert!(!parameter("send17_pre").scopes.iter().any(|s| s == "in"));
+    assert_eq!(parameter("send28_level").min, json!(-144.0));
+    let destination = engine.drv("wing").send_destination(29);
+    assert!(destination.is_none());
+    for (id, group) in [
+        ("send7_level", "sends_bus"),
+        ("send17_level", "sends_matrix"),
+        ("send28_level", "sends_main"),
+        ("lr_assign", "sends_main"),
+        ("eq8_freq", "eq"),
+        ("source_a", "source"),
+    ] {
+        let advertised = parameter(id)
+            .presentations
+            .iter()
+            .find_map(|p| p.get("recall_group"))
+            .unwrap();
+        assert_eq!(advertised, group);
+    }
+}
+
+#[tokio::test]
+async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
+    // Exercise the real recall path and WING driver over UDP. Encode the
+    // few fixture replies directly; no hardware or native meter service.
+    fn osc_string(out: &mut Vec<u8>, value: &str) {
+        out.extend_from_slice(value.as_bytes());
+        out.push(0);
+        while !out.len().is_multiple_of(4) {
+            out.push(0);
+        }
+    }
+    let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+    let addr = socket.local_addr().unwrap().to_string();
+    let writes = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let log = writes.clone();
+    let task = tokio::spawn(async move {
+        let mut data = [0u8; 4096];
+        loop {
+            let (n, peer) = socket.recv_from(&mut data).await.unwrap();
+            let packet = openfader_transport::osc::decode_packet(&data[..n]).unwrap();
+            for msg in openfader_transport::osc::flatten(packet) {
+                if !msg.args.is_empty() {
+                    log.lock().unwrap().push(msg.addr);
+                    continue;
+                }
+                let mut reply = Vec::new();
+                osc_string(&mut reply, &msg.addr);
+                if msg.addr == "/?" || msg.addr.ends_with("/mdl") {
+                    osc_string(&mut reply, ",s");
+                    osc_string(
+                        &mut reply,
+                        if msg.addr == "/?" {
+                            "WING,127.0.0.1,Scope fixture,wing-compact,TEST,3.0.5"
+                        } else {
+                            "NONE"
+                        },
+                    );
+                } else if msg.addr.ends_with("/grp") || msg.addr.ends_with("/altgrp") {
+                    osc_string(&mut reply, ",s");
+                    osc_string(&mut reply, "LCL");
+                } else if msg.addr.ends_with("/in/conn/in") || msg.addr.ends_with("/altin") {
+                    osc_string(&mut reply, ",i");
+                    reply.extend_from_slice(&3i32.to_be_bytes());
+                } else if msg.addr.ends_with("/srcauto") {
+                    osc_string(&mut reply, ",i");
+                    reply.extend_from_slice(&1i32.to_be_bytes());
+                } else if msg.addr.ends_with("/fdr") {
+                    osc_string(&mut reply, ",f");
+                    reply.extend_from_slice(&(-12f32).to_be_bytes());
+                } else {
+                    osc_string(&mut reply, ",i");
+                    reply.extend_from_slice(&0i32.to_be_bytes());
+                }
+                socket.send_to(&reply, peer).await.unwrap();
+            }
+        }
+    });
+    let engine = Engine::new(EngineConfig::default());
+    *engine.active.write().unwrap() = "wing".into();
+    let drv = engine.drv("wing");
+    drv.connect(&addr).await.unwrap();
+    let scene = StoredScene {
+        number: 1,
+        name: "Sends".into(),
+        saved_at: 0,
+        main_fader: None,
+        fx: vec![],
+        routing: vec![],
+        strips: vec![StoredStrip {
+            strip: 0,
+            key: Some("ch/01".into()),
+            name: String::new(),
+            fader: 0.5,
+            mute: false,
+            params: [1, 16, 17, 24, 25, 28]
+                .into_iter()
+                .map(|slot| (format!("send{slot}_on"), json!(true)))
+                .collect(),
+        }],
+    };
+    for (group, fields, paths) in [
+        (
+            "sends_bus",
+            vec!["send1_on", "send16_on"],
+            vec!["/ch/1/send/1/on", "/ch/1/send/16/on"],
+        ),
+        (
+            "sends_matrix",
+            vec!["send17_on", "send24_on"],
+            vec!["/ch/1/send/MX1/on", "/ch/1/send/MX8/on"],
+        ),
+        (
+            "sends_main",
+            vec!["send25_on", "send28_on"],
+            vec!["/ch/1/main/1/on", "/ch/1/main/4/on"],
+        ),
+        ("sends_fx", vec![], vec![]),
+        ("config", vec![], vec![]),
+        ("mute", vec!["mute"], vec!["/ch/1/mute"]),
+        ("fader_pan", vec!["fader"], vec!["/ch/1/fdr"]),
+    ] {
+        writes.lock().unwrap().clear();
+        let scope = RecallScope {
+            groups: Some(vec![group.into()]),
+            globals: Some(vec![]),
+            ..Default::default()
+        };
+        let mut out = Vec::new();
+        engine
+            .recall_full(&scene, 0, Some(&scope), "test", &mut out)
+            .await
+            .unwrap();
+        // Query barrier: all earlier loopback writes have reached the desk.
+        drv.get_fader(StripId(0)).await.unwrap();
+        let mut actual = writes.lock().unwrap().clone();
+        actual.sort();
+        let mut expected = paths;
+        expected.sort();
+        assert_eq!(actual, expected, "wire paths for {group}");
+        let mut echoes: Vec<_> = out
+            .iter()
+            .filter_map(|event| match event {
+                Event::Param { field, .. } => Some(field.clone()),
+                _ => None,
+            })
+            .collect();
+        echoes.sort();
+        let mut expected: Vec<_> = fields.iter().map(|s| s.to_string()).collect();
+        expected.sort();
+        assert_eq!(echoes, expected, "recall echoes for {group}");
+    }
+    let mut rejected = scene.clone();
+    rejected.strips[0].params = HashMap::from([("wing:source_mode".into(), json!("invalid"))]);
+    let scope = RecallScope {
+        groups: Some(vec!["source".into()]),
+        globals: Some(vec![]),
+        ..Default::default()
+    };
+    let mut out = Vec::new();
+    engine
+        .recall_full(&rejected, 0, Some(&scope), "test", &mut out)
+        .await
+        .unwrap();
+    assert!(!out
+        .iter()
+        .any(|event| matches!(event, Event::Param { field, .. } if field == "wing:source_mode")));
+    assert!(out.iter().any(|event| matches!(event, Event::Error {message,..} if message.contains("Scene recall skipped 1 setting(s)") && message.contains("wing:source_mode"))));
+    // Auto switching is active. Stored source context must reach the
+    // guarded preamp write, even in an input-only scoped recall.
+    let mut preamp = scene.clone();
+    preamp.strips[0].params = HashMap::from([
+        ("gain".into(), json!(20.)),
+        ("source_a".into(), json!(1003.)),
+        ("source_b".into(), json!(1003.)),
+        ("source_select".into(), json!(0.)),
+    ]);
+    let scope = RecallScope {
+        groups: Some(vec!["input".into()]),
+        globals: Some(vec![]),
+        ..Default::default()
+    };
+    writes.lock().unwrap().clear();
+    let mut out = Vec::new();
+    engine
+        .recall_full(&preamp, 0, Some(&scope), "test", &mut out)
+        .await
+        .unwrap();
+    drv.get_fader(StripId(0)).await.unwrap();
+    assert_eq!(*writes.lock().unwrap(), vec!["/io/in/LCL/3/g"]);
+    assert!(!out.iter().any(|event| matches!(event, Event::Error { .. })));
+    preamp.strips[0]
+        .params
+        .insert("source_a".into(), json!(1004.));
+    writes.lock().unwrap().clear();
+    out.clear();
+    engine
+        .recall_full(&preamp, 0, Some(&scope), "test", &mut out)
+        .await
+        .unwrap();
+    drv.get_fader(StripId(0)).await.unwrap();
+    assert!(writes.lock().unwrap().is_empty());
+    assert!(!out
+        .iter()
+        .any(|event| matches!(event, Event::Param {field,..} if field == "gain")));
+    assert!(out.iter().any(|event| matches!(event, Event::Error { .. })));
+    drv.disconnect().await.unwrap();
+    task.abort();
+}

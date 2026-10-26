@@ -26,10 +26,10 @@ class _EqTabState extends State<_EqTab> {
     final min = range?.first ?? 0;
     final max = range?.last ?? 1;
     ChannelFocus focus() => switch (prop) {
-      'g' => _eqGainFocus(widget.store, band.band),
-      'f' => eqFreqFocus(widget.store, band.band),
-      _ => _eqQFocus(widget.store, band.band),
-    };
+          'g' => _eqGainFocus(widget.store, band.band),
+          'f' => eqFreqFocus(widget.store, band.band),
+          _ => _eqQFocus(widget.store, band.band),
+        };
     return Padding(
         padding: const EdgeInsets.only(top: 6),
         child: _ProcessingSlider(
@@ -121,7 +121,8 @@ class _EqTabState extends State<_EqTab> {
                 ? () => widget.store.setEqBandOn(band.band, !band.on)
                 : null),
         const Spacer(),
-        if (band.band == 1 || band.band == 4) _shapeChoices(band),
+        if (band.band == 1 || band.band == widget.store.eq.bands.length)
+          _shapeChoices(band),
         _slider(band, 'g', 'G'),
         _slider(band, 'f', 'F'),
         _slider(band, 'q', 'Q'),
@@ -135,8 +136,8 @@ class _EqTabState extends State<_EqTab> {
     final selected =
         eq.bands.where((b) => b.band == eq.selectedBand).firstOrNull ??
             eq.bands.firstOrNull;
-    final showMobileShapes =
-        selected != null && (selected.band == 1 || selected.band == 4);
+    final showMobileShapes = selected != null &&
+        (selected.band == 1 || selected.band == eq.bands.length);
     return LayoutBuilder(builder: (context, bounds) {
       final scale = bounds.maxWidth / 1443;
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -184,6 +185,12 @@ class _EqTabState extends State<_EqTab> {
           if (wide) const Spacer(),
         ]),
         const SizedBox(height: 8),
+        if (eq.responseNote != null)
+          Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(eq.responseNote!,
+                  style: AppDesign.type(14,
+                      color: ConsolePalette.of(context).text7))),
         Opacity(
             opacity: eq.on || ConsolePalette.of(context).isLight ? 1 : .55,
             child: ListenableBuilder(
@@ -300,7 +307,83 @@ class _EqTabState extends State<_EqTab> {
             _slider(selected, 'q', 'Q'),
           ],
         ],
-        _hpf(),
+        if (store.paramApplies('hpf_on')) _hpf(),
+        if (store.paramApplies('hpf_slope') &&
+            parameterChoices(store.paramMetadata('hpf_slope')).isNotEmpty)
+          Padding(
+              padding: const EdgeInsets.only(top: 7),
+              child: _ParameterChoices(
+                  store: store,
+                  leaf: 'hpf_slope',
+                  label: 'Low cut slope',
+                  fallback: 'Loading…',
+                  compact: true,
+                  onChanged: (value) => store.cmdParam('hpf_slope', value))),
+        if (store.paramApplies('wing:hcf_on')) ...[
+          const SizedBox(height: 14),
+          _InputPreampControl(
+              store: store,
+              leaf: 'wing:hcf_freq',
+              label: 'High cut',
+              section: 'Input filters',
+              onFocus: widget.onFocus,
+              trailing: _ProcessingButton(
+                  label: 'On',
+                  active: store.paramBool('wing:hcf_on') == true,
+                  semanticsLabel: 'High cut enabled',
+                  onTap: store.supports('wing:hcf_on')
+                      ? () => store.cmdParam(
+                          'wing:hcf_on', store.paramBool('wing:hcf_on') != true)
+                      : null)),
+          const SizedBox(height: 7),
+          _ParameterChoices(
+              store: store,
+              leaf: 'wing:hcf_slope',
+              label: 'High cut slope',
+              fallback: 'Loading…',
+              compact: true,
+              onChanged: (value) => store.cmdParam('wing:hcf_slope', value)),
+        ],
+        if (store.paramApplies('wing:filter_model')) ...[
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(
+                child: _ParameterChoices(
+                    store: store,
+                    leaf: 'wing:filter_model',
+                    label: 'Tool filter',
+                    fallback: 'Loading…',
+                    compact: true,
+                    onChanged: (value) =>
+                        store.cmdParam('wing:filter_model', value))),
+            const SizedBox(width: 8),
+            _ProcessingButton(
+                label: 'On',
+                active: store.paramBool('wing:filter_on') == true,
+                semanticsLabel: 'Tool filter enabled',
+                onTap: store.supports('wing:filter_on')
+                    ? () => store.cmdParam('wing:filter_on',
+                        store.paramBool('wing:filter_on') != true)
+                    : null),
+          ]),
+          for (final control in const [
+            ('wing:filter_tilt', 'Tilt'),
+            ('wing:filter_low', 'Low contour'),
+            ('wing:filter_high', 'High process'),
+            ('wing:filter_ap1_freq', 'Frequency'),
+            ('wing:filter_ap2_freq', 'Frequency'),
+            ('wing:filter_ap2_q', 'Q'),
+          ])
+            if (store.paramMetadata(control.$1)?['hidden'] != true)
+              Padding(
+                  padding: const EdgeInsets.only(top: 7),
+                  child: _InputPreampControl(
+                      store: store,
+                      leaf: control.$1,
+                      label: control.$2,
+                      section: 'Tool filter',
+                      onFocus: widget.onFocus)),
+        ],
       ]);
     });
   }

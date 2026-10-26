@@ -224,7 +224,7 @@ pub fn strip_key_for_index(topology: &[StripFamily], index: usize) -> Option<Str
         return Some(canon.to_string());
     }
     let local = (index - fam.first + 1).min(99);
-    Some(strip_key(canon, local as u16))
+    Some(format!("{canon}/{local:02}"))
 }
 
 /// Global strip index for a stable key under `topology` (`None` when the

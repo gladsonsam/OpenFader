@@ -63,7 +63,14 @@ impl Engine {
             return None;
         }
         let v = param_value_json(&pv);
-        if !refresh_agrees(&v, written) {
+        let equivalent = json_to_param_value(written)
+            .ok()
+            .and_then(|written| {
+                self.drv(&driver)
+                    .param_readback_equivalent(param, &pv, &written)
+            })
+            .unwrap_or_else(|| refresh_agrees(&v, written));
+        if !equivalent {
             self.evict_param_unless_fresh(ch, param, write_started);
             return None;
         }
