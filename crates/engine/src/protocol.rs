@@ -418,6 +418,7 @@ impl Cmd {
             "fx_param",
             "fx_bypass",
             "fx_on",
+            "route_patch",
             "patch_set",
             "patch_clear",
             "offline",
