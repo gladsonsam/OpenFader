@@ -1,0 +1,641 @@
+part of 'app_store.dart';
+
+// Mixer banks, bus selection and stable strip control notifiers.
+// This contract exposes only state and hooks needed by other responsibilities.
+// Private access stays inside the AppStore library; screens use store contracts.
+abstract interface class _AppStoreStripsContract {
+  Map<int, double> get _confirmedFader;
+  Map<int, bool> get _confirmedMute;
+  String get _bank;
+  set _bank(String value);
+  String get _busId;
+  set _busId(String value);
+  void _syncControlNotes();
+  Map<String, (int, int)> get _bankRanges;
+  List<MixerBank> get banks;
+  int? get _selectedSubgroup;
+  ValueNotifier<double> faderOf(int ch);
+  void setFader(int ch, double v);
+  void _syncSendParamNotes();
+}
+
+mixin _AppStoreStrips on _AppStoreContext {
+  // --- mixer control state ---
+  @override
+  final Map<int, double> _confirmedFader = {};
+  @override
+  final Map<int, bool> _confirmedMute = {};
+  @override
+  String _bank = 'ch1';
+  @override
+  String _busId = 'main';
+  double _masterFader = 0.75;
+  bool _masterMuted = false;
+
+  // --- per-strip control notifiers (stable, updated in place) ---
+  // Hot-path writes (fader drags, mute taps, pan drags) update these in
+  // place and NEVER call notifyListeners(), so one strip rebuilds instead
+  // of the whole shell + all strips. Global notifyListeners() is reserved
+  // for structural changes (strips add/remove, bank/bus select, connection).
+  // Solo keeps its notifier AND a global notify (infrequent taps; the page
+  // solo banner reads hasSolo/soloCount off the store).
+  final Map<int, ValueNotifier<double>> _faderNotes = {};
+  final Map<int, ValueNotifier<bool>> _muteNotes = {};
+  final Map<int, ValueNotifier<double>> _panNotes = {};
+  final Map<int, ValueNotifier<bool>> _soloNotes = {};
+  final Map<int, ValueNotifier<int>> _controlReadyNotes = {};
+
+  // Solo is a dedicated protocol event, absent from the param catalogue.
+  // A real solo echo establishes availability; caps alone never enables it.
+  bool canEditControl(int ch, String field) =>
+      engine.driver == 'sim' ||
+      (engine.connected &&
+          engine.capsReady &&
+          (engine.supportedParams.contains(field) || field == 'solo') &&
+          engine.valueKnown(ch, field));
+
+  int _controlReady(int ch) => ch < 0
+      ? ((masterControlKnown('fader') ? 1 : 0) |
+          (masterControlKnown('mute') ? 2 : 0))
+      : (canEditControl(ch, 'fader') ? 1 : 0) |
+          (canEditControl(ch, 'mute') ? 2 : 0) |
+          (canEditControl(ch, 'pan') ? 4 : 0) |
+          (canEditControl(ch, 'solo') ? 8 : 0);
+
+  ValueNotifier<int> controlReadyNote(int ch) => _controlReadyNotes.putIfAbsent(
+      ch, () => ValueNotifier(_controlReady(ch)));
+
+  @override
+  int? get _selectedSubgroup => _busId.startsWith('subgroup')
+      ? int.tryParse(_busId.substring('subgroup'.length))
+      : null;
+
+  bool masterControlKnown(String field) {
+    final group = _selectedSubgroup;
+    if (group != null) {
+      // Capability establishes addressability; each echo hydrates only its
+      // own control, including in sim. Never enable from a fallback value.
+      return engine.connected &&
+          engine.capsReady &&
+          group >= 0 &&
+          group < engine.subgroupCount &&
+          (field == 'fader'
+              ? engine.subgroupFaders.containsKey(group)
+              : engine.subgroupMuted.containsKey(group));
+    }
+    return engine.driver == 'sim' ||
+        (engine.connected &&
+            (_busId == 'main'
+                ? (field == 'fader'
+                    ? engine.mainFader != null
+                    : engine.mainMuted != null)
+                : (field == 'fader'
+                    ? engine.busFaders.containsKey(
+                        int.tryParse(_busId.replaceFirst('bus', '')))
+                    : engine.busMuted.containsKey(
+                        int.tryParse(_busId.replaceFirst('bus', ''))))));
+  }
+
+  final ValueNotifier<double> _masterFaderNote = ValueNotifier(0.75);
+  final ValueNotifier<bool> _masterMutedNote = ValueNotifier(false);
+
+  // Raw engineering values, keyed by channel + canonical send field.
+  final Map<(int, String), ValueNotifier<double?>> _sendParamNotes = {};
+
+  // ------------------------------------------------------------------
+  // MixerStore
+  // ------------------------------------------------------------------
+  @override
+  List<Strip> get strips {
+    final cached = _stripsCache;
+    if (cached != null) return cached;
+    final range = _bankRanges[_bank];
+    final leaf = _selectedViewLeaf;
+    final Iterable<Strip> visible;
+    if (leaf != null) {
+      visible = _viewMembershipReady(leaf)
+          ? _viewCandidates(leaf).where((s) => _viewMember(s.ch, leaf) == true)
+          : const <Strip>[];
+    } else if (_bank == 'view:all') {
+      visible = engine.strips;
+    } else {
+      visible = range == null
+          ? engine.strips
+          : engine.strips.where((s) => s.ch >= range.$1 && s.ch < range.$2);
+    }
+    final built = List<Strip>.unmodifiable(visible.map((s) => Strip(
+          ch: s.ch,
+          key: s.key,
+          name: s.name,
+          fader: _stripFaderValue(s.ch, s.fader),
+          muted: _stripMuteValue(s.ch, s.muted),
+        )));
+    _stripsCache = built;
+    return built;
+  }
+
+  List<String> get _viewLeaves {
+    final pattern = RegExp(r'^view([1-9][0-9]*)_assign$');
+    final leaves = engine.supportedParams.where(pattern.hasMatch).toList();
+    leaves.sort((a, b) => int.parse(pattern.firstMatch(a)![1]!)
+        .compareTo(int.parse(pattern.firstMatch(b)![1]!)));
+    return leaves;
+  }
+
+  String? get _selectedViewLeaf =>
+      _bank.startsWith('view:') && _bank != 'view:all'
+          ? _bank.substring(5)
+          : null;
+
+  String _viewLabel(String leaf) =>
+      engine.parameterMetadata[leaf]?['label'] as String? ??
+      'View ${RegExp(r'\d+').firstMatch(leaf)?.group(0) ?? ''}';
+
+  // A provider may expose View memberships on only some strip families.
+  // Hydration/readiness must not wait for unsupported leaves on other families.
+  Iterable<Strip> _viewCandidates(String leaf) {
+    final scopes = engine.parameterMetadata[leaf]?['scopes'];
+    return engine.strips.where((strip) {
+      if (strip.key == 'main') return false;
+      if (scopes is! List || scopes.isEmpty) return true;
+      for (final family in engine.topology) {
+        final first = (family['first'] as num?)?.toInt() ?? 0;
+        final count = (family['count'] as num?)?.toInt() ?? 0;
+        if (strip.ch < first || strip.ch >= first + count) continue;
+        final tags = family['params_scope'];
+        return tags is List
+            ? tags.any(scopes.contains)
+            : scopes.contains(family['kind']);
+      }
+      return false;
+    });
+  }
+
+  bool? _viewMember(int ch, String leaf) {
+    if (!engine.valueKnown(ch, leaf)) return null;
+    final value = ps.optimisticValue(_maps, ch, leaf);
+    return value is bool ? value : null;
+  }
+
+  bool _viewMembershipReady(String leaf) =>
+      engine.connected &&
+      engine.capsReady &&
+      engine.supportedParams.contains(leaf) &&
+      engine.strips.isNotEmpty &&
+      _viewCandidates(leaf).every((s) => _viewMember(s.ch, leaf) != null);
+
+  @override
+  String get emptyBankMessage {
+    final leaf = _selectedViewLeaf;
+    if (leaf == null) return 'Waiting for channels…';
+    final label = _viewLabel(leaf);
+    if (!_viewMembershipReady(leaf)) return 'Waiting for $label membership…';
+    final scopes = engine.parameterMetadata[leaf]?['scopes'];
+    final inputs =
+        scopes is List && scopes.isNotEmpty && scopes.every((s) => s == 'in');
+    return 'No ${inputs ? 'input channels' : 'channels'} in $label.';
+  }
+
+  @override
+  Map<String, (int, int)> get _bankRanges {
+    final cached = _bankRangesCache;
+    if (cached != null) return cached;
+    final Map<String, (int, int)> built = {
+      for (final f in engine.topology)
+        for (var offset = 0; offset < (f['count'] as num).toInt(); offset += 16)
+          f['key'] == 'ch'
+              ? 'ch${offset ~/ 16 + 1}'
+              : "${f['key']}:${(f['first'] as num).toInt() + offset}": (
+            (f['first'] as num).toInt() + offset,
+            (f['first'] as num).toInt() +
+                math.min(offset + 16, (f['count'] as num).toInt())
+          ),
+    };
+    _bankRangesCache = built;
+    return built;
+  }
+
+  @override
+  double panOf(int ch) {
+    final v = ps.optimisticValue(_maps, ch, 'pan');
+    return v is num ? (v.toDouble() / 100).clamp(-1.0, 1.0) : 0.0;
+  }
+
+  @override
+  bool soloOf(int ch) => engine.solos.contains(ch);
+
+  @override
+  bool get hasSolo => engine.solos.isNotEmpty;
+
+  @override
+  int get soloCount => engine.solos.length;
+
+  // ------------------------------------------------------------------
+  // Per-strip control notifiers: stable ValueNotifiers updated in place.
+  // Strips listen to their own ch only; the hot drag path never calls
+  // notifyListeners() so the shell + sibling strips are not rebuilt.
+  // ------------------------------------------------------------------
+  // Engine state, confirmations and pending edits stay in protocol units.
+  // Only UI exposure/writes cross this boundary. SIM already uses the UI
+  // law; lawForDriver('sim') would incorrectly select the X-Air fallback.
+  double _protocolFaderToUi(double value) => engine.driver == 'sim'
+      ? value
+      : dbToPos(lawForDriver(engine.driver).toDb(value));
+
+  double _uiFaderToProtocol(double value) => engine.driver == 'sim'
+      ? value
+      : lawForDriver(engine.driver).fromDb(posToDb(value));
+
+  // Presentation resolves pending edits before confirmed values, even when an
+  // older echo has already replaced the engine strip. Keep protocol units here.
+  double _stripFaderValue(int ch, double fallback) {
+    final value = ps.optimisticValue(_maps, ch, 'fader');
+    return value is num ? value.toDouble().clamp(0.0, 1.0) : fallback;
+  }
+
+  bool _stripMuteValue(int ch, bool fallback) {
+    final value = ps.optimisticValue(_maps, ch, 'mute');
+    return value is bool ? value : fallback;
+  }
+
+  void _ensureStripNotes(int ch) {
+    _faderNotes.putIfAbsent(ch, () {
+      double v = 0;
+      for (final s in engine.strips) {
+        if (s.ch == ch) v = s.fader;
+      }
+      return ValueNotifier(_protocolFaderToUi(_stripFaderValue(ch, v)));
+    });
+    _muteNotes.putIfAbsent(ch, () {
+      bool m = false;
+      for (final s in engine.strips) {
+        if (s.ch == ch) m = s.muted;
+      }
+      return ValueNotifier(_stripMuteValue(ch, m));
+    });
+    _panNotes.putIfAbsent(ch, () => ValueNotifier(panOf(ch)));
+    _soloNotes.putIfAbsent(ch, () => ValueNotifier(engine.solos.contains(ch)));
+  }
+
+  @override
+  ValueNotifier<double> faderOf(int ch) {
+    _ensureStripNotes(ch);
+    return _faderNotes[ch]!;
+  }
+
+  @override
+  ValueNotifier<bool> muteOf(int ch) {
+    _ensureStripNotes(ch);
+    return _muteNotes[ch]!;
+  }
+
+  @override
+  ValueNotifier<double> panNoteOf(int ch) {
+    _ensureStripNotes(ch);
+    return _panNotes[ch]!;
+  }
+
+  @override
+  ValueNotifier<bool> soloNoteOf(int ch) {
+    _ensureStripNotes(ch);
+    return _soloNotes[ch]!;
+  }
+
+  @override
+  ValueNotifier<double> get masterFaderNote => _masterFaderNote;
+
+  @override
+  ValueNotifier<bool> get masterMutedNote => _masterMutedNote;
+
+  void _pushStripNote(int ch) {
+    controlReadyNote(ch).value = _controlReady(ch);
+    _ensureStripNotes(ch);
+    for (final s in engine.strips) {
+      if (s.ch != ch) continue;
+      final f = _faderNotes[ch]!;
+      final uiFader = _protocolFaderToUi(_stripFaderValue(ch, s.fader));
+      if (f.value != uiFader) f.value = uiFader;
+      final m = _muteNotes[ch]!;
+      final muted = _stripMuteValue(ch, s.muted);
+      if (m.value != muted) m.value = muted;
+    }
+    final p = _panNotes[ch]!;
+    final pv = panOf(ch);
+    if (p.value != pv) p.value = pv;
+    final so = _soloNotes[ch]!;
+    final sv = engine.solos.contains(ch);
+    if (so.value != sv) so.value = sv;
+  }
+
+  double? _sendParamValue(int ch, String field) {
+    final value = ps.optimisticValue(_maps, ch, field);
+    return value is num ? value.toDouble() : null;
+  }
+
+  @override
+  ValueNotifier<double?> sendParamNote(int slot, String param) {
+    assert(param == 'pan' || param == 'level');
+    final key = (_channel, 'send${slot}_$param');
+    return _sendParamNotes.putIfAbsent(
+        key, () => ValueNotifier(_sendParamValue(key.$1, key.$2)));
+  }
+
+  @override
+  void _syncSendParamNotes() {
+    for (final entry in _sendParamNotes.entries) {
+      entry.value.value = _sendParamValue(entry.key.$1, entry.key.$2);
+    }
+  }
+
+  @override
+  void _syncControlNotes() {
+    _syncSendParamNotes();
+    for (final entry in _controlReadyNotes.entries) {
+      entry.value.value = _controlReady(entry.key);
+    }
+    for (final s in engine.strips) {
+      _pushStripNote(s.ch);
+    }
+    final mf = masterFader;
+    if (_masterFaderNote.value != mf) _masterFaderNote.value = mf;
+    final mm = masterMuted;
+    if (_masterMutedNote.value != mm) _masterMutedNote.value = mm;
+  }
+
+  @override
+  double get masterFader => _protocolFaderToUi(_selectedSubgroup != null
+      ? engine.subgroupFaders[_selectedSubgroup] ?? 0
+      : _busId == 'main'
+          ? engine.mainFader ?? _masterFader
+          : engine.busFaders[int.tryParse(_busId.replaceFirst('bus', ''))] ??
+              0);
+
+  @override
+  bool get masterMuted => _selectedSubgroup != null
+      ? engine.subgroupMuted[_selectedSubgroup] ?? false
+      : _busId == 'main'
+          ? engine.mainMuted ?? _masterMuted
+          : engine.busMuted[int.tryParse(_busId.replaceFirst('bus', ''))] ??
+              false;
+
+  @override
+  String get masterName => _selectedSubgroup != null
+      ? 'SUBGROUP ${_selectedSubgroup! + 1}'
+      : _busId == 'main'
+          ? 'MAIN'
+          : 'BUS ${(int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1}';
+
+  @override
+  List<MixerBank> get banks {
+    final cached = _banksCache;
+    if (cached != null) return cached;
+    final built = List<MixerBank>.unmodifiable([
+      for (final entry in _bankRanges.entries)
+        MixerBank(
+            key: entry.key,
+            label: entry.key.startsWith('ch')
+                ? 'Ch ${entry.value.$1 + 1}–${entry.value.$2}'
+                : engine.topology.firstWhere((f) =>
+                    (f['first'] as num).toInt() <= entry.value.$1 &&
+                    (f['first'] as num).toInt() + (f['count'] as num).toInt() >
+                        entry.value.$1)['label'] as String,
+            color: const ConsolePalette().lime,
+            text: const ConsolePalette().onAccent),
+      if (_viewLeaves.isNotEmpty) ...[
+        MixerBank(
+            key: 'view:all',
+            label: 'All channels',
+            color: const ConsolePalette().lime,
+            text: const ConsolePalette().onAccent),
+        for (final leaf in _viewLeaves)
+          MixerBank(
+              key: 'view:$leaf',
+              label: _viewLabel(leaf),
+              color: const ConsolePalette().lime,
+              text: const ConsolePalette().onAccent),
+      ],
+    ]);
+    _banksCache = built;
+    return built;
+  }
+
+  @override
+  String get bank => _bank;
+
+  @override
+  List<MixerBusRow> get busRows {
+    final cached = _busRowsCache;
+    if (cached != null) return cached;
+    final built = List<MixerBusRow>.unmodifiable([
+      MixerBusRow(
+        id: 'main',
+        name: 'MAIN',
+        sub: 'LR master',
+        muted: engine.mainMuted ?? _masterMuted,
+        active: _busId == 'main',
+        meter: _masterMeter,
+      ),
+      for (final b in engine.busFaders.keys.toList()..sort())
+        MixerBusRow(
+          id: 'bus$b',
+          name: 'BUS ${b + 1}',
+          sub: engine.busMuted[b] == true ? 'muted' : 'open',
+          muted: engine.busMuted[b] ?? false,
+          active: _busId == 'bus$b',
+          meter: _busMeters.putIfAbsent('bus$b', () => ValueNotifier(0)),
+        ),
+      if (engine.capsReady)
+        for (var group = 0; group < engine.subgroupCount; group++)
+          MixerBusRow(
+            id: 'subgroup$group',
+            name: 'SUBGROUP ${group + 1}',
+            sub: !engine.subgroupFaders.containsKey(group) ||
+                    !engine.subgroupMuted.containsKey(group)
+                ? 'Awaiting desk values'
+                : engine.subgroupMuted[group] == true
+                    ? 'muted'
+                    : 'open',
+            muted: engine.subgroupMuted[group] ?? false,
+            active: _busId == 'subgroup$group',
+            // Subgroups have no dedicated meter feed in the current protocol.
+            meter: _busMeters.putIfAbsent(
+                'subgroup$group', () => ValueNotifier(0)),
+          ),
+    ]);
+    _busRowsCache = built;
+    return built;
+  }
+
+  @override
+  void setFader(int ch, double v) {
+    if (!canEditControl(ch, 'fader')) return;
+    final nv = v.clamp(0.0, 1.0);
+    final protocolValue = _uiFaderToProtocol(nv);
+    for (final s in engine.strips) {
+      if (s.ch == ch) s.fader = protocolValue;
+    }
+    ps.noteOptimistic(_maps, ch, 'fader', protocolValue, _nowMs());
+    _ensureStripNotes(ch);
+    final n = _faderNotes[ch]!;
+    if (n.value != nv) n.value = nv;
+    _coalescer.offer('fader:$ch', () => _send(Cmds.fader(ch, protocolValue)));
+    // Hot path: no notifyListeners(). The dragged strip rebuilds from
+    // faderOf(ch) alone; shell + siblings stay quiet. Caches invalidated
+    // so the next structural rebuild sees fresh values.
+    _invalidateDerived();
+  }
+
+  @override
+  void setMute(int ch, bool muted) {
+    if (!canEditControl(ch, 'mute')) return;
+    for (final s in engine.strips) {
+      if (s.ch == ch) s.muted = muted;
+    }
+    ps.noteOptimistic(_maps, ch, 'mute', muted, _nowMs());
+    _ensureStripNotes(ch);
+    final n = _muteNotes[ch]!;
+    if (n.value != muted) n.value = muted;
+    _coalescer.offer('mute:$ch', () => _send(Cmds.mute(ch, muted)));
+    // Hot path: no notifyListeners(). The tapped strip rebuilds from
+    // muteOf(ch) alone. Caches invalidated for the next structural pass.
+    _invalidateDerived();
+  }
+
+  @override
+  void toggleSolo(int ch) {
+    if (!canEditControl(ch, 'solo')) return;
+    final on = !engine.solos.contains(ch);
+    if (on) {
+      engine.solos.add(ch);
+    } else {
+      engine.solos.remove(ch);
+    }
+    _ensureStripNotes(ch);
+    final n = _soloNotes[ch]!;
+    if (n.value != on) n.value = on;
+    _coalescer.offer('solo:$ch', () => _send(Cmds.solo(ch, on)));
+    // Solo stays global: the page solo banner reads hasSolo/soloCount.
+    _invalidateDerived();
+    notifyListeners();
+  }
+
+  @override
+  void clearSolos() {
+    if (engine.driver != 'sim' &&
+        (!engine.connected ||
+            !engine.knownValues.keys
+                .any((ch) => engine.valueKnown(ch, 'solo')))) {
+      return;
+    }
+    engine.solos.clear();
+    for (final n in _soloNotes.values) {
+      if (n.value) n.value = false;
+    }
+    _send(Cmds.clearSolo());
+    _invalidateDerived();
+    notifyListeners();
+  }
+
+  @override
+  void setPan(int ch, double v) {
+    if (!canEditControl(ch, 'pan')) return;
+    final nv = v.clamp(-1.0, 1.0);
+    ps.noteOptimistic(_maps, ch, 'pan', nv * 100, _nowMs());
+    _ensureStripNotes(ch);
+    final n = _panNotes[ch]!;
+    if (n.value != nv) n.value = nv;
+    _coalescer.offer('pan:$ch', () => _send(Cmds.param(ch, 'pan', nv * 100)));
+    // Hot path: no notifyListeners(). The dragged strip rebuilds from
+    // panNoteOf(ch) alone. Caches invalidated for the next structural pass.
+    _invalidateDerived();
+  }
+
+  @override
+  void setMasterFader(double v) {
+    if (!masterControlKnown('fader')) return;
+    final nv = v.clamp(0.0, 1.0);
+    // Capture the driver's conversion now, before a queued send can run
+    // after a driver/bus change. The UI bottom maps to the driver's floor.
+    final protocolValue = _uiFaderToProtocol(nv);
+    final group = _selectedSubgroup;
+    if (group != null) {
+      engine.subgroupFaders[group] = protocolValue;
+      _masterFaderNote.value = nv;
+      _coalescer.offer('subgroup_fader:$group',
+          () => _send(Cmds.subgroupFader(group, protocolValue)));
+      _invalidateDerived();
+      return;
+    }
+    _masterFader = protocolValue;
+    if (_busId != 'main') {
+      final bus = int.tryParse(_busId.replaceFirst('bus', ''));
+      if (bus == null) return;
+      engine.busFaders[bus] = _masterFader;
+      if (_masterFaderNote.value != nv) {
+        _masterFaderNote.value = nv;
+      }
+      _coalescer.offer(
+          'bus_fader:$bus', () => _send(Cmds.busFader(bus, protocolValue)));
+      // Hot path: master strip rebuilds from masterFaderNote alone.
+      // No global notify; caches invalidated for the next structural pass.
+      _invalidateDerived();
+      return;
+    }
+    engine.mainFader = _masterFader;
+    if (_masterFaderNote.value != nv) {
+      _masterFaderNote.value = nv;
+    }
+    _coalescer.offer('main_fader', () => _send(Cmds.mainFader(protocolValue)));
+    // Hot path: master strip rebuilds from masterFaderNote alone.
+    // No global notify; caches invalidated for the next structural pass.
+    _invalidateDerived();
+  }
+
+  @override
+  void setMasterMuted(bool muted) {
+    if (!masterControlKnown('mute')) return;
+    final group = _selectedSubgroup;
+    if (group != null) {
+      engine.subgroupMuted[group] = muted;
+      _masterMutedNote.value = muted;
+      _coalescer.offer(
+          'subgroup_mute:$group', () => _send(Cmds.subgroupMute(group, muted)));
+      _invalidateDerived();
+      return;
+    }
+    _masterMuted = muted;
+    if (_busId != 'main') {
+      final bus = int.tryParse(_busId.replaceFirst('bus', ''));
+      if (bus == null) return;
+      engine.busMuted[bus] = muted;
+      if (_masterMutedNote.value != muted) _masterMutedNote.value = muted;
+      _coalescer.offer('bus_mute:$bus', () => _send(Cmds.busMute(bus, muted)));
+      // Hot path: no global notify; caches invalidated.
+      _invalidateDerived();
+      return;
+    }
+    engine.mainMuted = muted;
+    if (_masterMutedNote.value != muted) _masterMutedNote.value = muted;
+    _coalescer.offer('main_mute', () => _send(Cmds.mainMute(muted)));
+    // Hot path: no global notify; caches invalidated for the next pass.
+    _invalidateDerived();
+  }
+
+  @override
+  void selectBus(String id) {
+    if (_busId == id || !busRows.any((row) => row.id == id)) return;
+    _busId = id;
+    _syncControlNotes();
+    _syncMeters(_nowMs());
+    _invalidateDerived();
+    notifyListeners();
+  }
+
+  @override
+  void setBank(String key) {
+    if (!banks.any((bank) => bank.key == key)) return;
+    _bank = key;
+    _invalidateDerived();
+    notifyListeners();
+  }
+}
