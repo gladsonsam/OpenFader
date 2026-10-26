@@ -1,4 +1,4 @@
-//! Guarded recalls need desk evidence on the originating session too.
+//! Output edits and guarded recalls need independent originating-session evidence.
 use super::map::Spec;
 use crate::Dl32sDriver;
 use openfader_transport::mackie::REQUEST_TIMEOUT;
@@ -43,19 +43,19 @@ impl Dl32sDriver {
                     // beat the ACK). Extra transitions include peer ABA edits.
                     anyhow::ensure!(
                         row.revision == Some(readback_revision),
-                        "Output changed again during readback; recall stopped, result uncertain"
+                        "Output changed again during readback; result uncertain"
                     );
                     let current = row.current.expect("verified above");
                     anyhow::ensure!(
                         current.value == value,
-                        "Output write accepted, but mixer readback differs; recall stopped, result uncertain"
+                        "Output write accepted, but mixer readback differs; result uncertain"
                     );
                     return Ok(());
                 }
             }
             anyhow::ensure!(
                 tokio::time::Instant::now() < deadline,
-                "Output write accepted without independent mixer readback; recall stopped, result uncertain"
+                "Output write accepted without independent mixer readback; result uncertain"
             );
             // Provider-side bounded wait; the sole frontend poll loop remains
             // responsible for delivery to the UI. The native ingest task owns

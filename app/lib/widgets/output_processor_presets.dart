@@ -59,6 +59,8 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
   List<ProcessorPreset> _presets = const [];
   bool _busy = false;
   bool _recalling = false;
+  bool _recallSucceeded = false;
+  OutputPresetTarget? _completedTarget;
   String? _message;
 
   @override
@@ -108,8 +110,23 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
           final result =
               await widget.store.recallOutputPreset(widget.target, id);
           if (mounted) {
-            setState(() => _message = result.error ??
-                '${result.confirmed} of ${result.total} settings verified by mixer readback.');
+            // Retain a post-success snapshot only for status checks. Actions
+            // still require reopening; later peer/connection changes must
+            // continue to display their real error rather than a success hint.
+            final completed = result.error == null
+                ? widget.store.captureOutputPresetTarget(widget.target.surface)
+                : null;
+            setState(() {
+              _recallSucceeded = result.error == null;
+              if (completed != null &&
+                  completed.target == widget.target.target &&
+                  completed.session == widget.target.session &&
+                  completed.driver == widget.target.driver) {
+                _completedTarget = completed;
+              }
+              _message = result.error ??
+                  '${result.confirmed} of ${result.total} settings verified by mixer readback.';
+            });
           }
         } finally {
           if (mounted) setState(() => _recalling = false);
@@ -173,8 +190,9 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
           builder: (context, _) {
             final error = _recalling
                 ? null
-                : widget.store.outputPresetTargetError(widget.target);
-            final enabled = !_busy && error == null;
+                : widget.store
+                    .outputPresetTargetError(_completedTarget ?? widget.target);
+            final enabled = !_busy && !_recallSucceeded && error == null;
             return AlertDialog(
                 backgroundColor: ConsolePalette.of(context).panel,
                 title: Text(
@@ -190,6 +208,9 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
                               'Recall or paste applies this processor only. Bypass/on states and global temperature stay unchanged. Writes are ordered; cancellation stops before the next setting. Changes already sent are not rolled back.'),
                           const SizedBox(height: 12),
                           if (error != null) Text(error),
+                          if (error == null && _recallSucceeded)
+                            const Text(
+                                'Close and reopen presets to use the updated processor state.'),
                           if (_message != null) Text(_message!),
                           if (_busy) const LinearProgressIndicator(),
                           TextField(
