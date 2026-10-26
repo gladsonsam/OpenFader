@@ -29,6 +29,11 @@ class OutputProcessingGraph extends StatelessWidget {
                   : 'Transfer reference · input / output',
           style: TextStyle(color: palette.mutedText),
         ),
+        if (controls.any((control) => control.authority == 'accepted'))
+          Text(
+            'Includes unconfirmed values',
+            style: TextStyle(color: palette.mutedText),
+          ),
         const SizedBox(height: 8),
         SizedBox(
           height: 180,
