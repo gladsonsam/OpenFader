@@ -98,6 +98,11 @@ pub trait DynDriver: Send + Sync {
     fn discovered_name(&self, device: &openfader_transport::discovery::DiscoveredDevice) -> String {
         self.display_name(&device.model)
     }
+    /// Read-only control-path liveness, independent of cached display values.
+    /// Providers with push caches must override this with a bounded wire query.
+    async fn control_health(&self) -> anyhow::Result<()> {
+        self.get_main_fader().await.map(|_| ())
+    }
     // ---- MixerDriver mirror (every provider forwards these) ----
     fn name(&self) -> &'static str;
     fn channel_count(&self) -> usize;
@@ -1289,6 +1294,10 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
         }
         Ok(())
     }
+    async fn control_health(&self) -> anyhow::Result<()> {
+        self.check_control_health().await
+    }
+
     fn discovered_name(&self, device: &openfader_transport::discovery::DiscoveredDevice) -> String {
         if device.raw.trim().is_empty() { "Mackie DL mixer".into() } else { device.raw.clone() }
     }

@@ -1,7 +1,9 @@
-// Shell adapter: connection responsibility. The shell owns polling.
+// Shell-owned connection discovery, intent and recovery adapter.
 import 'dart:async';
 import 'dart:io';
 import '../core/wifi_net.dart';
+import '../connection/recovery.dart';
+import '../settings/prefs.dart';
 import '../engine.dart';
 import '../screens/connection.dart';
 import 'store_adapter.dart';
@@ -11,6 +13,42 @@ class ShellConnectionStore extends ShellStoreAdapter
   ShellConnectionStore(super.app) {
     _lastError = app.visibleError;
     app.addListener(_settle);
+    _recovery = ConnectionRecovery(_recover)..addListener(_recoveryChanged);
+  }
+
+  late final ConnectionRecovery _recovery;
+
+  void _recoveryChanged() {
+    if (!isDisposed) notifyListeners();
+  }
+
+  void tickRecovery() => _recovery.tick(
+        enabled: PrefsService.instance.reconnectLast,
+        busy: _probing,
+        connected: engine.connected,
+        state: engine.linkState,
+        driver: engine.driver,
+        host: engine.linkIp,
+      );
+
+  Future<bool> _recover(RecoveryTarget target) async {
+    final run = _connectionRun;
+    if (!await WifiNet.prepareConnection(target.host)) {
+      throw StateError(
+          'Could not prepare the network route to ${target.host}.');
+    }
+    if (isDisposed ||
+        run != _connectionRun ||
+        !PrefsService.instance.reconnectLast) {
+      return false;
+    }
+    app.clearErrors();
+    await app.sendCommand(Cmds.connect(target.driver, target.host));
+    return !isDisposed &&
+        run == _connectionRun &&
+        engine.connected &&
+        engine.driver == target.driver &&
+        engine.linkIp == target.host;
   }
 
   bool _scanning = false;
@@ -23,6 +61,7 @@ class ShellConnectionStore extends ShellStoreAdapter
   MixerType _lastMixerType = MixerType.automatic;
   String _connectionProgress = '';
   int _connectionRun = 0;
+  int get connectionRun => _connectionRun;
   int _probeAttempt = 0;
   bool _probing = false;
 
@@ -37,6 +76,7 @@ class ShellConnectionStore extends ShellStoreAdapter
   @override
   void dispose() {
     _connectionRun++;
+    _recovery.dispose();
     app.removeListener(_settle);
     _scanTimer?.cancel();
     super.dispose();
@@ -81,6 +121,10 @@ class ShellConnectionStore extends ShellStoreAdapter
   @override
   String get title {
     if (_probing) return 'Connecting · ${_lastMixerType.label}';
+    if (_recovery.active) return 'Reconnecting · ${engine.linkName}';
+    if (engine.linkState == 'reconnecting') {
+      return 'Connection lost · ${engine.linkName}';
+    }
     if (!isConnected) {
       return _isSim
           ? 'Not connected · sim (demo — not a desk)'
@@ -95,6 +139,7 @@ class ShellConnectionStore extends ShellStoreAdapter
   @override
   String get sub {
     if (_probing) return _connectionProgress;
+    if (_recovery.status.isNotEmpty) return _recovery.status;
     if (!isConnected) {
       return _isSim
           ? 'Simulator only — no desk hardware. Find a mixer or add one manually.'
@@ -157,9 +202,7 @@ class ShellConnectionStore extends ShellStoreAdapter
           ConnDevice(
             id: d.id,
             name: d.name,
-            mixerType: '${d.id} ${d.model}'.toLowerCase().contains('dl32s')
-                ? MixerType.dl32s
-                : MixerType.automatic,
+            mixerType: MixerType.automatic,
             sub: [d.model, d.ip, d.firmware]
                 .where((s) => s.isNotEmpty)
                 .join(' · '),
@@ -244,7 +287,15 @@ class ShellConnectionStore extends ShellStoreAdapter
         notifyListeners();
         return;
       }
-      await WifiNet.scanStart();
+      final prepared = await WifiNet.scanStart();
+      if (!prepared && !isDisposed && _deviceRequest == request) {
+        _scanning = false;
+        _deviceRequest = null;
+        _operationError =
+            'Could not prepare local network discovery. Check Wi-Fi and try again.';
+        notifyListeners();
+        return;
+      }
       if (isDisposed || _deviceRequest != request) {
         await WifiNet.scanStop();
         return;
@@ -272,15 +323,19 @@ class ShellConnectionStore extends ShellStoreAdapter
     // Ignore repeated submissions for the same pending target and type.
 
     if (_probing || addr.trim().isEmpty) return;
+    _cancelConnection();
     _lastProbe = addr.trim();
     _lastMixerType = mixerType;
     unawaited(_probeLoop(_lastProbe));
   }
 
-  // Retries keep the original driver because replaying a DL32S connect restarts its handshake.
+  // Explicit Retry preserves the selected type; automatic recovery uses the active provider key.
 
   @override
-  Future<void> retryProbe() => _probeLoop(_lastProbe);
+  Future<void> retryProbe() {
+    _cancelConnection();
+    return _probeLoop(_lastProbe.isNotEmpty ? _lastProbe : engine.linkIp);
+  }
 
   Future<void> _probeLoop(String addr) async {
     if (addr.isEmpty || _probing || isDisposed) return;
@@ -321,6 +376,7 @@ class ShellConnectionStore extends ShellStoreAdapter
             'Could not prepare the network connection to $addr. Check Wi-Fi or VPN access.';
         return;
       }
+      if (cancelled()) return;
       // One handshake only: restarting while a desk streams its initial state
       // prevents slower protocols from ever finishing (including auto-detected ones).
       const attempts = 1;
@@ -333,7 +389,7 @@ class ShellConnectionStore extends ShellStoreAdapter
         send(direct
             ? Cmds.connect(_lastMixerType.driver, addr)
             : Cmds.probe(addr));
-        // Never restart a live DL32S handshake automatically; only user Retry sends again.
+        // Wait for this handshake to finish before starting another connection.
 
         final deadline = DateTime.now().add(const Duration(seconds: 90));
         while (!cancelled() && DateTime.now().isBefore(deadline)) {
@@ -361,6 +417,7 @@ class ShellConnectionStore extends ShellStoreAdapter
 
   void _cancelConnection() {
     _connectionRun++;
+    _recovery.cancel();
     _probing = false;
     _connectionProgress = '';
   }
@@ -374,18 +431,21 @@ class ShellConnectionStore extends ShellStoreAdapter
       probe(host, mixerType: device.mixerType);
       return;
     }
+    _cancelConnection();
     send(Cmds.connectDevice(id));
   }
 
   @override
   void connectSim() {
     _cancelConnection();
+    unawaited(WifiNet.unbindWifi());
     send(Cmds.connectSim());
   }
 
   @override
   void disconnect() {
     _cancelConnection();
+    unawaited(WifiNet.unbindWifi());
     send(Cmds.disconnect());
   }
 

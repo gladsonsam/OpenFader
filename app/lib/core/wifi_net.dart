@@ -52,6 +52,7 @@ class WifiNet {
   }
 
   static Future<bool> scanStart() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return true;
     try {
       final v = await _ch.invokeMethod<bool>('scanStart');
       return v ?? false;
