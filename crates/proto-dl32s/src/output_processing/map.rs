@@ -1,6 +1,30 @@
-//! Inferred output address geometry; no hardware verification is claimed.
+//! Output address geometry: native Main anchors with inferred family strides.
 use openfader_core::destinations::DestinationValue;
+use openfader_transport::mackie::{MackieSession, VALUE_TYPE_MUTE_GROUP, VALUE_TYPE_PARAM};
 use std::sync::OnceLock;
+
+/// Raw address spaces overlap. Never use an unqualified word as a cache key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum Bank {
+    Parameter,
+    System,
+}
+
+impl Bank {
+    pub(super) fn value_type(self) -> u8 {
+        match self {
+            Self::Parameter => VALUE_TYPE_PARAM,
+            Self::System => VALUE_TYPE_MUTE_GROUP,
+        }
+    }
+
+    pub(super) fn verified(self, session: &MackieSession, address: u32) -> Option<u32> {
+        match self {
+            Self::Parameter => session.cached_verified(address),
+            Self::System => session.cached_type2_verified(address),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct Spec {
@@ -8,6 +32,7 @@ pub(super) struct Spec {
     pub(super) target_label: String,
     pub(super) name_slot: Option<u32>,
     pub(super) address: u32,
+    pub(super) bank: Bank,
     pub(super) mode: Option<u32>,
     pub(super) id: String,
     pub(super) label: String,
@@ -94,6 +119,7 @@ pub(super) fn specs() -> &'static [Spec] {
                         target_label: target_label.clone(),
                         name_slot,
                         address: base + offset,
+                        bank: Bank::Parameter,
                         mode,
                         id,
                         label,
@@ -199,17 +225,8 @@ pub(super) fn specs() -> &'static [Spec] {
                 continue;
             }
             let geq = comp + 8;
-            add(
-                geq,
-                "geq_master".into(),
-                "GEQ master".into(),
-                "output_geq",
-                -12.,
-                12.,
-                "dB",
-                vec![],
-                None,
-            );
+            // D+8/D+10 are not a proven GEQ master. Withhold that control
+            // until a native movement identifies it; do not write unknown words.
             add(
                 geq + 1,
                 "geq_on".into(),
@@ -230,7 +247,7 @@ pub(super) fn specs() -> &'static [Spec] {
             .enumerate()
             {
                 add(
-                    geq + 2 + index as u32,
+                    geq + 3 + index as u32,
                     format!("geq{}_gain", index + 1),
                     format!("{label} Hz"),
                     "output_geq",
@@ -245,8 +262,35 @@ pub(super) fn specs() -> &'static [Spec] {
                 (geq + 33, "hpf", "High-pass"),
                 (geq + 37, "lpf", "Low-pass"),
             ] {
-                // Neighboring zero words could be enable/mode or an unused
-                // filter-record gain. Native movement must identify them.
+                // Main native movement: enable D+42/+46, frequency +43/+47,
+                // slope +44/+48. Aux equivalents use the inferred +90 stride.
+                add(
+                    first + 1,
+                    format!("{id}_on"),
+                    format!("{label} filter"),
+                    "output_peq",
+                    0.,
+                    1.,
+                    "",
+                    binary(),
+                    None,
+                );
+                add(
+                    first + 3,
+                    format!("{id}_slope"),
+                    format!("{label} slope"),
+                    "output_peq",
+                    0.,
+                    3.,
+                    "",
+                    vec![
+                        (0, "6 dB/oct"),
+                        (1, "12 dB/oct"),
+                        (2, "18 dB/oct"),
+                        (3, "24 dB/oct"),
+                    ],
+                    None,
+                );
                 add(
                     first + 2,
                     format!("{id}_freq"),
@@ -259,7 +303,46 @@ pub(super) fn specs() -> &'static [Spec] {
                     None,
                 );
             }
+            // The native display and guide use distance as the fixed quantity;
+            // time changes with the global temperature. Never label raw as ms.
+            add(
+                comp + 68,
+                "delay_on".into(),
+                "Alignment delay".into(),
+                "output_delay",
+                0.,
+                1.,
+                "",
+                binary(),
+                None,
+            );
+            add(
+                comp + 69,
+                "delay_distance".into(),
+                "Alignment distance".into(),
+                "output_delay",
+                0.,
+                115.8,
+                "m",
+                vec![],
+                None,
+            );
         }
+        specs.push(Spec {
+            target: "system".into(),
+            target_label: "System (all outputs)".into(),
+            name_slot: None,
+            address: 7,
+            bank: Bank::System,
+            mode: None,
+            id: "delay_temperature".into(),
+            label: "Global alignment temperature".into(),
+            surface: "output_delay",
+            min: 0.,
+            max: 40.,
+            unit: "°C",
+            choices: vec![],
+        });
         specs
     })
 }
