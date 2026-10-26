@@ -69,6 +69,10 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3637, id: "er_level", label: "ER Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
     FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
         address: 3638, id: "lr_level", label: "LR Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
+    // Native slider endpoints independently verified as normalized0..1,
+    // despite the reference guide describing modulation depth in percent.
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3639, id: "mod_depth", label: "Mod Depth", min: 0.0, max: 1.0, unit: "", decimals: 1 },
     FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
         address: 3662, id: "time", label: "Delay time", min: 10.0, max: 1600.0, unit: "ms", decimals: 0 },
     FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
