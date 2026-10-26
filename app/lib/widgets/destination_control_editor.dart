@@ -95,7 +95,7 @@ class _DestinationControlEditorState extends State<DestinationControlEditor> {
                                     labelText: control.label,
                                     suffixText: control.unit,
                                     helperText:
-                                        '${control.min}–${control.max} ${control.unit}',
+                                        '${control.min!.toStringAsFixed(control.decimals)}–${control.max!.toStringAsFixed(control.decimals)}${control.unit.isEmpty ? '' : ' ${control.unit}'}',
                                     errorText: control.allowsValue(_selected)
                                         ? null
                                         : 'Enter a value within this range.'),

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 /// A provider-owned control shared by all sends feeding one destination.
 /// IDs and choices stay opaque to screens; values retain provider units.
 class DestinationChoiceVm {
@@ -64,10 +66,16 @@ class DestinationControlVm {
   }
 
   bool get numeric => min != null && max != null;
-  bool allowsValue(double candidate) =>
-      candidate.isFinite &&
-      (choices.any((choice) => choice.value == candidate) ||
-          numeric && candidate >= min! && candidate <= max!);
+  bool allowsValue(double candidate) {
+    if (!candidate.isFinite) return false;
+    if (choices.any((choice) => choice.value == candidate)) return true;
+    if (!numeric) return false;
+    // Destination commands and bounds use float32 in the engine. Compare
+    // at that precision so a typed decimal such as 0.1 matches its bound.
+    final wireValue = Float32List.fromList([candidate]).first;
+    return wireValue.isFinite && wireValue >= min! && wireValue <= max!;
+  }
+
   bool get available => valueLabel != null && authority != null;
 
   static DestinationControlVm? fromJson(int epoch, Map data) {
