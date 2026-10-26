@@ -149,6 +149,14 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3900, id: "main_return", label: "Main return", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
         address: 3972, id: "main_return", label: "Main return", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3584, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
+        address: 3596, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3608, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3620, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
 ];
 
 impl FxParameterSpec {
@@ -1800,6 +1808,8 @@ impl MixerDriver for Dl32sDriver {
                 tap_tempo: spec.slot == 2 && spec.algorithm == 12 && spec.id == "time",
                 description: if spec.id == "mute" {
                     format!("Changes the mute state of FX {}.", spec.slot)
+                } else if spec.id == "send_master" {
+                    format!("Changes the master send level feeding FX {}. Return levels and mute are separate controls.", spec.slot)
                 } else if spec.id == "main_return" {
                     format!("Changes the FX {} return level feeding Main. Other destinations and mute are separate controls.", spec.slot)
                 } else {
