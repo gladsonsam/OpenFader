@@ -26,6 +26,40 @@ class _NameEditorState extends State<_NameEditor> {
   String? _error;
   bool _colorSent = false;
   bool _iconSent = false;
+  String? _linkStatus;
+
+  Future<void> _setLink(bool linked) async {
+    final original = widget.store.linkedForChannel(widget.target);
+    if (_pending || original == null) return;
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+              title: Text(linked ? 'Link channels?' : 'Unlink channels?'),
+              content: const Text(
+                  'Stereo linking can change how the paired channels share processing and levels.'),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: Text(linked ? 'Link' : 'Unlink')),
+              ],
+            ));
+    if (!mounted || confirmed != true) return;
+    if (widget.store.linkedForChannel(widget.target) != original) {
+      setState(() => _linkStatus = 'Link state changed. Review and try again.');
+      return;
+    }
+    setState(() => _pending = true);
+    final error = await widget.store.linkChannel(widget.target, linked);
+    if (!mounted) return;
+    setState(() {
+      _pending = false;
+      _linkStatus = error ?? 'Link change sent to mixer';
+    });
+  }
+
   @override
   void dispose() {
     _text.dispose();
@@ -63,7 +97,7 @@ class _NameEditorState extends State<_NameEditor> {
           canPop: !_pending,
           child: AlertDialog(
             backgroundColor: p.panel,
-            title: Text('Rename channel ${widget.target.channel + 1}',
+            title: Text('Channel ${widget.target.channel + 1}',
                 style: AppDesign.type(18, color: p.text7)),
             content: SizedBox(
               width: 320,
@@ -73,7 +107,7 @@ class _NameEditorState extends State<_NameEditor> {
                   controller: _text,
                   autocorrect: false,
                   enableSuggestions: false,
-                  autofocus: true,
+                  autofocus: false,
                   enabled: !_pending && unavailable == null,
                   style: AppDesign.type(18, color: p.text7),
                   decoration: InputDecoration(
@@ -100,7 +134,7 @@ class _NameEditorState extends State<_NameEditor> {
                 if (_pending)
                   Padding(
                       padding: const EdgeInsets.only(top: 12),
-                      child: Text('Sending name…',
+                      child: Text('Applying change…',
                           style: AppDesign.type(14, color: p.mutedText))),
                 if (widget.store.nameCanBeEmpty(widget.target))
                   Align(
@@ -116,60 +150,89 @@ class _NameEditorState extends State<_NameEditor> {
                                 }),
                         child: const Text('Default name'),
                       )),
-                if (widget.store.colorsForChannel(widget.target).isNotEmpty)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton(
-                      onPressed: _pending ||
-                              widget.store.colorEditError(widget.target) != null
-                          ? null
-                          : () async {
-                              final sent = await showDialog<bool>(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (_) => _AppearanceEditor(
-                                      field: 'color',
-                                      store: widget.store,
-                                      target: widget.target));
-                              if (mounted && sent == true) {
-                                setState(() => _colorSent = true);
-                              }
-                            },
-                      child: Text(_colorSent
-                          ? 'Color sent to mixer · Edit color'
-                          : 'Channel color'),
-                    ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: _pending ||
+                            widget.store
+                                .colorsForChannel(widget.target)
+                                .isEmpty ||
+                            widget.store.colorEditError(widget.target) != null
+                        ? null
+                        : () async {
+                            final sent = await showDialog<bool>(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (_) => _AppearanceEditor(
+                                    field: 'color',
+                                    store: widget.store,
+                                    target: widget.target));
+                            if (mounted && sent == true) {
+                              setState(() => _colorSent = true);
+                            }
+                          },
+                    child: Row(children: [
+                      const Icon(Icons.palette_outlined, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: Text(
+                              _colorSent ? 'Color · sent to mixer' : 'Color')),
+                      const Icon(Icons.chevron_right, size: 20),
+                    ]),
                   ),
-                if (widget.store.iconsForChannel(widget.target).isNotEmpty)
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton(
-                      onPressed: _pending ||
-                              widget.store.iconEditError(widget.target) != null
-                          ? null
-                          : () async {
-                              final sent = await showDialog<bool>(
-                                  context: context,
-                                  barrierDismissible: false,
-                                  builder: (_) => _AppearanceEditor(
-                                      field: 'icon',
-                                      store: widget.store,
-                                      target: widget.target));
-                              if (mounted && sent == true) {
-                                setState(() => _iconSent = true);
-                              }
-                            },
-                      child: Text(_iconSent
-                          ? 'Icon sent to mixer · Edit icon'
-                          : 'Channel icon'),
-                    ),
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: _pending ||
+                            widget.store
+                                .iconsForChannel(widget.target)
+                                .isEmpty ||
+                            widget.store.iconEditError(widget.target) != null
+                        ? null
+                        : () async {
+                            final sent = await showDialog<bool>(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (_) => _AppearanceEditor(
+                                    field: 'icon',
+                                    store: widget.store,
+                                    target: widget.target));
+                            if (mounted && sent == true) {
+                              setState(() => _iconSent = true);
+                            }
+                          },
+                    child: Row(children: [
+                      const Icon(Icons.image_outlined, size: 20),
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: Text(
+                              _iconSent ? 'Icon · sent to mixer' : 'Icon')),
+                      const Icon(Icons.chevron_right, size: 20),
+                    ]),
                   ),
+                ),
+                Divider(color: p.line),
+                SwitchListTile.adaptive(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  title: const Text('Stereo link'),
+                  subtitle: Text(widget.store.linkEditError(widget.target) ??
+                      _linkStatus ??
+                      (widget.store.linkedForChannel(widget.target) == true
+                          ? 'Linked'
+                          : 'Unlinked')),
+                  value: widget.store.linkedForChannel(widget.target) == true,
+                  onChanged: _pending ||
+                          widget.store.linkEditError(widget.target) != null
+                      ? null
+                      : _setLink,
+                ),
               ])),
             ),
             actions: [
               TextButton(
                   onPressed: _pending ? null : () => Navigator.pop(context),
-                  child: Text('Cancel',
+                  child: Text('Close',
                       style: AppDesign.type(16, color: p.mutedText))),
               TextButton(
                   onPressed: canRename ? _save : null,

@@ -31,12 +31,14 @@ class MixerNameplate extends StatelessWidget {
       customSemanticsActions: onRename == null
           ? null
           : {
-              const CustomSemanticsAction(label: 'Rename channel'): onRename!,
+              const CustomSemanticsAction(label: 'Channel settings'): onRename!,
             },
       label: '${channel.name}, channel ${channel.number}',
       child: GestureDetector(
-          onTap: onSelect,
-          onDoubleTap: onOpen,
+          onTap: () {
+            onSelect();
+            (onRename ?? onOpen)();
+          },
           onLongPress: onRename,
           behavior: HitTestBehavior.opaque,
           child: LayoutBuilder(builder: (context, box) {
