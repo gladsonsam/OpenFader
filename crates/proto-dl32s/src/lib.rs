@@ -30,6 +30,9 @@ use tokio::sync::{broadcast, Mutex};
 /// Live DL32S-class mixer on TCP 50001.
 pub struct Dl32sDriver {
     session: Arc<Mutex<Option<MackieSession>>>,
+    /// Serialize output writes through independent readback, even while the
+    /// session lock is released so native bulk-push ingestion can progress.
+    output_write: Mutex<()>,
     addr: Mutex<Option<String>>,
     update_tx: broadcast::Sender<ParamUpdate>,
     generation: Arc<AtomicU64>,
@@ -55,6 +58,7 @@ impl Dl32sDriver {
         let (update_tx, _) = broadcast::channel(256);
         Self {
             session: Arc::new(Mutex::new(None)),
+            output_write: Mutex::new(()),
             addr: Mutex::new(None),
             update_tx,
             generation: Arc::new(AtomicU64::new(0)),
