@@ -10,6 +10,7 @@ abstract interface class _AppStorePresetsContract {
   void _stopPresetRecalls(String message);
   Map<int, Set<String>> get _presetVerifiedFields;
   void _pollPresetRecalls(double now);
+  void _observeInputPresetCatalogue();
   bool _recordParameterAuthority(
       Map<String, dynamic> event, int channel, String field);
   void _confirmPresetValue(int channel, String field, Object value,
@@ -32,6 +33,7 @@ mixin _AppStorePresets on _AppStoreContext {
   @override
   bool _recordParameterAuthority(
       Map<String, dynamic> event, int channel, String field) {
+    _observeInputPresetEvent(event, channel, field);
     final authority = event['authority'];
     final verified = event['type'] == 'param'
         ? authority == 'verified'
@@ -81,6 +83,11 @@ mixin _AppStorePresets on _AppStoreContext {
 
   final Map<(int, ProcessorPresetKind), _PresetRecall> _presetRecalls = {};
   final Expando<int> _presetTargets = Expando<int>();
+  final Expando<int> _presetDomains = Expando<int>();
+  String? _inputCatalogue;
+  int _inputCatalogueRevision = 0;
+  ProcessorPreset? _inputClipboard;
+  String? _inputClipboardDomain;
   @override
   int _presetGeneration = 0;
   int _presetId = 0;
@@ -140,12 +147,42 @@ mixin _AppStorePresets on _AppStoreContext {
       ];
 
   @override
+  void _observeInputPresetCatalogue() {
+    final catalogue = jsonEncode([engine.topology, engine.stereoPairs,
+      engine.supportedParams.toList()..sort(), engine.parameterMetadata]);
+    if (_inputCatalogue != catalogue) {
+      _inputCatalogue = catalogue;
+      _inputCatalogueRevision++;
+      for (final recall in _presetRecalls.values) {
+        recall.stop('Processor capabilities changed. Reopen presets.');
+      }
+    }
+  }
+
+  @override
   ProcessorPresetTarget? capturePresetTarget(ProcessorPresetKind kind) {
+    return captureChannelPresetTarget(kind, _channel);
+  }
+
+  @override
+  ProcessorPresetTarget? captureChannelPresetTarget(
+    ProcessorPresetKind kind,
+    int channel, {
+    int? session,
+    String? key,
+    int? accessEpoch,
+  }) {
+    if ((session != null && session != engine.session) ||
+        (accessEpoch != null && accessEpoch != controlAccessEpoch) ||
+        (key != null &&
+            !engine.strips.any((s) => s.ch == channel && s.key == key))) {
+      return null;
+    }
     if (kind.index > ProcessorPresetKind.compressor.index) return null;
-    final family = _presetFamily(_channel)?['key'];
+    final family = _presetFamily(channel)?['key'];
     if (family is! String || family.isEmpty) return null;
     for (final strip in engine.strips) {
-      if (strip.ch != _channel) continue;
+      if (strip.ch != channel) continue;
       final target = ProcessorPresetTarget(
           session: engine.session,
           channel: strip.ch,
@@ -157,6 +194,8 @@ mixin _AppStorePresets on _AppStoreContext {
               : strip.name,
           kind: kind);
       _presetTargets[target] = _presetGeneration;
+      _observeInputPresetCatalogue();
+      _presetDomains[target] = _inputCatalogueRevision;
       return presetTargetError(target) == null ? target : null;
     }
     return null;
@@ -181,6 +220,12 @@ mixin _AppStorePresets on _AppStoreContext {
             .any((s) => s.ch == target.channel && s.key == target.key)) {
       return 'The channel changed or is unavailable. Reopen presets.';
     }
+    _observeInputPresetCatalogue();
+    if (_presetDomains[target] != _inputCatalogueRevision) {
+      return 'Processor capabilities changed. Reopen presets.';
+    }
+    final protection = _inputPresetProtection(target);
+    if (protection != null) return protection;
     final catalogueError = _presetCatalogueError(target);
     if (catalogueError != null) return catalogueError;
     if (_presetFields(target).isEmpty) {
@@ -226,44 +271,9 @@ mixin _AppStorePresets on _AppStoreContext {
   bool _presetEditingBlocked(int channel, String field) =>
       _presetRecalls.values.any((recall) =>
           recall.target.channel == channel &&
-          _presetProcessorField(recall.target.kind, field));
-
-  String _presetSettingLabel(String field) {
-    final band = RegExp(r'^eq([1-8])_(freq|gain|q|type)$').firstMatch(field);
-    if (band != null) {
-      final parameter = switch (band[2]) {
-        'freq' => 'frequency',
-        'gain' => 'gain',
-        'q' => 'Q',
-        _ => 'shape',
-      };
-      return 'EQ band ${band[1]} $parameter';
-    }
-    if (field == 'eq_mode') return 'EQ mode';
-    if (field == 'hpf_freq') return 'high-pass frequency';
-    if (field == 'hpf_slope') return 'high-pass slope';
-    final dynamics = RegExp(r'^(gate|comp)_(.+)$').firstMatch(field);
-    if (dynamics != null) {
-      final processor = dynamics[1] == 'gate' ? 'gate' : 'compressor';
-      final setting = switch (dynamics[2]) {
-        'thr' => 'threshold',
-        'att' => 'attack',
-        'rel' => 'release',
-        'det' => 'detector',
-        'env' => 'envelope',
-        'key_src' => 'key source',
-        'filter_type' => 'filter shape',
-        'filter_freq' => 'filter frequency',
-        'auto' => 'automatic timing',
-        _ => dynamics[2]!,
-      };
-      return '$processor $setting';
-    }
-    final label = engine.parameterMetadata[field]?['label'];
-    return label is String && label.isNotEmpty
-        ? label
-        : field.replaceAll('_', ' ');
-  }
+            (field == 'link' ||
+                _presetProcessorField(recall.target.kind, field)),
+      );
 
   String? _presetValueError(
       ProcessorPresetTarget target, String field, Object? value,
@@ -343,26 +353,12 @@ mixin _AppStorePresets on _AppStoreContext {
     final error =
         _presetReadyError(target) ?? validateProcessorPresetName(name);
     if (error != null) return error;
-    // Copy synchronously before the first await: neither I/O nor channel
-    // navigation can substitute optimistic values or retarget this snapshot.
-    final values = <String, Object>{};
-    for (final field in _presetFields(target)) {
-      final value = _maps.confirmed[target.channel]?[field];
-      final invalid =
-          _presetValueError(target, field, value, requireVerified: true);
-      if (invalid != null) return invalid;
-      values[field] = value!;
+    final ProcessorPreset preset;
+    try {
+      preset = _captureInputProcessor(target, name);
+    } catch (error) {
+      return '$error';
     }
-    final now = DateTime.now();
-    final preset = ProcessorPreset(
-        id: '${now.microsecondsSinceEpoch}-${_presetId++}',
-        name: name.trim(),
-        driver: target.driver,
-        family: target.family,
-        kind: target.kind,
-        values: values,
-        createdAt: now,
-        updatedAt: now);
     try {
       await _processorPresets.save(preset);
       final changed = presetTargetError(target);
@@ -372,6 +368,43 @@ mixin _AppStorePresets on _AppStoreContext {
     } catch (error) {
       return 'Could not save preset: $error';
     }
+  }
+
+  @override
+  String? processorPasteError(ProcessorPresetTarget target) =>
+      _inputClipboardReadyError(target) ??
+      (_inputClipboard == null || !_presetCompatible(target, _inputClipboard!)
+          ? 'Copy a compatible input processor first.'
+          : _inputClipboardDomain != _inputFieldDomain(target)
+              ? 'The copied processor has different field domains. Copy it again.'
+              : null);
+
+  @override
+  String? copyInputProcessor(ProcessorPresetTarget target) {
+    try {
+      final error = _inputClipboardReadyError(target);
+      if (error != null) return error;
+      final snapshot = _captureInputProcessor(target, 'Copied processor');
+      _inputClipboardDomain = _inputFieldDomain(target);
+      _inputClipboard = snapshot;
+      notifyListeners();
+      return null;
+    } catch (error) {
+      return 'Could not copy processor: $error';
+    }
+  }
+
+  @override
+  Future<ProcessorPresetResult> pasteInputProcessor(
+    ProcessorPresetTarget target,
+  ) {
+    final error = processorPasteError(target);
+    if (error != null) {
+      return Future.value(
+        ProcessorPresetResult(error: error, confirmed: 0, total: 0),
+      );
+    }
+    return _recallInputProcessor(target, clipboard: _inputClipboard);
   }
 
   Future<ProcessorPreset> _findProcessorPreset(
@@ -499,12 +532,26 @@ mixin _AppStorePresets on _AppStoreContext {
 
   @override
   Future<ProcessorPresetResult> recallProcessorPreset(
-      ProcessorPresetTarget target, String id) async {
+      ProcessorPresetTarget target, String id) =>
+      _recallInputProcessor(target, id: id);
+
+  Future<ProcessorPresetResult> _recallInputProcessor(
+    ProcessorPresetTarget target, {
+    String? id,
+    ProcessorPreset? clipboard,
+  }) async {
     final unavailable = _presetReadyError(target);
     if (unavailable != null) {
       return ProcessorPresetResult(error: unavailable, confirmed: 0, total: 0);
     }
     final recall = _PresetRecall(target, _presetGeneration);
+    recall.observed.addAll({
+      for (final entry
+          in (_maps.confirmed[target.channel] ?? <String, Object>{}).entries)
+        if (entry.key == 'link' ||
+            _presetProcessorField(target.kind, entry.key))
+          entry.key: entry.value,
+    });
     final slot = (target.channel, target.kind);
     _presetRecalls[slot] = recall;
     for (final field in engine.supportedParams) {
@@ -520,10 +567,15 @@ mixin _AppStorePresets on _AppStoreContext {
     final skipped = <String>[];
     try {
       final preset = await Future.any<ProcessorPreset>([
-        _findProcessorPreset(target, id),
+        clipboard != null
+            ? Future.value(clipboard)
+            : _findProcessorPreset(target, id!),
         recall.stopped.future.then((error) => throw StateError(error)),
       ]);
       total = preset.values.length;
+      if (!_presetCompatible(target, preset)) {
+        throw StateError('Copy a compatible input processor first.');
+      }
       var error = _presetRecallError(recall);
       if (error != null) throw StateError(error);
       final fields = _presetFields(target);
@@ -640,37 +692,5 @@ mixin _AppStorePresets on _AppStoreContext {
         notifyListeners();
       }
     }
-  }
-}
-
-class _PresetRecall {
-  _PresetRecall(this.target, this.generation);
-  final ProcessorPresetTarget target;
-  final int generation;
-  final stopped = Completer<String>();
-  _PresetExpectation? waiting;
-  String? error;
-  void stop(String message) {
-    error ??= message;
-    if (!stopped.isCompleted) stopped.complete(error!);
-    waiting?.finish(error);
-  }
-}
-
-class _PresetExpectation {
-  _PresetExpectation(this.field, this.value, this.deadline);
-  final String field;
-  final Object value;
-  final double deadline;
-  final done = Completer<String?>();
-  bool accepted = false;
-  bool echoed = false;
-  bool verified = false;
-  void finish(String? error) {
-    if (!done.isCompleted) done.complete(error);
-  }
-
-  void check() {
-    if (accepted && echoed) finish(null);
   }
 }
