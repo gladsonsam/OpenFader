@@ -23,6 +23,12 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, Mutex, oneshot};
 use tokio::task::JoinHandle;
 
+mod values;
+pub use values::{
+    build_multi_set, build_read_request, build_single_set, decode_word, parse_value_block,
+    parse_value_blocks, DecodedWord, RawValue, ValueBlock,
+};
+
 // ---------------------------------------------------------------------------
 // Frame codec
 // ---------------------------------------------------------------------------
@@ -344,114 +350,6 @@ pub fn mute_group_name_slot(group_1_based: u32) -> anyhow::Result<u32> {
         anyhow::bail!("mute group must be 1..={MUTE_GROUP_COUNT}");
     }
     Ok(MUTE_GROUP_NAME_SLOT_BASE + group_1_based)
-}
-
-/// A decoded CHANNEL_VALUES / CHANNEL_NAMES payload: chunk 0 is the start
-/// address, chunk 1 packs `count:16 | type:8 | unknown:8`, then one word per
-/// value. The `count == 0 means "as many as fit"` rule is applied here, so
-/// bulk pushes (meta `0x00000500`) decode to their full implied length.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ValueBlock {
-    pub start: u32,
-    pub value_type: u8,
-    pub raws: Vec<u32>,
-}
-
-pub fn parse_value_block(body: &[u8]) -> Option<ValueBlock> {
-    if body.len() < 8 || !body.len().is_multiple_of(4) {
-        return None;
-    }
-    let start = u32::from_be_bytes(body[0..4].try_into().ok()?);
-    let meta = u32::from_be_bytes(body[4..8].try_into().ok()?);
-    let count = ((meta >> 16) & 0xFFFF) as usize;
-    let value_type = ((meta >> 8) & 0xFF) as u8;
-    let available = body.len() / 4 - 2;
-    let n = if count == 0 { available } else { count.min(available) };
-    let mut raws = Vec::with_capacity(n);
-    for i in 0..n {
-        let off = 8 + i * 4;
-        raws.push(u32::from_be_bytes(body[off..off + 4].try_into().ok()?));
-    }
-    Some(ValueBlock {
-        start,
-        value_type,
-        raws,
-    })
-}
-
-/// Raw wire value for a single-address write: integers/bools travel as u32,
-/// faders and other continuous parameters as big-endian IEEE-754 floats (dB).
-#[derive(Clone, Copy, Debug)]
-pub enum RawValue {
-    Int(u32),
-    Float(f32),
-}
-
-impl RawValue {
-    fn to_be_bytes(self) -> [u8; 4] {
-        match self {
-            Self::Int(v) => v.to_be_bytes(),
-            Self::Float(v) => v.to_be_bytes(),
-        }
-    }
-}
-
-/// Decoded parameter word.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum DecodedWord {
-    F(f32),
-    I(u32),
-}
-
-pub fn decode_word(raw: u32, is_float: bool) -> DecodedWord {
-    if is_float {
-        DecodedWord::F(f32::from_bits(raw))
-    } else {
-        DecodedWord::I(raw)
-    }
-}
-
-/// Build a single-address CHANNEL_VALUES write body:
-/// `[address, count(1)|type|0, value]`.
-pub fn build_single_set(address: u32, value: RawValue, value_type: u8) -> Vec<u8> {
-    let meta = (1u32 << 16) | ((value_type as u32) << 8);
-    let mut out = Vec::with_capacity(12);
-    out.extend_from_slice(&address.to_be_bytes());
-    out.extend_from_slice(&meta.to_be_bytes());
-    out.extend_from_slice(&value.to_be_bytes());
-    out
-}
-
-/// Build a multi-address CHANNEL_VALUES write the way the mixer app does:
-/// `(address, value)` pairs with the meta word carrying a `0x2000` flag in
-/// the count field, placed after the first address.
-pub fn build_multi_set(pairs: &[(u32, u32)], value_type: u8) -> anyhow::Result<Vec<u8>> {
-    if pairs.is_empty() {
-        anyhow::bail!("multi-set needs at least one (address, value) pair");
-    }
-    let count = pairs.len() as u32;
-    let meta = (((count & 0xFFFF) | 0x2000) << 16) | ((value_type as u32) << 8);
-    let mut out = Vec::with_capacity(pairs.len() * 8 + 4);
-    let mut first = true;
-    for (addr, raw) in pairs {
-        out.extend_from_slice(&addr.to_be_bytes());
-        if first {
-            out.extend_from_slice(&meta.to_be_bytes());
-            first = false;
-        }
-        out.extend_from_slice(&raw.to_be_bytes());
-    }
-    Ok(out)
-}
-
-/// The mixer answers read requests with an empty body: polling does not
-/// work, only listening to pushes does, so this is used for probing only.
-pub fn build_read_request(start: u32, count: u32, value_type: u8) -> Vec<u8> {
-    let meta = ((count & 0xFFFF) << 16) | ((value_type as u32) << 8);
-    let mut out = Vec::with_capacity(8);
-    out.extend_from_slice(&start.to_be_bytes());
-    out.extend_from_slice(&meta.to_be_bytes());
-    out
 }
 
 // ---------------------------------------------------------------------------
@@ -1026,7 +924,8 @@ impl MackieSession {
     }
 
     /// Probe read (the mixer answers reads with an empty body; the live
-    /// value space only arrives via pushes).
+    /// value space only arrives via pushes). Noncontiguous sparse replies
+    /// are withheld because this API has no way to return their addresses.
     pub async fn read_values(&self, start: u32, count: u32) -> anyhow::Result<Vec<u32>> {
         let body = build_read_request(start, count, VALUE_TYPE_PARAM);
         let resp = self
@@ -1702,32 +1601,32 @@ async fn send_frame(
     Ok(())
 }
 
-fn ingest_values(store: &StdMutex<ValueStore>, block: &ValueBlock) {
-    if block.value_type != VALUE_TYPE_PARAM {
-        return;
-    }
-    // One lock: desk insert + pending clear are atomic, so a concurrent
-    // verified read can never see a half-ingested block and a concurrent
-    // own-write can never interleave between the two steps.
+fn ingest_value_blocks(store: &StdMutex<ValueStore>, blocks: &[ValueBlock], value_type: u8) {
+    // Validate the entire payload first, then apply all of its runs under one
+    // lock: values and pending provenance change together in wire order.
     if let Ok(mut s) = store.lock() {
-        for (i, raw) in block.raws.iter().enumerate() {
-            let addr = block.start + i as u32;
-            s.values.insert(addr, *raw);
-            s.pending.remove(&addr);
+        for block in blocks.iter().filter(|block| block.value_type == value_type) {
+            for (i, raw) in block.raws.iter().enumerate() {
+                let addr = block.start + i as u32;
+                s.values.insert(addr, *raw);
+                s.pending.remove(&addr);
+            }
         }
     }
 }
 
-fn ingest_type2(store: &StdMutex<ValueStore>, block: &ValueBlock) {
-    if block.value_type != VALUE_TYPE_MUTE_GROUP {
+fn dispatch_values(caches: &Caches, body: &[u8]) {
+    let Some(blocks) = parse_value_blocks(body) else {
         return;
-    }
-    if let Ok(mut s) = store.lock() {
-        for (i, raw) in block.raws.iter().enumerate() {
-            let addr = block.start + i as u32;
-            s.values.insert(addr, *raw);
-            s.pending.remove(&addr);
-        }
+    };
+    ingest_value_blocks(&caches.values, &blocks, VALUE_TYPE_PARAM);
+    ingest_value_blocks(&caches.type2_values, &blocks, VALUE_TYPE_MUTE_GROUP);
+    for block in blocks {
+        let _ = caches.push_tx.send(PushEvent::Values {
+            value_type: block.value_type,
+            start: block.start,
+            raws: block.raws,
+        });
     }
 }
 
@@ -1758,8 +1657,9 @@ async fn dispatch(
     pending: &Arc<StdMutex<HashMap<u8, oneshot::Sender<PendingResult>>>>,
     caches: &Caches,
 ) {
-    let values = &caches.values;
-    let type2_values = &caches.type2_values;
+    if msg.command == Command::ChannelValues {
+        dispatch_values(caches, &msg.body);
+    }
     let names = &caches.names;
     let snapshot_names = &caches.snapshot_names;
     let current_snapshot = &caches.current_snapshot;
@@ -1800,18 +1700,7 @@ async fn dispatch(
                     }
                     msg.body.get(..4).unwrap_or(&[]).to_vec()
                 }
-                Command::ChannelValues => {
-                    if let Some(block) = parse_value_block(&msg.body) {
-                        ingest_values(values, &block);
-                        ingest_type2(type2_values, &block);
-                        let _ = caches.push_tx.send(PushEvent::Values {
-                            value_type: block.value_type,
-                            start: block.start,
-                            raws: block.raws.clone(),
-                        });
-                    }
-                    Vec::new()
-                }
+                Command::ChannelValues => Vec::new(),
                 Command::ChannelNames => {
                     if let Some(pairs) = parse_name_table(&msg.body) {
                         ingest_names(names, &pairs);
@@ -1823,31 +1712,8 @@ async fn dispatch(
             };
             let _ = send_frame(write, msg.seq, MessageType::Response, msg.command, reply_body).await;
         }
-        MessageType::Broadcast => {
-            if msg.command == Command::ChannelValues {
-                if let Some(block) = parse_value_block(&msg.body) {
-                    ingest_values(values, &block);
-                    ingest_type2(type2_values, &block);
-                    let _ = caches.push_tx.send(PushEvent::Values {
-                        value_type: block.value_type,
-                        start: block.start,
-                        raws: block.raws.clone(),
-                    });
-                }
-            }
-        }
+        MessageType::Broadcast => {}
         MessageType::Response | MessageType::Error => {
-            if msg.command == Command::ChannelValues {
-                if let Some(block) = parse_value_block(&msg.body) {
-                    ingest_values(values, &block);
-                    ingest_type2(type2_values, &block);
-                    let _ = caches.push_tx.send(PushEvent::Values {
-                        value_type: block.value_type,
-                        start: block.start,
-                        raws: block.raws.clone(),
-                    });
-                }
-            }
             if msg.msg_type == MessageType::Error {
                 complete_pending(
                     pending,
@@ -2146,10 +2012,12 @@ mod tests {
                         (Command::ChannelValues, MessageType::Request)
                             if req.body.len() > 8 =>
                         {
-                            if let Some(block) = parse_value_block(&req.body) {
+                            if let Some(blocks) = parse_value_blocks(&req.body) {
                                 let mut w = fake.writes.lock().unwrap();
-                                for (i, raw) in block.raws.iter().enumerate() {
-                                    w.push((block.start + i as u32, *raw));
+                                for block in blocks {
+                                    for (i, raw) in block.raws.iter().enumerate() {
+                                        w.push((block.start + i as u32, *raw));
+                                    }
                                 }
                             }
                             let resp = response_to(&req, vec![]);
