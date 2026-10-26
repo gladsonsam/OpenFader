@@ -20,12 +20,23 @@ abstract class OutputProcessingStore extends ChangeNotifier {
   Future<String?> deleteOutputPreset(OutputPresetTarget target, String id);
   String? copyOutputProcessor(OutputPresetTarget target);
   bool get hasOutputProcessorClipboard;
+
   /// Null id pastes the immutable in-memory processor clipboard.
   /// Acceptance without independent mixer readback is reported as unconfirmed.
   Future<ProcessorPresetResult> recallOutputPreset(
     OutputPresetTarget target,
     String? id,
   );
+
+  /// Applies every advertised GEQ gain, leaving all other fields unchanged.
+  /// The captured block and output selection must still be current.
+  Future<ProcessorPresetResult> applyOutputGeqDraft(
+    OutputPresetTarget target,
+    Map<String, double> gains,
+  );
+  OutputPresetTarget? captureOutputGeqDraftTarget();
+  String? outputGeqDraftTargetError(OutputPresetTarget target);
+
   /// Stops before the next dispatch; an in-flight write can still complete.
   void cancelOutputPresetRecall();
   List<DestinationControlVm> get outputProcessingControls;

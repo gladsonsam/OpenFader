@@ -8,6 +8,7 @@ abstract interface class _AppStoreOutputPresetsContract {
 /// parameter-plane recall is deliberately independent of destination DSP.
 mixin _AppStoreOutputPresets on _AppStoreContext {
   final Expando<int> _outputPresetTargets = Expando<int>();
+  final Expando<int> _outputDraftContexts = Expando<int>();
   ProcessorPreset? _outputClipboard;
   OutputPresetTarget? _outputRecall;
   int _outputRecallCancellation = 0;
@@ -19,7 +20,17 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
   bool _outputPresetBusy(String target) => _outputRecall?.target == target;
 
   @override
-  OutputPresetTarget? captureOutputPresetTarget(String surface) {
+  OutputPresetTarget? captureOutputPresetTarget(String surface) =>
+      _captureOutputTarget(surface);
+
+  @override
+  OutputPresetTarget? captureOutputGeqDraftTarget() =>
+      _captureOutputTarget('output_geq', draft: true);
+
+  OutputPresetTarget? _captureOutputTarget(
+    String surface, {
+    bool draft = false,
+  }) {
     final target = outputProcessingTarget;
     final controls = outputProcessingControls
         .where((c) => c.target == target && c.surface == surface)
@@ -36,8 +47,13 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
       surface,
       controls,
     );
+    _observeOutputProcessingContext();
+    _outputDraftContexts[captured] = _outputContextRevision;
     _outputPresetTargets[captured] = _presetGeneration;
-    return outputPresetTargetError(captured) == null ? captured : null;
+    final error = draft
+        ? outputGeqDraftTargetError(captured)
+        : outputPresetTargetError(captured);
+    return error == null ? captured : null;
   }
 
   String? _outputIdentityError(OutputPresetTarget target) {
@@ -73,13 +89,19 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
     return null;
   }
 
-  @override
-  String? outputPresetTargetError(OutputPresetTarget target) {
+  String? _outputTargetReadyError(OutputPresetTarget target) {
     final error = _outputSnapshotError(target, target.controls);
     if (error != null) return error;
     if (_outputRecall != null || _destinationHasPending(target.target)) {
       return 'Wait for the current output changes to finish.';
     }
+    return null;
+  }
+
+  @override
+  String? outputPresetTargetError(OutputPresetTarget target) {
+    final error = _outputTargetReadyError(target);
+    if (error != null) return error;
     final kind = target.kind;
     final fields = target.controls.where((c) => c.preset).toList();
     if (kind == null ||
@@ -92,6 +114,20 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
     }
     return null;
   }
+
+  String? _outputDraftIdentityError(OutputPresetTarget target) {
+    if (_outputDraftContexts[target] != _outputContextRevision ||
+        outputProcessingTarget != target.target) {
+      return 'Output selection or permissions changed. Reopen Graphic EQ.';
+    }
+    return null;
+  }
+
+  @override
+  String? outputGeqDraftTargetError(OutputPresetTarget target) =>
+      _outputDraftIdentityError(target) ??
+      _outputTargetReadyError(target) ??
+      outputGeqDraftError(target);
 
   bool _outputCompatible(OutputPresetTarget target, ProcessorPreset preset) =>
       preset.driver == target.driver &&
@@ -224,7 +260,23 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
   Future<ProcessorPresetResult> recallOutputPreset(
     OutputPresetTarget target,
     String? id,
-  ) async {
+  ) =>
+      _applyOutputValues(target, id);
+
+  @override
+  Future<ProcessorPresetResult> applyOutputGeqDraft(
+    OutputPresetTarget target,
+    Map<String, double> gains,
+  ) =>
+      _applyOutputValues(target, null, draft: Map.unmodifiable(gains));
+
+  Future<ProcessorPresetResult> _applyOutputValues(
+    OutputPresetTarget target,
+    String? id, {
+    Map<String, double>? draft,
+  }) async {
+    String? draftIdentity() =>
+        draft == null ? null : _outputDraftIdentityError(target);
     final cancellation = _outputRecallCancellation;
     var total = 0;
     var confirmed = 0;
@@ -232,29 +284,40 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
     var accepted = 0;
     var acquired = false;
     try {
-      final ready = outputPresetTargetError(target);
+      final ready = draft == null
+          ? outputPresetTargetError(target)
+          : outputGeqDraftTargetError(target);
       if (ready != null) throw StateError(ready);
-      final preset = id == null
-          ? _outputClipboard
-          : await _findOutputPreset(target, id);
+      final preset = draft != null
+          ? null
+          : id == null
+              ? _outputClipboard
+              : await _findOutputPreset(target, id);
       if (cancellation != _outputRecallCancellation) {
         throw StateError('Recall cancelled.');
       }
-      final changed = outputPresetTargetError(target);
+      final changed = draftIdentity() ??
+          (draft == null
+              ? outputPresetTargetError(target)
+              : _outputTargetReadyError(target));
       if (changed != null) throw StateError(changed);
-      if (preset == null || !_outputCompatible(target, preset)) {
+      if (draft == null &&
+          (preset == null || !_outputCompatible(target, preset))) {
         throw StateError('Copy a compatible output processor first.');
       }
-      final fields = target.controls.where((c) => c.preset).toList();
+      final fields = draft == null
+          ? target.controls.where((c) => c.preset).toList()
+          : outputGeqBands(target.controls);
+      final values = draft ?? preset!.values;
       total = fields.length;
-      if (preset.values.length != total ||
+      if (values.length != total ||
           fields.any(
             (c) =>
-                preset.values[c.id] is! num ||
-                !c.allowsValue((preset.values[c.id] as num).toDouble()),
+                values[c.id] is! num ||
+                !c.allowsValue((values[c.id] as num).toDouble()),
           )) {
         throw StateError(
-          'The saved processor does not match all advertised settings and domains on this output.',
+          'The proposal does not match all advertised settings and domains on this output.',
         );
       }
       // The original block (including bypass states) is held through every
@@ -268,11 +331,11 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
         if (cancellation != _outputRecallCancellation) {
           throw StateError('Recall cancelled.');
         }
-        final stale = _outputSnapshotError(target, snapshot);
+        final stale = draftIdentity() ?? _outputSnapshotError(target, snapshot);
         if (stale != null) throw StateError(stale);
         final index = snapshot.indexWhere((c) => c.id == field.id);
         final control = snapshot[index];
-        final value = (preset.values[field.id] as num).toDouble();
+        final value = (values[field.id] as num).toDouble();
         if (control.value != value) {
           sent++;
           final error = await _sendDestinationControl(
@@ -282,7 +345,7 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
           );
           if (error != null) throw StateError(error);
           accepted++;
-          final identity = _outputIdentityError(target);
+          final identity = draftIdentity() ?? _outputIdentityError(target);
           if (identity != null) throw StateError(identity);
           final live = engine.destinationControls
               .where(
@@ -290,7 +353,10 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
               )
               .toList();
           final result = live.where((c) => c.id == control.id).firstOrNull;
-          if (result == null || result.value != value || !result.available) {
+          if (result == null ||
+              result.value != value ||
+              !result.available ||
+              (draft != null && result.authority != 'verified')) {
             throw StateError(
               'Command accepted without matching output state; result uncertain.',
             );
@@ -303,7 +369,8 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
             );
           }
           snapshot[index] = result;
-          final stale = _outputSnapshotError(target, snapshot);
+          final stale =
+              draftIdentity() ?? _outputSnapshotError(target, snapshot);
           if (stale != null) throw StateError(stale);
         }
         if (snapshot[index].authority == 'verified') confirmed++;
@@ -311,6 +378,9 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
       if (cancellation != _outputRecallCancellation) {
         throw StateError('Recall cancelled.');
       }
+      final finalError =
+          draftIdentity() ?? _outputSnapshotError(target, snapshot);
+      if (finalError != null) throw StateError(finalError);
       return ProcessorPresetResult(
         error: confirmed == total
             ? null

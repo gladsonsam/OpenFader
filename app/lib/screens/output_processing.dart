@@ -3,9 +3,11 @@ import 'package:flutter/material.dart';
 
 import '../core/destination_controls.dart';
 import '../core/output_processing.dart';
+import '../core/output_geq.dart';
 import '../palette.dart';
 import '../widgets/destination_control_editor.dart';
 import '../widgets/output_processor_presets.dart';
+import '../widgets/output_geq_editor.dart';
 import 'output_processing_graph.dart';
 
 /// Output topology and controls come entirely from provider descriptors.
@@ -120,6 +122,12 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: OutputProcessorPresetActions(
                             store: store, surface: surface)),
+                  if (surface == 'output_geq' &&
+                      outputGeqBands(processor).isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: OutputGeqDraftActions(store: store),
+                    ),
                   Expanded(
                     child: processor.isEmpty
                         ? const Center(
