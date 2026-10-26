@@ -11,6 +11,7 @@ pub mod meters;
 pub mod osc;
 pub mod session;
 pub mod tcp;
+pub mod wing;
 
 pub use backoff::{backoff_delays, connect_with_backoff, Backoff};
 pub use discovery::{

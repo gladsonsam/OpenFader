@@ -6,7 +6,7 @@ use openfader_core::{MixerDriver, ParamValue, StripId};
 use std::time::Duration;
 
 const HELP: &str = "\
-Usage: openfader-cli [--driver sim|xair|dl32s] [--addr IP] [--preset generic|xr18|dl32s|studio] <command> [args]
+Usage: openfader-cli [--driver sim|xair|dl32s|wing] [--addr IP] [--preset generic|xr18|dl32s|studio] <command> [args]
 
 Commands:
   list                       list all strips (name, fader, mute)
@@ -19,7 +19,7 @@ Commands:
   discover [--timeout MS]    X-Air LAN discovery (/xinfo broadcast)
 
 Options:
-  --driver <name>   sim (default), xair, dl32s
+  --driver <name>   sim (default), xair, dl32s, wing
   --addr <ip>       mixer address (xair/dl32s connect; sim ignores)
   --preset <name>   sim scribbles: generic (default), xr18, dl32s, studio (owner rig)
   -h, --help        print this help
@@ -75,6 +75,7 @@ enum AnyDriver {
     Sim(Box<openfader_sim::SimDriver>),
     XAir(Box<openfader_proto_xair::XAirDriver>),
     Dl32s(Box<openfader_proto_dl32s::Dl32sDriver>),
+    Wing(Box<openfader_proto_wing::WingDriver>),
 }
 
 impl MixerDriver for AnyDriver {
@@ -83,6 +84,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.name(),
             AnyDriver::XAir(d) => d.name(),
             AnyDriver::Dl32s(d) => d.name(),
+            AnyDriver::Wing(d) => d.name(),
         }
     }
     fn channel_count(&self) -> usize {
@@ -90,6 +92,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.channel_count(),
             AnyDriver::XAir(d) => d.channel_count(),
             AnyDriver::Dl32s(d) => d.channel_count(),
+            AnyDriver::Wing(d) => d.channel_count(),
         }
     }
     async fn connect(&self, addr: &str) -> anyhow::Result<()> {
@@ -97,6 +100,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.connect(addr).await,
             AnyDriver::XAir(d) => d.connect(addr).await,
             AnyDriver::Dl32s(d) => d.connect(addr).await,
+            AnyDriver::Wing(d) => d.connect(addr).await,
         }
     }
     async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
@@ -104,6 +108,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.set_fader(strip, value).await,
             AnyDriver::XAir(d) => d.set_fader(strip, value).await,
             AnyDriver::Dl32s(d) => d.set_fader(strip, value).await,
+            AnyDriver::Wing(d) => d.set_fader(strip, value).await,
         }
     }
     async fn get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
@@ -111,6 +116,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.get_fader(strip).await,
             AnyDriver::XAir(d) => d.get_fader(strip).await,
             AnyDriver::Dl32s(d) => d.get_fader(strip).await,
+            AnyDriver::Wing(d) => d.get_fader(strip).await,
         }
     }
     async fn set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
@@ -118,6 +124,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.set_mute(strip, muted).await,
             AnyDriver::XAir(d) => d.set_mute(strip, muted).await,
             AnyDriver::Dl32s(d) => d.set_mute(strip, muted).await,
+            AnyDriver::Wing(d) => d.set_mute(strip, muted).await,
         }
     }
     async fn get_mute(&self, strip: StripId) -> anyhow::Result<bool> {
@@ -125,6 +132,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.get_mute(strip).await,
             AnyDriver::XAir(d) => d.get_mute(strip).await,
             AnyDriver::Dl32s(d) => d.get_mute(strip).await,
+            AnyDriver::Wing(d) => d.get_mute(strip).await,
         }
     }
     async fn set_name(&self, strip: StripId, name: &str) -> anyhow::Result<()> {
@@ -132,6 +140,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.set_name(strip, name).await,
             AnyDriver::XAir(d) => d.set_name(strip, name).await,
             AnyDriver::Dl32s(d) => d.set_name(strip, name).await,
+            AnyDriver::Wing(d) => d.set_name(strip, name).await,
         }
     }
     async fn get_name(&self, strip: StripId) -> anyhow::Result<String> {
@@ -139,6 +148,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.get_name(strip).await,
             AnyDriver::XAir(d) => d.get_name(strip).await,
             AnyDriver::Dl32s(d) => d.get_name(strip).await,
+            AnyDriver::Wing(d) => d.get_name(strip).await,
         }
     }
     async fn set_param(
@@ -151,6 +161,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.set_param(strip, param, value).await,
             AnyDriver::XAir(d) => d.set_param(strip, param, value).await,
             AnyDriver::Dl32s(d) => d.set_param(strip, param, value).await,
+            AnyDriver::Wing(d) => d.set_param(strip, param, value).await,
         }
     }
     async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
@@ -158,6 +169,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.get_param(strip, param).await,
             AnyDriver::XAir(d) => d.get_param(strip, param).await,
             AnyDriver::Dl32s(d) => d.get_param(strip, param).await,
+            AnyDriver::Wing(d) => d.get_param(strip, param).await,
         }
     }
     async fn snapshot(&self) -> anyhow::Result<openfader_core::MixerSnapshot> {
@@ -165,6 +177,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.snapshot().await,
             AnyDriver::XAir(d) => d.snapshot().await,
             AnyDriver::Dl32s(d) => d.snapshot().await,
+            AnyDriver::Wing(d) => d.snapshot().await,
         }
     }
     async fn recall(&self, snapshot: &openfader_core::MixerSnapshot) -> anyhow::Result<()> {
@@ -172,6 +185,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.recall(snapshot).await,
             AnyDriver::XAir(d) => d.recall(snapshot).await,
             AnyDriver::Dl32s(d) => d.recall(snapshot).await,
+            AnyDriver::Wing(d) => d.recall(snapshot).await,
         }
     }
     async fn query_info(&self) -> anyhow::Result<openfader_core::MixerInfo> {
@@ -179,6 +193,7 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.query_info().await,
             AnyDriver::XAir(d) => d.query_info().await,
             AnyDriver::Dl32s(d) => d.query_info().await,
+            AnyDriver::Wing(d) => d.query_info().await,
         }
     }
     fn poll_meters(&self) -> openfader_core::MeterFrame {
@@ -186,12 +201,14 @@ impl MixerDriver for AnyDriver {
             AnyDriver::Sim(d) => d.poll_meters(),
             AnyDriver::XAir(d) => d.poll_meters(),
             AnyDriver::Dl32s(d) => d.poll_meters(),
+            AnyDriver::Wing(d) => d.poll_meters(),
         }
     }
 }
 
 fn make_driver(kind: &str, preset: openfader_sim::SimPreset) -> AnyDriver {
     match kind {
+        "wing" => AnyDriver::Wing(Box::new(openfader_proto_wing::WingDriver::new())),
         "xair" => AnyDriver::XAir(Box::new(openfader_proto_xair::XAirDriver::new())),
         "dl32s" => AnyDriver::Dl32s(Box::new(openfader_proto_dl32s::Dl32sDriver::new())),
         _ => AnyDriver::Sim(Box::new(openfader_sim::SimDriver::with_preset(preset))),
@@ -255,8 +272,8 @@ async fn main() -> anyhow::Result<()> {
         i += 1;
     }
 
-    if !["sim", "xair", "dl32s"].contains(&driver.as_str()) {
-        anyhow::bail!("unknown driver {driver:?}; expected sim|xair|dl32s");
+    if !["sim", "xair", "dl32s", "wing"].contains(&driver.as_str()) {
+        anyhow::bail!("unknown driver {driver:?}; expected sim|xair|dl32s|wing");
     }
     if rest.is_empty() {
         print!("{HELP}");

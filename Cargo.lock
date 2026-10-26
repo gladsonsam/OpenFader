@@ -865,6 +865,7 @@ dependencies = [
  "anyhow",
  "openfader-core",
  "openfader-proto-dl32s",
+ "openfader-proto-wing",
  "openfader-proto-xair",
  "openfader-sim",
  "openfader-transport",
@@ -891,6 +892,7 @@ dependencies = [
  "futures",
  "openfader-core",
  "openfader-proto-dl32s",
+ "openfader-proto-wing",
  "openfader-proto-xair",
  "openfader-sim",
  "openfader-transport",
@@ -917,6 +919,17 @@ dependencies = [
  "anyhow",
  "openfader-core",
  "openfader-transport",
+ "tokio",
+]
+
+[[package]]
+name = "openfader-proto-wing"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "openfader-core",
+ "openfader-transport",
+ "rosc",
  "tokio",
 ]
 

@@ -10,7 +10,8 @@ import '../widgets/console_button.dart';
 enum MixerType {
   automatic('Automatic', 'auto'),
   xair('Behringer X-Air', 'xair'),
-  dl32s('Mackie DL32S', 'dl32s');
+  dl32s('Mackie DL32S', 'dl32s'),
+  wing('Behringer WING', 'wing');
 
   const MixerType(this.label, this.driver);
   final String label;

@@ -77,10 +77,15 @@ pub fn resolve_peer(addr: &str, default_port: u16) -> anyhow::Result<SocketAddr>
         .map_err(|e| anyhow::anyhow!("bad mixer address {addr:?}: {e}"))
 }
 
+struct PendingQuery {
+    tx: oneshot::Sender<OscMessage>,
+    accepts: fn(&OscMessage) -> bool,
+}
+
 /// Shared UDP session. Cloneable via Arc internals through &self methods.
 pub struct OscSession {
     socket: Arc<UdpSocket>,
-    pending: Arc<Mutex<HashMap<String, oneshot::Sender<OscMessage>>>>,
+    pending: Arc<Mutex<HashMap<String, PendingQuery>>>,
     query_lock: Mutex<()>,
     meter_tx: broadcast::Sender<MeterFrame>,
     /// Desk-originated traffic: every non-meter message that matches no
@@ -111,7 +116,7 @@ impl OscSession {
         socket: Arc<UdpSocket>,
         keepalive: Option<KeepaliveConfig>,
     ) -> Self {
-        let pending: Arc<Mutex<HashMap<String, oneshot::Sender<OscMessage>>>> =
+        let pending: Arc<Mutex<HashMap<String, PendingQuery>>> =
             Arc::new(Mutex::new(HashMap::new()));
         let (meter_tx, _) = broadcast::channel::<MeterFrame>(64);
         let (update_tx, _) = broadcast::channel::<OscMessage>(256);
@@ -151,8 +156,9 @@ impl OscSession {
                         // late query caller must not hide a newer desk change.
                         let _ = received_tx.send((received, msg.clone()));
                         let mut guard = pending.lock().await;
-                        if let Some(tx) = guard.remove(&msg.addr) {
-                            let _ = tx.send(msg);
+                        if guard.get(&msg.addr).is_some_and(|q| (q.accepts)(&msg)) {
+                            let query = guard.remove(&msg.addr).expect("matched pending query");
+                            let _ = query.tx.send(msg);
                         } else {
                             // No outstanding query: desk-originated traffic.
                             // Forward a clone to update subscribers (drivers
@@ -208,19 +214,33 @@ impl OscSession {
         addr: &str,
         timeout: Duration,
     ) -> anyhow::Result<OscMessage> {
+        self.query_with_args_timeout(addr, vec![], timeout, |_| true).await
+    }
+
+    /// Query a mixer-specific OSC operation and accept only its reply shape.
+    /// For example, WING node definitions and values share addresses but use
+    /// different payload types. Unmatched traffic stays on the update plane.
+    /// Like ordinary queries, this is serialized and does not install a mixer
+    /// subscription. Encoding/send errors remove the pending reply slot.
+    pub async fn query_with_args_timeout(
+        &self,
+        addr: &str,
+        args: Vec<OscType>,
+        timeout: Duration,
+        accepts: fn(&OscMessage) -> bool,
+    ) -> anyhow::Result<OscMessage> {
+        let bytes = osc::encode_message(addr, args)?;
         let _guard = self.query_lock.lock().await;
         let (tx, rx) = oneshot::channel();
-        {
-            let mut pending = self.pending.lock().await;
-            pending.insert(addr.to_string(), tx);
+        self.pending.lock().await.insert(addr.to_string(), PendingQuery { tx, accepts });
+        if let Err(error) = self.socket.send(&bytes).await {
+            self.pending.lock().await.remove(addr);
+            return Err(error.into());
         }
-        let bytes = osc::query_message(addr)?;
-        self.socket.send(&bytes).await?;
         match tokio::time::timeout(timeout, rx).await {
             Ok(Ok(msg)) => Ok(msg),
             Ok(Err(_)) => anyhow::bail!("{addr}: reply channel closed"),
             Err(_) => {
-                // Stale entry would steal a later reply; drop it.
                 self.pending.lock().await.remove(addr);
                 anyhow::bail!("{addr}: timed out after {timeout:?}")
             }
@@ -386,7 +406,7 @@ mod tests {
     use super::*;
     use std::time::Duration;
 
-    async fn loopback_pair() -> (OscSession, Arc<UdpSocket>) {
+    pub(super) async fn loopback_pair() -> (OscSession, Arc<UdpSocket>) {
         let mixer = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         let mixer_addr = mixer.local_addr().unwrap();
         let client_sock = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
@@ -775,4 +795,72 @@ mod tests {
             assert_eq!(frame.levels.len(), 2, "{addr}");
         }
     }
+}
+
+#[cfg(test)]
+mod typed_query_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn typed_query_keeps_same_address_values_and_late_blobs_out_of_reply_slot() {
+        let (session, mixer) = super::tests::loopback_pair().await;
+        let mut updates = session.subscribe_updates();
+        let task = tokio::spawn(async move {
+            let mut buf = [0u8; 1024];
+            let (n, peer) = mixer.recv_from(&mut buf).await.unwrap();
+            let request = osc::flatten(osc::decode_packet(&buf[..n]).unwrap());
+            assert_eq!(request[0].args, vec![OscType::Blob(vec![0xdd])]);
+            let value = osc::encode_message("/delay", vec![OscType::Float(12.)]).unwrap();
+            let blob = osc::encode_message("/delay", vec![OscType::Blob(vec![0xde])]).unwrap();
+            // Neither this value nor another-address blob can complete DD.
+            mixer.send_to(&value, peer).await.unwrap();
+            mixer.send_to(&osc::encode_message("/other", vec![OscType::Blob(vec![0xde])]).unwrap(), peer).await.unwrap();
+            mixer.send_to(&blob, peer).await.unwrap();
+            let (n, _) = mixer.recv_from(&mut buf).await.unwrap();
+            let request = osc::flatten(osc::decode_packet(&buf[..n]).unwrap());
+            assert!(request[0].args.is_empty());
+            // A delayed DD response must not complete the numeric read.
+            mixer.send_to(&blob, peer).await.unwrap();
+            mixer.send_to(&value, peer).await.unwrap();
+        });
+        let blob = session.query_with_args_timeout("/delay", vec![OscType::Blob(vec![0xdd])],
+            Duration::from_secs(2), |msg| matches!(msg.args.as_slice(), [OscType::Blob(_)]))
+            .await.unwrap();
+        assert_eq!(blob.args, vec![OscType::Blob(vec![0xde])]);
+        let value = session.query_with_args_timeout("/delay", vec![], Duration::from_secs(2),
+            |msg| matches!(msg.args.as_slice(), [OscType::Float(_)]))
+            .await.unwrap();
+        assert_eq!(value.args, vec![OscType::Float(12.)]);
+        assert_eq!(updates.recv().await.unwrap().args, vec![OscType::Float(12.)]);
+        assert_eq!(updates.recv().await.unwrap().addr, "/other");
+        assert_eq!(updates.recv().await.unwrap().args, vec![OscType::Blob(vec![0xde])]);
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn wrong_shape_times_out_and_releases_pending_slot_for_next_query() {
+        let (session, mixer) = super::tests::loopback_pair().await;
+        let task = tokio::spawn(async move {
+            let mut buf = [0u8; 1024];
+            for _ in 0..2 {
+                let (_, peer) = mixer.recv_from(&mut buf).await.unwrap();
+                mixer.send_to(&osc::encode_message("/delay", vec![OscType::Float(2.)]).unwrap(), peer).await.unwrap();
+            }
+        });
+        assert!(session.query_with_args_timeout("/delay", vec![OscType::Blob(vec![0xdd])],
+            Duration::from_millis(50), |msg| matches!(msg.args.as_slice(), [OscType::Blob(_)]))
+            .await.is_err());
+        assert!(session.pending.lock().await.is_empty());
+        assert_eq!(session.query("/delay").await.unwrap().args, vec![OscType::Float(2.)]);
+        task.await.unwrap();
+    }
+    #[tokio::test]
+    async fn typed_query_send_failure_does_not_leave_a_pending_reply_slot() {
+        let (session, _mixer) = super::tests::loopback_pair().await;
+        let result = session.query_with_args_timeout("/oversized",
+            vec![OscType::Blob(vec![0; 70_000])], Duration::from_secs(1), |_| true).await;
+        assert!(result.is_err());
+        assert!(session.pending.lock().await.is_empty());
+    }
+
 }

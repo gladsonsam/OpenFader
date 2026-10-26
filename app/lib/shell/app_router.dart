@@ -259,7 +259,8 @@ class _AppShellState extends State<AppShell> {
 
         final Widget header = isChan
             ? ChannelToolbar(
-                key: ValueKey((store.stripKey, store.bank, store.engine.driver)),
+                key:
+                    ValueKey((store.stripKey, store.bank, store.engine.driver)),
                 controlFocus: _channelFocus,
                 store: store,
                 compact: MediaQuery.sizeOf(context).width < 600,
@@ -465,6 +466,7 @@ class _AppShellState extends State<AppShell> {
                     compact: !wide,
                     onOpen: () {});
               }
+
               if (!wide) {
                 return selected == null
                     ? const SizedBox.shrink()
@@ -566,7 +568,6 @@ class _NavRail extends StatelessWidget {
 
 // Backend banner: the boot-time verdict stays loud on the Link tab.
 
-
 class _EngineTagBanner extends StatelessWidget {
   final bool isReal;
 
@@ -615,8 +616,6 @@ class _EngineTagBanner extends StatelessWidget {
   }
 }
 
-
-
 abstract class _StoreBase extends ChangeNotifier {
   _StoreBase(this.app) {
     app.addListener(_forward);
@@ -639,8 +638,6 @@ abstract class _StoreBase extends ChangeNotifier {
     super.dispose();
   }
 }
-
-
 
 class _ConnStore extends _StoreBase implements ConnectionStore {
   _ConnStore(super.app) {
@@ -1035,8 +1032,6 @@ class _ConnStore extends _StoreBase implements ConnectionStore {
   }
 }
 
-
-
 class _RoutingStore extends _StoreBase implements RoutingStore {
   _RoutingStore(super.app);
 
@@ -1201,8 +1196,6 @@ class _RoutingStore extends _StoreBase implements RoutingStore {
     send(Cmds.patchClear(strip, target: target));
   }
 }
-
-
 
 class _ScenesStore extends _StoreBase implements ScenesStore {
   _ScenesStore(super.app) {
@@ -1475,8 +1468,6 @@ class _ScenesStore extends _StoreBase implements ScenesStore {
   }
 }
 
-
-
 class _SettingsStore extends _StoreBase implements SettingsStore {
   _SettingsStore(super.app) {
     prefs.addListener(_forward);
@@ -1637,8 +1628,6 @@ class _SettingsStore extends _StoreBase implements SettingsStore {
   }
 }
 
-
-
 class _FxStore extends _StoreBase implements FxStore {
   _FxStore(super.app) {
     // FX meters ride the shell poll loop, so the FX page needs no timer.
@@ -1659,7 +1648,8 @@ class _FxStore extends _StoreBase implements FxStore {
   bool destinationControlIsCurrent(DestinationControlVm control) =>
       app.destinationControlIsCurrent(control);
   @override
-  Future<String?> setDestinationControl(DestinationControlVm control, double value) =>
+  Future<String?> setDestinationControl(
+          DestinationControlVm control, double value) =>
       app.setDestinationControl(control, value);
 
   @override
@@ -1693,7 +1683,9 @@ class _FxStore extends _StoreBase implements FxStore {
   @override
   List<String> get typeOptions => [
         for (final type in engine.fxTypes)
-          (type['id'] ?? type['label']) as String
+          if (type['slots'] is! List ||
+              (type['slots'] as List).contains(selected + 1))
+            (type['id'] ?? type['label']) as String
       ];
 
   Map<String, dynamic>? _typeMetadata(String type) {
@@ -1713,13 +1705,23 @@ class _FxStore extends _StoreBase implements FxStore {
       _typeMetadata(type)?['label'] as String? ?? type;
 
   String _parameterText(double normalized, Map<String, dynamic>? metadata) {
+    final choices = metadata?['choices'];
+    if (choices is List && choices.isNotEmpty) {
+      final index = (normalized * (choices.length - 1))
+          .round()
+          .clamp(0, choices.length - 1);
+      final choice = choices[index];
+      if (choice is Map && choice['label'] is String) {
+        return choice['label'] as String;
+      }
+    }
     final min = (metadata?['min'] as num?)?.toDouble();
     final max = (metadata?['max'] as num?)?.toDouble();
     if (min == null ||
         max == null ||
         !min.isFinite ||
         !max.isFinite ||
-        max <= min) {
+        max == min) {
       return '${(normalized * 100).toStringAsFixed(0)}%';
     }
     final scale = metadata?['scale'];
@@ -1846,8 +1848,6 @@ class _FxStore extends _StoreBase implements FxStore {
   @override
   void tap() {}
 }
-
-
 
 class _DebugStore extends _StoreBase implements DebugStore {
   _DebugStore(super.app);
