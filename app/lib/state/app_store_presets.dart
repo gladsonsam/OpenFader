@@ -410,6 +410,7 @@ mixin _AppStorePresets on _AppStoreContext {
 
   @override
   void _stopPresetRecalls(String message) {
+    cancelOutputPresetRecall();
     for (final recall in _presetRecalls.values) {
       recall.stop(message);
     }

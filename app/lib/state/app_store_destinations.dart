@@ -69,7 +69,11 @@ mixin _AppStoreDestinations on _AppStoreContext {
       return Future.value('A change to this destination is already pending.');
     }
     final id = 'destination-${engine.session}-${++_destinationRequestSequence}';
-    final edit = _DestinationEdit(control, _nowMs() + 15000);
+    final edit = _DestinationEdit(
+      control,
+      _nowMs() + 15000,
+      recalledValue: guard == null ? null : value,
+    );
     _destinationEdits[id] = edit;
     unawaited(
       _api
@@ -111,10 +115,24 @@ mixin _AppStoreDestinations on _AppStoreContext {
       );
     }
     for (final entry in _destinationEdits.entries.toList()) {
+      final edit = entry.value;
+      if (now < edit.deadline &&
+          edit.accepted &&
+          edit.recalledValue != null &&
+          engine.destinationControls.any((control) =>
+              control.epoch == edit.target.epoch &&
+              control.target == edit.target.target &&
+              control.id == edit.target.id &&
+              control.revision != edit.target.revision &&
+              control.value == edit.recalledValue &&
+              control.authority == 'verified')) {
+        _finishDestinationEdit(entry.key, null);
+        continue;
+      }
       if (now >= entry.value.deadline) {
         _finishDestinationEdit(
           entry.key,
-          'No command result arrived. The destination setting may have changed.',
+          'Command result or verified state did not arrive. The destination setting may have changed.',
         );
       }
     }
@@ -129,6 +147,15 @@ mixin _AppStoreDestinations on _AppStoreContext {
       return;
     }
     final message = frame['message'];
+    if (frame['accepted'] == true &&
+        message is! String &&
+        edit.recalledValue != null) {
+      // The engine unicasts its result BEFORE broadcasting destination state.
+      // Hold guarded recalls until the shell poll has consumed both frames.
+      edit.accepted = true;
+      _pollDestinationEdits(_nowMs());
+      return;
+    }
     _finishDestinationEdit(
       id,
       message is String
@@ -141,8 +168,10 @@ mixin _AppStoreDestinations on _AppStoreContext {
 }
 
 class _DestinationEdit {
-  _DestinationEdit(this.target, this.deadline);
+  _DestinationEdit(this.target, this.deadline, {this.recalledValue});
   final DestinationControlVm target;
   final double deadline;
+  final double? recalledValue;
+  bool accepted = false;
   final done = Completer<String?>();
 }

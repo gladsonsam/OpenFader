@@ -1012,6 +1012,19 @@ impl MackieSession {
         Ok(())
     }
 
+    /// Request a fresh desk push of the value space on this session.
+    /// This repeats only the final read-only initialization request; it does
+    /// not change meter layout or broadcast settings. The response is an ACK,
+    /// not value evidence: consumers must still observe a subsequent push.
+    pub async fn request_value_snapshot(&self) -> anyhow::Result<()> {
+        self.send_request(
+            Command::ChannelInfoControl,
+            6u32.to_be_bytes().to_vec(),
+            REQUEST_TIMEOUT,
+        ).await?;
+        Ok(())
+    }
+
     /// Probe read (the mixer answers reads with an empty body; the live
     /// value space only arrives via pushes).
     pub async fn read_values(&self, start: u32, count: u32) -> anyhow::Result<Vec<u32>> {
