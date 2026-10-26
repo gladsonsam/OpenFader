@@ -109,7 +109,10 @@ fn examples() -> Vec<(String, Value)> {
         (
             "routing",
             Event::Routing {
+                destinations: vec![],
                 patches: vec![openfader_engine::protocol::PatchEntry {
+                    destination: None,
+                    authority: None,
                     target: String::new(),
                     strip: 0,
                     key: None,

@@ -25,12 +25,14 @@ class RouteSrcTile {
   final int index;
   final String usedBy;
   final bool current;
+  final String? operationKey;
 
   const RouteSrcTile({
     required this.label,
     required this.group,
     required this.index,
     this.usedBy = '',
+    this.operationKey,
     this.current = false,
   });
 }
@@ -47,6 +49,7 @@ abstract class RoutingStore extends ChangeNotifier {
   List<RoutePatchTarget> get targets;
   String get target;
   bool get canClear;
+  String? get operationKey;
   void selectTarget(String target);
   String groupLabel(String group);
   List<String> get groups;
@@ -61,7 +64,7 @@ abstract class RoutingStore extends ChangeNotifier {
   void selectStrip(int strip);
   void selectGroup(String group);
   void patch(RouteSrcTile tile);
-  void clearPatch(int strip);
+  void clearPatch(int strip, {String? operationKey});
 }
 
 class U4RoutingPage extends StatelessWidget {
@@ -85,26 +88,30 @@ class U4RoutingPage extends StatelessWidget {
                 ),
               );
             }
+            final operationKey = store.operationKey;
+            final selectedStrip = store.selectedStrip;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (!store.canPatch)
                   const Padding(
                     padding: EdgeInsets.all(8),
-                    child: Text('Input routing is limited on this device.'),
+                    child: Text(
+                        'Select a current destination to edit; device limits apply.'),
                   ),
                 _Header(
                   selectedName: store.selectedName,
                   selectedSrc: store.selectedSrc,
                   onClear: store.selectedStrip == null || !store.canClear
                       ? null
-                      : () => store.clearPatch(store.selectedStrip!),
+                      : () => store.clearPatch(selectedStrip!,
+                          operationKey: operationKey),
                 ),
                 if (store.targets.length > 1)
                   _GroupChips(
                     groups: [for (final t in store.targets) t.key],
                     labels: {
-                      for (final t in store.targets) t.key: 'Input ${t.label}'
+                      for (final t in store.targets) t.key: t.label
                     },
                     active: store.target,
                     onPick: store.selectTarget,

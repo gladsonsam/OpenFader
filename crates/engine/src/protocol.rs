@@ -238,6 +238,15 @@ pub enum Cmd {
         slot: u8,
         on: bool,
     },
+    /// Provider destination identity, session and expected display guard.
+    /// A null source clears; legacy patch commands remain supported.
+    RoutePatch {
+        driver: String,
+        epoch: u64,
+        destination: String,
+        expected: String,
+        source: Option<RoutingSource>,
+    },
     /// R2: patch an input strip to a source socket
     /// (`{"cmd":"patch_set","strip":0,"group":"Lcl","index":1}`).
     PatchSet {
@@ -678,12 +687,42 @@ pub struct RoutingTargetCaps {
     pub clearable: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingSource {
+    pub group: String,
+    pub index: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingDestinationCaps {
+    /// Stable within the provider: plane key plus canonical destination key.
+    pub id: String,
+    pub key: String,
+    pub strip: u16,
+    pub label: String,
+    pub target: String,
+    pub clearable: bool,
+    /// Destination-specific allowed groups and their 1-based socket limits.
+    pub source_groups: Vec<RoutingGroupCaps>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoutingPlaneCaps {
+    pub key: String,
+    pub label: String,
+    pub destinations: Vec<RoutingDestinationCaps>,
+}
+
 /// `caps.routing` (R2): source-patch support of the active driver.
 /// `supported:false` means the UI hides patching (e.g. XR18 insrc is
 /// live-silent on FW 1.20). Optional targets describe independent patches
 /// within each input; an absent list retains the legacy single target.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct RoutingCaps {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub planes: Vec<RoutingPlaneCaps>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epoch: Option<u64>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<RoutingTargetCaps>,
     #[serde(default)]
@@ -752,6 +791,11 @@ pub struct FxSlotState {
 /// One `routing` patch row (R2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub destination: Option<String>,
+    /// Provider display may contain accepted cache continuity, not wire verification.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub target: String,
     pub strip: u16,
@@ -1022,6 +1066,9 @@ pub enum Event {
     },
     /// R2 routing patches: one row per patched input strip.
     Routing {
+        /// Complete provider display, including explicit unpatched destinations.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        destinations: Vec<PatchEntry>,
         patches: Vec<PatchEntry>,
     },
     /// R2 offline change report: emitted on connect while an offline
