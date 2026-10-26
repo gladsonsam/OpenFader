@@ -134,6 +134,12 @@ impl Engine {
         if self.prune_expired_locks() {
             out.push(self.locks_message_inner());
         }
+        let routing_context = match &cmd {
+            Cmd::RoutePatch { driver, epoch, expected, .. } => {
+                Some((driver.clone(), *epoch, expected.clone()))
+            }
+            _ => None,
+        };
         let policy = self.policy_of(writer);
         let (cmd, expected) = match cmd {
             Cmd::ParamGuarded {
@@ -161,9 +167,12 @@ impl Engine {
                     Some(expected),
                 )
             }
+            Cmd::RoutePatch { driver, epoch, destination, source, .. } =>
+                (self.routing_command(&driver, epoch, &destination, source)?, None),
             other => (other, None),
         };
         match cmd {
+            Cmd::RoutePatch { .. } => anyhow::bail!("routing command was not normalized"),
             cmd @ (Cmd::Connect { .. }
             | Cmd::RefreshDevices { .. }
             | Cmd::DiscoverDevices { .. }
@@ -206,7 +215,7 @@ impl Engine {
             | Cmd::PatchSet { .. }
             | Cmd::PatchClear { .. }
             | Cmd::FileDownload { .. }
-            | Cmd::FileUpload { .. }) => self.apply_processing(cmd, writer, out, &policy).await,
+            | Cmd::FileUpload { .. }) => self.apply_processing(cmd, writer, out, &policy, routing_context).await,
             cmd @ (Cmd::Offline { .. } | Cmd::OfflinePush { .. } | Cmd::OfflineDiscard) => {
                 self.apply_offline(cmd, writer, out, &policy).await
             }

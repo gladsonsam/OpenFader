@@ -1178,7 +1178,8 @@ class EngineState {
         ];
         return true;
       case 'routing':
-        final raw = (e['patches'] as List?) ?? const [];
+        final raw = (e['destinations'] as List?) ??
+            (e['patches'] as List?) ?? const [];
         routing = [
           for (final p in raw)
             if (p is Map)

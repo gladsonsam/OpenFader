@@ -9,6 +9,7 @@ impl Engine {
         writer: &str,
         out: &mut Vec<Event>,
         policy: &Policy,
+        routing_context: Option<(String, u64, String)>,
     ) -> anyhow::Result<Option<Event>> {
         match cmd {
             Cmd::FxSetType { slot, fx_type } => {
@@ -153,15 +154,14 @@ impl Engine {
                         return Ok(Some(Self::locked_error(strip, &holder)));
                     }
                 }
+                self.guard_routing_write(strip, &target, Some((&group, index)), policy, writer).await?;
                 let drv = self.active_drv();
-                let mut from = Value::Null;
-                if !drv.routing_groups().is_empty() {
-                    from = drv
-                        .routing_source(StripId(strip), &target)
-                        .await
-                        .map(Value::String)
-                        .unwrap_or(Value::Null);
-                }
+                let from = drv
+                    .routing_source(StripId(strip), &target)
+                    .await
+                    .map(Value::String)
+                    .unwrap_or(Value::Null);
+                self.validate_routing_context(&routing_context, &from)?;
                 let patch = drv
                     .patch_target_set(StripId(strip), &target, &group, index)
                     .await?;
@@ -190,15 +190,14 @@ impl Engine {
                         return Ok(Some(Self::locked_error(strip, &holder)));
                     }
                 }
+                self.guard_routing_write(strip, &target, None, policy, writer).await?;
                 let drv = self.active_drv();
-                let mut from = Value::Null;
-                if !drv.routing_groups().is_empty() {
-                    from = drv
-                        .routing_source(StripId(strip), &target)
-                        .await
-                        .map(Value::String)
-                        .unwrap_or(Value::Null);
-                }
+                let from = drv
+                    .routing_source(StripId(strip), &target)
+                    .await
+                    .map(Value::String)
+                    .unwrap_or(Value::Null);
+                self.validate_routing_context(&routing_context, &from)?;
                 let patch = drv.patch_target_clear(StripId(strip), &target).await?;
                 self.project_routing_patch(strip, writer, &patch, out).await;
                 self.offline_note(

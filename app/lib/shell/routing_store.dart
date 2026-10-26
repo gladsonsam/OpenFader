@@ -1,5 +1,6 @@
-// Shell adapter: routing responsibility. The shell owns polling.
-import '../engine.dart';
+// Shell adapter: provider routing contract. The shell owns polling.
+import 'dart:convert';
+
 import '../core/access_limits.dart';
 import '../screens/routing.dart';
 import 'store_adapter.dart';
@@ -7,102 +8,161 @@ import 'store_adapter.dart';
 class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
   ShellRoutingStore(super.app);
 
-  List<Map<String, dynamic>> get _groups => [
-        for (final g in engine.routingCaps['groups'] as List? ?? const [])
-          if (g is Map<String, dynamic>) g,
+  List<Map> get _planes => [
+        for (final p in engine.routingCaps['planes'] as List? ?? const [])
+          if (p is Map && p['key'] is String) p,
       ];
-  @override
-  List<RoutePatchTarget> get targets => [
-        for (final t in engine.routingCaps['targets'] as List? ?? const [])
-          if (t is Map && t['key'] is String && t['label'] is String)
-            RoutePatchTarget(t['key'] as String, t['label'] as String,
-                t['clearable'] == true),
+  Map? get _plane => _planes.where((p) => p['key'] == target).firstOrNull;
+  List<Map> get _destinations => [
+        for (final d in _plane?['destinations'] as List? ?? const [])
+          if (d is Map && d['id'] is String && d['strip'] is num) d,
+      ];
+  Map? _destination(int? strip) =>
+      _destinations.where((d) => d['strip'] == strip).firstOrNull;
+  Map? get _selected => _destination(_sel);
+  List<Map> get _groups => [
+        for (final g in (_selected ??
+                _destinations.firstOrNull)?['source_groups'] as List? ??
+            const [])
+          if (g is Map && g['key'] is String && g['count'] is num) g,
       ];
   String _target = '';
+  String _group = '';
+  int? _sel;
+  String? _selection;
+  int _sequence = 0;
+  @override
+  String? get operationKey => _selection;
+
+  @override
+  List<RoutePatchTarget> get targets => [
+        for (final p in _planes)
+          RoutePatchTarget(p['key'] as String, p['label'] as String, false),
+      ];
   @override
   String get target => targets.any((t) => t.key == _target)
       ? _target
       : targets.firstOrNull?.key ?? '';
   @override
-  bool get canClear =>
-      canPatch &&
-      (targets.isEmpty || targets.any((t) => t.key == target && t.clearable));
+  bool get routingSupported =>
+      engine.routingCaps['supported'] == true && _planes.isNotEmpty;
+
+  Map? _route(Map d) => engine.routing
+      .where(
+        (p) =>
+            p['destination'] == d['id'] &&
+            p['key'] == d['key'] &&
+            p['strip'] == d['strip'] &&
+            (p['target'] ?? '') == d['target'],
+      )
+      .firstOrNull;
+
+  // Capture identity, session, access policy and current state together. A stale
+  // callback cannot silently retarget after reconnect, reselect or a desk edit.
+  String? _identity(Map? d) {
+    if (d == null) return null;
+    final route = _route(d);
+    if (route == null || route['authority'] != 'provider_display') return null;
+    return jsonEncode([
+      _sequence,
+      engine.session,
+      engine.driver,
+      engine.routingCaps['epoch'],
+      app.controlAccessEpoch,
+      d['id'],
+      d['key'],
+      d['strip'],
+      route['group'],
+      route['index'],
+    ]);
+  }
+
   @override
   bool get canPatch =>
-      routingSupported && app.accessFamilyAllowed(AccessFamily.inputRouting);
+      !isDisposed &&
+      routingSupported &&
+      engine.connected &&
+      app.accessFamilyAllowed(AccessFamily.inputRouting) &&
+      _selection != null &&
+      _selection == _identity(_selected) &&
+      !engine.locks.containsKey(_sel) &&
+      _membersAllowed;
+
+  bool get _membersAllowed {
+    final d = _selected;
+    if (d == null || !app.accessTargetAllowed(d['key'] as String)) return false;
+    // Backend owns provider control_members. Conservatively protect both sides
+    // while stereo state is linked or unknown, including peer local limits.
+    final pair = engine.stereoPairs.where((p) => p.contains(_sel)).firstOrNull;
+    if (pair == null ||
+        pair.every((ch) => engine.params[ch]?['link'] == false)) {
+      return true;
+    }
+    return pair.every((ch) {
+      final key = engine.strips.where((s) => s.ch == ch).firstOrNull?.key;
+      return key != null &&
+          app.accessTargetAllowed(key) &&
+          !engine.locks.containsKey(ch);
+    });
+  }
+
   @override
-  void selectTarget(String target) {
-    if (!targets.any((t) => t.key == target)) return;
-    _target = target;
+  bool get canClear => canPatch && _selected?['clearable'] == true;
+  @override
+  void selectTarget(String value) {
+    if (!targets.any((t) => t.key == value)) return;
+    _sequence++;
+    _target = value;
+    _sel = null;
+    _selection = null;
     notifyListeners();
   }
 
+  String _name(Map d) =>
+      engine.strips
+          .where((s) => s.key == d['key'] && s.ch == d['strip'])
+          .map((s) => s.name)
+          .where((n) => n.isNotEmpty)
+          .firstOrNull ??
+      d['label'] as String;
+
+  String _sourceLabel(Map? route) {
+    if (route == null) return 'Unknown';
+    final group = route['group'] as String;
+    final index = (route['index'] as num).toInt();
+    if (group.isEmpty && index == 0) return '—';
+    return _groups.where((g) => g['key'] == group).firstOrNull?['count'] == 1
+        ? groupLabel(group)
+        : '${groupLabel(group)} $index';
+  }
+
+  @override
+  List<RouteStrip> get strips => [
+        for (final d in _destinations)
+          RouteStrip(
+            strip: (d['strip'] as num).toInt(),
+            id: d['id'] as String,
+            name: _name(d),
+            src: _sourceLabel(_route(d)),
+          ),
+      ];
   @override
   String groupLabel(String group) =>
       _groups.where((g) => g['key'] == group).firstOrNull?['label']
           as String? ??
       group;
-  String _group = 'Lcl';
-  int? _sel;
-
-  @override
-  List<RouteStrip> get strips => [
-        for (final s in engine.strips)
-          RouteStrip(
-            strip: s.ch,
-            id: 'in${s.ch + 1}',
-            name: s.name.isEmpty ? 'CH${s.ch + 1}' : s.name,
-            src: _srcOf(s.ch),
-          ),
-      ];
-
-  String _sourceLabel(String group, int index) {
-    if (group.isEmpty && index == 0) return '—';
-    final count = _groups.where((g) => g['key'] == group).firstOrNull?['count'];
-    return count == 1 ? groupLabel(group) : '${groupLabel(group)} $index';
-  }
-
-  String _srcOf(int ch) {
-    for (final p in engine.routing) {
-      final strip = (p['strip'] as num?)?.toInt();
-      if (strip == ch && (p['target'] ?? '') == target) {
-        final src = p['label'] ?? p['source'] ?? p['src'];
-        if (src is String && src.isNotEmpty) {
-          final group = p['group'];
-          final index = p['index'];
-          return group is String && index is num
-              ? _sourceLabel(group, index.toInt())
-              : src;
-        }
-      }
-    }
-    return '';
-  }
-
   @override
   List<String> get groups => [for (final g in _groups) g['key'] as String];
-
   @override
   String get group =>
       groups.contains(_group) ? _group : groups.firstOrNull ?? '';
-
   @override
-  int? get selectedStrip => _sel;
-
+  int? get selectedStrip => _selected == null ? null : _sel;
   @override
-  String get selectedName {
-    if (_sel == null) return '';
-    for (final s in engine.strips) {
-      if (s.ch == _sel) return s.name.isEmpty ? 'CH${s.ch + 1}' : s.name;
-    }
-    return 'CH${_sel! + 1}';
-  }
-
+  String get selectedName => _selected == null ? '' : _name(_selected!);
   @override
-  String get selectedSrc {
-    if (_sel == null) return '';
-    return _srcOf(_sel!);
-  }
+  String get selectedSrc =>
+      _selected == null ? '' : _sourceLabel(_route(_selected!));
 
   @override
   List<RouteSrcTile> get srcTiles => [
@@ -114,61 +174,80 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
                     0);
             i++)
           RouteSrcTile(
-            label: _sourceLabel(group, i),
+            label: _sourceLabel({'group': group, 'index': i}),
             group: group,
             index: i,
-            usedBy: _usedBy(group, i),
-            current: engine.routing.any((p) =>
-                p['strip'] == _sel &&
-                (p['target'] ?? '') == target &&
-                p['group'] == group &&
-                p['index'] == i),
+            operationKey: _identity(_selected),
+            current: _selected != null &&
+                _route(_selected!)?['group'] == group &&
+                _route(_selected!)?['index'] == i,
+            usedBy: _destinations
+                    .where(
+                      (d) =>
+                          _route(d)?['group'] == group &&
+                          _route(d)?['index'] == i,
+                    )
+                    .map(_name)
+                    .firstOrNull ??
+                '',
           ),
       ];
-
-  String _usedBy(String group, int index) {
-    for (final s in engine.strips) {
-      if (engine.routing.any((p) =>
-          p['strip'] == s.ch &&
-          (p['target'] ?? '') == target &&
-          p['group'] == group &&
-          p['index'] == index)) {
-        return s.name.isEmpty ? 'CH${s.ch + 1}' : s.name;
-      }
-    }
-    return '';
-  }
-
-  // Patch commands are addressable once caps answers, even before routing is parsed.
-
-  @override
-  bool get routingSupported => engine.routingCaps['supported'] == true;
-
   @override
   void selectStrip(int strip) {
+    final d = _destination(strip);
+    if (d == null) return;
+    _sequence++;
     _sel = strip;
+    _selection = _identity(d);
     notifyListeners();
   }
 
   @override
-  void selectGroup(String group) {
-    _group = group;
+  void selectGroup(String value) {
+    if (!groups.contains(value)) return;
+    _group = value;
+    notifyListeners();
+  }
+
+  void _write(Map<String, Object>? source) {
+    final d = _selected;
+    if (!canPatch || d == null || (source == null && !canClear)) return;
+    send(
+      jsonEncode({
+        'cmd': 'route_patch',
+        'driver': engine.driver,
+        'epoch': engine.routingCaps['epoch'],
+        'destination': d['id'],
+        'expected': _route(d)!['label'],
+        'source': source,
+      }),
+    );
+    // Require a fresh selection before another operation, without optimistic
+    // authority or treating an unrelated event as an acknowledgement.
+    _selection = null;
     notifyListeners();
   }
 
   @override
   void patch(RouteSrcTile tile) {
-    if (_sel == null ||
-        !canPatch ||
-        !srcTiles.any((t) => t.group == tile.group && t.index == tile.index)) {
+    if (tile.operationKey == null ||
+        tile.operationKey != _selection ||
+        !srcTiles.any(
+          (t) =>
+              t.group == tile.group &&
+              t.index == tile.index &&
+              t.operationKey == tile.operationKey,
+        )) {
       return;
     }
-    send(Cmds.patchSet(_sel!, tile.group, tile.index, target: target));
+    _write({'group': tile.group, 'index': tile.index});
   }
 
   @override
-  void clearPatch(int strip) {
-    if (!routingSupported || !canClear) return;
-    send(Cmds.patchClear(strip, target: target));
+  void clearPatch(int strip, {String? operationKey}) {
+    if (strip != _sel || operationKey == null || operationKey != _selection) {
+      return;
+    }
+    _write(null);
   }
 }

@@ -620,14 +620,14 @@ async fn routing_patch_roundtrip() {
     client.send(Cmd::PatchSet { target: String::new(), strip: 0, group: "Net".to_string(), index: 5, key: None}).await.unwrap();
     let routing = wait_for(
         &mut client,
-        |e| matches!(e, Event::Routing { patches } if patches.iter().any(|p| p.strip == 0 && p.label == "Net 05")),
+        |e| matches!(e, Event::Routing { patches, .. } if patches.iter().any(|p| p.strip == 0 && p.label == "Net 05")),
     )
     .await;
     let _ = routing;
     client.send(Cmd::PatchClear { target: String::new(), strip: 0, key: None}).await.unwrap();
     wait_for(
         &mut client,
-        |e| matches!(e, Event::Routing { patches } if patches.iter().all(|p| p.strip != 0)),
+        |e| matches!(e, Event::Routing { patches, .. } if patches.iter().all(|p| p.strip != 0)),
     )
     .await;
     client.send(Cmd::PatchSet { target: String::new(), strip: 0, group: "AES".to_string(), index: 1, key: None}).await.unwrap();

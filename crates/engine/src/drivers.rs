@@ -17,6 +17,7 @@
 //! [`registered_drivers`]. `engine.rs` needs zero edits.
 
 mod send_destinations;
+pub mod routing;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -370,6 +371,10 @@ pub trait DynDriver: Send + Sync {
     /// Routing groups behind `caps.routing` (empty = no routing plane).
     fn routing_groups(&self) -> Vec<RoutingGroup> {
         Vec::new()
+    }
+    fn routing_control(&self, _target: &str) -> &str { "source" }
+    fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
+        routing::input_planes(self)
     }
     fn routing_targets(&self) -> Vec<RoutingTarget> {
         if self.routing_groups().is_empty() { Vec::new() } else {
@@ -1299,6 +1304,9 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
     fn routing_targets(&self) -> Vec<RoutingTarget> {
         vec![RoutingTarget { key: "a", label: "A", clearable: true },
              RoutingTarget { key: "b", label: "B", clearable: true }]
+    }
+    fn routing_control(&self, target: &str) -> &str {
+        match target { "a" => "source_a", "b" => "source_b", _ => "source" }
     }
     fn routing_param_ids(&self) -> &'static [&'static str] { &["source_a", "source_b"] }
     async fn routing_source(&self, strip: StripId, target: &str) -> anyhow::Result<String> {

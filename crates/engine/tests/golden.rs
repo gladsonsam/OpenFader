@@ -186,6 +186,8 @@ fn examples() -> Vec<(String, Value)> {
                     ..Default::default()
                 },
                 routing: openfader_engine::protocol::RoutingCaps {
+                    planes: vec![],
+                    epoch: None,
                     targets: vec![],
                     groups: vec![openfader_engine::protocol::RoutingGroupCaps {
                         key: "Lcl".to_string(),

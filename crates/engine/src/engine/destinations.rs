@@ -21,8 +21,12 @@ impl Engine {
                 }
             })
             .collect();
-        let supported = !groups.is_empty();
+        let planes = self.drv(driver).routing_planes();
+        let supported = planes.iter().any(|p| !p.destinations.is_empty());
+        let per_strip = !groups.is_empty();
         crate::protocol::RoutingCaps {
+            planes,
+            epoch: Some(self.connection_gen.load(Ordering::Acquire)),
             targets: self
                 .drv(driver)
                 .routing_targets()
@@ -35,7 +39,7 @@ impl Engine {
                 })
                 .collect(),
             groups,
-            per_strip: supported,
+            per_strip,
             supported,
         }
     }
