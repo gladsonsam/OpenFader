@@ -107,8 +107,23 @@ class MixerController extends ChangeNotifier {
   String get error => store.visibleError;
   int get page => _page;
   int get pageSize => _pageSize;
-  int get pageCount =>
-      (store.strips.where((s) => s.key != 'main').length / _pageSize).ceil();
+  List<int>? _linkedPair(int channel) => store.engine.stereoPairs
+      .where((pair) =>
+          pair.contains(channel) &&
+          store.engine.valueKnown(pair.first, 'link') &&
+          store.engine.params[pair.first]?['link'] == true)
+      .firstOrNull;
+
+  List<Strip> get _surfaceStrips {
+    final strips = store.strips.where((s) => s.key != 'main').toList();
+    final visible = strips.map((s) => s.ch).toSet();
+    return strips.where((s) {
+      final pair = _linkedPair(s.ch);
+      return pair == null || pair.last != s.ch || !visible.contains(pair.first);
+    }).toList(growable: false);
+  }
+
+  int get pageCount => (_surfaceStrips.length / _pageSize).ceil();
   int get muteGroupCount => store.engine.muteGroupCount;
   bool get hasSolo => store.hasSolo;
 
@@ -122,8 +137,7 @@ class MixerController extends ChangeNotifier {
       master || ch == null ? store.masterMutedNote : store.muteOf(ch);
   ValueListenable<double> panNoteOf(int ch) => store.panNoteOf(ch);
   ValueListenable<bool> soloNoteOf(int ch) => store.soloNoteOf(ch);
-  List<MixerChannel> get channels => store.strips
-      .where((s) => s.key != 'main')
+  List<MixerChannel> get channels => _surfaceStrips
       .skip(_page * _pageSize)
       .take(_pageSize)
       .map(_channel)
@@ -131,7 +145,9 @@ class MixerController extends ChangeNotifier {
   MixerChannel _channel(Strip s, {bool? selected}) => MixerChannel(
       key: s.key,
       name: s.name.isEmpty ? s.key.replaceAll('/', '').toUpperCase() : s.name,
-      number: '${s.ch + 1}',
+      number: _linkedPair(s.ch) != null
+          ? '${_linkedPair(s.ch)!.first + 1}–${_linkedPair(s.ch)!.last + 1}'
+          : '${s.ch + 1}',
       channel: s.ch,
       artwork: _artwork(s),
       colorChoice: store.channelColorChoice(s.ch),
@@ -206,6 +222,22 @@ class MixerController extends ChangeNotifier {
       readoutFocus.value = (key: null, control: MixerReadoutControl.volume);
       _page = 0;
       _allowDemoSeed = false;
+    }
+    for (final strip in store.strips) {
+      if (strip.key != _selectedKey) continue;
+      final pair = _linkedPair(strip.ch);
+      if (pair != null && pair.last == strip.ch) {
+        final primary =
+            store.strips.where((s) => s.ch == pair.first).firstOrNull;
+        if (primary != null) {
+          _selectedKey = primary.key;
+          if (readoutFocus.value.key == strip.key) {
+            readoutFocus.value =
+                (key: primary.key, control: readoutFocus.value.control);
+          }
+        }
+      }
+      break;
     }
     if (_page >= pageCount) _page = 0;
     if (_selectedKey != null &&

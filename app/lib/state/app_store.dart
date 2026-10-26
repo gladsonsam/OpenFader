@@ -572,6 +572,16 @@ class AppStore extends ChangeNotifier
   }
 
   @override
+  int? linkPartnerForChannel(ChannelNameTarget target) {
+    for (final pair in engine.stereoPairs) {
+      if (pair.contains(target.channel)) {
+        return pair.first == target.channel ? pair.last : pair.first;
+      }
+    }
+    return null;
+  }
+
+  @override
   bool? linkedForChannel(ChannelNameTarget target) {
     final value = ps.optimisticValue(_maps, target.channel, 'link');
     return value is bool ? value : null;
@@ -621,7 +631,9 @@ class AppStore extends ChangeNotifier
         !engine.supportedParams.contains(field) ||
         !engine.valueKnown(target.channel, field) ||
         (field == 'link'
-            ? linkedForChannel(target) == null ||
+            ? linkPartnerForChannel(target) == null ||
+                engine.locks.containsKey(linkPartnerForChannel(target)) ||
+                linkedForChannel(target) == null ||
                 (engine.parameterMetadata[field]?['kind']) != 'bool'
             : _appearanceChoices(target, field).isEmpty) ||
         _presetEditingBlocked(target.channel, field)) {
@@ -666,7 +678,9 @@ class AppStore extends ChangeNotifier
       target: target,
       field: field,
       value: value,
-      deadline: _nowMs() + ps.confirmTimeoutMs,
+      // Linking copies a complete shared channel state through multiple
+      // acknowledged writes; it needs a longer receipt budget than a swatch.
+      deadline: _nowMs() + (field == 'link' ? 90000 : ps.confirmTimeoutMs),
       done: done
     );
     ps.noteOptimistic(_maps, target.channel, field, value, _nowMs());

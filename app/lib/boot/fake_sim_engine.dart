@@ -28,6 +28,7 @@ class FakeSimEngine implements EngineApi {
     'polarity': false,
     'pan': 0.0,
     'lr_assign': true,
+    'link': false,
     'usbreturn': 0,
     'hpf_on': false,
     'hpf_freq': 80.0,
@@ -99,6 +100,9 @@ class FakeSimEngine implements EngineApi {
           'first': 0,
           'count': _strips.length,
         }
+      ],
+      'stereo_pairs': [
+        for (var i = 0; i + 1 < _params.length; i += 2) [i, i + 1]
       ],
       'groups': {'subgroups': _subgroupFaders.length},
       'params': [
@@ -253,9 +257,11 @@ class FakeSimEngine implements EngineApi {
       case 'destination_param':
         _mailbox.add(jsonEncode({
           'type': 'destination_control_result',
-          'request_id': c['request_id'], 'epoch': c['epoch'],
+          'request_id': c['request_id'],
+          'epoch': c['epoch'],
           'accepted': false,
-          'message': 'Destination controls are unavailable in the offline fallback.',
+          'message':
+              'Destination controls are unavailable in the offline fallback.',
         }));
         return;
       case 'param':
@@ -278,6 +284,47 @@ class FakeSimEngine implements EngineApi {
         final field = c['field'];
         final value = c['value'];
         if (field is! String || !_params[ch].containsKey(field)) return;
+        if (field == 'link' && value is bool) {
+          final left = ch - ch % 2;
+          final right = left + 1;
+          if (right >= _params.length) return;
+          final peer = ch == left ? right : left;
+          if (value && _params[left]['link'] != true) {
+            for (final entry in Map<String, Object>.from(_params[ch]).entries) {
+              if (const {
+                'source',
+                'source_a',
+                'source_b',
+                'source_select',
+                'trim',
+                'gain',
+                'phantom',
+                'usbreturn',
+                'link',
+                'pan'
+              }.contains(entry.key)) {
+                continue;
+              }
+              _params[peer][entry.key] = entry.value;
+            }
+            _strips[peer].name = _params[peer]['name'] as String;
+            _strips[peer].fader = (_params[peer]['fader'] as num).toDouble();
+            _strips[peer].muted = _params[peer]['mute'] as bool;
+            _params[left]['pan'] = 0.0;
+          }
+          for (final member in [left, right]) {
+            _params[member]['link'] = value;
+            _mailbox.add(jsonEncode({
+              'type': 'params',
+              'ch': member,
+              'values': _params[member],
+              'authority': {
+                for (final id in _params[member].keys) id: 'verified'
+              }
+            }));
+          }
+          return;
+        }
         if (field == 'name' &&
             (value is! String ||
                 value.isEmpty ||

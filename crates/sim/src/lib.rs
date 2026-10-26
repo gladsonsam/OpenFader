@@ -1016,6 +1016,55 @@ impl SimDriver {
 }
 
 impl MixerDriver for SimDriver {
+    fn stereo_pairs(&self) -> Vec<[u16; 2]> {
+        self.topology().into_iter().filter(|f| f.kind == StripKind::In)
+            .flat_map(|f| (f.first as u16..(f.first + f.count) as u16).step_by(2)
+                .filter(move |left| *left + 1 < (f.first + f.count) as u16)
+                .map(|left| [left, left + 1])).collect()
+    }
+
+    async fn control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Vec<StripId>> {
+        if matches!(param, "link" | "source" | "source_a" | "source_b" | "source_select" | "trim" | "gain" | "phantom" | "usbreturn") {
+            return Ok(vec![strip]);
+        }
+        if let Some(pair) = self.stereo_pairs().into_iter().find(|pair| pair.contains(&strip.0)) {
+            if self.get_param(StripId(pair[0]), "link").await? == ParamValue::Bool(true) {
+                return Ok(pair.into_iter().map(StripId).collect());
+            }
+        }
+        Ok(vec![strip])
+    }
+
+    async fn set_stereo_link(&self, source: StripId, linked: bool)
+        -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+        let pair = self.stereo_pairs().into_iter().find(|p| p.contains(&source.0))
+            .ok_or_else(|| anyhow::anyhow!("sim: channel has no stereo partner"))?;
+        let peer = StripId(if pair[0] == source.0 { pair[1] } else { pair[0] });
+        let mut changes = Vec::new();
+        if linked && self.get_param(StripId(pair[0]), "link").await? != ParamValue::Bool(true) {
+            let values = self.params.read().expect("sim params poisoned")[source.0 as usize].clone();
+            for (field, value) in values {
+                if matches!(field.as_str(), "link" | "pan" | "source" | "source_a" | "source_b" | "source_select" | "gain" | "trim" | "phantom" | "usbreturn") { continue; }
+                let Some(def) = openfader_core::params::find(&field) else { continue; };
+                if !openfader_core::params::supports_kind(def, StripKind::In) { continue; }
+                self.set_param(peer, &field, value.clone()).await?;
+                changes.push((peer, field, value));
+            }
+            let source_strip = self.read()[source.0 as usize].clone();
+            for (field, value) in [("name", ParamValue::Text(source_strip.name)), ("fader", ParamValue::Float(source_strip.fader)), ("mute", ParamValue::Bool(source_strip.mute))] {
+                self.set_param(peer, field, value.clone()).await?;
+                changes.push((peer, field.to_string(), value));
+            }
+            self.set_param(StripId(pair[0]), "pan", ParamValue::Float(0.0)).await?;
+            changes.push((StripId(pair[0]), "pan".to_string(), ParamValue::Float(0.0)));
+        }
+        for member in pair {
+            self.set_param(StripId(member), "link", ParamValue::Bool(linked)).await?;
+            changes.push((StripId(member), "link".to_string(), ParamValue::Bool(linked)));
+        }
+        Ok(changes)
+    }
+
     fn param_defs(&self) -> &'static [openfader_core::params::ParamDef] {
         static DEFS: std::sync::OnceLock<[openfader_core::params::ParamDef; 1]> = std::sync::OnceLock::new();
         DEFS.get_or_init(|| {

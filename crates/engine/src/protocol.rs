@@ -854,6 +854,8 @@ pub enum Event {
         unsupported: Vec<String>,
         #[serde(default)]
         topology: Vec<TopologyFamily>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        stereo_pairs: Vec<[u16; 2]>,
         #[serde(default)]
         meter_taps: Vec<String>,
         #[serde(default, skip_serializing_if = "is_false")]

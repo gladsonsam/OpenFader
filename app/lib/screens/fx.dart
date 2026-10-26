@@ -52,6 +52,8 @@ abstract class FxStore extends ChangeNotifier {
   Future<String?> setDestinationControl(
           DestinationControlVm control, double value) =>
       Future.value('This FX control is unavailable.');
+  Future<String?> tapDestinationControl(DestinationControlVm control) =>
+      Future.value('Tap tempo is unavailable.');
   List<FxSlotVm> get slots;
   int get selected;
   List<String> get typeOptions;
@@ -296,6 +298,11 @@ class _NativeFxDetail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
+    final tapControls =
+        controls.where((control) => control.canTapTempo).toList();
+    final binaryControls = controls
+        .where((control) => !control.numeric && control.choices.length == 2)
+        .toList();
     return Container(
         padding: const EdgeInsets.all(14),
         decoration: _detailDecoration(palette),
@@ -307,28 +314,86 @@ class _NativeFxDetail extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: palette.text1)),
           const SizedBox(height: 12),
-          _KnobLayout(minHeight: minHeight - 68, children: [
-            for (final control in controls)
-              _FxRotary(
-                  key: ValueKey('${control.target}/${control.id}'),
-                  label: control.label,
-                  text: '${control.valueLabel ?? 'Unavailable'}'
-                      '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                  fraction: control.numeric && control.value != null
-                      ? ((control.value! - control.min!) /
-                              (control.max! - control.min!))
-                          .clamp(0, 1)
-                      : 0,
-                  enabled: store.destinationControlIsCurrent(control),
-                  onTap: () => showDialog<void>(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (_) => DestinationControlEditor(
-                          changes: store,
-                          isCurrent: store.destinationControlIsCurrent,
-                          apply: store.setDestinationControl,
-                          control: control))),
-          ]),
+          if (binaryControls.isNotEmpty)
+            Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Wrap(spacing: 12, runSpacing: 12, children: [
+                  for (final control in binaryControls)
+                    Tooltip(
+                        message: control.description,
+                        child: _FxToggle(
+                            label:
+                                '${control.label}: ${control.valueLabel ?? 'Unavailable'}'
+                                '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                            active: control.value == control.choices.last.value,
+                            onTap: store.destinationControlIsCurrent(control)
+                                ? () async {
+                                    final next = control.value ==
+                                            control.choices.first.value
+                                        ? control.choices.last.value
+                                        : control.choices.first.value;
+                                    final error = await store
+                                        .setDestinationControl(control, next);
+                                    if (context.mounted && error != null) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                              SnackBar(content: Text(error)));
+                                    }
+                                  }
+                                : null)),
+                ])),
+          _KnobLayout(
+              minHeight: math.max(
+                  0.0,
+                  minHeight -
+                      68 -
+                      64 * tapControls.length -
+                      (binaryControls.isEmpty ? 0 : 56)),
+              children: [
+                for (final control in controls)
+                  if (!binaryControls.contains(control))
+                    _FxRotary(
+                        key: ValueKey('${control.target}/${control.id}'),
+                        label: control.label,
+                        text: '${control.valueLabel ?? 'Unavailable'}'
+                            '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                        fraction: control.numeric && control.value != null
+                            ? ((control.value! - control.min!) /
+                                    (control.max! - control.min!))
+                                .clamp(0, 1)
+                            : 0,
+                        enabled: store.destinationControlIsCurrent(control),
+                        onTap: () => showDialog<void>(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (_) => DestinationControlEditor(
+                                changes: store,
+                                isCurrent: store.destinationControlIsCurrent,
+                                apply: store.setDestinationControl,
+                                control: control))),
+              ]),
+          for (final control in tapControls)
+            Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Align(
+                    child: Tooltip(
+                        message: 'Tap tempo for ${control.destinationName}',
+                        child: _FxToggle(
+                            label: tapControls.length == 1
+                                ? 'Tap tempo'
+                                : 'Tap ${control.label}',
+                            active: false,
+                            onTap: store.destinationControlIsCurrent(control)
+                                ? () async {
+                                    final error = await store
+                                        .tapDestinationControl(control);
+                                    if (context.mounted && error != null) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                              SnackBar(content: Text(error)));
+                                    }
+                                  }
+                                : null)))),
         ]));
   }
 }
@@ -412,7 +477,7 @@ class _FxToggle extends StatelessWidget {
   final String label;
   final bool active;
   final Color? activeColor;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
   const _FxToggle(
       {required this.label,
       required this.active,

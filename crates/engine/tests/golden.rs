@@ -116,6 +116,7 @@ fn examples() -> Vec<(String, Value)> {
         (
             "caps",
             Event::Caps {
+                stereo_pairs: Vec::new(),
                 dynamics_meters: false,
                 driver: "sim".to_string(),
                 params: vec![
