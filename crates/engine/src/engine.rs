@@ -6127,6 +6127,9 @@ impl Engine {
                     self.note_write(writer);
                     self.touch_holder_locks(writer);
                     for (strip, field, value) in changes {
+                        // As with ordinary writes, superseded desk evidence
+                        // must not overwrite the accepted value in snapshots.
+                        let _ = self.refresh_param(strip, &field, &param_value_json(&value)).await;
                         out.push(Event::Param {
                             ch: strip.0, field, value: param_value_json(&value),
                             by: Some(writer.to_string()), key: self.active_strip_key(strip.0),
