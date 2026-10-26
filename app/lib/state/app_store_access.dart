@@ -1,0 +1,362 @@
+part of 'app_store.dart';
+
+abstract interface class _AppStoreAccessContract implements AccessLimitsStore {
+  String _processingTargetForAccessBus(String id);
+  bool accessFamilyAllowed(AccessFamily family);
+  bool accessTargetAllowed(String target);
+  bool _accessParamAllowed(int ch, String field);
+  bool _accessDestinationAllowed(DestinationControlVm control);
+  Future<void> _command(String clientId, String json);
+}
+
+/// Local policy is intersected with existing readiness/locks, never substituted
+/// for them. This module owns all classifications and the final send boundary.
+mixin _AppStoreAccess on _AppStoreContext {
+  Set<String> _blockedAccess = const {};
+  @override
+  Set<String> get blockedAccess => _blockedAccess;
+
+  @override
+  bool accessFamilyAllowed(AccessFamily family) =>
+      !_blockedAccess.contains(family.key);
+
+  static String _targetKey(String target) {
+    final parts = target.trim().split('/');
+    if (parts.length != 2) return target.trim();
+    final index = int.tryParse(parts[1].trim());
+    if (index == null || index < 1) return target.trim();
+    final family = parts[0].trim() == 'mix' ? 'bus' : parts[0].trim();
+    if (family == 'main' && index == 1) return 'main';
+    return '$family/${index.toString().padLeft(2, '0')}';
+  }
+
+  String? _channelTarget(int ch) {
+    final kind = _presetFamily(ch)?['kind'];
+    if (!const ['bus', 'main', 'dca', 'mtx', 'subgroup', 'fxsnd']
+        .contains(kind)) {
+      return null; // FX return strips are deliberately independent of FX globals.
+    }
+    return engine.strips.where((s) => s.ch == ch).firstOrNull?.key;
+  }
+
+  @override
+  bool accessTargetAllowed(String target) {
+    if (_blockedAccess.isEmpty) return true;
+    target = _targetKey(target);
+    if (_blockedAccess.contains('target:$target')) return false;
+    // Stereo output pairs must not provide a second entrance to a limited mix.
+    final strip =
+        engine.strips.where((s) => _targetKey(s.key) == target).firstOrNull;
+    if (strip != null) {
+      final pair =
+          engine.stereoPairs.where((p) => p.contains(strip.ch)).firstOrNull;
+      if (pair != null &&
+          pair.any((ch) => engine.params[ch]?['link'] == true)) {
+        for (final ch in pair) {
+          final key = engine.strips.where((s) => s.ch == ch).firstOrNull?.key;
+          if (key != null &&
+              _blockedAccess.contains('target:${_targetKey(key)}')) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
+
+  static final _sendField = RegExp(r'^send([1-9]\d*)_(.+)$');
+  static final _dspField = RegExp(
+    r'^(eq\d*_|gate_|comp_|hpf_|lpf_|geq|peq|delay_|wing:(eq_|filter_|hcf_))',
+  );
+  static final _presetDspFields = {
+    for (final kind in ProcessorPresetKind.values)
+      ...processorPresetFields(kind),
+  };
+  static final _legacySendField = RegExp(r'^(aux|fx)([1-9]\d*)_(level|mute)$');
+
+  bool _isDsp(String field) =>
+      _dspField.hasMatch(field) || _presetDspFields.contains(field);
+
+  String? _sendTarget(int slot) {
+    final metadata = engine.parameterMetadata['send${slot}_level'];
+    final presentation = parameterPresentation(metadata, (field) => null);
+    final destination = presentation?['destination'];
+    if (destination is Map && destination['key'] is String) {
+      return destination['key'] as String;
+    }
+    return engine.destinationControls
+        .where((c) => c.sendSlot == slot)
+        .firstOrNull
+        ?.target;
+  }
+
+  @override
+  bool _accessParamAllowed(int ch, String field) {
+    if (_blockedAccess.isEmpty) return true;
+    final target = _channelTarget(ch);
+    if (target != null && !accessTargetAllowed(target)) return false;
+    if (_presetFamily(ch)?['kind'] == 'fxsnd' &&
+        !accessFamilyAllowed(AccessFamily.fx)) {
+      return false;
+    }
+    if (field == 'mute' &&
+        target == null &&
+        !accessFamilyAllowed(AccessFamily.channelMute)) {
+      return false;
+    }
+    if (field == 'solo' && !accessFamilyAllowed(AccessFamily.channelSolo)) {
+      return false;
+    }
+    if (const ['name', 'color', 'icon'].contains(field) &&
+        !accessFamilyAllowed(AccessFamily.channelId)) {
+      return false;
+    }
+    if (field == 'lr_assign' && !accessTargetAllowed('main')) return false;
+    final dca = RegExp(r'^dca([1-9]\d*)_assign$').firstMatch(field);
+    if (dca != null && !accessTargetAllowed('dca/${dca[1]!.padLeft(2, '0')}')) {
+      return false;
+    }
+    final legacy = _legacySendField.firstMatch(field);
+    if (legacy != null) {
+      final destination =
+          '${legacy[1] == 'aux' ? 'bus' : 'fx'}/${legacy[2]!.padLeft(2, '0')}';
+      if (!accessTargetAllowed(destination) ||
+          legacy[1] == 'fx' && !accessFamilyAllowed(AccessFamily.fx)) {
+        return false;
+      }
+    }
+    final send = _sendField.firstMatch(field);
+    if (send != null) {
+      final destination = _sendTarget(int.parse(send[1]!));
+      if (destination != null && !accessTargetAllowed(destination)) {
+        return false;
+      }
+      if (destination?.startsWith('fx/') == true &&
+          !accessFamilyAllowed(AccessFamily.fx)) {
+        return false;
+      }
+    }
+    if ((field == 'pan' || send?[2] == 'pan') &&
+        !accessFamilyAllowed(AccessFamily.pan)) {
+      return false;
+    }
+    if (_isDsp(field) &&
+        !accessFamilyAllowed(
+          target == null ? AccessFamily.inputDsp : AccessFamily.masterDsp,
+        )) {
+      return false;
+    }
+    return true;
+  }
+
+  @override
+  bool _accessDestinationAllowed(DestinationControlVm control) {
+    // Provider descriptor identifies main_return separately from FX globals.
+    if (control.surface == 'fx' && control.id == 'main_return') {
+      return accessTargetAllowed('main');
+    }
+    return accessTargetAllowed(control.target) &&
+        (!control.surface.startsWith('output_') ||
+            accessFamilyAllowed(AccessFamily.masterDsp)) &&
+        (control.surface != 'fx' || accessFamilyAllowed(AccessFamily.fx));
+  }
+
+  @override
+  List<AccessLimitOption> get accessOptions {
+    final fields = engine.supportedParams;
+    final targets = <String, String>{
+      for (final control in engine.destinationControls)
+        _targetKey(control.target): control.targetLabel,
+      if (engine.mainFader != null || engine.mainMuted != null)
+        'main': 'Main LR',
+      for (final bus in {...engine.busFaders.keys, ...engine.busMuted.keys})
+        'bus/${(bus + 1).toString().padLeft(2, '0')}': 'Bus ${bus + 1}',
+      for (var group = 0; group < engine.subgroupCount; group++)
+        'subgroup/${(group + 1).toString().padLeft(2, '0')}':
+            'Subgroup ${group + 1}',
+      for (final strip in engine.strips)
+        if (_channelTarget(strip.ch) != null)
+          _targetKey(strip.key): strip.name.isEmpty ? strip.key : strip.name,
+      for (final field in fields)
+        if (RegExp(r'^(aux|fx)([1-9]\d*)_level$').firstMatch(field)
+            case final legacy?)
+          '${legacy[1] == 'aux' ? 'bus' : 'fx'}/${legacy[2]!.padLeft(2, '0')}':
+              '${legacy[1] == 'aux' ? 'Aux' : 'FX'} ${legacy[2]}',
+      for (final field in fields)
+        if (_sendField.firstMatch(field) case final match?)
+          if (_sendTarget(int.parse(match[1]!)) case final target?)
+            _targetKey(target): parameterPresentation(
+                    engine.parameterMetadata['send${match[1]}_level'],
+                    (field) => null)?['destination']?['label'] as String? ??
+                target,
+    };
+    final available = <AccessFamily>{
+      if (fields.any(_isDsp)) AccessFamily.inputDsp,
+      if (engine.destinationControls.any(
+            (c) => c.surface.startsWith('output_'),
+          ) ||
+          engine.strips.any((s) => _channelTarget(s.ch) != null) &&
+              fields.any(_isDsp))
+        AccessFamily.masterDsp,
+      if (fields.contains('mute')) AccessFamily.channelMute,
+      if (engine.solos.isNotEmpty ||
+          engine.knownValues.keys.any((ch) => engine.valueKnown(ch, 'solo')))
+        AccessFamily.channelSolo,
+      if (fields.any((f) => f == 'pan' || f.endsWith('_pan'))) AccessFamily.pan,
+      if (fields.any((f) => const ['name', 'color', 'icon'].contains(f)))
+        AccessFamily.channelId,
+      if (engine.fx.isNotEmpty ||
+          engine.destinationControls.any((c) => c.surface == 'fx'))
+        AccessFamily.fx,
+    };
+    final options = <AccessLimitOption>[
+      for (final family in AccessFamily.values)
+        AccessLimitOption(
+          family.key,
+          family.label,
+          family.coverage,
+          available: available.contains(family),
+        ),
+      for (final entry in targets.entries)
+        AccessLimitOption(
+          'target:${entry.key}',
+          entry.value,
+          'Destination ${entry.key}: controls, sends and master selection',
+        ),
+    ];
+    // Keep restrictions editable even when another mixer lacks these identities.
+    for (final key in _blockedAccess) {
+      if (!options.any((o) => o.key == key)) {
+        options.add(
+          AccessLimitOption(
+            key,
+            key.replaceFirst('target:', ''),
+            'Saved restriction; not advertised by the current mixer',
+            available: false,
+          ),
+        );
+      }
+    }
+    return List.unmodifiable(options);
+  }
+
+  @override
+  String _processingTargetForAccessBus(String id) => id == 'main'
+      ? 'main'
+      : id.startsWith('subgroup')
+          ? 'subgroup/${((int.tryParse(id.substring(8)) ?? 0) + 1).toString().padLeft(2, '0')}'
+          : 'bus/${((int.tryParse(id.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
+
+  @override
+  Future<void> setAccessBlocked(String key, bool blocked) async {
+    if (!accessOptions.any((o) => o.key == key && (o.available || !blocked))) {
+      throw StateError('This limit is not available on the current mixer.');
+    }
+    final next = {...blockedAccess};
+    if (blocked) {
+      next.add(key);
+    } else {
+      next.remove(key);
+    }
+    await PrefsService.instance.setBlockedAccess(next);
+  }
+
+  void _accessChanged() {
+    final next = PrefsService.instance.blockedAccess;
+    if (setEquals(next, _blockedAccess)) return;
+    _blockedAccess = next;
+    // Queued writes and captured preset editors must not outlive permission.
+    _coalescer.clear();
+    _maps.pending.clear();
+    _invalidatePresetOperations('Local access limits changed. Reopen presets.');
+    _interruptDestinationEdits(
+      'Local access limits changed. Reopen this control.',
+    );
+    _failNameEdits('Local access limits changed. Reopen the name editor.');
+    _invalidateDerived();
+    _syncControlNotes();
+    notifyListeners();
+  }
+
+  bool _accessCommandAllowed(Map command) {
+    final cmd = command['cmd'];
+    final key = command['key'];
+    final resolved = key is String
+        ? engine.strips
+            .where((s) => _targetKey(s.key) == _targetKey(key))
+            .firstOrNull
+            ?.ch
+        : null;
+    final ch = resolved ?? command['ch'];
+    if (const [
+          'param',
+          'param_guarded',
+          'fader',
+          'mute',
+          'solo',
+        ].contains(cmd) &&
+        ch is int) {
+      return _accessParamAllowed(
+        ch,
+        command['field'] as String? ?? cmd as String,
+      );
+    }
+    if (cmd == 'clear_solo') {
+      return canClearSolos;
+    }
+    if (cmd == 'destination_param') {
+      final control = engine.destinationControls
+          .where(
+            (c) => c.target == command['target'] && c.id == command['control'],
+          )
+          .firstOrNull;
+      return control != null && _accessDestinationAllowed(control);
+    }
+    if (cmd is String && cmd.startsWith('fx_')) {
+      return accessFamilyAllowed(AccessFamily.fx) &&
+          accessTargetAllowed(
+            'fx/${command['slot'].toString().padLeft(2, '0')}',
+          );
+    }
+    if (const [
+      'set_main_fader',
+      'main_fader',
+      'main_mute',
+      'bus_fader',
+      'bus_mute',
+      'subgroup_fader',
+      'subgroup_mute',
+      'subgroup_assign',
+    ].contains(cmd)) {
+      final target = cmd == 'set_main_fader' ||
+              cmd.toString().startsWith('main_')
+          ? 'main'
+          : cmd.toString().startsWith('bus_')
+              ? 'bus/${((command['bus'] as int) + 1).toString().padLeft(2, '0')}'
+              : 'subgroup/${((command['group'] as int) + 1).toString().padLeft(2, '0')}';
+      return accessTargetAllowed(target);
+    }
+    // Bulk state changes cannot be safely split around restricted fields.
+    if (_blockedAccess.isNotEmpty &&
+        const [
+          'recall_scene',
+          'scene_recall',
+          'offline_push',
+          'file_upload',
+          'local_library_mutate',
+        ].contains(cmd)) {
+      return false;
+    }
+    return true;
+  }
+
+  @override
+  Future<void> _command(String clientId, String json) async {
+    if (_blockedAccess.isEmpty) return _api.cmd(clientId, json);
+    final command = jsonDecode(json);
+    if (command is Map && !_accessCommandAllowed(command)) {
+      throw StateError('Blocked by this device’s local access limits.');
+    }
+    await _api.cmd(clientId, json);
+  }
+}

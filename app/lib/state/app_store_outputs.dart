@@ -63,7 +63,9 @@ mixin _AppStoreOutputs on _AppStoreContext {
 
   @override
   void openOutputProcessing(String target) {
-    if (!outputTargets.containsKey(target)) {
+    if (!accessTargetAllowed(target) ||
+        !accessFamilyAllowed(AccessFamily.masterDsp) ||
+        !outputTargets.containsKey(target)) {
       return;
     }
     if (_outputProcessingTarget == target) return;

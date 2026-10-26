@@ -102,7 +102,8 @@ mixin _AppStoreChannel on _AppStoreContext {
   @override
   bool supports(String leaf) {
     final desk = AppStore.deskLeaf(leaf);
-    if (!engine.capsReady || _presetEditingBlocked(_channel, desk)) {
+    if (!_accessParamAllowed(_channel, desk) ||
+        !engine.capsReady || _presetEditingBlocked(_channel, desk)) {
       return false;
     }
     final presentation = paramMetadata(desk);
@@ -417,8 +418,8 @@ mixin _AppStoreChannel on _AppStoreContext {
   bool _sendDestinationIsStereoAux(int slot) {
     if (slot < 1) return false;
     final destination = paramMetadata('send${slot}_level')?['destination'];
-    if (destination is Map && destination['stereo'] is bool) {
-      return destination['stereo'] as bool;
+    if (destination is Map && destination['stereo'] == true) {
+      return true;
     }
     for (final family in engine.topology) {
       if (family['kind'] != 'bus') continue;
@@ -453,7 +454,7 @@ mixin _AppStoreChannel on _AppStoreContext {
       cmdParam('send${slot}_pan', pan.clamp(-1.0, 1.0) * 100);
 
   @override
-  bool? get mainAssigned => paramBool('lr_assign');
+  bool? get mainAssigned => supports('lr_assign') ? paramBool('lr_assign') : null;
   @override
   void setMainAssigned(bool on) => cmdParam('lr_assign', on);
   @override
@@ -468,7 +469,8 @@ mixin _AppStoreChannel on _AppStoreContext {
   }
 
   @override
-  bool? dcaAssigned(int group) => paramBool('dca${group + 1}_assign');
+  bool? dcaAssigned(int group) => supports('dca${group + 1}_assign')
+      ? paramBool('dca${group + 1}_assign') : null;
   @override
   String dcaGroupLabel(int group) =>
       paramMetadata('dca${group + 1}_assign')?['label'] as String? ??
@@ -737,7 +739,9 @@ mixin _AppStoreChannel on _AppStoreContext {
   int get muteGroupCount => engine.muteGroupCount;
 
   @override
-  bool? subgroupAssigned(int g) => engine.subgroupAssign['$_channel:$g'];
+  bool? subgroupAssigned(int g) => accessTargetAllowed(
+      'subgroup/${(g + 1).toString().padLeft(2, '0')}')
+      ? engine.subgroupAssign['$_channel:$g'] : null;
 
   @override
   bool? muteGroupAssigned(int g) => engine.muteGroupAssign['$_channel:$g'];

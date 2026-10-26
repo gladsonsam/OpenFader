@@ -77,6 +77,7 @@ abstract class MixerStore extends ChangeNotifier implements ChannelNameStore {
   void setFader(int ch, double v); // cmdFader
   void setMute(int ch, bool muted); // Mute
   void toggleSolo(int ch); // Solo
+  bool get canClearSolos;
   void clearSolos(); // ClearSolo
   void setPan(int ch, double v); // cmdParam pan
   void setMasterFader(double v); // MainFader

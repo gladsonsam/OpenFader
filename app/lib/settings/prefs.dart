@@ -3,6 +3,8 @@
 // for the knobs that need live apply.
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -26,6 +28,24 @@ class PrefsService extends ChangeNotifier {
     instance._applyWakeLock();
     instance.notifyListeners();
   }
+
+  /// One installation-wide policy, deliberately independent of mixer/session.
+  Set<String> get blockedAccess {
+    final raw = _prefs?.getString('openfader.accessLimits.v1');
+    if (raw == null) return const {};
+    try {
+      final values = jsonDecode(raw);
+      if (values is List && values.every((v) => v is String)) {
+        return Set.unmodifiable(values.cast<String>());
+      }
+    } catch (_) {
+      // Corrupt local data must not crash startup. No remote security claim.
+    }
+    return const {};
+  }
+
+  Future<void> setBlockedAccess(Set<String> keys) =>
+      _set('openfader.accessLimits.v1', jsonEncode(keys.toList()..sort()));
 
   // --- connection ----------------------------------------------------------
   bool get autoFind => _prefs?.getBool('openfader.autoFind') ?? true;
@@ -126,8 +146,8 @@ class PrefsService extends ChangeNotifier {
     WakelockPlus.toggle(enable: keepAwake);
   }
 
-  /// Restore display, meter, and connection defaults. Mixes, recents, and
-  /// addresses are untouched (separate destructive actions own those).
+  /// Restore display, meter, and connection defaults. Access limits, mixes,
+  /// recents, and addresses are untouched (separate destructive actions own those).
   Future<void> resetToDefaults() async {
     final p = _prefs ?? await SharedPreferences.getInstance();
     _prefs ??= p;

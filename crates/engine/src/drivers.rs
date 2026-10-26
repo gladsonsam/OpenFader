@@ -16,6 +16,8 @@
 //! extension overrides) and append one [`RegisteredDriver`] row in
 //! [`registered_drivers`]. `engine.rs` needs zero edits.
 
+mod send_destinations;
+
 use std::{
     collections::{BTreeMap, HashMap},
     net::{IpAddr, SocketAddr},
@@ -833,6 +835,10 @@ macro_rules! impl_dyn_driver {
 }
 
 impl_dyn_driver!(openfader_sim::SimDriver {
+    fn send_destination(&self, slot: u16) -> Option<SendDestination> {
+        send_destinations::legacy_send_destination(slot, 6, 4)
+    }
+
 
     fn fx_flavor(&self) -> FxFlavor {
         FxFlavor::Design
@@ -994,6 +1000,10 @@ impl_dyn_driver!(openfader_sim::SimDriver {
 });
 
 impl_dyn_driver!(openfader_proto_xair::XAirDriver {
+    fn send_destination(&self, slot: u16) -> Option<SendDestination> {
+        send_destinations::legacy_send_destination(slot, 6, 4)
+    }
+
     async fn identify(&self, ip: IpAddr, budget: std::time::Duration) -> Option<openfader_transport::discovery::DiscoveredDevice> {
         use openfader_transport::discovery::{probe_addr, PROBE_TABLE};
         let probes = PROBE_TABLE.iter().filter(|s| s.driver == DynDriver::name(self))
@@ -1261,6 +1271,10 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 });
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
+    fn send_destination(&self, slot: u16) -> Option<SendDestination> {
+        send_destinations::legacy_send_destination(slot, 8, 4)
+    }
+
 
     fn param_dependents(&self, param: &str) -> &'static [&'static str] {
         if matches!(param, "source_a" | "source_b" | "source_select") { &["gain", "phantom"] } else { &[] }
