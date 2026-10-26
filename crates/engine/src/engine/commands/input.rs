@@ -356,12 +356,31 @@ impl Engine {
             // (A surface clear arrives the same way, via `apply_inbound`
             // solosw broadcasts.)
             Cmd::ClearSolo => {
-                self.active_drv().clear_solo().await?;
+                let drv = self.active_drv();
+                let inputs_only = drv.clear_solo_scope() == Some("inputs");
+                let count = if inputs_only {
+                    drv.channel_count()
+                } else {
+                    drv.strip_count()
+                };
+                // Check the complete affected bank before the bulk provider write.
+                for ch in 0..count as u16 {
+                    policy.allow_strip(StripId(ch))?;
+                    if let Some(holder) = self.lock_holder(ch) {
+                        if holder != writer {
+                            return Ok(Some(Self::locked_error(ch, &holder)));
+                        }
+                    }
+                }
+                drv.clear_solo().await?;
                 let cleared: Vec<u16> = {
                     let mut sync = self.sync_state.lock().unwrap();
                     let mut cache = self.param_cache.write().unwrap();
                     let mut cleared = Vec::new();
                     for (ch, map) in cache.iter_mut() {
+                        if inputs_only && usize::from(*ch) >= count {
+                            continue;
+                        }
                         if map.get("solo") == Some(&json!(true)) {
                             cleared.push(*ch);
                             map.remove("solo");

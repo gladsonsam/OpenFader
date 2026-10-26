@@ -599,6 +599,9 @@ pub struct FxCaps {
 /// the active driver (never faked).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct GroupsCaps {
+    /// Exact provider coverage of the existing clear-solo action.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clear_solo_scope: Option<String>,
     #[serde(default)]
     pub buses: u8,
     #[serde(default)]

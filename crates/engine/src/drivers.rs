@@ -459,6 +459,10 @@ pub trait DynDriver: Send + Sync {
     fn live_solo_bank(&self) -> bool {
         false
     }
+    /// Advertised clear-solo coverage; unknown providers withhold the action.
+    fn clear_solo_scope(&self) -> Option<&'static str> {
+        None
+    }
     /// Desk fire-and-forget clear-solo.
     async fn clear_solo(&self) -> anyhow::Result<()> {
         anyhow::bail!("{}: clear solo not supported", self.name())
@@ -1271,6 +1275,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 });
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
+    fn clear_solo_scope(&self) -> Option<&'static str> { Some("inputs") }
     fn send_destination(&self, slot: u16) -> Option<SendDestination> {
         send_destinations::legacy_send_destination(slot, 8, 4)
     }
