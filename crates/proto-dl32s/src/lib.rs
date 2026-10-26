@@ -35,6 +35,8 @@ const AUX_SEND_SOURCE_ADDRESSES: [u32; 8] = [4434, 4524, 4614, 4704, 4794, 4884,
 // manufacturer mixer software and restored against the complete mixer bank. Algorithm
 // guards intentionally cover only the observed slot/algorithm pairs.
 // Engineering domains: manufacturer mixer software 5.1 reference guide pp165,167.
+// Decay bounds additionally verified at both native slider endpoints for
+// each listed slot/algorithm: Plate1..3 s, Hall2..6 s, Spring0.1..10 s.
 #[derive(Debug)]
 struct FxParameterSpec {
     slot: u16,
@@ -54,6 +56,8 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
     FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
         address: 3631, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
     FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3632, id: "decay", label: "Decay", min: 1.0, max: 3.0, unit: "s", decimals: 1 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
         address: 3633, id: "diffusion", label: "Diffusion", min: 0.0, max: 10.0, unit: "", decimals: 1 },
     FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
         address: 3634, id: "hf_damping", label: "HF Damping", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
@@ -66,11 +70,15 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
     FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
         address: 3693, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
     FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3694, id: "decay", label: "Decay", min: 2.0, max: 6.0, unit: "s", decimals: 1 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
         address: 3695, id: "diffusion", label: "Diffusion", min: 0.0, max: 10.0, unit: "", decimals: 1 },
     FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
         address: 3696, id: "hf_damping", label: "HF Damping", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
         address: 3724, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3725, id: "decay", label: "Decay", min: 0.1, max: 10.0, unit: "s", decimals: 1 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
         address: 3726, id: "diffusion", label: "Diffusion", min: 0.0, max: 10.0, unit: "", decimals: 1 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
