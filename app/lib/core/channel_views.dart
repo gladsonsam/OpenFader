@@ -144,6 +144,9 @@ Map<String, dynamic>? parameterPresentation(
     if (row.containsKey('swatches')) result['swatches'] = row['swatches'];
     if (row.containsKey('symbols')) result['symbols'] = row['symbols'];
     if (row.containsKey('text')) result['text'] = row['text'];
+    if (row.containsKey('destination')) {
+      result['destination'] = row['destination'];
+    }
     result['choices'] = row['choices'];
     result['value_labels'] = row['value_labels'];
     result['limiter_value'] = row['limiter_value'];
@@ -305,9 +308,11 @@ class ChannelEqVm {
   final double hpfF; // Hz
   final bool hpfOn;
   final List<double>? hpfRange;
-  final int hpfSlope; // 12 | 24
-  final List<EqBandVm> bands; // 4 parametric bands
-  final int selectedBand; // 0 = HPF, 1..4 bands
+  final int hpfSlope;
+  final bool hpfInResponse;
+  final String? responseNote;
+  final List<EqBandVm> bands; // Provider-described parametric bands
+  final int selectedBand; // 0 = HPF, then the provider band index
 
   const ChannelEqVm({
     this.on = true,
@@ -315,6 +320,8 @@ class ChannelEqVm {
     this.hpfOn = false,
     this.hpfRange,
     this.hpfSlope = 12,
+    this.hpfInResponse = true,
+    this.responseNote,
     this.bands = const [],
     this.selectedBand = 1,
   });
@@ -433,7 +440,7 @@ List<double> eqResponseDb(ChannelEqVm eq) {
   for (var i = 0; i <= EqGraphGeom.n; i++) {
     final f = EqGraphGeom.fOfX(EqGraphGeom.w * i / EqGraphGeom.n);
     var db = 0.0;
-    if (eq.hpfOn) {
+    if (eq.hpfOn && eq.hpfInResponse) {
       db += _highpassDb(eq.hpfF, f);
       if (eq.hpfSlope == 24) db += _highpassDb(eq.hpfF, f);
     }
@@ -610,15 +617,15 @@ double dynReductionDb(ChannelDynVm p, double levelDb) {
 
 // --- Sends / groups / source ---
 
-/// One aux/FX send row (channelModel.ts sendRowsVm shape).
+/// One provider-described send row (bus, matrix, main or FX).
 class ChannelSendVm {
   final List<DestinationControlVm> destinationControls;
-  final int slot; // 1..16 desk slot
+  final int slot; // Provider-defined 1-based send slot
   final String destName;
   final double level; // 0..1 fader pos
   final bool muted;
   final bool canMute;
-  final double? pan; // -1..1; null unless a stereo aux destination is known.
+  final double? pan; // -1..1; null unless a stereo destination is known.
   final bool? grpon; // null = unsupported leaf
   final int? tap; // desk tap enum 0..5, null = unknown
   final List<int> tapOptions;
@@ -645,6 +652,41 @@ const tapLabels = <int, String>{
   4: 'POST',
   5: 'GRP',
 };
+
+/// Captured shared source and mode, bound to the current input/connection.
+class ChannelSourceModeVm {
+  final Object context;
+  final String target, sourceLabel;
+  final int mode;
+  final bool editable;
+  const ChannelSourceModeVm(
+      {required this.context,
+      required this.target,
+      required this.sourceLabel,
+      required this.mode,
+      required this.editable});
+  String get code => const ['M', 'ST', 'M/S'][mode];
+  String get label => const ['Mono', 'Stereo', 'Mid/side'][mode];
+}
+
+/// One coherent native delay snapshot, bound to strip, unit and live domain.
+class ChannelDelayVm {
+  final Object context;
+  final int unit, steps;
+  final double value, min, max;
+  final bool on, editable;
+  const ChannelDelayVm(
+      {required this.context,
+      required this.unit,
+      required this.steps,
+      required this.value,
+      required this.min,
+      required this.max,
+      required this.on,
+      required this.editable});
+  String get code => const ['M', 'FT', 'MS', 'SMP'][unit];
+  String get unitLabel => const ['m', 'ft', 'ms', 'samples'][unit];
+}
 
 class ChannelPreampVm {
   final bool hasInput;

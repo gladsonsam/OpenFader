@@ -343,6 +343,7 @@ class _ParameterChoices extends StatelessWidget {
     final choices = parameterChoices(store.paramMetadata(leaf));
     final enabled = store.supports(leaf);
     final stripKey = store.stripKey;
+    final epoch = store.connectionEpoch;
     return Semantics(
         label: label,
         value: _choiceText(store, leaf, fallback),
@@ -355,6 +356,7 @@ class _ParameterChoices extends StatelessWidget {
           onSelected: (value) {
             // A menu may outlive a model change or a channel switch.
             if (store.stripKey == stripKey &&
+                store.connectionEpoch == epoch &&
                 store.supports(leaf) &&
                 parameterChoices(store.paramMetadata(leaf))
                     .any((c) => (c.value - value).abs() < .0001)) {

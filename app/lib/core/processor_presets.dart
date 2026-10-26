@@ -297,7 +297,7 @@ const int kProcessorPresetMaxScopeLength = 64;
 /// stays tiny).
 const int kProcessorPresetMaxStringValueLength = 256;
 
-/// EQ block: band freq/gain/q/type (1..6; recall narrows by live caps) plus
+/// EQ block: band freq/gain/q/type (1..8; recall narrows by live caps) plus
 /// HPF freq/slope. `eq_on` and `hpf_on` are never preset fields.
 const Set<String> _eqPresetFields = {
   'eq_mode',
@@ -327,6 +327,14 @@ const Set<String> _eqPresetFields = {
   'eq6_gain',
   'eq6_q',
   'eq6_type',
+  'eq7_freq',
+  'eq7_gain',
+  'eq7_q',
+  'eq7_type',
+  'eq8_freq',
+  'eq8_gain',
+  'eq8_q',
+  'eq8_type',
 };
 
 /// Gate block: timing + mode + key + filter voice. `gate_on` and

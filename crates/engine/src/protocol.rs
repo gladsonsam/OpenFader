@@ -549,7 +549,16 @@ pub struct TopologyFamily {
 /// One `caps.fx` param row (R2): a design FX type's param table entry.
 /// Ranges are display-only (from the design, never desk documents).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FxChoiceCaps {
+    pub value: f32,
+    pub label: String,
+}
+
+/// Optional provider-owned discrete choices in normalized FX space.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FxParamCaps {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub choices: Vec<FxChoiceCaps>,
     pub id: String,
     pub label: String,
     pub unit: String,
@@ -562,6 +571,8 @@ pub struct FxParamCaps {
 /// One `caps.fx` FX type row (R2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FxTypeCaps {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slots: Vec<u8>,
     pub id: String,
     pub label: String,
     pub params: Vec<FxParamCaps>,

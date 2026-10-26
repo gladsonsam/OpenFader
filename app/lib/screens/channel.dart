@@ -56,6 +56,7 @@ abstract class ChannelStore extends ChangeNotifier
   // Catalogue reads do not imply a hydrated or editable live value.
   bool get capabilitiesReady;
   Map<String, dynamic>? paramMetadata(String leaf);
+  bool paramApplies(String leaf) => paramMetadata(leaf) != null;
 
   // --- commands ---
   void cmdParam(String leaf, Object value);
@@ -84,7 +85,12 @@ abstract class ChannelStore extends ChangeNotifier
 
   // --- snapshots ---
   ChannelPreampVm get preamp;
+  bool get hasDelay => false;
+  ChannelDelayVm? get delay => null;
+  void setDelay(ChannelDelayVm snapshot, double value) {}
   ChannelSourceVm get source;
+  ChannelSourceModeVm? get sourceMode => null;
+  void setSourceMode(ChannelSourceModeVm snapshot, int mode) {}
   void setSourceSelected(int selected);
   void setSendPan(int slot, double pan);
 
@@ -107,7 +113,7 @@ abstract class ChannelStore extends ChangeNotifier
   List<ChannelSendVm> get sends;
   bool destinationControlIsCurrent(DestinationControlVm control) => false;
   Future<String?> setDestinationControl(
-      DestinationControlVm control, double value) async =>
+          DestinationControlVm control, double value) async =>
       'Destination control unavailable.';
   int get subgroupCount;
   int get muteGroupCount;
@@ -668,21 +674,17 @@ ChannelFocus _parameterFocus(ChannelStore store, String leaf, String title,
   }
 
   final target = leaf == 'gain' || leaf == 'phantom' ? sourceContext() : null;
-  List<double>? range() {
-    if (target != null &&
-        (store.connectionEpoch != epoch ||
-            store.stripKey != key ||
-            sourceContext() != target)) {
-      return null;
-    }
-    return _controlRange(store, leaf);
-  }
+  bool current() =>
+      store.connectionEpoch == epoch &&
+      store.stripKey == key &&
+      (target == null || sourceContext() == target);
+  List<double>? range() => current() ? _controlRange(store, leaf) : null;
 
   return ChannelFocus(
       title: title,
       label: label,
-      text: text,
-      entryText: () => store.paramNum(leaf)?.toString() ?? '',
+      text: () => current() ? text() : 'Reopen control',
+      entryText: () => current() ? store.paramNum(leaf)?.toString() ?? '' : '',
       min: 0,
       max: 1,
       resolveRange: range,
@@ -694,7 +696,7 @@ ChannelFocus _parameterFocus(ChannelStore store, String leaf, String title,
 }
 
 ChannelFocus eqFreqFocus(ChannelStore store, int band) {
-  final b = band.clamp(0, 4);
+  final b = band.clamp(0, store.eq.bands.length);
   return _parameterFocus(
       store,
       b == 0 ? 'eq_hpf_f' : 'eq${b}_f',
@@ -704,21 +706,24 @@ ChannelFocus eqFreqFocus(ChannelStore store, int band) {
       (v) => store.setEqParam(b, 'f', v));
 }
 
-ChannelFocus _eqGainFocus(ChannelStore store, int band) => _parameterFocus(
-    store,
-    'eq${band}_g',
-    'EQ Band $band',
-    'Gain',
-    () =>
-        '${store.eq.bands.firstWhere((b) => b.band == band).g.toStringAsFixed(1)} dB',
-    (v) => store.setEqParam(band, 'g', v));
+ChannelFocus _eqGainFocus(ChannelStore store, int band) =>
+    _parameterFocus(store, 'eq${band}_g', 'EQ Band $band', 'Gain', () {
+      final value = store.eq.bands.where((b) => b.band == band).firstOrNull?.g;
+      return value == null ? 'Loading…' : '${value.toStringAsFixed(1)} dB';
+    }, (v) => store.setEqParam(band, 'g', v));
 
 ChannelFocus _eqQFocus(ChannelStore store, int band) => _parameterFocus(
     store,
     'eq${band}_q',
     'EQ Band $band',
     'Q',
-    () => store.eq.bands.firstWhere((b) => b.band == band).q.toStringAsFixed(2),
+    () =>
+        store.eq.bands
+            .where((b) => b.band == band)
+            .firstOrNull
+            ?.q
+            .toStringAsFixed(2) ??
+        'Loading…',
     (v) => store.setEqParam(band, 'q', v));
 
 String _dynLiveText(ChannelStore store, DynKind kind, String prop) {
