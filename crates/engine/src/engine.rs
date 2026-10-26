@@ -3759,8 +3759,10 @@ impl Engine {
         controls.iter().map(|control| json!({
             "target": control.target, "target_label": control.target_label,
             "target_name": control.target_name, "send_slot": control.send_slot,
+            "surface": control.surface, "description": control.description,
             "id": control.id, "label": control.label, "scope": "destination",
             "choices": control.choices.iter().map(|choice| json!({"value": choice.value, "label": choice.label})).collect::<Vec<_>>(),
+            "range": control.range.as_ref().map(|range| json!({"min": range.min, "max": range.max, "unit": range.unit, "decimals": range.decimals})),
             "value": control.current.as_ref().map(|value| value.value),
             "authority": control.current.as_ref().map(|value| if value.verified { "verified" } else { "accepted" }),
         })).collect()
@@ -7095,7 +7097,7 @@ impl Engine {
                     let controls = driver.destination_controls();
                     let row = controls.iter().find(|row| row.target == target && row.id == control)
                         .ok_or_else(|| anyhow::anyhow!("Destination control unavailable."))?;
-                    anyhow::ensure!(row.choices.iter().any(|choice| choice.value == value), "Destination value is not advertised.");
+                    anyhow::ensure!(row.allows_value(value), "Destination value is not advertised.");
                     anyhow::ensure!(row.current.as_ref().is_some_and(|current| current.value == expected), "Destination changed; reopen the control.");
                     driver.set_destination_control(&target, &control, value, expected).await?;
                     anyhow::ensure!(epoch == self.connection_gen.load(Ordering::Acquire), "Destination connection changed while writing; result uncertain.");
