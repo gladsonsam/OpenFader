@@ -42,10 +42,20 @@ impl MixerDriver for Dl32sDriver {
     }
 
     fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
-        self.collect_destination_controls()
+        let mut controls = self.collect_destination_controls();
+        let generation = self.generation.load(std::sync::atomic::Ordering::Acquire);
+        if let Ok(native) = self.native.lock() {
+            if native.generation == generation && native.view.connected {
+                controls.extend(native.output_processing.controls());
+            }
+        }
+        controls
     }
 
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
+        if self.write_output_processing(target, control, value, expected).await? {
+            return Ok(());
+        }
         if self.write_fx_control(target, control, value, expected).await? {
             return Ok(());
         }

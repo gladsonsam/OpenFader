@@ -18,6 +18,7 @@ pub(super) struct NativeCache {
     pub(super) parameter_labels: std::collections::BTreeMap<&'static str, String>,
     pub(super) destinations: destination::DestinationState,
     pub(super) fx: fx::FxState,
+    pub(super) output_processing: crate::output_processing::OutputProcessingCache,
 }
 
 impl Dl32sDriver {
@@ -64,6 +65,7 @@ impl NativeCache {
         self.generation = generation;
         self.destinations.seed(session);
         self.fx.seed(session);
+        self.output_processing.seed(session);
         self.parameter_labels = (58..=75)
             .filter_map(|slot| {
                 let id = assignment_name_parameter(slot)?;
@@ -97,6 +99,7 @@ pub(super) fn ingest_native(
                 if v.view.connected {
                     v.destinations.ingest(*start, raws);
                     v.fx.ingest(*start, raws);
+                    v.output_processing.ingest(*start, raws);
                 }
             }
         }
@@ -108,6 +111,7 @@ pub(super) fn ingest_native(
                 if v.view.connected {
                     for (slot, name) in pairs {
                         v.destinations.name(*slot, name);
+                        v.output_processing.rename(*slot, name);
                         if let Some(id) = assignment_name_parameter(*slot) {
                             if let Some(label) = assignment_name_label(*slot, name) {
                                 v.parameter_labels.insert(id, label);

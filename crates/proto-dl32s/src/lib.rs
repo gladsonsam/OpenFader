@@ -15,6 +15,7 @@ mod input;
 mod lifecycle;
 mod metadata;
 mod native;
+mod output_processing;
 mod preamp;
 mod telemetry;
 

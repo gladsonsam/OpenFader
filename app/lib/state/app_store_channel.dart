@@ -28,7 +28,12 @@ mixin _AppStoreChannel on _AppStoreContext {
   // Select the open channel on shell navigation.
 
   void openChannel(int ch) {
-    if (_channel == ch) return;
+    final wasOutput = outputProcessingTarget != null;
+    _outputProcessingTarget = null;
+    if (_channel == ch) {
+      if (wasOutput) notifyListeners();
+      return;
+    }
     _channel = ch;
     engine.clearAudioSpectrum();
     engine.spectrum.clear();
