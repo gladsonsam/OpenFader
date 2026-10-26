@@ -1,134 +1,136 @@
 # Output processing implementation and verification handoff
 
-This module is **inferred, not hardware verified**. It adds a working path for
-645 controls on Main, Aux 1–8 and Subgroup 1–6 through the existing destination
-control contract. No hardware connection or writes were made during implementation.
-It is not a claim of full Master Fader parity.
+This is a partial output-processing implementation, not full Master Fader parity.
+The inventory contains 691 controls: Main/Aux1–8 (62 each), Subgroup1–6
+(22 each), and one shared system temperature. No hardware connection or writes
+were made by this implementation agent. Native evidence below was supplied by
+the exclusive verifier in `/tmp/output-hardware-mapping-handoff.json`.
 
 ## Module boundaries
 
-- `src/output_processing/map.rs`: output inventory, inferred addresses, encoding,
-  control domains and processor-mode dependencies. No socket or UI logic.
-- `src/output_processing.rs`: push-only hydration, per-word revisions, names,
-  descriptor publication and generation/expected-value guarded writes.
-- `src/lib.rs`: seven small integration points: module/cache member, descriptor
-  extension, write dispatch, connect seed, value ingest and name ingest.
-- `app/lib/core/output_processing.dart`: constructor-injected generic screen
-  contract; existing destination commands and epoch checks remain unchanged.
-- `app/lib/screens/output_processing.dart`: provider-derived output/processor
-  selection, enable/choice controls, numeric editors, release-to-commit sliders,
-  horizontally scrolling 31-band GEQ, stale/pending/error handling.
-- `app/lib/screens/output_processing_graph.dart`: observed PEQ band positions,
-  GEQ band gains and compressor transfer reference. PEQ is deliberately labelled
-  band positions rather than claiming a filter-response curve. Compressor plot
-  is a hard-knee static reference, not measured dynamics or soft-knee telemetry.
-- `AppStore`, mixer controller/page, shell router: selection/navigation hooks.
-  Output selection follows the matching generic master bus. Existing input
-  navigation clears output selection, including reopening the same input.
-
-There are no frontend provider/model branches, new polling loops, new canonical
-input capabilities, strip-count changes, fader-law changes or mutable colors.
-Output inventory uses destination IDs, independently of pollable input StripIds.
+- `src/output_processing/map.rs`: descriptors, engineering domains, raw bank,
+  encodings, addresses and processor-mode dependencies. No socket/UI logic.
+- `src/output_processing.rs`: bank-qualified push hydration, per-word revisions,
+  names, descriptor publication, generation/expected-value guarded writes.
+- `src/native.rs`: generation-checked type-parameter/type-2 push dispatch. Other
+  destination/FX caches continue to receive parameter-bank values only.
+- Existing generic Flutter output workspace and destination editors render the
+  new descriptors unchanged. No frontend provider switches, new timers,
+  palette/fader-law changes, mode selectors or input store-contract changes.
 
 ## Address geometry and provenance
 
-Source: `/tmp/dl32s-five-fx-before-20261026.json` (5257 raw words), existing
-`addrs.rs` output block bases/strides, input compressor/EQ quartet layouts,
-private `dl32s-protocol.md`, and official Master Fader 5.1 guide pp131,139,142–146.
-A raw domain/overlap audit found all 645 proposed values in domain and all
-645 addresses distinct. This checks consistency, **not address semantics**.
+DSP base **D** and PEQ mode **E**:
 
-Define DSP base **D**:
-
-| Output | D | PEQ mode E |
+| Output | D | E |
 |---|---:|---:|
-| Main | 4352 | D + 50 |
-| Aux n (1–8) | 4442 + (n−1)×90 | D + 50 |
-| Subgroup n (1–6) | 4048 + (n−1)×51 | D + 8 |
+| Main | 4352 | D+50 |
+| Aux n (1–8) | 4442+(n−1)×90 | D+50 |
+| Subgroup n (1–6) | 4048+(n−1)×51 | D+8 |
 
-All writes use type-1 parameter words (`VALUE_TYPE_PARAM`, not meter/type-2).
+`Parameter` means `VALUE_TYPE_PARAM` (wire value type 5, capture `words`).
+`System` means wire value type 2 (`VALUE_TYPE_MUTE_GROUP`, capture `type2`);
+that bank also carries system parameters, despite the transport constant's name.
+Cache keys include the bank. Seed/readback/write all select the same bank.
 
-| Control | Address | Encoding / domain |
+| Control | Parameter address | Encoding / guarded domain |
 |---|---|---|
-| Compressor internal mode (read guard only) | D | integer; numeric/knee descriptors require 0 |
+| Compressor mode (read guard only) | D | integer; numeric/knee require 0 |
 | Compressor enable | D+1 | integer 0/1 |
-| Makeup, threshold | D+2, D+3 | float32; 0..20, −80..0 dB |
-| Attack, release | D+4, D+5 | float32; 0.1..300, 50..3000 ms |
-| Ratio | D+6 | float32 1..101; inferred input-like 101 = infinity |
-| Knee | D+7 | integer 0 soft / 1 hard |
-| PEQ internal mode (read guard only) | E | integer; band descriptors require 0 |
+| Makeup, threshold | D+2/+3 | float32 0..20 / −80..0 dB |
+| Attack, release | D+4/+5 | float32 0.1..300 / 50..3000 ms |
+| Ratio, knee | D+6/+7 | float32 1..101 / integer 0 Soft, 1 Hard |
 | PEQ enable | E+1 | integer 0/1 |
-| Band b quartet (b=1..4) | E+2+(4−b)×4 | type, gain, frequency, Q |
-| Band 1/4 shape | quartet+0 | integers 2 bell / 3 low shelf / 4 high shelf, inferred from input mapping |
-| Band gain/frequency/Q | quartet+1/+2/+3 | float32; ±15 dB / 20..20000 Hz / 0.5..16 |
-| Main/Aux GEQ master | D+8 | float32 ±12 dB |
+| Band b quartet | E+2+(4−b)×4 | type, gain, frequency, Q; mode E must be 0 |
+| Band 1/4 shape | quartet+0 | 2 Bell / 3 Low shelf / 4 High shelf |
+| Band gain/frequency/Q | quartet+1/+2/+3 | float32 ±15 dB / 20..20000 Hz / 0.5..16 |
 | Main/Aux GEQ enable | D+9 | integer 0/1 |
-| Main/Aux GEQ band k (1..31) | D+9+k | float32 ±12 dB; ascending standard 20 Hz..20 kHz |
-| Main/Aux HPF/LPF frequency | D+43, D+47 | float32 20..20000 Hz |
+| Main/Aux GEQ band k (1..31) | D+10+k | float32 ±12 dB; ascending 20 Hz..20 kHz |
+| Main/Aux HPF enable/frequency/slope | D+42/+43/+44 | 0/1; float32 20..20000 Hz; integer 0..3 |
+| Main/Aux LPF enable/frequency/slope | D+46/+47/+48 | same domains |
+| Main/Aux delay enable/distance | D+68/+69 | 0/1; float32 0..115.8 m |
 
-The GEQ master/enable ordering and band order, output knee/type enum meanings,
-compressor infinity sentinel and all output write semantics still need native
-movement/readback evidence. Current raw values are genuine pushed observations;
-`verified` authority refers to readback provenance, not proof of these mappings.
-Own accepted writes are published as `accepted`, never upgraded to readback.
-Mode changes invalidate dependent cached values; mode 1 is not exposed as a
-selector or label. Values stay unavailable until the relevant pushed data returns.
+System target `system`, control `delay_temperature`, uses **type-2 word 7**,
+float32 **0..40 °C**. It is published once as “System (all outputs)”, never
+as a per-output temperature. The guide describes fixed speaker distances and
+shared temperature compensation changing time. No unproven speed-of-sound
+formula or synthetic ms/ft readback is introduced.
 
-## Deliberately remaining gaps
+Guide source: `/tmp/master-fader-v5-1-reference.pdf`, pp131/139/146. It documents
+6/12/18/24 dB/oct slopes, ±12 dB GEQ bands/master, 0..115.8 m alignment distance
+(0..341.7 ms), and 0..40 °C. Distance raw metres agrees with the supplied native
+observation (1.65895748 raw displayed as 1.7 m, 5.4 ft, 4.8 ms). Exact endpoint
+and global temperature behavior across outputs still need native verification.
+No delay/filter/GEQ descriptors are inferred onto the different Subgroup schema.
 
-- Alignment delay: guide p146 gives 0..341.7 ms and enable/temperature controls,
-  but no distinguishing baseline signature establishes their word positions.
-  Do not repurpose zero-valued tail words without a native movement capture.
-- HPF/LPF enable and slope: neighboring zero words may be mode/enable fields or
-  unused gain words in a filter quartet. Frequencies have clear 20/20000 anchors;
-  enable/slope enums remain unresolved. No speculative switch is published.
-- Output meters/GR, measured PEQ response, linked-output processing propagation,
-  presets, GEQ draw/reset, mode-1 editing and shelf-Q semantics are incomplete.
-- No simulator/native UI, Android, hardware or visual layout verification ran.
-  Offline providers without output descriptors correctly show no output entry.
+### Supplied native movement evidence
 
-## Bounded parent verification batch
+- Main GEQ enable4361; 20Hz4363, 630Hz4378, 20kHz4393. Corrected the previous
+  band's one-word offset. Removed unproven GEQ master4360; do not substitute
+  suspected4362 until a native movement proves it.
+- Main compressor threshold4355, ratio4358, knee4359; PEQ band1 gain4417,
+  shape4416 (2 Bell/3 Low shelf).
+- Main HPF enable4394, frequency4395, slope4396: 0=6,1=12,2=18 dB/oct.
+  LPF enable4398, frequency4399, slope4400: 2=18,3=24 dB/oct. Shared full
+  0..3 enum on both filters is an inference from these anchors and the guide.
+  Off is a separate enable, not another slope enum value.
+- Main delay enable4420 and distance4421; global temperature type2/7.
+- Aux1 compressor threshold4445, GEQ20Hz4453 and PEQ1 frequency4508 confirm
+  +90 relative to Main for those controls.
+- Verifier reports each supplied movement was restored to exact complete
+  5257 parameter /107 type2 /75 name baseline. This is native movement evidence,
+  not a product write or bidirectional verification of this new build.
 
-Use the parent's serialized hardware process, with a fresh complete baseline,
-quiet/muted output policy, independent native observation and peer capture.
-Restore the **exact original raw word after each probe**, then require complete
-5257/107/75 equality before the next probe. Do not leave compressors, filters or
-EQ gains altered. Do not infer hardware proof from an accepted local write.
+### Remaining inferences / gaps
 
-1. Establish each schema on Main, Aux1, Subgroup1 using native movements first:
-   compressor enable/threshold/attack/ratio/knee (Main 4353/4355/4356/4358/4359;
-   Aux1 add90; Sub1 4049/4051/4052/4054/4055), and PEQ enable + band1
-   type/gain/frequency/Q (Main 4403,4416–4419; Aux1 add90;
-   Sub1 4057,4070–4073). Probe one control at a time and restore exactly.
-2. Main/Aux1 GEQ: native master + enable and 20Hz/630Hz/20kHz movements
-   (Main 4360/4361/4362/4377/4392; Aux1 add90). Confirm order and units.
-   Native HPF/LPF frequency movements should isolate Main4395/4399 and
-   Aux1 4485/4489. Capture enable/slope and delay native movements in the same
-   session to resolve remaining unknown words without product guesses.
-3. Once each schema is established, cover equivalent geometry in a batch:
-   Aux2–8 one PEQ frequency and one compressor threshold each; Sub2–6 one
-   PEQ gain and one threshold each; terminal GEQ bands on Aux8. Read back and
-   restore every probe. This bounds the stride checks without manually
-   rediscovering each equivalent slot.
-4. Product on iPad and iPhone: open selected Main/Aux/Subgroup processing from
-   the master EQ preview; verify output picker tracks the master bus, all
-   processor tabs/31 bands/precise editors fit, input reopening retains its
-   existing behavior, then do representative product→native→peer→exact-restore
-   loops for the established schema. Exercise peer changes while an editor is
-   open/during a drag, disconnect, reconnect and invalid/out-of-range commands.
-   Require stale edits rejected and uncertain failed writes unavailable.
-5. Parent final integration gates: `flutter analyze` in app,
-   `cargo test --workspace --locked`, normal workspace Clippy/build gates,
-   both iOS boot/connect/layout checks and serialized hardware verification.
+Aux filter/delay addresses and Aux2–8 +90 geometry, Subgroup +51 geometry,
+unprobed PEQ/compressor controls, delay endpoints and shared temperature
+semantics remain inferred. Native slope choices unprobed on each individual
+filter remain inferred, not independently verified. Ratio101 infinity sentinel
+retains the existing input-like inference.
 
-## Local validation
+GEQ master is withheld; output meters/GR, measured PEQ response, linked-output
+propagation, presets, GEQ draw/reset, mode-1 editing and shelf-Q semantics remain
+incomplete. Only pushed values have readback authority; accepted writes retain
+unconfirmed authority. Unknown/out-of-domain values stay unavailable. Mode,
+expected value, per-word revision and connection-generation guards remain.
+
+## Batched parent verification recipe
+
+1. On Main and Aux1, capture one native enable/frequency/slope per filter and
+   delay enable/distance, including 6/12/18/24 slopes and delay endpoints.
+   Aux1 expected HPF4484/4485/4486, LPF4488/4489/4490, delay4510/4511.
+   Establish raw metre scaling at two exact distances. Confirm temperature is
+   one shared type2/7 parameter from both output views; probe 0/40 °C, checking
+   distance stays fixed while displayed time changes. Identify GEQ master
+   independently; do not write unknown4360/4362 through the product.
+2. Batch stride anchors: Aux2–8 one filter or delay and terminal GEQ band on
+   Aux8; Sub1–6 one compressor/PEQ anchor (no subgroup delay assumption).
+   Restore exact original raw words and require full5257/107/75 equality after
+   every probe, including delayed peer/link side effects.
+3. Rebuild integrated product; iPad/iPhone open Main/Aux/Subgroup workspace,
+   verify all tabs, 31 GEQ bands, slope choices, metre units, and single System
+   temperature editor. Run representative product→native→peer→exact-restore
+   loops across each established schema and both banks. Check negative values,
+   NaN/Inf, fractional enum, stale editor/drag, peer change, disconnect/reconnect,
+   accepted-versus-readback labels and unknown pushes. Type2/7 must never
+   overwrite parameter7 or feed destination/FX parameter caches.
+4. Parent owns full workspace gates, iOS builds/boot/connect/layout checks,
+   Android and serialized hardware verification. No device/native control,
+   hardware writes, pushes or PRs were performed here.
+
+## Local validation of this revision
 
 - `cargo check -p openfader-proto-dl32s --locked`: passed.
 - `cargo clippy -p openfader-proto-dl32s --locked -- -D warnings`: passed.
-- `cargo test -p openfader-proto-dl32s --lib --locked`: 18 existing tests passed;
-  no Rust test cases were added.
-- `flutter analyze --no-pub` from `app`: no issues.
-- Baseline domain/duplicate-address consistency audit: 645/645 in range,
-  645 unique addresses across 15 output targets. Not a semantic/wire proof.
-- No frontend tests, full workspace suites, app builds, native/device control,
-  hardware connections, pushes or PRs were performed.
+- `cargo test -p openfader-proto-dl32s --lib --locked`: all18 existing tests passed;
+  no test cases added.
+- `flutter pub get`, then `flutter analyze --no-pub` in `app`: no issues. Initial
+  no-pub analysis lacked this fresh worktree's dependency configuration; normal
+  dependency restoration resolved it without tracked Flutter changes.
+- Standalone read-only diagnostic compiled against the actual map and captured
+  baseline: all691 bank-qualified addresses unique, every baseline raw value in
+  domain, exact decode/encode roundtrips, NaN/Inf and fractional enum rejection.
+  This checks consistency, not wire semantics. Diagnostic remains in `/tmp`,
+  not in the repository; no frontend tests or Rust test cases were added.
+- No full builds/workspace suites, native/device control or hardware access.

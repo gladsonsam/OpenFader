@@ -1,6 +1,7 @@
 //! Output DSP geometry inferred from the 2026-10-26 full raw baseline.
 //!
-//! These addresses have NOT had native movement/write/restore verification.
+//! Main native movement anchors and inferred family strides are documented in
+//! OUTPUT_PROCESSING.md. Readback provenance does not prove inferred mappings.
 //! Input-like compressor and reversed four-band PEQ records recur in all 15
 //! output strips. Main/Aux add 31 GEQ gains and HP/LP filters. Keep this map
 //! separate from the hardware-proven input table. See OUTPUT_PROCESSING.md.
@@ -13,10 +14,9 @@ use openfader_transport::mackie::MackieSession;
 
 use crate::Dl32sDriver;
 use std::sync::atomic::Ordering;
-use openfader_transport::mackie::VALUE_TYPE_PARAM;
 
 mod map;
-use map::{specs, Spec};
+use map::{specs, Bank, Spec};
 
 #[derive(Debug, Default)]
 struct Entry {
@@ -26,7 +26,7 @@ struct Entry {
 
 #[derive(Debug, Default)]
 pub(crate) struct OutputProcessingCache {
-    parameters: BTreeMap<u32, Entry>,
+    parameters: BTreeMap<(Bank, u32), Entry>,
     modes: BTreeMap<u32, u32>,
     names: BTreeMap<u32, String>,
 }
@@ -45,11 +45,12 @@ impl OutputProcessingCache {
                     self.names.insert(slot, name);
                 }
             }
-            let current = session
-                .cached_verified(spec.address)
+            let current = spec
+                .bank
+                .verified(session, spec.address)
                 .and_then(|raw| spec.decode(raw));
             self.parameters.insert(
-                spec.address,
+                (spec.bank, spec.address),
                 Entry {
                     current,
                     revision: 0,
@@ -58,22 +59,32 @@ impl OutputProcessingCache {
         }
     }
 
-    pub(crate) fn ingest(&mut self, start: u32, raws: &[u32]) {
+    pub(crate) fn ingest(&mut self, value_type: u8, start: u32, raws: &[u32]) {
         let raw_at = |a: u32| {
             a.checked_sub(start)
                 .and_then(|i| raws.get(i as usize))
                 .copied()
         };
         let mut changed = std::collections::BTreeSet::new();
-        for address in specs().iter().filter_map(|spec| spec.mode) {
+        for address in specs()
+            .iter()
+            .filter(|spec| spec.bank.value_type() == value_type)
+            .filter_map(|spec| spec.mode)
+        {
             if let Some(mode) = raw_at(address) {
                 if self.modes.insert(address, mode) != Some(mode) {
                     changed.insert(address);
                 }
             }
         }
-        for spec in specs() {
-            let entry = self.parameters.entry(spec.address).or_default();
+        for spec in specs()
+            .iter()
+            .filter(|spec| spec.bank.value_type() == value_type)
+        {
+            let entry = self
+                .parameters
+                .entry((spec.bank, spec.address))
+                .or_default();
             if spec.mode.is_some_and(|address| changed.contains(&address)) {
                 entry.revision = entry.revision.wrapping_add(1);
                 entry.current = None;
@@ -110,11 +121,12 @@ impl OutputProcessingCache {
                 id: spec.id.clone(),
                 label: spec.label.clone(),
                 tap_tempo: false,
-                description: format!(
-                    "Changes {} processing for everything feeding {}.",
-                    spec.label.to_lowercase(),
-                    spec.target_label
-                ),
+                description: if spec.bank == Bank::System {
+                    "Shared temperature compensation for alignment delays on all outputs. Changing this changes delay times while preserving speaker distances.".into()
+                } else {
+                    format!("Changes {} processing for everything feeding {}.",
+                        spec.label.to_lowercase(), spec.target_label)
+                },
                 choices: spec
                     .choices
                     .iter()
@@ -133,7 +145,7 @@ impl OutputProcessingCache {
                     .ready(spec)
                     .then(|| {
                         self.parameters
-                            .get(&spec.address)
+                            .get(&(spec.bank, spec.address))
                             .and_then(|entry| entry.current.clone())
                     })
                     .flatten(),
@@ -183,13 +195,13 @@ impl Dl32sDriver {
             );
             let entry = cache
                 .parameters
-                .get_mut(&spec.address)
+                .get_mut(&(spec.bank, spec.address))
                 .ok_or_else(|| anyhow::anyhow!("Output value unavailable"))?;
             anyhow::ensure!(
                 entry.current.as_ref().is_some_and(|v| v.value == expected),
                 "Output value changed; reopen the control"
             );
-            if let Some(raw) = session.cached_verified(spec.address) {
+            if let Some(raw) = spec.bank.verified(session, spec.address) {
                 anyhow::ensure!(
                     raw == spec.raw(expected),
                     "Output value changed; reopen the control"
@@ -199,7 +211,7 @@ impl Dl32sDriver {
             entry.revision
         };
         session
-            .write_int(spec.address, spec.raw(value), VALUE_TYPE_PARAM)
+            .write_int(spec.address, spec.raw(value), spec.bank.value_type())
             .await?;
         let mut native = self
             .native
@@ -218,7 +230,7 @@ impl Dl32sDriver {
         );
         let entry = cache
             .parameters
-            .get_mut(&spec.address)
+            .get_mut(&(spec.bank, spec.address))
             .ok_or_else(|| anyhow::anyhow!("Output unavailable"))?;
         if entry.revision == revision {
             entry.current = Some(DestinationValue {
