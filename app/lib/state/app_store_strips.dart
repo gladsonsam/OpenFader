@@ -48,11 +48,12 @@ mixin _AppStoreStrips on _AppStoreContext {
   // Solo is a dedicated protocol event, absent from the param catalogue.
   // A real solo echo establishes availability; caps alone never enables it.
   bool canEditControl(int ch, String field) =>
-      engine.driver == 'sim' ||
-      (engine.connected &&
-          engine.capsReady &&
-          (engine.supportedParams.contains(field) || field == 'solo') &&
-          engine.valueKnown(ch, field));
+      _accessParamAllowed(ch, field) &&
+      (engine.driver == 'sim' ||
+          (engine.connected &&
+              engine.capsReady &&
+              (engine.supportedParams.contains(field) || field == 'solo') &&
+              engine.valueKnown(ch, field)));
 
   int _controlReady(int ch) => ch < 0
       ? ((masterControlKnown('fader') ? 1 : 0) |
@@ -71,6 +72,7 @@ mixin _AppStoreStrips on _AppStoreContext {
       : null;
 
   bool masterControlKnown(String field) {
+    if (!accessTargetAllowed(masterProcessingTarget)) return false;
     final group = _selectedSubgroup;
     if (group != null) {
       // Capability establishes addressability; each echo hydrates only its
@@ -462,8 +464,13 @@ mixin _AppStoreStrips on _AppStoreContext {
                 'subgroup$group', () => ValueNotifier(0)),
           ),
     ]);
-    _busRowsCache = built;
-    return built;
+    final allowed = List<MixerBusRow>.unmodifiable(
+      built.where(
+        (row) => accessTargetAllowed(_processingTargetForAccessBus(row.id)),
+      ),
+    );
+    _busRowsCache = allowed;
+    return allowed;
   }
 
   @override
@@ -520,7 +527,12 @@ mixin _AppStoreStrips on _AppStoreContext {
   }
 
   @override
+  bool get canClearSolos => accessFamilyAllowed(AccessFamily.channelSolo) &&
+      !blockedAccess.any((key) => key.startsWith('target:'));
+
+  @override
   void clearSolos() {
+    if (!canClearSolos) return;
     if (engine.driver != 'sim' &&
         (!engine.connected ||
             !engine.knownValues.keys
@@ -623,6 +635,7 @@ mixin _AppStoreStrips on _AppStoreContext {
 
   @override
   void selectBus(String id) {
+    if (!accessTargetAllowed(_processingTargetForAccessBus(id))) return;
     if (_busId == id || !busRows.any((row) => row.id == id)) return;
     _busId = id;
     _syncControlNotes();

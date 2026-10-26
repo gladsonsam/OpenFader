@@ -299,7 +299,8 @@ class MixerController extends ChangeNotifier {
   }
 
   bool get canOpenMasterProcessing => store.outputProcessingControls
-      .any((control) => control.target == store.masterProcessingTarget);
+      .any((control) => control.target == store.masterProcessingTarget &&
+          store.destinationControlIsCurrent(control));
 
   void openMasterProcessing() =>
       store.openOutputProcessing(store.masterProcessingTarget);

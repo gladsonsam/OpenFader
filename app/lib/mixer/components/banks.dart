@@ -281,7 +281,8 @@ class MixerBanks extends StatelessWidget {
                   // Keep monitoring recovery reachable even when the provider
                   // exposes enough banks/buses to fill the scrolling rail.
                   if (controller.hasSolo)
-                    button('Clear solos', controller.store.clearSolos,
+                    button('Clear solos', controller.store.canClearSolos
+                        ? controller.store.clearSolos : null,
                         size: 18, color: ConsolePalette.of(context).solo),
                 ]);
               })

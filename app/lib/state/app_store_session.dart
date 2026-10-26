@@ -139,7 +139,7 @@ mixin _AppStoreSession on _AppStoreContext {
 
   @override
   void _send(String json) {
-    unawaited(_api.cmd(_clientId, json).then((_) {}, onError: (e) {
+    unawaited(_command(_clientId, json).then((_) {}, onError: (e) {
       _noteTransportError(e);
     }));
   }
@@ -202,7 +202,7 @@ mixin _AppStoreSession on _AppStoreContext {
 
   Future<void> sendCommand(String json) async {
     _prepareConnectionCommand(json);
-    await _api.cmd(_clientId, json);
+    await _command(_clientId, json);
     await pollMeters();
   }
 }

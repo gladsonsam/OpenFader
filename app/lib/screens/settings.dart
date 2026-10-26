@@ -9,6 +9,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../core/access_limits.dart';
+import 'settings_access.dart';
+
 import '../settings/mixes.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
@@ -18,6 +21,7 @@ import '../palette.dart';
 enum SettingsSection {
   connections('Connections', Icons.wifi),
   mixes('Mixes & backups', Icons.library_music_outlined),
+  access('Access limits', Icons.lock_outline),
   data('App data', Icons.storage_outlined),
   appearance('Appearance & controls', Icons.palette_outlined),
   about('About & Support', Icons.info_outline);
@@ -30,6 +34,7 @@ enum SettingsSection {
 // Implemented by the shell over prefs, recents, mixes, and platform plugins.
 abstract class SettingsStore extends ChangeNotifier {
   PrefsService get prefs;
+  AccessLimitsStore get accessLimits;
   RecentMixers get recents;
   LocalMixStore get mixes;
   Future<int> appStorageBytes();
@@ -310,6 +315,8 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
               toast: _toast,
               confirm: _confirm,
               onOpenMixer: widget.onOpenMixer),
+          SettingsSection.access =>
+            AccessLimitsDetail(store: widget.store.accessLimits),
           SettingsSection.data =>
             _DataDetail(store: widget.store, toast: _toast, confirm: _confirm),
           SettingsSection.appearance =>

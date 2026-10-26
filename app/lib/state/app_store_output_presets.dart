@@ -57,6 +57,10 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
   }
 
   String? _outputIdentityError(OutputPresetTarget target) {
+    if (!accessTargetAllowed(target.target) ||
+        !accessFamilyAllowed(AccessFamily.masterDsp)) {
+      return 'Output processing is limited on this device.';
+    }
     if (_presetDisposed ||
         !_online ||
         !engine.connected ||

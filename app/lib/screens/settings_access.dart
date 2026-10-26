@@ -1,0 +1,100 @@
+import 'package:flutter/material.dart';
+
+import '../core/access_limits.dart';
+import '../palette.dart';
+import '../theme.dart';
+
+/// Reads only the injected policy contract; no engine or AppStore dependency.
+class AccessLimitsDetail extends StatefulWidget {
+  const AccessLimitsDetail({super.key, required this.store});
+  final AccessLimitsStore store;
+
+  @override
+  State<AccessLimitsDetail> createState() => _AccessLimitsDetailState();
+}
+
+class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
+  bool _saving = false;
+  String? _error;
+
+  Future<void> _set(String key, bool blocked) async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.store.setAccessBlocked(key, blocked);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Could not save access limit: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    final options = widget.store.accessOptions;
+    return DefaultTextStyle(
+      style: TextStyle(fontFamily: U4.font, color: palette.text1, fontSize: 17),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Limits for this device',
+            style: TextStyle(fontSize: 23, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Turn on a limit to prevent edits from this installation. Limits persist across mixers and offline sessions. Existing mixer permissions still apply.',
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'These are local UI limits, not authenticated remote security. Settings remains accessible to change them. No passcode lock is provided.',
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'While any limit is active, bulk scene/show recalls, library mutations, uploads and offline pushes are blocked because they can change restricted controls.',
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 12),
+              child: Text(_error!, style: TextStyle(color: palette.mute)),
+            ),
+          const SizedBox(height: 20),
+          for (final option in options)
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              activeThumbColor: palette.mute,
+              title: Text(
+                option.label,
+                style: TextStyle(color: palette.text1, fontFamily: U4.font),
+              ),
+              subtitle: Text(
+                '${option.coverage}${option.available ? '' : ' · Not currently advertised'}',
+                style: TextStyle(color: palette.text7, fontFamily: U4.font),
+              ),
+              value: widget.store.blockedAccess.contains(option.key),
+              onChanged: _saving ||
+                      (!option.available &&
+                          !widget.store.blockedAccess.contains(option.key))
+                  ? null
+                  : (value) => _set(option.key, value),
+            ),
+          const SizedBox(height: 20),
+          Text(
+            'Not covered in this release',
+            style: TextStyle(color: palette.text1, fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Input/master routing, mic preamps, oscillator, presets as a separate family, shows as a separate family, quick access, mute/view groups, group assignment, Masters, Overview, Devices, Settings and I/O Patchbay. Destination limits cover advertised target identities, not physical output patches. Unadvertised destination mappings cannot be limited individually. Stereo pairing follows advertised topology pairs and live link state. Input faders and group actions can still affect limited outputs; this is not mix isolation.',
+            style: TextStyle(color: palette.text7),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -55,6 +55,9 @@ mixin _AppStoreAppearance on _AppStoreContext {
 
   @override
   String? nameEditError(ChannelNameTarget target) {
+    if (!_accessParamAllowed(target.channel, 'name')) {
+      return 'Channel identity is limited on this device.';
+    }
     if (!engine.connected || engine.session != target.session) {
       return 'Connection changed or lost. Reopen the name editor.';
     }
@@ -149,6 +152,9 @@ mixin _AppStoreAppearance on _AppStoreContext {
 
   @override
   String? _appearanceEditError(ChannelNameTarget target, String field) {
+    if (!_accessParamAllowed(target.channel, field)) {
+      return 'This control is limited on this device.';
+    }
     if (!engine.connected ||
         engine.session != target.session ||
         !engine.strips
@@ -217,7 +223,7 @@ mixin _AppStoreAppearance on _AppStoreContext {
     ps.noteOptimistic(_maps, target.channel, field, value, _nowMs());
     notifyListeners();
     unawaited(Future<void>.sync(
-            () => _api.cmd(_clientId, Cmds.param(target.channel, field, value)))
+            () => _command(_clientId, Cmds.param(target.channel, field, value)))
         .then((_) {}, onError: (Object e) {
       if (identical(_appearanceEdits[key]?.done, done)) {
         _finishAppearanceEdit(key, 'Could not send channel $field: $e');
@@ -285,7 +291,7 @@ mixin _AppStoreAppearance on _AppStoreContext {
     _nameEditDeadlines[key] = _nowMs() + ps.confirmTimeoutMs;
     ps.noteOptimistic(_maps, target.channel, 'name', name, _nowMs());
     unawaited(Future<void>.sync(
-            () => _api.cmd(_clientId, Cmds.param(target.channel, 'name', name)))
+            () => _command(_clientId, Cmds.param(target.channel, 'name', name)))
         .then((_) {}, onError: (Object e) {
       // A late transport failure must not cancel a newer edit of this channel.
       if (identical(_nameEdits[key], done)) {

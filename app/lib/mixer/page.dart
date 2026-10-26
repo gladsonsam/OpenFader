@@ -178,7 +178,8 @@ class _MixerPageState extends State<MixerPage> {
                                                 .solo)),
                                     const Spacer(),
                                     TextButton(
-                                        onPressed: controller.store.clearSolos,
+                                        onPressed: controller.store.canClearSolos
+                                            ? controller.store.clearSolos : null,
                                         child: Text('Clear solos',
                                             style: mixerType(context, 12,
                                                 color:
