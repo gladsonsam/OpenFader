@@ -79,6 +79,8 @@ pub(crate) struct BridgeClient {
     pub(crate) handle: ClientHandle,
     pub(crate) bin_seq: u32,
     pub(crate) pending_json: VecDeque<String>,
+    // Output meters are JSON-only realtime telemetry, never reliable backlog.
+    pub(crate) pending_output_json: Option<String>,
 }
 
 impl BridgeClient {
@@ -87,6 +89,7 @@ impl BridgeClient {
             handle,
             bin_seq: 0,
             pending_json: VecDeque::new(),
+            pending_output_json: None,
         }
     }
 }

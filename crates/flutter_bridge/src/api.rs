@@ -125,7 +125,8 @@ pub async fn cmd(client_id: String, json: String) {
 /// Frames set aside by [`poll_binary`] (non-meter events seen while the
 /// Dart side drained the binary meter path) come first, in order, the
 /// JSON poll is the lossless fallback for everything binary does not
-/// carry.
+/// carry. JSON-only output meters use one latest-only slot after control
+/// frames, so delaying this poll cannot accumulate realtime telemetry.
 #[flutter_rust_bridge::frb]
 pub async fn poll(client_id: String, cap: u32) -> Vec<String> {
     let cap = if cap == 0 {
@@ -143,6 +144,11 @@ pub async fn poll(client_id: String, cap: u32) -> Vec<String> {
             out.push(json);
         } else {
             break;
+        }
+    }
+    if out.len() < cap {
+        if let Some(json) = client.pending_output_json.take() {
+            out.push(json);
         }
     }
     while out.len() < cap {
@@ -348,7 +354,10 @@ pub fn stats(client_id: String) -> String {
         .lock()
         .unwrap()
         .get(&client_id)
-        .map(|c| c.handle.events.len() + c.pending_json.len())
+        .map(|c| {
+            c.handle.events.len() + c.pending_json.len()
+                + usize::from(c.pending_output_json.is_some())
+        })
         .unwrap_or(0);
     serde_json::json!({
         "type": "ipc_stats",
@@ -380,6 +389,7 @@ pub fn stats(client_id: String) -> String {
 /// aside as JSON text in the client's pending queue and come back first
 /// from the next [`poll`], the hot meter path never loses control
 /// frames. Unknown clients get `[]`.
+/// JSON-only output meters instead replace the client's pending output slot.
 #[flutter_rust_bridge::frb]
 pub async fn poll_binary(client_id: String, cap: u32) -> Vec<u8> {
     let cap = if cap == 0 {
@@ -406,7 +416,13 @@ pub async fn poll_binary(client_id: String, cap: u32) -> Vec<u8> {
                         client.bin_seq = client.bin_seq.wrapping_add(1);
                         frames.push(bytes);
                     }
-                    None => client.pending_json.push_back(frame.json.to_string()),
+                    None => {
+                        if matches!(&*frame.event, openfader_engine::Event::OutputMeters { .. }) {
+                            client.pending_output_json = Some(frame.json.to_string());
+                        } else {
+                            client.pending_json.push_back(frame.json.to_string());
+                        }
+                    }
                 }
             }
             Err(_) => break,
