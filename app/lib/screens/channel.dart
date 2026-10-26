@@ -56,6 +56,7 @@ abstract class ChannelStore extends ChangeNotifier
   double? paramNum(String leaf);
   bool? paramBool(String leaf);
   bool supports(String leaf);
+  String? localAccessMessage(String leaf) => null;
 
   // Catalogue reads do not imply a hydrated or editable live value.
   bool get capabilitiesReady;
