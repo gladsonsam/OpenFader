@@ -1,0 +1,252 @@
+// Shell adapter: fx responsibility. The shell owns polling.
+import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
+import '../engine.dart';
+import '../screens/fx.dart';
+import 'store_adapter.dart';
+
+class ShellFxStore extends ShellStoreAdapter implements FxStore {
+  ShellFxStore(super.app) {
+    // FX meters ride the shell poll loop, so the FX page needs no timer.
+
+    app.addListener(_syncFxMeters);
+  }
+
+  int _sel = 0;
+  final Map<int, ValueNotifier<double>> _meters = {};
+  final Stopwatch _tapClock = Stopwatch()..start();
+  final Map<String, int> _tapTimes = {};
+  final Set<String> _tapWrites = {};
+  int? _tapSession;
+
+  @override
+  bool get stateControlsSupported => engine.fxStateControls;
+
+  @override
+  List<DestinationControlVm> get destinationControls => List.unmodifiable(
+      engine.destinationControls.where((control) => control.surface == 'fx'));
+  @override
+  bool destinationControlIsCurrent(DestinationControlVm control) =>
+      app.destinationControlIsCurrent(control);
+  @override
+  Future<String?> setDestinationControl(
+          DestinationControlVm control, double value) =>
+      app.setDestinationControl(control, value);
+
+  @override
+  Future<String?> tapDestinationControl(DestinationControlVm control) async {
+    if (isDisposed ||
+        !control.canTapTempo ||
+        !destinationControlIsCurrent(control)) {
+      return 'Connection or setting changed. Reopen this control.';
+    }
+    if (_tapSession != engine.session) {
+      _tapSession = engine.session;
+      _tapTimes.clear();
+      _tapWrites.clear();
+    }
+    final key =
+        '${engine.session}/${control.epoch}/${control.target}/${control.id}'
+        '/${control.targetName}/${control.min}/${control.max}/${control.unit}';
+    final now = _tapClock.elapsedMicroseconds;
+    final previous = _tapTimes[key];
+    _tapTimes[key] = now;
+    if (previous == null) return null;
+    final value = control.valueForTapPeriod(now - previous);
+    // A long pause starts a new pair. Keep recording taps during a write
+    // so the next accepted interval never includes a skipped beat.
+    if (value == null || !_tapWrites.add(key)) return null;
+    try {
+      return await setDestinationControl(control, value);
+    } finally {
+      _tapWrites.remove(key);
+    }
+  }
+
+  @override
+  void dispose() {
+    app.removeListener(_syncFxMeters);
+    _tapClock.stop();
+    _tapTimes.clear();
+    _tapWrites.clear();
+    for (final m in _meters.values) {
+      m.dispose();
+    }
+    super.dispose();
+  }
+
+  List<FxSlot> get _raw => engine.fx;
+
+  @override
+  List<FxSlotVm> get slots => [
+        for (final s in _raw)
+          FxSlotVm(
+            slot: s.slot,
+            name: 'FX ${s.slot}',
+            type: _typeMetadata(s.type)?['id'] as String? ??
+                (s.type.isEmpty ? '—' : s.type),
+            on: s.on,
+            bypass: s.bypass,
+            ret: s.returnLabel,
+          ),
+      ];
+
+  @override
+  int get selected => _sel.clamp(0, _raw.isEmpty ? 0 : _raw.length - 1);
+
+  @override
+  List<String> get typeOptions => [
+        for (final type in engine.fxTypes)
+          (type['id'] ?? type['label']) as String
+      ];
+
+  Map<String, dynamic>? _typeMetadata(String type) {
+    for (final metadata in engine.fxTypes) {
+      final id = metadata['id'] as String?;
+      final label = metadata['label'] as String?;
+      if (id?.toLowerCase() == type.toLowerCase() ||
+          label?.toLowerCase() == type.toLowerCase()) {
+        return metadata;
+      }
+    }
+    return null;
+  }
+
+  @override
+  String typeLabel(String type) =>
+      _typeMetadata(type)?['label'] as String? ?? type;
+
+  String _parameterText(double normalized, Map<String, dynamic>? metadata) {
+    final min = (metadata?['min'] as num?)?.toDouble();
+    final max = (metadata?['max'] as num?)?.toDouble();
+    if (min == null ||
+        max == null ||
+        !min.isFinite ||
+        !max.isFinite ||
+        max <= min) {
+      return '${(normalized * 100).toStringAsFixed(0)}%';
+    }
+    final scale = metadata?['scale'];
+    if (scale != 'lin' && scale != 'log' || scale == 'log' && min <= 0) {
+      return '${(normalized * 100).toStringAsFixed(0)}%';
+    }
+    final value = scale == 'log'
+        ? min * math.pow(max / min, normalized)
+        : min + (max - min) * normalized;
+    final unit = metadata?['unit'] as String? ?? '';
+    if (unit == 'Hz' && value >= 1000) {
+      return '${(value / 1000).toStringAsFixed(2)} kHz';
+    }
+    final text = value.toStringAsFixed(
+        unit == '%' || unit == 'ms' || value.abs() >= 100 ? 0 : 1);
+    return unit.isEmpty ? text : '$text${unit == '%' ? '' : ' '}$unit';
+  }
+
+  FxSlot? get _cur =>
+      _raw.isEmpty ? null : _raw[selected.clamp(0, _raw.length - 1)];
+
+  @override
+  List<FxKnobVm> get knobs {
+    final c = _cur;
+    if (c == null) return const [];
+    final definitions = <String, Map<String, dynamic>>{
+      for (final parameter
+          in _typeMetadata(c.type)?['params'] as List? ?? const [])
+        if (parameter is Map<String, dynamic> && parameter['id'] is String)
+          parameter['id'] as String: parameter,
+    };
+    final unknownIds = c.params.keys
+        .where((id) => !definitions.containsKey(id))
+        .toList()
+      ..sort();
+    final ids = [
+      for (final id in definitions.keys)
+        if (c.params.containsKey(id)) id,
+      ...unknownIds,
+    ];
+    return [
+      for (final id in ids)
+        FxKnobVm(
+          id: id,
+          label: definitions[id]?['label'] as String? ?? id,
+          min: 0,
+          max: 1,
+          value: c.params[id]!.clamp(0.0, 1.0),
+          text: _parameterText(c.params[id]!.clamp(0.0, 1.0), definitions[id]),
+        ),
+    ];
+  }
+
+  @override
+  // The engine has no tap command/capability yet; do not offer a no-op.
+  bool get tapVisible => false;
+
+  @override
+  String get tapLabel => 'TAP';
+
+  @override
+  ValueNotifier<double> meterOf(int slot) {
+    final n = _meters.putIfAbsent(slot, () => ValueNotifier(0));
+    final i = _raw.indexWhere((s) => s.slot == slot);
+    if (i >= 0 && i < engine.meters.length) {
+      n.value = _raw[i].level.clamp(0.0, 1.0);
+    }
+    return n;
+  }
+
+  @override
+  Future<void> pollMeters() async {
+    await app.pollMeters();
+    _syncFxMeters();
+  }
+
+  void _syncFxMeters() {
+    if (isDisposed) return;
+    for (final e in _meters.entries) {
+      final i = _raw.indexWhere((s) => s.slot == e.key);
+      if (i >= 0 && i < engine.meters.length) {
+        e.value.value = _raw[i].level.clamp(0.0, 1.0);
+      }
+    }
+  }
+
+  @override
+  void selectSlot(int slot) {
+    final i = _raw.indexWhere((s) => s.slot == slot);
+    _sel = i < 0 ? slot : i;
+    notifyListeners();
+  }
+
+  @override
+  void setType(String type) {
+    final c = _cur;
+    if (c == null) return;
+    send(Cmds.fxSetType(c.slot, type));
+  }
+
+  @override
+  void setParam(String id, double value) {
+    final c = _cur;
+    if (c == null) return;
+    send(Cmds.fxParam(c.slot, id, value));
+  }
+
+  @override
+  void setOn(bool on) {
+    final c = _cur;
+    if (c == null || !stateControlsSupported) return;
+    send(Cmds.fxOn(c.slot, on));
+  }
+
+  @override
+  void setBypass(bool bypass) {
+    final c = _cur;
+    if (c == null || !stateControlsSupported) return;
+    send(Cmds.fxBypass(c.slot, bypass));
+  }
+
+  // No tap-tempo cmd exists, so the TAP tile stays a no-op until the protocol grows one.
+
+  @override
+  void tap() {}
+}
