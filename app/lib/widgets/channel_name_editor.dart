@@ -1,22 +1,46 @@
 import 'package:flutter/material.dart';
+
 import '../core/channel_name.dart';
+import '../core/processor_presets.dart';
+import 'processor_preset_library.dart';
 import '../design.dart';
 import '../palette.dart';
 import 'channel_symbol.dart';
 import 'channel_quick_assign.dart';
 
 Future<void> showChannelNameEditor(BuildContext context, ChannelNameStore store,
-        ChannelNameTarget target) =>
-    showDialog<void>(
+        ChannelNameTarget target) {
+  final presets = store is InputProcessorPresetStore
+      ? <ProcessorPresetTarget>[
+          for (final kind in [
+            ProcessorPresetKind.eq,
+            ProcessorPresetKind.gate,
+            ProcessorPresetKind.compressor,
+          ])
+            if ((store as InputProcessorPresetStore).captureChannelPresetTarget(
+              kind,
+              target.channel,
+              session: target.session,
+              key: target.key,
+              accessEpoch: target.accessEpoch,
+            )
+                case final captured?)
+              captured,
+        ]
+      : <ProcessorPresetTarget>[];
+  return showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _NameEditor(store: store, target: target),
-    );
+      builder: (_) => _NameEditor(store: store, target: target, presets: presets),
+  );
+}
 
 class _NameEditor extends StatefulWidget {
   final ChannelNameStore store;
   final ChannelNameTarget target;
-  const _NameEditor({required this.store, required this.target});
+  final List<ProcessorPresetTarget> presets;
+  const _NameEditor({required this.store, required this.target,
+      required this.presets});
   @override
   State<_NameEditor> createState() => _NameEditorState();
 }
@@ -60,6 +84,22 @@ class _NameEditorState extends State<_NameEditor> {
       _linkStatus = error ?? 'Link change sent to mixer';
     });
   }
+
+  Future<void> _presets() => showDialog<void>(
+      context: context,
+      builder: (context) => SimpleDialog(
+          title: const Text('Presets'),
+          children: [
+            for (final target in widget.presets)
+              SimpleDialogOption(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    showProcessorPresetLibrary(this.context,
+                        widget.store as InputProcessorPresetStore,
+                        target.kind, target);
+                  },
+                  child: Text(target.kind.label)),
+          ]));
 
   @override
   void dispose() {
@@ -223,6 +263,19 @@ class _NameEditorState extends State<_NameEditor> {
                         Icon(Icons.playlist_add_check, size: 20),
                         SizedBox(width: 12),
                         Expanded(child: Text('Quick Assign')),
+                        Icon(Icons.chevron_right, size: 20),
+                      ]),
+                    ),
+                  ),
+                if (widget.presets.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton(
+                      onPressed: _pending ? null : _presets,
+                      child: const Row(children: [
+                        Icon(Icons.library_music_outlined, size: 20),
+                        SizedBox(width: 12),
+                        Expanded(child: Text('Presets')),
                         Icon(Icons.chevron_right, size: 20),
                       ]),
                     ),

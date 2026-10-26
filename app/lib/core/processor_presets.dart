@@ -279,6 +279,23 @@ abstract class ProcessorPresetStore implements Listenable {
   );
 }
 
+/// Optional input clipboard/captured-channel adapter. Existing preset stores keep
+/// their signatures; unsupported stores simply omit these actions.
+abstract class InputProcessorPresetStore implements ProcessorPresetStore {
+  ProcessorPresetTarget? captureChannelPresetTarget(
+    ProcessorPresetKind kind,
+    int channel, {
+    int? session,
+    String? key,
+    int? accessEpoch,
+  });
+  String? processorPasteError(ProcessorPresetTarget target);
+  String? copyInputProcessor(ProcessorPresetTarget target);
+  Future<ProcessorPresetResult> pasteInputProcessor(
+    ProcessorPresetTarget target,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Catalogue: explicit allow-lists, never an arbitrary prefix.
 // ---------------------------------------------------------------------------
