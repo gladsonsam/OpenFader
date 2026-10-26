@@ -127,6 +127,9 @@ impl_dyn_driver!(openfader_proto_wing::WingDriver {
         openfader_proto_wing::ROUTING_GROUPS.iter().filter(|(key, _, _)| *key != "OFF")
             .map(|&(key, label, count)| RoutingGroup { key, label, count: count as usize }).collect()
     }
+    fn canonical_routing_target<'a>(&self, target: &'a str) -> &'a str {
+        if target.is_empty() { "main" } else { target }
+    }
     fn routing_control(&self, _target: &str) -> &str { "source_select" }
     fn routing_targets(&self) -> Vec<RoutingTarget> {
         vec![RoutingTarget { key: "main", label: "Main input", clearable: true }, RoutingTarget { key: "alt", label: "Alternate input", clearable: true }]

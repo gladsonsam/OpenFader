@@ -79,7 +79,7 @@ impl Engine {
             .routing_planes()
             .into_iter()
             .flat_map(|p| p.destinations)
-            .find(|d| d.strip == strip && d.target == target)
+            .find(|d| d.strip == strip && d.target == drv.canonical_routing_target(target))
             .ok_or_else(|| {
                 anyhow::anyhow!("legacy patch requires advertised input strips and targets")
             })?;
