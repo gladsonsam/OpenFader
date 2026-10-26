@@ -568,23 +568,23 @@ fn decode_dynamics_meters(push: &PushEvent) -> Option<Vec<openfader_core::Dynami
 }
 
 /// Shared RTA selector (type-2) address: the desk's RTA source selector.
-/// Rig r12 accepted: the initial bulk carries `5000` (Return 1–2) and
-/// `4006` was verified live as CH7. No other selector ids are known —
-/// unknown values report unavailable, never guessed. No selector writes in
-/// this stage: the source is passive (the MF app selects; we only follow).
+/// The input bank uses 4000 + zero-based channel index: live Master Fader
+/// probes verified CH1, CH3, CH7 and the CH32 endpoint. Return 1–2 uses
+/// 5000. Other source families remain unavailable until identified.
+/// The source is passive (the MF app selects; we only follow).
 const RTA_SELECTOR_ADDR: u32 = 22;
 /// Confirmed shared source: Return 1–2 (global, `strip: None`).
 const RTA_SOURCE_RETURN_12: u32 = 5000;
-/// Verified shared source: CH7 (attributed to [`StripId`]`(6)`).
-const RTA_SOURCE_CH7: u32 = 4006;
+/// Shared input-source bank, attributed to the corresponding input strip.
+const RTA_SOURCE_INPUT_FIRST: u32 = 4000;
+const RTA_SOURCE_INPUT_LAST: u32 = 4031;
 
 /// RTA meter-frame geometry: the DL32S-only 91-entry layout (see
 /// [`openfader_transport::mackie::dl32s_meter_addresses`]) pushes
 /// `start == 1` blocks of exactly 91 BE-f32 dB words, with the 31 RTA bins
-/// at indices 60..90. The first 32 input words are unchanged, so
-/// [`decode_input_meters`] keeps accepting both the old 60-word and the new
-/// 91-word frames. RTA decodes ONLY the exact 91-word shape — a 60-word
-/// frame never yields bins.
+/// at indices 60..90. The expanded 283-word dynamics layout preserves
+/// this prefix. RTA accepts these two exact shapes; a legacy 60-word
+/// input-meter frame never yields bins.
 const RTA_FRAME_LEN: usize = 91;
 const RTA_BIN_OFFSET: usize = 60;
 const RTA_BIN_COUNT: usize = 31;
@@ -2666,11 +2666,11 @@ impl MixerDriver for Dl32sDriver {
             .map(|m| m.dynamics.clone()).unwrap_or_default())
     }
 
-    /// Passive shared RTA (Return 1–2): the desk's MF-selected source,
+    /// Passive shared RTA: the desk's MF-selected source,
     /// followed read-only — no acquisition, no restore writes. Returns the
     /// global (`strip: None`) frame for the confirmed selector 5000
-    /// (`DL32S Return 1–2 (shared)` / `shared`); the verified 4006 selector
-    /// attributes to [`StripId`]`(6)` (`DL32S CH7 (shared)` / `shared`).
+    /// (`DL32S Return 1–2 (shared)` / `shared`); input selectors 4000–4031
+    /// attribute to the corresponding zero-based input [`StripId`].
     /// Unknown selectors (and the unsettled/stale windows) report empty —
     /// unavailable, never fabricated. Source changes clear the cache, bump
     /// the epoch (monotonic across source/generation changes) and withhold
@@ -2687,7 +2687,9 @@ impl MixerDriver for Dl32sDriver {
                     return Vec::new();
                 }
                 match s.selector {
-                    Some(v) if v == RTA_SOURCE_RETURN_12 || v == RTA_SOURCE_CH7 => {}
+                    Some(v)
+                        if v == RTA_SOURCE_RETURN_12
+                            || (RTA_SOURCE_INPUT_FIRST..=RTA_SOURCE_INPUT_LAST).contains(&v) => {}
                     _ => return Vec::new(),
                 }
                 if s.switched_at.is_some_and(|t| t.elapsed() < RTA_SETTLE) {
@@ -2713,9 +2715,9 @@ impl MixerDriver for Dl32sDriver {
                 "DL32S Return 1–2 (shared)".to_string(),
                 "shared".to_string(),
             ),
-            Some(v) if v == RTA_SOURCE_CH7 => (
-                Some(StripId(6)),
-                "DL32S CH7 (shared)".to_string(),
+            Some(v) if (RTA_SOURCE_INPUT_FIRST..=RTA_SOURCE_INPUT_LAST).contains(&v) => (
+                Some(StripId((v - RTA_SOURCE_INPUT_FIRST) as u16)),
+                format!("DL32S CH{} (shared)", v - RTA_SOURCE_INPUT_FIRST + 1),
                 "shared".to_string(),
             ),
             _ => return Vec::new(),
