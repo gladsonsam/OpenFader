@@ -1,6 +1,11 @@
 /// Device-local UI limits. These supplement engine policy; they are not remote
 /// authentication. Keys describe control families/targets, never driver names.
 enum AccessFamily {
+  inputRouting(
+    'Input routing',
+    'Advertised input patches, source selection and source mode controls',
+  ),
+  micPreamps('Mic preamps', 'Advertised routed input gain and 48V controls'),
   inputDsp(
     'Input DSP',
     'Input EQ, filters, gate and compressor edits and recalls',

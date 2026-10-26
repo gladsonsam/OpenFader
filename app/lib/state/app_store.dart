@@ -48,6 +48,7 @@ part 'app_store_poll.dart';
 part 'app_store_meters.dart';
 part 'app_store_strips.dart';
 part 'app_store_channel.dart';
+part 'app_store_input.dart';
 part 'app_store_destinations.dart';
 part 'app_store_outputs.dart';
 part 'app_store_output_presets.dart';
@@ -118,6 +119,7 @@ class AppStore extends _AppStoreContext
         _AppStoreMeters,
         _AppStoreStrips,
         _AppStoreChannel,
+        _AppStoreInput,
         _AppStoreDestinations,
         _AppStoreOutputs,
         _AppStoreOutputPresets
