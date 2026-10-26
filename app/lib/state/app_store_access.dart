@@ -330,6 +330,7 @@ mixin _AppStoreAccess on _AppStoreContext {
     _interruptDestinationEdits(
       'Local access limits changed. Reopen this control.',
     );
+    _interruptAssignmentEdit('Local access limits changed. Reopen Quick Assign.');
     _failNameEdits('Local access limits changed. Reopen the name editor.');
     _invalidateDerived();
     _syncControlNotes();
