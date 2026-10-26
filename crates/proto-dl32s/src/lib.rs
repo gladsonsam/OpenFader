@@ -31,16 +31,49 @@ const INPUT_SOLO_FIRST_ADDRESS: u32 = 23;
 // Pre Fader1 -> Pre DSP2 and restored against the complete bank. Other
 // tap values and the separate Use LR Mute flag remain unverified.
 const AUX_SEND_SOURCE_ADDRESSES: [u32; 8] = [4434, 4524, 4614, 4704, 4794, 4884, 4974, 5064];
-// Active FX2 Tape Echo only. Delay address independently proven by
-// 859ms ->860ms ->859ms; range documented in manufacturer mixer software5.1 guide p167.
-const FX2_ALGORITHM_ADDRESS: u32 = 3660;
-const FX2_TAPE_ECHO_ALGORITHM: u32 = 12;
-const FX2_DELAY_ADDRESS: u32 = 3662;
+// Each listed parameter address was independently changed, observed in
+// manufacturer mixer software and restored against the complete mixer bank. Algorithm
+// guards intentionally cover only the observed slot/algorithm pairs.
+// Engineering domains: manufacturer mixer software 5.1 reference guide pp165,167.
+#[derive(Debug)]
+struct FxParameterSpec {
+    slot: u16,
+    algorithm_address: u32,
+    algorithm: u32,
+    algorithm_name: &'static str,
+    address: u32,
+    id: &'static str,
+    label: &'static str,
+    min: f32,
+    max: f32,
+    unit: &'static str,
+    decimals: u8,
+}
 
-fn fx2_delay_value(raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
-    let value = f32::from_bits(raw);
-    (value.is_finite() && (10.0..=1600.0).contains(&value))
-        .then_some(openfader_core::destinations::DestinationValue { value, verified: true })
+const FX_PARAMETERS: &[FxParameterSpec] = &[
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3631, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
+    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
+        address: 3662, id: "time", label: "Delay time", min: 10.0, max: 1600.0, unit: "ms", decimals: 0 },
+    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
+        address: 3664, id: "feedback", label: "Feedback", min: 0.0, max: 100.0, unit: "%", decimals: 0 },
+    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
+        address: 3665, id: "hf_damping", label: "HF Damping", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3693, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3724, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
+];
+
+impl FxParameterSpec {
+    fn allows(&self, value: f32) -> bool {
+        value.is_finite() && (self.min..=self.max).contains(&value)
+    }
+
+    fn read_value(&self, raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
+        let value = f32::from_bits(raw);
+        self.allows(value).then_some(openfader_core::destinations::DestinationValue { value, verified: true })
+    }
 }
 
 fn aux_tap_value(raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
@@ -619,6 +652,13 @@ struct AuxTapCache {
     revision: u64,
 }
 
+#[derive(Debug, Default)]
+struct FxParameterCache {
+    algorithm: Option<u32>,
+    current: Option<openfader_core::destinations::DestinationValue>,
+    revision: u64,
+}
+
 /// Private generation-tagged wrapper around the public
 /// [`openfader_core::NativeSnapshots`] view: `generation` names the
 /// connection that owns `view` (same pattern as [`MeterState`] /
@@ -632,9 +672,7 @@ struct NativeCache {
     view: openfader_core::NativeSnapshots,
     parameter_labels: std::collections::BTreeMap<&'static str, String>,
     aux_taps: std::collections::BTreeMap<u16, AuxTapCache>,
-    fx2_algorithm: Option<u32>,
-    fx2_delay: Option<openfader_core::destinations::DestinationValue>,
-    fx2_revision: u64,
+    fx_parameters: std::collections::BTreeMap<u32, FxParameterCache>,
 }
 
 /// Native VCA1..6 names occupy slots58..63; View A..F uses70..75.
@@ -1650,22 +1688,24 @@ impl MixerDriver for Dl32sDriver {
                 ], range: None, current: tap.and_then(|tap| tap.current.clone()),
             }
         }).collect();
-        if let Some(native) = native.as_ref().filter(|n| n.fx2_algorithm == Some(FX2_TAPE_ECHO_ALGORITHM)) {
+        for spec in FX_PARAMETERS {
+            let Some(parameter) = native.as_ref().and_then(|n| n.fx_parameters.get(&spec.address))
+                .filter(|parameter| parameter.algorithm == Some(spec.algorithm)) else { continue; };
             controls.push(DestinationControl {
-                target: "fx/02".to_string(), target_label: "FX 2".to_string(),
-                target_name: Some("Tape Echo Delay".to_string()), send_slot: None,
-                surface: "fx".to_string(), id: "time".to_string(), label: "Delay time".to_string(),
-                description: "Changes the delay time for every route through FX 2. Mute, returns and routing are separate controls.".to_string(),
-                choices: Vec::new(), range: Some(DestinationRange { min: 10.0, max: 1600.0, unit: "ms".to_string(), decimals: 0 }),
-                current: native.fx2_delay.clone(),
+                target: format!("fx/{:02}", spec.slot), target_label: format!("FX {}", spec.slot),
+                target_name: Some(spec.algorithm_name.to_string()), send_slot: None,
+                surface: "fx".to_string(), id: spec.id.to_string(), label: spec.label.to_string(),
+                description: format!("Changes {} for every route through FX {}. Mute, returns and routing are separate controls.", spec.label.to_lowercase(), spec.slot),
+                choices: Vec::new(), range: Some(DestinationRange { min: spec.min, max: spec.max, unit: spec.unit.to_string(), decimals: spec.decimals }),
+                current: parameter.current.clone(),
             });
         }
         controls
     }
 
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
-        if target == "fx/02" && control == "time" {
-            anyhow::ensure!(value.is_finite() && expected.is_finite() && (10.0..=1600.0).contains(&value) && (10.0..=1600.0).contains(&expected), "dl32s: delay time outside documented range");
+        if let Some(spec) = FX_PARAMETERS.iter().find(|spec| target == format!("fx/{:02}", spec.slot) && control == spec.id) {
+            anyhow::ensure!(spec.allows(value) && spec.allows(expected), "dl32s: FX parameter outside documented range");
             let guard = self.session().await?;
             let session = guard.as_ref().expect("checked above");
             anyhow::ensure!(session.is_alive(), "dl32s: FX session unavailable");
@@ -1673,20 +1713,22 @@ impl MixerDriver for Dl32sDriver {
             let revision = {
                 let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("FX cache unavailable"))?;
                 anyhow::ensure!(native.generation == generation && native.view.connected, "FX connection changed.");
-                anyhow::ensure!(native.fx2_algorithm == Some(FX2_TAPE_ECHO_ALGORITHM) && session.cached_verified(FX2_ALGORITHM_ADDRESS) == Some(FX2_TAPE_ECHO_ALGORITHM), "FX algorithm changed; reopen the control.");
-                anyhow::ensure!(native.fx2_delay.as_ref().is_some_and(|current| current.value == expected), "FX value changed; reopen the control.");
-                if let Some(raw) = session.cached_verified(FX2_DELAY_ADDRESS) {
+                let parameter = native.fx_parameters.get_mut(&spec.address).ok_or_else(|| anyhow::anyhow!("FX parameter unavailable."))?;
+                anyhow::ensure!(parameter.algorithm == Some(spec.algorithm) && session.cached_verified(spec.algorithm_address) == Some(spec.algorithm), "FX algorithm changed; reopen the control.");
+                anyhow::ensure!(parameter.current.as_ref().is_some_and(|current| current.value == expected), "FX value changed; reopen the control.");
+                if let Some(raw) = session.cached_verified(spec.address) {
                     anyhow::ensure!(raw == expected.to_bits(), "FX value changed; reopen the control.");
                 }
-                native.fx2_delay = None;
-                native.fx2_revision
+                parameter.current = None;
+                parameter.revision
             };
-            session.write_float(FX2_DELAY_ADDRESS, value).await?;
+            session.write_float(spec.address, value).await?;
             let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("FX cache unavailable"))?;
             anyhow::ensure!(self.generation.load(Ordering::Acquire) == generation && native.generation == generation && native.view.connected, "FX connection changed while writing; result uncertain.");
-            anyhow::ensure!(native.fx2_algorithm == Some(FX2_TAPE_ECHO_ALGORITHM), "FX algorithm changed while writing; result uncertain.");
-            if native.fx2_revision == revision {
-                native.fx2_delay = Some(openfader_core::destinations::DestinationValue { value, verified: false });
+            let parameter = native.fx_parameters.get_mut(&spec.address).ok_or_else(|| anyhow::anyhow!("FX parameter unavailable."))?;
+            anyhow::ensure!(parameter.algorithm == Some(spec.algorithm), "FX algorithm changed while writing; result uncertain.");
+            if parameter.revision == revision {
+                parameter.current = Some(openfader_core::destinations::DestinationValue { value, verified: false });
             }
             return Ok(());
         }
@@ -1918,10 +1960,15 @@ impl MixerDriver for Dl32sDriver {
                     revision: 0,
                 })
             }).collect();
-            n.fx2_algorithm = session.cached_verified(FX2_ALGORITHM_ADDRESS);
-            n.fx2_delay = (n.fx2_algorithm == Some(FX2_TAPE_ECHO_ALGORITHM))
-                .then(|| session.cached_verified(FX2_DELAY_ADDRESS).and_then(fx2_delay_value)).flatten();
-            n.fx2_revision = 0;
+            n.fx_parameters = FX_PARAMETERS.iter().map(|spec| {
+                let algorithm = session.cached_verified(spec.algorithm_address);
+                (spec.address, FxParameterCache {
+                    algorithm,
+                    current: (algorithm == Some(spec.algorithm))
+                        .then(|| session.cached_verified(spec.address).and_then(|raw| spec.read_value(raw))).flatten(),
+                    revision: 0,
+                })
+            }).collect();
             n.parameter_labels = (58..=75).filter_map(|slot| {
                 let id = assignment_name_parameter(slot)?;
                 let name = session.name_slot_verified(slot)?;
@@ -2003,17 +2050,20 @@ impl MixerDriver for Dl32sDriver {
                                             }
                                         }
                                         let raw_at = |address: u32| address.checked_sub(*start).and_then(|offset| raws.get(offset as usize)).copied();
-                                        if let Some(algorithm) = raw_at(FX2_ALGORITHM_ADDRESS) {
-                                            if v.fx2_algorithm != Some(algorithm) {
-                                                v.fx2_algorithm = Some(algorithm);
-                                                v.fx2_delay = None;
-                                                v.fx2_revision = v.fx2_revision.wrapping_add(1);
+                                        for spec in FX_PARAMETERS {
+                                            let Some(parameter) = v.fx_parameters.get_mut(&spec.address) else { continue; };
+                                            if let Some(algorithm) = raw_at(spec.algorithm_address) {
+                                                if parameter.algorithm != Some(algorithm) {
+                                                    parameter.algorithm = Some(algorithm);
+                                                    parameter.current = None;
+                                                    parameter.revision = parameter.revision.wrapping_add(1);
+                                                }
                                             }
-                                        }
-                                        if let Some(raw) = raw_at(FX2_DELAY_ADDRESS) {
-                                            v.fx2_revision = v.fx2_revision.wrapping_add(1);
-                                            v.fx2_delay = (v.fx2_algorithm == Some(FX2_TAPE_ECHO_ALGORITHM))
-                                                .then(|| fx2_delay_value(raw)).flatten();
+                                            if let Some(raw) = raw_at(spec.address) {
+                                                parameter.revision = parameter.revision.wrapping_add(1);
+                                                parameter.current = (parameter.algorithm == Some(spec.algorithm))
+                                                    .then(|| spec.read_value(raw)).flatten();
+                                            }
                                         }
                                     }
                                 }
