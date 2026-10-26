@@ -41,7 +41,8 @@ mixin _AppStoreAssignments on _AppStoreContext {
       ..sort();
     return [
       for (final id in fields)
-        if (_assignmentParamApplies(target, id))
+        if (_assignmentParamApplies(target, id) &&
+            assignmentForChannel(target, id) != null)
           ChannelAssignmentChoice(
             id,
             engine.parameterMetadata[id]?['label'] as String? ?? id,
@@ -72,6 +73,9 @@ mixin _AppStoreAssignments on _AppStoreContext {
   }
 
   String? _assignmentUnavailable(ChannelNameTarget target, String id) {
+    if (target.accessEpoch != controlAccessEpoch) {
+      return 'Local access limits changed. Reopen Quick Assign.';
+    }
     if (!engine.connected ||
         engine.session != target.session ||
         !engine.strips.any(
@@ -114,7 +118,8 @@ mixin _AppStoreAssignments on _AppStoreContext {
       if (engine.locks.containsKey(ch)) {
         return 'This channel or its stereo partner is locked.';
       }
-      if (_presetEditingBlocked(ch, id) ||
+      if (_maps.pending.containsKey(ps.pendingKey(ch, 'link')) ||
+          _presetEditingBlocked(ch, id) ||
           _maps.pending.containsKey(ps.pendingKey(ch, id))) {
         return 'A change to this setting is already pending.';
       }
@@ -178,7 +183,14 @@ mixin _AppStoreAssignments on _AppStoreContext {
     // Immediate dispatch, with no coalescer or selection lookup after an await.
     unawaited(
       Future<void>.sync(() => _command(_clientId, jsonEncode(command))).then(
-        (_) {},
+        (_) {
+          if (!identical(_assignmentEdit, edit)) return;
+          edit.sent = true;
+          _pollAssignmentEdit(_nowMs());
+          if (identical(_assignmentEdit, edit) && edit.observed) {
+            _finishAssignmentEdit(null);
+          }
+        },
         onError: (Object error) {
           if (identical(_assignmentEdit, edit)) {
             _interruptAssignmentEdit(
@@ -194,11 +206,11 @@ mixin _AppStoreAssignments on _AppStoreContext {
   @override
   void _interruptAssignmentEdit(String error) => _finishAssignmentEdit(error);
 
-  void _finishAssignmentEdit(String? error, {bool verified = false}) {
+  void _finishAssignmentEdit(String? error) {
     final edit = _assignmentEdit;
     _assignmentEdit = null;
     if (edit == null) return;
-    edit.done.complete(ChannelAssignmentResult(error, verified: verified));
+    edit.done.complete(ChannelAssignmentResult(error));
     notifyListeners();
   }
 
@@ -210,7 +222,7 @@ mixin _AppStoreAssignments on _AppStoreContext {
     if (error != null || now >= edit.deadline) {
       _interruptAssignmentEdit(
         error ??
-            'No matching assignment receipt arrived. The setting may have changed.',
+            'No matching assignment state arrived. The setting may have changed.',
       );
     }
   }
@@ -223,7 +235,8 @@ mixin _AppStoreAssignments on _AppStoreContext {
     final ch = event['ch'];
     if (event['type'] == 'error' && (ch == null || ch == edit.target.channel)) {
       _interruptAssignmentEdit(
-        'Backend rejected assignment: ${event['message'] ?? 'Unknown error'}',
+        'Backend reported an error: ${event['message'] ?? 'Unknown error'}. '
+        'The assignment result is uncertain.',
       );
       return;
     }
@@ -243,8 +256,10 @@ mixin _AppStoreAssignments on _AppStoreContext {
             event['group'] == int.parse(group[2]!) &&
             event['member'] == edit.value;
     if (matches) {
-      _finishAssignmentEdit(null,
-          verified: group == null && event['authority'] == 'verified');
+      // Events have no request ID: even own-writer verified state can be an
+      // earlier ABA edit. Report observation only; let dispatch errors win.
+      edit.observed = true;
+      if (edit.sent) _finishAssignmentEdit(null);
     }
   }
 }
@@ -254,6 +269,7 @@ class _ChannelAssignmentEdit {
   final String id;
   final bool value;
   final double deadline;
+  bool sent = false, observed = false;
   final done = Completer<ChannelAssignmentResult>();
   _ChannelAssignmentEdit(this.target, this.id, this.value, this.deadline);
 }

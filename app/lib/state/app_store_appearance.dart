@@ -47,7 +47,8 @@ mixin _AppStoreAppearance on _AppStoreContext {
       if (strip.ch != ch) continue;
       final rawName = ps.optimisticValue(_maps, ch, 'name');
       final target = ChannelNameTarget(
-          engine.session, ch, strip.key, rawName is String ? rawName : null);
+          engine.session, ch, strip.key, rawName is String ? rawName : null,
+          accessEpoch: controlAccessEpoch);
       return target;
     }
     return null;
