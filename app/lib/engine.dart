@@ -570,6 +570,7 @@ class EngineState {
   List<Map<String, dynamic>> topology = [];
   Map<String, dynamic> routingCaps = {};
   List<Map<String, dynamic>> fxTypes = [];
+  bool fxStateControls = false;
   String linkIp = '';
   String model = '';
   String firmware = '';
@@ -695,6 +696,7 @@ class EngineState {
     topology = [];
     routingCaps = {};
     fxTypes = [];
+    fxStateControls = false;
     meters = [];
     params.clear();
     taps.clear();
@@ -874,6 +876,8 @@ class EngineState {
             ? e['routing'] as Map<String, dynamic>
             : {};
         final types = e['fx'] is Map ? (e['fx'] as Map)['types'] : null;
+        fxStateControls =
+            e['fx'] is Map && (e['fx'] as Map)['state_controls'] == true;
         fxTypes = [
           for (final type in types is List ? types : const [])
             if (type is Map<String, dynamic>) type

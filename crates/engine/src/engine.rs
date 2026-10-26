@@ -3386,6 +3386,7 @@ impl Engine {
         crate::protocol::FxCaps {
             slots: drv.fx_slot_count(),
             types,
+            state_controls: drv.fx_flavor() == FxFlavor::Design,
         }
     }
 

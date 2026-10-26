@@ -1650,6 +1650,9 @@ class _FxStore extends _StoreBase implements FxStore {
   final Map<int, ValueNotifier<double>> _meters = {};
 
   @override
+  bool get stateControlsSupported => engine.fxStateControls;
+
+  @override
   List<DestinationControlVm> get destinationControls => List.unmodifiable(
       engine.destinationControls.where((control) => control.surface == 'fx'));
   @override
@@ -1827,14 +1830,14 @@ class _FxStore extends _StoreBase implements FxStore {
   @override
   void setOn(bool on) {
     final c = _cur;
-    if (c == null) return;
+    if (c == null || !stateControlsSupported) return;
     send(Cmds.fxOn(c.slot, on));
   }
 
   @override
   void setBypass(bool bypass) {
     final c = _cur;
-    if (c == null) return;
+    if (c == null || !stateControlsSupported) return;
     send(Cmds.fxBypass(c.slot, bypass));
   }
 
