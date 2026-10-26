@@ -48,6 +48,7 @@ impl Engine {
         let drv = self.drv(driver);
         let (mg_assign, sub_assign) = drv.group_assign_caps();
         crate::protocol::GroupsCaps {
+            clear_solo_scope: drv.clear_solo_scope().map(str::to_string),
             buses: drv.bus_count(),
             subgroups: drv.subgroup_count(),
             mute_groups: drv.mute_group_count(),

@@ -596,6 +596,7 @@ class EngineState {
   Map<String, dynamic> routingCaps = {};
   List<Map<String, dynamic>> fxTypes = [];
   bool fxStateControls = false;
+  String? clearSoloScope;
   String linkIp = '';
   String model = '';
   String firmware = '';
@@ -723,6 +724,7 @@ class EngineState {
     routingCaps = {};
     fxTypes = [];
     fxStateControls = false;
+    clearSoloScope = null;
     meters = [];
     outputMeterTargets = const [];
     _outputTelemetry.reset();
@@ -902,6 +904,9 @@ class EngineState {
             if (tap is String) tap,
         };
         final groups = e['groups'];
+        clearSoloScope = groups is Map && groups['clear_solo_scope'] is String
+            ? groups['clear_solo_scope'] as String
+            : null;
         muteGroupCount =
             groups is Map ? (groups['mute_groups'] as num?)?.toInt() ?? 0 : 0;
         subgroupCount = groups is Map

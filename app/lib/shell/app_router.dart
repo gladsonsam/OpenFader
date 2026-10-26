@@ -42,6 +42,8 @@ import 'scenes_store.dart';
 import 'settings_store.dart';
 import 'fx_store.dart';
 import 'debug_store.dart';
+import 'quick_access_store.dart';
+import '../screens/quick_access.dart';
 
 enum AppTab {
   mixer('Mixer'),
@@ -106,6 +108,7 @@ class _AppShellState extends State<AppShell> {
   late final ShellSettingsStore _settings;
   late final ShellFxStore _fx;
   late final ShellDebugStore _debug;
+  late final ShellQuickAccessStore _quickAccess;
 
   @override
   void initState() {
@@ -121,6 +124,7 @@ class _AppShellState extends State<AppShell> {
     _scenes = ShellScenesStore(widget.store);
     _settings = ShellSettingsStore(widget.store);
     _fx = ShellFxStore(widget.store);
+    _quickAccess = ShellQuickAccessStore(widget.store, _fx);
     _debug = ShellDebugStore(widget.store);
     _applyMeterTuning();
     PrefsService.instance.addListener(_onPrefs);
@@ -189,6 +193,7 @@ class _AppShellState extends State<AppShell> {
     _routing.dispose();
     _scenes.dispose();
     _settings.dispose();
+    _quickAccess.dispose();
     _fx.dispose();
     _debug.dispose();
     super.dispose();
@@ -260,7 +265,7 @@ class _AppShellState extends State<AppShell> {
         final narrow = MediaQuery.sizeOf(context).width < 720;
         if (_tab == AppTab.mixer &&
             (connected || sim || store.engine.linkState == 'offline')) {
-          return _mixerPage();
+          return _withQuickAccess(_mixerPage());
         }
         // Settings and channel views carry their own top bars, so the shared header steps aside.
 
@@ -339,11 +344,40 @@ class _AppShellState extends State<AppShell> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [Expanded(child: page), rail],
                   );
-        return U4Shell(
-            header: header, bottomSafeArea: !(isChan && narrow), child: body);
+        return _withQuickAccess(U4Shell(
+            header: header, bottomSafeArea: !(isChan && narrow), child: body));
       },
     );
   }
+
+  Widget _withQuickAccess(Widget child) => Stack(children: [
+        Positioned.fill(child: child),
+        Positioned(
+          right: 12,
+          bottom: 12,
+          child: SafeArea(
+            child: FloatingActionButton.small(
+              heroTag: 'quick-access',
+              tooltip: 'Quick Access',
+              backgroundColor: ConsolePalette.of(context).control,
+              foregroundColor: ConsolePalette.of(context).cyan,
+              onPressed: () => showModalBottomSheet<void>(
+                context: context,
+                isScrollControlled: true,
+                useSafeArea: true,
+                builder: (context) => ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+                    maxWidth: 640,
+                  ),
+                  child: SafeArea(child: QuickAccessPanel(store: _quickAccess)),
+                ),
+              ),
+              child: const Icon(Icons.bolt),
+            ),
+          ),
+        ),
+      ]);
 
   void _channelTool(ChannelTool t) {
     switch (t) {

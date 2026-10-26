@@ -196,6 +196,7 @@ fn examples() -> Vec<(String, Value)> {
                     supported: true,
                 },
                 groups: openfader_engine::protocol::GroupsCaps {
+                    clear_solo_scope: None,
                     buses: 8,
                     subgroups: 6,
                     mute_groups: 6,
