@@ -133,15 +133,28 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3734, id: "mod_rate", label: "Mod Rate", min: 0.0, max: 20.0, unit: "Hz", decimals: 2 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
         address: 3735, id: "lf_damping", label: "LF Damping", min: 20.0, max: 20000.0, unit: "Hz", decimals: 1 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3755, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
+        address: 3827, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3899, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3971, id: "mute", label: "Mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
 ];
 
 impl FxParameterSpec {
     fn allows(&self, value: f32) -> bool {
         value.is_finite() && (self.min..=self.max).contains(&value)
+            && (self.id != "mute" || matches!(value, 0.0 | 1.0))
+    }
+
+    fn raw_value(&self, value: f32) -> u32 {
+        if self.id == "mute" { value as u32 } else { value.to_bits() }
     }
 
     fn read_value(&self, raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
-        let value = f32::from_bits(raw);
+        let value = if self.id == "mute" { raw as f32 } else { f32::from_bits(raw) };
         self.allows(value).then_some(openfader_core::destinations::DestinationValue { value, verified: true })
     }
 }
@@ -1777,8 +1790,16 @@ impl MixerDriver for Dl32sDriver {
                 surface: "fx".to_string(), id: spec.id.to_string(), label: spec.label.to_string(),
                 // Native Tape Echo tapping changes only this delay-time word.
                 tap_tempo: spec.slot == 2 && spec.algorithm == 12 && spec.id == "time",
-                description: format!("Changes {} for every route through FX {}. Mute, returns and routing are separate controls.", spec.label.to_lowercase(), spec.slot),
-                choices: Vec::new(), range: Some(DestinationRange { min: spec.min, max: spec.max, unit: spec.unit.to_string(), decimals: spec.decimals }),
+                description: if spec.id == "mute" {
+                    format!("Changes the mute state of FX {}.", spec.slot)
+                } else {
+                    format!("Changes {} for every route through FX {}. Mute, returns and routing are separate controls.", spec.label.to_lowercase(), spec.slot)
+                },
+                choices: if spec.id == "mute" { vec![
+                    DestinationChoice { value: 0.0, label: "Unmuted".to_string() },
+                    DestinationChoice { value: 1.0, label: "Muted".to_string() },
+                ] } else { Vec::new() },
+                range: (spec.id != "mute").then(|| DestinationRange { min: spec.min, max: spec.max, unit: spec.unit.to_string(), decimals: spec.decimals }),
                 current: parameter.current.clone(),
             });
         }
@@ -1799,12 +1820,12 @@ impl MixerDriver for Dl32sDriver {
                 anyhow::ensure!(parameter.algorithm == Some(spec.algorithm) && session.cached_verified(spec.algorithm_address) == Some(spec.algorithm), "FX algorithm changed; reopen the control.");
                 anyhow::ensure!(parameter.current.as_ref().is_some_and(|current| current.value == expected), "FX value changed; reopen the control.");
                 if let Some(raw) = session.cached_verified(spec.address) {
-                    anyhow::ensure!(raw == expected.to_bits(), "FX value changed; reopen the control.");
+                    anyhow::ensure!(raw == spec.raw_value(expected), "FX value changed; reopen the control.");
                 }
                 parameter.current = None;
                 parameter.revision
             };
-            session.write_float(spec.address, value).await?;
+            session.write_int(spec.address, spec.raw_value(value), VALUE_TYPE_PARAM).await?;
             let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("FX cache unavailable"))?;
             anyhow::ensure!(self.generation.load(Ordering::Acquire) == generation && native.generation == generation && native.view.connected, "FX connection changed while writing; result uncertain.");
             let parameter = native.fx_parameters.get_mut(&spec.address).ok_or_else(|| anyhow::anyhow!("FX parameter unavailable."))?;
