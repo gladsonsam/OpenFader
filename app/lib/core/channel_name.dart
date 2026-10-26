@@ -73,7 +73,27 @@ List<ChannelColorChoice> channelColorChoices(Map<String, dynamic>? metadata) {
   ];
 }
 
+/// A supported membership action; IDs are supplied by the store, not the UI.
+class ChannelAssignmentChoice {
+  final String id, label;
+  const ChannelAssignmentChoice(this.id, this.label);
+}
+
+/// Only a matching verified parameter event establishes independent readback.
+class ChannelAssignmentResult {
+  final String? error;
+  final bool verified;
+  const ChannelAssignmentResult(this.error, {this.verified = false});
+}
+
 abstract class ChannelNameStore implements Listenable {
+  List<ChannelAssignmentChoice> assignmentsForChannel(ChannelNameTarget target);
+  bool? assignmentForChannel(ChannelNameTarget target, String id);
+  String? assignmentEditError(ChannelNameTarget target, String id);
+
+  /// Group membership echoes establish acceptance only.
+  Future<ChannelAssignmentResult> assignChannel(
+      ChannelNameTarget target, String id, bool value, {required bool expected});
   ChannelNameTarget? captureNameTarget([int? channel]);
   String? nameEditError(ChannelNameTarget target);
 
