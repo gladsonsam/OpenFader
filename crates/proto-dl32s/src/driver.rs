@@ -506,6 +506,8 @@ impl MixerDriver for Dl32sDriver {
     /// stream goes quiet instead of frozen. No polling here: pushes arrive
     /// on the existing broadcast feed, and the shell's 80 ms ticker stays
     /// the only meter clock.
+    fn output_meter_targets(&self) -> Vec<String> { crate::output_meters::targets() }
+    fn poll_output_meters(&self) -> Option<openfader_core::OutputMeterSnapshot> { Some(self.telemetry_poll_outputs()) }
     fn poll_meters(&self) -> MeterFrame {
         self.telemetry_poll_meters()
     }

@@ -788,6 +788,8 @@ pub enum Event {
         driver: String,
         strips: Vec<StateStrip>,
         main_fader: Option<f32>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        output_meter_targets: Vec<String>,
         #[serde(skip_serializing_if = "Option::is_none", default)]
         by: Option<String>,
     },
@@ -844,6 +846,12 @@ pub enum Event {
         source: String,
         position: String,
         epoch: u64,
+    },
+    OutputMeters {
+        epoch: u64,
+        source_generation: u64,
+        age_ms: u64,
+        frames: Vec<serde_json::Value>,
     },
     DynamicsMeters { frames: Vec<serde_json::Value> },
     Gr {
@@ -1154,6 +1162,7 @@ impl Event {
             Event::Spectrum { .. } => "spectrum",
             Event::AudioSpectrum { .. } => "audio_spectrum",
             Event::Gr { .. } => "gr",
+            Event::OutputMeters { .. } => "output_meters",
             Event::DynamicsMeters { .. } => "dynamics_meters",
             Event::Caps { .. } => "caps",
             Event::Params { .. } => "params",

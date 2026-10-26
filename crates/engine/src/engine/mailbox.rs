@@ -181,6 +181,7 @@ pub(super) enum RtSlot {
     Audio(u16),
     Gr(u16),
     Dynamics,
+    Outputs,
 }
 
 /// Classify a frame: `Some` key for supersede-by-newer meter-class frames
@@ -195,6 +196,7 @@ pub(super) fn rt_slot_key(event: &Event) -> Option<RtSlot> {
         Event::Spectrum { ch, .. } => Some(RtSlot::Spectrum(*ch)),
         Event::AudioSpectrum { ch, .. } => Some(RtSlot::Audio(ch.unwrap_or(u16::MAX))),
         Event::Gr { ch, .. } => Some(RtSlot::Gr(*ch)),
+        Event::OutputMeters { .. } => Some(RtSlot::Outputs),
         Event::DynamicsMeters { .. } => Some(RtSlot::Dynamics),
         _ => None,
     }
@@ -216,6 +218,7 @@ pub(super) struct RtSlots {
     pub(super) inflight: bool,
     pub(super) meters: Option<SharedEvent>,
     pub(super) dynamics: Option<SharedEvent>,
+    pub(super) outputs: Option<SharedEvent>,
     pub(super) taps: HashMap<String, SharedEvent>,
     pub(super) spectrum: HashMap<u16, SharedEvent>,
     pub(super) audio: HashMap<u16, SharedEvent>,
@@ -227,6 +230,7 @@ impl RtSlots {
     /// frame is superseded and dropped).
     pub(super) fn store(&mut self, key: RtSlot, frame: SharedEvent) {
         match key {
+            RtSlot::Outputs => { self.outputs = Some(frame); }
             RtSlot::Dynamics => {
                 self.dynamics = Some(frame);
             }
@@ -255,6 +259,7 @@ impl RtSlots {
         if let Some(frame) = self.meters.take() {
             out.push(frame);
         }
+        if let Some(frame) = self.outputs.take() { out.push(frame); }
         if let Some(frame) = self.dynamics.take() {
             out.push(frame);
         }
@@ -277,6 +282,7 @@ impl RtSlots {
     pub(super) fn occupancy(&self) -> usize {
         usize::from(self.meters.is_some())
             + usize::from(self.dynamics.is_some())
+            + usize::from(self.outputs.is_some())
             + self.taps.len()
             + self.spectrum.len()
             + self.audio.len()

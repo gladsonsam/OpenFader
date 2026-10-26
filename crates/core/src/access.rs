@@ -407,6 +407,8 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.subscribe_meters().await
     }
 
+    fn output_meter_targets(&self) -> Vec<String> { self.inner.output_meter_targets() }
+    fn poll_output_meters(&self) -> Option<crate::OutputMeterSnapshot> { self.inner.poll_output_meters() }
     fn poll_meters(&self) -> crate::MeterFrame {
         self.inner.poll_meters()
     }

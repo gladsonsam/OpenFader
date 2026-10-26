@@ -13,6 +13,8 @@ pub mod access;
 pub mod destinations;
 pub mod fx;
 pub mod params;
+pub mod output_meters;
+pub use output_meters::{OutputMeterFrame, OutputMeterSnapshot};
 pub mod presets;
 pub mod rta;
 pub mod show;
@@ -788,6 +790,12 @@ pub trait MixerDriver: Send + Sync {
     fn meter_taps(&self) -> &'static [&'static str] {
         &["in", "post", "gr_gate", "gr_comp"]
     }
+
+    /// Stable provider output identities. Empty preserves legacy flat meters.
+    fn output_meter_targets(&self) -> Vec<String> { Vec::new() }
+
+    /// None: unsupported; empty frames: supported but unavailable. Cache-only.
+    fn poll_output_meters(&self) -> Option<OutputMeterSnapshot> { None }
 
     /// None: unsupported; Some(empty): supported but no fresh measurement.
     fn poll_dynamics_meters(&self) -> Option<Vec<DynamicsMeterFrame>> {

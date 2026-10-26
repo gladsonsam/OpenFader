@@ -18,6 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/channel_views.dart';
 import '../core/output_processing.dart';
+import '../core/output_meters.dart';
 import '../core/output_presets.dart';
 import '../core/output_geq.dart';
 import '../core/audio_spectrum_peaks.dart';
@@ -198,6 +199,9 @@ class AppStore extends _AppStoreContext
       m.dispose();
     }
     _masterMeter.dispose();
+    for (final meter in _outputMeters.values) {
+      meter.dispose();
+    }
     for (final n in _faderNotes.values) {
       n.dispose();
     }

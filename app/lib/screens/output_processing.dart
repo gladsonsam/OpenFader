@@ -8,6 +8,7 @@ import '../palette.dart';
 import '../widgets/destination_control_editor.dart';
 import '../widgets/output_processor_presets.dart';
 import '../widgets/output_geq_editor.dart';
+import '../widgets/output_level_meter.dart';
 import 'output_processing_graph.dart';
 
 /// Output topology and controls come entirely from provider descriptors.
@@ -35,10 +36,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
           final store = widget.store;
           final palette = ConsolePalette.of(context);
           final controls = store.outputProcessingControls;
-          final targets = <String, String>{
-            for (final control in controls)
-              control.target: control.destinationName,
-          };
+          final targets = store.outputTargets;
           final target = store.outputProcessingTarget;
           final selected =
               controls.where((control) => control.target == target).toList();
@@ -98,6 +96,8 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                       },
                     ),
                   ),
+                  if (target != null)
+                    OutputLevelMeter(meter: store.outputMeterFor(target)),
                   if (surfaces.isNotEmpty)
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,

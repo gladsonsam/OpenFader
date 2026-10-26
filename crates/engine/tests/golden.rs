@@ -50,6 +50,7 @@ fn examples() -> Vec<(String, Value)> {
                     },
                 ],
                 main_fader: Some(0.8),
+                output_meter_targets: Vec::new(),
                 by: Some("client-1".to_string()),
             },
         ),
