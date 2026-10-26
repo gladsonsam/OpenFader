@@ -302,11 +302,16 @@ class Cmds {
   static String clearSolo() => '{"cmd":"clear_solo"}';
   static String param(int ch, String field, Object value) =>
       '{"cmd":"param","ch":$ch,"field":${_q(field)},"value":${jsonEncode(value)}}';
-  static String destinationParam(String requestId,
-      DestinationControlVm target, double value) => jsonEncode({
-        'cmd': 'destination_param', 'request_id': requestId,
-        'target': target.target, 'control': target.id, 'epoch': target.epoch,
-        'expected': target.value, 'value': value,
+  static String destinationParam(
+          String requestId, DestinationControlVm target, double value) =>
+      jsonEncode({
+        'cmd': 'destination_param',
+        'request_id': requestId,
+        'target': target.target,
+        'control': target.id,
+        'epoch': target.epoch,
+        'expected': target.value,
+        'value': value,
       });
   static String paramGuarded(
           int ch, String field, Object value, Map<String, Object> expect) =>
@@ -568,6 +573,7 @@ class EngineState {
   List<Strip> strips = [];
   List<double> meters = [];
   List<Map<String, dynamic>> topology = [];
+  List<List<int>> stereoPairs = const [];
   Map<String, dynamic> routingCaps = {};
   List<Map<String, dynamic>> fxTypes = [];
   bool fxStateControls = false;
@@ -694,6 +700,7 @@ class EngineState {
     meterTaps.clear();
     strips = [];
     topology = [];
+    stereoPairs = const [];
     routingCaps = {};
     fxTypes = [];
     fxStateControls = false;
@@ -788,14 +795,16 @@ class EngineState {
         for (final row in rows) {
           if (row is! Map) return false;
           final control = DestinationControlVm.fromJson(epoch, row);
-          if (control == null || controls.any((c) =>
-              c.target == control.target && c.id == control.id)) {
+          if (control == null ||
+              controls.any(
+                  (c) => c.target == control.target && c.id == control.id)) {
             return false;
           }
           controls.add(control);
         }
         if (controls.length == destinationControls.length &&
-            Iterable.generate(controls.length).every((i) => controls[i] == destinationControls[i])) {
+            Iterable.generate(controls.length)
+                .every((i) => controls[i] == destinationControls[i])) {
           return false;
         }
         destinationControls = List.unmodifiable(controls);
@@ -912,6 +921,26 @@ class EngineState {
             _applyStripValues(entry.key, entry.value);
           }
         }
+        final rawPairs = e['stereo_pairs'];
+        final parsedPairs = <List<int>>[];
+        final used = <int>{};
+        var validPairs = rawPairs is List;
+        if (rawPairs is List) {
+          for (final pair in rawPairs) {
+            if (pair is! List ||
+                pair.length != 2 ||
+                pair.any((v) => v is! int || v < 0) ||
+                pair[0] == pair[1] ||
+                pair.any(
+                    (v) => used.contains(v) || !strips.any((s) => s.ch == v))) {
+              validPairs = false;
+              break;
+            }
+            used.addAll(pair.cast<int>());
+            parsedPairs.add(List<int>.unmodifiable(pair.cast<int>()));
+          }
+        }
+        stereoPairs = validPairs ? List.unmodifiable(parsedPairs) : const [];
         final ps = e['params'];
         if (ps is List) {
           parameterMetadata = Map.unmodifiable({
