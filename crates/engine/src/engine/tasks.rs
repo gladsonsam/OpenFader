@@ -108,6 +108,8 @@ impl Engine {
                 let mut last_audio_spectrum_epoch = 0;
                 let mut meters_live = false;
                 let mut dynamics_live = false;
+                let mut outputs_live = false;
+                let mut output_source_generation = 0;
                 let mut parameter_labels_last = None;
                 let mut destination_controls_last = None;
                 let mut last_level_sample = None;
@@ -182,8 +184,8 @@ impl Engine {
                             });
                         }
                     }
-                    let drv = engine.active_drv();
                     let spectrum_generation = engine.connection_gen.load(Ordering::Acquire);
+                    let drv = engine.active_drv();
                     if spectrum_generation != audio_spectrum_generation {
                         audio_spectrum_generation = spectrum_generation;
                         had_audio_spectrum = false;
@@ -250,6 +252,23 @@ impl Engine {
                                 bins,
                             });
                         }
+                    }
+                    let outputs = if engine.reads_suspended.load(Ordering::Acquire) { None } else { drv.poll_output_meters() };
+                    if engine.connection_gen.load(Ordering::Acquire) == spectrum_generation
+                        && (outputs.as_ref().is_some_and(|s| !s.frames.is_empty()) || outputs_live) {
+                        let snapshot = outputs.unwrap_or(openfader_core::OutputMeterSnapshot { generation: output_source_generation, age_ms: 0, frames: Vec::new() });
+                        output_source_generation = snapshot.generation;
+                        outputs_live = !snapshot.frames.is_empty();
+                        engine.broadcast(Event::OutputMeters {
+                            epoch: spectrum_generation,
+                            source_generation: snapshot.generation,
+                            age_ms: snapshot.age_ms,
+                            frames: snapshot.frames.into_iter().map(|m| {
+                                let mut row = json!({"target": m.target, "levels": m.levels});
+                                if m.inferred { row["inferred"] = json!(true); }
+                                row
+                            }).collect(),
+                        });
                     }
                     let dynamics = if engine.reads_suspended.load(Ordering::Acquire) {
                         Vec::new()

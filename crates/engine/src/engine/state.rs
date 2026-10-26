@@ -10,6 +10,7 @@ impl Engine {
         let strips = snapshot_strips(&*self.drv(&name)).await;
         let main_fader = self.active_main_fader().await;
         Event::State {
+            output_meter_targets: self.drv(&name).output_meter_targets(),
             driver: name,
             strips,
             main_fader,

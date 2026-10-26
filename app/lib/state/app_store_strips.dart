@@ -457,7 +457,7 @@ mixin _AppStoreStrips on _AppStoreContext {
                     : 'open',
             muted: engine.subgroupMuted[group] ?? false,
             active: _busId == 'subgroup$group',
-            // Subgroups have no dedicated meter feed in the current protocol.
+            // Stable target-keyed meter feed, zero while unavailable.
             meter: _busMeters.putIfAbsent(
                 'subgroup$group', () => ValueNotifier(0)),
           ),

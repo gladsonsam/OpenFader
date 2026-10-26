@@ -276,6 +276,7 @@ fn binary_golden_fixtures() {
             driver: "sim".into(),
             strips: vec![],
             main_fader: None,
+            output_meter_targets: Vec::new(),
             by: None,
         }
         .to_binary(0, 0)

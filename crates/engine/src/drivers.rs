@@ -397,6 +397,8 @@ pub trait DynDriver: Send + Sync {
         None
     }
     /// Serves gate/comp GR over the `gate_gr`/`comp_gr` param path.
+    fn output_meter_targets(&self) -> Vec<String> { Vec::new() }
+    fn poll_output_meters(&self) -> Option<openfader_core::OutputMeterSnapshot> { None }
     fn poll_dynamics_meters(&self) -> Option<Vec<openfader_core::DynamicsMeterFrame>> { None }
     fn dyn_gr(&self) -> bool {
         false
@@ -645,6 +647,8 @@ macro_rules! impl_dyn_driver {
         async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()> {
             MixerDriver::set_spectrum_target(self, owner, strip).await
         }
+        fn output_meter_targets(&self) -> Vec<String> { MixerDriver::output_meter_targets(self) }
+        fn poll_output_meters(&self) -> Option<openfader_core::OutputMeterSnapshot> { MixerDriver::poll_output_meters(self) }
         fn poll_dynamics_meters(&self) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
             MixerDriver::poll_dynamics_meters(self)
         }

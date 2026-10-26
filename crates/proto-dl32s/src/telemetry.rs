@@ -26,6 +26,8 @@ pub(super) struct MeterState {
     pub(super) generation: u64,
     pub(super) updated_at: Option<std::time::Instant>,
     pub(super) levels: Vec<f32>,
+    pub(super) outputs: Vec<openfader_core::OutputMeterFrame>,
+    pub(super) outputs_at: Option<std::time::Instant>,
     pub(super) dynamics_at: Option<std::time::Instant>,
     pub(super) dynamics: Vec<openfader_core::DynamicsMeterFrame>,
 }

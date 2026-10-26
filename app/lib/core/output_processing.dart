@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'output_meters.dart';
 import 'destination_controls.dart';
 import 'output_presets.dart';
 import 'processor_presets.dart';
@@ -39,6 +40,8 @@ abstract class OutputProcessingStore extends ChangeNotifier {
 
   /// Stops before the next dispatch; an in-flight write can still complete.
   void cancelOutputPresetRecall();
+  Map<String, String> get outputTargets;
+  ValueListenable<OutputMeterVm> outputMeterFor(String target);
   List<DestinationControlVm> get outputProcessingControls;
   String? get outputProcessingTarget;
   void openOutputProcessing(String target);
