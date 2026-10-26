@@ -36,9 +36,7 @@ class _QuickAssignState extends State<_QuickAssign> {
     setState(() {
       _pending = false;
       _status = result.error ??
-          (result.verified
-              ? 'Desk readback matched the assignment.'
-              : 'Backend accepted the assignment. Desk readback is not confirmed.');
+          'Matching backend state observed. Command receipt and desk readback are not confirmed.';
     });
   }
 
