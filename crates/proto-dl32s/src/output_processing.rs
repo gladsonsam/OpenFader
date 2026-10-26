@@ -191,10 +191,15 @@ impl Dl32sDriver {
             spec.allows(value) && spec.allows(expected),
             "Output parameter outside documented range"
         );
+        let generation = self.generation.load(Ordering::Acquire);
+        let _output_write = self.output_write.lock().await;
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
         anyhow::ensure!(session.is_alive(), "Output processing session unavailable");
-        let generation = self.generation.load(Ordering::Acquire);
+        anyhow::ensure!(
+            self.generation.load(Ordering::Acquire) == generation,
+            "Output connection changed while waiting to write"
+        );
         let revision = {
             let mut native = self
                 .native
@@ -294,24 +299,36 @@ impl Dl32sDriver {
                 entry.revision.wrapping_add(1)
             }
         };
-        if let Some(snapshot) = snapshot {
-            // Release the session before waiting for native ingestion: bulk
-            // pushes may require that same lock for routed-preamp refresh.
-            session.request_value_snapshot().await.map_err(|error| {
-                anyhow::anyhow!("Output write accepted; readback request failed: {error}. Result uncertain")
-            })?;
-            drop(guard);
-            self.confirm_output_write(spec, generation, readback_revision, value).await?;
-            let native = self.native.lock()
-                .map_err(|_| anyhow::anyhow!("Output cache unavailable; result uncertain"))?;
-            anyhow::ensure!(self.generation.load(Ordering::Acquire) == generation
-                && native.generation == generation && native.view.connected,
-                "Output connection changed during readback; result uncertain");
-            let current = native.output_processing.controls(generation);
-            anyhow::ensure!(current.iter().any(|row| row.target == target && row.id == control
+        // Ordinary edits need the same independent evidence as recalls, so
+        // their accepted siblings cannot later invalidate a recall snapshot
+        // merely by becoming verified on its first bulk readback.
+        // Release the session before waiting for native ingestion: bulk
+        // pushes may require that same lock for routed-preamp refresh. Keep
+        // output_write held through confirmation to serialize local edits.
+        session.request_value_snapshot().await.map_err(|error| {
+            anyhow::anyhow!("Output write accepted; readback request failed: {error}. Result uncertain")
+        })?;
+        drop(guard);
+        self.confirm_output_write(spec, generation, readback_revision, value)
+            .await?;
+        let native = self
+            .native
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Output cache unavailable; result uncertain"))?;
+        anyhow::ensure!(
+            self.generation.load(Ordering::Acquire) == generation
+                && native.generation == generation
+                && native.view.connected,
+            "Output connection changed during readback; result uncertain"
+        );
+        let current = native.output_processing.controls(generation);
+        anyhow::ensure!(
+            current.iter().any(|row| row.target == target && row.id == control
                 && row.revision == Some(readback_revision)
                 && row.current.as_ref().is_some_and(|v| v.verified && v.value == value)),
-                "Output changed again after readback; result uncertain");
+            "Output changed again after readback; result uncertain"
+        );
+        if let Some(snapshot) = snapshot {
             anyhow::ensure!(snapshot.iter()
                 .filter(|row| row.id != control).all(|row| current.contains(row)),
                 "Output processor changed during readback; recall stopped, result uncertain");
