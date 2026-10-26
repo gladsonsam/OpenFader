@@ -13,6 +13,22 @@ abstract interface class _AppStoreAccessContract implements AccessLimitsStore {
 /// for them. This module owns all classifications and the final send boundary.
 mixin _AppStoreAccess on _AppStoreContext {
   Set<String> _blockedAccess = const {};
+  int _controlAccessEpoch = 0;
+  @override
+  int get controlAccessEpoch => _controlAccessEpoch;
+
+  // Existing provider input fields. Trim, polarity, balance, width and
+  // sidechain sources remain independent processing controls.
+  static const _inputRoutingFields = {
+    'source',
+    'source_a',
+    'source_b',
+    'source_select',
+    'usbreturn',
+    'wing:source_auto',
+    'wing:source_mode',
+  };
+  static const _micPreampFields = {'gain', 'phantom'};
   @override
   Set<String> get blockedAccess => _blockedAccess;
 
@@ -101,6 +117,14 @@ mixin _AppStoreAccess on _AppStoreContext {
   @override
   bool _accessParamAllowed(int ch, String field) {
     if (_blockedAccess.isEmpty) return true;
+    if (_inputRoutingFields.contains(field) &&
+        !accessFamilyAllowed(AccessFamily.inputRouting)) {
+      return false;
+    }
+    if (_micPreampFields.contains(field) &&
+        !accessFamilyAllowed(AccessFamily.micPreamps)) {
+      return false;
+    }
     if (field == 'link') {
       final pair = engine.stereoPairs.where((p) => p.contains(ch)).firstOrNull;
       // Linking copies processing, identity, sends and levels to the peer and
@@ -216,6 +240,10 @@ mixin _AppStoreAccess on _AppStoreContext {
                 target,
     };
     final available = <AccessFamily>{
+      if (engine.routingCaps['supported'] == true ||
+          fields.any((f) => f != 'source' && _inputRoutingFields.contains(f)))
+        AccessFamily.inputRouting,
+      if (fields.any(_micPreampFields.contains)) AccessFamily.micPreamps,
       if (fields.any(_isDsp)) AccessFamily.inputDsp,
       if (engine.destinationControls.any(
             (c) => c.surface.startsWith('output_'),
@@ -236,12 +264,16 @@ mixin _AppStoreAccess on _AppStoreContext {
     };
     final options = <AccessLimitOption>[
       for (final family in AccessFamily.values)
-        AccessLimitOption(
-          family.key,
-          family.label,
-          family.coverage,
-          available: available.contains(family),
-        ),
+        if (!const {AccessFamily.inputRouting, AccessFamily.micPreamps}
+                .contains(family) ||
+            available.contains(family) ||
+            _blockedAccess.contains(family.key))
+          AccessLimitOption(
+            family.key,
+            family.label,
+            family.coverage,
+            available: available.contains(family),
+          ),
       for (final entry in targets.entries)
         AccessLimitOption(
           'target:${entry.key}',
@@ -290,6 +322,7 @@ mixin _AppStoreAccess on _AppStoreContext {
     final next = PrefsService.instance.blockedAccess;
     if (setEquals(next, _blockedAccess)) return;
     _blockedAccess = next;
+    _controlAccessEpoch++;
     // Queued writes and captured preset editors must not outlive permission.
     _coalescer.clear();
     _maps.pending.clear();
@@ -327,6 +360,11 @@ mixin _AppStoreAccess on _AppStoreContext {
             ? command['field'] as String
             : cmd as String,
       );
+    }
+    // Existing patch commands exclusively address input strip sources. Their
+    // target selects an input source slot, not a master/output patch.
+    if (cmd == 'patch_set' || cmd == 'patch_clear') {
+      return accessFamilyAllowed(AccessFamily.inputRouting);
     }
     if (cmd == 'clear_solo') {
       return canClearSolos;

@@ -1,5 +1,6 @@
 // Shell adapter: routing responsibility. The shell owns polling.
 import '../engine.dart';
+import '../core/access_limits.dart';
 import '../screens/routing.dart';
 import 'store_adapter.dart';
 
@@ -24,7 +25,11 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
       : targets.firstOrNull?.key ?? '';
   @override
   bool get canClear =>
-      targets.isEmpty || targets.any((t) => t.key == target && t.clearable);
+      canPatch &&
+      (targets.isEmpty || targets.any((t) => t.key == target && t.clearable));
+  @override
+  bool get canPatch =>
+      routingSupported && app.accessFamilyAllowed(AccessFamily.inputRouting);
   @override
   void selectTarget(String target) {
     if (!targets.any((t) => t.key == target)) return;
@@ -154,7 +159,7 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
   @override
   void patch(RouteSrcTile tile) {
     if (_sel == null ||
-        !routingSupported ||
+        !canPatch ||
         !srcTiles.any((t) => t.group == tile.group && t.index == tile.index)) {
       return;
     }

@@ -56,6 +56,7 @@ abstract class RoutingStore extends ChangeNotifier {
   String get selectedSrc;
   List<RouteSrcTile> get srcTiles;
   bool get routingSupported;
+  bool get canPatch => routingSupported;
 
   void selectStrip(int strip);
   void selectGroup(String group);
@@ -87,6 +88,11 @@ class U4RoutingPage extends StatelessWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (!store.canPatch)
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Text('Input routing is limited on this device.'),
+                  ),
                 _Header(
                   selectedName: store.selectedName,
                   selectedSrc: store.selectedSrc,
@@ -200,7 +206,8 @@ class U4RoutingPage extends StatelessWidget {
                               final free = t.usedBy.isEmpty && !t.current;
                               return _RoutingTap(
                                 selected: t.current,
-                                onTap: store.selectedStrip == null
+                                onTap: store.selectedStrip == null ||
+                                        !store.canPatch
                                     ? null
                                     : () => store.patch(t),
                                 child: Container(
