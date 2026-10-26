@@ -157,20 +157,32 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3608, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
         address: 3620, id: "send_master", label: "Send master", min: -120.0, max: 10.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3583, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
+        address: 3595, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3607, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3619, id: "send_mute", label: "Send mute", min: 0.0, max: 1.0, unit: "", decimals: 0 },
 ];
 
 impl FxParameterSpec {
+    fn is_binary(&self) -> bool {
+        matches!(self.id, "mute" | "send_mute")
+    }
+
     fn allows(&self, value: f32) -> bool {
         value.is_finite() && (self.min..=self.max).contains(&value)
-            && (self.id != "mute" || matches!(value, 0.0 | 1.0))
+            && (!self.is_binary() || matches!(value, 0.0 | 1.0))
     }
 
     fn raw_value(&self, value: f32) -> u32 {
-        if self.id == "mute" { value as u32 } else { value.to_bits() }
+        if self.is_binary() { value as u32 } else { value.to_bits() }
     }
 
     fn read_value(&self, raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
-        let value = if self.id == "mute" { raw as f32 } else { f32::from_bits(raw) };
+        let value = if self.is_binary() { raw as f32 } else { f32::from_bits(raw) };
         self.allows(value).then_some(openfader_core::destinations::DestinationValue { value, verified: true })
     }
 }
@@ -1808,6 +1820,8 @@ impl MixerDriver for Dl32sDriver {
                 tap_tempo: spec.slot == 2 && spec.algorithm == 12 && spec.id == "time",
                 description: if spec.id == "mute" {
                     format!("Changes the mute state of FX {}.", spec.slot)
+                } else if spec.id == "send_mute" {
+                    format!("Mutes the FX {} send master. Turning this off does not clear mute groups.", spec.slot)
                 } else if spec.id == "send_master" {
                     format!("Changes the master send level feeding FX {}. Return levels and mute are separate controls.", spec.slot)
                 } else if spec.id == "main_return" {
@@ -1815,11 +1829,14 @@ impl MixerDriver for Dl32sDriver {
                 } else {
                     format!("Changes {} for every route through FX {}. Mute, returns and routing are separate controls.", spec.label.to_lowercase(), spec.slot)
                 },
-                choices: if spec.id == "mute" { vec![
+                choices: if spec.id == "send_mute" { vec![
+                    DestinationChoice { value: 0.0, label: "Off".to_string() },
+                    DestinationChoice { value: 1.0, label: "On".to_string() },
+                ] } else if spec.id == "mute" { vec![
                     DestinationChoice { value: 0.0, label: "Unmuted".to_string() },
                     DestinationChoice { value: 1.0, label: "Muted".to_string() },
                 ] } else { Vec::new() },
-                range: (spec.id != "mute").then(|| DestinationRange { min: spec.min, max: spec.max, unit: spec.unit.to_string(), decimals: spec.decimals }),
+                range: (!spec.is_binary()).then(|| DestinationRange { min: spec.min, max: spec.max, unit: spec.unit.to_string(), decimals: spec.decimals }),
                 current: parameter.current.clone(),
             });
         }
