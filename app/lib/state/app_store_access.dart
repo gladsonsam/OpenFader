@@ -25,10 +25,19 @@ mixin _AppStoreAccess on _AppStoreContext {
     if (parts.length != 2) return target.trim();
     final index = int.tryParse(parts[1].trim());
     if (index == null || index < 1) return target.trim();
-    final family = parts[0].trim() == 'mix' ? 'bus' : parts[0].trim();
+    final family = switch (parts[0].trim()) {
+      'mix' => 'bus',
+      // Strip topology calls FX send masters fxsnd; send metadata and global
+      // controls call the same destination fx. Returns use fxret, separately.
+      'fxsnd' => 'fx',
+      final family => family,
+    };
     if (family == 'main' && index == 1) return 'main';
     return '$family/${index.toString().padLeft(2, '0')}';
   }
+
+  bool _targetBlocked(String target) => _blockedAccess.any((key) =>
+      key.startsWith('target:') && _targetKey(key.substring(7)) == target);
 
   String? _channelTarget(int ch) {
     final kind = _presetFamily(ch)?['kind'];
@@ -43,7 +52,7 @@ mixin _AppStoreAccess on _AppStoreContext {
   bool accessTargetAllowed(String target) {
     if (_blockedAccess.isEmpty) return true;
     target = _targetKey(target);
-    if (_blockedAccess.contains('target:$target')) return false;
+    if (_targetBlocked(target)) return false;
     // Stereo output pairs must not provide a second entrance to a limited mix.
     final strip =
         engine.strips.where((s) => _targetKey(s.key) == target).firstOrNull;
@@ -54,8 +63,7 @@ mixin _AppStoreAccess on _AppStoreContext {
           pair.any((ch) => engine.params[ch]?['link'] == true)) {
         for (final ch in pair) {
           final key = engine.strips.where((s) => s.ch == ch).firstOrNull?.key;
-          if (key != null &&
-              _blockedAccess.contains('target:${_targetKey(key)}')) {
+          if (key != null && _targetBlocked(_targetKey(key))) {
             return false;
           }
         }
@@ -93,6 +101,23 @@ mixin _AppStoreAccess on _AppStoreContext {
   @override
   bool _accessParamAllowed(int ch, String field) {
     if (_blockedAccess.isEmpty) return true;
+    if (field == 'link') {
+      final pair = engine.stereoPairs.where((p) => p.contains(ch)).firstOrNull;
+      // Linking copies processing, identity, sends and levels to the peer and
+      // resets pan. Check both members even while the pair is still unlinked.
+      final copiedFields = {
+        ...engine.supportedParams,
+        'name',
+        'mute',
+        'pan',
+        'fader',
+      }
+        ..removeAll(['link', 'solo']);
+      if ((pair ?? [ch]).any((member) =>
+          copiedFields.any((field) => !_accessParamAllowed(member, field)))) {
+        return false;
+      }
+    }
     final target = _channelTarget(ch);
     if (target != null && !accessTargetAllowed(target)) return false;
     if (_presetFamily(ch)?['kind'] == 'fxsnd' &&
@@ -298,7 +323,9 @@ mixin _AppStoreAccess on _AppStoreContext {
         ch is int) {
       return _accessParamAllowed(
         ch,
-        command['field'] as String? ?? cmd as String,
+        cmd == 'param' || cmd == 'param_guarded'
+            ? command['field'] as String
+            : cmd as String,
       );
     }
     if (cmd == 'clear_solo') {
