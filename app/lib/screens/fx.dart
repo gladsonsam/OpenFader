@@ -300,6 +300,9 @@ class _NativeFxDetail extends StatelessWidget {
     final palette = ConsolePalette.of(context);
     final tapControls =
         controls.where((control) => control.canTapTempo).toList();
+    final binaryControls = controls
+        .where((control) => !control.numeric && control.choices.length == 2)
+        .toList();
     return Container(
         padding: const EdgeInsets.all(14),
         decoration: _detailDecoration(palette),
@@ -311,30 +314,63 @@ class _NativeFxDetail extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: palette.text1)),
           const SizedBox(height: 12),
+          if (binaryControls.isNotEmpty)
+            Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Wrap(spacing: 12, runSpacing: 12, children: [
+                  for (final control in binaryControls)
+                    Tooltip(
+                        message: control.description,
+                        child: _FxToggle(
+                            label:
+                                '${control.label}: ${control.valueLabel ?? 'Unavailable'}'
+                                '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                            active: control.value == control.choices.last.value,
+                            onTap: store.destinationControlIsCurrent(control)
+                                ? () async {
+                                    final next = control.value ==
+                                            control.choices.first.value
+                                        ? control.choices.last.value
+                                        : control.choices.first.value;
+                                    final error = await store
+                                        .setDestinationControl(control, next);
+                                    if (context.mounted && error != null) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                              SnackBar(content: Text(error)));
+                                    }
+                                  }
+                                : null)),
+                ])),
           _KnobLayout(
-              minHeight:
-                  math.max(0.0, minHeight - 68 - 64 * tapControls.length),
+              minHeight: math.max(
+                  0.0,
+                  minHeight -
+                      68 -
+                      64 * tapControls.length -
+                      (binaryControls.isEmpty ? 0 : 56)),
               children: [
                 for (final control in controls)
-                  _FxRotary(
-                      key: ValueKey('${control.target}/${control.id}'),
-                      label: control.label,
-                      text: '${control.valueLabel ?? 'Unavailable'}'
-                          '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                      fraction: control.numeric && control.value != null
-                          ? ((control.value! - control.min!) /
-                                  (control.max! - control.min!))
-                              .clamp(0, 1)
-                          : 0,
-                      enabled: store.destinationControlIsCurrent(control),
-                      onTap: () => showDialog<void>(
-                          context: context,
-                          barrierDismissible: false,
-                          builder: (_) => DestinationControlEditor(
-                              changes: store,
-                              isCurrent: store.destinationControlIsCurrent,
-                              apply: store.setDestinationControl,
-                              control: control))),
+                  if (!binaryControls.contains(control))
+                    _FxRotary(
+                        key: ValueKey('${control.target}/${control.id}'),
+                        label: control.label,
+                        text: '${control.valueLabel ?? 'Unavailable'}'
+                            '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                        fraction: control.numeric && control.value != null
+                            ? ((control.value! - control.min!) /
+                                    (control.max! - control.min!))
+                                .clamp(0, 1)
+                            : 0,
+                        enabled: store.destinationControlIsCurrent(control),
+                        onTap: () => showDialog<void>(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (_) => DestinationControlEditor(
+                                changes: store,
+                                isCurrent: store.destinationControlIsCurrent,
+                                apply: store.setDestinationControl,
+                                control: control))),
               ]),
           for (final control in tapControls)
             Padding(
