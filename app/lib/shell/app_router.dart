@@ -391,6 +391,13 @@ class _AppShellState extends State<AppShell> {
           }));
 
   Widget _pageFor(AppTab t, AppStore store) {
+    if (t == AppTab.scenes && store.blockedAccess.isNotEmpty) {
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text('Scenes and shows are unavailable while local access limits are active. Bulk recalls can change restricted controls.',
+          style: TextStyle(color: ConsolePalette.of(context).text1, fontSize: 18)),
+      ));
+    }
     if (!store.engine.connected &&
         store.engine.driver != 'sim' &&
         store.engine.linkState != 'offline' &&

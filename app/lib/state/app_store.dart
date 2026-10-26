@@ -16,6 +16,9 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/access_limits.dart';
+import '../settings/prefs.dart';
+
 import '../core/channel_views.dart';
 import '../core/output_processing.dart';
 import '../core/output_meters.dart';
@@ -34,6 +37,8 @@ import '../u4law.dart';
 import '../screens/channel.dart';
 import '../screens/meters.dart';
 import '../mixer/store.dart';
+
+part 'app_store_access.dart';
 
 part 'app_store_library.dart';
 part 'app_store_appearance.dart';
@@ -70,7 +75,8 @@ abstract class _AppStoreContext extends ChangeNotifier
         _AppStoreMetersContract,
         _AppStoreStripsContract,
         _AppStoreChannelContract,
-        _AppStoreDestinationsContract {}
+        _AppStoreDestinationsContract,
+        _AppStoreAccessContract {}
 
 abstract interface class _AppStoreCoreContract {
   EngineApi get _api;
@@ -103,6 +109,7 @@ abstract interface class _AppStoreCoreContract {
 // and expose explicit dependencies; the public store contracts are unchanged.
 class AppStore extends _AppStoreContext
     with
+        _AppStoreAccess,
         _AppStoreLibrary,
         _AppStoreAppearance,
         _AppStorePresets,
@@ -116,7 +123,10 @@ class AppStore extends _AppStoreContext
         _AppStoreOutputPresets
     implements MixerStore, MetersStore, ChannelStore, OutputProcessingStore {
   AppStore(this._api, this._clientId)
-      : _coalescer = WriteCoalescer(TimerCoalescerClock());
+      : _coalescer = WriteCoalescer(TimerCoalescerClock()) {
+    _blockedAccess = PrefsService.instance.blockedAccess;
+    PrefsService.instance.addListener(_accessChanged);
+  }
 
   @override
   final EngineApi _api;
@@ -184,6 +194,7 @@ class AppStore extends _AppStoreContext
 
   @override
   void dispose() {
+    PrefsService.instance.removeListener(_accessChanged);
     _interruptDestinationEdits(
         'Connection closed; the destination setting may have changed.');
     _libraryDisposed = true;

@@ -2,6 +2,7 @@
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import '../engine.dart';
+import '../core/access_limits.dart';
 import '../screens/fx.dart';
 import 'store_adapter.dart';
 
@@ -19,8 +20,11 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   final Set<String> _tapWrites = {};
   int? _tapSession;
 
+  bool get _globalAccessAllowed => app.accessFamilyAllowed(AccessFamily.fx) &&
+      (_cur == null || app.accessTargetAllowed('fx/${_cur!.slot.toString().padLeft(2, '0')}'));
+
   @override
-  bool get stateControlsSupported => engine.fxStateControls;
+  bool get stateControlsSupported => _globalAccessAllowed && engine.fxStateControls;
 
   @override
   List<DestinationControlVm> get destinationControls => List.unmodifiable(
@@ -95,7 +99,9 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   int get selected => _sel.clamp(0, _raw.isEmpty ? 0 : _raw.length - 1);
 
   @override
-  List<String> get typeOptions => [
+  List<String> get typeOptions => !_globalAccessAllowed
+      ? const []
+      : [
         for (final type in engine.fxTypes)
           if (type['slots'] is! List ||
               (type['slots'] as List).contains(selected + 1))
@@ -160,7 +166,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   @override
   List<FxKnobVm> get knobs {
     final c = _cur;
-    if (c == null) return const [];
+    if (c == null || !_globalAccessAllowed) return const [];
     final definitions = <String, Map<String, dynamic>>{
       for (final parameter
           in _typeMetadata(c.type)?['params'] as List? ?? const [])

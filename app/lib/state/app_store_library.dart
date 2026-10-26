@@ -42,6 +42,7 @@ mixin _AppStoreLibrary on _AppStoreContext {
       _libraryRequests.values.any((request) => !request.done.isCompleted) ||
       _libraryRecalls.any((request) => !request.done.isCompleted);
   bool get libraryWritable =>
+      blockedAccess.isEmpty &&
       !_libraryDisposed &&
       !_libraryResetting &&
       !libraryPending &&
@@ -54,7 +55,7 @@ mixin _AppStoreLibrary on _AppStoreContext {
     final query = _LibraryQuery(engine.session, _nowMs() + 10000);
     _libraryQueries.add(query);
     unawaited(
-        Future<void>.sync(() => _api.cmd(_clientId, Cmds.localLibraryStatus()))
+        Future<void>.sync(() => _command(_clientId, Cmds.localLibraryStatus()))
             .then((_) {
       _checkLibraryQuery(query, _nowMs());
     }, onError: (Object error) {
@@ -110,7 +111,7 @@ mixin _AppStoreLibrary on _AppStoreContext {
     final request = _LibraryRecall(owner, engine.session, _nowMs() + 15000);
     _libraryRecalls.add(request);
     notifyListeners();
-    unawaited(Future<void>.sync(() => _api.cmd(_clientId, command)).then((_) {
+    unawaited(Future<void>.sync(() => _command(_clientId, command)).then((_) {
       _checkLibraryRecall(request, _nowMs());
       _libraryRecalls.remove(request);
       if (!request.done.isCompleted) request.done.complete(null);
@@ -155,7 +156,8 @@ mixin _AppStoreLibrary on _AppStoreContext {
       bool resetting = false}) {
     final status = engine.localLibrary;
     final reset = action.operation == 'reset';
-    if (_libraryDisposed ||
+    if (blockedAccess.isNotEmpty ||
+        _libraryDisposed ||
         (_libraryResetting && !resetting) ||
         libraryPending ||
         status == null ||
@@ -172,7 +174,7 @@ mixin _AppStoreLibrary on _AppStoreContext {
     notifyListeners();
     // Invoke before returning: all mutations enter the engine's serialized
     // commit path in submission order, before reset can inspect the queue.
-    unawaited(Future<void>.sync(() => _api.cmd(
+    unawaited(Future<void>.sync(() => _command(
             _clientId, Cmds.localLibraryMutate(id, expectedRevision, action)))
         .then((_) {
       _checkLibraryRequest(request, _nowMs());
@@ -275,7 +277,7 @@ mixin _AppStoreLibrary on _AppStoreContext {
         _ForgetSavedMixersRequest(id, engine.session, _nowMs() + 15000);
     _forgetSavedMixersRequests[id] = request;
     unawaited(
-        Future<void>.sync(() => _api.cmd(_clientId, Cmds.forgetSavedMixers(id)))
+        Future<void>.sync(() => _command(_clientId, Cmds.forgetSavedMixers(id)))
             .then((_) {
       _checkForgetSavedMixers(request, _nowMs());
     }, onError: (Object error) {

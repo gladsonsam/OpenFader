@@ -164,6 +164,10 @@ mixin _AppStorePresets on _AppStoreContext {
 
   @override
   String? presetTargetError(ProcessorPresetTarget target) {
+    if (_presetFields(target)
+        .any((field) => !_accessParamAllowed(target.channel, field))) {
+      return 'This processor is limited on this device.';
+    }
     if (_presetDisposed ||
         _presetTargets[target] != _presetGeneration ||
         !engine.connected ||
@@ -572,7 +576,7 @@ mixin _AppStorePresets on _AppStoreContext {
         ps.noteOptimistic(_maps, target.channel, field, value, _nowMs());
         // Register expectation before dispatch, including synchronous throws.
         unawaited(Future<void>.sync(() =>
-                _api.cmd(_clientId, Cmds.param(target.channel, field, value)))
+                _command(_clientId, Cmds.param(target.channel, field, value)))
             .then((_) {
           // Submission may finish after the deadline even when the matching
           // frame arrived earlier. Neither half can complete a late recall.

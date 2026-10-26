@@ -139,6 +139,11 @@ class FakeSimEngine implements EngineApi {
               'min': -90,
               'max': 10,
               'unit': 'dB',
+              'destination': {
+                'key': int.parse(id.substring(4, id.indexOf('_'))) <= 6
+                    ? 'bus/${int.parse(id.substring(4, id.indexOf('_'))).toString().padLeft(2, '0')}'
+                    : 'fx/${(int.parse(id.substring(4, id.indexOf('_'))) - 6).toString().padLeft(2, '0')}',
+              },
             },
             if (RegExp(r'^send\d+_pan$').hasMatch(id)) ...{
               'min': -100,

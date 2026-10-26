@@ -21,6 +21,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
 
   @override
   bool destinationControlIsCurrent(DestinationControlVm control) =>
+      _accessDestinationAllowed(control) &&
       !_presetDisposed &&
       _online &&
       engine.connected &&
@@ -48,6 +49,9 @@ mixin _AppStoreDestinations on _AppStoreContext {
     double value, {
     List<DestinationControlVm>? guard,
   }) {
+    if (!_accessDestinationAllowed(control)) {
+      return Future.value('This control is limited on this device.');
+    }
     if (guard == null
         ? !destinationControlIsCurrent(control)
         : (!_online ||
@@ -76,8 +80,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
     );
     _destinationEdits[id] = edit;
     unawaited(
-      _api
-          .cmd(
+      _command(
         _clientId,
         Cmds.destinationParam(id, control, value, guard: guard),
       )

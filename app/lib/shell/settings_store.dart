@@ -3,6 +3,8 @@ import 'package:flutter/widgets.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:share_plus/share_plus.dart';
+
+import '../core/access_limits.dart';
 import '../settings/mixes.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
@@ -25,6 +27,9 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
     mixes.removeListener(forwardChange);
     super.dispose();
   }
+
+  @override
+  AccessLimitsStore get accessLimits => app;
 
   @override
   PrefsService get prefs => PrefsService.instance;
