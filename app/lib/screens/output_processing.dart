@@ -211,9 +211,12 @@ class _ControlTileState extends State<_ControlTile> {
   @override
   void didUpdateWidget(covariant _ControlTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!widget.store.destinationControlIsCurrent(widget.control)) {
+    final captured = _dragControl;
+    if (captured != null &&
+        !widget.store.destinationControlIsCurrent(captured)) {
       _draft = null;
-      _dragControl = null;
+      // Keep the captured descriptor until release: never substitute a new
+      // session/value for a gesture that started against an older one.
     }
   }
 
@@ -270,19 +273,27 @@ class _ControlTileState extends State<_ControlTile> {
             onChanged:
                 enabled ? (v) => setState(() => _draft = engineering(v)) : null,
             onChangeEnd: enabled
-                ? (v) => _commit(_dragControl ?? control, engineering(v))
+                ? (v) {
+                    final captured = _dragControl;
+                    if (captured != null) {
+                      _commit(captured, engineering(v));
+                    }
+                  }
                 : null,
           )
         : null;
+    final valueText = control.id == 'comp_ratio' && control.value == 101
+        ? '∞:1'
+        : control.valueLabel;
     final readout = TextButton(
       onPressed: enabled ? _edit : null,
       child: Text(
         _pending
             ? 'Sending…'
-            : (control.id == 'comp_ratio' && control.value == 101
-                    ? '∞:1'
-                    : control.valueLabel) ??
-                'Unavailable',
+            : valueText == null
+                ? 'Unavailable'
+                : '$valueText'
+                    '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
         textAlign: TextAlign.center,
         style: TextStyle(color: enabled ? palette.lime : palette.mutedText),
       ),
@@ -330,8 +341,10 @@ class _ControlTileState extends State<_ControlTile> {
                 children: [
                   for (final choice in control.choices)
                     ChoiceChip(
-                      label: Text(choice.label),
-                      selected: choice.value == control.value,
+                      label: Text('${choice.label}'
+                          '${choice.value == control.value && control.authority == 'accepted' ? ' (unconfirmed)' : ''}'),
+                      selected:
+                          control.available && choice.value == control.value,
                       onSelected: enabled
                           ? (_) => _commit(control, choice.value)
                           : null,
