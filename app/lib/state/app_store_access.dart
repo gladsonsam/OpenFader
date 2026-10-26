@@ -362,9 +362,9 @@ mixin _AppStoreAccess on _AppStoreContext {
             : cmd as String,
       );
     }
-    // Existing patch commands exclusively address input strip sources. Their
+    // Advertised patch commands currently address input strip sources. Their
     // target selects an input source slot, not a master/output patch.
-    if (cmd == 'patch_set' || cmd == 'patch_clear') {
+    if (cmd == 'patch_set' || cmd == 'patch_clear' || cmd == 'route_patch') {
       return accessFamilyAllowed(AccessFamily.inputRouting);
     }
     if (cmd == 'clear_solo') {

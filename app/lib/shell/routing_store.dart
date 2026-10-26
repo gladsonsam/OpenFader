@@ -8,23 +8,37 @@ import 'store_adapter.dart';
 class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
   ShellRoutingStore(super.app);
 
+  List _list(Object? value) => value is List ? value : const [];
+
   List<Map> get _planes => [
-        for (final p in engine.routingCaps['planes'] as List? ?? const [])
-          if (p is Map && p['key'] is String) p,
+        for (final p in _list(engine.routingCaps['planes']))
+          if (p is Map && p['key'] is String && p['label'] is String) p,
       ];
   Map? get _plane => _planes.where((p) => p['key'] == target).firstOrNull;
   List<Map> get _destinations => [
-        for (final d in _plane?['destinations'] as List? ?? const [])
-          if (d is Map && d['id'] is String && d['strip'] is num) d,
+        for (final d in _list(_plane?['destinations']))
+          if (d is Map &&
+              d['id'] is String &&
+              d['key'] is String &&
+              d['label'] is String &&
+              d['target'] is String &&
+              d['strip'] is int &&
+              (d['strip'] as int) >= 0)
+            d,
       ];
   Map? _destination(int? strip) =>
       _destinations.where((d) => d['strip'] == strip).firstOrNull;
   Map? get _selected => _destination(_sel);
   List<Map> get _groups => [
-        for (final g in (_selected ??
-                _destinations.firstOrNull)?['source_groups'] as List? ??
-            const [])
-          if (g is Map && g['key'] is String && g['count'] is num) g,
+        for (final g in _list(
+            (_selected ?? _destinations.firstOrNull)?['source_groups']))
+          if (g is Map &&
+              g['key'] is String &&
+              g['label'] is String &&
+              g['count'] is int &&
+              (g['count'] as int) > 0 &&
+              (g['count'] as int) <= 255)
+            g,
       ];
   String _target = '';
   String _group = '';
@@ -47,20 +61,43 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
   bool get routingSupported =>
       engine.routingCaps['supported'] == true && _planes.isNotEmpty;
 
-  Map? _route(Map d) => engine.routing
-      .where(
-        (p) =>
+  Map? _route(Map d) {
+    final route = engine.routing
+        .where((p) =>
             p['destination'] == d['id'] &&
             p['key'] == d['key'] &&
             p['strip'] == d['strip'] &&
-            (p['target'] ?? '') == d['target'],
-      )
-      .firstOrNull;
+            (p['target'] ?? '') == d['target'])
+        .firstOrNull;
+    if (route == null ||
+        route['group'] is! String ||
+        route['index'] is! int ||
+        route['label'] is! String) {
+      return null;
+    }
+    final group = route['group'] as String;
+    final index = route['index'] as int;
+    if (group.isEmpty && index == 0 && route['label'] == '—') return route;
+    final allowed = _list(d['source_groups']).whereType<Map>().any((g) =>
+        g['key'] == group &&
+        g['count'] is int &&
+        index > 0 &&
+        index <= (g['count'] as int));
+    // Display and command expectation must describe the same source socket.
+    final parts = (route['label'] as String).split(' ');
+    if (!allowed ||
+        parts.length != 2 ||
+        parts.first != group ||
+        int.tryParse(parts.last) != index) {
+      return null;
+    }
+    return route;
+  }
 
   // Capture identity, session, access policy and current state together. A stale
   // callback cannot silently retarget after reconnect, reselect or a desk edit.
   String? _identity(Map? d) {
-    if (d == null) return null;
+    if (d == null || engine.routingCaps['epoch'] is! int) return null;
     final route = _route(d);
     if (route == null || route['authority'] != 'provider_display') return null;
     return jsonEncode([
