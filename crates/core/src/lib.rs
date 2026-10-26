@@ -890,6 +890,17 @@ pub trait MixerDriver: Send + Sync {
         Vec::new()
     }
 
+    /// Recall one processor setting with the entire captured block checked under
+    /// the provider's write lock. Revisions must detect intervening peer edits.
+    /// Unsupported providers must not fall back to unguarded scalar writes.
+    async fn set_destination_control_guarded(
+        &self, target: &str, control: &str, value: f32, expected: f32,
+        snapshot: &[destinations::DestinationControl],
+    ) -> anyhow::Result<()> {
+        let _ = (target, control, value, expected, snapshot);
+        anyhow::bail!("{}: guarded processor recall not supported", self.name())
+    }
+
     /// Compare the captured display value and write against one live session.
     /// Implementations must reject unknown targets/domains and stale context.
     async fn set_destination_control(

@@ -46,10 +46,15 @@ impl MixerDriver for Dl32sDriver {
         let generation = self.generation.load(std::sync::atomic::Ordering::Acquire);
         if let Ok(native) = self.native.lock() {
             if native.generation == generation && native.view.connected {
-                controls.extend(native.output_processing.controls());
+                controls.extend(native.output_processing.controls(generation));
             }
         }
         controls
+    }
+
+    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<()> {
+        anyhow::ensure!(self.write_output_processing_guarded(target, control, value, expected, Some(snapshot)).await?, "Output processor unavailable");
+        Ok(())
     }
 
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
