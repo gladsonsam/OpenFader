@@ -27,11 +27,12 @@ use tokio::sync::{broadcast, Mutex, MutexGuard};
 // manufacturer mixer software, 2026-10-25. The contiguous input bank starts at CH1=23.
 const INPUT_SOLO_FIRST_ADDRESS: u32 = 23;
 
-// Aux1 only: native Pre Fader1 -> Pre DSP2 -> exact restore independently
-// verified across the full bank. Other tap values/addresses are unverified.
-const AUX1_SEND_SOURCE_ADDRESS: u32 = 4434;
+// Each Aux1..8 address was independently changed in manufacturer mixer software from
+// Pre Fader1 -> Pre DSP2 and restored against the complete bank. Other
+// tap values and the separate Use LR Mute flag remain unverified.
+const AUX_SEND_SOURCE_ADDRESSES: [u32; 8] = [4434, 4524, 4614, 4704, 4794, 4884, 4974, 5064];
 
-fn aux1_tap_value(raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
+fn aux_tap_value(raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
     matches!(raw, 1 | 2).then_some(openfader_core::destinations::DestinationValue {
         value: raw as f32, verified: true,
     })
@@ -600,6 +601,13 @@ struct SpectrumState {
     bins_db: Vec<f32>,
 }
 
+#[derive(Debug, Default)]
+struct AuxTapCache {
+    name: Option<String>,
+    current: Option<openfader_core::destinations::DestinationValue>,
+    revision: u64,
+}
+
 /// Private generation-tagged wrapper around the public
 /// [`openfader_core::NativeSnapshots`] view: `generation` names the
 /// connection that owns `view` (same pattern as [`MeterState`] /
@@ -612,9 +620,7 @@ struct NativeCache {
     generation: u64,
     view: openfader_core::NativeSnapshots,
     parameter_labels: std::collections::BTreeMap<&'static str, String>,
-    aux1_name: Option<String>,
-    aux1_tap: Option<openfader_core::destinations::DestinationValue>,
-    aux1_tap_revision: u64,
+    aux_taps: std::collections::BTreeMap<u16, AuxTapCache>,
 }
 
 /// Native VCA1..6 names occupy slots58..63; View A..F uses70..75.
@@ -1613,22 +1619,29 @@ impl MixerDriver for Dl32sDriver {
     fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
         use openfader_core::destinations::{DestinationChoice, DestinationControl};
         let generation = self.generation.load(Ordering::Acquire);
-        let (name, current) = self.native.lock().ok().filter(|n| {
+        let native = self.native.lock().ok().filter(|n| {
             n.generation == generation && n.view.connected
-        }).map(|n| (n.aux1_name.clone(), n.aux1_tap.clone())).unwrap_or_default();
-        vec![DestinationControl {
-            target: "bus/01".to_string(), target_label: "Aux 1".to_string(),
-            target_name: name, send_slot: Some(1), id: "tap".to_string(),
-            label: "Send source".to_string(),
-            choices: vec![
-                DestinationChoice { value: 2.0, label: "Pre DSP".to_string() },
-                DestinationChoice { value: 1.0, label: "Pre Fader".to_string() },
-            ], current,
-        }]
+        });
+        (1..=AUX_SEND_SOURCE_ADDRESSES.len() as u16).map(|slot| {
+            let tap = native.as_ref().and_then(|n| n.aux_taps.get(&slot));
+            DestinationControl {
+                target: format!("bus/{slot:02}"), target_label: format!("Aux {slot}"),
+                target_name: tap.and_then(|tap| tap.name.clone()), send_slot: Some(slot), id: "tap".to_string(),
+                label: "Send source".to_string(),
+                choices: vec![
+                    DestinationChoice { value: 2.0, label: "Pre DSP".to_string() },
+                    DestinationChoice { value: 1.0, label: "Pre Fader".to_string() },
+                ], current: tap.and_then(|tap| tap.current.clone()),
+            }
+        }).collect()
     }
 
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
-        anyhow::ensure!(target == "bus/01" && control == "tap", "dl32s: unverified destination control");
+        let slot = (1..=AUX_SEND_SOURCE_ADDRESSES.len() as u16)
+            .find(|slot| target == format!("bus/{slot:02}"))
+            .ok_or_else(|| anyhow::anyhow!("dl32s: unverified destination control"))?;
+        anyhow::ensure!(control == "tap", "dl32s: unverified destination control");
+        let address = AUX_SEND_SOURCE_ADDRESSES[slot as usize - 1];
         anyhow::ensure!(matches!(value, 1.0 | 2.0) && matches!(expected, 1.0 | 2.0), "dl32s: unverified destination tap value");
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
@@ -1639,19 +1652,21 @@ impl MixerDriver for Dl32sDriver {
         let revision = {
             let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("destination cache unavailable"))?;
             anyhow::ensure!(native.generation == generation && native.view.connected, "Destination connection changed.");
-            anyhow::ensure!(native.aux1_tap.as_ref().is_some_and(|current| current.value == expected), "Destination changed; reopen the control.");
-            if let Some(raw) = session.cached_verified(AUX1_SEND_SOURCE_ADDRESS) {
+            let tap = native.aux_taps.get_mut(&slot).ok_or_else(|| anyhow::anyhow!("Destination unavailable."))?;
+            anyhow::ensure!(tap.current.as_ref().is_some_and(|current| current.value == expected), "Destination changed; reopen the control.");
+            if let Some(raw) = session.cached_verified(address) {
                 anyhow::ensure!(raw == expected as u32, "Destination changed; reopen the control.");
             }
-            native.aux1_tap = None; // failed/uncertain writes cannot retain old proof
-            native.aux1_tap_revision
+            tap.current = None; // failed/uncertain writes cannot retain old proof
+            tap.revision
         };
-        session.write_int(AUX1_SEND_SOURCE_ADDRESS, value as u32, VALUE_TYPE_PARAM).await?;
+        session.write_int(address, value as u32, VALUE_TYPE_PARAM).await?;
         let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("destination cache unavailable"))?;
         anyhow::ensure!(self.generation.load(Ordering::Acquire) == generation && native.generation == generation && native.view.connected, "Destination connection changed while writing; result uncertain.");
         // A genuine newer push wins over accepted intent, even if it disagrees.
-        if native.aux1_tap_revision == revision {
-            native.aux1_tap = Some(openfader_core::destinations::DestinationValue { value, verified: false });
+        let tap = native.aux_taps.get_mut(&slot).ok_or_else(|| anyhow::anyhow!("Destination unavailable."))?;
+        if tap.revision == revision {
+            tap.current = Some(openfader_core::destinations::DestinationValue { value, verified: false });
         }
         Ok(())
     }
@@ -1842,9 +1857,14 @@ impl MixerDriver for Dl32sDriver {
                 .collect();
             slots.sort_by_key(|s| s.slot);
             n.generation = generation;
-            n.aux1_name = session.name_slot_verified(50).filter(|name| !name.is_empty());
-            n.aux1_tap = session.cached_verified(AUX1_SEND_SOURCE_ADDRESS).and_then(aux1_tap_value);
-            n.aux1_tap_revision = 0;
+            n.aux_taps = AUX_SEND_SOURCE_ADDRESSES.iter().enumerate().map(|(index, address)| {
+                let slot = index as u16 + 1;
+                (slot, AuxTapCache {
+                    name: session.name_slot_verified(49 + slot as u32).filter(|name| !name.is_empty()),
+                    current: session.cached_verified(*address).and_then(aux_tap_value),
+                    revision: 0,
+                })
+            }).collect();
             n.parameter_labels = (58..=75).filter_map(|slot| {
                 let id = assignment_name_parameter(slot)?;
                 let name = session.name_slot_verified(slot)?;
@@ -1915,12 +1935,17 @@ impl MixerDriver for Dl32sDriver {
                         // session's view.
                         match &push {
                             PushEvent::Values { value_type: VALUE_TYPE_PARAM, start, raws }
-                                if AUX1_SEND_SOURCE_ADDRESS >= *start && (AUX1_SEND_SOURCE_ADDRESS - *start) < raws.len() as u32 => {
+                                if AUX_SEND_SOURCE_ADDRESSES.iter().any(|address| *address >= *start && (*address - *start) < raws.len() as u32) => {
                                 if let Ok(mut v) = native.lock() {
                                     if v.generation != generation { break; }
                                     if v.view.connected {
-                                        v.aux1_tap_revision = v.aux1_tap_revision.wrapping_add(1);
-                                        v.aux1_tap = aux1_tap_value(raws[(AUX1_SEND_SOURCE_ADDRESS - *start) as usize]);
+                                        for (index, address) in AUX_SEND_SOURCE_ADDRESSES.iter().enumerate() {
+                                            if *address < *start || (*address - *start) >= raws.len() as u32 { continue; }
+                                            if let Some(tap) = v.aux_taps.get_mut(&(index as u16 + 1)) {
+                                                tap.revision = tap.revision.wrapping_add(1);
+                                                tap.current = aux_tap_value(raws[(*address - *start) as usize]);
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1929,8 +1954,10 @@ impl MixerDriver for Dl32sDriver {
                                     if v.generation != generation { break; }
                                     if v.view.connected {
                                         for (slot, name) in pairs {
-                                            if *slot == 50 {
-                                                v.aux1_name = (!name.is_empty()).then(|| name.clone());
+                                            if (50..=57).contains(slot) {
+                                                if let Some(tap) = v.aux_taps.get_mut(&((*slot - 49) as u16)) {
+                                                    tap.name = (!name.is_empty()).then(|| name.clone());
+                                                }
                                             }
                                             if let Some(id) = assignment_name_parameter(*slot) {
                                                 if let Some(label) = assignment_name_label(*slot, name) {
