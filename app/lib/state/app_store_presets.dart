@@ -14,10 +14,13 @@ abstract interface class _AppStorePresetsContract {
   void _confirmPresetValue(int channel, String field, Object value,
       {required bool verified});
   bool get _presetDisposed;
+  int get _presetGeneration;
+  ProcessorPresetLibrary get _processorPresets;
 }
 
 mixin _AppStorePresets on _AppStoreContext {
   // --- local user processor presets ---
+  @override
   final ProcessorPresetLibrary _processorPresets = ProcessorPresetLibrary();
   // Display/optimistic state is intentionally separate from values that can
   // substantiate a stored preset or complete a recall. Legacy events without
@@ -77,6 +80,7 @@ mixin _AppStorePresets on _AppStoreContext {
 
   final Map<(int, ProcessorPresetKind), _PresetRecall> _presetRecalls = {};
   final Expando<int> _presetTargets = Expando<int>();
+  @override
   int _presetGeneration = 0;
   int _presetId = 0;
   @override
@@ -135,6 +139,7 @@ mixin _AppStorePresets on _AppStoreContext {
 
   @override
   ProcessorPresetTarget? capturePresetTarget(ProcessorPresetKind kind) {
+    if (kind.index > ProcessorPresetKind.compressor.index) return null;
     final family = _presetFamily(_channel)?['key'];
     if (family is! String || family.isEmpty) return null;
     for (final strip in engine.strips) {
@@ -208,6 +213,7 @@ mixin _AppStorePresets on _AppStoreContext {
           field == 'gate_on' || field == 'gate_filter_on',
         ProcessorPresetKind.compressor =>
           field == 'comp_on' || field == 'comp_filter_on',
+        _ => false,
       };
 
   @override

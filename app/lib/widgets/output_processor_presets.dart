@@ -1,0 +1,256 @@
+import 'package:flutter/material.dart';
+
+import '../core/output_presets.dart';
+import '../core/output_processing.dart';
+import '../core/processor_presets.dart';
+import '../palette.dart';
+
+/// Capture before opening the modal: selection changes cannot retarget it.
+class OutputProcessorPresetActions extends StatelessWidget {
+  final OutputProcessingStore store;
+  final String surface;
+  const OutputProcessorPresetActions(
+      {super.key, required this.store, required this.surface});
+
+  @override
+  Widget build(BuildContext context) => Wrap(spacing: 8, children: [
+        TextButton.icon(
+            icon: const Icon(Icons.folder_open),
+            label: const Text('Presets / Paste'),
+            onPressed: () {
+              final target = store.captureOutputPresetTarget(surface);
+              if (target == null) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text(
+                        'Output presets are unavailable or settings are changing.')));
+                return;
+              }
+              showDialog<void>(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) =>
+                      _OutputPresetLibrary(store: store, target: target));
+            }),
+        TextButton.icon(
+            icon: const Icon(Icons.copy),
+            label: const Text('Copy processor'),
+            onPressed: () {
+              final target = store.captureOutputPresetTarget(surface);
+              final error = target == null
+                  ? 'Output presets are unavailable or settings are changing.'
+                  : store.copyOutputProcessor(target);
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(error ??
+                      'Processor copied. Bypass states and global temperature stay unchanged.')));
+            }),
+      ]);
+}
+
+class _OutputPresetLibrary extends StatefulWidget {
+  final OutputProcessingStore store;
+  final OutputPresetTarget target;
+  const _OutputPresetLibrary({required this.store, required this.target});
+  @override
+  State<_OutputPresetLibrary> createState() => _OutputPresetLibraryState();
+}
+
+class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
+  final _name = TextEditingController();
+  List<ProcessorPreset> _presets = const [];
+  bool _busy = false;
+  bool _recalling = false;
+  String? _message;
+
+  @override
+  void initState() {
+    super.initState();
+    _run(_load);
+  }
+
+  @override
+  void dispose() {
+    if (_recalling) widget.store.cancelOutputPresetRecall();
+    _name.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final presets = await widget.store.loadOutputPresets(widget.target);
+    if (mounted) setState(() => _presets = presets);
+  }
+
+  Future<void> _run(Future<void> Function() work) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _message = null;
+    });
+    try {
+      await work();
+    } catch (error) {
+      if (mounted) setState(() => _message = '$error');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _save() => _run(() async {
+        final error =
+            await widget.store.saveOutputPreset(widget.target, _name.text);
+        if (!mounted) return;
+        setState(() => _message = error ?? 'Preset saved on this device.');
+        if (error == null) await _load();
+      });
+
+  Future<void> _recall(String? id) => _run(() async {
+        setState(() => _recalling = true);
+        try {
+          final result =
+              await widget.store.recallOutputPreset(widget.target, id);
+          if (mounted) {
+            setState(() => _message = result.error ??
+                '${result.confirmed} of ${result.total} settings verified by mixer readback.');
+          }
+        } finally {
+          if (mounted) setState(() => _recalling = false);
+        }
+      });
+
+  Future<void> _rename(ProcessorPreset preset) => _run(() async {
+        var draft = preset.name;
+        final name = await showDialog<String>(
+            context: context,
+            builder: (context) => AlertDialog(
+                    backgroundColor: ConsolePalette.of(context).panel,
+                    title: const Text('Rename preset'),
+                    content: TextFormField(
+                        initialValue: preset.name,
+                        onChanged: (value) => draft = value,
+                        autofocus: true,
+                        maxLength: kProcessorPresetMaxNameLength),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Cancel')),
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, draft),
+                          child: const Text('Rename'))
+                    ]));
+        if (!mounted || name == null) return;
+        final error = await widget.store
+            .renameOutputPreset(widget.target, preset.id, name);
+        if (error != null) throw StateError(error);
+        await _load();
+      });
+
+  Future<void> _delete(ProcessorPreset preset) => _run(() async {
+        final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+                    backgroundColor: ConsolePalette.of(context).panel,
+                    title: const Text('Delete preset?'),
+                    content: Text(preset.name),
+                    actions: [
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancel')),
+                      TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text('Delete'))
+                    ]));
+        if (confirmed != true) return;
+        final error =
+            await widget.store.deleteOutputPreset(widget.target, preset.id);
+        if (error != null) throw StateError(error);
+        await _load();
+      });
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+      canPop: !_busy,
+      child: ListenableBuilder(
+          listenable: widget.store,
+          builder: (context, _) {
+            final error = _recalling
+                ? null
+                : widget.store.outputPresetTargetError(widget.target);
+            final enabled = !_busy && error == null;
+            return AlertDialog(
+                backgroundColor: ConsolePalette.of(context).panel,
+                title: Text(
+                    '${widget.target.kind!.label} · ${widget.target.name}'),
+                content: SizedBox(
+                    width: 520,
+                    child: SingleChildScrollView(
+                        child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                          const Text(
+                              'Recall or paste applies this processor only. Bypass/on states and global temperature stay unchanged. Writes are ordered; cancellation stops before the next setting. Changes already sent are not rolled back.'),
+                          const SizedBox(height: 12),
+                          if (error != null) Text(error),
+                          if (_message != null) Text(_message!),
+                          if (_busy) const LinearProgressIndicator(),
+                          TextField(
+                              controller: _name,
+                              enabled: enabled,
+                              maxLength: kProcessorPresetMaxNameLength,
+                              decoration: const InputDecoration(
+                                  labelText: 'Preset name')),
+                          Wrap(spacing: 8, children: [
+                            TextButton(
+                                onPressed: enabled ? _save : null,
+                                child: const Text('Save current')),
+                            TextButton(
+                                onPressed: enabled &&
+                                        widget.store.hasOutputProcessorClipboard
+                                    ? () => _recall(null)
+                                    : null,
+                                child: const Text('Paste processor')),
+                          ]),
+                          if (_presets.isEmpty && !_busy)
+                            const Text(
+                                'No local presets saved for this processor.'),
+                          for (final preset in _presets)
+                            ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                title: Text(preset.name),
+                                subtitle:
+                                    Text('${preset.values.length} settings'),
+                                trailing: Wrap(children: [
+                                  TextButton(
+                                      onPressed: enabled
+                                          ? () => _recall(preset.id)
+                                          : null,
+                                      child: const Text('Recall')),
+                                  PopupMenuButton<String>(
+                                      enabled: enabled,
+                                      onSelected: (action) => action == 'rename'
+                                          ? _rename(preset)
+                                          : _delete(preset),
+                                      itemBuilder: (_) => const [
+                                            PopupMenuItem(
+                                                value: 'rename',
+                                                child: Text('Rename')),
+                                            PopupMenuItem(
+                                                value: 'delete',
+                                                child: Text('Delete'))
+                                          ]),
+                                ])),
+                        ]))),
+                actions: [
+                  if (_recalling)
+                    TextButton(
+                        onPressed: () {
+                          widget.store.cancelOutputPresetRecall();
+                          setState(() => _message =
+                              'Cancellation requested. An in-flight setting may still complete.');
+                        },
+                        child: const Text('Cancel recall')),
+                  TextButton(
+                      onPressed: _busy ? null : () => Navigator.pop(context),
+                      child: const Text('Close')),
+                ]);
+          }));
+}

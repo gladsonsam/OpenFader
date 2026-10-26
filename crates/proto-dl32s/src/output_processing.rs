@@ -90,8 +90,11 @@ impl OutputProcessingCache {
                 entry.current = None;
             }
             if let Some(raw) = raw_at(spec.address) {
-                entry.revision = entry.revision.wrapping_add(1);
-                entry.current = spec.decode(raw);
+                let current = spec.decode(raw);
+                if entry.current != current {
+                    entry.revision = entry.revision.wrapping_add(1);
+                    entry.current = current;
+                }
             }
         }
     }
@@ -105,10 +108,13 @@ impl OutputProcessingCache {
             .is_none_or(|address| self.modes.get(&address) == Some(&0))
     }
 
-    pub(crate) fn controls(&self) -> Vec<DestinationControl> {
+    pub(crate) fn controls(&self, generation: u64) -> Vec<DestinationControl> {
         specs()
             .iter()
             .map(|spec| DestinationControl {
+                generation: Some(generation),
+                revision: self.parameters.get(&(spec.bank, spec.address)).map(|entry| entry.revision),
+                preset: spec.bank != Bank::System && !spec.id.ends_with("_on"),
                 target: spec.target.clone(),
                 target_label: spec.target_label.clone(),
                 target_name: spec
@@ -162,6 +168,18 @@ impl Dl32sDriver {
         value: f32,
         expected: f32,
     ) -> anyhow::Result<bool> {
+        self.write_output_processing_guarded(target, control, value, expected, None)
+            .await
+    }
+
+    pub(crate) async fn write_output_processing_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: Option<&[DestinationControl]>,
+    ) -> anyhow::Result<bool> {
         let Some(spec) = specs()
             .iter()
             .find(|spec| spec.target == target && spec.id == control)
@@ -185,6 +203,24 @@ impl Dl32sDriver {
                 native.generation == generation && native.view.connected,
                 "Output connection changed"
             );
+            if let Some(snapshot) = snapshot {
+                let current = native.output_processing.controls(generation);
+                let block: Vec<_> = current
+                    .iter()
+                    .filter(|row| row.target == target && row.surface == spec.surface)
+                    .collect();
+                anyhow::ensure!(
+                    snapshot.len() == block.len()
+                        && snapshot
+                            .iter()
+                            .all(|row| { row.revision.is_some() && block.contains(&row) }),
+                    "Output processor changed; recall stopped before the next write"
+                );
+                anyhow::ensure!(
+                    spec.bank != Bank::System && !spec.id.ends_with("_on"),
+                    "Control cannot be recalled"
+                );
+            }
             let cache = &mut native.output_processing;
             anyhow::ensure!(
                 cache.ready(spec)
@@ -208,6 +244,7 @@ impl Dl32sDriver {
                 );
             }
             entry.current = None;
+            entry.revision = entry.revision.wrapping_add(1);
             entry.revision
         };
         session
@@ -228,11 +265,22 @@ impl Dl32sDriver {
             cache.ready(spec),
             "Output processor changed while writing; result uncertain"
         );
+        if let Some(snapshot) = snapshot {
+            let current = cache.controls(generation);
+            anyhow::ensure!(
+                snapshot
+                    .iter()
+                    .filter(|row| row.id != control)
+                    .all(|row| { current.contains(row) }),
+                "Output processor changed while writing; recall stopped, result uncertain"
+            );
+        }
         let entry = cache
             .parameters
             .get_mut(&(spec.bank, spec.address))
             .ok_or_else(|| anyhow::anyhow!("Output unavailable"))?;
         if entry.revision == revision {
+            entry.revision = entry.revision.wrapping_add(1);
             entry.current = Some(DestinationValue {
                 value,
                 verified: false,

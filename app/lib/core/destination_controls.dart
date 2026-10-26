@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'dart:convert';
 
 /// A provider-owned control shared by all sends feeding one destination.
 /// IDs and choices stay opaque to screens; values retain provider units.
@@ -18,6 +19,12 @@ class DestinationChoiceVm {
 
 class DestinationControlVm {
   final int epoch;
+  final int? revision;
+  final int? generation;
+  final bool preset;
+  final String _descriptorJson;
+  Map<String, dynamic> get descriptor =>
+      jsonDecode(_descriptorJson) as Map<String, dynamic>;
   final String target;
   final String targetLabel;
   final String? targetName;
@@ -37,6 +44,10 @@ class DestinationControlVm {
 
   const DestinationControlVm._(
       this.epoch,
+      this.revision,
+      this.generation,
+      this.preset,
+      this._descriptorJson,
       this.target,
       this.targetLabel,
       this.targetName,
@@ -169,6 +180,10 @@ class DestinationControlVm {
     final send = data['send_slot'];
     return DestinationControlVm._(
         epoch,
+        data['revision'] is int ? data['revision'] as int : null,
+        data['generation'] is int ? data['generation'] as int : null,
+        data['preset'] == true,
+        jsonEncode(data),
         target,
         targetLabel,
         data['target_name'] is String ? data['target_name'] as String : null,
@@ -193,6 +208,9 @@ class DestinationControlVm {
   bool operator ==(Object other) =>
       other is DestinationControlVm &&
       epoch == other.epoch &&
+      revision == other.revision &&
+      generation == other.generation &&
+      preset == other.preset &&
       target == other.target &&
       targetLabel == other.targetLabel &&
       targetName == other.targetName &&
@@ -214,6 +232,9 @@ class DestinationControlVm {
   @override
   int get hashCode => Object.hash(
       epoch,
+      revision,
+      generation,
+      preset,
       target,
       targetLabel,
       targetName,

@@ -15,12 +15,20 @@ import 'package:flutter/foundation.dart';
 enum ProcessorPresetKind {
   eq,
   gate,
-  compressor;
+  compressor,
+  outputPeq,
+  outputGeq,
+  outputCompressor,
+  outputDelay;
 
   String get label => switch (this) {
         ProcessorPresetKind.eq => 'EQ',
         ProcessorPresetKind.gate => 'Gate',
         ProcessorPresetKind.compressor => 'Compressor',
+        ProcessorPresetKind.outputPeq => 'Output PEQ / filters',
+        ProcessorPresetKind.outputGeq => 'Output GEQ',
+        ProcessorPresetKind.outputCompressor => 'Output compressor',
+        ProcessorPresetKind.outputDelay => 'Output alignment delay',
       };
 
   /// Stable wire name, used in stored JSON.
@@ -372,6 +380,7 @@ bool processorPresetField(ProcessorPresetKind kind, String field) {
     ProcessorPresetKind.eq => _eqPresetFields.contains(field),
     ProcessorPresetKind.gate => _gatePresetFields.contains(field),
     ProcessorPresetKind.compressor => _compPresetFields.contains(field),
+    _ => processorPresetFields(kind).contains(field),
   };
 }
 
@@ -381,6 +390,17 @@ Set<String> processorPresetFields(ProcessorPresetKind kind) {
     ProcessorPresetKind.eq => _eqPresetFields,
     ProcessorPresetKind.gate => _gatePresetFields,
     ProcessorPresetKind.compressor => _compPresetFields,
+    ProcessorPresetKind.outputPeq => {
+        ..._eqPresetFields.where((f) => f != 'eq_mode'),
+        'lpf_freq',
+        'lpf_slope',
+      },
+    ProcessorPresetKind.outputGeq => {
+        for (var i = 1; i <= 31; i++) 'geq${i}_gain',
+      },
+    ProcessorPresetKind.outputCompressor =>
+      _compPresetFields.where((f) => f != 'comp_mode').toSet(),
+    ProcessorPresetKind.outputDelay => {'delay_distance'},
   };
 }
 

@@ -78,6 +78,9 @@ impl Dl32sDriver {
         let mut controls: Vec<_> = (1..=AUX_SEND_SOURCE_ADDRESSES.len() as u16).map(|slot| {
             let tap = native.as_ref().and_then(|n| n.destinations.aux_taps.get(&slot));
             DestinationControl {
+                revision: None,
+                generation: None,
+                preset: false,
                 target: format!("bus/{slot:02}"), target_label: format!("Aux {slot}"),
                 target_name: tap.and_then(|tap| tap.name.clone()), send_slot: Some(slot), id: "tap".to_string(),
                 surface: "send".to_string(),

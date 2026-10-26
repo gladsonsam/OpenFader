@@ -18,6 +18,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/channel_views.dart';
 import '../core/output_processing.dart';
+import '../core/output_presets.dart';
 import '../core/audio_spectrum_peaks.dart';
 import '../core/channel_name.dart';
 import '../core/coalescer.dart';
@@ -42,6 +43,7 @@ part 'app_store_strips.dart';
 part 'app_store_channel.dart';
 part 'app_store_destinations.dart';
 part 'app_store_outputs.dart';
+part 'app_store_output_presets.dart';
 
 double _linToDb(double l) => (l <= 0 || !l.isFinite)
     ? double.negativeInfinity
@@ -56,6 +58,7 @@ abstract class _AppStoreContext extends ChangeNotifier
         ChannelStore,
         OutputProcessingStore,
         _AppStoreOutputsContract,
+        _AppStoreOutputPresetsContract,
         _AppStoreCoreContract,
         _AppStoreLibraryContract,
         _AppStoreAppearanceContract,
@@ -107,7 +110,8 @@ class AppStore extends _AppStoreContext
         _AppStoreStrips,
         _AppStoreChannel,
         _AppStoreDestinations,
-        _AppStoreOutputs
+        _AppStoreOutputs,
+        _AppStoreOutputPresets
     implements MixerStore, MetersStore, ChannelStore, OutputProcessingStore {
   AppStore(this._api, this._clientId)
       : _coalescer = WriteCoalescer(TimerCoalescerClock());

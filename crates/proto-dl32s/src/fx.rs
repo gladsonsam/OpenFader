@@ -97,6 +97,9 @@ impl FxState {
                 continue;
             };
             controls.push(DestinationControl {
+                revision: None,
+                generation: None,
+                preset: false,
                 target: format!("fx/{:02}", spec.slot), target_label: format!("FX {}", spec.slot),
                 target_name: Some(spec.algorithm_name.to_string()), send_slot: None,
                 surface: "fx".to_string(), id: spec.id.to_string(), label: spec.label.to_string(),

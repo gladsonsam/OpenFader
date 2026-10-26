@@ -286,6 +286,9 @@ pub enum Cmd {
     },
     /// Captured destination-wide edit; distinct from strip-local send taps.
     DestinationParam {
+        /// Complete original processor descriptors for a guarded recall step.
+        #[serde(default)]
+        guard: Option<Vec<serde_json::Value>>,
         request_id: String,
         target: String,
         control: String,
