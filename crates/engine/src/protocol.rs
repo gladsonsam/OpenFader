@@ -575,6 +575,9 @@ pub struct FxCaps {
     pub slots: usize,
     #[serde(default)]
     pub types: Vec<FxTypeCaps>,
+    /// The driver exposes independent effect on/off and bypass state controls.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub state_controls: bool,
 }
 
 /// One `caps.groups` row (R2): addressable master-section counts behind

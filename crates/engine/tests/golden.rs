@@ -179,6 +179,7 @@ fn examples() -> Vec<(String, Value)> {
                             scale: "lin".to_string(),
                         }],
                     }],
+                    ..Default::default()
                 },
                 routing: openfader_engine::protocol::RoutingCaps {
                     targets: vec![],
