@@ -3,6 +3,114 @@
 use super::*;
 
 impl Engine {
+    /// Resolve only provider-owned stable IDs. Positional routing remains a
+    /// compatibility write adapter, never the source of advertised destinations.
+    pub(super) fn routing_command(
+        &self,
+        driver: &str,
+        epoch: u64,
+        destination: &str,
+        source: Option<crate::protocol::RoutingSource>,
+    ) -> anyhow::Result<Cmd> {
+        anyhow::ensure!(
+            driver == self.active_driver() && epoch == self.connection_gen.load(Ordering::Acquire),
+            "routing session changed"
+        );
+        let dest = self
+            .drv(driver)
+            .routing_planes()
+            .into_iter()
+            .flat_map(|p| p.destinations)
+            .find(|d| d.id == destination)
+            .ok_or_else(|| anyhow::anyhow!("unknown routing destination"))?;
+        Ok(if let Some(source) = source {
+            // The shared write guard checks the destination-specific allowlist.
+            Cmd::PatchSet {
+                strip: dest.strip,
+                key: Some(dest.key),
+                target: dest.target,
+                group: source.group,
+                index: source.index,
+            }
+        } else {
+            Cmd::PatchClear {
+                strip: dest.strip,
+                key: Some(dest.key),
+                target: dest.target,
+            }
+        })
+    }
+
+    pub(super) fn validate_routing_context(
+        &self,
+        context: &Option<(String, u64, String)>,
+        current: &Value,
+    ) -> anyhow::Result<()> {
+        if let Some((driver, epoch, expected)) = context {
+            anyhow::ensure!(
+                *driver == self.active_driver()
+                    && *epoch == self.connection_gen.load(Ordering::Acquire),
+                "routing session changed"
+            );
+            let current = current
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("routing state unknown"))?;
+            anyhow::ensure!(
+                current == expected
+                    || (parse_source(current).is_some()
+                        && parse_source(current) == parse_source(expected)),
+                "routing source changed; select the destination again"
+            );
+        }
+        Ok(())
+    }
+
+    /// Validate legacy and identity-addressed writes against the same provider contract.
+    pub(super) async fn guard_routing_write(
+        &self,
+        strip: u16,
+        target: &str,
+        source: Option<(&str, u8)>,
+        policy: &Policy,
+        writer: &str,
+    ) -> anyhow::Result<()> {
+        let drv = self.active_drv();
+        let dest = drv
+            .routing_planes()
+            .into_iter()
+            .flat_map(|p| p.destinations)
+            .find(|d| d.strip == strip && d.target == target)
+            .ok_or_else(|| {
+                anyhow::anyhow!("legacy patch requires advertised input strips and targets")
+            })?;
+        if let Some((group, index)) = source {
+            let allowed = dest
+                .source_groups
+                .iter()
+                .find(|g| g.key == group)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("unknown patch group {group:?} for routing destination")
+                })?;
+            anyhow::ensure!(
+                index > 0 && usize::from(index) <= allowed.count,
+                "patch index {index} out of range 1..={}",
+                allowed.count
+            );
+        } else {
+            anyhow::ensure!(dest.clearable, "destination cannot be cleared");
+        }
+        for member in drv
+            .control_members(StripId(strip), drv.routing_control(target))
+            .await?
+        {
+            policy.allow_strip(member)?;
+            if let Some(holder) = self.lock_holder(member.0) {
+                anyhow::ensure!(holder == writer, "strip {} locked by {}", member.0, holder);
+            }
+        }
+        Ok(())
+    }
+
     /// True when the FX cache needs no fill: design racks are in-memory
     /// complete and rack-less rows are honest placeholders; only a numbered
     /// row with a known type but a short param set wants the worker.
@@ -77,79 +185,84 @@ impl Engine {
     /// Providers may retain accepted-write continuity; this is not verified
     /// parameter evidence (that remains in the provenance-aware param plane).
     pub(super) async fn routing_message(&self) -> Event {
+        let driver = self.active_driver();
+        let catalog = self.drv(&driver).routing_planes();
+        let destinations: Vec<PatchEntry> = self
+            .routing_snapshot_on(&driver)
+            .await
+            .into_iter()
+            .map(|r| PatchEntry {
+                destination: catalog
+                    .iter()
+                    .flat_map(|p| &p.destinations)
+                    .find(|d| d.strip == r.strip && d.target == r.target)
+                    .map(|d| d.id.clone()),
+                // Provider display may include accepted writes. Never label it verified.
+                authority: Some("provider_display".to_string()),
+                target: r.target,
+                strip: r.strip,
+                key: r.key,
+                label: if r.group.is_empty() && r.index == 0 {
+                    "—".to_string()
+                } else {
+                    format!("{} {:02}", r.group, r.index)
+                },
+                group: r.group,
+                index: r.index,
+            })
+            .collect();
+        let patches = destinations
+            .iter()
+            // Preserve legacy absence-as-unpatched behavior for single-target clients.
+            .filter(|r| !r.target.is_empty() || !r.group.is_empty() || r.index != 0)
+            .cloned()
+            .collect();
         Event::Routing {
-            patches: self
-                .routing_snapshot()
-                .await
-                .into_iter()
-                // Legacy single-target clients use absence to mean unpatched.
-                // Named targets retain an explicit row so A and B stay distinct.
-                .filter(|r| !r.target.is_empty() || !r.group.is_empty() || r.index != 0)
-                .map(|r| PatchEntry {
-                    target: r.target,
-                    strip: r.strip,
-                    key: r.key.clone(),
-                    label: if r.group.is_empty() && r.index == 0 {
-                        "—".to_string()
-                    } else {
-                        format!("{} {:02}", r.group, r.index)
-                    },
-                    group: r.group,
-                    index: r.index,
-                })
-                .collect(),
+            patches,
+            destinations,
         }
     }
 
-    /// (strip + stable key, group, 1-based index) rows for patched inputs.
-    pub(super) async fn routing_snapshot(&self) -> Vec<StoredRoute> {
-        let driver = self.active_driver();
-        self.routing_snapshot_on(&driver).await
-    }
-
-    /// Pinned routing snapshot (r58 P2(2)): same rows as
-    /// [`Engine::routing_snapshot`] but read from `driver`, so a numbered
-    /// save cannot mix one desk's strips with another's routing.
+    /// Read provider destinations on one pinned driver, so scene saves and
+    /// routing frames cannot mix one desk's catalog with another's source state.
     pub(super) async fn routing_snapshot_on(&self, driver: &str) -> Vec<StoredRoute> {
         let drv = self.drv(driver);
-        if drv.routing_groups().is_empty() {
+        let planes = drv.routing_planes();
+        if planes.is_empty() {
             return Vec::new();
         }
-        let topo = drv.topology();
-        // Bulk `source` plane when the driver serves it (one lock instead
-        // of a per-strip `get_param` await); same rows in the same order.
+        // The executable provider contract owns the destination universe; input
+        // topology is only used by the compatibility adapter, never by this reader.
         let bulk = drv.source_bulk();
         let mut out = Vec::new();
-        for fam in &topo {
-            if fam.kind != openfader_core::StripKind::In {
-                continue;
-            }
-            for s in fam.first..fam.first + fam.count {
-                for target in drv.routing_targets() {
-                    let label = if target.key.is_empty() {
-                        match &bulk {
-                            Some(map) => map.get(&(s as u16)).cloned(),
-                            None => drv.routing_source(StripId(s as u16), target.key).await.ok(),
-                        }
-                    } else {
-                        drv.routing_source(StripId(s as u16), target.key).await.ok()
-                    };
-                    let Some(label) = label else { continue };
-                    let route = if label == "—" {
-                        Some((String::new(), 0))
-                    } else {
-                        parse_source(&label)
-                    };
-                    if let Some((group, index)) = route {
-                        out.push(StoredRoute {
-                            target: target.key.to_string(),
-                            strip: s as u16,
-                            key: openfader_core::strip_key_for_index(&topo, s),
-                            group,
-                            index,
-                        });
-                    }
+        for dest in planes.into_iter().flat_map(|p| p.destinations) {
+            let label = if dest.target.is_empty() {
+                match &bulk {
+                    Some(map) => map.get(&dest.strip).cloned(),
+                    None => drv
+                        .routing_source(StripId(dest.strip), &dest.target)
+                        .await
+                        .ok(),
                 }
+            } else {
+                drv.routing_source(StripId(dest.strip), &dest.target)
+                    .await
+                    .ok()
+            };
+            let Some(label) = label else { continue };
+            let route = if label == "—" {
+                Some((String::new(), 0))
+            } else {
+                parse_source(&label)
+            };
+            if let Some((group, index)) = route {
+                out.push(StoredRoute {
+                    target: dest.target,
+                    strip: dest.strip,
+                    key: Some(dest.key),
+                    group,
+                    index,
+                });
             }
         }
         out
@@ -165,7 +278,7 @@ impl Engine {
         out: &mut Vec<Event>,
     ) -> anyhow::Result<()> {
         let drv = self.active_drv();
-        if drv.routing_groups().is_empty() {
+        if drv.routing_planes().is_empty() {
             return Ok(());
         }
         let driver = self.active_driver();
