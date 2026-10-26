@@ -179,10 +179,22 @@ mixin _AppStoreSession on _AppStoreContext {
   void _prepareConnectionCommand(String json) {
     final command = jsonDecode(json);
     if (command is! Map ||
-        (command['cmd'] != 'connect' && command['cmd'] != 'disconnect')) {
+        !const {
+          'connect',
+          'connect_device',
+          'probe',
+          'probe_desk',
+          'disconnect',
+          'offline',
+        }.contains(command['cmd'])) {
       return;
     }
-    engine.resetSession();
+    if (command['cmd'] == 'connect' || command['cmd'] == 'disconnect') {
+      engine.resetSession();
+    } else {
+      // Invalidate edits even when identification fails before a new engine epoch.
+      engine.session++;
+    }
     _clearSessionValues();
     _syncControlNotes();
     notifyListeners();

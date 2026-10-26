@@ -79,6 +79,19 @@ async fn wait_for_initial_state(session: &MackieSession) -> anyhow::Result<()> {
 }
 
 impl Dl32sDriver {
+    /// A correlated, read-only device-name query on the existing control TCP
+    /// session. A cached main-fader word and a writable TCP buffer cannot
+    /// detect a silent/half-open Wi-Fi route. Uses the same captured request
+    /// as identification; it never initializes or writes mixer state.
+    pub async fn check_control_health(&self) -> anyhow::Result<()> {
+        let guard = self.session().await?;
+        let reply = guard.as_ref().expect("checked above")
+            .request_general_info(3, openfader_transport::mackie::REQUEST_TIMEOUT).await?;
+        anyhow::ensure!(reply.body.starts_with(&3u32.to_be_bytes()) && reply.body.len() >= 8,
+            "dl32s: invalid control health reply");
+        Ok(())
+    }
+
     pub(super) async fn session(&self) -> anyhow::Result<MutexGuard<'_, Option<MackieSession>>> {
         let guard = self.session.lock().await;
         if guard.is_none() {

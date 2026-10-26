@@ -796,7 +796,7 @@ pub struct Engine {
     /// [`POLL_TIMEOUT_STRIKES`] in a row, one lost datagram on venue wifi
     /// must not flap the status UI while the independent meter stream stays
     /// live. Any success (or any link reset) clears the count, so a truly
-    /// dead control path still surfaces as `reconnecting` after ~6 s and is
+    /// dead control path still surfaces as `reconnecting` after bounded failures and is
     /// never masked by fresh meters.
     health_strikes: AtomicU8,
     read_failures: RwLock<ReadFailures>,
@@ -870,6 +870,7 @@ pub struct Engine {
     connection_gen: AtomicU64,
     fill_connection_gen: AtomicU64,
     connection_changed: Notify,
+    connection_lifecycle: crate::connection_lifecycle::ConnectionLifecycle,
     /// Nonzero while the XR18 startup pass owns the read lane.
     hydrating: AtomicU64,
     reads_suspended: AtomicBool,
@@ -980,6 +981,7 @@ impl Engine {
             connection_gen: AtomicU64::new(1),
             fill_connection_gen: AtomicU64::new(1),
             connection_changed: Notify::new(),
+            connection_lifecycle: Default::default(),
             hydrating: AtomicU64::new(0),
             reads_suspended: AtomicBool::new(false),
         });
@@ -2549,25 +2551,20 @@ impl Engine {
         self.link_message_cached()
     }
 
-    /// Control-health sample duration in ms: an OSC main-fader round trip
-    /// on X-Air, a local session/cache check on DL32S, and deterministic
-    /// jitter on sim. DL32S samples are not network RTT. Failures keep the
-    /// last sample (never block the ticker).
-    ///
-    /// Liveness, not verification (R2 health contract): the probe reads the
-    /// inclusive DISPLAY getter (`get_main_fader` serves own-write-pending
-    /// words for continuity), exactly as it did before the verified-only
-    /// split, a locally moved main fader must never read as a dead control
-    /// path. Cache provenance is never treated as transport failure; only a
-    /// transport/session error arms strikes. No second connection is opened.
+    /// Read-only control-health round trip through the provider hook. The
+    /// default probes the display main fader; push-cache providers override
+    /// it with a correlated wire query so a silent route cannot look healthy
+    /// indefinitely from old values. It never verifies a mixer write and
+    /// never opens a second session. Failures retain the last RTT sample.
     ///
     /// Bounded failure policy (matches the poller's
     /// [`POLL_TIMEOUT_STRIKES`] tolerance): a single failed query only arms
     /// the bounded `repair_dirty` reconciliation and keeps `connected`, one
     /// lost datagram must not flap the status UI while the independent UDP
     /// meter stream stays live. The `link` flips to `reconnecting` only
-    /// after [`POLL_TIMEOUT_STRIKES`] consecutive failures (~6 s at the 2 s
-    /// [`LINK_INTERVAL`]). The strike count resets on any success and on
+    /// after [`POLL_TIMEOUT_STRIKES`] consecutive failures (cadence depends
+    /// on the provider's bounded query timeout and [`LINK_INTERVAL`]).
+    /// The strike count resets on any success and on
     /// every link reset (connect/disconnect/offline), and fresh meters
     /// NEVER reset it, so a dead control path always surfaces after ~6 s
     /// and cannot be masked indefinitely by live levels.
@@ -2575,8 +2572,11 @@ impl Engine {
         let last = self.link.read().unwrap().latency_ms;
         if self.reads_suspended.load(Ordering::Acquire) { return last; }
         if self.active_drv().is_hardware() {
+            let generation = self.connection_gen.load(Ordering::Acquire);
             let t0 = Instant::now();
-            let target = self.active_drv().get_main_fader().await;
+            let target = self.active_drv().control_health().await;
+            if generation != self.connection_gen.load(Ordering::Acquire)
+                || self.reads_suspended.load(Ordering::Acquire) { return last; }
             match target {
                 Ok(_) => {
                     self.health_strikes.store(0, Ordering::Release);
@@ -5842,13 +5842,38 @@ impl Engine {
     /// [`handle_json`](Engine::handle_json): run [`apply`](Engine::apply),
     /// unicast the direct reply (or error), then broadcast.
     async fn apply_cmd(&self, writer: &str, cmd: Cmd) {
+        let connecting = matches!(cmd, Cmd::Connect { .. } | Cmd::ConnectDevice { .. } | Cmd::Probe { .. } | Cmd::Disconnect | Cmd::Offline { .. });
+        if connecting {
+            let suspension = AtomicU8::new(0);
+            self.connection_lifecycle.run(async {
+                // Capture only after acquiring the intent lane: a queued
+                // selection must not inherit the older attempt's suspension.
+                suspension.store(1 + u8::from(self.reads_suspended.load(Ordering::Acquire)), Ordering::Release);
+                self.dispatch_cmd(writer, cmd, true).await;
+            }, || {
+                let before = suspension.load(Ordering::Acquire);
+                if before == 0 { return; } // Cancelled before work was polled.
+                // Restore a cancelled pre-readiness attempt's retained read
+                // lane before a newer probe can fail without changing epoch.
+                self.hydrating.store(0, Ordering::Release);
+                if self.reads_suspended.load(Ordering::Acquire) {
+                    self.reads_suspended.store(before == 2, Ordering::Release);
+                }
+                self.repair_dirty.store(true, Ordering::Release);
+            }).await;
+        } else {
+            self.dispatch_cmd(writer, cmd, false).await;
+        }
+    }
+
+    /// Connection work holds its intent lane through final publication, so
+    /// an old handshake cannot publish frames after a newer command's epoch.
+    async fn dispatch_cmd(&self, writer: &str, cmd: Cmd, connecting: bool) {
         let started = Instant::now();
         let generation = self.connection_gen.load(Ordering::Acquire);
-        // Probe connects on success, so its caps/link/devices must survive
-        // the generation change just like an explicit connection command.
-        let connecting = matches!(cmd, Cmd::Connect { .. } | Cmd::ConnectDevice { .. } | Cmd::Probe { .. } | Cmd::Disconnect | Cmd::Offline { .. });
         let mut out = Vec::new();
-        match self.apply(cmd, writer, &mut out).await {
+        let result = self.apply(cmd, writer, &mut out).await;
+        match result {
             Ok(Some(reply)) => self.unicast(writer, reply),
             Ok(None) => {}
             Err(e) => self.unicast(

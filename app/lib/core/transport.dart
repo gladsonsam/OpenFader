@@ -25,9 +25,11 @@ bool queueable(String json) {
     return const {
       'connect',
       'connect_device',
+      'probe',
       'probe_desk',
       'hello',
       'offline',
+      'disconnect',
     }.contains(c['cmd']);
   } catch (_) {
     return false;
@@ -88,7 +90,7 @@ class WsTransport implements Transport {
   void connect() {
     _wantOpen = true;
     _manuallyClosed = false;
-    if (_channel == null) _open();
+    if (_channel == null && _retryTimer == null) _open();
   }
 
   void _setOnline(bool v) {
@@ -110,14 +112,15 @@ class WsTransport implements Transport {
 
   void _scheduleRetry() {
     if (!_wantOpen || _manuallyClosed || _retryTimer != null) return;
-    final idx = _failures.clamp(0, backoffMs.length - 1);
+    final idx = (_failures - 1).clamp(0, backoffMs.length - 1);
     _retryTimer = Timer(Duration(milliseconds: backoffMs[idx]), () {
       _retryTimer = null;
       _open();
     });
   }
 
-  void _open() {
+  Future<void> _open() async {
+    if (!_wantOpen || _manuallyClosed || _channel != null) return;
     _clearRetry();
     WebSocketChannel ch;
     try {
@@ -138,21 +141,22 @@ class WsTransport implements Transport {
       onDone: () => _down(ch),
       cancelOnError: false,
     );
-    // The socket is not yet proven open; queue the hello with the same
-    // rule as any other handshake intent and flush below on first traffic.
-    // `WebSocketChannel` has no open callback, so treat construction as
-    // open (failures surface via onError/onDone) and flush immediately.
-    _failures = 0;
-    _setOnline(true);
-    for (final m in _queue.toList()) {
-      _queue.remove(m);
-      _sendFrame(m);
-    }
     try {
+      // Construction is not an open socket. Wait for the actual handshake
+      // before reporting online, resetting backoff, or releasing intent.
+      await ch.ready.timeout(const Duration(seconds: 10));
+      if (_channel != ch || _manuallyClosed) return;
+      _failures = 0;
+      _setOnline(true);
       _sendFrame(
-          '{"cmd":"hello","binary_meters":$binaryMeters,"taps":$wantTaps}');
+        '{"cmd":"hello","binary_meters":$binaryMeters,"taps":$wantTaps}',
+      );
+      while (_queue.isNotEmpty && _channel == ch && _online) {
+        final intent = _queue.removeAt(0);
+        _sendFrame(intent);
+      }
     } catch (_) {
-      // queued implicitly on the next failure
+      _down(ch);
     }
   }
 
@@ -179,7 +183,8 @@ class WsTransport implements Transport {
     _sub?.cancel();
     _sub = null;
     _channel = null;
-    _queue.clear();
+    // Sink close also retires a timed-out or synchronously failed socket.
+    unawaited(ch.sink.close().catchError((_) {}));
     _setOnline(false);
     _failures++;
     _scheduleRetry();
@@ -198,19 +203,34 @@ class WsTransport implements Transport {
   @override
   void send(String json) {
     if (_manuallyClosed) return;
-    if (_channel != null) {
+    if (_channel != null && _online) {
       try {
         _sendFrame(json);
         return;
       } catch (_) {
         final ch = _channel;
-        _channel = null;
-        _setOnline(false);
         if (ch != null) _down(ch);
       }
     }
-    if (queueable(json)) _queue.add(json);
-    if (_wantOpen && !_manuallyClosed && _channel == null) _open();
+    if (queueable(json)) {
+      // Only the latest selection can survive an unopened socket. In
+      // particular an offline selection must replace a pending connect.
+      final command = (jsonDecode(json) as Map)['cmd'];
+      if (command != 'hello') {
+        _queue.removeWhere(
+            (intent) => (jsonDecode(intent) as Map)['cmd'] != 'hello');
+      } else {
+        _queue.removeWhere(
+            (intent) => (jsonDecode(intent) as Map)['cmd'] == 'hello');
+      }
+      _queue.add(json);
+    }
+    if (_wantOpen &&
+        !_manuallyClosed &&
+        _channel == null &&
+        _retryTimer == null) {
+      _open();
+    }
   }
 
   void _sendFrame(String json) {
@@ -229,7 +249,8 @@ class WsTransport implements Transport {
     final ch = _channel;
     if (ch == null || !_online) {
       return Future.error(
-          StateError('Relay socket is unavailable; cleanup is unconfirmed.'));
+        StateError('Relay socket is unavailable; cleanup is unconfirmed.'),
+      );
     }
     final target = _helloIssued + 1;
     final done = Completer<void>();
@@ -248,16 +269,20 @@ class WsTransport implements Transport {
     }
 
     timer = Timer(const Duration(seconds: 30), () {
-      finish(StateError(
-          'Relay has not acknowledged queued cleanup. The pending request may still finish.'));
+      finish(
+        StateError(
+          'Relay has not acknowledged queued cleanup. The pending request may still finish.',
+        ),
+      );
     });
     offMessage = onMessage((_) {
       if (_channel == ch && _helloReceived >= target) finish();
     });
     offStatus = onStatus((up) {
       if (!up || _channel != ch) {
-        finish(StateError(
-            'Relay connection changed before cleanup was confirmed.'));
+        finish(
+          StateError('Relay connection changed before cleanup was confirmed.'),
+        );
       }
     });
     try {
