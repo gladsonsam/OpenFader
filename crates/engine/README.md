@@ -11,6 +11,32 @@ Byte-compatibility rule: the JSON is the pre-existing WebSocket protocol.
 Existing clients must not notice the move (same `cmd`/`type` tags, same
 field names, same shapes).
 
+## Implementation map
+
+`src/engine.rs` owns `Engine` state and construction. Its private `engine/`
+children implement that same coordinator; adapters keep using the existing
+`engine` exports and command/event protocol. Internal visibility stays within
+this module tree, and the synchronization fields remain on `Engine`.
+
+| Modules under `src/engine/` | Responsibility |
+| --- | --- |
+| `models`, `metadata`, `capabilities` | Session options, stored values, recall scope, provider registries/topology and capability frames |
+| `session`, `link`, `discovery`, `saved_mixers` | Connect/replay, link health, provider discovery and atomic saved-address persistence |
+| `clients`, `mailbox`, `broadcast` | Attach/resume snapshots, reliable/latest-only delivery, roster, policy and strip locks |
+| `tasks`, `telemetry`, `state` | Background task wiring, meter/GR/tap sampling and state frames |
+| `cache`, `readback` | Desk-evidenced cache ingestion, reconciliation, post-write readback and stale-value eviction |
+| `poll_lanes`, `poll_catalogue`, `poll_reads`, `poll_tick` | Poll scheduling/catalogues, focus queues, read health and batch execution |
+| `hydration` | Epoch transitions, initial hydration and deferred fill |
+| `library_status`, `library_transactions`, `scene_recall` | Library health/commit guard, durable mutations, full-plane capture and scoped recall |
+| `fx`, `routing`, `destinations`, `offline` | FX cache, routing projection, master/native-snapshot frames and offline edits |
+| `commands` | Command entry, connection intent serialization, shared write guard and final publication barrier |
+| `commands/{connection,input,client,library,processing,offline,destination}` | Command-family handlers; input retains guarded-parameter normalization context, destination retains guarded output writes |
+| `tests/{session,mailbox,catalogue,topology,polling}` | Existing unit tests grouped by concern; shared helpers live in `tests/mod.rs` |
+
+The command coordinator retains write-lane marking, opportunistic lock expiry
+and policy sampling before routing. Replies still precede command broadcasts;
+connection-generation checks and reconciliation still run at final publication.
+
 ## Embedding
 
 ```rust
