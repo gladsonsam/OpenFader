@@ -91,12 +91,20 @@ class PrefsService extends ChangeNotifier {
     final p = _prefs ?? await SharedPreferences.getInstance();
     _prefs ??= p;
     final bool saved;
-    if (value is bool) {
-      saved = await p.setBool(key, value);
-    } else if (value is int) {
-      saved = await p.setInt(key, value);
-    } else {
-      saved = await p.setString(key, value as String);
+    try {
+      if (value is bool) {
+        saved = await p.setBool(key, value);
+      } else if (value is int) {
+        saved = await p.setInt(key, value);
+      } else {
+        saved = await p.setString(key, value as String);
+      }
+    } catch (_) {
+      // SharedPreferences updates its cache before calling the platform. A
+      // thrown save must recover that cache just like a false save result.
+      await p.reload();
+      notifyListeners();
+      rethrow;
     }
     if (!saved) {
       await p.reload();
