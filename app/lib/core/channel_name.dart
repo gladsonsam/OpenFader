@@ -90,4 +90,7 @@ abstract class ChannelNameStore implements Listenable {
   double? iconForChannel(ChannelNameTarget target);
   String? iconEditError(ChannelNameTarget target);
   Future<String?> iconChannel(ChannelNameTarget target, double value);
+  bool? linkedForChannel(ChannelNameTarget target);
+  String? linkEditError(ChannelNameTarget target);
+  Future<String?> linkChannel(ChannelNameTarget target, bool linked);
 }

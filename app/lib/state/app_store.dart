@@ -135,7 +135,7 @@ class AppStore extends ChangeNotifier
       ({
         ChannelNameTarget target,
         String field,
-        double value,
+        Object value,
         double deadline,
         Completer<String?> done
       })> _appearanceEdits = {};
@@ -518,11 +518,7 @@ class AppStore extends ChangeNotifier
       final rawName = ps.optimisticValue(_maps, ch, 'name');
       final target = ChannelNameTarget(
           engine.session, ch, strip.key, rawName is String ? rawName : null);
-      return nameEditError(target) == null ||
-              colorEditError(target) == null ||
-              iconEditError(target) == null
-          ? target
-          : null;
+      return target;
     }
     return null;
   }
@@ -531,6 +527,9 @@ class AppStore extends ChangeNotifier
   String? nameEditError(ChannelNameTarget target) {
     if (!engine.connected || engine.session != target.session) {
       return 'Connection changed or lost. Reopen the name editor.';
+    }
+    if (engine.locks.containsKey(target.channel)) {
+      return 'This channel is locked by another controller.';
     }
     if (!engine.capsReady || !engine.supportedParams.contains('name')) {
       return 'Channel naming is unavailable on this connection.';
@@ -572,6 +571,20 @@ class AppStore extends ChangeNotifier
     return value is num && value.isFinite ? value.toDouble() : null;
   }
 
+  @override
+  bool? linkedForChannel(ChannelNameTarget target) {
+    final value = ps.optimisticValue(_maps, target.channel, 'link');
+    return value is bool ? value : null;
+  }
+
+  @override
+  String? linkEditError(ChannelNameTarget target) =>
+      _appearanceEditError(target, 'link');
+
+  @override
+  Future<String?> linkChannel(ChannelNameTarget target, bool linked) =>
+      _appearanceChannel(target, 'link', linked);
+
   bool get hasChannelIconChoices =>
       channelIconChoices(engine.parameterMetadata['icon']).isNotEmpty;
 
@@ -601,12 +614,20 @@ class AppStore extends ChangeNotifier
             .any((s) => s.ch == target.channel && s.key == target.key)) {
       return 'Connection changed or lost. Reopen the $field editor.';
     }
+    if (engine.locks.containsKey(target.channel)) {
+      return 'This channel is locked by another controller.';
+    }
     if (!engine.capsReady ||
         !engine.supportedParams.contains(field) ||
         !engine.valueKnown(target.channel, field) ||
-        _appearanceChoices(target, field).isEmpty ||
+        (field == 'link'
+            ? linkedForChannel(target) == null ||
+                (engine.parameterMetadata[field]?['kind']) != 'bool'
+            : _appearanceChoices(target, field).isEmpty) ||
         _presetEditingBlocked(target.channel, field)) {
-      return 'Channel ${field}s are unavailable on this connection.';
+      return field == 'link'
+          ? 'Stereo linking is unavailable on this connection.'
+          : 'Channel ${field}s are unavailable on this connection.';
     }
     return null;
   }
@@ -626,10 +647,14 @@ class AppStore extends ChangeNotifier
       _appearanceChannel(target, 'icon', value);
 
   Future<String?> _appearanceChannel(
-      ChannelNameTarget target, String field, double value) async {
+      ChannelNameTarget target, String field, Object value) async {
     final error = _appearanceEditError(target, field);
     if (error != null) return error;
-    if (!value.isFinite || !_appearanceChoices(target, field).contains(value)) {
+    if (field == 'link'
+        ? value is! bool
+        : value is! double ||
+            !value.isFinite ||
+            !_appearanceChoices(target, field).contains(value)) {
       return 'Choose from the $field choices provided by this mixer.';
     }
     final key = ps.pendingKey(target.channel, field);
@@ -736,7 +761,7 @@ class AppStore extends ChangeNotifier
     final verified = event['type'] == 'param'
         ? authority == 'verified'
         : authority is Map && authority[field] == 'verified';
-    if (field == 'color' || field == 'icon') {
+    if (field == 'color' || field == 'icon' || field == 'link') {
       final key = ps.pendingKey(channel, field);
       final edit = _appearanceEdits[key];
       final value = event['type'] == 'param'
@@ -748,8 +773,10 @@ class AppStore extends ChangeNotifier
       if (edit != null &&
           _nowMs() < edit.deadline &&
           (provenance == 'accepted' || provenance == 'verified') &&
-          value is num &&
-          (edit.value - value).abs() < .0001) {
+          (edit.value == value ||
+              (edit.value is num &&
+                  value is num &&
+                  ((edit.value as num) - value).abs() < .0001))) {
         _finishAppearanceEdit(
             key, _appearanceEditError(edit.target, edit.field));
       }
