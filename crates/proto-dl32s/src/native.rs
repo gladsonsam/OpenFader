@@ -1,7 +1,9 @@
 //! Generation-tagged desk-originated snapshots and destination metadata.
 use crate::assignments::{assignment_name_label, assignment_name_parameter};
 use crate::{destination, fx, Dl32sDriver};
-use openfader_transport::mackie::{MackieSession, PushEvent, VALUE_TYPE_PARAM};
+use openfader_transport::mackie::{
+    MackieSession, PushEvent, VALUE_TYPE_MUTE_GROUP, VALUE_TYPE_PARAM,
+};
 use std::sync::atomic::Ordering;
 
 /// Private generation-tagged wrapper around the public
@@ -88,18 +90,20 @@ pub(super) fn ingest_native(
 ) -> bool {
     match push {
         PushEvent::Values {
-            value_type: VALUE_TYPE_PARAM,
+            value_type,
             start,
             raws,
-        } => {
+        } if matches!(*value_type, VALUE_TYPE_PARAM | VALUE_TYPE_MUTE_GROUP) => {
             if let Ok(mut v) = native.lock() {
                 if v.generation != generation {
                     return false;
                 }
                 if v.view.connected {
-                    v.destinations.ingest(*start, raws);
-                    v.fx.ingest(*start, raws);
-                    v.output_processing.ingest(*start, raws);
+                    if *value_type == VALUE_TYPE_PARAM {
+                        v.destinations.ingest(*start, raws);
+                        v.fx.ingest(*start, raws);
+                    }
+                    v.output_processing.ingest(*value_type, *start, raws);
                 }
             }
         }
