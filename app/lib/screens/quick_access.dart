@@ -83,7 +83,7 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
                     ],
                   ),
                   const Text(
-                    'Provider-supported FX mute and per-slot tempo. '
+                    'FX mute and tempo controls. '
                     'FX returns remain independent.',
                   ),
                   if (!currentSession)
@@ -130,8 +130,8 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
                   if (store.clearSoloLabel case final label?) ...[
                     const Divider(),
                     const Text(
-                      'Provider coverage: input solos only. '
-                      'This action has no independent completion confirmation.',
+                      'Clears input solos. '
+                      'Output solos stay unchanged.',
                     ),
                     Align(
                       alignment: Alignment.centerLeft,
@@ -147,7 +147,7 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 16),
                       child: Text(
-                        'No supported Quick Access actions are advertised by this provider.',
+                        'No Quick Access controls are available for this mixer.',
                       ),
                     ),
                   if (_error != null)
