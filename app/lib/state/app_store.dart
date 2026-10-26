@@ -44,6 +44,7 @@ part 'app_store_library.dart';
 part 'app_store_appearance.dart';
 part 'app_store_assignments.dart';
 part 'app_store_presets.dart';
+part 'app_store_input_clipboard.dart';
 part 'app_store_session.dart';
 part 'app_store_poll.dart';
 part 'app_store_meters.dart';
@@ -65,6 +66,7 @@ abstract class _AppStoreContext extends ChangeNotifier
         MixerStore,
         MetersStore,
         ChannelStore,
+        InputProcessorPresetStore,
         OutputProcessingStore,
         _AppStoreOutputsContract,
         _AppStoreOutputPresetsContract,

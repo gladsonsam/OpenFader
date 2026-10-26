@@ -139,6 +139,39 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
         });
       });
 
+  Future<void> _copy() => _run(() async {
+        final error = (widget.store as InputProcessorPresetStore)
+            .copyInputProcessor(widget.target!);
+        if (mounted) {
+          setState(() {
+            _error = error;
+            if (error == null) {
+              _result = '${widget.kind.label} processor copied.';
+            }
+          });
+        }
+      });
+
+  Future<void> _paste() => _run(() async {
+        final target = widget.target!;
+        if (!await _confirm(
+          'Paste ${widget.kind.label} processor?',
+          'Paste copied settings on ${target.name} (channel ${target.channel + 1})?\n\nBypass stays unchanged.',
+          'Paste',
+        )) {
+          return;
+        }
+        final result = await (widget.store as InputProcessorPresetStore)
+            .pasteInputProcessor(target);
+        if (mounted) {
+          setState(() {
+            _result =
+                '${result.confirmed} of ${result.total} settings confirmed.';
+            _error = result.error;
+          });
+        }
+      });
+
   Future<void> _delete(ProcessorPreset preset) => _run(() async {
         if (!await _confirm('Delete preset?',
             'Delete “${preset.name}” from this device?', 'Delete')) {
@@ -195,6 +228,24 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
                               onPressed: enabled ? () => _name() : null,
                               icon: const Icon(Icons.add),
                               label: const Text('Save current')),
+                          if (widget.store case final InputProcessorPresetStore clipboard)
+                            Wrap(spacing: 8, children: [
+                              TextButton.icon(
+                                  onPressed: enabled ? _copy : null,
+                                  icon: const Icon(Icons.copy),
+                                  label: const Text('Copy processor')),
+                              Tooltip(
+                                  message: target == null
+                                      ? 'Processor unavailable.'
+                                      : clipboard.processorPasteError(target) ??
+                                          'Paste copied processor',
+                                  child: TextButton.icon(
+                                      onPressed: enabled &&
+                                              clipboard.processorPasteError(target!) == null
+                                          ? _paste : null,
+                                      icon: const Icon(Icons.paste),
+                                      label: const Text('Paste processor'))),
+                            ]),
                           const SizedBox(height: 8),
                           Expanded(
                               child: _presets.isEmpty
