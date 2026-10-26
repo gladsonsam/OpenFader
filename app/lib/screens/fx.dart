@@ -1,10 +1,9 @@
-// FX rack: slot cards with meters, type grid, on and bypass toggles, and param drag bars.
+// FX rack: slot cards, type choices and rotary parameter controls.
 // Screens stay constructor-injected so Area A can implement the store.
-import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../theme.dart';
 import '../palette.dart';
 import '../core/destination_controls.dart';
 import '../widgets/destination_control_editor.dart';
@@ -47,6 +46,7 @@ class FxSlotVm {
 
 // Implemented by the shell over the engine or a fixture sim.
 abstract class FxStore extends ChangeNotifier {
+  bool get stateControlsSupported => false;
   List<DestinationControlVm> get destinationControls => const [];
   bool destinationControlIsCurrent(DestinationControlVm control) => false;
   Future<String?> setDestinationControl(
@@ -73,188 +73,232 @@ abstract class FxStore extends ChangeNotifier {
 
 class U4FxPage extends StatefulWidget {
   final FxStore store;
-
   const U4FxPage({super.key, required this.store});
-
   @override
   State<U4FxPage> createState() => _U4FxPageState();
 }
 
+class _FxTarget {
+  final String key;
+  final FxSlotVm? slot;
+  final List<DestinationControlVm> controls;
+  const _FxTarget(this.key, {this.slot, this.controls = const []});
+}
+
 class _U4FxPageState extends State<U4FxPage> {
-  // This page owns no timer because the shell loop already updates the notifiers.
+  String? _selection;
+
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
+  Widget build(BuildContext context) => Scaffold(
       backgroundColor: ConsolePalette.of(context).page,
       body: SafeArea(
-        child: ListenableBuilder(
-          listenable: widget.store,
-          builder: (context, _) {
-            final store = widget.store;
-            final described = <String, List<DestinationControlVm>>{};
-            for (final control in store.destinationControls) {
-              described.putIfAbsent(control.target, () => []).add(control);
-            }
-            final sel = store.slots.isEmpty
-                ? null
-                : store.slots[store.selected.clamp(0, store.slots.length - 1)];
-            return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text('FX',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6,
-                          color: ConsolePalette.of(context).text1)),
-                  const SizedBox(height: 8),
-                  for (final controls in described.values) ...[
-                    _DestinationFxPanel(store: store, controls: controls),
-                    const SizedBox(height: 8),
-                  ],
-                  GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithMaxCrossAxisExtent(
-                      maxCrossAxisExtent: 320,
-                      mainAxisSpacing: 6,
-                      crossAxisSpacing: 6,
-                      childAspectRatio: 2.1,
-                    ),
-                    itemCount: store.slots.length,
-                    itemBuilder: (context, i) {
-                      final s = store.slots[i];
-                      final on = i == store.selected;
-                      final stateOn = s.on && !s.bypass;
-                      return RepaintBoundary(
-                        child: GestureDetector(
-                          onTap: () => store.selectSlot(s.slot),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: on
-                                  ? ConsolePalette.of(context).selected
-                                  : ConsolePalette.of(context).panel,
-                              border: Border.all(
-                                color: on
-                                    ? ConsolePalette.of(context).cyan
-                                    : ConsolePalette.of(context).tileBorder,
-                                width: on ? 2 : 1,
-                              ),
-                              borderRadius: U4.rBtn,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(s.name,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              color: ConsolePalette.of(context)
-                                                  .text7)),
-                                    ),
-                                    Text(
-                                      stateOn ? 'On' : 'Bypassed',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        color: stateOn
-                                            ? ConsolePalette.of(context)
-                                                .meterGreen
-                                            : ConsolePalette.of(context)
-                                                .meterAmber,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                Text(store.typeLabel(s.type),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w700,
-                                        color:
-                                            ConsolePalette.of(context).text1)),
-                                const SizedBox(height: 4),
-                                ValueListenableBuilder<double>(
-                                  valueListenable: store.meterOf(s.slot),
-                                  builder: (context, lv, _) {
-                                    return Container(
-                                      height: 4,
-                                      decoration: BoxDecoration(
-                                        color:
-                                            ConsolePalette.of(context).control,
-                                        borderRadius: BorderRadius.all(
-                                            Radius.circular(2)),
-                                      ),
-                                      child: FractionallySizedBox(
-                                        alignment: Alignment.centerLeft,
-                                        widthFactor: (stateOn ? lv : 0.0)
-                                            .clamp(0.0, 1.0),
-                                        child: Container(
-                                          decoration: BoxDecoration(
-                                            color:
-                                                ConsolePalette.of(context).cyan,
-                                            borderRadius: BorderRadius.all(
-                                                Radius.circular(2)),
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                ),
-                                if (s.ret.isNotEmpty)
-                                  Text(s.ret,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          color: ConsolePalette.of(context)
-                                              .text7)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  if (sel != null) ...[
-                    const SizedBox(height: 10),
-                    _DetailPanel(store: store, slot: sel),
-                  ],
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
+          child: ListenableBuilder(
+              listenable: widget.store,
+              builder: (context, _) {
+                final store = widget.store;
+                final groups = <String, List<DestinationControlVm>>{};
+                for (final control in store.destinationControls) {
+                  groups.putIfAbsent(control.target, () => []).add(control);
+                }
+                final targets = [
+                  for (final entry in groups.entries)
+                    _FxTarget('destination:${entry.key}',
+                        controls: entry.value),
+                  for (final slot in store.slots)
+                    _FxTarget('slot:${slot.slot}', slot: slot),
+                ];
+                final fallback = groups.isNotEmpty || store.slots.isEmpty
+                    ? targets.firstOrNull
+                    : targets[store.selected.clamp(0, targets.length - 1)];
+                final selected =
+                    targets.where((t) => t.key == _selection).firstOrNull ??
+                        fallback;
+                return LayoutBuilder(builder: (context, bounds) {
+                  final palette = ConsolePalette.of(context);
+                  final width = math.max(0.0, bounds.maxWidth - 24);
+                  final cardWidth = targets.isEmpty
+                      ? 180.0
+                      : ((width - 6 * (targets.length - 1)) / targets.length)
+                          .clamp(148.0, 240.0);
+                  final detailHeight = math.max(330.0, bounds.maxHeight - 158);
+                  return SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Text('FX',
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: .6,
+                                    color: palette.text1)),
+                            const SizedBox(height: 8),
+                            if (targets.isEmpty)
+                              Text(
+                                  'No FX controls are available for this mixer.',
+                                  style: TextStyle(color: palette.text4)),
+                            if (targets.isNotEmpty)
+                              SizedBox(
+                                  height: 112,
+                                  child: ListView.separated(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: targets.length,
+                                      separatorBuilder: (context, index) =>
+                                          const SizedBox(width: 6),
+                                      itemBuilder: (context, index) {
+                                        final target = targets[index];
+                                        return SizedBox(
+                                            width: cardWidth,
+                                            child: _FxCard(
+                                                store: store,
+                                                target: target,
+                                                selected: target == selected,
+                                                onSelect: () {
+                                                  setState(() =>
+                                                      _selection = target.key);
+                                                  if (target.slot
+                                                      case final slot?) {
+                                                    store.selectSlot(slot.slot);
+                                                  }
+                                                }));
+                                      })),
+                            if (selected != null) ...[
+                              const SizedBox(height: 8),
+                              if (selected.slot case final slot?)
+                                _LegacyFxDetail(
+                                    store: store,
+                                    slot: slot,
+                                    minHeight: detailHeight)
+                              else
+                                _NativeFxDetail(
+                                    store: store,
+                                    controls: selected.controls,
+                                    minHeight: detailHeight),
+                            ],
+                          ]));
+                });
+              })));
+}
+
+class _FxCard extends StatelessWidget {
+  final FxStore store;
+  final _FxTarget target;
+  final bool selected;
+  final VoidCallback onSelect;
+  const _FxCard(
+      {required this.store,
+      required this.target,
+      required this.selected,
+      required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    final slot = target.slot;
+    final control = target.controls.firstOrNull;
+    final title = slot?.name ?? control!.targetLabel;
+    final type = slot == null
+        ? control!.targetName ?? control.targetLabel
+        : store.typeLabel(slot.type);
+    final status = slot != null
+        ? !store.stateControlsSupported
+            ? '—'
+            : slot.bypass
+                ? 'Bypassed'
+                : slot.on
+                    ? 'On'
+                    : 'Off'
+        : target.controls.any((c) => !c.available)
+            ? 'Unavailable'
+            : target.controls.any((c) => c.authority == 'accepted')
+                ? 'Unconfirmed'
+                : 'Live';
+    return Semantics(
+        button: true,
+        selected: selected,
+        label: '$title, $type, $status',
+        child: InkWell(
+            onTap: onSelect,
+            child: Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                    color: selected ? palette.selected : palette.panel,
+                    border: Border.all(
+                        color: selected
+                            ? palette.processingPurple
+                            : palette.tileBorder,
+                        width: selected ? 2 : 1),
+                    borderRadius: BorderRadius.circular(2)),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Expanded(
+                            child: Text(title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 11, color: palette.text7))),
+                        Text(status,
+                            style: TextStyle(
+                                fontSize: 10,
+                                color: status == 'On' || status == 'Live'
+                                    ? palette.meterGreen
+                                    : palette.meterAmber)),
+                      ]),
+                      const SizedBox(height: 5),
+                      Expanded(
+                          child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text(type,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                      color: palette.text1)))),
+                      if (slot != null) ...[
+                        Text(slot.ret,
+                            maxLines: 1,
+                            style:
+                                TextStyle(fontSize: 10, color: palette.text7)),
+                        const SizedBox(height: 4),
+                        ValueListenableBuilder<double>(
+                            valueListenable: store.meterOf(slot.slot),
+                            builder: (context, value, _) =>
+                                LinearProgressIndicator(
+                                    value: value.clamp(0, 1),
+                                    minHeight: 3,
+                                    color: palette.meterGreen,
+                                    backgroundColor: palette.control)),
+                      ] else
+                        Text(control!.valueLabel ?? 'Unavailable',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                TextStyle(fontSize: 11, color: palette.text7)),
+                    ]))));
   }
 }
 
-class _DestinationFxPanel extends StatelessWidget {
+BoxDecoration _detailDecoration(ConsolePalette palette) => BoxDecoration(
+    color: palette.panel,
+    border: Border.all(color: palette.linePanel),
+    borderRadius: BorderRadius.circular(2));
+
+class _NativeFxDetail extends StatelessWidget {
   final FxStore store;
   final List<DestinationControlVm> controls;
-  const _DestinationFxPanel({required this.store, required this.controls});
+  final double minHeight;
+  const _NativeFxDetail(
+      {required this.store, required this.controls, required this.minHeight});
 
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
     return Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-            color: palette.panel,
-            border: Border.all(color: palette.linePanel),
-            borderRadius: const BorderRadius.all(Radius.circular(10))),
+        decoration: _detailDecoration(palette),
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Text(controls.first.destinationName,
@@ -262,276 +306,274 @@ class _DestinationFxPanel extends StatelessWidget {
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
                   color: palette.text1)),
-          const SizedBox(height: 10),
-          for (final control in controls)
-            Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: OutlinedButton(
-                    onPressed: store.destinationControlIsCurrent(control)
-                        ? () => showDialog<void>(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => DestinationControlEditor(
-                                changes: store,
-                                isCurrent: store.destinationControlIsCurrent,
-                                apply: store.setDestinationControl,
-                                control: control))
-                        : null,
-                    child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Text(
-                            '${control.label}: ${control.valueLabel ?? 'Unavailable'}'
-                            '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                            textAlign: TextAlign.center)))),
+          const SizedBox(height: 12),
+          _KnobLayout(minHeight: minHeight - 68, children: [
+            for (final control in controls)
+              _FxRotary(
+                  key: ValueKey('${control.target}/${control.id}'),
+                  label: control.label,
+                  text: '${control.valueLabel ?? 'Unavailable'}'
+                      '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                  fraction: control.numeric && control.value != null
+                      ? ((control.value! - control.min!) /
+                              (control.max! - control.min!))
+                          .clamp(0, 1)
+                      : 0,
+                  enabled: store.destinationControlIsCurrent(control),
+                  onTap: () => showDialog<void>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => DestinationControlEditor(
+                          changes: store,
+                          isCurrent: store.destinationControlIsCurrent,
+                          apply: store.setDestinationControl,
+                          control: control))),
+          ]),
         ]));
   }
 }
 
-class _DetailPanel extends StatelessWidget {
+class _LegacyFxDetail extends StatelessWidget {
   final FxStore store;
   final FxSlotVm slot;
-
-  const _DetailPanel({required this.store, required this.slot});
+  final double minHeight;
+  const _LegacyFxDetail(
+      {required this.store, required this.slot, required this.minHeight});
 
   @override
   Widget build(BuildContext context) {
-    final stateOn = slot.on && !slot.bypass;
+    final palette = ConsolePalette.of(context);
+    final knobs = store.knobs;
     return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: ConsolePalette.of(context).panel,
-        border: Border.all(color: ConsolePalette.of(context).linePanel),
-        borderRadius: const BorderRadius.all(Radius.circular(10)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('FX ${slot.slot} · ${store.typeLabel(slot.type)}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: ConsolePalette.of(context).text1)),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => store.setOn(!slot.on),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: slot.on
-                          ? ConsolePalette.of(context).cyan
-                          : ConsolePalette.of(context).warningContainer,
-                      border: Border.all(
-                          color: slot.on
-                              ? ConsolePalette.of(context).cyan
-                              : ConsolePalette.of(context).meterAmber),
-                      borderRadius: U4.rBtn,
-                    ),
-                    child: Text(slot.on ? 'On' : 'Off',
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: slot.on
-                                ? ConsolePalette.of(context).onAccent
-                                : ConsolePalette.of(context)
-                                    .onWarningContainer)),
-                  ),
-                ),
-              ),
+        padding: const EdgeInsets.all(14),
+        decoration: _detailDecoration(palette),
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(children: [
+            Expanded(
+                child: Text('FX ${slot.slot} · ${store.typeLabel(slot.type)}',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: palette.text1))),
+            if (store.stateControlsSupported) ...[
+              _FxToggle(
+                  label: slot.on ? 'On' : 'Off',
+                  active: slot.on,
+                  activeColor: palette.meterGreen,
+                  onTap: () => store.setOn(!slot.on)),
               const SizedBox(width: 6),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => store.setBypass(!slot.bypass),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: slot.bypass
-                          ? ConsolePalette.of(context).solo
-                          : ConsolePalette.of(context).well,
-                      border: Border.all(
-                          color: slot.bypass
-                              ? ConsolePalette.of(context).solo
-                              : ConsolePalette.of(context).lineCtl),
-                      borderRadius: U4.rBtn,
-                    ),
-                    child: Text(slot.bypass ? 'Bypassed' : 'Bypass',
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            color: slot.bypass
-                                ? ConsolePalette.of(context).onSolo
-                                : ConsolePalette.of(context).text1)),
-                  ),
-                ),
-              ),
-              if (store.tapVisible) ...[
-                const SizedBox(width: 6),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: store.tap,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: ConsolePalette.of(context).well,
-                        border: Border.all(
-                            color: ConsolePalette.of(context).lineCtl),
-                        borderRadius: U4.rBtn,
-                      ),
-                      child: Text(store.tapLabel,
-                          textAlign: TextAlign.center,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: ConsolePalette.of(context).text1)),
-                    ),
-                  ),
-                ),
-              ],
+              _FxToggle(
+                  label: slot.bypass ? 'Bypassed' : 'Bypass',
+                  active: slot.bypass,
+                  activeColor: palette.meterAmber,
+                  onTap: () => store.setBypass(!slot.bypass)),
             ],
-          ),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: [
-              for (final t in store.typeOptions)
-                GestureDetector(
-                  onTap: () => store.setType(t),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: t == slot.type
-                          ? ConsolePalette.of(context).cyan
-                          : ConsolePalette.of(context).well,
-                      borderRadius: U4.rBtn,
-                    ),
-                    child: Text(store.typeLabel(t),
-                        textAlign: TextAlign.center,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: t == slot.type
-                              ? ConsolePalette.of(context).onAccent
-                              : ConsolePalette.of(context).text4,
-                        )),
-                  ),
-                ),
-            ],
-          ),
+          ]),
           const SizedBox(height: 12),
-          for (final k in store.knobs)
-            _ParamBar(
-              knob: k,
-              enabled: stateOn,
-              onChange: (v) => store.setParam(k.id, v),
-            ),
-        ],
-      ),
-    );
+          LayoutBuilder(builder: (context, bounds) {
+            final types = store.typeOptions;
+            final columns = math.max(
+                1, math.min(types.length, (bounds.maxWidth / 140).floor()));
+            return Wrap(spacing: 6, runSpacing: 6, children: [
+              for (final type in types)
+                SizedBox(
+                    width: (bounds.maxWidth - 6 * (columns - 1)) / columns,
+                    child: _FxToggle(
+                        label: store.typeLabel(type),
+                        active: type == slot.type,
+                        onTap: () => store.setType(type))),
+            ]);
+          }),
+          const SizedBox(height: 12),
+          _KnobLayout(minHeight: minHeight - 130, children: [
+            for (final knob in knobs)
+              _FxRotary(
+                  key: ValueKey('${slot.slot}/${knob.id}'),
+                  label: knob.label,
+                  text: knob.text,
+                  fraction: knob.max > knob.min
+                      ? ((knob.value - knob.min) / (knob.max - knob.min))
+                          .clamp(0, 1)
+                      : 0,
+                  enabled: true,
+                  onChange: (fraction) => store.setParam(
+                      knob.id, knob.min + fraction * (knob.max - knob.min))),
+          ]),
+          if (store.tapVisible)
+            Align(
+                child: _FxToggle(
+                    label: store.tapLabel, active: false, onTap: store.tap)),
+        ]));
   }
 }
 
-class _ParamBar extends StatelessWidget {
-  final FxKnobVm knob;
-  final bool enabled;
-  final ValueChanged<double> onChange;
-
-  const _ParamBar({
-    required this.knob,
-    required this.enabled,
-    required this.onChange,
-  });
-
+class _FxToggle extends StatelessWidget {
+  final String label;
+  final bool active;
+  final Color? activeColor;
+  final VoidCallback onTap;
+  const _FxToggle(
+      {required this.label,
+      required this.active,
+      required this.onTap,
+      this.activeColor});
   @override
   Widget build(BuildContext context) {
-    final span = (knob.max - knob.min).abs() < 1e-9 ? 1.0 : knob.max - knob.min;
-    final frac = ((knob.value - knob.min) / span).clamp(0.0, 1.0);
-    return Opacity(
-      opacity: enabled ? 1.0 : 0.45,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(knob.label,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: ConsolePalette.of(context).text4)),
-                ),
-                Text(knob.text,
-                    style: TextStyle(
-                        fontSize: 13, color: ConsolePalette.of(context).text1)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onHorizontalDragUpdate: enabled
-                  ? (d) {
-                      final box = context.findRenderObject() as RenderBox?;
-                      if (box == null) return;
-                      final w = box.size.width;
-                      if (w <= 0) return;
-                      final dx = d.localPosition.dx.clamp(0.0, w);
-                      onChange(knob.min + span * (dx / w));
-                    }
-                  : null,
-              onTapDown: enabled
-                  ? (d) {
-                      final box = context.findRenderObject() as RenderBox?;
-                      if (box == null) return;
-                      final w = box.size.width;
-                      if (w <= 0) return;
-                      final dx = d.localPosition.dx.clamp(0.0, w);
-                      onChange(knob.min + span * (dx / w));
-                    }
-                  : null,
-              child: Container(
-                height: 28,
-                alignment: Alignment.center,
-                child: Container(
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: ConsolePalette.of(context).control,
-                    borderRadius: BorderRadius.all(Radius.circular(10)),
-                  ),
-                  child: FractionallySizedBox(
-                    alignment: Alignment.centerLeft,
-                    widthFactor: frac,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: ConsolePalette.of(context).cyan,
-                        borderRadius: BorderRadius.all(Radius.circular(10)),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    final palette = ConsolePalette.of(context);
+    return TextButton(
+        onPressed: onTap,
+        style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            backgroundColor:
+                active ? activeColor ?? palette.processingPurple : palette.well,
+            foregroundColor: active ? palette.onAccent : palette.text4,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(2),
+                side: BorderSide(color: palette.lineCtl))),
+        child: Text(label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)));
   }
+}
+
+class _KnobLayout extends StatelessWidget {
+  final double minHeight;
+  final List<Widget> children;
+  const _KnobLayout({required this.minHeight, required this.children});
+  @override
+  Widget build(BuildContext context) =>
+      LayoutBuilder(builder: (context, bounds) {
+        final columns = math.max(
+            1, math.min(children.length, (bounds.maxWidth / 150).floor()));
+        final rows = (children.length / columns).ceil();
+        final height = math.max(minHeight, rows * 170.0);
+        return SizedBox(
+            height: height,
+            child: Center(
+                child: Wrap(
+                    alignment: WrapAlignment.spaceEvenly,
+                    runSpacing: 12,
+                    children: [
+                  for (final child in children)
+                    SizedBox(
+                        width: bounds.maxWidth / columns,
+                        height: 158,
+                        child: child),
+                ])));
+      });
+}
+
+class _FxRotary extends StatefulWidget {
+  final String label;
+  final String text;
+  final double fraction;
+  final bool enabled;
+  final ValueChanged<double>? onChange;
+  final VoidCallback? onTap;
+  const _FxRotary(
+      {super.key,
+      required this.label,
+      required this.text,
+      required this.fraction,
+      required this.enabled,
+      this.onChange,
+      this.onTap});
+  @override
+  State<_FxRotary> createState() => _FxRotaryState();
+}
+
+class _FxRotaryState extends State<_FxRotary> {
+  double? _drag;
+  void _step(double delta) =>
+      widget.onChange?.call((widget.fraction + delta).clamp(0, 1));
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    final adjustable = widget.enabled && widget.onChange != null;
+    return Semantics(
+        button: widget.enabled && widget.onTap != null,
+        slider: adjustable,
+        enabled: widget.enabled,
+        label: widget.label,
+        value: widget.text,
+        onIncrease: adjustable ? () => _step(.01) : null,
+        onDecrease: adjustable ? () => _step(-.01) : null,
+        child: Opacity(
+            opacity: widget.enabled ? 1 : .45,
+            child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: widget.enabled ? widget.onTap : null,
+                onVerticalDragStart:
+                    adjustable ? (_) => _drag = widget.fraction : null,
+                onVerticalDragUpdate: adjustable
+                    ? (details) {
+                        _drag = ((_drag ?? widget.fraction) -
+                                details.delta.dy / 160)
+                            .clamp(0, 1);
+                        widget.onChange!(_drag!);
+                      }
+                    : null,
+                onVerticalDragEnd: adjustable ? (_) => _drag = null : null,
+                onVerticalDragCancel: adjustable ? () => _drag = null : null,
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CustomPaint(
+                          size: const Size(88, 88),
+                          painter: _FxKnobPainter(widget.fraction, palette)),
+                      const SizedBox(height: 8),
+                      Text(widget.label,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 12, color: palette.text7)),
+                      const SizedBox(height: 4),
+                      Text(widget.text,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 13, color: palette.text1)),
+                    ]))));
+  }
+}
+
+class _FxKnobPainter extends CustomPainter {
+  final double fraction;
+  final ConsolePalette palette;
+  const _FxKnobPainter(this.fraction, this.palette);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.shortestSide * .39;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final arc = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round
+      ..color = palette.lineCtl;
+    const start = math.pi * .75;
+    const sweep = math.pi * 1.5;
+    canvas.drawArc(rect, start, sweep, false, arc);
+    arc.color = palette.processingPurple;
+    canvas.drawArc(rect, start, sweep * fraction, false, arc);
+    canvas.drawCircle(center, radius - 9, Paint()..color = palette.well);
+    canvas.drawCircle(
+        center,
+        radius - 9,
+        Paint()
+          ..color = palette.control
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 3);
+    final angle = start + sweep * fraction;
+    final needle = Offset(math.cos(angle), math.sin(angle));
+    canvas.drawLine(
+        center + needle * 7,
+        center + needle * (radius - 14),
+        Paint()
+          ..color = palette.text4
+          ..strokeWidth = 2.5
+          ..strokeCap = StrokeCap.round);
+  }
+
+  @override
+  bool shouldRepaint(_FxKnobPainter oldDelegate) =>
+      oldDelegate.fraction != fraction || oldDelegate.palette != palette;
 }
