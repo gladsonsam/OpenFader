@@ -132,7 +132,9 @@ pub struct RecallScope {
     /// (never fail a recall).
     #[serde(default)]
     pub strip_keys: Option<Vec<String>>,
-    /// Param-group allowlist (see [`param_scope_group`]). `None` = all.
+    /// Param-group allowlist (see [`param_scope_group`]). Providers may override
+    /// a parameter's group via `caps.params[].presentations[].recall_group`.
+    /// WING adds `sends_matrix` and `sends_main`. `None` = all.
     #[serde(default)]
     pub groups: Option<Vec<String>>,
     /// Global allowlist (`main`, `fx`, `routing`). `None` = all.
@@ -175,6 +177,15 @@ impl RecallScope {
     }
     pub fn allows_param(&self, id: &str) -> bool {
         self.allows_group(param_scope_group(id))
+    }
+    /// Apply the active provider's local-scene classification when present.
+    /// The legacy helper above remains available to existing API callers.
+    pub fn allows_param_for(&self, driver: &dyn DynDriver, id: &str) -> bool {
+        self.allows_group(
+            driver
+                .param_recall_group(id)
+                .unwrap_or_else(|| param_scope_group(id)),
+        )
     }
     pub fn allows_global(&self, global: &str) -> bool {
         self.globals

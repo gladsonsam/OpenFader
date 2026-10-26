@@ -208,14 +208,28 @@ pub(super) fn is_core_id(id: &str, first: bool) -> bool {
 /// Safe recall order for full-plane scene params: input stage first
 /// (gain → HPF), then gate → comp → EQ → sends, then placement/look.
 /// Faders/mutes/names ride outside this order (fade block + name block).
-pub(super) fn safe_order_key(id: &str) -> (u8, &str) {
-    let lane = if [
-        "gain", "trim", "phantom", "polarity", "delay_on", "delay_ms",
+pub(super) fn safe_order_key(id: &str) -> (u8, u8, &str) {
+    let lane = if matches!(
+        id,
+        "source_a" | "source_b" | "source_select" | "wing:source_mode"
+    ) {
+        1u8
+    } else if [
+        "gain",
+        "trim",
+        "phantom",
+        "polarity",
+        "delay_on",
+        "delay_ms",
+        "wing:delay_unit",
+        "wing:delay_value",
+        "wing:input_balance",
     ]
     .contains(&id)
     {
         2u8
-    } else if id.starts_with("hpf") {
+    } else if id.starts_with("hpf") || id.starts_with("wing:hcf_") || id.starts_with("wing:filter_")
+    {
         3
     } else if id.starts_with("gate_") {
         4
@@ -225,10 +239,15 @@ pub(super) fn safe_order_key(id: &str) -> (u8, &str) {
         6
     } else if id.starts_with("send") || id.starts_with("aux") || id.starts_with("fx") {
         7
-    } else if id == "pan" || id == "balance" {
+    } else if id == "pan" || id == "balance" || id == "wing:width" {
         8
     } else {
         9
     };
-    (lane, id)
+    let priority = match id {
+        "gate_mode" | "comp_mode" | "eq_mode" | "wing:delay_unit" | "wing:filter_model" => 0,
+        "delay_on" | "hpf_on" | "wing:hcf_on" | "wing:filter_on" | "wing:source_mode" => 2,
+        _ => 1,
+    };
+    (lane, priority, id)
 }

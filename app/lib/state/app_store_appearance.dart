@@ -162,8 +162,7 @@ mixin _AppStoreAppearance on _AppStoreContext {
         !engine.supportedParams.contains(field) ||
         !engine.valueKnown(target.channel, field) ||
         (field == 'link'
-            ? linkPartnerForChannel(target) == null ||
-                engine.locks.containsKey(linkPartnerForChannel(target)) ||
+            ? engine.locks.containsKey(linkPartnerForChannel(target)) ||
                 linkedForChannel(target) == null ||
                 (engine.parameterMetadata[field]?['kind']) != 'bool'
             : _appearanceChoices(target, field).isEmpty) ||

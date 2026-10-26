@@ -188,10 +188,12 @@ impl Engine {
                     .find(|f| (f.first..f.first + f.count).contains(&(ch as usize)))
                 {
                     let event = match fam.kind {
-                        openfader_core::StripKind::Main => Some(Event::Main {
-                            fader: Some(fader),
-                            muted: Some(muted),
-                        }),
+                        openfader_core::StripKind::Main if ch as usize == fam.first => {
+                            Some(Event::Main {
+                                fader: Some(fader),
+                                muted: Some(muted),
+                            })
+                        }
                         openfader_core::StripKind::Bus => Some(Event::Bus {
                             bus: (ch as usize - fam.first) as u8,
                             fader,

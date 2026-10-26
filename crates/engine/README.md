@@ -610,6 +610,34 @@ working unchanged on the same engine; scenes share nothing with shows
 except the fade math. The design's
 Confirm/Instant recall mode is a UI concern (no engine state).
 
+Scoped recall accepts `scope.groups` as a parameter-group allowlist. The
+historical bus/FX send numbering remains the default for existing providers.
+A provider may override any parameter's group; overrides are exposed as
+`caps.params[].presentations[].recall_group` and used by the actual recall
+filter. On WING, slots 1–16 use `sends_bus`, 17–24 use `sends_matrix`, and
+25–28 plus the Main 1 assignment alias use `sends_main`. `sends_fx` recalls
+none of these WING audio sends; the FX rack remains under `scope.globals`
+`fx`. WING main/alternate source IDs and selection use `source`, and all
+numbered EQ bands use `eq`. Omitted groups include all parameters; an empty
+group list includes none. Excluded fader/mute axes receive no writes: sends-only
+recall does not touch either, mute-only recall does not move a fader, and a
+fader-only fade does not rewrite mutes. Native WING snapshot scopes are separate and remain
+unsupported.
+
+Shared/dynamically read-only parameters may provide a fresh capture override.
+WING source-mode capture checks the live source definition and omits read-only
+modes; derived mode/writability metadata never becomes a scene write. Its
+source-tagged mode value names the physical port. Preamp recall passes stored
+main/alternate source IDs and selection through the existing guarded-write
+path, including input-only scoped recalls. When automatic source switching is
+active, an unbound preamp write is rejected. A source mismatch cannot retarget
+the write to a different port.
+
+Hardware recall remains best-effort per parameter. Failed parameter/name
+writes produce one bounded error summary and no accepted parameter echo;
+other supported settings continue. Full scene capture uses multiple desk reads
+and cache samples and is not an atomic native snapshot.
+
 ### Durable local library (R2: one versioned combined document)
 
 Numbered slots AND the named show library persist together as one
@@ -711,6 +739,24 @@ desk-native 61-type table stays in `proto-xair`, UNVERIFIED-ON-RIG);
 dl32s serves none. The `fx` event carries the whole rack per mutation;
 an FX poll interleave (`FX_POLL_EVERY` = 32 ticks) refreshes one sim
 slot per cycle, cache-only (silent unless changed).
+
+## WING provider
+
+`wing` is a registered hardware provider; see [its compatibility report](../proto-wing/README.md)
+for implemented controls and gaps. It is documentation/schema-based and has
+not been verified on a physical WING.
+
+WING exposes 92 strip keys, 16 FX slots and 28 generic send destinations
+(buses, matrices and mains). A send level's provider presentation may contain
+`destination: {key, label, stereo, allow_self}`. Consumers resolve the live
+name using that strip key, use its source `scopes`, and enumerate advertised
+`sendN_level` IDs rather than assuming sixteen send slots. `allow_self:false`
+suppresses a bus's own destination. WING input/aux send modes and output pre
+switches are distinct parameter domains.
+
+FX type rows may provide `slots` to restrict a model to valid slots; parameter
+rows may provide normalized `choices` with display labels. These optional
+fields are omitted for providers that do not contribute them.
 
 ## Routing patch (R2)
 

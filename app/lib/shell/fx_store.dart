@@ -97,7 +97,9 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   @override
   List<String> get typeOptions => [
         for (final type in engine.fxTypes)
-          (type['id'] ?? type['label']) as String
+          if (type['slots'] is! List ||
+              (type['slots'] as List).contains(selected + 1))
+            (type['id'] ?? type['label']) as String
       ];
 
   Map<String, dynamic>? _typeMetadata(String type) {
@@ -117,13 +119,23 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       _typeMetadata(type)?['label'] as String? ?? type;
 
   String _parameterText(double normalized, Map<String, dynamic>? metadata) {
+    final choices = metadata?['choices'];
+    if (choices is List && choices.isNotEmpty) {
+      final index = (normalized * (choices.length - 1))
+          .round()
+          .clamp(0, choices.length - 1);
+      final choice = choices[index];
+      if (choice is Map && choice['label'] is String) {
+        return choice['label'] as String;
+      }
+    }
     final min = (metadata?['min'] as num?)?.toDouble();
     final max = (metadata?['max'] as num?)?.toDouble();
     if (min == null ||
         max == null ||
         !min.isFinite ||
         !max.isFinite ||
-        max <= min) {
+        max == min) {
       return '${(normalized * 100).toStringAsFixed(0)}%';
     }
     final scale = metadata?['scale'];

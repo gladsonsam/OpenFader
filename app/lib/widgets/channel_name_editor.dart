@@ -34,12 +34,9 @@ class _NameEditorState extends State<_NameEditor> {
     final confirmed = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-              title: Text(linked
-                  ? 'Link channel ${widget.target.channel + 1} over ${(widget.store.linkPartnerForChannel(widget.target) ?? widget.target.channel) + 1}?'
-                  : 'Unlink channels?'),
-              content: Text(linked
-                  ? 'Shared settings from the selected channel replace its partner’s settings. Independent input settings stay separate.'
-                  : 'Both channels keep their current settings and can be controlled separately.'),
+              title: Text(linked ? 'Link channels?' : 'Unlink channels?'),
+              content: const Text(
+                  'Stereo linking can change how the paired channels share processing and levels.'),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(context, false),
