@@ -246,7 +246,7 @@ mixin _AppStoreAccess on _AppStoreContext {
         AccessLimitOption(
           'target:${entry.key}',
           entry.value,
-          'Destination ${entry.key}: controls, sends and master selection',
+          'Controls, sends and master selection',
         ),
     ];
     // Keep restrictions editable even when another mixer lacks these identities.
