@@ -3,11 +3,13 @@ import 'package:flutter/foundation.dart';
 /// Captured identity; selection changes must never retarget an open editor.
 class ChannelNameTarget {
   final int session, channel;
+  final int? accessEpoch;
   final String key;
 
   /// Actual parameter value; null means it was not available at capture.
   final String? name;
-  const ChannelNameTarget(this.session, this.channel, this.key, this.name);
+  const ChannelNameTarget(this.session, this.channel, this.key, this.name,
+      {this.accessEpoch});
 }
 
 class ChannelColorChoice {
@@ -79,11 +81,10 @@ class ChannelAssignmentChoice {
   const ChannelAssignmentChoice(this.id, this.label);
 }
 
-/// Only a matching verified parameter event establishes independent readback.
+/// A matching state observation is not a correlated command receipt.
 class ChannelAssignmentResult {
   final String? error;
-  final bool verified;
-  const ChannelAssignmentResult(this.error, {this.verified = false});
+  const ChannelAssignmentResult(this.error);
 }
 
 abstract class ChannelNameStore implements Listenable {
@@ -91,7 +92,7 @@ abstract class ChannelNameStore implements Listenable {
   bool? assignmentForChannel(ChannelNameTarget target, String id);
   String? assignmentEditError(ChannelNameTarget target, String id);
 
-  /// Group membership echoes establish acceptance only.
+  /// Membership events lack request IDs; success means matching state observed.
   Future<ChannelAssignmentResult> assignChannel(
       ChannelNameTarget target, String id, bool value, {required bool expected});
   ChannelNameTarget? captureNameTarget([int? channel]);
