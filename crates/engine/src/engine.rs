@@ -162,7 +162,9 @@ pub struct RecallScope {
     /// (never fail a recall).
     #[serde(default)]
     pub strip_keys: Option<Vec<String>>,
-    /// Param-group allowlist (see [`param_scope_group`]). `None` = all.
+    /// Param-group allowlist (see [`param_scope_group`]). Providers may override
+    /// a parameter's group via `caps.params[].presentations[].recall_group`.
+    /// WING adds `sends_matrix` and `sends_main`. `None` = all.
     #[serde(default)]
     pub groups: Option<Vec<String>>,
     /// Global allowlist (`main`, `fx`, `routing`). `None` = all.
@@ -211,6 +213,11 @@ impl RecallScope {
     }
     pub fn allows_param(&self, id: &str) -> bool {
         self.allows_group(param_scope_group(id))
+    }
+    /// Apply the active provider's local-scene classification when present.
+    /// The legacy helper above remains available to existing API callers.
+    pub fn allows_param_for(&self, driver: &dyn DynDriver, id: &str) -> bool {
+        self.allows_group(driver.param_recall_group(id).unwrap_or_else(|| param_scope_group(id)))
     }
     pub fn allows_global(&self, global: &str) -> bool {
         self.globals.as_ref().is_none_or(|g| g.iter().any(|x| x == global))
@@ -2282,6 +2289,16 @@ impl Engine {
                         "choices": p.choices.iter().map(|c| json!({"value": c.value, "label": c.label})).collect::<Vec<_>>()
                     })
                 }).collect();
+                if let Some(slot) = def.id.strip_prefix("send").and_then(|id| id.strip_suffix("_level")).and_then(|id| id.parse::<u16>().ok()) {
+                    if let Some(destination) = self.drv(&driver).send_destination(slot) {
+                        frame.presentations.insert(0, json!({ "destination": {
+                            "key": destination.key, "label": destination.label, "stereo": destination.stereo, "allow_self": destination.allow_self,
+                        }}));
+                    }
+                }
+                if let Some(group) = self.drv(&driver).param_recall_group(def.id) {
+                    frame.presentations.insert(0, json!({ "recall_group": group }));
+                }
                 if !swatches.is_empty() {
                     frame.presentations.insert(0, json!({
                         "swatches": swatches.iter().map(|s| json!({
@@ -3112,7 +3129,7 @@ impl Engine {
                 let name_v = self.capture_read_param(&driver, strip, "name").await;
                 let mut params = HashMap::new();
                 for id in &caps {
-                    if *id == "fader" || *id == "mute" || *id == "name" {
+                    if *id == "fader" || *id == "mute" || *id == "name" || self.drv(&driver).param_read_only(id) {
                         continue;
                     }
                     let scoped = reg
@@ -3122,7 +3139,11 @@ impl Engine {
                     if !scoped {
                         continue;
                     }
-                    if let Some(pv) = self.capture_read_param(&driver, strip, id).await {
+                    let captured = match self.drv(&driver).capture_param_override(strip, id).await {
+                        Some(result) => result.ok(),
+                        None => self.capture_read_param(&driver, strip, id).await,
+                    };
+                    if let Some(pv) = captured {
                         // Skip catalogue defaults? No, full plane means
                         // every value, so restores are exact.
                         params.insert(id.to_string(), param_value_json(&pv));
@@ -3187,10 +3208,10 @@ impl Engine {
     /// direct writes are untouched).
     /// Scoped recall: `scope` restricts the recall to strips / param
     /// groups / globals (`None` = full plane, the historical behavior).
-    /// Axes outside the scope keep their live values: the fade targets
-    /// use current desk reads for excluded fader/mute axes (best-effort;
-    /// a failed read falls back to the scene value), excluded params are
-    /// skipped, and FX/routing/main apply only under their global.
+    /// Axes outside the scope receive no writes. Faders use the shared fade
+    /// only when included; a mute-only recall applies mutes directly, and
+    /// excluded mutes are suppressed in the fade adapter. Other excluded
+    /// params are skipped; FX/routing/main apply only under their global.
     async fn recall_full(
         &self,
         scene: &StoredScene,
@@ -3227,19 +3248,18 @@ impl Engine {
             .collect();
         // Faders ride the single shared fade (legacy order: pre-unmute
         // targets, ramp, snap, target mutes); params/FX/routing/main follow.
-        let mut targets: Vec<(StripId, f32, bool)> = Vec::with_capacity(strips.len());
-        for (s, r) in &strips {
-            let id = StripId(*r);
-            let want_fader = scope.is_none_or(|sc| sc.allows_param("fader"));
-            let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
-            let (cur_fader, cur_mute) = if !want_fader || !want_mute {
-                self.current_fader_mute(id).await
-            } else {
-                (s.fader, s.mute)
-            };
-            targets.push((id, if want_fader { s.fader } else { cur_fader }, if want_mute { s.mute } else { cur_mute }));
+        let want_fader = scope.is_none_or(|sc| sc.allows_param("fader"));
+        let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
+        if want_fader && !strips.is_empty() {
+            let targets: Vec<_> = strips.iter()
+                .map(|(s, r)| (StripId(*r), s.fader, s.mute)).collect();
+            let fade = ScopedSceneFade { engine: self, recall_mutes: want_mute };
+            openfader_core::show::fade_strips(&fade, &targets, fade_ms).await?;
+        } else if want_mute {
+            for (s, r) in &strips {
+                self.drv_set_mute(StripId(*r), s.mute).await?;
+            }
         }
-        openfader_core::show::fade_strips(self, &targets, fade_ms).await?;
         for (s, r) in &strips {
             let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
             if want_mute && s.mute {
@@ -3269,13 +3289,14 @@ impl Engine {
                 });
             }
         }
+        let mut failed = Vec::new();
         // Remaining params in safe order (names ride along unless the
         // scope excludes them).
         for (s, r) in &strips {
             let mut ids: Vec<&String> = s.params.keys().collect();
             ids.sort_by_key(|id| safe_order_key(id));
             for id in ids {
-                if scope.is_some_and(|sc| !sc.allows_param(id)) {
+                if scope.is_some_and(|sc| !sc.allows_param_for(self.drv(&driver).as_ref(), id)) {
                     continue;
                 }
                 let value = s.params.get(id).expect("key just listed");
@@ -3284,9 +3305,16 @@ impl Engine {
                 // silent mid-recall must not abort the rest); strict on
                 // the model.
                 let strict = !self.active_drv().is_hardware();
-                let rr = self.drv_set_param(StripId(*r), id, pv).await;
-                if strict {
-                    rr?;
+                let drv = self.active_drv();
+                let expected: BTreeMap<_,_> = drv.param_write_context(id).iter().filter_map(|field|
+                    s.params.get(*field).and_then(|v| json_to_param_value(v).ok()).map(|v| ((*field).to_string(),v))).collect();
+                let rr = if expected.is_empty() { self.drv_set_param(StripId(*r), id, pv).await }
+                    else { drv.set_param_guarded(StripId(*r), id, pv, &expected).await };
+                if let Err(error) = rr {
+                    if strict { return Err(error); }
+                    let key = openfader_core::strip_key_for_index(&topo, *r as usize).unwrap_or_else(|| r.to_string());
+                    failed.push(format!("{key} {id}: {error}"));
+                    continue;
                 }
                 // Recall-path echo: provenance per the `proven` flag above
                 // (no readback on this path).
@@ -3305,8 +3333,9 @@ impl Engine {
             let rr = self
                 .drv_set_param(StripId(*r), "name", ParamValue::Text(s.name.clone()))
                 .await;
-            if !self.active_drv().is_hardware() {
-                rr?;
+            if let Err(error) = rr {
+                if !self.active_drv().is_hardware() { return Err(error); }
+                failed.push(format!("strip {r} name: {error}"));
             }
         }
         // FX + routing snapshots (model-strict, best-effort elsewhere),
@@ -3332,21 +3361,12 @@ impl Engine {
             }
         }
         overrode.sort_unstable();
+        if !failed.is_empty() {
+            out.push(Event::Error { message: format!("Scene recall skipped {} setting(s): {}", failed.len(),
+                failed.iter().take(4).cloned().collect::<Vec<_>>().join("; ")),
+                locked_by: None, ch: None });
+        }
         Ok(overrode)
-    }
-
-    /// Current fader + mute of one strip (best-effort; failures read back
-    /// subscriber silence so a scoped recall degrades to a no-op axis
-    /// rather than failing the whole recall). Reads the inclusive display
-    /// getters (continuity: own writes included, no proof claimed), never
-    /// the stale pre-write `param_cache` entry, which the accepted write
-    /// already evicted and which would start an excluded-axis fade from the
-    /// wrong pre-move state.
-    async fn current_fader_mute(&self, strip: StripId) -> (f32, bool) {
-        let drv = self.active_drv();
-        let fader = drv.get_fader(strip).await.ok().unwrap_or(0.0);
-        let mute = drv.get_mute(strip).await.ok().unwrap_or(false);
-        (fader, mute)
     }
 
     // ================= R2: FX =================
@@ -3361,12 +3381,14 @@ impl Engine {
             openfader_core::fx::FX_TYPES
                 .iter()
                 .map(|t| crate::protocol::FxTypeCaps {
+                    slots: Vec::new(),
                     id: t.id.to_string(),
                     label: t.label.to_string(),
                     params: t
                         .params
                         .iter()
                         .map(|p| crate::protocol::FxParamCaps {
+                            choices: Vec::new(),
                             id: p.id.to_string(),
                             label: p.label.to_string(),
                             unit: p.unit.to_string(),
@@ -4484,7 +4506,7 @@ impl Engine {
                 let topo = self.driver_topology(&self.active_driver());
                 if let Some(fam) = topo.iter().find(|f| (f.first..f.first + f.count).contains(&(ch as usize))) {
                     let event = match fam.kind {
-                        openfader_core::StripKind::Main => Some(Event::Main { fader: Some(fader), muted: Some(muted) }),
+                        openfader_core::StripKind::Main if ch as usize == fam.first => Some(Event::Main { fader: Some(fader), muted: Some(muted) }),
                         openfader_core::StripKind::Bus => Some(Event::Bus { bus: (ch as usize - fam.first) as u8, fader, muted, key: self.active_strip_key(ch) }),
                         _ => None,
                     };
@@ -5613,7 +5635,10 @@ impl Engine {
             return None;
         }
         let v = param_value_json(&pv);
-        if !refresh_agrees(&v, written) {
+        let equivalent = json_to_param_value(written).ok()
+            .and_then(|written| self.drv(&driver).param_readback_equivalent(param, &pv, &written))
+            .unwrap_or_else(|| refresh_agrees(&v, written));
+        if !equivalent {
             self.evict_param_unless_fresh(ch, param, write_started);
             return None;
         }
@@ -7516,6 +7541,28 @@ impl openfader_core::show::FadeDriver for Engine {
     }
 }
 
+/// Keep the shared fader law while suppressing excluded mute writes entirely.
+/// Rewriting a sampled mute could race a console-side edit during a fade.
+struct ScopedSceneFade<'a> {
+    engine: &'a Engine,
+    recall_mutes: bool,
+}
+impl openfader_core::show::FadeDriver for ScopedSceneFade<'_> {
+    async fn fade_set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
+        if self.recall_mutes {
+            self.engine.drv_set_mute(strip, muted).await
+        } else {
+            Ok(())
+        }
+    }
+    async fn fade_get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
+        self.engine.drv_get_fader(strip).await
+    }
+    async fn fade_set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
+        self.engine.drv_set_fader(strip, value).await
+    }
+}
+
 async fn snapshot_strips(d: &dyn DynDriver) -> Vec<crate::protocol::StateStrip> {
     let topo = d.topology();
     match d.snapshot().await {
@@ -7708,10 +7755,12 @@ fn is_core_id(id: &str, first: bool) -> bool {
 /// Safe recall order for full-plane scene params: input stage first
 /// (gain → HPF), then gate → comp → EQ → sends, then placement/look.
 /// Faders/mutes/names ride outside this order (fade block + name block).
-fn safe_order_key(id: &str) -> (u8, &str) {
-    let lane = if ["gain", "trim", "phantom", "polarity", "delay_on", "delay_ms"].contains(&id) {
+fn safe_order_key(id: &str) -> (u8, u8, &str) {
+    let lane = if matches!(id, "source_a" | "source_b" | "source_select" | "wing:source_mode") {
+        1u8
+    } else if ["gain", "trim", "phantom", "polarity", "delay_on", "delay_ms", "wing:delay_unit", "wing:delay_value", "wing:input_balance"].contains(&id) {
         2u8
-    } else if id.starts_with("hpf") {
+    } else if id.starts_with("hpf") || id.starts_with("wing:hcf_") || id.starts_with("wing:filter_") {
         3
     } else if id.starts_with("gate_") {
         4
@@ -7721,12 +7770,17 @@ fn safe_order_key(id: &str) -> (u8, &str) {
         6
     } else if id.starts_with("send") || id.starts_with("aux") || id.starts_with("fx") {
         7
-    } else if id == "pan" || id == "balance" {
+    } else if id == "pan" || id == "balance" || id == "wing:width" {
         8
     } else {
         9
     };
-    (lane, id)
+    let priority = match id {
+        "gate_mode" | "comp_mode" | "eq_mode" | "wing:delay_unit" | "wing:filter_model" => 0,
+        "delay_on" | "hpf_on" | "wing:hcf_on" | "wing:filter_on" | "wing:source_mode" => 2,
+        _ => 1,
+    };
+    (lane, priority, id)
 }
 
 /// JSON engineering value back to a driver [`ParamValue`].
@@ -8051,6 +8105,8 @@ mod tests {
         assert!(!is_unsupported_error(&anyhow::anyhow!("sim: gain has no value yet")));
         assert!(!is_unsupported_error(&anyhow::anyhow!("fader: no value pushed yet")));
         assert!(!is_unsupported_error(&anyhow::anyhow!("not connected: call connect() first")));
+        assert!(!is_unsupported_error(&anyhow::anyhow!("WING: this control requires the TILT model; the loaded model has different parameters")));
+
     }
 
     #[test]
@@ -8091,6 +8147,17 @@ mod tests {
         assert!(!is_essentials_id("insert_sel"));
         assert_eq!(safe_order_key("insert_on").0, 9);
         assert_eq!(safe_order_key("insert_sel").0, 9);
+        assert!(safe_order_key("wing:delay_unit") < safe_order_key("wing:delay_value"));
+        assert!(safe_order_key("wing:delay_value") < safe_order_key("delay_on"));
+        assert!(safe_order_key("wing:filter_model") < safe_order_key("wing:filter_ap2_freq"));
+        assert!(safe_order_key("wing:filter_ap2_q") < safe_order_key("wing:filter_on"));
+        assert!(safe_order_key("wing:hcf_freq") < safe_order_key("wing:hcf_on"));
+        assert!(safe_order_key("source_select") < safe_order_key("wing:source_mode"));
+        assert!(safe_order_key("wing:source_mode") < safe_order_key("gain"));
+        assert!(safe_order_key("gain") < safe_order_key("wing:source_auto"));
+
+
+
     }
 
     #[test]
@@ -9195,4 +9262,208 @@ mod tests {
             "survivor's focus kept"
         );
     }
+    #[test]
+    fn wing_caps_name_matrix_and_main_send_destinations_and_scope_their_controls() {
+        let engine = Engine::new(EngineConfig::default());
+        *engine.active.write().unwrap() = "wing".into();
+        let Event::Caps { params, .. } = engine.caps_message() else { panic!("caps frame expected") };
+        let parameter = |id: &str| params.iter().find(|p| p.id == id).unwrap();
+        for (id, key, label) in [
+            ("send1_level", "bus/01", "Bus 1"),
+            ("send17_level", "mtx/01", "Matrix 1"),
+            ("send24_level", "mtx/08", "Matrix 8"),
+            ("send25_level", "main/01", "Main 1"),
+            ("send28_level", "main/04", "Main 4"),
+        ] {
+            let destination = parameter(id).presentations.iter().find_map(|p| p.get("destination")).unwrap();
+            assert_eq!(destination["key"], key);
+            assert_eq!(destination["label"], label);
+            assert_eq!(destination["stereo"], true);
+            assert_eq!(destination["allow_self"], false);
+        }
+        assert!(parameter("send17_level").scopes.iter().any(|s| s == "main"));
+        assert!(!parameter("send25_level").scopes.iter().any(|s| s == "main"));
+        assert!(!parameter("send17_pre").scopes.iter().any(|s| s == "in"));
+        assert_eq!(parameter("send28_level").min, json!(-144.0));
+        let destination = engine.drv("wing").send_destination(29);
+        assert!(destination.is_none());
+        for (id, group) in [
+            ("send7_level", "sends_bus"),
+            ("send17_level", "sends_matrix"),
+            ("send28_level", "sends_main"),
+            ("lr_assign", "sends_main"),
+            ("eq8_freq", "eq"),
+            ("source_a", "source"),
+        ] {
+            let advertised = parameter(id).presentations.iter()
+                .find_map(|p| p.get("recall_group")).unwrap();
+            assert_eq!(advertised, group);
+        }
+    }
+
+
+    #[tokio::test]
+    async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
+        // Exercise the real recall path and WING driver over UDP. Encode the
+        // few fixture replies directly; no hardware or native meter service.
+        fn osc_string(out: &mut Vec<u8>, value: &str) {
+            out.extend_from_slice(value.as_bytes());
+            out.push(0);
+            while !out.len().is_multiple_of(4) {
+                out.push(0);
+            }
+        }
+        let socket = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let addr = socket.local_addr().unwrap().to_string();
+        let writes = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let log = writes.clone();
+        let task = tokio::spawn(async move {
+            let mut data = [0u8; 4096];
+            loop {
+                let (n, peer) = socket.recv_from(&mut data).await.unwrap();
+                let packet = openfader_transport::osc::decode_packet(&data[..n]).unwrap();
+                for msg in openfader_transport::osc::flatten(packet) {
+                    if !msg.args.is_empty() {
+                        log.lock().unwrap().push(msg.addr);
+                        continue;
+                    }
+                    let mut reply = Vec::new();
+                    osc_string(&mut reply, &msg.addr);
+                    if msg.addr == "/?" || msg.addr.ends_with("/mdl") {
+                        osc_string(&mut reply, ",s");
+                        osc_string(
+                            &mut reply,
+                            if msg.addr == "/?" {
+                                "WING,127.0.0.1,Scope fixture,wing-compact,TEST,3.0.5"
+                            } else {
+                                "NONE"
+                            },
+                        );
+                    } else if msg.addr.ends_with("/grp") || msg.addr.ends_with("/altgrp") {
+                        osc_string(&mut reply, ",s");
+                        osc_string(&mut reply, "LCL");
+                    } else if msg.addr.ends_with("/in/conn/in") || msg.addr.ends_with("/altin") {
+                        osc_string(&mut reply, ",i");
+                        reply.extend_from_slice(&3i32.to_be_bytes());
+                    } else if msg.addr.ends_with("/srcauto") {
+                        osc_string(&mut reply, ",i");
+                        reply.extend_from_slice(&1i32.to_be_bytes());
+                    } else if msg.addr.ends_with("/fdr") {
+                        osc_string(&mut reply, ",f");
+                        reply.extend_from_slice(&(-12f32).to_be_bytes());
+                    } else {
+                        osc_string(&mut reply, ",i");
+                        reply.extend_from_slice(&0i32.to_be_bytes());
+                    }
+                    socket.send_to(&reply, peer).await.unwrap();
+                }
+            }
+        });
+        let engine = Engine::new(EngineConfig::default());
+        *engine.active.write().unwrap() = "wing".into();
+        let drv = engine.drv("wing");
+        drv.connect(&addr).await.unwrap();
+        let scene = StoredScene {
+            number: 1,
+            name: "Sends".into(),
+            saved_at: 0,
+            main_fader: None,
+            fx: vec![],
+            routing: vec![],
+            strips: vec![StoredStrip {
+                strip: 0,
+                key: Some("ch/01".into()),
+                name: String::new(),
+                fader: 0.5,
+                mute: false,
+                params: [1, 16, 17, 24, 25, 28]
+                    .into_iter()
+                    .map(|slot| (format!("send{slot}_on"), json!(true)))
+                    .collect(),
+            }],
+        };
+        for (group, fields, paths) in [
+            (
+                "sends_bus",
+                vec!["send1_on", "send16_on"],
+                vec!["/ch/1/send/1/on", "/ch/1/send/16/on"],
+            ),
+            (
+                "sends_matrix",
+                vec!["send17_on", "send24_on"],
+                vec!["/ch/1/send/MX1/on", "/ch/1/send/MX8/on"],
+            ),
+            (
+                "sends_main",
+                vec!["send25_on", "send28_on"],
+                vec!["/ch/1/main/1/on", "/ch/1/main/4/on"],
+            ),
+            ("sends_fx", vec![], vec![]),
+            ("config", vec![], vec![]),
+            ("mute", vec!["mute"], vec!["/ch/1/mute"]),
+            ("fader_pan", vec!["fader"], vec!["/ch/1/fdr"]),
+        ] {
+            writes.lock().unwrap().clear();
+            let scope = RecallScope {
+                groups: Some(vec![group.into()]),
+                globals: Some(vec![]),
+                ..Default::default()
+            };
+            let mut out = Vec::new();
+            engine
+                .recall_full(&scene, 0, Some(&scope), "test", &mut out)
+                .await
+                .unwrap();
+            // Query barrier: all earlier loopback writes have reached the desk.
+            drv.get_fader(StripId(0)).await.unwrap();
+            let mut actual = writes.lock().unwrap().clone();
+            actual.sort();
+            let mut expected = paths;
+            expected.sort();
+            assert_eq!(actual, expected, "wire paths for {group}");
+            let mut echoes: Vec<_> = out
+                .iter()
+                .filter_map(|event| match event {
+                    Event::Param { field, .. } => Some(field.clone()),
+                    _ => None,
+                })
+                .collect();
+            echoes.sort();
+            let mut expected: Vec<_> = fields.iter().map(|s| s.to_string()).collect();
+            expected.sort();
+            assert_eq!(echoes, expected, "recall echoes for {group}");
+        }
+        let mut rejected = scene.clone();
+        rejected.strips[0].params = HashMap::from([("wing:source_mode".into(), json!("invalid"))]);
+        let scope = RecallScope { groups: Some(vec!["source".into()]), globals: Some(vec![]), ..Default::default() };
+        let mut out = Vec::new();
+        engine.recall_full(&rejected, 0, Some(&scope), "test", &mut out).await.unwrap();
+        assert!(!out.iter().any(|event| matches!(event, Event::Param { field, .. } if field == "wing:source_mode")));
+        assert!(out.iter().any(|event| matches!(event, Event::Error {message,..} if message.contains("Scene recall skipped 1 setting(s)") && message.contains("wing:source_mode"))));
+        // Auto switching is active. Stored source context must reach the
+        // guarded preamp write, even in an input-only scoped recall.
+        let mut preamp = scene.clone();
+        preamp.strips[0].params = HashMap::from([
+            ("gain".into(),json!(20.)), ("source_a".into(),json!(1003.)),
+            ("source_b".into(),json!(1003.)), ("source_select".into(),json!(0.)),
+        ]);
+        let scope = RecallScope { groups: Some(vec!["input".into()]), globals: Some(vec![]), ..Default::default() };
+        writes.lock().unwrap().clear();
+        let mut out = Vec::new();
+        engine.recall_full(&preamp, 0, Some(&scope), "test", &mut out).await.unwrap();
+        drv.get_fader(StripId(0)).await.unwrap();
+        assert_eq!(*writes.lock().unwrap(), vec!["/io/in/LCL/3/g"]);
+        assert!(!out.iter().any(|event| matches!(event, Event::Error {..})));
+        preamp.strips[0].params.insert("source_a".into(),json!(1004.));
+        writes.lock().unwrap().clear();
+        out.clear();
+        engine.recall_full(&preamp, 0, Some(&scope), "test", &mut out).await.unwrap();
+        drv.get_fader(StripId(0)).await.unwrap();
+        assert!(writes.lock().unwrap().is_empty());
+        assert!(!out.iter().any(|event| matches!(event, Event::Param {field,..} if field == "gain")));
+        assert!(out.iter().any(|event| matches!(event, Event::Error {..})));
+        drv.disconnect().await.unwrap();
+        task.abort();
+    }
+
 }

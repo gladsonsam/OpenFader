@@ -931,7 +931,7 @@ class AppStore extends ChangeNotifier
       switch (kind) {
         ProcessorPresetKind.eq => field == 'eq_on' ||
             field == 'hpf_on' ||
-            RegExp(r'^eq[1-6]_on$').hasMatch(field),
+            RegExp(r'^eq[1-8]_on$').hasMatch(field),
         ProcessorPresetKind.gate =>
           field == 'gate_on' || field == 'gate_filter_on',
         ProcessorPresetKind.compressor =>
@@ -944,7 +944,7 @@ class AppStore extends ChangeNotifier
           _presetProcessorField(recall.target.kind, field));
 
   String _presetSettingLabel(String field) {
-    final band = RegExp(r'^eq([1-6])_(freq|gain|q|type)$').firstMatch(field);
+    final band = RegExp(r'^eq([1-8])_(freq|gain|q|type)$').firstMatch(field);
     if (band != null) {
       final parameter = switch (band[2]) {
         'freq' => 'frequency',
@@ -1550,7 +1550,8 @@ class AppStore extends ChangeNotifier
       _transportError.isNotEmpty ? _transportErrorAt : _engineErrorAt;
 
   void _noteTransportError(Object e) {
-    _interruptDestinationEdits('Connection error; the destination setting may have changed.');
+    _interruptDestinationEdits(
+        'Connection error; the destination setting may have changed.');
     _interruptForgetSavedMixers(
         'A transport error interrupted address clearing: $e.');
     _interruptAllLibrary(
@@ -1594,7 +1595,8 @@ class AppStore extends ChangeNotifier
   }
 
   void _clearSessionValues() {
-    _interruptDestinationEdits('Connection changed; the destination setting may have changed.');
+    _interruptDestinationEdits(
+        'Connection changed; the destination setting may have changed.');
     _interruptAllLibrary(
         'Connection changed while waiting for the library result.');
     _interruptForgetSavedMixers('Connection changed during address clearing.');
@@ -2670,7 +2672,9 @@ class AppStore extends ChangeNotifier
   }
 
   @override
-  String get stripKey => 'ch/${(_channel + 1).toString().padLeft(2, '0')}';
+  String get stripKey =>
+      engine.strips.where((s) => s.ch == _channel).firstOrNull?.key ??
+      'ch/${(_channel + 1).toString().padLeft(2, '0')}';
   @override
   int get connectionEpoch => engine.session;
 
@@ -2709,6 +2713,17 @@ class AppStore extends ChangeNotifier
   @override
   Map<String, dynamic>? paramMetadata(String leaf) =>
       parameterPresentation(engine.parameterMetadata[deskLeaf(leaf)], paramNum);
+
+  @override
+  bool paramApplies(String leaf) {
+    final desk = deskLeaf(leaf);
+    if (!engine.supportedParams.contains(desk)) return false;
+    final scopes = engine.parameterMetadata[desk]?['scopes'];
+    final family = _presetFamily(_channel);
+    final tags = family?['params_scope'];
+    final kinds = tags is List ? tags : [family?['kind']];
+    return scopes is List && scopes.any(kinds.contains);
+  }
 
   @override
   bool supports(String leaf) {
@@ -2769,14 +2784,26 @@ class AppStore extends ChangeNotifier
     // DSP edits (including delayed ChannelWrites flushes) use the current
     // driver limits. Hydration remains untouched, even outside these limits.
     final isDspRange = desk == 'hpf_freq' ||
-        RegExp(r'^eq[1-6]_(freq|gain|q)$').hasMatch(desk) ||
+        desk == 'wing:hcf_freq' ||
+        desk == 'wing:input_balance' ||
+        desk == 'wing:width' ||
+        desk.startsWith('wing:filter_') &&
+            desk != 'wing:filter_on' &&
+            desk != 'wing:filter_model' ||
+        RegExp(r'^eq[1-8]_(freq|gain|q)$').hasMatch(desk) ||
         RegExp(r'^(gate|comp)_(thr|range|att|hold|rel|ratio|knee|makeup|filter_freq|mix)$')
             .hasMatch(desk);
     final range = isDspRange ? _editableRange(desk) : null;
     if (isDspRange && (range == null || value is! num)) return;
-    final coerced = range == null
+    var coerced = range == null
         ? value
         : (value as num).toDouble().clamp(range.first, range.last);
+    // WING's native source controls have 61 width and 181 balance steps.
+    if (desk == 'wing:width' && coerced is num) {
+      coerced = (coerced / 5).round() * 5.0;
+    } else if (desk == 'wing:input_balance' && coerced is num) {
+      coerced = (coerced * 10).round() / 10;
+    }
     // Capture at enqueue time: navigation must not retarget a queued edit.
     final ch = _channel;
     _maps.confirmed.putIfAbsent(ch, () => {});
@@ -2786,6 +2813,7 @@ class AppStore extends ChangeNotifier
         ? _preampExpect(ch)
         : <String, Object>{};
     _coalescer.offer('param:$ch:$desk', () {
+      if (engine.session != epoch) return;
       if (expected.isNotEmpty &&
           (engine.session != epoch ||
               expected.entries.any(
@@ -2876,6 +2904,138 @@ class AppStore extends ChangeNotifier
   }
 
   @override
+  ChannelSourceModeVm? get sourceMode {
+    final raw = ps.optimisticValue(_maps, _channel, 'wing:source_mode');
+    if (raw is! String) return null;
+    final parts = raw.split(':');
+    if (parts.length != 2) return null;
+    final mode = const ['M', 'ST', 'M/S'].indexOf(parts[1]);
+    final target = parts[0];
+    final port = target.split('/');
+    if (mode < 0 ||
+        port.length != 2 ||
+        int.tryParse(port[1]) == null ||
+        source.srcName != '${port[0]} ${port[1]}') {
+      return null;
+    }
+    var label = '${port[0]} ${port[1]}';
+    final groups = engine.routingCaps['groups'];
+    if (groups is List) {
+      for (final group in groups) {
+        if (group is Map &&
+            group['key'] == port[0] &&
+            group['label'] is String) {
+          label = '${group['label']} ${port[1]}';
+          break;
+        }
+      }
+    }
+    final editable = supports('wing:source_mode') &&
+        paramBool('wing:source_mode_writable') == true &&
+        supports('wing:source_mode_writable');
+    return ChannelSourceModeVm(context: (
+      engine.session,
+      _channel,
+      source.sourceA,
+      source.sourceB,
+      source.selected,
+      raw,
+      editable
+    ), target: target, sourceLabel: label, mode: mode, editable: editable);
+  }
+
+  @override
+  void setSourceMode(ChannelSourceModeVm snapshot, int mode) {
+    final current = sourceMode;
+    if (mode < 0 ||
+        mode > 2 ||
+        current == null ||
+        !current.editable ||
+        current.context != snapshot.context ||
+        current.mode == mode) {
+      return;
+    }
+    final code = const ['M', 'ST', 'M/S'][mode];
+    cmdParam('wing:source_mode', '${snapshot.target}:${snapshot.code}>$code');
+  }
+
+  @override
+  bool get hasDelay {
+    final scopes = engine.parameterMetadata['wing:delay_state']?['scopes'];
+    final family = _presetFamily(_channel);
+    final tags = family?['params_scope'];
+    final kinds = tags is List ? tags : [family?['kind']];
+    return engine.supportedParams.contains('wing:delay_state') &&
+        scopes is List &&
+        scopes.any(kinds.contains);
+  }
+
+  @override
+  ChannelDelayVm? get delay {
+    final raw = ps.optimisticValue(_maps, _channel, 'wing:delay_state');
+    if (raw is! String) return null;
+    try {
+      final data = jsonDecode(raw);
+      if (data is! Map) return null;
+      final unit = data['unit'],
+          value = data['value'],
+          min = data['min'],
+          max = data['max'],
+          steps = data['steps'];
+      if (unit is! int ||
+          unit < 0 ||
+          unit > 3 ||
+          value is! num ||
+          min is! num ||
+          max is! num ||
+          steps is! int ||
+          steps < 0 ||
+          !value.isFinite ||
+          !min.isFinite ||
+          !max.isFinite ||
+          min >= max ||
+          value < min ||
+          value > max ||
+          data['on'] is! bool ||
+          data['editable'] is! bool ||
+          paramNum('wing:delay_unit') != unit) {
+        return null;
+      }
+      return ChannelDelayVm(
+          context: (engine.session, _channel, unit, min, max, steps),
+          unit: unit,
+          steps: steps,
+          value: value.toDouble(),
+          min: min.toDouble(),
+          max: max.toDouble(),
+          on: data['on'] as bool,
+          editable: data['editable'] == true && supports('wing:delay_value'));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  void setDelay(ChannelDelayVm snapshot, double value) {
+    final live = delay;
+    if (live == null ||
+        !live.editable ||
+        live.context != snapshot.context ||
+        !value.isFinite ||
+        value < live.min ||
+        value > live.max) {
+      return;
+    }
+    final step =
+        live.steps > 1 ? (live.max - live.min) / (live.steps - 1) : 0.0;
+    final snapped = step > 0
+        ? (live.min + ((value - live.min) / step).round() * step)
+            .clamp(live.min, live.max)
+        : value;
+    cmdParam('wing:delay_value', '${snapshot.code}:$snapped');
+  }
+
+  @override
   ChannelPreampVm get preamp => ChannelPreampVm(
         hasInput: supports('gain'),
         gain: paramNum('gain') ?? 0,
@@ -2906,10 +3066,14 @@ class AppStore extends ChangeNotifier
     );
   }
 
-  // A send-pan leaf alone never proves stereo; only a reported link on the destination does.
+  // Providers may declare a fixed stereo destination; other desks need a live link value.
 
   bool _sendDestinationIsStereoAux(int slot) {
     if (slot < 1) return false;
+    final destination = paramMetadata('send${slot}_level')?['destination'];
+    if (destination is Map && destination['stereo'] is bool) {
+      return destination['stereo'] as bool;
+    }
     for (final family in engine.topology) {
       if (family['kind'] != 'bus') continue;
       final first = family['first'];
@@ -3000,21 +3164,64 @@ class AppStore extends ChangeNotifier
     return parameterRange(paramMetadata(leaf));
   }
 
+  int get _eqBandCount => (paramNum('wing:eq_bands')?.toInt() ?? 4).clamp(4, 8);
+
   @override
   ChannelEqVm get eq => ChannelEqVm(
         on: paramBool('eq_on') ?? false,
         hpfF: paramNum('hpf_freq') ?? 80,
         hpfRange: _editableRange('hpf_freq'),
         hpfOn: paramBool('hpf_on') ?? false,
-        hpfSlope: 12,
+        hpfSlope: engine.driver == 'wing'
+            ? (paramNum('hpf_slope') == null
+                ? 12
+                : const [
+                    6,
+                    12,
+                    18,
+                    24
+                  ][paramNum('hpf_slope')!.toInt().clamp(0, 3)])
+            : 12,
+        hpfInResponse: engine.driver != 'wing',
+        responseNote: paramApplies('wing:filter_model')
+            ? 'EQ curve excludes input filters.'
+            : null,
         selectedBand: _eqBand,
         bands: [
-          for (var b = 1; b <= 4; b++)
+          for (var b = 1; b <= _eqBandCount; b++)
             EqBandVm(
               band: b,
-              name: const ['Low', 'Lo-Mid', 'Hi-Mid', 'High'][b - 1],
+              name: _eqBandCount == 8
+                  ? (b == 1
+                      ? 'Low'
+                      : b == 8
+                          ? 'High'
+                          : 'Mid ${b - 1}')
+                  : _eqBandCount == 6
+                      ? const [
+                          'Low',
+                          'Lo-Mid 1',
+                          'Lo-Mid 2',
+                          'Hi-Mid 1',
+                          'Hi-Mid 2',
+                          'High'
+                        ][b - 1]
+                      : const ['Low', 'Lo-Mid', 'Hi-Mid', 'High'][b - 1],
               f: paramNum('eq${b}_freq') ??
-                  [80.0, 400.0, 1200.0, 6000.0][b - 1],
+                  (_eqBandCount == 8
+                      ? [
+                          80.0,
+                          160.0,
+                          320.0,
+                          640.0,
+                          1250.0,
+                          2500.0,
+                          5000.0,
+                          10000.0
+                        ]
+                      : _eqBandCount == 6
+                          ? [80.0, 250.0, 600.0, 1500.0, 4000.0, 10000.0]
+                          : [80.0, 400.0, 1200.0, 6000.0])[b - 1],
               g: paramNum('eq${b}_gain') ?? 0,
               q: paramNum('eq${b}_q') ?? 1,
               shelfUsesQ: engine.driver != 'dl32s',
@@ -3083,43 +3290,86 @@ class AppStore extends ChangeNotifier
   @override
   ChannelDynVm get comp => _dyn(DynKind.comp);
 
+  List<int> get _sendSlots {
+    final family = _presetFamily(_channel);
+    final familyScopes = family?['params_scope'];
+    final kinds = familyScopes is List ? familyScopes : [family?['kind']];
+    final slots = <int>[];
+    final sourceKey = stripKey;
+    for (final id in engine.supportedParams) {
+      final match = RegExp(r'^send([1-9][0-9]*)_level$').firstMatch(id);
+      if (match == null) continue;
+      final scopes = engine.parameterMetadata[id]?['scopes'];
+      if (scopes is List && scopes.isNotEmpty && !scopes.any(kinds.contains)) {
+        continue;
+      }
+      final destination = paramMetadata(id)?['destination'];
+      if (destination is Map &&
+          destination['allow_self'] == false &&
+          destination['key'] == sourceKey) {
+        continue;
+      }
+      slots.add(int.parse(match[1]!));
+    }
+    return slots..sort();
+  }
+
   @override
   List<ChannelSendVm> get sends {
     final cached = _sendsCache;
     if (cached != null) return cached;
     final built = List<ChannelSendVm>.unmodifiable([
-      for (var slot = 1; slot <= 16; slot++)
-        if (engine.supportedParams.contains('send${slot}_level'))
-          ChannelSendVm(
-            destinationControls: List.unmodifiable(engine.destinationControls
-                .where((control) => control.sendSlot == slot)),
-            slot: slot,
-            destName: _sendName(slot),
-            level: dbToPos(paramNum('send${slot}_level') ?? -90),
-            muted: supports('send${slot}_on')
-                ? !(paramBool('send${slot}_on') ?? true)
-                : paramBool(_sendMuteLeaf(slot)) ?? false,
-            canMute:
-                supports('send${slot}_on') || supports(_sendMuteLeaf(slot)),
-            pan: sendPan(slot),
-            tap: paramNum('send${slot}_tap')?.toInt(),
-            tapOptions: supports('send${slot}_tap')
-                ? const [0, 1, 2, 3, 4, 5]
-                : const [],
-            grpon: paramBool('send${slot}_grpon'),
-          ),
+      for (final slot in _sendSlots)
+        ChannelSendVm(
+          destinationControls: List.unmodifiable(engine.destinationControls
+              .where((control) => control.sendSlot == slot)),
+          slot: slot,
+          destName: _sendName(slot),
+          level: dbToPos(paramNum('send${slot}_level') ?? -90),
+          muted: supports('send${slot}_on')
+              ? !(paramBool('send${slot}_on') ?? true)
+              : paramBool(_sendMuteLeaf(slot)) ?? false,
+          canMute: supports('send${slot}_on') || supports(_sendMuteLeaf(slot)),
+          pan: sendPan(slot),
+          tap: paramNum('send${slot}_tap')?.toInt(),
+          tapOptions: supports('send${slot}_tap')
+              ? (parameterChoices(paramMetadata('send${slot}_tap')).isEmpty
+                  ? const [0, 1, 2, 3, 4, 5]
+                  : parameterChoices(paramMetadata('send${slot}_tap'))
+                      .map((c) => c.value.toInt())
+                      .toList())
+              : const [],
+          grpon: paramBool('send${slot}_grpon'),
+        ),
     ]);
     _sendsCache = built;
     return built;
   }
 
   String _sendMuteLeaf(int slot) {
-    final auxCount = engine.driver == 'dl32s' ? 8 : 6;
+    final auxCount = engine.driver == 'wing'
+        ? 16
+        : engine.driver == 'dl32s'
+            ? 8
+            : 6;
     return slot <= auxCount ? 'aux${slot}_mute' : 'fx${slot - auxCount}_mute';
   }
 
   String _sendName(int slot) {
-    final auxCount = engine.driver == 'dl32s' ? 8 : 6;
+    final destination = paramMetadata('send${slot}_level')?['destination'];
+    if (destination is Map && destination['key'] is String) {
+      final key = destination['key'];
+      for (final strip in engine.strips) {
+        if (strip.key == key && strip.name.isNotEmpty) return strip.name;
+      }
+      if (destination['label'] is String) return destination['label'] as String;
+    }
+
+    final auxCount = engine.driver == 'wing'
+        ? 16
+        : engine.driver == 'dl32s'
+            ? 8
+            : 6;
     final kind = slot <= auxCount ? 'bus' : 'fxsnd';
     final index = slot <= auxCount ? slot - 1 : slot - auxCount - 1;
     for (final family in engine.topology) {
@@ -3173,7 +3423,7 @@ class AppStore extends ChangeNotifier
 
   @override
   void setEqBandType(int band, EqFilterShape shape) {
-    if (band != 1 && band != 4) return;
+    if (band != 1 && band != _eqBandCount) return;
     if (shape != EqFilterShape.bell &&
         shape !=
             (band == 1 ? EqFilterShape.lowShelf : EqFilterShape.highShelf)) {
@@ -3210,7 +3460,7 @@ class AppStore extends ChangeNotifier
 
   @override
   void resetEq() {
-    for (var b = 1; b <= 4; b++) {
+    for (var b = 1; b <= _eqBandCount; b++) {
       cmdParam('eq${b}_g', 0.0);
     }
     notifyListeners();
@@ -3238,7 +3488,10 @@ class AppStore extends ChangeNotifier
   @override
   void setSendLevel(int slot, double value) {
     final db = posToDb(value.clamp(0.0, 1.0));
-    cmdParam('send${slot}_level', db.isFinite ? db : -90.0);
+    final floor =
+        (paramMetadata('send${slot}_level')?['min'] as num?)?.toDouble() ??
+            -90.0;
+    cmdParam('send${slot}_level', db.isFinite ? db : floor);
   }
 
   @override
@@ -3246,14 +3499,20 @@ class AppStore extends ChangeNotifier
 
   @override
   bool destinationControlIsCurrent(DestinationControlVm control) =>
-      !_presetDisposed && _online && engine.connected && engine.capsReady &&
-      !locked && control.available && engine.destinationControls.contains(control);
+      !_presetDisposed &&
+      _online &&
+      engine.connected &&
+      engine.capsReady &&
+      !locked &&
+      control.available &&
+      engine.destinationControls.contains(control);
 
   @override
   Future<String?> setDestinationControl(
       DestinationControlVm control, double value) {
     if (!destinationControlIsCurrent(control)) {
-      return Future.value('Connection or setting changed. Reopen this control.');
+      return Future.value(
+          'Connection or setting changed. Reopen this control.');
     }
     if (!control.allowsValue(value)) {
       return Future.value('This setting is unavailable.');
@@ -3266,7 +3525,8 @@ class AppStore extends ChangeNotifier
     final id = 'destination-${engine.session}-${++_destinationRequestSequence}';
     final edit = _DestinationEdit(control, _nowMs() + 15000);
     _destinationEdits[id] = edit;
-    unawaited(_api.cmd(_clientId, Cmds.destinationParam(id, control, value))
+    unawaited(_api
+        .cmd(_clientId, Cmds.destinationParam(id, control, value))
         .then((_) {}, onError: (Object error) {
       if (!_presetDisposed) _noteTransportError(error);
     }));
@@ -3286,7 +3546,8 @@ class AppStore extends ChangeNotifier
 
   void _pollDestinationEdits(double now) {
     if (!_online || !engine.connected) {
-      _interruptDestinationEdits('Connection lost; the destination setting may have changed.');
+      _interruptDestinationEdits(
+          'Connection lost; the destination setting may have changed.');
     }
     for (final entry in _destinationEdits.entries.toList()) {
       if (now >= entry.value.deadline) {
@@ -3300,10 +3561,17 @@ class AppStore extends ChangeNotifier
     _pollDestinationEdits(_nowMs());
     final id = frame['request_id'];
     final edit = _destinationEdits[id];
-    if (id is! String || edit == null || frame['epoch'] != edit.target.epoch) return;
+    if (id is! String || edit == null || frame['epoch'] != edit.target.epoch) {
+      return;
+    }
     final message = frame['message'];
-    _finishDestinationEdit(id, message is String ? message :
-        frame['accepted'] == true ? null : 'The mixer rejected this change.');
+    _finishDestinationEdit(
+        id,
+        message is String
+            ? message
+            : frame['accepted'] == true
+                ? null
+                : 'The mixer rejected this change.');
   }
 
   @override
@@ -3327,7 +3595,8 @@ class AppStore extends ChangeNotifier
 
   @override
   void dispose() {
-    _interruptDestinationEdits('Connection closed; the destination setting may have changed.');
+    _interruptDestinationEdits(
+        'Connection closed; the destination setting may have changed.');
     _libraryDisposed = true;
     _interruptAllLibrary('The engine was closed.');
     _interruptForgetSavedMixers('The engine was closed.');

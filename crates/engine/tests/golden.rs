@@ -167,9 +167,11 @@ fn examples() -> Vec<(String, Value)> {
                 fx: openfader_engine::protocol::FxCaps {
                     slots: 8,
                     types: vec![openfader_engine::protocol::FxTypeCaps {
+                    slots: Vec::new(),
                         id: "hall".to_string(),
                         label: "Hall".to_string(),
                         params: vec![openfader_engine::protocol::FxParamCaps {
+                    choices: Vec::new(),
                             id: "mix".to_string(),
                             label: "Mix".to_string(),
                             unit: "%".to_string(),
