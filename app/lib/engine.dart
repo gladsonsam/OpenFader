@@ -1178,8 +1178,9 @@ class EngineState {
         ];
         return true;
       case 'routing':
-        final raw = (e['destinations'] as List?) ??
-            (e['patches'] as List?) ?? const [];
+        final rows =
+            e.containsKey('destinations') ? e['destinations'] : e['patches'];
+        final raw = rows is List ? rows : const [];
         routing = [
           for (final p in raw)
             if (p is Map)

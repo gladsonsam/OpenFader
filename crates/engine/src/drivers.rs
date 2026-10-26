@@ -372,6 +372,8 @@ pub trait DynDriver: Send + Sync {
     fn routing_groups(&self) -> Vec<RoutingGroup> {
         Vec::new()
     }
+    /// Preserve provider-defined legacy target aliases at the write guard.
+    fn canonical_routing_target<'a>(&self, target: &'a str) -> &'a str { target }
     fn routing_control(&self, _target: &str) -> &str { "source" }
     fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
         routing::input_planes(self)
