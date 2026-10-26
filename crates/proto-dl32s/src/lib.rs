@@ -95,6 +95,8 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3728, id: "lr_rolloff", label: "LR Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
         address: 3729, id: "lr_bass_boost", label: "LR Bass Boost", min: -15.0, max: 15.0, unit: "dB", decimals: 1 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3730, id: "er_level", label: "ER Level", min: -12.0, max: 12.0, unit: "dB", decimals: 1 },
 ];
 
 impl FxParameterSpec {
