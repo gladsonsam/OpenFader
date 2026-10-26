@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../palette.dart';
+import '../core/destination_controls.dart';
+import '../widgets/destination_control_editor.dart';
 
 class FxKnobVm {
   final String id;
@@ -45,6 +47,11 @@ class FxSlotVm {
 
 // Implemented by the shell over the engine or a fixture sim.
 abstract class FxStore extends ChangeNotifier {
+  List<DestinationControlVm> get destinationControls => const [];
+  bool destinationControlIsCurrent(DestinationControlVm control) => false;
+  Future<String?> setDestinationControl(
+          DestinationControlVm control, double value) =>
+      Future.value('This FX control is unavailable.');
   List<FxSlotVm> get slots;
   int get selected;
   List<String> get typeOptions;
@@ -84,6 +91,10 @@ class _U4FxPageState extends State<U4FxPage> {
           listenable: widget.store,
           builder: (context, _) {
             final store = widget.store;
+            final described = <String, List<DestinationControlVm>>{};
+            for (final control in store.destinationControls) {
+              described.putIfAbsent(control.target, () => []).add(control);
+            }
             final sel = store.slots.isEmpty
                 ? null
                 : store.slots[store.selected.clamp(0, store.slots.length - 1)];
@@ -99,6 +110,10 @@ class _U4FxPageState extends State<U4FxPage> {
                           letterSpacing: 0.6,
                           color: ConsolePalette.of(context).text1)),
                   const SizedBox(height: 8),
+                  for (final controls in described.values) ...[
+                    _DestinationFxPanel(store: store, controls: controls),
+                    const SizedBox(height: 8),
+                  ],
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
@@ -223,6 +238,52 @@ class _U4FxPageState extends State<U4FxPage> {
         ),
       ),
     );
+  }
+}
+
+class _DestinationFxPanel extends StatelessWidget {
+  final FxStore store;
+  final List<DestinationControlVm> controls;
+  const _DestinationFxPanel({required this.store, required this.controls});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+            color: palette.panel,
+            border: Border.all(color: palette.linePanel),
+            borderRadius: const BorderRadius.all(Radius.circular(10))),
+        child:
+            Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(controls.first.destinationName,
+              style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                  color: palette.text1)),
+          const SizedBox(height: 10),
+          for (final control in controls)
+            Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: OutlinedButton(
+                    onPressed: store.destinationControlIsCurrent(control)
+                        ? () => showDialog<void>(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (_) => DestinationControlEditor(
+                                changes: store,
+                                isCurrent: store.destinationControlIsCurrent,
+                                apply: store.setDestinationControl,
+                                control: control))
+                        : null,
+                    child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Text(
+                            '${control.label}: ${control.valueLabel ?? 'Unavailable'}'
+                            '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                            textAlign: TextAlign.center)))),
+        ]));
   }
 }
 
