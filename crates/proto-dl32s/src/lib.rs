@@ -61,6 +61,10 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3633, id: "diffusion", label: "Diffusion", min: 0.0, max: 10.0, unit: "", decimals: 1 },
     FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
         address: 3634, id: "hf_damping", label: "HF Damping", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3635, id: "lr_rolloff", label: "LR Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 1, algorithm_address: 3629, algorithm: 2, algorithm_name: "Plate Reverb",
+        address: 3636, id: "lr_bass_boost", label: "LR Bass Boost", min: -15.0, max: 15.0, unit: "dB", decimals: 1 },
     FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
         address: 3662, id: "time", label: "Delay time", min: 10.0, max: 1600.0, unit: "ms", decimals: 0 },
     FxParameterSpec { slot: 2, algorithm_address: 3660, algorithm: 12, algorithm_name: "Tape Echo Delay",
@@ -75,6 +79,10 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3695, id: "diffusion", label: "Diffusion", min: 0.0, max: 10.0, unit: "", decimals: 1 },
     FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
         address: 3696, id: "hf_damping", label: "HF Damping", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3697, id: "lr_rolloff", label: "LR Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 3, algorithm_address: 3691, algorithm: 7, algorithm_name: "Hall Reverb",
+        address: 3698, id: "lr_bass_boost", label: "LR Bass Boost", min: -15.0, max: 15.0, unit: "dB", decimals: 1 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
         address: 3724, id: "predelay", label: "Predelay", min: 0.0, max: 300.0, unit: "ms", decimals: 0 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
@@ -83,6 +91,10 @@ const FX_PARAMETERS: &[FxParameterSpec] = &[
         address: 3726, id: "diffusion", label: "Diffusion", min: 0.0, max: 10.0, unit: "", decimals: 1 },
     FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
         address: 3727, id: "hf_damping", label: "HF Damping", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3728, id: "lr_rolloff", label: "LR Rolloff", min: 500.0, max: 20000.0, unit: "Hz", decimals: 0 },
+    FxParameterSpec { slot: 4, algorithm_address: 3722, algorithm: 10, algorithm_name: "Spring Reverb",
+        address: 3729, id: "lr_bass_boost", label: "LR Bass Boost", min: -15.0, max: 15.0, unit: "dB", decimals: 1 },
 ];
 
 impl FxParameterSpec {
