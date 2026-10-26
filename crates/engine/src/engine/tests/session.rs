@@ -121,6 +121,9 @@ fn unsupported_error_shapes() {
     assert!(!is_unsupported_error(&anyhow::anyhow!(
         "not connected: call connect() first"
     )));
+    assert!(!is_unsupported_error(&anyhow::anyhow!(
+        "WING: this control requires the TILT model; the loaded model has different parameters"
+    )));
 }
 
 #[test]
@@ -161,6 +164,14 @@ fn new_param_id_shapes_need_no_allowlist() {
     assert!(!is_essentials_id("insert_sel"));
     assert_eq!(safe_order_key("insert_on").0, 9);
     assert_eq!(safe_order_key("insert_sel").0, 9);
+    assert!(safe_order_key("wing:delay_unit") < safe_order_key("wing:delay_value"));
+    assert!(safe_order_key("wing:delay_value") < safe_order_key("delay_on"));
+    assert!(safe_order_key("wing:filter_model") < safe_order_key("wing:filter_ap2_freq"));
+    assert!(safe_order_key("wing:filter_ap2_q") < safe_order_key("wing:filter_on"));
+    assert!(safe_order_key("wing:hcf_freq") < safe_order_key("wing:hcf_on"));
+    assert!(safe_order_key("source_select") < safe_order_key("wing:source_mode"));
+    assert!(safe_order_key("wing:source_mode") < safe_order_key("gain"));
+    assert!(safe_order_key("gain") < safe_order_key("wing:source_auto"));
 }
 
 #[test]

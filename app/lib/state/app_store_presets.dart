@@ -4,6 +4,7 @@ part of 'app_store.dart';
 // This contract exposes only state and hooks needed by other responsibilities.
 // Private access stays inside the AppStore library; screens use store contracts.
 abstract interface class _AppStorePresetsContract {
+  Map<String, dynamic>? _presetFamily(int channel);
   bool _presetEditingBlocked(int channel, String field);
   void _invalidatePresetOperations(String message);
   void _stopPresetRecalls(String message);
@@ -86,6 +87,7 @@ mixin _AppStorePresets on _AppStoreContext {
   @override
   bool _presetDisposed = false;
 
+  @override
   Map<String, dynamic>? _presetFamily(int channel) {
     for (final family in engine.topology) {
       final first = family['first'];
@@ -208,7 +210,7 @@ mixin _AppStorePresets on _AppStoreContext {
       switch (kind) {
         ProcessorPresetKind.eq => field == 'eq_on' ||
             field == 'hpf_on' ||
-            RegExp(r'^eq[1-6]_on$').hasMatch(field),
+            RegExp(r'^eq[1-8]_on$').hasMatch(field),
         ProcessorPresetKind.gate =>
           field == 'gate_on' || field == 'gate_filter_on',
         ProcessorPresetKind.compressor =>
@@ -223,7 +225,7 @@ mixin _AppStorePresets on _AppStoreContext {
           _presetProcessorField(recall.target.kind, field));
 
   String _presetSettingLabel(String field) {
-    final band = RegExp(r'^eq([1-6])_(freq|gain|q|type)$').firstMatch(field);
+    final band = RegExp(r'^eq([1-8])_(freq|gain|q|type)$').firstMatch(field);
     if (band != null) {
       final parameter = switch (band[2]) {
         'freq' => 'frequency',

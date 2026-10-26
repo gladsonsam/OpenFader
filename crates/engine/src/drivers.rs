@@ -83,6 +83,16 @@ pub enum FxFlavor {
     Numbered,
 }
 
+/// Provider-owned generic-send destination. Stable strip keys preserve the
+/// destination's live name without assuming a particular console's slot order.
+#[derive(Clone, Debug)]
+pub struct SendDestination {
+    pub key: String,
+    pub label: String,
+    pub stereo: bool,
+    pub allow_self: bool,
+}
+
 /// Object-safe mirror of [`MixerDriver`] plus the engine-only extensions.
 /// Defaults are honestly unsupported; providers override what they serve.
 #[async_trait::async_trait]
@@ -128,6 +138,26 @@ pub trait DynDriver: Send + Sync {
     fn param_defs(&self) -> &'static [ParamDef] {
         &[]
     }
+    /// Derived metadata remains readable but must not become a recall write.
+    fn param_read_only(&self, _param: &str) -> bool { false }
+    /// Stored companion fields that bind a local-scene write to its source.
+    fn param_write_context(&self, _param: &str) -> &'static [&'static str] { &[] }
+
+    /// Fresh capture override for shared/dynamically read-only hardware fields.
+    /// None keeps the existing cache/display capture path. An error omits the
+    /// value rather than turning unavailable hardware state into a recall write.
+    async fn capture_param_override(&self, _strip: StripId, _param: &str) -> Option<anyhow::Result<ParamValue>> { None }
+
+    /// Semantic comparison for a structured provider value after a genuine
+    /// desk read. None retains the canonical numeric/bool/text comparison.
+    fn param_readback_equivalent(&self, _param: &str, _read: &ParamValue, _written: &ParamValue) -> Option<bool> { None }
+
+    /// Optional local-scene recall group override. Console send numbering and
+    /// contributed IDs need not follow the historical bus/FX catalogue split.
+    /// Unspecified IDs retain the engine's legacy classification.
+    fn param_recall_group(&self, _param: &str) -> Option<&'static str> { None }
+
+    fn send_destination(&self, _slot: u16) -> Option<SendDestination> { None }
     /// Driver-specific canonical range overrides, merged into this
     /// provider's [`ParamRegistry`](openfader_core::params::ParamRegistry)
     /// at boot (see [`RegisteredDriver::param_registry`]). Defaults to
@@ -1096,6 +1126,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                     label.push('?');
                 }
                 params.push(crate::protocol::FxParamCaps {
+                    choices: Vec::new(),
                     id: format!("par{par:02}"),
                     label,
                     unit: def.unit.to_string(),
@@ -1109,6 +1140,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                 });
             }
             out.push(crate::protocol::FxTypeCaps {
+                    slots: Vec::new(),
                 id: code.to_string(),
                 label: label.to_string(),
                 params,
@@ -1360,6 +1392,9 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
     }
 });
 
+mod wing;
+
+
 /// One registered provider: its key, default address, and erased driver.
 /// New providers append one row in [`registered_drivers`].
 pub struct RegisteredDriver {
@@ -1417,6 +1452,11 @@ pub fn registered_drivers(preset: Option<openfader_sim::SimPreset>) -> Vec<Regis
             name: "dl32s",
             default_addr: "192.168.1.1",
             driver: Arc::new(openfader_proto_dl32s::Dl32sDriver::new()),
+        },
+        RegisteredDriver {
+            name: "wing",
+            default_addr: "192.168.1.1",
+            driver: Arc::new(openfader_proto_wing::WingDriver::new()),
         },
     ]
 }

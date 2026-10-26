@@ -45,7 +45,12 @@ pub const INFO_PROBE: &[u8] = b"/info\0\0\0,";
 
 /// Per-driver probe table. DL32S intentionally has no broadcast probe yet:
 /// its protocol is closed pending own-LAN capture (see DL32S protocol notes).
+pub const WING_PROBE: ProbeSpec = ProbeSpec {
+    driver: "wing", port: 2222, payload: b"WING?", reply_prefix: "WING",
+};
+
 pub const PROBE_TABLE: &[ProbeSpec] = &[
+    WING_PROBE,
     ProbeSpec {
         driver: "xair",
         port: XAIR_PORT,
@@ -80,6 +85,13 @@ pub struct DiscoveredDevice {
 /// `nth(2)` reads the IP instead. Bare replies (one or zero args) fall
 /// back to the single arg / `"unknown"`, the old behaviour.
 pub fn parse_info_reply(buf: &[u8], reply_prefix: &str) -> Option<(String, String)> {
+    if reply_prefix == "WING" {
+        let raw = std::str::from_utf8(buf).ok()?.trim_end_matches(['\0', '\r', '\n']);
+        let fields: Vec<_> = raw.split(',').collect();
+        if fields.len() != 6 || fields[0] != "WING" || fields[1].parse::<IpAddr>().is_err()
+            || fields[3].is_empty() || fields[5].is_empty() { return None; }
+        return Some((fields[3].to_owned(), raw.to_owned()));
+    }
     let text: String = String::from_utf8_lossy(buf)
         .chars()
         .map(|c| if c == '\0' || c == ',' { ' ' } else { c })
@@ -275,6 +287,7 @@ pub async fn probe_addr(
         }
         match peer.recv_from_timeout(&mut buf, deadline - now).await {
             Ok((len, from)) => {
+                if from.ip() != ip { continue; }
                 collect_reply(&mut out, spec, &buf[..len], from);
                 // One directed target answers once: stop at the first valid
                 // reply, so Add-by-IP connects in one round trip instead of

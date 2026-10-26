@@ -149,7 +149,25 @@ const FaderLaw dl32sLaw = FaderLaw(
   topDb: topDb,
 );
 
+// OpenFader WING protocol normalization is linear over the full dB range.
+// The provider sends engineering dB, never WING's normalized reply argument.
+double _wingToDb(double f) => !f.isFinite || f <= 0
+    ? double.negativeInfinity
+    : -144 + f.clamp(0, 1) * 154;
+double _wingFromDb(double db) =>
+    !db.isFinite || db <= -144 ? 0 : ((db + 144) / 154).clamp(0, 1).toDouble();
+
+const FaderLaw wingLaw = FaderLaw(
+  id: 'wing',
+  label: 'Behringer WING',
+  toDb: _wingToDb,
+  fromDb: _wingFromDb,
+  floorDb: -144,
+  topDb: 10,
+);
+
 const Map<String, FaderLaw> _laws = {
+  'wing': wingLaw,
   'design': designLaw,
   'xair': xairLaw,
   'dl32s': dl32sLaw,

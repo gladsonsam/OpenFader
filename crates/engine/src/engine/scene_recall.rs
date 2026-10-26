@@ -33,7 +33,11 @@ impl Engine {
                 let name_v = self.capture_read_param(&driver, strip, "name").await;
                 let mut params = HashMap::new();
                 for id in &caps {
-                    if *id == "fader" || *id == "mute" || *id == "name" {
+                    if *id == "fader"
+                        || *id == "mute"
+                        || *id == "name"
+                        || self.drv(&driver).param_read_only(id)
+                    {
                         continue;
                     }
                     let scoped = reg
@@ -43,7 +47,11 @@ impl Engine {
                     if !scoped {
                         continue;
                     }
-                    if let Some(pv) = self.capture_read_param(&driver, strip, id).await {
+                    let captured = match self.drv(&driver).capture_param_override(strip, id).await {
+                        Some(result) => result.ok(),
+                        None => self.capture_read_param(&driver, strip, id).await,
+                    };
+                    if let Some(pv) = captured {
                         // Skip catalogue defaults? No, full plane means
                         // every value, so restores are exact.
                         params.insert(id.to_string(), param_value_json(&pv));
@@ -108,10 +116,10 @@ impl Engine {
     /// direct writes are untouched).
     /// Scoped recall: `scope` restricts the recall to strips / param
     /// groups / globals (`None` = full plane, the historical behavior).
-    /// Axes outside the scope keep their live values: the fade targets
-    /// use current desk reads for excluded fader/mute axes (best-effort;
-    /// a failed read falls back to the scene value), excluded params are
-    /// skipped, and FX/routing/main apply only under their global.
+    /// Axes outside the scope receive no writes. Faders use the shared fade
+    /// only when included; a mute-only recall applies mutes directly, and
+    /// excluded mutes are suppressed in the fade adapter. Other excluded
+    /// params are skipped; FX/routing/main apply only under their global.
     pub(super) async fn recall_full(
         &self,
         scene: &StoredScene,
@@ -148,23 +156,23 @@ impl Engine {
             .collect();
         // Faders ride the single shared fade (legacy order: pre-unmute
         // targets, ramp, snap, target mutes); params/FX/routing/main follow.
-        let mut targets: Vec<(StripId, f32, bool)> = Vec::with_capacity(strips.len());
-        for (s, r) in &strips {
-            let id = StripId(*r);
-            let want_fader = scope.is_none_or(|sc| sc.allows_param("fader"));
-            let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
-            let (cur_fader, cur_mute) = if !want_fader || !want_mute {
-                self.current_fader_mute(id).await
-            } else {
-                (s.fader, s.mute)
+        let want_fader = scope.is_none_or(|sc| sc.allows_param("fader"));
+        let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
+        if want_fader && !strips.is_empty() {
+            let targets: Vec<_> = strips
+                .iter()
+                .map(|(s, r)| (StripId(*r), s.fader, s.mute))
+                .collect();
+            let fade = ScopedSceneFade {
+                engine: self,
+                recall_mutes: want_mute,
             };
-            targets.push((
-                id,
-                if want_fader { s.fader } else { cur_fader },
-                if want_mute { s.mute } else { cur_mute },
-            ));
+            openfader_core::show::fade_strips(&fade, &targets, fade_ms).await?;
+        } else if want_mute {
+            for (s, r) in &strips {
+                self.drv_set_mute(StripId(*r), s.mute).await?;
+            }
         }
-        openfader_core::show::fade_strips(self, &targets, fade_ms).await?;
         for (s, r) in &strips {
             let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
             if want_mute && s.mute {
@@ -194,13 +202,14 @@ impl Engine {
                 });
             }
         }
+        let mut failed = Vec::new();
         // Remaining params in safe order (names ride along unless the
         // scope excludes them).
         for (s, r) in &strips {
             let mut ids: Vec<&String> = s.params.keys().collect();
             ids.sort_by_key(|id| safe_order_key(id));
             for id in ids {
-                if scope.is_some_and(|sc| !sc.allows_param(id)) {
+                if scope.is_some_and(|sc| !sc.allows_param_for(self.drv(&driver).as_ref(), id)) {
                     continue;
                 }
                 let value = s.params.get(id).expect("key just listed");
@@ -209,9 +218,30 @@ impl Engine {
                 // silent mid-recall must not abort the rest); strict on
                 // the model.
                 let strict = !self.active_drv().is_hardware();
-                let rr = self.drv_set_param(StripId(*r), id, pv).await;
-                if strict {
-                    rr?;
+                let drv = self.active_drv();
+                let expected: BTreeMap<_, _> = drv
+                    .param_write_context(id)
+                    .iter()
+                    .filter_map(|field| {
+                        s.params
+                            .get(*field)
+                            .and_then(|v| json_to_param_value(v).ok())
+                            .map(|v| ((*field).to_string(), v))
+                    })
+                    .collect();
+                let rr = if expected.is_empty() {
+                    self.drv_set_param(StripId(*r), id, pv).await
+                } else {
+                    drv.set_param_guarded(StripId(*r), id, pv, &expected).await
+                };
+                if let Err(error) = rr {
+                    if strict {
+                        return Err(error);
+                    }
+                    let key = openfader_core::strip_key_for_index(&topo, *r as usize)
+                        .unwrap_or_else(|| r.to_string());
+                    failed.push(format!("{key} {id}: {error}"));
+                    continue;
                 }
                 // Recall-path echo: provenance per the `proven` flag above
                 // (no readback on this path).
@@ -230,8 +260,11 @@ impl Engine {
             let rr = self
                 .drv_set_param(StripId(*r), "name", ParamValue::Text(s.name.clone()))
                 .await;
-            if !self.active_drv().is_hardware() {
-                rr?;
+            if let Err(error) = rr {
+                if !self.active_drv().is_hardware() {
+                    return Err(error);
+                }
+                failed.push(format!("strip {r} name: {error}"));
             }
         }
         // FX + routing snapshots (model-strict, best-effort elsewhere),
@@ -257,21 +290,23 @@ impl Engine {
             }
         }
         overrode.sort_unstable();
+        if !failed.is_empty() {
+            out.push(Event::Error {
+                message: format!(
+                    "Scene recall skipped {} setting(s): {}",
+                    failed.len(),
+                    failed
+                        .iter()
+                        .take(4)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                ),
+                locked_by: None,
+                ch: None,
+            });
+        }
         Ok(overrode)
-    }
-
-    /// Current fader + mute of one strip (best-effort; failures read back
-    /// subscriber silence so a scoped recall degrades to a no-op axis
-    /// rather than failing the whole recall). Reads the inclusive display
-    /// getters (continuity: own writes included, no proof claimed), never
-    /// the stale pre-write `param_cache` entry, which the accepted write
-    /// already evicted and which would start an excluded-axis fade from the
-    /// wrong pre-move state.
-    pub(super) async fn current_fader_mute(&self, strip: StripId) -> (f32, bool) {
-        let drv = self.active_drv();
-        let fader = drv.get_fader(strip).await.ok().unwrap_or(0.0);
-        let mute = drv.get_mute(strip).await.ok().unwrap_or(false);
-        (fader, mute)
     }
 }
 
@@ -292,5 +327,27 @@ impl openfader_core::show::FadeDriver for Engine {
 
     async fn fade_set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
         self.drv_set_fader(strip, value).await
+    }
+}
+
+/// Keep the shared fader law while suppressing excluded mute writes entirely.
+/// Rewriting a sampled mute could race a console-side edit during a fade.
+struct ScopedSceneFade<'a> {
+    engine: &'a Engine,
+    recall_mutes: bool,
+}
+impl openfader_core::show::FadeDriver for ScopedSceneFade<'_> {
+    async fn fade_set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
+        if self.recall_mutes {
+            self.engine.drv_set_mute(strip, muted).await
+        } else {
+            Ok(())
+        }
+    }
+    async fn fade_get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
+        self.engine.drv_get_fader(strip).await
+    }
+    async fn fade_set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
+        self.engine.drv_set_fader(strip, value).await
     }
 }
