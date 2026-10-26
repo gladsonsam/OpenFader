@@ -1650,6 +1650,16 @@ class _FxStore extends _StoreBase implements FxStore {
   final Map<int, ValueNotifier<double>> _meters = {};
 
   @override
+  List<DestinationControlVm> get destinationControls => List.unmodifiable(
+      engine.destinationControls.where((control) => control.surface == 'fx'));
+  @override
+  bool destinationControlIsCurrent(DestinationControlVm control) =>
+      app.destinationControlIsCurrent(control);
+  @override
+  Future<String?> setDestinationControl(DestinationControlVm control, double value) =>
+      app.setDestinationControl(control, value);
+
+  @override
   void dispose() {
     app.removeListener(_syncFxMeters);
     for (final m in _meters.values) {

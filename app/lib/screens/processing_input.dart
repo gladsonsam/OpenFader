@@ -598,113 +598,12 @@ class _ProcessingSend extends StatelessWidget {
                     ? () => showDialog<void>(
                         context: context,
                         barrierDismissible: false,
-                        builder: (_) => _DestinationControlDialog(
-                            store: store, control: control))
+                        builder: (_) => DestinationControlEditor(
+                            changes: store,
+                            isCurrent: store.destinationControlIsCurrent,
+                            apply: store.setDestinationControl,
+                            control: control))
                     : null)),
     ]);
   }
-}
-
-class _DestinationControlDialog extends StatefulWidget {
-  final ChannelStore store;
-  final DestinationControlVm control;
-  const _DestinationControlDialog({required this.store, required this.control});
-  @override
-  State<_DestinationControlDialog> createState() =>
-      _DestinationControlDialogState();
-}
-
-class _DestinationControlDialogState extends State<_DestinationControlDialog> {
-  late double _selected = widget.control.value!;
-  bool _sending = false;
-  String? _error;
-
-  Future<void> _apply() async {
-    setState(() {
-      _sending = true;
-      _error = null;
-    });
-    final error =
-        await widget.store.setDestinationControl(widget.control, _selected);
-    if (!mounted) return;
-    if (error == null) {
-      Navigator.of(context).pop();
-    } else {
-      setState(() {
-        _sending = false;
-        _error = error;
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(
-      listenable: widget.store,
-      builder: (context, _) {
-        final control = widget.control;
-        final current = widget.store.destinationControlIsCurrent(control);
-        final palette = ConsolePalette.of(context);
-        return PopScope(
-            canPop: !_sending,
-            child: AlertDialog(
-                scrollable: true,
-                title: Text('${control.label} · ${control.destinationName}'),
-                content: SizedBox(
-                    width: 420,
-                    child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                              'Applies to every input feeding ${control.destinationName}. '
-                              'Changing this can alter that monitor mix.'),
-                          if (control.authority == 'accepted') ...[
-                            const SizedBox(height: 8),
-                            const Text(
-                                'The displayed value is accepted but not independently confirmed.'),
-                          ],
-                          const SizedBox(height: 8),
-                          for (final choice in control.choices)
-                            Semantics(
-                                selected: choice.value == _selected,
-                                child: ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    leading: Icon(
-                                        choice.value == _selected
-                                            ? Icons.radio_button_checked
-                                            : Icons.radio_button_unchecked,
-                                        color: current
-                                            ? palette.cyan
-                                            : palette.text7),
-                                    title: Text(choice.label),
-                                    onTap: current && !_sending
-                                        ? () => setState(
-                                            () => _selected = choice.value)
-                                        : null)),
-                          if (!current && !_sending) ...[
-                            const SizedBox(height: 8),
-                            const Text(
-                                'Connection or setting changed. Close and reopen this control.'),
-                          ],
-                          if (_error != null) ...[
-                            const SizedBox(height: 8),
-                            Text(_error!,
-                                style: TextStyle(color: palette.meterAmber)),
-                          ],
-                        ])),
-                actions: [
-                  TextButton(
-                      onPressed:
-                          _sending ? null : () => Navigator.of(context).pop(),
-                      child: const Text('Cancel')),
-                  TextButton(
-                      onPressed:
-                          current && !_sending && _selected != control.value
-                              ? _apply
-                              : null,
-                      child: Text(_sending
-                          ? 'Sending…'
-                          : 'Apply to ${control.targetLabel}')),
-                ]));
-      });
 }

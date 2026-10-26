@@ -3228,7 +3228,7 @@ class AppStore extends ChangeNotifier
     if (!destinationControlIsCurrent(control)) {
       return Future.value('Connection or setting changed. Reopen this control.');
     }
-    if (!value.isFinite || !control.choices.any((choice) => choice.value == value)) {
+    if (!control.allowsValue(value)) {
       return Future.value('This setting is unavailable.');
     }
     if (value == control.value) return Future.value(null);

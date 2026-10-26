@@ -22,6 +22,7 @@ import '../u4law.dart';
 
 import '../widgets/channel_widgets.dart';
 import '../widgets/processor_preset_library.dart';
+import '../widgets/destination_control_editor.dart';
 
 part 'processing_input.dart';
 part 'processing_eq.dart';

@@ -31,6 +31,17 @@ const INPUT_SOLO_FIRST_ADDRESS: u32 = 23;
 // Pre Fader1 -> Pre DSP2 and restored against the complete bank. Other
 // tap values and the separate Use LR Mute flag remain unverified.
 const AUX_SEND_SOURCE_ADDRESSES: [u32; 8] = [4434, 4524, 4614, 4704, 4794, 4884, 4974, 5064];
+// Active FX2 Tape Echo only. Delay address independently proven by
+// 859ms ->860ms ->859ms; range documented in manufacturer mixer software5.1 guide p167.
+const FX2_ALGORITHM_ADDRESS: u32 = 3660;
+const FX2_TAPE_ECHO_ALGORITHM: u32 = 12;
+const FX2_DELAY_ADDRESS: u32 = 3662;
+
+fn fx2_delay_value(raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
+    let value = f32::from_bits(raw);
+    (value.is_finite() && (10.0..=1600.0).contains(&value))
+        .then_some(openfader_core::destinations::DestinationValue { value, verified: true })
+}
 
 fn aux_tap_value(raw: u32) -> Option<openfader_core::destinations::DestinationValue> {
     matches!(raw, 1 | 2).then_some(openfader_core::destinations::DestinationValue {
@@ -621,6 +632,9 @@ struct NativeCache {
     view: openfader_core::NativeSnapshots,
     parameter_labels: std::collections::BTreeMap<&'static str, String>,
     aux_taps: std::collections::BTreeMap<u16, AuxTapCache>,
+    fx2_algorithm: Option<u32>,
+    fx2_delay: Option<openfader_core::destinations::DestinationValue>,
+    fx2_revision: u64,
 }
 
 /// Native VCA1..6 names occupy slots58..63; View A..F uses70..75.
@@ -1617,26 +1631,65 @@ impl MixerDriver for Dl32sDriver {
     }
 
     fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
-        use openfader_core::destinations::{DestinationChoice, DestinationControl};
+        use openfader_core::destinations::{DestinationChoice, DestinationControl, DestinationRange};
         let generation = self.generation.load(Ordering::Acquire);
         let native = self.native.lock().ok().filter(|n| {
             n.generation == generation && n.view.connected
         });
-        (1..=AUX_SEND_SOURCE_ADDRESSES.len() as u16).map(|slot| {
+        let mut controls: Vec<_> = (1..=AUX_SEND_SOURCE_ADDRESSES.len() as u16).map(|slot| {
             let tap = native.as_ref().and_then(|n| n.aux_taps.get(&slot));
             DestinationControl {
                 target: format!("bus/{slot:02}"), target_label: format!("Aux {slot}"),
                 target_name: tap.and_then(|tap| tap.name.clone()), send_slot: Some(slot), id: "tap".to_string(),
+                surface: "send".to_string(),
+                description: format!("Applies to every input feeding Aux {slot}. Changing this can alter that monitor mix."),
                 label: "Send source".to_string(),
                 choices: vec![
                     DestinationChoice { value: 2.0, label: "Pre DSP".to_string() },
                     DestinationChoice { value: 1.0, label: "Pre Fader".to_string() },
-                ], current: tap.and_then(|tap| tap.current.clone()),
+                ], range: None, current: tap.and_then(|tap| tap.current.clone()),
             }
-        }).collect()
+        }).collect();
+        if let Some(native) = native.as_ref().filter(|n| n.fx2_algorithm == Some(FX2_TAPE_ECHO_ALGORITHM)) {
+            controls.push(DestinationControl {
+                target: "fx/02".to_string(), target_label: "FX 2".to_string(),
+                target_name: Some("Tape Echo Delay".to_string()), send_slot: None,
+                surface: "fx".to_string(), id: "time".to_string(), label: "Delay time".to_string(),
+                description: "Changes the delay time for every route through FX 2. Mute, returns and routing are separate controls.".to_string(),
+                choices: Vec::new(), range: Some(DestinationRange { min: 10.0, max: 1600.0, unit: "ms".to_string(), decimals: 0 }),
+                current: native.fx2_delay.clone(),
+            });
+        }
+        controls
     }
 
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
+        if target == "fx/02" && control == "time" {
+            anyhow::ensure!(value.is_finite() && expected.is_finite() && (10.0..=1600.0).contains(&value) && (10.0..=1600.0).contains(&expected), "dl32s: delay time outside documented range");
+            let guard = self.session().await?;
+            let session = guard.as_ref().expect("checked above");
+            anyhow::ensure!(session.is_alive(), "dl32s: FX session unavailable");
+            let generation = self.generation.load(Ordering::Acquire);
+            let revision = {
+                let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("FX cache unavailable"))?;
+                anyhow::ensure!(native.generation == generation && native.view.connected, "FX connection changed.");
+                anyhow::ensure!(native.fx2_algorithm == Some(FX2_TAPE_ECHO_ALGORITHM) && session.cached_verified(FX2_ALGORITHM_ADDRESS) == Some(FX2_TAPE_ECHO_ALGORITHM), "FX algorithm changed; reopen the control.");
+                anyhow::ensure!(native.fx2_delay.as_ref().is_some_and(|current| current.value == expected), "FX value changed; reopen the control.");
+                if let Some(raw) = session.cached_verified(FX2_DELAY_ADDRESS) {
+                    anyhow::ensure!(raw == expected.to_bits(), "FX value changed; reopen the control.");
+                }
+                native.fx2_delay = None;
+                native.fx2_revision
+            };
+            session.write_float(FX2_DELAY_ADDRESS, value).await?;
+            let mut native = self.native.lock().map_err(|_| anyhow::anyhow!("FX cache unavailable"))?;
+            anyhow::ensure!(self.generation.load(Ordering::Acquire) == generation && native.generation == generation && native.view.connected, "FX connection changed while writing; result uncertain.");
+            anyhow::ensure!(native.fx2_algorithm == Some(FX2_TAPE_ECHO_ALGORITHM), "FX algorithm changed while writing; result uncertain.");
+            if native.fx2_revision == revision {
+                native.fx2_delay = Some(openfader_core::destinations::DestinationValue { value, verified: false });
+            }
+            return Ok(());
+        }
         let slot = (1..=AUX_SEND_SOURCE_ADDRESSES.len() as u16)
             .find(|slot| target == format!("bus/{slot:02}"))
             .ok_or_else(|| anyhow::anyhow!("dl32s: unverified destination control"))?;
@@ -1865,6 +1918,10 @@ impl MixerDriver for Dl32sDriver {
                     revision: 0,
                 })
             }).collect();
+            n.fx2_algorithm = session.cached_verified(FX2_ALGORITHM_ADDRESS);
+            n.fx2_delay = (n.fx2_algorithm == Some(FX2_TAPE_ECHO_ALGORITHM))
+                .then(|| session.cached_verified(FX2_DELAY_ADDRESS).and_then(fx2_delay_value)).flatten();
+            n.fx2_revision = 0;
             n.parameter_labels = (58..=75).filter_map(|slot| {
                 let id = assignment_name_parameter(slot)?;
                 let name = session.name_slot_verified(slot)?;
@@ -1934,8 +1991,7 @@ impl MixerDriver for Dl32sDriver {
                         // check above must not write into the newer
                         // session's view.
                         match &push {
-                            PushEvent::Values { value_type: VALUE_TYPE_PARAM, start, raws }
-                                if AUX_SEND_SOURCE_ADDRESSES.iter().any(|address| *address >= *start && (*address - *start) < raws.len() as u32) => {
+                            PushEvent::Values { value_type: VALUE_TYPE_PARAM, start, raws } => {
                                 if let Ok(mut v) = native.lock() {
                                     if v.generation != generation { break; }
                                     if v.view.connected {
@@ -1945,6 +2001,19 @@ impl MixerDriver for Dl32sDriver {
                                                 tap.revision = tap.revision.wrapping_add(1);
                                                 tap.current = aux_tap_value(raws[(*address - *start) as usize]);
                                             }
+                                        }
+                                        let raw_at = |address: u32| address.checked_sub(*start).and_then(|offset| raws.get(offset as usize)).copied();
+                                        if let Some(algorithm) = raw_at(FX2_ALGORITHM_ADDRESS) {
+                                            if v.fx2_algorithm != Some(algorithm) {
+                                                v.fx2_algorithm = Some(algorithm);
+                                                v.fx2_delay = None;
+                                                v.fx2_revision = v.fx2_revision.wrapping_add(1);
+                                            }
+                                        }
+                                        if let Some(raw) = raw_at(FX2_DELAY_ADDRESS) {
+                                            v.fx2_revision = v.fx2_revision.wrapping_add(1);
+                                            v.fx2_delay = (v.fx2_algorithm == Some(FX2_TAPE_ECHO_ALGORITHM))
+                                                .then(|| fx2_delay_value(raw)).flatten();
                                         }
                                     }
                                 }
