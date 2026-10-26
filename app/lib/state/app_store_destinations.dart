@@ -5,6 +5,12 @@ part of 'app_store.dart';
 // Private access stays inside the AppStore library; screens use store contracts.
 abstract interface class _AppStoreDestinationsContract {
   void _interruptDestinationEdits(String error);
+  bool _destinationHasPending(String target);
+  Future<String?> _sendDestinationControl(
+    DestinationControlVm control,
+    double value, {
+    List<DestinationControlVm>? guard,
+  });
   void _pollDestinationEdits(double now);
   void _receiveDestinationResult(Map<String, dynamic> frame);
 }
@@ -21,31 +27,67 @@ mixin _AppStoreDestinations on _AppStoreContext {
       engine.capsReady &&
       !locked &&
       control.available &&
+      !_outputPresetBusy(control.target) &&
       engine.destinationControls.contains(control);
 
   @override
   Future<String?> setDestinationControl(
-      DestinationControlVm control, double value) {
-    if (!destinationControlIsCurrent(control)) {
+    DestinationControlVm control,
+    double value,
+  ) {
+    return _sendDestinationControl(control, value);
+  }
+
+  @override
+  bool _destinationHasPending(String target) =>
+      _destinationEdits.values.any((edit) => edit.target.target == target);
+
+  @override
+  Future<String?> _sendDestinationControl(
+    DestinationControlVm control,
+    double value, {
+    List<DestinationControlVm>? guard,
+  }) {
+    if (guard == null
+        ? !destinationControlIsCurrent(control)
+        : (!_online ||
+            !engine.connected ||
+            locked ||
+            !engine.destinationControls.contains(control))) {
       return Future.value(
-          'Connection or setting changed. Reopen this control.');
+        'Connection or setting changed. Reopen this control.',
+      );
     }
     if (!control.allowsValue(value)) {
       return Future.value('This setting is unavailable.');
     }
     if (value == control.value) return Future.value(null);
-    if (_destinationEdits.values.any((edit) =>
-        edit.target.target == control.target && edit.target.id == control.id)) {
+    if (_destinationEdits.values.any(
+      (edit) =>
+          edit.target.target == control.target && edit.target.id == control.id,
+    )) {
       return Future.value('A change to this destination is already pending.');
     }
     final id = 'destination-${engine.session}-${++_destinationRequestSequence}';
     final edit = _DestinationEdit(control, _nowMs() + 15000);
     _destinationEdits[id] = edit;
-    unawaited(_api
-        .cmd(_clientId, Cmds.destinationParam(id, control, value))
-        .then((_) {}, onError: (Object error) {
-      if (!_presetDisposed) _noteTransportError(error);
-    }));
+    unawaited(
+      _api
+          .cmd(
+        _clientId,
+        Cmds.destinationParam(id, control, value, guard: guard),
+      )
+          .then(
+        (_) {},
+        onError: (Object error) {
+          if (guard != null) {
+            _finishDestinationEdit(id,
+                'Could not send output setting: $error. Its result is uncertain.');
+          }
+          if (!_presetDisposed) _noteTransportError(error);
+        },
+      ),
+    );
     return edit.done.future;
   }
 
@@ -65,12 +107,15 @@ mixin _AppStoreDestinations on _AppStoreContext {
   void _pollDestinationEdits(double now) {
     if (!_online || !engine.connected) {
       _interruptDestinationEdits(
-          'Connection lost; the destination setting may have changed.');
+        'Connection lost; the destination setting may have changed.',
+      );
     }
     for (final entry in _destinationEdits.entries.toList()) {
       if (now >= entry.value.deadline) {
-        _finishDestinationEdit(entry.key,
-            'No command result arrived. The destination setting may have changed.');
+        _finishDestinationEdit(
+          entry.key,
+          'No command result arrived. The destination setting may have changed.',
+        );
       }
     }
   }
@@ -85,12 +130,13 @@ mixin _AppStoreDestinations on _AppStoreContext {
     }
     final message = frame['message'];
     _finishDestinationEdit(
-        id,
-        message is String
-            ? message
-            : frame['accepted'] == true
-                ? null
-                : 'The mixer rejected this change.');
+      id,
+      message is String
+          ? message
+          : frame['accepted'] == true
+              ? null
+              : 'The mixer rejected this change.',
+    );
   }
 }
 

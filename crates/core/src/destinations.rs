@@ -25,6 +25,12 @@ pub struct DestinationRange {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct DestinationControl {
+    /// Monotonic observed-state revision, required for guarded processor recall.
+    pub revision: Option<u64>,
+    /// Provider connection generation; prevents revision reuse after reconnect.
+    pub generation: Option<u64>,
+    /// Provider opt-in: local processor snapshots may store this control.
+    pub preset: bool,
     pub target: String,
     pub target_label: String,
     pub target_name: Option<String>,

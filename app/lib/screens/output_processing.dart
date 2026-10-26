@@ -5,6 +5,7 @@ import '../core/destination_controls.dart';
 import '../core/output_processing.dart';
 import '../palette.dart';
 import '../widgets/destination_control_editor.dart';
+import '../widgets/output_processor_presets.dart';
 import 'output_processing_graph.dart';
 
 /// Output topology and controls come entirely from provider descriptors.
@@ -114,6 +115,11 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                         ],
                       ),
                     ),
+                  if (surface != null)
+                    Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: OutputProcessorPresetActions(
+                            store: store, surface: surface)),
                   Expanded(
                     child: processor.isEmpty
                         ? const Center(
@@ -264,38 +270,51 @@ class _ControlTileState extends State<_ControlTile> {
         ? control.min! * math.pow(control.max! / control.min!, v)
         : v;
     final slider = control.numeric && value != null
-        ? Slider(
-            min: logarithmic ? 0 : control.min!,
-            max: logarithmic ? 1 : control.max!,
-            value: position(value.clamp(control.min!, control.max!)),
-            label: '${value.toStringAsFixed(control.decimals)} ${control.unit}',
-            onChangeStart: enabled ? (_) => _dragControl = control : null,
-            onChanged:
-                enabled ? (v) => setState(() => _draft = engineering(v)) : null,
-            onChangeEnd: enabled
-                ? (v) {
-                    final captured = _dragControl;
-                    if (captured != null) {
-                      _commit(captured, engineering(v));
+        ? Semantics(
+            label: '${control.destinationName}, ${control.label}',
+            child: Slider(
+              min: logarithmic ? 0 : control.min!,
+              max: logarithmic ? 1 : control.max!,
+              value: position(value.clamp(control.min!, control.max!)),
+              label:
+                  '${value.toStringAsFixed(control.decimals)} ${control.unit}',
+              semanticFormatterCallback: (positionValue) =>
+                  '${engineering(positionValue).toStringAsFixed(control.decimals)} ${control.unit}'
+                  '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+              onChangeStart: enabled ? (_) => _dragControl = control : null,
+              onChanged: enabled
+                  ? (v) => setState(() => _draft = engineering(v))
+                  : null,
+              onChangeEnd: enabled
+                  ? (v) {
+                      final captured = _dragControl;
+                      if (captured != null) {
+                        _commit(captured, engineering(v));
+                      }
                     }
-                  }
-                : null,
+                  : null,
+            ),
           )
         : null;
     final valueText = control.id == 'comp_ratio' && control.value == 101
         ? '∞:1'
         : control.valueLabel;
+    final readoutText = _pending
+        ? 'Sending…'
+        : valueText == null
+            ? 'Unavailable'
+            : '$valueText'
+                '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}';
     final readout = TextButton(
       onPressed: enabled ? _edit : null,
-      child: Text(
-        _pending
-            ? 'Sending…'
-            : valueText == null
-                ? 'Unavailable'
-                : '$valueText'
-                    '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-        textAlign: TextAlign.center,
-        style: TextStyle(color: enabled ? palette.lime : palette.mutedText),
+      child: Semantics(
+        label: '${control.destinationName}, ${control.label}: $readoutText',
+        excludeSemantics: true,
+        child: Text(
+          readoutText,
+          textAlign: TextAlign.center,
+          style: TextStyle(color: enabled ? palette.lime : palette.mutedText),
+        ),
       ),
     );
     if (widget.vertical) {

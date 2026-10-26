@@ -173,6 +173,10 @@ pub trait DynDriver: Send + Sync {
     fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
         Vec::new()
     }
+    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<()> {
+        let _ = (target, control, value, expected, snapshot);
+        anyhow::bail!("guarded processor recall not supported")
+    }
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
         let _ = (target, control, value, expected);
         anyhow::bail!("{}: destination controls not supported", self.name())
@@ -626,6 +630,9 @@ macro_rules! impl_dyn_driver {
         fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
             MixerDriver::destination_controls(self)
         }
+    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<()> {
+        MixerDriver::set_destination_control_guarded(self, target, control, value, expected, snapshot).await
+    }
         async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
             MixerDriver::set_destination_control(self, target, control, value, expected).await
         }

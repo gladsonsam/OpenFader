@@ -303,9 +303,11 @@ class Cmds {
   static String param(int ch, String field, Object value) =>
       '{"cmd":"param","ch":$ch,"field":${_q(field)},"value":${jsonEncode(value)}}';
   static String destinationParam(
-          String requestId, DestinationControlVm target, double value) =>
+          String requestId, DestinationControlVm target, double value,
+          {List<DestinationControlVm>? guard}) =>
       jsonEncode({
         'cmd': 'destination_param',
+        if (guard != null) 'guard': guard.map((c) => c.descriptor).toList(),
         'request_id': requestId,
         'target': target.target,
         'control': target.id,

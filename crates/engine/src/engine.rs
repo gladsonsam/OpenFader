@@ -3760,6 +3760,7 @@ impl Engine {
     fn destination_rows(controls: &[openfader_core::destinations::DestinationControl]) -> Vec<Value> {
         controls.iter().map(|control| {
             let mut row = json!({
+            "revision": control.revision, "generation": control.generation, "preset": control.preset,
             "target": control.target, "target_label": control.target_label,
             "target_name": control.target_name, "send_slot": control.send_slot,
             "surface": control.surface, "description": control.description,
@@ -7181,7 +7182,7 @@ impl Engine {
                 Ok(None)
             }
             // R2 mix-bus masters (0-based `bus` over `0..bus_count()`).
-            Cmd::DestinationParam { request_id, target, control, value, expected, epoch } => {
+            Cmd::DestinationParam { request_id, target, control, value, expected, epoch, guard } => {
                 let result: anyhow::Result<()> = async {
                     anyhow::ensure!(!request_id.is_empty() && request_id.len() <= 128, "Invalid destination request ID.");
                     policy.allow_master()?;
@@ -7193,7 +7194,15 @@ impl Engine {
                         .ok_or_else(|| anyhow::anyhow!("Destination control unavailable."))?;
                     anyhow::ensure!(row.allows_value(value), "Destination value is not advertised.");
                     anyhow::ensure!(row.current.as_ref().is_some_and(|current| current.value == expected), "Destination changed; reopen the control.");
-                    driver.set_destination_control(&target, &control, value, expected).await?;
+                    if let Some(guard) = guard {
+                        let block: Vec<_> = controls.iter().filter(|r| r.target == target && r.surface == row.surface).cloned().collect();
+                        let serialized = Self::destination_rows(&block);
+                        anyhow::ensure!(row.preset && row.revision.is_some() && row.generation.is_some() && !guard.is_empty() && guard.len() <= 64
+                            && guard == serialized, "Output processor changed; reopen presets.");
+                        driver.set_destination_control_guarded(&target, &control, value, expected, &block).await?;
+                    } else {
+                        driver.set_destination_control(&target, &control, value, expected).await?;
+                    }
                     anyhow::ensure!(epoch == self.connection_gen.load(Ordering::Acquire), "Destination connection changed while writing; result uncertain.");
                     self.note_write(writer);
                     self.touch_holder_locks(writer);
