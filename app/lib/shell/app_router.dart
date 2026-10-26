@@ -1648,6 +1648,10 @@ class _FxStore extends _StoreBase implements FxStore {
 
   int _sel = 0;
   final Map<int, ValueNotifier<double>> _meters = {};
+  final Stopwatch _tapClock = Stopwatch()..start();
+  final Map<String, int> _tapTimes = {};
+  final Set<String> _tapWrites = {};
+  int? _tapSession;
 
   @override
   bool get stateControlsSupported => engine.fxStateControls;
@@ -1663,8 +1667,38 @@ class _FxStore extends _StoreBase implements FxStore {
       app.setDestinationControl(control, value);
 
   @override
+  Future<String?> tapDestinationControl(DestinationControlVm control) async {
+    if (_dead || !control.canTapTempo || !destinationControlIsCurrent(control)) {
+      return 'Connection or setting changed. Reopen this control.';
+    }
+    if (_tapSession != engine.session) {
+      _tapSession = engine.session;
+      _tapTimes.clear();
+      _tapWrites.clear();
+    }
+    final key = '${engine.session}/${control.epoch}/${control.target}/${control.id}'
+        '/${control.targetName}/${control.min}/${control.max}/${control.unit}';
+    final now = _tapClock.elapsedMicroseconds;
+    final previous = _tapTimes[key];
+    _tapTimes[key] = now;
+    if (previous == null) return null;
+    final value = control.valueForTapPeriod(now - previous);
+    // A long pause starts a new pair. Keep recording taps during a write
+    // so the next accepted interval never includes a skipped beat.
+    if (value == null || !_tapWrites.add(key)) return null;
+    try {
+      return await setDestinationControl(control, value);
+    } finally {
+      _tapWrites.remove(key);
+    }
+  }
+
+  @override
   void dispose() {
     app.removeListener(_syncFxMeters);
+    _tapClock.stop();
+    _tapTimes.clear();
+    _tapWrites.clear();
     for (final m in _meters.values) {
       m.dispose();
     }

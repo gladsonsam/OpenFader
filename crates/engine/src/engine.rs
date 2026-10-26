@@ -3758,7 +3758,8 @@ impl Engine {
 
     /// Serialize provider-owned destination domains without mixer-name logic.
     fn destination_rows(controls: &[openfader_core::destinations::DestinationControl]) -> Vec<Value> {
-        controls.iter().map(|control| json!({
+        controls.iter().map(|control| {
+            let mut row = json!({
             "target": control.target, "target_label": control.target_label,
             "target_name": control.target_name, "send_slot": control.send_slot,
             "surface": control.surface, "description": control.description,
@@ -3767,7 +3768,10 @@ impl Engine {
             "range": control.range.as_ref().map(|range| json!({"min": range.min, "max": range.max, "unit": range.unit, "decimals": range.decimals})),
             "value": control.current.as_ref().map(|value| value.value),
             "authority": control.current.as_ref().map(|value| if value.verified { "verified" } else { "accepted" }),
-        })).collect()
+            });
+            if control.tap_tempo { row["tap_tempo"] = json!(true); }
+            row
+        }).collect()
     }
 
     fn destination_controls_message(&self) -> Option<Event> {

@@ -1761,6 +1761,7 @@ impl MixerDriver for Dl32sDriver {
                 surface: "send".to_string(),
                 description: format!("Applies to every input feeding Aux {slot}. Changing this can alter that monitor mix."),
                 label: "Send source".to_string(),
+                tap_tempo: false,
                 choices: vec![
                     DestinationChoice { value: 2.0, label: "Pre DSP".to_string() },
                     DestinationChoice { value: 1.0, label: "Pre Fader".to_string() },
@@ -1774,6 +1775,8 @@ impl MixerDriver for Dl32sDriver {
                 target: format!("fx/{:02}", spec.slot), target_label: format!("FX {}", spec.slot),
                 target_name: Some(spec.algorithm_name.to_string()), send_slot: None,
                 surface: "fx".to_string(), id: spec.id.to_string(), label: spec.label.to_string(),
+                // Native Tape Echo tapping changes only this delay-time word.
+                tap_tempo: spec.slot == 2 && spec.algorithm == 12 && spec.id == "time",
                 description: format!("Changes {} for every route through FX {}. Mute, returns and routing are separate controls.", spec.label.to_lowercase(), spec.slot),
                 choices: Vec::new(), range: Some(DestinationRange { min: spec.min, max: spec.max, unit: spec.unit.to_string(), decimals: spec.decimals }),
                 current: parameter.current.clone(),
