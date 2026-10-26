@@ -3,6 +3,7 @@
 
 const SPARSE_FLAG: u16 = 0x2000;
 const SPARSE_COUNT_MASK: u16 = SPARSE_FLAG - 1;
+const METER_STREAM_FLAG: u16 = 0x1000;
 
 /// A contiguous run of CHANNEL_VALUES words in one address space.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,6 +18,8 @@ pub struct ValueBlock {
 /// Runs preserve wire order (including repeated or descending addresses).
 /// Ordinary count zero consumes all remaining words; an explicit ordinary
 /// count ignores surplus words, but never accepts a truncated range.
+/// Captured meter streams (type 1, count field exactly `0x1000`) also consume
+/// all remaining words: this field is a stream flag, not a 4096-word count.
 pub fn parse_value_blocks(body: &[u8]) -> Option<Vec<ValueBlock>> {
     if body.len() < 8 || !body.len().is_multiple_of(4) {
         return None;
@@ -54,7 +57,13 @@ pub fn parse_value_blocks(body: &[u8]) -> Option<Vec<ValueBlock>> {
         Some(blocks)
     } else {
         let available = body.len() / 4 - 2;
-        let count = usize::from(count_field);
+        // Only the observed meter stream marker has implied length. Do not
+        // mask this bit out of explicit counts or other address spaces.
+        let count = if value_type == super::VALUE_TYPE_METERS && count_field == METER_STREAM_FLAG {
+            0
+        } else {
+            usize::from(count_field)
+        };
         let count = if count == 0 { available } else { count };
         if count > available {
             return None;
