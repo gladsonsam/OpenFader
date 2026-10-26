@@ -21,6 +21,7 @@ import '../theme.dart';
 import '../u4law.dart' show panText;
 import 'shell.dart';
 import '../screens/channel.dart';
+import '../screens/output_processing.dart';
 import '../mixer/components/banks.dart';
 import '../mixer/components/strip.dart';
 import '../screens/channel_toolbar.dart';
@@ -259,61 +260,63 @@ class _AppShellState extends State<AppShell> {
         }
         // Settings and channel views carry their own top bars, so the shared header steps aside.
 
-        final Widget header = isChan
-            ? ChannelToolbar(
-                key:
-                    ValueKey((store.stripKey, store.bank, store.engine.driver)),
-                controlFocus: _channelFocus,
-                store: store,
-                compact: MediaQuery.sizeOf(context).width < 600,
-                onHome: () => _go(AppTab.mixer),
-                onTool: _channelTool,
-                onLock: () =>
-                    store.locked ? store.cmdUnlock() : store.cmdLock(),
-              )
-            : _tab == AppTab.settings
-                ? const SizedBox.shrink()
-                : U4ShellHeader(
-                    title: title,
-                    pageTitle: _tab.label,
-                    showBack: _tab != AppTab.mixer,
-                    onBack: () => _go(AppTab.mixer),
-                    mode: _modeOf(_tab),
-                    connected: connected,
-                    connDot: connected
-                        ? (sim
-                            ? ConsolePalette.of(context).text7
-                            : ConsolePalette.of(context).meterGreen)
-                        : ConsolePalette.of(context).meterAmber,
-                    connAria: !connected
-                        ? 'Disconnected'
-                        : sim
-                            ? 'Demo simulator (not a desk)'
-                            : 'Connected to desk',
-                    isChannel: isChan,
-                    channelName: isChan ? store.displayName : '',
-                    metersActive: _tab == AppTab.meters,
-                    scenesActive: _tab == AppTab.scenes,
-                    sceneNum: _sceneNum(store),
-                    sceneName: _sceneName(store),
-                    sceneAria:
-                        '${_sceneNum(store).isEmpty ? '' : 'Scene ${_sceneNum(store)}, '}${_sceneName(store)}, open scene list',
+        final Widget header = isChan && store.outputProcessingTarget != null
+            ? const SizedBox.shrink()
+            : isChan
+                ? ChannelToolbar(
+                    key: ValueKey(
+                        (store.stripKey, store.bank, store.engine.driver)),
+                    controlFocus: _channelFocus,
+                    store: store,
                     compact: MediaQuery.sizeOf(context).width < 600,
-                    onFx: () => _go(AppTab.fx),
-                    onRouting: () => _go(AppTab.routing),
-                    onConnect: () => _go(AppTab.connect),
-                    onSettings: () => _go(AppTab.settings),
-                    onMeters: () => _go(AppTab.meters),
-                    onScene: () => _go(AppTab.scenes),
-                    onPrevChannel: isChan && connected
-                        ? () => store.openChannel((store.channelIndex - 1)
-                            .clamp(0, store.engine.strips.length - 1))
-                        : null,
-                    onNextChannel: isChan && connected
-                        ? () => store.openChannel((store.channelIndex + 1)
-                            .clamp(0, store.engine.strips.length - 1))
-                        : null,
-                  );
+                    onHome: () => _go(AppTab.mixer),
+                    onTool: _channelTool,
+                    onLock: () =>
+                        store.locked ? store.cmdUnlock() : store.cmdLock(),
+                  )
+                : _tab == AppTab.settings
+                    ? const SizedBox.shrink()
+                    : U4ShellHeader(
+                        title: title,
+                        pageTitle: _tab.label,
+                        showBack: _tab != AppTab.mixer,
+                        onBack: () => _go(AppTab.mixer),
+                        mode: _modeOf(_tab),
+                        connected: connected,
+                        connDot: connected
+                            ? (sim
+                                ? ConsolePalette.of(context).text7
+                                : ConsolePalette.of(context).meterGreen)
+                            : ConsolePalette.of(context).meterAmber,
+                        connAria: !connected
+                            ? 'Disconnected'
+                            : sim
+                                ? 'Demo simulator (not a desk)'
+                                : 'Connected to desk',
+                        isChannel: isChan,
+                        channelName: isChan ? store.displayName : '',
+                        metersActive: _tab == AppTab.meters,
+                        scenesActive: _tab == AppTab.scenes,
+                        sceneNum: _sceneNum(store),
+                        sceneName: _sceneName(store),
+                        sceneAria:
+                            '${_sceneNum(store).isEmpty ? '' : 'Scene ${_sceneNum(store)}, '}${_sceneName(store)}, open scene list',
+                        compact: MediaQuery.sizeOf(context).width < 600,
+                        onFx: () => _go(AppTab.fx),
+                        onRouting: () => _go(AppTab.routing),
+                        onConnect: () => _go(AppTab.connect),
+                        onSettings: () => _go(AppTab.settings),
+                        onMeters: () => _go(AppTab.meters),
+                        onScene: () => _go(AppTab.scenes),
+                        onPrevChannel: isChan && connected
+                            ? () => store.openChannel((store.channelIndex - 1)
+                                .clamp(0, store.engine.strips.length - 1))
+                            : null,
+                        onNextChannel: isChan && connected
+                            ? () => store.openChannel((store.channelIndex + 1)
+                                .clamp(0, store.engine.strips.length - 1))
+                            : null,
+                      );
         final page = _pageFor(_tab, store);
         final rail = _NavRail(
           active: _tab,
@@ -402,12 +405,14 @@ class _AppShellState extends State<AppShell> {
       AppTab.mixer => _mixerPage(),
       AppTab.meters =>
         U4MetersPage(store: store, onClose: () => _go(AppTab.mixer)),
-      AppTab.channel => ChannelPage(
-          key: ValueKey((store.stripKey, store.bank, store.engine.driver)),
-          stripKey: store.stripKey,
-          store: store,
-          mixerControls: _processingMixerControls(),
-          controlFocus: _channelFocus),
+      AppTab.channel => store.outputProcessingTarget != null
+          ? OutputProcessingPage(store: store, onClose: () => _go(AppTab.mixer))
+          : ChannelPage(
+              key: ValueKey((store.stripKey, store.bank, store.engine.driver)),
+              stripKey: store.stripKey,
+              store: store,
+              mixerControls: _processingMixerControls(),
+              controlFocus: _channelFocus),
       AppTab.scenes => U4ScenesPage(store: _scenes),
       AppTab.fx => U4FxPage(store: _fx),
       AppTab.routing => U4RoutingPage(store: _routing),

@@ -100,7 +100,10 @@ class _MixerPageState extends State<MixerPage> {
                           mobile ? MediaQuery.paddingOf(context).bottom : 0,
                       onOpen: () {
                         controller.select(ch);
-                        if (ch.master) {
+                        if (ch.master && controller.canOpenMasterProcessing) {
+                          controller.openMasterProcessing();
+                          widget.onNavigate(MixerDestination.channel);
+                        } else if (ch.master) {
                           showMixerBuses(context, controller);
                         } else {
                           widget.onNavigate(MixerDestination.channel);

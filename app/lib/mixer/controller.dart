@@ -206,6 +206,7 @@ class MixerController extends ChangeNotifier {
   /// Processing follows the store's open channel, including direct navigation.
   /// Highlight its real strip without changing mixer selection or bank/scroll.
   MixerChannel? get selectedProcessing {
+    if (store.outputProcessingTarget != null) return master;
     for (final strip in store.engine.strips) {
       if (strip.key != 'main' && strip.ch == store.channelIndex) {
         return _channel(strip, selected: true);
@@ -296,6 +297,12 @@ class MixerController extends ChangeNotifier {
     _page = first ~/ count;
     notifyListeners();
   }
+
+  bool get canOpenMasterProcessing => store.outputProcessingControls
+      .any((control) => control.target == store.masterProcessingTarget);
+
+  void openMasterProcessing() =>
+      store.openOutputProcessing(store.masterProcessingTarget);
 
   void select(MixerChannel channel) {
     _focusReadout(channel, MixerReadoutControl.volume);
