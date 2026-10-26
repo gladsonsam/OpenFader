@@ -36,6 +36,9 @@ pub struct DestinationControl {
     pub description: String,
     pub id: String,
     pub label: String,
+    /// This numeric control accepts a tapped period in ms/s, or a tempo
+    /// in BPM. Providers opt in only where tapping is supported.
+    pub tap_tempo: bool,
     pub choices: Vec<DestinationChoice>,
     pub range: Option<DestinationRange>,
     pub current: Option<DestinationValue>,
