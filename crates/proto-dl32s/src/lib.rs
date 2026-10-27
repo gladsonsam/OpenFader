@@ -61,7 +61,12 @@ impl Default for Dl32sDriver {
 
 impl Dl32sDriver {
     pub fn new() -> Self {
-        let (update_tx, _) = broadcast::channel(256);
+        // A read-only value-space refresh can fan out the complete 32-input
+        // catalogue in one non-yielding ingest burst. The former 256 slots
+        // dropped early-channel confirmations before Engine could consume
+        // them, leaving accepted UI edits unverified until a slow repair sweep.
+        // Bound the queue to two complete input catalogues (including aliases).
+        let (update_tx, _) = broadcast::channel(2 * 32 * DL32S_CAPABILITIES.len());
         Self {
             session: Arc::new(Mutex::new(None)),
             output_write: Arc::new(Mutex::new(())),
