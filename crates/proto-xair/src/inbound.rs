@@ -134,7 +134,7 @@ pub(super) fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static st
     }
 
     // Solo switches (`/-stat/solosw/NN`, 1-based channel bank): the desk
-    // broadcasts these on solo changes (surface, X-Air Edit, or our own
+    // broadcasts these on solo changes (surface, another OSC client, or our own
     // `set_solo` — all drive the same bank). Decoded to the `solo` poll
     // id so the engine can fan them out as `Solo` events; out-of-range
     // leaves stay silent (XR18: channels 1..=16 only).

@@ -82,8 +82,8 @@ pub fn fx_effect_name(index: u8) -> Option<&'static str> {
 /// Full display name for an effect-type index (`None` = undocumented
 /// index, same gap rule as [`fx_effect_name`]).
 ///
-/// Provenance: 58 of the 60 names are the X-AIR-Edit 1.8.1 rack-select
-/// strings (see X-Air Edit 1.8.1 app structure capture §4 —
+/// Provenance: 58 of the 60 names are the native client 1.8.1 rack-select
+/// strings (see native client 1.8.1 structure capture §4 —
 /// our own prior strings inventory, names only, no artwork): matched to
 /// wire indices by family/param semantics (the rack-select order is
 /// grouped by category, NOT wire order). Two are clean-room inferences,

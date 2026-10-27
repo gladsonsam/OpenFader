@@ -1,7 +1,7 @@
 //! DL32S-only requested list geometry. Sample k maps to requested address k;
 //! pushed `start == 1` is the list ID, never an absolute meter address.
 //!
-//! Source: installed-native decoding report 2026-10-27 (Master Fader 5.2,
+//! Source: installed-native decoding report 2026-10-27 (native client 5.2,
 //! build 28602, DLFresh32 selected by DL32S model 10). Native getters give
 //! Return IN 258+4r, FX SEND 266+f, FX return PREFADER L/R 270+2f/271+2f,
 //! Subgroup OUT 278+4s, LR OUT 302/303, Aux OUT 310+4a. The accompanying
