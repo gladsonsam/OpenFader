@@ -225,8 +225,20 @@ pub(super) fn specs() -> &'static [Spec] {
                 continue;
             }
             let geq = comp + 8;
-            // D+8/D+10 are not a proven GEQ master. Withhold that control
-            // until a native movement identifies it; do not write unknown words.
+            // Compiled DL32S snapshot metadata (2026-10-27): Main 4362,
+            // Aux 4452+90*a, f32 -12..12. Parameter bank is wire type 5;
+            // historical capture labels "words/type1" are not meter type 1.
+            add(
+                geq + 2,
+                "geq_master_gain".into(),
+                "GEQ master gain".into(),
+                "output_geq",
+                -12.,
+                12.,
+                "dB",
+                vec![],
+                None,
+            );
             add(
                 geq + 1,
                 "geq_on".into(),
