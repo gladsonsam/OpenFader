@@ -78,8 +78,14 @@ class AppShell extends StatefulWidget {
   State<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends State<AppShell> {
+class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   late AppTab _tab;
+
+  // Soft-close resume: host stashed while backgrounded, verdict after return.
+  Timer? _resumeVerdict;
+  int _resumeGen = 0;
+  String? _resumeHost;
+  double _resumeWallMs = 0;
 
   // Where Settings Close returns.
   AppTab _prevTab = AppTab.mixer;
@@ -110,6 +116,7 @@ class _AppShellState extends State<AppShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tab = widget.initialTab;
     _syncChannelFocus();
     widget.store.addListener(_syncChannelFocus);
@@ -146,6 +153,53 @@ class _AppShellState extends State<AppShell> {
     }
   }
 
+  // Soft-close resume: iOS suspends the process, killing sockets and desk
+  // subscriptions. Returning is an explicit intent to keep mixing, so a
+  // previously live hardware session re-establishes itself without asking.
+  // Healthy sessions are untouched (traffic since resume proves it); only a
+  // stale or dropped link re-probes. Explicit disconnects never retry.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused) {
+      _resumeVerdict?.cancel();
+      final engine = widget.store.engine;
+      if (engine.connected &&
+          engine.driver != 'sim' &&
+          engine.linkIp.isNotEmpty) {
+        _resumeHost = engine.linkIp;
+        _resumeWallMs = DateTime.now().microsecondsSinceEpoch / 1000.0;
+      } else {
+        _resumeHost = null;
+      }
+      return;
+    }
+    if (state != AppLifecycleState.resumed) return;
+    final host = _resumeHost;
+    _resumeHost = null;
+    if (host == null || host.isEmpty || !mounted) return;
+    if (widget.store.engine.driver == 'sim') return;
+    // Cheap liveness probe through the normal command path first.
+    _conn.requestInfo();
+    final gen = ++_resumeGen;
+    final resumeWall = _resumeWallMs;
+    _resumeVerdict?.cancel();
+    _resumeVerdict =
+        Timer(const Duration(milliseconds: 2500), () => _verdictResume(gen, host, resumeWall));
+  }
+
+  Future<void> _verdictResume(int gen, String host, double resumeWall) async {
+    if (!mounted || gen != _resumeGen) return;
+    final store = widget.store;
+    if (_conn.probing || store.engine.linkState == 'reconnecting') return;
+    // An explicit disconnect between suspend and verdict wins over retry.
+    if (store.engine.linkState == 'disconnected') return;
+    // Traffic since resume proves the session survived suspension untouched.
+    if (store.engine.connected && store.lastTrafficMs >= resumeWall) return;
+    final driver = await RecentMixers.savedDriverFor(host);
+    if (!mounted || gen != _resumeGen || _conn.probing) return;
+    _conn.probe(host, mixerType: MixerType.fromDriver(driver));
+  }
+
   // Meter cadence and peak behavior follow the Appearance prefs.
 
   void _onPrefs() {
@@ -180,6 +234,8 @@ class _AppShellState extends State<AppShell> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _resumeVerdict?.cancel();
     _shellLoop?.cancel();
     PrefsService.instance.removeListener(_onPrefs);
     widget.store.removeListener(_syncChannelFocus);
