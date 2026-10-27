@@ -15,8 +15,8 @@ class MixerGeometry {
   double x(double value) => value * sx;
   double get left => x(phone ? 5 : 8);
   double get right => x(phone ? 3 : 6);
-  double get rackY => y(phone ? 6 : 24);
-  double get rackH => y(phone ? 62 : 202);
+  double get rackY => y(phone ? 6 : 32);
+  double get rackH => y(phone ? 62 : 188);
   double get panY => y(phone ? 76 : 235);
   double get panH => y(phone ? 38 : 58);
   double get muteY => y(phone ? 124 : 300);
@@ -31,8 +31,8 @@ class MixerGeometry {
   double get nameH => y(phone ? 36 : 51);
   double get nameText => x(phone ? 17 : 26);
   double target(double visual) => math.max(44, visual);
-  static double stripWidth(double availableWidth, bool phone) => phone
-      ? availableWidth * 104.2 / 466
-      : (availableWidth - railWidth(availableWidth)) / 9;
+  static double stripWidth(double availableWidth, bool phone, [int count = 8]) => phone
+      ? availableWidth * 104.2 / 466 * 8 / count.clamp(4, 12)
+      : math.min(120, (availableWidth - railWidth(availableWidth)) / (count.clamp(4, 12) + 1));
   static double railWidth(double availableWidth) => availableWidth * 93 / 1823;
 }

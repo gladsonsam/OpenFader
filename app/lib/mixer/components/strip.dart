@@ -1,9 +1,12 @@
 import '../../palette.dart';
 import '../../design.dart';
+import '../../settings/prefs.dart';
 import '../../widgets/channel_name_editor.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../geometry.dart';
+import '../strip_layout.dart';
 import 'fader.dart';
 import 'nameplate.dart';
 import 'pan.dart';
@@ -22,6 +25,8 @@ class MixerStrip extends StatelessWidget {
   final MixerChannel channel;
   final MixerController controller;
   final VoidCallback onOpen;
+  final VoidCallback? onOpenProcessing;
+  final int? identityChannel;
   final ValueChanged<MixerReadoutControl>? onControlFocus;
   final bool compact;
   final double bottomInset;
@@ -32,13 +37,62 @@ class MixerStrip extends StatelessWidget {
       this.onControlFocus,
       this.compact = false,
       this.bottomInset = 0,
-      required this.onOpen});
+      required this.onOpen,
+      this.onOpenProcessing,
+      this.identityChannel});
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         final g = MixerGeometry(
             phone: compact, width: box.maxWidth, height: box.maxHeight);
-        Widget place(double y, double height, Widget child,
+        final layout = PrefsService.instance.stripLayout;
+        final baseline = listEquals(layout.order, StripLayout.defaultOrder) &&
+            StripLayout.defaultOrder.every(layout.visible.contains) &&
+            layout.faderWeight == StripLayout.defaultFaderWeight &&
+            (!layout.compactProcessing || compact);
+        final heights = <StripElement, double>{
+          StripElement.processing: layout.compactProcessing ? g.y(62) : g.rackH,
+          StripElement.pan: g.panH,
+          StripElement.mute: g.muteH,
+          StripElement.solo: g.soloH,
+          StripElement.nameplate: box.maxHeight - g.scribbleY,
+        };
+        final positions = <StripElement, Rect>{};
+        if (!baseline) {
+          final visible = layout.visibleOrder;
+          final gap = g.y(compact ? 8 : 10);
+          final top = g.rackY;
+          final available = (box.maxHeight - top - gap * (visible.length - 1)).clamp(0.0, box.maxHeight);
+          final fixed = visible.fold<double>(0, (sum, element) => sum + (heights[element] ?? 0));
+          final densityScale = layout.faderWeight > 3
+              ? 1 - (layout.faderWeight - 3) * .08
+              : 1.0;
+          final fitScale = fixed > available ? available / fixed : 1.0;
+          final scale = densityScale < fitScale ? densityScale : fitScale;
+          final remaining = (available - fixed * scale).clamp(0.0, available);
+          final faderHeight = remaining * (layout.faderWeight < 3
+              ? .7 + .15 * (layout.faderWeight - 1)
+              : 1.0);
+          var y = top;
+          for (final element in visible) {
+            final height = element == StripElement.fader ? faderHeight : (heights[element] ?? 0) * scale;
+            positions[element] = Rect.fromLTWH(0, y, box.maxWidth, height);
+            y += height + gap;
+          }
+        }
+        final nameplateScale = baseline
+            ? 1.0
+            : ((positions[StripElement.nameplate]?.height ?? 0) /
+                    (box.maxHeight - g.scribbleY))
+                .clamp(0.0, 1.0);
+        Widget place(StripElement element, double y, double height, Widget child,
             {bool touch = false}) {
+          if (!layout.visible.contains(element)) return const SizedBox.shrink();
+          if (!baseline) {
+            final rect = positions[element];
+            if (rect == null) return const SizedBox.shrink();
+            y = rect.top;
+            height = rect.height;
+          }
           final target = touch ? g.target(height) : height;
           return Positioned(
               left: g.left,
@@ -66,18 +120,23 @@ class MixerStrip extends StatelessWidget {
                                     ConsolePalette.of(context).stripDivider))),
                     child: Stack(children: [
                       place(
+                          StripElement.processing,
                           g.rackY,
                           g.rackH,
-                          compact
+                          compact || layout.compactProcessing
                               ? MixerEqPreview(
-                                  channel: ch, compact: true, onOpen: onOpen)
+                                  channel: ch, compact: true,
+                                  showPhantom: controller.hasPhantomOf(ch),
+                                  onOpen: onOpenProcessing ?? onOpen)
                               : MixerProcessingRack(
                                   channel: ch,
                                   gainRange: controller.gainRangeOf(ch),
+                                  showPhantom: controller.hasPhantomOf(ch),
                                   demo: controller.demo,
-                                  onOpen: onOpen,
+                                  onOpen: onOpenProcessing ?? onOpen,
                                   onGain: (v) => controller.setGain(ch, v))),
                       place(
+                          StripElement.pan,
                           g.panY,
                           g.panH,
                           isMaster || chIndex == null
@@ -106,6 +165,7 @@ class MixerStrip extends StatelessWidget {
                                               : null)),
                           touch: true),
                       place(
+                          StripElement.mute,
                           g.muteY,
                           g.muteH,
                           ValueListenableBuilder<bool>(
@@ -125,6 +185,7 @@ class MixerStrip extends StatelessWidget {
                                       : null)),
                           touch: true),
                       place(
+                          StripElement.fader,
                           g.faderY,
                           g.faderH,
                           ValueListenableBuilder<double>(
@@ -141,6 +202,7 @@ class MixerStrip extends StatelessWidget {
                                                     channel:
                                                         _withFader(ch, fader),
                                                     compact: compact,
+                                                    showMeter: layout.showMeter,
                                                     onTouch: () =>
                                                         onControlFocus?.call(
                                                             MixerReadoutControl
@@ -188,6 +250,7 @@ class MixerStrip extends StatelessWidget {
                                       const Center(child: Text('Loading…')),
                                   ]))),
                       place(
+                          StripElement.solo,
                           g.soloY,
                           g.soloH,
                           ValueListenableBuilder<bool>(
@@ -209,29 +272,26 @@ class MixerStrip extends StatelessWidget {
                                       ? () => controller.toggleSolo(ch)
                                       : null)),
                           touch: true),
-                      Positioned(
+                      if (layout.visible.contains(StripElement.nameplate)) Positioned(
                           left: 0,
                           right: 0,
-                          top: g.scribbleY,
-                          bottom: 0,
+                          top: baseline ? g.scribbleY : positions[StripElement.nameplate]?.top ?? g.scribbleY,
+                          height: baseline ? box.maxHeight - g.scribbleY : positions[StripElement.nameplate]?.height ?? 0,
                           child: MixerNameplate(
                               channel: ch,
-                              iconHeight: g.scribbleH,
-                              nameHeight: g.nameH,
-                              nameOffset: g.nameY - g.scribbleY,
+                              iconHeight: g.scribbleH * nameplateScale,
+                              nameHeight: g.nameH * nameplateScale,
+                              nameOffset: (g.nameY - g.scribbleY) * nameplateScale,
                               fontSize: g.nameText,
                               compact: compact,
                               onSelect: () => controller.select(ch),
                               onOpen: onOpen,
-                              onRename: isMaster ||
-                                      chIndex == null ||
-                                      controller.store
-                                              .captureNameTarget(chIndex) ==
-                                          null
+                              onRename: (identityChannel ?? chIndex) == null ||
+                                      controller.store.captureNameTarget(identityChannel ?? chIndex) == null
                                   ? null
                                   : () {
                                       final target = controller.store
-                                          .captureNameTarget(chIndex);
+                                          .captureNameTarget(identityChannel ?? chIndex);
                                       if (target != null) {
                                         showChannelNameEditor(
                                             context, controller.store, target);

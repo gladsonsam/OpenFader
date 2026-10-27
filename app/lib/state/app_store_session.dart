@@ -168,7 +168,7 @@ mixin _AppStoreSession on _AppStoreContext {
     _maps.pending.clear();
     _confirmedFader.clear();
     _confirmedMute.clear();
-    _bank = 'ch1';
+    _bank = 'view:all';
     _outputProcessingTarget = null;
     _busId = 'main';
     _focusCh = null;

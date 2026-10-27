@@ -83,6 +83,26 @@ pub const XAIR_TOPOLOGY: [openfader_core::StripFamily; 7] = [
     },
 ];
 
+/// XR18 color indices follow the X-Air OSC color enumeration (0–7 and inverted 8–15).
+pub const XAIR_COLOR_SWATCHES: &[openfader_core::params::ParamSwatch] = &[
+    openfader_core::params::ParamSwatch { value: 0.0, label: "None", rgb: None },
+    openfader_core::params::ParamSwatch { value: 1.0, label: "Red", rgb: Some(0xe74c3c) },
+    openfader_core::params::ParamSwatch { value: 2.0, label: "Green", rgb: Some(0x43a66c) },
+    openfader_core::params::ParamSwatch { value: 3.0, label: "Yellow", rgb: Some(0xe9c94a) },
+    openfader_core::params::ParamSwatch { value: 4.0, label: "Blue", rgb: Some(0x4c83cf) },
+    openfader_core::params::ParamSwatch { value: 5.0, label: "Magenta", rgb: Some(0xb55fba) },
+    openfader_core::params::ParamSwatch { value: 6.0, label: "Cyan", rgb: Some(0x50b8c4) },
+    openfader_core::params::ParamSwatch { value: 7.0, label: "White", rgb: Some(0xe3e3e3) },
+    openfader_core::params::ParamSwatch { value: 8.0, label: "None (inverted)", rgb: None },
+    openfader_core::params::ParamSwatch { value: 9.0, label: "Red (inverted)", rgb: Some(0xe74c3c) },
+    openfader_core::params::ParamSwatch { value: 10.0, label: "Green (inverted)", rgb: Some(0x43a66c) },
+    openfader_core::params::ParamSwatch { value: 11.0, label: "Yellow (inverted)", rgb: Some(0xe9c94a) },
+    openfader_core::params::ParamSwatch { value: 12.0, label: "Blue (inverted)", rgb: Some(0x4c83cf) },
+    openfader_core::params::ParamSwatch { value: 13.0, label: "Magenta (inverted)", rgb: Some(0xb55fba) },
+    openfader_core::params::ParamSwatch { value: 14.0, label: "Cyan (inverted)", rgb: Some(0x50b8c4) },
+    openfader_core::params::ParamSwatch { value: 15.0, label: "White (inverted)", rgb: Some(0xe3e3e3) },
+];
+
 /// Total addressable strips on the XR18 map (16 + 4 + 6 + 4 + 1 + 4 + 1).
 pub const XAIR_STRIPS: usize = 36;
 

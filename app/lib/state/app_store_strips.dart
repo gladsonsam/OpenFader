@@ -26,7 +26,7 @@ mixin _AppStoreStrips on _AppStoreContext {
   @override
   final Map<int, bool> _confirmedMute = {};
   @override
-  String _bank = 'ch1';
+  String _bank = 'view:all';
   @override
   String _busId = 'main';
   double _masterFader = 0.75;
@@ -143,8 +143,20 @@ mixin _AppStoreStrips on _AppStoreContext {
       visible = _viewMembershipReady(leaf)
           ? _viewCandidates(leaf).where((s) => _viewMember(s.ch, leaf) == true)
           : const <Strip>[];
+    } else if (_bank.startsWith('custom:')) {
+      final id = _bank.substring(7);
+      final view = customMixerViews.where((v) => v.id == id).firstOrNull;
+      visible =
+          engine.strips.where((s) => view?.stripKeys.contains(s.key) ?? false);
     } else if (_bank == 'view:all') {
-      visible = engine.strips;
+      visible = engine.topology.isEmpty
+          ? engine.strips
+          : engine.strips.where((strip) => engine.topology.any((family) {
+                final first = (family['first'] as num).toInt();
+                final count = (family['count'] as num).toInt();
+                return strip.ch >= first && strip.ch < first + count &&
+                    (family['kind'] == 'in' || family['kind'] == 'ret');
+              }));
     } else {
       visible = range == null
           ? engine.strips
@@ -220,6 +232,7 @@ mixin _AppStoreStrips on _AppStoreContext {
   @override
   String get emptyBankMessage {
     final leaf = _selectedViewLeaf;
+    if (_bank.startsWith('custom:')) return 'No channels in this view.';
     if (leaf == null) return 'Waiting for channels…';
     final label = _viewLabel(leaf);
     if (!_viewMembershipReady(leaf)) return 'Waiting for $label membership…';
@@ -393,6 +406,12 @@ mixin _AppStoreStrips on _AppStoreContext {
           : engine.busMuted[int.tryParse(_busId.replaceFirst('bus', ''))] ??
               false;
 
+  String _busDisplayName(int index) {
+    final key = 'bus/${(index + 1).toString().padLeft(2, '0')}';
+    final name = engine.strips.where((s) => s.key == key).firstOrNull?.name.trim();
+    return name == null || name.isEmpty ? 'BUS ${index + 1}' : name;
+  }
+
   @override
   String get masterName => _busId.startsWith('solo:')
       ? (_targetSolo(-1)?.targetLabel ?? 'SOLO')
@@ -400,13 +419,25 @@ mixin _AppStoreStrips on _AppStoreContext {
           ? 'SUBGROUP ${_selectedSubgroup! + 1}'
           : _busId == 'main'
               ? 'MAIN'
-              : 'BUS ${(int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1}';
+              : _busDisplayName(int.tryParse(_busId.replaceFirst('bus', '')) ?? 0);
 
   @override
   List<MixerBank> get banks {
     final cached = _banksCache;
     if (cached != null) return cached;
     final built = List<MixerBank>.unmodifiable([
+      MixerBank(
+        key: 'view:all',
+        label: 'All',
+        color: const ConsolePalette().lime,
+        text: const ConsolePalette().onAccent,
+      ),
+      for (final view in customMixerViews)
+        MixerBank(
+            key: 'custom:${view.id}',
+            label: view.name,
+            color: const ConsolePalette().lime,
+            text: const ConsolePalette().onAccent),
       for (final entry in _bankRanges.entries)
         MixerBank(
           key: entry.key,
@@ -423,12 +454,6 @@ mixin _AppStoreStrips on _AppStoreContext {
           text: const ConsolePalette().onAccent,
         ),
       if (_viewLeaves.isNotEmpty) ...[
-        MixerBank(
-          key: 'view:all',
-          label: 'All channels',
-          color: const ConsolePalette().lime,
-          text: const ConsolePalette().onAccent,
-        ),
         for (final leaf in _viewLeaves)
           MixerBank(
             key: 'view:$leaf',
@@ -440,6 +465,26 @@ mixin _AppStoreStrips on _AppStoreContext {
     ]);
     _banksCache = built;
     return built;
+  }
+
+  String get _mixerViewScope =>
+      '${engine.driver}:${engine.model}:${engine.linkIp}';
+
+  @override
+  List<CustomMixerView> get customMixerViews =>
+      PrefsService.instance.mixerViews(_mixerViewScope);
+
+  @override
+  Future<void> saveCustomMixerViews(List<CustomMixerView> views) async {
+    final scope = _mixerViewScope;
+    await PrefsService.instance.saveMixerViews(scope, views);
+    if (scope != _mixerViewScope) return;
+    if (_bank.startsWith('custom:') &&
+        !views.any((v) => 'custom:${v.id}' == _bank)) {
+      _bank = 'view:all';
+    }
+    _invalidateDerived();
+    notifyListeners();
   }
 
   @override
@@ -461,7 +506,7 @@ mixin _AppStoreStrips on _AppStoreContext {
       for (final b in engine.busFaders.keys.toList()..sort())
         MixerBusRow(
           id: 'bus$b',
-          name: 'BUS ${b + 1}',
+          name: _busDisplayName(b),
           sub: engine.busMuted[b] == true ? 'muted' : 'open',
           muted: engine.busMuted[b] ?? false,
           active: _busId == 'bus$b',

@@ -144,7 +144,9 @@ class _NameEditorState extends State<_NameEditor> {
           canPop: !_pending,
           child: AlertDialog(
             backgroundColor: p.panel,
-            title: Text('Channel ${widget.target.channel + 1}',
+            title: Text(widget.target.key.startsWith('bus/')
+                ? 'Bus ${int.tryParse(widget.target.key.split('/').last) ?? widget.target.key}'
+                : 'Channel ${widget.target.channel + 1}',
                 style: AppDesign.type(18, color: p.text7)),
             content: SizedBox(
               width: 320,
@@ -395,7 +397,9 @@ class _AppearanceEditorState extends State<_AppearanceEditor> {
             child: AlertDialog(
               backgroundColor: p.panel,
               title: Text(
-                  'Channel ${widget.target.channel + 1} ${widget.field}',
+                  widget.target.key.startsWith('bus/')
+                      ? 'Bus ${int.tryParse(widget.target.key.split('/').last) ?? widget.target.key} ${widget.field}'
+                      : 'Channel ${widget.target.channel + 1} ${widget.field}',
                   style: AppDesign.type(18, color: p.text7)),
               content: SizedBox(
                 width: 320,

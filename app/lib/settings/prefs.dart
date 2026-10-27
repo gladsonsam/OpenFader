@@ -3,11 +3,17 @@
 // for the knobs that need live apply.
 library;
 
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
+import '../mixer/store.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/access_policy.dart';
+import '../mixer/mixer_layers.dart';
+import '../mixer/strip_layout.dart';
 
 class PrefsService extends ChangeNotifier {
   PrefsService._();
@@ -150,6 +156,73 @@ class PrefsService extends ChangeNotifier {
   bool get holdClips => _prefs?.getBool('openfader.holdClips') ?? true;
   bool get largeTargets => _prefs?.getBool('openfader.largeTargets') ?? true;
 
+  // --- channel strips -------------------------------------------------------
+  static const stripLayoutKey = 'openfader.stripLayout.v1';
+
+  // Trailing-edge debounce for per-tick drag writes (e.g. the fader-size
+  // slider): the in-memory layout updates immediately so the UI stays live,
+  // while SharedPreferences persistence waits ~400ms after the last tick.
+  StripLayout? _pendingStripLayout;
+  Timer? _stripLayoutTimer;
+  static const _stripLayoutDebounce = Duration(milliseconds: 400);
+
+  /// Parsed strip layout with defaults fallback on missing/corrupt payloads.
+  /// A pending debounced write (if any) wins over the persisted payload.
+  StripLayout get stripLayout =>
+      _pendingStripLayout ??
+      StripLayout.tryDecode(_prefs?.getString(stripLayoutKey)) ??
+      StripLayout.defaults();
+
+  Future<void> setStripLayout(StripLayout layout) {
+    _stripLayoutTimer?.cancel();
+    _stripLayoutTimer = null;
+    _pendingStripLayout = null;
+    return _set(stripLayoutKey, layout.encode());
+  }
+
+  /// Debounced variant for drag/slider ticks: applies [layout] in memory
+  /// now (notifyListeners) and persists the latest value on the trailing
+  /// edge. Follows the same [_set] persistence path, so save failures still
+  /// reload + notify. The singleton lives for the app session, so there is
+  /// no dispose to cancel the timer; an immediate [setStripLayout] cancels
+  /// any pending trailing write.
+  void setStripLayoutDebounced(StripLayout layout) {
+    _pendingStripLayout = layout;
+    notifyListeners();
+    _stripLayoutTimer?.cancel();
+    _stripLayoutTimer = Timer(_stripLayoutDebounce, () async {
+      final pending = _pendingStripLayout;
+      _pendingStripLayout = null;
+      _stripLayoutTimer = null;
+      if (pending != null) {
+        await setStripLayout(pending);
+      }
+    });
+  }
+
+  // --- mixer layers ---------------------------------------------------------
+  static const layersKey = 'openfader.layers.v1';
+  static const activeLayerIdKey = 'openfader.activeLayerId';
+
+  /// User layers with defaults fallback on missing/corrupt payloads.
+  List<MixerLayer> get mixerLayers =>
+      MixerLayer.tryDecodeList(_prefs?.getString(layersKey)) ?? const [];
+
+  /// Active layer id; unknown ids fall back to the built-in All layer.
+  String get activeMixerLayerId =>
+      _prefs?.getString(activeLayerIdKey) ?? MixerLayer.allLayerId;
+
+  MixerLayersState get mixerLayersState => MixerLayersState(
+        layers: mixerLayers,
+        activeLayerId: activeMixerLayerId,
+      );
+
+  Future<void> setMixerLayers(List<MixerLayer> layers) =>
+      _set(layersKey, MixerLayer.encodeList(layers));
+
+  Future<void> setActiveMixerLayerId(String id) =>
+      _set(activeLayerIdKey, id);
+
   // --- mixes ------------------------------------------------------------------
   bool get autoBackup => _prefs?.getBool('openfader.autoBackup') ?? true;
   String get backupCreatedAt =>
@@ -181,6 +254,39 @@ class PrefsService extends ChangeNotifier {
     }
     notifyListeners();
   }
+
+  List<CustomMixerView> mixerViews(String scope) {
+    try {
+      final data =
+          jsonDecode(_prefs?.getString('openfader.mixerViews.$scope') ?? '[]');
+      if (data is! List) return const [];
+      return [
+        for (final row in data)
+          if (row is Map &&
+              row['id'] is String &&
+              row['name'] is String &&
+              row['strips'] is List)
+            CustomMixerView(
+                id: row['id'] as String,
+                name: row['name'] as String,
+                stripKeys: (row['strips'] as List).whereType<String>().toSet())
+      ];
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> saveMixerViews(String scope, List<CustomMixerView> views) =>
+      _set(
+          'openfader.mixerViews.$scope',
+          jsonEncode([
+            for (final view in views)
+              {
+                'id': view.id,
+                'name': view.name,
+                'strips': view.stripKeys.toList()
+              }
+          ]));
 
   Future<void> setAutoFind(bool v) => _set('openfader.autoFind', v);
   Future<void> setReconnectLast(bool v) => _set('openfader.reconnectLast', v);
@@ -241,6 +347,9 @@ class PrefsService extends ChangeNotifier {
       'openfader.holdClips',
       'openfader.largeTargets',
       'openfader.autoBackup',
+      stripLayoutKey,
+      layersKey,
+      activeLayerIdKey,
     ]) {
       if (!await p.remove(key)) {
         await p.reload();

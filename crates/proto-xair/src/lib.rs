@@ -159,6 +159,10 @@ impl MixerDriver for XAirDriver {
         XAIR_CAPABILITIES
     }
 
+    fn param_swatches(&self, param: &str) -> &'static [openfader_core::params::ParamSwatch] {
+        if param == "color" { metadata::XAIR_COLOR_SWATCHES } else { &[] }
+    }
+
     /// XR18 strip map (16 in + 4 FX ret + 6 bus + 4 FX send + LR + 4 DCA).
     fn topology(&self) -> Vec<openfader_core::StripFamily> {
         XAIR_TOPOLOGY.to_vec()

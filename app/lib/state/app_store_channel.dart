@@ -54,6 +54,7 @@ mixin _AppStoreChannel on _AppStoreContext {
 
   @override
   String get displayName {
+    if (stripKey == 'main') return 'Main LR';
     for (final s in engine.strips) {
       if (s.ch == _channel && s.name.isNotEmpty) return s.name;
     }
@@ -61,7 +62,7 @@ mixin _AppStoreChannel on _AppStoreContext {
   }
 
   @override
-  String get channelNumber => '${_channel + 1}';
+  String get channelNumber => stripKey == 'main' ? 'LR' : '${_channel + 1}';
 
   @override
   ValueNotifier<double> faderNote() => faderOf(_channel);
@@ -311,9 +312,12 @@ mixin _AppStoreChannel on _AppStoreContext {
       ? paramBool('dca${group + 1}_assign')
       : null;
   @override
-  String dcaGroupLabel(int group) =>
-      paramMetadata('dca${group + 1}_assign')?['label'] as String? ??
-      'VCA ${group + 1}';
+  String dcaGroupLabel(int group) {
+    final label = paramMetadata('dca${group + 1}_assign')?['label'] as String? ??
+        'VCA ${group + 1}';
+    final match = RegExp(r'^dca(\s*\d+)$', caseSensitive: false).firstMatch(label);
+    return match == null ? label : 'DCA${match[1]}';
+  }
   @override
   void setDcaAssigned(int group, bool on) =>
       cmdParam('dca${group + 1}_assign', on);
@@ -353,7 +357,8 @@ mixin _AppStoreChannel on _AppStoreContext {
     return parameterRange(paramMetadata(leaf));
   }
 
-  int get _eqBandCount => (paramNum('wing:eq_bands')?.toInt() ?? 4).clamp(4, 8);
+  int get _eqBandCount =>
+      (paramNum('wing:eq_bands')?.toInt() ?? (paramApplies('eq6_gain') ? 6 : 4)).clamp(4, 8);
 
   @override
   ChannelEqVm get eq => ChannelEqVm(
