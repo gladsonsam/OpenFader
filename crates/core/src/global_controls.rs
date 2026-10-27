@@ -175,9 +175,9 @@ pub fn reference_controls() -> Vec<DestinationControl> {
         "monitor",
         "Monitor",
         "lr_defeat",
-        "LR defeat",
+        "LR to Monitors",
         0.,
-        boolean(),
+        choices(&["On", "Off"]),
         None,
     );
     add(
@@ -198,8 +198,18 @@ pub fn reference_controls() -> Vec<DestinationControl> {
         boolean(),
         None,
     );
-    // Withhold delay distance until its physical unit/conversion is established.
-    // The compiled 0..115.85 domain and named taper alone do not prove metres.
+    // Native monitor binding and two-way UI conversions establish metres:
+    // feet = m * 3.28083992; milliseconds = 1000*m/(331+0.6*temperatureC).
+    // Compiled evidence 2026-10-27; live write/readback remains separate proof.
+    add(
+        "monitor",
+        "Monitor",
+        "distance",
+        "Delay distance",
+        0.,
+        vec![],
+        range(0., 115.85, "m", 3),
+    );
     rows
 }
 fn choices(labels: &[&str]) -> Vec<DestinationChoice> {
