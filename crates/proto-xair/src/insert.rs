@@ -64,7 +64,10 @@ pub fn sel_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<i32> {
     match msg.args.first() {
         Some(OscType::Int(i)) => {
             if !(INSERT_SEL_MIN..=INSERT_SEL_MAX).contains(i) {
-                anyhow::bail!("{}: insert sel {i} outside {INSERT_SEL_MIN}..={INSERT_SEL_MAX}", msg.addr);
+                anyhow::bail!(
+                    "{}: insert sel {i} outside {INSERT_SEL_MIN}..={INSERT_SEL_MAX}",
+                    msg.addr
+                );
             }
             Ok(*i)
         }

@@ -16,8 +16,8 @@
 //! extension overrides) and append one [`RegisteredDriver`] row in
 //! [`registered_drivers`]. `engine.rs` needs zero edits.
 
-mod send_destinations;
 pub mod routing;
+mod send_destinations;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -25,12 +25,12 @@ use std::{
     sync::Arc,
 };
 
+use openfader_core::show::Scene;
 use openfader_core::{
     params::{ParamDef, ParamRegistry},
-    MeterFrame, MixerDriver, MixerInfo, MixerSnapshot, ParamUpdate, ParamValue, StripFamily, StripId,
-    StripKind,
+    MeterFrame, MixerDriver, MixerInfo, MixerSnapshot, ParamUpdate, ParamValue, StripFamily,
+    StripId, StripKind,
 };
-use openfader_core::show::Scene;
 
 /// Neutral FX slot view: the sim design rack projected off the sim type so
 /// session logic never names a provider type.
@@ -102,10 +102,17 @@ pub struct SendDestination {
 pub trait DynDriver: Send + Sync {
     /// Read-only identification, independent of the active mixer session.
     /// New providers implement this and discovery alongside their driver.
-    async fn identify(&self, _ip: IpAddr, _budget: std::time::Duration) -> Option<openfader_transport::discovery::DiscoveredDevice> {
+    async fn identify(
+        &self,
+        _ip: IpAddr,
+        _budget: std::time::Duration,
+    ) -> Option<openfader_transport::discovery::DiscoveredDevice> {
         None
     }
-    async fn discover(&self, _budget: std::time::Duration) -> Vec<openfader_transport::discovery::DiscoveredDevice> {
+    async fn discover(
+        &self,
+        _budget: std::time::Duration,
+    ) -> Vec<openfader_transport::discovery::DiscoveredDevice> {
         Vec::new()
     }
     fn discovered_name(&self, device: &openfader_transport::discovery::DiscoveredDevice) -> String {
@@ -121,7 +128,9 @@ pub trait DynDriver: Send + Sync {
     fn channel_count(&self) -> usize;
     fn strip_count(&self) -> usize;
     fn topology(&self) -> Vec<StripFamily>;
-    fn stereo_pairs(&self) -> Vec<[u16; 2]> { Vec::new() }
+    fn stereo_pairs(&self) -> Vec<[u16; 2]> {
+        Vec::new()
+    }
     /// All strips affected by a shared linked control. Providers keep
     /// independent input controls local; the engine checks every member
     /// before any write. An unavailable link state must fail closed.
@@ -129,8 +138,11 @@ pub trait DynDriver: Send + Sync {
         Ok(vec![strip])
     }
 
-    async fn set_stereo_link(&self, _source: StripId, _linked: bool)
-        -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+    async fn set_stereo_link(
+        &self,
+        _source: StripId,
+        _linked: bool,
+    ) -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
         anyhow::bail!("stereo linking unavailable")
     }
     fn capabilities(&self) -> &'static [&'static str];
@@ -142,25 +154,46 @@ pub trait DynDriver: Send + Sync {
         &[]
     }
     /// Derived metadata remains readable but must not become a recall write.
-    fn param_read_only(&self, _param: &str) -> bool { false }
+    fn param_read_only(&self, _param: &str) -> bool {
+        false
+    }
     /// Stored companion fields that bind a local-scene write to its source.
-    fn param_write_context(&self, _param: &str) -> &'static [&'static str] { &[] }
+    fn param_write_context(&self, _param: &str) -> &'static [&'static str] {
+        &[]
+    }
 
     /// Fresh capture override for shared/dynamically read-only hardware fields.
     /// None keeps the existing cache/display capture path. An error omits the
     /// value rather than turning unavailable hardware state into a recall write.
-    async fn capture_param_override(&self, _strip: StripId, _param: &str) -> Option<anyhow::Result<ParamValue>> { None }
+    async fn capture_param_override(
+        &self,
+        _strip: StripId,
+        _param: &str,
+    ) -> Option<anyhow::Result<ParamValue>> {
+        None
+    }
 
     /// Semantic comparison for a structured provider value after a genuine
     /// desk read. None retains the canonical numeric/bool/text comparison.
-    fn param_readback_equivalent(&self, _param: &str, _read: &ParamValue, _written: &ParamValue) -> Option<bool> { None }
+    fn param_readback_equivalent(
+        &self,
+        _param: &str,
+        _read: &ParamValue,
+        _written: &ParamValue,
+    ) -> Option<bool> {
+        None
+    }
 
     /// Optional local-scene recall group override. Console send numbering and
     /// contributed IDs need not follow the historical bus/FX catalogue split.
     /// Unspecified IDs retain the engine's legacy classification.
-    fn param_recall_group(&self, _param: &str) -> Option<&'static str> { None }
+    fn param_recall_group(&self, _param: &str) -> Option<&'static str> {
+        None
+    }
 
-    fn send_destination(&self, _slot: u16) -> Option<SendDestination> { None }
+    fn send_destination(&self, _slot: u16) -> Option<SendDestination> {
+        None
+    }
     /// Driver-specific canonical range overrides, merged into this
     /// provider's [`ParamRegistry`](openfader_core::params::ParamRegistry)
     /// at boot (see [`RegisteredDriver::param_registry`]). Defaults to
@@ -175,16 +208,33 @@ pub trait DynDriver: Send + Sync {
     fn param_label_overrides(&self) -> Vec<(&'static str, String)> {
         Vec::new()
     }
-    fn param_swatches(&self, _param: &str) -> &'static [openfader_core::params::ParamSwatch] { &[] }
-    fn param_symbols(&self, _param: &str) -> &'static [openfader_core::params::ParamSymbol] { &[] }
-    fn param_text_rules(&self, _param: &str) -> Option<openfader_core::params::ParamTextRules> { None }
-    fn param_dependents(&self, _param: &str) -> &'static [&'static str] { &[] }
+    fn param_swatches(&self, _param: &str) -> &'static [openfader_core::params::ParamSwatch] {
+        &[]
+    }
+    fn param_symbols(&self, _param: &str) -> &'static [openfader_core::params::ParamSymbol] {
+        &[]
+    }
+    fn param_text_rules(&self, _param: &str) -> Option<openfader_core::params::ParamTextRules> {
+        None
+    }
+    fn param_dependents(&self, _param: &str) -> &'static [&'static str] {
+        &[]
+    }
     async fn get_param_display(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
         self.get_param(strip, param).await
     }
-    async fn set_param_guarded(&self, strip: StripId, param: &str, value: ParamValue, expected: &BTreeMap<String, ParamValue>) -> anyhow::Result<()> {
+    async fn set_param_guarded(
+        &self,
+        strip: StripId,
+        param: &str,
+        value: ParamValue,
+        expected: &BTreeMap<String, ParamValue>,
+    ) -> anyhow::Result<()> {
         for (id, wanted) in expected {
-            anyhow::ensure!(self.get_param_display(strip, id).await? == *wanted, "Input source changed; reopen the control.");
+            anyhow::ensure!(
+                self.get_param_display(strip, id).await? == *wanted,
+                "Input source changed; reopen the control."
+            );
         }
         self.set_param(strip, param, value).await
     }
@@ -200,9 +250,15 @@ pub trait DynDriver: Send + Sync {
     /// [`MixerDriver::native_snapshots`](openfader_core::MixerDriver::native_snapshots)):
     /// `None` = the driver does not model native slots (honest
     /// `unsupported`, never faked). Sync lock-local read, no I/O.
-    fn native_library(&self) -> Option<serde_json::Value> { None }
-    async fn native_library_action(&self, _action: &serde_json::Value, _expected: &serde_json::Value,
-        _check: openfader_core::native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
+    fn native_library(&self) -> Option<serde_json::Value> {
+        None
+    }
+    async fn native_library_action(
+        &self,
+        _action: &serde_json::Value,
+        _expected: &serde_json::Value,
+        _check: openfader_core::native_library::Check<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
         anyhow::bail!("Native library unsupported")
     }
     fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
@@ -210,38 +266,85 @@ pub trait DynDriver: Send + Sync {
     }
     /// Fail closed unless the provider serializes writes and fresh independent
     /// readback, checking the entire captured block and observed revisions.
-    fn input_processor_guard(&self) -> bool { false }
+    fn input_processor_guard(&self) -> bool {
+        false
+    }
     /// Complete EQ/filter/gate/compressor block, including enable flags.
     /// Identity, preamps, sources, mix levels and assignments are excluded.
-    fn channel_processing_guard(&self) -> bool { false }
-    async fn input_processor(&self, _strip: StripId, _processor: &str,
-        _write: Option<(&str, ParamValue)>, _expected: Option<&serde_json::Value>, _check: openfader_core::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
+    fn channel_processing_guard(&self) -> bool {
+        false
+    }
+    async fn input_processor(
+        &self,
+        _strip: StripId,
+        _processor: &str,
+        _write: Option<(&str, ParamValue)>,
+        _expected: Option<&serde_json::Value>,
+        _check: openfader_core::input_processors::RecallCheck<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
         anyhow::bail!("guarded input processor recall unavailable for this provider")
     }
     fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
         Vec::new()
     }
-    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
+    async fn set_destination_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+    ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
         let _ = (target, control, value, expected, snapshot);
         anyhow::bail!("guarded processor recall not supported")
     }
-    async fn set_fx_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+    async fn set_fx_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         let _ = (target, control, value, expected, snapshot, context);
         anyhow::bail!("guarded FX unavailable")
     }
-    async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+    async fn set_target_solo(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         let _ = (target, control, value, expected, snapshot, context);
         anyhow::bail!("target solo unsupported")
     }
-    async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
+    async fn set_destination_control(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+    ) -> anyhow::Result<()> {
         let _ = (target, control, value, expected);
         anyhow::bail!("{}: destination controls not supported", self.name())
     }
     async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()>;
     async fn connect(&self, addr: &str) -> anyhow::Result<()>;
-    async fn disconnect(&self) -> anyhow::Result<()> { Ok(()) }
-    async fn refresh_streams(&self) -> anyhow::Result<()> { Ok(()) }
-    fn telemetry_timestamps(&self) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> { None }
+    async fn disconnect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn refresh_streams(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+    fn telemetry_timestamps(
+        &self,
+    ) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> {
+        None
+    }
     async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()>;
     async fn get_fader(&self, strip: StripId) -> anyhow::Result<f32>;
     async fn set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()>;
@@ -256,11 +359,17 @@ pub trait DynDriver: Send + Sync {
     async fn get_subgroup_fader(&self, group: u8) -> anyhow::Result<f32>;
     async fn set_subgroup_mute(&self, group: u8, muted: bool) -> anyhow::Result<()>;
     async fn get_subgroup_mute(&self, group: u8) -> anyhow::Result<bool>;
-    async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()>;
+    async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool)
+        -> anyhow::Result<()>;
     async fn get_subgroup_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool>;
     async fn set_mute_group(&self, group: u8, muted: bool) -> anyhow::Result<()>;
     async fn get_mute_group(&self, group: u8) -> anyhow::Result<bool>;
-    async fn set_mute_group_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()>;
+    async fn set_mute_group_assign(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+    ) -> anyhow::Result<()>;
     async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool>;
     async fn download_file(&self, filename: &str) -> anyhow::Result<Vec<u8>>;
     async fn upload_file(&self, filename: &str, data: &[u8], file_type: u32) -> anyhow::Result<()>;
@@ -274,13 +383,16 @@ pub trait DynDriver: Send + Sync {
     async fn get_solo_verified(&self, strip: StripId) -> anyhow::Result<bool> {
         self.get_solo(strip).await
     }
-    async fn set_param(&self, strip: StripId, param: &str, value: ParamValue) -> anyhow::Result<()>;
+    async fn set_param(&self, strip: StripId, param: &str, value: ParamValue)
+        -> anyhow::Result<()>;
     async fn get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue>;
     async fn snapshot(&self) -> anyhow::Result<MixerSnapshot>;
     async fn recall(&self, snapshot: &MixerSnapshot) -> anyhow::Result<()>;
     async fn recall_scene(&self, scene: &Scene, fade_ms: u64) -> anyhow::Result<()>;
     async fn query_info(&self) -> anyhow::Result<MixerInfo>;
-    async fn subscribe_meters(&self) -> anyhow::Result<tokio::sync::broadcast::Receiver<MeterFrame>>;
+    async fn subscribe_meters(
+        &self,
+    ) -> anyhow::Result<tokio::sync::broadcast::Receiver<MeterFrame>>;
     async fn set_fx_param(&self, slot: u8, param: u8, value: f32) -> anyhow::Result<()>;
     async fn get_fx_param(&self, slot: u8, param: u8) -> anyhow::Result<f32>;
     /// Single-query FX param read with an already-known effect index
@@ -376,7 +488,12 @@ pub trait DynDriver: Send + Sync {
         anyhow::bail!("{}: fx recall not supported", self.name())
     }
     /// Apply one offline `fx/...` change (per-driver legacy messages).
-    async fn fx_push(&self, strip: u8, param: &str, value: &serde_json::Value) -> anyhow::Result<()> {
+    async fn fx_push(
+        &self,
+        strip: u8,
+        param: &str,
+        value: &serde_json::Value,
+    ) -> anyhow::Result<()> {
         let _ = (strip, param, value);
         anyhow::bail!("{}: fx push not supported", self.name())
     }
@@ -396,20 +513,36 @@ pub trait DynDriver: Send + Sync {
         Vec::new()
     }
     /// Preserve provider-defined legacy target aliases at the write guard.
-    fn canonical_routing_target<'a>(&self, target: &'a str) -> &'a str { target }
-    fn routing_control(&self, _target: &str) -> &str { "source" }
+    fn canonical_routing_target<'a>(&self, target: &'a str) -> &'a str {
+        target
+    }
+    fn routing_control(&self, _target: &str) -> &str {
+        "source"
+    }
     fn output_route(&self, _id: &str) -> anyhow::Result<openfader_core::routing::RouteState> {
         anyhow::bail!("Output routing unsupported")
     }
-    async fn set_output_route(&self, _id: &str, _source: &str, _expected: &openfader_core::routing::RouteState, _context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+    async fn set_output_route(
+        &self,
+        _id: &str,
+        _source: &str,
+        _expected: &openfader_core::routing::RouteState,
+        _context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<()> {
         anyhow::bail!("Output routing unsupported")
     }
     fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
         routing::input_planes(self)
     }
     fn routing_targets(&self) -> Vec<RoutingTarget> {
-        if self.routing_groups().is_empty() { Vec::new() } else {
-            vec![RoutingTarget { key: "", label: "Input", clearable: true }]
+        if self.routing_groups().is_empty() {
+            Vec::new()
+        } else {
+            vec![RoutingTarget {
+                key: "",
+                label: "Input",
+                clearable: true,
+            }]
         }
     }
     async fn routing_source(&self, strip: StripId, target: &str) -> anyhow::Result<String> {
@@ -419,25 +552,47 @@ pub trait DynDriver: Send + Sync {
             _ => anyhow::bail!("routing source is not a label"),
         }
     }
-    async fn patch_target_set(&self, strip: StripId, target: &str, group: &str, index: u8) -> anyhow::Result<RoutingPatch> {
+    async fn patch_target_set(
+        &self,
+        strip: StripId,
+        target: &str,
+        group: &str,
+        index: u8,
+    ) -> anyhow::Result<RoutingPatch> {
         anyhow::ensure!(target.is_empty(), "unknown routing target {target:?}");
-        self.patch_set(strip, group, index).map(|label| RoutingPatch { label, param: None })
+        self.patch_set(strip, group, index)
+            .map(|label| RoutingPatch { label, param: None })
     }
-    async fn patch_target_clear(&self, strip: StripId, target: &str) -> anyhow::Result<RoutingPatch> {
+    async fn patch_target_clear(
+        &self,
+        strip: StripId,
+        target: &str,
+    ) -> anyhow::Result<RoutingPatch> {
         anyhow::ensure!(target.is_empty(), "unknown routing target {target:?}");
-        self.patch_clear(strip).map(|()| RoutingPatch { label: "—".to_string(), param: None })
+        self.patch_clear(strip).map(|()| RoutingPatch {
+            label: "—".to_string(),
+            param: None,
+        })
     }
     /// Param changes that also invalidate the routing frame.
-    fn routing_param_ids(&self) -> &'static [&'static str] { &[] }
+    fn routing_param_ids(&self) -> &'static [&'static str] {
+        &[]
+    }
     /// Per-strip meter taps behind the `taps` frames (`None` = synthesize
     /// from `poll_meters`, like hardware does).
     fn poll_taps(&self) -> Option<Vec<TapLevels>> {
         None
     }
     /// Serves gate/comp GR over the `gate_gr`/`comp_gr` param path.
-    fn output_meter_targets(&self) -> Vec<String> { Vec::new() }
-    fn poll_output_meters(&self) -> Option<openfader_core::OutputMeterSnapshot> { None }
-    fn poll_dynamics_meters(&self) -> Option<Vec<openfader_core::DynamicsMeterFrame>> { None }
+    fn output_meter_targets(&self) -> Vec<String> {
+        Vec::new()
+    }
+    fn poll_output_meters(&self) -> Option<openfader_core::OutputMeterSnapshot> {
+        None
+    }
+    fn poll_dynamics_meters(&self) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
+        None
+    }
     fn dyn_gr(&self) -> bool {
         false
     }
@@ -594,7 +749,9 @@ pub trait DynDriver: Send + Sync {
         Vec::new()
     }
     /// Strip families served by the existing input patch contracts.
-    fn routing_strip_kind(&self, kind: StripKind) -> bool { kind == StripKind::In }
+    fn routing_strip_kind(&self, kind: StripKind) -> bool {
+        kind == StripKind::In
+    }
     /// Scope restrictions applied to this provider's param registry
     /// (`(param id, allowed strip kinds)`; empty = none).
     fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> {
@@ -1490,7 +1647,6 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
 });
 
 mod wing;
-
 
 /// One registered provider: its key, default address, and erased driver.
 /// New providers append one row in [`registered_drivers`].

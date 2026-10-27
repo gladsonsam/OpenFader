@@ -272,7 +272,7 @@ pub fn preset_by_id(id: &str) -> Option<&'static ChannelPreset> {
     PRESETS.iter().find(|p| p.id == id)
 }
 
-/// Apply a preset to one strip via the existing `set_param` path 
+/// Apply a preset to one strip via the existing `set_param` path
 /// no driver changes. Bails on the first rejected field.
 pub async fn apply_preset<D: MixerDriver + Sync + ?Sized>(
     driver: &D,
@@ -296,7 +296,9 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), 10);
-        for id in ["kick", "snare", "hat", "tom", "oh", "bass", "egtr", "vox", "keys", "playback"] {
+        for id in [
+            "kick", "snare", "hat", "tom", "oh", "bass", "egtr", "vox", "keys", "playback",
+        ] {
             assert!(preset_by_id(id).is_some(), "missing {id}");
         }
         assert!(preset_by_id("nope").is_none());

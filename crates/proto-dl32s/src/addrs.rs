@@ -24,7 +24,9 @@ pub const DL32R_BASE: u32 = 41;
 pub const DL32R_STRIDE: u32 = 132;
 
 /// Fader curve in dB, matching the mixer's own scale.
-pub const DB_POINTS: &[f32] = &[-120.0, -60.0, -40.0, -30.0, -20.0, -10.0, -5.0, 0.0, 5.0, 10.0];
+pub const DB_POINTS: &[f32] = &[
+    -120.0, -60.0, -40.0, -30.0, -20.0, -10.0, -5.0, 0.0, 5.0, 10.0,
+];
 
 pub static DL32S_FADER_SCALE: FaderScale = FaderScale::from_uniform(DB_POINTS);
 
@@ -125,7 +127,14 @@ fn input_head() -> Vec<Field> {
         // Control reference guide 5.1 p103 Modern EQ documents HPF 20..700 Hz (the
         // previous table stopped at 400). Documentation-based:
         // endpoint hardware tests pending.
-        field("hpf_freq", 15, Float, "HPF frequency", Some((20.0, 700.0)), true),
+        field(
+            "hpf_freq",
+            15,
+            Float,
+            "HPF frequency",
+            Some((20.0, 700.0)),
+            true,
+        ),
         field("hpf_slope", 16, Int, "HPF slope", None, false),
         field("gate_mode", 17, Enum, "Gate modern/vintage", None, true),
         field("gate_on", 18, Bool, "Gate on", None, true),
@@ -133,21 +142,70 @@ fn input_head() -> Vec<Field> {
         // existing raw table bound stays (-120, 0); the canonical control
         // range remains the documented -80..0. Neither endpoint nor
         // out-of-range clamp behavior is established by these limits.
-        field("gate_threshold", 19, Db, "Gate threshold", Some((-120.0, 0.0)), true),
-        field("gate_attack", 20, Float, "Gate attack ms", Some((0.1, 300.0)), true),
-        field("gate_release", 21, Float, "Gate release ms", Some((50.0, 3000.0)), true),
-        field("gate_range", 22, Float, "Gate range dB", Some((0.0, 60.0)), true),
-        field("gate_hold", 23, Float, "Gate hold ms", Some((0.0, 5000.0)), true),
+        field(
+            "gate_threshold",
+            19,
+            Db,
+            "Gate threshold",
+            Some((-120.0, 0.0)),
+            true,
+        ),
+        field(
+            "gate_attack",
+            20,
+            Float,
+            "Gate attack ms",
+            Some((0.1, 300.0)),
+            true,
+        ),
+        field(
+            "gate_release",
+            21,
+            Float,
+            "Gate release ms",
+            Some((50.0, 3000.0)),
+            true,
+        ),
+        field(
+            "gate_range",
+            22,
+            Float,
+            "Gate range dB",
+            Some((0.0, 60.0)),
+            true,
+        ),
+        field(
+            "gate_hold",
+            23,
+            Float,
+            "Gate hold ms",
+            Some((0.0, 5000.0)),
+            true,
+        ),
         field("comp_mode", 24, Enum, "Comp modern/vintage", None, true),
         field("comp_on", 25, Bool, "Comp on", None, true),
         // Control reference guide 5.1 p112 documents comp gain 0..20 dB (the absent
         // bound was inherited, not measured). Documentation-based: meaning
         // inferred, endpoint hardware tests pending.
-        field("comp_gain", 26, Db, "Comp makeup gain", Some((0.0, 20.0)), false),
+        field(
+            "comp_gain",
+            26,
+            Db,
+            "Comp makeup gain",
+            Some((0.0, 20.0)),
+            false,
+        ),
         // Control reference guide 5.1 p112 documents comp threshold -80..0 dB (the
         // previous table stopped at -60). Documentation-based:
         // live survey 2026-10-20 saw -36.8..0.0, endpoint tests pending.
-        field("comp_threshold", 27, Db, "Comp threshold", Some((-80.0, 0.0)), false),
+        field(
+            "comp_threshold",
+            27,
+            Db,
+            "Comp threshold",
+            Some((-80.0, 0.0)),
+            false,
+        ),
         field("comp_attack", 28, Float, "Comp attack ms", None, false),
         field("comp_release", 29, Float, "Comp release ms", None, false),
         field("comp_ratio", 30, Float, "Comp ratio", None, false),
@@ -177,7 +235,14 @@ fn input_eq() -> Vec<Field> {
         let label = |suffix: &str| -> &'static str {
             Box::leak(format!("EQ band {band} {suffix}").into_boxed_str())
         };
-        out.push(field(key("type"), base, Enum, label("filter type"), None, true));
+        out.push(field(
+            key("type"),
+            base,
+            Enum,
+            label("filter type"),
+            None,
+            true,
+        ));
         // Control reference guide 5.1 p103 Modern EQ documents band gain ±15 dB (the
         // previous table allowed ±20). Documentation-based: endpoint
         // hardware tests pending.
@@ -232,9 +297,23 @@ fn sends(prefix: &str, label: &str, first: u32, count: u32, with_third: bool) ->
             Some((-120.0, 10.0)),
             true,
         ));
-        out.push(field(key("mute"), base + 1, Encoding::Bool, lab("send mute"), None, true));
+        out.push(field(
+            key("mute"),
+            base + 1,
+            Encoding::Bool,
+            lab("send mute"),
+            None,
+            true,
+        ));
         if with_third {
-            out.push(field(key("pan"), base + 2, Encoding::Float, lab("send pan"), Some((-1.0, 1.0)), false));
+            out.push(field(
+                key("pan"),
+                base + 2,
+                Encoding::Float,
+                lab("send pan"),
+                Some((-1.0, 1.0)),
+                false,
+            ));
         }
     }
     out
@@ -269,7 +348,11 @@ pub struct ChannelBlock {
 impl ChannelBlock {
     pub fn address(&self, index_1_based: u32, key: &str) -> anyhow::Result<u32> {
         if !(1..=self.count).contains(&index_1_based) {
-            anyhow::bail!("{} index {index_1_based} out of range 1..={}", self.name, self.count);
+            anyhow::bail!(
+                "{} index {index_1_based} out of range 1..={}",
+                self.name,
+                self.count
+            );
         }
         let f = self.field(key)?;
         Ok(self.base + (index_1_based - 1) * self.stride + f.offset)
@@ -310,7 +393,6 @@ fn build_dl32s_inputs() -> ChannelBlock {
     }
 }
 
-
 /// Subgroup master strips: 6 strips of 51 words from 4041. Mute + fader
 /// are live-verified (net-zero write+relay observed 2026-10-18 — see
 /// DL32S protocol notes); the rest of each 51-word strip is unmapped.
@@ -322,8 +404,22 @@ pub fn dl32s_subgroups() -> &'static ChannelBlock {
         stride: 51,
         count: 6,
         fields: vec![
-            field("mute", 0, Encoding::Bool, "Subgroup master mute", None, true),
-            field("fader", 1, Encoding::Db, "Subgroup master fader", Some((-120.0, 10.0)), true),
+            field(
+                "mute",
+                0,
+                Encoding::Bool,
+                "Subgroup master mute",
+                None,
+                true,
+            ),
+            field(
+                "fader",
+                1,
+                Encoding::Db,
+                "Subgroup master fader",
+                Some((-120.0, 10.0)),
+                true,
+            ),
         ],
     })
 }
@@ -337,7 +433,14 @@ pub fn dl32s_main() -> &'static ChannelBlock {
         stride: 87,
         count: 1,
         fields: vec![
-            field("fader", 0, Encoding::Db, "Main master fader", Some((-120.0, 10.0)), false),
+            field(
+                "fader",
+                0,
+                Encoding::Db,
+                "Main master fader",
+                Some((-120.0, 10.0)),
+                false,
+            ),
             field("mute", 1, Encoding::Bool, "Main master mute", None, false),
             field("balance", 2, Encoding::Float, "Main balance", None, false),
         ],
@@ -354,11 +457,17 @@ pub fn dl32s_auxmasters() -> &'static ChannelBlock {
         count: 8,
         fields: vec![
             field("mute", 3, Encoding::Bool, "Aux master mute", None, false),
-            field("fader", 4, Encoding::Db, "Aux master fader", Some((-120.0, 10.0)), false),
+            field(
+                "fader",
+                4,
+                Encoding::Db,
+                "Aux master fader",
+                Some((-120.0, 10.0)),
+                false,
+            ),
         ],
     })
 }
-
 
 /// Declarative map of the Mackie DL value space (mirrors the Python
 /// `addressmap.MixerMap`). Only the verified DL32S map is served.
@@ -399,27 +508,59 @@ fn build_dl32s_map() -> MixerMap {
 pub fn dl32s_returns() -> &'static ChannelBlock {
     static B: OnceLock<ChannelBlock> = OnceLock::new();
     B.get_or_init(|| {
-        let fields = dl32s_inputs().fields.iter().filter_map(|f| {
-            let offset = match f.offset { 0..=11 => f.offset, 24..=105 => f.offset - 12, _ => return None };
-            let mut f = f.clone(); f.offset = offset; f.verified = false; Some(f)
-        }).collect();
-        ChannelBlock { name: "return", base: 3393, stride: 94, count: 2, fields }
+        let fields = dl32s_inputs()
+            .fields
+            .iter()
+            .filter_map(|f| {
+                let offset = match f.offset {
+                    0..=11 => f.offset,
+                    24..=105 => f.offset - 12,
+                    _ => return None,
+                };
+                let mut f = f.clone();
+                f.offset = offset;
+                f.verified = false;
+                Some(f)
+            })
+            .collect();
+        ChannelBlock {
+            name: "return",
+            base: 3393,
+            stride: 94,
+            count: 2,
+            fields,
+        }
     })
 }
 
 pub fn dl32s_fxreturns() -> &'static ChannelBlock {
     static B: OnceLock<ChannelBlock> = OnceLock::new();
     B.get_or_init(|| {
-        let fields = dl32s_inputs().fields.iter().filter_map(|f| {
-            let offset = match f.offset {
-                4..=5 => f.offset - 4, 7..=10 => f.offset - 5,
-                32..=73 => f.offset - 26, 82..=105 => f.offset - 34,
-                _ => return None,
-            };
-            let mut f = f.clone(); f.offset = offset; f.verified = false; Some(f)
-        }).collect();
+        let fields = dl32s_inputs()
+            .fields
+            .iter()
+            .filter_map(|f| {
+                let offset = match f.offset {
+                    4..=5 => f.offset - 4,
+                    7..=10 => f.offset - 5,
+                    32..=73 => f.offset - 26,
+                    82..=105 => f.offset - 34,
+                    _ => return None,
+                };
+                let mut f = f.clone();
+                f.offset = offset;
+                f.verified = false;
+                Some(f)
+            })
+            .collect();
         // Native balance (parameter 62), not mono pan (55); same -1..1 units.
-        ChannelBlock { name: "fxreturn", base: 3753, stride: 72, count: 4, fields }
+        ChannelBlock {
+            name: "fxreturn",
+            base: 3753,
+            stride: 72,
+            count: 4,
+            fields,
+        }
     })
 }
 
@@ -428,12 +569,25 @@ pub fn dl32s_vcas() -> &'static ChannelBlock {
     B.get_or_init(|| {
         let mut fields = vec![
             field("mute", 0, Encoding::Bool, "VCA mute", None, false),
-            field("fader", 1, Encoding::Db, "VCA fader", Some((-120., 10.)), false),
+            field(
+                "fader",
+                1,
+                Encoding::Db,
+                "VCA fader",
+                Some((-120., 10.)),
+                false,
+            ),
             field("icon", 2, Encoding::Int, "Icon", None, false),
             field("colour", 3, Encoding::Int, "Colour", None, false),
         ];
         fields.extend(membership("view", "View", 4));
-        ChannelBlock { name: "vca", base: 5154, stride: 10, count: 6, fields }
+        ChannelBlock {
+            name: "vca",
+            base: 5154,
+            stride: 10,
+            count: 6,
+            fields,
+        }
     })
 }
 

@@ -284,7 +284,10 @@ pub fn tap_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<i32> {
 /// encode, [`openfader_transport::osc::is_on`] decode.
 pub fn generic_send_slot(n: u8) -> anyhow::Result<u8> {
     if !(1..=AUX_SENDS + FX_SENDS).contains(&n) {
-        anyhow::bail!("send {n} out of range 1..={} (X-Air has 6 bus + 4 FX sends)", AUX_SENDS + FX_SENDS);
+        anyhow::bail!(
+            "send {n} out of range 1..={} (X-Air has 6 bus + 4 FX sends)",
+            AUX_SENDS + FX_SENDS
+        );
     }
     Ok(n)
 }

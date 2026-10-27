@@ -165,7 +165,10 @@ pub fn eqtype_from_msg(msg: &OscMessage) -> anyhow::Result<i32> {
     match msg.args.first() {
         Some(OscType::Int(i)) => {
             if !(EQ_TYPE_MIN..=EQ_TYPE_MAX).contains(i) {
-                anyhow::bail!("{}: eq type {i} outside {EQ_TYPE_MIN}..={EQ_TYPE_MAX}", msg.addr);
+                anyhow::bail!(
+                    "{}: eq type {i} outside {EQ_TYPE_MIN}..={EQ_TYPE_MAX}",
+                    msg.addr
+                );
             }
             Ok(*i)
         }
@@ -175,7 +178,10 @@ pub fn eqtype_from_msg(msg: &OscMessage) -> anyhow::Result<i32> {
             }
             let i = *f as i32;
             if !(EQ_TYPE_MIN..=EQ_TYPE_MAX).contains(&i) {
-                anyhow::bail!("{}: eq type {i} outside {EQ_TYPE_MIN}..={EQ_TYPE_MAX}", msg.addr);
+                anyhow::bail!(
+                    "{}: eq type {i} outside {EQ_TYPE_MIN}..={EQ_TYPE_MAX}",
+                    msg.addr
+                );
             }
             Ok(i)
         }

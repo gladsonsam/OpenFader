@@ -4,11 +4,11 @@
 //! X-Air address table + arg mapping. Sockets, keepalive, meter parsing, and
 //! request/response plumbing all live in `openfader-transport`.
 use openfader_core::{MixerDriver, MixerInfo, ParamValue, StripId};
-use openfader_transport::{KeepaliveConfig, OscSession, osc};
+use openfader_transport::{osc, KeepaliveConfig, OscSession};
 use rosc::{OscMessage, OscType};
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
-use tokio::sync::{Mutex, broadcast};
+use tokio::sync::{broadcast, Mutex};
 
 pub mod automix;
 pub mod codec;
@@ -160,7 +160,11 @@ impl MixerDriver for XAirDriver {
     }
 
     fn param_swatches(&self, param: &str) -> &'static [openfader_core::params::ParamSwatch] {
-        if param == "color" { metadata::XAIR_COLOR_SWATCHES } else { &[] }
+        if param == "color" {
+            metadata::XAIR_COLOR_SWATCHES
+        } else {
+            &[]
+        }
     }
 
     /// XR18 strip map (16 in + 4 FX ret + 6 bus + 4 FX send + LR + 4 DCA).

@@ -46,7 +46,10 @@ pub const INFO_PROBE: &[u8] = b"/info\0\0\0,";
 /// Per-driver probe table. DL32S intentionally has no broadcast probe yet:
 /// its protocol is closed pending own-LAN capture (see DL32S protocol notes).
 pub const WING_PROBE: ProbeSpec = ProbeSpec {
-    driver: "wing", port: 2222, payload: b"WING?", reply_prefix: "WING",
+    driver: "wing",
+    port: 2222,
+    payload: b"WING?",
+    reply_prefix: "WING",
 };
 
 pub const PROBE_TABLE: &[ProbeSpec] = &[
@@ -86,10 +89,18 @@ pub struct DiscoveredDevice {
 /// back to the single arg / `"unknown"`, the old behaviour.
 pub fn parse_info_reply(buf: &[u8], reply_prefix: &str) -> Option<(String, String)> {
     if reply_prefix == "WING" {
-        let raw = std::str::from_utf8(buf).ok()?.trim_end_matches(['\0', '\r', '\n']);
+        let raw = std::str::from_utf8(buf)
+            .ok()?
+            .trim_end_matches(['\0', '\r', '\n']);
         let fields: Vec<_> = raw.split(',').collect();
-        if fields.len() != 6 || fields[0] != "WING" || fields[1].parse::<IpAddr>().is_err()
-            || fields[3].is_empty() || fields[5].is_empty() { return None; }
+        if fields.len() != 6
+            || fields[0] != "WING"
+            || fields[1].parse::<IpAddr>().is_err()
+            || fields[3].is_empty()
+            || fields[5].is_empty()
+        {
+            return None;
+        }
         return Some((fields[3].to_owned(), raw.to_owned()));
     }
     let text: String = String::from_utf8_lossy(buf)
@@ -221,12 +232,7 @@ async fn probe_on(
 
 /// Parse one datagram and append a row, deduped by sender address (a desk
 /// answers every attempt; the first reply per address wins).
-fn collect_reply(
-    out: &mut Vec<DiscoveredDevice>,
-    spec: &ProbeSpec,
-    buf: &[u8],
-    from: SocketAddr,
-) {
+fn collect_reply(out: &mut Vec<DiscoveredDevice>, spec: &ProbeSpec, buf: &[u8], from: SocketAddr) {
     if out.iter().any(|d| d.addr == from) {
         return;
     }
@@ -287,7 +293,9 @@ pub async fn probe_addr(
         }
         match peer.recv_from_timeout(&mut buf, deadline - now).await {
             Ok((len, from)) => {
-                if from.ip() != ip { continue; }
+                if from.ip() != ip {
+                    continue;
+                }
                 collect_reply(&mut out, spec, &buf[..len], from);
                 // One directed target answers once: stop at the first valid
                 // reply, so Add-by-IP connects in one round trip instead of
@@ -374,8 +382,13 @@ where
     let mut hosts = Vec::new();
     for iface in interfaces {
         let prefix = subnet24(iface.ip);
-        if !sweepable_prefix(prefix) || prefix_len(iface.netmask) >= 31
-            || prefixes.contains(&prefix) || prefixes.len() >= 4 { continue; }
+        if !sweepable_prefix(prefix)
+            || prefix_len(iface.netmask) >= 31
+            || prefixes.contains(&prefix)
+            || prefixes.len() >= 4
+        {
+            continue;
+        }
         prefixes.push(prefix);
         let mask = u32::from(iface.netmask);
         let network = u32::from(iface.ip) & mask;
@@ -385,12 +398,17 @@ where
         }));
     }
     let deadline = tokio::time::Instant::now() + budget;
-    let mut pending = stream::iter(hosts.into_iter().map(|ip| {
-        identify(IpAddr::V4(ip), Duration::from_millis(400).min(budget))
-    })).buffer_unordered(64);
+    let mut pending = stream::iter(
+        hosts
+            .into_iter()
+            .map(|ip| identify(IpAddr::V4(ip), Duration::from_millis(400).min(budget))),
+    )
+    .buffer_unordered(64);
     let mut out = Vec::new();
     while let Ok(Some(reply)) = tokio::time::timeout_at(deadline, pending.next()).await {
-        if let Some(device) = reply { out.push(device); }
+        if let Some(device) = reply {
+            out.push(device);
+        }
     }
     out
 }
@@ -493,7 +511,9 @@ async fn sweep_hosts(
     for chunk in hosts.chunks(16) {
         for ip in chunk {
             for spec in specs {
-                let _ = peer.send_to(spec.payload, &format!("{ip}:{}", spec.port)).await;
+                let _ = peer
+                    .send_to(spec.payload, &format!("{ip}:{}", spec.port))
+                    .await;
             }
         }
         tokio::task::yield_now().await;
@@ -533,8 +553,7 @@ pub async fn discover_xair(timeout: Duration) -> anyhow::Result<Vec<DiscoveredDe
         set.spawn(probe(spec, timeout));
     }
     while let Some(joined) = set.join_next().await {
-        let devs = joined
-            .map_err(|e| anyhow::anyhow!("discovery probe task failed: {e}"))??;
+        let devs = joined.map_err(|e| anyhow::anyhow!("discovery probe task failed: {e}"))??;
         for dev in devs {
             if !out.iter().any(|d| d.addr == dev.addr) {
                 out.push(dev);
@@ -554,8 +573,7 @@ pub async fn discover_all(timeout: Duration) -> anyhow::Result<Vec<DiscoveredDev
         set.spawn(probe(spec, timeout));
     }
     while let Some(joined) = set.join_next().await {
-        let devs = joined
-            .map_err(|e| anyhow::anyhow!("discovery probe task failed: {e}"))??;
+        let devs = joined.map_err(|e| anyhow::anyhow!("discovery probe task failed: {e}"))??;
         for dev in devs {
             if !out.iter().any(|d| d.addr == dev.addr) {
                 out.push(dev);
@@ -569,7 +587,9 @@ pub async fn discover_all(timeout: Duration) -> anyhow::Result<Vec<DiscoveredDev
 /// (e.g. `"_xairstage._udp.local."`). Shared helper; providers only pass
 /// their service string.
 pub fn mdns_query(service: &str) -> Vec<u8> {
-    let mut pkt = vec![0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+    let mut pkt = vec![
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    ];
     for label in service.trim_end_matches('.').split('.') {
         pkt.push(label.len() as u8);
         pkt.extend_from_slice(label.as_bytes());
@@ -706,7 +726,10 @@ mod tests {
                 return;
             };
             let text = String::from_utf8_lossy(&buf[..n]).replace('\0', " ");
-            assert!(text.starts_with("/xinfo"), "unicast probe spelling (got {text:?})");
+            assert!(
+                text.starts_with("/xinfo"),
+                "unicast probe spelling (got {text:?})"
+            );
             let _ = sock.send_to(b"/xinfo 127.0.0.1 XR18 1.22", peer).await;
         });
         let spec = ProbeSpec {
@@ -767,9 +790,18 @@ mod tests {
             attempt_spacing(Duration::from_secs(2)),
             PROBE_ATTEMPT_SPACING
         );
-        assert_eq!(attempt_spacing(Duration::from_millis(900)), Duration::from_millis(300));
-        assert_eq!(attempt_spacing(Duration::from_millis(300)), Duration::from_millis(100));
-        assert_eq!(attempt_spacing(Duration::from_millis(30)), Duration::from_millis(10));
+        assert_eq!(
+            attempt_spacing(Duration::from_millis(900)),
+            Duration::from_millis(300)
+        );
+        assert_eq!(
+            attempt_spacing(Duration::from_millis(300)),
+            Duration::from_millis(100)
+        );
+        assert_eq!(
+            attempt_spacing(Duration::from_millis(30)),
+            Duration::from_millis(10)
+        );
     }
 
     /// /24 sweep target generation: a known desk IP maps to its /24, hosts

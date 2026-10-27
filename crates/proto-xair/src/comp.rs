@@ -173,7 +173,12 @@ pub fn int_leaf_to_arg(v: f32, min: i32, max: i32, what: &str) -> anyhow::Result
     crate::codec::int_to_arg(v, min, max, "comp", what)
 }
 
-pub fn int_leaf_from_msg(msg: &rosc::OscMessage, min: i32, max: i32, what: &str) -> anyhow::Result<i32> {
+pub fn int_leaf_from_msg(
+    msg: &rosc::OscMessage,
+    min: i32,
+    max: i32,
+    what: &str,
+) -> anyhow::Result<i32> {
     crate::codec::int_from_msg(msg, min, max, "comp", what)
 }
 
@@ -195,8 +200,14 @@ mod tests {
 
     #[test]
     fn lin_mapping_roundtrips() {
-        assert_eq!(lin_to_wire(-60.0, COMP_THR_MIN_DB, COMP_THR_MAX_DB, "thr").unwrap(), 0.0);
-        assert_eq!(lin_to_wire(0.0, COMP_THR_MIN_DB, COMP_THR_MAX_DB, "thr").unwrap(), 1.0);
+        assert_eq!(
+            lin_to_wire(-60.0, COMP_THR_MIN_DB, COMP_THR_MAX_DB, "thr").unwrap(),
+            0.0
+        );
+        assert_eq!(
+            lin_to_wire(0.0, COMP_THR_MIN_DB, COMP_THR_MAX_DB, "thr").unwrap(),
+            1.0
+        );
         assert!(lin_to_wire(0.1, COMP_THR_MIN_DB, COMP_THR_MAX_DB, "thr").is_err());
     }
 

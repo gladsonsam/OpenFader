@@ -214,11 +214,14 @@ impl Dl32sDriver {
                 entry.revision.wrapping_add(1)
             }
         };
-        session.request_global_value(*address).await.map_err(|error| {
-            anyhow::anyhow!(
-                "Global write accepted; readback request failed: {error}. Result uncertain"
-            )
-        })?;
+        session
+            .request_global_value(*address)
+            .await
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "Global write accepted; readback request failed: {error}. Result uncertain"
+                )
+            })?;
         drop(guard);
         let deadline = tokio::time::Instant::now() + REQUEST_TIMEOUT;
         loop {

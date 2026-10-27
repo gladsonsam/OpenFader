@@ -32,9 +32,7 @@ pub fn automix(root: &str) -> String {
 
 pub fn automix_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<(bool, f32)> {
     match msg.args.as_slice() {
-        [rosc::OscType::Int(on), rosc::OscType::Float(w)] => {
-            Ok((*on != 0, wire_to_weight(*w)?))
-        }
+        [rosc::OscType::Int(on), rosc::OscType::Float(w)] => Ok((*on != 0, wire_to_weight(*w)?)),
         other => anyhow::bail!("{}: automix needs (int, float), got {other:?}", msg.addr),
     }
 }
@@ -55,11 +53,23 @@ pub fn automix_weight(root: &str) -> String {
 
 /// Identity over `0..1`.
 pub fn weight_to_wire(v: f32) -> anyhow::Result<f32> {
-    crate::codec::lin_to_wire(v, AUTOMIX_WEIGHT_MIN, AUTOMIX_WEIGHT_MAX, "automix", "weight")
+    crate::codec::lin_to_wire(
+        v,
+        AUTOMIX_WEIGHT_MIN,
+        AUTOMIX_WEIGHT_MAX,
+        "automix",
+        "weight",
+    )
 }
 
 pub fn wire_to_weight(w: f32) -> anyhow::Result<f32> {
-    crate::codec::wire_to_lin(w, AUTOMIX_WEIGHT_MIN, AUTOMIX_WEIGHT_MAX, "automix", "weight")
+    crate::codec::wire_to_lin(
+        w,
+        AUTOMIX_WEIGHT_MIN,
+        AUTOMIX_WEIGHT_MAX,
+        "automix",
+        "weight",
+    )
 }
 
 #[cfg(test)]

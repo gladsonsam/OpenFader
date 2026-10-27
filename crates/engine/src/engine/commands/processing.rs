@@ -154,7 +154,8 @@ impl Engine {
                         return Ok(Some(Self::locked_error(strip, &holder)));
                     }
                 }
-                self.guard_routing_write(strip, &target, Some((&group, index)), policy, writer).await?;
+                self.guard_routing_write(strip, &target, Some((&group, index)), policy, writer)
+                    .await?;
                 let drv = self.active_drv();
                 let from = drv
                     .routing_source(StripId(strip), &target)
@@ -190,7 +191,8 @@ impl Engine {
                         return Ok(Some(Self::locked_error(strip, &holder)));
                     }
                 }
-                self.guard_routing_write(strip, &target, None, policy, writer).await?;
+                self.guard_routing_write(strip, &target, None, policy, writer)
+                    .await?;
                 let drv = self.active_drv();
                 let from = drv
                     .routing_source(StripId(strip), &target)

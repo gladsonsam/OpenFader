@@ -83,7 +83,9 @@ pub enum Cmd {
         expect: std::collections::BTreeMap<String, serde_json::Value>,
     },
     /// Shared desk RTA interest while EQ is visible; null releases this client.
-    SpectrumTarget { ch: Option<u16> },
+    SpectrumTarget {
+        ch: Option<u16>,
+    },
     Focus {
         ch: Option<u16>,
         chs: Option<Vec<serde_json::Value>>,
@@ -202,9 +204,16 @@ pub enum Cmd {
     /// (`mode` memory|device, `status` ready|error|uncertain, monotonic
     /// `revision`, `error`, `bytes`). Works in memory mode too.
     LocalLibraryStatus,
-    NativeLibrary { request_id: String, driver: String, epoch: u64,
-        action: Value, expected: Option<Value> },
-    NativeLibraryCancel { request_id: String },
+    NativeLibrary {
+        request_id: String,
+        driver: String,
+        epoch: u64,
+        action: Value,
+        expected: Option<Value>,
+    },
+    NativeLibraryCancel {
+        request_id: String,
+    },
     /// R2 durable local-library mutation (`{"cmd":"local_library_mutate",
     /// `"request_id":"…","expected_revision":N,
     /// `"action":{"op":"save","n":1,"name":"Set 1"}}`): every numbered and
@@ -302,8 +311,13 @@ pub enum Cmd {
     },
     /// Provider-backed complete-block capture or guarded input recall step.
     InputProcessor {
-        request_id: String, epoch: u64, ch: u16, key: String,
-        processor: String, field: Option<String>, value: Option<serde_json::Value>,
+        request_id: String,
+        epoch: u64,
+        ch: u16,
+        key: String,
+        processor: String,
+        field: Option<String>,
+        value: Option<serde_json::Value>,
         guard: Option<serde_json::Value>,
     },
     /// Captured destination-wide edit; distinct from strip-local send taps.
@@ -635,7 +649,7 @@ pub struct GroupsCaps {
     #[serde(default)]
     pub mute_groups: u8,
     /// Per-channel assign-leaf support: false where the desk has no
-    /// assign leaf (X-Air: no subgroup/mute-group membership leaves 
+    /// assign leaf (X-Air: no subgroup/mute-group membership leaves
     /// masters only). The UI collapses assign toggles there (never faked).
     #[serde(default = "default_true")]
     pub mg_assign: bool,
@@ -891,13 +905,21 @@ pub enum Event {
         shows: Vec<Show>,
     },
     /// Additive connection-generation barrier. Never a parameter reset in steady state.
-    SyncEpoch { epoch: u64 },
+    SyncEpoch {
+        epoch: u64,
+    },
     /// Provider-described controls shared by all sends to a destination.
-    DestinationControls { epoch: u64, controls: Vec<serde_json::Value> },
+    DestinationControls {
+        epoch: u64,
+        controls: Vec<serde_json::Value>,
+    },
     /// A snapshot means verified provider state, never mere write acceptance.
     /// Errors after dispatch may represent partial writes; no rollback occurs.
     InputProcessorResult {
-        request_id: String, epoch: u64, snapshot: Option<serde_json::Value>, message: Option<String>,
+        request_id: String,
+        epoch: u64,
+        snapshot: Option<serde_json::Value>,
+        message: Option<String>,
     },
     DestinationControlResult {
         /// Exact independently observed guarded-write receipt, captured under
@@ -931,7 +953,9 @@ pub enum Event {
         age_ms: u64,
         frames: Vec<serde_json::Value>,
     },
-    DynamicsMeters { frames: Vec<serde_json::Value> },
+    DynamicsMeters {
+        frames: Vec<serde_json::Value>,
+    },
     Gr {
         ch: u16,
         gate: f32,
@@ -1212,8 +1236,13 @@ pub enum Event {
     /// no command writes these slots.
     /// Unicast in the attach/resume snapshots; broadcast on change (no
     /// audio-param fanout, this frame carries no strip params).
-    NativeLibraryResult { request_id: String, driver: String, epoch: u64,
-        operation: String, result: Value },
+    NativeLibraryResult {
+        request_id: String,
+        driver: String,
+        epoch: u64,
+        operation: String,
+        result: Value,
+    },
     NativeSnapshots {
         driver: String,
         supported: bool,
@@ -1223,7 +1252,7 @@ pub enum Event {
         current: Option<u32>,
         epoch: u64,
     },
-/// Realtime negotiation ack (MR1): unicast reply to [`Cmd::Hello`],
+    /// Realtime negotiation ack (MR1): unicast reply to [`Cmd::Hello`],
     /// carrying the client's current binary-meter preference. Never
     /// broadcast. Old clients never see it (they never send `hello`).
     /// R2 adds `taps`: the client's meter-tap preference (skipped on the
@@ -1341,9 +1370,7 @@ impl Event {
                 out.extend_from_slice(&t_ms.to_le_bytes());
                 out.push(tap_id(tap));
                 for level in levels.iter().take(n) {
-                    out.extend_from_slice(
-                        &taps_level_to_u16(tap, *level).to_le_bytes(),
-                    );
+                    out.extend_from_slice(&taps_level_to_u16(tap, *level).to_le_bytes());
                 }
                 Some(out)
             }

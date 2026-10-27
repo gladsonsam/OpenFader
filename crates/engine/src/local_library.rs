@@ -525,10 +525,16 @@ fn parse_numbered(scenes: &[Value]) -> Result<HashMap<u16, StoredScene>, String>
         for (j, r) in doc.routing.iter().enumerate() {
             let what = format!("scenes[{i}].routing[{j}]");
             check_key(r.key.as_deref(), &format!("{what}.key"))?;
-            if !r.target.is_empty() { check_name(&r.target, &format!("{what}.target"))?; }
+            if !r.target.is_empty() {
+                check_name(&r.target, &format!("{what}.target"))?;
+            }
             if !r.group.is_empty() || r.index != 0 {
                 check_name(&r.group, &format!("{what}.group"))?;
-                if r.index == 0 { return Err(format!("{what}.index must be positive for a patched source")); }
+                if r.index == 0 {
+                    return Err(format!(
+                        "{what}.index must be positive for a patched source"
+                    ));
+                }
             }
             if r.group.len() > MAX_ROUTE_GROUP_LEN {
                 return Err(format!(
@@ -863,10 +869,14 @@ pub fn validate_candidate(
         }
         for r in &s.routing {
             check_key(r.key.as_deref(), &format!("{what}.routing key"))?;
-            if !r.target.is_empty() { check_name(&r.target, &format!("{what}.routing target"))?; }
+            if !r.target.is_empty() {
+                check_name(&r.target, &format!("{what}.routing target"))?;
+            }
             if !r.group.is_empty() || r.index != 0 {
                 check_name(&r.group, &format!("{what}.routing group"))?;
-                if r.index == 0 { return Err(format!("{what}: patched source index must be positive")); }
+                if r.index == 0 {
+                    return Err(format!("{what}: patched source index must be positive"));
+                }
             }
         }
     }

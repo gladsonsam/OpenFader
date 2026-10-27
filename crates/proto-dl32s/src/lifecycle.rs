@@ -85,10 +85,15 @@ impl Dl32sDriver {
     /// as identification; it never initializes or writes mixer state.
     pub async fn check_control_health(&self) -> anyhow::Result<()> {
         let guard = self.session().await?;
-        let reply = guard.as_ref().expect("checked above")
-            .request_general_info(3, openfader_transport::mackie::REQUEST_TIMEOUT).await?;
-        anyhow::ensure!(reply.body.starts_with(&3u32.to_be_bytes()) && reply.body.len() >= 8,
-            "dl32s: invalid control health reply");
+        let reply = guard
+            .as_ref()
+            .expect("checked above")
+            .request_general_info(3, openfader_transport::mackie::REQUEST_TIMEOUT)
+            .await?;
+        anyhow::ensure!(
+            reply.body.starts_with(&3u32.to_be_bytes()) && reply.body.len() >= 8,
+            "dl32s: invalid control health reply"
+        );
         Ok(())
     }
 

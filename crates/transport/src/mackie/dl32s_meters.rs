@@ -38,7 +38,10 @@ pub const LEGACY_FRAME_LEN: usize = 60;
 
 /// Exact shapes produced by our explicit lists; legacy only supports input IN.
 pub fn is_explicit_shape(len: usize) -> bool {
-    matches!(len, STRIP_COUNT | RTA_FRAME_LEN | DYNAMICS_FRAME_LEN | OUTPUT_GR_FRAME_LEN)
+    matches!(
+        len,
+        STRIP_COUNT | RTA_FRAME_LEN | DYNAMICS_FRAME_LEN | OUTPUT_GR_FRAME_LEN
+    )
 }
 
 pub const STRIP_ADDRESSES: [i32; STRIP_COUNT] = strip_addresses();

@@ -6,11 +6,16 @@ impl Engine {
     /// Sample native revisions on the existing shell/control cadence. No new ticker.
     pub(super) fn output_routing_fingerprint(&self, driver: &str) -> Value {
         let drv = self.drv(driver);
-        json!(drv.routing_planes().into_iter().flat_map(|p| p.destinations)
-            .filter(|d| d.output).map(|d| {
+        json!(drv
+            .routing_planes()
+            .into_iter()
+            .flat_map(|p| p.destinations)
+            .filter(|d| d.output)
+            .map(|d| {
                 let state = drv.output_route(&d.id).ok().map(|s| route_guard(&s));
                 json!([d.id, state])
-            }).collect::<Vec<_>>())
+            })
+            .collect::<Vec<_>>())
     }
 
     /// Resolve only provider-owned stable IDs. Positional routing remains a
@@ -90,7 +95,9 @@ impl Engine {
             .routing_planes()
             .into_iter()
             .flat_map(|p| p.destinations)
-            .find(|d| !d.output && d.strip == strip && d.target == drv.canonical_routing_target(target))
+            .find(|d| {
+                !d.output && d.strip == strip && d.target == drv.canonical_routing_target(target)
+            })
             .ok_or_else(|| {
                 anyhow::anyhow!("legacy patch requires advertised input strips and targets")
             })?;
@@ -223,21 +230,39 @@ impl Engine {
                 index: r.index,
             })
             .collect();
-        for dest in catalog.iter().flat_map(|p| &p.destinations).filter(|d| d.output) {
-            let Ok(state) = self.drv(&driver).output_route(&dest.id) else { continue };
-            let (group, index) = if state.source == "—" { (String::new(), 0) }
-                else if let Some(source) = parse_source(&state.source) { source }
-                else { continue };
+        for dest in catalog
+            .iter()
+            .flat_map(|p| &p.destinations)
+            .filter(|d| d.output)
+        {
+            let Ok(state) = self.drv(&driver).output_route(&dest.id) else {
+                continue;
+            };
+            let (group, index) = if state.source == "—" {
+                (String::new(), 0)
+            } else if let Some(source) = parse_source(&state.source) {
+                source
+            } else {
+                continue;
+            };
             destinations.push(PatchEntry {
-                guard: Some(route_guard(&state)), destination: Some(dest.id.clone()),
-                authority: Some("verified".into()), target: dest.target.clone(),
-                strip: dest.strip, key: Some(dest.key.clone()), group, index, label: state.source,
+                guard: Some(route_guard(&state)),
+                destination: Some(dest.id.clone()),
+                authority: Some("verified".into()),
+                target: dest.target.clone(),
+                strip: dest.strip,
+                key: Some(dest.key.clone()),
+                group,
+                index,
+                label: state.source,
             });
         }
         let patches = destinations
             .iter()
             // Preserve legacy absence-as-unpatched behavior for single-target clients.
-            .filter(|r| r.guard.is_none() && (!r.target.is_empty() || !r.group.is_empty() || r.index != 0))
+            .filter(|r| {
+                r.guard.is_none() && (!r.target.is_empty() || !r.group.is_empty() || r.index != 0)
+            })
             .cloned()
             .collect();
         Event::Routing {
@@ -258,7 +283,11 @@ impl Engine {
         // topology is only used by the compatibility adapter, never by this reader.
         let bulk = drv.source_bulk();
         let mut out = Vec::new();
-        for dest in planes.into_iter().flat_map(|p| p.destinations).filter(|d| !d.output) {
+        for dest in planes
+            .into_iter()
+            .flat_map(|p| p.destinations)
+            .filter(|d| !d.output)
+        {
             let label = if dest.target.is_empty() {
                 match &bulk {
                     Some(map) => map.get(&dest.strip).cloned(),

@@ -308,7 +308,9 @@ impl Dl32sDriver {
         // pushes may require that same lock for routed-preamp refresh. Keep
         // output_write held through confirmation to serialize local edits.
         session.request_value_snapshot().await.map_err(|error| {
-            anyhow::anyhow!("Output write accepted; readback request failed: {error}. Result uncertain")
+            anyhow::anyhow!(
+                "Output write accepted; readback request failed: {error}. Result uncertain"
+            )
         })?;
         drop(guard);
         self.confirm_output_write(spec, generation, readback_revision, value)
@@ -325,15 +327,23 @@ impl Dl32sDriver {
         );
         let current = native.output_processing.controls(generation);
         anyhow::ensure!(
-            current.iter().any(|row| row.target == target && row.id == control
+            current.iter().any(|row| row.target == target
+                && row.id == control
                 && row.revision == Some(readback_revision)
-                && row.current.as_ref().is_some_and(|v| v.verified && v.value == value)),
+                && row
+                    .current
+                    .as_ref()
+                    .is_some_and(|v| v.verified && v.value == value)),
             "Output changed again after readback; result uncertain"
         );
         if let Some(snapshot) = snapshot {
-            anyhow::ensure!(snapshot.iter()
-                .filter(|row| row.id != control).all(|row| current.contains(row)),
-                "Output processor changed during readback; recall stopped, result uncertain");
+            anyhow::ensure!(
+                snapshot
+                    .iter()
+                    .filter(|row| row.id != control)
+                    .all(|row| current.contains(row)),
+                "Output processor changed during readback; recall stopped, result uncertain"
+            );
         }
         Ok(true)
     }

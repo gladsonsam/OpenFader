@@ -7,16 +7,13 @@ use futures::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 use tokio::time::{timeout, Duration};
 
-type WsStream = tokio_tungstenite::WebSocketStream<
-    tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
->;
+type WsStream =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 type WsRx = futures::stream::SplitStream<WsStream>;
 type WsTx = futures::stream::SplitSink<WsStream, tokio_tungstenite::tungstenite::Message>;
 
 async fn serve() -> std::net::SocketAddr {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(openfader_serve::run(
         listener,
@@ -110,7 +107,7 @@ async fn hello_binary_meters_flow() {
 
     let frame = timeout(Duration::from_secs(5), async {
         loop {
-            let msg = rx.next().await.expect("stream") .expect("read");
+            let msg = rx.next().await.expect("stream").expect("read");
             if let Message::Binary(b) = msg {
                 return b;
             }

@@ -63,9 +63,14 @@ async fn next_full_caps(
         .expect("hello send");
     loop {
         let v = next_typed(rx, "caps").await;
-        if v.get("params").and_then(Value::as_array).is_some_and(|params| {
-            params.iter().any(|param| param.get("id").and_then(Value::as_str) == Some("gain"))
-        }) {
+        if v.get("params")
+            .and_then(Value::as_array)
+            .is_some_and(|params| {
+                params
+                    .iter()
+                    .any(|param| param.get("id").and_then(Value::as_str) == Some("gain"))
+            })
+        {
             return v;
         }
     }
@@ -80,9 +85,7 @@ fn strip(state: &Value, ch: u64) -> &Value {
 }
 
 type WsRx = futures::stream::SplitStream<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
 >;
 
 /// Keep reading `state` frames until `want` holds (a pre-command snapshot
@@ -132,9 +135,10 @@ async fn wait_param(rx: &mut WsRx, ch: u64, field: &str, want: &Value) -> Value 
         let ch_ok = last.get("ch") == Some(&json!(ch));
         let field_ok = last.get("field") == Some(&json!(field));
         let val_ok = match (last.get("value"), want) {
-            (Some(Value::Number(a)), Value::Number(b)) => {
-                a.as_f64().zip(b.as_f64()).is_some_and(|(x, y)| (x - y).abs() < 1e-6)
-            }
+            (Some(Value::Number(a)), Value::Number(b)) => a
+                .as_f64()
+                .zip(b.as_f64())
+                .is_some_and(|(x, y)| (x - y).abs() < 1e-6),
             (Some(a), b) => a == b,
             (None, _) => false,
         };
@@ -146,9 +150,7 @@ async fn wait_param(rx: &mut WsRx, ch: u64, field: &str, want: &Value) -> Value 
 
 #[tokio::test]
 async fn ws_sim_studio_preset() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let opts = openfader_serve::ServeOptions {
         preset: Some("studio".to_string()),
@@ -172,9 +174,7 @@ async fn ws_sim_studio_preset() {
 
 #[tokio::test]
 async fn ws_sim_connect_fader_mute() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(openfader_serve::run(
         listener,
@@ -231,8 +231,7 @@ async fn ws_sim_connect_fader_mute() {
     ))
     .await
     .unwrap();
-    let _state =
-        wait_state(&mut rx, |s| strip(s, 0).get("muted") == Some(&json!(false))).await;
+    let _state = wait_state(&mut rx, |s| strip(s, 0).get("muted") == Some(&json!(false))).await;
 
     // Generic param: fader (float) maps through set_param; the server
     // echoes {"type":"param","ch":1,"field":"fader","value":0.25} so
@@ -271,10 +270,10 @@ async fn ws_sim_connect_fader_mute() {
                     if strip(&v, 1)
                         .get("fader")
                         .and_then(Value::as_f64)
-                        .is_some_and(|f| (f - 0.25).abs() < 1e-6)
-                    => {
-                        saw_state = true;
-                    }
+                        .is_some_and(|f| (f - 0.25).abs() < 1e-6) =>
+                {
+                    saw_state = true;
+                }
                 _ => {}
             }
         }
@@ -347,10 +346,7 @@ async fn ws_sim_connect_fader_mute() {
             .get(key)
             .and_then(Value::as_f64)
             .unwrap_or_else(|| panic!("gr carries {key}"));
-        assert!(
-            v >= 0.0,
-            "gr {key} is dB reduction >= 0, got {v}"
-        );
+        assert!(v >= 0.0, "gr {key} is dB reduction >= 0, got {v}");
     }
     tx.send(Message::text(json!({"cmd":"bogus"}).to_string()))
         .await
@@ -365,9 +361,7 @@ async fn ws_sim_connect_fader_mute() {
 /// capture -> list -> move faders -> recall (jump) -> verify state -> delete.
 #[tokio::test]
 async fn ws_scenes_capture_recall_delete() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(openfader_serve::run(
         listener,
@@ -517,10 +511,10 @@ async fn ws_scenes_capture_recall_delete() {
                     if strip(&v, 0)
                         .get("fader")
                         .and_then(Value::as_f64)
-                        .is_some_and(|f| (f - cap_fader).abs() < 1e-6)
-                    => {
-                        saw_state = true;
-                    }
+                        .is_some_and(|f| (f - cap_fader).abs() < 1e-6) =>
+                {
+                    saw_state = true;
+                }
                 _ => {}
             }
         }
@@ -561,9 +555,7 @@ async fn ws_scenes_capture_recall_delete() {
 /// in `writers` (last-write-wins, 10 s window).
 #[tokio::test]
 async fn ws_client_presence_and_writer_tag() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(openfader_serve::run(
         listener,
@@ -572,7 +564,9 @@ async fn ws_client_presence_and_writer_tag() {
     use tokio_tungstenite::tungstenite::Message;
 
     async fn connect(url: String) -> (WsTx, WsRx) {
-        let (stream, _) = tokio_tungstenite::connect_async(url).await.expect("WS connect");
+        let (stream, _) = tokio_tungstenite::connect_async(url)
+            .await
+            .expect("WS connect");
         stream.split()
     }
     type WsTx = futures::stream::SplitSink<
@@ -695,9 +689,7 @@ async fn ws_client_presence_and_writer_tag() {
 /// `overrode_locks`, and a disconnect proves auto-release.
 #[tokio::test]
 async fn ws_strip_locks_deny_unlock_recall_disconnect() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(openfader_serve::run(
         listener,
@@ -706,7 +698,9 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
     use tokio_tungstenite::tungstenite::Message;
 
     async fn connect(url: String) -> (WsTx, WsRx) {
-        let (stream, _) = tokio_tungstenite::connect_async(url).await.expect("WS connect");
+        let (stream, _) = tokio_tungstenite::connect_async(url)
+            .await
+            .expect("WS connect");
         stream.split()
     }
     type WsTx = futures::stream::SplitSink<
@@ -844,7 +838,10 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
         .unwrap();
     let l1 = wait_locks(&mut rx1, |v| holds_ch(v, 0).is_some()).await;
     let holder = holds_ch(&l1, 0).expect("holder id");
-    let l2 = wait_locks(&mut rx2, |v| holds_ch(v, 0).as_deref() == Some(holder.as_str())).await;
+    let l2 = wait_locks(&mut rx2, |v| {
+        holds_ch(v, 0).as_deref() == Some(holder.as_str())
+    })
+    .await;
     assert_eq!(holds_ch(&l2, 0).as_deref(), Some(holder.as_str()));
 
     // Locked strip rejects other writers' fader/mute/param with locked_by.
@@ -1001,9 +998,7 @@ async fn ws_strip_locks_deny_unlock_recall_disconnect() {
 #[tokio::test]
 async fn ws_strip_locks_expiry() {
     use tokio_tungstenite::tungstenite::Message;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(openfader_serve::run_with_lock_ttl(
         listener,
@@ -1101,9 +1096,7 @@ async fn ws_strip_locks_expiry() {
 
     // After the 200 ms TTL the sweeper releases + broadcasts; c2 writes.
     let _ = wait_locks(&mut rx2, |v| {
-        v.get("holds")
-            .and_then(|h| h.get("2"))
-            .is_none()
+        v.get("holds").and_then(|h| h.get("2")).is_none()
     })
     .await;
     tx2.send(Message::text(
@@ -1128,9 +1121,7 @@ async fn ws_strip_locks_expiry() {
 #[tokio::test]
 async fn ws_main_fader_set_and_state() {
     use tokio_tungstenite::tungstenite::Message;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(openfader_serve::run(
         listener,
@@ -1164,7 +1155,10 @@ async fn ws_main_fader_set_and_state() {
     })
     .await;
     assert!(
-        state.get("by").and_then(Value::as_str).is_some_and(|b| !b.is_empty()),
+        state
+            .get("by")
+            .and_then(Value::as_str)
+            .is_some_and(|b| !b.is_empty()),
         "main_fader mutation is writer-tagged"
     );
 
@@ -1207,9 +1201,11 @@ async fn ws_main_fader_set_and_state() {
             break;
         }
     }
-    tx.send(Message::text(json!({"cmd":"connect","driver":"sim"}).to_string()))
-        .await
-        .unwrap();
+    tx.send(Message::text(
+        json!({"cmd":"connect","driver":"sim"}).to_string(),
+    ))
+    .await
+    .unwrap();
     let state = wait_state(&mut rx, |s| {
         main_of(s).is_some_and(|m| (m - 0.3).abs() < 1e-6)
     })
@@ -1236,9 +1232,7 @@ async fn ws_main_fader_set_and_state() {
 #[tokio::test]
 async fn ws_you_self_id_precedes_state_and_tags_writes() {
     use tokio_tungstenite::tungstenite::Message;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(openfader_serve::run(
         listener,
@@ -1362,9 +1356,7 @@ async fn wait_params(rx: &mut WsRx, want: impl Fn(&Value) -> bool) -> Value {
 /// snapshot including the written value.
 #[tokio::test]
 async fn ws_caps_and_params_snapshot() {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(openfader_serve::run(
         listener,
@@ -1376,15 +1368,21 @@ async fn ws_caps_and_params_snapshot() {
         .expect("WS connect");
     let (mut tx, mut rx) = stream.split();
 
-    // Initial snapshot ships the slim caps (essentials lane only 
+    // Initial snapshot ships the slim caps (essentials lane only
     // first paint never waits for the catalogue); hello completes the
     // full catalogue (unicast, before the ack).
     let caps = next_full_caps(&mut tx, &mut rx).await;
     assert_eq!(caps.get("driver"), Some(&json!("sim")));
     let params = caps.get("params").and_then(Value::as_array).unwrap();
-    assert_eq!(params.len(), 186, "sim caps include stereo balance and six VCA memberships");
+    assert_eq!(
+        params.len(),
+        186,
+        "sim caps include stereo balance and six VCA memberships"
+    );
     for p in params {
-        for key in ["id", "kind", "scope", "scopes", "min", "max", "unit", "default", "label"] {
+        for key in [
+            "id", "kind", "scope", "scopes", "min", "max", "unit", "default", "label",
+        ] {
             assert!(p.get(key).is_some(), "caps entry misses {key}: {p}");
         }
     }
@@ -1475,9 +1473,7 @@ async fn ws_caps_and_params_snapshot() {
 #[tokio::test]
 async fn ws_params_diff_broadcast() {
     use tokio_tungstenite::tungstenite::Message;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(openfader_serve::run_with_poll(
         listener,
@@ -1523,11 +1519,7 @@ async fn ws_params_diff_broadcast() {
     wait_state(&mut rx, |s| {
         s.get("strips")
             .and_then(Value::as_array)
-            .and_then(|strips| {
-                strips
-                    .iter()
-                    .find(|s| s.get("ch") == Some(&json!(5)))
-            })
+            .and_then(|strips| strips.iter().find(|s| s.get("ch") == Some(&json!(5))))
             .and_then(|s| s.get("fader"))
             .and_then(Value::as_f64)
             .is_some_and(|f| (f - 0.6).abs() < 1e-6)
@@ -1546,9 +1538,7 @@ async fn ws_params_diff_broadcast() {
 async fn ws_focus_prioritizes_channel() {
     use std::collections::{HashMap, HashSet};
     use tokio_tungstenite::tungstenite::Message;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let server = tokio::spawn(openfader_serve::run_with_poll(
         listener,
@@ -1570,7 +1560,10 @@ async fn ws_focus_prioritizes_channel() {
         .expect("caps carries params");
     let nparams = params.len();
     // v2 catalogue size (was 54 in v1).
-    assert_eq!(nparams, 186, "sim caps include stereo balance and six VCA memberships");
+    assert_eq!(
+        nparams, 186,
+        "sim caps include stereo balance and six VCA memberships"
+    );
     // Channel strips (ch5/ch7 below) only ever receive the In-scoped
     // subset, bus/main-only EQ bands 5..6 never land on a channel
     // (firmware band counts).
@@ -1583,7 +1576,10 @@ async fn ws_focus_prioritizes_channel() {
                 .unwrap_or(false)
         })
         .count();
-    assert!(nchan < nparams && nchan > 100, "chan-scoped subset sane: {nchan}");
+    assert!(
+        nchan < nparams && nchan > 100,
+        "chan-scoped subset sane: {nchan}"
+    );
 
     // Merge params frames into per-channel key sets until `ch` is complete.
     async fn wait_channel_complete(
@@ -1620,11 +1616,9 @@ async fn ws_focus_prioritizes_channel() {
     }
 
     // Jump the queue to channel 5 before its round-robin slot.
-    tx.send(Message::text(
-        json!({"cmd":"focus","ch":5}).to_string(),
-    ))
-    .await
-    .unwrap();
+    tx.send(Message::text(json!({"cmd":"focus","ch":5}).to_string()))
+        .await
+        .unwrap();
     let mut keys: HashMap<u64, HashSet<String>> = HashMap::new();
     wait_channel_complete(&mut rx, &mut keys, 5, nchan, "focus ch5").await;
     let ch0 = keys.get(&0).map(HashSet::len).unwrap_or(0);
@@ -1634,11 +1628,9 @@ async fn ws_focus_prioritizes_channel() {
     );
 
     // The `chs` array form focuses channel 7 the same way.
-    tx.send(Message::text(
-        json!({"cmd":"focus","chs":[7]}).to_string(),
-    ))
-    .await
-    .unwrap();
+    tx.send(Message::text(json!({"cmd":"focus","chs":[7]}).to_string()))
+        .await
+        .unwrap();
     wait_channel_complete(&mut rx, &mut keys, 7, nchan, "focus chs [7]").await;
 
     // Out-of-range focus: error frame, socket stays open.
@@ -1674,7 +1666,8 @@ async fn ws_focus_prioritizes_channel() {
     .unwrap();
     let err = next_typed(&mut rx, "error").await;
     assert!(
-        err.get("message").is_some_and(|m| m.as_str().is_some_and(|s| s.contains("999"))),
+        err.get("message")
+            .is_some_and(|m| m.as_str().is_some_and(|s| s.contains("999"))),
         "mixed focus error names the ignored channel: {err}"
     );
     wait_channel_complete(&mut rx, &mut keys, 3, nchan, "mixed focus ch3").await;
@@ -1721,9 +1714,11 @@ async fn ws_focus_flood_superseded() {
         })
         .count();
     for i in 0..30u64 {
-        tx.send(Message::text(json!({"cmd":"focus","ch": i % 32}).to_string()))
-            .await
-            .unwrap();
+        tx.send(Message::text(
+            json!({"cmd":"focus","ch": i % 32}).to_string(),
+        ))
+        .await
+        .unwrap();
     }
     tx.send(Message::text(json!({"cmd":"focus","ch":40}).to_string()))
         .await
@@ -1732,7 +1727,10 @@ async fn ws_focus_flood_superseded() {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     while keys.get(&40).map(HashSet::len).unwrap_or(0) < nparams {
         if std::time::Instant::now() > deadline {
-            panic!("flooded focus never yielded to ch40: {:?} ", keys.get(&40).map(HashSet::len));
+            panic!(
+                "flooded focus never yielded to ch40: {:?} ",
+                keys.get(&40).map(HashSet::len)
+            );
         }
         let next = timeout(std::time::Duration::from_millis(500), next_msg(&mut rx)).await;
         let v = match next {
@@ -1742,7 +1740,9 @@ async fn ws_focus_flood_superseded() {
         if v.get("type").and_then(Value::as_str) != Some("params") {
             continue;
         }
-        let Some(got) = v.get("ch").and_then(Value::as_u64) else { continue };
+        let Some(got) = v.get("ch").and_then(Value::as_u64) else {
+            continue;
+        };
         if let Some(values) = v.get("values").and_then(Value::as_object) {
             keys.entry(got).or_default().extend(values.keys().cloned());
         }
@@ -1771,9 +1771,11 @@ async fn ws_focus_flood_superseded() {
     let (mut tx, mut rx) = stream.split();
     let _ = next_typed(&mut rx, "caps").await;
     for i in 0..30u64 {
-        tx.send(Message::text(json!({"cmd":"focus","ch": i % 32}).to_string()))
-            .await
-            .unwrap();
+        tx.send(Message::text(
+            json!({"cmd":"focus","ch": i % 32}).to_string(),
+        ))
+        .await
+        .unwrap();
     }
     tx.send(Message::text(json!({"cmd":"focus","ch":40}).to_string()))
         .await

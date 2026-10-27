@@ -147,62 +147,270 @@ pub const DL32S_CAPABILITIES: &[&str] = &[
 // Native row-major stock table. Clear is separate from the crossed-circle
 // stock icon. Endpoints, keyboard and clear verified on CH7, 2026-10-26.
 static DL32S_ICON_SYMBOLS: &[openfader_core::params::ParamSymbol] = &[
-    openfader_core::params::ParamSymbol { value: 0.0, label: "Clear image", symbol: "none" },
-    openfader_core::params::ParamSymbol { value: 1000.0, label: "Kick drum", symbol: "kick" },
-    openfader_core::params::ParamSymbol { value: 1001.0, label: "Snare drum", symbol: "snare" },
-    openfader_core::params::ParamSymbol { value: 1002.0, label: "Tom drum", symbol: "tom" },
-    openfader_core::params::ParamSymbol { value: 1003.0, label: "Hi-hat", symbol: "hihat" },
-    openfader_core::params::ParamSymbol { value: 1004.0, label: "Cymbals", symbol: "cymbals" },
-    openfader_core::params::ParamSymbol { value: 1005.0, label: "Drum kit", symbol: "drumkit" },
-    openfader_core::params::ParamSymbol { value: 1006.0, label: "Cowbell", symbol: "cowbell" },
-    openfader_core::params::ParamSymbol { value: 1007.0, label: "Bass guitar 1", symbol: "bass1" },
-    openfader_core::params::ParamSymbol { value: 1008.0, label: "Bass guitar 2", symbol: "bass2" },
-    openfader_core::params::ParamSymbol { value: 1009.0, label: "Guitar 1", symbol: "guitar1" },
-    openfader_core::params::ParamSymbol { value: 1010.0, label: "Guitar 2", symbol: "guitar2" },
-    openfader_core::params::ParamSymbol { value: 1011.0, label: "Guitar 3", symbol: "guitar3" },
-    openfader_core::params::ParamSymbol { value: 1012.0, label: "Acoustic guitar 1", symbol: "acoustic1" },
-    openfader_core::params::ParamSymbol { value: 1013.0, label: "Acoustic guitar 2", symbol: "acoustic2" },
-    openfader_core::params::ParamSymbol { value: 1014.0, label: "Bowed strings 1", symbol: "strings1" },
-    openfader_core::params::ParamSymbol { value: 1015.0, label: "Bowed strings 2", symbol: "strings2" },
-    openfader_core::params::ParamSymbol { value: 1016.0, label: "Trumpet", symbol: "trumpet" },
-    openfader_core::params::ParamSymbol { value: 1017.0, label: "Grand piano", symbol: "piano" },
-    openfader_core::params::ParamSymbol { value: 1018.0, label: "Keyboards", symbol: "keyboards" },
-    openfader_core::params::ParamSymbol { value: 1019.0, label: "Synthesizer", symbol: "synth" },
-    openfader_core::params::ParamSymbol { value: 1020.0, label: "Amplifier", symbol: "amp" },
-    openfader_core::params::ParamSymbol { value: 1021.0, label: "Vocalist 1", symbol: "vocal1" },
-    openfader_core::params::ParamSymbol { value: 1022.0, label: "Vocalist 2", symbol: "vocal2" },
-    openfader_core::params::ParamSymbol { value: 1023.0, label: "Vocal group", symbol: "group" },
-    openfader_core::params::ParamSymbol { value: 1024.0, label: "Phone", symbol: "phone" },
-    openfader_core::params::ParamSymbol { value: 1025.0, label: "Wedge monitor 1", symbol: "wedge" },
-    openfader_core::params::ParamSymbol { value: 1026.0, label: "Wedge monitor 2", symbol: "wedges" },
-    openfader_core::params::ParamSymbol { value: 1027.0, label: "Mixer", symbol: "mixer" },
-    openfader_core::params::ParamSymbol { value: 1028.0, label: "Arches", symbol: "arches" },
-    openfader_core::params::ParamSymbol { value: 1029.0, label: "Clock", symbol: "clock" },
-    openfader_core::params::ParamSymbol { value: 1030.0, label: "PA speakers", symbol: "pa" },
-    openfader_core::params::ParamSymbol { value: 1031.0, label: "Speaker", symbol: "speaker" },
-    openfader_core::params::ParamSymbol { value: 1032.0, label: "Crossed circle", symbol: "prohibited" },
+    openfader_core::params::ParamSymbol {
+        value: 0.0,
+        label: "Clear image",
+        symbol: "none",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1000.0,
+        label: "Kick drum",
+        symbol: "kick",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1001.0,
+        label: "Snare drum",
+        symbol: "snare",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1002.0,
+        label: "Tom drum",
+        symbol: "tom",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1003.0,
+        label: "Hi-hat",
+        symbol: "hihat",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1004.0,
+        label: "Cymbals",
+        symbol: "cymbals",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1005.0,
+        label: "Drum kit",
+        symbol: "drumkit",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1006.0,
+        label: "Cowbell",
+        symbol: "cowbell",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1007.0,
+        label: "Bass guitar 1",
+        symbol: "bass1",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1008.0,
+        label: "Bass guitar 2",
+        symbol: "bass2",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1009.0,
+        label: "Guitar 1",
+        symbol: "guitar1",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1010.0,
+        label: "Guitar 2",
+        symbol: "guitar2",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1011.0,
+        label: "Guitar 3",
+        symbol: "guitar3",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1012.0,
+        label: "Acoustic guitar 1",
+        symbol: "acoustic1",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1013.0,
+        label: "Acoustic guitar 2",
+        symbol: "acoustic2",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1014.0,
+        label: "Bowed strings 1",
+        symbol: "strings1",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1015.0,
+        label: "Bowed strings 2",
+        symbol: "strings2",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1016.0,
+        label: "Trumpet",
+        symbol: "trumpet",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1017.0,
+        label: "Grand piano",
+        symbol: "piano",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1018.0,
+        label: "Keyboards",
+        symbol: "keyboards",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1019.0,
+        label: "Synthesizer",
+        symbol: "synth",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1020.0,
+        label: "Amplifier",
+        symbol: "amp",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1021.0,
+        label: "Vocalist 1",
+        symbol: "vocal1",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1022.0,
+        label: "Vocalist 2",
+        symbol: "vocal2",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1023.0,
+        label: "Vocal group",
+        symbol: "group",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1024.0,
+        label: "Phone",
+        symbol: "phone",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1025.0,
+        label: "Wedge monitor 1",
+        symbol: "wedge",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1026.0,
+        label: "Wedge monitor 2",
+        symbol: "wedges",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1027.0,
+        label: "Mixer",
+        symbol: "mixer",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1028.0,
+        label: "Arches",
+        symbol: "arches",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1029.0,
+        label: "Clock",
+        symbol: "clock",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1030.0,
+        label: "PA speakers",
+        symbol: "pa",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1031.0,
+        label: "Speaker",
+        symbol: "speaker",
+    },
+    openfader_core::params::ParamSymbol {
+        value: 1032.0,
+        label: "Crossed circle",
+        symbol: "prohibited",
+    },
 ];
 
 // Native input palette order; CH7 endpoints and None verified 2026-10-26.
 static DL32S_COLOR_SWATCHES: &[openfader_core::params::ParamSwatch] = &[
-    openfader_core::params::ParamSwatch { value: -1.0, label: "None", rgb: None },
-    openfader_core::params::ParamSwatch { value: 0.0, label: "Pink", rgb: Some(0xed1176) },
-    openfader_core::params::ParamSwatch { value: 1.0, label: "Coral", rgb: Some(0xf16464) },
-    openfader_core::params::ParamSwatch { value: 2.0, label: "Red", rgb: Some(0xee3b25) },
-    openfader_core::params::ParamSwatch { value: 3.0, label: "Orange", rgb: Some(0xf56522) },
-    openfader_core::params::ParamSwatch { value: 4.0, label: "Amber", rgb: Some(0xffb52d) },
-    openfader_core::params::ParamSwatch { value: 5.0, label: "Gold", rgb: Some(0xffd100) },
-    openfader_core::params::ParamSwatch { value: 6.0, label: "Yellow", rgb: Some(0xf9ef42) },
-    openfader_core::params::ParamSwatch { value: 7.0, label: "Lime", rgb: Some(0xa8d25d) },
-    openfader_core::params::ParamSwatch { value: 8.0, label: "Green", rgb: Some(0x54bf79) },
-    openfader_core::params::ParamSwatch { value: 9.0, label: "Mint", rgb: Some(0x8fd3b2) },
-    openfader_core::params::ParamSwatch { value: 10.0, label: "Teal", rgb: Some(0x22bcb5) },
-    openfader_core::params::ParamSwatch { value: 11.0, label: "Cyan", rgb: Some(0x65cee3) },
-    openfader_core::params::ParamSwatch { value: 12.0, label: "Sky blue", rgb: Some(0x1baed1) },
-    openfader_core::params::ParamSwatch { value: 13.0, label: "Blue", rgb: Some(0x357dbe) },
-    openfader_core::params::ParamSwatch { value: 14.0, label: "Lavender", rgb: Some(0xa782ba) },
-    openfader_core::params::ParamSwatch { value: 15.0, label: "Purple", rgb: Some(0x9156a5) },
-    openfader_core::params::ParamSwatch { value: 16.0, label: "White", rgb: Some(0xffffff) },
+    openfader_core::params::ParamSwatch {
+        value: -1.0,
+        label: "None",
+        rgb: None,
+    },
+    openfader_core::params::ParamSwatch {
+        value: 0.0,
+        label: "Pink",
+        rgb: Some(0xed1176),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 1.0,
+        label: "Coral",
+        rgb: Some(0xf16464),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 2.0,
+        label: "Red",
+        rgb: Some(0xee3b25),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 3.0,
+        label: "Orange",
+        rgb: Some(0xf56522),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 4.0,
+        label: "Amber",
+        rgb: Some(0xffb52d),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 5.0,
+        label: "Gold",
+        rgb: Some(0xffd100),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 6.0,
+        label: "Yellow",
+        rgb: Some(0xf9ef42),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 7.0,
+        label: "Lime",
+        rgb: Some(0xa8d25d),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 8.0,
+        label: "Green",
+        rgb: Some(0x54bf79),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 9.0,
+        label: "Mint",
+        rgb: Some(0x8fd3b2),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 10.0,
+        label: "Teal",
+        rgb: Some(0x22bcb5),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 11.0,
+        label: "Cyan",
+        rgb: Some(0x65cee3),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 12.0,
+        label: "Sky blue",
+        rgb: Some(0x1baed1),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 13.0,
+        label: "Blue",
+        rgb: Some(0x357dbe),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 14.0,
+        label: "Lavender",
+        rgb: Some(0xa782ba),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 15.0,
+        label: "Purple",
+        rgb: Some(0x9156a5),
+    },
+    openfader_core::params::ParamSwatch {
+        value: 16.0,
+        label: "White",
+        rgb: Some(0xffffff),
+    },
 ];
 
 /// Canonical id -> documented modern-DL32S `(min, max)`, served through
@@ -274,16 +482,36 @@ static DL32S_SOURCE_LABELS: &[openfader_core::params::ParamChoice] = input_sourc
 // a selected physical preamp exposes gain/phantom, irrespective of slot.
 const DL32S_SELECTED_PREAMP: openfader_core::params::ParamCondition = {
     use openfader_core::params::ParamCondition::*;
-    Any { any: &[
-        All { all: &[
-            Equals { id: "source_select", value: 1.0 },
-            Range { id: "source_a", min: 1000.0, max: 1031.0 },
-        ] },
-        All { all: &[
-            Equals { id: "source_select", value: 0.0 },
-            Range { id: "source_b", min: 1000.0, max: 1031.0 },
-        ] },
-    ] }
+    Any {
+        any: &[
+            All {
+                all: &[
+                    Equals {
+                        id: "source_select",
+                        value: 1.0,
+                    },
+                    Range {
+                        id: "source_a",
+                        min: 1000.0,
+                        max: 1031.0,
+                    },
+                ],
+            },
+            All {
+                all: &[
+                    Equals {
+                        id: "source_select",
+                        value: 0.0,
+                    },
+                    Range {
+                        id: "source_b",
+                        min: 1000.0,
+                        max: 1031.0,
+                    },
+                ],
+            },
+        ],
+    }
 };
 
 // Native CH7 selections, independently read and restored 2026-10-25.
@@ -291,112 +519,326 @@ const DL32S_SELECTED_PREAMP: openfader_core::params::ParamCondition = {
 // to a named selection merely by displaying this metadata.
 static DL32S_PARAM_PRESENTATIONS: &[openfader_core::params::ParamPresentation] = &[
     openfader_core::params::ParamPresentation {
-        id: "gain", when: None, hidden: true, curve: None, limiter_value: None,
-        choices: &[], value_labels: &[],
+        id: "gain",
+        when: None,
+        hidden: true,
+        curve: None,
+        limiter_value: None,
+        choices: &[],
+        value_labels: &[],
     },
     openfader_core::params::ParamPresentation {
-        id: "gain", when: Some(DL32S_SELECTED_PREAMP), hidden: false, curve: None, limiter_value: None,
-        choices: &[], value_labels: &[],
+        id: "gain",
+        when: Some(DL32S_SELECTED_PREAMP),
+        hidden: false,
+        curve: None,
+        limiter_value: None,
+        choices: &[],
+        value_labels: &[],
     },
     openfader_core::params::ParamPresentation {
-        id: "phantom", when: None, hidden: true, curve: None, limiter_value: None,
-        choices: &[], value_labels: &[],
+        id: "phantom",
+        when: None,
+        hidden: true,
+        curve: None,
+        limiter_value: None,
+        choices: &[],
+        value_labels: &[],
     },
     openfader_core::params::ParamPresentation {
-        id: "phantom", when: Some(DL32S_SELECTED_PREAMP), hidden: false, curve: None, limiter_value: None,
-        choices: &[], value_labels: &[],
+        id: "phantom",
+        when: Some(DL32S_SELECTED_PREAMP),
+        hidden: false,
+        curve: None,
+        limiter_value: None,
+        choices: &[],
+        value_labels: &[],
     },
     openfader_core::params::ParamPresentation {
-        id: "source_a", when: None, hidden: false, curve: None, limiter_value: None,
-        choices: &[], value_labels: DL32S_SOURCE_LABELS,
+        id: "source_a",
+        when: None,
+        hidden: false,
+        curve: None,
+        limiter_value: None,
+        choices: &[],
+        value_labels: DL32S_SOURCE_LABELS,
     },
     openfader_core::params::ParamPresentation {
-        id: "source_b", when: None, hidden: false, curve: None, limiter_value: None,
-        choices: &[], value_labels: DL32S_SOURCE_LABELS,
+        id: "source_b",
+        when: None,
+        hidden: false,
+        curve: None,
+        limiter_value: None,
+        choices: &[],
+        value_labels: DL32S_SOURCE_LABELS,
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
-        id: "comp_mode", when: None, hidden: false, curve: None, value_labels: &[],
-        choices: &[openfader_core::params::ParamChoice { value: 0.0, label: "Modern" }, openfader_core::params::ParamChoice { value: 1.0, label: "Vintage" }],
+        id: "comp_mode",
+        when: None,
+        hidden: false,
+        curve: None,
+        value_labels: &[],
+        choices: &[
+            openfader_core::params::ParamChoice {
+                value: 0.0,
+                label: "Modern",
+            },
+            openfader_core::params::ParamChoice {
+                value: 1.0,
+                label: "Vintage",
+            },
+        ],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
-        id: "comp_knee", when: None, hidden: false, curve: None, value_labels: &[],
-        choices: &[openfader_core::params::ParamChoice { value: 0.0, label: "Soft Knee" }, openfader_core::params::ParamChoice { value: 1.0, label: "Hard Knee" }],
+        id: "comp_knee",
+        when: None,
+        hidden: false,
+        curve: None,
+        value_labels: &[],
+        choices: &[
+            openfader_core::params::ParamChoice {
+                value: 0.0,
+                label: "Soft Knee",
+            },
+            openfader_core::params::ParamChoice {
+                value: 1.0,
+                label: "Hard Knee",
+            },
+        ],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
-        id: "comp_att", when: Some(openfader_core::params::ParamCondition::Equals { id: "comp_mode", value: 1.0 }), hidden: false, curve: None, value_labels: &[],
-        choices: &[openfader_core::params::ParamChoice { value: 0.1, label: "Fast" }, openfader_core::params::ParamChoice { value: 50.0, label: "Medium" }, openfader_core::params::ParamChoice { value: 300.0, label: "Slow" }],
+        id: "comp_att",
+        when: Some(openfader_core::params::ParamCondition::Equals {
+            id: "comp_mode",
+            value: 1.0,
+        }),
+        hidden: false,
+        curve: None,
+        value_labels: &[],
+        choices: &[
+            openfader_core::params::ParamChoice {
+                value: 0.1,
+                label: "Fast",
+            },
+            openfader_core::params::ParamChoice {
+                value: 50.0,
+                label: "Medium",
+            },
+            openfader_core::params::ParamChoice {
+                value: 300.0,
+                label: "Slow",
+            },
+        ],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
-        id: "comp_rel", when: Some(openfader_core::params::ParamCondition::Equals { id: "comp_mode", value: 1.0 }), hidden: false, curve: None, value_labels: &[],
-        choices: &[openfader_core::params::ParamChoice { value: 50.0, label: "Fast" }, openfader_core::params::ParamChoice { value: 500.0, label: "Medium" }, openfader_core::params::ParamChoice { value: 3000.0, label: "Slow" }],
+        id: "comp_rel",
+        when: Some(openfader_core::params::ParamCondition::Equals {
+            id: "comp_mode",
+            value: 1.0,
+        }),
+        hidden: false,
+        curve: None,
+        value_labels: &[],
+        choices: &[
+            openfader_core::params::ParamChoice {
+                value: 50.0,
+                label: "Fast",
+            },
+            openfader_core::params::ParamChoice {
+                value: 500.0,
+                label: "Medium",
+            },
+            openfader_core::params::ParamChoice {
+                value: 3000.0,
+                label: "Slow",
+            },
+        ],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
-        id: "comp_ratio", when: Some(openfader_core::params::ParamCondition::Equals { id: "comp_mode", value: 1.0 }), hidden: false, curve: None, value_labels: &[],
-        choices: &[openfader_core::params::ParamChoice { value: 2.0, label: "2:1" }, openfader_core::params::ParamChoice { value: 4.0, label: "4:1" }, openfader_core::params::ParamChoice { value: 8.0, label: "8:1" }, openfader_core::params::ParamChoice { value: 12.0, label: "12:1" }, openfader_core::params::ParamChoice { value: 20.0, label: "20:1" }],
+        id: "comp_ratio",
+        when: Some(openfader_core::params::ParamCondition::Equals {
+            id: "comp_mode",
+            value: 1.0,
+        }),
+        hidden: false,
+        curve: None,
+        value_labels: &[],
+        choices: &[
+            openfader_core::params::ParamChoice {
+                value: 2.0,
+                label: "2:1",
+            },
+            openfader_core::params::ParamChoice {
+                value: 4.0,
+                label: "4:1",
+            },
+            openfader_core::params::ParamChoice {
+                value: 8.0,
+                label: "8:1",
+            },
+            openfader_core::params::ParamChoice {
+                value: 12.0,
+                label: "12:1",
+            },
+            openfader_core::params::ParamChoice {
+                value: 20.0,
+                label: "20:1",
+            },
+        ],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
-        id: "comp_knee", when: Some(openfader_core::params::ParamCondition::Equals { id: "comp_knee", value: 1.0 }), hidden: false,
-        curve: Some("hard_knee"), value_labels: &[],
-        choices: &[openfader_core::params::ParamChoice { value: 0.0, label: "Soft Knee" }, openfader_core::params::ParamChoice { value: 1.0, label: "Hard Knee" }],
+        id: "comp_knee",
+        when: Some(openfader_core::params::ParamCondition::Equals {
+            id: "comp_knee",
+            value: 1.0,
+        }),
+        hidden: false,
+        curve: Some("hard_knee"),
+        value_labels: &[],
+        choices: &[
+            openfader_core::params::ParamChoice {
+                value: 0.0,
+                label: "Soft Knee",
+            },
+            openfader_core::params::ParamChoice {
+                value: 1.0,
+                label: "Hard Knee",
+            },
+        ],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
-        id: "comp_knee", when: Some(openfader_core::params::ParamCondition::Equals { id: "comp_mode", value: 1.0 }), hidden: true, curve: None, value_labels: &[],
+        id: "comp_knee",
+        when: Some(openfader_core::params::ParamCondition::Equals {
+            id: "comp_mode",
+            value: 1.0,
+        }),
+        hidden: true,
+        curve: None,
+        value_labels: &[],
         choices: &[],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: Some(101.0),
-        id: "comp_ratio", when: Some(openfader_core::params::ParamCondition::Equals { id: "comp_mode", value: 0.0 }), hidden: false, curve: None,
-        choices: &[], value_labels: &[openfader_core::params::ParamChoice { value: 101.0, label: "∞:1" }],
+        id: "comp_ratio",
+        when: Some(openfader_core::params::ParamCondition::Equals {
+            id: "comp_mode",
+            value: 0.0,
+        }),
+        hidden: false,
+        curve: None,
+        choices: &[],
+        value_labels: &[openfader_core::params::ParamChoice {
+            value: 101.0,
+            label: "∞:1",
+        }],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
         value_labels: &[],
-        id: "gate_mode", when: None, hidden: false, curve: None,
+        id: "gate_mode",
+        when: None,
+        hidden: false,
+        curve: None,
         choices: &[
-            openfader_core::params::ParamChoice { value: 0.0, label: "Modern" },
-            openfader_core::params::ParamChoice { value: 1.0, label: "Vintage" },
+            openfader_core::params::ParamChoice {
+                value: 0.0,
+                label: "Modern",
+            },
+            openfader_core::params::ParamChoice {
+                value: 1.0,
+                label: "Vintage",
+            },
         ],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
         value_labels: &[],
-        id: "gate_mode", when: Some(openfader_core::params::ParamCondition::Equals { id: "gate_mode", value: 0.0 }), hidden: false,
-        curve: Some("gate_attenuation"), choices: &[
-            openfader_core::params::ParamChoice { value: 0.0, label: "Modern" },
-            openfader_core::params::ParamChoice { value: 1.0, label: "Vintage" },
-        ],
-    },
-    openfader_core::params::ParamPresentation {
-        limiter_value: None,
-        value_labels: &[],
-        id: "gate_att", when: Some(openfader_core::params::ParamCondition::Equals { id: "gate_mode", value: 1.0 }), hidden: false, curve: None,
+        id: "gate_mode",
+        when: Some(openfader_core::params::ParamCondition::Equals {
+            id: "gate_mode",
+            value: 0.0,
+        }),
+        hidden: false,
+        curve: Some("gate_attenuation"),
         choices: &[
-            openfader_core::params::ParamChoice { value: 0.1, label: "Fast" },
-            openfader_core::params::ParamChoice { value: 50.0, label: "Medium" },
-            openfader_core::params::ParamChoice { value: 300.0, label: "Slow" },
+            openfader_core::params::ParamChoice {
+                value: 0.0,
+                label: "Modern",
+            },
+            openfader_core::params::ParamChoice {
+                value: 1.0,
+                label: "Vintage",
+            },
         ],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
         value_labels: &[],
-        id: "gate_rel", when: Some(openfader_core::params::ParamCondition::Equals { id: "gate_mode", value: 1.0 }), hidden: false, curve: None,
+        id: "gate_att",
+        when: Some(openfader_core::params::ParamCondition::Equals {
+            id: "gate_mode",
+            value: 1.0,
+        }),
+        hidden: false,
+        curve: None,
         choices: &[
-            openfader_core::params::ParamChoice { value: 50.0, label: "Fast" },
-            openfader_core::params::ParamChoice { value: 500.0, label: "Medium" },
-            openfader_core::params::ParamChoice { value: 3000.0, label: "Slow" },
+            openfader_core::params::ParamChoice {
+                value: 0.1,
+                label: "Fast",
+            },
+            openfader_core::params::ParamChoice {
+                value: 50.0,
+                label: "Medium",
+            },
+            openfader_core::params::ParamChoice {
+                value: 300.0,
+                label: "Slow",
+            },
         ],
     },
     openfader_core::params::ParamPresentation {
         limiter_value: None,
         value_labels: &[],
-        id: "gate_range", when: Some(openfader_core::params::ParamCondition::Equals { id: "gate_mode", value: 1.0 }), hidden: true, choices: &[], curve: None,
+        id: "gate_rel",
+        when: Some(openfader_core::params::ParamCondition::Equals {
+            id: "gate_mode",
+            value: 1.0,
+        }),
+        hidden: false,
+        curve: None,
+        choices: &[
+            openfader_core::params::ParamChoice {
+                value: 50.0,
+                label: "Fast",
+            },
+            openfader_core::params::ParamChoice {
+                value: 500.0,
+                label: "Medium",
+            },
+            openfader_core::params::ParamChoice {
+                value: 3000.0,
+                label: "Slow",
+            },
+        ],
+    },
+    openfader_core::params::ParamPresentation {
+        limiter_value: None,
+        value_labels: &[],
+        id: "gate_range",
+        when: Some(openfader_core::params::ParamCondition::Equals {
+            id: "gate_mode",
+            value: 1.0,
+        }),
+        hidden: true,
+        choices: &[],
+        curve: None,
     },
 ];
 
@@ -438,16 +880,24 @@ impl Dl32sDriver {
                 source("source_select", 1.0, "Input A/B"),
             ];
             for (id, label) in [
-                ("dca5_assign", "VCA 5"), ("dca6_assign", "VCA 6"),
-                ("view1_assign", "View A"), ("view2_assign", "View B"),
-                ("view3_assign", "View C"), ("view4_assign", "View D"),
-                ("view5_assign", "View E"), ("view6_assign", "View F"),
+                ("dca5_assign", "VCA 5"),
+                ("dca6_assign", "VCA 6"),
+                ("view1_assign", "View A"),
+                ("view2_assign", "View B"),
+                ("view3_assign", "View C"),
+                ("view4_assign", "View D"),
+                ("view5_assign", "View E"),
+                ("view6_assign", "View F"),
             ] {
-                defs.push(openfader_core::params::ParamDef { id, label,
+                defs.push(openfader_core::params::ParamDef {
+                    id,
+                    label,
                     kind: openfader_core::params::ParamKind::Bool,
                     scope: openfader_core::params::ParamScope::Channel,
                     scopes: openfader_core::params::SCOPES_INPUT,
-                    min: 0.0, max: 1.0, unit: "",
+                    min: 0.0,
+                    max: 1.0,
+                    unit: "",
                     default: openfader_core::params::ParamDefault::Bool(false),
                 });
             }
@@ -481,21 +931,42 @@ impl Dl32sDriver {
         DL32S_RANGE_OVERRIDES
     }
 
-    pub(super) fn metadata_param_symbols(&self, param: &str) -> &'static [openfader_core::params::ParamSymbol] {
-        if param == "icon" { DL32S_ICON_SYMBOLS } else { &[] }
+    pub(super) fn metadata_param_symbols(
+        &self,
+        param: &str,
+    ) -> &'static [openfader_core::params::ParamSymbol] {
+        if param == "icon" {
+            DL32S_ICON_SYMBOLS
+        } else {
+            &[]
+        }
     }
 
-    pub(super) fn metadata_param_text_rules(&self, param: &str) -> Option<openfader_core::params::ParamTextRules> {
+    pub(super) fn metadata_param_text_rules(
+        &self,
+        param: &str,
+    ) -> Option<openfader_core::params::ParamTextRules> {
         (param == "name").then_some(openfader_core::params::ParamTextRules {
-            max_utf8_bytes: Some(63), allow_empty: true, allow_edge_whitespace: false,
+            max_utf8_bytes: Some(63),
+            allow_empty: true,
+            allow_edge_whitespace: false,
         })
     }
 
-    pub(super) fn metadata_param_swatches(&self, param: &str) -> &'static [openfader_core::params::ParamSwatch] {
-        if param == "color" { DL32S_COLOR_SWATCHES } else { &[] }
+    pub(super) fn metadata_param_swatches(
+        &self,
+        param: &str,
+    ) -> &'static [openfader_core::params::ParamSwatch] {
+        if param == "color" {
+            DL32S_COLOR_SWATCHES
+        } else {
+            &[]
+        }
     }
 
-    pub(super) fn metadata_param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
+    pub(super) fn metadata_param_presentations(
+        &self,
+    ) -> &'static [openfader_core::params::ParamPresentation] {
         DL32S_PARAM_PRESENTATIONS
     }
 }

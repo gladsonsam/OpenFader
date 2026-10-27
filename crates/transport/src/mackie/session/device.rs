@@ -194,9 +194,18 @@ impl MackieSession {
         self.get_show_info_guarded(timeout, &|| true).await
     }
 
-    pub async fn get_show_info_guarded(&self, timeout: std::time::Duration,
-        authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<Message> {
-        self.send_request_guarded(Command::FileInfo, 5u32.to_be_bytes().to_vec(), timeout, authorize).await
+    pub async fn get_show_info_guarded(
+        &self,
+        timeout: std::time::Duration,
+        authorize: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<Message> {
+        self.send_request_guarded(
+            Command::FileInfo,
+            5u32.to_be_bytes().to_vec(),
+            timeout,
+            authorize,
+        )
+        .await
     }
 
     pub async fn show_ok(&self) -> anyhow::Result<()> {

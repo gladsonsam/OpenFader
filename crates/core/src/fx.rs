@@ -113,7 +113,7 @@ impl Default for FxRack {
 // the engineering range the UI formats into, `default` is the design's
 // seeded normalized value, `scale` hints the formatter law (`lin`/`log`).
 //
-// Ranges here are display strings from the design, NOT desk documents 
+// Ranges here are display strings from the design, NOT desk documents
 // never assert them against hardware. Desk-native algorithms (X-Air 61
 // effect types) keep their own table in `crates/proto-xair/src/fx.rs`.
 // ---------------------------------------------------------------------------
@@ -138,69 +138,294 @@ pub struct FxTypeMeta {
     pub params: &'static [FxParamMeta],
 }
 
-const P_DECAY: FxParamMeta = FxParamMeta { id: "decay", label: "Decay", unit: "s", min: 0.2, max: 10.0, default: 0.42, scale: "lin" };
-const P_PREDELAY: FxParamMeta = FxParamMeta { id: "predelay", label: "Pre-delay", unit: "ms", min: 0.0, max: 200.0, default: 0.15, scale: "lin" };
-const P_SIZE: FxParamMeta = FxParamMeta { id: "size", label: "Size", unit: "%", min: 0.0, max: 100.0, default: 0.6, scale: "lin" };
-const P_HIDAMP: FxParamMeta = FxParamMeta { id: "hidamp", label: "Hi Damp", unit: "Hz", min: 1000.0, max: 20000.0, default: 0.55, scale: "log" };
-const P_MIX: FxParamMeta = FxParamMeta { id: "mix", label: "Mix", unit: "%", min: 0.0, max: 100.0, default: 1.0, scale: "lin" };
-const P_TIME: FxParamMeta = FxParamMeta { id: "time", label: "Time", unit: "ms", min: 20.0, max: 2000.0, default: 0.55, scale: "log" };
-const P_FEEDBACK_DLY: FxParamMeta = FxParamMeta { id: "feedback", label: "Feedback", unit: "%", min: 0.0, max: 95.0, default: 0.35, scale: "lin" };
-const P_FEEDBACK_FLG: FxParamMeta = FxParamMeta { id: "feedback", label: "Feedback", unit: "%", min: 0.0, max: 90.0, default: 0.4, scale: "lin" };
-const P_HICUT: FxParamMeta = FxParamMeta { id: "hicut", label: "Hi Cut", unit: "Hz", min: 1000.0, max: 20000.0, default: 0.55, scale: "log" };
-const P_SPREAD: FxParamMeta = FxParamMeta { id: "spread", label: "Spread", unit: "%", min: 0.0, max: 100.0, default: 0.4, scale: "lin" };
-const P_RATE: FxParamMeta = FxParamMeta { id: "rate", label: "Rate", unit: "Hz", min: 0.05, max: 5.0, default: 0.4, scale: "log" };
-const P_DEPTH: FxParamMeta = FxParamMeta { id: "depth", label: "Depth", unit: "%", min: 0.0, max: 100.0, default: 0.5, scale: "lin" };
+const P_DECAY: FxParamMeta = FxParamMeta {
+    id: "decay",
+    label: "Decay",
+    unit: "s",
+    min: 0.2,
+    max: 10.0,
+    default: 0.42,
+    scale: "lin",
+};
+const P_PREDELAY: FxParamMeta = FxParamMeta {
+    id: "predelay",
+    label: "Pre-delay",
+    unit: "ms",
+    min: 0.0,
+    max: 200.0,
+    default: 0.15,
+    scale: "lin",
+};
+const P_SIZE: FxParamMeta = FxParamMeta {
+    id: "size",
+    label: "Size",
+    unit: "%",
+    min: 0.0,
+    max: 100.0,
+    default: 0.6,
+    scale: "lin",
+};
+const P_HIDAMP: FxParamMeta = FxParamMeta {
+    id: "hidamp",
+    label: "Hi Damp",
+    unit: "Hz",
+    min: 1000.0,
+    max: 20000.0,
+    default: 0.55,
+    scale: "log",
+};
+const P_MIX: FxParamMeta = FxParamMeta {
+    id: "mix",
+    label: "Mix",
+    unit: "%",
+    min: 0.0,
+    max: 100.0,
+    default: 1.0,
+    scale: "lin",
+};
+const P_TIME: FxParamMeta = FxParamMeta {
+    id: "time",
+    label: "Time",
+    unit: "ms",
+    min: 20.0,
+    max: 2000.0,
+    default: 0.55,
+    scale: "log",
+};
+const P_FEEDBACK_DLY: FxParamMeta = FxParamMeta {
+    id: "feedback",
+    label: "Feedback",
+    unit: "%",
+    min: 0.0,
+    max: 95.0,
+    default: 0.35,
+    scale: "lin",
+};
+const P_FEEDBACK_FLG: FxParamMeta = FxParamMeta {
+    id: "feedback",
+    label: "Feedback",
+    unit: "%",
+    min: 0.0,
+    max: 90.0,
+    default: 0.4,
+    scale: "lin",
+};
+const P_HICUT: FxParamMeta = FxParamMeta {
+    id: "hicut",
+    label: "Hi Cut",
+    unit: "Hz",
+    min: 1000.0,
+    max: 20000.0,
+    default: 0.55,
+    scale: "log",
+};
+const P_SPREAD: FxParamMeta = FxParamMeta {
+    id: "spread",
+    label: "Spread",
+    unit: "%",
+    min: 0.0,
+    max: 100.0,
+    default: 0.4,
+    scale: "lin",
+};
+const P_RATE: FxParamMeta = FxParamMeta {
+    id: "rate",
+    label: "Rate",
+    unit: "Hz",
+    min: 0.05,
+    max: 5.0,
+    default: 0.4,
+    scale: "log",
+};
+const P_DEPTH: FxParamMeta = FxParamMeta {
+    id: "depth",
+    label: "Depth",
+    unit: "%",
+    min: 0.0,
+    max: 100.0,
+    default: 0.5,
+    scale: "lin",
+};
 
 const HALL_PARAMS: &[FxParamMeta] = &[P_DECAY, P_PREDELAY, P_SIZE, P_HIDAMP, P_MIX];
 const PLATE_PARAMS: &[FxParamMeta] = &[
-    FxParamMeta { id: "decay", label: "Decay", unit: "s", min: 0.2, max: 10.0, default: 0.25, scale: "lin" },
-    FxParamMeta { id: "predelay", label: "Pre-delay", unit: "ms", min: 0.0, max: 200.0, default: 0.08, scale: "lin" },
-    FxParamMeta { id: "size", label: "Size", unit: "%", min: 0.0, max: 100.0, default: 0.5, scale: "lin" },
-    FxParamMeta { id: "hidamp", label: "Hi Damp", unit: "Hz", min: 1000.0, max: 20000.0, default: 0.65, scale: "log" },
+    FxParamMeta {
+        id: "decay",
+        label: "Decay",
+        unit: "s",
+        min: 0.2,
+        max: 10.0,
+        default: 0.25,
+        scale: "lin",
+    },
+    FxParamMeta {
+        id: "predelay",
+        label: "Pre-delay",
+        unit: "ms",
+        min: 0.0,
+        max: 200.0,
+        default: 0.08,
+        scale: "lin",
+    },
+    FxParamMeta {
+        id: "size",
+        label: "Size",
+        unit: "%",
+        min: 0.0,
+        max: 100.0,
+        default: 0.5,
+        scale: "lin",
+    },
+    FxParamMeta {
+        id: "hidamp",
+        label: "Hi Damp",
+        unit: "Hz",
+        min: 1000.0,
+        max: 20000.0,
+        default: 0.65,
+        scale: "log",
+    },
     P_MIX,
 ];
 const ROOM_PARAMS: &[FxParamMeta] = &[
-    FxParamMeta { id: "decay", label: "Decay", unit: "s", min: 0.2, max: 10.0, default: 0.1, scale: "lin" },
-    FxParamMeta { id: "predelay", label: "Pre-delay", unit: "ms", min: 0.0, max: 200.0, default: 0.05, scale: "lin" },
-    FxParamMeta { id: "size", label: "Size", unit: "%", min: 0.0, max: 100.0, default: 0.3, scale: "lin" },
-    FxParamMeta { id: "hidamp", label: "Hi Damp", unit: "Hz", min: 1000.0, max: 20000.0, default: 0.6, scale: "log" },
+    FxParamMeta {
+        id: "decay",
+        label: "Decay",
+        unit: "s",
+        min: 0.2,
+        max: 10.0,
+        default: 0.1,
+        scale: "lin",
+    },
+    FxParamMeta {
+        id: "predelay",
+        label: "Pre-delay",
+        unit: "ms",
+        min: 0.0,
+        max: 200.0,
+        default: 0.05,
+        scale: "lin",
+    },
+    FxParamMeta {
+        id: "size",
+        label: "Size",
+        unit: "%",
+        min: 0.0,
+        max: 100.0,
+        default: 0.3,
+        scale: "lin",
+    },
+    FxParamMeta {
+        id: "hidamp",
+        label: "Hi Damp",
+        unit: "Hz",
+        min: 1000.0,
+        max: 20000.0,
+        default: 0.6,
+        scale: "log",
+    },
     P_MIX,
 ];
 const DELAY_PARAMS: &[FxParamMeta] = &[P_TIME, P_FEEDBACK_DLY, P_HICUT, P_SPREAD, P_MIX];
 const CHORUS_PARAMS: &[FxParamMeta] = &[
     P_RATE,
     P_DEPTH,
-    FxParamMeta { id: "spread", label: "Spread", unit: "%", min: 0.0, max: 100.0, default: 0.6, scale: "lin" },
-    FxParamMeta { id: "mix", label: "Mix", unit: "%", min: 0.0, max: 100.0, default: 1.0, scale: "lin" },
+    FxParamMeta {
+        id: "spread",
+        label: "Spread",
+        unit: "%",
+        min: 0.0,
+        max: 100.0,
+        default: 0.6,
+        scale: "lin",
+    },
+    FxParamMeta {
+        id: "mix",
+        label: "Mix",
+        unit: "%",
+        min: 0.0,
+        max: 100.0,
+        default: 1.0,
+        scale: "lin",
+    },
 ];
 const FLANGER_PARAMS: &[FxParamMeta] = &[
-    FxParamMeta { id: "rate", label: "Rate", unit: "Hz", min: 0.05, max: 5.0, default: 0.3, scale: "log" },
-    FxParamMeta { id: "depth", label: "Depth", unit: "%", min: 0.0, max: 100.0, default: 0.6, scale: "lin" },
+    FxParamMeta {
+        id: "rate",
+        label: "Rate",
+        unit: "Hz",
+        min: 0.05,
+        max: 5.0,
+        default: 0.3,
+        scale: "log",
+    },
+    FxParamMeta {
+        id: "depth",
+        label: "Depth",
+        unit: "%",
+        min: 0.0,
+        max: 100.0,
+        default: 0.6,
+        scale: "lin",
+    },
     P_FEEDBACK_FLG,
-    FxParamMeta { id: "mix", label: "Mix", unit: "%", min: 0.0, max: 100.0, default: 1.0, scale: "lin" },
+    FxParamMeta {
+        id: "mix",
+        label: "Mix",
+        unit: "%",
+        min: 0.0,
+        max: 100.0,
+        default: 1.0,
+        scale: "lin",
+    },
 ];
 
 /// The design's six FX types in UI order.
 pub const FX_TYPES: &[FxTypeMeta] = &[
-    FxTypeMeta { id: "hall", label: "Hall", params: HALL_PARAMS },
-    FxTypeMeta { id: "plate", label: "Plate", params: PLATE_PARAMS },
-    FxTypeMeta { id: "room", label: "Room", params: ROOM_PARAMS },
-    FxTypeMeta { id: "delay", label: "Delay", params: DELAY_PARAMS },
-    FxTypeMeta { id: "chorus", label: "Chorus", params: CHORUS_PARAMS },
-    FxTypeMeta { id: "flanger", label: "Flanger", params: FLANGER_PARAMS },
+    FxTypeMeta {
+        id: "hall",
+        label: "Hall",
+        params: HALL_PARAMS,
+    },
+    FxTypeMeta {
+        id: "plate",
+        label: "Plate",
+        params: PLATE_PARAMS,
+    },
+    FxTypeMeta {
+        id: "room",
+        label: "Room",
+        params: ROOM_PARAMS,
+    },
+    FxTypeMeta {
+        id: "delay",
+        label: "Delay",
+        params: DELAY_PARAMS,
+    },
+    FxTypeMeta {
+        id: "chorus",
+        label: "Chorus",
+        params: CHORUS_PARAMS,
+    },
+    FxTypeMeta {
+        id: "flanger",
+        label: "Flanger",
+        params: FLANGER_PARAMS,
+    },
 ];
 
 /// Look up a design FX type by id or display label (case-insensitive).
 pub fn fx_type_meta(id_or_label: &str) -> Option<&'static FxTypeMeta> {
-    FX_TYPES
-        .iter()
-        .find(|t| t.id.eq_ignore_ascii_case(id_or_label) || t.label.eq_ignore_ascii_case(id_or_label))
+    FX_TYPES.iter().find(|t| {
+        t.id.eq_ignore_ascii_case(id_or_label) || t.label.eq_ignore_ascii_case(id_or_label)
+    })
 }
 
 /// The design's default 8-slot rack types (`buildFx` order: Hall, Plate,
 /// Delay, Chorus, Room, Delay, Flanger, Hall).
-pub const DESIGN_FX_DEFAULT_TYPES: [&str; 8] =
-    ["Hall", "Plate", "Delay", "Chorus", "Room", "Delay", "Flanger", "Hall"];
+pub const DESIGN_FX_DEFAULT_TYPES: [&str; 8] = [
+    "Hall", "Plate", "Delay", "Chorus", "Room", "Delay", "Flanger", "Hall",
+];
 
 /// Normalized default param vector for a design type id/label (falls back
 /// to the type table's own defaults when the id is unknown).
@@ -255,11 +480,18 @@ mod tests {
     fn design_type_tables_match_design_logic() {
         // Six types in UI order; labels mirror design-logic fxDefs.
         let labels: Vec<&str> = FX_TYPES.iter().map(|t| t.label).collect();
-        assert_eq!(labels, vec!["Hall", "Plate", "Room", "Delay", "Chorus", "Flanger"]);
+        assert_eq!(
+            labels,
+            vec!["Hall", "Plate", "Room", "Delay", "Chorus", "Flanger"]
+        );
         for id in ["Hall", "Plate", "Room"] {
             let t = fx_type_meta(id).unwrap();
             let labels: Vec<&str> = t.params.iter().map(|p| p.label).collect();
-            assert_eq!(labels, vec!["Decay", "Pre-delay", "Size", "Hi Damp", "Mix"], "{id}");
+            assert_eq!(
+                labels,
+                vec!["Decay", "Pre-delay", "Size", "Hi Damp", "Mix"],
+                "{id}"
+            );
             assert_eq!(t.params.len(), 5);
         }
         let delay = fx_type_meta("Delay").unwrap();

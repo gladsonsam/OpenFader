@@ -254,27 +254,42 @@ impl Engine {
                             });
                         }
                     }
-                    let outputs = if engine.reads_suspended.load(Ordering::Acquire) { None } else { drv.poll_output_meters() };
+                    let outputs = if engine.reads_suspended.load(Ordering::Acquire) {
+                        None
+                    } else {
+                        drv.poll_output_meters()
+                    };
                     if engine.connection_gen.load(Ordering::Acquire) == spectrum_generation
-                        && (outputs.as_ref().is_some_and(|s| !s.frames.is_empty()) || outputs_live) {
-                        let snapshot = outputs.unwrap_or(openfader_core::OutputMeterSnapshot { generation: output_source_generation, age_ms: 0, frames: Vec::new() });
+                        && (outputs.as_ref().is_some_and(|s| !s.frames.is_empty()) || outputs_live)
+                    {
+                        let snapshot = outputs.unwrap_or(openfader_core::OutputMeterSnapshot {
+                            generation: output_source_generation,
+                            age_ms: 0,
+                            frames: Vec::new(),
+                        });
                         output_source_generation = snapshot.generation;
                         outputs_live = !snapshot.frames.is_empty();
                         engine.broadcast(Event::OutputMeters {
                             epoch: spectrum_generation,
                             source_generation: snapshot.generation,
                             age_ms: snapshot.age_ms,
-                            frames: snapshot.frames.into_iter().map(|m| {
-                                let mut row = json!({"target": m.target, "levels": m.levels});
-                                if m.inferred { row["inferred"] = json!(true); }
-                                if let Some(gr) = m.compressor_gr {
-                                    row["compressor_gr"] = json!({
-                                        "reduction_db": gr.reduction_db,
-                                        "inferred": gr.inferred,
-                                    });
-                                }
-                                row
-                            }).collect(),
+                            frames: snapshot
+                                .frames
+                                .into_iter()
+                                .map(|m| {
+                                    let mut row = json!({"target": m.target, "levels": m.levels});
+                                    if m.inferred {
+                                        row["inferred"] = json!(true);
+                                    }
+                                    if let Some(gr) = m.compressor_gr {
+                                        row["compressor_gr"] = json!({
+                                            "reduction_db": gr.reduction_db,
+                                            "inferred": gr.inferred,
+                                        });
+                                    }
+                                    row
+                                })
+                                .collect(),
                         });
                     }
                     let dynamics = if engine.reads_suspended.load(Ordering::Acquire) {

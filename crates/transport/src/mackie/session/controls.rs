@@ -8,18 +8,27 @@ impl MackieSession {
     /// Recall a show snapshot the way the mixer app does: REQUEST `[1, n]`
     /// then RESPONSE `[1]`, fire-and-forget (no correlated reply).
     pub async fn recall_show_snapshot(&self, snapshot_1_based: u32) -> anyhow::Result<()> {
-        self.recall_show_snapshot_guarded(snapshot_1_based, &|| true).await
+        self.recall_show_snapshot_guarded(snapshot_1_based, &|| true)
+            .await
     }
 
     /// Both legs share a write lane and a final authority check. No retry.
-    pub async fn recall_show_snapshot_guarded(&self, snapshot_1_based: u32,
-        authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+    pub async fn recall_show_snapshot_guarded(
+        &self,
+        snapshot_1_based: u32,
+        authorize: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<()> {
         anyhow::ensure!(snapshot_1_based <= 99, "Snapshot must be 0..99");
         let mut lane = self.write.lock().await;
-        anyhow::ensure!(authorize(), "Native recall authority changed before dispatch");
+        anyhow::ensure!(
+            authorize(),
+            "Native recall authority changed before dispatch"
+        );
         let req = build_snapshot_recall_request(snapshot_1_based);
-        for (kind, body) in [(MessageType::Request, req),
-            (MessageType::Response, 1u32.to_be_bytes().to_vec())] {
+        for (kind, body) in [
+            (MessageType::Request, req),
+            (MessageType::Response, 1u32.to_be_bytes().to_vec()),
+        ] {
             let msg = Message::new(self.next_seq(), kind, Command::ShowSnapshot, body)?;
             lane.write_all(&msg.encode()).await?;
         }
@@ -35,7 +44,10 @@ impl MackieSession {
         snapshot_1_based: u32,
         name: &str,
     ) -> anyhow::Result<()> {
-        anyhow::ensure!((1..=99).contains(&snapshot_1_based), "snapshot must be 1..99");
+        anyhow::ensure!(
+            (1..=99).contains(&snapshot_1_based),
+            "snapshot must be 1..99"
+        );
         openfader_core::native_library::validate_name(name)?;
         let epoch = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -53,24 +65,48 @@ impl MackieSession {
 
     /// Native op 5 naming, validated without truncation. ACK is not a
     /// snapshot relay or evidence that any mixer state was stored.
-    pub async fn rename_show_snapshot_guarded(&self, slot: u32, name: &str,
-        authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
-        anyhow::ensure!((1..=99).contains(&slot), "Default snapshot cannot be renamed");
+    pub async fn rename_show_snapshot_guarded(
+        &self,
+        slot: u32,
+        name: &str,
+        authorize: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            (1..=99).contains(&slot),
+            "Default snapshot cannot be renamed"
+        );
         openfader_core::native_library::validate_name(name)?;
-        let epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
-        self.send_request_guarded(Command::ShowSnapshot, build_snapshot_save(slot, epoch, name),
-            REQUEST_TIMEOUT, authorize).await?;
+        let epoch = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
+        self.send_request_guarded(
+            Command::ShowSnapshot,
+            build_snapshot_save(slot, epoch, name),
+            REQUEST_TIMEOUT,
+            authorize,
+        )
+        .await?;
         Ok(())
     }
 
     /// Store current native state or delete a user position. ACK alone is not
     /// persistence proof; the provider must read the stored index back.
-    pub async fn mutate_snapshot_guarded(&self, slot: u32, delete: bool,
-        authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
-        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as u32;
-        let body = if delete { super::super::names::build_snapshot_delete(slot, timestamp)? }
-            else { super::super::names::build_snapshot_store(slot, timestamp)? };
-        self.send_request_guarded(Command::ShowSnapshot, body, REQUEST_TIMEOUT, authorize).await?;
+    pub async fn mutate_snapshot_guarded(
+        &self,
+        slot: u32,
+        delete: bool,
+        authorize: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<()> {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs() as u32;
+        let body = if delete {
+            super::super::names::build_snapshot_delete(slot, timestamp)?
+        } else {
+            super::super::names::build_snapshot_store(slot, timestamp)?
+        };
+        self.send_request_guarded(Command::ShowSnapshot, body, REQUEST_TIMEOUT, authorize)
+            .await?;
         self.caches.snapshot_names.lock().unwrap().clear();
         Ok(())
     }

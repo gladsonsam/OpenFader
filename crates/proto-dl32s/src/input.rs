@@ -1,16 +1,20 @@
 //! Input field validation, canonical mapping, verified reads and push decoding.
-use crate::{addrs, Dl32sDriver, DL32S_CAPABILITIES};
-use crate::assignments::{MEMBERSHIP_ALIASES, INPUT_SOLO_FIRST_ADDRESS};
-use crate::preamp::selected_preamp_strip;
 use crate::addrs::INPUT_COUNT;
-use openfader_core::{ParamUpdate, ParamValue, StripId, MixerDriver};
-use openfader_transport::mackie::{PushEvent, MUTE_GROUP_BASE_ADDRESS, MUTE_GROUP_COUNT, VALUE_TYPE_PARAM, VALUE_TYPE_MUTE_GROUP};
+use crate::assignments::{INPUT_SOLO_FIRST_ADDRESS, MEMBERSHIP_ALIASES};
+use crate::preamp::selected_preamp_strip;
+use crate::{addrs, Dl32sDriver, DL32S_CAPABILITIES};
+use openfader_core::{MixerDriver, ParamUpdate, ParamValue, StripId};
+use openfader_transport::mackie::{
+    PushEvent, MUTE_GROUP_BASE_ADDRESS, MUTE_GROUP_COUNT, VALUE_TYPE_MUTE_GROUP, VALUE_TYPE_PARAM,
+};
 
 /// Canonical id -> native table key for renamed leaves (`None` = same name).
 /// Pure renames only — unit conversions (pan) and domain guards (modes)
 /// stay as explicit arms in `set_param`/`get_param`/decode.
 pub(super) fn alias_target(param: &str) -> Option<&'static str> {
-    if let Some((_, native)) = MEMBERSHIP_ALIASES.iter().find(|(id, _)| *id == param) { return Some(*native); }
+    if let Some((_, native)) = MEMBERSHIP_ALIASES.iter().find(|(id, _)| *id == param) {
+        return Some(*native);
+    }
     Some(match param {
         "lr_assign" => "main_assign",
         "link" => "stereo_link",
@@ -27,7 +31,9 @@ pub(super) fn alias_target(param: &str) -> Option<&'static str> {
 }
 
 pub(super) fn canonical_for_table_key(key: &str) -> Option<&'static str> {
-    if let Some((id, _)) = MEMBERSHIP_ALIASES.iter().find(|(_, native)| *native == key) { return Some(*id); }
+    if let Some((id, _)) = MEMBERSHIP_ALIASES.iter().find(|(_, native)| *native == key) {
+        return Some(*id);
+    }
     Some(match key {
         "main_assign" => "lr_assign",
         "stereo_link" => "link",
@@ -60,7 +66,11 @@ pub(super) fn send_table_key(param: &str) -> Option<String> {
 }
 
 pub(super) fn decode_colour(raw: u32) -> f32 {
-    if raw == u32::MAX { -1.0 } else { raw as f32 }
+    if raw == u32::MAX {
+        -1.0
+    } else {
+        raw as f32
+    }
 }
 
 /// Decode one pushed raw into canonical `(strip, param, value)` triples,
@@ -72,8 +82,12 @@ pub(super) fn decode_colour(raw: u32) -> f32 {
 pub(super) fn decode_push_value(addr: u32, raw: u32) -> Vec<(StripId, String, ParamValue)> {
     let Some((first, table)) = crate::strips::topology().iter().find_map(|family| {
         let table = crate::strips::resolve(StripId(family.first as u16)).ok()?.0;
-        (table.base..table.base + table.stride * table.count).contains(&addr).then_some((family.first, table))
-    }) else { return Vec::new(); };
+        (table.base..table.base + table.stride * table.count)
+            .contains(&addr)
+            .then_some((family.first, table))
+    }) else {
+        return Vec::new();
+    };
     let ch0 = (first + ((addr - table.base) / table.stride) as usize) as u16;
     let off = (addr - table.base) % table.stride;
     let Some(field) = table.fields.iter().find(|f| f.offset == off) else {
@@ -88,13 +102,22 @@ pub(super) fn decode_push_value(addr: u32, raw: u32) -> Vec<(StripId, String, Pa
     match field.key {
         // Physical preamp addresses need routing-aware fanout, not ch=socket.
         "gain" | "phantom" => return out,
-        "fader" => push("fader".to_string(), ParamValue::Float(addrs::DL32S_FADER_SCALE.inverse(f))),
+        "fader" => push(
+            "fader".to_string(),
+            ParamValue::Float(addrs::DL32S_FADER_SCALE.inverse(f)),
+        ),
         "mute" => push("mute".to_string(), ParamValue::Bool(raw != 0)),
         "pan" => push("pan".to_string(), ParamValue::Float(f * 100.0)),
         "stereo_link" => {
             if ch0.is_multiple_of(2) {
-                return vec![(strip, "link".to_string(), ParamValue::Bool(raw != 0)),
-                    (StripId(ch0 + 1), "link".to_string(), ParamValue::Bool(raw != 0))];
+                return vec![
+                    (strip, "link".to_string(), ParamValue::Bool(raw != 0)),
+                    (
+                        StripId(ch0 + 1),
+                        "link".to_string(),
+                        ParamValue::Bool(raw != 0),
+                    ),
+                ];
             }
             return out;
         }
@@ -123,9 +146,7 @@ pub(super) fn decode_push_value(addr: u32, raw: u32) -> Vec<(StripId, String, Pa
             let value = match field.encoding {
                 addrs::Encoding::Bool => ParamValue::Bool(raw != 0),
                 addrs::Encoding::Db | addrs::Encoding::Float => ParamValue::Float(f),
-                addrs::Encoding::Enum | addrs::Encoding::Int => {
-                    ParamValue::Float(raw as f32)
-                }
+                addrs::Encoding::Enum | addrs::Encoding::Int => ParamValue::Float(raw as f32),
             };
             push(key.to_string(), value);
         }
@@ -207,14 +228,23 @@ pub(super) fn decode_push(push: PushEvent) -> Vec<ParamUpdate> {
             let mut out = Vec::new();
             for (i, raw) in raws.iter().enumerate() {
                 for (strip, param, value) in decode_push_value(start + i as u32, *raw) {
-                    out.push(ParamUpdate { received_at, strip, param, value });
+                    out.push(ParamUpdate {
+                        received_at,
+                        strip,
+                        param,
+                        value,
+                    });
                 }
             }
             out
         }
         PushEvent::Names { pairs } => pairs
             .into_iter()
-            .filter_map(|(slot, name)| (0..crate::strips::STRIP_COUNT).find(|i| crate::strips::name_slot(StripId(*i as u16)).ok() == Some(slot)).map(|i| (i, name)))
+            .filter_map(|(slot, name)| {
+                (0..crate::strips::STRIP_COUNT)
+                    .find(|i| crate::strips::name_slot(StripId(*i as u16)).ok() == Some(slot))
+                    .map(|i| (i, name))
+            })
             .map(|(i, name)| ParamUpdate {
                 received_at,
                 strip: StripId(i as u16),
@@ -238,29 +268,52 @@ impl Dl32sDriver {
     /// Write one table field, encoding the value per its wire type.
     /// Value-shape mistakes are reported before the connection is touched,
     /// so mapping bugs surface even offline.
-    pub(super) async fn set_field(&self, strip: StripId, key: &str, value: ParamValue) -> anyhow::Result<()> {
+    pub(super) async fn set_field(
+        &self,
+        strip: StripId,
+        key: &str,
+        value: ParamValue,
+    ) -> anyhow::Result<()> {
         let _write = self.output_write.lock().await;
         self.set_field_checked(strip, key, value, None).await
     }
 
-    pub(super) async fn set_field_checked(&self, strip: StripId, key: &str, value: ParamValue, expected: Option<&std::collections::BTreeMap<String, ParamValue>>) -> anyhow::Result<()> {
+    pub(super) async fn set_field_checked(
+        &self,
+        strip: StripId,
+        key: &str,
+        value: ParamValue,
+        expected: Option<&std::collections::BTreeMap<String, ParamValue>>,
+    ) -> anyhow::Result<()> {
         let (table, channel) = crate::strips::resolve(strip)?;
-        let field = if matches!(key, "gain" | "phantom") { addrs::dl32s_inputs().field(key)? } else { table.field(key)? };
-        anyhow::ensure!(crate::strips::supports(table, key), "Control unavailable for this strip family");
+        let field = if matches!(key, "gain" | "phantom") {
+            addrs::dl32s_inputs().field(key)?
+        } else {
+            table.field(key)?
+        };
+        anyhow::ensure!(
+            crate::strips::supports(table, key),
+            "Control unavailable for this strip family"
+        );
         enum Out {
             Int(u32),
             Float(f32),
         }
         let out = match (field.encoding, value) {
             (addrs::Encoding::Int, ParamValue::Float(v)) if key == "icon" => {
-                anyhow::ensure!(v.is_finite() && v.fract() == 0.0 &&
-                    (v == 0.0 || (1000.0..=1032.0).contains(&v)),
-                    "icon must be Clear (0) or a stock symbol 1000..1032, got {v}");
+                anyhow::ensure!(
+                    v.is_finite()
+                        && v.fract() == 0.0
+                        && (v == 0.0 || (1000.0..=1032.0).contains(&v)),
+                    "icon must be Clear (0) or a stock symbol 1000..1032, got {v}"
+                );
                 Out::Int(v as u32)
             }
             (addrs::Encoding::Int, ParamValue::Float(v)) if key == "colour" => {
-                anyhow::ensure!(v.is_finite() && v.fract() == 0.0 && (-1.0..=16.0).contains(&v),
-                    "colour must be None (-1) or an integer swatch 0..16, got {v}");
+                anyhow::ensure!(
+                    v.is_finite() && v.fract() == 0.0 && (-1.0..=16.0).contains(&v),
+                    "colour must be None (-1) or an integer swatch 0..16, got {v}"
+                );
                 Out::Int(if v == -1.0 { u32::MAX } else { v as u32 })
             }
             (addrs::Encoding::Bool, ParamValue::Bool(b)) => Out::Int(u32::from(b)),
@@ -288,22 +341,50 @@ impl Dl32sDriver {
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
         let route = if matches!(key, "gain" | "phantom") {
-            Some(session.cached_range::<3>(table.address(channel, "source_a")?)
-                .ok_or_else(|| anyhow::anyhow!("preamp routing context is unavailable"))?)
-        } else { None };
+            Some(
+                session
+                    .cached_range::<3>(table.address(channel, "source_a")?)
+                    .ok_or_else(|| anyhow::anyhow!("preamp routing context is unavailable"))?,
+            )
+        } else {
+            None
+        };
         if let Some(expected) = expected {
-            let route = route.ok_or_else(|| anyhow::anyhow!("guarded preamp control requires gain or phantom"))?;
+            let route = route.ok_or_else(|| {
+                anyhow::anyhow!("guarded preamp control requires gain or phantom")
+            })?;
             for (id, wanted) in expected {
-                let i = match id.as_str() { "source_a" => 0, "source_b" => 1, "source_select" => 2, _ => anyhow::bail!("invalid preamp context field {id}") };
-                anyhow::ensure!(*wanted == ParamValue::Float(route[i] as f32), "Input source changed; reopen the control.");
+                let i = match id.as_str() {
+                    "source_a" => 0,
+                    "source_b" => 1,
+                    "source_select" => 2,
+                    _ => anyhow::bail!("invalid preamp context field {id}"),
+                };
+                anyhow::ensure!(
+                    *wanted == ParamValue::Float(route[i] as f32),
+                    "Input source changed; reopen the control."
+                );
             }
         }
-        let physical = if let Some([a,b,selected]) = route {
-            let source = match selected { 1 => a, 0 => b, _ => anyhow::bail!("preamp source selection is unavailable") };
-            anyhow::ensure!((1000..=1031).contains(&source), "preamp unavailable for selected input source");
+        let physical = if let Some([a, b, selected]) = route {
+            let source = match selected {
+                1 => a,
+                0 => b,
+                _ => anyhow::bail!("preamp source selection is unavailable"),
+            };
+            anyhow::ensure!(
+                (1000..=1031).contains(&source),
+                "preamp unavailable for selected input source"
+            );
             source - 999
-        } else { channel };
-        let addr = if matches!(key, "gain" | "phantom") { addrs::dl32s_inputs().address(physical, key)? } else { table.address(physical, key)? };
+        } else {
+            channel
+        };
+        let addr = if matches!(key, "gain" | "phantom") {
+            addrs::dl32s_inputs().address(physical, key)?
+        } else {
+            table.address(physical, key)?
+        };
 
         match out {
             Out::Int(v) => session.write_int(addr, v, VALUE_TYPE_PARAM).await,
@@ -325,22 +406,54 @@ impl Dl32sDriver {
         self.get_field_mode(strip, key, true).await
     }
 
-    pub(super) async fn get_field_mode(&self, strip: StripId, key: &str, verified: bool) -> anyhow::Result<ParamValue> {
+    pub(super) async fn get_field_mode(
+        &self,
+        strip: StripId,
+        key: &str,
+        verified: bool,
+    ) -> anyhow::Result<ParamValue> {
         let (table, channel) = crate::strips::resolve(strip)?;
-        let field = if matches!(key, "gain" | "phantom") { addrs::dl32s_inputs().field(key)? } else { table.field(key)? };
-        anyhow::ensure!(crate::strips::supports(table, key), "Control unavailable for this strip family");
+        let field = if matches!(key, "gain" | "phantom") {
+            addrs::dl32s_inputs().field(key)?
+        } else {
+            table.field(key)?
+        };
+        anyhow::ensure!(
+            crate::strips::supports(table, key),
+            "Control unavailable for this strip family"
+        );
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
         let physical = if key == "stereo_link" {
-            if !channel.is_multiple_of(2) { channel } else { channel - 1 }
-        } else if matches!(key, "gain" | "phantom") { selected_preamp_strip(session, strip)? } else { channel };
-        let addr = if matches!(key, "gain" | "phantom") { addrs::dl32s_inputs().address(physical, key)? } else { table.address(physical, key)? };
-        let raw = if verified { session.cached_verified(addr) } else { session.cached(addr) }
-            .ok_or_else(|| anyhow::anyhow!("{key}: no desk-confirmed value yet"))?;
+            if !channel.is_multiple_of(2) {
+                channel
+            } else {
+                channel - 1
+            }
+        } else if matches!(key, "gain" | "phantom") {
+            selected_preamp_strip(session, strip)?
+        } else {
+            channel
+        };
+        let addr = if matches!(key, "gain" | "phantom") {
+            addrs::dl32s_inputs().address(physical, key)?
+        } else {
+            table.address(physical, key)?
+        };
+        let raw = if verified {
+            session.cached_verified(addr)
+        } else {
+            session.cached(addr)
+        }
+        .ok_or_else(|| anyhow::anyhow!("{key}: no desk-confirmed value yet"))?;
         if key == "stereo_link" {
             let peer = table.address(physical + 1, key)?;
-            let other = if verified { session.cached_verified(peer) } else { session.cached(peer) }
-                .ok_or_else(|| anyhow::anyhow!("link: no confirmed partner state"))?;
+            let other = if verified {
+                session.cached_verified(peer)
+            } else {
+                session.cached(peer)
+            }
+            .ok_or_else(|| anyhow::anyhow!("link: no confirmed partner state"))?;
             anyhow::ensure!(raw <= 1 && other <= 1, "Unknown stereo link state");
             Ok(ParamValue::Bool(raw != 0 || other != 0))
         } else if key == "colour" {
@@ -397,10 +510,16 @@ impl Dl32sDriver {
     /// Display/snapshot continuity for routing. Includes an acknowledged
     /// own write; get_param remains desk-evidenced and withholds pending words.
     pub async fn input_source_display(&self, strip: StripId, target: &str) -> anyhow::Result<u32> {
-        let leaf = match target { "a" => "source_a", "b" => "source_b", _ => anyhow::bail!("dl32s: choose routing target A or B") };
+        let leaf = match target {
+            "a" => "source_a",
+            "b" => "source_b",
+            _ => anyhow::bail!("dl32s: choose routing target A or B"),
+        };
         let (table, n) = crate::strips::resolve(strip)?;
         let address = table.address(n, leaf)?;
-        self.request_value_u32(address).await?.ok_or_else(|| anyhow::anyhow!("dl32s: source unavailable"))
+        self.request_value_u32(address)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("dl32s: source unavailable"))
     }
 
     pub async fn request_value_u32(&self, address: u32) -> anyhow::Result<Option<u32>> {
@@ -425,11 +544,19 @@ impl Dl32sDriver {
         value: ParamValue,
     ) -> anyhow::Result<()> {
         match (param, value) {
-            ("link", ParamValue::Bool(linked)) => self.set_stereo_link(strip, linked).await.map(|_| ()),
+            ("link", ParamValue::Bool(linked)) => {
+                self.set_stereo_link(strip, linked).await.map(|_| ())
+            }
             (leaf @ ("source_a" | "source_b"), ParamValue::Float(v)) => {
-                anyhow::ensure!(v.is_finite() && v.fract() == 0.0 &&
-                    (v == 0.0 || v == 17000.0 || (1000.0..=1031.0).contains(&v) || (2000.0..=2031.0).contains(&v)),
-                    "dl32s: source must be None, Oscillator, or a verified mic preamp/USB socket");
+                anyhow::ensure!(
+                    v.is_finite()
+                        && v.fract() == 0.0
+                        && (v == 0.0
+                            || v == 17000.0
+                            || (1000.0..=1031.0).contains(&v)
+                            || (2000.0..=2031.0).contains(&v)),
+                    "dl32s: source must be None, Oscillator, or a verified mic preamp/USB socket"
+                );
                 self.set_field(strip, leaf, ParamValue::Float(v)).await
             }
             ("source_select", ParamValue::Float(v)) => {
@@ -445,7 +572,8 @@ impl Dl32sDriver {
             ("name", _) => anyhow::bail!("dl32s: set_name requires text"),
             // Canonical pan is -100..+100; the wire leaf is -1.0..+1.0.
             ("pan", ParamValue::Float(v)) => {
-                self.set_field(strip, "pan", ParamValue::Float(v / 100.0)).await
+                self.set_field(strip, "pan", ParamValue::Float(v / 100.0))
+                    .await
             }
             // Binary-confirmed modes (live survey 2026-10-20 saw only 0/1
             // across 32 channels): modern=0/vintage=1 per Mackie convention
@@ -455,13 +583,15 @@ impl Dl32sDriver {
                 if v != 0.0 && v != 1.0 {
                     anyhow::bail!("dl32s: comp_mode must be 0 or 1, got {v}");
                 }
-                self.set_field(strip, "comp_mode", ParamValue::Float(v)).await
+                self.set_field(strip, "comp_mode", ParamValue::Float(v))
+                    .await
             }
             ("comp_knee", ParamValue::Float(v)) => {
                 if v != 0.0 && v != 1.0 {
                     anyhow::bail!("dl32s: comp_knee must be 0 (soft) or 1 (hard), got {v}");
                 }
-                self.set_field(strip, "comp_knee", ParamValue::Float(v)).await
+                self.set_field(strip, "comp_knee", ParamValue::Float(v))
+                    .await
             }
             // Gate attack uses the canonical alias path below (gate_attack
             // in the native table); modes retain their explicit domain guards.
@@ -469,7 +599,8 @@ impl Dl32sDriver {
                 if v != 0.0 && v != 1.0 {
                     anyhow::bail!("dl32s: gate_mode must be 0 or 1, got {v}");
                 }
-                self.set_field(strip, "gate_mode", ParamValue::Float(v)).await
+                self.set_field(strip, "gate_mode", ParamValue::Float(v))
+                    .await
             }
             ("eq_mode", ParamValue::Float(v)) => {
                 if v != 0.0 && v != 1.0 {
@@ -490,7 +621,11 @@ impl Dl32sDriver {
                 // Generic send slots ride the aux/FX leaves; send pans are
                 // canonical -100..+100 vs wire -1.0..+1.0.
                 if let Some(mapped) = send_table_key(key) {
-                    let w = if mapped.ends_with("_pan") { v / 100.0 } else { v };
+                    let w = if mapped.ends_with("_pan") {
+                        v / 100.0
+                    } else {
+                        v
+                    };
                     return self.set_field(strip, &mapped, ParamValue::Float(w)).await;
                 }
                 self.set_field(strip, key, ParamValue::Float(v)).await
@@ -518,7 +653,11 @@ impl Dl32sDriver {
     /// only — own-write-pending words withheld. Deliberately NOT routed via
     /// the inclusive display getters above (continuity without proof); each
     /// arm reads the verified cache directly, including unit conversion.
-    pub(super) async fn input_get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
+    pub(super) async fn input_get_param(
+        &self,
+        strip: StripId,
+        param: &str,
+    ) -> anyhow::Result<ParamValue> {
         match param {
             "fader" => {
                 let (table, ch) = crate::strips::resolve(strip)?;

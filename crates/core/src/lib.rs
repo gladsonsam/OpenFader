@@ -9,18 +9,18 @@
 //! tokio I/O. All methods past the core four have default bodies returning
 //! "unsupported", so stub drivers keep compiling while they grow.
 
-pub mod routing;
 pub mod access;
 pub mod destinations;
-pub mod global_controls;
-pub mod solo;
 pub mod fx;
-pub mod params;
+pub mod global_controls;
 pub mod output_meters;
+pub mod params;
+pub mod routing;
+pub mod solo;
 pub use output_meters::{OutputMeterFrame, OutputMeterSnapshot};
-pub mod presets;
 pub mod input_processors;
 pub mod native_library;
+pub mod presets;
 pub mod rta;
 pub mod show;
 pub mod sync;
@@ -503,7 +503,9 @@ pub trait MixerDriver: Send + Sync {
 
     /// Provider-declared channel pairs. Empty means that stereo linking is
     /// not available through the shared surface. Indices are zero-based.
-    fn stereo_pairs(&self) -> Vec<[u16; 2]> { Vec::new() }
+    fn stereo_pairs(&self) -> Vec<[u16; 2]> {
+        Vec::new()
+    }
     /// All strips affected by a shared linked control. Providers keep
     /// independent input controls local; the engine checks every member
     /// before any write. An unavailable link state must fail closed.
@@ -511,12 +513,14 @@ pub trait MixerDriver: Send + Sync {
         Ok(vec![strip])
     }
 
-
     /// Directional copy-and-link operation. Returned changes are accepted
     /// writes, never desk-originated readback. The engine authorizes both
     /// members before calling and publishes these with accepted provenance.
-    async fn set_stereo_link(&self, source: StripId, linked: bool)
-        -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+    async fn set_stereo_link(
+        &self,
+        source: StripId,
+        linked: bool,
+    ) -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
         let _ = (source, linked);
         anyhow::bail!("{}: stereo linking unavailable", self.name())
     }
@@ -524,12 +528,20 @@ pub trait MixerDriver: Send + Sync {
     // ---- connection ----
     async fn connect(&self, addr: &str) -> anyhow::Result<()>;
     /// Release the current transport and its subscription tasks.
-    async fn disconnect(&self) -> anyhow::Result<()> { Ok(()) }
+    async fn disconnect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
     /// Renew existing telemetry subscriptions after host suspension.
-    async fn refresh_streams(&self) -> anyhow::Result<()> { Ok(()) }
+    async fn refresh_streams(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
     /// Socket receipt stamps for level and GR samples, when the provider
     /// can prove their provenance. Replaying a cache does not advance them.
-    fn telemetry_timestamps(&self) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> { None }
+    fn telemetry_timestamps(
+        &self,
+    ) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> {
+        None
+    }
 
     // ---- channel strips ----
     async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()>;
@@ -596,7 +608,12 @@ pub trait MixerDriver: Send + Sync {
         anyhow::bail!("{}: subgroup mutes not supported", self.name())
     }
     /// Channel -> subgroup membership (DL32S `subN` leaf). Default: unsupported.
-    async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+    async fn set_subgroup_assign(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+    ) -> anyhow::Result<()> {
         let _ = (ch, group, member);
         anyhow::bail!("{}: subgroup assign not supported", self.name())
     }
@@ -618,7 +635,12 @@ pub trait MixerDriver: Send + Sync {
         anyhow::bail!("{}: mute groups not supported", self.name())
     }
     /// Channel -> mute-group membership. Default: unsupported.
-    async fn set_mute_group_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+    async fn set_mute_group_assign(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+    ) -> anyhow::Result<()> {
         let _ = (ch, group, member);
         anyhow::bail!("{}: mute-group assign not supported", self.name())
     }
@@ -798,10 +820,14 @@ pub trait MixerDriver: Send + Sync {
     }
 
     /// Stable provider output identities. Empty preserves legacy flat meters.
-    fn output_meter_targets(&self) -> Vec<String> { Vec::new() }
+    fn output_meter_targets(&self) -> Vec<String> {
+        Vec::new()
+    }
 
     /// None: unsupported; empty frames: supported but unavailable. Cache-only.
-    fn poll_output_meters(&self) -> Option<OutputMeterSnapshot> { None }
+    fn poll_output_meters(&self) -> Option<OutputMeterSnapshot> {
+        None
+    }
 
     /// None: unsupported; Some(empty): supported but no fresh measurement.
     fn poll_dynamics_meters(&self) -> Option<Vec<DynamicsMeterFrame>> {
@@ -859,9 +885,7 @@ pub trait MixerDriver: Send + Sync {
     /// `None` (the driver learns desk-side changes by polling only).
     /// Drivers that tap the transport update feed return a receiver here;
     /// values are engineering units, same as `get_param`.
-    fn subscribe_updates(
-        &self,
-    ) -> Option<tokio::sync::broadcast::Receiver<ParamUpdate>> {
+    fn subscribe_updates(&self) -> Option<tokio::sync::broadcast::Receiver<ParamUpdate>> {
         None
     }
 
@@ -874,7 +898,11 @@ pub trait MixerDriver: Send + Sync {
     /// Acquire/change/release the desk's shared RTA selector. An empty owner
     /// releases the current lease (disconnect); a named release affects only
     /// that client. Providers without a selector can ignore the hint.
-    async fn set_spectrum_target(&self, _owner: &str, _strip: Option<StripId>) -> anyhow::Result<()> {
+    async fn set_spectrum_target(
+        &self,
+        _owner: &str,
+        _strip: Option<StripId>,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -897,9 +925,15 @@ pub trait MixerDriver: Send + Sync {
     /// Explicit native-library inspection/operations. No provider means unsupported.
     /// Action errors must precede mutation dispatch. After any possible
     /// dispatch, return a confirmed/uncertain receipt; never retry internally.
-    fn native_library(&self) -> Option<serde_json::Value> { None }
-    async fn native_library_action(&self, _action: &serde_json::Value,
-        _expected: &serde_json::Value, _check: native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
+    fn native_library(&self) -> Option<serde_json::Value> {
+        None
+    }
+    async fn native_library_action(
+        &self,
+        _action: &serde_json::Value,
+        _expected: &serde_json::Value,
+        _check: native_library::Check<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
         anyhow::bail!("Native library operations unsupported")
     }
     fn native_snapshots(&self) -> Option<NativeSnapshots> {
@@ -908,10 +942,14 @@ pub trait MixerDriver: Send + Sync {
 
     /// Fail closed unless the provider serializes writes and fresh independent
     /// readback, checking the entire captured block and observed revisions.
-    fn input_processor_guard(&self) -> bool { false }
+    fn input_processor_guard(&self) -> bool {
+        false
+    }
     /// Complete EQ/filter/gate/compressor block, including enable flags.
     /// Identity, preamps, sources, mix levels and assignments are excluded.
-    fn channel_processing_guard(&self) -> bool { false }
+    fn channel_processing_guard(&self) -> bool {
+        false
+    }
     /// Capture (`write=None`) or recall one input setting, returning a full
     /// verified block: provider/generation, channel, processor, descriptor
     /// domains, values, observed revisions and stereo-link witnesses. A write
@@ -921,8 +959,14 @@ pub trait MixerDriver: Send + Sync {
     /// ACK/accepted state cannot substantiate this result. No wire CAS or
     /// detection of unreceived transitions is promised. A matching observed
     /// transition cannot be attributed to a particular writer on these wires.
-    async fn input_processor(&self, _strip: StripId, _processor: &str,
-        _write: Option<(&str, ParamValue)>, _expected: Option<&serde_json::Value>, _check: input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
+    async fn input_processor(
+        &self,
+        _strip: StripId,
+        _processor: &str,
+        _write: Option<(&str, ParamValue)>,
+        _expected: Option<&serde_json::Value>,
+        _check: input_processors::RecallCheck<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
         anyhow::bail!("guarded input processor recall unavailable for this provider")
     }
     /// Lock-local destination-wide control metadata and observed values.
@@ -938,7 +982,11 @@ pub trait MixerDriver: Send + Sync {
     /// independent readback. Gesture providers require it for enable ownership;
     /// never construct a receipt from a later unlocked cache collection.
     async fn set_destination_control_guarded(
-        &self, target: &str, control: &str, value: f32, expected: f32,
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
         snapshot: &[destinations::DestinationControl],
     ) -> anyhow::Result<Option<crate::destinations::DestinationControl>> {
         let _ = (target, control, value, expected, snapshot);
@@ -946,16 +994,28 @@ pub trait MixerDriver: Send + Sync {
     }
 
     /// FX uses the complete destination guard and repeats authority at dispatch.
-    async fn set_fx_control_guarded(&self, target: &str, control: &str, value: f32,
-        expected: f32, snapshot: &[destinations::DestinationControl],
-        context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<destinations::DestinationControl> {
+    async fn set_fx_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<destinations::DestinationControl> {
         let _ = (target, control, value, expected, snapshot, context);
         anyhow::bail!("guarded FX unavailable")
     }
     /// Target solo repeats engine authority at dispatch.
-    async fn set_target_solo(&self, target: &str, control: &str, value: f32,
-        expected: f32, snapshot: &[destinations::DestinationControl],
-        context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<destinations::DestinationControl> {
+    async fn set_target_solo(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<destinations::DestinationControl> {
         let _ = (target, control, value, expected, snapshot, context);
         anyhow::bail!("target solo unsupported")
     }
@@ -963,7 +1023,11 @@ pub trait MixerDriver: Send + Sync {
     /// Compare the captured display value and write against one live session.
     /// Implementations must reject unknown targets/domains and stale context.
     async fn set_destination_control(
-        &self, target: &str, control: &str, value: f32, expected: f32,
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
     ) -> anyhow::Result<()> {
         let _ = (target, control, value, expected);
         anyhow::bail!("{}: destination controls not supported", self.name())
@@ -1011,12 +1075,27 @@ mod tests {
         assert_eq!(super::strip_key("fxret", 1), "fxret/01");
         assert_eq!(super::strip_key("main", 1), "main");
         assert_eq!(super::parse_strip_key("ch/01"), Some(("ch".to_string(), 1)));
-        assert_eq!(super::parse_strip_key("bus/1"), Some(("bus".to_string(), 1)));
-        assert_eq!(super::parse_strip_key("dca/2"), Some(("dca".to_string(), 2)));
-        assert_eq!(super::parse_strip_key("main"), Some(("main".to_string(), 1)));
-        assert_eq!(super::parse_strip_key("main/1"), Some(("main".to_string(), 1)));
+        assert_eq!(
+            super::parse_strip_key("bus/1"),
+            Some(("bus".to_string(), 1))
+        );
+        assert_eq!(
+            super::parse_strip_key("dca/2"),
+            Some(("dca".to_string(), 2))
+        );
+        assert_eq!(
+            super::parse_strip_key("main"),
+            Some(("main".to_string(), 1))
+        );
+        assert_eq!(
+            super::parse_strip_key("main/1"),
+            Some(("main".to_string(), 1))
+        );
         assert_eq!(super::strip_key("mix", 1), "bus/01");
-        assert_eq!(super::parse_strip_key("mix/01"), Some(("bus".to_string(), 1)));
+        assert_eq!(
+            super::parse_strip_key("mix/01"),
+            Some(("bus".to_string(), 1))
+        );
         // Malformed keys fail.
         for bad in ["", " ", "ch/", "ch/0", "/01", "ch/01/x", "ch/x", "main/2x"] {
             assert_eq!(super::parse_strip_key(bad), None, "key {bad:?}");
@@ -1024,7 +1103,11 @@ mod tests {
         // Round-trip across the padded range.
         for n in 1..=48u16 {
             let k = super::strip_key("ch", n);
-            assert_eq!(super::parse_strip_key(&k), Some(("ch".to_string(), n.min(99))), "key {k}");
+            assert_eq!(
+                super::parse_strip_key(&k),
+                Some(("ch".to_string(), n.min(99))),
+                "key {k}"
+            );
         }
     }
 
@@ -1032,13 +1115,53 @@ mod tests {
     fn strip_key_index_roundtrip_bus_alias() {
         use super::{strip_index_for_key, strip_key_for_index, StripFamily, StripKind};
         let sim = [
-            StripFamily { key: "ch", kind: StripKind::In, label: "Ch", first: 0, count: 2, name_prefix: "Ch", color_default: 2 },
-            StripFamily { key: "mix", kind: StripKind::Bus, label: "Mix", first: 2, count: 2, name_prefix: "Mix", color_default: 6 },
-            StripFamily { key: "main", kind: StripKind::Main, label: "Main", first: 4, count: 1, name_prefix: "Main", color_default: 11 },
+            StripFamily {
+                key: "ch",
+                kind: StripKind::In,
+                label: "Ch",
+                first: 0,
+                count: 2,
+                name_prefix: "Ch",
+                color_default: 2,
+            },
+            StripFamily {
+                key: "mix",
+                kind: StripKind::Bus,
+                label: "Mix",
+                first: 2,
+                count: 2,
+                name_prefix: "Mix",
+                color_default: 6,
+            },
+            StripFamily {
+                key: "main",
+                kind: StripKind::Main,
+                label: "Main",
+                first: 4,
+                count: 1,
+                name_prefix: "Main",
+                color_default: 11,
+            },
         ];
         let xair = [
-            StripFamily { key: "ch", kind: StripKind::In, label: "Ch", first: 0, count: 2, name_prefix: "Ch", color_default: 2 },
-            StripFamily { key: "bus", kind: StripKind::Bus, label: "Bus", first: 2, count: 2, name_prefix: "Mix", color_default: 6 },
+            StripFamily {
+                key: "ch",
+                kind: StripKind::In,
+                label: "Ch",
+                first: 0,
+                count: 2,
+                name_prefix: "Ch",
+                color_default: 2,
+            },
+            StripFamily {
+                key: "bus",
+                kind: StripKind::Bus,
+                label: "Bus",
+                first: 2,
+                count: 2,
+                name_prefix: "Mix",
+                color_default: 6,
+            },
         ];
         assert_eq!(strip_key_for_index(&sim, 2), Some("bus/01".to_string()));
         assert_eq!(strip_key_for_index(&xair, 2), Some("bus/01".to_string()));

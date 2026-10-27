@@ -10,21 +10,15 @@ use tokio::time::{timeout, Duration};
 use tokio_tungstenite::tungstenite::Message;
 
 type WsTx = futures::stream::SplitSink<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     Message,
 >;
 type WsRx = futures::stream::SplitStream<
-    tokio_tungstenite::WebSocketStream<
-        tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-    >,
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
 >;
 
 async fn serve() -> String {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let opts = openfader_serve::ServeOptions {
         driver: "sim".to_string(),
@@ -35,7 +29,9 @@ async fn serve() -> String {
 }
 
 async fn connect(url: &str) -> (WsTx, WsRx) {
-    let (stream, _) = tokio_tungstenite::connect_async(url).await.expect("WS connect");
+    let (stream, _) = tokio_tungstenite::connect_async(url)
+        .await
+        .expect("WS connect");
     stream.split()
 }
 
@@ -78,8 +74,8 @@ async fn next_typed(rx: &mut WsRx, want: &str) -> Value {
 /// R2 devices/link/info/scenes/fx/routing), asserting its order.
 async fn drain_snapshot(rx: &mut WsRx) {
     for want in [
-        "you", "state", "shows", "clients", "locks", "caps", "devices", "link", "info",
-        "scenes", "fx", "routing",
+        "you", "state", "shows", "clients", "locks", "caps", "devices", "link", "info", "scenes",
+        "fx", "routing",
     ] {
         let v = next_typed(rx, want).await;
         assert_eq!(v.get("type").and_then(Value::as_str), Some(want));
@@ -132,7 +128,11 @@ async fn ws_r2_scene_fx_routing_roundtrip() {
     drain_snapshot(&mut rx).await;
     send(&mut tx, json!({"cmd":"fader","ch":0,"value":0.9})).await;
     next_typed(&mut rx, "state").await;
-    send(&mut tx, json!({"cmd":"param","ch":0,"field":"eq1_gain","value":5.0})).await;
+    send(
+        &mut tx,
+        json!({"cmd":"param","ch":0,"field":"eq1_gain","value":5.0}),
+    )
+    .await;
     next_typed(&mut rx, "param").await;
     send(&mut tx, json!({"cmd":"scene_save","n":4,"name":"WS Set"})).await;
     let scenes = next_typed(&mut rx, "scenes").await;
@@ -163,18 +163,30 @@ async fn ws_r2_scene_fx_routing_roundtrip() {
     // Drain the completed recall, including its restored FX rack, before
     // checking the response to a subsequent FX edit.
     next_typed(&mut rx, "scenes").await;
-    send(&mut tx, json!({"cmd":"fx_set_type","slot":2,"type":"Delay"})).await;
+    send(
+        &mut tx,
+        json!({"cmd":"fx_set_type","slot":2,"type":"Delay"}),
+    )
+    .await;
     let fx = next_typed(&mut rx, "fx").await;
     let slots = fx.get("slots").and_then(Value::as_array).unwrap();
     assert_eq!(slots[1].get("type"), Some(&json!("Delay")));
-    send(&mut tx, json!({"cmd":"fx_param","slot":2,"id":"mix","value":0.25})).await;
+    send(
+        &mut tx,
+        json!({"cmd":"fx_param","slot":2,"id":"mix","value":0.25}),
+    )
+    .await;
     let fx = next_typed(&mut rx, "fx").await;
     let slots = fx.get("slots").and_then(Value::as_array).unwrap();
     assert_eq!(
         slots[1].get("params").and_then(|p| p.get("mix")),
         Some(&json!(0.25f32))
     );
-    send(&mut tx, json!({"cmd":"patch_set","strip":3,"group":"USB","index":7})).await;
+    send(
+        &mut tx,
+        json!({"cmd":"patch_set","strip":3,"group":"USB","index":7}),
+    )
+    .await;
     let routing = next_typed(&mut rx, "routing").await;
     assert!(routing
         .get("patches")
@@ -200,7 +212,11 @@ async fn ws_r2_offline_diff_and_push() {
     send(&mut tx, json!({"cmd":"offline","model":"xair"})).await;
     let link = next_typed(&mut rx, "link").await;
     assert_eq!(link.get("state"), Some(&json!("offline")));
-    send(&mut tx, json!({"cmd":"param","ch":1,"field":"gain","value":33.0})).await;
+    send(
+        &mut tx,
+        json!({"cmd":"param","ch":1,"field":"gain","value":33.0}),
+    )
+    .await;
     next_typed(&mut rx, "param").await;
     send(&mut tx, json!({"cmd":"connect","driver":"sim"})).await;
     let diff = next_typed(&mut rx, "offline_diff").await;
@@ -260,5 +276,8 @@ async fn ws_r2_taps_json_and_binary() {
     let taps = next_typed(&mut rx_b, "taps").await;
     let tap = taps.get("tap").and_then(Value::as_str).unwrap();
     assert!(["in", "post", "gr_gate", "gr_comp"].contains(&tap));
-    assert_eq!(taps.get("levels").and_then(Value::as_array).unwrap().len(), 81);
+    assert_eq!(
+        taps.get("levels").and_then(Value::as_array).unwrap().len(),
+        81
+    );
 }

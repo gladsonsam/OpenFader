@@ -118,7 +118,9 @@ pub(super) fn ingest_native(
                         v.output_routes.ingest(*start, raws);
                         v.fx.ingest(*start, raws);
                     }
-                    if *value_type == VALUE_TYPE_MUTE_GROUP { v.globals.ingest(*start, raws); }
+                    if *value_type == VALUE_TYPE_MUTE_GROUP {
+                        v.globals.ingest(*start, raws);
+                    }
                     v.solos.ingest(*value_type, *start, raws);
                     v.output_processing.ingest(*value_type, *start, raws);
                 }

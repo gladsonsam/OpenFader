@@ -290,7 +290,11 @@ mod tests {
             .unwrap();
         assert_eq!(peak, 4, "tone at 4 cycles/window must peak at bin 4");
         assert!((bins[4] - 1.0).abs() < 1e-5, "peak bin normalized to 1.0");
-        assert!(bins[0] < 0.1, "mean removal must suppress DC, got {}", bins[0]);
+        assert!(
+            bins[0] < 0.1,
+            "mean removal must suppress DC, got {}",
+            bins[0]
+        );
 
         let flat = rta.spectrum(1);
         assert_eq!(flat.len(), SPECTRUM_BINS);

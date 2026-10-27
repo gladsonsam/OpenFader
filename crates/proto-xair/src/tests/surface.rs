@@ -275,22 +275,18 @@ async fn driver_aux_strip_param_path() {
     assert!((g - 3.0).abs() < 1e-4, "aux eq1_gain readback {g}");
     // Aux carries 4 EQ bands like the FX returns: band 5+ is
     // scope-rejected driver-side, never hitting a silent address.
-    assert!(
-        driver
-            .set_param(aux, "eq5_gain", ParamValue::Float(0.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(aux, "eq5_gain", ParamValue::Float(0.0))
+        .await
+        .is_err());
     // Input-scoped leaves stay out of scope on the aux return.
     assert!(driver.get_param(aux, "gain").await.is_err());
     assert!(driver.get_param(aux, "phantom").await.is_err());
     // Channel sends are channel-scoped: aux sends ride no leaf here.
-    assert!(
-        driver
-            .set_param(aux, "aux1_level", ParamValue::Float(-10.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(aux, "aux1_level", ParamValue::Float(-10.0))
+        .await
+        .is_err());
 }
 
 /// Headamp gain/phantom loopback over UDP (`crate::headamp`,
@@ -309,18 +305,14 @@ async fn driver_headamp_gain_phantom_roundtrip() {
     // The fake stores verbatim; epsilon covers f32 conversion only —
     // hardware quantization is uncharacterized (see `crate::headamp`).
     assert!((db - 24.0).abs() < 0.05, "headamp gain readback {db}");
-    assert!(
-        driver
-            .set_param(StripId(0), "gain", ParamValue::Float(61.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "gain", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "gain", ParamValue::Float(61.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "gain", ParamValue::Bool(true))
+        .await
+        .is_err());
 
     driver
         .set_param(StripId(0), "phantom", ParamValue::Bool(true))
@@ -338,20 +330,16 @@ async fn driver_headamp_gain_phantom_roundtrip() {
         driver.get_param(StripId(0), "phantom").await.unwrap(),
         ParamValue::Bool(false)
     );
-    assert!(
-        driver
-            .set_param(StripId(0), "phantom", ParamValue::Float(1.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "phantom", ParamValue::Float(1.0))
+        .await
+        .is_err());
 
     // Phantom strips stay local: no headamp past the model bound (T3).
-    assert!(
-        driver
-            .set_param(StripId(16), "gain", ParamValue::Float(24.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(16), "gain", ParamValue::Float(24.0))
+        .await
+        .is_err());
     assert!(driver.get_param(StripId(16), "phantom").await.is_err());
     // Unknown params still rejected — including `inputsource`
     // (`/ch/NN/config/insrc`), which is live-silent on this rig
@@ -365,12 +353,10 @@ async fn driver_headamp_gain_phantom_roundtrip() {
     assert!(driver.get_param(StripId(0), "fx1_mute").await.is_err());
     assert!(driver.get_param(StripId(0), "aux7_level").await.is_err());
     assert!(driver.get_param(StripId(0), "aux8_level").await.is_err());
-    assert!(
-        driver
-            .set_param(StripId(0), "aux1_mute", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "aux1_mute", ParamValue::Bool(true))
+        .await
+        .is_err());
 }
 
 /// Pan loopback over UDP (`crate::mix`, UNVERIFIED-ON-RIG): engineering
@@ -389,24 +375,18 @@ async fn driver_pan_roundtrip() {
         assert!((back - eng).abs() < 1e-4, "pan {eng} -> {back}");
         let _ = wire;
     }
-    assert!(
-        driver
-            .set_param(StripId(0), "pan", ParamValue::Float(100.1))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "pan", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(40), "pan", ParamValue::Float(0.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "pan", ParamValue::Float(100.1))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "pan", ParamValue::Bool(true))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(40), "pan", ParamValue::Float(0.0))
+        .await
+        .is_err());
 }
 
 /// Strip look loopback over UDP (`crate::look`): colour `0..=15` is a
@@ -442,18 +422,14 @@ async fn driver_look_roundtrip() {
         driver.get_param(StripId(0), "link").await.unwrap(),
         ParamValue::Bool(true)
     );
-    assert!(
-        driver
-            .set_param(StripId(0), "color", ParamValue::Float(16.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "icon", ParamValue::Float(32.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "color", ParamValue::Float(16.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "icon", ParamValue::Float(32.0))
+        .await
+        .is_err());
     // DCA strips carry colour (basics) but no link (input-only).
     driver
         .set_param(StripId(31), "color", ParamValue::Float(0.0))

@@ -57,10 +57,13 @@ pub struct DestinationControl {
 
 impl DestinationControl {
     pub fn allows_value(&self, value: f32) -> bool {
-        value.is_finite() && (self.choices.iter().any(|choice| choice.value == value)
-            || self.range.as_ref().is_some_and(|range| {
-                range.min.is_finite() && range.max.is_finite() && range.min < range.max
-                    && (range.min..=range.max).contains(&value)
-            }))
+        value.is_finite()
+            && (self.choices.iter().any(|choice| choice.value == value)
+                || self.range.as_ref().is_some_and(|range| {
+                    range.min.is_finite()
+                        && range.max.is_finite()
+                        && range.min < range.max
+                        && (range.min..=range.max).contains(&value)
+                }))
     }
 }
