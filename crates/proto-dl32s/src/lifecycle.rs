@@ -130,8 +130,8 @@ impl Dl32sDriver {
         // connect bumps the generation or the session drops). Mirrors the
         // X-Air session->driver forward path. Type-1 meter blocks ride a
         // separate telemetry branch; `decode_push` never treats them as params.
-        // The per-client 283-entry layout preserves the input/RTA prefix
-        // (input0..31, RTA60..90) and appends six dynamics words per input.
+        // The per-client 285-entry layout preserves the input/RTA prefix
+        // (input0..31, RTA62..92) and appends six dynamics words per input.
         // A refused override leaves extended telemetry unavailable while
         // the default input stream can continue.
         if let Err(e) = session
@@ -231,9 +231,9 @@ impl Dl32sDriver {
                                     m.dynamics = frames;
                                 }
                             }
-                            // The 283-word frame retains the input/RTA prefix: meters
-                            // above, RTA bins at 60..90. A 60-word frame
-                            // also carries output levels, but no RTA bins.
+                            // The explicit frame carries RTA after the 62-word strip
+                            // prefix. Legacy 60-word frames supply input IN only;
+                            // their output aliases must never be labelled DL32S.
                             if let Some(bins) = decode_rta_bins(&push) {
                                 if let Ok(mut s) = spectrum.lock() {
                                     if s.generation == generation {

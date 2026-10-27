@@ -67,7 +67,9 @@ No delay/filter/GEQ descriptors are inferred onto the different Subgroup schema.
 
 - Main GEQ enable4361; 20Hz4363, 630Hz4378, 20kHz4393. Corrected the previous
   band's one-word offset. Removed unproven GEQ master4360; do not substitute
-  suspected4362 until a native movement proves it.
+  suspected4362 until a native movement proves it. The later parent revision
+  exposes4362 as inferred GEQ master gain from compiled snapshot metadata;
+  the earlier movement capture alone did not establish it.
 - Main compressor threshold4355, ratio4358, knee4359; PEQ band1 gain4417,
   shape4416 (2 Bell/3 Low shelf).
 - Main HPF enable4394, frequency4395, slope4396: 0=6,1=12,2=18 dB/oct.
@@ -89,9 +91,10 @@ semantics remain inferred. Native slope choices unprobed on each individual
 filter remain inferred, not independently verified. Ratio101 infinity sentinel
 retains the existing input-like inference.
 
-GEQ master is withheld; output meters/GR, measured PEQ response, linked-output
-propagation, presets, GEQ draw/reset, mode-1 editing and shelf-Q semantics remain
-incomplete. Only pushed values have readback authority; accepted writes retain
+GEQ master gain is exposed as inferred from compiled native metadata. Output
+levels use the corrected native layout described below; output GR remains
+unavailable. Measured PEQ response, linked-output propagation, presets, GEQ
+draw/reset, mode-1 editing and shelf-Q semantics remain incomplete. Only pushed values have readback authority; accepted writes retain
 unconfirmed authority. Unknown/out-of-domain values stay unavailable. Mode,
 expected value, per-word revision and connection-generation guards remain.
 
@@ -103,7 +106,8 @@ expected value, per-word revision and connection-generation guards remain.
    Establish raw metre scaling at two exact distances. Confirm temperature is
    one shared type2/7 parameter from both output views; probe 0/40 °C, checking
    distance stays fixed while displayed time changes. Identify GEQ master
-   independently; do not write unknown4360/4362 through the product.
+   independently; do not write unknown4360 or treat inferred4362 as physically
+   calibrated.
 2. Batch stride anchors: Aux2–8 one filter or delay and terminal GEQ band on
    Aux8; Sub1–6 one compressor/PEQ anchor (no subgroup delay assumption).
    Restore exact original raw words and require full5257/107/75 equality after
@@ -134,3 +138,58 @@ expected value, per-word revision and connection-generation guards remain.
   This checks consistency, not wire semantics. Diagnostic remains in `/tmp`,
   not in the repository; no frontend tests or Rust test cases were added.
 - No full builds/workspace suites, native/device control or hardware access.
+
+## DL32S meter geometry correction (2026-10-27)
+
+The DL32S-only override now requests 62 strip words, then 31 passive RTA
+words (93 total), then 32 six-word input dynamics rows (285 total).
+`transport::mackie::dl32s_meters` owns the exact list and derived offsets;
+the shared 60-word family handshake/default remains unchanged for other
+callers. Legacy 60-word frames supply only input IN in the DL32S driver;
+their output labels, RTA and dynamics fail closed. Exact shape and list ID
+are required. The list is fixed per connection; generation/freshness and the
+single shell poll loop remain unchanged. Length alone does not authenticate
+a different same-length list, so concurrent layout replacements are unsupported.
+
+Zero-based sample positions:
+
+- 0..31: input IN (`34+7c`). Generic strip topology/meter frames stay 32 inputs.
+- 32..33: Return IN (`258`, `262`).
+- 34..37: FX SEND (`266..269`), output targets `fx/01..04`; tap timing unknown.
+- 38..45: Aux OUT (`310+4a`), output targets `bus/01..08`.
+- 46..53: four FX-return PREFADER L/R pairs (`270..277`); distinct from FX sends,
+  not flattened into generic strip meters or exposed as send output levels.
+- 54..59: Subgroup OUT (`278+4s`), targets `subgroup/01..06`.
+- 60..61: Main OUT L/R (`302/303`), target `main`.
+- 62..92: RTA (`3..33`); 93..284: input dynamics (`35+7c..40+7c`).
+
+Provenance: supplied `openfader-native-meter-decoding-evidence-20261027.json`
+traces installed Master Fader 5.2 build 28602 DL32S/DLFresh32 native getters
+and raw f32 receiver/list ordering. The supplied
+`openfader-native-output-meters-20261027-final.json` contains 73 passive
+explicit-116-word frames, list ID 1, with requested-address order retained;
+14 old 60-word frames were discarded. `start=1` is a list ID, not address 1.
+The 62-word grouping is our proposed product list. Scratch diagnostics project
+captured raw words by address into it; that is not a captured 285-word stream.
+The JSON has no serialized outbound request body, so a derived body hash is
+not an observed wire hash. No new physical calibration is claimed.
+
+All 18 captured output COMP_GR slots were zero. The production list omits
+output GR; the existing contract continues to emit `reduction_db: None` with
+`inferred: true` for Aux/Subgroup/Main, and no compressor contract for FX
+sends. Nonzero output GR scale/sign calibration, physical connector correlation,
+OUT/SEND tap timing, and integrated device verification remain open. The
+existing GEQ master contract is unaffected by this geometry correction.
+
+Validation for this correction: `cargo test --workspace --locked` passed
+443 tests, 3 ignored. The first run failed the existing engine
+`pipelined_writes_still_preempt` timing threshold (69.9 ms p99 versus 25 ms)
+while Clippy was compiling; the complete rerun after compilation passed.
+Clippy for `openfader-proto-dl32s` and `openfader-transport` passed with
+`-D warnings`. No Dart changed, no dependencies or permanent tests were added.
+Scratch production-source diagnostics checked 73 captured frames projected
+into each 62/93/285-word shape (219 decodes), 19 output targets/20 samples,
+all lengths 0..349, list ID/type and nonfinite rejection, RTA sentinel,
+dynamics row/GR validity, unity at 0 dB, generation/staleness, and the derived
+serialized-prefix hash. RTA/dynamics suffix samples in this projection were
+synthetic. No hardware, mixer network, GUI/device or full app build was used.

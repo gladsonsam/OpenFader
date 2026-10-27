@@ -1,24 +1,22 @@
-//! Existing 60-word family prefix only; no subscriptions or invented tap positions.
+//! Native DL32S explicit-list output levels; no invented tap positions.
 use crate::Dl32sDriver;
-use openfader_core::{output_meters::OutputCompressorGr, OutputMeterFrame, OutputMeterSnapshot};
-use openfader_transport::mackie::{PushEvent, VALUE_TYPE_METERS};
+use openfader_core::{OutputMeterFrame, OutputMeterSnapshot, output_meters::OutputCompressorGr};
+use openfader_transport::mackie::{PushEvent, VALUE_TYPE_METERS, dl32s_meters as layout};
 use std::{sync::atomic::Ordering, time::Duration};
 
 pub(super) fn targets() -> Vec<String> {
-    (1..=8)
+    (1..=layout::AUX_COUNT)
         .map(|n| format!("bus/{n:02}"))
-        .chain((1..=6).map(|n| format!("subgroup/{n:02}")))
-        .chain((1..=4).map(|n| format!("fx/{n:02}")))
+        .chain((1..=layout::SUBGROUP_COUNT).map(|n| format!("subgroup/{n:02}")))
+        .chain((1..=layout::FX_COUNT).map(|n| format!("fx/{n:02}")))
         .chain(["main".into()])
         .collect()
 }
 
-/// Structural evidence: dl32_family_meter_addresses explicitly orders fourteen
-/// 318+4z master words, four 278+2z FX-out words, then 310/311 Main L/R.
-/// Eight Aux followed by six subgroup labels match the output inventory but
-/// remain inferred until independently correlated. FX-out slot order and Main
-/// L/R also need live correlation; none of these claim a post-fader tap.
-/// Returns and FX-in words are deliberately outside this output contract.
+/// Native DL32S OUT/SEND getters map the explicit list, never the legacy
+/// family list. FX identities here are sends (tap unknown); the separate
+/// stereo FX-return PREFADER pairs at FX_RETURN_OFFSET are not send levels.
+/// Native semantics plus passive raw-f32 evidence are not physical calibration.
 pub(super) fn decode(push: &PushEvent) -> Option<Vec<OutputMeterFrame>> {
     let PushEvent::Values {
         value_type: VALUE_TYPE_METERS,
@@ -28,45 +26,44 @@ pub(super) fn decode(push: &PushEvent) -> Option<Vec<OutputMeterFrame>> {
     else {
         return None;
     };
-    if !matches!(raws.len(), 60 | 91 | 283) {
+    if !layout::is_explicit_shape(raws.len()) {
         return None;
     }
-    let levels: Option<Vec<f32>> = raws[40..60]
-        .iter()
-        .map(|raw| {
-            let db = f32::from_bits(*raw);
-            db.is_finite().then(|| 10f32.powf(db.min(0.0) / 20.0))
-        })
-        .collect();
-    let levels = levels?;
-    Some(
-        targets()
-            .into_iter()
-            .enumerate()
-            .map(|(i, target)| OutputMeterFrame {
+    // Ordered exactly like targets(); Main alone owns an L/R pair.
+    let positions = (layout::AUX_OFFSET..layout::FX_RETURN_OFFSET)
+        .map(|i| (i, 1))
+        .chain((layout::SUBGROUP_OFFSET..layout::MAIN_OFFSET).map(|i| (i, 1)))
+        .chain((layout::FX_SEND_OFFSET..layout::AUX_OFFSET).map(|i| (i, 1)))
+        .chain([(layout::MAIN_OFFSET, layout::STEREO_WIDTH)]);
+    targets()
+        .into_iter()
+        .zip(positions)
+        .map(|(target, (offset, width))| {
+            let levels = raws[offset..offset + width]
+                .iter()
+                .map(|raw| {
+                    let db = f32::from_bits(*raw);
+                    db.is_finite().then(|| 10f32.powf(db.min(0.0) / 20.0))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some(OutputMeterFrame {
                 compressor_gr: compressor_gr_indices(&target).map(|_| OutputCompressorGr {
                     reduction_db: None,
                     inferred: true,
                 }),
                 target,
-                levels: if i == 18 {
-                    levels[18..20].to_vec()
-                } else {
-                    vec![levels[i]]
-                },
+                levels,
                 inferred: true,
             })
-            .collect(),
-    )
+        })
+        .collect()
 }
 
-/// Compiled DL32S getters identify meter-wire-type-1 indices, NOT global
-/// type-2 parameters. These are addresses in METER_LAYOUT, never raw offsets.
-/// The captured 60/91/283-word layouts do not include a dedicated output GR
-/// block. The legacy family prefix does include 280/284 (previously inferred
-/// FX-out slots); that overlap does not prove output GR encoding/units/sign.
-/// Preserve the existing level stream and deliberately emit GR absence until
-/// a labelled capture establishes both the requested layout and sample scale.
+/// Native meter-wire-type-1 addresses, NOT type-2 parameters/raw offsets.
+/// Our 62/93/285-word lists omit output GR. All 18 GR slots in the supplied
+/// 73 passive explicit-116-word frames were zero: static positive-attenuation
+/// parity is not nonzero output scale calibration. Emit absence/inferred until
+/// that calibration exists; do not reinterpret a subgroup GR as an FX level.
 fn compressor_gr_indices(target: &str) -> Option<Vec<u32>> {
     if target == "main" {
         return Some(vec![306, 307]);
@@ -75,13 +72,17 @@ fn compressor_gr_indices(target: &str) -> Option<Vec<u32>> {
         .strip_prefix("bus/")
         .and_then(|n| n.parse::<u32>().ok())
     {
-        return (1..=8).contains(&n).then(|| vec![312 + 4 * (n - 1)]);
+        return (1..=layout::AUX_COUNT as u32)
+            .contains(&n)
+            .then(|| vec![312 + 4 * (n - 1)]);
     }
     if let Some(n) = target
         .strip_prefix("subgroup/")
         .and_then(|n| n.parse::<u32>().ok())
     {
-        return (1..=6).contains(&n).then(|| vec![280 + 4 * (n - 1)]);
+        return (1..=layout::SUBGROUP_COUNT as u32)
+            .contains(&n)
+            .then(|| vec![280 + 4 * (n - 1)]);
     }
     None
 }

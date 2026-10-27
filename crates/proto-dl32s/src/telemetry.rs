@@ -1,15 +1,18 @@
 //! Push-decoded input/dynamics meters and passive shared-source RTA.
 use crate::{Dl32sDriver, addrs::INPUT_COUNT};
 use openfader_core::{AudioSpectrum, MeterFrame, StripId};
-use openfader_transport::mackie::{PushEvent, VALUE_TYPE_METERS, VALUE_TYPE_MUTE_GROUP};
+use openfader_transport::mackie::{dl32s_meters as layout, PushEvent, VALUE_TYPE_METERS, VALUE_TYPE_MUTE_GROUP};
+use layout::{DYNAMICS_OFFSET, DYNAMICS_FRAME_LEN, RTA_FRAME_LEN, RTA_OFFSET as RTA_BIN_OFFSET, RTA_BIN_COUNT};
 use std::{sync::atomic::Ordering, time::Duration};
 
-/// Observed input-meter push shape (type-1 `Values`): `start == 1` with at
-/// least 32 words, where the first 32 words are the ordered input meters as
+/// Input-meter push shape (type-1 `Values`): list ID `start == 1` with
+/// exactly our explicit list length or the legacy 60 words. The first 32
+/// words are the ordered input meters as
 /// big-endian IEEE-754 dB. Rig-verified 2026-10-24 (CH7 A->B flip moved only
 /// word 7 by >10 dB; word 7 restored with all 106 CH7 words): structurally
 /// upstream, CH7 live-pinned. Words past the first 32 ride the rest of the
 /// meter layout; the extended layout appends measured processor telemetry.
+// Meter start is list ID 1, not native address 1.
 const METER_START: u32 = 1;
 
 /// Staleness bound for the input-meter cache: the desk pushes at ~11 Hz, so
@@ -33,7 +36,7 @@ pub(super) struct MeterState {
 }
 
 /// Decode one meter push (type-1 `Values`) into the 32 linear input levels,
-/// or `None` when the shape is not the observed one (wrong start, short
+/// or `None` when the shape is not the observed one (wrong list ID/length, malformed
 /// block) or any of the first 32 words is non-finite dB. Conversion is
 /// `10^(db/20)` amplitude: valid 0 dB reads back 1, and an exact `0.0` word
 /// is 0 dB (unity) — never silence-mapped. Only the first-32 scope keeps
@@ -48,7 +51,9 @@ pub(super) fn decode_input_meters(push: &PushEvent) -> Option<Vec<f32>> {
         } if *value_type == VALUE_TYPE_METERS => (*start, raws),
         _ => return None,
     };
-    if start != METER_START || raws.len() < INPUT_COUNT as usize {
+    if start != METER_START
+        || !(layout::is_explicit_shape(raws.len()) || raws.len() == layout::LEGACY_FRAME_LEN)
+    {
         return None;
     }
     let mut out = Vec::with_capacity(INPUT_COUNT as usize);
@@ -62,15 +67,13 @@ pub(super) fn decode_input_meters(push: &PushEvent) -> Option<Vec<f32>> {
     Some(out)
 }
 
-// The 91-word input/RTA prefix is unchanged. Each appended six-word row
-// is gate IN/positive GR/OUT then compressor IN/positive GR/OUT.
-const DYNAMICS_OFFSET: usize = 91;
-const DYNAMICS_FRAME_LEN: usize = DYNAMICS_OFFSET + 32 * 6;
+// Dynamics starts after the actual 62-strip + 31-RTA prefix. Each row is
+// gate IN/positive GR/OUT then compressor IN/positive GR/OUT.
 pub(super) fn decode_dynamics_meters(push: &PushEvent) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
     let PushEvent::Values { value_type: VALUE_TYPE_METERS, start: METER_START, raws } = push else { return None; };
     if raws.len() != DYNAMICS_FRAME_LEN { return None; }
-    let mut frames = Vec::with_capacity(32);
-    for (ch, row) in raws[DYNAMICS_OFFSET..].as_chunks::<6>().0.iter().enumerate() {
+    let mut frames = Vec::with_capacity(layout::INPUT_COUNT);
+    for (ch, row) in raws[DYNAMICS_OFFSET..].as_chunks::<{ layout::DYNAMICS_WIDTH }>().0.iter().enumerate() {
         let v: Vec<f32> = row.iter().map(|r| f32::from_bits(*r)).collect();
         if v.iter().any(|v| !v.is_finite()) || v[1] < -0.001 || v[4] < -0.001 { return None; }
         frames.push(openfader_core::DynamicsMeterFrame {
@@ -93,15 +96,8 @@ const RTA_SOURCE_RETURN_12: u32 = 5000;
 const RTA_SOURCE_INPUT_FIRST: u32 = 4000;
 const RTA_SOURCE_INPUT_LAST: u32 = 4031;
 
-/// RTA meter-frame geometry: the DL32S-only 91-entry layout (see
-/// [`openfader_transport::mackie::dl32s_meter_addresses`]) pushes
-/// `start == 1` blocks of exactly 91 BE-f32 dB words, with the 31 RTA bins
-/// at indices 60..90. The expanded 283-word dynamics layout preserves
-/// this prefix. RTA accepts these two exact shapes; a legacy 60-word
-/// input-meter frame never yields bins.
-const RTA_FRAME_LEN: usize = 91;
-const RTA_BIN_OFFSET: usize = 60;
-const RTA_BIN_COUNT: usize = 31;
+// RTA starts after the exact DL32S strip prefix, never the legacy family
+// list. Only the 93-word RTA and 285-word dynamics lists carry these bins.
 
 /// Transition sentinel: the desk parks all RTA bins at −999 dB while the
 /// shared source settles. An all-sentinel frame is dropped; finite quiet
@@ -159,8 +155,8 @@ pub(super) struct SpectrumState {
     pub(super) bins_db: Vec<f32>,
 }
 
-/// Decode one meter push's RTA bins (indices 60..90, BE-f32 dB), or `None`
-/// when the shape is not the exact 91-word one, any bin is non-finite, or
+/// Decode the explicit list's RTA suffix (62..92, BE-f32 dB), or `None`
+/// when the shape is not an exact RTA/dynamics list, any bin is non-finite, or
 /// all bins sit at the [`RTA_SENTINEL_DB`] transition sentinel.
 pub(super) fn decode_rta_bins(push: &PushEvent) -> Option<Vec<f32>> {
     let (start, raws) = match push {
