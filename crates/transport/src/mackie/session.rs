@@ -249,12 +249,32 @@ impl MackieSession {
         body: Vec<u8>,
         timeout: Duration,
     ) -> anyhow::Result<Message> {
+        self.send_request_guarded(command, body, timeout, &|| true)
+            .await
+    }
+
+    /// Recheck caller authority after acquiring the socket write lane, before
+    /// allocating a request or sending bytes. The synchronous callback must
+    /// not acquire this session's write lock or call session I/O. A rejection
+    /// sends nothing, creates no pending request and is never replayed.
+    ///
+    /// This is a dispatch boundary, not a transaction: revocation after bytes
+    /// start leaving cannot retract them. Cancellation while waiting for the
+    /// lane sends nothing; cancellation after dispatch remains uncertain.
+    pub async fn send_request_guarded(
+        &self,
+        command: Command,
+        body: Vec<u8>,
+        timeout: Duration,
+        authorize: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<Message> {
         if !body.len().is_multiple_of(4) {
             anyhow::bail!("request body length must be a multiple of 4");
         }
         let (seq, rx) = {
             let (tx, rx) = oneshot::channel();
             let mut guard = self.write.lock().await;
+            anyhow::ensure!(authorize(), "Request authority changed before dispatch");
             let seq = self.next_seq();
             self.pending
                 .lock()
