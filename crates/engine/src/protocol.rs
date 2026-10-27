@@ -293,6 +293,12 @@ pub enum Cmd {
         #[serde(default)]
         taps: Option<bool>,
     },
+    /// Provider-backed complete-block capture or guarded input recall step.
+    InputProcessor {
+        request_id: String, epoch: u64, ch: u16, key: String,
+        processor: String, field: Option<String>, value: Option<serde_json::Value>,
+        guard: Option<serde_json::Value>,
+    },
     /// Captured destination-wide edit; distinct from strip-local send taps.
     DestinationParam {
         /// Complete original processor descriptors for a guarded recall step.
@@ -390,6 +396,7 @@ impl Cmd {
             "solo",
             "param",
             "param_guarded",
+            "input_processor",
             "focus",
             "spectrum_target",
             "lock",
@@ -873,6 +880,11 @@ pub enum Event {
     SyncEpoch { epoch: u64 },
     /// Provider-described controls shared by all sends to a destination.
     DestinationControls { epoch: u64, controls: Vec<serde_json::Value> },
+    /// A snapshot means verified provider state, never mere write acceptance.
+    /// Errors after dispatch may represent partial writes; no rollback occurs.
+    InputProcessorResult {
+        request_id: String, epoch: u64, snapshot: Option<serde_json::Value>, message: Option<String>,
+    },
     DestinationControlResult {
         request_id: String,
         epoch: u64,
@@ -908,6 +920,8 @@ pub enum Event {
         comp: f32,
     },
     Caps {
+        #[serde(default, skip_serializing_if = "is_false")]
+        input_processor_guard: bool,
         driver: String,
         params: Vec<ParamDef>,
         unsupported: Vec<String>,
@@ -1208,6 +1222,7 @@ impl Event {
             Event::Shows { .. } => "shows",
             Event::SyncEpoch { .. } => "sync_epoch",
             Event::DestinationControls { .. } => "destination_controls",
+            Event::InputProcessorResult { .. } => "input_processor_result",
             Event::DestinationControlResult { .. } => "destination_control_result",
             Event::Meters { .. } => "meters",
             Event::Spectrum { .. } => "spectrum",

@@ -16,6 +16,7 @@ pub mod params;
 pub mod output_meters;
 pub use output_meters::{OutputMeterFrame, OutputMeterSnapshot};
 pub mod presets;
+pub mod input_processors;
 pub mod rta;
 pub mod show;
 pub mod sync;
@@ -892,6 +893,22 @@ pub trait MixerDriver: Send + Sync {
         None
     }
 
+    /// Fail closed unless the provider serializes writes and fresh independent
+    /// readback, checking the entire captured block and observed revisions.
+    fn input_processor_guard(&self) -> bool { false }
+    /// Capture (`write=None`) or recall one input setting, returning a full
+    /// verified block: provider/generation, channel, processor, descriptor
+    /// domains, values, observed revisions and stereo-link witnesses. A write
+    /// requires the previous complete block. Check it under the provider write
+    /// lock immediately before dispatch, then serialize through fresh readback
+    /// and recheck all siblings, domains, revisions and connection identity.
+    /// ACK/accepted state cannot substantiate this result. No wire CAS or
+    /// detection of unreceived transitions is promised. A matching observed
+    /// transition cannot be attributed to a particular writer on these wires.
+    async fn input_processor(&self, _strip: StripId, _processor: &str,
+        _write: Option<(&str, ParamValue)>, _expected: Option<&serde_json::Value>, _check: input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
+        anyhow::bail!("guarded input processor recall unavailable for this provider")
+    }
     /// Lock-local destination-wide control metadata and observed values.
     /// Empty means unsupported; never infer this from strip-local send taps.
     fn destination_controls(&self) -> Vec<destinations::DestinationControl> {

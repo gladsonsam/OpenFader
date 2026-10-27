@@ -879,6 +879,7 @@ dependencies = [
  "anyhow",
  "openfader-sim",
  "realfft",
+ "serde_json",
  "tokio",
 ]
 
@@ -919,6 +920,7 @@ dependencies = [
  "anyhow",
  "openfader-core",
  "openfader-transport",
+ "serde_json",
  "tokio",
 ]
 
@@ -966,6 +968,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "openfader-core",
+ "serde_json",
  "tokio",
 ]
 

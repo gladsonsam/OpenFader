@@ -680,6 +680,8 @@ class EngineState {
   // Incremented when a desk session ends, including same-driver reconnects.
   int session = 0;
   int? _syncEpoch;
+  int? get syncEpoch => _syncEpoch;
+  bool inputProcessorGuard = false;
   final Map<int, Set<String>> knownValues = {};
 
   bool valueKnown(int ch, String field) =>
@@ -714,6 +716,7 @@ class EngineState {
     _nativeSnapshotsCaps = null;
     knownValues.clear();
     capsReady = false;
+    inputProcessorGuard = false;
     supportedParams.clear();
     parameterMetadata = {};
     destinationControls = const [];
@@ -894,6 +897,7 @@ class EngineState {
         if (nextDriver != driver) _resetDesk();
         driver = nextDriver;
         capsReady = true;
+        inputProcessorGuard = e['input_processor_guard'] == true;
         final nativeCaps =
             NativeSnapshotsVm.fromCaps(driver, e['native_snapshots']);
         if (!nativeCaps.supported) _nativeSnapshots = null;

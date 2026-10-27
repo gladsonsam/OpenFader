@@ -12,6 +12,9 @@ impl Engine {
         expected: Option<BTreeMap<String, ParamValue>>,
     ) -> anyhow::Result<Option<Event>> {
         match cmd {
+            Cmd::InputProcessor { request_id, epoch, ch, key, processor, field, value, guard } => {
+                Ok(Some(self.apply_input_processor(request_id, epoch, ch, key, processor, field, value, guard, writer, out).await))
+            }
             Cmd::Fader { ch, value, key } => {
                 let ch = self.resolve_strip(ch, key.as_deref())?;
                 policy.allow_fader(StripId(ch), value)?;
