@@ -254,7 +254,7 @@ impl XAirDriver {
                     preset: false,
                     members: if root.starts_with("/ch/") {
                         let n: u8 = target[3..].parse().unwrap();
-                        let first = if n % 2 == 0 { n - 1 } else { n };
+                        let first = if n.is_multiple_of(2) { n - 1 } else { n };
                         vec![format!("ch/{first:02}"), format!("ch/{:02}", first + 1)]
                     } else {
                         vec![target.clone()]

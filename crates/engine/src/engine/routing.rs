@@ -2,6 +2,9 @@
 
 use super::*;
 
+/// Display-reader input snapshot: (strip, target) -> (label, value).
+type InputBulkMap = std::collections::HashMap<(u16, String), (String, Value)>;
+
 impl Engine {
     pub(super) async fn patch_xair_guarded(
         &self,
@@ -353,7 +356,7 @@ impl Engine {
     pub(super) async fn routing_snapshot_on(
         &self,
         driver: &str,
-        input_bulk: Option<&std::collections::HashMap<(u16, String), (String, Value)>>,
+        input_bulk: Option<&InputBulkMap>,
     ) -> Vec<StoredRoute> {
         let drv = self.drv(driver);
         let planes = drv.routing_planes();

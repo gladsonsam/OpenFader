@@ -94,6 +94,9 @@ struct PendingQuery {
     accepts: fn(&OscMessage) -> bool,
 }
 
+/// Timestamped X-Air secondary meter snapshot shared with the ingest task.
+type XairMeterSnapshot = Arc<std::sync::Mutex<Option<(std::time::Instant, Vec<f32>)>>>;
+
 /// Shared UDP session. Cloneable via Arc internals through &self methods.
 pub struct OscSession {
     socket: Arc<UdpSocket>,
@@ -116,8 +119,8 @@ pub struct OscSession {
     received_tx: broadcast::Sender<(std::time::Instant, OscMessage)>,
     latest_meter: Arc<std::sync::Mutex<Option<(std::time::Instant, MeterFrame)>>>,
     xair_secondary_meters_enabled: Arc<std::sync::atomic::AtomicBool>,
-    latest_xair_dca: Arc<std::sync::Mutex<Option<(std::time::Instant, Vec<f32>)>>>,
-    latest_xair_outputs: Arc<std::sync::Mutex<Option<(std::time::Instant, Vec<f32>)>>>,
+    latest_xair_dca: XairMeterSnapshot,
+    latest_xair_outputs: XairMeterSnapshot,
     _recv: JoinHandle<()>,
     _keepalive: Option<JoinHandle<()>>,
 }
