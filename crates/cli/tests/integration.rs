@@ -38,11 +38,16 @@ async fn sim_fader_roundtrip() {
     assert!(drv.set_fader(StripId(0), 2.0).await.is_err());
     assert!(drv.set_fader(StripId(999), 0.5).await.is_err());
 
-    // Fake meters: one frame per strip, muted strip reads 0.
+    // Fake meters are pre-mute signal previews (like the desk's own
+    // level stream): a muted strip stays hot here; the post tap below
+    // keeps honest mute semantics.
     let frame = drv.poll_meters();
     assert_eq!(frame.levels.len(), openfader_sim::SIM_STRIPS);
-    assert_eq!(frame.levels[2], 0.0);
+    assert!(frame.levels[2] > 0.0);
     assert!(frame.levels[0] > 0.0);
+    let taps = drv.poll_taps();
+    assert_eq!(taps[2].post, 0.0);
+    assert!(taps[2].input > 0.0);
 }
 
 #[test]

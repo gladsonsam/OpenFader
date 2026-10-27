@@ -827,7 +827,9 @@ impl SimDriver {
         if kind_of_strip(i).is_ok_and(|kind| kind == StripKind::Dca) { return 0.0; }
         let strips = self.read();
         let Some(strip) = strips.get(i) else { return 0.0; };
-        if strip.mute { return 0.0; }
+        // Pre-mute signal preview, like the desk's own level stream
+        // (XR18 `/meters/1` stays hot while channels sit muted): mute
+        // never hides the input here, the mute button shows the state.
         10.0_f32.powf(Self::input_db(i, tick) / 20.0) * strip.fader
     }
 
