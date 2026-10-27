@@ -623,8 +623,10 @@ fn default_fx_for(preset: SimPreset) -> Vec<SimFxSlot> {
         .collect()
 }
 mod input_processors;
+mod global_controls;
 
 pub struct SimDriver {
+    globals: RwLock<Vec<openfader_core::destinations::DestinationControl>>,
     processor_revision: AtomicU64,
     processor_generation: AtomicU64,
     strips: RwLock<Vec<ChannelStrip>>,
@@ -685,6 +687,7 @@ impl SimDriver {
             })
             .collect();
         Self {
+            globals: RwLock::new(openfader_core::global_controls::reference_controls()),
             processor_revision: AtomicU64::new(0),
             processor_generation: AtomicU64::new(0),
             strips: RwLock::new(strips),
@@ -1022,6 +1025,14 @@ impl SimDriver {
 }
 
 impl MixerDriver for SimDriver {
+    fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> { self.global_controls() }
+    async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
+        self.write_global(target, control, value, expected, None)
+    }
+    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<()> {
+        self.write_global(target, control, value, expected, Some(snapshot))
+    }
+
     fn stereo_pairs(&self) -> Vec<[u16; 2]> {
         self.topology().into_iter().filter(|f| f.kind == StripKind::In)
             .flat_map(|f| (f.first as u16..(f.first + f.count) as u16).step_by(2)

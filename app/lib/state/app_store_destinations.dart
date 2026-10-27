@@ -28,6 +28,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
       engine.capsReady &&
       !locked &&
       control.available &&
+      (control.surface != 'global' || control.authority == 'verified') &&
       !_outputPresetBusy(control.target) &&
       engine.destinationControls.contains(control);
 
@@ -36,7 +37,26 @@ mixin _AppStoreDestinations on _AppStoreContext {
     DestinationControlVm control,
     double value,
   ) {
-    return _sendDestinationControl(control, value);
+    if (!destinationControlIsCurrent(control)) {
+      return Future.value(
+          'Connection or setting changed. Reopen this control.');
+    }
+    // Shared global configuration uses an exact provider block guard too.
+    // It is never preset material; the guard prevents peer/ABA changes while
+    // an editor is open and waits for independently verified readback.
+    return _sendDestinationControl(
+      control,
+      value,
+      guard: control.surface == 'global'
+          ? engine.destinationControls
+              .where(
+                (row) =>
+                    row.target == control.target &&
+                    row.surface == control.surface,
+              )
+              .toList(growable: false)
+          : null,
+    );
   }
 
   @override
@@ -83,13 +103,14 @@ mixin _AppStoreDestinations on _AppStoreContext {
       _command(
         _clientId,
         Cmds.destinationParam(id, control, value, guard: guard),
-      )
-          .then(
+      ).then(
         (_) {},
         onError: (Object error) {
           if (guard != null) {
-            _finishDestinationEdit(id,
-                'Could not send output setting: $error. Its result is uncertain.');
+            _finishDestinationEdit(
+              id,
+              'Could not send output setting: $error. Its result is uncertain.',
+            );
           }
           if (!_presetDisposed) _noteTransportError(error);
         },
@@ -122,13 +143,15 @@ mixin _AppStoreDestinations on _AppStoreContext {
       if (now < edit.deadline &&
           edit.accepted &&
           edit.recalledValue != null &&
-          engine.destinationControls.any((control) =>
-              control.epoch == edit.target.epoch &&
-              control.target == edit.target.target &&
-              control.id == edit.target.id &&
-              control.revision != edit.target.revision &&
-              control.value == edit.recalledValue &&
-              control.authority == 'verified')) {
+          engine.destinationControls.any(
+            (control) =>
+                control.epoch == edit.target.epoch &&
+                control.target == edit.target.target &&
+                control.id == edit.target.id &&
+                control.revision != edit.target.revision &&
+                control.value == edit.recalledValue &&
+                control.authority == 'verified',
+          )) {
         _finishDestinationEdit(entry.key, null);
         continue;
       }
