@@ -223,6 +223,10 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
             i++)
           RouteSrcTile(
             label: _sourceLabel({'group': group, 'index': i}),
+            displayGroupLabel:
+                _groups.where((g) => g['key'] == group).firstOrNull?['count'] == 1
+                    ? null
+                    : groupLabel(group),
             group: group,
             index: i,
             operationKey: _identity(_selected),
