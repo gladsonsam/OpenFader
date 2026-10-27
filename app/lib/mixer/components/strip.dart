@@ -169,36 +169,24 @@ class MixerStrip extends StatelessWidget {
                       place(
                           g.soloY,
                           g.soloH,
-                          isMaster || chIndex == null
-                              ? MixerToggle(
+                          ValueListenableBuilder<bool>(
+                              valueListenable: controller
+                                  .soloNoteOf(isMaster ? -1 : chIndex!),
+                              builder: (context, solo, _) => MixerToggle(
                                   label: 'Solo',
-                                  channelName: ch.name,
-                                  on: false,
+                                  unavailableReason: ready & 8 != 0
+                                      ? null
+                                      : 'Solo unavailable',
                                   visualHeight: g.soloH,
                                   fontSize: g.x(compact ? 20 : 32),
+                                  channelName: ch.name,
+                                  on: ready & 8 != 0 && solo,
                                   activeColor: ConsolePalette.of(context).solo,
                                   activeForeground:
                                       ConsolePalette.of(context).onSolo,
-                                  onPressed: null)
-                              : ValueListenableBuilder<bool>(
-                                  valueListenable:
-                                      controller.soloNoteOf(chIndex),
-                                  builder: (context, solo, _) => MixerToggle(
-                                      label: 'Solo',
-                                      unavailableReason: ready & 8 != 0
-                                          ? null
-                                          : 'Solo unavailable',
-                                      visualHeight: g.soloH,
-                                      fontSize: g.x(compact ? 20 : 32),
-                                      channelName: ch.name,
-                                      on: ready & 8 != 0 && solo,
-                                      activeColor:
-                                          ConsolePalette.of(context).solo,
-                                      activeForeground:
-                                          ConsolePalette.of(context).onSolo,
-                                      onPressed: ready & 8 != 0
-                                          ? () => controller.toggleSolo(ch)
-                                          : null)),
+                                  onPressed: ready & 8 != 0
+                                      ? () => controller.toggleSolo(ch)
+                                      : null)),
                           touch: true),
                       Positioned(
                           left: 0,

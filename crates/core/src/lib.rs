@@ -13,6 +13,7 @@ pub mod routing;
 pub mod access;
 pub mod destinations;
 pub mod global_controls;
+pub mod solo;
 pub mod fx;
 pub mod params;
 pub mod output_meters;
@@ -929,6 +930,14 @@ pub trait MixerDriver: Send + Sync {
     ) -> anyhow::Result<Option<crate::destinations::DestinationControl>> {
         let _ = (target, control, value, expected, snapshot);
         anyhow::bail!("{}: guarded processor recall not supported", self.name())
+    }
+
+    /// Target solo uses the destination guard and repeats engine authority at dispatch.
+    async fn set_target_solo(&self, target: &str, control: &str, value: f32,
+        expected: f32, snapshot: &[destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<destinations::DestinationControl> {
+        let _ = (target, control, value, expected, snapshot, context);
+        anyhow::bail!("target solo unsupported")
     }
 
     /// Compare the captured display value and write against one live session.

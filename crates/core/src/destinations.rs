@@ -31,6 +31,8 @@ pub struct DestinationControl {
     pub generation: Option<u64>,
     /// Provider opt-in: local processor snapshots may store this control.
     pub preset: bool,
+    /// Conservative affected stable targets; never synthetic input strip IDs.
+    pub members: Vec<String>,
     pub target: String,
     pub target_label: String,
     pub target_name: Option<String>,

@@ -217,6 +217,10 @@ pub trait DynDriver: Send + Sync {
         let _ = (target, control, value, expected, snapshot);
         anyhow::bail!("guarded processor recall not supported")
     }
+    async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        let _ = (target, control, value, expected, snapshot, context);
+        anyhow::bail!("target solo unsupported")
+    }
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
         let _ = (target, control, value, expected);
         anyhow::bail!("{}: destination controls not supported", self.name())
@@ -697,6 +701,9 @@ macro_rules! impl_dyn_driver {
     async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
         MixerDriver::set_destination_control_guarded(self, target, control, value, expected, snapshot).await
     }
+        async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+            MixerDriver::set_target_solo(self, target, control, value, expected, snapshot, context).await
+        }
         async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
             MixerDriver::set_destination_control(self, target, control, value, expected).await
         }
@@ -863,6 +870,7 @@ macro_rules! impl_dyn_driver {
 }
 
 impl_dyn_driver!(openfader_sim::SimDriver {
+    fn clear_solo_scope(&self) -> Option<&'static str> { Some("advertised") }
     fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
         let mut planes = routing::input_planes(self);
         planes.extend(routing::output_planes(openfader_sim::output_routing::planes()));
@@ -1323,7 +1331,7 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
         self.set_output_route_guarded(id, source, expected, context).await
     }
 
-    fn clear_solo_scope(&self) -> Option<&'static str> { Some("inputs") }
+    fn clear_solo_scope(&self) -> Option<&'static str> { Some("advertised") }
     fn send_destination(&self, slot: u16) -> Option<SendDestination> {
         send_destinations::legacy_send_destination(slot, 8, 4)
     }
@@ -1395,18 +1403,6 @@ impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
         Ok(bank)
     }
 
-    async fn clear_solo(&self) -> anyhow::Result<()> {
-        // Clear the supported input bank. Read it completely before writing,
-        // so unavailable state cannot silently masquerade as Solo OFF.
-        let mut active = Vec::new();
-        for ch in 0..MixerDriver::channel_count(self) as u16 {
-            if MixerDriver::get_solo(self, StripId(ch)).await? { active.push(ch); }
-        }
-        for ch in active {
-            MixerDriver::set_solo(self, StripId(ch), false).await?;
-        }
-        Ok(())
-    }
     async fn control_health(&self) -> anyhow::Result<()> {
         self.check_control_health().await
     }

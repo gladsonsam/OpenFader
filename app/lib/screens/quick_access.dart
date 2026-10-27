@@ -231,8 +231,7 @@ class _QuickAccessPanelState extends State<QuickAccessPanel>
                         if (store.clearSoloLabel case final label?) ...[
                           const Divider(),
                           const Text(
-                            'Clears input solos. '
-                            'Output solos stay unchanged.',
+                            'Clears the solo targets advertised by this mixer.',
                           ),
                           Align(
                             alignment: Alignment.centerLeft,

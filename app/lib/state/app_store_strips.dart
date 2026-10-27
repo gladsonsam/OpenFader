@@ -47,24 +47,36 @@ mixin _AppStoreStrips on _AppStoreContext {
 
   // Solo is a dedicated protocol event, absent from the param catalogue.
   // A real solo echo establishes availability; caps alone never enables it.
-  bool canEditControl(int ch, String field) =>
-      _accessParamAllowed(ch, field) &&
-      (engine.driver == 'sim' ||
-          (engine.connected &&
-              engine.capsReady &&
-              (engine.supportedParams.contains(field) || field == 'solo') &&
-              engine.valueKnown(ch, field)));
+  bool canEditControl(int ch, String field) {
+    if (field == 'solo') {
+      final input = _inputSoloDescriptor(ch);
+      if (input != null && !_accessDestinationAllowed(input)) return false;
+      if (ch < 0 || engine.strips.any((s) => s.ch == ch && s.key == 'main')) {
+        return _targetSoloReady(ch);
+      }
+      if (_targetSolo(ch) != null) return _targetSoloReady(ch);
+    }
+    return _accessParamAllowed(ch, field) &&
+        (engine.driver == 'sim' ||
+            (engine.connected &&
+                engine.capsReady &&
+                (engine.supportedParams.contains(field) || field == 'solo') &&
+                engine.valueKnown(ch, field)));
+  }
 
   int _controlReady(int ch) => ch < 0
       ? ((masterControlKnown('fader') ? 1 : 0) |
-          (masterControlKnown('mute') ? 2 : 0))
+          (masterControlKnown('mute') ? 2 : 0) |
+          (_targetSoloReady(-1) ? 8 : 0))
       : (canEditControl(ch, 'fader') ? 1 : 0) |
           (canEditControl(ch, 'mute') ? 2 : 0) |
           (canEditControl(ch, 'pan') ? 4 : 0) |
           (canEditControl(ch, 'solo') ? 8 : 0);
 
   ValueNotifier<int> controlReadyNote(int ch) => _controlReadyNotes.putIfAbsent(
-      ch, () => ValueNotifier(_controlReady(ch)));
+        ch,
+        () => ValueNotifier(_controlReady(ch)),
+      );
 
   @override
   int? get _selectedSubgroup => _busId.startsWith('subgroup')
@@ -72,6 +84,7 @@ mixin _AppStoreStrips on _AppStoreContext {
       : null;
 
   bool masterControlKnown(String field) {
+    if (_busId.startsWith('solo:')) return false;
     if (!accessTargetAllowed(masterProcessingTarget)) return false;
     final group = _selectedSubgroup;
     if (group != null) {
@@ -93,9 +106,11 @@ mixin _AppStoreStrips on _AppStoreContext {
                     : engine.mainMuted != null)
                 : (field == 'fader'
                     ? engine.busFaders.containsKey(
-                        int.tryParse(_busId.replaceFirst('bus', '')))
+                        int.tryParse(_busId.replaceFirst('bus', '')),
+                      )
                     : engine.busMuted.containsKey(
-                        int.tryParse(_busId.replaceFirst('bus', ''))))));
+                        int.tryParse(_busId.replaceFirst('bus', '')),
+                      ))));
   }
 
   final ValueNotifier<double> _masterFaderNote = ValueNotifier(0.75);
@@ -125,13 +140,17 @@ mixin _AppStoreStrips on _AppStoreContext {
           ? engine.strips
           : engine.strips.where((s) => s.ch >= range.$1 && s.ch < range.$2);
     }
-    final built = List<Strip>.unmodifiable(visible.map((s) => Strip(
+    final built = List<Strip>.unmodifiable(
+      visible.map(
+        (s) => Strip(
           ch: s.ch,
           key: s.key,
           name: s.name,
           fader: _stripFaderValue(s.ch, s.fader),
           muted: _stripMuteValue(s.ch, s.muted),
-        )));
+        ),
+      ),
+    );
     _stripsCache = built;
     return built;
   }
@@ -139,8 +158,10 @@ mixin _AppStoreStrips on _AppStoreContext {
   List<String> get _viewLeaves {
     final pattern = RegExp(r'^view([1-9][0-9]*)_assign$');
     final leaves = engine.supportedParams.where(pattern.hasMatch).toList();
-    leaves.sort((a, b) => int.parse(pattern.firstMatch(a)![1]!)
-        .compareTo(int.parse(pattern.firstMatch(b)![1]!)));
+    leaves.sort(
+      (a, b) => int.parse(pattern.firstMatch(a)![1]!)
+          .compareTo(int.parse(pattern.firstMatch(b)![1]!)),
+    );
     return leaves;
   }
 
@@ -210,7 +231,7 @@ mixin _AppStoreStrips on _AppStoreContext {
               : "${f['key']}:${(f['first'] as num).toInt() + offset}": (
             (f['first'] as num).toInt() + offset,
             (f['first'] as num).toInt() +
-                math.min(offset + 16, (f['count'] as num).toInt())
+                math.min(offset + 16, (f['count'] as num).toInt()),
           ),
     };
     _bankRangesCache = built;
@@ -224,41 +245,13 @@ mixin _AppStoreStrips on _AppStoreContext {
   }
 
   @override
-  bool soloOf(int ch) => engine.solos.contains(ch);
+  bool soloOf(int ch) =>
+      _targetSolo(ch) != null ? _hardSoloValue(ch) : engine.solos.contains(ch);
 
   @override
-  bool get hasSolo => engine.solos.isNotEmpty;
-
+  bool get hasSolo => _hasAnySolo;
   @override
-  int get soloCount => engine.solos.length;
-
-  // ------------------------------------------------------------------
-  // Per-strip control notifiers: stable ValueNotifiers updated in place.
-  // Strips listen to their own ch only; the hot drag path never calls
-  // notifyListeners() so the shell + sibling strips are not rebuilt.
-  // ------------------------------------------------------------------
-  // Engine state, confirmations and pending edits stay in protocol units.
-  // Only UI exposure/writes cross this boundary. SIM already uses the UI
-  // law; lawForDriver('sim') would incorrectly select the X-Air fallback.
-  double _protocolFaderToUi(double value) => engine.driver == 'sim'
-      ? value
-      : dbToPos(lawForDriver(engine.driver).toDb(value));
-
-  double _uiFaderToProtocol(double value) => engine.driver == 'sim'
-      ? value
-      : lawForDriver(engine.driver).fromDb(posToDb(value));
-
-  // Presentation resolves pending edits before confirmed values, even when an
-  // older echo has already replaced the engine strip. Keep protocol units here.
-  double _stripFaderValue(int ch, double fallback) {
-    final value = ps.optimisticValue(_maps, ch, 'fader');
-    return value is num ? value.toDouble().clamp(0.0, 1.0) : fallback;
-  }
-
-  bool _stripMuteValue(int ch, bool fallback) {
-    final value = ps.optimisticValue(_maps, ch, 'mute');
-    return value is bool ? value : fallback;
-  }
+  int get soloCount => _hardSoloCount;
 
   void _ensureStripNotes(int ch) {
     _faderNotes.putIfAbsent(ch, () {
@@ -276,7 +269,7 @@ mixin _AppStoreStrips on _AppStoreContext {
       return ValueNotifier(_stripMuteValue(ch, m));
     });
     _panNotes.putIfAbsent(ch, () => ValueNotifier(panOf(ch)));
-    _soloNotes.putIfAbsent(ch, () => ValueNotifier(engine.solos.contains(ch)));
+    _soloNotes.putIfAbsent(ch, () => ValueNotifier(soloOf(ch)));
   }
 
   @override
@@ -325,7 +318,7 @@ mixin _AppStoreStrips on _AppStoreContext {
     final pv = panOf(ch);
     if (p.value != pv) p.value = pv;
     final so = _soloNotes[ch]!;
-    final sv = engine.solos.contains(ch);
+    final sv = soloOf(ch);
     if (so.value != sv) so.value = sv;
   }
 
@@ -339,7 +332,9 @@ mixin _AppStoreStrips on _AppStoreContext {
     assert(param == 'pan' || param == 'level');
     final key = (_channel, 'send${slot}_$param');
     return _sendParamNotes.putIfAbsent(
-        key, () => ValueNotifier(_sendParamValue(key.$1, key.$2)));
+      key,
+      () => ValueNotifier(_sendParamValue(key.$1, key.$2)),
+    );
   }
 
   @override
@@ -358,6 +353,8 @@ mixin _AppStoreStrips on _AppStoreContext {
     for (final s in engine.strips) {
       _pushStripNote(s.ch);
     }
+    final masterSolo = _soloNotes[-1];
+    if (masterSolo != null) masterSolo.value = soloOf(-1);
     final mf = masterFader;
     if (_masterFaderNote.value != mf) _masterFaderNote.value = mf;
     final mm = masterMuted;
@@ -365,12 +362,15 @@ mixin _AppStoreStrips on _AppStoreContext {
   }
 
   @override
-  double get masterFader => _protocolFaderToUi(_selectedSubgroup != null
-      ? engine.subgroupFaders[_selectedSubgroup] ?? 0
-      : _busId == 'main'
-          ? engine.mainFader ?? _masterFader
-          : engine.busFaders[int.tryParse(_busId.replaceFirst('bus', ''))] ??
-              0);
+  double get masterFader => _protocolFaderToUi(
+        _selectedSubgroup != null
+            ? engine.subgroupFaders[_selectedSubgroup] ?? 0
+            : _busId == 'main'
+                ? engine.mainFader ?? _masterFader
+                : engine.busFaders[
+                        int.tryParse(_busId.replaceFirst('bus', ''))] ??
+                    0,
+      );
 
   @override
   bool get masterMuted => _selectedSubgroup != null
@@ -381,11 +381,13 @@ mixin _AppStoreStrips on _AppStoreContext {
               false;
 
   @override
-  String get masterName => _selectedSubgroup != null
-      ? 'SUBGROUP ${_selectedSubgroup! + 1}'
-      : _busId == 'main'
-          ? 'MAIN'
-          : 'BUS ${(int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1}';
+  String get masterName => _busId.startsWith('solo:')
+      ? (_targetSolo(-1)?.targetLabel ?? 'SOLO')
+      : _selectedSubgroup != null
+          ? 'SUBGROUP ${_selectedSubgroup! + 1}'
+          : _busId == 'main'
+              ? 'MAIN'
+              : 'BUS ${(int.tryParse(_busId.replaceFirst('bus', '')) ?? 0) + 1}';
 
   @override
   List<MixerBank> get banks {
@@ -394,27 +396,33 @@ mixin _AppStoreStrips on _AppStoreContext {
     final built = List<MixerBank>.unmodifiable([
       for (final entry in _bankRanges.entries)
         MixerBank(
-            key: entry.key,
-            label: entry.key.startsWith('ch')
-                ? 'Ch ${entry.value.$1 + 1}–${entry.value.$2}'
-                : engine.topology.firstWhere((f) =>
-                    (f['first'] as num).toInt() <= entry.value.$1 &&
-                    (f['first'] as num).toInt() + (f['count'] as num).toInt() >
-                        entry.value.$1)['label'] as String,
-            color: const ConsolePalette().lime,
-            text: const ConsolePalette().onAccent),
+          key: entry.key,
+          label: entry.key.startsWith('ch')
+              ? 'Ch ${entry.value.$1 + 1}–${entry.value.$2}'
+              : engine.topology.firstWhere(
+                  (f) =>
+                      (f['first'] as num).toInt() <= entry.value.$1 &&
+                      (f['first'] as num).toInt() +
+                              (f['count'] as num).toInt() >
+                          entry.value.$1,
+                )['label'] as String,
+          color: const ConsolePalette().lime,
+          text: const ConsolePalette().onAccent,
+        ),
       if (_viewLeaves.isNotEmpty) ...[
         MixerBank(
-            key: 'view:all',
-            label: 'All channels',
-            color: const ConsolePalette().lime,
-            text: const ConsolePalette().onAccent),
+          key: 'view:all',
+          label: 'All channels',
+          color: const ConsolePalette().lime,
+          text: const ConsolePalette().onAccent,
+        ),
         for (final leaf in _viewLeaves)
           MixerBank(
-              key: 'view:$leaf',
-              label: _viewLabel(leaf),
-              color: const ConsolePalette().lime,
-              text: const ConsolePalette().onAccent),
+            key: 'view:$leaf',
+            label: _viewLabel(leaf),
+            color: const ConsolePalette().lime,
+            text: const ConsolePalette().onAccent,
+          ),
       ],
     ]);
     _banksCache = built;
@@ -461,8 +469,11 @@ mixin _AppStoreStrips on _AppStoreContext {
             active: _busId == 'subgroup$group',
             // Stable target-keyed meter feed, zero while unavailable.
             meter: _busMeters.putIfAbsent(
-                'subgroup$group', () => ValueNotifier(0)),
+              'subgroup$group',
+              () => ValueNotifier(0),
+            ),
           ),
+      ..._soloBusRows,
     ]);
     final allowed = List<MixerBusRow>.unmodifiable(
       built.where(
@@ -510,6 +521,10 @@ mixin _AppStoreStrips on _AppStoreContext {
 
   @override
   void toggleSolo(int ch) {
+    if (_targetSolo(ch) != null) {
+      _writeTargetSolo(ch);
+      return;
+    }
     if (!canEditControl(ch, 'solo')) return;
     final on = !engine.solos.contains(ch);
     if (on) {
@@ -527,16 +542,23 @@ mixin _AppStoreStrips on _AppStoreContext {
   }
 
   @override
-  bool get canClearSolos => accessFamilyAllowed(AccessFamily.channelSolo) &&
-      !blockedAccess.any((key) => key.startsWith('target:'));
+  bool get canClearSolos =>
+      accessFamilyAllowed(AccessFamily.channelSolo) &&
+      !blockedAccess.any((key) => key.startsWith('target:')) &&
+      (engine.clearSoloScope != 'advertised' || _advertisedSoloClearReady);
 
   @override
   void clearSolos() {
     if (!canClearSolos) return;
+    if (engine.clearSoloScope == 'advertised') {
+      if (_advertisedSoloClearReady) _send(Cmds.clearSolo());
+      return;
+    }
     if (engine.driver != 'sim' &&
         (!engine.connected ||
-            !engine.knownValues.keys
-                .any((ch) => engine.valueKnown(ch, 'solo')))) {
+            !engine.knownValues.keys.any(
+              (ch) => engine.valueKnown(ch, 'solo'),
+            ))) {
       return;
     }
     engine.solos.clear();
@@ -573,8 +595,10 @@ mixin _AppStoreStrips on _AppStoreContext {
     if (group != null) {
       engine.subgroupFaders[group] = protocolValue;
       _masterFaderNote.value = nv;
-      _coalescer.offer('subgroup_fader:$group',
-          () => _send(Cmds.subgroupFader(group, protocolValue)));
+      _coalescer.offer(
+        'subgroup_fader:$group',
+        () => _send(Cmds.subgroupFader(group, protocolValue)),
+      );
       _invalidateDerived();
       return;
     }
@@ -587,7 +611,9 @@ mixin _AppStoreStrips on _AppStoreContext {
         _masterFaderNote.value = nv;
       }
       _coalescer.offer(
-          'bus_fader:$bus', () => _send(Cmds.busFader(bus, protocolValue)));
+        'bus_fader:$bus',
+        () => _send(Cmds.busFader(bus, protocolValue)),
+      );
       // Hot path: master strip rebuilds from masterFaderNote alone.
       // No global notify; caches invalidated for the next structural pass.
       _invalidateDerived();
@@ -611,7 +637,9 @@ mixin _AppStoreStrips on _AppStoreContext {
       engine.subgroupMuted[group] = muted;
       _masterMutedNote.value = muted;
       _coalescer.offer(
-          'subgroup_mute:$group', () => _send(Cmds.subgroupMute(group, muted)));
+        'subgroup_mute:$group',
+        () => _send(Cmds.subgroupMute(group, muted)),
+      );
       _invalidateDerived();
       return;
     }

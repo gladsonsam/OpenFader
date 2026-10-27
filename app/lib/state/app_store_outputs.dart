@@ -55,7 +55,9 @@ mixin _AppStoreOutputs on _AppStoreContext {
   @override
   String get masterProcessingTarget => _processingTargetForBus(_busId);
 
-  String _processingTargetForBus(String id) => id == 'main'
+  String _processingTargetForBus(String id) => id.startsWith('solo:')
+      ? id.split(':')[1]
+      : id == 'main'
       ? 'main'
       : id.startsWith('subgroup')
           ? 'subgroup/${((int.tryParse(id.substring('subgroup'.length)) ?? 0) + 1).toString().padLeft(2, '0')}'

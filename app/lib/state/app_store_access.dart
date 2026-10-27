@@ -52,13 +52,21 @@ mixin _AppStoreAccess on _AppStoreContext {
     return '$family/${index.toString().padLeft(2, '0')}';
   }
 
-  bool _targetBlocked(String target) => _blockedAccess.any((key) =>
-      key.startsWith('target:') && _targetKey(key.substring(7)) == target);
+  bool _targetBlocked(String target) => _blockedAccess.any(
+        (key) =>
+            key.startsWith('target:') && _targetKey(key.substring(7)) == target,
+      );
 
   String? _channelTarget(int ch) {
     final kind = _presetFamily(ch)?['kind'];
-    if (!const ['bus', 'main', 'dca', 'mtx', 'subgroup', 'fxsnd']
-        .contains(kind)) {
+    if (!const [
+      'bus',
+      'main',
+      'dca',
+      'mtx',
+      'subgroup',
+      'fxsnd',
+    ].contains(kind)) {
       return null; // FX return strips are deliberately independent of FX globals.
     }
     return engine.strips.where((s) => s.ch == ch).firstOrNull?.key;
@@ -135,10 +143,11 @@ mixin _AppStoreAccess on _AppStoreContext {
         'mute',
         'pan',
         'fader',
-      }
-        ..removeAll(['link', 'solo']);
-      if ((pair ?? [ch]).any((member) =>
-          copiedFields.any((field) => !_accessParamAllowed(member, field)))) {
+      }..removeAll(['link', 'solo']);
+      if ((pair ?? [ch]).any(
+        (member) =>
+            copiedFields.any((field) => !_accessParamAllowed(member, field)),
+      )) {
         return false;
       }
     }
@@ -152,6 +161,10 @@ mixin _AppStoreAccess on _AppStoreContext {
         target == null &&
         !accessFamilyAllowed(AccessFamily.channelMute)) {
       return false;
+    }
+    if (field == 'solo') {
+      final input = _inputSoloDescriptor(ch);
+      if (input != null && !_accessDestinationAllowed(input)) return false;
     }
     if (field == 'solo' && !accessFamilyAllowed(AccessFamily.channelSolo)) {
       return false;
@@ -200,6 +213,10 @@ mixin _AppStoreAccess on _AppStoreContext {
 
   @override
   bool _accessDestinationAllowed(DestinationControlVm control) {
+    if (control.targetSolo) {
+      return control.soloScopeAllowed(
+          accessFamilyAllowed(AccessFamily.channelSolo), accessTargetAllowed);
+    }
     // Provider descriptor identifies main_return separately from FX globals.
     if (control.surface == 'fx' && control.id == 'main_return') {
       return accessTargetAllowed('main');
@@ -245,8 +262,9 @@ mixin _AppStoreAccess on _AppStoreContext {
         if (_sendField.firstMatch(field) case final match?)
           if (_sendTarget(int.parse(match[1]!)) case final target?)
             _targetKey(target): parameterPresentation(
-                    engine.parameterMetadata['send${match[1]}_level'],
-                    (field) => null)?['destination']?['label'] as String? ??
+                  engine.parameterMetadata['send${match[1]}_level'],
+                  (field) => null,
+                )?['destination']?['label'] as String? ??
                 target,
     };
     final available = <AccessFamily>{
@@ -264,7 +282,8 @@ mixin _AppStoreAccess on _AppStoreContext {
               fields.any(_isDsp))
         AccessFamily.masterDsp,
       if (fields.contains('mute')) AccessFamily.channelMute,
-      if (engine.solos.isNotEmpty ||
+      if (engine.destinationControls.any((r) => r.targetSolo) ||
+          engine.solos.isNotEmpty ||
           engine.knownValues.keys.any((ch) => engine.valueKnown(ch, 'solo')))
         AccessFamily.channelSolo,
       if (fields.any((f) => f == 'pan' || f.endsWith('_pan'))) AccessFamily.pan,
@@ -276,8 +295,10 @@ mixin _AppStoreAccess on _AppStoreContext {
     };
     final options = <AccessLimitOption>[
       for (final family in AccessFamily.values)
-        if (!const {AccessFamily.inputRouting, AccessFamily.micPreamps}
-                .contains(family) ||
+        if (!const {
+              AccessFamily.inputRouting,
+              AccessFamily.micPreamps,
+            }.contains(family) ||
             available.contains(family) ||
             _blockedAccess.contains(family.key))
           AccessLimitOption(
@@ -310,11 +331,13 @@ mixin _AppStoreAccess on _AppStoreContext {
   }
 
   @override
-  String _processingTargetForAccessBus(String id) => id == 'main'
-      ? 'main'
-      : id.startsWith('subgroup')
-          ? 'subgroup/${((int.tryParse(id.substring(8)) ?? 0) + 1).toString().padLeft(2, '0')}'
-          : 'bus/${((int.tryParse(id.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
+  String _processingTargetForAccessBus(String id) => id.startsWith('solo:')
+      ? id.split(':')[1]
+      : id == 'main'
+          ? 'main'
+          : id.startsWith('subgroup')
+              ? 'subgroup/${((int.tryParse(id.substring(8)) ?? 0) + 1).toString().padLeft(2, '0')}'
+              : 'bus/${((int.tryParse(id.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
 
   @override
   Future<void> setAccessBlocked(String key, bool blocked) async {
@@ -342,7 +365,9 @@ mixin _AppStoreAccess on _AppStoreContext {
     _interruptDestinationEdits(
       'Local access limits changed. Reopen this control.',
     );
-    _interruptAssignmentEdit('Local access limits changed. Reopen Quick Assign.');
+    _interruptAssignmentEdit(
+      'Local access limits changed. Reopen Quick Assign.',
+    );
     _failNameEdits('Local access limits changed. Reopen the name editor.');
     _invalidateDerived();
     _syncControlNotes();
@@ -366,9 +391,7 @@ mixin _AppStoreAccess on _AppStoreContext {
         'compressor' => ProcessorPresetKind.compressor,
         _ => null,
       };
-      if (ch is! int ||
-          kind == null ||
-          _presetFamily(ch)?['kind'] != 'in') {
+      if (ch is! int || kind == null || _presetFamily(ch)?['kind'] != 'in') {
         return false;
       }
       final fields = engine.supportedParams
@@ -383,8 +406,9 @@ mixin _AppStoreAccess on _AppStoreContext {
       // Raw commands share the same complete-block and partner access gate
       // as preset recall, including captures and unchanged-value checks.
       final pair = engine.stereoPairs.where((p) => p.contains(ch)).firstOrNull;
-      return (pair ?? [ch]).every((member) =>
-          fields.every((field) => _accessParamAllowed(member, field)));
+      return (pair ?? [ch]).every(
+        (member) => fields.every((field) => _accessParamAllowed(member, field)),
+      );
     }
     if (const [
           'param',
@@ -408,19 +432,22 @@ mixin _AppStoreAccess on _AppStoreContext {
             for (final d in (plane['destinations'] as List? ?? const []))
               if (d is Map) d,
       ];
-      return routingCommandAccessAllowed(command, destinations,
-          familyAllowed: accessFamilyAllowed,
-          targetAllowed: accessTargetAllowed,
-          membersFor: (strip) {
-            final pair =
-                engine.stereoPairs.where((p) => p.contains(strip)).firstOrNull;
-            return pair == null ||
-                    pair.every((ch) => engine.params[ch]?['link'] == false)
-                ? [strip]
-                : pair;
-          },
-          memberKey: (member) =>
-              engine.strips.where((s) => s.ch == member).firstOrNull?.key);
+      return routingCommandAccessAllowed(
+        command,
+        destinations,
+        familyAllowed: accessFamilyAllowed,
+        targetAllowed: accessTargetAllowed,
+        membersFor: (strip) {
+          final pair =
+              engine.stereoPairs.where((p) => p.contains(strip)).firstOrNull;
+          return pair == null ||
+                  pair.every((ch) => engine.params[ch]?['link'] == false)
+              ? [strip]
+              : pair;
+        },
+        memberKey: (member) =>
+            engine.strips.where((s) => s.ch == member).firstOrNull?.key,
+      );
     }
     if (cmd == 'clear_solo') {
       return canClearSolos;
