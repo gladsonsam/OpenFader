@@ -181,6 +181,26 @@ impl Engine {
             }
         }
     }
+
+    /// Apply one host check to the stored device list: drop verified
+    /// hostname aliases (or mark a miss unverified), then the canonical
+    /// upsert. Refresh streams one `devices` frame per completed host;
+    /// the old batch merge was this same step run once per result.
+    pub(super) fn apply_device_check(&self, result: &DeviceCheck) {
+        {
+            let mut devices = self.devices.write().unwrap();
+            if let Some(row) = &result.device {
+                devices.retain(|d| d.ip != result.addr || d.id == row.id);
+            } else {
+                for device in devices.iter_mut().filter(|d| d.ip == result.addr.trim()) {
+                    device.state = "unverified".into();
+                }
+            }
+        }
+        if let Some(row) = result.device.clone() {
+            self.merge_device_rows([row]);
+        }
+    }
 }
 
 /// R2 LAN discovery behind a trait: production uses [`RealScanner`]
