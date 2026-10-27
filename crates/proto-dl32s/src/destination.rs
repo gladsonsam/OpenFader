@@ -96,7 +96,7 @@ impl Dl32sDriver {
             }
         }).collect();
         if let Some(native) = native.as_ref() {
-            native.fx.controls(&mut controls);
+            native.fx.controls(&mut controls, generation);
         }
         controls
     }
