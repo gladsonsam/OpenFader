@@ -298,7 +298,10 @@ extension _ChannelClipboard on _AppStorePresets {
           (r) => r['id'] == field,
         );
         final value = copy.values[field]!;
-        final unchanged = ps.valuesEqual(row['value'], value);
+        // These are captured provider values, not optimistic slider echoes.
+        // The UI echo tolerance can hide distinct native DSP values and must
+        // never turn a required write into a falsely verified unchanged row.
+        final unchanged = row['value'] == value;
         if (!unchanged) attempted++;
         snapshot = await _inputProcessorStep(
           recall,
