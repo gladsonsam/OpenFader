@@ -292,18 +292,15 @@ class _MixerPageState extends State<MixerPage> {
                                                     PointerDeviceKind.mouse,
                                                     PointerDeviceKind.trackpad
                                                   }),
-                                              child: Scrollbar(
+                                              child: ListView.builder(
                                                   controller: _scroll,
-                                                  thumbVisibility: true,
-                                                  child: ListView.builder(
-                                                      controller: _scroll,
                                                       scrollDirection:
                                                           Axis.horizontal,
                                                       itemExtent: stripWidth,
                                                       itemCount:
                                                           channels.length,
                                                       itemBuilder: (context, i) =>
-                                                          strip(channels[i]))))),
+                                                          strip(channels[i])))),
                                   SizedBox(
                                       width: stripWidth,
                                       child: strip(controller.master)),
