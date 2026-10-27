@@ -16,6 +16,8 @@ use std::sync::atomic::Ordering;
 #[derive(Debug, Default)]
 pub(super) struct NativeCache {
     pub(super) generation: u64,
+    pub(super) library_revision: u64,
+    pub(super) library_show_info: Option<Vec<u8>>,
     pub(super) view: openfader_core::NativeSnapshots,
     pub(super) parameter_labels: std::collections::BTreeMap<&'static str, String>,
     pub(super) destinations: destination::DestinationState,
@@ -61,6 +63,10 @@ impl Dl32sDriver {
 
 impl NativeCache {
     pub(super) fn seed(&mut self, generation: u64, session: &MackieSession) {
+        if self.generation != generation {
+            self.library_show_info = None;
+            self.library_revision = 0;
+        }
         let mut slots: Vec<openfader_core::NativeSnapshotSlot> = session
             .snapshot_names_pushed()
             .into_iter()
@@ -142,6 +148,7 @@ pub(super) fn ingest_native(
                     return false;
                 }
                 if v.view.connected {
+                    v.library_revision += 1;
                     v.view.current = Some(*n);
                     v.view.received = true;
                 }
@@ -153,6 +160,7 @@ pub(super) fn ingest_native(
                     return false;
                 }
                 if v.view.connected {
+                    v.library_revision += 1;
                     match v.view.slots.iter_mut().find(|s| s.slot == *slot) {
                         Some(row) => row.name = name.clone(),
                         None => v.view.slots.push(openfader_core::NativeSnapshotSlot {

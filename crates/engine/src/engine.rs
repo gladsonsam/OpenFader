@@ -219,6 +219,8 @@ pub struct Engine {
     /// Serializes ALL numbered/named library mutations (one engine-owned
     /// async lock; never a `std` lock across `.await`).
     lib_lock: Mutex<()>,
+    native_lane: Mutex<()>,
+    native_requests: std::sync::Mutex<commands::NativeRequests>,
     /// Durability health of the local library (ready/error/uncertain +
     /// mode + latch message + owned file bytes).
     lib_health: RwLock<LibraryHealth>,
@@ -413,6 +415,8 @@ impl Engine {
             scenes_lib: RwLock::new(scenes_lib),
             scenes_current: RwLock::new(None),
             lib_lock: Mutex::new(()),
+            native_lane: Mutex::new(()),
+            native_requests: std::sync::Mutex::new(Default::default()),
             lib_health: RwLock::new(lib_health),
             lib_revision: AtomicU64::new(0),
             lib_temp: AtomicU64::new(0),

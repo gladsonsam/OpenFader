@@ -488,6 +488,12 @@ mixin _AppStoreAccess on _AppStoreContext {
               : 'subgroup/${((command['group'] as int) + 1).toString().padLeft(2, '0')}';
       return accessTargetAllowed(target);
     }
+    if (cmd == 'native_library' && _blockedAccess.isNotEmpty) {
+      final action = command['action'];
+      if (action is! Map || !const ['inspect', 'refresh', 'read_show'].contains(action['op'])) {
+        return false;
+      }
+    }
     // Bulk state changes cannot be safely split around restricted fields.
     if (_blockedAccess.isNotEmpty &&
         const [

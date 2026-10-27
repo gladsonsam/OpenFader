@@ -8,30 +8,35 @@ impl MackieSession {
     /// Recall a show snapshot the way the mixer app does: REQUEST `[1, n]`
     /// then RESPONSE `[1]`, fire-and-forget (no correlated reply).
     pub async fn recall_show_snapshot(&self, snapshot_1_based: u32) -> anyhow::Result<()> {
-        if snapshot_1_based == 0 {
-            anyhow::bail!("snapshot number must be >= 1");
-        }
+        self.recall_show_snapshot_guarded(snapshot_1_based, &|| true).await
+    }
+
+    /// Both legs share a write lane and a final authority check. No retry.
+    pub async fn recall_show_snapshot_guarded(&self, snapshot_1_based: u32,
+        authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+        anyhow::ensure!(snapshot_1_based <= 99, "Snapshot must be 0..99");
+        let mut lane = self.write.lock().await;
+        anyhow::ensure!(authorize(), "Native recall authority changed before dispatch");
         let req = build_snapshot_recall_request(snapshot_1_based);
-        self.send_frame_no_reply(MessageType::Request, Command::ShowSnapshot, req)
-            .await?;
-        self.send_frame_no_reply(
-            MessageType::Response,
-            Command::ShowSnapshot,
-            1u32.to_be_bytes().to_vec(),
-        )
-        .await?;
+        for (kind, body) in [(MessageType::Request, req),
+            (MessageType::Response, 1u32.to_be_bytes().to_vec())] {
+            let msg = Message::new(self.next_seq(), kind, Command::ShowSnapshot, body)?;
+            lane.write_all(&msg.encode()).await?;
+        }
+        lane.flush().await?;
         Ok(())
     }
 
-    /// Save current state into a snapshot slot under `name` (op 5).
+    /// Historical API name: op 5 NAMES an existing snapshot; it does not
+    /// capture current state. Native Master Fader store is op 2. Retained
+    /// for wire compatibility; never advertise this wrapper as native save.
     pub async fn save_show_snapshot(
         &self,
         snapshot_1_based: u32,
         name: &str,
     ) -> anyhow::Result<()> {
-        if snapshot_1_based == 0 {
-            anyhow::bail!("snapshot number must be >= 1");
-        }
+        anyhow::ensure!((1..=99).contains(&snapshot_1_based), "snapshot must be 1..99");
+        openfader_core::native_library::validate_name(name)?;
         let epoch = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -43,6 +48,18 @@ impl MackieSession {
         if let Ok(mut c) = self.caches.snapshot_names.lock() {
             c.insert(snapshot_1_based, name.trim().to_string());
         }
+        Ok(())
+    }
+
+    /// Native op 5 naming, validated without truncation. ACK is not a
+    /// snapshot relay or evidence that any mixer state was stored.
+    pub async fn rename_show_snapshot_guarded(&self, slot: u32, name: &str,
+        authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+        anyhow::ensure!((1..=99).contains(&slot), "Default snapshot cannot be renamed");
+        openfader_core::native_library::validate_name(name)?;
+        let epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
+        self.send_request_guarded(Command::ShowSnapshot, build_snapshot_save(slot, epoch, name),
+            REQUEST_TIMEOUT, authorize).await?;
         Ok(())
     }
 

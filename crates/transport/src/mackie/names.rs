@@ -55,7 +55,7 @@ pub fn parse_snapshot_push(body: &[u8]) -> Option<SnapshotEvent> {
     }
     let op = u32::from_be_bytes(body[0..4].try_into().ok()?);
     let number = u32::from_be_bytes(body[4..8].try_into().ok()?);
-    if number == 0 {
+    if number == 0 && op != 1 {
         return None;
     }
     match op {
@@ -86,6 +86,7 @@ pub fn build_snapshot_recall_request(snapshot: u32) -> Vec<u8> {
     out
 }
 
+/// Historical codec name: op 5 is native snapshot naming, not storing state.
 pub fn build_snapshot_save(snapshot: u32, epoch_secs: u64, name: &str) -> Vec<u8> {
     let text = name.as_bytes();
     let clipped = &text[..text.len().min(63)];
