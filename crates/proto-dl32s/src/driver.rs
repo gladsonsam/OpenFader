@@ -486,17 +486,13 @@ impl MixerDriver for Dl32sDriver {
         &["in"]
     }
 
-    /// Read-only native snapshot view: the push-observed model above
-    /// (`Some` whenever this driver is selected — supported but possibly
-    /// unconnected/loading — so the engine can render honest status
-    /// instead of guessing). A mismatched private generation withholds
-    /// the view (unavailable default) so a newer session never reads the
-    /// older session's slots. No write path exists behind this hook.
     fn native_library(&self) -> Option<serde_json::Value> { self.library_inventory() }
     async fn native_library_action(&self, action: &serde_json::Value, expected: &serde_json::Value,
         check: openfader_core::native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
         self.execute_library(action, expected, check).await
     }
+    /// Push-observed snapshot reports are withheld across session generations.
+    /// Mutations use the separately guarded native library action contract.
     fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
         self.read_native_snapshots()
     }
