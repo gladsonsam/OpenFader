@@ -98,6 +98,7 @@ class _QuickAccessPanelState extends State<QuickAccessPanel>
     return showDialog<void>(
       context: context,
       builder: (_) => DestinationControlEditor(
+        accessEpoch: () => store.controlAccessEpoch,
         changes: store,
         isCurrent: isCurrent,
         apply: (captured, value) => isCurrent(captured)

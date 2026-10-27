@@ -46,6 +46,7 @@ class FxSlotVm {
 
 // Implemented by the shell over the engine or a fixture sim.
 abstract class FxStore extends ChangeNotifier {
+  int get controlAccessEpoch => 0;
   bool get stateControlsSupported => false;
   List<DestinationControlVm> get destinationControls => const [];
   bool destinationControlIsCurrent(DestinationControlVm control) => false;
@@ -326,6 +327,7 @@ class _NativeFxDetail extends StatelessWidget {
                       context: context,
                       barrierDismissible: false,
                       builder: (_) => DestinationControlEditor(
+                        accessEpoch: () => store.controlAccessEpoch,
                         changes: store,
                         isCurrent: store.destinationControlIsCurrent,
                         apply: store.setDestinationControl,
@@ -394,6 +396,7 @@ class _NativeFxDetail extends StatelessWidget {
                             context: context,
                             barrierDismissible: false,
                             builder: (_) => DestinationControlEditor(
+                                accessEpoch: () => store.controlAccessEpoch,
                                 changes: store,
                                 isCurrent: store.destinationControlIsCurrent,
                                 apply: store.setDestinationControl,

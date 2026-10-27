@@ -339,6 +339,7 @@ class _ProcessingSend extends StatelessWidget {
                         context: context,
                         barrierDismissible: false,
                         builder: (_) => DestinationControlEditor(
+                            accessEpoch: () => store.controlAccessEpoch,
                             changes: store,
                             isCurrent: store.destinationControlIsCurrent,
                             apply: store.setDestinationControl,

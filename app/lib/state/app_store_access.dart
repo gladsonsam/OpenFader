@@ -565,6 +565,10 @@ mixin _AppStoreAccess on _AppStoreContext {
 
   @override
   Future<void> _command(String clientId, String json) async {
+    if (!PrefsService.instance.loaded) {
+      throw StateError(
+          'Local access policy is unavailable. Reload preferences first.');
+    }
     if (PrefsService.instance.accessSaving) {
       throw StateError('Access policy is changing. Reopen this control.');
     }
