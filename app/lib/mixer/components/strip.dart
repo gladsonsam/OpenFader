@@ -148,21 +148,19 @@ class MixerStrip extends StatelessWidget {
                               : ValueListenableBuilder<double>(
                                   valueListenable:
                                       controller.panNoteOf(chIndex),
-                                  builder: (context, pan, _) => ready & 4 == 0
-                                      ? const Center(child: Text('Pan · —'))
-                                      : MixerPan(
-                                          name: ch.name,
-                                          value: pan,
-                                          onTouch: () => onControlFocus
-                                              ?.call(MixerReadoutControl.pan),
-                                          visualHeight: g.panH,
-                                          onChanged: ready & 4 != 0
-                                              ? (v) {
-                                                  onControlFocus?.call(
-                                                      MixerReadoutControl.pan);
-                                                  controller.setPan(ch, v);
-                                                }
-                                              : null)),
+                                  builder: (context, pan, _) => MixerPan(
+                                      name: ch.name,
+                                      value: pan,
+                                      onTouch: () => onControlFocus
+                                          ?.call(MixerReadoutControl.pan),
+                                      visualHeight: g.panH,
+                                      onChanged: ready & 4 != 0
+                                          ? (v) {
+                                              onControlFocus?.call(
+                                                  MixerReadoutControl.pan);
+                                              controller.setPan(ch, v);
+                                            }
+                                          : null)),
                           touch: true),
                       place(
                           StripElement.mute,

@@ -8,6 +8,12 @@ abstract interface class _AppStorePollContract {
 }
 
 mixin _AppStorePoll on _AppStoreContext {
+  /// Engine wall-clock (ms) of the last poll batch carrying any engine
+  /// frames (control or meters). Meters stream at ~20 Hz on a live link,
+  /// so staleness here is a reliable dead-link signal for resume verdicts.
+  double _lastTrafficMs = 0;
+  double get lastTrafficMs => _lastTrafficMs;
+
   // ------------------------------------------------------------------
   // Single shared 80 ms ticker target (driven ONLY by the AppShell loop).
   // ------------------------------------------------------------------
@@ -105,6 +111,7 @@ mixin _AppStorePoll on _AppStoreContext {
     }
     var dirty = false;
     var controlsTouched = false;
+    if (frames.isNotEmpty) _lastTrafficMs = _nowMs();
     for (final f in frames) {
       try {
         final e = jsonDecode(f);
@@ -217,6 +224,7 @@ mixin _AppStorePoll on _AppStoreContext {
   void applyBinaryFrame(Uint8List bytes) {
     final f = parseBinary(bytes);
     if (f == null) return;
+    _lastTrafficMs = _nowMs();
     engine.applyBinary(f);
     _invalidateDerived();
     _syncMeters(_nowMs());
