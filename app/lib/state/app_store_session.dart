@@ -153,6 +153,7 @@ mixin _AppStoreSession on _AppStoreContext {
 
   @override
   void _clearSessionValues() {
+    _stopNativeLibrary();
     _interruptDestinationEdits(
         'Connection changed; the destination setting may have changed.');
     _interruptAllLibrary(

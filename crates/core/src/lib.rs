@@ -20,6 +20,7 @@ pub mod output_meters;
 pub use output_meters::{OutputMeterFrame, OutputMeterSnapshot};
 pub mod presets;
 pub mod input_processors;
+pub mod native_library;
 pub mod rta;
 pub mod show;
 pub mod sync;
@@ -371,8 +372,9 @@ pub struct MixerSnapshot {
 
 /// One native desk snapshot slot: the desk's own slot id intact (raw `u32`,
 /// never remapped, never zero-defaulted) plus the desk-provided name. No
-/// base, bounds, labels or counts are invented, native `0` may exist
-/// (Default?) but that is unverified, so no slot is assumed to be first.
+/// base, bounds, labels or counts are invented by this passive view. DL32S
+/// Default 0 is documented separately in its provider library descriptor;
+/// this stream never inserts an unobserved default or assumes a first slot.
 /// Slots exist ONLY from desk push evidence (see
 /// [`MixerDriver::native_snapshots`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -892,6 +894,14 @@ pub trait MixerDriver: Send + Sync {
     /// out of this surface. The view is sync and lock-local (session-cache
     /// reads only, no I/O) so the engine can sample it on its existing
     /// ticker without a new task or timer.
+    /// Explicit native-library inspection/operations. No provider means unsupported.
+    /// Action errors must precede mutation dispatch. After any possible
+    /// dispatch, return a confirmed/uncertain receipt; never retry internally.
+    fn native_library(&self) -> Option<serde_json::Value> { None }
+    async fn native_library_action(&self, _action: &serde_json::Value,
+        _expected: &serde_json::Value, _check: native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
+        anyhow::bail!("Native library operations unsupported")
+    }
     fn native_snapshots(&self) -> Option<NativeSnapshots> {
         None
     }

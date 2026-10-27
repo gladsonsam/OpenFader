@@ -290,6 +290,16 @@ class FakeSimEngine implements EngineApi {
       return;
     }
     switch (c['cmd']) {
+      case 'native_library':
+        _mailbox.add(jsonEncode({'type':'native_library_result',
+          'request_id':c['request_id'], 'driver':c['driver'], 'epoch':c['epoch'],
+          'operation':(c['action'] as Map?)?['op'],
+          'result':{'status':'rejected',
+            'message':'Provider libraries unavailable in the fallback engine. Use the Rust simulator.',
+            'inventory':null}}));
+        return;
+      case 'native_library_cancel':
+        return;
       case 'local_library_status':
         _mailbox.add(jsonEncode({
           'type': 'local_library_status',

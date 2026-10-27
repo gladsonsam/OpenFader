@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 fn default_driver() -> String {
     "sim".to_string()
@@ -201,6 +202,9 @@ pub enum Cmd {
     /// (`mode` memory|device, `status` ready|error|uncertain, monotonic
     /// `revision`, `error`, `bytes`). Works in memory mode too.
     LocalLibraryStatus,
+    NativeLibrary { request_id: String, driver: String, epoch: u64,
+        action: Value, expected: Option<Value> },
+    NativeLibraryCancel { request_id: String },
     /// R2 durable local-library mutation (`{"cmd":"local_library_mutate",
     /// `"request_id":"…","expected_revision":N,
     /// `"action":{"op":"save","n":1,"name":"Set 1"}}`): every numbered and
@@ -424,6 +428,8 @@ impl Cmd {
             "scene_clear",
             "local_library_status",
             "local_library_mutate",
+            "native_library",
+            "native_library_cancel",
             "fx_set_type",
             "fx_param",
             "fx_bypass",
@@ -1204,6 +1210,8 @@ pub enum Event {
     /// no command writes these slots.
     /// Unicast in the attach/resume snapshots; broadcast on change (no
     /// audio-param fanout, this frame carries no strip params).
+    NativeLibraryResult { request_id: String, driver: String, epoch: u64,
+        operation: String, result: Value },
     NativeSnapshots {
         driver: String,
         supported: bool,
@@ -1269,6 +1277,7 @@ impl Event {
             Event::Solo { .. } => "solo",
             Event::File { .. } => "file",
             Event::NativeSnapshots { .. } => "native_snapshots",
+            Event::NativeLibraryResult { .. } => "native_library_result",
         }
     }
 

@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/access_limits.dart';
+import '../core/native_library.dart';
 import '../core/routing_access.dart';
 import '../settings/prefs.dart';
 
@@ -42,6 +43,7 @@ import '../mixer/store.dart';
 part 'app_store_access.dart';
 
 part 'app_store_library.dart';
+part 'app_store_native_library.dart';
 part 'app_store_appearance.dart';
 part 'app_store_assignments.dart';
 part 'app_store_presets.dart';
@@ -78,6 +80,7 @@ abstract class _AppStoreContext extends ChangeNotifier
         _AppStoreOutputPresetsContract,
         _AppStoreCoreContract,
         _AppStoreLibraryContract,
+        _AppStoreNativeLibraryContract,
         _AppStoreAppearanceContract,
         _AppStoreAssignmentsContract,
         _AppStorePresetsContract,
@@ -122,6 +125,7 @@ class AppStore extends _AppStoreContext
     with
         _AppStoreAccess,
         _AppStoreLibrary,
+        _AppStoreNativeLibrary,
         _AppStoreAppearance,
         _AppStoreAssignments,
         _AppStorePresets,
@@ -212,6 +216,7 @@ class AppStore extends _AppStoreContext
         'Connection closed; the destination setting may have changed.');
     _libraryDisposed = true;
     _interruptAllLibrary('The engine was closed.');
+    _stopNativeLibrary();
     _interruptForgetSavedMixers('The engine was closed.');
     _libraryRequests.clear();
     _libraryRecalls.clear();

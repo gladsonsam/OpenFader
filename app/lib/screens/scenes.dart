@@ -1,10 +1,12 @@
 // Snapshot library plus named show capture and recall.
-// Writes use correlated local-library results; native snapshots remain read-only.
+// Local transactions and guarded provider operations keep separate authorities.
 // Screens stay constructor-injected so Area A can implement the store.
 import 'package:flutter/material.dart';
 
 import '../engine.dart' show NativeSnapshotsVm, NativeSnapshotsStatus;
 import '../theme.dart';
+import '../core/native_library.dart';
+import '../widgets/native_library.dart';
 import '../palette.dart';
 import '../widgets/console_button.dart';
 
@@ -21,7 +23,21 @@ class SceneEntryVm {
 }
 
 // Implemented by the shell over the engine or a fixture sim.
-abstract class ScenesStore extends ChangeNotifier {
+abstract class ScenesStore extends ChangeNotifier implements NativeLibraryStore {
+  @override
+  NativeLibraryVm? get nativeLibrary => null;
+  @override
+  String? get nativeStatus => null;
+  @override
+  bool get nativeBusy => false;
+  @override
+  bool get nativeWritable => false;
+  @override
+  Object get nativeContext => actionContext;
+  @override
+  Future<void> nativeAction(Map<String, dynamic> action, Object captured) async {}
+  @override
+  void cancelNativeAction() {}
   List<SceneEntryVm> get entries;
   List<String> get shows;
   List<String> get showScenes;
@@ -180,6 +196,8 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.6,
                           color: ConsolePalette.of(context).text1)),
+                  const SizedBox(height: 10),
+                  NativeLibrarySection(store: store),
                   const SizedBox(height: 10),
                   _NativeSnapshotsSection(view: store.nativeSnapshots),
                   const SizedBox(height: 16),
@@ -535,7 +553,7 @@ class _NativeSnapshotsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _SectionTitle('Mixer snapshots · read only'),
+          const _SectionTitle('Passive mixer snapshot reports'),
           Text(message, style: TextStyle(fontSize: 12, color: palette.text7)),
           if (view.status == NativeSnapshotsStatus.ready) ...[
             const SizedBox(height: 8),

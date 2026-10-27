@@ -3,8 +3,9 @@ import 'dart:async';
 import '../engine.dart';
 import '../screens/scenes.dart';
 import 'store_adapter.dart';
+import 'native_library_store.dart';
 
-class ShellScenesStore extends ShellStoreAdapter implements ScenesStore {
+class ShellScenesStore extends ShellStoreAdapter with ShellNativeLibrary implements ScenesStore {
   ShellScenesStore(super.app) {
     app.addListener(_settle);
   }
@@ -17,7 +18,7 @@ class ShellScenesStore extends ShellStoreAdapter implements ScenesStore {
   Object? _pendingContext;
 
   Object get _context => (engine.session, _show, _newShow);
-  bool get _canRun => !isDisposed && !_busy && online && app.libraryWritable;
+  bool get _canRun => !isDisposed && !_busy && !nativeBusy && online && app.libraryWritable;
 
   @override
   Object get actionContext => (
@@ -42,7 +43,7 @@ class ShellScenesStore extends ShellStoreAdapter implements ScenesStore {
   }
 
   @override
-  bool get busy => _busy || app.libraryResetting || app.libraryActive;
+  bool get busy => _busy || nativeBusy || app.libraryResetting || app.libraryActive;
 
   @override
   String get libraryDescription {
