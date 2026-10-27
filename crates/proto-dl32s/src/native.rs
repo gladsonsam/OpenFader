@@ -21,6 +21,7 @@ pub(super) struct NativeCache {
     pub(super) destinations: destination::DestinationState,
     pub(super) fx: fx::FxState,
     pub(super) globals: crate::global_controls::GlobalControls,
+    pub(super) output_routes: crate::output_routing::OutputRoutes,
     pub(super) output_processing: crate::output_processing::OutputProcessingCache,
 }
 
@@ -70,6 +71,7 @@ impl NativeCache {
         self.fx.seed(session);
         self.globals.seed(session);
         self.output_processing.seed(session);
+        self.output_routes.seed(session);
         self.parameter_labels = (58..=75)
             .filter_map(|slot| {
                 let id = assignment_name_parameter(slot)?;
@@ -103,6 +105,7 @@ pub(super) fn ingest_native(
                 if v.view.connected {
                     if *value_type == VALUE_TYPE_PARAM {
                         v.destinations.ingest(*start, raws);
+                        v.output_routes.ingest(*start, raws);
                         v.fx.ingest(*start, raws);
                     }
                     if *value_type == VALUE_TYPE_MUTE_GROUP { v.globals.ingest(*start, raws); }

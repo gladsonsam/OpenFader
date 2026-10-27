@@ -90,7 +90,7 @@ class _AccessLimitsDetailState extends State<AccessLimitsDetail> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Master routing, physical output patching, oscillator, presets as a separate family, shows as a separate family, quick access, mute/view groups, group assignment, Masters, Overview, Devices, Settings and I/O Patchbay. Input routing covers the input patches and source controls offered by the mixer. Mic preamps covers offered input gain and 48V controls; trim and polarity remain independent. Destination limits cover advertised mixes and groups, not physical output patches. Individual limits are unavailable for destinations the mixer does not identify. Stereo pairing uses the mixer’s reported channel pairs and current link state. Input faders and group actions can still affect limited outputs; this is not mix isolation.',
+            'Master routing beyond advertised output patches, oscillator, presets as a separate family, shows as a separate family, quick access, mute/view groups, group assignment, Masters, Overview, Devices, Settings and I/O Patchbay. Input routing covers the input patches and source controls offered by the mixer. Mic preamps covers offered input gain and 48V controls; trim and polarity remain independent. Output patching covers advertised physical and USB send patches. Destination limits also cover advertised output patch endpoints. Individual limits are unavailable for destinations the mixer does not identify. Stereo pairing uses the mixer’s reported channel pairs and current link state. Input faders and group actions can still affect limited outputs; this is not mix isolation.',
             style: TextStyle(color: palette.text7),
           ),
         ],

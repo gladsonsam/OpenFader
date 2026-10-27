@@ -9,6 +9,7 @@
 //! tokio I/O. All methods past the core four have default bodies returning
 //! "unsupported", so stub drivers keep compiling while they grow.
 
+pub mod routing;
 pub mod access;
 pub mod destinations;
 pub mod global_controls;

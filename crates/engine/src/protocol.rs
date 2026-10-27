@@ -244,6 +244,9 @@ pub enum Cmd {
         driver: String,
         epoch: u64,
         destination: String,
+        /// Exact `destinations[].guard` required for non-strip outputs.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        guard: Option<serde_json::Value>,
         expected: String,
         source: Option<RoutingSource>,
     },
@@ -703,6 +706,9 @@ pub struct RoutingSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoutingDestinationCaps {
+    /// Non-strip destinations require the guarded master write lane.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub output: bool,
     /// Stable within the provider: plane key plus canonical destination key.
     pub id: String,
     pub key: String,
@@ -799,6 +805,8 @@ pub struct FxSlotState {
 /// One `routing` patch row (R2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PatchEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guard: Option<serde_json::Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub destination: Option<String>,
     /// Provider display may contain accepted cache continuity, not wire verification.
