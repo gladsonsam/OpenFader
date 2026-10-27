@@ -410,6 +410,7 @@ mixin _AppStoreAccess on _AppStoreContext {
     _accessRevision = prefs.accessRevision;
     _blockedAccess = next;
     _controlAccessEpoch++;
+    _stopNativeLibrary();
     // Queued writes and captured preset editors must not outlive permission.
     _coalescer.clear();
     _maps.pending.clear();
