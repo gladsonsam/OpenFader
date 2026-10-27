@@ -9,6 +9,8 @@
 //! driver crates; [`MixerDriver`](crate::MixerDriver) already exposes
 //! defaulted `set_fx_param`/`get_fx_param` hooks for that.
 
+pub mod dl32s;
+
 /// FX slot count (X-Air: 4 stereo slots).
 pub const FX_SLOT_COUNT: usize = 4;
 /// First slot number (wire convention is 1-based).

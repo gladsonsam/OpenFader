@@ -40,6 +40,10 @@ impl MixerDriver for Dl32sDriver {
         controls
     }
 
+    async fn set_fx_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        self.write_fx_guarded(target, control, value, expected, snapshot, context).await
+    }
+
     async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         self.write_target_solo(target, control, value, expected, snapshot, context).await
     }
@@ -55,9 +59,7 @@ impl MixerDriver for Dl32sDriver {
         if self.write_output_processing(target, control, value, expected).await? {
             return Ok(());
         }
-        if self.write_fx_control(target, control, value, expected).await? {
-            return Ok(());
-        }
+        anyhow::ensure!(!target.starts_with("fx/"), "FX requires a complete current configuration guard");
         self.write_aux_control(target, control, value, expected).await
     }
 

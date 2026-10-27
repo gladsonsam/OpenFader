@@ -1,7 +1,9 @@
 //! Reviewed FX address table, engineering domains and wire encoding.
 // Each listed parameter address was independently changed, observed in
 // manufacturer mixer software and restored against the complete mixer bank. Algorithm
-// guards intentionally cover only the observed slot/algorithm pairs.
+// Historic evidence covers only the observed slot/algorithm pairs.
+// Keep these 55 scalar descriptors + four source actions as compatibility
+// overrides; the complete native catalogue lives in core::fx::dl32s.
 // Engineering domains: manufacturer mixer software 5.1 reference guide pp165,167.
 // Decay bounds additionally verified at both native slider endpoints for
 // each listed slot/algorithm: Plate1..3 s, Hall2..6 s, Spring0.1..10 s.

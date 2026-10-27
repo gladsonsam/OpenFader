@@ -54,8 +54,8 @@ impl Engine {
                         "Destination changed; reopen the control."
                     );
                     anyhow::ensure!(
-                        (!matches!(row.surface.as_str(), "global" | "solo") && row.gesture.is_none()) || guard.is_some(),
-                        "Global or gesture control requires the current configuration guard."
+                        (!matches!(row.surface.as_str(), "global" | "solo" | "fx") && row.gesture.is_none()) || guard.is_some(),
+                        "Shared control requires the current configuration guard."
                     );
                     if let Some(guard) = guard {
                         let block: Vec<_> = controls
@@ -65,7 +65,7 @@ impl Engine {
                             .collect();
                         let serialized = Self::destination_rows(&block);
                         anyhow::ensure!(
-                            (row.preset || matches!(row.surface.as_str(), "global" | "solo") || row.gesture.is_some())
+                            (row.preset || matches!(row.surface.as_str(), "global" | "solo" | "fx") || row.gesture.is_some())
                                 && row.revision.is_some()
                                 && row.generation.is_some()
                                 && !guard.is_empty()
@@ -81,6 +81,14 @@ impl Engine {
                                 && !self.reads_suspended.load(Ordering::Acquire)
                                 && self.check_solo_scope(&row.members, writer).is_ok();
                             Some(driver.set_target_solo(&target, &control, value, expected, &block, &context).await?)
+                        } else if row.surface == "fx" {
+                            self.check_solo_scope(std::slice::from_ref(&target), writer)?;
+                            let driver_id = self.active_driver();
+                            let context = || driver_id == self.active_driver()
+                                && epoch == self.connection_gen.load(Ordering::Acquire)
+                                && !self.reads_suspended.load(Ordering::Acquire)
+                                && self.check_solo_scope(std::slice::from_ref(&target), writer).is_ok();
+                            Some(driver.set_fx_control_guarded(&target, &control, value, expected, &block, &context).await?)
                         } else { driver
                             .set_destination_control_guarded(
                                 &target, &control, value, expected, &block,

@@ -217,6 +217,10 @@ pub trait DynDriver: Send + Sync {
         let _ = (target, control, value, expected, snapshot);
         anyhow::bail!("guarded processor recall not supported")
     }
+    async fn set_fx_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        let _ = (target, control, value, expected, snapshot, context);
+        anyhow::bail!("guarded FX unavailable")
+    }
     async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         let _ = (target, control, value, expected, snapshot, context);
         anyhow::bail!("target solo unsupported")
@@ -703,6 +707,9 @@ macro_rules! impl_dyn_driver {
     async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
         MixerDriver::set_destination_control_guarded(self, target, control, value, expected, snapshot).await
     }
+        async fn set_fx_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+            MixerDriver::set_fx_control_guarded(self, target, control, value, expected, snapshot, context).await
+        }
         async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
             MixerDriver::set_target_solo(self, target, control, value, expected, snapshot, context).await
         }

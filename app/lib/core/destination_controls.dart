@@ -111,6 +111,11 @@ class DestinationControlVm {
       'bpm' => 60000000 / microseconds,
       _ => double.nan,
     };
+// Native FX tap intervals pause above 1.5 times the maximum, then clamp.
+    if (surface == 'fx') {
+      if (value > max! * 1.5) return null;
+      return wireValue(value.clamp(min!, max!));
+    }
     return wireValue(value);
   }
 

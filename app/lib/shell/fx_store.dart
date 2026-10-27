@@ -52,7 +52,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
     final key =
         '${engine.session}/${control.epoch}/${control.target}/${control.id}'
         '/${control.targetName}/${control.min}/${control.max}/${control.unit}';
-    final now = _tapClock.elapsedMicroseconds;
+    final now = _tapClock.elapsedMilliseconds * 1000;
     final previous = _tapTimes[key];
     _tapTimes[key] = now;
     if (previous == null) return null;
@@ -82,7 +82,12 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   List<FxSlot> get _raw => engine.fx;
 
   @override
-  List<FxSlotVm> get slots => [
+  // A provider-native catalogue owns the rack presentation, including sim.
+  // Keep legacy numbered/design racks for providers without that contract.
+  List<FxSlotVm> get slots => engine.destinationControls.any(
+          (control) => control.surface == 'fx' && control.id == 'algorithm')
+      ? const []
+      : [
         for (final s in _raw)
           FxSlotVm(
             slot: s.slot,
