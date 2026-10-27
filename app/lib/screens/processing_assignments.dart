@@ -12,48 +12,52 @@ class _InputAssignments extends StatelessWidget {
   Widget build(BuildContext context) {
     final assignmentFont = wide && store.viewGroupCount > 0 ? 14.0 : 16.0;
     final groups = <String, List<Widget>>{
-      'Main': [
-        _ProcessingButton(
-            fontSize: assignmentFont,
-            label: 'Main',
-            detail: wide ? 'LR' : null,
-            active: store.mainAssigned == true,
-            onTap: store.mainAssigned == null
-                ? null
-                : () => store.setMainAssigned(!store.mainAssigned!))
-      ],
-      'Sub': [
-        for (var g = 0; g < store.subgroupCount; g++)
+      if (store.paramApplies('lr_assign'))
+        'Main': [
           _ProcessingButton(
               fontSize: assignmentFont,
-              label: 'Sub ${g + 1}',
-              active: store.subgroupAssigned(g) == true,
-              onTap: store.subgroupAssigned(g) == null
+              label: 'Main',
+              detail: wide ? 'LR' : null,
+              active: store.mainAssigned == true,
+              onTap: store.mainAssigned == null
                   ? null
-                  : () =>
-                      store.cmdSubgroupAssign(g, !store.subgroupAssigned(g)!))
-      ],
-      'VCA': [
-        for (var g = 0; g < store.dcaCount; g++)
-          _ProcessingButton(
-              fontSize: assignmentFont,
-              label: store.dcaGroupLabel(g),
-              active: store.dcaAssigned(g) == true,
-              onTap: store.dcaAssigned(g) == null
-                  ? null
-                  : () => store.setDcaAssigned(g, !store.dcaAssigned(g)!))
-      ],
-      'Mute': [
-        for (var g = 0; g < store.muteGroupCount; g++)
-          _ProcessingButton(
-              fontSize: assignmentFont,
-              label: 'Mute ${g + 1}',
-              active: store.muteGroupAssigned(g) == true,
-              onTap: store.muteGroupAssigned(g) == null
-                  ? null
-                  : () =>
-                      store.cmdMuteGroupAssign(g, !store.muteGroupAssigned(g)!))
-      ],
+                  : () => store.setMainAssigned(!store.mainAssigned!))
+        ],
+      if (store.subgroupCount > 0)
+        'Sub': [
+          for (var g = 0; g < store.subgroupCount; g++)
+            _ProcessingButton(
+                fontSize: assignmentFont,
+                label: 'Sub ${g + 1}',
+                active: store.subgroupAssigned(g) == true,
+                onTap: store.subgroupAssigned(g) == null
+                    ? null
+                    : () =>
+                        store.cmdSubgroupAssign(g, !store.subgroupAssigned(g)!))
+        ],
+      if (store.dcaCount > 0)
+        'VCA': [
+          for (var g = 0; g < store.dcaCount; g++)
+            _ProcessingButton(
+                fontSize: assignmentFont,
+                label: store.dcaGroupLabel(g),
+                active: store.dcaAssigned(g) == true,
+                onTap: store.dcaAssigned(g) == null
+                    ? null
+                    : () => store.setDcaAssigned(g, !store.dcaAssigned(g)!))
+        ],
+      if (store.muteGroupCount > 0)
+        'Mute': [
+          for (var g = 0; g < store.muteGroupCount; g++)
+            _ProcessingButton(
+                fontSize: assignmentFont,
+                label: 'Mute ${g + 1}',
+                active: store.muteGroupAssigned(g) == true,
+                onTap: store.muteGroupAssigned(g) == null
+                    ? null
+                    : () => store.cmdMuteGroupAssign(
+                        g, !store.muteGroupAssigned(g)!))
+        ],
       if (store.viewGroupCount > 0)
         'View': [
           for (var g = 0; g < store.viewGroupCount; g++)

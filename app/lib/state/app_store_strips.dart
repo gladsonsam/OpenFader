@@ -39,6 +39,11 @@ mixin _AppStoreStrips on _AppStoreContext {
   // for structural changes (strips add/remove, bank/bus select, connection).
   // Solo keeps its notifier AND a global notify (infrequent taps; the page
   // solo banner reads hasSolo/soloCount off the store).
+  final Map<int, ValueNotifier<String>> _controlGroupNotes = {};
+  @override
+  ValueListenable<String> controlGroupNoteOf(int ch) =>
+      _controlGroupNotes.putIfAbsent(ch, () => ValueNotifier(''));
+
   final Map<int, ValueNotifier<double>> _faderNotes = {};
   final Map<int, ValueNotifier<bool>> _muteNotes = {};
   final Map<int, ValueNotifier<double>> _panNotes = {};
@@ -56,6 +61,7 @@ mixin _AppStoreStrips on _AppStoreContext {
       }
       if (_targetSolo(ch) != null) return _targetSoloReady(ch);
     }
+    if (field != 'solo' && !_stripParamApplies(ch, field)) return false;
     return _accessParamAllowed(ch, field) &&
         (engine.driver == 'sim' ||
             (engine.connected &&
@@ -347,6 +353,9 @@ mixin _AppStoreStrips on _AppStoreContext {
   @override
   void _syncControlNotes() {
     _syncSendParamNotes();
+    for (final entry in _controlGroupNotes.entries) {
+      entry.value.value = _controlGroupInfluence(entry.key);
+    }
     for (final entry in _controlReadyNotes.entries) {
       entry.value.value = _controlReady(entry.key);
     }

@@ -247,15 +247,15 @@ async fn ws_r2_taps_json_and_binary() {
             assert_eq!(bytes[0], 3, "binary taps type");
             assert_eq!(bytes[1], 1, "binary version");
             let n = u16::from_le_bytes([bytes[2], bytes[3]]);
-            assert_eq!(n, 77, "taps cover every sim strip");
+            assert_eq!(n, 81, "taps cover every sim strip");
             assert!(bytes[12] <= 3, "tap id in/post/gr_gate/gr_comp");
-            assert_eq!(bytes.len(), 12 + 1 + 77 * 2);
+            assert_eq!(bytes.len(), 12 + 1 + 81 * 2);
             break;
         }
     }
-    // B: JSON taps text with a valid tap name and 77 levels.
+    // B: JSON taps text with a valid tap name and 81 levels.
     let taps = next_typed(&mut rx_b, "taps").await;
     let tap = taps.get("tap").and_then(Value::as_str).unwrap();
     assert!(["in", "post", "gr_gate", "gr_comp"].contains(&tap));
-    assert_eq!(taps.get("levels").and_then(Value::as_array).unwrap().len(), 77);
+    assert_eq!(taps.get("levels").and_then(Value::as_array).unwrap().len(), 81);
 }

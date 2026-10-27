@@ -11,8 +11,9 @@ impl SimDriver {
         check: openfader_core::input_processors::RecallCheck<'_>,
     ) -> anyhow::Result<Value> {
         let i = self.idx(strip)?;
+        let kind = kind_of_strip(i)?;
         anyhow::ensure!(
-            kind_of_strip(i)? == StripKind::In && ["eq", "gate", "compressor"].contains(&processor),
+            ["eq", "gate", "compressor"].contains(&processor),
             "Input processor unavailable"
         );
         let mut params = self.params.write().expect("sim params poisoned");
@@ -23,12 +24,14 @@ impl SimDriver {
             .filter(|id| {
                 member(processor, id)
                     && openfader_core::params::find(id)
-                        .is_some_and(|d| openfader_core::params::supports_kind(d, StripKind::In))
+                        .is_some_and(|d| strip_schema::supports(d, kind))
             })
             .collect();
+        anyhow::ensure!(!ids.is_empty(), "Processor unavailable on this family");
+        let pair = self.stereo_pairs().into_iter().find(|pair| pair.contains(&strip.0));
         let snapshot = |params: &Vec<HashMap<String, ParamValue>>| -> anyhow::Result<Value> {
             let mut links = Vec::new();
-            for ch in [i - i % 2, i - i % 2 + 1] {
+            for ch in pair.into_iter().flatten().map(usize::from) {
                 anyhow::ensure!(
                     params[ch].get("link") == Some(&ParamValue::Bool(false)),
                     "Input presets require verified unlinked channels"

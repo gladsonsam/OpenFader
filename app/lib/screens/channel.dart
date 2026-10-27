@@ -261,10 +261,11 @@ class _ChannelPageState extends State<ChannelPage> {
                   velocity.sign == _swipeDistance.sign)) {
             return;
           }
-          final index = _tabOrder.indexOf(start);
+          final tabs = _availableTabs(store);
+          final index = tabs.indexOf(start);
           final next = index + (_swipeDistance < 0 ? 1 : -1);
-          if (next >= 0 && next < _tabOrder.length) {
-            _switchTab(store, _tabOrder[next]);
+          if (next >= 0 && next < tabs.length) {
+            _switchTab(store, tabs[next]);
           }
         },
         onHorizontalDragCancel: () => _swipeTab = null,
@@ -284,7 +285,10 @@ class _ChannelPageState extends State<ChannelPage> {
           builder: (context, _) {
             final store = widget.store;
             final wide = MediaQuery.sizeOf(context).width >= 700;
-            final tabContent = switch (store.tab) {
+            final selectedTab = _availableTabs(store).contains(store.tab)
+                ? store.tab
+                : ChannelTab.input;
+            final tabContent = switch (selectedTab) {
               ChannelTab.input =>
                 _InputTab(store: store, onFocus: (f) => _focus.value = f),
               ChannelTab.eq =>
@@ -299,9 +303,9 @@ class _ChannelPageState extends State<ChannelPage> {
                   kind: DynKind.comp),
             };
             final content = SingleChildScrollView(
-              key: PageStorageKey('processing-${store.tab.name}'),
+              key: PageStorageKey('processing-${selectedTab.name}'),
               child: KeyedSubtree(
-                  key: ValueKey((store.stripKey, store.tab)),
+                  key: ValueKey((store.stripKey, selectedTab)),
                   child: wide
                       ? Padding(
                           padding: const EdgeInsets.all(12), child: tabContent)
@@ -325,7 +329,7 @@ class _ChannelPageState extends State<ChannelPage> {
                               width: bounds.maxWidth * 178 / 1823,
                               child: _SideMenu(
                                   store: store,
-                                  tab: store.tab,
+                                  tab: selectedTab,
                                   onTab: (t) => _switchTab(store, t)))),
                     Expanded(
                         child: Column(children: [
@@ -333,7 +337,7 @@ class _ChannelPageState extends State<ChannelPage> {
                       if (!wide)
                         _BottomNav(
                             store: store,
-                            tab: store.tab,
+                            tab: selectedTab,
                             onTab: (t) => _switchTab(store, t)),
                     ])),
                     SizedBox(width: stripWidth, child: widget.mixerControls),
@@ -345,6 +349,17 @@ class _ChannelPageState extends State<ChannelPage> {
     );
   }
 }
+
+List<ChannelTab> _availableTabs(ChannelStore store) => [
+      for (final tab in _tabOrder)
+        if (switch (tab) {
+          ChannelTab.input => true,
+          ChannelTab.gate => store.paramApplies('gate_on'),
+          ChannelTab.comp => store.paramApplies('comp_on'),
+          ChannelTab.eq => store.paramApplies('eq_on'),
+        })
+          tab,
+    ];
 
 const _tabOrder = [
   ChannelTab.input,
@@ -388,7 +403,7 @@ class _SideMenu extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (final t in _tabOrder)
+          for (final t in _availableTabs(store))
             Expanded(
                 child: _MenuRow(
                     store: store,
@@ -571,14 +586,14 @@ class _BottomNav extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              for (var i = 0; i < _tabOrder.length; i++) ...[
+              for (var i = 0; i < _availableTabs(store).length; i++) ...[
                 Expanded(
                     child: _BottomCell(
                         store: store,
-                        tab: _tabOrder[i],
-                        active: _tabOrder[i] == tab,
-                        onTap: () => onTab(_tabOrder[i]))),
-                if (i < _tabOrder.length - 1)
+                        tab: _availableTabs(store)[i],
+                        active: _availableTabs(store)[i] == tab,
+                        onTap: () => onTab(_availableTabs(store)[i]))),
+                if (i < _availableTabs(store).length - 1)
                   Container(width: 1, color: ConsolePalette.of(context).line),
               ],
             ],

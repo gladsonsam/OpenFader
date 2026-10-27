@@ -63,6 +63,7 @@ abstract class MixerStore extends ChangeNotifier implements ChannelNameStore {
   /// Stable per-strip control notifiers, updated in place on the hot path
   /// (fader/mute/pan drags and taps) without a global notify. Strips listen
   /// to their own ch only.
+  ValueListenable<String> controlGroupNoteOf(int ch);
   ValueNotifier<double> faderOf(int ch);
   ValueNotifier<bool> muteOf(int ch);
   ValueNotifier<double> panNoteOf(int ch);

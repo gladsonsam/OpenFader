@@ -51,8 +51,12 @@ mixin _AppStoreMeters on _AppStoreContext {
       _meters.removeLast().dispose();
     }
     for (var i = 0; i < engine.strips.length; i++) {
-      final lv =
-          i < engine.meters.length ? engine.meters[i].clamp(0.0, 1.0) : 0.0;
+      final measured = engine.outputMeter(engine.strips[i].key);
+      final lv = measured.available
+          ? measured.peak
+          : i < engine.meters.length
+              ? engine.meters[i].clamp(0.0, 1.0)
+              : 0.0;
       _meters[i].value = lv;
       final ch = engine.strips[i].ch;
       final tap = _taps.putIfAbsent(ch, () => BridgeTap());
@@ -86,9 +90,7 @@ mixin _AppStoreMeters on _AppStoreContext {
     }
     // Open-channel feeds.
     final ci = engine.strips.indexWhere((s) => s.ch == _channel);
-    final lv = ci >= 0 && ci < engine.meters.length
-        ? engine.meters[ci].clamp(0.0, 1.0)
-        : 0.0;
+    final lv = ci >= 0 && ci < _meters.length ? _meters[ci].value : 0.0;
     _levelDb.value = _linToDb(lv);
     final dynamics = engine.dynamicsMeters[_channel];
     _dynamicsMeters.value = dynamics == null

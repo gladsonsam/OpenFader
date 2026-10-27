@@ -1,6 +1,6 @@
 //! Guard existing input mappings with transport-observed revisions/fresh pushes.
 //! Local serialization and observed-state checks are not atomic desk CAS.
-use crate::{addrs::dl32s_inputs, input::alias_target, Dl32sDriver, DL32S_CAPABILITIES};
+use crate::{input::alias_target, Dl32sDriver, DL32S_CAPABILITIES};
 use openfader_core::{
     input_processors::{domain, member, writable},
     ParamValue, StripId,
@@ -19,28 +19,30 @@ fn capture(
         ["eq", "gate", "compressor"].contains(&processor),
         "Unknown input processor"
     );
+    let (table, channel) = crate::strips::resolve(StripId(ch))?;
     let ids: Vec<_> = DL32S_CAPABILITIES
         .iter()
         .copied()
-        .filter(|id| member(processor, id))
+        .filter(|id| member(processor, id) && crate::strips::supports(table, id))
         .collect();
     anyhow::ensure!(!ids.is_empty(), "Input processor unavailable");
-    let table = dl32s_inputs();
     let mut addresses = ids
         .iter()
-        .map(|id| table.address(u32::from(ch) + 1, alias_target(id).unwrap_or(id)))
+        .map(|id| table.address(channel, alias_target(id).unwrap_or(id)))
         .collect::<anyhow::Result<Vec<_>>>()?;
     // Both native stereo words matter: left link state and right direction.
-    let left = u32::from(ch - ch % 2) + 1;
-    addresses.push(table.address(left, "stereo_link")?);
-    addresses.push(table.address(left + 1, "stereo_link")?);
+    if table.field("stereo_link").is_ok() {
+        let left = channel - (channel - 1) % 2;
+        addresses.push(table.address(left, "stereo_link")?);
+        addresses.push(table.address(left + 1, "stereo_link")?);
+    }
     let observed = session.verified_value_snapshot(&addresses).ok_or_else(|| {
         anyhow::anyhow!("Waiting for complete verified input processor and stereo link readback")
     })?;
-    anyhow::ensure!(
-        observed[ids.len()].0 == 0 && observed[ids.len() + 1].0 <= 1,
-        "Input presets require verified unlinked channels and known link direction"
-    );
+    if addresses.len() > ids.len() {
+        anyhow::ensure!(observed[ids.len()].0 == 0 && observed[ids.len() + 1].0 == 0,
+            "Input presets require verified unlinked channels and known link direction");
+    }
     let rows = ids
         .iter()
         .enumerate()
@@ -77,7 +79,7 @@ impl Dl32sDriver {
         expected: Option<&Value>,
         check: openfader_core::input_processors::RecallCheck<'_>,
     ) -> anyhow::Result<Value> {
-        let channel = Self::channel(strip)?;
+        let (table, channel) = crate::strips::resolve(strip)?;
         let generation = self.generation.load(Ordering::Acquire);
         let _write = self.output_write.lock().await;
         let session_guard = self.session().await?;
@@ -112,7 +114,6 @@ impl Dl32sDriver {
         }
         registry.validate(id, &pv)?;
         let native = alias_target(id).unwrap_or(id);
-        let table = dl32s_inputs();
         let field = table.field(native)?;
         if matches!(id, "eq_mode" | "gate_mode" | "comp_mode" | "comp_knee") {
             anyhow::ensure!(

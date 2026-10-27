@@ -185,7 +185,7 @@ async fn caps_and_params_snapshot() {
     let full = wait_for(&mut a, |e| matches!(e, Event::Caps { .. })).await;
     let full_json = ev_json(&full);
     let full_params = full_json.get("params").and_then(Value::as_array).unwrap();
-    assert_eq!(full_params.len(), openfader_core::params::CATALOGUE.len() + 1, "hello completes the catalogue plus stereo balance");
+    assert_eq!(full_params.len(), openfader_core::params::CATALOGUE.len() + 3, "hello completes the catalogue, stereo balance and six VCA memberships");
     // The ack still follows, and a second hello is a pure re-ack (no
     // second catalogue, the flag is per client).
     wait_for(&mut a, |e| matches!(e, Event::Hello { .. })).await;
