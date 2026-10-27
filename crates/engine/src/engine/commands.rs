@@ -7,6 +7,7 @@ mod connection;
 mod destination;
 mod input;
 mod input_processor;
+mod solo;
 mod library;
 mod offline;
 mod processing;

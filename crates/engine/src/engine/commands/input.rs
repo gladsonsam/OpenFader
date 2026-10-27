@@ -360,6 +360,9 @@ impl Engine {
             // solosw broadcasts.)
             Cmd::ClearSolo => {
                 let drv = self.active_drv();
+                if drv.clear_solo_scope() == Some("advertised") {
+                    return self.clear_advertised_solos(writer, out).await;
+                }
                 let inputs_only = drv.clear_solo_scope() == Some("inputs");
                 let count = if inputs_only {
                     drv.channel_count()

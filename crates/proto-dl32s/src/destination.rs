@@ -78,6 +78,7 @@ impl Dl32sDriver {
         let mut controls: Vec<_> = (1..=AUX_SEND_SOURCE_ADDRESSES.len() as u16).map(|slot| {
             let tap = native.as_ref().and_then(|n| n.destinations.aux_taps.get(&slot));
             DestinationControl {
+                members: Vec::new(),
                 revision: None,
                 generation: None,
                 preset: false,

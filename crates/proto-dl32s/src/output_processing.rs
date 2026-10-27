@@ -113,6 +113,7 @@ impl OutputProcessingCache {
         specs()
             .iter()
             .map(|spec| DestinationControl {
+                members: Vec::new(),
                 generation: Some(generation),
                 revision: self.parameters.get(&(spec.bank, spec.address)).map(|entry| entry.revision),
                 preset: spec.bank != Bank::System && !spec.id.ends_with("_on"),

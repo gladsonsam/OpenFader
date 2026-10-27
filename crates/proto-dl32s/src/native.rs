@@ -20,6 +20,7 @@ pub(super) struct NativeCache {
     pub(super) parameter_labels: std::collections::BTreeMap<&'static str, String>,
     pub(super) destinations: destination::DestinationState,
     pub(super) fx: fx::FxState,
+    pub(super) solos: crate::solo::SoloState,
     pub(super) globals: crate::global_controls::GlobalControls,
     pub(super) output_routes: crate::output_routing::OutputRoutes,
     pub(super) output_processing: crate::output_processing::OutputProcessingCache,
@@ -70,6 +71,7 @@ impl NativeCache {
         self.destinations.seed(session);
         self.fx.seed(session);
         self.globals.seed(session);
+        self.solos.seed(session);
         self.output_processing.seed(session);
         self.output_routes.seed(session);
         self.parameter_labels = (58..=75)
@@ -109,6 +111,7 @@ pub(super) fn ingest_native(
                         v.fx.ingest(*start, raws);
                     }
                     if *value_type == VALUE_TYPE_MUTE_GROUP { v.globals.ingest(*start, raws); }
+                    v.solos.ingest(*value_type, *start, raws);
                     v.output_processing.ingest(*value_type, *start, raws);
                 }
             }

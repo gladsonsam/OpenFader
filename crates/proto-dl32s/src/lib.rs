@@ -12,6 +12,7 @@ mod destination;
 mod driver;
 mod fx;
 mod global_controls;
+mod solo;
 mod input;
 mod lifecycle;
 mod metadata;

@@ -54,9 +54,14 @@ impl MixerDriver for Dl32sDriver {
             if native.generation == generation && native.view.connected {
                 controls.extend(native.output_processing.controls(generation));
                 controls.extend(native.globals.controls(generation));
+                controls.extend(native.solos.controls(generation));
             }
         }
         controls
+    }
+
+    async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        self.write_target_solo(target, control, value, expected, snapshot, context).await
     }
 
     async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
@@ -173,6 +178,7 @@ impl MixerDriver for Dl32sDriver {
         let guard = self.session().await?;
         guard.as_ref().expect("checked above")
             .cached_type2(address)
+            .filter(|raw| *raw<=1)
             .map(|raw| raw != 0)
             .ok_or_else(|| anyhow::anyhow!("solo: no value pushed yet"))
     }
