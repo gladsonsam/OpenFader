@@ -203,6 +203,13 @@ pub trait DynDriver: Send + Sync {
     fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
         None
     }
+    /// Fail closed unless the provider serializes writes and fresh independent
+    /// readback, checking the entire captured block and observed revisions.
+    fn input_processor_guard(&self) -> bool { false }
+    async fn input_processor(&self, _strip: StripId, _processor: &str,
+        _write: Option<(&str, ParamValue)>, _expected: Option<&serde_json::Value>, _check: openfader_core::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
+        anyhow::bail!("guarded input processor recall unavailable for this provider")
+    }
     fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
         Vec::new()
     }
@@ -674,6 +681,10 @@ macro_rules! impl_dyn_driver {
         fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
             MixerDriver::native_snapshots(self)
         }
+    fn input_processor_guard(&self) -> bool { MixerDriver::input_processor_guard(self) }
+    async fn input_processor(&self, strip: StripId, processor: &str, write: Option<(&str, ParamValue)>, expected: Option<&serde_json::Value>, check: openfader_core::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
+        MixerDriver::input_processor(self, strip, processor, write, expected, check).await
+    }
         fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
             MixerDriver::destination_controls(self)
         }

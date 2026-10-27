@@ -16,6 +16,7 @@ mod lifecycle;
 mod metadata;
 mod native;
 mod output_processing;
+mod input_processors;
 mod preamp;
 mod telemetry;
 mod output_meters;
@@ -31,8 +32,9 @@ use tokio::sync::{broadcast, Mutex};
 /// Live DL32S-class mixer on TCP 50001.
 pub struct Dl32sDriver {
     session: Arc<Mutex<Option<MackieSession>>>,
-    /// Serialize output writes through independent readback, even while the
-    /// session lock is released so native bulk-push ingestion can progress.
+    /// Serialize input/output processor writes through independent readback.
+    /// Output readback releases the session for native ingestion; input
+    /// readback consumes transport provenance directly while holding it.
     output_write: Mutex<()>,
     addr: Mutex<Option<String>>,
     update_tx: broadcast::Sender<ParamUpdate>,

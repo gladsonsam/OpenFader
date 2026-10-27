@@ -622,7 +622,11 @@ fn default_fx_for(preset: SimPreset) -> Vec<SimFxSlot> {
         })
         .collect()
 }
+mod input_processors;
+
 pub struct SimDriver {
+    processor_revision: AtomicU64,
+    processor_generation: AtomicU64,
     strips: RwLock<Vec<ChannelStrip>>,
     /// Per-strip detail state (`gain`, `phantom`, `eq1_gain`, …): catalogue
     /// params, stored bit-exact (no wire quantization in sim). Strip-backed params (`fader`, `mute`, `name`, `pan`) live in
@@ -681,6 +685,8 @@ impl SimDriver {
             })
             .collect();
         Self {
+            processor_revision: AtomicU64::new(0),
+            processor_generation: AtomicU64::new(0),
             strips: RwLock::new(strips),
             params: RwLock::new(params),
             solos: RwLock::new(HashMap::new()),
@@ -1077,6 +1083,10 @@ impl MixerDriver for SimDriver {
         })
     }
 
+    fn input_processor_guard(&self) -> bool { true }
+    async fn input_processor(&self, strip: StripId, processor: &str, write: Option<(&str, ParamValue)>, expected: Option<&serde_json::Value>, check: openfader_core::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
+        self.guarded_input_processor(strip, processor, write, expected, check)
+    }
     fn name(&self) -> &'static str {
         "sim"
     }
@@ -1118,6 +1128,7 @@ impl MixerDriver for SimDriver {
     }
 
     async fn connect(&self, _addr: &str) -> anyhow::Result<()> {
+        self.processor_generation.fetch_add(1, Ordering::AcqRel);
         *self.connected.write().expect("sim flag poisoned") = true;
         Ok(())
     }
@@ -1354,7 +1365,9 @@ impl MixerDriver for SimDriver {
                 anyhow::bail!("sim: {param} out of scope for {kind:?} strips");
             }
             openfader_core::params::validate(param, &value)?;
-            self.params.write().expect("sim params poisoned")[i].insert(param.to_string(), value);
+            let mut params = self.params.write().expect("sim params poisoned");
+            if params[i].get(param) != Some(&value) { self.processor_revision.fetch_add(1, Ordering::AcqRel); }
+            params[i].insert(param.to_string(), value);
             return Ok(());
         }
         anyhow::bail!("sim: unknown param {param:?}")

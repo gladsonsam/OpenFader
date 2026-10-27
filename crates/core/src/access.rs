@@ -200,6 +200,14 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.name()
     }
 
+    fn input_processor_guard(&self) -> bool { self.inner.input_processor_guard() }
+    async fn input_processor(&self, strip: StripId, processor: &str, write: Option<(&str, ParamValue)>, expected: Option<&serde_json::Value>, check: crate::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
+        self.policy.allow_strip(strip)?;
+        for partner in self.inner.stereo_pairs().into_iter().find(|p| p.contains(&strip.0)).into_iter().flatten() {
+            self.policy.allow_strip(StripId(partner))?;
+        }
+        self.inner.input_processor(strip, processor, write, expected, check).await
+    }
     fn destination_controls(&self) -> Vec<crate::destinations::DestinationControl> {
         self.inner.destination_controls()
     }

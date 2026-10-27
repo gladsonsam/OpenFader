@@ -548,7 +548,10 @@ type PendingResult = Result<Message, RequestFailed>;
 /// thread's provenance check and value read. Push ingest clears pending in
 /// the same critical section it inserts desk values. No second connection,
 /// no invented wire fields, provenance only, values unchanged.
+#[derive(Default)]
 struct ValueStore {
+    observed: HashMap<u32, (u32, u64, u64)>,
+    sequence: u64,
     values: HashMap<u32, u32>,
     pending: HashSet<u32>,
 }
@@ -618,8 +621,8 @@ impl Caches {
     fn fresh() -> Self {
         let (push_tx, _) = broadcast::channel(256);
         Self {
-            values: StdMutex::new(ValueStore { values: HashMap::new(), pending: HashSet::new() }),
-            type2_values: StdMutex::new(ValueStore { values: HashMap::new(), pending: HashSet::new() }),
+            values: StdMutex::new(ValueStore::default()),
+            type2_values: StdMutex::new(ValueStore::default()),
             names: StdMutex::new(NameStore { names: HashMap::new(), pending: HashSet::new() }),
             snapshot_names: StdMutex::new(HashMap::new()),
             current_snapshot: StdMutex::new(None),
@@ -947,6 +950,20 @@ impl MackieSession {
         let store = self.caches.values.lock().ok()?;
         (0..N).map(|i| store.values.get(&(start + i as u32)).copied())
             .collect::<Option<Vec<_>>>()?.try_into().ok()
+    }
+
+    /// Receipt baseline remains available while an own write is pending.
+    pub fn observed_value_sequence(&self, address: u32) -> Option<u64> {
+        Some(self.caches.values.lock().ok()?.observed.get(&address)?.2)
+    }
+    /// One-lock complete type-5 capture: raw value, observed-change revision,
+    /// and receipt sequence. Own ACK/cache writes never advance this evidence.
+    /// Revisions detect only transitions received by this transport session.
+    pub fn verified_value_snapshot(&self, addresses: &[u32]) -> Option<Vec<(u32, u64, u64)>> {
+        let s = self.caches.values.lock().ok()?;
+        addresses.iter().map(|a| {
+            if s.pending.contains(a) { None } else { s.observed.get(a).copied() }
+        }).collect()
     }
 
     /// Cached type-5 word with desk provenance: `Some` only when a desk push
@@ -1608,6 +1625,11 @@ fn ingest_value_blocks(store: &StdMutex<ValueStore>, blocks: &[ValueBlock], valu
         for block in blocks.iter().filter(|block| block.value_type == value_type) {
             for (i, raw) in block.raws.iter().enumerate() {
                 let addr = block.start + i as u32;
+                s.sequence = s.sequence.wrapping_add(1);
+                let sequence = s.sequence;
+                let observed = s.observed.entry(addr).or_insert((*raw, 0, 0));
+                if observed.0 != *raw { observed.1 = observed.1.wrapping_add(1); observed.0 = *raw; }
+                observed.2 = sequence;
                 s.values.insert(addr, *raw);
                 s.pending.remove(&addr);
             }

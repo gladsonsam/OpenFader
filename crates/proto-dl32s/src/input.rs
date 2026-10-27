@@ -240,6 +240,7 @@ impl Dl32sDriver {
     /// Value-shape mistakes are reported before the connection is touched,
     /// so mapping bugs surface even offline.
     pub(super) async fn set_field(&self, strip: StripId, key: &str, value: ParamValue) -> anyhow::Result<()> {
+        let _write = self.output_write.lock().await;
         self.set_field_checked(strip, key, value, None).await
     }
 
