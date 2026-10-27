@@ -313,8 +313,12 @@ class Cmds {
         'target': target.target,
         'control': target.id,
         'epoch': target.epoch,
-        'expected': target.value,
-        'value': value,
+        'expected': target.wireValue(target.value ?? double.nan) ??
+            (throw ArgumentError.value(target.value, 'expected',
+                'Destination value is outside its wire domain')),
+        'value': target.wireValue(value) ??
+            (throw ArgumentError.value(
+                value, 'value', 'Destination value is outside its wire domain')),
       });
   static String paramGuarded(
           int ch, String field, Object value, Map<String, Object> expect) =>

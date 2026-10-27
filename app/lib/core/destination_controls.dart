@@ -111,18 +111,29 @@ class DestinationControlVm {
       'bpm' => 60000000 / microseconds,
       _ => double.nan,
     };
-    return allowsValue(value) ? value : null;
+    return wireValue(value);
   }
 
-  bool allowsValue(double candidate) {
-    if (!candidate.isFinite) return false;
-    if (choices.any((choice) => choice.value == candidate)) return true;
-    if (!numeric) return false;
-    // Destination commands and bounds use float32 in the engine. Compare
-    // at that precision so a typed decimal such as 0.1 matches its bound.
+  /// Exact value sent to the engine and expected back in its f32 receipt.
+  /// Validate enum identity before rounding: a nearby number is not a choice.
+  /// Numeric bounds are provider f32 values, so their displayed decimal
+  /// endpoints (e.g. 115.850 m) remain enterable at the same wire precision.
+  double? wireValue(double candidate) {
+    if (!candidate.isFinite) return null;
+    if (choices.isNotEmpty) {
+      for (final choice in choices) {
+        if (choice.value == candidate) return choice.value;
+      }
+      return null;
+    }
+    if (!numeric) return null;
     final wireValue = Float32List.fromList([candidate]).first;
-    return wireValue.isFinite && wireValue >= min! && wireValue <= max!;
+    return wireValue.isFinite && wireValue >= min! && wireValue <= max!
+        ? wireValue
+        : null;
   }
+
+  bool allowsValue(double candidate) => wireValue(candidate) != null;
 
   bool get available => valueLabel != null && authority != null;
 
