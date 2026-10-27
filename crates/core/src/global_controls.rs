@@ -20,10 +20,11 @@ pub fn reference_controls() -> Vec<DestinationControl> {
             revision: Some(0), generation: Some(0), preset: false,
             target: target.into(), target_label: target_label.into(), target_name: None,
             send_slot: None, surface: "global".into(), id: id.into(), label: label.into(),
+            gesture: (target == "talkback" && id == "enable").then_some("talkback"),
             tap_tempo: false,
             description: match target {
                 "oscillator" => "Shared signal generator. Enabling can produce audio on existing routes; level and routing are independent.",
-                "talkback" => "Shared talkback configuration. Enable is an explicit latched command; momentary and Auto gestures are not advertised. Mode is a local preference, not a mixer parameter.",
+                "talkback" => "Shared talkback configuration. Enable supports local Momentary, Latch and Auto gestures. Mode is a local preference, not a mixer parameter.",
                 "solo" => "Shared solo-bus configuration. Solo in place can affect the main mix.",
                 _ => "Shared monitor configuration. LR defeat uses the native polarity; distance is not a time in milliseconds.",
             }.into(),

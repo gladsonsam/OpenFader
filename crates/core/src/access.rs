@@ -212,7 +212,7 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.destination_controls()
     }
 
-    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[crate::destinations::DestinationControl]) -> anyhow::Result<()> {
+    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[crate::destinations::DestinationControl]) -> anyhow::Result<Option<crate::destinations::DestinationControl>> {
         self.policy.allow_master()?;
         self.inner.set_destination_control_guarded(target, control, value, expected, snapshot).await
     }

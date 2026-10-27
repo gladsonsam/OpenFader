@@ -104,6 +104,7 @@ impl FxState {
                 target_name: Some(spec.algorithm_name.to_string()), send_slot: None,
                 surface: "fx".to_string(), id: spec.id.to_string(), label: spec.label.to_string(),
                 // Native Tape Echo tapping changes only this delay-time word.
+                gesture: None,
                 tap_tempo: spec.slot == 2 && spec.algorithm == 12 && spec.id == "time",
                 description: if spec.id == "mute" {
                     format!("Changes the mute state of FX {}.", spec.slot)

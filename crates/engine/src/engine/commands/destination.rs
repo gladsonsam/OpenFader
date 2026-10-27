@@ -21,6 +21,7 @@ impl Engine {
                 epoch,
                 guard,
             } => {
+                let mut applied = None;
                 let result: anyhow::Result<()> = async {
                     anyhow::ensure!(
                         !request_id.is_empty() && request_id.len() <= 128,
@@ -53,8 +54,8 @@ impl Engine {
                         "Destination changed; reopen the control."
                     );
                     anyhow::ensure!(
-                        row.surface != "global" || guard.is_some(),
-                        "Global control requires the current configuration guard."
+                        (row.surface != "global" && row.gesture.is_none()) || guard.is_some(),
+                        "Global or gesture control requires the current configuration guard."
                     );
                     if let Some(guard) = guard {
                         let block: Vec<_> = controls
@@ -64,7 +65,7 @@ impl Engine {
                             .collect();
                         let serialized = Self::destination_rows(&block);
                         anyhow::ensure!(
-                            (row.preset || row.surface == "global")
+                            (row.preset || row.surface == "global" || row.gesture.is_some())
                                 && row.revision.is_some()
                                 && row.generation.is_some()
                                 && !guard.is_empty()
@@ -72,11 +73,22 @@ impl Engine {
                                 && guard == serialized,
                             "Shared control changed; reopen the control."
                         );
-                        driver
+                        let receipt = driver
                             .set_destination_control_guarded(
                                 &target, &control, value, expected, &block,
                             )
                             .await?;
+                        if let Some(receipt) = receipt {
+                            anyhow::ensure!(receipt.target == target && receipt.id == control
+                                && receipt.surface == row.surface && receipt.gesture == row.gesture
+                                && receipt.revision != row.revision
+                                && receipt.current.as_ref().is_some_and(|v| v.verified && v.value == value)
+                                && receipt.revision.is_some() && receipt.generation == row.generation,
+                                "Invalid guarded-write receipt; result uncertain");
+                            applied = Self::destination_rows(&[receipt]).into_iter().next();
+                        }
+                        anyhow::ensure!(row.gesture.is_none() || applied.is_some(),
+                            "Gesture write lacks independent receipt; result uncertain");
                     } else {
                         driver
                             .set_destination_control(&target, &control, value, expected)
@@ -110,6 +122,7 @@ impl Engine {
                     );
                 }
                 Ok(Some(Event::DestinationControlResult {
+                    applied: if accepted { applied } else { None },
                     request_id,
                     epoch,
                     accepted,
