@@ -18,6 +18,7 @@ pub(super) struct NativeCache {
     pub(super) generation: u64,
     pub(super) library_revision: u64,
     pub(super) library_show_info: Option<Vec<u8>>,
+    pub(super) library_index: Option<serde_json::Value>,
     pub(super) view: openfader_core::NativeSnapshots,
     pub(super) parameter_labels: std::collections::BTreeMap<&'static str, String>,
     pub(super) destinations: destination::DestinationState,
@@ -65,6 +66,7 @@ impl NativeCache {
     pub(super) fn seed(&mut self, generation: u64, session: &MackieSession) {
         if self.generation != generation {
             self.library_show_info = None;
+            self.library_index = None;
             self.library_revision = 0;
         }
         let mut slots: Vec<openfader_core::NativeSnapshotSlot> = session
@@ -161,6 +163,7 @@ pub(super) fn ingest_native(
                 }
                 if v.view.connected {
                     v.library_revision += 1;
+                    v.library_index = None;
                     match v.view.slots.iter_mut().find(|s| s.slot == *slot) {
                         Some(row) => row.name = name.clone(),
                         None => v.view.slots.push(openfader_core::NativeSnapshotSlot {
