@@ -88,6 +88,11 @@ impl Engine {
                     })?;
                     params.insert(id.to_string(), param_value_json(&pv));
                 }
+                // Legacy documents use an empty name to mean no name capture.
+                // An explicit parameter preserves a deliberately blank name.
+                if matches!(&name_v, Some(ParamValue::Text(name)) if name.is_empty()) {
+                    params.insert("name".to_string(), json!(""));
+                }
                 strips.push(StoredStrip {
                     strip: s as u16,
                     key: openfader_core::strip_key_for_index(&topo, s),
@@ -351,7 +356,10 @@ impl Engine {
                     authority: authority(),
                 });
             }
-            if scope.is_some_and(|sc| !sc.allows_param("name")) {
+            if s.params.contains_key("name")
+                || s.name.is_empty()
+                || scope.is_some_and(|sc| !sc.allows_param("name"))
+            {
                 continue;
             }
             check()?;
