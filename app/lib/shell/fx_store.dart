@@ -24,6 +24,9 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       (_cur == null || app.accessTargetAllowed('fx/${_cur!.slot.toString().padLeft(2, '0')}'));
 
   @override
+  int get controlAccessEpoch => app.controlAccessEpoch;
+
+  @override
   bool get stateControlsSupported => _globalAccessAllowed && engine.fxStateControls;
 
   @override

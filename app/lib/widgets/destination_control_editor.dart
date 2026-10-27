@@ -5,12 +5,14 @@ import '../palette.dart';
 
 class DestinationControlEditor extends StatefulWidget {
   final Listenable changes;
+  final int Function() accessEpoch;
   final bool Function(DestinationControlVm) isCurrent;
   final Future<String?> Function(DestinationControlVm, double) apply;
   final DestinationControlVm control;
   const DestinationControlEditor(
       {super.key,
       required this.changes,
+      required this.accessEpoch,
       required this.isCurrent,
       required this.apply,
       required this.control});
@@ -21,6 +23,9 @@ class DestinationControlEditor extends StatefulWidget {
 
 class _DestinationControlEditorState extends State<DestinationControlEditor> {
   late double _selected = widget.control.value!;
+  late final int _accessEpoch;
+  bool get _current =>
+      widget.accessEpoch() == _accessEpoch && widget.isCurrent(widget.control);
   bool _sending = false;
   String? _error;
   TextEditingController? _number;
@@ -28,6 +33,7 @@ class _DestinationControlEditorState extends State<DestinationControlEditor> {
   @override
   void initState() {
     super.initState();
+    _accessEpoch = widget.accessEpoch();
     if (widget.control.numeric) {
       final value = widget.control.value!;
       _number = TextEditingController(
@@ -44,6 +50,7 @@ class _DestinationControlEditorState extends State<DestinationControlEditor> {
   }
 
   Future<void> _apply() async {
+    if (!_current) return;
     setState(() {
       _sending = true;
       _error = null;
@@ -65,7 +72,7 @@ class _DestinationControlEditorState extends State<DestinationControlEditor> {
       listenable: widget.changes,
       builder: (context, _) {
         final control = widget.control;
-        final current = widget.isCurrent(control);
+        final current = _current;
         final palette = ConsolePalette.of(context);
         return PopScope(
             canPop: !_sending,

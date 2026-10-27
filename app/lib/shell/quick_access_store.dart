@@ -49,6 +49,9 @@ class ShellQuickAccessStore extends ShellStoreAdapter
   }
 
   @override
+  int get controlAccessEpoch => app.controlAccessEpoch;
+
+  @override
   TalkbackModePreference get talkbackModePreference => _talkbackMode;
 
   @override
