@@ -2,7 +2,7 @@
 use crate::{Dl32sDriver, addrs::INPUT_COUNT};
 use openfader_core::{AudioSpectrum, MeterFrame, StripId};
 use openfader_transport::mackie::{dl32s_meters as layout, PushEvent, VALUE_TYPE_METERS, VALUE_TYPE_MUTE_GROUP};
-use layout::{DYNAMICS_OFFSET, DYNAMICS_FRAME_LEN, RTA_FRAME_LEN, RTA_OFFSET as RTA_BIN_OFFSET, RTA_BIN_COUNT};
+use layout::{DYNAMICS_OFFSET, DYNAMICS_FRAME_LEN, OUTPUT_GR_FRAME_LEN, RTA_FRAME_LEN, RTA_OFFSET as RTA_BIN_OFFSET, RTA_BIN_COUNT};
 use std::{sync::atomic::Ordering, time::Duration};
 
 /// Input-meter push shape (type-1 `Values`): list ID `start == 1` with
@@ -71,9 +71,9 @@ pub(super) fn decode_input_meters(push: &PushEvent) -> Option<Vec<f32>> {
 // gate IN/positive GR/OUT then compressor IN/positive GR/OUT.
 pub(super) fn decode_dynamics_meters(push: &PushEvent) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
     let PushEvent::Values { value_type: VALUE_TYPE_METERS, start: METER_START, raws } = push else { return None; };
-    if raws.len() != DYNAMICS_FRAME_LEN { return None; }
+    if !matches!(raws.len(), DYNAMICS_FRAME_LEN | OUTPUT_GR_FRAME_LEN) { return None; }
     let mut frames = Vec::with_capacity(layout::INPUT_COUNT);
-    for (ch, row) in raws[DYNAMICS_OFFSET..].as_chunks::<{ layout::DYNAMICS_WIDTH }>().0.iter().enumerate() {
+    for (ch, row) in raws[DYNAMICS_OFFSET..DYNAMICS_FRAME_LEN].as_chunks::<{ layout::DYNAMICS_WIDTH }>().0.iter().enumerate() {
         let v: Vec<f32> = row.iter().map(|r| f32::from_bits(*r)).collect();
         if v.iter().any(|v| !v.is_finite()) || v[1] < -0.001 || v[4] < -0.001 { return None; }
         frames.push(openfader_core::DynamicsMeterFrame {
@@ -97,7 +97,7 @@ const RTA_SOURCE_INPUT_FIRST: u32 = 4000;
 const RTA_SOURCE_INPUT_LAST: u32 = 4031;
 
 // RTA starts after the exact DL32S strip prefix, never the legacy family
-// list. Only the 93-word RTA and 285-word dynamics lists carry these bins.
+// list. The 93/285/301-word explicit lists carry these bins.
 
 /// Transition sentinel: the desk parks all RTA bins at −999 dB while the
 /// shared source settles. An all-sentinel frame is dropped; finite quiet
@@ -167,7 +167,7 @@ pub(super) fn decode_rta_bins(push: &PushEvent) -> Option<Vec<f32>> {
         } if *value_type == VALUE_TYPE_METERS => (*start, raws),
         _ => return None,
     };
-    if start != METER_START || !matches!(raws.len(), RTA_FRAME_LEN | DYNAMICS_FRAME_LEN) {
+    if start != METER_START || !matches!(raws.len(), RTA_FRAME_LEN | DYNAMICS_FRAME_LEN | OUTPUT_GR_FRAME_LEN) {
         return None;
     }
     let mut out = Vec::with_capacity(RTA_BIN_COUNT);

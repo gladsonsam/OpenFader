@@ -104,6 +104,15 @@ pub fn dl32s_dynamics_meter_addresses() -> Vec<i32> {
     addrs
 }
 
+/// DL32S 285-word dynamics prefix plus 16 output compressor GR samples.
+/// Aux1 positive f32 dB attenuation is physically calibrated; other outputs
+/// share native getter semantics but remain inferred by the provider.
+pub fn dl32s_output_meter_addresses() -> Vec<i32> {
+    let mut addrs = dl32s_dynamics_meter_addresses();
+    addrs.extend_from_slice(&dl32s_meters::OUTPUT_GR_ADDRESSES);
+    addrs
+}
+
 /// METER_LAYOUT body: a flag word with byte 3 set, then each address as BE i32.
 pub fn build_meter_layout(addresses: &[i32]) -> Vec<u8> {
     let mut out = Vec::with_capacity(4 + addresses.len() * 4);

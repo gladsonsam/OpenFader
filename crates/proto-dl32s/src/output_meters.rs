@@ -1,4 +1,4 @@
-//! Native DL32S explicit-list output levels; no invented tap positions.
+//! DL32S explicit-list output levels and provider-normalized compressor GR.
 use crate::Dl32sDriver;
 use openfader_core::{OutputMeterFrame, OutputMeterSnapshot, output_meters::OutputCompressorGr};
 use openfader_transport::mackie::{PushEvent, VALUE_TYPE_METERS, dl32s_meters as layout};
@@ -51,10 +51,7 @@ pub(super) fn decode(push: &PushEvent) -> Option<Vec<OutputMeterFrame>> {
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(OutputMeterFrame {
-                compressor_gr: compressor_gr_indices(&target).map(|_| OutputCompressorGr {
-                    reduction_db: None,
-                    inferred: true,
-                }),
+                compressor_gr: compressor_gr(&target, raws),
                 target,
                 levels,
                 inferred: true,
@@ -63,32 +60,46 @@ pub(super) fn decode(push: &PushEvent) -> Option<Vec<OutputMeterFrame>> {
         .collect()
 }
 
-/// Native meter-wire-type-1 addresses, NOT type-2 parameters/raw offsets.
-/// Our 62/93/285-word lists omit output GR. All 18 GR slots in the supplied
-/// 73 passive explicit-116-word frames were zero: static positive-attenuation
-/// parity is not nonzero output scale calibration. Emit absence/inferred until
-/// that calibration exists; do not reinterpret a subgroup GR as an FX level.
-fn compressor_gr_indices(target: &str) -> Option<Vec<u32>> {
-    if target == "main" {
-        return Some(vec![306, 307]);
-    }
-    if let Some(n) = target
+/// Positive network-f32 dB attenuation. Aux1 native312 is physically
+/// calibrated (2026-10-27, thresholds -80/-78 dB; IN311-OUT313 agrees within
+/// 0.052 dB). Other outputs have static native getter evidence only.
+/// Short explicit shapes publish absence, replacing any prior 301-word GR.
+/// Invalid readings stay unavailable; never clamp them to zero or merge L/R.
+fn compressor_gr(target: &str, raws: &[u32]) -> Option<OutputCompressorGr> {
+    let (offset, width) = if target == "main" {
+        (layout::MAIN_GR_OFFSET, layout::STEREO_WIDTH)
+    } else if let Some(n) = target
         .strip_prefix("bus/")
-        .and_then(|n| n.parse::<u32>().ok())
+        .and_then(|n| n.parse::<usize>().ok())
     {
-        return (1..=layout::AUX_COUNT as u32)
-            .contains(&n)
-            .then(|| vec![312 + 4 * (n - 1)]);
-    }
-    if let Some(n) = target
-        .strip_prefix("subgroup/")
-        .and_then(|n| n.parse::<u32>().ok())
-    {
-        return (1..=layout::SUBGROUP_COUNT as u32)
-            .contains(&n)
-            .then(|| vec![280 + 4 * (n - 1)]);
-    }
-    None
+        if !(1..=layout::AUX_COUNT).contains(&n) {
+            return None;
+        }
+        (layout::OUTPUT_GR_OFFSET + n - 1, 1)
+    } else {
+        let n = target
+            .strip_prefix("subgroup/")
+            .and_then(|n| n.parse::<usize>().ok())?;
+        if !(1..=layout::SUBGROUP_COUNT).contains(&n) {
+            return None;
+        }
+        (layout::SUBGROUP_GR_OFFSET + n - 1, 1)
+    };
+    let reduction_db = (raws.len() == layout::OUTPUT_GR_FRAME_LEN)
+        .then(|| {
+            raws[offset..offset + width]
+                .iter()
+                .map(|raw| {
+                    let db = f32::from_bits(*raw);
+                    (db.is_finite() && db >= 0.0).then_some(db)
+                })
+                .collect::<Option<Vec<_>>>()
+        })
+        .flatten();
+    Some(OutputCompressorGr {
+        reduction_db,
+        inferred: target != "bus/01",
+    })
 }
 
 impl Dl32sDriver {
