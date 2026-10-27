@@ -124,7 +124,12 @@ async fn dispatch(
     pending: &Arc<StdMutex<HashMap<u8, oneshot::Sender<PendingResult>>>>,
     caches: &Caches,
 ) {
-    if msg.command == Command::ChannelValues {
+    // 0x12 is application-parameter GET (historically named ShowStatus).
+    // Its value-bearing response uses the same payload as 0x13 pushes.
+    // Empty ACKs and malformed bodies never clear pending provenance.
+    if msg.command == Command::ChannelValues
+        || (msg.command == Command::ShowStatus && msg.msg_type == MessageType::Response)
+    {
         dispatch_values(caches, &msg.body);
     }
     let names = &caches.names;

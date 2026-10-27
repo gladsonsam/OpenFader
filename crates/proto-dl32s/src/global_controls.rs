@@ -216,7 +216,7 @@ impl Dl32sDriver {
                 entry.revision.wrapping_add(1)
             }
         };
-        session.request_value_snapshot().await.map_err(|error| {
+        session.request_global_value(*address).await.map_err(|error| {
             anyhow::anyhow!(
                 "Global write accepted; readback request failed: {error}. Result uncertain"
             )
