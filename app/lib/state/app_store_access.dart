@@ -347,6 +347,33 @@ mixin _AppStoreAccess on _AppStoreContext {
             ?.ch
         : null;
     final ch = resolved ?? command['ch'];
+    if (cmd == 'input_processor') {
+      final kind = switch (command['processor']) {
+        'eq' => ProcessorPresetKind.eq,
+        'gate' => ProcessorPresetKind.gate,
+        'compressor' => ProcessorPresetKind.compressor,
+        _ => null,
+      };
+      if (ch is! int ||
+          kind == null ||
+          _presetFamily(ch)?['kind'] != 'in') {
+        return false;
+      }
+      final fields = engine.supportedParams
+          .where((field) => processorPresetField(kind, field))
+          .toList();
+      final field = command['field'];
+      if (fields.isEmpty ||
+          (field != null &&
+              (field is! String || !processorPresetField(kind, field)))) {
+        return false;
+      }
+      // Raw commands share the same complete-block and partner access gate
+      // as preset recall, including captures and unchanged-value checks.
+      final pair = engine.stereoPairs.where((p) => p.contains(ch)).firstOrNull;
+      return (pair ?? [ch]).every((member) =>
+          fields.every((field) => _accessParamAllowed(member, field)));
+    }
     if (const [
           'param',
           'param_guarded',
