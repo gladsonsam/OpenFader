@@ -21,6 +21,9 @@ class RouteStrip {
 
 class RouteSrcTile {
   final String label;
+  // Numbered sources reserve space for the index independently of the group.
+  // Null keeps the complete label for unnumbered sources.
+  final String? displayGroupLabel;
   final String group;
   final int index;
   final String usedBy;
@@ -31,6 +34,7 @@ class RouteSrcTile {
     required this.label,
     required this.group,
     required this.index,
+    this.displayGroupLabel,
     this.usedBy = '',
     this.operationKey,
     this.current = false,
@@ -238,21 +242,7 @@ class U4RoutingPage extends StatelessWidget {
                                   child: Column(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Text(
-                                        t.label,
-                                        textAlign: TextAlign.center,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: t.current
-                                              ? ConsolePalette.of(context)
-                                                  .onAccent
-                                              : ConsolePalette.of(context)
-                                                  .text1,
-                                        ),
-                                      ),
+                                      _SourceLabel(tile: t),
                                       if (!t.current && t.usedBy.isNotEmpty)
                                         Text(
                                           '→ ${t.usedBy}',
@@ -276,6 +266,52 @@ class U4RoutingPage extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+}
+
+class _SourceLabel extends StatelessWidget {
+  final RouteSrcTile tile;
+
+  const _SourceLabel({required this.tile});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      color: tile.current
+          ? ConsolePalette.of(context).onAccent
+          : ConsolePalette.of(context).text1,
+    );
+    final groupLabel = tile.displayGroupLabel;
+    return Semantics(
+      label: tile.label,
+      child: ExcludeSemantics(
+        child: groupLabel == null
+            ? Text(
+                tile.label,
+                textAlign: TextAlign.center,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: style,
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      groupLabel,
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: style,
+                    ),
+                  ),
+                  Text(' ${tile.index}', style: style),
+                ],
+              ),
       ),
     );
   }
