@@ -105,10 +105,11 @@ mixin _AppStoreDestinations on _AppStoreContext {
         'Connection or setting changed. Reopen this control.',
       );
     }
-    if (!control.allowsValue(value)) {
+    final wireValue = control.wireValue(value);
+    if (wireValue == null) {
       return Future.value('This setting is unavailable.');
     }
-    if (value == control.value) return Future.value(null);
+    if (wireValue == control.value) return Future.value(null);
     if (_destinationEdits.values.any(
       (edit) =>
           edit.target.target == control.target && edit.target.id == control.id,
@@ -119,14 +120,14 @@ mixin _AppStoreDestinations on _AppStoreContext {
     final edit = _DestinationEdit(
       control,
       _nowMs() + 15000,
-      recalledValue: guard == null ? null : value,
+      recalledValue: guard == null ? null : wireValue,
       onApplied: onApplied,
     );
     _destinationEdits[id] = edit;
     unawaited(
       _command(
         _clientId,
-        Cmds.destinationParam(id, control, value, guard: guard),
+        Cmds.destinationParam(id, control, wireValue, guard: guard),
       ).then(
         (_) {},
         onError: (Object error) {
