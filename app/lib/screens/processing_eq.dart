@@ -157,31 +157,32 @@ class _EqTabState extends State<_EqTab> {
             Expanded(
                 child: _PresetsButton(
                     store: store, compact: true, kind: ProcessorPresetKind.eq)),
-          const SizedBox(width: 8),
-          SizedBox(
-              width: wide ? 248 * scale : null,
-              child: ListenableBuilder(
-                  listenable:
-                      Listenable.merge([store.spectrum, store.audioSpectrum]),
-                  builder: (context, _) {
-                    final available = store.audioSpectrum.value != null ||
-                        store.spectrum.value.isNotEmpty;
-                    return Semantics(
-                        toggled: _showRta && available,
-                        child: _ProcessingButton(
-                            label: !available
-                                ? 'RTA unavailable'
-                                : store.audioSpectrum.value?.isShared == true
-                                    ? 'RTA · shared'
-                                    : 'RTA',
-                            active: _showRta && available,
-                            onTap: !available
-                                ? null
-                                : () {
-                                    store.resetAudioSpectrumPeaks();
-                                    setState(() => _showRta = !_showRta);
-                                  }));
-                  })),
+          ListenableBuilder(
+              listenable: Listenable.merge([store.spectrum, store.audioSpectrum]),
+              builder: (context, _) {
+                final available = store.audioSpectrum.value != null ||
+                    store.spectrum.value.isNotEmpty;
+                if (!available) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: SizedBox(
+                    width: wide ? 248 * scale : null,
+                    child: Semantics(
+                      toggled: _showRta,
+                      child: _ProcessingButton(
+                        label: store.audioSpectrum.value?.isShared == true
+                            ? 'RTA · shared'
+                            : 'RTA',
+                        active: _showRta,
+                        onTap: () {
+                          store.resetAudioSpectrumPeaks();
+                          setState(() => _showRta = !_showRta);
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              }),
           if (wide) const Spacer(),
         ]),
         const SizedBox(height: 8),

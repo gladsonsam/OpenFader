@@ -11,6 +11,7 @@ import 'meter.dart';
 class MixerFader extends StatefulWidget {
   final MixerChannel channel;
   final bool compact;
+  final bool showMeter;
   final ValueChanged<double> onPosition;
   final VoidCallback onSelect, onUnity;
   final VoidCallback? onTouch;
@@ -18,6 +19,7 @@ class MixerFader extends StatefulWidget {
       {super.key,
       required this.channel,
       this.compact = false,
+      this.showMeter = true,
       required this.onPosition,
       required this.onSelect,
       this.onTouch,
@@ -73,7 +75,9 @@ class _MixerFaderState extends State<MixerFader> {
                       width: box.maxWidth *
                           (widget.compact ? 20 / 96.2 : 36 / 178.2),
                       bottom: geometry.bottom,
-                      child: MixerMeter(level: ch.meter, stereo: ch.master)),
+                      child: widget.showMeter
+                          ? MixerMeter(level: ch.meter, stereo: ch.master)
+                          : const SizedBox.shrink()),
                   Positioned(
                       left: geometry.x -
                           geometry.capWidth / 2 -
@@ -161,8 +165,6 @@ class _ScalePainter extends CustomPainter {
   const _ScalePainter(this.palette, this.g, this.number);
   @override
   void paint(Canvas c, Size s) {
-    mixerText(c, 'LR', const Offset(4, 10), 8,
-        color: palette.mutedText, weight: FontWeight.w600);
     mixerBox(c, Rect.fromLTWH(g.x - 3, g.top - 3, 6, g.travel + 6),
         palette.faderSlot,
         radius: 3, border: palette.faderSlotBorder);
@@ -229,8 +231,6 @@ class _CapPainter extends CustomPainter {
     c.drawShadow(Path()..addRRect(rect), palette.shadow, 3, false);
     mixerBox(c, Offset.zero & s, palette.cap,
         radius: 14, border: palette.capBorder);
-    c.drawLine(const Offset(6, .5), Offset(s.width - 6, .5),
-        Paint()..color = palette.capHighlight);
     // Ribbed grips: repeating dark slits across the top and bottom zones.
     // All insets are proportional so the small phone cap keeps the same
     // look as the large tablet one (design: 14px inset on an 84px cap).

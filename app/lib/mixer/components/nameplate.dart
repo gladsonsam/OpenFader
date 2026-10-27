@@ -43,7 +43,7 @@ class MixerNameplate extends StatelessWidget {
           behavior: HitTestBehavior.opaque,
           child: LayoutBuilder(builder: (context, box) {
             final sx = box.maxWidth / (compact ? 104.2 : 192.2);
-            final tape = channel.master
+            final tape = channel.master && channel.colorChoice == null
                 ? ConsolePalette.of(context).bus
                 : channel.colorChoice != null
                     ? channel.colorChoice!.rgb == null
@@ -54,7 +54,7 @@ class MixerNameplate extends StatelessWidget {
             return Stack(clipBehavior: Clip.none, children: [
               if (!channel.master)
                 Positioned(
-                    left: (compact ? 6 : 3) * sx,
+                    left: (compact ? 10 : 12) * sx,
                     top: 2,
                     child: Text(channel.number,
                         style: mixerType(context, (compact ? 15 : 20) * sx,

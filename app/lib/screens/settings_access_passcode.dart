@@ -78,6 +78,10 @@ class _AccessPasscodeDialogState extends State<_AccessPasscodeDialog> {
             const Text(
               'Use exactly four characters. This protects local access settings only.',
             ),
+            if (needsNext) ...[
+              const SizedBox(height: 12),
+              const Text('If you forget it, resetting requires reinstalling the app and may delete local data.'),
+            ],
             if (needsCurrent)
               TextField(
                 controller: current,

@@ -124,6 +124,12 @@ class _ProcessingSliderState extends State<_ProcessingSlider> {
                   enabled: widget.enabled,
                   label: widget.label,
                   value: widget.text,
+                  increasedValue: widget.enabled
+                      ? (v + (widget.max - widget.min) / 100).clamp(widget.min, widget.max).toStringAsFixed(2)
+                      : null,
+                  decreasedValue: widget.enabled
+                      ? (v - (widget.max - widget.min) / 100).clamp(widget.min, widget.max).toStringAsFixed(2)
+                      : null,
                   onIncrease: widget.enabled
                       ? () {
                           widget.onFocus?.call();

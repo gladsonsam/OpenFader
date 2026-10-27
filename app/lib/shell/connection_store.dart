@@ -349,7 +349,9 @@ class ShellConnectionStore extends ShellStoreAdapter
     _probing = true;
     _operationError = null;
     _probeAttempt = 0;
-    _connectionProgress = 'Preparing connection to $_lastProbe…';
+    _connectionProgress = _lastMixerType == MixerType.automatic
+        ? 'Connecting to $_lastProbe…'
+        : 'Connecting to ${_lastMixerType.label} at $_lastProbe…';
     app.clearErrors();
     notifyListeners();
     try {
@@ -383,8 +385,8 @@ class ShellConnectionStore extends ShellStoreAdapter
       for (var i = 0; i < attempts; i++) {
         _probeAttempt = i + 1;
         _connectionProgress = direct
-            ? 'Connecting to $_lastProbe · waiting for mixer state (up to 90 seconds)…'
-            : 'Identifying $_lastProbe · waiting for mixer state (up to 90 seconds)…';
+            ? 'Connecting to ${_lastMixerType.label} at $_lastProbe…'
+            : 'Connecting to mixer at $_lastProbe…';
         notifyListeners();
         send(direct
             ? Cmds.connect(_lastMixerType.driver, addr)

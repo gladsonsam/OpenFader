@@ -55,6 +55,11 @@ class ChannelToolbar extends StatelessWidget {
         final toolsLeft = box.maxWidth - 16 - toolsWidth;
         final readoutWidth =
             compact ? box.maxWidth - 152 : (toolsLeft - 60) * .63;
+        final identity = store.stripKey == 'main'
+            ? 'Main LR'
+            : store.stripKey.startsWith('bus/')
+                ? 'Bus ${int.tryParse(store.stripKey.split('/').last) ?? store.channelNumber}'
+                : 'channel ${store.channelNumber}';
         return Stack(alignment: Alignment.centerLeft, children: [
           Positioned(left: 16, child: _HomeButton(onHome: onHome)),
           Positioned(
@@ -78,11 +83,10 @@ class ChannelToolbar extends StatelessWidget {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Tooltip(
-                                      message: 'Rename channel',
+                                      message: 'Rename $identity',
                                       child: Semantics(
                                           button: true,
-                                          label:
-                                              'Rename channel ${store.channelNumber}',
+                                          label: 'Rename $identity',
                                           child: InkWell(
                                               onTap:
                                                   store.captureNameTarget() ==
@@ -99,7 +103,11 @@ class ChannelToolbar extends StatelessWidget {
                                                           }
                                                         },
                                               child: Text(
-                                                  'Ch ${store.channelNumber} · ${store.displayName}',
+                                                  store.stripKey == 'main'
+                                                      ? 'Main LR'
+                                                      : store.stripKey.startsWith('bus/')
+                                                          ? 'Bus ${int.tryParse(store.stripKey.split('/').last) ?? store.channelNumber} · ${store.displayName}'
+                                                          : 'Ch ${store.channelNumber} · ${store.displayName}',
                                                   maxLines: 1,
                                                   overflow:
                                                       TextOverflow.ellipsis,

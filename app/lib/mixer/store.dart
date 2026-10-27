@@ -19,6 +19,13 @@ class MixerBank {
   });
 }
 
+class CustomMixerView {
+  final String id, name;
+  final Set<String> stripKeys;
+  const CustomMixerView(
+      {required this.id, required this.name, required this.stripKeys});
+}
+
 class MixerBusRow {
   final String id;
   final String name;
@@ -56,6 +63,8 @@ abstract class MixerStore extends ChangeNotifier implements ChannelNameStore {
   bool get masterMuted;
   String get masterName;
   List<MixerBank> get banks;
+  List<CustomMixerView> get customMixerViews;
+  Future<void> saveCustomMixerViews(List<CustomMixerView> views);
   String get bank;
   String get emptyBankMessage;
   List<MixerBusRow> get busRows;

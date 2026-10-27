@@ -7,6 +7,7 @@ import 'design.dart';
 import 'geometry.dart';
 import '../settings/prefs.dart';
 import 'components/banks.dart';
+import 'components/layers.dart';
 import 'components/strip.dart';
 import 'components/toolbar.dart';
 
@@ -32,6 +33,7 @@ class _MixerPageState extends State<MixerPage> {
   final _focus = FocusNode(debugLabel: 'Mixer keyboard');
   int? _configuredSize;
   String? _bank;
+  String? _layerId;
   int? _page;
 
   @override
@@ -44,6 +46,7 @@ class _MixerPageState extends State<MixerPage> {
     // The first frame is a return to the retained bank/page, not a change
     // of bank/page that should reset its saved horizontal position.
     _bank = widget.controller.store.bank;
+    _layerId = widget.controller.activeLayer.id;
     _page = widget.controller.page;
   }
 
@@ -59,27 +62,32 @@ class _MixerPageState extends State<MixerPage> {
   Widget build(BuildContext context) => Material(
       color: ConsolePalette.of(context).background,
       child: SafeArea(
-          bottom: false,
+          bottom: true,
           child: LayoutBuilder(builder: (context, constraints) {
             final controller = widget.controller;
             final mobile = constraints.maxWidth < 600;
             final sideRail = !mobile;
-            const pageSize = 8;
-            if (_configuredSize != pageSize) {
-              _configuredSize = pageSize;
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) controller.configurePageSize(pageSize);
-              });
-            }
             return ListenableBuilder(
                 // Rebuild on prefs too so large-targets/interface changes
                 // apply without reopening the screen (rare notifications).
                 listenable:
                     Listenable.merge([controller, PrefsService.instance]),
                 builder: (context, _) {
+                  final pageSize =
+                      controller.store.strips.length.clamp(16, 9999);
+                  if (_configuredSize != pageSize) {
+                    _configuredSize = pageSize;
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted && _configuredSize == pageSize) {
+                        controller.configurePageSize(pageSize);
+                      }
+                    });
+                  }
                   if (_bank != controller.store.bank ||
+                      _layerId != controller.activeLayer.id ||
                       _page != controller.page) {
                     _bank = controller.store.bank;
+                    _layerId = controller.activeLayer.id;
                     _page = controller.page;
                     WidgetsBinding.instance.addPostFrameCallback((_) {
                       if (mounted && _scroll.hasClients) _scroll.jumpTo(0);
@@ -89,21 +97,26 @@ class _MixerPageState extends State<MixerPage> {
                   final railWidth = sideRail
                       ? MixerGeometry.railWidth(constraints.maxWidth)
                       : 0.0;
-                  final stripWidth =
-                      MixerGeometry.stripWidth(constraints.maxWidth, mobile);
+                  final stripWidth = MixerGeometry.stripWidth(
+                      constraints.maxWidth, mobile,
+                      controller.isCustomLayerActive ? controller.effectivePageSize : 8);
                   Widget strip(MixerChannel ch) => MixerStrip(
                       key: ValueKey(ch.key),
                       channel: ch,
                       controller: controller,
+                      identityChannel: ch.master ? controller.masterIdentityChannel : null,
                       compact: mobile,
                       bottomInset:
                           mobile ? MediaQuery.paddingOf(context).bottom : 0,
+                      onOpenProcessing: ch.master ? () {
+                        controller.select(ch);
+                        if (controller.openMasterProcessing()) {
+                          widget.onNavigate(MixerDestination.channel);
+                        }
+                      } : null,
                       onOpen: () {
                         controller.select(ch);
-                        if (ch.master && controller.canOpenMasterProcessing) {
-                          controller.openMasterProcessing();
-                          widget.onNavigate(MixerDestination.channel);
-                        } else if (ch.master) {
+                        if (ch.master) {
                           showMixerBuses(context, controller);
                         } else {
                           widget.onNavigate(MixerDestination.channel);
@@ -143,6 +156,38 @@ class _MixerPageState extends State<MixerPage> {
                             Container(
                                 height: mobile ? 6 : 8,
                                 color: ConsolePalette.of(context).bus),
+                            // Custom layer banner: names the active layer.
+                            // Tapping opens the layer list; the master strip
+                            // stays fixed and is never part of a layer.
+                            if (controller.isCustomLayerActive)
+                              GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => showMixerLayers(
+                                      context, controller),
+                                  child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 6),
+                                      child: Row(children: [
+                                        Icon(Icons.layers_outlined,
+                                            size: 16,
+                                            color: ConsolePalette.of(context)
+                                                .mutedText),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                            child: Text(
+                                                controller.activeLayer.name,
+                                                maxLines: 1,
+                                                overflow:
+                                                    TextOverflow.ellipsis,
+                                                style: mixerType(context, 14,
+                                                    weight: FontWeight.w600))),
+                                        Text(
+                                            '${controller.page + 1}/${controller.pageCount.clamp(1, 999)}',
+                                            style: mixerType(context, 12,
+                                                color:
+                                                    ConsolePalette.of(context)
+                                                        .mutedText)),
+                                      ]))),
                             if (controller.error.isNotEmpty)
                               Material(
                                   color: ConsolePalette.of(context).over,
@@ -178,8 +223,10 @@ class _MixerPageState extends State<MixerPage> {
                                                 .solo)),
                                     const Spacer(),
                                     TextButton(
-                                        onPressed: controller.store.canClearSolos
-                                            ? controller.store.clearSolos : null,
+                                        onPressed:
+                                            controller.store.canClearSolos
+                                                ? controller.store.clearSolos
+                                                : null,
                                         child: Text('Clear solos',
                                             style: mixerType(context, 12,
                                                 color:
@@ -194,11 +241,47 @@ class _MixerPageState extends State<MixerPage> {
                                   Expanded(
                                       child: channels.isEmpty
                                           ? Center(
-                                              child: Text(
-                                                  controller
-                                                      .store.emptyBankMessage,
-                                                  style:
-                                                      mixerType(context, 16)))
+                                              child: controller
+                                                      .isCustomLayerActive
+                                                  ? Column(
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                          Text(
+                                                              controller
+                                                                  .activeLayer
+                                                                  .name,
+                                                              style: mixerType(
+                                                                  context, 18,
+                                                                  weight:
+                                                                      FontWeight
+                                                                          .w600)),
+                                                          const SizedBox(
+                                                              height: 8),
+                                                          Padding(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .symmetric(
+                                                                      horizontal:
+                                                                          32),
+                                                              child: Text(
+                                                                  controller
+                                                                      .layerEmptyMessage,
+                                                                  textAlign:
+                                                                      TextAlign
+                                                                          .center,
+                                                                  style: mixerType(
+                                                                      context,
+                                                                      15,
+                                                                      color: ConsolePalette.of(
+                                                                              context)
+                                                                          .mutedText))),
+                                                        ])
+                                                  : Text(
+                                                      controller.store
+                                                          .emptyBankMessage,
+                                                      style: mixerType(
+                                                          context, 16)))
                                           : ScrollConfiguration(
                                               behavior:
                                                   const MaterialScrollBehavior()
@@ -209,14 +292,18 @@ class _MixerPageState extends State<MixerPage> {
                                                     PointerDeviceKind.mouse,
                                                     PointerDeviceKind.trackpad
                                                   }),
-                                              child: ListView.builder(
+                                              child: Scrollbar(
                                                   controller: _scroll,
-                                                  scrollDirection:
-                                                      Axis.horizontal,
-                                                  itemExtent: stripWidth,
-                                                  itemCount: channels.length,
-                                                  itemBuilder: (context, i) =>
-                                                      strip(channels[i])))),
+                                                  thumbVisibility: true,
+                                                  child: ListView.builder(
+                                                      controller: _scroll,
+                                                      scrollDirection:
+                                                          Axis.horizontal,
+                                                      itemExtent: stripWidth,
+                                                      itemCount:
+                                                          channels.length,
+                                                      itemBuilder: (context, i) =>
+                                                          strip(channels[i]))))),
                                   SizedBox(
                                       width: stripWidth,
                                       child: strip(controller.master)),

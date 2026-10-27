@@ -400,18 +400,26 @@ class _SideMenu extends StatelessWidget {
         border: Border.fromBorderSide(
             BorderSide(color: ConsolePalette.of(context).lineHeader)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (final t in _availableTabs(store))
-            Expanded(
-                child: _MenuRow(
+      child: LayoutBuilder(builder: (context, constraints) {
+        final tabs = _availableTabs(store);
+        final height = (constraints.maxHeight / tabs.length).clamp(110.0, 190.0);
+        return SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              for (final t in tabs)
+                SizedBox(
+                  height: height,
+                  child: _MenuRow(
                     store: store,
                     tab: t,
                     active: t == tab,
-                    onTap: () => onTab(t))),
-        ],
-      ),
+                    onTap: () => onTab(t)),
+                ),
+            ],
+          ),
+        );
+      }),
     );
   }
 }
@@ -430,6 +438,12 @@ class _MenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final off = _tabOff(store, tab);
+    final status = switch (tab) {
+      ChannelTab.input => null,
+      ChannelTab.gate => store.paramBool('gate_on'),
+      ChannelTab.comp => store.paramBool('comp_on'),
+      ChannelTab.eq => store.paramBool('eq_on'),
+    };
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Semantics(
@@ -454,29 +468,28 @@ class _MenuRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                  Expanded(
-                      child: Text(_tabLabels[tab]!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontFamily: U4.font,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w600,
-                              color: active
-                                  ? ConsolePalette.of(context).cyan
-                                  : off
-                                      ? ConsolePalette.of(context).text7
-                                      : ConsolePalette.of(context).text4))),
-                  if (off)
-                    Text('OFF',
+                Text(_tabLabels[tab]!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontFamily: U4.font,
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        color: active
+                            ? ConsolePalette.of(context).cyan
+                            : off
+                                ? ConsolePalette.of(context).text7
+                                : ConsolePalette.of(context).text4)),
+                if (status != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(status ? 'On' : 'Off',
                         style: TextStyle(
                             fontFamily: U4.font,
                             fontSize: 13,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.1,
+                            fontWeight: FontWeight.w600,
                             color: ConsolePalette.of(context).text7)),
-                ]),
+                  ),
                 const SizedBox(height: 8),
                 Expanded(
                     child: Opacity(

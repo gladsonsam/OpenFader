@@ -12,6 +12,7 @@ class MixerProcessingRack extends StatefulWidget {
   final MixerChannel channel;
   final bool demo;
   final List<double>? gainRange;
+  final bool showPhantom;
   final VoidCallback onOpen;
   final ValueChanged<double> onGain;
   const MixerProcessingRack(
@@ -19,6 +20,7 @@ class MixerProcessingRack extends StatefulWidget {
       required this.channel,
       required this.demo,
       this.gainRange,
+      this.showPhantom = false,
       required this.onOpen,
       required this.onGain});
   @override
@@ -55,8 +57,20 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
             child: Stack(children: [
               place(
                   5,
-                  widget.channel.master ? 57 : 36,
-                  LayoutBuilder(
+                  36,
+                  widget.channel.master || widget.gainRange == null
+                      ? Semantics(
+                          button: true,
+                          label: 'Open ${widget.channel.name} processing',
+                          child: InkWell(
+                            onTap: widget.onOpen,
+                            child: Center(
+                              child: Text(widget.channel.name.toUpperCase(),
+                                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                                  style: mixerType(context, 12,
+                                      color: ConsolePalette.of(context).mutedText,
+                                      weight: FontWeight.w700)))))
+                      : LayoutBuilder(
                       builder: (context, gainBox) => Semantics(
                           container: true,
                           label: '${widget.channel.name} gain',
@@ -94,18 +108,26 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                                   painter: _GainPainter(
                                       ConsolePalette.of(context),
                                       widget.channel.params,
-                                      widget.channel.master,
                                       widget.demo,
-                                      widget.gainRange)))))),
+                                      widget.gainRange,
+                                      widget.showPhantom)))))),
               place(
-                  widget.channel.master ? 68 : 47,
-                  widget.channel.master ? 58 : 79,
-                  MixerEqPreview(
-                      channel: widget.channel, onOpen: widget.onOpen)),
+                  47,
+                  79,
+                  Padding(
+                      padding: const EdgeInsets.only(left: 4, right: 10),
+                      child: MixerEqPreview(
+                          channel: widget.channel, onOpen: widget.onOpen))),
               place(
                   132,
                   62,
-                  CustomPaint(
+                  Semantics(
+                      button: true,
+                      label: '${widget.channel.name} dynamics and processing',
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: widget.onOpen,
+                        child: CustomPaint(
                       painter: _DynamicsPainter(
                           ConsolePalette.of(context),
                           widget.channel.params,
@@ -115,7 +137,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                                   !widget.channel.params.containsKey('comp_gr')
                               ? mixerDemoStrips[widget.channel.artwork]
                                   .compression
-                              : null))),
+                              : null))))),
             ]));
       });
 }
@@ -125,12 +147,14 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
 class MixerEqPreview extends StatelessWidget {
   final MixerChannel channel;
   final bool compact;
+  final bool showPhantom;
   final VoidCallback onOpen;
   const MixerEqPreview({
     super.key,
     required this.channel,
     required this.onOpen,
     this.compact = false,
+    this.showPhantom = false,
   });
 
   @override
@@ -160,7 +184,7 @@ class MixerEqPreview extends StatelessWidget {
                                           backgroundColor:
                                               ConsolePalette.of(context)
                                                   .eqBg))))),
-                if (compact)
+                if (compact && showPhantom)
                   Positioned(
                       top: 3,
                       right: 5,
@@ -197,28 +221,20 @@ class MixerEqPreview extends StatelessWidget {
 class _GainPainter extends CustomPainter {
   final ConsolePalette palette;
   final Map<String, Object> params;
-  final bool master, demo;
+  final bool demo;
   final List<double>? gainRange;
-  _GainPainter(
-      this.palette, this.params, this.master, this.demo, this.gainRange);
+  final bool showPhantom;
+  _GainPainter(this.palette, this.params, this.demo, this.gainRange, this.showPhantom);
   @override
   void paint(Canvas c, Size s) {
     c.save();
-    c.scale(s.width / 168.2, s.height / 36);
+    final horizontalScale = s.width / 168.2;
+    c.scale(horizontalScale, s.height / 36);
     s = const Size(168.2, 36);
     mixerBox(c, Offset.zero & s, palette.panel, radius: 6);
-    if (master) {
-      for (var n = 0; n < 24; n++) {
-        final w = (s.width - 22) / 8;
-        mixerBox(c, Rect.fromLTWH(4 + n % 8 * (w + 2), 3 + n ~/ 8 * 6, w, 5),
-            palette.lineCtl,
-            radius: 1);
-      }
-      c.restore();
-      return;
-    }
-    final width = s.width * .7;
-    mixerBox(c, Rect.fromLTWH(3, 7, width, 11), palette.control,
+    final left = 4 / horizontalScale;
+    final width = s.width * .60;
+    mixerBox(c, Rect.fromLTWH(left, 13, width, 11), palette.control,
         radius: 3, border: palette.lineCtl);
     final amount = gainRange == null
         ? 0.0
@@ -227,23 +243,29 @@ class _GainPainter extends CustomPainter {
                 (gainRange!.last - gainRange!.first))
             .clamp(0.0, 1.0);
     mixerBox(
-        c, Rect.fromLTWH(6, 10, (width - 7) * amount, 5), palette.meterCover,
+        c, Rect.fromLTWH(left + 3, 16, (width - 7) * amount, 5), palette.meterCover,
         radius: 2, border: palette.lime);
-    mixerBox(c, Rect.fromLTWH(4 + (width - 7) * amount, 8, 5, 9), palette.text4,
+    mixerBox(c, Rect.fromLTWH(left + 1 + (width - 7) * amount, 14, 5, 9), palette.text4,
         radius: 1);
     // Design: 48V indicator replaces the A/B label (red when phantom is on).
     final phantom = params['phantom'] == true || params['phantom'] == 1;
-    mixerText(c, '48V', Offset(s.width - 39, 7), 13,
+    const labelWidth = 32.0;
+    final labelRight = s.width - 10 / horizontalScale;
+    if (showPhantom) {
+      mixerText(c, '48V', Offset(labelRight - labelWidth, 13), 13,
         color: phantom ? palette.phantom : palette.mutedText,
+        width: labelWidth,
+        align: TextAlign.right,
         weight: FontWeight.w700);
+    }
     c.restore();
   }
 
   @override
   bool shouldRepaint(_GainPainter old) =>
       old.palette != palette ||
-      old.master != master ||
       old.demo != demo ||
+      old.showPhantom != showPhantom ||
       !listEquals(old.gainRange, gainRange) ||
       !mapEquals(old.params, params);
 }

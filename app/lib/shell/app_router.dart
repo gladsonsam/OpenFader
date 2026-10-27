@@ -42,8 +42,6 @@ import 'scenes_store.dart';
 import 'settings_store.dart';
 import 'fx_store.dart';
 import 'debug_store.dart';
-import 'quick_access_store.dart';
-import '../screens/quick_access.dart';
 
 enum AppTab {
   mixer('Mixer'),
@@ -108,7 +106,6 @@ class _AppShellState extends State<AppShell> {
   late final ShellSettingsStore _settings;
   late final ShellFxStore _fx;
   late final ShellDebugStore _debug;
-  late final ShellQuickAccessStore _quickAccess;
 
   @override
   void initState() {
@@ -124,7 +121,6 @@ class _AppShellState extends State<AppShell> {
     _scenes = ShellScenesStore(widget.store);
     _settings = ShellSettingsStore(widget.store);
     _fx = ShellFxStore(widget.store);
-    _quickAccess = ShellQuickAccessStore(widget.store, _fx);
     _debug = ShellDebugStore(widget.store);
     _applyMeterTuning();
     PrefsService.instance.addListener(_onPrefs);
@@ -179,8 +175,6 @@ class _AppShellState extends State<AppShell> {
       if (mounted && _tab == AppTab.debug) _debug.captureFrame();
     } catch (_) {
       // A transport hiccup must not crash the shell loop.
-    } finally {
-      _quickAccess.tickGestures();
     }
   }
 
@@ -195,7 +189,6 @@ class _AppShellState extends State<AppShell> {
     _routing.dispose();
     _scenes.dispose();
     _settings.dispose();
-    _quickAccess.dispose();
     _fx.dispose();
     _debug.dispose();
     super.dispose();
@@ -267,7 +260,7 @@ class _AppShellState extends State<AppShell> {
         final narrow = MediaQuery.sizeOf(context).width < 720;
         if (_tab == AppTab.mixer &&
             (connected || sim || store.engine.linkState == 'offline')) {
-          return _withQuickAccess(_mixerPage());
+          return _mixerPage();
         }
         // Settings and channel views carry their own top bars, so the shared header steps aside.
 
@@ -346,46 +339,11 @@ class _AppShellState extends State<AppShell> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [Expanded(child: page), rail],
                   );
-        return _withQuickAccess(U4Shell(
-            header: header, bottomSafeArea: !(isChan && narrow), child: body));
+        return U4Shell(
+            header: header, bottomSafeArea: !(isChan && narrow), child: body);
       },
     );
   }
-
-  Widget _withQuickAccess(Widget child) => Column(children: [
-        Expanded(child: child),
-        // Reserve the launcher's hit area: overlaying the bottom-right corner
-        // hides the master nameplate on phones and Clear solos on the rail.
-        SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Align(
-              alignment: Alignment.centerRight,
-              heightFactor: 1,
-              child: FloatingActionButton.small(
-                heroTag: 'quick-access',
-                tooltip: 'Quick Access',
-                backgroundColor: ConsolePalette.of(context).control,
-                foregroundColor: ConsolePalette.of(context).cyan,
-                onPressed: () => showModalBottomSheet<void>(
-                  context: context,
-                  isScrollControlled: true,
-                  useSafeArea: true,
-                  builder: (context) => ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-                      maxWidth: 640,
-                    ),
-                    child: SafeArea(child: QuickAccessPanel(store: _quickAccess)),
-                  ),
-                ),
-                child: const Icon(Icons.bolt),
-              ),
-            ),
-          ),
-        ),
-      ]);
 
   void _channelTool(ChannelTool t) {
     switch (t) {
@@ -485,6 +443,11 @@ class _AppShellState extends State<AppShell> {
             _settingsSection = null;
             _go(_prevTab);
           },
+          onHome: () {
+            _settingsSection = null;
+            _showStart = true;
+            _go(AppTab.mixer);
+          },
           onOpenMixer: () {
             _showStart = false;
             _conn.connectSim();
@@ -518,6 +481,7 @@ class _AppShellState extends State<AppShell> {
                 return MixerStrip(
                     channel: ch,
                     controller: _mixer,
+                    identityChannel: ch.master ? _mixer.masterIdentityChannel : null,
                     onControlFocus: (control) {
                       // Null restores the toolbar's live per-strip fader readout.
                       _channelFocus.value =

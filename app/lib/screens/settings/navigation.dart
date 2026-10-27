@@ -3,7 +3,8 @@ part of '../settings.dart';
 class _Sidebar extends StatelessWidget {
   final SettingsSection active;
   final ValueChanged<SettingsSection> onSelect;
-  const _Sidebar({required this.active, required this.onSelect});
+  final VoidCallback onHome;
+  const _Sidebar({required this.active, required this.onSelect, required this.onHome});
 
   @override
   Widget build(BuildContext context) {
@@ -72,8 +73,11 @@ class _Sidebar extends StatelessWidget {
               ),
             ),
           const Spacer(),
-          GestureDetector(
-            onTap: () => onSelect(SettingsSection.connections),
+          Semantics(
+            button: true,
+            label: 'Open Connections home',
+            child: GestureDetector(
+            onTap: onHome,
             behavior: HitTestBehavior.opaque,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
@@ -100,7 +104,7 @@ class _Sidebar extends StatelessWidget {
                 ],
               ),
             ),
-          ),
+          )),
         ],
       ),
     );
@@ -108,9 +112,15 @@ class _Sidebar extends StatelessWidget {
 }
 
 class _OverviewBrand extends StatelessWidget {
+  final VoidCallback onHome;
+  const _OverviewBrand({required this.onHome});
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
+  Widget build(BuildContext context) => Semantics(
+        button: true, label: 'Open Connections home',
+        child: GestureDetector(
+        onTap: onHome, behavior: HitTestBehavior.opaque,
+        child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
         child: Row(
           children: [
             SizedBox(width: 54, height: 54, child: SvgPictureAssetLogo()),
@@ -126,7 +136,7 @@ class _OverviewBrand extends StatelessWidget {
             ),
           ],
         ),
-      );
+      )));
 }
 
 class SvgPictureAssetLogo extends StatelessWidget {

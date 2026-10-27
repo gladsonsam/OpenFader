@@ -15,6 +15,9 @@ import 'settings_access.dart';
 import '../settings/mixes.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
+import '../mixer/components/layers.dart';
+import '../mixer/mixer_layers.dart';
+import '../mixer/strip_layout.dart';
 import '../theme.dart';
 import '../palette.dart';
 
@@ -25,6 +28,8 @@ part 'settings/connections.dart';
 part 'settings/mixes.dart';
 part 'settings/data.dart';
 part 'settings/appearance.dart';
+part 'settings/strip_layout.dart';
+part 'settings/layers.dart';
 part 'settings/about.dart';
 
 enum SettingsSection {
@@ -46,6 +51,10 @@ abstract class SettingsStore extends ChangeNotifier {
   AccessLimitsStore get accessLimits;
   RecentMixers get recents;
   LocalMixStore get mixes;
+
+  /// Live channel catalog for the custom-layers editor (master excluded).
+  List<({String key, String name})> get layerChannelOptions;
+  Future<void> activateMixerLayer(String id);
   Future<int> appStorageBytes();
 
   Future<String?> importMix();
@@ -66,6 +75,7 @@ class U4SettingsPage extends StatefulWidget {
   final SettingsSection? initialSection;
   final VoidCallback onClose;
   final VoidCallback onOpenMixer;
+  final VoidCallback onHome;
 
   const U4SettingsPage({
     super.key,
@@ -73,6 +83,7 @@ class U4SettingsPage extends StatefulWidget {
     required this.store,
     required this.onClose,
     required this.onOpenMixer,
+    required this.onHome,
   });
 
   @override
@@ -275,7 +286,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Sidebar(active: _sel, onSelect: (s) => setState(() => _sel = s)),
+              _Sidebar(active: _sel, onSelect: (s) => setState(() => _sel = s), onHome: widget.onHome),
               Expanded(child: _detailScroll(_sel, wide: true)),
             ],
           ),
@@ -295,7 +306,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _OverviewBrand(),
+                _OverviewBrand(onHome: widget.onHome),
                 const SizedBox(height: 24),
                 for (final s in SettingsSection.values)
                   Padding(
