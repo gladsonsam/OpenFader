@@ -298,6 +298,7 @@ class _NativeFxDetail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
+    final selector = controls.where((control) => control.id == 'algorithm').firstOrNull;
     final tapControls =
         controls.where((control) => control.canTapTempo).toList();
     final binaryControls = controls
@@ -314,6 +315,32 @@ class _NativeFxDetail extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: palette.text1)),
           const SizedBox(height: 12),
+          if (selector != null) ...[
+            OutlinedButton.icon(
+              icon: const Icon(Icons.expand_more),
+              label: Text(
+                '${selector.label}: ${selector.valueLabel ?? 'Waiting for mixer'}',
+              ),
+              onPressed: store.destinationControlIsCurrent(selector)
+                  ? () => showDialog<void>(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (_) => DestinationControlEditor(
+                        changes: store,
+                        isCurrent: store.destinationControlIsCurrent,
+                        apply: store.setDestinationControl,
+                        control: selector,
+                      ),
+                    )
+                  : null,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'FX preset library is unavailable for this mixer.',
+              style: TextStyle(fontSize: 12, color: palette.text4),
+            ),
+            const SizedBox(height: 12),
+          ],
           if (binaryControls.isNotEmpty)
             Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -351,7 +378,7 @@ class _NativeFxDetail extends StatelessWidget {
                       (binaryControls.isEmpty ? 0 : 56)),
               children: [
                 for (final control in controls)
-                  if (!binaryControls.contains(control))
+                  if (control != selector && !binaryControls.contains(control))
                     _FxRotary(
                         key: ValueKey('${control.target}/${control.id}'),
                         label: control.label,

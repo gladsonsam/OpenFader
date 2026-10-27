@@ -79,8 +79,15 @@ impl MackieSession {
     /// App-style multi-address write of raw u32 pairs.
     /// Same accepted-but-unverified provenance as [`write_int`](Self::write_int).
     pub async fn write_multi(&self, pairs: &[(u32, u32)], value_type: u8) -> anyhow::Result<()> {
+        self.write_multi_guarded(pairs, value_type, &|| true).await
+    }
+
+    /// App-style atomic source/bank action with final socket-lane authority.
+    /// Cancellation never queues a retry. ACK remains unverified per word.
+    pub async fn write_multi_guarded(&self, pairs: &[(u32, u32)], value_type: u8,
+        authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
         let body = build_multi_set(pairs, value_type)?;
-        self.send_request(Command::ChannelValues, body, REQUEST_TIMEOUT)
+        self.send_request_guarded(Command::ChannelValues, body, REQUEST_TIMEOUT, authorize)
             .await?;
         if value_type == VALUE_TYPE_MUTE_GROUP {
             if let Ok(mut s) = self.caches.type2_values.lock() {

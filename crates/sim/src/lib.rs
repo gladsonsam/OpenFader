@@ -633,9 +633,11 @@ fn default_fx_for(preset: SimPreset) -> Vec<SimFxSlot> {
 mod input_processors;
 pub mod output_routing;
 mod global_controls;
+mod fx_controls;
 mod solo;
 
 pub struct SimDriver {
+    fx_controls: RwLock<Vec<fx_controls::FxSlot>>,
     output_routes: RwLock<HashMap<String, (String, u64)>>,
     globals: RwLock<Vec<openfader_core::destinations::DestinationControl>>,
     processor_revision: AtomicU64,
@@ -699,6 +701,7 @@ impl SimDriver {
             .collect();
         Self {
             output_routes: RwLock::new(HashMap::new()),
+            fx_controls: RwLock::new(fx_controls::initial()),
             globals: RwLock::new(openfader_core::global_controls::reference_controls().into_iter().chain(solo::controls()).collect()),
             processor_revision: AtomicU64::new(0),
             processor_generation: AtomicU64::new(0),
@@ -1041,9 +1044,12 @@ impl SimDriver {
 }
 
 impl MixerDriver for SimDriver {
-    fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> { self.global_controls() }
+    fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> { self.global_controls().into_iter().chain(self.fx_controls()).collect() }
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
         self.write_global(target, control, value, expected, None).map(|_| ())
+    }
+    async fn set_fx_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        self.write_sim_fx(target, control, value, expected, snapshot, context)
     }
     async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         self.write_sim_solo(target, control, value, expected, snapshot, context)
