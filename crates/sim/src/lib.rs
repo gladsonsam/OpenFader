@@ -1,4 +1,4 @@
-//! Offline fake mixer for UI dev: full v2 topology (77 strips), fake meters.
+//! Offline fake mixer for UI dev: full v2 topology (81 strips), fake meters.
 //!
 //! Strip index map (global, stable, indices 0..39 mean what they always
 //! meant so existing UI/tests keep working; new families append after):
@@ -12,11 +12,14 @@
 //! | 60..64  | fxsnd  | fxsnd | FxSnd 1-4 | FXS1..FXS4          | blue 4 |
 //! | 64..72  | mtx    | mtx   | Mtx 1-8   | MTX1..MTX8          | mag 11 |
 //! | 72..73  | main   | main  | Main LR   | MAIN                | mag 11 |
-//! | 73..77  | dca    | dca   | DCA 1-4   | DCA1..DCA4          | red 0 |
+//! | 73..79  | dca    | dca   | VCA 1-6   | VCA1..VCA6          | red 0 |
+//! | 79..81  | ret    | return| Returns   | Return 1..2        | green 2 |
 //!
-//! Total [`SIM_STRIPS`] = 77. DCA strips carry fader/mute/name/color only
+//! Total [`SIM_STRIPS`] = 81. DCA strips carry fader/mute/name/color only
 //! (catalogue scopes); every other family answers its full scoped set from
 //! the first poll (seeded state, no silent gaps).
+pub mod strip_schema;
+
 use openfader_core::{
     validate_fader, ChannelStrip, MeterFrame, MixerDriver, MixerSnapshot, ParamValue, StripFamily,
     StripId, StripKind,
@@ -38,16 +41,17 @@ pub const SIM_RETS: usize = 4;
 pub const SIM_FXSNDS: usize = 4;
 pub const SIM_MTX: usize = 8;
 pub const SIM_MAINS: usize = 1;
-pub const SIM_DCAS: usize = 4;
+pub const SIM_DCAS: usize = 6;
+pub const SIM_RETURNS: usize = 2;
 /// R2 subgroup master count (matches the DL32S desk family).
 pub const SIM_SUBGROUPS: usize = 6;
 /// R2 mute-group master count (matches the DL32S desk family).
 pub const SIM_MUTE_GROUPS: usize = 6;
-/// Total strips (0..77). Indices 0..40 keep their historic meaning.
+/// Total strips (0..81). Indices 0..40 keep their historic meaning.
 pub const SIM_STRIPS: usize =
-    SIM_CHANNELS + SIM_BUSES + SIM_INPUTS_EXT + SIM_RETS + SIM_FXSNDS + SIM_MTX + SIM_MAINS + SIM_DCAS;
+    SIM_CHANNELS + SIM_BUSES + SIM_INPUTS_EXT + SIM_RETS + SIM_FXSNDS + SIM_MTX + SIM_MAINS + SIM_DCAS + SIM_RETURNS;
 
-pub const SIM_TOPOLOGY: [StripFamily; 8] = [
+pub const SIM_TOPOLOGY: [StripFamily; 9] = [
     StripFamily { key: "ch", kind: StripKind::In, label: "Ch 1-32", first: 0, count: SIM_CHANNELS, name_prefix: "Ch", color_default: 2 },
     StripFamily { key: "mix", kind: StripKind::Bus, label: "Mix 1-8", first: 32, count: SIM_BUSES, name_prefix: "Mix", color_default: 6 },
     StripFamily { key: "ch2", kind: StripKind::In, label: "Ch 33-48", first: 40, count: SIM_INPUTS_EXT, name_prefix: "Ch", color_default: 2 },
@@ -55,7 +59,8 @@ pub const SIM_TOPOLOGY: [StripFamily; 8] = [
     StripFamily { key: "fxsnd", kind: StripKind::FxSnd, label: "FxSnd 1-4", first: 60, count: SIM_FXSNDS, name_prefix: "FxSnd", color_default: 4 },
     StripFamily { key: "mtx", kind: StripKind::Mtx, label: "Mtx 1-8", first: 64, count: SIM_MTX, name_prefix: "Mtx", color_default: 11 },
     StripFamily { key: "main", kind: StripKind::Main, label: "Main LR", first: 72, count: SIM_MAINS, name_prefix: "Main", color_default: 11 },
-    StripFamily { key: "dca", kind: StripKind::Dca, label: "DCA 1-4", first: 73, count: SIM_DCAS, name_prefix: "DCA", color_default: 0 },
+    StripFamily { key: "dca", kind: StripKind::Dca, label: "VCA 1-6", first: 73, count: SIM_DCAS, name_prefix: "VCA", color_default: 0 },
+    StripFamily { key: "ret", kind: strip_schema::RETURN_KIND, label: "Returns", first: 79, count: SIM_RETURNS, name_prefix: "Return", color_default: 2 },
 ];
 
 pub fn kind_of_strip(idx: usize) -> anyhow::Result<StripKind> {
@@ -281,11 +286,14 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
         v.push(s);
     }
     for i in 0..SIM_DCAS {
-        let mut s = ChannelStrip::new((73 + i) as u16, format!("DCA{}", i + 1));
+        let mut s = ChannelStrip::new((73 + i) as u16, format!("VCA{}", i + 1));
         s.pan = 0.0;
         s.fader = 0.75;
         s.mute = false;
         v.push(s);
+    }
+    for i in 0..SIM_RETURNS {
+        v.push(ChannelStrip::new((79 + i) as u16, format!("Return {}", i + 1)));
     }
     debug_assert_eq!(v.len(), SIM_STRIPS);
     v
@@ -602,7 +610,7 @@ pub struct StripTaps {
 fn first_supporting_strip(id: &str) -> Option<StripId> {
     let def = openfader_core::params::find(id)?;
     for fam in SIM_TOPOLOGY {
-        if openfader_core::params::supports_kind(def, fam.kind) {
+        if strip_schema::supports(def, fam.kind) {
             return Some(StripId(fam.first as u16));
         }
     }
@@ -924,7 +932,7 @@ impl SimDriver {
     pub fn set_patch(&self, strip: StripId, group: &str, index: u8) -> anyhow::Result<String> {
         let i = self.idx(strip)?;
         let kind = kind_of_strip(i)?;
-        if kind != openfader_core::StripKind::In {
+        if kind != StripKind::In && kind != strip_schema::RETURN_KIND {
             anyhow::bail!("sim: patch only supported on input strips");
         }
         let (key, count) = Self::check_patch_group(group)?;
@@ -942,7 +950,7 @@ impl SimDriver {
     pub fn clear_patch(&self, strip: StripId) -> anyhow::Result<()> {
         let i = self.idx(strip)?;
         let kind = kind_of_strip(i)?;
-        if kind != openfader_core::StripKind::In {
+        if kind != StripKind::In && kind != strip_schema::RETURN_KIND {
             anyhow::bail!("sim: patch only supported on input strips");
         }
         self.params.write().expect("sim params poisoned")[i]
@@ -1041,7 +1049,7 @@ impl MixerDriver for SimDriver {
     }
 
     fn stereo_pairs(&self) -> Vec<[u16; 2]> {
-        self.topology().into_iter().filter(|f| f.kind == StripKind::In)
+        self.topology().into_iter().filter(|f| matches!(f.kind, StripKind::In) || f.kind == strip_schema::RETURN_KIND)
             .flat_map(|f| (f.first as u16..(f.first + f.count) as u16).step_by(2)
                 .filter(move |left| *left + 1 < (f.first + f.count) as u16)
                 .map(|left| [left, left + 1])).collect()
@@ -1069,8 +1077,8 @@ impl MixerDriver for SimDriver {
             let values = self.params.read().expect("sim params poisoned")[source.0 as usize].clone();
             for (field, value) in values {
                 if matches!(field.as_str(), "link" | "pan" | "source" | "source_a" | "source_b" | "source_select" | "gain" | "trim" | "phantom" | "usbreturn") { continue; }
-                let Some(def) = openfader_core::params::find(&field) else { continue; };
-                if !openfader_core::params::supports_kind(def, StripKind::In) { continue; }
+                let Some(def) = strip_schema::definition(&field) else { continue; };
+                if !strip_schema::supports(def, kind_of_strip(source.0 as usize)?) { continue; }
                 self.set_param(peer, &field, value.clone()).await?;
                 changes.push((peer, field, value));
             }
@@ -1090,14 +1098,14 @@ impl MixerDriver for SimDriver {
     }
 
     fn param_defs(&self) -> &'static [openfader_core::params::ParamDef] {
-        static DEFS: std::sync::OnceLock<[openfader_core::params::ParamDef; 1]> = std::sync::OnceLock::new();
+        static DEFS: std::sync::OnceLock<Vec<openfader_core::params::ParamDef>> = std::sync::OnceLock::new();
         DEFS.get_or_init(|| {
             let mut balance = *openfader_core::params::find("pan").expect("catalogue has pan");
             balance.id = "balance";
             balance.label = "Balance";
             balance.scope = openfader_core::params::ParamScope::Main;
             balance.scopes = &[StripKind::Main];
-            [balance]
+            std::iter::once(balance).chain(strip_schema::extra().iter().copied()).collect()
         })
     }
 
@@ -1135,12 +1143,12 @@ impl MixerDriver for SimDriver {
         SIM_CHANNELS
     }
 
-    /// Full v2 topology (77 strips, indices 0..39 stable; see module docs).
+    /// Full v2 topology (81 strips, indices 0..39 stable; see module docs).
     fn topology(&self) -> Vec<StripFamily> {
         SIM_TOPOLOGY.to_vec()
     }
 
-    /// Total addressable strips (77: inputs + buses + extended families).
+    /// Total addressable strips (81: inputs + buses + extended families).
     fn strip_count(&self) -> usize {
         SIM_STRIPS
     }
@@ -1368,7 +1376,7 @@ impl MixerDriver for SimDriver {
                 return Ok(());
             }
             ("pan", ParamValue::Float(v)) => {
-                if !openfader_core::params::supports_kind(
+                if !strip_schema::supports(
                     openfader_core::params::find("pan").expect("catalogue has pan"),
                     kind,
                 ) {
@@ -1380,11 +1388,12 @@ impl MixerDriver for SimDriver {
             }
             _ => {}
         }
-        if let Some(def) = openfader_core::params::find(param) {
-            if !openfader_core::params::supports_kind(def, kind) {
+        if let Some(def) = strip_schema::definition(param) {
+            if !strip_schema::supports(def, kind) {
                 anyhow::bail!("sim: {param} out of scope for {kind:?} strips");
             }
-            openfader_core::params::validate(param, &value)?;
+            if openfader_core::params::find(param).is_some() { openfader_core::params::validate(param, &value)?; }
+            else { anyhow::ensure!(matches!(value, ParamValue::Bool(_)), "sim membership requires a boolean"); }
             let mut params = self.params.write().expect("sim params poisoned");
             if params[i].get(param) != Some(&value) { self.processor_revision.fetch_add(1, Ordering::AcqRel); }
             params[i].insert(param.to_string(), value);
@@ -1407,7 +1416,7 @@ impl MixerDriver for SimDriver {
                 return Ok(ParamValue::Float(self.read()[i].pan));
             }
             "pan" => {
-                if !openfader_core::params::supports_kind(
+                if !strip_schema::supports(
                     openfader_core::params::find("pan").expect("catalogue has pan"),
                     kind,
                 ) {
@@ -1417,8 +1426,8 @@ impl MixerDriver for SimDriver {
             }
             _ => {}
         }
-        if let Some(def) = openfader_core::params::find(param) {
-            if !openfader_core::params::supports_kind(def, kind) {
+        if let Some(def) = strip_schema::definition(param) {
+            if !strip_schema::supports(def, kind) {
                 anyhow::bail!("sim: {param} out of scope for {kind:?} strips");
             }
             if let Some(v) = self.params.read().expect("sim params poisoned")[i].get(param) {
@@ -1935,7 +1944,7 @@ mod tests {
 
     #[test]
     fn topology_is_ordered_contiguous_and_stable() {
-        assert_eq!(SIM_STRIPS, 77);
+        assert_eq!(SIM_STRIPS, 81);
         let mut next = 0usize;
         for fam in SIM_TOPOLOGY {
             assert_eq!(fam.first, next, "gap/overlap before {}", fam.key);
@@ -1949,7 +1958,7 @@ mod tests {
         assert_eq!(SIM_TOPOLOGY[1].kind, StripKind::Bus);
         assert_eq!((SIM_TOPOLOGY[1].first, SIM_TOPOLOGY[1].count), (32, 8));
         let colours: Vec<u8> = SIM_TOPOLOGY.iter().map(|f| f.color_default).collect();
-        assert_eq!(colours, vec![2, 6, 2, 6, 4, 11, 11, 0]);
+        assert_eq!(colours, vec![2, 6, 2, 6, 4, 11, 11, 0, 2]);
         for (i, fam) in SIM_TOPOLOGY.iter().enumerate() {
             for s in fam.first..fam.end() {
                 assert_eq!(kind_of_strip(s).unwrap(), fam.kind, "strip {s}");
@@ -1967,7 +1976,7 @@ mod tests {
             for s in fam.first..fam.end() {
                 let strip = StripId(s as u16);
                 for def in params::CATALOGUE {
-                    let supported = params::supports_kind(def, fam.kind);
+                    let supported = strip_schema::supports(def, fam.kind);
                     let got = d.get_param(strip, def.id).await;
                     if supported {
                         let v = got.unwrap_or_else(|e| {

@@ -164,62 +164,67 @@ class _InputTab extends StatelessWidget {
       if (!wide)
         Text('Input', style: AppDesign.type(18, weight: FontWeight.w600)),
       SizedBox(height: wide ? 16 : 12),
-      Text('Source',
-          style: AppDesign.type(wide ? 18 : 14,
-              color: ConsolePalette.of(context).text7)),
-      const SizedBox(height: 8),
-      if (sources.isEmpty)
-        Container(
-            constraints: const BoxConstraints(minHeight: 60),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-                color: ConsolePalette.of(context).chip, borderRadius: U4.rBtn),
-            child: Text(
-                [store.source.srcName, store.source.srcGroup]
-                    .where((s) => s.isNotEmpty)
-                    .join(' · '),
-                style: AppDesign.type(16,
-                    color: ConsolePalette.of(context).text7)))
-      else if (wide)
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(
-              child: Column(children: [
-            for (final s in sources)
-              Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: _ProcessingButton(
-                      label: s.label,
-                      active: s.selected,
-                      onTap: s.enabled
-                          ? () => store.setSourceSelected(int.parse(s.id))
-                          : null))
-          ])),
-          const SizedBox(width: 12),
-          Expanded(
-              child: Column(children: [
-            for (final s in sources)
-              SizedBox(
-                  height: 50,
-                  child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(s.name, style: AppDesign.type(18))))
-          ])),
-        ])
-      else
-        Row(children: [
-          for (var i = 0; i < sources.length; i++) ...[
-            if (i > 0) const SizedBox(width: 6),
+      if (store.paramApplies('source') ||
+          store.paramApplies('source_a') ||
+          store.paramApplies('usbreturn')) ...[
+        Text('Source',
+            style: AppDesign.type(wide ? 18 : 14,
+                color: ConsolePalette.of(context).text7)),
+        const SizedBox(height: 8),
+        if (sources.isEmpty)
+          Container(
+              constraints: const BoxConstraints(minHeight: 60),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                  color: ConsolePalette.of(context).chip,
+                  borderRadius: U4.rBtn),
+              child: Text(
+                  [store.source.srcName, store.source.srcGroup]
+                      .where((s) => s.isNotEmpty)
+                      .join(' · '),
+                  style: AppDesign.type(16,
+                      color: ConsolePalette.of(context).text7)))
+        else if (wide)
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(
-                child: _ProcessingButton(
-                    label: sources[i].label,
-                    detail: sources[i].name,
-                    active: sources[i].selected,
-                    onTap: sources[i].enabled
-                        ? () =>
-                            store.setSourceSelected(int.parse(sources[i].id))
-                        : null)),
-          ]
-        ]),
+                child: Column(children: [
+              for (final s in sources)
+                Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: _ProcessingButton(
+                        label: s.label,
+                        active: s.selected,
+                        onTap: s.enabled
+                            ? () => store.setSourceSelected(int.parse(s.id))
+                            : null))
+            ])),
+            const SizedBox(width: 12),
+            Expanded(
+                child: Column(children: [
+              for (final s in sources)
+                SizedBox(
+                    height: 50,
+                    child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(s.name, style: AppDesign.type(18))))
+            ])),
+          ])
+        else
+          Row(children: [
+            for (var i = 0; i < sources.length; i++) ...[
+              if (i > 0) const SizedBox(width: 6),
+              Expanded(
+                  child: _ProcessingButton(
+                      label: sources[i].label,
+                      detail: sources[i].name,
+                      active: sources[i].selected,
+                      onTap: sources[i].enabled
+                          ? () =>
+                              store.setSourceSelected(int.parse(sources[i].id))
+                          : null)),
+            ]
+          ]),
+      ],
       if (store.paramApplies('wing:input_mode')) ...[
         const SizedBox(height: 12),
         if (store.sourceMode?.editable == true)
@@ -245,21 +250,23 @@ class _InputTab extends StatelessWidget {
                 : null),
       ],
       SizedBox(height: wide ? 88 : 14),
-      if (store.paramMetadata('gain')?['hidden'] != true) ...[
+      if (store.paramApplies('gain') &&
+          store.paramMetadata('gain')?['hidden'] != true) ...[
         _InputPreampControl(
             store: store, leaf: 'gain', label: 'Gain', onFocus: onFocus),
         const SizedBox(height: 7),
       ],
-      _InputPreampControl(
-          store: store,
-          leaf: 'trim',
-          label: 'Trim',
-          onFocus: onFocus,
-          trailing: _ProcessingButton(
-              label: 'Ø',
-              active: pre.invert,
-              semanticsLabel: 'Invert polarity',
-              onTap: store.supports('polarity') ? store.toggleInvert : null)),
+      if (store.paramApplies('trim'))
+        _InputPreampControl(
+            store: store,
+            leaf: 'trim',
+            label: 'Trim',
+            onFocus: onFocus,
+            trailing: _ProcessingButton(
+                label: 'Ø',
+                active: pre.invert,
+                semanticsLabel: 'Invert polarity',
+                onTap: store.supports('polarity') ? store.toggleInvert : null)),
       if (store.paramApplies('wing:input_balance')) ...[
         const SizedBox(height: 7),
         _InputPreampControl(
@@ -278,7 +285,8 @@ class _InputTab extends StatelessWidget {
             onFocus: onFocus),
       ],
       const SizedBox(height: 7),
-      if (store.paramMetadata('phantom')?['hidden'] != true)
+      if (store.paramApplies('phantom') &&
+          store.paramMetadata('phantom')?['hidden'] != true)
         Row(children: [
           SizedBox(
               width: 64,

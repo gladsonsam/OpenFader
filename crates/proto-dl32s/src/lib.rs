@@ -14,6 +14,7 @@ mod fx;
 mod global_controls;
 mod solo;
 mod input;
+pub mod strips;
 mod lifecycle;
 mod metadata;
 mod native;

@@ -14,16 +14,66 @@ import '../core/processor_presets.dart';
 part 'fake_sim_input_processors.dart';
 
 class FakeSimEngine implements EngineApi {
+  static const _stripCount = 20;
+  static String _family(int ch) => ch < 8
+      ? 'ch'
+      : ch < 10
+          ? 'ret'
+          : ch < 14
+              ? 'fxret'
+              : 'dca';
+  static String _kind(int ch) => ch < 8
+      ? 'in'
+      : ch < 10
+          ? 'ret'
+          : ch < 14
+              ? 'fxret'
+              : 'dca';
+  static int _number(int ch) => ch < 8
+      ? ch + 1
+      : ch < 10
+          ? ch - 7
+          : ch < 14
+              ? ch - 9
+              : ch - 13;
+  static String _key(int ch) =>
+      '${_family(ch)}/${_number(ch).toString().padLeft(2, '0')}';
+  static String _name(int ch) =>
+      '${ch < 8 ? 'CH' : ch < 10 ? 'Return' : ch < 14 ? 'FX Return' : 'VCA'} ${_number(ch)}';
+  FakeSimEngine() {
+    for (var ch = 8; ch < _stripCount; ch++) {
+      _params[ch].removeWhere((id, _) {
+        if (ch >= 14) {
+          return !{'name', 'fader', 'mute', 'color', 'icon'}.contains(id) &&
+              !id.startsWith('view');
+        }
+        if (id == 'gain' ||
+            id == 'phantom' ||
+            id.startsWith('gate_') ||
+            id.startsWith('hpf_')) {
+          return true;
+        }
+        if (ch >= 10 &&
+            (id == 'trim' ||
+                id == 'polarity' ||
+                id == 'source' ||
+                id == 'usbreturn' ||
+                id == 'link' ||
+                id.startsWith('comp_'))) {
+          return true;
+        }
+        final slot =
+            int.tryParse(RegExp(r'^send(\d+)_').firstMatch(id)?[1] ?? '');
+        return ch >= 10 && slot != null && slot > 6;
+      });
+    }
+  }
   int _processorRevision = 0;
   int _processorEpoch = 0;
   final List<Strip> _strips = List.generate(
-      8,
+      _stripCount,
       (i) => Strip(
-          ch: i,
-          key: 'ch/${(i + 1).toString().padLeft(2, '0')}',
-          name: 'CH${(i + 1).toString().padLeft(2, '0')}',
-          fader: 0.75,
-          muted: false));
+          ch: i, key: _key(i), name: _name(i), fader: 0.75, muted: false));
   // Every advertised leaf carries an engineering-unit value and survives resync.
   static const _defaults = <String, Object>{
     'fader': 0.75,
@@ -55,10 +105,12 @@ class FakeSimEngine implements EngineApi {
     'comp_rel': 100.0,
   };
   final List<Map<String, Object>> _params = List.generate(
-      8,
+      _stripCount,
       (ch) => {
             ..._defaults,
-            'name': 'CH${(ch + 1).toString().padLeft(2, '0')}',
+            'name': _name(ch),
+            for (var g = 1; g <= 6; g++) 'dca${g}_assign': false,
+            for (var g = 1; g <= 6; g++) 'view${g}_assign': false,
             'source': 'Local ${ch + 1}',
             for (var band = 1; band <= 4; band++) ...{
               'eq${band}_freq': [100.0, 2000.0, 5000.0, 10000.0][band - 1],
@@ -75,7 +127,7 @@ class FakeSimEngine implements EngineApi {
           });
   double _mainFader = 0.8;
   bool _mainMuted = false;
-  final List<bool> _solos = List.filled(8, false);
+  final List<bool> _solos = List.filled(_stripCount, false);
 
   // Subgroup masters mirror the native sim initial values.
   final List<double> _subgroupFaders = List.filled(6, 0);
@@ -101,17 +153,37 @@ class FakeSimEngine implements EngineApi {
       'input_processor_guard': true,
       'driver': 'sim',
       'topology': [
-        {
-          'key': 'ch',
-          'kind': 'in',
-          'label': 'Inputs',
-          'name_prefix': 'CH',
-          'first': 0,
-          'count': _strips.length,
-        }
+        for (final first in [0, 8, 10, 14])
+          {
+            'key': _family(first),
+            'kind': _kind(first),
+            'params_scope': [_kind(first)],
+            'label': first == 0
+                ? 'Inputs'
+                : first == 8
+                    ? 'Returns'
+                    : first == 10
+                        ? 'FX returns'
+                        : 'VCA 1-6',
+            'name_prefix': first == 0
+                ? 'CH'
+                : first == 8
+                    ? 'Return'
+                    : first == 10
+                        ? 'FX Return'
+                        : 'VCA',
+            'first': first,
+            'count': first == 0
+                ? 8
+                : first == 8
+                    ? 2
+                    : first == 10
+                        ? 4
+                        : 6,
+          },
       ],
       'stereo_pairs': [
-        for (var i = 0; i + 1 < _params.length; i += 2) [i, i + 1]
+        for (var i = 0; i < 10; i += 2) [i, i + 1]
       ],
       'groups': {'subgroups': _subgroupFaders.length},
       'params': [
@@ -129,7 +201,10 @@ class FakeSimEngine implements EngineApi {
                 }
               ],
             'scope': 'channel',
-            'scopes': ['in'],
+            'scopes': [
+              for (final first in [0, 8, 10, 14])
+                if (_params[first].containsKey(id)) _kind(first)
+            ],
             'kind': _params.first[id] is bool
                 ? 'bool'
                 : _params.first[id] is String
@@ -209,7 +284,8 @@ class FakeSimEngine implements EngineApi {
   Future<void> cmd(String clientId, String json) async {
     final c = jsonDecode(json) as Map<String, dynamic>;
     final ch = (c['ch'] as num?)?.toInt();
-    if (ch != null && (ch < 0 || ch >= _strips.length) &&
+    if (ch != null &&
+        (ch < 0 || ch >= _strips.length) &&
         c['cmd'] != 'input_processor') {
       return;
     }
@@ -400,7 +476,8 @@ class FakeSimEngine implements EngineApi {
           return;
         }
         _processorEpoch++;
-        _mailbox.add(jsonEncode({'type': 'sync_epoch', 'epoch': _processorEpoch}));
+        _mailbox
+            .add(jsonEncode({'type': 'sync_epoch', 'epoch': _processorEpoch}));
         _snapshot();
         return;
       case 'main_fader':

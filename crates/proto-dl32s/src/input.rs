@@ -1,8 +1,8 @@
 //! Input field validation, canonical mapping, verified reads and push decoding.
 use crate::{addrs, Dl32sDriver, DL32S_CAPABILITIES};
 use crate::assignments::{MEMBERSHIP_ALIASES, INPUT_SOLO_FIRST_ADDRESS};
-use crate::preamp::selected_preamp;
-use crate::addrs::{dl32s_inputs, INPUT_COUNT};
+use crate::preamp::selected_preamp_strip;
+use crate::addrs::INPUT_COUNT;
 use openfader_core::{ParamUpdate, ParamValue, StripId, MixerDriver};
 use openfader_transport::mackie::{PushEvent, MUTE_GROUP_BASE_ADDRESS, MUTE_GROUP_COUNT, VALUE_TYPE_PARAM, VALUE_TYPE_MUTE_GROUP};
 
@@ -70,13 +70,12 @@ pub(super) fn decode_colour(raw: u32) -> f32 {
 /// advertise. Master/type-2/meter leaves have no strip plane and are
 /// skipped (documented limitation: masters refresh on open + own writes).
 pub(super) fn decode_push_value(addr: u32, raw: u32) -> Vec<(StripId, String, ParamValue)> {
-    use addrs::{INPUT_BASE, INPUT_STRIDE};
-    if !(INPUT_BASE..INPUT_BASE + INPUT_COUNT * INPUT_STRIDE).contains(&addr) {
-        return Vec::new();
-    }
-    let ch0 = ((addr - INPUT_BASE) / INPUT_STRIDE) as u16;
-    let off = (addr - INPUT_BASE) % INPUT_STRIDE;
-    let table = dl32s_inputs();
+    let Some((first, table)) = crate::strips::topology().iter().find_map(|family| {
+        let table = crate::strips::resolve(StripId(family.first as u16)).ok()?.0;
+        (table.base..table.base + table.stride * table.count).contains(&addr).then_some((family.first, table))
+    }) else { return Vec::new(); };
+    let ch0 = (first + ((addr - table.base) / table.stride) as usize) as u16;
+    let off = (addr - table.base) % table.stride;
     let Some(field) = table.fields.iter().find(|f| f.offset == off) else {
         return Vec::new();
     };
@@ -215,10 +214,10 @@ pub(super) fn decode_push(push: PushEvent) -> Vec<ParamUpdate> {
         }
         PushEvent::Names { pairs } => pairs
             .into_iter()
-            .filter(|(slot, _)| (1..=INPUT_COUNT).contains(slot))
-            .map(|(slot, name)| ParamUpdate {
+            .filter_map(|(slot, name)| (0..crate::strips::STRIP_COUNT).find(|i| crate::strips::name_slot(StripId(*i as u16)).ok() == Some(slot)).map(|i| (i, name)))
+            .map(|(i, name)| ParamUpdate {
                 received_at,
-                strip: StripId((slot - 1) as u16),
+                strip: StripId(i as u16),
                 param: "name".to_string(),
                 value: ParamValue::Text(name),
             })
@@ -245,9 +244,9 @@ impl Dl32sDriver {
     }
 
     pub(super) async fn set_field_checked(&self, strip: StripId, key: &str, value: ParamValue, expected: Option<&std::collections::BTreeMap<String, ParamValue>>) -> anyhow::Result<()> {
-        let table = dl32s_inputs();
-        let field = table.field(key)?;
-        let channel = Self::channel(strip)?;
+        let (table, channel) = crate::strips::resolve(strip)?;
+        let field = if matches!(key, "gain" | "phantom") { addrs::dl32s_inputs().field(key)? } else { table.field(key)? };
+        anyhow::ensure!(crate::strips::supports(table, key), "Control unavailable for this strip family");
         enum Out {
             Int(u32),
             Float(f32),
@@ -304,7 +303,7 @@ impl Dl32sDriver {
             anyhow::ensure!((1000..=1031).contains(&source), "preamp unavailable for selected input source");
             source - 999
         } else { channel };
-        let addr = table.address(physical, key)?;
+        let addr = if matches!(key, "gain" | "phantom") { addrs::dl32s_inputs().address(physical, key)? } else { table.address(physical, key)? };
 
         match out {
             Out::Int(v) => session.write_int(addr, v, VALUE_TYPE_PARAM).await,
@@ -327,18 +326,24 @@ impl Dl32sDriver {
     }
 
     pub(super) async fn get_field_mode(&self, strip: StripId, key: &str, verified: bool) -> anyhow::Result<ParamValue> {
-        let table = dl32s_inputs();
-        let field = table.field(key)?;
-        let channel = Self::channel(strip)?;
+        let (table, channel) = crate::strips::resolve(strip)?;
+        let field = if matches!(key, "gain" | "phantom") { addrs::dl32s_inputs().field(key)? } else { table.field(key)? };
+        anyhow::ensure!(crate::strips::supports(table, key), "Control unavailable for this strip family");
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
         let physical = if key == "stereo_link" {
             if !channel.is_multiple_of(2) { channel } else { channel - 1 }
-        } else if matches!(key, "gain" | "phantom") { selected_preamp(session, channel)? } else { channel };
-        let addr = table.address(physical, key)?;
+        } else if matches!(key, "gain" | "phantom") { selected_preamp_strip(session, strip)? } else { channel };
+        let addr = if matches!(key, "gain" | "phantom") { addrs::dl32s_inputs().address(physical, key)? } else { table.address(physical, key)? };
         let raw = if verified { session.cached_verified(addr) } else { session.cached(addr) }
             .ok_or_else(|| anyhow::anyhow!("{key}: no desk-confirmed value yet"))?;
-        if key == "colour" {
+        if key == "stereo_link" {
+            let peer = table.address(physical + 1, key)?;
+            let other = if verified { session.cached_verified(peer) } else { session.cached(peer) }
+                .ok_or_else(|| anyhow::anyhow!("link: no confirmed partner state"))?;
+            anyhow::ensure!(raw <= 1 && other <= 1, "Unknown stereo link state");
+            Ok(ParamValue::Bool(raw != 0 || other != 0))
+        } else if key == "colour" {
             Ok(ParamValue::Float(decode_colour(raw)))
         } else if field.encoding.is_float() {
             Ok(ParamValue::Float(f32::from_bits(raw)))
@@ -393,7 +398,8 @@ impl Dl32sDriver {
     /// own write; get_param remains desk-evidenced and withholds pending words.
     pub async fn input_source_display(&self, strip: StripId, target: &str) -> anyhow::Result<u32> {
         let leaf = match target { "a" => "source_a", "b" => "source_b", _ => anyhow::bail!("dl32s: choose routing target A or B") };
-        let address = dl32s_inputs().address(Self::channel(strip)?, leaf)?;
+        let (table, n) = crate::strips::resolve(strip)?;
+        let address = table.address(n, leaf)?;
         self.request_value_u32(address).await?.ok_or_else(|| anyhow::anyhow!("dl32s: source unavailable"))
     }
 
@@ -515,17 +521,17 @@ impl Dl32sDriver {
     pub(super) async fn input_get_param(&self, strip: StripId, param: &str) -> anyhow::Result<ParamValue> {
         match param {
             "fader" => {
-                let ch = Self::channel(strip)?;
-                let addr = dl32s_inputs().address(ch, "fader")?;
+                let (table, ch) = crate::strips::resolve(strip)?;
+                let addr = table.address(ch, "fader")?;
                 self.verified_fader(addr).await.map(ParamValue::Float)
             }
             "mute" => {
-                let ch = Self::channel(strip)?;
-                let addr = dl32s_inputs().address(ch, "mute")?;
+                let (table, ch) = crate::strips::resolve(strip)?;
+                let addr = table.address(ch, "mute")?;
                 self.verified_mute(addr).await.map(ParamValue::Bool)
             }
             "name" => {
-                let ch = Self::channel(strip)?;
+                let ch = crate::strips::name_slot(strip)?;
                 self.verified_name(ch).await.map(ParamValue::Text)
             }
             // Wire pan -1.0..+1.0 back out to canonical -100..+100.

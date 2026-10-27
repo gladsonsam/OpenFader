@@ -1,6 +1,5 @@
 //! MixerDriver adapter; protocol responsibilities live in the sibling modules.
 use crate::{addrs, Dl32sDriver, DL32S_CAPABILITIES};
-use crate::addrs::{dl32s_inputs, INPUT_COUNT};
 use crate::assignments::INPUT_SOLO_FIRST_ADDRESS;
 use openfader_core::{validate_fader, AudioSpectrum, ChannelStrip, MeterFrame, MixerDriver, MixerInfo, MixerSnapshot, ParamUpdate, ParamValue, StripId};
 use openfader_transport::mackie::{VALUE_TYPE_PARAM, VALUE_TYPE_MUTE_GROUP, MUTE_GROUP_COUNT};
@@ -11,27 +10,8 @@ impl MixerDriver for Dl32sDriver {
         "dl32s"
     }
 
-    /// DL32S strip map: 32 input channels only (honest — output-strip
-    /// leaves are served through the bus/subgroup/mute-group/main
-    /// methods below, not as pollable strips, so no extra topology is
-    /// advertised). MeterFrame likewise contains only these 32 input IN levels;
-    /// the 62-word wire prefix is not a flat topology. Its stereo FX-return
-    /// pairs must never be flattened into FX-send or generic strip indices.
-    fn topology(&self) -> Vec<openfader_core::StripFamily> {
-        vec![openfader_core::StripFamily {
-            key: "ch",
-            kind: openfader_core::StripKind::In,
-            label: "Ch 1-32",
-            first: 0,
-            count: INPUT_COUNT as usize,
-            name_prefix: "Ch",
-            color_default: 2,
-        }]
-    }
-
-    fn strip_count(&self) -> usize {
-        INPUT_COUNT as usize
-    }
+    fn topology(&self) -> Vec<openfader_core::StripFamily> { crate::strips::topology() }
+    fn strip_count(&self) -> usize { crate::strips::STRIP_COUNT }
 
     /// Wave-1+2 verified surface: every id names a confirmed DL32S leaf
     /// (see [`DL32S_CAPABILITIES`]). The poller reads exactly this set.
@@ -143,8 +123,8 @@ impl MixerDriver for Dl32sDriver {
 
     async fn set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
         let level = validate_fader(value)?;
-        let ch = Self::channel(strip)?;
-        let addr = dl32s_inputs().address(ch, "fader")?;
+        let (table, ch) = crate::strips::resolve(strip)?;
+        let addr = table.address(ch, "fader")?;
         let db = addrs::DL32S_FADER_SCALE.forward(level);
         let guard = self.session().await?;
         guard.as_ref().expect("checked above").write_float(addr, db).await
@@ -154,8 +134,8 @@ impl MixerDriver for Dl32sDriver {
     /// own writes included, no proof claimed. Verification uses `get_param`
     /// (desk-proven) instead.
     async fn get_fader(&self, strip: StripId) -> anyhow::Result<f32> {
-        let ch = Self::channel(strip)?;
-        let addr = dl32s_inputs().address(ch, "fader")?;
+        let (table, ch) = crate::strips::resolve(strip)?;
+        let addr = table.address(ch, "fader")?;
         let guard = self.session().await?;
         let raw = guard
             .as_ref()
@@ -184,8 +164,8 @@ impl MixerDriver for Dl32sDriver {
     }
 
     async fn set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
-        let ch = Self::channel(strip)?;
-        let addr = dl32s_inputs().address(ch, "mute")?;
+        let (table, ch) = crate::strips::resolve(strip)?;
+        let addr = table.address(ch, "mute")?;
         let guard = self.session().await?;
         guard
             .as_ref()
@@ -194,12 +174,12 @@ impl MixerDriver for Dl32sDriver {
             .await
     }
     async fn set_name(&self, strip: StripId, name: &str) -> anyhow::Result<()> {
-        let ch = Self::channel(strip)?;
+        let ch = crate::strips::name_slot(strip)?;
         self.set_channel_name(ch, name).await
     }
     /// DISPLAY continuity read (inclusive).
     async fn get_name(&self, strip: StripId) -> anyhow::Result<String> {
-        let ch = Self::channel(strip)?;
+        let ch = crate::strips::name_slot(strip)?;
         let guard = self.session().await?;
         guard
             .as_ref()
@@ -242,8 +222,8 @@ impl MixerDriver for Dl32sDriver {
 
     /// DISPLAY continuity read (inclusive).
     async fn get_mute(&self, strip: StripId) -> anyhow::Result<bool> {
-        let ch = Self::channel(strip)?;
-        let addr = dl32s_inputs().address(ch, "mute")?;
+        let (table, ch) = crate::strips::resolve(strip)?;
+        let addr = table.address(ch, "mute")?;
         let guard = self.session().await?;
         guard
             .as_ref()
@@ -336,8 +316,8 @@ impl MixerDriver for Dl32sDriver {
 
     async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
         let g = Self::dl_check_subgroup(group)?;
-        let ch1 = Self::channel(ch)?;
-        let addr = dl32s_inputs().address(ch1, &format!("sub{g}"))?;
+        let (table, ch1) = crate::strips::resolve(ch)?;
+        let addr = table.address(ch1, &format!("sub{g}"))?;
         let guard = self.session().await?;
         guard.as_ref().expect("checked above").write_int(addr, u32::from(member), VALUE_TYPE_PARAM).await
     }
@@ -345,8 +325,8 @@ impl MixerDriver for Dl32sDriver {
     /// DISPLAY continuity read (inclusive).
     async fn get_subgroup_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
         let g = Self::dl_check_subgroup(group)?;
-        let ch1 = Self::channel(ch)?;
-        let addr = dl32s_inputs().address(ch1, &format!("sub{g}"))?;
+        let (table, ch1) = crate::strips::resolve(ch)?;
+        let addr = table.address(ch1, &format!("sub{g}"))?;
         let v = self.request_value_u32(addr).await?.ok_or_else(|| anyhow::anyhow!("subgroup assign: no value pushed yet"))?;
         Ok(v != 0)
     }
@@ -369,8 +349,8 @@ impl MixerDriver for Dl32sDriver {
 
     async fn set_mute_group_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
         let g = Self::dl_check_mute_group(group)?;
-        let ch1 = Self::channel(ch)?;
-        let addr = dl32s_inputs().address(ch1, &format!("mutegroup{g}"))?;
+        let (table, ch1) = crate::strips::resolve(ch)?;
+        let addr = table.address(ch1, &format!("mutegroup{g}"))?;
         let guard = self.session().await?;
         guard.as_ref().expect("checked above").write_int(addr, u32::from(member), VALUE_TYPE_PARAM).await
     }
@@ -378,8 +358,8 @@ impl MixerDriver for Dl32sDriver {
     /// DISPLAY continuity read (inclusive).
     async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
         let g = Self::dl_check_mute_group(group)?;
-        let ch1 = Self::channel(ch)?;
-        let addr = dl32s_inputs().address(ch1, &format!("mutegroup{g}"))?;
+        let (table, ch1) = crate::strips::resolve(ch)?;
+        let addr = table.address(ch1, &format!("mutegroup{g}"))?;
         let v = self.request_value_u32(addr).await?.ok_or_else(|| anyhow::anyhow!("mute-group assign: no value pushed yet"))?;
         Ok(v != 0)
     }
@@ -400,7 +380,7 @@ impl MixerDriver for Dl32sDriver {
     }
 
     fn stereo_pairs(&self) -> Vec<[u16; 2]> {
-        (0..INPUT_COUNT as u16).step_by(2).map(|left| [left, left + 1]).collect()
+        (0..34_u16).step_by(2).map(|left| [left, left + 1]).collect()
     }
 
     async fn control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Vec<StripId>> {
@@ -432,13 +412,12 @@ impl MixerDriver for Dl32sDriver {
     async fn snapshot(&self) -> anyhow::Result<MixerSnapshot> {
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
-        let table = dl32s_inputs();
-        let mut strips = Vec::with_capacity(INPUT_COUNT as usize);
-        for i in 0..INPUT_COUNT {
-            let ch = i + 1;
+        let mut strips = Vec::with_capacity(crate::strips::STRIP_COUNT);
+        for i in 0..crate::strips::STRIP_COUNT {
+            let (table, ch) = crate::strips::resolve(StripId(i as u16))?;
             let fader_addr = table.address(ch, "fader").expect("table static");
             let mute_addr = table.address(ch, "mute").expect("table static");
-            let pan_addr = table.address(ch, "pan").expect("table static");
+            let pan_addr = table.address(ch, "pan").ok();
             // No fabricated defaults: a missing word means the bulk push
             // hasn't covered this strip yet, and reporting 0/unmuted as
             // real would paint the wrong desk state. Surface the read
@@ -457,13 +436,13 @@ impl MixerDriver for Dl32sDriver {
                 .cached(mute_addr)
                 .map(|v| v != 0)
                 .ok_or_else(|| anyhow::anyhow!("snapshot: ch{ch} mute: no value pushed yet"))?;
-            let pan = session
-                .cached(pan_addr)
-                .map(|raw| f32::from_bits(raw) * 100.0)
-                .ok_or_else(|| anyhow::anyhow!("snapshot: ch{ch} pan: no value pushed yet"))?;
+            let pan = if let Some(address) = pan_addr {
+                session.cached(address).map(|raw| f32::from_bits(raw) * 100.0)
+                    .ok_or_else(|| anyhow::anyhow!("snapshot: {} {ch} balance unavailable", table.name))?
+            } else { 0.0 };
             let name = session
-                .name_slot(ch)
-                .unwrap_or_else(|| format!("CH{ch:02}"));
+                .name_slot(crate::strips::name_slot(StripId(i as u16))?)
+                .unwrap_or_else(|| format!("{} {ch}", table.name));
             strips.push(ChannelStrip {
                 id: StripId(i as u16),
                 name,

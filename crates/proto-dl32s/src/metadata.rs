@@ -28,6 +28,10 @@ use crate::Dl32sDriver;
 ///   silent; the UI collapses them, never faked).
 /// - `hpf_slope` — reads constant 2, meaning inferred.
 ///
+/// Return/FX-return/VCA applicability is resolved separately by `strips::scopes`
+/// from the native compiled schemas. Those additions are statically confirmed;
+/// input hardware evidence below does not certify the new families live.
+///
 /// Per-provider caps ranges ride `param_range_overrides` (documented
 /// modern-DL32S bounds, see `DL32S_RANGE_OVERRIDES`); the canonical
 /// catalogue is untouched.

@@ -1,6 +1,16 @@
 part of 'app_store.dart';
 
 extension _StripValues on _AppStoreContext {
+  // Capabilities are per family, not the union of every advertised strip.
+  bool _stripParamApplies(int ch, String field) {
+    if (!engine.supportedParams.contains(field)) return false;
+    final scopes = engine.parameterMetadata[field]?['scopes'];
+    final family = _presetFamily(ch);
+    final tags = family?['params_scope'];
+    final kinds = tags is List ? tags : [family?['kind']];
+    return scopes is List && scopes.any(kinds.contains);
+  }
+
   // Engine state, confirmations and pending edits stay in protocol units.
   // Only UI exposure/writes cross this boundary. SIM already uses the UI
   // law; lawForDriver('sim') would incorrectly select the X-Air fallback.

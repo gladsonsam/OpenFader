@@ -89,15 +89,8 @@ mixin _AppStoreChannel on _AppStoreContext {
       engine.parameterMetadata[AppStore.deskLeaf(leaf)], paramNum);
 
   @override
-  bool paramApplies(String leaf) {
-    final desk = AppStore.deskLeaf(leaf);
-    if (!engine.supportedParams.contains(desk)) return false;
-    final scopes = engine.parameterMetadata[desk]?['scopes'];
-    final family = _presetFamily(_channel);
-    final tags = family?['params_scope'];
-    final kinds = tags is List ? tags : [family?['kind']];
-    return scopes is List && scopes.any(kinds.contains);
-  }
+  bool paramApplies(String leaf) =>
+      _stripParamApplies(_channel, AppStore.deskLeaf(leaf));
 
   @override
   String? localAccessMessage(String leaf) =>
@@ -108,6 +101,7 @@ mixin _AppStoreChannel on _AppStoreContext {
   @override
   bool supports(String leaf) {
     final desk = AppStore.deskLeaf(leaf);
+    if (!paramApplies(leaf)) return false;
     if (!_accessParamAllowed(_channel, desk) ||
         !engine.capsReady ||
         _presetEditingBlocked(_channel, desk)) {
@@ -300,6 +294,7 @@ mixin _AppStoreChannel on _AppStoreContext {
     return engine.supportedParams
         .map((id) => int.tryParse(pattern.firstMatch(id)?.group(1) ?? ''))
         .whereType<int>()
+        .where((n) => paramApplies('$family${n}_assign'))
         .fold(0, math.max);
   }
 
@@ -318,7 +313,9 @@ mixin _AppStoreChannel on _AppStoreContext {
   @override
   int get viewGroupCount => _assignmentCount('view');
   @override
-  bool? viewGroupAssigned(int group) => paramBool('view${group + 1}_assign');
+  bool? viewGroupAssigned(int group) => supports('view${group + 1}_assign')
+      ? paramBool('view${group + 1}_assign')
+      : null;
   @override
   String viewGroupLabel(int group) =>
       paramMetadata('view${group + 1}_assign')?['label'] as String? ??
@@ -569,10 +566,16 @@ mixin _AppStoreChannel on _AppStoreContext {
   }
 
   @override
-  int get subgroupCount => engine.subgroupCount;
+  int get subgroupCount =>
+      engine.subgroupAssign.keys.any((key) => key.startsWith('$_channel:'))
+          ? engine.subgroupCount
+          : 0;
 
   @override
-  int get muteGroupCount => engine.muteGroupCount;
+  int get muteGroupCount =>
+      engine.muteGroupAssign.keys.any((key) => key.startsWith('$_channel:'))
+          ? engine.muteGroupCount
+          : 0;
 
   @override
   bool? subgroupAssigned(int g) =>

@@ -62,18 +62,17 @@ extension _InputPresetGuards on _AppStorePresets {
   }
 
   String _inputFieldDomain(ProcessorPresetTarget target) => jsonEncode({
-    for (final f in (_presetFields(target)..sort())) f: engine.parameterMetadata[f],
-  });
+        for (final f in (_presetFields(target)..sort()))
+          f: engine.parameterMetadata[f],
+      });
 
   String? _inputClipboardReadyError(ProcessorPresetTarget target) {
     final error = _presetReadyError(target);
     if (error != null) return error;
-    if (_presetFamily(target.channel)?['kind'] != 'in') {
-      return 'Input processor copy and paste are unavailable on this channel.';
-    }
     for (final field in _presetFields(target)) {
-      final invalid = _presetValueError(target, field,
-          _maps.confirmed[target.channel]?[field], requireVerified: true);
+      final invalid = _presetValueError(
+          target, field, _maps.confirmed[target.channel]?[field],
+          requireVerified: true);
       if (invalid != null) return invalid;
     }
     return null;

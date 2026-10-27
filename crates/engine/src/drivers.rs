@@ -581,6 +581,8 @@ pub trait DynDriver: Send + Sync {
         let _ = topo;
         Vec::new()
     }
+    /// Strip families served by the existing input patch contracts.
+    fn routing_strip_kind(&self, kind: StripKind) -> bool { kind == StripKind::In }
     /// Scope restrictions applied to this provider's param registry
     /// (`(param id, allowed strip kinds)`; empty = none).
     fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> {
@@ -871,6 +873,8 @@ macro_rules! impl_dyn_driver {
 
 impl_dyn_driver!(openfader_sim::SimDriver {
     fn clear_solo_scope(&self) -> Option<&'static str> { Some("advertised") }
+    fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> { openfader_sim::strip_schema::scopes() }
+    fn routing_strip_kind(&self, kind: StripKind) -> bool { kind == StripKind::In || kind == openfader_sim::strip_schema::RETURN_KIND }
     fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
         let mut planes = routing::input_planes(self);
         planes.extend(routing::output_planes(openfader_sim::output_routing::planes()));
@@ -1319,6 +1323,8 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 });
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
+    fn routing_strip_kind(&self, kind: StripKind) -> bool { matches!(kind, StripKind::In | StripKind::Ret) }
+    fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> { openfader_proto_dl32s::strips::scopes() }
     fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
         let mut planes = routing::input_planes(self);
         planes.extend(routing::output_planes(openfader_proto_dl32s::output_routing::planes()));
