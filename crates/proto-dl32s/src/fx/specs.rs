@@ -1,6 +1,6 @@
 //! Reviewed FX address table, engineering domains and wire encoding.
-// Each listed parameter address was independently changed, observed in
-// the native client and restored against the complete mixer bank.
+// Each listed parameter address was independently changed, observed on
+// the desk and restored against the complete mixer bank.
 // Historic evidence covers only the observed slot/algorithm pairs.
 // Keep these 55 scalar descriptors + four source actions as compatibility
 // overrides; the complete native catalogue lives in core::fx::dl32s.

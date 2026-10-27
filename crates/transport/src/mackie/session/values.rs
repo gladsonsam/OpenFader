@@ -76,13 +76,13 @@ impl MackieSession {
         Ok(())
     }
 
-    /// App-style multi-address write of raw u32 pairs.
+    /// Multi-address write of raw u32 pairs.
     /// Same accepted-but-unverified provenance as [`write_int`](Self::write_int).
     pub async fn write_multi(&self, pairs: &[(u32, u32)], value_type: u8) -> anyhow::Result<()> {
         self.write_multi_guarded(pairs, value_type, &|| true).await
     }
 
-    /// App-style atomic source/bank action with final socket-lane authority.
+    /// Atomic source/bank action with final socket-lane authority.
     /// Cancellation never queues a retry. ACK remains unverified per word.
     pub async fn write_multi_guarded(&self, pairs: &[(u32, u32)], value_type: u8,
         authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
@@ -119,9 +119,8 @@ impl MackieSession {
         Ok(())
     }
 
-    /// Read one global word using the native single-parameter GET (0x12).
-    /// Native client 5.2 `singleParameterGetMandolinMessage` at 0x1001d0f90
-    /// builds [PID, 0x00010000 | target << 8]. Unlike sync-current-state
+    /// Read one global word using the single-parameter GET (0x12).
+    /// It builds [PID, 0x00010000 | target << 8]. Unlike sync-current-state
     /// (0x06/6), this explicitly selects the global/type-2 bank. Only an
     /// inbound value payload proves readback; an empty ACK proves nothing.
     pub async fn request_global_value(&self, address: u32) -> anyhow::Result<()> {

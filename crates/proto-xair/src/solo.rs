@@ -6,7 +6,7 @@
 //!   int `0..=1` (OFF/ON), `/config/solo/level` float `0.0..=1.0`
 //!   (headphone volume), `/config/solo/source` int `0..=14` (OFF, LR,
 //!   LRPFL, LRAFL, AUX, U1718, Bus1-6, Bus12, Bus34, Bus56).
-//! - XR18 protocol notes from native client research (§7):
+//! - XR18 protocol notes from desk research (§7):
 //!   `/config/solo ,fifiifiiii` = (level, source=3, …) — flip-verified
 //!   2026-10-19: `dim 0→1` moves container pos6 only, `mute 0→1` moves pos8
 //!   only, `level` moves pos0; leaf reads match (source reads 3).

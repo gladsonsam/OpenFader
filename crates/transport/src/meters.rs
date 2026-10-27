@@ -13,9 +13,9 @@
 //! legacy plain LE-i16 run below untouched.
 //!
 //! Address forms: driver-subscribes get blobs addressed `/meters/N`, while
-//! app-style `/batchsubscribe` gets the SAME blobs addressed `meters/N`
+//! `/batchsubscribe` gets the SAME blobs addressed `meters/N`
 //! (no leading slash, rig-verified 2026-10-19, XR18 FW 1.20; see
-//! XR18 protocol notes from native client research §4). Both forms route
+//! XR18 protocol notes from desk research §4). Both forms route
 //! into the parse path.
 //!
 //! Blob census (rig lengths): m0:20B m1:84B m2:76B m3:116B m4:204B

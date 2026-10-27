@@ -1,5 +1,5 @@
 //! Explicit DL32S snapshot descriptors, not DL32R geometry or inferred stride.
-//! Each word resolves independently in gDLF32SnapshotParameterTable.
+//! Each word resolves independently in the desk snapshot parameter table.
 pub(super) const BANKS: [[u32; 31]; 4] = [
     [
         3629, 3630, 3631, 3632, 3633, 3634, 3635, 3636, 3637, 3638, 3639, 3640, 3641, 3642, 3643,

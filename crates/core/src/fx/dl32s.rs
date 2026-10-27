@@ -1,6 +1,5 @@
-//! DL32S FX engineering schemas from native client 5.2 compiled tables.
-//! Anchors: g_tFXTable 0x10635e500; gDLF32SnapshotParameterTable
-//! 0x106315c40; FxParameterModel named getters; guide 5.1 pp165–172.
+//! DL32S FX engineering schemas, desk-verified.
+//! Anchors: control reference guide 5.1 pp165–172.
 //! Defaults seed simulation only; production never fabricates values.
 use crate::destinations::{
     DestinationChoice, DestinationControl, DestinationRange, DestinationValue,

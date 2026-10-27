@@ -104,7 +104,7 @@ fn input_head() -> Vec<Field> {
         field("source_b", 1, Int, "Input B source", None, true),
         field("source_select", 2, Enum, "Source A/B", None, true),
         // CH7 trim endpoints -40..+20 dB independently read and restored
-        // against the native client, 2026-10-25 (manual 5.1 p91).
+        // against the desk, 2026-10-25 (manual 5.1 p91).
         field("trim", 3, Db, "Trim", Some((-40.0, 20.0)), true),
         field("icon", 4, Int, "Icon", None, true),
         field("colour", 5, Int, "Colour", None, true),
@@ -118,7 +118,7 @@ fn input_head() -> Vec<Field> {
         // line inputs attenuate -20..40 effective. No input-socket
         // detection exists, so the wire bound stays the union (-20..60) —
         // both ends documented; the mic-side caps contract is 0..60 via
-        // `param_range_overrides` (CH7 MicPre native 0 observed).
+        // `param_range_overrides` (CH7 MicPre 0 observed on the desk).
         field("gain", 12, Db, "Preamp gain", Some((-20.0, 60.0)), true),
         field("phantom", 13, Bool, "48V phantom", None, true),
         field("hpf_on", 14, Bool, "HPF on", None, true),
@@ -392,7 +392,7 @@ fn build_dl32s_map() -> MixerMap {
     }
 }
 
-/// Native client 5.2 (28602), snapshot table at file offset 0x6315c40.
+/// Desk-verified snapshot table layout.
 /// Every family row was compared by (effect, instance, qualifier, parameter),
 /// encoding and domain, including every member. These are separate layouts,
 /// not an extension of the 106-word input array. Static evidence, not live proof.

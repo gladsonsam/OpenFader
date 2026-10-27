@@ -82,14 +82,14 @@ pub fn fx_effect_name(index: u8) -> Option<&'static str> {
 /// Full display name for an effect-type index (`None` = undocumented
 /// index, same gap rule as [`fx_effect_name`]).
 ///
-/// Provenance: 58 of the 60 names are the native client 1.8.1 rack-select
-/// strings (see native client 1.8.1 structure capture §4 —
-/// our own prior strings inventory, names only, no artwork): matched to
+/// Provenance: 58 of the 60 names are the desk rack-select
+/// strings (see hardware structure capture §4 —
+/// a prior strings inventory, names only): matched to
 /// wire indices by family/param semantics (the rack-select order is
 /// grouped by category, NOT wire order). Two are clean-room inferences,
-/// marked below: `PLAT` has no entry in the captured strings
+/// marked below: `PLAT` has no entry in the desk-captured strings
 /// ("Plate Reverb" from the code + plate param family) and `ULC2` takes
-/// "Dual Ultimo Compressor" (the captured "Stereo Ultimo Compressor"
+/// "Dual Ultimo Compressor" (the desk-captured "Stereo Ultimo Compressor"
 /// has no corresponding wire index in the 0..=60 order — possibly a
 /// single-channel variant outside this table; never asserted).
 ///

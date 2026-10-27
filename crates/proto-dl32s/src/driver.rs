@@ -72,7 +72,7 @@ impl MixerDriver for Dl32sDriver {
     }
 
     /// Documented modern-DL32S engineering-unit ranges (control reference
-    /// guide 5.1; native client 5.2 / mixer firmware 1.6).
+    /// guide 5.1; mixer firmware 1.6).
     /// Applied over the canonical (X-Air-shaped) catalogue in this
     /// provider's registry only — sim and xair keep canonical ranges.
     /// Every entry below has known units and a direct wire encoding (dB
@@ -85,7 +85,7 @@ impl MixerDriver for Dl32sDriver {
     /// Deliberately absent (canonical kept, with reason):
     /// - Line-input `-20..40` effective attenuation (p90): no
     ///   input-socket detection exists, so the single mic/balanced `0..60`
-    ///   slider is served (CH7 MicPre native 0 observed, consistent); the
+    ///   slider is served (CH7 MicPre 0 observed on the desk, consistent); the
     ///   existing wire bound is retained without assuming how the physical
     ///   offset is represented.
     ///
@@ -514,7 +514,7 @@ impl MixerDriver for Dl32sDriver {
         self.telemetry_poll_dynamics_meters()
     }
 
-    /// Passive shared RTA: the desk's source selected by the native client,
+    /// Passive shared RTA: the desk's source selected on the desk,
     /// followed read-only — no acquisition, no restore writes. Returns the
     /// global (`strip: None`) frame for the confirmed selector 5000
     /// (`DL32S Return 1–2 (shared)` / `shared`); input selectors 4000–4031
@@ -533,7 +533,7 @@ impl MixerDriver for Dl32sDriver {
 
     /// Passive shared RTA source: release (`None`) is a no-op Ok — there is
     /// nothing owned to restore. A named acquire errors explicitly (no
-    /// default success pretence): the source is selected by the native client;
+    /// default success pretence): the source is selected on the desk;
     /// this stage performs no selector writes. The frontend disables automatic DL32S
     /// target requests.
     async fn set_spectrum_target(
@@ -545,7 +545,7 @@ impl MixerDriver for Dl32sDriver {
             return Ok(());
         }
         anyhow::bail!(
-            "dl32s: RTA source is selected by the native client (shared Return 1–2); automatic acquisition is disabled"
+            "dl32s: RTA source is selected on the desk (shared Return 1–2); automatic acquisition is disabled"
         )
     }
 
