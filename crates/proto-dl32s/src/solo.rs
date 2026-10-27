@@ -1,5 +1,5 @@
-//! Native 5.2 static SOLO bank: type2 PID23..84, Bool 0/1.
-//! See /tmp/openfader-native-solo-map-20261027.json. No SIP/Main mapping.
+//! DL32S static SOLO bank: type2 PID23..84, Bool 0/1.
+//! Desk-verified mapping. No SIP/Main mapping.
 use crate::Dl32sDriver;
 use openfader_core::destinations::{DestinationControl, DestinationValue};
 use openfader_transport::mackie::{

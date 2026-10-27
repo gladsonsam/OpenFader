@@ -289,8 +289,8 @@ impl OscSession {
         self.latest_meter.lock().unwrap().clone()
     }
 
-    /// App-style per-param push subscribe (VERIFIED live 2026-10-19, XR18
-    /// FW 1.20, XR18 protocol notes from native client research §4):
+    /// Per-param push subscribe (VERIFIED live 2026-10-19, XR18
+    /// FW 1.20, XR18 protocol notes from desk research §4):
     /// sends `/subscribe` with `sub_slot` (string, e.g. `"meters/9"`),
     /// `path` (string) and `long(1)`. The desk then streams that param's
     /// value at ~20/s addressed as the param itself; other-param changes
@@ -311,8 +311,8 @@ impl OscSession {
         .await
     }
 
-    /// App-style meter blob subscribe (VERIFIED live 2026-10-19, XR18 FW
-    /// 1.20, XR18 protocol notes from native client research §4):
+    /// Meter blob subscribe (VERIFIED live 2026-10-19, XR18 FW
+    /// 1.20, XR18 protocol notes from desk research §4):
     /// sends `/batchsubscribe` with `sub_slot` (string, e.g.
     /// `"meters/1"`), `meter_path` (string, e.g. `"/meters/1"`) and `long`
     /// ×3 (zeros; trailing values do not gate the flow, their meaning is
@@ -339,8 +339,8 @@ impl OscSession {
         .await
     }
 
-    /// App-style subscription renewal (VERIFIED live 2026-10-19, XR18 FW
-    /// 1.20, XR18 protocol notes from native client research §4): sends `/renew` +
+    /// Subscription renewal (VERIFIED live 2026-10-19, XR18 FW
+    /// 1.20, XR18 protocol notes from desk research §4): sends `/renew` +
     /// `sub_slot` (string). Sent while the subscription is live it EXTENDS
     /// the stream (alive at t+14 s); sent after death it does NOT
     /// resurrect, resubscribe instead.
@@ -352,8 +352,8 @@ impl OscSession {
         .await
     }
 
-    /// App-style subscription stop (VERIFIED live 2026-10-19, XR18 FW 1.20 
-    /// XR18 protocol notes from native client research §4): sends `/unsubscribe` +
+    /// Subscription stop (VERIFIED live 2026-10-19, XR18 FW 1.20
+    /// XR18 protocol notes from desk research §4): sends `/unsubscribe` +
     /// `sub_slot` (string). Expect a few in-flight residuals after the stop.
     pub async fn unsubscribe(&self, sub_slot: &str) -> anyhow::Result<()> {
         self.send(

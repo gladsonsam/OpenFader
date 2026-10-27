@@ -157,7 +157,7 @@ mixin _AppStoreInput on _AppStoreContext {
           raw is String && raw.trim().isNotEmpty ? raw : 'Source unavailable',
       sourceA: paramNum('source_a')?.toInt(),
       sourceB: paramNum('source_b')?.toInt(),
-      // DL32S wire selector is 1=A / 0=B, verified against the native client.
+      // DL32S wire selector is 1=A / 0=B, verified against the desk.
       // The view model uses the displayed A/B index, 0=A / 1=B.
       selected: selected == null
           ? null

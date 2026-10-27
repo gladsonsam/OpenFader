@@ -118,7 +118,7 @@ mixin _AppStoreChannel on _AppStoreContext {
         !_sendDestinationIsStereoAux(int.parse(sendPan[1]!))) {
       return false;
     }
-    // The native client's modern DL32S EQ disables Q while a shelf is selected
+    // The desk's modern DL32S EQ disables Q while a shelf is selected
     // (reference guide p101). Keep the stored value, but block every edit
     // path, including pinch and a previously focused numeric readout.
     final eqQ = RegExp(r'^eq([1-4])_q$').firstMatch(desk);

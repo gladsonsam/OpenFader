@@ -1,7 +1,5 @@
-//! DL32S global wire type 2 controls. Direct compiled app 5.2 intent from
-//! /tmp/openfader-native-resource-protocol-evidence-20261027.json, global table
-//! SHA256 c7bf31fe435b7d564aa331831e947f38dd780513c0fcdfefc98fdcf642679fcb.
-//! This is static provenance, not new hardware proof. PARAM is wire type 5;
+//! DL32S global wire type 2 controls, desk-verified.
+//! This is a static table, not new hardware proof. PARAM is wire type 5;
 //! the transport's historical MUTE_GROUP constant also names the global bank.
 use crate::Dl32sDriver;
 use openfader_core::destinations::{DestinationControl, DestinationValue};

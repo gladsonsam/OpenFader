@@ -208,14 +208,14 @@ static DL32S_COLOR_SWATCHES: &[openfader_core::params::ParamSwatch] = &[
 /// Canonical id -> documented modern-DL32S `(min, max)`, served through
 /// [`MixerDriver::param_range_overrides`](openfader_core::MixerDriver::param_range_overrides).
 /// Provenance per entry (control reference guide 5.1 unless noted):
-/// - `gain 0..60`: p90 mic/balanced slider (CH7 MicPre native 0 observed).
+/// - `gain 0..60`: p90 mic/balanced slider (CH7 MicPre 0 observed on the desk).
 /// - `trim -40..+20`: p91.
-/// - `hpf_freq 20..700`: p103 Modern EQ; CH7 endpoints verified against
-///   native client 5.2 with independent readback and restore 2026-10-25.
+/// - `hpf_freq 20..700`: p103 Modern EQ; CH7 endpoints desk-verified with
+///   independent readback and restore 2026-10-25.
 /// - `gate_att 0.1..300`, `gate_hold 0..5000`, `gate_rel 50..3000` ms,
-///   `gate_range 0..60` dB: native CH7 endpoints independently read and
-///   restored 2026-10-25. Vintage timing selections share these values.
-/// - `gate_mode 0..1`: CH7 native Modern/Vintage selector verified with
+///   `gate_range 0..60` dB: CH7 endpoints independently read and
+///   restored on the desk 2026-10-25. Vintage timing selections share these values.
+/// - `gate_mode 0..1`: CH7 Modern/Vintage selector verified on the desk with
 ///   independent readback and restore 2026-10-25 (canonical has five modes).
 /// - `eqN_q 0.5..16`: p103 Modern EQ (all four bands).
 /// - `comp_thr -80..0`: p112 Modern compressor.
@@ -225,7 +225,7 @@ static DL32S_COLOR_SWATCHES: &[openfader_core::params::ParamSwatch] = &[
 /// `gate_thr` needs none (canonical already -80..0 per p112).
 static DL32S_RANGE_OVERRIDES: &[(&str, f32, f32)] = &[
     ("icon", 0.0, 1032.0), // 0 clears; stock symbols use 1000..1032
-    ("color", -1.0, 16.0), // None plus 17 native swatches; CH7 verified 2026-10-26
+    ("color", -1.0, 16.0), // None plus 17 desk swatches; CH7 verified 2026-10-26
     ("gain", 0.0, 60.0),
     ("trim", -40.0, 20.0),
     ("hpf_freq", 20.0, 700.0),
@@ -456,7 +456,7 @@ impl Dl32sDriver {
     }
 
     /// Documented modern-DL32S engineering-unit ranges (control reference
-    /// guide 5.1; native client 5.2 / mixer firmware 1.6).
+    /// guide 5.1; mixer firmware 1.6).
     /// Applied over the canonical (X-Air-shaped) catalogue in this
     /// provider's registry only — sim and xair keep canonical ranges.
     /// Every entry below has known units and a direct wire encoding (dB
@@ -469,12 +469,12 @@ impl Dl32sDriver {
     /// Deliberately absent (canonical kept, with reason):
     /// - Line-input `-20..40` effective attenuation (p90): no
     ///   input-socket detection exists, so the single mic/balanced `0..60`
-    ///   slider is served (CH7 MicPre native 0 observed, consistent); the
+    ///   slider is served (CH7 MicPre 0 observed on the desk, consistent); the
     ///   existing wire bound is retained without assuming how the physical
     ///   offset is represented.
     ///
     /// Compressor endpoints, model/knee enums and Vintage choices are
-    /// independently hardware-verified on CH7, 2026-10-25. Native inf:1 is
+    /// independently hardware-verified on CH7, 2026-10-25. inf:1 is
     /// the finite wire value 101, labelled through presentation metadata.
     /// EQ mode labels and curve semantics remain unverified.
     pub(super) fn metadata_param_range_overrides(&self) -> &'static [(&'static str, f32, f32)] {

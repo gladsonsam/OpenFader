@@ -17,7 +17,7 @@ pub fn query_message(addr: &str) -> anyhow::Result<Vec<u8>> {
 /// Decode one UDP datagram into a packet.
 ///
 /// Slashless fallback (rig-verified 2026-10-19, XR18 FW 1.20, see
-/// XR18 protocol notes from native client research §4): the desk addresses
+/// XR18 protocol notes from desk research §4): the desk addresses
 /// `/batchsubscribe` meter blobs as `meters/N` with NO leading slash,
 /// which the strict decoder rejects. When strict decode fails AND the
 /// datagram's leading address string is a slashless `meters` addr, retry

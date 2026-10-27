@@ -1,12 +1,6 @@
-//! DL32S output patching from native client 5.2 (28602), x86_64.
-//! Executable SHA256 efee2537ba2a65315d4952f837c2a85452769e53f9f1790e8ce206f13c4d1e57.
-//! DLF32 descriptor rows (52 bytes) at file 0x6357f58: type5 PID5214..5257.
-//! DLDeviceChannelModel::getOutputSources at VM0x1000f6ad0 returns member+a0;
-//! createChannels 0x1000f3304..0x1000f38f4 populates that list. getIPadSources
-//! at 0x1000f6c50 returns+b8, populated at 0x1000f3ba4..0x1000f3f84.
-//! DLFresh32Definition::channelInstanceMap at 0x1001244b0 bounds input32,
-//! return2, FXreturn4 (two sides), subgroup6, aux8, headphone2, matrix absent.
-//! Sources are those explicit loops/constants, NOT the 0..17000 envelope.
+//! DL32S output patching, desk-verified.
+//! DLF32 descriptor rows: type5 PID5214..5257.
+//! Sources are those explicit descriptor rows, NOT the 0..17000 envelope.
 //! NONE is a named enum but absent from these compiled selection lists: no
 //! clear is advertised. USB omits generator/monitor; neither list has Dante.
 //! Static intent only: firmware semantics and USB taps await owner live proof.

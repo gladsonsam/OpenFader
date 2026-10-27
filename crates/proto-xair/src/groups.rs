@@ -4,8 +4,8 @@
 //!
 //! - Behringer XR18 firmware OSC map, FW 1.14 (xr-meters `parameters.txt`):
 //!   every channel/bus strip carries a `grp/` node with `dca` + `mute`
-//!   leaves; the XR18 protocol notes from native client 1.8.1 research
-//!   (plus its live full-plane capture (2026-10-19)) show
+//!   leaves; the XR18 protocol notes from desk research
+//!   (plus a live full-plane desk capture (2026-10-19)) show
 //!   `/ch/NN/grp/dca`, `/ch/NN/grp/mute` (and the `/bus/N`, `/rtn/N`,
 //!   `/rtn/aux`, `/fxsend/N` parallels) answering int `0`, with the
 //!   two-int `/ch/NN/grp` container reading `(dca, mute)`.

@@ -4,7 +4,7 @@ use openfader_core::destinations::{DestinationChoice, DestinationControl};
 use openfader_transport::mackie::{MackieSession, VALUE_TYPE_PARAM};
 use std::sync::atomic::Ordering;
 
-// Each Aux1..8 address was independently changed in the native client from
+// Each Aux1..8 address was independently changed on the desk from
 // Pre Fader1 -> Pre DSP2 and restored against the complete bank. Other
 // tap values and the separate Use LR Mute flag remain unverified.
 const AUX_SEND_SOURCE_ADDRESSES: [u32; 8] = [4434, 4524, 4614, 4704, 4794, 4884, 4974, 5064];

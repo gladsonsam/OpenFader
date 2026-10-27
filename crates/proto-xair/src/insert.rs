@@ -2,11 +2,11 @@
 //!
 //! Doc sources (address shapes):
 //!
-//! - XR18 protocol notes from native client research (§7):
+//! - XR18 protocol notes from desk research (§7):
 //!   `insert ,ii` = **(on, sel)** — the container carries exactly the two
 //!   leaves below, no position leaf.
-//! - Owner full-plane capture
-//!   (native client 1.8.1 live full-plane capture (2026-10-19)):
+//! - Owner full-plane desk capture
+//!   (live full-plane capture (2026-10-19)):
 //!   `/ch/01..16`, `/bus/1..6` and `/lr` answer `insert`, `insert/on` and
 //!   `insert/sel`; `/rtn/*`, `/rtn/aux`, `/fxsend/*` and `/dca/*` carry no
 //!   insert node (silence, not guessed).
