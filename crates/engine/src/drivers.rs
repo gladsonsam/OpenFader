@@ -382,6 +382,12 @@ pub trait DynDriver: Send + Sync {
     /// Preserve provider-defined legacy target aliases at the write guard.
     fn canonical_routing_target<'a>(&self, target: &'a str) -> &'a str { target }
     fn routing_control(&self, _target: &str) -> &str { "source" }
+    fn output_route(&self, _id: &str) -> anyhow::Result<openfader_core::routing::RouteState> {
+        anyhow::bail!("Output routing unsupported")
+    }
+    async fn set_output_route(&self, _id: &str, _source: &str, _expected: &openfader_core::routing::RouteState, _context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+        anyhow::bail!("Output routing unsupported")
+    }
     fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
         routing::input_planes(self)
     }
@@ -857,6 +863,19 @@ macro_rules! impl_dyn_driver {
 }
 
 impl_dyn_driver!(openfader_sim::SimDriver {
+    fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
+        let mut planes = routing::input_planes(self);
+        planes.extend(routing::output_planes(openfader_sim::output_routing::planes()));
+        planes
+    }
+    fn output_route(&self, id: &str) -> anyhow::Result<openfader_core::routing::RouteState> {
+        self.output_route(id)
+    }
+    async fn set_output_route(&self, id: &str, source: &str, expected: &openfader_core::routing::RouteState, context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+        anyhow::ensure!(context(), "Output engine session or policy changed");
+        self.set_output_route(id, source, expected)
+    }
+
     fn send_destination(&self, slot: u16) -> Option<SendDestination> {
         send_destinations::legacy_send_destination(slot, 6, 4)
     }
@@ -1293,6 +1312,18 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 });
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
+    fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
+        let mut planes = routing::input_planes(self);
+        planes.extend(routing::output_planes(openfader_proto_dl32s::output_routing::planes()));
+        planes
+    }
+    fn output_route(&self, id: &str) -> anyhow::Result<openfader_core::routing::RouteState> {
+        self.output_route(id)
+    }
+    async fn set_output_route(&self, id: &str, source: &str, expected: &openfader_core::routing::RouteState, context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+        self.set_output_route_guarded(id, source, expected, context).await
+    }
+
     fn clear_solo_scope(&self) -> Option<&'static str> { Some("inputs") }
     fn send_destination(&self, slot: u16) -> Option<SendDestination> {
         send_destinations::legacy_send_destination(slot, 8, 4)

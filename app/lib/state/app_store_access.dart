@@ -213,7 +213,17 @@ mixin _AppStoreAccess on _AppStoreContext {
   @override
   List<AccessLimitOption> get accessOptions {
     final fields = engine.supportedParams;
+    final routeDestinations = [
+      for (final plane in (engine.routingCaps['planes'] as List? ?? const []))
+        if (plane is Map)
+          for (final destination
+              in (plane['destinations'] as List? ?? const []))
+            if (destination is Map) destination,
+    ];
     final targets = <String, String>{
+      for (final d in routeDestinations)
+        if (d['output'] == true && d['key'] is String && d['label'] is String)
+          d['key'] as String: d['label'] as String,
       for (final control in engine.destinationControls)
         _targetKey(control.target): control.targetLabel,
       if (engine.mainFader != null || engine.mainMuted != null)
@@ -240,6 +250,8 @@ mixin _AppStoreAccess on _AppStoreContext {
                 target,
     };
     final available = <AccessFamily>{
+      if (routeDestinations.any((d) => d['output'] == true))
+        AccessFamily.outputRouting,
       if (engine.routingCaps['supported'] == true ||
           fields.any((f) => f != 'source' && _inputRoutingFields.contains(f)))
         AccessFamily.inputRouting,
@@ -389,10 +401,26 @@ mixin _AppStoreAccess on _AppStoreContext {
             : cmd as String,
       );
     }
-    // Advertised patch commands currently address input strip sources. Their
-    // target selects an input source slot, not a master/output patch.
     if (cmd == 'patch_set' || cmd == 'patch_clear' || cmd == 'route_patch') {
-      return accessFamilyAllowed(AccessFamily.inputRouting);
+      final destinations = [
+        for (final plane in (engine.routingCaps['planes'] as List? ?? const []))
+          if (plane is Map)
+            for (final d in (plane['destinations'] as List? ?? const []))
+              if (d is Map) d,
+      ];
+      return routingCommandAccessAllowed(command, destinations,
+          familyAllowed: accessFamilyAllowed,
+          targetAllowed: accessTargetAllowed,
+          membersFor: (strip) {
+            final pair =
+                engine.stereoPairs.where((p) => p.contains(strip)).firstOrNull;
+            return pair == null ||
+                    pair.every((ch) => engine.params[ch]?['link'] == false)
+                ? [strip]
+                : pair;
+          },
+          memberKey: (member) =>
+              engine.strips.where((s) => s.ch == member).firstOrNull?.key);
     }
     if (cmd == 'clear_solo') {
       return canClearSolos;

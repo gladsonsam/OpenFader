@@ -27,6 +27,7 @@ pub fn input_planes<D: DynDriver + ?Sized>(drv: &D) -> Vec<RoutingPlaneCaps> {
                     .filter_map(|(f, i)| {
                         let key = openfader_core::strip_key_for_index(&topo, i)?;
                         Some(RoutingDestinationCaps {
+                            output: false,
                             id: format!("{plane}/{key}"),
                             key,
                             strip: i as u16,
@@ -45,6 +46,40 @@ pub fn input_planes<D: DynDriver + ?Sized>(drv: &D) -> Vec<RoutingPlaneCaps> {
                     })
                     .collect(),
             }
+        })
+        .collect()
+}
+
+/// Non-strip destination IDs are never resolved through strip topology.
+pub fn output_planes(planes: Vec<openfader_core::routing::OutputPlane>) -> Vec<RoutingPlaneCaps> {
+    planes
+        .into_iter()
+        .map(|p| RoutingPlaneCaps {
+            key: p.key.into(),
+            label: p.label.into(),
+            destinations: (1..=p.count)
+                .map(|slot| {
+                    let id = format!("{}/{slot:02}", p.key);
+                    RoutingDestinationCaps {
+                        output: true,
+                        id: id.clone(),
+                        key: id,
+                        strip: slot - 1,
+                        label: format!("{} {slot}", p.label),
+                        target: p.key.into(),
+                        clearable: p.clearable,
+                        source_groups: p
+                            .sources
+                            .iter()
+                            .map(|(key, label, count)| crate::protocol::RoutingGroupCaps {
+                                key: (*key).into(),
+                                label: (*label).into(),
+                                count: *count,
+                            })
+                            .collect(),
+                    }
+                })
+                .collect(),
         })
         .collect()
 }

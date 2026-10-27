@@ -10,6 +10,7 @@ mod input_processor;
 mod library;
 mod offline;
 mod processing;
+mod output_routing;
 
 impl Engine {
     /// Adapter entry: apply one raw JSON command line from `writer` without
@@ -135,6 +136,7 @@ impl Engine {
         if self.prune_expired_locks() {
             out.push(self.locks_message_inner());
         }
+        if self.apply_output_route(&cmd, writer, out).await? { return Ok(None); }
         let routing_context = match &cmd {
             Cmd::RoutePatch { driver, epoch, expected, .. } => {
                 Some((driver.clone(), *epoch, expected.clone()))

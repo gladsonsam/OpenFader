@@ -623,9 +623,11 @@ fn default_fx_for(preset: SimPreset) -> Vec<SimFxSlot> {
         .collect()
 }
 mod input_processors;
+pub mod output_routing;
 mod global_controls;
 
 pub struct SimDriver {
+    output_routes: RwLock<HashMap<String, (String, u64)>>,
     globals: RwLock<Vec<openfader_core::destinations::DestinationControl>>,
     processor_revision: AtomicU64,
     processor_generation: AtomicU64,
@@ -687,6 +689,7 @@ impl SimDriver {
             })
             .collect();
         Self {
+            output_routes: RwLock::new(HashMap::new()),
             globals: RwLock::new(openfader_core::global_controls::reference_controls()),
             processor_revision: AtomicU64::new(0),
             processor_generation: AtomicU64::new(0),
@@ -1139,6 +1142,7 @@ impl MixerDriver for SimDriver {
     }
 
     async fn connect(&self, _addr: &str) -> anyhow::Result<()> {
+        let _routes = self.output_routes.write().expect("sim output routes poisoned");
         self.processor_generation.fetch_add(1, Ordering::AcqRel);
         *self.connected.write().expect("sim flag poisoned") = true;
         Ok(())
