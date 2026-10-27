@@ -1027,10 +1027,10 @@ impl SimDriver {
 impl MixerDriver for SimDriver {
     fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> { self.global_controls() }
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
-        self.write_global(target, control, value, expected, None)
+        self.write_global(target, control, value, expected, None).map(|_| ())
     }
-    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<()> {
-        self.write_global(target, control, value, expected, Some(snapshot))
+    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
+        self.write_global(target, control, value, expected, Some(snapshot)).map(Some)
     }
 
     fn stereo_pairs(&self) -> Vec<[u16; 2]> {

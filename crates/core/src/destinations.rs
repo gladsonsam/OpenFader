@@ -45,6 +45,9 @@ pub struct DestinationControl {
     /// This numeric control accepts a tapped period in ms/s, or a tempo
     /// in BPM. Providers opt in only where tapping is supported.
     pub tap_tempo: bool,
+    /// Explicit provider opt-in to local press/release semantics. `talkback`
+    /// uses binary 0/1 and requires a verified guarded-write receipt.
+    pub gesture: Option<&'static str>,
     pub choices: Vec<DestinationChoice>,
     pub range: Option<DestinationRange>,
     pub current: Option<DestinationValue>,

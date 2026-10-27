@@ -34,6 +34,9 @@ class DestinationControlVm {
   final String id;
   final String label;
   final bool tapTempo;
+
+  /// Explicit provider opt-in; IDs/binary choices alone imply no gesture.
+  final bool talkbackGesture;
   final List<DestinationChoiceVm> choices;
   final double? min;
   final double? max;
@@ -57,6 +60,7 @@ class DestinationControlVm {
       this.id,
       this.label,
       this.tapTempo,
+      this.talkbackGesture,
       this.choices,
       this.min,
       this.max,
@@ -195,6 +199,7 @@ class DestinationControlVm {
         id,
         label,
         tapTempo == true,
+        data['gesture'] == 'talkback',
         List.unmodifiable(choices),
         min,
         max,
@@ -220,6 +225,7 @@ class DestinationControlVm {
       id == other.id &&
       label == other.label &&
       tapTempo == other.tapTempo &&
+      talkbackGesture == other.talkbackGesture &&
       value == other.value &&
       authority == other.authority &&
       min == other.min &&
@@ -243,7 +249,7 @@ class DestinationControlVm {
       description,
       id,
       label,
-      tapTempo,
+      Object.hash(tapTempo, talkbackGesture),
       value,
       authority,
       min,
@@ -251,4 +257,12 @@ class DestinationControlVm {
       unit,
       decimals,
       Object.hashAll(choices));
+}
+
+/// Receipt comes from a provider-held write lane after independent readback.
+/// A later matching cache value cannot be substituted to infer ownership.
+class DestinationEditResult {
+  final String? error;
+  final DestinationControlVm? applied;
+  const DestinationEditResult(this.error, [this.applied]);
 }

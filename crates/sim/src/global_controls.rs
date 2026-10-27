@@ -24,7 +24,7 @@ impl SimDriver {
         value: f32,
         expected: f32,
         snapshot: Option<&[DestinationControl]>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<DestinationControl> {
         let mut rows = self.globals.write().expect("sim globals poisoned");
         if let Some(snapshot) = snapshot {
             let generation = self.processor_generation.load(Ordering::Acquire);
@@ -59,6 +59,8 @@ impl SimDriver {
             verified: true,
         });
         row.revision = row.revision.map(|r| r.wrapping_add(1));
-        Ok(())
+        let mut receipt = row.clone();
+        receipt.generation = Some(self.processor_generation.load(Ordering::Acquire));
+        Ok(receipt)
     }
 }

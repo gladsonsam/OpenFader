@@ -99,6 +99,7 @@ impl Engine {
             "value": control.current.as_ref().map(|value| value.value),
             "authority": control.current.as_ref().map(|value| if value.verified { "verified" } else { "accepted" }),
             });
+            if let Some(gesture) = control.gesture { row["gesture"] = json!(gesture); }
             if control.tap_tempo { row["tap_tempo"] = json!(true); }
             row
         }).collect()

@@ -127,6 +127,7 @@ impl OutputProcessingCache {
                 surface: spec.surface.into(),
                 id: spec.id.clone(),
                 label: spec.label.clone(),
+                gesture: None,
                 tap_tempo: false,
                 description: if spec.bank == Bank::System {
                     "Shared temperature compensation for alignment delays on all outputs. Changing this changes delay times while preserving speaker distances.".into()

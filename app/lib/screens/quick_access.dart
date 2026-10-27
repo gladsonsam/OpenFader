@@ -4,6 +4,7 @@ import '../core/quick_access.dart';
 import '../core/destination_controls.dart';
 import '../palette.dart';
 import '../widgets/destination_control_editor.dart';
+import '../widgets/talkback_button.dart';
 
 /// This panel never owns navigation, a poll loop, or a command queue.
 class QuickAccessPanel extends StatefulWidget {
@@ -14,10 +15,35 @@ class QuickAccessPanel extends StatefulWidget {
   State<QuickAccessPanel> createState() => _QuickAccessPanelState();
 }
 
-class _QuickAccessPanelState extends State<QuickAccessPanel> {
+class _QuickAccessPanelState extends State<QuickAccessPanel>
+    with WidgetsBindingObserver {
   late final int _session = widget.store.session;
   final Set<String> _pending = {};
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) widget.store.cancelTalkback();
+  }
+
+  @override
+  void didUpdateWidget(covariant QuickAccessPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.store != widget.store) oldWidget.store.cancelTalkback();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.store.cancelTalkback();
+    super.dispose();
+  }
 
   Future<void> _run(DestinationControlVm control, {required bool tap}) async {
     final key = '${control.target}/${control.id}';
@@ -45,17 +71,19 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
     }
   }
 
-  Future<void> _edit(DestinationControlVm control) => showDialog<void>(
-        context: context,
-        builder: (_) => DestinationControlEditor(
-          changes: widget.store,
-          isCurrent: (control) =>
-              _session == widget.store.session &&
-              widget.store.isCurrent(control),
-          apply: widget.store.setControl,
-          control: control,
-        ),
-      );
+  Future<void> _edit(DestinationControlVm control) {
+    widget.store.cancelTalkback();
+    return showDialog<void>(
+      context: context,
+      builder: (_) => DestinationControlEditor(
+        changes: widget.store,
+        isCurrent: (control) =>
+            _session == widget.store.session && widget.store.isCurrent(control),
+        apply: widget.store.setControl,
+        control: control,
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -169,9 +197,7 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
                         ),
                       ),
                   ],
-                  if (store.globalControls.any(
-                    (control) => control.target == 'talkback',
-                  )) ...[
+                  if (store.talkbackGestureControl != null) ...[
                     DropdownButtonFormField<TalkbackModePreference>(
                       key: ValueKey(store.talkbackModePreference),
                       initialValue: store.talkbackModePreference,
@@ -196,8 +222,14 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
                         if (mode != null) store.setTalkbackModePreference(mode);
                       },
                     ),
-                    if (store.talkbackGestureUnavailable case final reason?)
-                      Text(reason),
+                    const Text('Momentary: hold to talk. Latch: tap to toggle. '
+                        'Auto: tap to latch, hold 500 ms or longer for momentary. '
+                        '500 ms is the OpenFader threshold; native timing is undocumented. '
+                        'Release/cancel preserves pre-existing or changed peer activations.'),
+                    TalkbackButton(
+                        store: store, currentSession: currentSession),
+                    if (store.talkbackGestureError case final error?)
+                      Text(error, style: TextStyle(color: palette.meterAmber)),
                   ],
                   if (store.clearSoloLabel case final label?) ...[
                     const Divider(),
