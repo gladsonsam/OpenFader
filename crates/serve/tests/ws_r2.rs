@@ -160,6 +160,9 @@ async fn ws_r2_scene_fx_routing_roundtrip() {
             break;
         }
     }
+    // Drain the completed recall, including its restored FX rack, before
+    // checking the response to a subsequent FX edit.
+    next_typed(&mut rx, "scenes").await;
     send(&mut tx, json!({"cmd":"fx_set_type","slot":2,"type":"Delay"})).await;
     let fx = next_typed(&mut rx, "fx").await;
     let slots = fx.get("slots").and_then(Value::as_array).unwrap();

@@ -580,14 +580,17 @@ async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
         ..Default::default()
     };
     let mut out = Vec::new();
-    engine
+    let error = engine
         .recall_full(&rejected, 0, Some(&scope), "test", &mut out)
         .await
-        .unwrap();
+        .unwrap_err();
     assert!(!out
         .iter()
         .any(|event| matches!(event, Event::Param { field, .. } if field == "wing:source_mode")));
-    assert!(out.iter().any(|event| matches!(event, Event::Error {message,..} if message.contains("Scene recall skipped 1 setting(s)") && message.contains("wing:source_mode"))));
+    assert!(error
+        .to_string()
+        .contains("Snapshot recall incomplete: 1 setting(s)"));
+    assert!(error.to_string().contains("wing:source_mode"));
     // Auto switching is active. Stored source context must reach the
     // guarded preamp write, even in an input-only scoped recall.
     let mut preamp = scene.clone();
@@ -616,16 +619,16 @@ async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
         .insert("source_a".into(), json!(1004.));
     writes.lock().unwrap().clear();
     out.clear();
-    engine
+    let error = engine
         .recall_full(&preamp, 0, Some(&scope), "test", &mut out)
         .await
-        .unwrap();
+        .unwrap_err();
     drv.get_fader(StripId(0)).await.unwrap();
     assert!(writes.lock().unwrap().is_empty());
     assert!(!out
         .iter()
         .any(|event| matches!(event, Event::Param {field,..} if field == "gain")));
-    assert!(out.iter().any(|event| matches!(event, Event::Error { .. })));
+    assert!(error.to_string().contains("Input source changed"));
     drv.disconnect().await.unwrap();
     task.abort();
 }
