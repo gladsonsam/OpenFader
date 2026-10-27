@@ -183,6 +183,26 @@ pub fn usbreturn_from_msg(msg: &OscMessage) -> anyhow::Result<i32> {
     Ok(i)
 }
 
+/// Strict integer decoding for the active-source selector and its source index.
+pub(super) fn source_selector(msg: &OscMessage, max: i32) -> anyhow::Result<i32> {
+    match msg.args.as_slice() {
+        [OscType::Int(value)] if (0..=max).contains(value) => Ok(*value),
+        _ => anyhow::bail!("{}: invalid source selector", msg.addr),
+    }
+}
+
+/// The physical and USB source banks are zero-based on the mixer.
+pub(super) fn source_label(mode: i32, source: i32) -> String {
+    match (mode, source) {
+        (0, n @ 0..=15) => format!("Mic {}", n + 1),
+        (0, 16) => "Aux L".into(),
+        (0, 17) => "Aux R".into(),
+        (0, 18) => "Off".into(),
+        (1, n @ 0..=17) => format!("USB {}", n + 1),
+        _ => unreachable!("validated source selector"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,25 +302,5 @@ mod tests {
             args: vec![OscType::String("U18".into())],
         };
         assert!(usbreturn_from_msg(&wrong_kind).is_err());
-    }
-}
-
-/// Strict integer decoding for the active-source selector and its source index.
-pub(super) fn source_selector(msg: &OscMessage, max: i32) -> anyhow::Result<i32> {
-    match msg.args.as_slice() {
-        [OscType::Int(value)] if (0..=max).contains(value) => Ok(*value),
-        _ => anyhow::bail!("{}: invalid source selector", msg.addr),
-    }
-}
-
-/// The physical and USB source banks are zero-based on the mixer.
-pub(super) fn source_label(mode: i32, source: i32) -> String {
-    match (mode, source) {
-        (0, n @ 0..=15) => format!("Mic {}", n + 1),
-        (0, 16) => "Aux L".into(),
-        (0, 17) => "Aux R".into(),
-        (0, 18) => "Off".into(),
-        (1, n @ 0..=17) => format!("USB {}", n + 1),
-        _ => unreachable!("validated source selector"),
     }
 }
