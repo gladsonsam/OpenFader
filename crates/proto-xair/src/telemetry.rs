@@ -234,11 +234,10 @@ impl XAirDriver {
     /// (pre-mute taps — live-verified pattern 2026-10-20: hot while the
     /// channels sit muted, ch15-anchored at idx 14, aux pre pair at 16/17),
     /// and idx 26 feeds the aux-return strip 35 (`/rtn/aux` mute-gated,
-    /// live-verified 2026-10-20). Strips past the channels (FX/bus/main/
-    /// DCA) and the remaining blob slots have no rig-verified strip
-    /// mapping, so they read honest silence here — never a neighbor's
-    /// level. `None` (no blob yet) reads back full-map silence, like the
-    /// core default.
+    /// live-verified 2026-10-20). The documented main post-fader L/R pair
+    /// at 36/37 feeds the single main strip meter using the louder side
+    /// (xr-meters main.js; not yet rig-verified). Other unmapped strips
+    /// read silence. Missing or stale data returns an empty frame.
     pub(super) fn driver_poll_meters(&self) -> openfader_core::MeterFrame {
         let sample = self.meter_latest.lock().unwrap();
         let Some((_, latest)) = sample
@@ -253,6 +252,9 @@ impl XAirDriver {
         }
         if let Some(v) = latest.get(26) {
             levels[35] = *v;
+        }
+        if let (Some(left), Some(right)) = (latest.get(36), latest.get(37)) {
+            levels[30] = left.max(*right);
         }
         openfader_core::MeterFrame { levels }
     }
