@@ -111,14 +111,14 @@ def main():
         zip_tree(APP / 'build/ios/iphonesimulator/Runner.app', output('openfader-ios-simulator.app.zip'))
     elif platform == 'macos':
         run(flutter, 'build', 'macos', '--release', *flags)
-        app = APP / 'build/macos/Build/Products/Release/OpenMix.app'
+        app = APP / 'build/macos/Build/Products/Release/OpenFader.app'
         # Ad-hoc sealing only. No distribution certificate or notarization.
         run('codesign', '--force', '--sign', '-', '--preserve-metadata=identifier,entitlements,flags,runtime', app)
         run('codesign', '--verify', '--deep', '--strict', app)
         zip_tree(app, output('openfader-macos-universal.app.zip'))
         dmg = output('openfader-macos-universal.dmg')
         dmg.unlink(missing_ok=True)
-        run('hdiutil', 'create', '-volname', 'OpenMix', '-srcfolder', app, '-ov', '-format', 'UDZO', dmg)
+        run('hdiutil', 'create', '-volname', 'OpenFader', '-srcfolder', app, '-ov', '-format', 'UDZO', dmg)
     elif platform in ('linux', 'windows'):
         run('cargo', 'build', '--locked', '--release', '-p', 'openfader-flutter-bridge', cwd=ROOT)
         run(flutter, 'build', platform, '--release', *flags)
