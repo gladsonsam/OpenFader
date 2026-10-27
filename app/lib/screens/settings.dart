@@ -195,6 +195,8 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
     final wide = MediaQuery.sizeOf(context).width > 900;
     return Scaffold(
       backgroundColor: ConsolePalette.of(context).page,
+      // Dialogs handle their own keyboard insets; keep navigation at full height.
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: ListenableBuilder(
           listenable: widget.store,
