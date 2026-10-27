@@ -130,15 +130,16 @@ impl Dl32sDriver {
         // connect bumps the generation or the session drops). Mirrors the
         // X-Air session->driver forward path. Type-1 meter blocks ride a
         // separate telemetry branch; `decode_push` never treats them as params.
-        // The per-client 285-entry layout preserves the input/RTA prefix
-        // (input0..31, RTA62..92) and appends six dynamics words per input.
+        // The per-client 301-entry layout preserves the input/RTA prefix
+        // (input0..31, RTA62..92), then appends six dynamics words per
+        // input and 16 output GR words.
         // A refused override leaves extended telemetry unavailable while
         // the default input stream can continue.
         if let Err(e) = session
-            .request_meter_layout(&openfader_transport::mackie::dl32s_dynamics_meter_addresses())
+            .request_meter_layout(&openfader_transport::mackie::dl32s_output_meter_addresses())
             .await
         {
-            eprintln!("dl32s: dynamics/RTA meter layout override failed (input meters continue, extended telemetry unavailable): {e:#}");
+            eprintln!("dl32s: output GR/dynamics/RTA meter layout override failed (input meters continue, extended telemetry unavailable): {e:#}");
         }
         // Liveness recheck (r50): the layout override above awaited two
         // correlated round trips. Recheck BEFORE publishing the session or
@@ -225,6 +226,10 @@ impl Dl32sDriver {
                                 if let Some(outputs) = crate::output_meters::decode(&push) {
                                     m.outputs_at = Some(std::time::Instant::now());
                                     m.outputs = outputs;
+                                } else {
+                                    // A legacy input-only shape cannot retain output GR.
+                                    m.outputs.clear();
+                                    m.outputs_at = None;
                                 }
                                 if let Some(frames) = decode_dynamics_meters(&push) {
                                     m.dynamics_at = Some(std::time::Instant::now());

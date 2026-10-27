@@ -94,7 +94,7 @@ impl MackieSession {
     /// the shared init handshake and [`enable_meter_reports`](Self::enable_meter_reports)
     /// use, sourced from the native MeterLayout -> ack -> BroadcastControl
     /// -> ack activation order. The DL32S driver uses this to request its
-    /// 285-entry dynamics/RTA layout ([`dl32s_dynamics_meter_addresses`]);
+    /// 301-entry output/dynamics/RTA layout ([`dl32s_output_meter_addresses`]);
     /// the shared init handshake keeps the 60-entry family default. Each request error is
     /// propagated (no layout-success pretence); the caller decides whether
     /// the override is optional.
