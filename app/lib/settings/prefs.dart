@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/access_policy.dart';
+import '../mixer/strip_layout.dart';
 
 class PrefsService extends ChangeNotifier {
   PrefsService._();
@@ -150,6 +151,17 @@ class PrefsService extends ChangeNotifier {
   bool get holdClips => _prefs?.getBool('openfader.holdClips') ?? true;
   bool get largeTargets => _prefs?.getBool('openfader.largeTargets') ?? true;
 
+  // --- channel strips -------------------------------------------------------
+  static const stripLayoutKey = 'openfader.stripLayout.v1';
+
+  /// Parsed strip layout with defaults fallback on missing/corrupt payloads.
+  StripLayout get stripLayout =>
+      StripLayout.tryDecode(_prefs?.getString(stripLayoutKey)) ??
+      StripLayout.defaults();
+
+  Future<void> setStripLayout(StripLayout layout) =>
+      _set(stripLayoutKey, layout.encode());
+
   // --- mixes ------------------------------------------------------------------
   bool get autoBackup => _prefs?.getBool('openfader.autoBackup') ?? true;
   String get backupCreatedAt =>
@@ -241,6 +253,7 @@ class PrefsService extends ChangeNotifier {
       'openfader.holdClips',
       'openfader.largeTargets',
       'openfader.autoBackup',
+      stripLayoutKey,
     ]) {
       if (!await p.remove(key)) {
         await p.reload();

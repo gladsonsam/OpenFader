@@ -15,6 +15,7 @@ import 'settings_access.dart';
 import '../settings/mixes.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
+import '../mixer/strip_layout.dart';
 import '../theme.dart';
 import '../palette.dart';
 
@@ -25,6 +26,7 @@ part 'settings/connections.dart';
 part 'settings/mixes.dart';
 part 'settings/data.dart';
 part 'settings/appearance.dart';
+part 'settings/strip_layout.dart';
 part 'settings/about.dart';
 
 enum SettingsSection {

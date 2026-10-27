@@ -11,6 +11,7 @@ import 'meter.dart';
 class MixerFader extends StatefulWidget {
   final MixerChannel channel;
   final bool compact;
+  final bool showMeter;
   final ValueChanged<double> onPosition;
   final VoidCallback onSelect, onUnity;
   final VoidCallback? onTouch;
@@ -18,6 +19,7 @@ class MixerFader extends StatefulWidget {
       {super.key,
       required this.channel,
       this.compact = false,
+      this.showMeter = true,
       required this.onPosition,
       required this.onSelect,
       this.onTouch,
@@ -73,7 +75,9 @@ class _MixerFaderState extends State<MixerFader> {
                       width: box.maxWidth *
                           (widget.compact ? 20 / 96.2 : 36 / 178.2),
                       bottom: geometry.bottom,
-                      child: MixerMeter(level: ch.meter, stereo: ch.master)),
+                      child: widget.showMeter
+                          ? MixerMeter(level: ch.meter, stereo: ch.master)
+                          : const SizedBox.shrink()),
                   Positioned(
                       left: geometry.x -
                           geometry.capWidth / 2 -
