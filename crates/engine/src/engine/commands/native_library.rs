@@ -20,9 +20,13 @@ impl Engine {
     ) -> bool {
         let cancelled = {
             let requests = self.native_requests.lock().unwrap();
-            requests.blocked || requests.cancelled.contains(&(writer.into(), request.into()))
+            requests.blocked
+                || requests
+                    .cancelled
+                    .contains(&(writer.into(), request.into()))
         };
-        if cancelled || !self.has_client(writer)
+        if cancelled
+            || !self.has_client(writer)
             || self.active_driver() != driver
             || self.connection_gen.load(Ordering::Acquire) != epoch
             || self.reads_suspended.load(Ordering::Acquire)

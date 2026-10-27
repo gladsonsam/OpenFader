@@ -84,8 +84,12 @@ impl MackieSession {
 
     /// Atomic source/bank action with final socket-lane authority.
     /// Cancellation never queues a retry. ACK remains unverified per word.
-    pub async fn write_multi_guarded(&self, pairs: &[(u32, u32)], value_type: u8,
-        authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+    pub async fn write_multi_guarded(
+        &self,
+        pairs: &[(u32, u32)],
+        value_type: u8,
+        authorize: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<()> {
         let body = build_multi_set(pairs, value_type)?;
         self.send_request_guarded(Command::ChannelValues, body, REQUEST_TIMEOUT, authorize)
             .await?;

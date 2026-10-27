@@ -171,11 +171,11 @@ fn examples() -> Vec<(String, Value)> {
                 fx: openfader_engine::protocol::FxCaps {
                     slots: 8,
                     types: vec![openfader_engine::protocol::FxTypeCaps {
-                    slots: Vec::new(),
+                        slots: Vec::new(),
                         id: "hall".to_string(),
                         label: "Hall".to_string(),
                         params: vec![openfader_engine::protocol::FxParamCaps {
-                    choices: Vec::new(),
+                            choices: Vec::new(),
                             id: "mix".to_string(),
                             label: "Mix".to_string(),
                             unit: "%".to_string(),
@@ -365,7 +365,10 @@ fn examples() -> Vec<(String, Value)> {
             "subgroup_assign",
             json!({"cmd":"subgroup_assign","ch":0,"group":1,"member":true}),
         ),
-        ("mute_group", json!({"cmd":"mute_group","group":0,"muted":true})),
+        (
+            "mute_group",
+            json!({"cmd":"mute_group","group":0,"muted":true}),
+        ),
         (
             "mute_group_assign",
             json!({"cmd":"mute_group_assign","ch":5,"group":2,"member":false}),
@@ -403,24 +406,31 @@ fn golden_frames_validate() {
         names.push(name.clone());
         let path = dir.join(format!("{name}.json"));
         if update {
-            std::fs::write(&path, serde_json::to_string_pretty(&example).unwrap() + "\n")
-                .unwrap();
+            std::fs::write(
+                &path,
+                serde_json::to_string_pretty(&example).unwrap() + "\n",
+            )
+            .unwrap();
             continue;
         }
-        let raw = std::fs::read_to_string(&path)
-            .unwrap_or_else(|_| panic!("missing golden fixture {name}.json (run with GOLDEN_UPDATE=1)"));
+        let raw = std::fs::read_to_string(&path).unwrap_or_else(|_| {
+            panic!("missing golden fixture {name}.json (run with GOLDEN_UPDATE=1)")
+        });
         let file: Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(
             file, example,
             "golden fixture {name}.json matches the constructor"
         );
         if file.get("type").is_some() {
-            let event: Event = serde_json::from_value(file.clone()).unwrap_or_else(|e| {
-                panic!("golden frame {name}.json parses as Event: {e}")
-            });
+            let event: Event = serde_json::from_value(file.clone())
+                .unwrap_or_else(|e| panic!("golden frame {name}.json parses as Event: {e}"));
             let back: Value = serde_json::to_value(&event).unwrap();
             assert_eq!(back, file, "golden frame {name}.json round-trips");
-            assert_eq!(event.tag(), name.as_str(), "frame tag matches its file name");
+            assert_eq!(
+                event.tag(),
+                name.as_str(),
+                "frame tag matches its file name"
+            );
         } else {
             let cmd: Cmd = serde_json::from_value(file.clone())
                 .unwrap_or_else(|e| panic!("golden command {name}.json parses as Cmd: {e}"));

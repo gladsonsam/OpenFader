@@ -58,9 +58,7 @@ impl Engine {
                             (index, result)
                         })
                         .collect();
-                    while let Some((index, result)) =
-                        futures::StreamExt::next(&mut pending).await
-                    {
+                    while let Some((index, result)) = futures::StreamExt::next(&mut pending).await {
                         self.apply_device_check(&result);
                         self.scanned_at.store(now_unix(), Ordering::Relaxed);
                         self.unicast(writer, self.devices_message());
@@ -117,9 +115,7 @@ impl Engine {
                         .collect();
                     if !pending.is_empty() {
                         match tokio::time::timeout(remaining, async {
-                            while let Some(found) =
-                                futures::StreamExt::next(&mut pending).await
-                            {
+                            while let Some(found) = futures::StreamExt::next(&mut pending).await {
                                 if let Some(row) = found {
                                     push_row(&mut rows, row.clone());
                                     self.merge_device_rows([row]);

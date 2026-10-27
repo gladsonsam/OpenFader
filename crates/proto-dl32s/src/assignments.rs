@@ -45,10 +45,14 @@ pub(super) fn assignment_name_parameter(slot: u32) -> Option<&'static str> {
 }
 
 pub(super) fn assignment_name_label(slot: u32, name: &str) -> Option<String> {
-    if !name.is_empty() { return Some(name.to_string()); }
+    if !name.is_empty() {
+        return Some(name.to_string());
+    }
     // Canonical DCA rows use DCA labels; a known blank on this desk is
     // displayed as VCA N, matching its native naming convention.
-    (58..=63).contains(&slot).then(|| format!("VCA {}", slot - 57))
+    (58..=63)
+        .contains(&slot)
+        .then(|| format!("VCA {}", slot - 57))
 }
 
 impl Dl32sDriver {
@@ -56,9 +60,11 @@ impl Dl32sDriver {
     pub async fn get_solo_verified(&self, strip: StripId) -> anyhow::Result<bool> {
         let address = INPUT_SOLO_FIRST_ADDRESS + Self::channel(strip)? - 1;
         let guard = self.session().await?;
-        guard.as_ref().expect("checked above")
+        guard
+            .as_ref()
+            .expect("checked above")
             .cached_type2_verified(address)
-            .filter(|raw| *raw<=1)
+            .filter(|raw| *raw <= 1)
             .map(|raw| raw != 0)
             .ok_or_else(|| anyhow::anyhow!("solo: no desk-confirmed value yet"))
     }
@@ -93,16 +99,25 @@ impl Dl32sDriver {
             .as_ref()
             .expect("checked above")
             .cached_mute_group_verified(group_1_based)
-            .ok_or_else(|| anyhow::anyhow!("mute group {group_1_based}: no desk-confirmed value yet"))
+            .ok_or_else(|| {
+                anyhow::anyhow!("mute group {group_1_based}: no desk-confirmed value yet")
+            })
     }
 
     /// Desk-proven mute-group assign (withholds own-write-pending words).
     /// Verification paths must use this, never the inclusive trait getter.
-    pub async fn get_mute_group_assign_verified(&self, ch: StripId, group_0_based: u8) -> anyhow::Result<bool> {
+    pub async fn get_mute_group_assign_verified(
+        &self,
+        ch: StripId,
+        group_0_based: u8,
+    ) -> anyhow::Result<bool> {
         let g = Self::dl_check_mute_group(group_0_based)?;
         let (table, ch1) = crate::strips::resolve(ch)?;
         let addr = table.address(ch1, &format!("mutegroup{g}"))?;
-        let v = self.verified_value_u32(addr).await?.ok_or_else(|| anyhow::anyhow!("mute-group assign: no desk-confirmed value yet"))?;
+        let v = self
+            .verified_value_u32(addr)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("mute-group assign: no desk-confirmed value yet"))?;
         Ok(v != 0)
     }
 
@@ -123,37 +138,79 @@ impl Dl32sDriver {
     }
 }
 impl Dl32sDriver {
-    pub(super) async fn assignments_control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Vec<StripId>> {
-        if matches!(param, "link" | "stereo_link" | "source" | "source_a" | "source_b" | "source_select" | "trim" | "gain" | "phantom" | "usbreturn") {
+    pub(super) async fn assignments_control_members(
+        &self,
+        strip: StripId,
+        param: &str,
+    ) -> anyhow::Result<Vec<StripId>> {
+        if matches!(
+            param,
+            "link"
+                | "stereo_link"
+                | "source"
+                | "source_a"
+                | "source_b"
+                | "source_select"
+                | "trim"
+                | "gain"
+                | "phantom"
+                | "usbreturn"
+        ) {
             return Ok(vec![strip]);
         }
         let (table, channel) = crate::strips::resolve(strip)?;
-        if table.field("stereo_link").is_err() { return Ok(vec![strip]); }
+        if table.field("stereo_link").is_err() {
+            return Ok(vec![strip]);
+        }
         let first = strip.0 - (channel - 1) as u16;
-        let left = if channel.is_multiple_of(2) { channel - 1 } else { channel };
+        let left = if channel.is_multiple_of(2) {
+            channel - 1
+        } else {
+            channel
+        };
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
         let address = table.address(left, "stereo_link")?;
-        let raw = session.cached(address)
-            .ok_or_else(|| anyhow::anyhow!("Stereo link state is not confirmed; reopen the control."))?;
+        let raw = session.cached(address).ok_or_else(|| {
+            anyhow::anyhow!("Stereo link state is not confirmed; reopen the control.")
+        })?;
         anyhow::ensure!(raw <= 1, "Unknown stereo link state");
         let peer_address = table.address(left + 1, "stereo_link")?;
-        let peer_raw = session.cached(peer_address)
+        let peer_raw = session
+            .cached(peer_address)
             .ok_or_else(|| anyhow::anyhow!("Partner link state is unavailable"))?;
         anyhow::ensure!(peer_raw <= 1, "Unknown partner link state");
         // Own accepted writes are intentionally absent from the verified
         // cache. Keep both members protected while that state is pending.
-        Ok(if raw == 1 || peer_raw == 1 || session.cached_verified(address).is_none() || session.cached_verified(peer_address).is_none() {
-            vec![StripId(first + (left - 1) as u16), StripId(first + left as u16)]
-        } else { vec![strip] })
+        Ok(
+            if raw == 1
+                || peer_raw == 1
+                || session.cached_verified(address).is_none()
+                || session.cached_verified(peer_address).is_none()
+            {
+                vec![
+                    StripId(first + (left - 1) as u16),
+                    StripId(first + left as u16),
+                ]
+            } else {
+                vec![strip]
+            },
+        )
     }
 
-    pub(super) async fn assignments_set_stereo_link(&self, source: StripId, linked: bool)
-        -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+    pub(super) async fn assignments_set_stereo_link(
+        &self,
+        source: StripId,
+        linked: bool,
+    ) -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
         let _write = self.output_write.lock().await;
         let (table, channel) = crate::strips::resolve(source)?;
         let first = source.0 - (channel - 1) as u16;
-        let left = if !channel.is_multiple_of(2) { channel } else { channel - 1 };
+        let left = if !channel.is_multiple_of(2) {
+            channel
+        } else {
+            channel - 1
+        };
         let right = left + 1;
         let peer = if channel == left { right } else { left };
 
@@ -164,11 +221,13 @@ impl Dl32sDriver {
         // Use the inclusive snapshot so recent accepted edits can be
         // copied and link/unlink can repeat on a desk with no own-write
         // echo. Returned changes remain accepted, never readback proof.
-        let current = session.cached(left_link)
-            .ok_or_else(|| anyhow::anyhow!("Stereo link state is not available; reopen the control."))?;
+        let current = session.cached(left_link).ok_or_else(|| {
+            anyhow::anyhow!("Stereo link state is not available; reopen the control.")
+        })?;
         anyhow::ensure!(current <= 1, "Unknown stereo link state");
-        let direction = session.cached(right_link)
-            .ok_or_else(|| anyhow::anyhow!("Partner link state is not available; reopen the control."))?;
+        let direction = session.cached(right_link).ok_or_else(|| {
+            anyhow::anyhow!("Partner link state is not available; reopen the control.")
+        })?;
         anyhow::ensure!(direction <= 1, "Unknown stereo link direction");
         let mut changes = Vec::new();
         if linked && current == 0 && direction == 0 {
@@ -177,32 +236,69 @@ impl Dl32sDriver {
             // phantom. Pan is the combined strip's balance, centered below.
             // Both directions and name ownership were independently probed.
             for field in &table.fields {
-                if matches!(field.key, "source_a" | "source_b" | "source_select" | "trim" | "pan" | "stereo_link" | "gain" | "phantom") { continue; }
+                if matches!(
+                    field.key,
+                    "source_a"
+                        | "source_b"
+                        | "source_select"
+                        | "trim"
+                        | "pan"
+                        | "stereo_link"
+                        | "gain"
+                        | "phantom"
+                ) {
+                    continue;
+                }
                 let offset = field.offset;
                 let from = table.address(channel, field.key)?;
                 let to = table.address(peer, field.key)?;
-                let value = session.cached(from)
-                    .ok_or_else(|| anyhow::anyhow!("Source setting {offset} is not available; reopen the control."))?;
-                let old = session.cached(to)
-                    .ok_or_else(|| anyhow::anyhow!("Partner setting {offset} is not available; reopen the control."))?;
-                if value != old { writes.push((to, value)); }
+                let value = session.cached(from).ok_or_else(|| {
+                    anyhow::anyhow!("Source setting {offset} is not available; reopen the control.")
+                })?;
+                let old = session.cached(to).ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "Partner setting {offset} is not available; reopen the control."
+                    )
+                })?;
+                if value != old {
+                    writes.push((to, value));
+                }
             }
-            let name = session.name_slot(crate::strips::name_slot(source)?)
-                .ok_or_else(|| anyhow::anyhow!("Source name is not available; reopen the control."))?;
-            let old_name = session.name_slot(crate::strips::name_slot(StripId(first + (peer - 1) as u16))?)
-                .ok_or_else(|| anyhow::anyhow!("Partner name is not available; reopen the control."))?;
+            let name = session
+                .name_slot(crate::strips::name_slot(source)?)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Source name is not available; reopen the control.")
+                })?;
+            let old_name = session
+                .name_slot(crate::strips::name_slot(StripId(
+                    first + (peer - 1) as u16,
+                ))?)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Partner name is not available; reopen the control.")
+                })?;
             let balance = table.address(left, "pan")?;
-            session.cached(balance)
+            session
+                .cached(balance)
                 .ok_or_else(|| anyhow::anyhow!("Balance is not available; reopen the control."))?;
-            session.cached(right_link)
-                .ok_or_else(|| anyhow::anyhow!("Partner link state is not available; reopen the control."))?;
+            session.cached(right_link).ok_or_else(|| {
+                anyhow::anyhow!("Partner link state is not available; reopen the control.")
+            })?;
             writes.push((balance, 0.0f32.to_bits()));
             writes.push((right_link, u32::from(channel == right)));
             writes.push((left_link, 1));
             // Validate the entire capture before the first mutation.
             if name != old_name {
-                session.set_channel_name(crate::strips::name_slot(StripId(first + (peer - 1) as u16))?, &name).await?;
-                changes.push((StripId(first + (peer - 1) as u16), "name".to_string(), ParamValue::Text(name)));
+                session
+                    .set_channel_name(
+                        crate::strips::name_slot(StripId(first + (peer - 1) as u16))?,
+                        &name,
+                    )
+                    .await?;
+                changes.push((
+                    StripId(first + (peer - 1) as u16),
+                    "name".to_string(),
+                    ParamValue::Text(name),
+                ));
             }
             // DL32S firmware can acknowledge multi-address frames without
             // applying every pair. Use the established single-write path;
@@ -211,7 +307,9 @@ impl Dl32sDriver {
                 session.write_int(address, raw, VALUE_TYPE_PARAM).await?;
             }
             for (address, raw) in writes {
-                if address == left_link || address == right_link { continue; }
+                if address == left_link || address == right_link {
+                    continue;
+                }
                 changes.extend(decode_push_value(address, raw));
             }
         } else if !linked && (current != 0 || direction != 0) {
@@ -219,7 +317,11 @@ impl Dl32sDriver {
             session.write_int(right_link, 0, VALUE_TYPE_PARAM).await?;
         }
         for member in [left, right] {
-            changes.push((StripId(first + (member - 1) as u16), "link".to_string(), ParamValue::Bool(linked)));
+            changes.push((
+                StripId(first + (member - 1) as u16),
+                "link".to_string(),
+                ParamValue::Bool(linked),
+            ));
         }
         Ok(changes)
     }

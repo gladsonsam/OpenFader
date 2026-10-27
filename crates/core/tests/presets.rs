@@ -1,5 +1,5 @@
 //! Presets apply against the SimDriver (integration: one core build).
-use openfader_core::presets::{PRESETS, apply_preset, preset_by_id};
+use openfader_core::presets::{apply_preset, preset_by_id, PRESETS};
 use openfader_core::{MixerDriver, StripId};
 
 #[tokio::test]

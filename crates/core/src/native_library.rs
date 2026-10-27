@@ -11,7 +11,10 @@ pub fn receipt(status: &str, message: impl Into<String>, inventory: Value) -> Va
 /// from this byte ceiling. Reject rather than clip UTF-8 or embedded NUL.
 pub fn validate_name(name: &str) -> anyhow::Result<()> {
     anyhow::ensure!(
-        !name.trim().is_empty() && name.trim() == name && name.len() <= 63 && !name.chars().any(char::is_control),
+        !name.trim().is_empty()
+            && name.trim() == name
+            && name.len() <= 63
+            && !name.chars().any(char::is_control),
         "Name needs 1..63 UTF-8 bytes, no control characters or surrounding whitespace"
     );
     Ok(())

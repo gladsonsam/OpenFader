@@ -77,12 +77,13 @@ impl Scene {
 
     /// Store a driver-namespaced note (FX-rack dumps, mute-group maps…).
     pub fn set_note(&mut self, driver: &str, key: &str, value: impl Into<String>) {
-        self.notes
-            .insert(Self::note_key(driver, key), value.into());
+        self.notes.insert(Self::note_key(driver, key), value.into());
     }
 
     pub fn note(&self, driver: &str, key: &str) -> Option<&str> {
-        self.notes.get(&Self::note_key(driver, key)).map(String::as_str)
+        self.notes
+            .get(&Self::note_key(driver, key))
+            .map(String::as_str)
     }
 
     /// Recall this scene onto `driver`, ramping faders over `fade_ms`.

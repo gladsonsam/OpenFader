@@ -1,8 +1,11 @@
 //! MixerDriver adapter; protocol responsibilities live in the sibling modules.
-use crate::{addrs, Dl32sDriver, DL32S_CAPABILITIES};
 use crate::assignments::INPUT_SOLO_FIRST_ADDRESS;
-use openfader_core::{validate_fader, AudioSpectrum, ChannelStrip, MeterFrame, MixerDriver, MixerInfo, MixerSnapshot, ParamUpdate, ParamValue, StripId};
-use openfader_transport::mackie::{VALUE_TYPE_PARAM, VALUE_TYPE_MUTE_GROUP, MUTE_GROUP_COUNT};
+use crate::{addrs, Dl32sDriver, DL32S_CAPABILITIES};
+use openfader_core::{
+    validate_fader, AudioSpectrum, ChannelStrip, MeterFrame, MixerDriver, MixerInfo, MixerSnapshot,
+    ParamUpdate, ParamValue, StripId,
+};
+use openfader_transport::mackie::{MUTE_GROUP_COUNT, VALUE_TYPE_MUTE_GROUP, VALUE_TYPE_PARAM};
 use tokio::sync::broadcast;
 
 impl MixerDriver for Dl32sDriver {
@@ -10,8 +13,12 @@ impl MixerDriver for Dl32sDriver {
         "dl32s"
     }
 
-    fn topology(&self) -> Vec<openfader_core::StripFamily> { crate::strips::topology() }
-    fn strip_count(&self) -> usize { crate::strips::STRIP_COUNT }
+    fn topology(&self) -> Vec<openfader_core::StripFamily> {
+        crate::strips::topology()
+    }
+    fn strip_count(&self) -> usize {
+        crate::strips::STRIP_COUNT
+    }
 
     /// Wave-1+2 verified surface: every id names a confirmed DL32S leaf
     /// (see [`DL32S_CAPABILITIES`]). The poller reads exactly this set.
@@ -23,10 +30,22 @@ impl MixerDriver for Dl32sDriver {
         self.native_param_label_overrides()
     }
 
-    fn input_processor_guard(&self) -> bool { true }
-    fn channel_processing_guard(&self) -> bool { true }
-    async fn input_processor(&self, strip: StripId, processor: &str, write: Option<(&str, ParamValue)>, expected: Option<&serde_json::Value>, check: openfader_core::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
-        self.guarded_input_processor(strip, processor, write, expected, check).await
+    fn input_processor_guard(&self) -> bool {
+        true
+    }
+    fn channel_processing_guard(&self) -> bool {
+        true
+    }
+    async fn input_processor(
+        &self,
+        strip: StripId,
+        processor: &str,
+        write: Option<(&str, ParamValue)>,
+        expected: Option<&serde_json::Value>,
+        check: openfader_core::input_processors::RecallCheck<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.guarded_input_processor(strip, processor, write, expected, check)
+            .await
     }
     fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
         let mut controls = self.collect_destination_controls();
@@ -41,27 +60,80 @@ impl MixerDriver for Dl32sDriver {
         controls
     }
 
-    async fn set_fx_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
-        self.write_fx_guarded(target, control, value, expected, snapshot, context).await
+    async fn set_fx_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        self.write_fx_guarded(target, control, value, expected, snapshot, context)
+            .await
     }
 
-    async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
-        self.write_target_solo(target, control, value, expected, snapshot, context).await
+    async fn set_target_solo(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        self.write_target_solo(target, control, value, expected, snapshot, context)
+            .await
     }
 
-    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
-        if let Some(receipt) = self.write_global_control(target, control, value, expected, Some(snapshot)).await? { return Ok(Some(receipt)); }
-        anyhow::ensure!(self.write_output_processing_guarded(target, control, value, expected, Some(snapshot)).await?, "Output processor unavailable");
+    async fn set_destination_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+    ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
+        if let Some(receipt) = self
+            .write_global_control(target, control, value, expected, Some(snapshot))
+            .await?
+        {
+            return Ok(Some(receipt));
+        }
+        anyhow::ensure!(
+            self.write_output_processing_guarded(target, control, value, expected, Some(snapshot))
+                .await?,
+            "Output processor unavailable"
+        );
         Ok(None)
     }
 
-    async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
-        if self.write_global_control(target, control, value, expected, None).await?.is_some() { return Ok(()); }
-        if self.write_output_processing(target, control, value, expected).await? {
+    async fn set_destination_control(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+    ) -> anyhow::Result<()> {
+        if self
+            .write_global_control(target, control, value, expected, None)
+            .await?
+            .is_some()
+        {
             return Ok(());
         }
-        anyhow::ensure!(!target.starts_with("fx/"), "FX requires a complete current configuration guard");
-        self.write_aux_control(target, control, value, expected).await
+        if self
+            .write_output_processing(target, control, value, expected)
+            .await?
+        {
+            return Ok(());
+        }
+        anyhow::ensure!(
+            !target.starts_with("fx/"),
+            "FX requires a complete current configuration guard"
+        );
+        self.write_aux_control(target, control, value, expected)
+            .await
     }
 
     /// Provider rows extend the canonical catalogue with source IDs,
@@ -130,7 +202,11 @@ impl MixerDriver for Dl32sDriver {
         let addr = table.address(ch, "fader")?;
         let db = addrs::DL32S_FADER_SCALE.forward(level);
         let guard = self.session().await?;
-        guard.as_ref().expect("checked above").write_float(addr, db).await
+        guard
+            .as_ref()
+            .expect("checked above")
+            .write_float(addr, db)
+            .await
     }
 
     /// DISPLAY continuity read (attach/snapshot/health/state): inclusive —
@@ -151,17 +227,22 @@ impl MixerDriver for Dl32sDriver {
     async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
         let address = INPUT_SOLO_FIRST_ADDRESS + Self::channel(strip)? - 1;
         let guard = self.session().await?;
-        guard.as_ref().expect("checked above")
-            .write_int(address, u32::from(soloed), VALUE_TYPE_MUTE_GROUP).await
+        guard
+            .as_ref()
+            .expect("checked above")
+            .write_int(address, u32::from(soloed), VALUE_TYPE_MUTE_GROUP)
+            .await
     }
 
     /// Display continuity only; polling uses `get_solo_verified`.
     async fn get_solo(&self, strip: StripId) -> anyhow::Result<bool> {
         let address = INPUT_SOLO_FIRST_ADDRESS + Self::channel(strip)? - 1;
         let guard = self.session().await?;
-        guard.as_ref().expect("checked above")
+        guard
+            .as_ref()
+            .expect("checked above")
             .cached_type2(address)
-            .filter(|raw| *raw<=1)
+            .filter(|raw| *raw <= 1)
             .map(|raw| raw != 0)
             .ok_or_else(|| anyhow::anyhow!("solo: no value pushed yet"))
     }
@@ -191,7 +272,8 @@ impl MixerDriver for Dl32sDriver {
             .ok_or_else(|| anyhow::anyhow!("name: no value pushed yet"))
     }
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
-        self.set_main_fader_db(addrs::DL32S_FADER_SCALE.forward(value)).await
+        self.set_main_fader_db(addrs::DL32S_FADER_SCALE.forward(value))
+            .await
     }
     /// DISPLAY continuity read (inclusive).
     async fn get_main_fader(&self) -> anyhow::Result<f32> {
@@ -243,7 +325,11 @@ impl MixerDriver for Dl32sDriver {
 
     async fn set_bus_fader(&self, bus: u8, value: f32) -> anyhow::Result<()> {
         let aux = Self::dl_check_bus(bus)?;
-        self.set_auxmaster_fader_db(aux, addrs::DL32S_FADER_SCALE.forward(validate_fader(value)?)).await
+        self.set_auxmaster_fader_db(
+            aux,
+            addrs::DL32S_FADER_SCALE.forward(validate_fader(value)?),
+        )
+        .await
     }
 
     /// DISPLAY continuity read (inclusive).
@@ -283,7 +369,8 @@ impl MixerDriver for Dl32sDriver {
 
     async fn set_subgroup_fader(&self, group: u8, value: f32) -> anyhow::Result<()> {
         let g = Self::dl_check_subgroup(group)?;
-        self.set_subgroup_fader_db(g, addrs::DL32S_FADER_SCALE.forward(validate_fader(value)?)).await
+        self.set_subgroup_fader_db(g, addrs::DL32S_FADER_SCALE.forward(validate_fader(value)?))
+            .await
     }
 
     /// DISPLAY continuity read (inclusive).
@@ -317,12 +404,21 @@ impl MixerDriver for Dl32sDriver {
             .ok_or_else(|| anyhow::anyhow!("subgroup mute: no value pushed yet"))
     }
 
-    async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+    async fn set_subgroup_assign(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+    ) -> anyhow::Result<()> {
         let g = Self::dl_check_subgroup(group)?;
         let (table, ch1) = crate::strips::resolve(ch)?;
         let addr = table.address(ch1, &format!("sub{g}"))?;
         let guard = self.session().await?;
-        guard.as_ref().expect("checked above").write_int(addr, u32::from(member), VALUE_TYPE_PARAM).await
+        guard
+            .as_ref()
+            .expect("checked above")
+            .write_int(addr, u32::from(member), VALUE_TYPE_PARAM)
+            .await
     }
 
     /// DISPLAY continuity read (inclusive).
@@ -330,7 +426,10 @@ impl MixerDriver for Dl32sDriver {
         let g = Self::dl_check_subgroup(group)?;
         let (table, ch1) = crate::strips::resolve(ch)?;
         let addr = table.address(ch1, &format!("sub{g}"))?;
-        let v = self.request_value_u32(addr).await?.ok_or_else(|| anyhow::anyhow!("subgroup assign: no value pushed yet"))?;
+        let v = self
+            .request_value_u32(addr)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("subgroup assign: no value pushed yet"))?;
         Ok(v != 0)
     }
 
@@ -350,12 +449,21 @@ impl MixerDriver for Dl32sDriver {
         self.get_mute_group(g).await
     }
 
-    async fn set_mute_group_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+    async fn set_mute_group_assign(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+    ) -> anyhow::Result<()> {
         let g = Self::dl_check_mute_group(group)?;
         let (table, ch1) = crate::strips::resolve(ch)?;
         let addr = table.address(ch1, &format!("mutegroup{g}"))?;
         let guard = self.session().await?;
-        guard.as_ref().expect("checked above").write_int(addr, u32::from(member), VALUE_TYPE_PARAM).await
+        guard
+            .as_ref()
+            .expect("checked above")
+            .write_int(addr, u32::from(member), VALUE_TYPE_PARAM)
+            .await
     }
 
     /// DISPLAY continuity read (inclusive).
@@ -363,7 +471,10 @@ impl MixerDriver for Dl32sDriver {
         let g = Self::dl_check_mute_group(group)?;
         let (table, ch1) = crate::strips::resolve(ch)?;
         let addr = table.address(ch1, &format!("mutegroup{g}"))?;
-        let v = self.request_value_u32(addr).await?.ok_or_else(|| anyhow::anyhow!("mute-group assign: no value pushed yet"))?;
+        let v = self
+            .request_value_u32(addr)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("mute-group assign: no value pushed yet"))?;
         Ok(v != 0)
     }
 
@@ -383,15 +494,21 @@ impl MixerDriver for Dl32sDriver {
     }
 
     fn stereo_pairs(&self) -> Vec<[u16; 2]> {
-        (0..34_u16).step_by(2).map(|left| [left, left + 1]).collect()
+        (0..34_u16)
+            .step_by(2)
+            .map(|left| [left, left + 1])
+            .collect()
     }
 
     async fn control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Vec<StripId>> {
         self.assignments_control_members(strip, param).await
     }
 
-    async fn set_stereo_link(&self, source: StripId, linked: bool)
-        -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+    async fn set_stereo_link(
+        &self,
+        source: StripId,
+        linked: bool,
+    ) -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
         self.assignments_set_stereo_link(source, linked).await
     }
 
@@ -440,9 +557,15 @@ impl MixerDriver for Dl32sDriver {
                 .map(|v| v != 0)
                 .ok_or_else(|| anyhow::anyhow!("snapshot: ch{ch} mute: no value pushed yet"))?;
             let pan = if let Some(address) = pan_addr {
-                session.cached(address).map(|raw| f32::from_bits(raw) * 100.0)
-                    .ok_or_else(|| anyhow::anyhow!("snapshot: {} {ch} balance unavailable", table.name))?
-            } else { 0.0 };
+                session
+                    .cached(address)
+                    .map(|raw| f32::from_bits(raw) * 100.0)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("snapshot: {} {ch} balance unavailable", table.name)
+                    })?
+            } else {
+                0.0
+            };
             let name = session
                 .name_slot(crate::strips::name_slot(StripId(i as u16))?)
                 .unwrap_or_else(|| format!("{} {ch}", table.name));
@@ -486,9 +609,15 @@ impl MixerDriver for Dl32sDriver {
         &["in"]
     }
 
-    fn native_library(&self) -> Option<serde_json::Value> { self.library_inventory() }
-    async fn native_library_action(&self, action: &serde_json::Value, expected: &serde_json::Value,
-        check: openfader_core::native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
+    fn native_library(&self) -> Option<serde_json::Value> {
+        self.library_inventory()
+    }
+    async fn native_library_action(
+        &self,
+        action: &serde_json::Value,
+        expected: &serde_json::Value,
+        check: openfader_core::native_library::Check<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
         self.execute_library(action, expected, check).await
     }
     /// Push-observed snapshot reports are withheld across session generations.
@@ -504,8 +633,12 @@ impl MixerDriver for Dl32sDriver {
     /// stream goes quiet instead of frozen. No polling here: pushes arrive
     /// on the existing broadcast feed, and the shell's 80 ms ticker stays
     /// the only meter clock.
-    fn output_meter_targets(&self) -> Vec<String> { crate::output_meters::targets() }
-    fn poll_output_meters(&self) -> Option<openfader_core::OutputMeterSnapshot> { Some(self.telemetry_poll_outputs()) }
+    fn output_meter_targets(&self) -> Vec<String> {
+        crate::output_meters::targets()
+    }
+    fn poll_output_meters(&self) -> Option<openfader_core::OutputMeterSnapshot> {
+        Some(self.telemetry_poll_outputs())
+    }
     fn poll_meters(&self) -> MeterFrame {
         self.telemetry_poll_meters()
     }

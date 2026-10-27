@@ -119,18 +119,33 @@ pub fn wire_to_log(w: f32, min: f32, max: f32, what: &str) -> anyhow::Result<f32
 
 /// Same log curve as the EQ corner (`log(201) // 20..20000`).
 pub fn filter_hz_to_wire(hz: f32) -> anyhow::Result<f32> {
-    log_to_wire(hz, GATE_FILTER_FREQ_MIN_HZ, GATE_FILTER_FREQ_MAX_HZ, "filter freq")
+    log_to_wire(
+        hz,
+        GATE_FILTER_FREQ_MIN_HZ,
+        GATE_FILTER_FREQ_MAX_HZ,
+        "filter freq",
+    )
 }
 
 pub fn wire_to_filter_hz(w: f32) -> anyhow::Result<f32> {
-    wire_to_log(w, GATE_FILTER_FREQ_MIN_HZ, GATE_FILTER_FREQ_MAX_HZ, "filter freq")
+    wire_to_log(
+        w,
+        GATE_FILTER_FREQ_MIN_HZ,
+        GATE_FILTER_FREQ_MAX_HZ,
+        "filter freq",
+    )
 }
 
 pub fn int_leaf_to_arg(v: f32, min: i32, max: i32, what: &str) -> anyhow::Result<OscType> {
     crate::codec::int_to_arg(v, min, max, "gate", what)
 }
 
-pub fn int_leaf_from_msg(msg: &rosc::OscMessage, min: i32, max: i32, what: &str) -> anyhow::Result<i32> {
+pub fn int_leaf_from_msg(
+    msg: &rosc::OscMessage,
+    min: i32,
+    max: i32,
+    what: &str,
+) -> anyhow::Result<i32> {
     crate::codec::int_from_msg(msg, min, max, "gate", what)
 }
 
@@ -151,8 +166,14 @@ mod tests {
 
     #[test]
     fn lin_mapping_roundtrips() {
-        assert_eq!(lin_to_wire(-80.0, GATE_THR_MIN_DB, GATE_THR_MAX_DB, "thr").unwrap(), 0.0);
-        assert_eq!(lin_to_wire(0.0, GATE_THR_MIN_DB, GATE_THR_MAX_DB, "thr").unwrap(), 1.0);
+        assert_eq!(
+            lin_to_wire(-80.0, GATE_THR_MIN_DB, GATE_THR_MAX_DB, "thr").unwrap(),
+            0.0
+        );
+        assert_eq!(
+            lin_to_wire(0.0, GATE_THR_MIN_DB, GATE_THR_MAX_DB, "thr").unwrap(),
+            1.0
+        );
         let back = wire_to_lin(0.375, GATE_THR_MIN_DB, GATE_THR_MAX_DB, "thr").unwrap();
         assert!((back + 50.0).abs() < 1e-5, "{back}");
         assert!(lin_to_wire(-80.1, GATE_THR_MIN_DB, GATE_THR_MAX_DB, "thr").is_err());
@@ -161,13 +182,28 @@ mod tests {
 
     #[test]
     fn log_mapping_matches_firmware_tags() {
-        assert_eq!(log_to_wire(0.02, GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").unwrap(), 0.0);
-        assert_eq!(log_to_wire(2000.0, GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").unwrap(), 1.0);
-        assert_eq!(wire_to_log(0.0, GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").unwrap(), 0.02);
+        assert_eq!(
+            log_to_wire(0.02, GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").unwrap(),
+            0.0
+        );
+        assert_eq!(
+            log_to_wire(2000.0, GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").unwrap(),
+            1.0
+        );
+        assert_eq!(
+            wire_to_log(0.0, GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").unwrap(),
+            0.02
+        );
         let live = wire_to_log(0.76, GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").unwrap();
         assert!((live - 126.0).abs() < 3.0, "live hold {live}");
         for ms in [0.02, 1.0, 50.0, 500.0, 2000.0] {
-            let back = wire_to_log(log_to_wire(ms, GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").unwrap(), GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").unwrap();
+            let back = wire_to_log(
+                log_to_wire(ms, GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").unwrap(),
+                GATE_HOLD_MIN_MS,
+                GATE_HOLD_MAX_MS,
+                "hold",
+            )
+            .unwrap();
             assert!((back - ms).abs() / ms < 1e-4, "round-trip {ms} -> {back}");
         }
         assert!(log_to_wire(0.019, GATE_HOLD_MIN_MS, GATE_HOLD_MAX_MS, "hold").is_err());
@@ -176,10 +212,16 @@ mod tests {
 
     #[test]
     fn int_codec_shapes() {
-        assert_eq!(int_leaf_to_arg(4.0, GATE_MODE_MIN, GATE_MODE_MAX, "mode").unwrap(), OscType::Int(4));
+        assert_eq!(
+            int_leaf_to_arg(4.0, GATE_MODE_MIN, GATE_MODE_MAX, "mode").unwrap(),
+            OscType::Int(4)
+        );
         assert!(int_leaf_to_arg(5.0, GATE_MODE_MIN, GATE_MODE_MAX, "mode").is_err());
         assert!(int_leaf_to_arg(1.5, GATE_MODE_MIN, GATE_MODE_MAX, "mode").is_err());
-        assert_eq!(int_leaf_to_arg(22.0, GATE_KEY_SRC_MIN, GATE_KEY_SRC_MAX, "keysrc").unwrap(), OscType::Int(22));
+        assert_eq!(
+            int_leaf_to_arg(22.0, GATE_KEY_SRC_MIN, GATE_KEY_SRC_MAX, "keysrc").unwrap(),
+            OscType::Int(22)
+        );
         assert!(int_leaf_to_arg(23.0, GATE_KEY_SRC_MIN, GATE_KEY_SRC_MAX, "keysrc").is_err());
     }
 }

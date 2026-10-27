@@ -230,7 +230,9 @@ impl RtSlots {
     /// frame is superseded and dropped).
     pub(super) fn store(&mut self, key: RtSlot, frame: SharedEvent) {
         match key {
-            RtSlot::Outputs => { self.outputs = Some(frame); }
+            RtSlot::Outputs => {
+                self.outputs = Some(frame);
+            }
             RtSlot::Dynamics => {
                 self.dynamics = Some(frame);
             }
@@ -259,7 +261,9 @@ impl RtSlots {
         if let Some(frame) = self.meters.take() {
             out.push(frame);
         }
-        if let Some(frame) = self.outputs.take() { out.push(frame); }
+        if let Some(frame) = self.outputs.take() {
+            out.push(frame);
+        }
         if let Some(frame) = self.dynamics.take() {
             out.push(frame);
         }

@@ -46,12 +46,10 @@ async fn driver_assign_plane_roundtrip() {
         ParamValue::Bool(true)
     ));
     assert!(driver.get_param(StripId(0), "dca5_assign").await.is_err());
-    assert!(
-        driver
-            .set_param(StripId(30), "dca1_assign", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(30), "dca1_assign", ParamValue::Bool(true))
+        .await
+        .is_err());
     assert!(matches!(
         driver.get_param(StripId(0), "lr_assign").await.unwrap(),
         ParamValue::Bool(true)
@@ -81,21 +79,17 @@ async fn driver_assign_plane_roundtrip() {
         .unwrap();
     assert!(!driver.get_mute_group_assign(StripId(0), 1).await.unwrap());
     assert!(driver.get_mute_group_assign(StripId(0), 4).await.is_err());
-    assert!(
-        driver
-            .set_mute_group_assign(StripId(0), 4, true)
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_mute_group_assign(StripId(0), 4, true)
+        .await
+        .is_err());
     // Main-LR (strip 30) and DCA (strip 31) strips carry no `grp`
     // leaf: local bail, never a hardware timeout.
     assert!(driver.get_mute_group_assign(StripId(30), 0).await.is_err());
-    assert!(
-        driver
-            .set_mute_group_assign(StripId(31), 0, true)
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_mute_group_assign(StripId(31), 0, true)
+        .await
+        .is_err());
     driver
         .set_param(StripId(0), "automix_weight", ParamValue::Float(0.75))
         .await
@@ -158,12 +152,10 @@ async fn driver_input_routing_roundtrip() {
             "usbreturn {bad} accepted"
         );
     }
-    assert!(
-        driver
-            .set_param(StripId(0), "usbreturn", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "usbreturn", ParamValue::Bool(true))
+        .await
+        .is_err());
 
     // trim: dB −18..=18, linear wire (the fake stores verbatim, so
     // epsilon covers f32 conversion only).
@@ -183,18 +175,14 @@ async fn driver_input_routing_roundtrip() {
         panic!("trim read back non-float");
     };
     assert!((db + 18.0).abs() < 1e-4, "trim readback {db}");
-    assert!(
-        driver
-            .set_param(StripId(0), "trim", ParamValue::Float(18.1))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "trim", ParamValue::Bool(false))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "trim", ParamValue::Float(18.1))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "trim", ParamValue::Bool(false))
+        .await
+        .is_err());
 
     // polarity (phase invert): plain bool, NOT inverted like /mix/on.
     driver
@@ -213,12 +201,10 @@ async fn driver_input_routing_roundtrip() {
         driver.get_param(StripId(0), "polarity").await.unwrap(),
         ParamValue::Bool(false)
     );
-    assert!(
-        driver
-            .set_param(StripId(0), "polarity", ParamValue::Float(1.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "polarity", ParamValue::Float(1.0))
+        .await
+        .is_err());
 
     // hpf_on + hpf_freq (log 20..400 Hz; 1 Hz epsilon for log/f32).
     driver
@@ -245,35 +231,27 @@ async fn driver_input_routing_roundtrip() {
         panic!("hpf_freq read back non-float");
     };
     assert!((hz - 400.0).abs() < 1.0, "hpf_freq readback {hz}");
-    assert!(
-        driver
-            .set_param(StripId(0), "hpf_freq", ParamValue::Float(19.9))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "hpf_freq", ParamValue::Float(f32::NAN))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "hpf_freq", ParamValue::Float(19.9))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "hpf_freq", ParamValue::Float(f32::NAN))
+        .await
+        .is_err());
 
     // v2: strip 16 is an FX return (input-scoped leaves like trim stay
     // out-of-scope errors there); the strip space ends at 35.
-    assert!(
-        driver
-            .set_param(StripId(16), "trim", ParamValue::Float(0.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(16), "trim", ParamValue::Float(0.0))
+        .await
+        .is_err());
     assert!(driver.get_param(StripId(16), "polarity").await.is_err());
     assert!(driver.get_param(StripId(0), "inputsource").await.is_err());
-    assert!(
-        driver
-            .set_param(StripId(0), "inputsource", ParamValue::Float(0.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "inputsource", ParamValue::Float(0.0))
+        .await
+        .is_err());
     assert!(driver.get_param(StripId(0), "usbinput").await.is_err());
 }
 
@@ -310,36 +288,26 @@ async fn driver_send_level_roundtrip() {
         driver.get_param(StripId(0), "aux6_level").await.unwrap(),
         ParamValue::Float(-90.0)
     );
-    assert!(
-        driver
-            .set_param(StripId(0), "aux1_level", ParamValue::Float(10.1))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "aux7_level", ParamValue::Float(0.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "fx5_level", ParamValue::Float(0.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "aux1_level", ParamValue::Bool(false))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(16), "aux1_level", ParamValue::Float(0.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "aux1_level", ParamValue::Float(10.1))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "aux7_level", ParamValue::Float(0.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "fx5_level", ParamValue::Float(0.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "aux1_level", ParamValue::Bool(false))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(16), "aux1_level", ParamValue::Float(0.0))
+        .await
+        .is_err());
 }
 
 /// Generic-send loopback over UDP (`crate::mix`, firmware-truth): `send1..6`
@@ -378,12 +346,10 @@ async fn driver_send_tap_pan_on_roundtrip() {
         driver.get_param(s, "send1_tap").await.unwrap(),
         ParamValue::Float(4.0)
     );
-    assert!(
-        driver
-            .set_param(s, "send1_tap", ParamValue::Float(6.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(s, "send1_tap", ParamValue::Float(6.0))
+        .await
+        .is_err());
     driver
         .set_param(s, "send1_pan", ParamValue::Float(-20.0))
         .await
@@ -402,18 +368,14 @@ async fn driver_send_tap_pan_on_roundtrip() {
     );
 
     // Slots 11..16 have no wire; legacy send mutes stay errors (T7).
-    assert!(
-        driver
-            .set_param(s, "send11_level", ParamValue::Float(0.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(s, "send2_level", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(s, "send11_level", ParamValue::Float(0.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(s, "send2_level", ParamValue::Bool(true))
+        .await
+        .is_err());
     assert!(driver.get_param(s, "aux1_mute").await.is_err());
     assert!(driver.get_param(s, "fx1_mute").await.is_err());
 }
@@ -453,19 +415,15 @@ async fn driver_lr_assign_roundtrip() {
         driver.get_param(StripId(20), "lr_assign").await.unwrap(),
         ParamValue::Bool(true)
     );
-    assert!(
-        driver
-            .set_param(StripId(0), "lr_assign", ParamValue::Float(1.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "lr_assign", ParamValue::Float(1.0))
+        .await
+        .is_err());
     assert!(driver.get_param(StripId(30), "lr_assign").await.is_err());
-    assert!(
-        driver
-            .set_param(StripId(30), "lr_assign", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(30), "lr_assign", ParamValue::Bool(true))
+        .await
+        .is_err());
     assert!(driver.get_param(StripId(26), "lr_assign").await.is_err());
     assert!(driver.get_param(StripId(31), "lr_assign").await.is_err());
 }
@@ -497,26 +455,20 @@ async fn driver_send_grpon_roundtrip() {
         driver.get_param(s, "send10_grpon").await.unwrap(),
         ParamValue::Bool(true)
     );
-    assert!(
-        driver
-            .set_param(s, "send1_grpon", ParamValue::Float(1.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(s, "send1_grpon", ParamValue::Float(1.0))
+        .await
+        .is_err());
     assert!(driver.get_param(s, "send11_grpon").await.is_err());
-    assert!(
-        driver
-            .set_param(s, "send11_grpon", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(s, "send11_grpon", ParamValue::Bool(true))
+        .await
+        .is_err());
     // Sends originate from inputs only (catalogue scopes).
-    assert!(
-        driver
-            .set_param(StripId(20), "send1_grpon", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(20), "send1_grpon", ParamValue::Bool(true))
+        .await
+        .is_err());
 }
 
 /// Automix weight loopback over UDP (`crate::automix`, rig-verified
@@ -538,31 +490,23 @@ async fn driver_automix_weight_roundtrip() {
         panic!("automix_weight read back non-float");
     };
     assert!((back - 0.7).abs() < 1e-6, "automix_weight {back}");
-    assert!(
-        driver
-            .set_param(s, "automix_weight", ParamValue::Float(1.1))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(s, "automix_weight", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(s, "automix_weight", ParamValue::Float(1.1))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(s, "automix_weight", ParamValue::Bool(true))
+        .await
+        .is_err());
     // Buses/returns carry no automix leaf (catalogue scopes).
-    assert!(
-        driver
-            .get_param(StripId(20), "automix_weight")
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .get_param(StripId(16), "automix_weight")
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .get_param(StripId(20), "automix_weight")
+        .await
+        .is_err());
+    assert!(driver
+        .get_param(StripId(16), "automix_weight")
+        .await
+        .is_err());
 }
 
 /// Strip insert loopback over UDP (`crate::insert`, rig-verified
@@ -606,30 +550,22 @@ async fn driver_strip_insert_roundtrip() {
         driver.get_param(StripId(30), "insert_on").await.unwrap(),
         ParamValue::Bool(true)
     );
-    assert!(
-        driver
-            .set_param(StripId(0), "insert_on", ParamValue::Float(1.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "insert_sel", ParamValue::Float(9.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "insert_sel", ParamValue::Float(1.5))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(0), "insert_sel", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(0), "insert_on", ParamValue::Float(1.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "insert_sel", ParamValue::Float(9.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "insert_sel", ParamValue::Float(1.5))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(0), "insert_sel", ParamValue::Bool(true))
+        .await
+        .is_err());
     // Returns, FX sends and masters carry no insert leaf (the desk is
     // silent there — catalogue scopes reject before any I/O).
     for s in [StripId(16), StripId(26), StripId(31), StripId(35)] {

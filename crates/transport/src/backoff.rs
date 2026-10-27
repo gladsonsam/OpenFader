@@ -83,8 +83,8 @@ pub fn backoff_delays(max_attempts: usize) -> impl Iterator<Item = Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     #[test]
     fn backoff_caps() {

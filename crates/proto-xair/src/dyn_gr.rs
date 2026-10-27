@@ -113,7 +113,12 @@ pub fn parse_dyn_blob(blob: &[u8]) -> anyhow::Result<DynMeters> {
     comp.copy_from_slice(&samples[DYN_CHANNELS..2 * DYN_CHANNELS]);
     bus.copy_from_slice(&samples[2 * DYN_CHANNELS..2 * DYN_CHANNELS + DYN_BUSES]);
     let lr = samples[DYN_SAMPLE_COUNT - 1];
-    Ok(DynMeters { gate, comp, bus, lr })
+    Ok(DynMeters {
+        gate,
+        comp,
+        bus,
+        lr,
+    })
 }
 
 /// Test/fake helper mirroring the documented encoding.
@@ -212,10 +217,7 @@ mod tests {
         for w in [0u32, 1, 38, 40, 0xFFFF_FFFF] {
             let mut bad = good.clone();
             bad[0..4].copy_from_slice(&w.to_le_bytes());
-            assert!(
-                parse_dyn_blob(&bad).is_err(),
-                "size word {w} accepted"
-            );
+            assert!(parse_dyn_blob(&bad).is_err(), "size word {w} accepted");
         }
         assert!(parse_dyn_blob(&[0xABu8; DYN_BLOB_LEN]).is_err());
         assert!(parse_dyn_blob(&[0u8; DYN_BLOB_LEN]).is_err());

@@ -395,11 +395,9 @@ async fn main() -> anyhow::Result<()> {
             match rest.get(3) {
                 None => match drv.get_param(strip, id).await? {
                     ParamValue::Float(v) => println!("ch{} {id} = {v}", strip.0 + 1),
-                    ParamValue::Bool(b) => println!(
-                        "ch{} {id} = {}",
-                        strip.0 + 1,
-                        if b { "on" } else { "off" }
-                    ),
+                    ParamValue::Bool(b) => {
+                        println!("ch{} {id} = {}", strip.0 + 1, if b { "on" } else { "off" })
+                    }
                     ParamValue::Text(s) => println!("ch{} {id} = {s:?}", strip.0 + 1),
                 },
                 Some(raw) => {
@@ -411,8 +409,12 @@ async fn main() -> anyhow::Result<()> {
         }
         "meters" => {
             let frame = drv.poll_meters();
-            let shown: Vec<String> =
-                frame.levels.iter().take(8).map(|l| format!("{l:.2}")).collect();
+            let shown: Vec<String> = frame
+                .levels
+                .iter()
+                .take(8)
+                .map(|l| format!("{l:.2}"))
+                .collect();
             println!("meters[{}]: {}", frame.levels.len(), shown.join(" "));
         }
         other => {

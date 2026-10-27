@@ -6,8 +6,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use openfader_engine::protocol::{
-    db_to_u8, level_to_u16, u8_to_db, u16_to_level, BIN_HEADER_LEN, BIN_TYPE_GR,
-    BIN_TYPE_METERS, BIN_VERSION, GR_DB_MAX,
+    db_to_u8, level_to_u16, u16_to_level, u8_to_db, BIN_HEADER_LEN, BIN_TYPE_GR, BIN_TYPE_METERS,
+    BIN_VERSION, GR_DB_MAX,
 };
 use openfader_engine::{Cmd, Engine, EngineConfig, Event, SharedEvent};
 
@@ -23,9 +23,7 @@ async fn new_engine() -> Arc<Engine> {
 
 /// Drain the 6-frame attach snapshot (`you`, `state`, `shows`, `clients`,
 /// `locks`, `caps`).
-async fn drain_snapshot(
-    handle: &mut openfader_engine::engine::ClientHandle,
-) -> Vec<SharedEvent> {
+async fn drain_snapshot(handle: &mut openfader_engine::engine::ClientHandle) -> Vec<SharedEvent> {
     let mut out = Vec::new();
     for _ in 0..6 {
         out.push(
@@ -47,8 +45,7 @@ async fn wait_for(
         if Instant::now() > deadline {
             panic!("timed out waiting for matching event");
         }
-        let next =
-            tokio::time::timeout(Duration::from_millis(500), handle.events.recv()).await;
+        let next = tokio::time::timeout(Duration::from_millis(500), handle.events.recv()).await;
         match next {
             Ok(Some(e)) if want(&e) => return e,
             _ => continue,
@@ -79,20 +76,14 @@ async fn hello_negotiates_binary_meters() {
 
     a.send_json(r#"{"cmd":"hello"}"#).await.unwrap();
     let ack = wait_for(&mut a, |e| matches!(e, Event::Hello { .. })).await;
-    assert_eq!(
-        ack.to_json(),
-        r#"{"type":"hello","binary_meters":true}"#,
-    );
+    assert_eq!(ack.to_json(), r#"{"type":"hello","binary_meters":true}"#,);
     assert!(engine.client_binary_meters(&a.id));
 
     a.send_json(r#"{"cmd":"hello","binary_meters":false}"#)
         .await
         .unwrap();
     let ack = wait_for(&mut a, |e| matches!(e, Event::Hello { .. })).await;
-    assert_eq!(
-        ack.to_json(),
-        r#"{"type":"hello","binary_meters":false}"#,
-    );
+    assert_eq!(ack.to_json(), r#"{"type":"hello","binary_meters":false}"#,);
     assert!(!engine.client_binary_meters(&a.id));
 
     assert!(!engine.client_binary_meters("client-999"));
@@ -170,7 +161,9 @@ fn decode_levels(f: &BinFrame) -> Vec<f32> {
     assert_eq!(f.version, BIN_VERSION);
     assert_eq!(f.payload.len(), f.n as usize * 2);
     f.payload
-        .as_chunks::<2>().0.iter()
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| u16_to_level(u16::from_le_bytes([c[0], c[1]])))
         .collect()
 }
@@ -180,7 +173,9 @@ fn decode_gr(f: &BinFrame) -> Vec<(u8, f32, f32)> {
     assert_eq!(f.version, BIN_VERSION);
     assert_eq!(f.payload.len(), f.n as usize * 3);
     f.payload
-        .as_chunks::<3>().0.iter()
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|c| (c[0], u8_to_db(c[1]), u8_to_db(c[2])))
         .collect()
 }
@@ -236,10 +231,9 @@ fn binary_golden_fixtures() {
             std::fs::write(&path, hex_of(&bytes) + "\n").unwrap();
             continue;
         }
-        let raw =
-            std::fs::read_to_string(&path).unwrap_or_else(|_| {
-                panic!("missing golden binary {name}.bin.hex (run with BIN_UPDATE=1)")
-            });
+        let raw = std::fs::read_to_string(&path).unwrap_or_else(|_| {
+            panic!("missing golden binary {name}.bin.hex (run with BIN_UPDATE=1)")
+        });
         assert_eq!(
             bytes,
             bytes_of(&raw),
@@ -249,8 +243,7 @@ fn binary_golden_fixtures() {
 
     // Decode the committed fixtures with the reference decoder and check
     // the values (this is what the UI test re-implements in TypeScript).
-    let meters_raw =
-        std::fs::read_to_string(dir.join("meters.bin.hex")).unwrap();
+    let meters_raw = std::fs::read_to_string(dir.join("meters.bin.hex")).unwrap();
     let meters = decode_bin(&bytes_of(&meters_raw));
     assert_eq!((meters.ftype, meters.version, meters.n), (1, 1, 4));
     assert_eq!((meters.seq, meters.t_ms), (7, 123_456));
@@ -267,25 +260,30 @@ fn binary_golden_fixtures() {
     let entries = decode_gr(&gr);
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].0, 1, "gr channel");
-    assert!((entries[0].1 - 3.5).abs() < 1e-6, "gr gate {}", entries[0].1);
+    assert!(
+        (entries[0].1 - 3.5).abs() < 1e-6,
+        "gr gate {}",
+        entries[0].1
+    );
     assert_eq!(entries[0].2, 0.0, "gr comp {}", entries[0].2);
 
     // Control frames never encode: the adapter falls back to JSON text.
+    assert!(Event::State {
+        driver: "sim".into(),
+        strips: vec![],
+        main_fader: None,
+        output_meter_targets: Vec::new(),
+        by: None,
+    }
+    .to_binary(0, 0)
+    .is_none());
     assert!(
-        Event::State {
-            driver: "sim".into(),
-            strips: vec![],
-            main_fader: None,
-            output_meter_targets: Vec::new(),
-            by: None,
+        Event::Spectrum {
+            ch: 0,
+            bins: vec![]
         }
         .to_binary(0, 0)
-        .is_none()
-    );
-    assert!(
-        Event::Spectrum { ch: 0, bins: vec![] }
-            .to_binary(0, 0)
-            .is_none(),
+        .is_none(),
         "spectrum stays JSON even in binary mode"
     );
 }
@@ -313,9 +311,7 @@ async fn write_latency_p99_under_saturation() {
     // the harness's own memory churn out of the dispatch measurement.
     for i in 0..8 {
         let mut c = engine.attach(Some(format!("fan{i}"))).await;
-        tokio::spawn(async move {
-            while c.events.recv().await.is_some() {}
-        });
+        tokio::spawn(async move { while c.events.recv().await.is_some() {} });
     }
     let mut me = engine.attach(Some("writer".to_string())).await;
     drain_snapshot(&mut me).await;
@@ -323,7 +319,9 @@ async fn write_latency_p99_under_saturation() {
     for i in 0..50u16 {
         me.send(Cmd::Fader {
             ch: i % 32,
-            value: 0.5, key: None})
+            value: 0.5,
+            key: None,
+        })
         .await
         .unwrap();
     }
@@ -336,22 +334,31 @@ async fn write_latency_p99_under_saturation() {
         let v = 0.1 + 0.8 * ((i % 100) as f32 / 100.0);
         let t = Instant::now();
         match i % 4 {
-            0 => me.send(Cmd::Fader { ch, value: v, key: None}).await.unwrap(),
-            1 => {
-                me.send(Cmd::Mute {
+            0 => me
+                .send(Cmd::Fader {
                     ch,
-                    muted: i % 8 < 4, key: None})
+                    value: v,
+                    key: None,
+                })
                 .await
-                .unwrap()
-            }
-            2 => {
-                me.send(Cmd::Param {
+                .unwrap(),
+            1 => me
+                .send(Cmd::Mute {
+                    ch,
+                    muted: i % 8 < 4,
+                    key: None,
+                })
+                .await
+                .unwrap(),
+            2 => me
+                .send(Cmd::Param {
                     ch,
                     field: "gain".to_string(),
-                    value: serde_json::json!(20.0 + (i % 10) as f64), key: None})
+                    value: serde_json::json!(20.0 + (i % 10) as f64),
+                    key: None,
+                })
                 .await
-                .unwrap()
-            }
+                .unwrap(),
             _ => me.send(Cmd::MainFader { value: v }).await.unwrap(),
         }
         dts.push(t.elapsed());

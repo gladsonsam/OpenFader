@@ -5,7 +5,7 @@ use super::*;
 /// drive that effect's labeled pars bit-exact.
 #[tokio::test]
 async fn loopback_type_then_labeled_pars() {
-    use openfader_transport::{OscSession, osc};
+    use openfader_transport::{osc, OscSession};
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex as StdMutex};
     use tokio::net::UdpSocket;
@@ -104,7 +104,7 @@ async fn loopback_type_then_labeled_pars() {
 /// — tap target par writes round-trip bit-exact via `set_fx_param`.
 #[tokio::test]
 async fn loopback_tap_target_par_roundtrip() {
-    use openfader_transport::{OscSession, osc};
+    use openfader_transport::{osc, OscSession};
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex as StdMutex};
     use tokio::net::UdpSocket;
@@ -189,7 +189,7 @@ async fn loopback_tap_target_par_roundtrip() {
 /// float roundtrips.
 #[tokio::test]
 async fn loopback_mixed_int_float_pars_with_nan_padding() {
-    use openfader_transport::{OscSession, osc};
+    use openfader_transport::{osc, OscSession};
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex as StdMutex};
     use tokio::net::UdpSocket;

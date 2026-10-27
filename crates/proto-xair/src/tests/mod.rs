@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex as StdMutex};
 use tokio::net::UdpSocket;
 
 mod support;
-use support::{FakeMixer, connected_driver};
+use support::{connected_driver, FakeMixer};
 
 mod fx;
 mod inbound;

@@ -22,7 +22,9 @@ fn live() -> bool {
 async fn connected() -> XAirDriver {
     let d = XAirDriver::new();
     // Bare IP (no `:port`): exercises the connect-time 10024 -> 10023 sweep.
-    d.connect(&rig_addr()).await.expect("rig connect (sweep) failed");
+    d.connect(&rig_addr())
+        .await
+        .expect("rig connect (sweep) failed");
     d
 }
 
@@ -37,9 +39,15 @@ async fn live_inbound_leaves_read() {
     // `/ch/02/mix/01/level` == aux1_level: valid dB in the send law range
     // (desk state drifts — no exact-value assert on non-baseline leaves).
     let v = d.get_param(StripId(1), "aux1_level").await.unwrap();
-    assert!(matches!(v, ParamValue::Float(f) if (-90.0..=10.0).contains(&f)), "aux1_level: {v:?}");
+    assert!(
+        matches!(v, ParamValue::Float(f) if (-90.0..=10.0).contains(&f)),
+        "aux1_level: {v:?}"
+    );
     let v = d.get_param(StripId(1), "gain").await.unwrap();
-    assert!(matches!(v, ParamValue::Float(f) if (-12.0..=60.0).contains(&f)), "gain: {v:?}");
+    assert!(
+        matches!(v, ParamValue::Float(f) if (-12.0..=60.0).contains(&f)),
+        "gain: {v:?}"
+    );
     // `/ch/16/config/color` answers (baseline §7: 0).
     let v = d.get_param(StripId(15), "color").await.unwrap();
     assert!(matches!(v, ParamValue::Float(_)), "color: {v:?}");

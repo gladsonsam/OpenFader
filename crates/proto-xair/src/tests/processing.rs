@@ -17,12 +17,10 @@ async fn driver_eq_roundtrip() {
         .set_param(StripId(1), "eq_on", ParamValue::Bool(false))
         .await
         .unwrap();
-    assert!(
-        driver
-            .set_param(StripId(1), "eq_on", ParamValue::Float(1.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(1), "eq_on", ParamValue::Float(1.0))
+        .await
+        .is_err());
 
     driver
         .set_param(StripId(1), "eq2_gain", ParamValue::Float(6.0))
@@ -71,48 +69,34 @@ async fn driver_eq_roundtrip() {
         ParamValue::Float(1.0)
     );
 
-    assert!(
-        driver
-            .set_param(StripId(1), "eq2_gain", ParamValue::Float(15.1))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(1), "eq2_freq", ParamValue::Float(19.9))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(1), "eq2_q", ParamValue::Float(0.29))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(1), "eq2_type", ParamValue::Float(6.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(1), "eq5_gain", ParamValue::Float(0.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(1), "eq2_gain", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(StripId(40), "eq1_gain", ParamValue::Float(0.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(1), "eq2_gain", ParamValue::Float(15.1))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(1), "eq2_freq", ParamValue::Float(19.9))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(1), "eq2_q", ParamValue::Float(0.29))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(1), "eq2_type", ParamValue::Float(6.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(1), "eq5_gain", ParamValue::Float(0.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(1), "eq2_gain", ParamValue::Bool(true))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(StripId(40), "eq1_gain", ParamValue::Float(0.0))
+        .await
+        .is_err());
 }
 
 /// Gate/comp on/off loopback over UDP (`crate::dynamics`,
@@ -147,12 +131,10 @@ async fn driver_gate_comp_on_roundtrip() {
             "{id} wrong kind accepted"
         );
     }
-    assert!(
-        driver
-            .set_param(StripId(40), "gate_on", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(40), "gate_on", ParamValue::Bool(true))
+        .await
+        .is_err());
 }
 
 /// Gate full-set loopback over UDP (`crate::gate`, firmware-truth):
@@ -200,43 +182,31 @@ async fn driver_gate_full_roundtrip() {
         driver.get_param(s, "gate_filter_on").await.unwrap(),
         ParamValue::Bool(true)
     );
-    assert!(
-        driver
-            .set_param(s, "gate_thr", ParamValue::Float(-80.1))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(s, "gate_range", ParamValue::Float(2.9))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(s, "gate_mode", ParamValue::Float(5.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(s, "gate_key_src", ParamValue::Float(23.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(s, "gate_thr", ParamValue::Bool(true))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(s, "gate_thr", ParamValue::Float(-80.1))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(s, "gate_range", ParamValue::Float(2.9))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(s, "gate_mode", ParamValue::Float(5.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(s, "gate_key_src", ParamValue::Float(23.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(s, "gate_thr", ParamValue::Bool(true))
+        .await
+        .is_err());
     // DCA strips carry no gate block (catalogue scopes).
-    assert!(
-        driver
-            .set_param(StripId(31), "gate_thr", ParamValue::Float(-30.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(StripId(31), "gate_thr", ParamValue::Float(-30.0))
+        .await
+        .is_err());
     assert!(driver.get_param(StripId(31), "gate_mode").await.is_err());
     // Channels carry 4 EQ bands (bus/main carry 6).
     assert!(driver.get_param(s, "eq5_gain").await.is_err());
@@ -301,30 +271,22 @@ async fn driver_comp_full_roundtrip() {
         driver.get_param(s, "comp_filter_on").await.unwrap(),
         ParamValue::Bool(false)
     );
-    assert!(
-        driver
-            .set_param(s, "comp_ratio", ParamValue::Float(3.5))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(s, "comp_ratio", ParamValue::Float(101.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(s, "comp_att", ParamValue::Float(121.0))
-            .await
-            .is_err()
-    );
-    assert!(
-        driver
-            .set_param(s, "comp_auto", ParamValue::Float(1.0))
-            .await
-            .is_err()
-    );
+    assert!(driver
+        .set_param(s, "comp_ratio", ParamValue::Float(3.5))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(s, "comp_ratio", ParamValue::Float(101.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(s, "comp_att", ParamValue::Float(121.0))
+        .await
+        .is_err());
+    assert!(driver
+        .set_param(s, "comp_auto", ParamValue::Float(1.0))
+        .await
+        .is_err());
     // FX-send masters carry no comp block (catalogue scopes).
     assert!(driver.get_param(StripId(26), "comp_thr").await.is_err());
 }

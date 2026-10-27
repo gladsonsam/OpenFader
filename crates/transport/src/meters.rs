@@ -102,7 +102,9 @@ pub fn parse_xair_meter_blob(blob: &[u8]) -> Option<Vec<f32>> {
 }
 
 pub fn parse_meter_blob(blob: &[u8]) -> Vec<f32> {
-    blob.as_chunks::<2>().0.iter()
+    blob.as_chunks::<2>()
+        .0
+        .iter()
         .map(|c| sample_to_level(i16::from_le_bytes([c[0], c[1]])))
         .collect()
 }
@@ -304,7 +306,11 @@ mod tests {
         assert!(hub.push(MeterFrame::silent(2)).is_err());
         let mut rx = hub.subscribe();
         assert_eq!(hub.receiver_count(), 1);
-        let n = hub.push(MeterFrame { levels: vec![0.5, 0.25] }).unwrap();
+        let n = hub
+            .push(MeterFrame {
+                levels: vec![0.5, 0.25],
+            })
+            .unwrap();
         assert_eq!(n, 1);
         let frame = rx.try_recv().unwrap();
         assert_eq!(frame.levels, vec![0.5, 0.25]);
@@ -415,10 +421,7 @@ mod tests {
                         "RTA/DYN must not enter the level hub"
                     );
                 } else {
-                    assert_eq!(
-                        parse_meter_message(&msg).unwrap().levels.len(),
-                        count
-                    );
+                    assert_eq!(parse_meter_message(&msg).unwrap().levels.len(), count);
                 }
             }
         }

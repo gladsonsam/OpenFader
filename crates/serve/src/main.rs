@@ -102,11 +102,10 @@ async fn main() -> anyhow::Result<()> {
             }
             "--static-dir" => {
                 i += 1;
-                opts.static_dir = Some(PathBuf::from(
-                    argv.get(i)
-                        .cloned()
-                        .ok_or_else(|| anyhow::anyhow!("--static-dir needs a value"))?,
-                ));
+                opts.static_dir =
+                    Some(PathBuf::from(argv.get(i).cloned().ok_or_else(|| {
+                        anyhow::anyhow!("--static-dir needs a value")
+                    })?));
             }
             v if v.starts_with("--static-dir=") => {
                 opts.static_dir = Some(PathBuf::from(&v["--static-dir=".len()..]));
@@ -142,11 +141,10 @@ async fn main() -> anyhow::Result<()> {
             }
             "--data-dir" => {
                 i += 1;
-                opts.data_dir = Some(PathBuf::from(
-                    argv.get(i)
-                        .cloned()
-                        .ok_or_else(|| anyhow::anyhow!("--data-dir needs a value"))?,
-                ));
+                opts.data_dir =
+                    Some(PathBuf::from(argv.get(i).cloned().ok_or_else(|| {
+                        anyhow::anyhow!("--data-dir needs a value")
+                    })?));
             }
             v if v.starts_with("--data-dir=") => {
                 opts.data_dir = Some(PathBuf::from(&v["--data-dir=".len()..]));

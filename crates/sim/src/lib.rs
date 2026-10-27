@@ -48,19 +48,98 @@ pub const SIM_SUBGROUPS: usize = 6;
 /// R2 mute-group master count (matches the DL32S desk family).
 pub const SIM_MUTE_GROUPS: usize = 6;
 /// Total strips (0..81). Indices 0..40 keep their historic meaning.
-pub const SIM_STRIPS: usize =
-    SIM_CHANNELS + SIM_BUSES + SIM_INPUTS_EXT + SIM_RETS + SIM_FXSNDS + SIM_MTX + SIM_MAINS + SIM_DCAS + SIM_RETURNS;
+pub const SIM_STRIPS: usize = SIM_CHANNELS
+    + SIM_BUSES
+    + SIM_INPUTS_EXT
+    + SIM_RETS
+    + SIM_FXSNDS
+    + SIM_MTX
+    + SIM_MAINS
+    + SIM_DCAS
+    + SIM_RETURNS;
 
 pub const SIM_TOPOLOGY: [StripFamily; 9] = [
-    StripFamily { key: "ch", kind: StripKind::In, label: "Ch 1-32", first: 0, count: SIM_CHANNELS, name_prefix: "Ch", color_default: 2 },
-    StripFamily { key: "mix", kind: StripKind::Bus, label: "Mix 1-8", first: 32, count: SIM_BUSES, name_prefix: "Mix", color_default: 6 },
-    StripFamily { key: "ch2", kind: StripKind::In, label: "Ch 33-48", first: 40, count: SIM_INPUTS_EXT, name_prefix: "Ch", color_default: 2 },
-    StripFamily { key: "fxret", kind: StripKind::Ret, label: "FxRet 1-4", first: 56, count: SIM_RETS, name_prefix: "FxRet", color_default: 6 },
-    StripFamily { key: "fxsnd", kind: StripKind::FxSnd, label: "FxSnd 1-4", first: 60, count: SIM_FXSNDS, name_prefix: "FxSnd", color_default: 4 },
-    StripFamily { key: "mtx", kind: StripKind::Mtx, label: "Mtx 1-8", first: 64, count: SIM_MTX, name_prefix: "Mtx", color_default: 11 },
-    StripFamily { key: "main", kind: StripKind::Main, label: "Main LR", first: 72, count: SIM_MAINS, name_prefix: "Main", color_default: 11 },
-    StripFamily { key: "dca", kind: StripKind::Dca, label: "VCA 1-6", first: 73, count: SIM_DCAS, name_prefix: "VCA", color_default: 0 },
-    StripFamily { key: "ret", kind: strip_schema::RETURN_KIND, label: "Returns", first: 79, count: SIM_RETURNS, name_prefix: "Return", color_default: 2 },
+    StripFamily {
+        key: "ch",
+        kind: StripKind::In,
+        label: "Ch 1-32",
+        first: 0,
+        count: SIM_CHANNELS,
+        name_prefix: "Ch",
+        color_default: 2,
+    },
+    StripFamily {
+        key: "mix",
+        kind: StripKind::Bus,
+        label: "Mix 1-8",
+        first: 32,
+        count: SIM_BUSES,
+        name_prefix: "Mix",
+        color_default: 6,
+    },
+    StripFamily {
+        key: "ch2",
+        kind: StripKind::In,
+        label: "Ch 33-48",
+        first: 40,
+        count: SIM_INPUTS_EXT,
+        name_prefix: "Ch",
+        color_default: 2,
+    },
+    StripFamily {
+        key: "fxret",
+        kind: StripKind::Ret,
+        label: "FxRet 1-4",
+        first: 56,
+        count: SIM_RETS,
+        name_prefix: "FxRet",
+        color_default: 6,
+    },
+    StripFamily {
+        key: "fxsnd",
+        kind: StripKind::FxSnd,
+        label: "FxSnd 1-4",
+        first: 60,
+        count: SIM_FXSNDS,
+        name_prefix: "FxSnd",
+        color_default: 4,
+    },
+    StripFamily {
+        key: "mtx",
+        kind: StripKind::Mtx,
+        label: "Mtx 1-8",
+        first: 64,
+        count: SIM_MTX,
+        name_prefix: "Mtx",
+        color_default: 11,
+    },
+    StripFamily {
+        key: "main",
+        kind: StripKind::Main,
+        label: "Main LR",
+        first: 72,
+        count: SIM_MAINS,
+        name_prefix: "Main",
+        color_default: 11,
+    },
+    StripFamily {
+        key: "dca",
+        kind: StripKind::Dca,
+        label: "VCA 1-6",
+        first: 73,
+        count: SIM_DCAS,
+        name_prefix: "VCA",
+        color_default: 0,
+    },
+    StripFamily {
+        key: "ret",
+        kind: strip_schema::RETURN_KIND,
+        label: "Returns",
+        first: 79,
+        count: SIM_RETURNS,
+        name_prefix: "Return",
+        color_default: 2,
+    },
 ];
 
 pub fn kind_of_strip(idx: usize) -> anyhow::Result<StripKind> {
@@ -125,16 +204,16 @@ impl SimPreset {
 /// XR18 input scribbles (18 physical inputs of a typical live band layout).
 /// Strips 19..=32 keep their `CHxx` spare labels.
 pub const XR18_CHANNELS: [&str; 18] = [
-    "Kick", "Snare", "Hat", "Tom 1", "Tom 2", "Floor", "OH L", "OH R", "Bass", "Gtr L",
-    "Gtr R", "Keys L", "Keys R", "Vox 1", "Vox 2", "Vox 3", "Play L", "Play R",
+    "Kick", "Snare", "Hat", "Tom 1", "Tom 2", "Floor", "OH L", "OH R", "Bass", "Gtr L", "Gtr R",
+    "Keys L", "Keys R", "Vox 1", "Vox 2", "Vox 3", "Play L", "Play R",
 ];
 
 /// DL32S input scribbles (32 physical inputs, typical live band layout).
 pub const DL32S_CHANNELS: [&str; 32] = [
-    "Kick", "Snare", "Hat", "Tom 1", "Tom 2", "Tom 3", "Floor", "OH L", "OH R", "Bass",
-    "Gtr 1", "Gtr 2", "Keys L", "Keys R", "Ac Gtr", "Perc", "Vox 1", "Vox 2", "Vox 3",
-    "Vox 4", "Choir 1", "Choir 2", "Play L", "Play R", "Click", "Talkbk", "Spare 1",
-    "Spare 2", "Spare 3", "Spare 4", "Spare 5", "Spare 6",
+    "Kick", "Snare", "Hat", "Tom 1", "Tom 2", "Tom 3", "Floor", "OH L", "OH R", "Bass", "Gtr 1",
+    "Gtr 2", "Keys L", "Keys R", "Ac Gtr", "Perc", "Vox 1", "Vox 2", "Vox 3", "Vox 4", "Choir 1",
+    "Choir 2", "Play L", "Play R", "Click", "Talkbk", "Spare 1", "Spare 2", "Spare 3", "Spare 4",
+    "Spare 5", "Spare 6",
 ];
 
 /// Sim bus scribbles, shared by the generic-desk presets: front mix, four
@@ -149,22 +228,22 @@ pub const PRESET_BUSES: [&str; 8] = [
 /// read back empty on the hardware. Desk spelling kept (`Abelton`).
 /// Strips 17..=32 keep their `CHxx` spare labels (XR18 is a 16-channel desk).
 pub const STUDIO_CHANNELS: [&str; 16] = [
-    "BASS", "", "", "VOX", "VOX", "", "GTR L", "GTR R", "DRUM L", "DRUM R", "KEYS L",
-    "KEYS R", "AC GTR", "", "Abelton", "Abelton",
+    "BASS", "", "", "VOX", "VOX", "", "GTR L", "GTR R", "DRUM L", "DRUM R", "KEYS L", "KEYS R",
+    "AC GTR", "", "Abelton", "Abelton",
 ];
 
 /// Owner's desk-as-found channel faders, same order (XR18 baseline notes
 /// §2; `/ch/NN/mix/fader`).
 pub const STUDIO_FADERS: [f32; 16] = [
-    0.197458, 0.0, 0.337243, 0.348974, 0.375367, 0.0, 0.434995, 0.434995, 0.0, 0.482893,
-    0.438905, 0.438905, 0.339198, 0.0, 0.524927, 0.524927,
+    0.197458, 0.0, 0.337243, 0.348974, 0.375367, 0.0, 0.434995, 0.434995, 0.0, 0.482893, 0.438905,
+    0.438905, 0.339198, 0.0, 0.524927, 0.524927,
 ];
 
 /// Owner's desk-as-found mute state, same order: `true` = muted.
 /// Baseline column is `mix/on` (1 = ON/unmuted), so mute = `on == 0`.
 pub const STUDIO_MUTES: [bool; 16] = [
-    true, true, true, true, false, true, false, false, false, false, true, true, true,
-    true, true, true,
+    true, true, true, true, false, true, false, false, false, false, true, true, true, true, true,
+    true,
 ];
 
 /// Owner's bus scribbles (`/bus/1..6/config/name`; bus 3 is empty on the
@@ -175,9 +254,7 @@ pub const STUDIO_BUSES: [&str; 8] = [
 
 /// Owner's desk-as-found bus faders (`/bus/1..6/mix/fader` all ON/unmuted);
 /// buses 7..8 are parked spares at 0.75.
-pub const STUDIO_BUS_FADERS: [f32; 8] = [
-    0.749756, 0.749756, 0.749756, 1.0, 1.0, 1.0, 0.75, 0.75,
-];
+pub const STUDIO_BUS_FADERS: [f32; 8] = [0.749756, 0.749756, 0.749756, 1.0, 1.0, 1.0, 0.75, 0.75];
 
 /// Owner's desk-as-found main LR fader (`/lr/mix/fader`, ON/unmuted).
 pub const STUDIO_MAIN: f32 = 0.749756;
@@ -248,7 +325,10 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
     // indices 0..40 keep their historic meaning and new strips still answer
     // the first poll with plausible values).
     for i in 0..SIM_INPUTS_EXT {
-        let mut s = ChannelStrip::new((SIM_CHANNELS + SIM_BUSES + i) as u16, format!("CH{:02}", 33 + i));
+        let mut s = ChannelStrip::new(
+            (SIM_CHANNELS + SIM_BUSES + i) as u16,
+            format!("CH{:02}", 33 + i),
+        );
         s.pan = seed_pan(32 + i, &s.name);
         s.fader = 0.0;
         s.mute = true;
@@ -293,7 +373,10 @@ fn default_strips_for(preset: SimPreset) -> Vec<ChannelStrip> {
         v.push(s);
     }
     for i in 0..SIM_RETURNS {
-        v.push(ChannelStrip::new((79 + i) as u16, format!("Return {}", i + 1)));
+        v.push(ChannelStrip::new(
+            (79 + i) as u16,
+            format!("Return {}", i + 1),
+        ));
     }
     debug_assert_eq!(v.len(), SIM_STRIPS);
     v
@@ -377,10 +460,7 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
     };
     m.insert("gain".into(), f(gain));
     // Condenser-ish sources get phantom; small trim variation everywhere.
-    m.insert(
-        "phantom".into(),
-        b(matches!(role, "vox" | "oh")),
-    );
+    m.insert("phantom".into(), b(matches!(role, "vox" | "oh")));
     m.insert("trim".into(), f((idx % 5) as f32 - 2.0));
     // HPF on for everything except bass/kick (the review's example).
     let hpf = !matches!(role, "bass" | "kick");
@@ -391,10 +471,7 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
         "gate_on".into(),
         b(matches!(role, "kick" | "snare" | "tom" | "drum")),
     );
-    m.insert(
-        "comp_on".into(),
-        b(matches!(role, "bass" | "vox" | "gtr")),
-    );
+    m.insert("comp_on".into(), b(matches!(role, "bass" | "vox" | "gtr")));
     m.insert("eq_on".into(), b(idx % 4 != 3));
     // EQ bands with plausible freq/gain/q/type (types 0..=5 whole numbers).
     let low_boost = if matches!(role, "bass" | "kick") {
@@ -406,10 +483,7 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
     m.insert("eq1_freq".into(), f(100.0));
     m.insert("eq1_q".into(), f(1.0));
     m.insert("eq1_type".into(), f(1.0));
-    m.insert(
-        "eq2_gain".into(),
-        f(if role == "vox" { 2.0 } else { 0.0 }),
-    );
+    m.insert("eq2_gain".into(), f(if role == "vox" { 2.0 } else { 0.0 }));
     m.insert("eq2_freq".into(), f(800.0 + (idx % 4) as f32 * 100.0));
     m.insert("eq2_q".into(), f(1.2));
     m.insert("eq2_type".into(), f(2.0));
@@ -424,10 +498,7 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
     m.insert("eq3_freq".into(), f(3000.0));
     m.insert("eq3_q".into(), f(1.4));
     m.insert("eq3_type".into(), f(2.0));
-    m.insert(
-        "eq4_gain".into(),
-        f(if role == "vox" { 1.0 } else { 0.0 }),
-    );
+    m.insert("eq4_gain".into(), f(if role == "vox" { 1.0 } else { 0.0 }));
     m.insert("eq4_freq".into(), f(12000.0));
     m.insert("eq4_q".into(), f(0.7));
     m.insert("eq4_type".into(), f(4.0));
@@ -459,8 +530,14 @@ fn seed_params_for(idx: usize, name: &str) -> HashMap<String, ParamValue> {
     // seeded scene shows variation.
     m.insert("color".into(), f(if role == "vox" { 3.0 } else { 2.0 }));
     m.insert("icon".into(), f(0.0));
-    m.insert("link".into(), b(name.ends_with(" L") || name.ends_with(" R")));
-    m.insert("source".into(), ParamValue::Text(format!("Lcl {:02}", (idx % 32) + 1)));
+    m.insert(
+        "link".into(),
+        b(name.ends_with(" L") || name.ends_with(" R")),
+    );
+    m.insert(
+        "source".into(),
+        ParamValue::Text(format!("Lcl {:02}", (idx % 32) + 1)),
+    );
     m.insert("delay_on".into(), b(false));
     m.insert("delay_ms".into(), f(0.0));
     m.insert("hpf_slope".into(), f(0.0));
@@ -586,9 +663,30 @@ pub struct SimDevice {
 /// The design's three devices: FOH Console (.20, connected), Monitor
 /// Console (.21, available), Stage Box A (.40, I/O in use).
 pub const SIM_DEVICES: &[SimDevice] = &[
-    SimDevice { id: "foh", name: "FOH Console", model: "SimConsole 48", ip: "192.168.1.120", kind: "console", state: "connected" },
-    SimDevice { id: "mon", name: "Monitor Console", model: "SimConsole 48", ip: "192.168.1.21", kind: "console", state: "available" },
-    SimDevice { id: "sb1", name: "Stage Box A", model: "SimIO 32", ip: "192.168.1.40", kind: "io", state: "in_use" },
+    SimDevice {
+        id: "foh",
+        name: "FOH Console",
+        model: "SimConsole 48",
+        ip: "192.168.1.120",
+        kind: "console",
+        state: "connected",
+    },
+    SimDevice {
+        id: "mon",
+        name: "Monitor Console",
+        model: "SimConsole 48",
+        ip: "192.168.1.21",
+        kind: "console",
+        state: "available",
+    },
+    SimDevice {
+        id: "sb1",
+        name: "Stage Box A",
+        model: "SimIO 32",
+        ip: "192.168.1.40",
+        kind: "io",
+        state: "in_use",
+    },
 ];
 
 /// R2 routing patch groups: Local / Network / USB, 32 sockets each (the
@@ -635,11 +733,11 @@ fn default_fx_for(preset: SimPreset) -> Vec<SimFxSlot> {
         })
         .collect()
 }
+mod fx_controls;
+mod global_controls;
 mod input_processors;
 mod native_library;
 pub mod output_routing;
-mod global_controls;
-mod fx_controls;
 mod solo;
 
 pub struct SimDriver {
@@ -709,7 +807,12 @@ impl SimDriver {
         Self {
             output_routes: RwLock::new(HashMap::new()),
             fx_controls: RwLock::new(fx_controls::initial()),
-            globals: RwLock::new(openfader_core::global_controls::reference_controls().into_iter().chain(solo::controls()).collect()),
+            globals: RwLock::new(
+                openfader_core::global_controls::reference_controls()
+                    .into_iter()
+                    .chain(solo::controls())
+                    .collect(),
+            ),
             processor_revision: AtomicU64::new(0),
             processor_generation: AtomicU64::new(0),
             strips: RwLock::new(strips),
@@ -766,16 +869,22 @@ impl SimDriver {
 
     /// Bulk subgroup-assign snapshot for the engine's attach fast path:
     /// one lock acquisition instead of ~strips × groups awaits. Same
-    /// content `get_subgroup_assign` serves (absent entries read false 
+    /// content `get_subgroup_assign` serves (absent entries read false
     /// callers filter or default identically).
     pub fn bulk_sub_assign(&self) -> HashMap<(u16, u8), bool> {
-        self.sub_assign.read().expect("sim sub_assign poisoned").clone()
+        self.sub_assign
+            .read()
+            .expect("sim sub_assign poisoned")
+            .clone()
     }
 
     /// Bulk mute-group-assign snapshot, mirroring
     /// [`bulk_sub_assign`](SimDriver::bulk_sub_assign).
     pub fn bulk_mg_assign(&self) -> HashMap<(u16, u8), bool> {
-        self.mg_assign.read().expect("sim mg_assign poisoned").clone()
+        self.mg_assign
+            .read()
+            .expect("sim mg_assign poisoned")
+            .clone()
     }
 
     /// Bulk solo snapshot: strip -> soloed (only strips ever soloed
@@ -818,15 +927,19 @@ impl SimDriver {
         let t = tick as f32 * 0.025;
         let ph = i as f32 * 0.7;
         let rate = 0.65 + (i % 5) as f32 * 0.07;
-        let phrase = (0.5 + 0.35 * (t * rate + ph).sin()
-            + 0.15 * (t * 1.7 + ph * 1.3).sin()).clamp(0.0, 1.0);
+        let phrase = (0.5 + 0.35 * (t * rate + ph).sin() + 0.15 * (t * 1.7 + ph * 1.3).sin())
+            .clamp(0.0, 1.0);
         -36.0 + 24.0 * phrase
     }
 
     fn meter_level(&self, i: usize, tick: u64) -> f32 {
-        if kind_of_strip(i).is_ok_and(|kind| kind == StripKind::Dca) { return 0.0; }
+        if kind_of_strip(i).is_ok_and(|kind| kind == StripKind::Dca) {
+            return 0.0;
+        }
         let strips = self.read();
-        let Some(strip) = strips.get(i) else { return 0.0; };
+        let Some(strip) = strips.get(i) else {
+            return 0.0;
+        };
         // Pre-mute signal preview, like the desk's own level stream
         // (XR18 `/meters/1` stays hot while channels sit muted): mute
         // never hides the input here, the mute button shows the state.
@@ -838,18 +951,22 @@ impl SimDriver {
     /// normalize each frame, which makes tiny timing differences look full scale.
     pub fn demo_spectrum(&self, ch: usize) -> Vec<f32> {
         let level = self.meter_level(ch, self.signal_tick());
-        if level <= 0.0 { return vec![0.0; 64]; }
+        if level <= 0.0 {
+            return vec![0.0; 64];
+        }
         let envelope = ((20.0 * level.log10() + 90.0) / 70.0).clamp(0.0, 1.0);
-        (0..64).map(|bin| {
-            let x = bin as f32;
-            let peak = |center: f32, width: f32| (-0.5 * ((x - center) / width).powi(2)).exp();
-            let profile = 0.012
-                + 0.92 * peak(12.0 + (ch % 3) as f32, 3.0)
-                + 0.55 * peak(23.0 + (ch % 4) as f32, 3.8)
-                + 0.20 * peak(34.0, 5.0);
-            let texture = 0.85 + 0.15 * (x * 1.9 + ch as f32 * 0.7).cos();
-            (profile * texture * envelope).clamp(0.0, 1.0)
-        }).collect()
+        (0..64)
+            .map(|bin| {
+                let x = bin as f32;
+                let peak = |center: f32, width: f32| (-0.5 * ((x - center) / width).powi(2)).exp();
+                let profile = 0.012
+                    + 0.92 * peak(12.0 + (ch % 3) as f32, 3.0)
+                    + 0.55 * peak(23.0 + (ch % 4) as f32, 3.8)
+                    + 0.20 * peak(34.0, 5.0);
+                let texture = 0.85 + 0.15 * (x * 1.9 + ch as f32 * 0.7).cos();
+                (profile * texture * envelope).clamp(0.0, 1.0)
+            })
+            .collect()
     }
 
     // ---- R2: FX rack (design types, [`SIM_FX_SLOTS`] slots) ----
@@ -896,11 +1013,10 @@ impl SimDriver {
         let mut fx = self.fx.write().expect("sim fx poisoned");
         let meta = openfader_core::fx::fx_type_meta(&fx[i].fx_type.clone())
             .ok_or_else(|| anyhow::anyhow!("sim: fx slot {slot} has unknown type"))?;
-        let pos = meta
-            .params
-            .iter()
-            .position(|p| p.id == id)
-            .ok_or_else(|| anyhow::anyhow!("sim: unknown fx param {id:?} for {}", meta.label))?;
+        let pos =
+            meta.params.iter().position(|p| p.id == id).ok_or_else(|| {
+                anyhow::anyhow!("sim: unknown fx param {id:?} for {}", meta.label)
+            })?;
         fx[i].params[pos] = value;
         Ok(())
     }
@@ -910,11 +1026,10 @@ impl SimDriver {
         let fx = self.fx.read().expect("sim fx poisoned");
         let meta = openfader_core::fx::fx_type_meta(&fx[i].fx_type)
             .ok_or_else(|| anyhow::anyhow!("sim: fx slot {slot} has unknown type"))?;
-        let pos = meta
-            .params
-            .iter()
-            .position(|p| p.id == id)
-            .ok_or_else(|| anyhow::anyhow!("sim: unknown fx param {id:?} for {}", meta.label))?;
+        let pos =
+            meta.params.iter().position(|p| p.id == id).ok_or_else(|| {
+                anyhow::anyhow!("sim: unknown fx param {id:?} for {}", meta.label)
+            })?;
         Ok(fx[i].params[pos])
     }
 
@@ -984,7 +1099,12 @@ impl SimDriver {
         (0..strips.len())
             .map(|i| {
                 if kind_of_strip(i).is_ok_and(|kind| kind == StripKind::Dca) {
-                    return StripTaps { input: 0.0, post: 0.0, gr_gate_db: 0.0, gr_comp_db: 0.0 };
+                    return StripTaps {
+                        input: 0.0,
+                        post: 0.0,
+                        gr_gate_db: 0.0,
+                        gr_comp_db: 0.0,
+                    };
                 }
                 let input_db = Self::input_db(i, tick);
                 let input = 10.0_f32.powf(input_db / 20.0);
@@ -996,16 +1116,26 @@ impl SimDriver {
                     Some(ParamValue::Float(v)) => *v,
                     _ => fallback,
                 };
-                let enabled = |name: &str| matches!(params[i].get(name), Some(ParamValue::Bool(true)));
+                let enabled =
+                    |name: &str| matches!(params[i].get(name), Some(ParamValue::Bool(true)));
                 let gr_gate_db = if enabled("gate_on") {
                     ((param("gate_thr", -40.0) - input_db) / 12.0).clamp(0.0, 1.0)
                         * param("gate_range", 30.0)
-                } else { 0.0 };
+                } else {
+                    0.0
+                };
                 let gr_comp_db = if enabled("comp_on") {
                     (input_db - param("comp_thr", -20.0)).max(0.0)
                         * (1.0 - 1.0 / param("comp_ratio", 4.0).max(1.0))
-                } else { 0.0 };
-                StripTaps { input, post, gr_gate_db, gr_comp_db }
+                } else {
+                    0.0
+                };
+                StripTaps {
+                    input,
+                    post,
+                    gr_gate_db,
+                    gr_comp_db,
+                }
             })
             .collect()
     }
@@ -1054,32 +1184,89 @@ impl SimDriver {
 }
 
 impl MixerDriver for SimDriver {
-    fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> { self.global_controls().into_iter().chain(self.fx_controls()).collect() }
-    async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
-        self.write_global(target, control, value, expected, None).map(|_| ())
+    fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
+        self.global_controls()
+            .into_iter()
+            .chain(self.fx_controls())
+            .collect()
     }
-    async fn set_fx_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+    async fn set_destination_control(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+    ) -> anyhow::Result<()> {
+        self.write_global(target, control, value, expected, None)
+            .map(|_| ())
+    }
+    async fn set_fx_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         self.write_sim_fx(target, control, value, expected, snapshot, context)
     }
-    async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+    async fn set_target_solo(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         self.write_sim_solo(target, control, value, expected, snapshot, context)
     }
-    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
-        self.write_global(target, control, value, expected, Some(snapshot)).map(Some)
+    async fn set_destination_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+    ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
+        self.write_global(target, control, value, expected, Some(snapshot))
+            .map(Some)
     }
 
     fn stereo_pairs(&self) -> Vec<[u16; 2]> {
-        self.topology().into_iter().filter(|f| matches!(f.kind, StripKind::In) || f.kind == strip_schema::RETURN_KIND)
-            .flat_map(|f| (f.first as u16..(f.first + f.count) as u16).step_by(2)
-                .filter(move |left| *left + 1 < (f.first + f.count) as u16)
-                .map(|left| [left, left + 1])).collect()
+        self.topology()
+            .into_iter()
+            .filter(|f| matches!(f.kind, StripKind::In) || f.kind == strip_schema::RETURN_KIND)
+            .flat_map(|f| {
+                (f.first as u16..(f.first + f.count) as u16)
+                    .step_by(2)
+                    .filter(move |left| *left + 1 < (f.first + f.count) as u16)
+                    .map(|left| [left, left + 1])
+            })
+            .collect()
     }
 
     async fn control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Vec<StripId>> {
-        if matches!(param, "link" | "source" | "source_a" | "source_b" | "source_select" | "trim" | "gain" | "phantom" | "usbreturn") {
+        if matches!(
+            param,
+            "link"
+                | "source"
+                | "source_a"
+                | "source_b"
+                | "source_select"
+                | "trim"
+                | "gain"
+                | "phantom"
+                | "usbreturn"
+        ) {
             return Ok(vec![strip]);
         }
-        if let Some(pair) = self.stereo_pairs().into_iter().find(|pair| pair.contains(&strip.0)) {
+        if let Some(pair) = self
+            .stereo_pairs()
+            .into_iter()
+            .find(|pair| pair.contains(&strip.0))
+        {
             if self.get_param(StripId(pair[0]), "link").await? == ParamValue::Bool(true) {
                 return Ok(pair.into_iter().map(StripId).collect());
             }
@@ -1087,56 +1274,115 @@ impl MixerDriver for SimDriver {
         Ok(vec![strip])
     }
 
-    async fn set_stereo_link(&self, source: StripId, linked: bool)
-        -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
-        let pair = self.stereo_pairs().into_iter().find(|p| p.contains(&source.0))
+    async fn set_stereo_link(
+        &self,
+        source: StripId,
+        linked: bool,
+    ) -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+        let pair = self
+            .stereo_pairs()
+            .into_iter()
+            .find(|p| p.contains(&source.0))
             .ok_or_else(|| anyhow::anyhow!("sim: channel has no stereo partner"))?;
-        let peer = StripId(if pair[0] == source.0 { pair[1] } else { pair[0] });
+        let peer = StripId(if pair[0] == source.0 {
+            pair[1]
+        } else {
+            pair[0]
+        });
         let mut changes = Vec::new();
         if linked && self.get_param(StripId(pair[0]), "link").await? != ParamValue::Bool(true) {
-            let values = self.params.read().expect("sim params poisoned")[source.0 as usize].clone();
+            let values =
+                self.params.read().expect("sim params poisoned")[source.0 as usize].clone();
             for (field, value) in values {
-                if matches!(field.as_str(), "link" | "pan" | "source" | "source_a" | "source_b" | "source_select" | "gain" | "trim" | "phantom" | "usbreturn") { continue; }
-                let Some(def) = strip_schema::definition(&field) else { continue; };
-                if !strip_schema::supports(def, kind_of_strip(source.0 as usize)?) { continue; }
+                if matches!(
+                    field.as_str(),
+                    "link"
+                        | "pan"
+                        | "source"
+                        | "source_a"
+                        | "source_b"
+                        | "source_select"
+                        | "gain"
+                        | "trim"
+                        | "phantom"
+                        | "usbreturn"
+                ) {
+                    continue;
+                }
+                let Some(def) = strip_schema::definition(&field) else {
+                    continue;
+                };
+                if !strip_schema::supports(def, kind_of_strip(source.0 as usize)?) {
+                    continue;
+                }
                 self.set_param(peer, &field, value.clone()).await?;
                 changes.push((peer, field, value));
             }
             let source_strip = self.read()[source.0 as usize].clone();
-            for (field, value) in [("name", ParamValue::Text(source_strip.name)), ("fader", ParamValue::Float(source_strip.fader)), ("mute", ParamValue::Bool(source_strip.mute))] {
+            for (field, value) in [
+                ("name", ParamValue::Text(source_strip.name)),
+                ("fader", ParamValue::Float(source_strip.fader)),
+                ("mute", ParamValue::Bool(source_strip.mute)),
+            ] {
                 self.set_param(peer, field, value.clone()).await?;
                 changes.push((peer, field.to_string(), value));
             }
-            self.set_param(StripId(pair[0]), "pan", ParamValue::Float(0.0)).await?;
+            self.set_param(StripId(pair[0]), "pan", ParamValue::Float(0.0))
+                .await?;
             changes.push((StripId(pair[0]), "pan".to_string(), ParamValue::Float(0.0)));
         }
         for member in pair {
-            self.set_param(StripId(member), "link", ParamValue::Bool(linked)).await?;
-            changes.push((StripId(member), "link".to_string(), ParamValue::Bool(linked)));
+            self.set_param(StripId(member), "link", ParamValue::Bool(linked))
+                .await?;
+            changes.push((
+                StripId(member),
+                "link".to_string(),
+                ParamValue::Bool(linked),
+            ));
         }
         Ok(changes)
     }
 
     fn param_defs(&self) -> &'static [openfader_core::params::ParamDef] {
-        static DEFS: std::sync::OnceLock<Vec<openfader_core::params::ParamDef>> = std::sync::OnceLock::new();
+        static DEFS: std::sync::OnceLock<Vec<openfader_core::params::ParamDef>> =
+            std::sync::OnceLock::new();
         DEFS.get_or_init(|| {
             let mut balance = *openfader_core::params::find("pan").expect("catalogue has pan");
             balance.id = "balance";
             balance.label = "Balance";
             balance.scope = openfader_core::params::ParamScope::Main;
             balance.scopes = &[StripKind::Main];
-            std::iter::once(balance).chain(strip_schema::extra().iter().copied()).collect()
+            std::iter::once(balance)
+                .chain(strip_schema::extra().iter().copied())
+                .collect()
         })
     }
 
-    fn native_library(&self) -> Option<serde_json::Value> { self.library_inventory() }
-    async fn native_library_action(&self, action: &serde_json::Value, expected: &serde_json::Value,
-        check: openfader_core::native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
+    fn native_library(&self) -> Option<serde_json::Value> {
+        self.library_inventory()
+    }
+    async fn native_library_action(
+        &self,
+        action: &serde_json::Value,
+        expected: &serde_json::Value,
+        check: openfader_core::native_library::Check<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
         self.execute_library(action, expected, check).await
     }
-    fn input_processor_guard(&self) -> bool { true }
-    fn channel_processing_guard(&self) -> bool { true }
-    async fn input_processor(&self, strip: StripId, processor: &str, write: Option<(&str, ParamValue)>, expected: Option<&serde_json::Value>, check: openfader_core::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
+    fn input_processor_guard(&self) -> bool {
+        true
+    }
+    fn channel_processing_guard(&self) -> bool {
+        true
+    }
+    async fn input_processor(
+        &self,
+        strip: StripId,
+        processor: &str,
+        write: Option<(&str, ParamValue)>,
+        expected: Option<&serde_json::Value>,
+        check: openfader_core::input_processors::RecallCheck<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
         self.guarded_input_processor(strip, processor, write, expected, check)
     }
     fn name(&self) -> &'static str {
@@ -1161,7 +1407,9 @@ impl MixerDriver for SimDriver {
 
     fn param_text_rules(&self, param: &str) -> Option<openfader_core::params::ParamTextRules> {
         (param == "name").then_some(openfader_core::params::ParamTextRules {
-            max_utf8_bytes: Some(16), allow_empty: false, allow_edge_whitespace: true,
+            max_utf8_bytes: Some(16),
+            allow_empty: false,
+            allow_edge_whitespace: true,
         })
     }
 
@@ -1180,7 +1428,10 @@ impl MixerDriver for SimDriver {
     }
 
     async fn connect(&self, _addr: &str) -> anyhow::Result<()> {
-        let _routes = self.output_routes.write().expect("sim output routes poisoned");
+        let _routes = self
+            .output_routes
+            .write()
+            .expect("sim output routes poisoned");
         self.processor_generation.fetch_add(1, Ordering::AcqRel);
         *self.connected.write().expect("sim flag poisoned") = true;
         Ok(())
@@ -1266,7 +1517,6 @@ impl MixerDriver for SimDriver {
         SIM_SUBGROUPS as u8
     }
 
-
     async fn set_subgroup_fader(&self, group: u8, value: f32) -> anyhow::Result<()> {
         let v = validate_fader(value)?;
         let i = Self::sim_check_subgroup(group)?;
@@ -1290,15 +1540,29 @@ impl MixerDriver for SimDriver {
         Ok(self.subgroups.read().expect("sim subgroups poisoned")[i].1)
     }
 
-    async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+    async fn set_subgroup_assign(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+    ) -> anyhow::Result<()> {
         let key = self.sim_check_sub_assign(ch, group)?;
-        self.sub_assign.write().expect("sim sub_assign poisoned").insert(key, member);
+        self.sub_assign
+            .write()
+            .expect("sim sub_assign poisoned")
+            .insert(key, member);
         Ok(())
     }
 
     async fn get_subgroup_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
         let key = self.sim_check_sub_assign(ch, group)?;
-        Ok(self.sub_assign.read().expect("sim sub_assign poisoned").get(&key).copied().unwrap_or(false))
+        Ok(self
+            .sub_assign
+            .read()
+            .expect("sim sub_assign poisoned")
+            .get(&key)
+            .copied()
+            .unwrap_or(false))
     }
 
     fn mute_group_count(&self) -> u8 {
@@ -1316,15 +1580,29 @@ impl MixerDriver for SimDriver {
         Ok(self.mute_groups.read().expect("sim mute_groups poisoned")[i])
     }
 
-    async fn set_mute_group_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+    async fn set_mute_group_assign(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+    ) -> anyhow::Result<()> {
         let key = self.sim_check_mg_assign(ch, group)?;
-        self.mg_assign.write().expect("sim mg_assign poisoned").insert(key, member);
+        self.mg_assign
+            .write()
+            .expect("sim mg_assign poisoned")
+            .insert(key, member);
         Ok(())
     }
 
     async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool> {
         let key = self.sim_check_mg_assign(ch, group)?;
-        Ok(self.mg_assign.read().expect("sim mg_assign poisoned").get(&key).copied().unwrap_or(false))
+        Ok(self
+            .mg_assign
+            .read()
+            .expect("sim mg_assign poisoned")
+            .get(&key)
+            .copied()
+            .unwrap_or(false))
     }
 
     fn file_transfer(&self) -> bool {
@@ -1353,7 +1631,8 @@ impl MixerDriver for SimDriver {
     async fn set_main_fader(&self, value: f32) -> anyhow::Result<()> {
         // Master commands, strip params, snapshots, recall and meters all
         // address the same LR fader, just as they do for the LR mute.
-        self.set_fader(StripId(SIM_TOPOLOGY[6].first as u16), value).await
+        self.set_fader(StripId(SIM_TOPOLOGY[6].first as u16), value)
+            .await
     }
 
     async fn get_main_fader(&self) -> anyhow::Result<f32> {
@@ -1363,7 +1642,8 @@ impl MixerDriver for SimDriver {
     async fn set_main_mute(&self, muted: bool) -> anyhow::Result<()> {
         // Share the Main strip with snapshots, param reads and meters.
         // A separate mute bit lets the next state frame undo the main echo.
-        self.set_mute(StripId(SIM_TOPOLOGY[6].first as u16), muted).await
+        self.set_mute(StripId(SIM_TOPOLOGY[6].first as u16), muted)
+            .await
     }
 
     async fn get_main_mute(&self) -> anyhow::Result<bool> {
@@ -1373,13 +1653,22 @@ impl MixerDriver for SimDriver {
     async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
         self.idx(strip)?;
         self.legacy_solo_descriptor(strip.0, soloed);
-        self.solos.write().expect("sim solos poisoned").insert(strip.0, soloed);
+        self.solos
+            .write()
+            .expect("sim solos poisoned")
+            .insert(strip.0, soloed);
         Ok(())
     }
 
     async fn get_solo(&self, strip: StripId) -> anyhow::Result<bool> {
         self.idx(strip)?;
-        Ok(self.solos.read().expect("sim solos poisoned").get(&strip.0).copied().unwrap_or(false))
+        Ok(self
+            .solos
+            .read()
+            .expect("sim solos poisoned")
+            .get(&strip.0)
+            .copied()
+            .unwrap_or(false))
     }
 
     async fn set_param(
@@ -1418,10 +1707,18 @@ impl MixerDriver for SimDriver {
             if !strip_schema::supports(def, kind) {
                 anyhow::bail!("sim: {param} out of scope for {kind:?} strips");
             }
-            if openfader_core::params::find(param).is_some() { openfader_core::params::validate(param, &value)?; }
-            else { anyhow::ensure!(matches!(value, ParamValue::Bool(_)), "sim membership requires a boolean"); }
+            if openfader_core::params::find(param).is_some() {
+                openfader_core::params::validate(param, &value)?;
+            } else {
+                anyhow::ensure!(
+                    matches!(value, ParamValue::Bool(_)),
+                    "sim membership requires a boolean"
+                );
+            }
             let mut params = self.params.write().expect("sim params poisoned");
-            if params[i].get(param) != Some(&value) { self.processor_revision.fetch_add(1, Ordering::AcqRel); }
+            if params[i].get(param) != Some(&value) {
+                self.processor_revision.fetch_add(1, Ordering::AcqRel);
+            }
             params[i].insert(param.to_string(), value);
             return Ok(());
         }
@@ -1543,7 +1840,12 @@ mod tests {
         for (i, (f, m)) in STUDIO_FADERS.iter().zip(STUDIO_MUTES.iter()).enumerate() {
             let got = d.get_fader(StripId(i as u16)).await.unwrap();
             assert!((got - f).abs() < 1e-6, "ch{} fader {got} != {f}", i + 1);
-            assert_eq!(d.get_mute(StripId(i as u16)).await.unwrap(), *m, "ch{}", i + 1);
+            assert_eq!(
+                d.get_mute(StripId(i as u16)).await.unwrap(),
+                *m,
+                "ch{}",
+                i + 1
+            );
         }
         assert_eq!(names[16], "CH17");
         assert_eq!(d.get_fader(StripId(16)).await.unwrap(), 0.0);
@@ -1553,7 +1855,11 @@ mod tests {
             let strip = StripId((SIM_CHANNELS + b) as u16);
             assert_eq!(d.get_name(strip).await.unwrap(), *name, "bus{}", b + 1);
             let got = d.get_bus_fader(b as u8).await.unwrap();
-            assert!((got - STUDIO_BUS_FADERS[b]).abs() < 1e-6, "bus{} {got}", b + 1);
+            assert!(
+                (got - STUDIO_BUS_FADERS[b]).abs() < 1e-6,
+                "bus{} {got}",
+                b + 1
+            );
             assert!(!d.get_mute(strip).await.unwrap(), "bus{}", b + 1);
         }
 
@@ -1654,11 +1960,7 @@ mod tests {
                 .unwrap_or_else(|e| panic!("set {f}: {e}"));
         }
         for (f, v) in fields {
-            assert_eq!(
-                d.get_param(s, f).await.unwrap(),
-                *v,
-                "roundtrip {f}"
-            );
+            assert_eq!(d.get_param(s, f).await.unwrap(), *v, "roundtrip {f}");
         }
         for legacy in ["gate_threshold", "comp_threshold", "mutegroup1"] {
             let err = d
@@ -1678,7 +1980,10 @@ mod tests {
         assert_eq!(d.fx_slot_count(), SIM_FX_SLOTS);
         let slots = d.fx_slots();
         let types: Vec<&str> = slots.iter().map(|s| s.fx_type.as_str()).collect();
-        assert_eq!(types, vec!["Hall", "Plate", "Delay", "Chorus", "Room", "Delay", "Flanger", "Hall"]);
+        assert_eq!(
+            types,
+            vec!["Hall", "Plate", "Delay", "Chorus", "Room", "Delay", "Flanger", "Hall"]
+        );
         assert!(slots[..7].iter().all(|s| s.on));
         assert!(!slots[7].on);
         assert_eq!(slots[0].params, vec![0.42, 0.15, 0.6, 0.55, 1.0]);
@@ -1785,7 +2090,13 @@ mod tests {
     async fn param_rejects_unknown_and_wrong_kind() {
         let d = SimDriver::new();
         let s = StripId(0);
-        for bad in ["nope", "eq7_gain", "aux9_level", "fx5_mute", "gate_key_filter"] {
+        for bad in [
+            "nope",
+            "eq7_gain",
+            "aux9_level",
+            "fx5_mute",
+            "gate_key_filter",
+        ] {
             let err = d
                 .set_param(s, bad, ParamValue::Float(1.0))
                 .await
@@ -1881,7 +2192,9 @@ mod tests {
         let s = StripId(2);
         for id in ["usbreturn", "eq1_type", "eq2_type"] {
             let def = openfader_core::params::find(id).unwrap();
-            d.set_param(s, id, ParamValue::Float(def.max)).await.unwrap();
+            d.set_param(s, id, ParamValue::Float(def.max))
+                .await
+                .unwrap();
             assert_eq!(
                 d.get_param(s, id).await.unwrap(),
                 ParamValue::Float(def.max)
@@ -1915,7 +2228,10 @@ mod tests {
                         .unwrap_or_else(|e| panic!("{preset:?} ch{ch} {} = {v:?}: {e}", def.id));
                 }
             }
-            assert!(checked > 100, "input strips carry the bulk of the catalogue");
+            assert!(
+                checked > 100,
+                "input strips carry the bulk of the catalogue"
+            );
             for def in params::CATALOGUE {
                 if params::supports_kind(def, openfader_core::StripKind::In) {
                     continue;
@@ -1975,7 +2291,11 @@ mod tests {
         for fam in SIM_TOPOLOGY {
             assert_eq!(fam.first, next, "gap/overlap before {}", fam.key);
             assert!(fam.count > 0, "empty family {}", fam.key);
-            assert!(!fam.label.is_empty() && !fam.name_prefix.is_empty(), "{}", fam.key);
+            assert!(
+                !fam.label.is_empty() && !fam.name_prefix.is_empty(),
+                "{}",
+                fam.key
+            );
             next = fam.end();
         }
         assert_eq!(next, SIM_STRIPS);
@@ -2008,9 +2328,8 @@ mod tests {
                         let v = got.unwrap_or_else(|e| {
                             panic!("strip {s} ({:?}) {}: {e}", fam.kind, def.id)
                         });
-                        params::validate(def.id, &v).unwrap_or_else(|e| {
-                            panic!("strip {s} {} = {v:?}: {e}", def.id)
-                        });
+                        params::validate(def.id, &v)
+                            .unwrap_or_else(|e| panic!("strip {s} {} = {v:?}: {e}", def.id));
                     } else {
                         assert!(
                             got.is_err(),

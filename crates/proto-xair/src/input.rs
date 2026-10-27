@@ -172,7 +172,10 @@ pub fn usbreturn_to_arg(v: f32) -> anyhow::Result<OscType> {
 pub fn usbreturn_from_msg(msg: &OscMessage) -> anyhow::Result<i32> {
     let i = osc::int_arg(msg)?;
     if !(RTNSRC_MIN..=RTNSRC_MAX).contains(&i) {
-        anyhow::bail!("{}: usb return source {i} outside {RTNSRC_MIN}..={RTNSRC_MAX}", msg.addr);
+        anyhow::bail!(
+            "{}: usb return source {i} outside {RTNSRC_MIN}..={RTNSRC_MAX}",
+            msg.addr
+        );
     }
     Ok(i)
 }

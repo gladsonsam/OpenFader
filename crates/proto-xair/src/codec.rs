@@ -131,9 +131,18 @@ mod tests {
 
     #[test]
     fn log_roundtrips_with_tagged_errors() {
-        assert_eq!(log_to_wire(0.02, 0.02, 2000.0, "gate", "hold").unwrap(), 0.0);
-        assert_eq!(log_to_wire(2000.0, 0.02, 2000.0, "gate", "hold").unwrap(), 1.0);
-        assert_eq!(wire_to_log(0.0, 0.02, 2000.0, "gate", "hold").unwrap(), 0.02);
+        assert_eq!(
+            log_to_wire(0.02, 0.02, 2000.0, "gate", "hold").unwrap(),
+            0.0
+        );
+        assert_eq!(
+            log_to_wire(2000.0, 0.02, 2000.0, "gate", "hold").unwrap(),
+            1.0
+        );
+        assert_eq!(
+            wire_to_log(0.0, 0.02, 2000.0, "gate", "hold").unwrap(),
+            0.02
+        );
         let live = wire_to_log(0.76, 0.02, 2000.0, "gate", "hold").unwrap();
         assert!((live - 126.0).abs() < 3.0, "live hold {live}");
         assert!(log_to_wire(0.019, 0.02, 2000.0, "gate", "hold").is_err());
@@ -142,7 +151,10 @@ mod tests {
 
     #[test]
     fn int_codec_with_tagged_errors() {
-        assert_eq!(int_to_arg(4.0, 0, 4, "gate", "mode").unwrap(), OscType::Int(4));
+        assert_eq!(
+            int_to_arg(4.0, 0, 4, "gate", "mode").unwrap(),
+            OscType::Int(4)
+        );
         assert!(int_to_arg(5.0, 0, 4, "gate", "mode").is_err());
         assert!(int_to_arg(1.5, 0, 4, "gate", "mode").is_err());
         let reply = rosc::OscMessage {

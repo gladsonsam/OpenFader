@@ -11,7 +11,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
-use tokio::sync::{Mutex, broadcast, oneshot};
+use tokio::sync::{broadcast, oneshot, Mutex};
 use tokio::task::JoinHandle;
 
 pub const DEFAULT_QUERY_TIMEOUT: Duration = Duration::from_secs(2);
@@ -155,7 +155,9 @@ impl OscSession {
                     let n = match socket.recv(&mut buf).await {
                         Ok(n) => n,
                         Err(error) => {
-                            eprintln!("OSC receive error: {error}; retrying same connected peer in 250ms");
+                            eprintln!(
+                                "OSC receive error: {error}; retrying same connected peer in 250ms"
+                            );
                             tokio::time::sleep(Duration::from_millis(250)).await;
                             continue;
                         }
@@ -229,12 +231,9 @@ impl OscSession {
         self.query_timeout(addr, DEFAULT_QUERY_TIMEOUT).await
     }
 
-    pub async fn query_timeout(
-        &self,
-        addr: &str,
-        timeout: Duration,
-    ) -> anyhow::Result<OscMessage> {
-        self.query_with_args_timeout(addr, vec![], timeout, |_| true).await
+    pub async fn query_timeout(&self, addr: &str, timeout: Duration) -> anyhow::Result<OscMessage> {
+        self.query_with_args_timeout(addr, vec![], timeout, |_| true)
+            .await
     }
 
     /// Query a mixer-specific OSC operation and accept only its reply shape.
@@ -253,7 +252,10 @@ impl OscSession {
         let bytes = osc::encode_message(addr, args)?;
         let _guard = self.query_shards[query_shard(addr)].lock().await;
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().await.insert(addr.to_string(), PendingQuery { tx, accepts });
+        self.pending
+            .lock()
+            .await
+            .insert(addr.to_string(), PendingQuery { tx, accepts });
         if let Err(error) = self.socket.send(&bytes).await {
             self.pending.lock().await.remove(addr);
             return Err(error.into());
@@ -280,7 +282,9 @@ impl OscSession {
     }
 
     /// Ordered control receives, timestamped at the socket, including replies.
-    pub fn subscribe_received_updates(&self) -> broadcast::Receiver<(std::time::Instant, OscMessage)> {
+    pub fn subscribe_received_updates(
+        &self,
+    ) -> broadcast::Receiver<(std::time::Instant, OscMessage)> {
         self.received_tx.subscribe()
     }
 
@@ -345,22 +349,16 @@ impl OscSession {
     /// the stream (alive at t+14 s); sent after death it does NOT
     /// resurrect, resubscribe instead.
     pub async fn renew(&self, sub_slot: &str) -> anyhow::Result<()> {
-        self.send(
-            "/renew",
-            vec![OscType::String(sub_slot.to_string())],
-        )
-        .await
+        self.send("/renew", vec![OscType::String(sub_slot.to_string())])
+            .await
     }
 
     /// Subscription stop (VERIFIED live 2026-10-19, XR18 FW 1.20
     /// XR18 protocol notes from desk research §4): sends `/unsubscribe` +
     /// `sub_slot` (string). Expect a few in-flight residuals after the stop.
     pub async fn unsubscribe(&self, sub_slot: &str) -> anyhow::Result<()> {
-        self.send(
-            "/unsubscribe",
-            vec![OscType::String(sub_slot.to_string())],
-        )
-        .await
+        self.send("/unsubscribe", vec![OscType::String(sub_slot.to_string())])
+            .await
     }
 
     /// Raw socket access for driver-specific fire-and-forget flows.
@@ -660,11 +658,9 @@ mod tests {
             };
             for msg in osc::flatten(packet) {
                 if msg.addr == "/info" {
-                    let reply = osc::encode_message(
-                        "/info",
-                        vec![rosc::OscType::String("back".into())],
-                    )
-                    .unwrap();
+                    let reply =
+                        osc::encode_message("/info", vec![rosc::OscType::String("back".into())])
+                            .unwrap();
                     let _ = mixer.send_to(&reply, peer).await;
                 }
             }
@@ -697,18 +693,14 @@ mod tests {
                     if msg.addr == "/info" && msg.args.is_empty() {
                         for _ in 0..200 {
                             let blob = crate::meters::build_meter_blob(&[0.1, 0.5]);
-                            let bytes = osc::encode_message(
-                                "/meters/1",
-                                vec![rosc::OscType::Blob(blob)],
-                            )
-                            .unwrap();
+                            let bytes =
+                                osc::encode_message("/meters/1", vec![rosc::OscType::Blob(blob)])
+                                    .unwrap();
                             let _ = mixer.send_to(&bytes, peer).await;
                         }
-                        let reply = osc::encode_message(
-                            "/info",
-                            vec![rosc::OscType::String("ok".into())],
-                        )
-                        .unwrap();
+                        let reply =
+                            osc::encode_message("/info", vec![rosc::OscType::String("ok".into())])
+                                .unwrap();
                         let _ = mixer.send_to(&reply, peer).await;
                     }
                 }
@@ -806,8 +798,7 @@ mod tests {
         let client = session.socket().local_addr().unwrap();
         for addr in ["meters/1", "/meters/1"] {
             let blob = crate::meters::build_meter_blob(&[0.1, 0.5]);
-            let bytes =
-                osc::encode_message(addr, vec![rosc::OscType::Blob(blob)]).unwrap();
+            let bytes = osc::encode_message(addr, vec![rosc::OscType::Blob(blob)]).unwrap();
             mixer.send_to(&bytes, client).await.unwrap();
             let frame = tokio::time::timeout(Duration::from_secs(2), meters.recv())
                 .await
@@ -835,7 +826,13 @@ mod typed_query_tests {
             let blob = osc::encode_message("/delay", vec![OscType::Blob(vec![0xde])]).unwrap();
             // Neither this value nor another-address blob can complete DD.
             mixer.send_to(&value, peer).await.unwrap();
-            mixer.send_to(&osc::encode_message("/other", vec![OscType::Blob(vec![0xde])]).unwrap(), peer).await.unwrap();
+            mixer
+                .send_to(
+                    &osc::encode_message("/other", vec![OscType::Blob(vec![0xde])]).unwrap(),
+                    peer,
+                )
+                .await
+                .unwrap();
             mixer.send_to(&blob, peer).await.unwrap();
             let (n, _) = mixer.recv_from(&mut buf).await.unwrap();
             let request = osc::flatten(osc::decode_packet(&buf[..n]).unwrap());
@@ -844,17 +841,32 @@ mod typed_query_tests {
             mixer.send_to(&blob, peer).await.unwrap();
             mixer.send_to(&value, peer).await.unwrap();
         });
-        let blob = session.query_with_args_timeout("/delay", vec![OscType::Blob(vec![0xdd])],
-            Duration::from_secs(2), |msg| matches!(msg.args.as_slice(), [OscType::Blob(_)]))
-            .await.unwrap();
+        let blob = session
+            .query_with_args_timeout(
+                "/delay",
+                vec![OscType::Blob(vec![0xdd])],
+                Duration::from_secs(2),
+                |msg| matches!(msg.args.as_slice(), [OscType::Blob(_)]),
+            )
+            .await
+            .unwrap();
         assert_eq!(blob.args, vec![OscType::Blob(vec![0xde])]);
-        let value = session.query_with_args_timeout("/delay", vec![], Duration::from_secs(2),
-            |msg| matches!(msg.args.as_slice(), [OscType::Float(_)]))
-            .await.unwrap();
+        let value = session
+            .query_with_args_timeout("/delay", vec![], Duration::from_secs(2), |msg| {
+                matches!(msg.args.as_slice(), [OscType::Float(_)])
+            })
+            .await
+            .unwrap();
         assert_eq!(value.args, vec![OscType::Float(12.)]);
-        assert_eq!(updates.recv().await.unwrap().args, vec![OscType::Float(12.)]);
+        assert_eq!(
+            updates.recv().await.unwrap().args,
+            vec![OscType::Float(12.)]
+        );
         assert_eq!(updates.recv().await.unwrap().addr, "/other");
-        assert_eq!(updates.recv().await.unwrap().args, vec![OscType::Blob(vec![0xde])]);
+        assert_eq!(
+            updates.recv().await.unwrap().args,
+            vec![OscType::Blob(vec![0xde])]
+        );
         task.await.unwrap();
     }
 
@@ -865,23 +877,43 @@ mod typed_query_tests {
             let mut buf = [0u8; 1024];
             for _ in 0..2 {
                 let (_, peer) = mixer.recv_from(&mut buf).await.unwrap();
-                mixer.send_to(&osc::encode_message("/delay", vec![OscType::Float(2.)]).unwrap(), peer).await.unwrap();
+                mixer
+                    .send_to(
+                        &osc::encode_message("/delay", vec![OscType::Float(2.)]).unwrap(),
+                        peer,
+                    )
+                    .await
+                    .unwrap();
             }
         });
-        assert!(session.query_with_args_timeout("/delay", vec![OscType::Blob(vec![0xdd])],
-            Duration::from_millis(50), |msg| matches!(msg.args.as_slice(), [OscType::Blob(_)]))
-            .await.is_err());
+        assert!(session
+            .query_with_args_timeout(
+                "/delay",
+                vec![OscType::Blob(vec![0xdd])],
+                Duration::from_millis(50),
+                |msg| matches!(msg.args.as_slice(), [OscType::Blob(_)])
+            )
+            .await
+            .is_err());
         assert!(session.pending.lock().await.is_empty());
-        assert_eq!(session.query("/delay").await.unwrap().args, vec![OscType::Float(2.)]);
+        assert_eq!(
+            session.query("/delay").await.unwrap().args,
+            vec![OscType::Float(2.)]
+        );
         task.await.unwrap();
     }
     #[tokio::test]
     async fn typed_query_send_failure_does_not_leave_a_pending_reply_slot() {
         let (session, _mixer) = super::tests::loopback_pair().await;
-        let result = session.query_with_args_timeout("/oversized",
-            vec![OscType::Blob(vec![0; 70_000])], Duration::from_secs(1), |_| true).await;
+        let result = session
+            .query_with_args_timeout(
+                "/oversized",
+                vec![OscType::Blob(vec![0; 70_000])],
+                Duration::from_secs(1),
+                |_| true,
+            )
+            .await;
         assert!(result.is_err());
         assert!(session.pending.lock().await.is_empty());
     }
-
 }

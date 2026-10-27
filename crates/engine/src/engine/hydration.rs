@@ -8,7 +8,14 @@ type FillResult = anyhow::Result<ParamValue>;
 /// error), a pair the desk already pushed while the fill was opening
 /// (skip without cost), or an exhausted deadline (stop the fill).
 enum FillRead {
-    Done((u16, &'static str, Instant, Result<FillResult, tokio::time::error::Elapsed>)),
+    Done(
+        (
+            u16,
+            &'static str,
+            Instant,
+            Result<FillResult, tokio::time::error::Elapsed>,
+        ),
+    ),
     Skipped,
     Stop,
 }
@@ -335,7 +342,10 @@ impl Engine {
             // duplicate never costs a query.
             phase_items.sort();
             phase_items.dedup();
-            eprintln!("engine: {driver} fill phase {phase}: {} items", phase_items.len());
+            eprintln!(
+                "engine: {driver} fill phase {phase}: {} items",
+                phase_items.len()
+            );
             let mut pending = Vec::with_capacity(phase_items.len());
             for (ch, id) in phase_items {
                 let driver = driver.clone();
@@ -367,11 +377,9 @@ impl Engine {
                     if budget.is_zero() {
                         return FillRead::Stop;
                     }
-                    let result = tokio::time::timeout(
-                        budget,
-                        self.read_param(&driver, StripId(ch), id),
-                    )
-                    .await;
+                    let result =
+                        tokio::time::timeout(budget, self.read_param(&driver, StripId(ch), id))
+                            .await;
                     FillRead::Done((ch, id, started, result))
                 });
             }

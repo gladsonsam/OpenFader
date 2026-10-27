@@ -40,8 +40,10 @@ fn capture(
         anyhow::anyhow!("Waiting for complete verified input processor and stereo link readback")
     })?;
     if addresses.len() > ids.len() {
-        anyhow::ensure!(observed[ids.len()].0 == 0 && observed[ids.len() + 1].0 == 0,
-            "Input presets require verified unlinked channels and known link direction");
+        anyhow::ensure!(
+            observed[ids.len()].0 == 0 && observed[ids.len() + 1].0 == 0,
+            "Input presets require verified unlinked channels and known link direction"
+        );
     }
     let rows = ids
         .iter()

@@ -355,7 +355,8 @@ pub fn stats(client_id: String) -> String {
         .unwrap()
         .get(&client_id)
         .map(|c| {
-            c.handle.events.len() + c.pending_json.len()
+            c.handle.events.len()
+                + c.pending_json.len()
                 + usize::from(c.pending_output_json.is_some())
         })
         .unwrap_or(0);

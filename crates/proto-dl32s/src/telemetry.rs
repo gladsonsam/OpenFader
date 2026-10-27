@@ -1,8 +1,13 @@
 //! Push-decoded input/dynamics meters and passive shared-source RTA.
-use crate::{Dl32sDriver, addrs::INPUT_COUNT};
+use crate::{addrs::INPUT_COUNT, Dl32sDriver};
+use layout::{
+    DYNAMICS_FRAME_LEN, DYNAMICS_OFFSET, OUTPUT_GR_FRAME_LEN, RTA_BIN_COUNT, RTA_FRAME_LEN,
+    RTA_OFFSET as RTA_BIN_OFFSET,
+};
 use openfader_core::{AudioSpectrum, MeterFrame, StripId};
-use openfader_transport::mackie::{dl32s_meters as layout, PushEvent, VALUE_TYPE_METERS, VALUE_TYPE_MUTE_GROUP};
-use layout::{DYNAMICS_OFFSET, DYNAMICS_FRAME_LEN, OUTPUT_GR_FRAME_LEN, RTA_FRAME_LEN, RTA_OFFSET as RTA_BIN_OFFSET, RTA_BIN_COUNT};
+use openfader_transport::mackie::{
+    dl32s_meters as layout, PushEvent, VALUE_TYPE_METERS, VALUE_TYPE_MUTE_GROUP,
+};
 use std::{sync::atomic::Ordering, time::Duration};
 
 /// Input-meter push shape (type-1 `Values`): list ID `start == 1` with
@@ -69,16 +74,39 @@ pub(super) fn decode_input_meters(push: &PushEvent) -> Option<Vec<f32>> {
 
 // Dynamics starts after the actual 62-strip + 31-RTA prefix. Each row is
 // gate IN/positive GR/OUT then compressor IN/positive GR/OUT.
-pub(super) fn decode_dynamics_meters(push: &PushEvent) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
-    let PushEvent::Values { value_type: VALUE_TYPE_METERS, start: METER_START, raws } = push else { return None; };
-    if !matches!(raws.len(), DYNAMICS_FRAME_LEN | OUTPUT_GR_FRAME_LEN) { return None; }
+pub(super) fn decode_dynamics_meters(
+    push: &PushEvent,
+) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
+    let PushEvent::Values {
+        value_type: VALUE_TYPE_METERS,
+        start: METER_START,
+        raws,
+    } = push
+    else {
+        return None;
+    };
+    if !matches!(raws.len(), DYNAMICS_FRAME_LEN | OUTPUT_GR_FRAME_LEN) {
+        return None;
+    }
     let mut frames = Vec::with_capacity(layout::INPUT_COUNT);
-    for (ch, row) in raws[DYNAMICS_OFFSET..DYNAMICS_FRAME_LEN].as_chunks::<{ layout::DYNAMICS_WIDTH }>().0.iter().enumerate() {
+    for (ch, row) in raws[DYNAMICS_OFFSET..DYNAMICS_FRAME_LEN]
+        .as_chunks::<{ layout::DYNAMICS_WIDTH }>()
+        .0
+        .iter()
+        .enumerate()
+    {
         let v: Vec<f32> = row.iter().map(|r| f32::from_bits(*r)).collect();
-        if v.iter().any(|v| !v.is_finite()) || v[1] < -0.001 || v[4] < -0.001 { return None; }
+        if v.iter().any(|v| !v.is_finite()) || v[1] < -0.001 || v[4] < -0.001 {
+            return None;
+        }
         frames.push(openfader_core::DynamicsMeterFrame {
-            ch: ch as u16, gate_in: v[0], gate_reduction: v[1].max(0.0), gate_out: v[2],
-            comp_in: v[3], comp_reduction: v[4].max(0.0), comp_out: v[5],
+            ch: ch as u16,
+            gate_in: v[0],
+            gate_reduction: v[1].max(0.0),
+            gate_out: v[2],
+            comp_in: v[3],
+            comp_reduction: v[4].max(0.0),
+            comp_out: v[5],
         });
     }
     Some(frames)
@@ -116,9 +144,9 @@ const RTA_SETTLE: Duration = Duration::from_millis(500);
 /// bands were not individually excited). Positions are trusted; exact band
 /// shapes were not measured.
 const RTA_CENTERS_HZ: [f32; RTA_BIN_COUNT] = [
-    20.0, 25.0, 31.5, 40.0, 50.0, 63.0, 80.0, 100.0, 125.0, 160.0, 200.0, 250.0, 315.0,
-    400.0, 500.0, 630.0, 800.0, 1000.0, 1250.0, 1600.0, 2000.0, 2500.0, 3150.0, 4000.0,
-    5000.0, 6300.0, 8000.0, 10000.0, 12500.0, 16000.0, 20000.0,
+    20.0, 25.0, 31.5, 40.0, 50.0, 63.0, 80.0, 100.0, 125.0, 160.0, 200.0, 250.0, 315.0, 400.0,
+    500.0, 630.0, 800.0, 1000.0, 1250.0, 1600.0, 2000.0, 2500.0, 3150.0, 4000.0, 5000.0, 6300.0,
+    8000.0, 10000.0, 12500.0, 16000.0, 20000.0,
 ];
 
 /// Nominal 32 band edges for [`RTA_CENTERS_HZ`]: geometric midpoints
@@ -167,7 +195,12 @@ pub(super) fn decode_rta_bins(push: &PushEvent) -> Option<Vec<f32>> {
         } if *value_type == VALUE_TYPE_METERS => (*start, raws),
         _ => return None,
     };
-    if start != METER_START || !matches!(raws.len(), RTA_FRAME_LEN | DYNAMICS_FRAME_LEN | OUTPUT_GR_FRAME_LEN) {
+    if start != METER_START
+        || !matches!(
+            raws.len(),
+            RTA_FRAME_LEN | DYNAMICS_FRAME_LEN | OUTPUT_GR_FRAME_LEN
+        )
+    {
         return None;
     }
     let mut out = Vec::with_capacity(RTA_BIN_COUNT);
@@ -230,11 +263,22 @@ impl Dl32sDriver {
         }
     }
 
-    pub(super) fn telemetry_poll_dynamics_meters(&self) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
+    pub(super) fn telemetry_poll_dynamics_meters(
+        &self,
+    ) -> Option<Vec<openfader_core::DynamicsMeterFrame>> {
         let current = self.generation.load(Ordering::Acquire);
-        Some(self.meters.lock().ok().filter(|m| m.generation == current &&
-            m.dynamics_at.is_some_and(|at| at.elapsed() <= METER_STALE_AFTER))
-            .map(|m| m.dynamics.clone()).unwrap_or_default())
+        Some(
+            self.meters
+                .lock()
+                .ok()
+                .filter(|m| {
+                    m.generation == current
+                        && m.dynamics_at
+                            .is_some_and(|at| at.elapsed() <= METER_STALE_AFTER)
+                })
+                .map(|m| m.dynamics.clone())
+                .unwrap_or_default(),
+        )
     }
 
     /// Passive shared RTA: the desk's source selected on the desk,

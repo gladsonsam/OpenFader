@@ -174,7 +174,9 @@ impl Outbox {
     fn store(&mut self, frame: openfader_engine::SharedEvent) {
         use openfader_engine::Event as E;
         match &*frame.event {
-            E::OutputMeters { .. } => { self.outputs = Some(frame); }
+            E::OutputMeters { .. } => {
+                self.outputs = Some(frame);
+            }
             E::Meters { .. } => {
                 if self.meters.replace(frame).is_some() {
                     self.meters_dropped += 1;
@@ -208,7 +210,8 @@ impl Outbox {
     }
 
     fn queue_depth(&self) -> usize {
-        self.control.len() + usize::from(self.outputs.is_some())
+        self.control.len()
+            + usize::from(self.outputs.is_some())
             + usize::from(self.meters.is_some())
             + self.taps.len()
             + self.spectrum.len()
@@ -240,19 +243,25 @@ impl Outbox {
     /// R2 taps frames encode binary (type 3) only for taps-negotiated
     /// clients and count into the meters stream (the `stats` shape is
     /// pinned, so taps fold into `meters_sent`/`meters_dropped`).
-    fn take_next(
-        &mut self,
-        engine: &openfader_engine::Engine,
-    ) -> Option<(Message, StreamKind)> {
+    fn take_next(&mut self, engine: &openfader_engine::Engine) -> Option<(Message, StreamKind)> {
         if let Some(frame) = self.control.pop_front() {
-            return Some((Message::Text(frame.json.to_string().into()), StreamKind::Control));
+            return Some((
+                Message::Text(frame.json.to_string().into()),
+                StreamKind::Control,
+            ));
         }
         if let Some(frame) = self.outputs.take() {
-            return Some((Message::Text(frame.json.to_string().into()), StreamKind::Meters));
+            return Some((
+                Message::Text(frame.json.to_string().into()),
+                StreamKind::Meters,
+            ));
         }
         let t_ms = engine.now_ms();
         if let Some(event) = self.meters.take() {
-            return Some((encode_stream(event, &mut self.seq, t_ms, self.binary), StreamKind::Meters));
+            return Some((
+                encode_stream(event, &mut self.seq, t_ms, self.binary),
+                StreamKind::Meters,
+            ));
         }
         if let Some(tap) = self.taps.keys().next().cloned() {
             let event = self.taps.remove(&tap).expect("key just read");
@@ -263,11 +272,17 @@ impl Outbox {
         }
         if let Some(ch) = self.spectrum.keys().next().copied() {
             let event = self.spectrum.remove(&ch).expect("key just read");
-            return Some((encode_stream(event, &mut self.seq, t_ms, self.binary), StreamKind::Spectrum));
+            return Some((
+                encode_stream(event, &mut self.seq, t_ms, self.binary),
+                StreamKind::Spectrum,
+            ));
         }
         if let Some(ch) = self.gr.keys().next().copied() {
             let event = self.gr.remove(&ch).expect("key just read");
-            return Some((encode_stream(event, &mut self.seq, t_ms, self.binary), StreamKind::Gr));
+            return Some((
+                encode_stream(event, &mut self.seq, t_ms, self.binary),
+                StreamKind::Gr,
+            ));
         }
         None
     }
@@ -438,8 +453,7 @@ async fn handle_socket(
                         } else {
                             engine.handle_json(&id, &text).await;
                             let mut outbox = outbox.lock().await;
-                            outbox.binary =
-                                engine.client_binary_meters(&id);
+                            outbox.binary = engine.client_binary_meters(&id);
                             outbox.taps_binary = engine.client_taps(&id);
                         }
                     }
@@ -565,7 +579,9 @@ async fn static_root(AxumState(app): AxumState<AppState>) -> impl IntoResponse {
 fn api_only() -> axum::response::Response {
     (
         StatusCode::NOT_FOUND,
-        Html("<h1>openfader-serve</h1><p>No static UI found. WebSocket API at <code>/ws</code>.</p>"),
+        Html(
+            "<h1>openfader-serve</h1><p>No static UI found. WebSocket API at <code>/ws</code>.</p>",
+        ),
     )
         .into_response()
 }
@@ -586,9 +602,7 @@ async fn static_file(
     };
     // Fall back to index.html for unknown paths (SPA).
     match tokio::fs::read(dir.join(&path)).await {
-        Ok(bytes) => {
-            ([(header::CONTENT_TYPE, content_type(&path))], bytes).into_response()
-        }
+        Ok(bytes) => ([(header::CONTENT_TYPE, content_type(&path))], bytes).into_response(),
         Err(_) => read_index(dir).await,
     }
 }
@@ -629,10 +643,7 @@ struct AppState {
 /// option-setting in [`configure_accepted`], covered by
 /// `accepted_socket_has_nodelay` below. Otherwise identical behaviour:
 /// HTTP/1 + upgrades, one task per connection.
-async fn serve_loop(
-    listener: tokio::net::TcpListener,
-    app: Router,
-) -> std::io::Result<()> {
+async fn serve_loop(listener: tokio::net::TcpListener, app: Router) -> std::io::Result<()> {
     loop {
         let (stream, _peer) = match listener.accept().await {
             Ok(v) => v,
@@ -659,10 +670,7 @@ async fn serve_loop(
 
 /// Serve the API + static UI until the listener errors or the future is
 /// dropped (tests abort the spawned task).
-pub async fn run(
-    listener: tokio::net::TcpListener,
-    opts: ServeOptions,
-) -> anyhow::Result<()> {
+pub async fn run(listener: tokio::net::TcpListener, opts: ServeOptions) -> anyhow::Result<()> {
     run_with_lock_ttl(listener, opts, LOCK_TTL).await
 }
 
@@ -699,8 +707,15 @@ pub async fn run_with_full(
     use openfader_engine::{Engine, EngineConfig};
 
     let local = listener.local_addr()?;
-    if opts.sim_only && (opts.driver != "sim" || opts.addr.is_some() || opts.data_dir.is_some() || data_dir.is_some()) {
-        anyhow::bail!("--sim-only requires the sim driver, no mixer address, and an in-memory scene library");
+    if opts.sim_only
+        && (opts.driver != "sim"
+            || opts.addr.is_some()
+            || opts.data_dir.is_some()
+            || data_dir.is_some())
+    {
+        anyhow::bail!(
+            "--sim-only requires the sim driver, no mixer address, and an in-memory scene library"
+        );
     }
     let preset = match opts.preset.as_deref() {
         None => None,
@@ -738,7 +753,11 @@ pub async fn run_with_full(
         .route("/healthz", get(health))
         .route("/", get(static_root))
         .route("/{*path}", get(static_file))
-        .with_state(AppState { engine, static_dir, sim_only: opts.sim_only });
+        .with_state(AppState {
+            engine,
+            static_dir,
+            sim_only: opts.sim_only,
+        });
 
     eprintln!("openfader-serve: listening on http://{local} (ws://{local}/ws)");
     serve_loop(listener, app).await?;
@@ -753,9 +772,7 @@ mod tests {
     /// real loopback pair, real `configure_accepted`, real `getsockopt`.
     #[tokio::test]
     async fn accepted_socket_has_nodelay() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let accepted = tokio::spawn(async move { listener.accept().await.unwrap().0 });
         let _client = tokio::net::TcpStream::connect(addr).await.unwrap();
@@ -819,10 +836,19 @@ mod tests {
         let engine = openfader_engine::Engine::new(openfader_engine::EngineConfig::default());
         let mut o = Outbox::new();
         let shared = openfader_engine::SharedEvent::new;
-        o.store(shared(Event::Taps { tap: "in".into(), levels: vec![0.1] }));
-        o.store(shared(Event::Taps { tap: "post".into(), levels: vec![0.2] }));
+        o.store(shared(Event::Taps {
+            tap: "in".into(),
+            levels: vec![0.1],
+        }));
+        o.store(shared(Event::Taps {
+            tap: "post".into(),
+            levels: vec![0.2],
+        }));
         assert_eq!(o.queue_depth(), 2);
-        o.store(shared(Event::Taps { tap: "in".into(), levels: vec![0.3] }));
+        o.store(shared(Event::Taps {
+            tap: "in".into(),
+            levels: vec![0.3],
+        }));
         assert_eq!(o.meters_dropped, 1);
         assert_eq!(o.queue_depth(), 2);
         // JSON by default…
@@ -831,7 +857,10 @@ mod tests {
         assert!(matches!(msg, Message::Text(_)));
         // …binary type 3 once the client negotiated taps.
         o.taps_binary = true;
-        o.store(shared(Event::Taps { tap: "gr_comp".into(), levels: vec![6.0] }));
+        o.store(shared(Event::Taps {
+            tap: "gr_comp".into(),
+            levels: vec![6.0],
+        }));
         // Drain remaining queued taps first (per-tap slots are unordered).
         while o.taps.len() > 1 {
             let _ = o.take_next(&engine).unwrap();
@@ -859,15 +888,31 @@ mod tests {
         assert_eq!(o.meters_dropped, 1);
         assert_eq!(o.queue_depth(), 1);
         // Per-channel spectrum/gr slots are independent per channel.
-        o.store(shared(Event::Spectrum { ch: 3, bins: vec![] }));
-        o.store(shared(Event::Gr { ch: 3, gate: 1.0, comp: 0.0 }));
+        o.store(shared(Event::Spectrum {
+            ch: 3,
+            bins: vec![],
+        }));
+        o.store(shared(Event::Gr {
+            ch: 3,
+            gate: 1.0,
+            comp: 0.0,
+        }));
         assert_eq!(o.queue_depth(), 3);
-        o.store(shared(Event::Spectrum { ch: 3, bins: vec![] }));
+        o.store(shared(Event::Spectrum {
+            ch: 3,
+            bins: vec![],
+        }));
         assert_eq!(o.spectrum_dropped, 1);
-        o.store(shared(Event::Gr { ch: 4, gate: 0.0, comp: 0.0 }));
+        o.store(shared(Event::Gr {
+            ch: 4,
+            gate: 0.0,
+            comp: 0.0,
+        }));
         assert_eq!(o.gr_dropped, 0, "other channels do not collide");
         // Control first, then streams; marks advance the sent counters.
-        o.store(shared(Event::You { id: "client-1".into() }));
+        o.store(shared(Event::You {
+            id: "client-1".into(),
+        }));
         let (first, kind) = o.take_next(&engine).unwrap();
         assert!(matches!(kind, StreamKind::Control));
         assert!(matches!(first, Message::Text(_)));

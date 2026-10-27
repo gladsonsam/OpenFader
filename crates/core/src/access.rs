@@ -200,36 +200,81 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.name()
     }
 
-    fn input_processor_guard(&self) -> bool { self.inner.input_processor_guard() }
-    fn channel_processing_guard(&self) -> bool { self.inner.channel_processing_guard() }
-    async fn input_processor(&self, strip: StripId, processor: &str, write: Option<(&str, ParamValue)>, expected: Option<&serde_json::Value>, check: crate::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
+    fn input_processor_guard(&self) -> bool {
+        self.inner.input_processor_guard()
+    }
+    fn channel_processing_guard(&self) -> bool {
+        self.inner.channel_processing_guard()
+    }
+    async fn input_processor(
+        &self,
+        strip: StripId,
+        processor: &str,
+        write: Option<(&str, ParamValue)>,
+        expected: Option<&serde_json::Value>,
+        check: crate::input_processors::RecallCheck<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
         self.policy.allow_strip(strip)?;
-        for partner in self.inner.stereo_pairs().into_iter().find(|p| p.contains(&strip.0)).into_iter().flatten() {
+        for partner in self
+            .inner
+            .stereo_pairs()
+            .into_iter()
+            .find(|p| p.contains(&strip.0))
+            .into_iter()
+            .flatten()
+        {
             self.policy.allow_strip(StripId(partner))?;
         }
-        self.inner.input_processor(strip, processor, write, expected, check).await
+        self.inner
+            .input_processor(strip, processor, write, expected, check)
+            .await
     }
     fn destination_controls(&self) -> Vec<crate::destinations::DestinationControl> {
         self.inner.destination_controls()
     }
 
-    async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[crate::destinations::DestinationControl]) -> anyhow::Result<Option<crate::destinations::DestinationControl>> {
+    async fn set_destination_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[crate::destinations::DestinationControl],
+    ) -> anyhow::Result<Option<crate::destinations::DestinationControl>> {
         self.policy.allow_master()?;
-        self.inner.set_destination_control_guarded(target, control, value, expected, snapshot).await
+        self.inner
+            .set_destination_control_guarded(target, control, value, expected, snapshot)
+            .await
     }
 
-    async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
+    async fn set_destination_control(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+    ) -> anyhow::Result<()> {
         self.policy.allow_master()?;
-        self.inner.set_destination_control(target, control, value, expected).await
+        self.inner
+            .set_destination_control(target, control, value, expected)
+            .await
     }
 
     fn channel_count(&self) -> usize {
         self.inner.channel_count()
     }
 
-    async fn disconnect(&self) -> anyhow::Result<()> { self.inner.disconnect().await }
-    async fn refresh_streams(&self) -> anyhow::Result<()> { self.inner.refresh_streams().await }
-    fn telemetry_timestamps(&self) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> { self.inner.telemetry_timestamps() }
+    async fn disconnect(&self) -> anyhow::Result<()> {
+        self.inner.disconnect().await
+    }
+    async fn refresh_streams(&self) -> anyhow::Result<()> {
+        self.inner.refresh_streams().await
+    }
+    fn telemetry_timestamps(
+        &self,
+    ) -> Option<(Option<std::time::Instant>, Option<std::time::Instant>)> {
+        self.inner.telemetry_timestamps()
+    }
 
     async fn connect(&self, addr: &str) -> anyhow::Result<()> {
         self.inner.connect(addr).await
@@ -307,7 +352,12 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.get_subgroup_mute(group).await
     }
 
-    async fn set_subgroup_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+    async fn set_subgroup_assign(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+    ) -> anyhow::Result<()> {
         self.policy.allow_assign(ch)?;
         self.inner.set_subgroup_assign(ch, group, member).await
     }
@@ -329,7 +379,12 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.get_mute_group(group).await
     }
 
-    async fn set_mute_group_assign(&self, ch: StripId, group: u8, member: bool) -> anyhow::Result<()> {
+    async fn set_mute_group_assign(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+    ) -> anyhow::Result<()> {
         self.policy.allow_assign(ch)?;
         self.inner.set_mute_group_assign(ch, group, member).await
     }
@@ -416,8 +471,12 @@ impl<D: MixerDriver + Sync> MixerDriver for CheckedDriver<'_, D> {
         self.inner.subscribe_meters().await
     }
 
-    fn output_meter_targets(&self) -> Vec<String> { self.inner.output_meter_targets() }
-    fn poll_output_meters(&self) -> Option<crate::OutputMeterSnapshot> { self.inner.poll_output_meters() }
+    fn output_meter_targets(&self) -> Vec<String> {
+        self.inner.output_meter_targets()
+    }
+    fn poll_output_meters(&self) -> Option<crate::OutputMeterSnapshot> {
+        self.inner.poll_output_meters()
+    }
     fn poll_meters(&self) -> crate::MeterFrame {
         self.inner.poll_meters()
     }

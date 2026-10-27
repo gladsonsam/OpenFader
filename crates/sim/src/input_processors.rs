@@ -16,9 +16,14 @@ impl SimDriver {
             ["eq", "gate", "compressor", "channel_processing"].contains(&processor),
             "Input processor unavailable"
         );
-        anyhow::ensure!(processor != "channel_processing" || matches!(kind,
-            StripKind::In | StripKind::Ret | strip_schema::RETURN_KIND),
-            "Channel DSP clipboard unavailable on this family");
+        anyhow::ensure!(
+            processor != "channel_processing"
+                || matches!(
+                    kind,
+                    StripKind::In | StripKind::Ret | strip_schema::RETURN_KIND
+                ),
+            "Channel DSP clipboard unavailable on this family"
+        );
         let mut params = self.params.write().expect("sim params poisoned");
         let ids: Vec<_> = self
             .capabilities()
@@ -31,7 +36,10 @@ impl SimDriver {
             })
             .collect();
         anyhow::ensure!(!ids.is_empty(), "Processor unavailable on this family");
-        let pair = self.stereo_pairs().into_iter().find(|pair| pair.contains(&strip.0));
+        let pair = self
+            .stereo_pairs()
+            .into_iter()
+            .find(|pair| pair.contains(&strip.0));
         let snapshot = |params: &Vec<HashMap<String, ParamValue>>| -> anyhow::Result<Value> {
             let mut links = Vec::new();
             for ch in pair.into_iter().flatten().map(usize::from) {

@@ -12,19 +12,19 @@ mod destination;
 mod driver;
 mod fx;
 mod global_controls;
-mod solo;
 mod input;
-pub mod strips;
+mod input_processors;
 mod lifecycle;
 mod metadata;
 mod native;
 mod native_library;
-mod output_processing;
-mod input_processors;
-mod preamp;
-mod telemetry;
 mod output_meters;
+mod output_processing;
 pub mod output_routing;
+mod preamp;
+mod solo;
+pub mod strips;
+mod telemetry;
 
 pub use metadata::DL32S_CAPABILITIES;
 use native::NativeCache;
@@ -90,5 +90,5 @@ mod tests;
 
 /// Lossless native file inspection; does not authorize a mixer restore.
 pub mod native_archive;
-pub mod native_show;
 mod native_inflate;
+pub mod native_show;

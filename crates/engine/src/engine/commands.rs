@@ -7,13 +7,13 @@ mod connection;
 mod destination;
 mod input;
 mod input_processor;
-mod solo;
 mod library;
 mod native_library;
+mod solo;
 pub(crate) use native_library::NativeRequests;
 mod offline;
-mod processing;
 mod output_routing;
+mod processing;
 
 impl Engine {
     /// Adapter entry: apply one raw JSON command line from `writer` without
@@ -139,11 +139,16 @@ impl Engine {
         if self.prune_expired_locks() {
             out.push(self.locks_message_inner());
         }
-        if self.apply_output_route(&cmd, writer, out).await? { return Ok(None); }
+        if self.apply_output_route(&cmd, writer, out).await? {
+            return Ok(None);
+        }
         let routing_context = match &cmd {
-            Cmd::RoutePatch { driver, epoch, expected, .. } => {
-                Some((driver.clone(), *epoch, expected.clone()))
-            }
+            Cmd::RoutePatch {
+                driver,
+                epoch,
+                expected,
+                ..
+            } => Some((driver.clone(), *epoch, expected.clone())),
             _ => None,
         };
         let policy = self.policy_of(writer);
@@ -173,13 +178,26 @@ impl Engine {
                     Some(expected),
                 )
             }
-            Cmd::RoutePatch { driver, epoch, destination, source, .. } =>
-                (self.routing_command(&driver, epoch, &destination, source)?, None),
+            Cmd::RoutePatch {
+                driver,
+                epoch,
+                destination,
+                source,
+                ..
+            } => (
+                self.routing_command(&driver, epoch, &destination, source)?,
+                None,
+            ),
             other => (other, None),
         };
         match cmd {
-            cmd @ Cmd::NativeLibrary { .. } => Ok(Some(self.apply_native_library(cmd, writer).await)),
-            Cmd::NativeLibraryCancel { request_id } => { self.cancel_native_library(writer, request_id); Ok(None) },
+            cmd @ Cmd::NativeLibrary { .. } => {
+                Ok(Some(self.apply_native_library(cmd, writer).await))
+            }
+            Cmd::NativeLibraryCancel { request_id } => {
+                self.cancel_native_library(writer, request_id);
+                Ok(None)
+            }
             Cmd::RoutePatch { .. } => anyhow::bail!("routing command was not normalized"),
             cmd @ (Cmd::Connect { .. }
             | Cmd::RefreshDevices { .. }
@@ -224,7 +242,10 @@ impl Engine {
             | Cmd::PatchSet { .. }
             | Cmd::PatchClear { .. }
             | Cmd::FileDownload { .. }
-            | Cmd::FileUpload { .. }) => self.apply_processing(cmd, writer, out, &policy, routing_context).await,
+            | Cmd::FileUpload { .. }) => {
+                self.apply_processing(cmd, writer, out, &policy, routing_context)
+                    .await
+            }
             cmd @ (Cmd::Offline { .. } | Cmd::OfflinePush { .. } | Cmd::OfflineDiscard) => {
                 self.apply_offline(cmd, writer, out, &policy).await
             }

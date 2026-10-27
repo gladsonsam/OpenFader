@@ -1,7 +1,7 @@
 //! DL32S explicit-list output levels and provider-normalized compressor GR.
 use crate::Dl32sDriver;
-use openfader_core::{OutputMeterFrame, OutputMeterSnapshot, output_meters::OutputCompressorGr};
-use openfader_transport::mackie::{PushEvent, VALUE_TYPE_METERS, dl32s_meters as layout};
+use openfader_core::{output_meters::OutputCompressorGr, OutputMeterFrame, OutputMeterSnapshot};
+use openfader_transport::mackie::{dl32s_meters as layout, PushEvent, VALUE_TYPE_METERS};
 use std::{sync::atomic::Ordering, time::Duration};
 
 pub(super) fn targets() -> Vec<String> {

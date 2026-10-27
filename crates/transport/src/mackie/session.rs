@@ -144,9 +144,14 @@ impl std::fmt::Debug for MackieValueCache {
 impl MackieValueCache {
     pub fn verified_snapshot(&self, addresses: &[u32]) -> Option<Vec<(u32, u64, u64)>> {
         let store = self.caches.values.lock().ok()?;
-        addresses.iter().map(|a| {
-            (!store.pending.contains(a)).then(|| store.observed.get(a).copied()).flatten()
-        }).collect()
+        addresses
+            .iter()
+            .map(|a| {
+                (!store.pending.contains(a))
+                    .then(|| store.observed.get(a).copied())
+                    .flatten()
+            })
+            .collect()
     }
     /// Value, observed-change revision, receipt sequence; own ACKs are withheld.
     /// Revisions describe received transitions, not invisible/same-value peers.

@@ -1,5 +1,5 @@
 //! Generic OSC encode/decode over `rosc`. All drivers use this; none hand-roll OSC.
-use rosc::{OscMessage, OscPacket, OscType, decoder, encoder};
+use rosc::{decoder, encoder, OscMessage, OscPacket, OscType};
 
 /// Encode `addr` with `args` to wire bytes.
 pub fn encode_message(addr: &str, args: Vec<OscType>) -> anyhow::Result<Vec<u8>> {
@@ -27,8 +27,7 @@ pub fn query_message(addr: &str) -> anyhow::Result<Vec<u8>> {
 pub fn decode_packet(buf: &[u8]) -> anyhow::Result<OscPacket> {
     match decoder::decode_udp(buf) {
         Ok((_, p)) => Ok(p),
-        Err(e) => decode_slashless_meters(buf)
-            .ok_or_else(|| anyhow::anyhow!("osc decode: {e:?}")),
+        Err(e) => decode_slashless_meters(buf).ok_or_else(|| anyhow::anyhow!("osc decode: {e:?}")),
     }
 }
 
@@ -148,8 +147,7 @@ mod tests {
     /// decode-or-error, never panic. (The full datagram still decodes.)
     #[test]
     fn truncated_datagrams_never_panic() {
-        let valid =
-            encode_message("/ch/01/mix/fader", vec![OscType::Float(0.75)]).unwrap();
+        let valid = encode_message("/ch/01/mix/fader", vec![OscType::Float(0.75)]).unwrap();
         for len in 0..valid.len() {
             let _ = decode_packet(&valid[..len]);
         }
