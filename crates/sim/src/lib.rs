@@ -813,6 +813,7 @@ impl SimDriver {
     }
 
     fn meter_level(&self, i: usize, tick: u64) -> f32 {
+        if kind_of_strip(i).is_ok_and(|kind| kind == StripKind::Dca) { return 0.0; }
         let strips = self.read();
         let Some(strip) = strips.get(i) else { return 0.0; };
         if strip.mute { return 0.0; }
@@ -969,6 +970,9 @@ impl SimDriver {
         let params = self.params.read().unwrap();
         (0..strips.len())
             .map(|i| {
+                if kind_of_strip(i).is_ok_and(|kind| kind == StripKind::Dca) {
+                    return StripTaps { input: 0.0, post: 0.0, gr_gate_db: 0.0, gr_comp_db: 0.0 };
+                }
                 let input_db = Self::input_db(i, tick);
                 let input = 10.0_f32.powf(input_db / 20.0);
                 let s = &strips[i];
