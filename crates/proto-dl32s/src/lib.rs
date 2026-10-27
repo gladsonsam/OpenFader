@@ -35,7 +35,9 @@ pub struct Dl32sDriver {
     /// Serialize input/output processor writes through independent readback.
     /// Output readback releases the session for native ingestion; input
     /// readback consumes transport provenance directly while holding it.
-    output_write: Mutex<()>,
+    output_write: Arc<Mutex<()>>,
+    /// Session-tagged trailing input DSP refresh; never carries protocol writes.
+    input_refresh: std::sync::Mutex<Option<(u64, tokio::sync::watch::Sender<()>)>>,
     addr: Mutex<Option<String>>,
     update_tx: broadcast::Sender<ParamUpdate>,
     generation: Arc<AtomicU64>,
@@ -61,7 +63,8 @@ impl Dl32sDriver {
         let (update_tx, _) = broadcast::channel(256);
         Self {
             session: Arc::new(Mutex::new(None)),
-            output_write: Mutex::new(()),
+            output_write: Arc::new(Mutex::new(())),
+            input_refresh: std::sync::Mutex::new(None),
             addr: Mutex::new(None),
             update_tx,
             generation: Arc::new(AtomicU64::new(0)),

@@ -282,12 +282,14 @@ impl Dl32sDriver {
             }
         });
         *self.session.lock().await = Some(session);
+        self.start_input_refresh(generation);
         *self.addr.lock().await = Some(addr.to_string());
         Ok(())
     }
 
     pub(super) async fn lifecycle_disconnect(&self) -> anyhow::Result<()> {
         self.generation.fetch_add(1, Ordering::SeqCst);
+        self.input_refresh.lock().unwrap().take();
         if let Some(session) = self.session.lock().await.take() {
             session.close();
         }
