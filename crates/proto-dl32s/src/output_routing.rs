@@ -17,7 +17,7 @@ use openfader_transport::mackie::{
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::atomic::Ordering,
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 pub fn planes() -> Vec<OutputPlane> {
@@ -221,7 +221,7 @@ impl Dl32sDriver {
         );
         // Reserve a revision and hide the row BEFORE writing. ACK never creates
         // confirmed state. A subsequent push must release the reservation.
-        let observed = {
+        let (observed, reservation) = {
             let mut native = self
                 .native
                 .lock()
@@ -246,25 +246,48 @@ impl Dl32sDriver {
             );
             let revision = native.output_routes.revisions.entry(pid).or_default();
             *revision = revision.wrapping_add(1);
+            let reservation = *revision;
             native.output_routes.pending.insert(pid);
-            observed
+            (observed, reservation)
         };
         // No native/output/session lock acquisition here: the caller already
         // owns the session and output lanes. Transport evidence is updated by
         // RX before native ingest, so even blocked-ingest A→B→A is rejected.
         let cache = session.value_cache();
+        let rejected = AtomicBool::new(false);
         let authorize = || {
-            context()
+            let allowed = context()
                 && session.is_alive()
                 && self.generation.load(Ordering::Acquire) == expected.generation
                 && cache
                     .verified(pid)
-                    .is_some_and(|v| v.0 == observed.0 && v.1 == observed.1)
+                    .is_some_and(|v| v.0 == observed.0 && v.1 == observed.1);
+            if !allowed {
+                rejected.store(true, Ordering::Release);
+            }
+            allowed
         };
-        session
+        if let Err(error) = session
             .write_int_guarded(pid, raw, VALUE_TYPE_PARAM, &authorize)
             .await
-            .map_err(|e| anyhow::anyhow!("Output write not confirmed; result uncertain: {e}"))?;
+        {
+            if rejected.load(Ordering::Acquire) {
+                // Only callback rejection proves no bytes left the socket.
+                // Keep the advanced revision, but release this reservation so
+                // readers need no subsequent push to recover. Ingest or a new
+                // generation/reservation must never be undone by this cleanup.
+                if let Ok(mut native) = self.native.lock() {
+                    if self.generation.load(Ordering::Acquire) == expected.generation
+                        && native.generation == expected.generation
+                        && native.output_routes.revisions.get(&pid) == Some(&reservation)
+                    {
+                        native.output_routes.pending.remove(&pid);
+                    }
+                }
+                anyhow::bail!("Output not sent; dispatch authorization rejected: {error}");
+            }
+            anyhow::bail!("Output write not confirmed; result uncertain: {error}");
+        }
         session.request_value_snapshot().await.map_err(|e| {
             anyhow::anyhow!("Output accepted but readback request failed; result uncertain: {e}")
         })?;
