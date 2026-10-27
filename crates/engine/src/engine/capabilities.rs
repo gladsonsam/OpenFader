@@ -122,6 +122,7 @@ impl Engine {
             })
             .collect();
         Event::Caps {
+            input_processor_guard: self.drv(&driver).input_processor_guard(),
             driver: driver.clone(),
             params,
             unsupported,

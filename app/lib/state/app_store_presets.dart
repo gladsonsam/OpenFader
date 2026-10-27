@@ -5,6 +5,7 @@ part of 'app_store.dart';
 // Private access stays inside the AppStore library; screens use store contracts.
 abstract interface class _AppStorePresetsContract {
   Map<String, dynamic>? _presetFamily(int channel);
+  void _receiveInputProcessorResult(Map<String, dynamic> frame);
   bool _presetEditingBlocked(int channel, String field);
   void _invalidatePresetOperations(String message);
   void _stopPresetRecalls(String message);
@@ -196,7 +197,9 @@ mixin _AppStorePresets on _AppStoreContext {
       _presetTargets[target] = _presetGeneration;
       _observeInputPresetCatalogue();
       _presetDomains[target] = _inputCatalogueRevision;
-      return presetTargetError(target) == null ? target : null;
+      // A structurally valid target keeps the library reachable while guard
+      // and value hydration report their specific readiness errors inside it.
+      return target;
     }
     return null;
   }
@@ -207,7 +210,7 @@ mixin _AppStorePresets on _AppStoreContext {
         .any((field) => !_accessParamAllowed(target.channel, field))) {
       return 'This processor is limited on this device.';
     }
-    if (_presetDisposed ||
+    if (locked || _presetDisposed ||
         _presetTargets[target] != _presetGeneration ||
         !engine.connected ||
         engine.session != target.session ||
@@ -224,12 +227,26 @@ mixin _AppStorePresets on _AppStoreContext {
     if (_presetDomains[target] != _inputCatalogueRevision) {
       return 'Processor capabilities changed. Reopen presets.';
     }
+    if (!engine.inputProcessorGuard) {
+      return 'Guarded input processor recall and paste are unavailable for this provider.';
+    }
+    if (engine.syncEpoch == null) {
+      return 'Waiting for mixer connection state. Reopen presets after the connection finishes.';
+    }
     final protection = _inputPresetProtection(target);
     if (protection != null) return protection;
     final catalogueError = _presetCatalogueError(target);
     if (catalogueError != null) return catalogueError;
     if (_presetFields(target).isEmpty) {
       return '${target.kind.label} presets are unavailable for this channel.';
+    }
+    for (final field in _presetFields(target)) {
+      if (!engine.valueKnown(target.channel, field) ||
+          !ps.confirmedKnown(_maps, target.channel, field) ||
+          _presetVerifiedFields[target.channel]?.contains(field) != true) {
+        return 'Waiting for verified mixer readback of ${_presetSettingLabel(field)}. '
+            'Open channel processing, then reopen presets.';
+      }
     }
     return null;
   }
@@ -500,197 +517,48 @@ mixin _AppStorePresets on _AppStoreContext {
   @override
   void _confirmPresetValue(int channel, String field, Object value,
       {required bool verified}) {
-    // A poll can start before expiry and return after it. Enforce the same
-    // deadline at receipt, before any matching frame can complete the wait.
+    // Parameter echoes never complete a processor command. Only the matching
+    // provider result, carrying its independently verified block, can do so.
+    _pollPresetRecalls(_nowMs());
+  }
+
+  @override
+  void _receiveInputProcessorResult(Map<String, dynamic> frame) {
     _pollPresetRecalls(_nowMs());
     for (final recall in _presetRecalls.values) {
       final waiting = recall.waiting;
-      if (recall.error != null ||
-          recall.target.channel != channel ||
-          waiting == null ||
-          waiting.field != field ||
-          !ps.valuesEqual(value, waiting.value)) {
+      if (waiting == null || waiting.requestId != frame['request_id'] ||
+          waiting.epoch != frame['epoch'] || recall.error != null ||
+          waiting.done.isCompleted) {
         continue;
       }
-      final error = _presetRecallError(recall);
-      if (error != null) {
-        recall.stop(error);
+      final snapshot = frame['snapshot'];
+      final message = frame['message'];
+      if (message is String || snapshot is! Map<String, dynamic>) {
+        recall.stop(message is String ? message : 'No verified processor result arrived; result uncertain.');
       } else {
-        waiting.echoed = true;
-        waiting.verified = verified;
-        waiting.check();
+        try {
+          _validateInputSnapshot(recall.target, snapshot);
+        } catch (error) {
+          recall.stop('$error');
+          continue;
+        }
+        // Keep our own observed values aligned with the correlated result.
+        // Regular parameter frames still supply the screen's read model.
+        for (final row in snapshot['rows'] as List) {
+          recall.observed[row['id'] as String] = row['value'] as Object;
+        }
+        waiting.snapshot = Map<String, dynamic>.from(snapshot);
+        waiting.finish(null);
       }
     }
   }
 
-  int _presetFieldOrder(String field) {
-    if (field.endsWith('_mode') || field == 'comp_auto') return 0;
-    if (field.endsWith('_type') || field == 'hpf_slope') return 1;
-    if (field.endsWith('_q')) return 3;
-    return 2;
-  }
+  void _notifyPresetRecall() => notifyListeners();
 
   @override
   Future<ProcessorPresetResult> recallProcessorPreset(
       ProcessorPresetTarget target, String id) =>
       _recallInputProcessor(target, id: id);
 
-  Future<ProcessorPresetResult> _recallInputProcessor(
-    ProcessorPresetTarget target, {
-    String? id,
-    ProcessorPreset? clipboard,
-  }) async {
-    final unavailable = _presetReadyError(target);
-    if (unavailable != null) {
-      return ProcessorPresetResult(error: unavailable, confirmed: 0, total: 0);
-    }
-    final recall = _PresetRecall(target, _presetGeneration);
-    recall.observed.addAll({
-      for (final entry
-          in (_maps.confirmed[target.channel] ?? <String, Object>{}).entries)
-        if (entry.key == 'link' ||
-            _presetProcessorField(target.kind, entry.key))
-          entry.key: entry.value,
-    });
-    final slot = (target.channel, target.kind);
-    _presetRecalls[slot] = recall;
-    for (final field in engine.supportedParams) {
-      if (_presetProcessorField(target.kind, field)) {
-        _coalescer.cancel('param:${target.channel}:$field');
-      }
-    }
-    notifyListeners();
-    var confirmed = 0;
-    var acceptedUnverified = 0;
-    var total = 0;
-    var attempted = 0;
-    final skipped = <String>[];
-    try {
-      final preset = await Future.any<ProcessorPreset>([
-        clipboard != null
-            ? Future.value(clipboard)
-            : _findProcessorPreset(target, id!),
-        recall.stopped.future.then((error) => throw StateError(error)),
-      ]);
-      total = preset.values.length;
-      if (!_presetCompatible(target, preset)) {
-        throw StateError('Copy a compatible input processor first.');
-      }
-      var error = _presetRecallError(recall);
-      if (error != null) throw StateError(error);
-      final fields = _presetFields(target);
-      if (fields.any((field) => !preset.values.containsKey(field))) {
-        throw StateError(
-            'This preset does not contain every setting required by this processor.');
-      }
-      // Validate EVERY saved field before issuing a single command. Saved
-      // values are never silently clamped or dropped when capabilities differ.
-      for (final entry in preset.values.entries) {
-        error = _presetValueError(target, entry.key, entry.value);
-        if (error != null) throw StateError(error);
-      }
-      for (final key in _maps.pending.keys) {
-        final edit = ps.splitKey(key);
-        if (edit != null &&
-            edit.ch == target.channel &&
-            _presetProcessorField(target.kind, edit.id)) {
-          throw StateError(
-              'Wait for the current processor changes to be confirmed.');
-        }
-      }
-      final ordered = preset.values.keys.toList()
-        ..sort((a, b) {
-          final order = _presetFieldOrder(a).compareTo(_presetFieldOrder(b));
-          return order == 0 ? a.compareTo(b) : order;
-        });
-      for (final field in ordered) {
-        error = _presetRecallError(recall);
-        if (error != null) throw StateError(error);
-        error = _presetValueError(target, field, preset.values[field]);
-        if (error != null) throw StateError(error);
-        final band = RegExp(r'^eq([1-4])_q$').firstMatch(field);
-        if (target.driver == 'dl32s' &&
-            band != null &&
-            preset.values['eq${band[1]}_type'] != 2) {
-          // DL32S Q is inactive outside bell mode. Keep the saved Q in the
-          // library and explicitly report it as not recalled.
-          skipped.add(field);
-          continue;
-        }
-        // Cancel any held callback defensively; readiness already rejected
-        // unconfirmed edits before taking this processor's write lock.
-        _coalescer.cancel('param:${target.channel}:$field');
-        final value = preset.values[field]!;
-        final waiting =
-            _PresetExpectation(field, value, _nowMs() + ps.confirmTimeoutMs);
-        recall.waiting = waiting;
-        attempted++;
-        ps.noteOptimistic(_maps, target.channel, field, value, _nowMs());
-        // Register expectation before dispatch, including synchronous throws.
-        unawaited(Future<void>.sync(() =>
-                _command(_clientId, Cmds.param(target.channel, field, value)))
-            .then((_) {
-          // Submission may finish after the deadline even when the matching
-          // frame arrived earlier. Neither half can complete a late recall.
-          _pollPresetRecalls(_nowMs());
-          if (!identical(recall.waiting, waiting) || recall.error != null) {
-            return;
-          }
-          final changed = _presetRecallError(recall);
-          if (changed != null) {
-            recall.stop(changed);
-          } else {
-            waiting.accepted = true;
-            waiting.check();
-          }
-        }, onError: (Object error) {
-          if (identical(recall.waiting, waiting)) {
-            recall.stop(
-                'Could not send ${_presetSettingLabel(field)}: $error. Its result is uncertain.');
-          }
-        }));
-        error = await waiting.done.future;
-        if (error != null) throw StateError(error);
-        if (waiting.verified) {
-          confirmed++;
-        } else {
-          acceptedUnverified++;
-        }
-        recall.waiting = null;
-        error = _presetRecallError(recall);
-        if (error != null) throw StateError(error);
-      }
-      return ProcessorPresetResult(
-          error: acceptedUnverified == 0 && skipped.isEmpty
-              ? null
-              : [
-                  if (acceptedUnverified > 0)
-                    '$acceptedUnverified settings were accepted, but the mixer did not verify their values.',
-                  if (skipped.isNotEmpty)
-                    'Inactive Q settings were kept unchanged: ${skipped.map(_presetSettingLabel).join(', ')}. '
-                        'Their saved values remain in the preset.',
-                ].join(' '),
-          confirmed: confirmed,
-          total: total);
-    } catch (error) {
-      final notSent = total - attempted;
-      return ProcessorPresetResult(
-          error: '$error '
-              '${acceptedUnverified > 0 ? '$acceptedUnverified settings were accepted without value verification. ' : ''}'
-              '${notSent > 0 ? '$notSent settings were not sent. ' : ''}'
-              'No changes were rolled back.',
-          confirmed: confirmed,
-          total: total);
-    } finally {
-      final waiting = recall.waiting;
-      if (waiting != null) {
-        _maps.pending.remove(ps.pendingKey(target.channel, waiting.field));
-      }
-      if (identical(_presetRecalls[slot], recall)) _presetRecalls.remove(slot);
-      if (!_presetDisposed) {
-        _invalidateDerived();
-        notifyListeners();
-      }
-    }
-  }
 }

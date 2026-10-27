@@ -9,7 +9,13 @@ import 'dart:typed_data';
 import '../engine.dart';
 import '../core/channel_views.dart' show canonicalSimDspRange;
 
+import '../core/processor_presets.dart';
+
+part 'fake_sim_input_processors.dart';
+
 class FakeSimEngine implements EngineApi {
+  int _processorRevision = 0;
+  int _processorEpoch = 0;
   final List<Strip> _strips = List.generate(
       8,
       (i) => Strip(
@@ -82,7 +88,9 @@ class FakeSimEngine implements EngineApi {
 
   @override
   Future<String> boot() async {
+    _processorEpoch++;
     _mailbox.add(jsonEncode({'type': 'you', 'id': 'client-1'}));
+    _mailbox.add(jsonEncode({'type': 'sync_epoch', 'epoch': _processorEpoch}));
     _snapshot();
     return 'client-1';
   }
@@ -90,6 +98,7 @@ class FakeSimEngine implements EngineApi {
   void _snapshot() {
     _mailbox.add(jsonEncode({
       'type': 'caps',
+      'input_processor_guard': true,
       'driver': 'sim',
       'topology': [
         {
@@ -200,7 +209,10 @@ class FakeSimEngine implements EngineApi {
   Future<void> cmd(String clientId, String json) async {
     final c = jsonDecode(json) as Map<String, dynamic>;
     final ch = (c['ch'] as num?)?.toInt();
-    if (ch != null && (ch < 0 || ch >= _strips.length)) return;
+    if (ch != null && (ch < 0 || ch >= _strips.length) &&
+        c['cmd'] != 'input_processor') {
+      return;
+    }
     switch (c['cmd']) {
       case 'local_library_status':
         _mailbox.add(jsonEncode({
@@ -269,6 +281,9 @@ class FakeSimEngine implements EngineApi {
               'Destination controls are unavailable in the offline fallback.',
         }));
         return;
+      case 'input_processor':
+        _inputProcessor(c);
+        return;
       case 'param':
       case 'param_guarded':
         if (ch == null) return;
@@ -290,6 +305,7 @@ class FakeSimEngine implements EngineApi {
         final value = c['value'];
         if (field is! String || !_params[ch].containsKey(field)) return;
         if (field == 'link' && value is bool) {
+          _processorRevision++;
           final left = ch - ch % 2;
           final right = left + 1;
           if (right >= _params.length) return;
@@ -343,6 +359,7 @@ class FakeSimEngine implements EngineApi {
           return;
         }
         final current = _params[ch][field];
+        if (current != value) _processorRevision++;
         if ((current is num && value is num && value.isFinite) ||
             (current is bool && value is bool) ||
             (current is String && value is String)) {
@@ -382,6 +399,8 @@ class FakeSimEngine implements EngineApi {
           }));
           return;
         }
+        _processorEpoch++;
+        _mailbox.add(jsonEncode({'type': 'sync_epoch', 'epoch': _processorEpoch}));
         _snapshot();
         return;
       case 'main_fader':

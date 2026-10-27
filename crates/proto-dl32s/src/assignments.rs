@@ -144,6 +144,7 @@ impl Dl32sDriver {
 
     pub(super) async fn assignments_set_stereo_link(&self, source: StripId, linked: bool)
         -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+        let _write = self.output_write.lock().await;
         let channel = Self::channel(source)?;
         let left = if !channel.is_multiple_of(2) { channel } else { channel - 1 };
         let right = left + 1;

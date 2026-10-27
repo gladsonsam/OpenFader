@@ -21,15 +21,11 @@ class _PresetExpectation {
   final Object value;
   final double deadline;
   final done = Completer<String?>();
-  bool accepted = false;
-  bool echoed = false;
-  bool verified = false;
+  String? requestId;
+  int? epoch;
+  Map<String, dynamic>? snapshot;
   void finish(String? error) {
     if (!done.isCompleted) done.complete(error);
-  }
-
-  void check() {
-    if (accepted && echoed) finish(null);
   }
 }
 
@@ -101,7 +97,7 @@ extension _InputPresetGuards on _AppStorePresets {
       if (pair != null &&
           (engine.params[ch]?['link'] != false ||
               _presetVerifiedFields[ch]?.contains('link') != true)) {
-        return 'Input presets require verified unlinked channels. Reopen after mixer readback.';
+        return 'Waiting for verified unlinked channel and stereo partner readback. Open channel processing, then reopen presets.';
       }
     }
     return null;

@@ -6,6 +6,7 @@ mod client;
 mod connection;
 mod destination;
 mod input;
+mod input_processor;
 mod library;
 mod offline;
 mod processing;
@@ -188,6 +189,7 @@ impl Engine {
             | Cmd::MainMute { .. }
             | Cmd::Solo { .. }
             | Cmd::Param { .. }
+            | Cmd::InputProcessor { .. }
             | Cmd::ParamGuarded { .. }
             | Cmd::ClearSolo) => self.apply_input(cmd, writer, out, &policy, expected).await,
             cmd @ (Cmd::SpectrumTarget { .. }

@@ -113,6 +113,9 @@ mixin _AppStorePoll on _AppStoreContext {
         var frameDirty = engine.applyFrame(e);
         if (e['type'] == 'caps') _observeInputPresetCatalogue();
         _observeOutputProcessingContext();
+        if (e['type'] == 'input_processor_result') {
+          _receiveInputProcessorResult(e);
+        }
         if (e['type'] == 'destination_control_result') {
           _receiveDestinationResult(e);
         }
