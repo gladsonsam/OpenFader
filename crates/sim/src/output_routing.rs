@@ -68,8 +68,21 @@ impl SimDriver {
         source: &str,
         expected: &RouteState,
     ) -> anyhow::Result<()> {
+        self.set_output_route_guarded(id, source, expected, &|| true)
+    }
+
+    pub fn set_output_route_guarded(
+        &self,
+        id: &str,
+        source: &str,
+        expected: &RouteState,
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<()> {
         validate(id, Some(source))?;
         let mut rows = self.output_routes.write().unwrap();
+        // A queued writer must use the engine context that is current after
+        // acquiring the mutation lock, just like the native provider lane.
+        anyhow::ensure!(context(), "Output engine session or policy changed");
         let generation = self.processor_generation.load(Ordering::Acquire);
         let (current, revision) = rows.get(id).cloned().unwrap_or(("—".into(), 0));
         anyhow::ensure!(

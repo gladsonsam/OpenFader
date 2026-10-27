@@ -872,8 +872,7 @@ impl_dyn_driver!(openfader_sim::SimDriver {
         self.output_route(id)
     }
     async fn set_output_route(&self, id: &str, source: &str, expected: &openfader_core::routing::RouteState, context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
-        anyhow::ensure!(context(), "Output engine session or policy changed");
-        self.set_output_route(id, source, expected)
+        self.set_output_route_guarded(id, source, expected, context)
     }
 
     fn send_destination(&self, slot: u16) -> Option<SendDestination> {
