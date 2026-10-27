@@ -123,7 +123,12 @@ class PrefsService extends ChangeNotifier {
 
   // --- connection ----------------------------------------------------------
   bool get autoFind => _prefs?.getBool('openfader.autoFind') ?? true;
-  bool get reconnectLast => _prefs?.getBool('openfader.reconnectLast') ?? false;
+  bool get reconnectLast => _prefs?.getBool('openfader.reconnectLast') ?? true;
+
+  /// False after an explicit disconnect until the next successful hardware
+  /// connect. Keeps a cold start from re-dialling a desk the user just left.
+  bool get reconnectArmed =>
+      _prefs?.getBool('openfader.reconnectArmed') ?? true;
   bool get rememberRecents =>
       _prefs?.getBool('openfader.rememberRecents') ?? true;
   String get startupDest =>
@@ -220,8 +225,7 @@ class PrefsService extends ChangeNotifier {
   Future<void> setMixerLayers(List<MixerLayer> layers) =>
       _set(layersKey, MixerLayer.encodeList(layers));
 
-  Future<void> setActiveMixerLayerId(String id) =>
-      _set(activeLayerIdKey, id);
+  Future<void> setActiveMixerLayerId(String id) => _set(activeLayerIdKey, id);
 
   // --- mixes ------------------------------------------------------------------
   bool get autoBackup => _prefs?.getBool('openfader.autoBackup') ?? true;
@@ -290,6 +294,7 @@ class PrefsService extends ChangeNotifier {
 
   Future<void> setAutoFind(bool v) => _set('openfader.autoFind', v);
   Future<void> setReconnectLast(bool v) => _set('openfader.reconnectLast', v);
+  Future<void> setReconnectArmed(bool v) => _set('openfader.reconnectArmed', v);
   Future<void> setRemember(bool v) async {
     await _set('openfader.rememberRecents', v);
   }
@@ -336,6 +341,7 @@ class PrefsService extends ChangeNotifier {
     for (final key in [
       'openfader.autoFind',
       'openfader.reconnectLast',
+      'openfader.reconnectArmed',
       'openfader.rememberRecents',
       'openfader.startupDest',
       'openfader.appearance',

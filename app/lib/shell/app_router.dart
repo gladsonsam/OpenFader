@@ -138,10 +138,34 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     // Auto-reconnect stays off unless the preference enables it.
 
     final prefs = PrefsService.instance;
-    if (prefs.reconnectLast && prefs.lastMixerAddr.isNotEmpty) {
+    if (prefs.reconnectLast &&
+        prefs.reconnectArmed &&
+        prefs.lastMixerAddr.isNotEmpty) {
+      // A settled cold-start handshake skips the front door: the user asked
+      // to keep mixing, not to tap Connect again after every relaunch.
+      _coldReconnectAddr = prefs.lastMixerAddr;
+      widget.store.addListener(_watchColdReconnect);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         unawaited(_reconnectLast(prefs.lastMixerAddr));
       });
+    }
+  }
+
+  String? _coldReconnectAddr;
+  bool _coldReconnectEntered = false;
+
+  void _watchColdReconnect() {
+    final addr = _coldReconnectAddr;
+    if (addr == null || _coldReconnectEntered || !mounted) return;
+    final engine = widget.store.engine;
+    if (!engine.connected || engine.driver == 'sim' || engine.linkIp.isEmpty) {
+      return;
+    }
+    if (_conn.canonicalHost(engine.linkIp) == _conn.canonicalHost(addr)) {
+      _coldReconnectEntered = true;
+      _coldReconnectAddr = null;
+      widget.store.removeListener(_watchColdReconnect);
+      setState(() => _showStart = false);
     }
   }
 
@@ -158,6 +182,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   // previously live hardware session re-establishes itself without asking.
   // Healthy sessions are untouched (traffic since resume proves it); only a
   // stale or dropped link re-probes. Explicit disconnects never retry.
+  // The verdict wait is short on purpose: a dead link should redial in
+  // under a second, and the traffic check below still guards healthy ones.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused) {
@@ -183,8 +209,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     final gen = ++_resumeGen;
     final resumeWall = _resumeWallMs;
     _resumeVerdict?.cancel();
-    _resumeVerdict =
-        Timer(const Duration(milliseconds: 2500), () => _verdictResume(gen, host, resumeWall));
+    _resumeVerdict = Timer(const Duration(milliseconds: 800),
+        () => _verdictResume(gen, host, resumeWall));
   }
 
   Future<void> _verdictResume(int gen, String host, double resumeWall) async {
@@ -235,6 +261,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    widget.store.removeListener(_watchColdReconnect);
     _resumeVerdict?.cancel();
     _shellLoop?.cancel();
     PrefsService.instance.removeListener(_onPrefs);
@@ -471,10 +498,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
 
   Widget _pageContent(AppTab t, AppStore store) {
     if (t == AppTab.scenes && store.blockedAccess.isNotEmpty) {
-      return Center(child: Padding(
+      return Center(
+          child: Padding(
         padding: const EdgeInsets.all(24),
-        child: Text('Scenes and shows are unavailable while local access limits are active. Bulk recalls can change restricted controls.',
-          style: TextStyle(color: ConsolePalette.of(context).text1, fontSize: 18)),
+        child: Text(
+            'Scenes and shows are unavailable while local access limits are active. Bulk recalls can change restricted controls.',
+            style: TextStyle(
+                color: ConsolePalette.of(context).text1, fontSize: 18)),
       ));
     }
     if (!store.engine.connected &&
@@ -560,7 +590,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 return MixerStrip(
                     channel: ch,
                     controller: _mixer,
-                    identityChannel: ch.master ? _mixer.masterIdentityChannel : null,
+                    identityChannel:
+                        ch.master ? _mixer.masterIdentityChannel : null,
                     onControlFocus: (control) {
                       // Null restores the toolbar's live per-strip fader readout.
                       _channelFocus.value =

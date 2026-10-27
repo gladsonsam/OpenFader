@@ -13,7 +13,7 @@ class ConnectionRecovery extends ChangeNotifier {
 
   final Future<bool> Function(RecoveryTarget target) _connect;
   final Stopwatch _clock = Stopwatch()..start();
-  static const _delays = [2, 5, 10];
+  static const _delays = [1, 2, 5];
   RecoveryTarget? _target;
   Duration? _due;
   Duration? _deadline;
