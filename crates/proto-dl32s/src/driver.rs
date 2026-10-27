@@ -14,7 +14,9 @@ impl MixerDriver for Dl32sDriver {
     /// DL32S strip map: 32 input channels only (honest — output-strip
     /// leaves are served through the bus/subgroup/mute-group/main
     /// methods below, not as pollable strips, so no extra topology is
-    /// advertised).
+    /// advertised). MeterFrame likewise contains only these 32 input IN levels;
+    /// the 62-word wire prefix is not a flat topology. Its stereo FX-return
+    /// pairs must never be flattened into FX-send or generic strip indices.
     fn topology(&self) -> Vec<openfader_core::StripFamily> {
         vec![openfader_core::StripFamily {
             key: "ch",
