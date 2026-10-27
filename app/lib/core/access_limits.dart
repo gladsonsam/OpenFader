@@ -49,5 +49,18 @@ class AccessLimitOption {
 abstract interface class AccessLimitsStore {
   Set<String> get blockedAccess;
   List<AccessLimitOption> get accessOptions;
+  bool get accessLocked;
+  bool get accessHasPasscode;
+  int get controlAccessEpoch;
+  Future<void> setAllAccessBlocked(bool blocked);
+  Future<void> setAccessPasscode(String passcode, String confirmation);
+  Future<void> lockAccess();
+  Future<void> unlockAccess(String passcode);
+  Future<void> changeAccessPasscode(
+    String current,
+    String next,
+    String confirmation,
+  );
+  Future<void> removeAccessPasscode(String current);
   Future<void> setAccessBlocked(String key, bool blocked);
 }

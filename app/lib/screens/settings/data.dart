@@ -118,12 +118,12 @@ class _DataDetail extends StatelessWidget {
             _ActionRow(
               label: 'Reset all app data',
               desc:
-                  'Remove local mixes, scenes/shows, processor presets and preferences.',
+                  'Remove local mixes, scenes/shows, processor presets and preferences. Access policy is preserved; unlock it first.',
               danger: true,
               onTap: () => confirm(
                 title: 'Reset all app data?',
                 body:
-                    'Local scenes/shows will be reset through the engine first, then local mixes, backups, processor presets, saved mixers, cache and preferences will be removed. A connected mixer will not be reset.',
+                    'Local scenes/shows will be reset through the engine first, then local mixes, backups, processor presets, saved mixers, cache and preferences will be removed. Access limits and their passcode will stay. Unlock access policy before continuing. A connected mixer will not be reset.',
                 action: 'Reset app data',
                 onConfirm: () async {
                   await store.fullReset();

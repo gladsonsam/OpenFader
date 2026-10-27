@@ -218,7 +218,9 @@ mixin _AppStoreAccess on _AppStoreContext {
   bool _accessDestinationAllowed(DestinationControlVm control) {
     if (control.targetSolo) {
       return control.soloScopeAllowed(
-          accessFamilyAllowed(AccessFamily.channelSolo), accessTargetAllowed);
+        accessFamilyAllowed(AccessFamily.channelSolo),
+        accessTargetAllowed,
+      );
     }
     // Provider descriptor identifies main_return separately from FX globals.
     if (control.surface == 'fx' && control.id == 'main_return') {
@@ -356,15 +358,64 @@ mixin _AppStoreAccess on _AppStoreContext {
     await PrefsService.instance.setBlockedAccess(next);
   }
 
+  @override
+  bool get accessLocked => PrefsService.instance.accessPolicy.locked;
+  @override
+  bool get accessHasPasscode => PrefsService.instance.accessPolicy.hasPasscode;
+  @override
+  Future<void> setAccessPasscode(String passcode, String confirmation) =>
+      PrefsService.instance.setAccessPasscode(passcode, confirmation);
+  @override
+  Future<void> lockAccess() => PrefsService.instance.lockAccess();
+  @override
+  Future<void> unlockAccess(String passcode) =>
+      PrefsService.instance.unlockAccess(passcode);
+  @override
+  Future<void> changeAccessPasscode(
+    String current,
+    String next,
+    String confirmation,
+  ) =>
+      PrefsService.instance.changeAccessPasscode(current, next, confirmation);
+  @override
+  Future<void> removeAccessPasscode(String current) =>
+      PrefsService.instance.removeAccessPasscode(current);
+  @override
+  Future<void> setAllAccessBlocked(bool blocked) async {
+    final keys = accessOptions
+        .where((o) => o.available)
+        .map((o) => o.key.startsWith('target:')
+            ? 'target:${_targetKey(o.key.substring(7))}'
+            : o.key)
+        .toSet();
+    final next = {...blockedAccess};
+    if (blocked) {
+      next.addAll(keys);
+    } else {
+      next.removeWhere((key) => keys.contains(key.startsWith('target:')
+          ? 'target:${_targetKey(key.substring(7))}'
+          : key));
+    }
+    await PrefsService.instance.setBlockedAccess(next);
+  }
+
+  int _accessRevision = -1;
   void _accessChanged() {
-    final next = PrefsService.instance.blockedAccess;
-    if (setEquals(next, _blockedAccess)) return;
+    final prefs = PrefsService.instance;
+    final next = prefs.blockedAccess;
+    if (setEquals(next, _blockedAccess) &&
+        _accessRevision == prefs.accessRevision) {
+      return;
+    }
+    _accessRevision = prefs.accessRevision;
     _blockedAccess = next;
     _controlAccessEpoch++;
     // Queued writes and captured preset editors must not outlive permission.
     _coalescer.clear();
     _maps.pending.clear();
     _invalidatePresetOperations('Local access limits changed. Reopen presets.');
+    _libraryGeneration++;
+    _interruptAllLibrary('Local access limits changed. Reopen the library.');
     _interruptDestinationEdits(
       'Local access limits changed. Reopen this control.',
     );
@@ -398,13 +449,15 @@ mixin _AppStoreAccess on _AppStoreContext {
         return false;
       }
       final fields = engine.supportedParams
-          .where((field) =>
-              processorPresetField(kind, field) && _stripParamApplies(ch, field))
+          .where(
+            (field) =>
+                processorPresetField(kind, field) &&
+                _stripParamApplies(ch, field),
+          )
           .toList();
       final field = command['field'];
       if (fields.isEmpty ||
-          (field != null &&
-              (field is! String || !fields.contains(field)))) {
+          (field != null && (field is! String || !fields.contains(field)))) {
         return false;
       }
       // Raw commands share the same complete-block and partner access gate
@@ -510,6 +563,9 @@ mixin _AppStoreAccess on _AppStoreContext {
 
   @override
   Future<void> _command(String clientId, String json) async {
+    if (PrefsService.instance.accessSaving) {
+      throw StateError('Access policy is changing. Reopen this control.');
+    }
     if (_blockedAccess.isEmpty) return _api.cmd(clientId, json);
     final command = jsonDecode(json);
     if (command is Map && !_accessCommandAllowed(command)) {

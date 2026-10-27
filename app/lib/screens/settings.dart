@@ -112,6 +112,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
     required String action,
     required Future<void> Function() onConfirm,
   }) async {
+    final accessEpoch = widget.store.accessLimits.controlAccessEpoch;
     final wide = MediaQuery.sizeOf(context).width > 900;
     final ok = await showDialog<bool>(
       context: context,
@@ -178,6 +179,9 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
     );
     if (ok == true) {
       try {
+        if (widget.store.accessLimits.controlAccessEpoch != accessEpoch) {
+          throw StateError('Access policy changed. Reopen this confirmation.');
+        }
         await onConfirm();
         if (mounted) setState(() {});
       } catch (error) {

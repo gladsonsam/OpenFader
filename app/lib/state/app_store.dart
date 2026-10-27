@@ -142,6 +142,7 @@ class AppStore extends _AppStoreContext
   AppStore(this._api, this._clientId)
       : _coalescer = WriteCoalescer(TimerCoalescerClock()) {
     _blockedAccess = PrefsService.instance.blockedAccess;
+    _accessRevision = PrefsService.instance.accessRevision;
     PrefsService.instance.addListener(_accessChanged);
   }
 

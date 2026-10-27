@@ -123,15 +123,19 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
   }
 
   @override
-  Future<void> fullReset() => app.resetLocalLibraryThen(() async {
-        await app.forgetSavedMixers();
-        await app.clearProcessorPresets();
-        await _mixes.deleteAll();
-        await _mixes.clearCache();
-        await _recents.clear();
-        await prefs.clearAll();
-        notifyListeners();
-      });
+  Future<void> fullReset() async {
+    await PrefsService.ensureInitialized();
+    prefs.requireAccessEditable();
+    await app.resetLocalLibraryThen(() async {
+      await app.forgetSavedMixers();
+      await app.clearProcessorPresets();
+      await _mixes.deleteAll();
+      await _mixes.clearCache();
+      await _recents.clear();
+      await prefs.clearAll();
+      notifyListeners();
+    });
+  }
 
   @override
   Future<void> exportDiagnostics() async {
