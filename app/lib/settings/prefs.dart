@@ -3,11 +3,11 @@
 // for the knobs that need live apply.
 library;
 
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+
+import '../core/access_policy.dart';
 
 class PrefsService extends ChangeNotifier {
   PrefsService._();
@@ -25,27 +25,95 @@ class PrefsService extends ChangeNotifier {
       _initializing = null;
       rethrow;
     }
+    instance._accessPolicy = null;
+    instance._accessRevision++;
     instance._applyWakeLock();
     instance.notifyListeners();
   }
 
-  /// One installation-wide policy, deliberately independent of mixer/session.
-  Set<String> get blockedAccess {
-    final raw = _prefs?.getString('openfader.accessLimits.v1');
-    if (raw == null) return const {};
-    try {
-      final values = jsonDecode(raw);
-      if (values is List && values.every((v) => v is String)) {
-        return Set.unmodifiable(values.cast<String>());
-      }
-    } catch (_) {
-      // Corrupt local data must not crash startup. No remote security claim.
+  static const _accessKey = 'openfader.accessPolicy.v2';
+  AccessPolicy? _accessPolicy;
+  bool _accessSaving = false;
+  int _accessRevision = 0;
+  bool get accessSaving => _accessSaving;
+  int get accessRevision => _accessRevision;
+
+  /// Read a committed snapshot, never SharedPreferences' optimistic cache.
+  AccessPolicy get accessPolicy => _accessPolicy ??= AccessPolicy.decode(
+        _prefs?.getString(_accessKey),
+        _prefs?.getString('openfader.accessLimits.v1'),
+      );
+  Set<String> get blockedAccess => accessPolicy.blocked;
+
+  void requireAccessEditable() {
+    if (accessSaving || accessPolicy.locked) {
+      throw StateError('Unlock this device’s access limits first.');
     }
-    return const {};
   }
 
-  Future<void> setBlockedAccess(Set<String> keys) =>
-      _set('openfader.accessLimits.v1', jsonEncode(keys.toList()..sort()));
+  Future<void> _saveAccess(AccessPolicy next) async {
+    if (_accessSaving) throw StateError('An access change is already saving.');
+    _accessSaving = true;
+    // Invalidate captures and queued work even when persistence later fails.
+    _accessRevision++;
+    notifyListeners();
+    try {
+      await _set(_accessKey, next.encode());
+      _accessPolicy = next;
+    } finally {
+      _accessSaving = false;
+      _accessRevision++;
+      notifyListeners();
+    }
+  }
+
+  Future<void> setBlockedAccess(Set<String> keys) async {
+    await ensureInitialized();
+    requireAccessEditable();
+    await _saveAccess(accessPolicy.copyWith(blocked: keys));
+  }
+
+  Future<void> setAccessPasscode(String passcode, String confirmation) async {
+    await ensureInitialized();
+    requireAccessEditable();
+    if (accessPolicy.hasPasscode) {
+      throw StateError('Use Change passcode for an existing passcode.');
+    }
+    AccessPolicy.validatePasscode(passcode, confirmation);
+    await _saveAccess(accessPolicy.copyWith(passcode: passcode, locked: true));
+  }
+
+  Future<void> lockAccess() async {
+    await ensureInitialized();
+    requireAccessEditable();
+    if (!accessPolicy.hasPasscode) throw StateError('Set a passcode first.');
+    await _saveAccess(accessPolicy.copyWith(locked: true));
+  }
+
+  Future<void> unlockAccess(String passcode) async {
+    await ensureInitialized();
+    accessPolicy.requirePasscode(passcode);
+    await _saveAccess(accessPolicy.copyWith(locked: false));
+  }
+
+  Future<void> changeAccessPasscode(
+    String current,
+    String next,
+    String confirmation,
+  ) async {
+    await ensureInitialized();
+    requireAccessEditable();
+    accessPolicy.requirePasscode(current);
+    AccessPolicy.validatePasscode(next, confirmation);
+    await _saveAccess(accessPolicy.copyWith(passcode: next));
+  }
+
+  Future<void> removeAccessPasscode(String current) async {
+    await ensureInitialized();
+    requireAccessEditable();
+    accessPolicy.requirePasscode(current);
+    await _saveAccess(accessPolicy.copyWith(passcode: ''));
+  }
 
   // --- connection ----------------------------------------------------------
   bool get autoFind => _prefs?.getBool('openfader.autoFind') ?? true;
@@ -184,11 +252,19 @@ class PrefsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Full wipe of every openfader.* key (Reset all app data).
+  /// Reset app data while preserving access policy. Only authenticated access
+  /// controls can remove its passcode; forgotten codes require an OS app reset.
   Future<void> clearAll() async {
+    await ensureInitialized();
+    requireAccessEditable();
     final p = _prefs ?? await SharedPreferences.getInstance();
     _prefs ??= p;
-    for (final key in p.getKeys().where((k) => k.startsWith('openfader.'))) {
+    for (final key in p.getKeys().where(
+          (k) =>
+              k.startsWith('openfader.') &&
+              k != _accessKey &&
+              k != 'openfader.accessLimits.v1',
+        )) {
       if (!await p.remove(key)) {
         await p.reload();
         notifyListeners();
