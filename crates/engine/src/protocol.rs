@@ -886,6 +886,10 @@ pub enum Event {
         request_id: String, epoch: u64, snapshot: Option<serde_json::Value>, message: Option<String>,
     },
     DestinationControlResult {
+        /// Exact independently observed guarded-write receipt, captured under
+        /// the provider write lock. Never inferred from a later cache value.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        applied: Option<serde_json::Value>,
         request_id: String,
         epoch: u64,
         accepted: bool,

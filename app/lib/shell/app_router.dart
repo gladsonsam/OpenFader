@@ -179,6 +179,8 @@ class _AppShellState extends State<AppShell> {
       if (mounted && _tab == AppTab.debug) _debug.captureFrame();
     } catch (_) {
       // A transport hiccup must not crash the shell loop.
+    } finally {
+      _quickAccess.tickGestures();
     }
   }
 

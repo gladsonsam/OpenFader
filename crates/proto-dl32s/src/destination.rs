@@ -86,6 +86,7 @@ impl Dl32sDriver {
                 surface: "send".to_string(),
                 description: format!("Applies to every input feeding Aux {slot}. Changing this can alter that monitor mix."),
                 label: "Send source".to_string(),
+                gesture: None,
                 tap_tempo: false,
                 choices: vec![
                     DestinationChoice { value: 2.0, label: "Pre DSP".to_string() },

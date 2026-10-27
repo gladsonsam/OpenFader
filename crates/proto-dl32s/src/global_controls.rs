@@ -130,12 +130,12 @@ impl Dl32sDriver {
         value: f32,
         expected: f32,
         snapshot: Option<&[DestinationControl]>,
-    ) -> anyhow::Result<bool> {
+    ) -> anyhow::Result<Option<DestinationControl>> {
         let Some((address, spec)) = specs()
             .iter()
             .find(|(_, row)| row.target == target && row.id == control)
         else {
-            return Ok(false);
+            return Ok(None);
         };
         anyhow::ensure!(
             spec.allows_value(value) && spec.allows_value(expected),
@@ -253,7 +253,11 @@ impl Dl32sDriver {
                         entry.revision == readback_revision && current.value == value,
                         "Global mixer readback differs or changed again; result uncertain"
                     );
-                    return Ok(true);
+                    // Capture while the native lock and write lane are held;
+                    // later cache collection must not attribute a peer edit to us.
+                    return Ok(rows
+                        .into_iter()
+                        .find(|row| row.target == target && row.id == control));
                 }
             }
             anyhow::ensure!(

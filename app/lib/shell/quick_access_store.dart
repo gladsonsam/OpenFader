@@ -5,14 +5,28 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../core/access_limits.dart';
 import '../engine.dart';
 import '../core/quick_access.dart';
+import '../core/talkback_gesture.dart';
 import 'fx_store.dart';
 import 'store_adapter.dart';
 
 class ShellQuickAccessStore extends ShellStoreAdapter
     implements QuickAccessStore {
   ShellQuickAccessStore(super.app, this.fx) {
+    _talkback = TalkbackGestureController(
+        session: () => engine.session,
+        sessionActive: () =>
+            app.onlineFlag && engine.connected && engine.capsReady,
+        current: () => talkbackGestureControl,
+        isCurrent: app.destinationControlIsCurrent,
+        write: app.setDestinationControlWithReceipt,
+        nowMilliseconds: () => _gestureClock.elapsedMilliseconds,
+        changed: () {
+          if (!isDisposed) notifyListeners();
+        });
     unawaited(_loadTalkbackPreference());
   }
+  final Stopwatch _gestureClock = Stopwatch()..start();
+  late final TalkbackGestureController _talkback;
   static const _talkbackModeKey = 'openfader.talkbackMode';
   TalkbackModePreference _talkbackMode = TalkbackModePreference.momentary;
   int _preferenceRevision = 0;
@@ -28,6 +42,7 @@ class ShellQuickAccessStore extends ShellStoreAdapter
         value >= TalkbackModePreference.values.length) {
       return;
     }
+    _talkback.cancel();
     _talkbackMode = TalkbackModePreference.values[value];
     notifyListeners();
   }
@@ -38,6 +53,7 @@ class ShellQuickAccessStore extends ShellStoreAdapter
   @override
   Future<void> setTalkbackModePreference(TalkbackModePreference mode) async {
     if (isDisposed) return;
+    _talkback.cancel();
     ++_preferenceRevision;
     _talkbackMode = mode;
     notifyListeners();
@@ -48,9 +64,44 @@ class ShellQuickAccessStore extends ShellStoreAdapter
   }
 
   @override
-  String? get talkbackGestureUnavailable =>
-      'Momentary and Auto gestures are unavailable for this provider. '
-      'The saved mode is local only. Enable (latch) is an explicit mixer command.';
+  DestinationControlVm? get talkbackGestureControl => engine.destinationControls
+      .where((row) => row.talkbackGesture)
+      .firstOrNull;
+  @override
+  bool get canPressTalkback => !isDisposed && _talkback.canPress;
+  @override
+  bool get talkbackHeld => _talkback.held;
+  @override
+  bool get talkbackBusy => _talkback.busy;
+  @override
+  String? get talkbackGestureError => _talkback.error;
+  @override
+  void pressTalkback() => _talkback.press(_talkbackMode);
+  @override
+  void releaseTalkback() => _talkback.release();
+  @override
+  void cancelTalkback() => _talkback.cancel();
+  @override
+  void tapTalkback() => _talkback.tap(_talkbackMode);
+
+  /// Driven only by the existing shell loop. No page or gesture timer.
+  void tickGestures() {
+    if (!isDisposed) _talkback.poll();
+  }
+
+  @override
+  void forwardChange() {
+    if (!isDisposed) _talkback.poll();
+    super.forwardChange();
+  }
+
+  @override
+  void dispose() {
+    _talkback.dispose();
+    _gestureClock.stop();
+    super.dispose();
+  }
+
   final ShellFxStore fx;
 
   @override

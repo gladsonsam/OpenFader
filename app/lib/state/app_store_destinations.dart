@@ -28,7 +28,8 @@ mixin _AppStoreDestinations on _AppStoreContext {
       engine.capsReady &&
       !locked &&
       control.available &&
-      (control.surface != 'global' || control.authority == 'verified') &&
+      ((control.surface != 'global' && !control.talkbackGesture) ||
+          control.authority == 'verified') &&
       !_outputPresetBusy(control.target) &&
       engine.destinationControls.contains(control);
 
@@ -47,7 +48,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
     return _sendDestinationControl(
       control,
       value,
-      guard: control.surface == 'global'
+      guard: control.surface == 'global' || control.talkbackGesture
           ? engine.destinationControls
               .where(
                 (row) =>
@@ -59,6 +60,27 @@ mixin _AppStoreDestinations on _AppStoreContext {
     );
   }
 
+  Future<DestinationEditResult> setDestinationControlWithReceipt(
+      DestinationControlVm control, double value) async {
+    if (!destinationControlIsCurrent(control) || !control.talkbackGesture) {
+      return const DestinationEditResult(
+          'Talkback connection or access changed.');
+    }
+    DestinationControlVm? applied;
+    final error = await _sendDestinationControl(control, value,
+        guard: engine.destinationControls
+            .where((row) =>
+                row.target == control.target && row.surface == control.surface)
+            .toList(growable: false),
+        onApplied: (row) => applied = row);
+    return DestinationEditResult(
+        error ??
+            (applied == null
+                ? 'Talkback write has no independent ownership receipt; result uncertain.'
+                : null),
+        applied);
+  }
+
   @override
   bool _destinationHasPending(String target) =>
       _destinationEdits.values.any((edit) => edit.target.target == target);
@@ -68,6 +90,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
     DestinationControlVm control,
     double value, {
     List<DestinationControlVm>? guard,
+    void Function(DestinationControlVm)? onApplied,
   }) {
     if (!_accessDestinationAllowed(control)) {
       return Future.value('This control is limited on this device.');
@@ -97,6 +120,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
       control,
       _nowMs() + 15000,
       recalledValue: guard == null ? null : value,
+      onApplied: onApplied,
     );
     _destinationEdits[id] = edit;
     unawaited(
@@ -121,7 +145,12 @@ mixin _AppStoreDestinations on _AppStoreContext {
 
   void _finishDestinationEdit(String id, String? error) {
     final edit = _destinationEdits.remove(id);
-    if (edit != null && !edit.done.isCompleted) edit.done.complete(error);
+    if (edit != null && !edit.done.isCompleted) {
+      if (error == null && edit.applied != null) {
+        edit.onApplied?.call(edit.applied!);
+      }
+      edit.done.complete(error);
+    }
   }
 
   @override
@@ -140,6 +169,21 @@ mixin _AppStoreDestinations on _AppStoreContext {
     }
     for (final entry in _destinationEdits.entries.toList()) {
       final edit = entry.value;
+      if (edit.onApplied != null &&
+          edit.accepted &&
+          edit.applied != null &&
+          engine.destinationControls.any((row) =>
+              row.epoch == edit.target.epoch &&
+              row.target == edit.target.target &&
+              row.id == edit.target.id &&
+              row.generation == edit.applied!.generation &&
+              row.authority == 'verified' &&
+              row.revision != null &&
+              row.revision! > edit.applied!.revision!)) {
+        _finishDestinationEdit(entry.key,
+            'Talkback changed after readback; ownership not acquired. Current mixer state preserved.');
+        continue;
+      }
       if (now < edit.deadline &&
           edit.accepted &&
           edit.recalledValue != null &&
@@ -150,7 +194,8 @@ mixin _AppStoreDestinations on _AppStoreContext {
                 control.id == edit.target.id &&
                 control.revision != edit.target.revision &&
                 control.value == edit.recalledValue &&
-                control.authority == 'verified',
+                control.authority == 'verified' &&
+                (edit.onApplied == null || control == edit.applied),
           )) {
         _finishDestinationEdit(entry.key, null);
         continue;
@@ -171,6 +216,21 @@ mixin _AppStoreDestinations on _AppStoreContext {
     final edit = _destinationEdits[id];
     if (id is! String || edit == null || frame['epoch'] != edit.target.epoch) {
       return;
+    }
+    final rawApplied = frame['applied'];
+    if (rawApplied is Map) {
+      final row = DestinationControlVm.fromJson(edit.target.epoch, rawApplied);
+      if (row != null &&
+          row.target == edit.target.target &&
+          row.id == edit.target.id &&
+          row.generation == edit.target.generation &&
+          row.revision != null &&
+          row.revision != edit.target.revision &&
+          row.talkbackGesture == edit.target.talkbackGesture &&
+          row.authority == 'verified' &&
+          row.value == edit.recalledValue) {
+        edit.applied = row;
+      }
     }
     final message = frame['message'];
     if (frame['accepted'] == true &&
@@ -194,7 +254,10 @@ mixin _AppStoreDestinations on _AppStoreContext {
 }
 
 class _DestinationEdit {
-  _DestinationEdit(this.target, this.deadline, {this.recalledValue});
+  _DestinationEdit(this.target, this.deadline,
+      {this.recalledValue, this.onApplied});
+  final void Function(DestinationControlVm)? onApplied;
+  DestinationControlVm? applied;
   final DestinationControlVm target;
   final double deadline;
   final double? recalledValue;

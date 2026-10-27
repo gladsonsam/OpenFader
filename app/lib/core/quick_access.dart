@@ -2,9 +2,9 @@ import 'package:flutter/foundation.dart';
 
 import 'destination_controls.dart';
 
-/// Local preference values, matching the compiled QSettings enum.
-/// This is not a mixer wire parameter or a claim of gesture support.
-enum TalkbackModePreference { momentary, latch, auto }
+import 'talkback_gesture.dart' show TalkbackModePreference;
+
+export 'talkback_gesture.dart' show TalkbackModePreference;
 
 /// Shell-injected, provider-neutral view of verified quick controls.
 /// Descriptors remain opaque snapshots: implementations must recheck every write.
@@ -15,9 +15,15 @@ abstract class QuickAccessStore extends ChangeNotifier {
   TalkbackModePreference get talkbackModePreference;
   Future<void> setTalkbackModePreference(TalkbackModePreference mode);
 
-  /// Null only when the provider advertises a cancellable held-control path.
-  /// Ordinary enable writes must never be turned into queued hold gestures.
-  String? get talkbackGestureUnavailable;
+  DestinationControlVm? get talkbackGestureControl;
+  bool get canPressTalkback;
+  bool get talkbackHeld;
+  bool get talkbackBusy;
+  String? get talkbackGestureError;
+  void pressTalkback();
+  void releaseTalkback();
+  void cancelTalkback();
+  void tapTalkback();
   bool isCurrent(DestinationControlVm control);
   Future<String?> setControl(DestinationControlVm control, double value);
   Future<String?> tapControl(DestinationControlVm control);

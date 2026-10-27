@@ -919,10 +919,13 @@ pub trait MixerDriver: Send + Sync {
     /// Recall one processor setting with the entire captured block checked under
     /// the provider's write lock. Revisions must detect intervening peer edits.
     /// Unsupported providers must not fall back to unguarded scalar writes.
+    /// An optional receipt must be captured under the provider write lane after
+    /// independent readback. Gesture providers require it for enable ownership;
+    /// never construct a receipt from a later unlocked cache collection.
     async fn set_destination_control_guarded(
         &self, target: &str, control: &str, value: f32, expected: f32,
         snapshot: &[destinations::DestinationControl],
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<crate::destinations::DestinationControl>> {
         let _ = (target, control, value, expected, snapshot);
         anyhow::bail!("{}: guarded processor recall not supported", self.name())
     }
