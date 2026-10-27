@@ -24,32 +24,26 @@ class TalkbackButton extends StatefulWidget {
 class _TalkbackButtonState extends State<TalkbackButton> {
   final _focus = FocusNode(debugLabel: 'Talkback');
   int? _pointer;
-  final _downClock = Stopwatch();
-  bool _accepted = false;
+  final _hitTarget = GlobalKey();
   LogicalKeyboardKey? _keyboardKey;
 
   void _cancel() {
     _pointer = null;
-    _accepted = false;
-    _downClock.stop();
     _keyboardKey = null;
     widget.store.cancelTalkback();
   }
 
-  void _accept() {
-    if (_pointer == null || _accepted || !widget.currentSession) return;
-    _accepted = true;
-    widget.store.pressTalkback(
-      elapsedMilliseconds: _downClock.elapsedMilliseconds,
-    );
+  bool _inside(Offset position) {
+    final box = _hitTarget.currentContext?.findRenderObject() as RenderBox?;
+    return box != null &&
+        box.hasSize &&
+        (Offset.zero & box.size).contains(box.globalToLocal(position));
   }
 
   void _release() {
     if (_pointer == null) return;
     _pointer = null;
-    _downClock.stop();
-    if (_accepted) widget.store.releaseTalkback();
-    _accepted = false;
+    widget.store.releaseTalkback();
   }
 
   @override
@@ -106,6 +100,7 @@ class _TalkbackButtonState extends State<TalkbackButton> {
         value: control?.valueLabel ?? 'Unavailable',
         onTap: canPress ? store.tapTalkback : null,
         child: Listener(
+          key: _hitTarget,
           onPointerDown: (event) {
             if (canPress &&
                 _pointer == null &&
@@ -113,16 +108,26 @@ class _TalkbackButtonState extends State<TalkbackButton> {
                 event.buttons == kPrimaryButton) {
               _pointer = event.pointer;
               _focus.requestFocus();
-              _accepted = false;
-              _downClock
-                ..reset()
-                ..start();
+              // This fixed footer has no scrollable ancestor. Momentary and
+              // Auto start at actual down; only Latch waits for accepted up.
+              store.pressTalkback();
+            }
+          },
+          onPointerMove: (event) {
+            if (_pointer == event.pointer && !_inside(event.position)) {
+              _cancel();
             }
           },
           onPointerUp: (event) {
-            // Recognizers finish this event synchronously before cleanup.
+            if (_pointer != event.pointer) return;
+            if (!_inside(event.position)) {
+              _cancel();
+              return;
+            }
+            // Only an accepted tap-up may commit Latch/short Auto. Keep the
+            // pending release installed while ON is awaiting its receipt.
             scheduleMicrotask(() {
-              if (mounted && _pointer == event.pointer) _release();
+              if (mounted && _pointer == event.pointer) _cancel();
             });
           },
           onPointerCancel: (event) {
@@ -131,17 +136,19 @@ class _TalkbackButtonState extends State<TalkbackButton> {
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
             excludeFromSemantics: true,
-            // Raw down only records time. Tap-up and long-press-start run
-            // after their recognizer wins: a scroll cannot send ON while
-            // still competing with the button. A hold accepts at 500ms;
-            // Auto's boundary still uses actual down, including quick taps.
-            // Keep callbacks installed while busy to retain pending release.
-            onTapUp: (_) {
-              _accept();
-              _release();
+            // Keep recognizers installed while busy so release/cancel intent
+            // survives the synchronous store notification from raw down.
+            onTapUp: (details) {
+              if (_pointer == null) return;
+              if (_inside(details.globalPosition)) {
+                _release();
+              } else {
+                _cancel();
+              }
             },
-            onLongPressStart: (_) => _accept(),
-            onLongPressEnd: (_) => _release(),
+            onTapCancel: () {
+              if (_pointer != null) _cancel();
+            },
 
             child: Container(
               constraints: const BoxConstraints(minHeight: 48),
