@@ -246,10 +246,8 @@ impl Engine {
         }
     }
 
-    /// Strip-scene storage deliberately excludes non-strip ports: those require
-    /// a fresh stable output guard and are never replayed as legacy strip writes.
-    /// Read provider destinations on one pinned driver, so scene saves and
-    /// routing frames cannot mix one desk's catalog with another's source state.
+    /// Best-effort input rows for display frames. Durable captures use the
+    /// strict reader below, including output ports under stable destination IDs.
     pub(super) async fn routing_snapshot_on(&self, driver: &str) -> Vec<StoredRoute> {
         let drv = self.drv(driver);
         let planes = drv.routing_planes();
@@ -293,6 +291,62 @@ impl Engine {
         out
     }
 
+    /// Read every advertised route on the pinned provider. Output IDs are saved
+    /// in `target` with no strip key; recall obtains a fresh provider guard.
+    pub(super) async fn capture_routing_on(
+        &self,
+        driver: &str,
+    ) -> anyhow::Result<Vec<StoredRoute>> {
+        let drv = self.drv(driver);
+        let planes = drv.routing_planes();
+        if planes.is_empty() {
+            return Ok(Vec::new());
+        }
+        // The executable provider contract owns the destination universe; input
+        // topology is only used by the compatibility adapter, never by this reader.
+        let bulk = drv.source_bulk();
+        let mut out = Vec::new();
+        for dest in planes.into_iter().flat_map(|p| p.destinations) {
+            let label = if dest.output {
+                Some(drv.output_route(&dest.id)?.source)
+            } else if dest.target.is_empty() {
+                match &bulk {
+                    Some(map) => map.get(&dest.strip).cloned(),
+                    None => drv
+                        .routing_source(StripId(dest.strip), &dest.target)
+                        .await
+                        .ok(),
+                }
+            } else {
+                drv.routing_source(StripId(dest.strip), &dest.target)
+                    .await
+                    .ok()
+            };
+            let label = label.ok_or_else(|| {
+                anyhow::anyhow!("snapshot capture incomplete: route {} unavailable", dest.id)
+            })?;
+            let route = if label == "—" {
+                Some((String::new(), 0))
+            } else {
+                parse_source(&label)
+            };
+            let (group, index) = route.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "snapshot capture incomplete: route {} source {label:?} unsupported",
+                    dest.id
+                )
+            })?;
+            out.push(StoredRoute {
+                target: if dest.output { dest.id } else { dest.target },
+                strip: dest.strip,
+                key: if dest.output { None } else { Some(dest.key) },
+                group,
+                index,
+            });
+        }
+        Ok(out)
+    }
+
     /// Recall routing snapshot rows (routing-capable drivers only;
     /// skipped elsewhere). Rows resolve their stable key first (desk-switch
     /// survival) and fall back to the positional strip.
@@ -301,6 +355,7 @@ impl Engine {
         routing: &[StoredRoute],
         writer: &str,
         out: &mut Vec<Event>,
+        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<()> {
         let drv = self.active_drv();
         if drv.routing_planes().is_empty() {
@@ -309,6 +364,31 @@ impl Engine {
         let driver = self.active_driver();
         let topo = self.driver_topology(&driver);
         for row in routing {
+            check()?;
+            if row.target.starts_with("output/") {
+                let dest = drv
+                    .routing_planes()
+                    .into_iter()
+                    .flat_map(|p| p.destinations)
+                    .find(|d| d.output && d.id == row.target)
+                    .ok_or_else(|| anyhow::anyhow!("snapshot output {} unavailable", row.target))?;
+                let source = if row.group.is_empty() && row.index == 0 {
+                    anyhow::ensure!(dest.clearable, "snapshot output cannot be cleared");
+                    "—".to_string()
+                } else {
+                    anyhow::ensure!(
+                        dest.source_groups.iter().any(|g| g.key == row.group
+                            && row.index > 0
+                            && usize::from(row.index) <= g.count),
+                        "snapshot output source unavailable"
+                    );
+                    format!("{} {}", row.group, row.index)
+                };
+                let state = drv.output_route(&row.target)?;
+                drv.set_output_route(&row.target, &source, &state, &|| check().is_ok())
+                    .await?;
+                continue;
+            }
             let strip = row
                 .key
                 .as_deref()

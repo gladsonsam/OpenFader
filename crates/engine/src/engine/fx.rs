@@ -412,23 +412,19 @@ impl Engine {
         }
     }
 
-    /// Recall FX snapshot rows (design-strict, best-effort elsewhere).
-    pub(super) async fn recall_fx(&self, fx: &[StoredFx]) -> anyhow::Result<()> {
-        let strict = self.active_drv().fx_flavor() == FxFlavor::Design;
+    /// Apply saved FX to the pinned provider; a failed row is never success.
+    pub(super) async fn recall_fx(
+        &self,
+        fx: &[StoredFx],
+        drv: &dyn DynDriver,
+        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
         for row in fx {
-            let r = self.apply_fx_row(row).await;
-            if strict {
-                r?;
-            }
+            check()?;
+            drv.fx_apply_row(row.slot, &row.fx_type, row.on, row.bypass, &row.params)
+                .await?;
         }
         Ok(())
-    }
-
-    /// Apply one FX snapshot row to the active driver.
-    pub(super) async fn apply_fx_row(&self, row: &StoredFx) -> anyhow::Result<()> {
-        self.active_drv()
-            .fx_apply_row(row.slot, &row.fx_type, row.on, row.bypass, &row.params)
-            .await
     }
 }
 
