@@ -29,11 +29,20 @@ impl Engine {
                     Some("Refresh accepts at most 64 hosts".to_string())
                 } else {
                     let mut seen = HashSet::new();
-                    let checks = hosts
+                    let hosts: Vec<String> = hosts
                         .into_iter()
                         .filter(|host| seen.insert(host.trim().to_ascii_lowercase()))
-                        .map(|addr| async move {
-                            match tokio::time::timeout(
+                        .collect();
+                    // Completion order streams (one `devices` frame per
+                    // host); the slots below restore input order for the
+                    // final correlated complete.
+                    let mut slots: Vec<Option<DeviceCheck>> =
+                        (0..hosts.len()).map(|_| None).collect();
+                    let mut pending: futures::stream::FuturesUnordered<_> = hosts
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, addr)| async move {
+                            let result = match tokio::time::timeout(
                                 Duration::from_secs(3),
                                 self.check_recent_host(addr.clone()),
                             )
@@ -45,25 +54,23 @@ impl Engine {
                                     status: "no_reply".into(),
                                     device: None,
                                 },
-                            }
-                        });
-                    results = futures::future::join_all(checks).await;
-                    // Remove verified hostname aliases before canonical upsert.
+                            };
+                            (index, result)
+                        })
+                        .collect();
+                    while let Some((index, result)) =
+                        futures::StreamExt::next(&mut pending).await
                     {
-                        let mut devices = self.devices.write().unwrap();
-                        for result in &results {
-                            if let Some(row) = &result.device {
-                                devices.retain(|d| d.ip != result.addr || d.id == row.id);
-                            } else {
-                                for device in
-                                    devices.iter_mut().filter(|d| d.ip == result.addr.trim())
-                                {
-                                    device.state = "unverified".into();
-                                }
-                            }
-                        }
+                        self.apply_device_check(&result);
+                        self.scanned_at.store(now_unix(), Ordering::Relaxed);
+                        self.unicast(writer, self.devices_message());
+                        out.push(self.devices_message());
+                        slots[index] = Some(result);
                     }
-                    self.merge_device_rows(results.iter().filter_map(|r| r.device.clone()));
+                    results = slots
+                        .into_iter()
+                        .map(|slot| slot.expect("refresh slot fills on completion"))
+                        .collect();
                     None
                 };
                 self.scanned_at.store(now_unix(), Ordering::Relaxed);
@@ -80,23 +87,57 @@ impl Engine {
                 let display = |k: &str, m: &str| self.drv(k).display_name(m);
                 let remembered: Vec<String> =
                     self.desk_addrs.read().unwrap().values().cloned().collect();
-                let (rows, error) = match tokio::time::timeout(Duration::from_secs(4), async {
-                    let (mut rows, known) = tokio::join!(
-                        self.scanner.scan(&display, Duration::from_secs(2)),
-                        futures::future::join_all(remembered.iter().map(|host| {
-                            self.identify_registered(host, Duration::from_secs(3))
-                        }))
-                    );
-                    for row in known.into_iter().flatten() {
-                        push_row(&mut rows, row);
-                    }
-                    rows
-                })
+                // Stream live rows: the 2 s broadcast scan merges and
+                // publishes first, then each remembered-host identify
+                // publishes on completion. The op keeps its 4 s-class
+                // bound: the remembered phase gets whatever the scan
+                // left of it, and a hit there reports the same timeout
+                // with the rows gathered so far.
+                let started = Instant::now();
+                let (mut rows, mut error) = match tokio::time::timeout(
+                    Duration::from_secs(4),
+                    self.scanner.scan(&display, Duration::from_secs(2)),
+                )
                 .await
                 {
-                    Ok(rows) => (rows, None),
+                    Ok(scan_rows) => (scan_rows, None),
                     Err(_) => (Vec::new(), Some("Discovery timed out".to_string())),
                 };
+                if error.is_none() {
+                    self.merge_device_rows(rows.iter().cloned());
+                    self.scanned_at.store(now_unix(), Ordering::Relaxed);
+                    self.unicast(writer, self.devices_message());
+                    out.push(self.devices_message());
+                    let remaining = Duration::from_secs(4)
+                        .checked_sub(started.elapsed())
+                        .unwrap_or(Duration::ZERO);
+                    let mut pending: futures::stream::FuturesUnordered<_> = remembered
+                        .iter()
+                        .map(|host| self.identify_registered(host, Duration::from_secs(3)))
+                        .collect();
+                    if !pending.is_empty() {
+                        match tokio::time::timeout(remaining, async {
+                            while let Some(found) =
+                                futures::StreamExt::next(&mut pending).await
+                            {
+                                if let Some(row) = found {
+                                    push_row(&mut rows, row.clone());
+                                    self.merge_device_rows([row]);
+                                    self.scanned_at.store(now_unix(), Ordering::Relaxed);
+                                    self.unicast(writer, self.devices_message());
+                                    out.push(self.devices_message());
+                                }
+                            }
+                        })
+                        .await
+                        {
+                            Ok(()) => {}
+                            Err(_) => {
+                                error = Some("Discovery timed out".to_string());
+                            }
+                        }
+                    }
+                }
                 let results = rows
                     .iter()
                     .map(|row| DeviceCheck {
@@ -105,7 +146,8 @@ impl Engine {
                         device: Some(row.clone()),
                     })
                     .collect();
-                self.merge_device_rows(rows);
+                // Rows merged as they streamed (scan first, then each
+                // identify); the final store + publish below are unchanged.
                 self.scanned_at.store(now_unix(), Ordering::Relaxed);
                 self.unicast(writer, self.devices_message());
                 out.push(self.devices_message());
