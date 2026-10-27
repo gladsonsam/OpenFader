@@ -43,6 +43,7 @@ mixin _AppStoreAccess on _AppStoreContext {
     if (index == null || index < 1) return target.trim();
     final family = switch (parts[0].trim()) {
       'mix' => 'bus',
+      'dca' => 'vca',
       // Strip topology calls FX send masters fxsnd; send metadata and global
       // controls call the same destination fx. Returns use fxret, separately.
       'fxsnd' => 'fx',
@@ -393,16 +394,17 @@ mixin _AppStoreAccess on _AppStoreContext {
         'compressor' => ProcessorPresetKind.compressor,
         _ => null,
       };
-      if (ch is! int || kind == null || _presetFamily(ch)?['kind'] != 'in') {
+      if (ch is! int || kind == null || _presetFamily(ch) == null) {
         return false;
       }
       final fields = engine.supportedParams
-          .where((field) => processorPresetField(kind, field))
+          .where((field) =>
+              processorPresetField(kind, field) && _stripParamApplies(ch, field))
           .toList();
       final field = command['field'];
       if (fields.isEmpty ||
           (field != null &&
-              (field is! String || !processorPresetField(kind, field)))) {
+              (field is! String || !fields.contains(field)))) {
         return false;
       }
       // Raw commands share the same complete-block and partner access gate

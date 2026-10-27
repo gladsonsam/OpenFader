@@ -604,6 +604,7 @@ class FakeSimEngine implements EngineApi {
   }
 
   double _inputLevel(int i, double t) {
+    if (_kind(i) == 'dca') return 0;
     final phase = i * 0.7;
     final rate = 0.65 + (i % 5) * 0.07;
     final phrase = (0.5 +
