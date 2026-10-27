@@ -1,6 +1,6 @@
 # Output processing implementation and verification handoff
 
-This is a partial output-processing implementation, not full Master Fader parity.
+This is a partial implementation of DL32S output processing; full coverage is unverified.
 The inventory contains 691 controls: Main/Aux1–8 (62 each), Subgroup1–6
 (22 each), and one shared system temperature. No hardware connection or writes
 were made by this implementation agent. Native evidence below was supplied by
@@ -56,7 +56,7 @@ as a per-output temperature. The guide describes fixed speaker distances and
 shared temperature compensation changing time. No unproven speed-of-sound
 formula or synthetic ms/ft readback is introduced.
 
-Guide source: `/tmp/master-fader-v5-1-reference.pdf`, pp131/139/146. It documents
+The supplied control reference guide v5.1, pp131/139/146, documents
 6/12/18/24 dB/oct slopes, ±12 dB GEQ bands/master, 0..115.8 m alignment distance
 (0..341.7 ms), and 0..40 °C. Distance raw metres agrees with the supplied native
 observation (1.65895748 raw displayed as 1.7 m, 5.4 ft, 4.8 ms). Exact endpoint
@@ -164,7 +164,7 @@ Zero-based sample positions:
 - 62..92: RTA (`3..33`); 93..284: input dynamics (`35+7c..40+7c`).
 
 Provenance: supplied `openfader-native-meter-decoding-evidence-20261027.json`
-traces installed Master Fader 5.2 build 28602 DL32S/DLFresh32 native getters
+traces installed native client 5.2 build 28602 DL32S/DLFresh32 native getters
 and raw f32 receiver/list ordering. The supplied
 `openfader-native-output-meters-20261027-final.json` contains 73 passive
 explicit-116-word frames, list ID 1, with requested-address order retained;

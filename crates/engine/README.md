@@ -178,8 +178,8 @@ Unknown `cmd` → unicast `error` (`unknown cmd "bogus"`); malformed JSON →
   These are **not audio frequencies**.
 - `audio_spectrum`: `ch` (nullable topology slot), `bins_db` (measured signed
   dB), `band_edges_hz` (one more edge than bins), `source`, `position`, `epoch`.
-  XR18 preserves all 100 bins; nominal display edges follow X-AIR-Edit and
-  isolated-tone verification. An empty bin vector clears prior audio data.
+  XR18 preserves all 100 bins; nominal display edges follow the native client
+  display and isolated-tone verification. An empty bin vector clears prior audio data.
   One global latest-only slot prevents old-source frames lingering in adapters.
   `spectrum_target {ch}` acquires/changes the source while EQ is open;
   `ch:null` releases the client's interest. Ownership, same-session readback,
@@ -720,7 +720,7 @@ new timer/task; no audio-param fanout — it carries no strip params).
 Unverified hardware limits (DL32S): slot names arrive only when the
 desk pushes a rename relay, and the current marker only on a recall
 relay — a fresh connect normally reads `loading` until someone
-recalls/renames on the desk or in Master Fader (the init bulk carries
+recalls/renames on the desk or in the native client (the init bulk carries
 no slot table, and the engine never downloads `Show.zip` to fill the
 gap). Own saves are acceptance-only and never populate this view, so
 an optimistic local save must not be read as desk proof.
@@ -764,7 +764,8 @@ fields are omitted for providers that do not contribute them.
 supports patching (Lcl/Net/USB × 32; defaults mirror the design: Ch n
 ← Lcl n, Ch 33+ ← Net; reads/writes ride the `source` param plane).
 xair reports `supported:false` (`insrc` is live-silent on FW 1.20 —
-see X-Air Edit 1.8.1 protocol map); `usbreturn` stays a plain param there.
+see XR18 protocol notes from native client 1.8.1 research); `usbreturn`
+stays a plain param there.
 DL32S: unsupported. `patch_set`/`patch_clear` honour roles
 (`allow_strip`) and strip locks (deny with `locked_by`, like params).
 

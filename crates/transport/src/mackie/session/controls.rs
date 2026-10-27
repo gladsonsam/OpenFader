@@ -28,7 +28,7 @@ impl MackieSession {
     }
 
     /// Historical API name: op 5 NAMES an existing snapshot; it does not
-    /// capture current state. Native Master Fader store is op 2. Retained
+    /// capture current state. Native client store is op 2. Retained
     /// for wire compatibility; never advertise this wrapper as native save.
     pub async fn save_show_snapshot(
         &self,

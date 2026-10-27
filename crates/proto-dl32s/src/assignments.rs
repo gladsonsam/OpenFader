@@ -4,7 +4,7 @@ use openfader_core::{ParamValue, StripId};
 use openfader_transport::mackie::{MUTE_GROUP_COUNT, VALUE_TYPE_PARAM};
 
 // Type-2 input Solo: CH7=29 and CH8=30 independently verified against
-// Master Fader, 2026-10-25. The contiguous input bank starts at CH1=23.
+// the native client, 2026-10-25. The contiguous input bank starts at CH1=23.
 pub(super) const INPUT_SOLO_FIRST_ADDRESS: u32 = 23;
 
 // Canonical assignment leaves map to provider membership words; group count
@@ -25,7 +25,7 @@ pub(super) const MEMBERSHIP_ALIASES: &[(&str, &str)] = &[
 ];
 
 /// Native VCA1..6 names occupy slots58..63; View A..F uses70..75.
-/// Both banks were matched read-only against Master Fader.
+/// Both banks were matched read-only against the native client.
 pub(super) fn assignment_name_parameter(slot: u32) -> Option<&'static str> {
     match slot {
         58 => Some("dca1_assign"),

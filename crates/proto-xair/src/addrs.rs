@@ -15,7 +15,7 @@ pub const CLEAR_SOLO: &str = "/-action/clearsolo";
 /// Solo switch bank: the desk answers queries here with one int per
 /// channel (1 = soloed), and 1-based `/-stat/solosw/NN` leaves take
 /// fire-and-forget sets. The desk broadcasts leaf updates to
-/// `/xremote` subscribers on solo changes (surface or X-Air Edit —
+/// `/xremote` subscribers on solo changes (surface or another OSC client —
 /// decoded by [`parse_inbound`]). Rig-verified XR18 FW 1.20.
 pub const SOLO_SW: &str = "/-stat/solosw";
 /// Meter stream id requested from the mixer (`/meters/1` carries the

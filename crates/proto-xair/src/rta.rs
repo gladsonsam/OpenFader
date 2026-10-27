@@ -28,7 +28,7 @@ pub struct RtaStream {
     cache: Cache,
 }
 
-/// The official X-AIR-Edit 1.8 `_rtasrctxt` table, mapped to our topology.
+/// The native client 1.8 `_rtasrctxt` table, mapped to our topology.
 fn source_strip(source: i32) -> Option<StripId> {
     Some(StripId(match source {
         0..=15 => source as u16,
@@ -232,7 +232,7 @@ impl RtaStream {
                                     if lease.is_none() || Instant::now() < ready || confirmed.elapsed() > Duration::from_millis(750) { continue; }
                                     let frame = AudioSpectrum {
                                         strip: source_strip(source), bins_db,
-                                        // X-AIR-Edit renders 100 equal-width bars on its
+                                        // The native client renders 100 equal-width bars on its
                                         // log(20)..log(20000) axis: these are band EDGES.
                                         band_edges_hz: (0..=100).map(|i| 20.0 * 1000f32.powf(i as f32 / 100.0)).collect(),
                                         source: source_label(source),
