@@ -12,6 +12,7 @@ class _NativeRequest {
   final Object session;
   final String driver;
   final int epoch;
+  final int accessEpoch;
   final String op;
   final double deadline;
   final Completer<Map<String, dynamic>> done = Completer();
@@ -20,6 +21,7 @@ class _NativeRequest {
     this.session,
     this.driver,
     this.epoch,
+    this.accessEpoch,
     this.op,
     this.deadline,
   );
@@ -48,6 +50,7 @@ mixin _AppStoreNativeLibrary on _AppStoreContext {
       engine.session,
       engine.driver,
       epoch,
+      controlAccessEpoch,
       action['op'] as String,
       _nowMs() + 20000,
     );
@@ -90,6 +93,7 @@ mixin _AppStoreNativeLibrary on _AppStoreContext {
         frame['driver'] != request.driver ||
         frame['epoch'] != request.epoch ||
         frame['operation'] != request.op ||
+        controlAccessEpoch != request.accessEpoch ||
         engine.session != request.session) {
       return;
     }
@@ -110,13 +114,24 @@ mixin _AppStoreNativeLibrary on _AppStoreContext {
   void cancelNativeLibrary(Object owner) {
     for (final entry in _nativeRequests.entries.toList()) {
       if (!identical(entry.value.owner, owner)) continue;
-      _send(
-        jsonEncode({'cmd': 'native_library_cancel', 'request_id': entry.key}),
+      // Cancellation must reach the engine even while access persistence is
+      // saving. It revokes an admitted request; it never authorizes a write.
+      unawaited(
+        _api
+            .cmd(
+              _clientId,
+              jsonEncode({
+                'cmd': 'native_library_cancel',
+                'request_id': entry.key,
+              }),
+            )
+            .catchError((Object error) {
+              _noteTransportError(error);
+            }),
       );
       _finishNative(entry.key, {
         'status': 'uncertain',
-        'message':
-            'Operation interrupted. It may already have taken effect; inspect again. No replay.',
+        'message': 'Operation interrupted. It may already have taken effect; inspect again. No replay.',
       });
     }
   }
@@ -133,10 +148,14 @@ mixin _AppStoreNativeLibrary on _AppStoreContext {
     for (final entry in _nativeRequests.entries.toList()) {
       if (now >= entry.value.deadline ||
           engine.session != entry.value.session ||
+          controlAccessEpoch != entry.value.accessEpoch ||
           !engine.connected ||
           blockedAccess.isNotEmpty &&
-              !const ['inspect', 'refresh', 'read_show']
-                  .contains(entry.value.op)) {
+              !const [
+                'inspect',
+                'refresh',
+                'read_show',
+              ].contains(entry.value.op)) {
         cancelNativeLibrary(entry.value.owner);
       }
     }

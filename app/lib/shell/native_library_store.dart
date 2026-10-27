@@ -14,7 +14,7 @@ mixin ShellNativeLibrary on ShellStoreAdapter {
   bool get nativeBusy => _nativeBusy;
   bool get nativeWritable => engine.connected && app.blockedAccess.isEmpty;
   Object get nativeContext =>
-      (engine.session, nativeLibrary, app.blockedAccess);
+      (engine.session, nativeLibrary, app.controlAccessEpoch);
 
   Future<void> nativeAction(
     Map<String, dynamic> action,
