@@ -112,6 +112,7 @@ impl Engine {
                 let mut output_source_generation = 0;
                 let mut parameter_labels_last = None;
                 let mut destination_controls_last = None;
+                let mut output_routes_last = None;
                 let mut last_level_sample = None;
                 let mut last_gr_sample = None;
                 let mut tick = tokio::time::interval(openfader_transport::METER_INTERVAL);
@@ -319,12 +320,18 @@ impl Engine {
                         let view = engine.drv(&driver).native_snapshots();
                         let labels = engine.drv(&driver).param_label_overrides();
                         let destination_controls = engine.drv(&driver).destination_controls();
+                        let output_routes = engine.output_routing_fingerprint(&driver);
                         // Held to the end of the block: the barrier shared
                         // with `invalidate_connection`.
                         let _sync = engine.sync_state.lock().unwrap();
                         if engine.connection_gen.load(Ordering::Acquire) == generation
                             && !engine.reads_suspended.load(Ordering::Acquire)
                         {
+                            let output_key = (generation, driver.clone(), output_routes);
+                            if output_routes_last.as_ref() != Some(&output_key) {
+                                engine.routing_dirty.store(true, Ordering::Release);
+                                output_routes_last = Some(output_key);
+                            }
                             let destination_key = (generation, destination_controls);
                             if destination_controls_last.as_ref() != Some(&destination_key) {
                                 let emit = !destination_key.1.is_empty()

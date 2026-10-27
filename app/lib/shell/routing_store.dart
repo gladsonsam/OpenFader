@@ -99,7 +99,12 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
   String? _identity(Map? d) {
     if (d == null || engine.routingCaps['epoch'] is! int) return null;
     final route = _route(d);
-    if (route == null || route['authority'] != 'provider_display') return null;
+    if (route == null ||
+        (d['output'] == true
+            ? route['authority'] != 'verified' || route['guard'] is! Map
+            : route['authority'] != 'provider_display')) {
+      return null;
+    }
     return jsonEncode([
       _sequence,
       engine.session,
@@ -111,6 +116,7 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
       d['strip'],
       route['group'],
       route['index'],
+      route['guard'],
     ]);
   }
 
@@ -119,15 +125,20 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
       !isDisposed &&
       routingSupported &&
       engine.connected &&
-      app.accessFamilyAllowed(AccessFamily.inputRouting) &&
+      app.accessFamilyAllowed(
+        _selected?['output'] == true
+            ? AccessFamily.outputRouting
+            : AccessFamily.inputRouting,
+      ) &&
       _selection != null &&
       _selection == _identity(_selected) &&
-      !engine.locks.containsKey(_sel) &&
+      (_selected?['output'] == true || !engine.locks.containsKey(_sel)) &&
       _membersAllowed;
 
   bool get _membersAllowed {
     final d = _selected;
     if (d == null || !app.accessTargetAllowed(d['key'] as String)) return false;
+    if (d['output'] == true) return true;
     // Backend owns provider control_members. Conservatively protect both sides
     // while stereo state is linked or unknown, including peer local limits.
     final pair = engine.stereoPairs.where((p) => p.contains(_sel)).firstOrNull;
@@ -256,6 +267,7 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
         'epoch': engine.routingCaps['epoch'],
         'destination': d['id'],
         'expected': _route(d)!['label'],
+        if (d['output'] == true) 'guard': _route(d)!['guard'],
         'source': source,
       }),
     );

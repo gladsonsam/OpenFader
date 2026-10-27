@@ -17,6 +17,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/access_limits.dart';
+import '../core/routing_access.dart';
 import '../settings/prefs.dart';
 
 import '../core/channel_views.dart';

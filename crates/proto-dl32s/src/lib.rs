@@ -21,6 +21,7 @@ mod input_processors;
 mod preamp;
 mod telemetry;
 mod output_meters;
+pub mod output_routing;
 
 pub use metadata::DL32S_CAPABILITIES;
 use native::NativeCache;

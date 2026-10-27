@@ -5,6 +5,10 @@ enum AccessFamily {
     'Input routing',
     'Advertised input patches, source selection and source mode controls',
   ),
+  outputRouting(
+    'Output patching',
+    'Advertised physical outputs and USB send patches',
+  ),
   micPreamps('Mic preamps', 'Advertised routed input gain and 48V controls'),
   inputDsp(
     'Input DSP',

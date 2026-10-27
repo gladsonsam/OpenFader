@@ -3,6 +3,16 @@
 use super::*;
 
 impl Engine {
+    /// Sample native revisions on the existing shell/control cadence. No new ticker.
+    pub(super) fn output_routing_fingerprint(&self, driver: &str) -> Value {
+        let drv = self.drv(driver);
+        json!(drv.routing_planes().into_iter().flat_map(|p| p.destinations)
+            .filter(|d| d.output).map(|d| {
+                let state = drv.output_route(&d.id).ok().map(|s| route_guard(&s));
+                json!([d.id, state])
+            }).collect::<Vec<_>>())
+    }
+
     /// Resolve only provider-owned stable IDs. Positional routing remains a
     /// compatibility write adapter, never the source of advertised destinations.
     pub(super) fn routing_command(
@@ -23,6 +33,7 @@ impl Engine {
             .flat_map(|p| p.destinations)
             .find(|d| d.id == destination)
             .ok_or_else(|| anyhow::anyhow!("unknown routing destination"))?;
+        anyhow::ensure!(!dest.output, "output requires guarded stable command");
         Ok(if let Some(source) = source {
             // The shared write guard checks the destination-specific allowlist.
             Cmd::PatchSet {
@@ -79,7 +90,7 @@ impl Engine {
             .routing_planes()
             .into_iter()
             .flat_map(|p| p.destinations)
-            .find(|d| d.strip == strip && d.target == drv.canonical_routing_target(target))
+            .find(|d| !d.output && d.strip == strip && d.target == drv.canonical_routing_target(target))
             .ok_or_else(|| {
                 anyhow::anyhow!("legacy patch requires advertised input strips and targets")
             })?;
@@ -187,11 +198,12 @@ impl Engine {
     pub(super) async fn routing_message(&self) -> Event {
         let driver = self.active_driver();
         let catalog = self.drv(&driver).routing_planes();
-        let destinations: Vec<PatchEntry> = self
+        let mut destinations: Vec<PatchEntry> = self
             .routing_snapshot_on(&driver)
             .await
             .into_iter()
             .map(|r| PatchEntry {
+                guard: None,
                 destination: catalog
                     .iter()
                     .flat_map(|p| &p.destinations)
@@ -211,10 +223,21 @@ impl Engine {
                 index: r.index,
             })
             .collect();
+        for dest in catalog.iter().flat_map(|p| &p.destinations).filter(|d| d.output) {
+            let Ok(state) = self.drv(&driver).output_route(&dest.id) else { continue };
+            let (group, index) = if state.source == "—" { (String::new(), 0) }
+                else if let Some(source) = parse_source(&state.source) { source }
+                else { continue };
+            destinations.push(PatchEntry {
+                guard: Some(route_guard(&state)), destination: Some(dest.id.clone()),
+                authority: Some("verified".into()), target: dest.target.clone(),
+                strip: dest.strip, key: Some(dest.key.clone()), group, index, label: state.source,
+            });
+        }
         let patches = destinations
             .iter()
             // Preserve legacy absence-as-unpatched behavior for single-target clients.
-            .filter(|r| !r.target.is_empty() || !r.group.is_empty() || r.index != 0)
+            .filter(|r| r.guard.is_none() && (!r.target.is_empty() || !r.group.is_empty() || r.index != 0))
             .cloned()
             .collect();
         Event::Routing {
@@ -223,6 +246,8 @@ impl Engine {
         }
     }
 
+    /// Strip-scene storage deliberately excludes non-strip ports: those require
+    /// a fresh stable output guard and are never replayed as legacy strip writes.
     /// Read provider destinations on one pinned driver, so scene saves and
     /// routing frames cannot mix one desk's catalog with another's source state.
     pub(super) async fn routing_snapshot_on(&self, driver: &str) -> Vec<StoredRoute> {
@@ -235,7 +260,7 @@ impl Engine {
         // topology is only used by the compatibility adapter, never by this reader.
         let bulk = drv.source_bulk();
         let mut out = Vec::new();
-        for dest in planes.into_iter().flat_map(|p| p.destinations) {
+        for dest in planes.into_iter().flat_map(|p| p.destinations).filter(|d| !d.output) {
             let label = if dest.target.is_empty() {
                 match &bulk {
                     Some(map) => map.get(&dest.strip).cloned(),
@@ -316,4 +341,9 @@ pub(super) fn parse_source(label: &str) -> Option<(String, u8)> {
     } else {
         None
     }
+}
+
+/// Exact provider snapshot serialized for the client roundtrip.
+pub(super) fn route_guard(state: &openfader_core::routing::RouteState) -> Value {
+    json!({ "source": state.source, "revision": state.revision, "generation": state.generation })
 }
