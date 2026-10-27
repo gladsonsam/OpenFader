@@ -3,10 +3,12 @@ import 'package:flutter/foundation.dart';
 import '../engine.dart';
 import '../core/channel_name.dart';
 import '../core/channel_views.dart' show parameterRange;
+import '../settings/prefs.dart';
 import '../state/app_store.dart';
 import '../u4law.dart';
 import 'design.dart';
 import 'demo.dart';
+import 'mixer_layers.dart';
 
 enum MixerDestination {
   meters,
@@ -95,6 +97,7 @@ class MixerController extends ChangeNotifier {
       : _allowDemoSeed = seedReferenceDemo,
         _driver = store.engine.driver {
     store.addListener(_changed);
+    PrefsService.instance.addListener(_layersChanged);
     scheduleMicrotask(_maybeSeedDemo);
   }
   bool get demo => store.engine.driver == 'sim';
@@ -123,7 +126,44 @@ class MixerController extends ChangeNotifier {
     }).toList(growable: false);
   }
 
-  int get pageCount => (_surfaceStrips.length / _pageSize).ceil();
+  /// Active custom layer, or the built-in All layer (unknown ids fall back
+  /// to All via [MixerLayersState]).
+  MixerLayer get activeLayer => PrefsService.instance.mixerLayersState.activeLayer;
+  bool get isCustomLayerActive => !activeLayer.isAll;
+
+  /// Custom layers ignore the bank rail: their channel source is the layer's
+  /// own [MixerLayer.channelKeys] order, not the bank-filtered surface
+  /// strips. The All layer keeps today's bank paging behavior unchanged.
+  List<Strip> get _effectiveStrips {
+    final layer = activeLayer;
+    if (layer.isAll) return _surfaceStrips;
+    final byKey = {
+      for (final s in store.strips)
+        if (s.key != 'main') s.key: s,
+    };
+    final picked = <Strip>[];
+    for (final key in layer.channelKeys) {
+      final strip = byKey[key];
+      // Unknown keys (desk reconfigured since the layer was saved) are
+      // ignored; duplicates collapse to first occurrence.
+      if (strip == null || picked.any((s) => s.key == key)) continue;
+      picked.add(strip);
+    }
+    // Preserve stereo-link collapse with layer-local visibility: a linked
+    // secondary drops out only when its primary is also in the layer.
+    final present = picked.map((s) => s.ch).toSet();
+    return picked.where((s) {
+      final pair = _linkedPair(s.ch);
+      return pair == null || pair.last != s.ch || !present.contains(pair.first);
+    }).toList(growable: false);
+  }
+
+  /// Custom layers page by their own density; All keeps the configured size.
+  int get effectivePageSize => isCustomLayerActive
+      ? activeLayer.effectiveStripsPerPage
+      : _pageSize;
+
+  int get pageCount => (_effectiveStrips.length / effectivePageSize).ceil();
   int get muteGroupCount => store.engine.muteGroupCount;
   bool get hasSolo => store.hasSolo;
 
@@ -137,11 +177,15 @@ class MixerController extends ChangeNotifier {
       master || ch == null ? store.masterMutedNote : store.muteOf(ch);
   ValueListenable<double> panNoteOf(int ch) => store.panNoteOf(ch);
   ValueListenable<bool> soloNoteOf(int ch) => store.soloNoteOf(ch);
-  List<MixerChannel> get channels => _surfaceStrips
-      .skip(_page * _pageSize)
-      .take(_pageSize)
+  List<MixerChannel> get channels => _effectiveStrips
+      .skip(_page * effectivePageSize)
+      .take(effectivePageSize)
       .map(_channel)
       .toList(growable: false);
+
+  /// Empty-state copy for a custom layer with no resolvable channels.
+  String get layerEmptyMessage =>
+      '“${activeLayer.name}” has no channels to show.\nLong-press the bank rail to edit layers.';
   MixerChannel _channel(Strip s, {bool? selected}) => MixerChannel(
       key: s.key,
       name: s.name.isEmpty ? s.key.replaceAll('/', '').toUpperCase() : s.name,
@@ -254,6 +298,27 @@ class MixerController extends ChangeNotifier {
       readoutFocus.value = (key: null, control: MixerReadoutControl.volume);
     }
     _maybeSeedDemo();
+    notifyListeners();
+  }
+
+  /// Layer prefs changed (possibly from Settings while the mixer is open):
+  /// clamp the page to the new source and drop a selection the layer cannot
+  /// resolve. Prefs notifies on every preference write, so this stays cheap
+  /// and never writes prefs back (no notify loop).
+  void _layersChanged() {
+    if (_disposed) return;
+    if (_page >= pageCount) _page = 0;
+    if (_selectedKey != null &&
+        _selectedKey != 'master' &&
+        !_effectiveStrips.any((s) => s.key == _selectedKey)) {
+      _selectedKey = channels.firstOrNull?.key;
+    }
+    final focusKey = readoutFocus.value.key;
+    if (focusKey != null &&
+        focusKey != 'master' &&
+        !store.strips.any((s) => s.key == focusKey)) {
+      readoutFocus.value = (key: null, control: MixerReadoutControl.volume);
+    }
     notifyListeners();
   }
 
@@ -384,6 +449,22 @@ class MixerController extends ChangeNotifier {
     if (first != null) select(first);
   }
 
+  /// Switch the active layer. Unknown ids are ignored (the All fallback in
+  /// [activeLayer] would otherwise silently change the view). Mirrors
+  /// [setBank]: reset to the first page and select its first strip.
+  Future<void> setActiveLayer(String id) async {
+    final prefs = PrefsService.instance;
+    final known = id == MixerLayer.allLayerId ||
+        prefs.mixerLayers.any((layer) => layer.id == id);
+    if (!known || prefs.activeMixerLayerId == id) return;
+    _page = 0;
+    await prefs.setActiveMixerLayerId(id);
+    // The prefs listener (_layersChanged) already clamped the page and
+    // selection; align the open channel like a bank switch does.
+    final first = channels.firstOrNull;
+    if (first != null) select(first);
+  }
+
   void moveSelection(int delta) {
     final all = [...channels, master];
     final index = all.indexWhere((s) => s.key == _selectedKey);
@@ -414,6 +495,7 @@ class MixerController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     store.removeListener(_changed);
+    PrefsService.instance.removeListener(_layersChanged);
     readoutFocus.dispose();
     super.dispose();
   }

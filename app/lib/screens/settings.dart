@@ -15,6 +15,8 @@ import 'settings_access.dart';
 import '../settings/mixes.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
+import '../mixer/components/layers.dart';
+import '../mixer/mixer_layers.dart';
 import '../mixer/strip_layout.dart';
 import '../theme.dart';
 import '../palette.dart';
@@ -27,6 +29,7 @@ part 'settings/mixes.dart';
 part 'settings/data.dart';
 part 'settings/appearance.dart';
 part 'settings/strip_layout.dart';
+part 'settings/layers.dart';
 part 'settings/about.dart';
 
 enum SettingsSection {
@@ -48,6 +51,9 @@ abstract class SettingsStore extends ChangeNotifier {
   AccessLimitsStore get accessLimits;
   RecentMixers get recents;
   LocalMixStore get mixes;
+
+  /// Live channel catalog for the custom-layers editor (master excluded).
+  List<({String key, String name})> get layerChannelOptions;
   Future<int> appStorageBytes();
 
   Future<String?> importMix();

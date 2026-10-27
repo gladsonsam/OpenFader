@@ -138,6 +138,7 @@ class _AppearanceDetail extends StatelessWidget {
           ],
         ),
         _StripLayoutSection(store: store, toast: toast),
+        _LayersSection(store: store, toast: toast),
       ],
     );
   }

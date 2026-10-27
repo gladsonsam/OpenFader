@@ -2,6 +2,7 @@ import '../../palette.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../design.dart';
+import 'layers.dart';
 import 'toggle.dart';
 
 Future<void> showMixerLayout(BuildContext context, MixerController controller,
@@ -47,6 +48,15 @@ Future<void> showMixerLayout(BuildContext context, MixerController controller,
                               Navigator.pop(context);
                             }),
                       Divider(color: ConsolePalette.of(context).line),
+                      ListTile(
+                          title: Text('Layers',
+                              style: mixerType(context, 17)),
+                          subtitle: Text('Custom channel sets',
+                              style: mixerType(context, 13,
+                                  color: ConsolePalette.of(context)
+                                      .mutedText)),
+                          onTap: () =>
+                              showMixerLayers(context, controller)),
                       ListTile(
                           title:
                               Text('Master bus', style: mixerType(context, 17)),
@@ -252,10 +262,16 @@ class MixerBanks extends StatelessWidget {
                             borderRadius: BorderRadius.circular(14 * sx)),
                         child: Column(children: [
                           for (final bank in banks)
-                            button(
-                                bank.label, () => controller.setBank(bank.key),
-                                active: bank.key == controller.store.bank,
-                                size: 31),
+                            // Long-press opens the custom layers editor.
+                            GestureDetector(
+                                onLongPress: () =>
+                                    showMixerLayers(context, controller),
+                                child: button(
+                                    bank.label,
+                                    () => controller.setBank(bank.key),
+                                    active:
+                                        bank.key == controller.store.bank,
+                                    size: 31)),
                         ])),
                     for (final bus in controller.store.busRows)
                       button(bus.name, () => controller.store.selectBus(bus.id),
@@ -292,8 +308,12 @@ class MixerBanks extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Row(children: [
                       Expanded(
-                          child: DropdownButtonHideUnderline(
-                              child: DropdownButton<String>(
+                          // Long-press opens the custom layers editor.
+                          child: GestureDetector(
+                              onLongPress: () =>
+                                  showMixerLayers(context, controller),
+                              child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
                                   isExpanded: true,
                                   dropdownColor:
                                       ConsolePalette.of(context).chip,
@@ -312,7 +332,7 @@ class MixerBanks extends StatelessWidget {
                                   ],
                                   onChanged: (key) {
                                     if (key != null) controller.setBank(key);
-                                  }))),
+                                  })))),
                       SizedBox(width: 114, child: _pager(context)),
                       if (count > 0)
                         IconButton(
@@ -400,4 +420,14 @@ Future<void> showMixerBanks(BuildContext context, MixerController controller) =>
                               controller.setBank(bank.key);
                               Navigator.pop(context);
                             }),
+                      Divider(color: ConsolePalette.of(context).line),
+                      ListTile(
+                          title: Text('Layers',
+                              style: mixerType(context, 17)),
+                          subtitle: Text('Custom channel sets',
+                              style: mixerType(context, 13,
+                                  color: ConsolePalette.of(context)
+                                      .mutedText)),
+                          onTap: () =>
+                              showMixerLayers(context, controller)),
                     ]))));

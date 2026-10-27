@@ -34,6 +34,14 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
   @override
   PrefsService get prefs => PrefsService.instance;
 
+  /// Live channel catalog for the custom-layers editor (master excluded).
+  @override
+  List<({String key, String name})> get layerChannelOptions => [
+        for (final s in app.strips)
+          if (s.key != 'main')
+            (key: s.key, name: s.name.isEmpty ? s.key : s.name),
+      ];
+
   final RecentMixers _recents = RecentMixers.instance;
 
   @override

@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../core/access_policy.dart';
+import '../mixer/mixer_layers.dart';
 import '../mixer/strip_layout.dart';
 
 class PrefsService extends ChangeNotifier {
@@ -162,6 +163,29 @@ class PrefsService extends ChangeNotifier {
   Future<void> setStripLayout(StripLayout layout) =>
       _set(stripLayoutKey, layout.encode());
 
+  // --- mixer layers ---------------------------------------------------------
+  static const layersKey = 'openfader.layers.v1';
+  static const activeLayerIdKey = 'openfader.activeLayerId';
+
+  /// User layers with defaults fallback on missing/corrupt payloads.
+  List<MixerLayer> get mixerLayers =>
+      MixerLayer.tryDecodeList(_prefs?.getString(layersKey)) ?? const [];
+
+  /// Active layer id; unknown ids fall back to the built-in All layer.
+  String get activeMixerLayerId =>
+      _prefs?.getString(activeLayerIdKey) ?? MixerLayer.allLayerId;
+
+  MixerLayersState get mixerLayersState => MixerLayersState(
+        layers: mixerLayers,
+        activeLayerId: activeMixerLayerId,
+      );
+
+  Future<void> setMixerLayers(List<MixerLayer> layers) =>
+      _set(layersKey, MixerLayer.encodeList(layers));
+
+  Future<void> setActiveMixerLayerId(String id) =>
+      _set(activeLayerIdKey, id);
+
   // --- mixes ------------------------------------------------------------------
   bool get autoBackup => _prefs?.getBool('openfader.autoBackup') ?? true;
   String get backupCreatedAt =>
@@ -254,6 +278,8 @@ class PrefsService extends ChangeNotifier {
       'openfader.largeTargets',
       'openfader.autoBackup',
       stripLayoutKey,
+      layersKey,
+      activeLayerIdKey,
     ]) {
       if (!await p.remove(key)) {
         await p.reload();
