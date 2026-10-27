@@ -54,6 +54,7 @@ part 'app_store_meters.dart';
 part 'app_store_strips.dart';
 part 'app_store_solo.dart';
 part 'app_store_strip_values.dart';
+part 'app_store_control_groups.dart';
 part 'app_store_channel.dart';
 part 'app_store_input.dart';
 part 'app_store_destinations.dart';
@@ -225,6 +226,9 @@ class AppStore extends _AppStoreContext
     _masterMeter.dispose();
     for (final meter in _outputMeters.values) {
       meter.dispose();
+    }
+    for (final n in _controlGroupNotes.values) {
+      n.dispose();
     }
     for (final n in _faderNotes.values) {
       n.dispose();

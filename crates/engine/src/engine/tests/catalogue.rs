@@ -78,13 +78,13 @@ fn driver_capability_sets() {
     );
     assert_eq!(engine.driver_channels("xair"), 16);
     assert_eq!(engine.driver_channels("sim"), 32);
-    // Strip totals (topology): sim 77, xair 36, dl32s 32.
+    // Strip totals (topology): sim 77, xair 36, dl32s 44.
     assert_eq!(engine.driver_strips("sim"), openfader_sim::SIM_STRIPS);
     assert_eq!(
         engine.driver_strips("xair"),
         openfader_proto_xair::XAIR_STRIPS
     );
-    assert_eq!(engine.driver_strips("dl32s"), 32);
+    assert_eq!(engine.driver_strips("dl32s"), 44);
     assert_eq!(
         engine.driver_topology("sim").len(),
         openfader_sim::SIM_TOPOLOGY.len()

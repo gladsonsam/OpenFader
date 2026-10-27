@@ -22,7 +22,7 @@ pub fn input_planes<D: DynDriver + ?Sized>(drv: &D) -> Vec<RoutingPlaneCaps> {
                 label: target.label.to_string(),
                 destinations: topo
                     .iter()
-                    .filter(|f| f.kind == StripKind::In)
+                    .filter(|f| drv.routing_strip_kind(f.kind))
                     .flat_map(|f| (f.first..f.first + f.count).map(move |i| (f, i)))
                     .filter_map(|(f, i)| {
                         let key = openfader_core::strip_key_for_index(&topo, i)?;

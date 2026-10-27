@@ -5,7 +5,8 @@ extension _FakeSimInputProcessors on FakeSimEngine {
     Map<String, dynamic>? result;
     String? error;
     try {
-      if (c['request_id'] is! String || (c['request_id'] as String).isEmpty ||
+      if (c['request_id'] is! String ||
+          (c['request_id'] as String).isEmpty ||
           (c['request_id'] as String).length > 128) {
         throw StateError('Invalid processor request ID');
       }
@@ -40,9 +41,11 @@ extension _FakeSimInputProcessors on FakeSimEngine {
           };
       Map<String, dynamic> capture() {
         final left = ch - ch % 2;
-        for (final i in [left, left + 1]) {
+        for (final i
+            in _params[ch].containsKey('link') ? [left, left + 1] : <int>[]) {
           if (_params[i]['link'] != false) {
-            throw StateError('Input presets require verified unlinked channels');
+            throw StateError(
+                'Input presets require verified unlinked channels');
           }
         }
         return {
@@ -51,17 +54,28 @@ extension _FakeSimInputProcessors on FakeSimEngine {
           'processor': processor,
           'generation': _processorEpoch,
           'revision': _processorRevision,
-          'domain': [for (final id in _params[ch].keys.where(member)) {
-            'id': id, 'scopes': ['in'],
-            'kind': _params[ch][id] is bool ? 'bool' : id.endsWith('_type') ? 'enum' : 'float',
-            'range': canonicalSimDspRange(id) ?? (id.endsWith('_type') ? [0, 5] : null),
-          }],
+          'domain': [
+            for (final id in _params[ch].keys.where(member))
+              {
+                'id': id,
+                'scopes': [FakeSimEngine._kind(ch)],
+                'kind': _params[ch][id] is bool
+                    ? 'bool'
+                    : id.endsWith('_type')
+                        ? 'enum'
+                        : 'float',
+                'range': canonicalSimDspRange(id) ??
+                    (id.endsWith('_type') ? [0, 5] : null),
+              }
+          ],
           'rows': [
             for (final entry in _params[ch].entries.where((e) => member(e.key)))
               {'id': entry.key, 'value': entry.value}
           ],
           'links': [
-            for (final i in [left, left + 1]) {'ch': i, 'value': false}
+            for (final i
+                in _params[ch].containsKey('link') ? [left, left + 1] : <int>[])
+              {'ch': i, 'value': false}
           ]
         };
       }
@@ -83,9 +97,13 @@ extension _FakeSimInputProcessors on FakeSimEngine {
                     value.isFinite))) {
           throw StateError('Input setting cannot be recalled');
         }
-        final range = canonicalSimDspRange(field) ?? (field.endsWith('_type') ? [0, 5] : null);
-        if (value is num && (range == null || value < range.first ||
-            value > range.last || (field.endsWith('_type') && value != value.roundToDouble()))) {
+        final range = canonicalSimDspRange(field) ??
+            (field.endsWith('_type') ? [0, 5] : null);
+        if (value is num &&
+            (range == null ||
+                value < range.first ||
+                value > range.last ||
+                (field.endsWith('_type') && value != value.roundToDouble()))) {
           throw StateError('Input value is outside the provider domain');
         }
         if (_params[ch][field] != value) _processorRevision++;

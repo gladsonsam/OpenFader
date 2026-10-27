@@ -17,6 +17,7 @@ fn strip_identity(ch: u16) -> Option<(String, &'static str)> {
                 "fxsnd" => ("fx", "send_solo"),
                 "fxret" => ("fx", "return_solo"),
                 "dca" => ("vca", "solo"),
+                "ret" => ("return", "solo"),
                 _ => return None,
             };
             Some((format!("{family}/{n:02}"), id))

@@ -10,6 +10,8 @@ pub(super) fn targets() -> Vec<String> {
         .chain((1..=layout::SUBGROUP_COUNT).map(|n| format!("subgroup/{n:02}")))
         .chain((1..=layout::FX_COUNT).map(|n| format!("fx/{n:02}")))
         .chain(["main".into()])
+        .chain((1..=layout::RETURN_COUNT).map(|n| format!("ret/{n:02}")))
+        .chain((1..=layout::FX_COUNT).map(|n| format!("fxret/{n:02}")))
         .collect()
 }
 
@@ -34,7 +36,9 @@ pub(super) fn decode(push: &PushEvent) -> Option<Vec<OutputMeterFrame>> {
         .map(|i| (i, 1))
         .chain((layout::SUBGROUP_OFFSET..layout::MAIN_OFFSET).map(|i| (i, 1)))
         .chain((layout::FX_SEND_OFFSET..layout::AUX_OFFSET).map(|i| (i, 1)))
-        .chain([(layout::MAIN_OFFSET, layout::STEREO_WIDTH)]);
+        .chain([(layout::MAIN_OFFSET, layout::STEREO_WIDTH)])
+        .chain((0..layout::RETURN_COUNT).map(|n| (layout::RETURN_OFFSET + n, 1)))
+        .chain((0..layout::FX_COUNT).map(|n| (layout::FX_RETURN_OFFSET + n * 2, 2)));
     targets()
         .into_iter()
         .zip(positions)

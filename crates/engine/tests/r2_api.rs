@@ -717,7 +717,7 @@ async fn taps_negotiation_and_frames() {
         )
         .await;
         if let Event::Taps { levels, .. } = &*frame {
-            assert_eq!(levels.len(), 77, "tap {want} covers every strip");
+            assert_eq!(levels.len(), openfader_sim::SIM_STRIPS, "tap {want} covers every strip");
         } else {
             panic!("expected taps");
         }

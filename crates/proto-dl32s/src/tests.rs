@@ -251,7 +251,8 @@
         let got = decode_push(PushEvent::Names {
             pairs: vec![(1, "Vox".to_string()), (33, "Aux".to_string())],
         });
-        assert_eq!(got.len(), 1);
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[1].strip, StripId(32));
         assert_eq!(got[0].strip, StripId(0));
         assert_eq!(got[0].param, "name");
         assert_eq!(got[0].value, ParamValue::Text("Vox".to_string()));

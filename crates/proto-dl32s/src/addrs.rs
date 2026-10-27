@@ -392,6 +392,51 @@ fn build_dl32s_map() -> MixerMap {
     }
 }
 
+/// Native manufacturer mixer software 5.2 (28602), snapshot table at file offset 0x6315c40.
+/// Every family row was compared by (effect, instance, qualifier, parameter),
+/// encoding and domain, including every member. These are separate layouts,
+/// not an extension of the 106-word input array. Static evidence, not live proof.
+pub fn dl32s_returns() -> &'static ChannelBlock {
+    static B: OnceLock<ChannelBlock> = OnceLock::new();
+    B.get_or_init(|| {
+        let fields = dl32s_inputs().fields.iter().filter_map(|f| {
+            let offset = match f.offset { 0..=11 => f.offset, 24..=105 => f.offset - 12, _ => return None };
+            let mut f = f.clone(); f.offset = offset; f.verified = false; Some(f)
+        }).collect();
+        ChannelBlock { name: "return", base: 3393, stride: 94, count: 2, fields }
+    })
+}
+
+pub fn dl32s_fxreturns() -> &'static ChannelBlock {
+    static B: OnceLock<ChannelBlock> = OnceLock::new();
+    B.get_or_init(|| {
+        let fields = dl32s_inputs().fields.iter().filter_map(|f| {
+            let offset = match f.offset {
+                4..=5 => f.offset - 4, 7..=10 => f.offset - 5,
+                32..=73 => f.offset - 26, 82..=105 => f.offset - 34,
+                _ => return None,
+            };
+            let mut f = f.clone(); f.offset = offset; f.verified = false; Some(f)
+        }).collect();
+        // Native balance (parameter 62), not mono pan (55); same -1..1 units.
+        ChannelBlock { name: "fxreturn", base: 3753, stride: 72, count: 4, fields }
+    })
+}
+
+pub fn dl32s_vcas() -> &'static ChannelBlock {
+    static B: OnceLock<ChannelBlock> = OnceLock::new();
+    B.get_or_init(|| {
+        let mut fields = vec![
+            field("mute", 0, Encoding::Bool, "VCA mute", None, false),
+            field("fader", 1, Encoding::Db, "VCA fader", Some((-120., 10.)), false),
+            field("icon", 2, Encoding::Int, "Icon", None, false),
+            field("colour", 3, Encoding::Int, "Colour", None, false),
+        ];
+        fields.extend(membership("view", "View", 4));
+        ChannelBlock { name: "vca", base: 5154, stride: 10, count: 6, fields }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,4 +1,5 @@
 import '../../palette.dart';
+import '../../design.dart';
 import '../../widgets/channel_name_editor.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
@@ -163,6 +164,26 @@ class MixerStrip extends StatelessWidget {
                                                               .volume);
                                                       controller.unity(ch);
                                                     })))),
+                                    if (!isMaster && chIndex != null)
+                                      Positioned(
+                                          left: 0,
+                                          right: 0,
+                                          bottom: 0,
+                                          child: IgnorePointer(
+                                              child: ValueListenableBuilder<
+                                                  String>(
+                                            valueListenable: controller.store
+                                                .controlGroupNoteOf(chIndex),
+                                            builder: (context, text, _) => Text(
+                                                text,
+                                                maxLines: 2,
+                                                textAlign: TextAlign.center,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: AppDesign.type(10,
+                                                    color: ConsolePalette.of(
+                                                            context)
+                                                        .text7)),
+                                          ))),
                                     if (ready & 1 == 0)
                                       const Center(child: Text('Loading…')),
                                   ]))),
