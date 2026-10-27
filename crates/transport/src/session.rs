@@ -23,6 +23,18 @@ const RECV_BUF: usize = 65535;
 /// safety: a slow gig reply must not drop a poll read).
 pub const CONNECT_BURST_TIMEOUT: Duration = Duration::from_millis(300);
 
+/// Query-lock shards: same-address queries always land on the same shard
+/// (serialized, protecting the single pending slot per address) while
+/// distinct addresses usually proceed concurrently.
+const QUERY_SHARDS: usize = 64;
+
+fn query_shard(addr: &str) -> usize {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    addr.hash(&mut h);
+    (h.finish() % QUERY_SHARDS as u64) as usize
+}
+
 #[derive(Clone, Debug)]
 pub struct KeepaliveConfig {
     pub addr: String,
@@ -86,7 +98,14 @@ struct PendingQuery {
 pub struct OscSession {
     socket: Arc<UdpSocket>,
     pending: Arc<Mutex<HashMap<String, PendingQuery>>>,
-    query_lock: Mutex<()>,
+    /// Reply-slot guard, sharded by address hash (64 shards): queries to
+    /// the SAME address stay serialized (the pending map holds one slot
+    /// per address, so overlapping same-address queries would steal each
+    /// other's reply), while queries to different addresses fly
+    /// concurrently. A global lock capped all providers at ~1 query per
+    /// RTT; hydration of a full desk is thousands of reads, so sharding
+    /// is the throughput lever (rig: XR18 answers ~1600 q/s burst).
+    query_shards: Vec<Mutex<()>>,
     meter_tx: broadcast::Sender<MeterFrame>,
     /// Desk-originated traffic: every non-meter message that matches no
     /// outstanding query (change broadcasts to all `/xremote` subscribers,
@@ -187,7 +206,7 @@ impl OscSession {
         Self {
             socket,
             pending,
-            query_lock: Mutex::new(()),
+            query_shards: (0..QUERY_SHARDS).map(|_| Mutex::new(())).collect(),
             meter_tx,
             update_tx,
             received_tx,
@@ -204,7 +223,8 @@ impl OscSession {
     }
 
     /// Send a no-arg query and await the mixer's reply to the same address.
-    /// Serialized so concurrent queries never steal each other's reply.
+    /// Same-address queries serialize on their shard so they never steal
+    /// each other's reply; distinct addresses run concurrently.
     pub async fn query(&self, addr: &str) -> anyhow::Result<OscMessage> {
         self.query_timeout(addr, DEFAULT_QUERY_TIMEOUT).await
     }
@@ -220,8 +240,9 @@ impl OscSession {
     /// Query a mixer-specific OSC operation and accept only its reply shape.
     /// For example, WING node definitions and values share addresses but use
     /// different payload types. Unmatched traffic stays on the update plane.
-    /// Like ordinary queries, this is serialized and does not install a mixer
-    /// subscription. Encoding/send errors remove the pending reply slot.
+    /// Same-address queries serialize on their shard (one pending reply
+    /// slot per address); distinct addresses proceed concurrently.
+    /// Encoding/send errors remove the pending reply slot.
     pub async fn query_with_args_timeout(
         &self,
         addr: &str,
@@ -230,7 +251,7 @@ impl OscSession {
         accepts: fn(&OscMessage) -> bool,
     ) -> anyhow::Result<OscMessage> {
         let bytes = osc::encode_message(addr, args)?;
-        let _guard = self.query_lock.lock().await;
+        let _guard = self.query_shards[query_shard(addr)].lock().await;
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(addr.to_string(), PendingQuery { tx, accepts });
         if let Err(error) = self.socket.send(&bytes).await {

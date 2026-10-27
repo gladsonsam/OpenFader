@@ -2,6 +2,17 @@
 
 use super::*;
 
+type FillResult = anyhow::Result<ParamValue>;
+
+/// One concurrent fill read's outcome: a finished query (ok or desk
+/// error), a pair the desk already pushed while the fill was opening
+/// (skip without cost), or an exhausted deadline (stop the fill).
+enum FillRead {
+    Done((u16, &'static str, Instant, Result<FillResult, tokio::time::error::Elapsed>)),
+    Skipped,
+    Stop,
+}
+
 impl Engine {
     /// Shared post-switch flow for `connect` / `connect_device` / `offline`:
     /// fast-first. Invalidate parameter caches and queue the
@@ -262,77 +273,138 @@ impl Engine {
         }
     }
 
-    /// Bounded sequential fill, field-major across the entire topology:
+    /// Bounded concurrent fill, field-major across the entire topology:
     /// levels -> masters -> mutes -> names/look -> EQ -> remaining fields.
     /// Provider scopes/capabilities still decide which leaves can be read.
-    /// A five-second burst never blocks the command path; unfinished fields
-    /// retain this order in the existing poller's queue, without a new timer.
+    /// Reads within a phase fly concurrently (up to the driver's poll
+    /// inflight bound; the transport serializes same-address queries while
+    /// distinct addresses proceed in parallel), so the wall time is ~reads
+    /// / inflight RTTs instead of the sum. A five-second burst never blocks
+    /// the command path; unfinished fields retain this order in the
+    /// existing poller's queue, without a new timer.
     pub(super) async fn hydrate_initial(&self, generation: u64) {
+        use futures::StreamExt;
         let driver = self.active_driver();
         let start = Instant::now();
         let deadline = start + Duration::from_secs(5);
+        let inflight = self.max_inflight(&driver).max(1);
         let mut list = self.static_poll_list(&driver);
         // Stable sorting preserves provider order within each channel/phase.
         list.sort_by_key(|(ch, id)| (initial_load_priority(id), *ch));
         let mut reads = 0usize;
+        let mut skipped = 0usize;
         'fill: for phase in 0..=5 {
-            for &(ch, id) in list
-                .iter()
-                .filter(|(_, id)| initial_load_priority(id) == phase)
-            {
+            if self.connection_gen.load(Ordering::Acquire) != generation {
+                return;
+            }
+            if Instant::now() >= deadline {
+                break 'fill;
+            }
+            while Self::poller_yields(self.writes_in_flight.load(Ordering::Relaxed)) {
+                tokio::time::sleep(Duration::from_millis(5)).await;
                 if self.connection_gen.load(Ordering::Acquire) != generation {
                     return;
                 }
-                // Fetch solo through the regular bank lane, after DSP.
-                if id == "solo"
-                    || self
+                if Instant::now() >= deadline {
+                    break 'fill;
+                }
+            }
+            // Fetch solo through the regular bank lane, after DSP.
+            let mut phase_items: Vec<(u16, &'static str)> = list
+                .iter()
+                .filter(|(_, id)| initial_load_priority(id) == phase)
+                .filter(|(ch, id)| {
+                    *id != "solo"
+                        && !self
+                            .param_cache
+                            .read()
+                            .unwrap()
+                            .get(ch)
+                            .is_some_and(|values| values.contains_key(*id))
+                        && !self
+                            .param_dropped
+                            .read()
+                            .unwrap()
+                            .contains(&(driver.clone(), id.to_string()))
+                })
+                .map(|(ch, id)| (*ch, *id))
+                .collect();
+            // The static list can hold the same (strip, id) twice (catalogue
+            // plane plus extra rows). The old sequential pass skipped the
+            // second hit via its live-cache check; drop it up front so a
+            // duplicate never costs a query.
+            phase_items.sort();
+            phase_items.dedup();
+            eprintln!("engine: {driver} fill phase {phase}: {} items", phase_items.len());
+            let mut pending = Vec::with_capacity(phase_items.len());
+            for (ch, id) in phase_items {
+                let driver = driver.clone();
+                pending.push(async move {
+                    // Recheck at task start: desk pushes landing during the
+                    // fill already hydrated this pair (the old sequential
+                    // pass saw them via its inline check).
+                    let fresh = self
                         .param_cache
                         .read()
                         .unwrap()
                         .get(&ch)
                         .is_some_and(|values| values.contains_key(id))
-                    || self
-                        .param_dropped
-                        .read()
-                        .unwrap()
-                        .contains(&(driver.clone(), id.to_string()))
-                {
-                    continue;
-                }
-                if Instant::now() >= deadline {
-                    break 'fill;
-                }
-                while Self::poller_yields(self.writes_in_flight.load(Ordering::Relaxed)) {
-                    tokio::time::sleep(Duration::from_millis(5)).await;
-                    if self.connection_gen.load(Ordering::Acquire) != generation {
-                        return;
+                        || self
+                            .param_dropped
+                            .read()
+                            .unwrap()
+                            .contains(&(driver.clone(), id.to_string()));
+                    if fresh {
+                        return FillRead::Skipped;
                     }
-                    if Instant::now() >= deadline {
-                        break 'fill;
+                    let started = Instant::now();
+                    // Bound a silent leaf by the steady-state query budget so one
+                    // dead address can't eat the whole fill; the poller retries
+                    // it later under the normal budget.
+                    let budget = deadline
+                        .saturating_duration_since(started)
+                        .min(openfader_transport::session::DEFAULT_QUERY_TIMEOUT);
+                    if budget.is_zero() {
+                        return FillRead::Stop;
                     }
-                }
-                let started = Instant::now();
-                let Ok(result) = tokio::time::timeout(
-                    deadline.saturating_duration_since(started),
-                    self.read_param(&driver, StripId(ch), id),
-                )
-                .await
-                else {
-                    break 'fill;
-                };
+                    let result = tokio::time::timeout(
+                        budget,
+                        self.read_param(&driver, StripId(ch), id),
+                    )
+                    .await;
+                    FillRead::Done((ch, id, started, result))
+                });
+            }
+            let reads_stream = futures::stream::iter(pending).buffer_unordered(inflight);
+            tokio::pin!(reads_stream);
+            while let Some(read) = reads_stream.next().await {
                 if self.connection_gen.load(Ordering::Acquire) != generation {
                     return;
                 }
+                let (ch, id, started, result) = match read {
+                    FillRead::Done(item) => item,
+                    FillRead::Skipped => {
+                        skipped += 1;
+                        continue;
+                    }
+                    FillRead::Stop => break 'fill,
+                };
                 match result {
-                    Ok(value) => {
+                    Ok(Ok(value)) => {
                         self.note_read_ok(&driver, ch, id);
                         self.apply_received(ch, id, &value, Instant::now(), Some(started));
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         self.note_read_error(&driver, ch, id, &e);
                     }
+                    // Per-read timeout: skip it and keep filling; the
+                    // background poller retries under its own budget.
+                    Err(_) => {}
                 }
                 reads += 1;
+                if Instant::now() >= deadline {
+                    break 'fill;
+                }
             }
             // Replay each completed phase from verified cache only. Individual
             // reads already stream; this also covers attach/initial-caps gaps.
@@ -378,7 +450,7 @@ impl Engine {
         drop(cache);
         drop(sync);
         eprintln!(
-            "engine: {driver} initial fill {:?} ({reads} reads); remainder streams via poller",
+            "engine: {driver} initial fill {:?} ({reads} reads, {skipped} pushed-skipped); remainder streams via poller",
             start.elapsed()
         );
     }
