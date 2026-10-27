@@ -13,8 +13,22 @@ impl MackieSession {
     /// (snapshots stay continuous) while `cached_verified` withholds it
     /// until a desk push covers the address.
     pub async fn write_int(&self, address: u32, value: u32, value_type: u8) -> anyhow::Result<()> {
+        self.write_int_guarded(address, value, value_type, &|| true)
+            .await
+    }
+
+    /// Raw write with a final synchronous authority check inside the socket
+    /// write lane. See [`send_request_guarded`](Self::send_request_guarded).
+    /// Rejected dispatch never updates the cache; ACK remains unverified.
+    pub async fn write_int_guarded(
+        &self,
+        address: u32,
+        value: u32,
+        value_type: u8,
+        authorize: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<()> {
         let body = build_single_set(address, RawValue::Int(value), value_type);
-        self.send_request(Command::ChannelValues, body, REQUEST_TIMEOUT)
+        self.send_request_guarded(Command::ChannelValues, body, REQUEST_TIMEOUT, authorize)
             .await?;
         if value_type == VALUE_TYPE_MUTE_GROUP {
             self.caches
