@@ -50,12 +50,16 @@ mixin _AppStoreStrips on _AppStoreContext {
   final Map<int, ValueNotifier<bool>> _soloNotes = {};
   final Map<int, ValueNotifier<int>> _controlReadyNotes = {};
 
-  // Solo is a dedicated protocol event, absent from the param catalogue.
-  // A real solo echo establishes availability; caps alone never enables it.
+  // Advertised Solo descriptors carry verified readiness independently of the
+  // sparse legacy Solo events. Providers without them still require an echo.
   bool canEditControl(int ch, String field) {
     if (field == 'solo') {
       final input = _inputSoloDescriptor(ch);
-      if (input != null && !_accessDestinationAllowed(input)) return false;
+      if (input != null) {
+        return _accessParamAllowed(ch, field) &&
+            destinationControlIsCurrent(input) &&
+            engine.locks.isEmpty;
+      }
       if (ch < 0 || engine.strips.any((s) => s.ch == ch && s.key == 'main')) {
         return _targetSoloReady(ch);
       }
