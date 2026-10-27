@@ -123,6 +123,7 @@ impl Engine {
             .collect();
         Event::Caps {
             input_processor_guard: self.drv(&driver).input_processor_guard(),
+            channel_processing_guard: self.drv(&driver).channel_processing_guard(),
             driver: driver.clone(),
             params,
             unsupported,

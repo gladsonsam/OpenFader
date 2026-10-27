@@ -1,7 +1,17 @@
 part of 'app_store.dart';
 
 class _PresetRecall {
-  _PresetRecall(this.target, this.generation);
+  _PresetRecall(this.target, this.generation, {this.processing = false});
+  final bool processing;
+  String get processor => processing ? 'channel_processing' : target.kind.name;
+  bool contains(String field) => processing
+      ? channelProcessingField(field)
+      : processorPresetField(target.kind, field) || switch (target.kind) {
+          ProcessorPresetKind.eq => field == 'eq_on' || field == 'hpf_on' || RegExp(r'^eq[1-8]_on$').hasMatch(field),
+          ProcessorPresetKind.gate => field == 'gate_on' || field == 'gate_filter_on',
+          ProcessorPresetKind.compressor => field == 'comp_on' || field == 'comp_filter_on',
+          _ => false,
+        };
   final ProcessorPresetTarget target;
   final int generation;
   final stopped = Completer<String>();
@@ -113,7 +123,7 @@ extension _InputPresetGuards on _AppStorePresets {
     for (final recall in _presetRecalls.values) {
       if (recall.target.channel != channel ||
           !(field == 'link' ||
-              _presetProcessorField(recall.target.kind, field))) {
+              recall.contains(field))) {
         continue;
       }
       final previous = recall.observed[field];

@@ -10,6 +10,7 @@ import '../engine.dart';
 import '../core/channel_views.dart' show canonicalSimDspRange;
 
 import '../core/processor_presets.dart';
+import '../core/channel_clipboard.dart';
 
 part 'fake_sim_input_processors.dart';
 
@@ -151,6 +152,7 @@ class FakeSimEngine implements EngineApi {
     _mailbox.add(jsonEncode({
       'type': 'caps',
       'input_processor_guard': true,
+      'channel_processing_guard': true,
       'driver': 'sim',
       'topology': [
         for (final first in [0, 8, 10, 14])

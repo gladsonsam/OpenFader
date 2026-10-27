@@ -211,6 +211,9 @@ pub trait DynDriver: Send + Sync {
     /// Fail closed unless the provider serializes writes and fresh independent
     /// readback, checking the entire captured block and observed revisions.
     fn input_processor_guard(&self) -> bool { false }
+    /// Complete EQ/filter/gate/compressor block, including enable flags.
+    /// Identity, preamps, sources, mix levels and assignments are excluded.
+    fn channel_processing_guard(&self) -> bool { false }
     async fn input_processor(&self, _strip: StripId, _processor: &str,
         _write: Option<(&str, ParamValue)>, _expected: Option<&serde_json::Value>, _check: openfader_core::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
         anyhow::bail!("guarded input processor recall unavailable for this provider")
@@ -708,6 +711,7 @@ macro_rules! impl_dyn_driver {
             MixerDriver::native_snapshots(self)
         }
     fn input_processor_guard(&self) -> bool { MixerDriver::input_processor_guard(self) }
+    fn channel_processing_guard(&self) -> bool { MixerDriver::channel_processing_guard(self) }
     async fn input_processor(&self, strip: StripId, processor: &str, write: Option<(&str, ParamValue)>, expected: Option<&serde_json::Value>, check: openfader_core::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
         MixerDriver::input_processor(self, strip, processor, write, expected, check).await
     }

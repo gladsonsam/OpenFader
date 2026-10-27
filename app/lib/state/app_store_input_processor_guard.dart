@@ -27,7 +27,7 @@ extension _InputProcessorGuard on _AppStorePresets {
           'epoch': epoch,
           'ch': target.channel,
           'key': target.key,
-          'processor': target.kind.name,
+          'processor': recall.processor,
           'field': field,
           'value': value,
           'guard': snapshot,
@@ -49,14 +49,15 @@ extension _InputProcessorGuard on _AppStorePresets {
   }
 
   void _validateInputSnapshot(
-      ProcessorPresetTarget target, Map<String, dynamic> snapshot) {
+      ProcessorPresetTarget target, Map<String, dynamic> snapshot, {bool processing = false}) {
     final rows = snapshot['rows'];
-    final fields = _presetFields(target);
+    final fields = processing ? _channelProcessingFields(target) : _presetFields(target);
     if (snapshot['provider'] != target.driver ||
         snapshot['ch'] != target.channel ||
-        snapshot['processor'] != target.kind.name ||
+        snapshot['processor'] != (processing ? 'channel_processing' : target.kind.name) ||
         snapshot['domain'] is! List ||
         rows is! List ||
+        (processing && rows.length != fields.length) ||
         rows.any(
             (r) => r is! Map || r['id'] is! String || r['value'] == null) ||
         fields.any((f) => rows.where((r) => r['id'] == f).length != 1)) {

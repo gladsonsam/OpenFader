@@ -28,6 +28,7 @@ import '../core/output_presets.dart';
 import '../core/output_geq.dart';
 import '../core/audio_spectrum_peaks.dart';
 import '../core/channel_name.dart';
+import '../core/channel_clipboard.dart';
 import '../core/coalescer.dart';
 import '../core/processor_presets.dart';
 import '../settings/processor_presets.dart';
@@ -48,6 +49,7 @@ part 'app_store_appearance.dart';
 part 'app_store_assignments.dart';
 part 'app_store_presets.dart';
 part 'app_store_input_clipboard.dart';
+part 'app_store_channel_clipboard.dart';
 part 'app_store_input_processor_guard.dart';
 part 'app_store_input_processor_recall.dart';
 part 'app_store_session.dart';
@@ -75,6 +77,7 @@ abstract class _AppStoreContext extends ChangeNotifier
         MetersStore,
         ChannelStore,
         InputProcessorPresetStore,
+        ChannelClipboardStore,
         OutputProcessingStore,
         _AppStoreOutputsContract,
         _AppStoreOutputPresetsContract,

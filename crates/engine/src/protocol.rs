@@ -940,6 +940,8 @@ pub enum Event {
     Caps {
         #[serde(default, skip_serializing_if = "is_false")]
         input_processor_guard: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        channel_processing_guard: bool,
         driver: String,
         params: Vec<ParamDef>,
         unsupported: Vec<String>,

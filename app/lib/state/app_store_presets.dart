@@ -87,6 +87,23 @@ mixin _AppStorePresets on _AppStoreContext {
   final Expando<int> _presetDomains = Expando<int>();
   String? _inputCatalogue;
   int _inputCatalogueRevision = 0;
+  _ChannelProcessingCopy? _channelClipboard;
+  _PresetRecall? _channelRecall;
+  final Expando<_ChannelProcessingPlan> _channelPlans = Expando<_ChannelProcessingPlan>();
+
+  @override
+  ChannelProcessingTarget? captureChannelProcessingTarget(ChannelNameTarget target) => _captureChannelProcessingTarget(target);
+  @override
+  String? channelProcessingError(ChannelProcessingTarget target, {bool paste = false}) => _channelProcessingError(target, paste: paste);
+  @override
+  Future<String?> copyChannelProcessing(ChannelProcessingTarget target) => _copyChannelProcessing(target);
+  @override
+  Future<ChannelProcessingPaste> prepareChannelProcessingPaste(ChannelProcessingTarget target) => _prepareChannelProcessingPaste(target);
+  @override
+  Future<ProcessorPresetResult> pasteChannelProcessing(ChannelProcessingPaste proposal) => _pasteChannelProcessing(proposal);
+  @override
+  void cancelChannelProcessing() => _cancelChannelProcessing();
+
   ProcessorPreset? _inputClipboard;
   String? _inputClipboardDomain;
   @override
@@ -254,7 +271,7 @@ mixin _AppStorePresets on _AppStoreContext {
   String? _presetReadyError(ProcessorPresetTarget target) {
     final unavailable = presetTargetError(target);
     if (unavailable != null) return unavailable;
-    if (_presetRecalls.containsKey((target.channel, target.kind))) {
+    if (_presetRecalls.values.any((r) => r.target.channel == target.channel && (r.processing || r.target.kind == target.kind))) {
       return 'Wait for the current ${target.kind.label} recall to finish.';
     }
     // Pending processor edits include bypass flags, even though they are never
@@ -289,7 +306,7 @@ mixin _AppStorePresets on _AppStoreContext {
       _presetRecalls.values.any((recall) =>
           recall.target.channel == channel &&
             (field == 'link' ||
-                _presetProcessorField(recall.target.kind, field)),
+                recall.contains(field)),
       );
 
   String? _presetValueError(
@@ -538,7 +555,7 @@ mixin _AppStorePresets on _AppStoreContext {
         recall.stop(message is String ? message : 'No verified processor result arrived; result uncertain.');
       } else {
         try {
-          _validateInputSnapshot(recall.target, snapshot);
+          _validateInputSnapshot(recall.target, snapshot, processing: recall.processing);
         } catch (error) {
           recall.stop('$error');
           continue;

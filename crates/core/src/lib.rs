@@ -909,6 +909,9 @@ pub trait MixerDriver: Send + Sync {
     /// Fail closed unless the provider serializes writes and fresh independent
     /// readback, checking the entire captured block and observed revisions.
     fn input_processor_guard(&self) -> bool { false }
+    /// Complete EQ/filter/gate/compressor block, including enable flags.
+    /// Identity, preamps, sources, mix levels and assignments are excluded.
+    fn channel_processing_guard(&self) -> bool { false }
     /// Capture (`write=None`) or recall one input setting, returning a full
     /// verified block: provider/generation, channel, processor, descriptor
     /// domains, values, observed revisions and stereo-link witnesses. A write

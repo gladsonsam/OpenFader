@@ -5,6 +5,7 @@ use serde_json::{json, Value};
 /// Complete processor membership, including excluded bypass witnesses.
 pub fn member(processor: &str, id: &str) -> bool {
     match processor {
+        "channel_processing" => ["eq", "gate", "compressor"].iter().any(|p| member(p, id)),
         "eq" => id.starts_with("eq") || id.starts_with("hpf_"),
         "gate" => id.starts_with("gate_"),
         "compressor" => id.starts_with("comp_"),
@@ -12,7 +13,7 @@ pub fn member(processor: &str, id: &str) -> bool {
     }
 }
 pub fn writable(processor: &str, id: &str) -> bool {
-    member(processor, id) && !id.ends_with("_on")
+    member(processor, id) && (processor == "channel_processing" || !id.ends_with("_on"))
 }
 pub fn value(value: &ParamValue) -> Value {
     match value {
