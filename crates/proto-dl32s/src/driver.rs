@@ -51,17 +51,20 @@ impl MixerDriver for Dl32sDriver {
         if let Ok(native) = self.native.lock() {
             if native.generation == generation && native.view.connected {
                 controls.extend(native.output_processing.controls(generation));
+                controls.extend(native.globals.controls(generation));
             }
         }
         controls
     }
 
     async fn set_destination_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl]) -> anyhow::Result<()> {
+        if self.write_global_control(target, control, value, expected, Some(snapshot)).await? { return Ok(()); }
         anyhow::ensure!(self.write_output_processing_guarded(target, control, value, expected, Some(snapshot)).await?, "Output processor unavailable");
         Ok(())
     }
 
     async fn set_destination_control(&self, target: &str, control: &str, value: f32, expected: f32) -> anyhow::Result<()> {
+        if self.write_global_control(target, control, value, expected, None).await? { return Ok(()); }
         if self.write_output_processing(target, control, value, expected).await? {
             return Ok(());
         }

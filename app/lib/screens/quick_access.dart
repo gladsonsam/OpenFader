@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/quick_access.dart';
 import '../core/destination_controls.dart';
 import '../palette.dart';
+import '../widgets/destination_control_editor.dart';
 
 /// This panel never owns navigation, a poll loop, or a command queue.
 class QuickAccessPanel extends StatefulWidget {
@@ -44,6 +45,18 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
     }
   }
 
+  Future<void> _edit(DestinationControlVm control) => showDialog<void>(
+        context: context,
+        builder: (_) => DestinationControlEditor(
+          changes: widget.store,
+          isCurrent: (control) =>
+              _session == widget.store.session &&
+              widget.store.isCurrent(control),
+          apply: widget.store.setControl,
+          control: control,
+        ),
+      );
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
         listenable: widget.store,
@@ -54,6 +67,10 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
           final groups = <String, List<DestinationControlVm>>{};
           for (final control in store.fxControls) {
             groups.putIfAbsent(control.target, () => []).add(control);
+          }
+          final globals = <String, List<DestinationControlVm>>{};
+          for (final control in store.globalControls) {
+            globals.putIfAbsent(control.target, () => []).add(control);
           }
           return Material(
             color: palette.panel,
@@ -127,6 +144,61 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
                         ),
                       ),
                   ],
+                  for (final controls in globals.values) ...[
+                    const Divider(),
+                    Text(
+                      controls.first.destinationName,
+                      style: TextStyle(
+                        color: palette.text1,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    for (final control in controls)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(control.label),
+                        subtitle: Text(
+                          '${control.valueLabel ?? 'Unavailable'}'
+                          '${control.authority == 'accepted' ? ' · Unconfirmed' : ''}',
+                        ),
+                        trailing: TextButton(
+                          onPressed: currentSession && store.isCurrent(control)
+                              ? () => _edit(control)
+                              : null,
+                          child: const Text('Edit'),
+                        ),
+                      ),
+                  ],
+                  if (store.globalControls.any(
+                    (control) => control.target == 'talkback',
+                  )) ...[
+                    DropdownButtonFormField<TalkbackModePreference>(
+                      key: ValueKey(store.talkbackModePreference),
+                      initialValue: store.talkbackModePreference,
+                      decoration: const InputDecoration(
+                        labelText: 'Talkback mode preference (local)',
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: TalkbackModePreference.momentary,
+                          child: Text('Momentary'),
+                        ),
+                        DropdownMenuItem(
+                          value: TalkbackModePreference.latch,
+                          child: Text('Latch'),
+                        ),
+                        DropdownMenuItem(
+                          value: TalkbackModePreference.auto,
+                          child: Text('Auto'),
+                        ),
+                      ],
+                      onChanged: (mode) {
+                        if (mode != null) store.setTalkbackModePreference(mode);
+                      },
+                    ),
+                    if (store.talkbackGestureUnavailable case final reason?)
+                      Text(reason),
+                  ],
                   if (store.clearSoloLabel case final label?) ...[
                     const Divider(),
                     const Text(
@@ -143,7 +215,9 @@ class _QuickAccessPanelState extends State<QuickAccessPanel> {
                       ),
                     ),
                   ],
-                  if (groups.isEmpty && store.clearSoloLabel == null)
+                  if (groups.isEmpty &&
+                      globals.isEmpty &&
+                      store.clearSoloLabel == null)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 16),
                       child: Text(
