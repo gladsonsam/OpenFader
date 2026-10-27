@@ -18,6 +18,7 @@ pub mod strips;
 mod lifecycle;
 mod metadata;
 mod native;
+mod native_library;
 mod output_processing;
 mod input_processors;
 mod preamp;

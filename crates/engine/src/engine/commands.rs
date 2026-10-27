@@ -9,6 +9,8 @@ mod input;
 mod input_processor;
 mod solo;
 mod library;
+mod native_library;
+pub(crate) use native_library::NativeRequests;
 mod offline;
 mod processing;
 mod output_routing;
@@ -176,6 +178,8 @@ impl Engine {
             other => (other, None),
         };
         match cmd {
+            cmd @ Cmd::NativeLibrary { .. } => Ok(Some(self.apply_native_library(cmd, writer).await)),
+            Cmd::NativeLibraryCancel { request_id } => { self.cancel_native_library(writer, request_id); Ok(None) },
             Cmd::RoutePatch { .. } => anyhow::bail!("routing command was not normalized"),
             cmd @ (Cmd::Connect { .. }
             | Cmd::RefreshDevices { .. }

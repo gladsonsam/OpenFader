@@ -24,7 +24,7 @@ impl Dl32sDriver {
             .await
     }
 
-    /// Save current state into a snapshot slot under `name` (op 5).
+    /// Historical misnomer: op 5 names an existing snapshot, not a state capture.
     pub async fn save_show(&self, snapshot_1_based: u32, name: &str) -> anyhow::Result<()> {
         let guard = self.session().await?;
         guard
@@ -142,8 +142,9 @@ impl Dl32sDriver {
     pub async fn refresh_snapshot_names(&self) -> anyhow::Result<std::collections::HashMap<u32, String>> {
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
-        let _ = session.download_file("Show.zip", REQUEST_TIMEOUT).await;
-        Ok(session.snapshot_names())
+        session.download_file("Show.zip", REQUEST_TIMEOUT).await?;
+        // A successful transfer is not a parsed, complete show inventory.
+        Ok(session.snapshot_names_pushed())
     }
 
     pub async fn get_device_name(&self) -> anyhow::Result<String> {

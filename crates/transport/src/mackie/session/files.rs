@@ -10,6 +10,11 @@ impl MackieSession {
         filename: &str,
         timeout: std::time::Duration,
     ) -> anyhow::Result<Vec<u8>> {
+        self.download_file_guarded(filename, timeout, &|| true).await
+    }
+
+    pub async fn download_file_guarded(&self, filename: &str, timeout: std::time::Duration,
+        authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<Vec<u8>> {
         let name = filename.as_bytes();
         let mut padded = name.to_vec();
         while !padded.len().is_multiple_of(4) {
@@ -18,23 +23,24 @@ impl MackieSession {
         let mut open_body = Vec::with_capacity(4 + padded.len());
         open_body.extend_from_slice(&0x80000004u32.to_be_bytes());
         open_body.extend_from_slice(&word_swap(&padded));
-        self.send_request(Command::FileOpen, open_body, timeout)
+        self.send_request_guarded(Command::FileOpen, open_body, timeout, authorize)
             .await?;
 
         let info = self
-            .send_request(
+            .send_request_guarded(
                 Command::FileInfo,
                 [2u32.to_be_bytes(), 0u32.to_be_bytes()].concat(),
-                timeout,
+                timeout, authorize,
             )
             .await?;
         if info.body.len() < 12 {
             anyhow::bail!("File info response too short");
         }
         let size = u32::from_be_bytes(info.body[8..12].try_into().unwrap()) as usize;
+        anyhow::ensure!(size <= 32 * 1024 * 1024, "Native download exceeds 32 MiB safety limit");
         if size == 0 {
             let _ = self
-                .send_request(Command::FileClose, 0u32.to_be_bytes().to_vec(), timeout)
+                .send_request_guarded(Command::FileClose, 0u32.to_be_bytes().to_vec(), timeout, authorize)
                 .await;
             return Ok(Vec::new());
         }
@@ -48,7 +54,7 @@ impl MackieSession {
             req.extend_from_slice(&(size as u32).to_be_bytes());
             req.extend_from_slice(&(out.len() as u32).to_be_bytes());
             req.extend_from_slice(&(length as u32).to_be_bytes());
-            let resp = self.send_request(Command::FileRead, req, timeout).await?;
+            let resp = self.send_request_guarded(Command::FileRead, req, timeout, authorize).await?;
             if resp.body.len() <= 16 {
                 anyhow::bail!("File read returned no data");
             }
@@ -60,7 +66,7 @@ impl MackieSession {
             out.extend_from_slice(&chunk[..take]);
         }
         let _ = self
-            .send_request(Command::FileClose, 0u32.to_be_bytes().to_vec(), timeout)
+            .send_request_guarded(Command::FileClose, 0u32.to_be_bytes().to_vec(), timeout, authorize)
             .await;
         out.truncate(size);
         Ok(out)

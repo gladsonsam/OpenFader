@@ -200,6 +200,11 @@ pub trait DynDriver: Send + Sync {
     /// [`MixerDriver::native_snapshots`](openfader_core::MixerDriver::native_snapshots)):
     /// `None` = the driver does not model native slots (honest
     /// `unsupported`, never faked). Sync lock-local read, no I/O.
+    fn native_library(&self) -> Option<serde_json::Value> { None }
+    async fn native_library_action(&self, _action: &serde_json::Value, _expected: &serde_json::Value,
+        _check: openfader_core::native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
+        anyhow::bail!("Native library unsupported")
+    }
     fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
         None
     }
@@ -693,6 +698,11 @@ macro_rules! impl_dyn_driver {
         }
         fn meter_taps(&self) -> &'static [&'static str] {
             MixerDriver::meter_taps(self)
+        }
+        fn native_library(&self) -> Option<serde_json::Value> { MixerDriver::native_library(self) }
+        async fn native_library_action(&self, action: &serde_json::Value, expected: &serde_json::Value,
+            check: openfader_core::native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
+            MixerDriver::native_library_action(self, action, expected, check).await
         }
         fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
             MixerDriver::native_snapshots(self)

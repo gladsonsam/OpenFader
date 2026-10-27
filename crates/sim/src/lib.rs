@@ -631,6 +631,7 @@ fn default_fx_for(preset: SimPreset) -> Vec<SimFxSlot> {
         .collect()
 }
 mod input_processors;
+mod native_library;
 pub mod output_routing;
 mod global_controls;
 mod fx_controls;
@@ -638,6 +639,7 @@ mod solo;
 
 pub struct SimDriver {
     fx_controls: RwLock<Vec<fx_controls::FxSlot>>,
+    native_library: RwLock<native_library::SimLibrary>,
     output_routes: RwLock<HashMap<String, (String, u64)>>,
     globals: RwLock<Vec<openfader_core::destinations::DestinationControl>>,
     processor_revision: AtomicU64,
@@ -712,6 +714,7 @@ impl SimDriver {
             tick_offset: AtomicU64::new(0),
             connected: RwLock::new(false),
             preset,
+            native_library: RwLock::new(Default::default()),
             fx: RwLock::new(default_fx_for(preset)),
             subgroups: RwLock::new([(0.0, false); SIM_SUBGROUPS]),
             mute_groups: RwLock::new([false; SIM_MUTE_GROUPS]),
@@ -1119,6 +1122,11 @@ impl MixerDriver for SimDriver {
         })
     }
 
+    fn native_library(&self) -> Option<serde_json::Value> { self.library_inventory() }
+    async fn native_library_action(&self, action: &serde_json::Value, expected: &serde_json::Value,
+        check: openfader_core::native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
+        self.execute_library(action, expected, check).await
+    }
     fn input_processor_guard(&self) -> bool { true }
     async fn input_processor(&self, strip: StripId, processor: &str, write: Option<(&str, ParamValue)>, expected: Option<&serde_json::Value>, check: openfader_core::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
         self.guarded_input_processor(strip, processor, write, expected, check)

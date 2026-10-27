@@ -491,6 +491,11 @@ impl MixerDriver for Dl32sDriver {
     /// instead of guessing). A mismatched private generation withholds
     /// the view (unavailable default) so a newer session never reads the
     /// older session's slots. No write path exists behind this hook.
+    fn native_library(&self) -> Option<serde_json::Value> { self.library_inventory() }
+    async fn native_library_action(&self, action: &serde_json::Value, expected: &serde_json::Value,
+        check: openfader_core::native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
+        self.execute_library(action, expected, check).await
+    }
     fn native_snapshots(&self) -> Option<openfader_core::NativeSnapshots> {
         self.read_native_snapshots()
     }

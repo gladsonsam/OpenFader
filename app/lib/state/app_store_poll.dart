@@ -45,6 +45,7 @@ mixin _AppStorePoll on _AppStoreContext {
       }
     }
     _pollLibrary(now);
+    _pollNativeLibrary(now);
     _pollPresetRecalls(now);
     final expired = ps.sweepPending(_maps.pending, now, ps.confirmTimeoutMs);
     if (expired.isNotEmpty) {
@@ -118,6 +119,10 @@ mixin _AppStorePoll on _AppStoreContext {
         }
         if (e['type'] == 'destination_control_result') {
           _receiveDestinationResult(e);
+        }
+        if (e['type'] == 'native_library_result') {
+          _receiveNativeLibrary(e);
+          frameDirty = true;
         }
         if (e['type'] == 'local_library_result') {
           _receiveLibraryResult(e);
