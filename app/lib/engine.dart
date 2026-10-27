@@ -686,6 +686,7 @@ class EngineState {
   int? _syncEpoch;
   int? get syncEpoch => _syncEpoch;
   bool inputProcessorGuard = false;
+  bool channelProcessingGuard = false;
   final Map<int, Set<String>> knownValues = {};
 
   bool valueKnown(int ch, String field) =>
@@ -721,6 +722,7 @@ class EngineState {
     knownValues.clear();
     capsReady = false;
     inputProcessorGuard = false;
+    channelProcessingGuard = false;
     supportedParams.clear();
     parameterMetadata = {};
     destinationControls = const [];
@@ -902,6 +904,7 @@ class EngineState {
         driver = nextDriver;
         capsReady = true;
         inputProcessorGuard = e['input_processor_guard'] == true;
+        channelProcessingGuard = e['channel_processing_guard'] == true;
         final nativeCaps =
             NativeSnapshotsVm.fromCaps(driver, e['native_snapshots']);
         if (!nativeCaps.supported) _nativeSnapshots = null;

@@ -16,7 +16,7 @@ fn capture(
     generation: u64,
 ) -> anyhow::Result<(Value, Vec<u64>)> {
     anyhow::ensure!(
-        ["eq", "gate", "compressor"].contains(&processor),
+        ["eq", "gate", "compressor", "channel_processing"].contains(&processor),
         "Unknown input processor"
     );
     let (table, channel) = crate::strips::resolve(StripId(ch))?;

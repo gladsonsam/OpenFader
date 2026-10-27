@@ -13,6 +13,7 @@ impl Engine {
             topology,
             stereo_pairs,
             input_processor_guard,
+            channel_processing_guard,
             ..
         } = self.caps_message()
         else {
@@ -22,6 +23,7 @@ impl Engine {
             input_processor_guard,
             "Guarded input processor recall unavailable for this provider"
         );
+        anyhow::ensure!(processor != "channel_processing" || channel_processing_guard, "Guarded channel processing unavailable for this provider");
         let params: Vec<_> = params
             .into_iter()
             .filter(|p| openfader_core::input_processors::member(processor, &p.id))

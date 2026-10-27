@@ -445,15 +445,16 @@ mixin _AppStoreAccess on _AppStoreContext {
         'compressor' => ProcessorPresetKind.compressor,
         _ => null,
       };
-      if (ch is! int || kind == null || _presetFamily(ch) == null) {
+      final processing = command['processor'] == 'channel_processing';
+      if (ch is! int || (!processing && kind == null) || _presetFamily(ch) == null) {
         return false;
       }
       final fields = engine.supportedParams
-          .where(
-            (field) =>
-                processorPresetField(kind, field) &&
-                _stripParamApplies(ch, field),
-          )
+          .where((field) =>
+              (processing
+                  ? channelProcessingField(field)
+                  : processorPresetField(kind!, field)) &&
+              _stripParamApplies(ch, field))
           .toList();
       final field = command['field'];
       if (fields.isEmpty ||
