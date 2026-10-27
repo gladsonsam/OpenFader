@@ -151,7 +151,10 @@ mixin _AppStoreInput on _AppStoreContext {
     final raw = ps.optimisticValue(_maps, _channel, 'source');
     final selected = paramNum('source_select')?.toInt();
     return ChannelSourceVm(
-      srcName: raw is String ? raw : '—',
+      // Some providers expose a source field without a descriptive value.
+      // Do not infer a physical route from the strip number or seed defaults.
+      srcName:
+          raw is String && raw.trim().isNotEmpty ? raw : 'Source unavailable',
       sourceA: paramNum('source_a')?.toInt(),
       sourceB: paramNum('source_b')?.toInt(),
       // DL32S wire selector is 1=A / 0=B, verified against manufacturer mixer software.
@@ -175,5 +178,4 @@ mixin _AppStoreInput on _AppStoreContext {
           'source_select', engine.driver == 'dl32s' ? 1 - selected : selected);
     }
   }
-
 }

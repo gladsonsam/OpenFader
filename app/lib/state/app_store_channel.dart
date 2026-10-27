@@ -214,7 +214,15 @@ mixin _AppStoreChannel on _AppStoreContext {
   @override
   void cmdFocus() {
     _focusCh = _channel;
-    _send(Cmds.focus([_channel]));
+    // Processing readiness requires independent link readback for both
+    // members, even while unlinked. Use provider identities (Return pairs
+    // need not start at an even strip ID), and keep the open channel first.
+    final pair =
+        engine.stereoPairs.where((p) => p.contains(_channel)).firstOrNull;
+    _send(Cmds.focus([
+      _channel,
+      if (pair != null) ...pair.where((ch) => ch != _channel),
+    ]));
   }
 
   @override

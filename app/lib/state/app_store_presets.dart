@@ -233,13 +233,13 @@ mixin _AppStorePresets on _AppStoreContext {
     if (engine.syncEpoch == null) {
       return 'Waiting for mixer connection state. Reopen presets after the connection finishes.';
     }
-    final protection = _inputPresetProtection(target);
-    if (protection != null) return protection;
     final catalogueError = _presetCatalogueError(target);
     if (catalogueError != null) return catalogueError;
     if (_presetFields(target).isEmpty) {
       return '${target.kind.label} presets are unavailable for this channel.';
     }
+    final protection = _inputPresetProtection(target);
+    if (protection != null) return protection;
     for (final field in _presetFields(target)) {
       if (!engine.valueKnown(target.channel, field) ||
           !ps.confirmedKnown(_maps, target.channel, field) ||
