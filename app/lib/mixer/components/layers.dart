@@ -1,5 +1,6 @@
 import '../../palette.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../settings/prefs.dart';
 import '../controller.dart';
 import '../design.dart';
@@ -42,6 +43,7 @@ Future<MixerLayer> duplicateMixerLayer(MixerLayer layer) async {
     name: '${layer.name} copy',
     channelKeys: [...layer.channelKeys],
     stripsPerPage: layer.stripsPerPage,
+    deviceHint: layer.deviceHint,
   );
   await saveMixerLayer(copy);
   return copy;
@@ -61,9 +63,67 @@ Future<void> deleteMixerLayer(
       [...prefs.mixerLayers.where((l) => l.id != id)]);
 }
 
+/// Copies the layers list JSON to the clipboard (export).
+Future<void> shareMixerLayers(BuildContext context) async {
+  final text = MixerLayer.encodeList(PrefsService.instance.mixerLayers);
+  await Clipboard.setData(ClipboardData(text: text));
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Layers copied to clipboard')),
+    );
+  }
+}
+
+/// Pastes a layers JSON payload from a dialog text field, validates it via
+/// [MixerLayer.tryDecodeList], and persists it on success. Invalid payloads
+/// show an error SnackBar and change nothing.
+Future<void> showMixerLayerImport(BuildContext context) async {
+  final editing = TextEditingController();
+  final pasted = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      backgroundColor: ConsolePalette.of(context).chip,
+      title: Text('Import layers', style: mixerType(context, 18)),
+      content: TextField(
+        controller: editing,
+        maxLines: 6,
+        minLines: 3,
+        decoration: const InputDecoration(
+          hintText: 'Paste layers JSON here',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel', style: mixerType(context, 16)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, editing.text),
+          child: Text('Import', style: mixerType(context, 16)),
+        ),
+      ],
+    ),
+  );
+  editing.dispose();
+  if (pasted == null || !context.mounted) return;
+  final decoded = MixerLayer.tryDecodeList(pasted.trim());
+  if (decoded == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('Invalid layers JSON — nothing imported')),
+    );
+    return;
+  }
+  await PrefsService.instance.setMixerLayers(decoded);
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Imported ${decoded.length} layers')),
+    );
+  }
+}
+
 Future<void> showMixerLayerRename(
-    BuildContext context, MixerLayer layer) async {
-  final editing = TextEditingController(text: layer.name);
+    BuildContext context, MixerLayer layer) async {  final editing = TextEditingController(text: layer.name);
   final name = await showDialog<String>(
     context: context,
     builder: (context) => AlertDialog(
@@ -138,7 +198,8 @@ Future<void> showMixerLayers(
                   title: Text(layer.name, style: mixerType(context, 17)),
                   subtitle: Text(
                     '${layer.channelKeys.length} channels · '
-                    '${layer.effectiveStripsPerPage} per page',
+                    '${layer.effectiveStripsPerPage} per page'
+                    '${layer.deviceHint == null ? '' : ' · ${layer.deviceHint}'}',
                     style: mixerType(context, 13,
                         color: ConsolePalette.of(context).mutedText),
                   ),
@@ -186,6 +247,57 @@ Future<void> showMixerLayers(
                     controller.setActiveLayer(layer.id);
                   },
                 ),
+              Divider(color: ConsolePalette.of(context).line),
+              Padding(
+                padding:
+                    const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: Text('New from template',
+                    style: mixerType(context, 15,
+                        color:
+                            ConsolePalette.of(context).mutedText)),
+              ),
+              for (final template in MixerLayerTemplate.all)
+                ListTile(
+                  leading: Icon(Icons.auto_awesome,
+                      color: ConsolePalette.of(context).mutedText),
+                  title: Text(template.name,
+                      style: mixerType(context, 17)),
+                  subtitle: Text('Tap to create',
+                      style: mixerType(context, 13,
+                          color:
+                              ConsolePalette.of(context).mutedText)),
+                  onTap: () async {
+                    final layer = template.resolve(channels);
+                    await saveMixerLayer(layer);
+                    if (context.mounted) {
+                      await showMixerLayerEditor(context,
+                          layer: layer, channels: channels);
+                    }
+                  },
+                ),
+              Divider(color: ConsolePalette.of(context).line),
+              ListTile(
+                leading: Icon(Icons.ios_share,
+                    color: ConsolePalette.of(context).mutedText),
+                title: Text('Share layers',
+                    style: mixerType(context, 17)),
+                subtitle: Text('Copy layers JSON to clipboard',
+                    style: mixerType(context, 13,
+                        color:
+                            ConsolePalette.of(context).mutedText)),
+                onTap: () => shareMixerLayers(context),
+              ),
+              ListTile(
+                leading: Icon(Icons.file_download_outlined,
+                    color: ConsolePalette.of(context).mutedText),
+                title: Text('Import layers',
+                    style: mixerType(context, 17)),
+                subtitle: Text('Paste layers JSON',
+                    style: mixerType(context, 13,
+                        color:
+                            ConsolePalette.of(context).mutedText)),
+                onTap: () => showMixerLayerImport(context),
+              ),
               Divider(color: ConsolePalette.of(context).line),
               ListTile(
                 leading: Icon(Icons.add,
@@ -253,16 +365,20 @@ class _LayerEditor extends StatefulWidget {
 
 class _LayerEditorState extends State<_LayerEditor> {
   late final TextEditingController _name;
+  late final TextEditingController _deviceHint;
 
   @override
   void initState() {
     super.initState();
     _name = TextEditingController(text: _layer?.name ?? '');
+    _deviceHint =
+        TextEditingController(text: _layer?.deviceHint ?? '');
   }
 
   @override
   void dispose() {
     _name.dispose();
+    _deviceHint.dispose();
     super.dispose();
   }
 
@@ -284,6 +400,11 @@ class _LayerEditorState extends State<_LayerEditor> {
           if (_name.text != layer.name &&
               _name.selection.baseOffset < 0) {
             _name.text = layer.name;
+          }
+          final hintText = layer.deviceHint ?? '';
+          if (_deviceHint.text != hintText &&
+              _deviceHint.selection.baseOffset < 0) {
+            _deviceHint.text = hintText;
           }
           final inLayer = layer.channelKeys.toSet();
           return ListView(
@@ -307,6 +428,28 @@ class _LayerEditorState extends State<_LayerEditor> {
                     final trimmed = value.trim();
                     if (trimmed.isNotEmpty && trimmed != layer.name) {
                       saveMixerLayer(layer.copyWith(name: trimmed));
+                    }
+                  },
+                ),
+              ),
+              Padding(
+                padding:
+                    const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: TextField(
+                  controller: _deviceHint,
+                  textCapitalization: TextCapitalization.none,
+                  decoration: const InputDecoration(
+                    labelText: 'Device (optional)',
+                    hintText: 'e.g. X32, DL32S — blank = all mixers',
+                  ),
+                  onChanged: (value) {
+                    final trimmed = value.trim();
+                    final next = trimmed.isEmpty ? null : trimmed;
+                    if (next != layer.deviceHint) {
+                      saveMixerLayer(layer.copyWith(
+                        deviceHint: next,
+                        clearDeviceHint: next == null,
+                      ));
                     }
                   },
                 ),

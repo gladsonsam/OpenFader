@@ -92,8 +92,8 @@ class _StripLayoutSection extends StatelessWidget {
                   max: 6,
                   divisions: 10,
                   label: layout.faderWeight.toStringAsFixed(1),
-                  onChanged: (v) =>
-                      prefs.setStripLayout(layout.copyWith(faderWeight: v)),
+                  onChanged: (v) => prefs.setStripLayoutDebounced(
+                      layout.copyWith(faderWeight: v)),
                 ),
               ),
             ),

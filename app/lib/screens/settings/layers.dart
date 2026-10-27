@@ -64,7 +64,8 @@ class _LayersSection extends StatelessWidget {
                 ),
                 subtitle: Text(
                   '${layer.channelKeys.length} channels · '
-                  '${layer.effectiveStripsPerPage} per page',
+                  '${layer.effectiveStripsPerPage} per page'
+                  '${layer.deviceHint == null ? '' : ' · ${layer.deviceHint}'}',
                   style: TextStyle(
                     fontFamily: U4.font,
                     fontSize: 14,

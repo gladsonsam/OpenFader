@@ -25,12 +25,19 @@ class MixerLayer {
   final String name;
   final List<String> channelKeys;
   final int stripsPerPage;
+  // Optional free-text device tag (e.g. "X32", "DL32S"). Null = global
+  // layer shown on every mixer. Full per-mixer-model keying
+  // (layers bound to a specific desk model) is future work; this hint is
+  // deliberately unstructured so a later migration can adopt it without a
+  // codec break.
+  final String? deviceHint;
 
   const MixerLayer({
     required this.id,
     required this.name,
     required this.channelKeys,
     this.stripsPerPage = defaultStripsPerPage,
+    this.deviceHint,
   });
 
   /// The built-in layer: follows bank paging as today.
@@ -55,20 +62,25 @@ class MixerLayer {
     String? name,
     List<String>? channelKeys,
     int? stripsPerPage,
+    String? deviceHint,
+    bool clearDeviceHint = false,
   }) =>
       MixerLayer(
         id: id ?? this.id,
         name: name ?? this.name,
         channelKeys: channelKeys ?? this.channelKeys,
         stripsPerPage: stripsPerPage ?? this.stripsPerPage,
+        deviceHint:
+            clearDeviceHint ? null : (deviceHint ?? this.deviceHint),
       );
 
-  Map<String, Object> toJson() => {
+  Map<String, Object?> toJson() => {
         'version': version,
         'id': id,
         'name': name,
         'channelKeys': channelKeys,
         'stripsPerPage': stripsPerPage,
+        if (deviceHint != null) 'deviceHint': deviceHint,
       };
 
   factory MixerLayer.fromJson(Map<dynamic, dynamic> json) {
@@ -99,11 +111,16 @@ class MixerLayer {
     final density = rawDensity is num
         ? rawDensity.toInt().clamp(minStripsPerPage, maxStripsPerPage)
         : defaultStripsPerPage;
+    final rawHint = json['deviceHint'];
+    final hint = rawHint is String && rawHint.trim().isNotEmpty
+        ? rawHint.trim()
+        : null;
     return MixerLayer(
       id: id,
       name: name,
       channelKeys: List.unmodifiable(keys),
       stripsPerPage: density,
+      deviceHint: hint,
     );
   }
 
@@ -141,11 +158,141 @@ class MixerLayer {
       id == other.id &&
       name == other.name &&
       _listEquals(channelKeys, other.channelKeys) &&
-      stripsPerPage == other.stripsPerPage;
+      stripsPerPage == other.stripsPerPage &&
+      deviceHint == other.deviceHint;
 
   @override
   int get hashCode => Object.hash(
-      id, name, Object.hashAll(channelKeys), stripsPerPage);
+      id, name, Object.hashAll(channelKeys), stripsPerPage, deviceHint);
+}
+
+/// Built-in layer preset templates (P4).
+///
+/// Each template carries a display [name] plus lowercase substring
+/// [matchers] run against the live strip names/keys. Resolution is a pure
+/// function of the current strip list: unknown keys are never produced
+/// (only live keys are picked), an empty topology yields an empty layer
+/// instead of crashing, and no match at all falls back to the first
+/// [fallbackCount] channels so the new layer is never mysteriously empty.
+class MixerLayerTemplate {
+  final String key;
+  final String name;
+  final List<String> matchers;
+  final int fallbackCount;
+
+  const MixerLayerTemplate({
+    required this.key,
+    required this.name,
+    required this.matchers,
+    required this.fallbackCount,
+  });
+
+  /// Resolve this template against live [channels] (master already
+  /// excluded by the catalog builders). Never throws.
+  MixerLayer resolve(List<LayerChannelOption> channels) {
+    final picked = <String>[];
+    for (final option in channels) {
+      final haystack = '${option.name} ${option.key}'.toLowerCase();
+      var hit = false;
+      for (final matcher in matchers) {
+        if (matcher.isNotEmpty && haystack.contains(matcher)) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit && !picked.contains(option.key)) picked.add(option.key);
+    }
+    if (picked.isEmpty && channels.isNotEmpty) {
+      for (final option in channels) {
+        if (picked.length >= fallbackCount) break;
+        if (!picked.contains(option.key)) picked.add(option.key);
+      }
+    }
+    return MixerLayer(
+      id: MixerLayer.newId(),
+      name: name,
+      channelKeys: picked,
+    );
+  }
+
+  static const vocals = MixerLayerTemplate(
+    key: 'vocals',
+    name: 'Vocals',
+    matchers: [
+      'voc',
+      'vox',
+      'vocal',
+      'lead',
+      'choir',
+      'harm',
+      'singer',
+      'mic',
+    ],
+    fallbackCount: 4,
+  );
+
+  static const drums = MixerLayerTemplate(
+    key: 'drums',
+    name: 'Drums',
+    matchers: [
+      'kick',
+      'snare',
+      'hat',
+      'tom',
+      'drum',
+      'perc',
+      'cymbal',
+      'overhead',
+      'room',
+    ],
+    fallbackCount: 8,
+  );
+
+  static const band = MixerLayerTemplate(
+    key: 'band',
+    name: 'Band',
+    matchers: [
+      'gtr',
+      'guitar',
+      'bass',
+      'key',
+      'piano',
+      'organ',
+      'synth',
+      'drum',
+      'perc',
+      'vox',
+      'vocal',
+      'sax',
+      'trumpet',
+      'horn',
+      'string',
+    ],
+    fallbackCount: 8,
+  );
+
+  static const stream = MixerLayerTemplate(
+    key: 'stream',
+    name: 'Stream',
+    matchers: [
+      'stream',
+      'usb',
+      'record',
+      'main',
+      'broadcast',
+      'phone',
+      'bluetooth',
+      'mix',
+    ],
+    fallbackCount: 2,
+  );
+
+  static const List<MixerLayerTemplate> all = [
+    vocals,
+    drums,
+    band,
+    stream,
+  ];
 }
 
 /// Layers list plus the selected layer id, as read from prefs. An unknown

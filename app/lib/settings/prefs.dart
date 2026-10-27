@@ -3,6 +3,8 @@
 // for the knobs that need live apply.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -155,13 +157,46 @@ class PrefsService extends ChangeNotifier {
   // --- channel strips -------------------------------------------------------
   static const stripLayoutKey = 'openfader.stripLayout.v1';
 
+  // Trailing-edge debounce for per-tick drag writes (e.g. the fader-size
+  // slider): the in-memory layout updates immediately so the UI stays live,
+  // while SharedPreferences persistence waits ~400ms after the last tick.
+  StripLayout? _pendingStripLayout;
+  Timer? _stripLayoutTimer;
+  static const _stripLayoutDebounce = Duration(milliseconds: 400);
+
   /// Parsed strip layout with defaults fallback on missing/corrupt payloads.
+  /// A pending debounced write (if any) wins over the persisted payload.
   StripLayout get stripLayout =>
+      _pendingStripLayout ??
       StripLayout.tryDecode(_prefs?.getString(stripLayoutKey)) ??
       StripLayout.defaults();
 
-  Future<void> setStripLayout(StripLayout layout) =>
-      _set(stripLayoutKey, layout.encode());
+  Future<void> setStripLayout(StripLayout layout) {
+    _stripLayoutTimer?.cancel();
+    _stripLayoutTimer = null;
+    _pendingStripLayout = null;
+    return _set(stripLayoutKey, layout.encode());
+  }
+
+  /// Debounced variant for drag/slider ticks: applies [layout] in memory
+  /// now (notifyListeners) and persists the latest value on the trailing
+  /// edge. Follows the same [_set] persistence path, so save failures still
+  /// reload + notify. The singleton lives for the app session, so there is
+  /// no dispose to cancel the timer; an immediate [setStripLayout] cancels
+  /// any pending trailing write.
+  void setStripLayoutDebounced(StripLayout layout) {
+    _pendingStripLayout = layout;
+    notifyListeners();
+    _stripLayoutTimer?.cancel();
+    _stripLayoutTimer = Timer(_stripLayoutDebounce, () async {
+      final pending = _pendingStripLayout;
+      _pendingStripLayout = null;
+      _stripLayoutTimer = null;
+      if (pending != null) {
+        await setStripLayout(pending);
+      }
+    });
+  }
 
   // --- mixer layers ---------------------------------------------------------
   static const layersKey = 'openfader.layers.v1';
