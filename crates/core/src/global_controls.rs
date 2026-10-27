@@ -26,7 +26,7 @@ pub fn reference_controls() -> Vec<DestinationControl> {
                 "oscillator" => "Shared signal generator. Enabling can produce audio on existing routes; level and routing are independent.",
                 "talkback" => "Shared talkback configuration. Enable supports local Momentary, Latch and Auto gestures. Mode is a local preference, not a mixer parameter.",
                 "solo" => "Shared solo-bus configuration. Solo in place can affect the main mix.",
-                _ => "Shared monitor configuration. LR defeat uses the native polarity; distance is not a time in milliseconds.",
+                _ => "Shared monitor configuration.",
             }.into(),
             choices, range, current: Some(DestinationValue { value: default, verified: true }),
         });
@@ -198,17 +198,8 @@ pub fn reference_controls() -> Vec<DestinationControl> {
         boolean(),
         None,
     );
-    // Native distance domain. Metres are suggested by a named taper, but
-    // labelled UI conversion has not been traced: keep the unit honest.
-    add(
-        "monitor",
-        "Monitor",
-        "distance",
-        "Delay distance (native)",
-        0.,
-        vec![],
-        range(0., 115.85, "native distance", 6),
-    );
+    // Withhold delay distance until its physical unit/conversion is established.
+    // The compiled 0..115.85 domain and named taper alone do not prove metres.
     rows
 }
 fn choices(labels: &[&str]) -> Vec<DestinationChoice> {

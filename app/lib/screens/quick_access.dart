@@ -73,13 +73,38 @@ class _QuickAccessPanelState extends State<QuickAccessPanel>
 
   Future<void> _edit(DestinationControlVm control) {
     widget.store.cancelTalkback();
+    final store = widget.store;
+    // Keep the configuration seen at dialog open, not a fresh block at Apply.
+    // A sibling edit (for example generator level) can change the write's effect.
+    final snapshot = store.globalControls
+        .where(
+          (row) =>
+              row.target == control.target && row.surface == control.surface,
+        )
+        .toList(growable: false);
+    bool isCurrent(DestinationControlVm captured) {
+      final current = store.globalControls
+          .where(
+            (row) =>
+                row.target == control.target && row.surface == control.surface,
+          )
+          .toList(growable: false);
+      return _session == store.session &&
+          store.isCurrent(captured) &&
+          snapshot.length == current.length &&
+          snapshot.every(current.contains);
+    }
+
     return showDialog<void>(
       context: context,
       builder: (_) => DestinationControlEditor(
-        changes: widget.store,
-        isCurrent: (control) =>
-            _session == widget.store.session && widget.store.isCurrent(control),
-        apply: widget.store.setControl,
+        changes: store,
+        isCurrent: isCurrent,
+        apply: (captured, value) => isCurrent(captured)
+            ? store.setControl(captured, value)
+            : Future.value(
+                'Configuration changed. Close and reopen this control.',
+              ),
         control: control,
       ),
     );
@@ -128,8 +153,7 @@ class _QuickAccessPanelState extends State<QuickAccessPanel>
                     ],
                   ),
                   const Text(
-                    'FX mute and tempo controls. '
-                    'FX returns remain independent.',
+                    'FX mute and tempo, talkback, solo, monitor and oscillator controls.',
                   ),
                   if (!currentSession)
                     const Padding(
@@ -223,9 +247,7 @@ class _QuickAccessPanelState extends State<QuickAccessPanel>
                       },
                     ),
                     const Text('Momentary: hold to talk. Latch: tap to toggle. '
-                        'Auto: tap to latch, hold 500 ms or longer for momentary. '
-                        '500 ms is the OpenFader threshold; native timing is undocumented. '
-                        'Release/cancel preserves pre-existing or changed peer activations.'),
+                        'Auto: tap to latch, hold 500 ms or longer for momentary.'),
                     TalkbackButton(
                         store: store, currentSession: currentSession),
                     if (store.talkbackGestureError case final error?)
