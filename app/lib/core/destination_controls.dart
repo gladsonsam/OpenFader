@@ -69,6 +69,21 @@ class DestinationControlVm {
       this.value,
       this.authority);
 
+  bool get targetSolo => surface == 'solo';
+  List<String> get members => List.unmodifiable(
+      (descriptor['members'] as List? ?? const []).whereType<String>());
+
+  /// Native VCA and FX-return identities also respect existing strip aliases.
+  bool soloScopeAllowed(bool familyAllowed, bool Function(String) targetAllowed) =>
+      targetSolo && familyAllowed && members.isNotEmpty &&
+      members.every((target) => targetAllowed(target) &&
+          (!target.startsWith('return/') ||
+              targetAllowed(target.replaceFirst('return/', 'ret/'))) &&
+          (!target.startsWith('vca/') ||
+              targetAllowed(target.replaceFirst('vca/', 'dca/'))) &&
+          (id != 'return_solo' ||
+              targetAllowed(target.replaceFirst('fx/', 'fxret/'))));
+
   String get destinationName => targetName == null || targetName!.isEmpty
       ? targetLabel
       : '$targetLabel · $targetName';

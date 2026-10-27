@@ -52,6 +52,8 @@ part 'app_store_session.dart';
 part 'app_store_poll.dart';
 part 'app_store_meters.dart';
 part 'app_store_strips.dart';
+part 'app_store_solo.dart';
+part 'app_store_strip_values.dart';
 part 'app_store_channel.dart';
 part 'app_store_input.dart';
 part 'app_store_destinations.dart';

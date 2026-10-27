@@ -190,7 +190,7 @@ class MixerController extends ChangeNotifier {
       fader: store.masterFader,
       pan: 0,
       muted: store.masterMuted,
-      solo: false,
+      solo: store.soloOf(-1),
       selected: _selectedKey == 'master',
       master: true,
       meter: store.masterMeter,
@@ -339,7 +339,7 @@ class MixerController extends ChangeNotifier {
   }
 
   void toggleSolo(MixerChannel ch) {
-    if (!ch.master) store.toggleSolo(ch.channel!);
+    store.toggleSolo(ch.master ? -1 : ch.channel!);
   }
 
   void setPan(MixerChannel ch, double value) {

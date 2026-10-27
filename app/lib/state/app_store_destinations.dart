@@ -28,7 +28,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
       engine.capsReady &&
       !locked &&
       control.available &&
-      ((control.surface != 'global' && !control.talkbackGesture) ||
+      ((control.surface != 'global' && !control.targetSolo && !control.talkbackGesture) ||
           control.authority == 'verified') &&
       !_outputPresetBusy(control.target) &&
       engine.destinationControls.contains(control);
@@ -48,7 +48,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
     return _sendDestinationControl(
       control,
       value,
-      guard: control.surface == 'global' || control.talkbackGesture
+      guard: control.surface == 'global' || control.targetSolo || control.talkbackGesture
           ? engine.destinationControls
               .where(
                 (row) =>

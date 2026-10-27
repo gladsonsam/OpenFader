@@ -90,6 +90,7 @@ impl Engine {
         controls.iter().map(|control| {
             let mut row = json!({
             "revision": control.revision, "generation": control.generation, "preset": control.preset,
+            "members": control.members,
             "target": control.target, "target_label": control.target_label,
             "target_name": control.target_name, "send_slot": control.send_slot,
             "surface": control.surface, "description": control.description,

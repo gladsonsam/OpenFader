@@ -27,7 +27,6 @@ impl Engine {
                         !request_id.is_empty() && request_id.len() <= 128,
                         "Invalid destination request ID."
                     );
-                    policy.allow_master()?;
                     anyhow::ensure!(
                         !self.reads_suspended.load(Ordering::Acquire)
                             && epoch == self.connection_gen.load(Ordering::Acquire),
@@ -43,6 +42,7 @@ impl Engine {
                         .iter()
                         .find(|row| row.target == target && row.id == control)
                         .ok_or_else(|| anyhow::anyhow!("Destination control unavailable."))?;
+                    if row.surface != "solo" { policy.allow_master()?; }
                     anyhow::ensure!(
                         row.allows_value(value),
                         "Destination value is not advertised."
@@ -54,7 +54,7 @@ impl Engine {
                         "Destination changed; reopen the control."
                     );
                     anyhow::ensure!(
-                        (row.surface != "global" && row.gesture.is_none()) || guard.is_some(),
+                        (!matches!(row.surface.as_str(), "global" | "solo") && row.gesture.is_none()) || guard.is_some(),
                         "Global or gesture control requires the current configuration guard."
                     );
                     if let Some(guard) = guard {
@@ -65,7 +65,7 @@ impl Engine {
                             .collect();
                         let serialized = Self::destination_rows(&block);
                         anyhow::ensure!(
-                            (row.preset || row.surface == "global" || row.gesture.is_some())
+                            (row.preset || matches!(row.surface.as_str(), "global" | "solo") || row.gesture.is_some())
                                 && row.revision.is_some()
                                 && row.generation.is_some()
                                 && !guard.is_empty()
@@ -73,11 +73,19 @@ impl Engine {
                                 && guard == serialized,
                             "Shared control changed; reopen the control."
                         );
-                        let receipt = driver
+                        let receipt = if row.surface == "solo" {
+                            self.check_solo_scope(&row.members, writer)?;
+                            let driver_id = self.active_driver();
+                            let context = || driver_id == self.active_driver()
+                                && epoch == self.connection_gen.load(Ordering::Acquire)
+                                && !self.reads_suspended.load(Ordering::Acquire)
+                                && self.check_solo_scope(&row.members, writer).is_ok();
+                            Some(driver.set_target_solo(&target, &control, value, expected, &block, &context).await?)
+                        } else { driver
                             .set_destination_control_guarded(
                                 &target, &control, value, expected, &block,
                             )
-                            .await?;
+                            .await? };
                         if let Some(receipt) = receipt {
                             anyhow::ensure!(receipt.target == target && receipt.id == control
                                 && receipt.surface == row.surface && receipt.gesture == row.gesture

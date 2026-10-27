@@ -17,6 +17,7 @@ pub fn reference_controls() -> Vec<DestinationControl> {
                    choices: Vec<DestinationChoice>,
                    range: Option<DestinationRange>| {
         rows.push(DestinationControl {
+                members: Vec::new(),
             revision: Some(0), generation: Some(0), preset: false,
             target: target.into(), target_label: target_label.into(), target_name: None,
             send_slot: None, surface: "global".into(), id: id.into(), label: label.into(),

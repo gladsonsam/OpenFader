@@ -97,6 +97,7 @@ impl FxState {
                 continue;
             };
             controls.push(DestinationControl {
+                members: Vec::new(),
                 revision: None,
                 generation: None,
                 preset: false,

@@ -59,6 +59,7 @@ impl Dl32sDriver {
         let guard = self.session().await?;
         guard.as_ref().expect("checked above")
             .cached_type2_verified(address)
+            .filter(|raw| *raw<=1)
             .map(|raw| raw != 0)
             .ok_or_else(|| anyhow::anyhow!("solo: no desk-confirmed value yet"))
     }
@@ -132,12 +133,14 @@ impl Dl32sDriver {
         let guard = self.session().await?;
         let session = guard.as_ref().expect("checked above");
         let address = dl32s_inputs().address(left, "stereo_link")?;
+        let peer_address = dl32s_inputs().address(left+1, "stereo_link")?;
+        let peer = session.cached(peer_address);
         let raw = session.cached(address)
             .ok_or_else(|| anyhow::anyhow!("Stereo link state is not confirmed; reopen the control."))?;
         anyhow::ensure!(raw <= 1, "Unknown stereo link state");
         // Own accepted writes are intentionally absent from the verified
         // cache. Keep both members protected while that state is pending.
-        Ok(if raw == 1 || session.cached_verified(address).is_none() {
+        Ok(if raw == 1 || peer != Some(0) || session.cached_verified(address).is_none() || session.cached_verified(peer_address).is_none() {
             vec![StripId((left - 1) as u16), StripId(left as u16)]
         } else { vec![strip] })
     }

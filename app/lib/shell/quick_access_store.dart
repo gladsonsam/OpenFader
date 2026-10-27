@@ -13,16 +13,17 @@ class ShellQuickAccessStore extends ShellStoreAdapter
     implements QuickAccessStore {
   ShellQuickAccessStore(super.app, this.fx) {
     _talkback = TalkbackGestureController(
-        session: () => engine.session,
-        sessionActive: () =>
-            app.onlineFlag && engine.connected && engine.capsReady,
-        current: () => talkbackGestureControl,
-        isCurrent: app.destinationControlIsCurrent,
-        write: app.setDestinationControlWithReceipt,
-        nowMilliseconds: () => _gestureClock.elapsedMilliseconds,
-        changed: () {
-          if (!isDisposed) notifyListeners();
-        });
+      session: () => engine.session,
+      sessionActive: () =>
+          app.onlineFlag && engine.connected && engine.capsReady,
+      current: () => talkbackGestureControl,
+      isCurrent: app.destinationControlIsCurrent,
+      write: app.setDestinationControlWithReceipt,
+      nowMilliseconds: () => _gestureClock.elapsedMilliseconds,
+      changed: () {
+        if (!isDisposed) notifyListeners();
+      },
+    );
     unawaited(_loadTalkbackPreference());
   }
   final Stopwatch _gestureClock = Stopwatch()..start();
@@ -147,6 +148,7 @@ class ShellQuickAccessStore extends ShellStoreAdapter
   @override
   String? get clearSoloLabel => switch (engine.clearSoloScope) {
         'inputs' => 'Clear input solos',
+        'advertised' => 'Clear all solos',
         _ => null,
       };
 
@@ -160,17 +162,26 @@ class ShellQuickAccessStore extends ShellStoreAdapter
       engine.locks.isEmpty &&
       app.canClearSolos &&
       app.accessFamilyAllowed(AccessFamily.channelSolo) &&
-      engine.strips.any((strip) => strip.key.startsWith('ch/')) &&
-      engine.strips.where((strip) => strip.key.startsWith('ch/')).every(
-            (strip) =>
-                app.accessTargetAllowed(strip.key) &&
-                engine.valueKnown(strip.ch, 'solo'),
-          );
+      (engine.clearSoloScope == 'advertised'
+          ? engine.destinationControls.where((r) => r.targetSolo).isNotEmpty &&
+              engine.destinationControls.where((r) => r.targetSolo).every(
+                    (r) =>
+                        r.available &&
+                        r.authority == 'verified' &&
+                        r.members.isNotEmpty &&
+                        r.members.every(app.accessTargetAllowed),
+                  )
+          : engine.strips.any((strip) => strip.key.startsWith('ch/')) &&
+              engine.strips.where((strip) => strip.key.startsWith('ch/')).every(
+                    (strip) =>
+                        app.accessTargetAllowed(strip.key) &&
+                        engine.valueKnown(strip.ch, 'solo'),
+                  ));
 
   @override
   void clearSolo(int session) {
     if (session != engine.session || !canClearSolo) return;
-    // Keep other solo families intact; the provider echoes only its coverage.
+    // The provider owns coverage and publishes only confirmed changes.
     // This is an immediate action, never an offline/coalesced edit.
     send(Cmds.clearSolo());
   }

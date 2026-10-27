@@ -881,7 +881,7 @@ async fn masters_groups_files_roundtrip() {
     let snap = drain_snapshot(&mut client).await;
     let caps = snap.iter().find(|e| matches!(&*e.event, Event::Caps { .. })).unwrap();
     let v = ev_json(caps);
-    assert_eq!(v.get("groups"), Some(&json!({"buses": 8, "subgroups": 6, "mute_groups": 6, "mg_assign": true, "sub_assign": true})));
+    assert_eq!(v.get("groups"), Some(&json!({"buses": 8, "subgroups": 6, "mute_groups": 6, "mg_assign": true, "sub_assign": true, "clear_solo_scope": "advertised"})));
     assert_eq!(v.get("files"), Some(&json!({"supported": true})));
 
     // Bus master round-trip (sim mix bus 0 == strip 32).
