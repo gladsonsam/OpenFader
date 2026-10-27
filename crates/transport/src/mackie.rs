@@ -356,9 +356,9 @@ pub fn mute_group_name_slot(group_1_based: u32) -> anyhow::Result<u32> {
 // Meter layout / broadcast control (init sequence data)
 // ---------------------------------------------------------------------------
 
-/// Meter address list for the 32-input DL family (inputs, returns, FX in,
-/// aux masters, FX out, mains). The DL32S needs this full table even though
-/// the DL16S profile lists only 16 inputs.
+/// Legacy 60-word family list retained for the shared init handshake and
+/// other models. Its output aliases are NOT DL32S geometry; the DL32S driver
+/// explicitly replaces it with its native list after handshake.
 pub fn dl32_family_meter_addresses() -> Vec<i32> {
     let mut addrs = Vec::with_capacity(62);
     for z in 0..32 {
@@ -380,26 +380,23 @@ pub fn dl32_family_meter_addresses() -> Vec<i32> {
     addrs
 }
 
-/// DL32S-only 91-entry meter layout: the 60-entry family table above with
-/// 31 RTA addresses `3..=33` appended. The first 32 input words are
-/// unchanged; the RTA bins ride indices 60..90 of the pushed block.
-/// Per-client override, only the DL32S driver requests this (see
-/// [`MackieSession::request_meter_layout`]); the shared init handshake and
-/// [`MackieSession::enable_meter_reports`] keep the 60-entry default so all
-/// other callers are unaffected.
+/// DL32S-only geometry and native meter addresses; shared handshake stays legacy.
+pub mod dl32s_meters;
+
+/// DL32S strip prefix plus passive RTA (93 words).
 pub fn dl32s_meter_addresses() -> Vec<i32> {
-    let mut addrs = dl32_family_meter_addresses();
-    addrs.extend(3..=33);
+    let mut addrs = dl32s_meters::STRIP_ADDRESSES.to_vec();
+    addrs.extend(3..3 + dl32s_meters::RTA_BIN_COUNT as i32);
     addrs
 }
 
-/// Existing input/RTA prefix plus six measured dynamics words per input.
-/// CH7 gate range8/20 and compressor reduction/makeup probes pin the order:
-/// gate IN/GR/OUT, compressor IN/GR/OUT. This layout is per-client only.
+/// DL32S input/RTA prefix plus gate IN/GR/OUT, compressor IN/GR/OUT
+/// per input. Historical input probes pin this six-word order and scale.
 pub fn dl32s_dynamics_meter_addresses() -> Vec<i32> {
     let mut addrs = dl32s_meter_addresses();
-    for z in 0..32 {
-        addrs.extend(35 + z * 7..=40 + z * 7);
+    for z in 0..dl32s_meters::INPUT_COUNT as i32 {
+        let first = 35 + z * 7;
+        addrs.extend(first..first + dl32s_meters::DYNAMICS_WIDTH as i32);
     }
     addrs
 }
@@ -1153,8 +1150,8 @@ impl MackieSession {
     /// the shared init handshake and [`enable_meter_reports`](Self::enable_meter_reports)
     /// use, sourced from the native MeterLayout -> ack -> BroadcastControl
     /// -> ack activation order. The DL32S driver uses this to request its
-    /// 91-entry RTA layout ([`dl32s_meter_addresses`]); the shared init
-    /// handshake keeps the 60-entry family default. Each request error is
+    /// 285-entry dynamics/RTA layout ([`dl32s_dynamics_meter_addresses`]);
+    /// the shared init handshake keeps the 60-entry family default. Each request error is
     /// propagated (no layout-success pretence); the caller decides whether
     /// the override is optional.
     pub async fn request_meter_layout(&self, addresses: &[i32]) -> anyhow::Result<()> {
