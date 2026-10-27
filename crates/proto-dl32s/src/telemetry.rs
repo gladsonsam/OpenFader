@@ -85,10 +85,10 @@ pub(super) fn decode_dynamics_meters(push: &PushEvent) -> Option<Vec<openfader_c
 }
 
 /// Shared RTA selector (type-2) address: the desk's RTA source selector.
-/// The input bank uses 4000 + zero-based channel index: live manufacturer mixer software
-/// probes verified CH1, CH3, CH7 and the CH32 endpoint. Return 1–2 uses
+/// The input bank uses 4000 + zero-based channel index: live probes using the native
+/// client verified CH1, CH3, CH7 and the CH32 endpoint. Return 1–2 uses
 /// 5000. Other source families remain unavailable until identified.
-/// The source is passive (the MF app selects; we only follow).
+/// The source is passive (the native client selects; we only follow).
 pub(super) const RTA_SELECTOR_ADDR: u32 = 22;
 /// Confirmed shared source: Return 1–2 (global, `strip: None`).
 const RTA_SOURCE_RETURN_12: u32 = 5000;
@@ -237,7 +237,7 @@ impl Dl32sDriver {
             .map(|m| m.dynamics.clone()).unwrap_or_default())
     }
 
-    /// Passive shared RTA: the desk's MF-selected source,
+    /// Passive shared RTA: the desk's source selected by the native client,
     /// followed read-only — no acquisition, no restore writes. Returns the
     /// global (`strip: None`) frame for the confirmed selector 5000
     /// (`DL32S Return 1–2 (shared)` / `shared`); input selectors 4000–4031

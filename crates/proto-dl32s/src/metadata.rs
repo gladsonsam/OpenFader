@@ -207,11 +207,11 @@ static DL32S_COLOR_SWATCHES: &[openfader_core::params::ParamSwatch] = &[
 
 /// Canonical id -> documented modern-DL32S `(min, max)`, served through
 /// [`MixerDriver::param_range_overrides`](openfader_core::MixerDriver::param_range_overrides).
-/// Provenance per entry (manufacturer mixer software 5.1 manual unless noted):
+/// Provenance per entry (control reference guide 5.1 unless noted):
 /// - `gain 0..60`: p90 mic/balanced slider (CH7 MicPre native 0 observed).
 /// - `trim -40..+20`: p91.
 /// - `hpf_freq 20..700`: p103 Modern EQ; CH7 endpoints verified against
-///   manufacturer mixer software 5.2 with independent readback and restore 2026-10-25.
+///   native client 5.2 with independent readback and restore 2026-10-25.
 /// - `gate_att 0.1..300`, `gate_hold 0..5000`, `gate_rel 50..3000` ms,
 ///   `gate_range 0..60` dB: native CH7 endpoints independently read and
 ///   restored 2026-10-25. Vintage timing selections share these values.
@@ -455,8 +455,8 @@ impl Dl32sDriver {
         })
     }
 
-    /// Documented modern-DL32S engineering-unit ranges (manufacturer mixer software 5.1
-    /// manual; the desk runs native manufacturer mixer software 5.2 / mixer firmware 1.6).
+    /// Documented modern-DL32S engineering-unit ranges (control reference
+    /// guide 5.1; native client 5.2 / mixer firmware 1.6).
     /// Applied over the canonical (X-Air-shaped) catalogue in this
     /// provider's registry only — sim and xair keep canonical ranges.
     /// Every entry below has known units and a direct wire encoding (dB

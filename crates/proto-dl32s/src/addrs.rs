@@ -104,7 +104,7 @@ fn input_head() -> Vec<Field> {
         field("source_b", 1, Int, "Input B source", None, true),
         field("source_select", 2, Enum, "Source A/B", None, true),
         // CH7 trim endpoints -40..+20 dB independently read and restored
-        // against native manufacturer mixer software, 2026-10-25 (manual 5.1 p91).
+        // against the native client, 2026-10-25 (manual 5.1 p91).
         field("trim", 3, Db, "Trim", Some((-40.0, 20.0)), true),
         field("icon", 4, Int, "Icon", None, true),
         field("colour", 5, Int, "Colour", None, true),
@@ -114,7 +114,7 @@ fn input_head() -> Vec<Field> {
         field("pan", 9, Float, "Pan", Some((-1.0, 1.0)), true),
         field("main_assign", 10, Bool, "Assign to main", None, true),
         field("stereo_link", 11, Bool, "Stereo link", None, true),
-        // manufacturer mixer software 5.1 p90: mic/balanced gain slider 0..60 dB; 1/4-inch
+        // Control reference guide 5.1 p90: mic/balanced gain slider 0..60 dB; 1/4-inch
         // line inputs attenuate -20..40 effective. No input-socket
         // detection exists, so the wire bound stays the union (-20..60) —
         // both ends documented; the mic-side caps contract is 0..60 via
@@ -122,14 +122,14 @@ fn input_head() -> Vec<Field> {
         field("gain", 12, Db, "Preamp gain", Some((-20.0, 60.0)), true),
         field("phantom", 13, Bool, "48V phantom", None, true),
         field("hpf_on", 14, Bool, "HPF on", None, true),
-        // manufacturer mixer software 5.1 p103 Modern EQ documents HPF 20..700 Hz (the
+        // Control reference guide 5.1 p103 Modern EQ documents HPF 20..700 Hz (the
         // previous table stopped at 400). Documentation-based:
         // endpoint hardware tests pending.
         field("hpf_freq", 15, Float, "HPF frequency", Some((20.0, 700.0)), true),
         field("hpf_slope", 16, Int, "HPF slope", None, false),
         field("gate_mode", 17, Enum, "Gate modern/vintage", None, true),
         field("gate_on", 18, Bool, "Gate on", None, true),
-        // manufacturer mixer software 5.1 p112 documents gate threshold -80..0 dB. The
+        // Control reference guide 5.1 p112 documents gate threshold -80..0 dB. The
         // existing raw table bound stays (-120, 0); the canonical control
         // range remains the documented -80..0. Neither endpoint nor
         // out-of-range clamp behavior is established by these limits.
@@ -140,11 +140,11 @@ fn input_head() -> Vec<Field> {
         field("gate_hold", 23, Float, "Gate hold ms", Some((0.0, 5000.0)), true),
         field("comp_mode", 24, Enum, "Comp modern/vintage", None, true),
         field("comp_on", 25, Bool, "Comp on", None, true),
-        // manufacturer mixer software 5.1 p112 documents comp gain 0..20 dB (the absent
+        // Control reference guide 5.1 p112 documents comp gain 0..20 dB (the absent
         // bound was inherited, not measured). Documentation-based: meaning
         // inferred, endpoint hardware tests pending.
         field("comp_gain", 26, Db, "Comp makeup gain", Some((0.0, 20.0)), false),
-        // manufacturer mixer software 5.1 p112 documents comp threshold -80..0 dB (the
+        // Control reference guide 5.1 p112 documents comp threshold -80..0 dB (the
         // previous table stopped at -60). Documentation-based:
         // live survey 2026-10-20 saw -36.8..0.0, endpoint tests pending.
         field("comp_threshold", 27, Db, "Comp threshold", Some((-80.0, 0.0)), false),
@@ -178,7 +178,7 @@ fn input_eq() -> Vec<Field> {
             Box::leak(format!("EQ band {band} {suffix}").into_boxed_str())
         };
         out.push(field(key("type"), base, Enum, label("filter type"), None, true));
-        // manufacturer mixer software 5.1 p103 Modern EQ documents band gain ±15 dB (the
+        // Control reference guide 5.1 p103 Modern EQ documents band gain ±15 dB (the
         // previous table allowed ±20). Documentation-based: endpoint
         // hardware tests pending.
         out.push(field(
@@ -197,7 +197,7 @@ fn input_eq() -> Vec<Field> {
             Some((20.0, 20000.0)),
             true,
         ));
-        // manufacturer mixer software 5.1 p103 Modern EQ documents Q 0.5..16 (the
+        // Control reference guide 5.1 p103 Modern EQ documents Q 0.5..16 (the
         // previous table allowed 0.1..20). Documentation-based:
         // endpoint hardware tests pending.
         out.push(field(
@@ -392,7 +392,7 @@ fn build_dl32s_map() -> MixerMap {
     }
 }
 
-/// Native manufacturer mixer software 5.2 (28602), snapshot table at file offset 0x6315c40.
+/// Native client 5.2 (28602), snapshot table at file offset 0x6315c40.
 /// Every family row was compared by (effect, instance, qualifier, parameter),
 /// encoding and domain, including every member. These are separate layouts,
 /// not an extension of the 106-word input array. Static evidence, not live proof.

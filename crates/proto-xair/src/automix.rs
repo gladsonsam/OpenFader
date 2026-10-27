@@ -5,7 +5,7 @@
 //! - Behringer XR18 firmware OSC map, FW 1.14 (xr-meters `parameters.txt`):
 //!   the channel block carries an `automix/` node with `weight`.
 //! - Community X-Air OSC table: `/ch/01/automix/weight` float `0.0..=1.0`.
-//! - mixer control software protocol map (mixer control software protocol map §7):
+//! - XR18 protocol notes from native client research (§7):
 //!   `automix ,if` = (enable, weight).
 //!
 //! Owner-rig verified 2026-10-20 (XR18 FW 1.20, ch16 muted/unused,

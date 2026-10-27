@@ -1,7 +1,7 @@
 part of 'app_store.dart';
 
-// manufacturer mixer software guide pp54–55: actual gain is the algebraic dB sum of the
-// member and assigned VCA masters; any off fader forces off. This is control
+// DL32S control reference guide pp54–55: actual gain is the algebraic dB
+// sum of the member and assigned VCA masters; any off fader forces off. This is control
 // indication, separate from the member's own fader/mute and from audio meters.
 extension _ControlGroupInfluence on _AppStoreContext {
   String _controlGroupInfluence(int channel) {

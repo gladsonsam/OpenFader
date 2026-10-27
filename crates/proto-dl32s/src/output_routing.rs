@@ -1,4 +1,4 @@
-//! DL32S output patching from manufacturer mixer software 5.2 (28602), x86_64.
+//! DL32S output patching from native client 5.2 (28602), x86_64.
 //! Executable SHA256 efee2537ba2a65315d4952f837c2a85452769e53f9f1790e8ce206f13c4d1e57.
 //! DLF32 descriptor rows (52 bytes) at file 0x6357f58: type5 PID5214..5257.
 //! DLDeviceChannelModel::getOutputSources at VM0x1000f6ad0 returns member+a0;

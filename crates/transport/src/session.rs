@@ -269,7 +269,7 @@ impl OscSession {
     }
 
     /// App-style per-param push subscribe (VERIFIED live 2026-10-19, XR18
-    /// FW 1.20, mixer control software protocol map §4): sends `/subscribe`
+    /// FW 1.20, XR18 protocol notes from native client research §4):
     /// sends `/subscribe` with `sub_slot` (string, e.g. `"meters/9"`),
     /// `path` (string) and `long(1)`. The desk then streams that param's
     /// value at ~20/s addressed as the param itself; other-param changes
@@ -291,7 +291,7 @@ impl OscSession {
     }
 
     /// App-style meter blob subscribe (VERIFIED live 2026-10-19, XR18 FW
-    /// 1.20, mixer control software protocol map §4): sends `/batchsubscribe`
+    /// 1.20, XR18 protocol notes from native client research §4):
     /// sends `/batchsubscribe` with `sub_slot` (string, e.g.
     /// `"meters/1"`), `meter_path` (string, e.g. `"/meters/1"`) and `long`
     /// ×3 (zeros; trailing values do not gate the flow, their meaning is
@@ -319,7 +319,7 @@ impl OscSession {
     }
 
     /// App-style subscription renewal (VERIFIED live 2026-10-19, XR18 FW
-    /// 1.20, mixer control software protocol map §4): sends `/renew` +
+    /// 1.20, XR18 protocol notes from native client research §4): sends `/renew` +
     /// `sub_slot` (string). Sent while the subscription is live it EXTENDS
     /// the stream (alive at t+14 s); sent after death it does NOT
     /// resurrect, resubscribe instead.
@@ -332,7 +332,7 @@ impl OscSession {
     }
 
     /// App-style subscription stop (VERIFIED live 2026-10-19, XR18 FW 1.20 
-    /// mixer control software protocol map §4): sends `/unsubscribe` +
+    /// XR18 protocol notes from native client research §4): sends `/unsubscribe` +
     /// `sub_slot` (string). Expect a few in-flight residuals after the stop.
     pub async fn unsubscribe(&self, sub_slot: &str) -> anyhow::Result<()> {
         self.send(

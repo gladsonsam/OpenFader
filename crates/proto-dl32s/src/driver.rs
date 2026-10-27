@@ -71,8 +71,8 @@ impl MixerDriver for Dl32sDriver {
         self.metadata_param_defs()
     }
 
-    /// Documented modern-DL32S engineering-unit ranges (manufacturer mixer software 5.1
-    /// manual; the desk runs native manufacturer mixer software 5.2 / mixer firmware 1.6).
+    /// Documented modern-DL32S engineering-unit ranges (control reference
+    /// guide 5.1; native client 5.2 / mixer firmware 1.6).
     /// Applied over the canonical (X-Air-shaped) catalogue in this
     /// provider's registry only — sim and xair keep canonical ranges.
     /// Every entry below has known units and a direct wire encoding (dB
@@ -518,7 +518,7 @@ impl MixerDriver for Dl32sDriver {
         self.telemetry_poll_dynamics_meters()
     }
 
-    /// Passive shared RTA: the desk's MF-selected source,
+    /// Passive shared RTA: the desk's source selected by the native client,
     /// followed read-only — no acquisition, no restore writes. Returns the
     /// global (`strip: None`) frame for the confirmed selector 5000
     /// (`DL32S Return 1–2 (shared)` / `shared`); input selectors 4000–4031
@@ -537,8 +537,8 @@ impl MixerDriver for Dl32sDriver {
 
     /// Passive shared RTA source: release (`None`) is a no-op Ok — there is
     /// nothing owned to restore. A named acquire errors explicitly (no
-    /// default success pretence): the source is MF-selected and this stage
-    /// performs no selector writes. The frontend disables automatic DL32S
+    /// default success pretence): the source is selected by the native client;
+    /// this stage performs no selector writes. The frontend disables automatic DL32S
     /// target requests.
     async fn set_spectrum_target(
         &self,
@@ -549,7 +549,7 @@ impl MixerDriver for Dl32sDriver {
             return Ok(());
         }
         anyhow::bail!(
-            "dl32s: RTA source is MF-selected (shared Return 1–2); automatic acquisition is disabled"
+            "dl32s: RTA source is selected by the native client (shared Return 1–2); automatic acquisition is disabled"
         )
     }
 
