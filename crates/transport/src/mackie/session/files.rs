@@ -39,9 +39,9 @@ impl MackieSession {
         let size = u32::from_be_bytes(info.body[8..12].try_into().unwrap()) as usize;
         anyhow::ensure!(size <= 32 * 1024 * 1024, "Native download exceeds 32 MiB safety limit");
         if size == 0 {
-            let _ = self
+            self
                 .send_request_guarded(Command::FileClose, 0u32.to_be_bytes().to_vec(), timeout, authorize)
-                .await;
+                .await?;
             return Ok(Vec::new());
         }
 
@@ -65,9 +65,9 @@ impl MackieSession {
             }
             out.extend_from_slice(&chunk[..take]);
         }
-        let _ = self
+        self
             .send_request_guarded(Command::FileClose, 0u32.to_be_bytes().to_vec(), timeout, authorize)
-            .await;
+            .await?;
         out.truncate(size);
         Ok(out)
     }
