@@ -9,6 +9,7 @@ export 'talkback_gesture.dart' show TalkbackModePreference;
 /// Shell-injected, provider-neutral view of verified quick controls.
 /// Descriptors remain opaque snapshots: implementations must recheck every write.
 abstract class QuickAccessStore extends ChangeNotifier {
+  int get controlAccessEpoch => 0;
   int get session;
   List<DestinationControlVm> get fxControls;
   List<DestinationControlVm> get globalControls;

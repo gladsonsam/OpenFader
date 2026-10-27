@@ -222,6 +222,7 @@ class _ControlTile extends StatefulWidget {
 
 class _ControlTileState extends State<_ControlTile> {
   DestinationControlVm? _dragControl;
+  int? _dragAccessEpoch;
   double? _draft;
   bool _pending = false;
 
@@ -238,6 +239,14 @@ class _ControlTileState extends State<_ControlTile> {
   }
 
   Future<void> _commit(DestinationControlVm control, double value) async {
+    if (_dragControl != null &&
+        _dragAccessEpoch != widget.store.controlAccessEpoch) {
+      setState(() {
+        _draft = null;
+        _dragControl = null;
+      });
+      return;
+    }
     setState(() {
       _pending = true;
       _draft = null;
@@ -258,6 +267,7 @@ class _ControlTileState extends State<_ControlTile> {
     showDialog<void>(
       context: context,
       builder: (_) => DestinationControlEditor(
+        accessEpoch: () => widget.store.controlAccessEpoch,
         control: control,
         changes: widget.store,
         isCurrent: widget.store.destinationControlIsCurrent,
@@ -292,7 +302,12 @@ class _ControlTileState extends State<_ControlTile> {
               semanticFormatterCallback: (positionValue) =>
                   '${engineering(positionValue).toStringAsFixed(control.decimals)} ${control.unit}'
                   '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-              onChangeStart: enabled ? (_) => _dragControl = control : null,
+              onChangeStart: enabled
+                  ? (_) {
+                      _dragControl = control;
+                      _dragAccessEpoch = widget.store.controlAccessEpoch;
+                    }
+                  : null,
               onChanged: enabled
                   ? (v) => setState(() => _draft = engineering(v))
                   : null,

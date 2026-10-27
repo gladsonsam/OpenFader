@@ -8,6 +8,8 @@ import 'processor_presets.dart';
 /// Destination DSP is independent of input-strip indices and send-slot counts.
 /// Providers supply the output inventory, processor surfaces and value domains.
 abstract class OutputProcessingStore extends ChangeNotifier {
+  int get controlAccessEpoch => 0;
+
   /// Frozen output block, independent of input-channel preset targets.
   OutputPresetTarget? captureOutputPresetTarget(String surface);
   String? outputPresetTargetError(OutputPresetTarget target);

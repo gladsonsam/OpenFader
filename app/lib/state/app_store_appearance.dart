@@ -56,6 +56,10 @@ mixin _AppStoreAppearance on _AppStoreContext {
 
   @override
   String? nameEditError(ChannelNameTarget target) {
+    if (target.accessEpoch != null &&
+        target.accessEpoch != controlAccessEpoch) {
+      return 'Local access changed. Reopen this editor.';
+    }
     if (!_accessParamAllowed(target.channel, 'name')) {
       return 'Channel identity is limited on this device.';
     }
@@ -153,6 +157,10 @@ mixin _AppStoreAppearance on _AppStoreContext {
 
   @override
   String? _appearanceEditError(ChannelNameTarget target, String field) {
+    if (target.accessEpoch != null &&
+        target.accessEpoch != controlAccessEpoch) {
+      return 'Local access changed. Reopen this editor.';
+    }
     if (!_accessParamAllowed(target.channel, field)) {
       return 'This control is limited on this device.';
     }
