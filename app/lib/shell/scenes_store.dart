@@ -64,7 +64,13 @@ class ShellScenesStore extends ShellStoreAdapter with ShellNativeLibrary impleme
       LocalLibraryHealth.uncertain =>
         ' Library state is uncertain: ${library.error ?? 'commit could not be confirmed'}. Changes may have taken effect; writes are blocked until an explicit reset.',
     };
-    return '$storage$health It is not a native mixer backup.';
+    return '$storage$health Numbered snapshots include writable strip '
+        'catalogue parameters, basic FX rack settings and input/output patches. '
+        'Provider-specific shared, global and FX controls outside this set '
+        'are not captured. Named show captures include strip names, faders, '
+        'mutes and main level. '
+        'Local snapshot export/import is not available here. '
+        'It is not a native mixer backup.';
   }
 
   @override

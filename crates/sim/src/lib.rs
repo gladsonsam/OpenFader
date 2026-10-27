@@ -520,6 +520,11 @@ fn seed_params_for_family(idx: usize, name: &str, kind: StripKind) -> HashMap<St
             }
         }
     }
+    // Extended inputs and returns start unpatched, using the same canonical
+    // label as clear_patch so routing and snapshot round trips stay exact.
+    if kind == StripKind::In || kind == strip_schema::RETURN_KIND {
+        m.insert("source".into(), ParamValue::Text("—".into()));
+    }
     let f = ParamValue::Float;
     let b = ParamValue::Bool;
     let color = match kind {
