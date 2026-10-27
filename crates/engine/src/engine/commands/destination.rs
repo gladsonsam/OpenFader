@@ -52,6 +52,10 @@ impl Engine {
                             .is_some_and(|current| current.value == expected),
                         "Destination changed; reopen the control."
                     );
+                    anyhow::ensure!(
+                        row.surface != "global" || guard.is_some(),
+                        "Global control requires the current configuration guard."
+                    );
                     if let Some(guard) = guard {
                         let block: Vec<_> = controls
                             .iter()
@@ -60,13 +64,13 @@ impl Engine {
                             .collect();
                         let serialized = Self::destination_rows(&block);
                         anyhow::ensure!(
-                            row.preset
+                            (row.preset || row.surface == "global")
                                 && row.revision.is_some()
                                 && row.generation.is_some()
                                 && !guard.is_empty()
                                 && guard.len() <= 64
                                 && guard == serialized,
-                            "Output processor changed; reopen presets."
+                            "Shared control changed; reopen the control."
                         );
                         driver
                             .set_destination_control_guarded(

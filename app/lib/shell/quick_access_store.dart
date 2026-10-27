@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../core/access_limits.dart';
 import '../engine.dart';
 import '../core/quick_access.dart';
@@ -6,7 +10,47 @@ import 'store_adapter.dart';
 
 class ShellQuickAccessStore extends ShellStoreAdapter
     implements QuickAccessStore {
-  ShellQuickAccessStore(super.app, this.fx);
+  ShellQuickAccessStore(super.app, this.fx) {
+    unawaited(_loadTalkbackPreference());
+  }
+  static const _talkbackModeKey = 'openfader.talkbackMode';
+  TalkbackModePreference _talkbackMode = TalkbackModePreference.momentary;
+  int _preferenceRevision = 0;
+
+  Future<void> _loadTalkbackPreference() async {
+    final revision = _preferenceRevision;
+    final preferences = await SharedPreferences.getInstance();
+    final value = preferences.getInt(_talkbackModeKey);
+    if (isDisposed ||
+        revision != _preferenceRevision ||
+        value == null ||
+        value < 0 ||
+        value >= TalkbackModePreference.values.length) {
+      return;
+    }
+    _talkbackMode = TalkbackModePreference.values[value];
+    notifyListeners();
+  }
+
+  @override
+  TalkbackModePreference get talkbackModePreference => _talkbackMode;
+
+  @override
+  Future<void> setTalkbackModePreference(TalkbackModePreference mode) async {
+    if (isDisposed) return;
+    ++_preferenceRevision;
+    _talkbackMode = mode;
+    notifyListeners();
+    final preferences = await SharedPreferences.getInstance();
+    if (!isDisposed && _talkbackMode == mode) {
+      await preferences.setInt(_talkbackModeKey, mode.index);
+    }
+  }
+
+  @override
+  String? get talkbackGestureUnavailable =>
+      'Momentary and Auto gestures are unavailable for this provider. '
+      'The saved mode is local only. Enable (latch) is an explicit mixer command.';
   final ShellFxStore fx;
 
   @override
@@ -26,15 +70,21 @@ class ShellQuickAccessStore extends ShellStoreAdapter
       );
 
   @override
+  List<DestinationControlVm> get globalControls => List.unmodifiable(
+        engine.destinationControls
+            .where((control) => control.surface == 'global'),
+      );
+
+  @override
   bool isCurrent(DestinationControlVm control) =>
       !isDisposed &&
-      fxControls.contains(control) &&
-      fx.destinationControlIsCurrent(control);
+      (fxControls.contains(control) || globalControls.contains(control)) &&
+      app.destinationControlIsCurrent(control);
 
   @override
   Future<String?> setControl(DestinationControlVm control, double value) =>
       isCurrent(control)
-          ? fx.setDestinationControl(control, value)
+          ? app.setDestinationControl(control, value)
           : Future.value('Connection or setting changed. Reopen Quick Access.');
 
   @override

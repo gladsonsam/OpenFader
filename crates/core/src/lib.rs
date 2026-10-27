@@ -11,6 +11,7 @@
 
 pub mod access;
 pub mod destinations;
+pub mod global_controls;
 pub mod fx;
 pub mod params;
 pub mod output_meters;
