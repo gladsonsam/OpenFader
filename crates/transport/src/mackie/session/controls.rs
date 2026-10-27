@@ -28,7 +28,7 @@ impl MackieSession {
     }
 
     /// Historical API name: op 5 NAMES an existing snapshot; it does not
-    /// capture current state. Native client store is op 2. Retained
+    /// capture current state. Native snapshot store is op 2. Retained
     /// for wire compatibility; never advertise this wrapper as native save.
     pub async fn save_show_snapshot(
         &self,
@@ -60,6 +60,18 @@ impl MackieSession {
         let epoch = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
         self.send_request_guarded(Command::ShowSnapshot, build_snapshot_save(slot, epoch, name),
             REQUEST_TIMEOUT, authorize).await?;
+        Ok(())
+    }
+
+    /// Store current native state or delete a user position. ACK alone is not
+    /// persistence proof; the provider must read the stored index back.
+    pub async fn mutate_snapshot_guarded(&self, slot: u32, delete: bool,
+        authorize: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+        let timestamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as u32;
+        let body = if delete { super::super::names::build_snapshot_delete(slot, timestamp)? }
+            else { super::super::names::build_snapshot_store(slot, timestamp)? };
+        self.send_request_guarded(Command::ShowSnapshot, body, REQUEST_TIMEOUT, authorize).await?;
+        self.caches.snapshot_names.lock().unwrap().clear();
         Ok(())
     }
 
@@ -176,14 +188,12 @@ impl MackieSession {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0) as u32;
-        let mut body = Vec::with_capacity(12);
-        body.extend_from_slice(&3u32.to_be_bytes());
-        body.extend_from_slice(&snapshot_1_based.to_be_bytes());
-        body.extend_from_slice(&epoch.to_be_bytes());
+        let body = super::super::names::build_snapshot_delete(snapshot_1_based, epoch)?;
         self.send_request(Command::ShowSnapshot, body, REQUEST_TIMEOUT)
             .await?;
         if let Ok(mut c) = self.caches.snapshot_names.lock() {
-            c.remove(&snapshot_1_based);
+            // Deletion compacts positions; none of the old index is safe.
+            c.clear();
         }
         Ok(())
     }

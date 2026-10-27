@@ -40,7 +40,7 @@ pub use frame::{
 };
 pub use identify::identify;
 pub use names::{
-    build_snapshot_recall_request, build_snapshot_save, parse_name_table, parse_snapshot_push,
+    build_snapshot_delete, build_snapshot_store, build_snapshot_recall_request, build_snapshot_save, parse_name_table, parse_snapshot_push,
     SnapshotEvent,
 };
 pub use protocol::{

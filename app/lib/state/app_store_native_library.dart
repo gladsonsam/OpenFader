@@ -155,6 +155,8 @@ mixin _AppStoreNativeLibrary on _AppStoreContext {
                 'inspect',
                 'refresh',
                 'read_show',
+                'export_file',
+                'inspect_file',
               ].contains(entry.value.op)) {
         cancelNativeLibrary(entry.value.owner);
       }

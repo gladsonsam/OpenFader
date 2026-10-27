@@ -87,3 +87,8 @@ impl Dl32sDriver {
 
 #[cfg(test)]
 mod tests;
+
+/// Lossless native file inspection; does not authorize a mixer restore.
+pub mod native_archive;
+pub mod native_show;
+mod native_inflate;
