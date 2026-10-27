@@ -225,8 +225,12 @@ impl Dl32sDriver {
                 .native
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Output cache unavailable"))?;
+            // The native cache lock can also queue behind telemetry. Recheck
+            // engine authority after that final wait, before reserving a write.
+            anyhow::ensure!(context(), "Output engine session or policy changed");
             anyhow::ensure!(
-                native.generation == expected.generation
+                session.is_alive()
+                    && native.generation == expected.generation
                     && !native.output_routes.pending.contains(&pid),
                 "Output changed before write"
             );
