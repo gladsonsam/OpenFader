@@ -24,6 +24,7 @@ impl MixerDriver for Dl32sDriver {
     }
 
     fn input_processor_guard(&self) -> bool { true }
+    fn channel_processing_guard(&self) -> bool { true }
     async fn input_processor(&self, strip: StripId, processor: &str, write: Option<(&str, ParamValue)>, expected: Option<&serde_json::Value>, check: openfader_core::input_processors::RecallCheck<'_>) -> anyhow::Result<serde_json::Value> {
         self.guarded_input_processor(strip, processor, write, expected, check).await
     }

@@ -16,7 +16,9 @@ extension _FakeSimInputProcessors on FakeSimEngine {
       }
       final ch = c['ch'];
       final processor = c['processor'];
+      final processing = processor == 'channel_processing';
       final kind = switch (processor) {
+        'channel_processing' => ProcessorPresetKind.eq,
         'eq' => ProcessorPresetKind.eq,
         'gate' => ProcessorPresetKind.gate,
         'compressor' => ProcessorPresetKind.compressor,
@@ -30,7 +32,7 @@ extension _FakeSimInputProcessors on FakeSimEngine {
         throw StateError('Input connection or channel changed');
       }
       bool member(String id) =>
-          processorPresetField(kind, id) ||
+          processing ? channelProcessingField(id) : processorPresetField(kind, id) ||
           switch (kind) {
             ProcessorPresetKind.eq => id == 'eq_on' ||
                 id == 'hpf_on' ||
@@ -89,7 +91,7 @@ extension _FakeSimInputProcessors on FakeSimEngine {
         final value = c['value'];
         if (c['guard'] == null ||
             field is! String ||
-            !processorPresetField(kind, field) ||
+            !(processing ? channelProcessingField(field) : processorPresetField(kind, field)) ||
             !_params[ch].containsKey(field) ||
             !((_params[ch][field] is bool && value is bool) ||
                 (_params[ch][field] is num &&

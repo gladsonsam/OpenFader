@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../core/channel_name.dart';
+import '../core/channel_clipboard.dart';
+import 'channel_clipboard_actions.dart';
 import '../core/processor_presets.dart';
 import 'processor_preset_library.dart';
 import '../design.dart';
@@ -10,6 +12,9 @@ import 'channel_quick_assign.dart';
 
 Future<void> showChannelNameEditor(BuildContext context, ChannelNameStore store,
         ChannelNameTarget target) {
+  final processing = store is ChannelClipboardStore
+      ? (store as ChannelClipboardStore).captureChannelProcessingTarget(target)
+      : null;
   final presets = store is InputProcessorPresetStore
       ? <ProcessorPresetTarget>[
           for (final kind in [
@@ -31,7 +36,7 @@ Future<void> showChannelNameEditor(BuildContext context, ChannelNameStore store,
   return showDialog<void>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _NameEditor(store: store, target: target, presets: presets),
+      builder: (_) => _NameEditor(store: store, target: target, presets: presets, processing: processing),
   );
 }
 
@@ -39,8 +44,9 @@ class _NameEditor extends StatefulWidget {
   final ChannelNameStore store;
   final ChannelNameTarget target;
   final List<ProcessorPresetTarget> presets;
+  final ChannelProcessingTarget? processing;
   const _NameEditor({required this.store, required this.target,
-      required this.presets});
+      required this.presets, required this.processing});
   @override
   State<_NameEditor> createState() => _NameEditorState();
 }
@@ -299,6 +305,12 @@ class _NameEditorState extends State<_NameEditor> {
                       ? null
                       : _setLink,
                 ),
+                if (widget.processing case final target?)
+                  ChannelClipboardActions(
+                    store: widget.store as ChannelClipboardStore,
+                    target: target,
+                    onBusy: (busy) => setState(() => _pending = busy),
+                  ),
               ])),
             ),
             actions: [

@@ -13,9 +13,12 @@ impl SimDriver {
         let i = self.idx(strip)?;
         let kind = kind_of_strip(i)?;
         anyhow::ensure!(
-            ["eq", "gate", "compressor"].contains(&processor),
+            ["eq", "gate", "compressor", "channel_processing"].contains(&processor),
             "Input processor unavailable"
         );
+        anyhow::ensure!(processor != "channel_processing" || matches!(kind,
+            StripKind::In | StripKind::Ret | strip_schema::RETURN_KIND),
+            "Channel DSP clipboard unavailable on this family");
         let mut params = self.params.write().expect("sim params poisoned");
         let ids: Vec<_> = self
             .capabilities()
