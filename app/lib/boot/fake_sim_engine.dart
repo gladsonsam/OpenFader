@@ -601,8 +601,9 @@ class FakeSimEngine implements EngineApi {
     _lastMeterTick = tick;
     final t = tick * 0.025;
     for (var ch = 0; ch < _strips.length; ch++) {
-      final level =
-          _strips[ch].muted ? 0.0 : _inputLevel(ch, t) * _strips[ch].fader;
+      // Pre-mute signal preview, like the desk's own level stream: mute
+      // never hides the input here, the mute button shows the state.
+      final level = _inputLevel(ch, t) * _strips[ch].fader;
       _pendingSpectra[ch] = jsonEncode({
         'type': 'spectrum',
         'ch': ch,
@@ -611,7 +612,7 @@ class FakeSimEngine implements EngineApi {
     }
     return [
       for (var i = 0; i < _strips.length; i++)
-        _strips[i].muted ? 0.0 : _inputLevel(i, t) * _strips[i].fader
+        _inputLevel(i, t) * _strips[i].fader
     ];
   }
 
