@@ -4,7 +4,7 @@ import '../design.dart';
 
 /// Shared console action: quiet hover/press feedback, keyboard focus, and a
 /// 44-point target. Colour indicates state or intent rather than screen type.
-class ConsoleButton extends StatelessWidget {
+class ConsoleButton extends StatefulWidget {
   final String label;
   final VoidCallback? onPressed;
   final bool selected, primary, danger;
@@ -19,17 +19,41 @@ class ConsoleButton extends StatelessWidget {
       this.accent});
 
   @override
+  State<ConsoleButton> createState() => _ConsoleButtonState();
+}
+
+class _ConsoleButtonState extends State<ConsoleButton> {
+  bool _pressed = false;
+
+  void _setPressed(bool value) {
+    if (_pressed == value) return;
+    setState(() => _pressed = value);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final active = danger
+    final active = widget.danger
         ? ConsolePalette.of(context).mute
-        : accent ?? ConsolePalette.of(context).lime;
-    final filled = selected || primary;
-    return TextButton(
-        onPressed: onPressed,
+        : widget.accent ?? ConsolePalette.of(context).lime;
+    final filled = widget.selected || widget.primary;
+    final animationsOff = MediaQuery.disableAnimationsOf(context);
+    return GestureDetector(
+      onTapDown:
+          widget.onPressed == null ? null : (_) => _setPressed(true),
+      onTapUp: widget.onPressed == null ? null : (_) => _setPressed(false),
+      onTapCancel: () => _setPressed(false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: animationsOff
+            ? Duration.zero
+            : const Duration(milliseconds: 100),
+        curve: Curves.easeOut,
+        child: TextButton(
+        onPressed: widget.onPressed,
         style: TextButton.styleFrom(
           backgroundColor: filled ? active : ConsolePalette.of(context).control,
           foregroundColor: filled
-              ? (danger
+              ? (widget.danger
                   ? ConsolePalette.of(context).onDanger
                   : ConsolePalette.of(context).onAccent)
               : ConsolePalette.of(context).text,
@@ -39,20 +63,22 @@ class ConsoleButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           textStyle: AppDesign.type(13, weight: FontWeight.w600),
           shape: const RoundedRectangleBorder(borderRadius: AppDesign.radius),
-          side: danger && !filled ? BorderSide(color: active) : BorderSide.none,
+          side: widget.danger && !filled ? BorderSide(color: active) : BorderSide.none,
         ).copyWith(
-            animationDuration: MediaQuery.disableAnimationsOf(context)
+            animationDuration: animationsOff
                 ? Duration.zero
                 : const Duration(milliseconds: 100),
             side: WidgetStateProperty.resolveWith(
                 (states) => states.contains(WidgetState.focused)
                     ? BorderSide(color: ConsolePalette.of(context).selectedLine)
-                    : danger && !filled
+                    : widget.danger && !filled
                         ? BorderSide(color: active)
                         : BorderSide.none)),
-        child: Text(label,
+        child: Text(widget.label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center));
+            textAlign: TextAlign.center)),
+      ),
+    );
   }
 }

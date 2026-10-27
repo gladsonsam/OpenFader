@@ -447,6 +447,29 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
           }));
 
   Widget _pageFor(AppTab t, AppStore store) {
+    final Widget content = _pageContent(t, store);
+    // Tab switches rebuild from scratch today (no keep-alives), so a plain
+    // switcher is safe: the per-tab key retriggers the transition on tab
+    // change, while identical keys across poll-loop rebuilds animate nothing.
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeOutCubic,
+      transitionBuilder: (child, animation) => FadeTransition(
+        opacity: animation,
+        child: SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, -0.04),
+            end: Offset.zero,
+          ).animate(animation),
+          child: child,
+        ),
+      ),
+      child: KeyedSubtree(key: ValueKey(t), child: content),
+    );
+  }
+
+  Widget _pageContent(AppTab t, AppStore store) {
     if (t == AppTab.scenes && store.blockedAccess.isNotEmpty) {
       return Center(child: Padding(
         padding: const EdgeInsets.all(24),
