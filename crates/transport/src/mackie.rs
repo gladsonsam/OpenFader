@@ -50,7 +50,7 @@ pub use protocol::{
     MUTE_GROUP_BASE_ADDRESS, MUTE_GROUP_COUNT, MUTE_GROUP_NAME_SLOT_BASE, REQUEST_TIMEOUT,
     VALUE_TYPE_FILE, VALUE_TYPE_METERS, VALUE_TYPE_MUTE_GROUP, VALUE_TYPE_PARAM, VALUE_TYPE_SHOW,
 };
-pub use session::{MackieSession, PushEvent};
+pub use session::{MackieSession, MackieValueCache, PushEvent};
 pub use values::{
     build_multi_set, build_read_request, build_single_set, decode_word, parse_value_block,
     parse_value_blocks, DecodedWord, RawValue, ValueBlock,

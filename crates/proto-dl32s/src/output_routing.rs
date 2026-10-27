@@ -12,7 +12,9 @@
 //! Static intent only: firmware semantics and USB taps await owner live proof.
 use crate::Dl32sDriver;
 use openfader_core::routing::{OutputPlane, RouteState};
-use openfader_transport::mackie::{MackieSession, REQUEST_TIMEOUT, VALUE_TYPE_PARAM};
+use openfader_transport::mackie::{
+    MackieSession, MackieValueCache, REQUEST_TIMEOUT, VALUE_TYPE_PARAM,
+};
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::atomic::Ordering,
@@ -120,31 +122,31 @@ fn label(plane: &str, raw: u32) -> Option<String> {
 
 #[derive(Debug, Default)]
 pub(super) struct OutputRoutes {
-    rows: BTreeMap<u32, (u32, u64)>,
+    cache: Option<MackieValueCache>,
+    // Local reservations/readbacks invalidate guards even for no-op writes.
+    revisions: BTreeMap<u32, u64>,
     pending: BTreeSet<u32>,
 }
 impl OutputRoutes {
     pub(super) fn seed(&mut self, session: &MackieSession) {
-        self.rows.clear();
+        self.cache = Some(session.value_cache());
+        self.revisions.clear();
         self.pending.clear();
-        for pid in 5214..=5257 {
-            if let Some(raw) = session.cached_verified(pid) {
-                self.rows.insert(pid, (raw, 1));
+    }
+    pub(super) fn ingest(&mut self, start: u32, raws: &[u32]) {
+        for i in 0..raws.len() {
+            let pid = start + i as u32;
+            if self.pending.remove(&pid) {
+                let revision = self.revisions.entry(pid).or_default();
+                *revision = revision.wrapping_add(1);
             }
         }
     }
-    pub(super) fn ingest(&mut self, start: u32, raws: &[u32]) {
-        for (i, raw) in raws.iter().enumerate() {
-            let pid = start + i as u32;
-            if !(5214..=5257).contains(&pid) {
-                continue;
-            }
-            let row = self.rows.entry(pid).or_insert((*raw, 0));
-            if self.pending.remove(&pid) || row.0 != *raw || row.1 == 0 {
-                row.0 = *raw;
-                row.1 = row.1.wrapping_add(1);
-            }
-        }
+    fn observed(&self, pid: u32) -> Option<(u32, u64, u64)> {
+        self.cache.as_ref()?.verified(pid)
+    }
+    fn revision(&self, pid: u32, wire_revision: u64) -> u64 {
+        wire_revision.wrapping_add(self.revisions.get(&pid).copied().unwrap_or_default())
     }
 }
 
@@ -164,15 +166,14 @@ impl Dl32sDriver {
             !native.output_routes.pending.contains(&pid),
             "Output write awaits independent readback"
         );
-        let (raw, revision) = native
+        let (raw, wire_revision, _) = native
             .output_routes
-            .rows
-            .get(&pid)
+            .observed(pid)
             .ok_or_else(|| anyhow::anyhow!("Waiting for independent output readback"))?;
         Ok(RouteState {
-            source: label(plane, *raw)
+            source: label(plane, raw)
                 .ok_or_else(|| anyhow::anyhow!("Unresolved output source {raw}"))?,
-            revision: *revision,
+            revision: native.output_routes.revision(pid, wire_revision),
             generation,
         })
     }
@@ -187,7 +188,7 @@ impl Dl32sDriver {
             .await
     }
 
-    /// Recheck the owning engine epoch/policy after all provider lock waits.
+    /// Recheck engine authority and received route evidence at socket dispatch.
     pub async fn set_output_route_guarded(
         &self,
         id: &str,
@@ -219,14 +220,14 @@ impl Dl32sDriver {
             "Output native source/session changed before write"
         );
         // Reserve a revision and hide the row BEFORE writing. ACK never creates
-        // confirmed state. A subsequent native push must repopulate this PID.
-        {
+        // confirmed state. A subsequent push must release the reservation.
+        let observed = {
             let mut native = self
                 .native
                 .lock()
                 .map_err(|_| anyhow::anyhow!("Output cache unavailable"))?;
             // The native cache lock can also queue behind telemetry. Recheck
-            // engine authority after that final wait, before reserving a write.
+            // engine authority after that wait, before reserving a write.
             anyhow::ensure!(context(), "Output engine session or policy changed");
             anyhow::ensure!(
                 session.is_alive()
@@ -234,21 +235,34 @@ impl Dl32sDriver {
                     && !native.output_routes.pending.contains(&pid),
                 "Output changed before write"
             );
-            let row = native
+            let observed = native
                 .output_routes
-                .rows
-                .get_mut(&pid)
-                .expect("checked above");
+                .observed(pid)
+                .ok_or_else(|| anyhow::anyhow!("Waiting for independent output readback"))?;
             anyhow::ensure!(
-                row.1 == expected.revision
-                    && label(plane, row.0).as_ref() == Some(&expected.source),
+                native.output_routes.revision(pid, observed.1) == expected.revision
+                    && label(plane, observed.0).as_ref() == Some(&expected.source),
                 "Output changed before write"
             );
-            row.1 = row.1.wrapping_add(1);
+            let revision = native.output_routes.revisions.entry(pid).or_default();
+            *revision = revision.wrapping_add(1);
             native.output_routes.pending.insert(pid);
-        }
+            observed
+        };
+        // No native/output/session lock acquisition here: the caller already
+        // owns the session and output lanes. Transport evidence is updated by
+        // RX before native ingest, so even blocked-ingest A→B→A is rejected.
+        let cache = session.value_cache();
+        let authorize = || {
+            context()
+                && session.is_alive()
+                && self.generation.load(Ordering::Acquire) == expected.generation
+                && cache
+                    .verified(pid)
+                    .is_some_and(|v| v.0 == observed.0 && v.1 == observed.1)
+        };
         session
-            .write_int(pid, raw, VALUE_TYPE_PARAM)
+            .write_int_guarded(pid, raw, VALUE_TYPE_PARAM, &authorize)
             .await
             .map_err(|e| anyhow::anyhow!("Output write not confirmed; result uncertain: {e}"))?;
         session.request_value_snapshot().await.map_err(|e| {
@@ -261,16 +275,25 @@ impl Dl32sDriver {
                 self.generation.load(Ordering::Acquire) == expected.generation,
                 "Output session changed; result uncertain"
             );
-            // Transport provenance is independent of ACK: cached_verified
+            // Transport provenance is independent of ACK: verified
             // withholds pending own writes even when their numeric value agrees.
             let session_guard = self.session().await?;
-            let session = session_guard.as_ref().expect("session checked");
-            if let Some(observed) = session.cached_verified(pid) {
-                anyhow::ensure!(observed == raw, "Output readback differs; result uncertain");
+            if let Some(evidence) = cache.verified(pid) {
+                anyhow::ensure!(
+                    evidence.0 == raw
+                        && evidence.1 == observed.1.wrapping_add(u64::from(raw != observed.0))
+                        && evidence.2 != observed.2,
+                    "Output readback differs; result uncertain"
+                );
                 if let Ok(state) = self.output_route(id) {
                     anyhow::ensure!(
-                        state.source == source
-                            && state.revision == expected.revision.wrapping_add(2),
+                        state.generation == expected.generation
+                            && state.source == source
+                            && state.revision
+                                == expected
+                                    .revision
+                                    .wrapping_add(2)
+                                    .wrapping_add(u64::from(raw != observed.0)),
                         "Output changed during readback; result uncertain"
                     );
                     return Ok(());

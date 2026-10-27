@@ -128,6 +128,31 @@ impl Caches {
     }
 }
 
+/// Cloneable, read-only access to transport-received parameter evidence.
+/// Reads never wait for a driver's session lock or its delayed push consumer.
+#[derive(Clone)]
+pub struct MackieValueCache {
+    caches: Arc<Caches>,
+}
+
+impl std::fmt::Debug for MackieValueCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MackieValueCache").finish_non_exhaustive()
+    }
+}
+
+impl MackieValueCache {
+    /// Value, observed-change revision, receipt sequence; own ACKs are withheld.
+    /// Revisions describe received transitions, not invisible/same-value peers.
+    pub fn verified(&self, address: u32) -> Option<(u32, u64, u64)> {
+        let store = self.caches.values.lock().ok()?;
+        if store.pending.contains(&address) {
+            return None;
+        }
+        store.observed.get(&address).copied()
+    }
+}
+
 /// Live Mackie TCP session. Cloneable via Arc internals through `&self`
 /// methods, mirroring [`crate::session::OscSession`].
 pub struct MackieSession {

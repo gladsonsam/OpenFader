@@ -3,6 +3,13 @@
 use super::*;
 
 impl MackieSession {
+    /// Read-only evidence handle, bound to this exact transport session.
+    pub fn value_cache(&self) -> MackieValueCache {
+        MackieValueCache {
+            caches: self.caches.clone(),
+        }
+    }
+
     // ---- raw value access (driver maps fields to addresses) ----
 
     /// Write one address as a raw u32 (bools, enums, ints, mute group).
