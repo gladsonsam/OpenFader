@@ -504,7 +504,9 @@ class _Box extends StatelessWidget {
                       child: Column(children: [
                     for (var i = 0; i < rows.length; i++) ...[
                       _DeviceRow(
+                          key: ValueKey(rows[i].key),
                           row: rows[i],
+                          index: i,
                           wide: wide,
                           busy: pending != null,
                           connecting: pending != null &&
@@ -527,19 +529,29 @@ class _Box extends StatelessWidget {
 
 class _DeviceRow extends StatelessWidget {
   final _Row row;
+  final int index;
   final bool wide;
   final bool busy;
   final bool connecting;
   final VoidCallback onConnect;
   const _DeviceRow(
-      {required this.row,
+      {super.key,
+      required this.row,
+      required this.index,
       required this.wide,
       required this.busy,
       required this.connecting,
       required this.onConnect});
 
+  // One-shot entrance: the tween always runs 0 -> 1, so poll-loop rebuilds
+  // (same end value) never restart a finished animation. The ValueKey on
+  // each row keeps element identity stable as rows stream in, and stagger
+  // comes from duration only (duration changes don't restart the tween).
+
   @override
   Widget build(BuildContext context) {
+    final animationsOff = MediaQuery.disableAnimationsOf(context);
+    final ms = (120 + index * 40).clamp(120, 200);
     final primary = row.connected || row.reachable;
     final label = connecting
         ? 'Connecting…'
@@ -548,7 +560,7 @@ class _DeviceRow extends StatelessWidget {
             : row.reachable
                 ? 'Connect'
                 : 'Retry';
-    return Padding(
+    final content = Padding(
       padding: EdgeInsets.symmetric(
           horizontal: wide ? 28 : 20, vertical: wide ? 24 : 20),
       child: Row(
@@ -603,6 +615,20 @@ class _DeviceRow extends StatelessWidget {
           ),
         ],
       ),
+    );
+    if (animationsOff) return content;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: ms),
+      curve: Curves.easeOut,
+      builder: (context, value, child) => Opacity(
+        opacity: value,
+        child: Transform.translate(
+          offset: Offset(0, (1 - value) * 8),
+          child: child,
+        ),
+      ),
+      child: content,
     );
   }
 }
