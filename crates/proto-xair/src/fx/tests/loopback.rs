@@ -183,7 +183,7 @@ async fn loopback_tap_target_par_roundtrip() {
 }
 
 /// Loopback: a fake serving the hardware-proven mix — INT enum/switch
-/// pars (D/FL par 02/08/09 = 0/1/1, VRM par 13 = 0), float continuous
+/// pars (MODD par 02/08/09 = 0/1/1, VRM par 13 = 0), float continuous
 /// pars, and float-NaN padding past each effect's own count — proves
 /// the read path: int decode per def, NaN rejection, and bit-exact
 /// float roundtrips.
@@ -272,7 +272,7 @@ async fn loopback_mixed_int_float_pars_with_nan_padding() {
     let back = session.query(&fx_param(3, 7).unwrap()).await.unwrap();
     assert_eq!(parse_fx_param(&back.args, def(8).as_ref()).unwrap(), 1.0);
     let back = session.query(&fx_param(3, 8).unwrap()).await.unwrap();
-    assert_eq!(parse_fx_param(&back.args, def(9).as_ref()).unwrap(), 1.0);
+    assert_eq!(parse_fx_param(&back.args, def(9).as_ref()).unwrap(), 0.5);
     let back = session.query(&fx_param(3, 0).unwrap()).await.unwrap();
     assert_eq!(parse_fx_param(&back.args, def(1).as_ref()).unwrap(), 0.5);
     // Padding past the effect's own count replies NaN → absent, never a value.

@@ -115,6 +115,9 @@ pub struct OscSession {
     update_tx: broadcast::Sender<OscMessage>,
     received_tx: broadcast::Sender<(std::time::Instant, OscMessage)>,
     latest_meter: Arc<std::sync::Mutex<Option<(std::time::Instant, MeterFrame)>>>,
+    xair_secondary_meters_enabled: Arc<std::sync::atomic::AtomicBool>,
+    latest_xair_dca: Arc<std::sync::Mutex<Option<(std::time::Instant, Vec<f32>)>>>,
+    latest_xair_outputs: Arc<std::sync::Mutex<Option<(std::time::Instant, Vec<f32>)>>>,
     _recv: JoinHandle<()>,
     _keepalive: Option<JoinHandle<()>>,
 }
@@ -141,6 +144,9 @@ impl OscSession {
         let (update_tx, _) = broadcast::channel::<OscMessage>(256);
         let (received_tx, _) = broadcast::channel(2048);
         let latest_meter = Arc::new(std::sync::Mutex::new(None));
+        let xair_secondary_meters_enabled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let latest_xair_dca = Arc::new(std::sync::Mutex::new(None));
+        let latest_xair_outputs = Arc::new(std::sync::Mutex::new(None));
 
         let recv = {
             let socket = socket.clone();
@@ -149,6 +155,9 @@ impl OscSession {
             let update_tx = update_tx.clone();
             let received_tx = received_tx.clone();
             let latest_meter = latest_meter.clone();
+            let xair_secondary_meters_enabled = xair_secondary_meters_enabled.clone();
+            let latest_xair_dca = latest_xair_dca.clone();
+            let latest_xair_outputs = latest_xair_outputs.clone();
             tokio::spawn(async move {
                 let mut buf = vec![0u8; RECV_BUF];
                 loop {
@@ -168,6 +177,52 @@ impl OscSession {
                     };
                     let received = std::time::Instant::now();
                     for msg in osc::flatten(packet) {
+                        // X-Air's DCA bank is a separate four-value stream.
+                        // Opt-in keeps other OSC providers' meter semantics intact.
+                        if xair_secondary_meters_enabled.load(std::sync::atomic::Ordering::Acquire)
+                            && matches!(
+                                msg.addr.as_str(),
+                                "/meters/8"
+                                    | "meters/8"
+                                    | "/meters/5"
+                                    | "meters/5"
+                                    | "/meters/2"
+                                    | "meters/2"
+                            )
+                        {
+                            if let [OscType::Blob(blob)] = msg.args.as_slice() {
+                                let dca = matches!(msg.addr.as_str(), "/meters/8" | "meters/8");
+                                let input = matches!(msg.addr.as_str(), "/meters/2" | "meters/2");
+                                let count = if dca {
+                                    4
+                                } else if input {
+                                    36
+                                } else {
+                                    44
+                                };
+                                if blob.len() == 4 + count * 2 {
+                                    if let Some(levels) = crate::meters::parse_xair_meter_blob(blob)
+                                        .filter(|levels| levels.len() == count)
+                                    {
+                                        if input {
+                                            let _ = received_tx.send((received, msg.clone()));
+                                            continue;
+                                        }
+                                        let cache = if dca {
+                                            &latest_xair_dca
+                                        } else {
+                                            &latest_xair_outputs
+                                        };
+                                        *cache.lock().unwrap() = Some((received, levels));
+                                        if !dca {
+                                            let _ = received_tx.send((received, msg.clone()));
+                                        }
+                                    }
+                                }
+                            }
+                            // Malformed secondary banks must not poison the main level cache.
+                            continue;
+                        }
                         if let Some(frame) = parse_meter_message(&msg) {
                             *latest_meter.lock().unwrap() = Some((received, frame.clone()));
                             let _ = meter_tx.send(frame);
@@ -213,6 +268,9 @@ impl OscSession {
             update_tx,
             received_tx,
             latest_meter,
+            xair_secondary_meters_enabled,
+            latest_xair_dca,
+            latest_xair_outputs,
             _recv: recv,
             _keepalive: keep,
         }
@@ -291,6 +349,22 @@ impl OscSession {
     /// Most recent socket-received level sample; never refresh its age on replay.
     pub fn latest_meter_sample(&self) -> Option<(std::time::Instant, MeterFrame)> {
         self.latest_meter.lock().unwrap().clone()
+    }
+
+    /// Route X-Air `/meters/2`, `/meters/5` and `/meters/8` separately from primary levels.
+    pub fn enable_xair_secondary_meters(&self) {
+        self.xair_secondary_meters_enabled
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    /// Most recent valid four-DCA sample, timestamped at the socket.
+    pub fn latest_xair_dca_sample(&self) -> Option<(std::time::Instant, Vec<f32>)> {
+        self.latest_xair_dca.lock().unwrap().clone()
+    }
+
+    /// Most recent valid X-Air physical-output bank, timestamped at the socket.
+    pub fn latest_xair_output_sample(&self) -> Option<(std::time::Instant, Vec<f32>)> {
+        self.latest_xair_outputs.lock().unwrap().clone()
     }
 
     /// Per-param push subscribe (VERIFIED live 2026-10-19, XR18

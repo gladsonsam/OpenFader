@@ -75,17 +75,39 @@ impl XAirDriver {
         param: u8,
         value: f32,
     ) -> anyhow::Result<()> {
+        self.set_fx_param_checked(slot, param, value, None).await
+    }
+
+    /// Bind a snapshot parameter to the effect captured for that slot.
+    /// A concurrent type change must not turn a saved enum into a write to
+    /// an unrelated algorithm.
+    pub async fn set_fx_param_checked(
+        &self,
+        slot: u8,
+        param: u8,
+        value: f32,
+        expected_effect: Option<u8>,
+    ) -> anyhow::Result<()> {
         // 0-based trait index; the wire is 1-based on both axes (`fx`).
         // Validated BEFORE any I/O so out-of-range never hits the desk.
         // Bit-exact on hardware (baseline §6 row 5) — no fader epsilon here.
         let addr = fx::fx_param(slot, param)?;
         let value = fx::check_value(value)?;
         let guard = self.session().await?;
-        guard
-            .as_ref()
-            .unwrap()
-            .send(&addr, vec![OscType::Float(value)])
-            .await
+        let session = guard.as_ref().unwrap();
+        let effect = fx::parse_fx_type(&session.query(&fx::fx_type(slot)?).await?.args)?;
+        anyhow::ensure!(
+            expected_effect.is_none_or(|expected| expected == effect),
+            "xair: FX {slot} type changed during snapshot recall"
+        );
+        let arg = match fx::fx_param_def(effect, param + 1).and_then(|def| def.options) {
+            Some(options) if options.len() >= 2 => {
+                OscType::Int((value * (options.len() - 1) as f32).round() as i32)
+            }
+            Some(_) => anyhow::bail!("xair: invalid FX enum metadata"),
+            None => OscType::Float(value),
+        };
+        session.send(&addr, vec![arg]).await
     }
 
     pub(super) async fn driver_get_fx_param(&self, slot: u8, param: u8) -> anyhow::Result<f32> {

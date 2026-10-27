@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'destination_controls.dart';
 import 'output_presets.dart';
 
@@ -39,7 +37,7 @@ String? outputGeqDraftError(OutputPresetTarget target) {
 /// Round to the advertised display precision, clamp to this band's domain and
 /// retain wire precision so verified float32 readback can match the proposal.
 double outputGeqDraftGain(DestinationControlVm band, double value) =>
-    Float32List.fromList([
+    band.wireValue(
       double.parse(value.toStringAsFixed(band.decimals))
           .clamp(band.min!, band.max!),
-    ]).first;
+    )!;

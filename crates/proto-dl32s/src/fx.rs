@@ -134,6 +134,7 @@ impl FxState {
                         max: legacy.max,
                         unit: legacy.unit.to_string(),
                         decimals: legacy.decimals,
+                        step: None,
                     });
                 }
                 rows.push(row);
@@ -196,6 +197,7 @@ impl FxState {
                     max: spec.max,
                     unit: spec.unit.to_string(),
                     decimals: spec.decimals,
+                    step: None,
                 });
             }
             rows.push(row);

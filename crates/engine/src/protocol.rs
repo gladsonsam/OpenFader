@@ -1013,6 +1013,11 @@ pub enum Event {
         #[serde(skip_serializing_if = "Option::is_none", default)]
         authority: Option<BTreeMap<String, String>>,
     },
+    /// Clear values whose source identity is no longer known.
+    ParamInvalidated {
+        ch: u16,
+        fields: Vec<String>,
+    },
     Locks {
         holds: BTreeMap<String, String>,
     },
@@ -1283,6 +1288,7 @@ impl Event {
             Event::DynamicsMeters { .. } => "dynamics_meters",
             Event::Caps { .. } => "caps",
             Event::Params { .. } => "params",
+            Event::ParamInvalidated { .. } => "param_invalidated",
             Event::Locks { .. } => "locks",
             Event::Clients { .. } => "clients",
             Event::Error { .. } => "error",

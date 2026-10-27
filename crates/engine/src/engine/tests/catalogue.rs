@@ -124,7 +124,10 @@ fn registries_merge_canonical_plus_provider_rows() {
     // The merge helper itself: canonical wins, provider rows append.
     let mut reg = ParamRegistry::canonical();
     reg.register(engine.drv("xair").param_defs());
-    assert_eq!(reg.len(), openfader_core::params::CATALOGUE.len());
+    assert_eq!(
+        reg.len(),
+        openfader_core::params::CATALOGUE.len() + engine.drv("xair").param_defs().len()
+    );
 }
 
 /// Resume path: `push_snapshot` queues the attach frame set into an
@@ -509,6 +512,8 @@ async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
         main_fader: None,
         fx: vec![],
         routing: vec![],
+        mute_groups: None,
+        automix: None,
         strips: vec![StoredStrip {
             strip: 0,
             key: Some("ch/01".into()),

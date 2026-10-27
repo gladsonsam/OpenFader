@@ -296,7 +296,10 @@ class _InputTab extends StatelessWidget {
                   enabled: store.supports('phantom'),
                   onTap: () => _confirmPhantom(context))),
           Expanded(
-              child: Text('Phantom power',
+              child: Text(
+                  store.preampPhantomAvailable == false
+                      ? 'Phantom unavailable for this source'
+                      : 'Phantom power',
                   style: AppDesign.type(14,
                       color: ConsolePalette.of(context).text7)))
         ]),
@@ -304,6 +307,31 @@ class _InputTab extends StatelessWidget {
       if (store.hasDelay) ...[
         _InputDelayControl(store: store, onFocus: onFocus),
         SizedBox(height: wide ? 24 : 14),
+      ],
+      if (store.inputInserts.isNotEmpty) ...[
+        Text('Insert',
+            style: AppDesign.type(14, color: ConsolePalette.of(context).text7)),
+        const SizedBox(height: 8),
+        for (final control in store.inputInserts)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 7),
+            child: _ProcessingButton(
+              label: control.label,
+              detail: control.valueLabel,
+              onTap: control.available &&
+                      store.destinationControlIsCurrent(control)
+                  ? () => showDialog<void>(
+                      context: context,
+                      builder: (_) => DestinationControlEditor(
+                          changes: store,
+                          accessEpoch: () => store.controlAccessEpoch,
+                          isCurrent: store.destinationControlIsCurrent,
+                          apply: store.setDestinationControl,
+                          control: control))
+                  : null,
+            ),
+          ),
+        const SizedBox(height: 12),
       ],
       _InputAssignments(store: store, wide: wide),
     ]);
@@ -473,13 +501,15 @@ class _InputPreampControl extends StatelessWidget {
     final text = store.localAccessMessage(leaf) ??
         (!store.capabilitiesReady
             ? 'Loading…'
-            : metadata == null
-                ? 'Not supported'
-                : value == null || !store.supports(leaf)
-                    ? 'Loading…'
-                    : range == null
-                        ? '${readout(value)} · range unavailable'
-                        : readout(value));
+            : leaf == 'gain' && store.preampGainAvailable == false
+                ? 'Unavailable for this source'
+                : metadata == null
+                    ? 'Not supported'
+                    : value == null || !store.supports(leaf)
+                        ? 'Loading…'
+                        : range == null
+                            ? '${readout(value)} · range unavailable'
+                            : readout(value));
     void focusPreamp() {
       if (!enabled) return;
       onFocus(_parameterFocus(store, leaf, section, label, () {

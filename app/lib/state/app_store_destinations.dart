@@ -28,7 +28,10 @@ mixin _AppStoreDestinations on _AppStoreContext {
       engine.capsReady &&
       !locked &&
       control.available &&
-      ((control.surface != 'global' && control.surface != 'fx' && !control.targetSolo && !control.talkbackGesture) ||
+      ((control.surface != 'global' &&
+              control.surface != 'fx' &&
+              !control.targetSolo &&
+              !control.talkbackGesture) ||
           control.authority == 'verified') &&
       !_outputPresetBusy(control.target) &&
       engine.destinationControls.contains(control);
@@ -48,7 +51,14 @@ mixin _AppStoreDestinations on _AppStoreContext {
     return _sendDestinationControl(
       control,
       value,
-      guard: control.surface == 'global' || control.surface == 'fx' || control.targetSolo || control.talkbackGesture
+      guard: control.surface == 'global' ||
+              control.surface == 'fx' ||
+              control.surface == 'routing' ||
+              control.surface == 'input_insert' ||
+              control.surface == 'automix_settings' ||
+              control.surface.startsWith('output_') ||
+              control.targetSolo ||
+              control.talkbackGesture
           ? engine.destinationControls
               .where(
                 (row) =>

@@ -90,6 +90,7 @@ impl FxSlot {
                     max: 10.0,
                     unit: "dB".to_string(),
                     decimals: 1,
+                    step: None,
                 });
             }
             r.current = self.values.get(id).map(|value| DestinationValue {

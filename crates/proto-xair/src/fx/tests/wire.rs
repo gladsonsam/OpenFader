@@ -64,7 +64,7 @@ fn int_pars_decode_per_def_and_nan_is_absent() {
     assert!(parse_fx_param(&[OscType::Int(2)], freeze.as_ref()).is_err());
     assert!(parse_fx_param(&[OscType::Int(-1)], freeze.as_ref()).is_err());
 
-    let pattern = fx_param_def(26, 2);
+    let pattern = fx_param_def(25, 2);
     assert_eq!(pattern.unwrap().options, Some(PATTERN14));
     assert_eq!(
         parse_fx_param(&[OscType::Int(0)], pattern.as_ref()).unwrap(),
@@ -79,7 +79,7 @@ fn int_pars_decode_per_def_and_nan_is_absent() {
     );
     assert!(parse_fx_param(&[OscType::Int(14)], pattern.as_ref()).is_err());
 
-    let depth = fx_param_def(26, 8);
+    let depth = fx_param_def(25, 8);
     assert!(depth.unwrap().options.is_none());
     assert_eq!(
         parse_fx_param(&[OscType::Int(1)], depth.as_ref()).unwrap(),

@@ -161,6 +161,15 @@ pub trait DynDriver: Send + Sync {
     fn param_write_context(&self, _param: &str) -> &'static [&'static str] {
         &[]
     }
+    /// Whether a parameter is meaningful for this strip's current source.
+    /// Errors reject capture; false omits a genuinely inapplicable value.
+    async fn capture_param_applicable(
+        &self,
+        _strip: StripId,
+        _param: &str,
+    ) -> anyhow::Result<bool> {
+        Ok(true)
+    }
 
     /// Fresh capture override for shared/dynamically read-only hardware fields.
     /// None keeps the existing cache/display capture path. An error omits the
@@ -238,6 +247,20 @@ pub trait DynDriver: Send + Sync {
         }
         self.set_param(strip, param, value).await
     }
+    /// Recheck authorization immediately before a provider dispatches a
+    /// shared control. Providers with shared state invoke this under their
+    /// serialization lane with the freshly resolved affected members.
+    async fn set_param_guarded_checked(
+        &self,
+        strip: StripId,
+        param: &str,
+        value: ParamValue,
+        expected: &BTreeMap<String, ParamValue>,
+        check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        check(&[strip])?;
+        self.set_param_guarded(strip, param, value, expected).await
+    }
     fn meter_taps(&self) -> &'static [&'static str];
     fn bus_count(&self) -> u8;
     fn subgroup_count(&self) -> u8;
@@ -309,6 +332,40 @@ pub trait DynDriver: Send + Sync {
     ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         let _ = (target, control, value, expected, snapshot, context);
         anyhow::bail!("guarded FX unavailable")
+    }
+    async fn set_routing_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        let _ = (target, control, value, expected, snapshot, context);
+        anyhow::bail!("guarded routing control unavailable")
+    }
+    async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> {
+        Ok(None)
+    }
+    async fn set_output_processor_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
+        anyhow::ensure!(context(), "Output processor context changed");
+        let result = self
+            .set_destination_control_guarded(target, control, value, expected, snapshot)
+            .await?;
+        anyhow::ensure!(
+            context(),
+            "Output processor result uncertain: context changed"
+        );
+        Ok(result)
     }
     async fn set_target_solo(
         &self,
@@ -427,6 +484,16 @@ pub trait DynDriver: Send + Sync {
     /// FX slot count behind `caps.fx` and slot range checks.
     fn fx_slot_count(&self) -> usize {
         0
+    }
+    /// Whether numbered snapshots can read and restore a slot insert switch.
+    fn fx_insert_supported(&self) -> bool {
+        false
+    }
+    async fn get_fx_insert(&self, _slot: u8) -> anyhow::Result<bool> {
+        anyhow::bail!("{}: FX insert unavailable", self.name())
+    }
+    async fn set_fx_insert(&self, _slot: u8, _enabled: bool) -> anyhow::Result<()> {
+        anyhow::bail!("{}: FX insert unavailable", self.name())
     }
     /// Design-rack snapshot behind the FX cache (empty unless Design).
     fn fx_snapshot(&self) -> Vec<FxSlotView> {
@@ -552,6 +619,32 @@ pub trait DynDriver: Send + Sync {
             _ => anyhow::bail!("routing source is not a label"),
         }
     }
+    /// Optional provider-owned opaque input-route state for guarded commands.
+    async fn input_route_guard(
+        &self,
+        _strip: StripId,
+    ) -> anyhow::Result<Option<serde_json::Value>> {
+        Ok(None)
+    }
+    async fn input_routes_bulk(
+        &self,
+    ) -> Option<std::collections::HashMap<(u16, String), (String, serde_json::Value)>> {
+        None
+    }
+    async fn patch_target_guarded(
+        &self,
+        strip: StripId,
+        target: &str,
+        source: Option<(&str, u8)>,
+        _guard: Option<&serde_json::Value>,
+        check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<RoutingPatch> {
+        check(&[strip])?;
+        match source {
+            Some((group, index)) => self.patch_target_set(strip, target, group, index).await,
+            None => self.patch_target_clear(strip, target).await,
+        }
+    }
     async fn patch_target_set(
         &self,
         strip: StripId,
@@ -620,6 +713,32 @@ pub trait DynDriver: Send + Sync {
     /// (mute-group assign, subgroup assign) support behind `caps.groups`.
     fn group_assign_caps(&self) -> (bool, bool) {
         (false, false)
+    }
+    /// A provider can opt into atomic whole-mask local snapshot handling.
+    fn mute_group_snapshot_supported(&self) -> bool {
+        false
+    }
+    fn mute_group_snapshot_applies(&self, _kind: StripKind) -> bool {
+        false
+    }
+    async fn snapshot_mute_group_mask(&self, _strip: StripId) -> anyhow::Result<u32> {
+        anyhow::bail!("{}: mute-group snapshot unsupported", self.name())
+    }
+    async fn restore_mute_group_mask(
+        &self,
+        _strip: StripId,
+        _mask: u32,
+        _check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("{}: mute-group snapshot unsupported", self.name())
+    }
+    async fn restore_mute_group_master(
+        &self,
+        _group: u8,
+        _muted: bool,
+        _check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("{}: mute-group snapshot unsupported", self.name())
     }
     /// Bulk subgroup-assign snapshot: ((strip, group), member) pairs, or
     /// `None` when the driver has no bulk source (the engine falls back to
@@ -880,6 +999,13 @@ macro_rules! impl_dyn_driver {
     }
         async fn set_fx_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
             MixerDriver::set_fx_control_guarded(self, target, control, value, expected, snapshot, context).await
+        }
+        async fn set_routing_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+            MixerDriver::set_routing_control_guarded(self, target, control, value, expected, snapshot, context).await
+        }
+        async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> { MixerDriver::read_automix_settings(self).await }
+        async fn set_output_processor_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
+            MixerDriver::set_output_processor_guarded(self, target, control, value, expected, snapshot, context).await
         }
         async fn set_target_solo(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
             MixerDriver::set_target_solo(self, target, control, value, expected, snapshot, context).await
@@ -1230,6 +1356,136 @@ impl_dyn_driver!(openfader_sim::SimDriver {
 });
 
 impl_dyn_driver!(openfader_proto_xair::XAirDriver {
+    async fn input_routes_bulk(&self) -> Option<std::collections::HashMap<(u16, String), (String, serde_json::Value)>> {
+        let reads = futures::future::join_all((0..16_u16).map(|i| self.input_route(StripId(i)))).await;
+        let mut out = std::collections::HashMap::new();
+        for (i, result) in reads.into_iter().enumerate() {
+            let Ok(route) = result else { continue };
+            let guard = serde_json::json!({"analog": route.analog, "usb": route.usb, "bank": route.bank});
+            let analog = match route.analog { 0..=15 => format!("Mic {}", route.analog + 1), 16..=17 => format!("Aux {}", route.analog - 15), 18 => "—".to_string(), _ => continue };
+            out.insert((i as u16, "analog".into()), (analog, guard.clone()));
+            out.insert((i as u16, "usb".into()), (format!("USB {}", route.usb + 1), guard.clone()));
+            out.insert((i as u16, "bank".into()), (format!("Bank {}", route.bank + 1), guard));
+        }
+        Some(out)
+    }
+    async fn input_route_guard(&self, strip: StripId) -> anyhow::Result<Option<serde_json::Value>> {
+        let route = self.input_route(strip).await?;
+        Ok(Some(serde_json::json!({"analog": route.analog, "usb": route.usb, "bank": route.bank})))
+    }
+    async fn routing_source(&self, strip: StripId, target: &str) -> anyhow::Result<String> {
+        let route = self.input_route(strip).await?;
+        match target {
+            "analog" => Ok(match route.analog { 0..=15 => format!("Mic {}", route.analog + 1), 16..=17 => format!("Aux {}", route.analog - 15), 18 => "—".to_string(), _ => anyhow::bail!("xair: invalid analog source") }),
+            "usb" => Ok(format!("USB {}", route.usb + 1)),
+            "bank" => Ok(format!("Bank {}", route.bank + 1)),
+            _ => anyhow::bail!("xair: invalid input routing target"),
+        }
+    }
+    async fn patch_target_guarded(&self, strip: StripId, target: &str, source: Option<(&str, u8)>, guard: Option<&serde_json::Value>, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<RoutingPatch> {
+        let guard = guard.ok_or_else(|| anyhow::anyhow!("xair: input routing requires a captured route"))?;
+        let field = |id| -> anyhow::Result<i32> {
+            Ok(i32::try_from(guard.get(id).and_then(|v| v.as_i64()).ok_or_else(|| anyhow::anyhow!("xair: invalid captured input route"))?)?)
+        };
+        let expected = openfader_proto_xair::input_routing::InputRoute { analog: field("analog")?, usb: field("usb")?, bank: field("bank")? };
+        let mut desired = expected;
+        let label = match (target, source) {
+            ("analog", None) => { desired.analog = 18; "—".to_string() },
+            ("analog", Some(("Mic", n @ 1..=16))) => { desired.analog = i32::from(n) - 1; format!("Mic {n}") },
+            ("analog", Some(("Aux", n @ 1..=2))) => { desired.analog = i32::from(n) + 15; format!("Aux {n}") },
+            ("usb", Some(("USB", n @ 1..=18))) => { desired.usb = i32::from(n) - 1; format!("USB {n}") },
+            ("bank", Some(("Bank", n @ 1..=2))) => { desired.bank = i32::from(n) - 1; format!("Bank {n}") },
+            _ => anyhow::bail!("xair: invalid input route"),
+        };
+        self.set_input_route_guarded(strip, expected, desired, check).await?;
+        Ok(RoutingPatch { label, param: None })
+    }
+    fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
+        // Keep both dormant banks and the active selector independently
+        // addressable. Input rows are enabled only with guarded dispatch.
+        use crate::protocol::{RoutingDestinationCaps, RoutingGroupCaps, RoutingPlaneCaps};
+        let mut input = Vec::new();
+        for (target, label, clearable, groups) in [
+            ("analog", "Analog inputs", true, vec![("Mic", "Mic inputs", 16), ("Aux", "Aux L / R", 2)]),
+            ("usb", "USB returns", false, vec![("USB", "USB returns", 18)]),
+            ("bank", "Input bank", false, vec![("Bank", "1 Analog / 2 USB", 2)]),
+        ] {
+            let plane = format!("input/{target}");
+            let destinations = (0..16_u16).map(|strip| {
+                let key = format!("ch/{:02}", strip + 1);
+                RoutingDestinationCaps { output: false, id: format!("{plane}/{key}"), key, strip, label: format!("Channel {}", strip + 1), target: target.into(), clearable,
+                    source_groups: groups.iter().map(|(key, label, count)| RoutingGroupCaps { key: (*key).into(), label: (*label).into(), count: *count }).collect() }
+            }).collect();
+            input.push(RoutingPlaneCaps { key: plane, label: label.into(), destinations });
+        }
+        let stereo = openfader_core::routing::OutputPlane {
+            key: "physical/stereo", label: "Main and phones", count: 2,
+            clearable: false, sources: openfader_proto_xair::output_routing::stereo_sources(),
+        };
+        let mut outputs = routing::output_planes(vec![stereo]);
+        for (destination, (id, label)) in outputs[0].destinations.iter_mut().zip([
+            ("physical/main", "Main output"), ("physical/phones", "Phones output")
+        ]) {
+            destination.id = id.into(); destination.key = id.into(); destination.label = label.into();
+        }
+        outputs.extend(routing::output_planes(openfader_proto_xair::output_routing::planes()));
+        input.extend(outputs);
+        input
+    }
+    fn output_route(&self, id: &str) -> anyhow::Result<openfader_core::routing::RouteState> {
+        self.output_route(id)
+    }
+    async fn set_output_route(&self, id: &str, source: &str, expected: &openfader_core::routing::RouteState, context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<()> {
+        self.set_output_route_guarded(id, source, expected, context).await
+    }
+    fn param_write_context(&self, param: &str) -> &'static [&'static str] {
+        if matches!(param, "gain" | "phantom") { &["source"] } else { &[] }
+    }
+    async fn capture_param_applicable(&self, strip: StripId, param: &str) -> anyhow::Result<bool> {
+        if matches!(param, "gain" | "phantom") { self.preamp_capture_applicable(strip, param).await } else { Ok(true) }
+    }
+    async fn set_param_guarded(&self, strip: StripId, param: &str, value: ParamValue, expected: &BTreeMap<String, ParamValue>) -> anyhow::Result<()> {
+        if matches!(param, "gain" | "phantom") {
+            return self.write_active_preamp_guarded(strip, param, value, expected).await;
+        }
+        for (id, wanted) in expected {
+            anyhow::ensure!(MixerDriver::get_param(self, strip, id).await? == *wanted, "Input source changed; reopen the control.");
+        }
+        MixerDriver::set_param(self, strip, param, value).await
+    }
+    async fn set_param_guarded_checked(&self, strip: StripId, param: &str, value: ParamValue, expected: &BTreeMap<String, ParamValue>, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
+        if matches!(param, "gain" | "phantom") {
+            return self.write_active_preamp_guarded_checked(strip, param, value, expected, check).await;
+        }
+        check(&[strip])?;
+        self.set_param_guarded(strip, param, value, expected).await
+    }
+    fn mute_group_snapshot_supported(&self) -> bool { true }
+    fn mute_group_snapshot_applies(&self, kind: StripKind) -> bool {
+        matches!(kind, StripKind::In | StripKind::Ret | StripKind::Bus | StripKind::FxSnd)
+    }
+    async fn snapshot_mute_group_mask(&self, strip: StripId) -> anyhow::Result<u32> {
+        openfader_proto_xair::XAirDriver::snapshot_mute_group_mask(self, strip).await
+    }
+    async fn restore_mute_group_mask(&self, strip: StripId, mask: u32, check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
+        openfader_proto_xair::XAirDriver::restore_mute_group_mask(self, strip, mask, check).await
+    }
+    async fn restore_mute_group_master(&self, group: u8, muted: bool, check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
+        openfader_proto_xair::XAirDriver::restore_mute_group_master(self, group, muted, check).await
+    }
+    fn fx_insert_supported(&self) -> bool { true }
+    async fn get_fx_insert(&self, slot: u8) -> anyhow::Result<bool> {
+        openfader_proto_xair::XAirDriver::get_fx_insert(self, slot).await
+    }
+    async fn set_fx_insert(&self, slot: u8, enabled: bool) -> anyhow::Result<()> {
+        openfader_proto_xair::XAirDriver::set_fx_insert(self, slot, enabled).await
+    }
+    fn param_read_only(&self, param: &str) -> bool {
+        // The bool loses the distinction between groups X and Y; snapshots
+        // capture and restore the group enum instead. The source label is
+        // derived from multiple desk fields and is not a routing write.
+        matches!(param, "automix_on" | "source" | "xair:preamp_state" | "usbreturn")
+    }
     fn send_destination(&self, slot: u16) -> Option<SendDestination> {
         send_destinations::legacy_send_destination(slot, 6, 4)
     }
@@ -1317,7 +1573,8 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
     fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> {
         // XR18 LR has dynamics but no external key-source leaf.
         const SCOPES: &[StripKind] = &[StripKind::In, StripKind::Bus];
-        vec![("comp_key_src", SCOPES)]
+        const DCA: &[StripKind] = &[StripKind::In, StripKind::Ret, StripKind::Bus, StripKind::FxSnd];
+        vec![("comp_key_src", SCOPES), ("dca1_assign", DCA), ("dca2_assign", DCA), ("dca3_assign", DCA), ("dca4_assign", DCA)]
     }
     fn param_plane_snapshot(&self) -> bool {
         true
@@ -1442,14 +1699,29 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         _bypass: bool,
         params: &BTreeMap<String, f32>,
     ) -> anyhow::Result<()> {
-        let _ = fx_type;
-        // Numbered pars only (design ids have no verified mapping).
-        let mut ids: Vec<&String> = params.keys().collect();
-        ids.sort();
-        for id in ids {
-            if let Some(idx) = parse_par_id(id) {
-                MixerDriver::set_fx_param(self, slot, idx, params[id]).await?;
+        let effect = DynDriver::fx_type_index_of(self, fx_type)
+            .ok_or_else(|| anyhow::anyhow!("xair: unknown FX type {fx_type:?}"))?;
+        let mut values = Vec::with_capacity(params.len());
+        for (id, value) in params {
+            let idx = parse_par_id(id).ok_or_else(|| anyhow::anyhow!("xair: invalid FX parameter {id:?}"))?;
+            openfader_proto_xair::fx::check_value(*value)?;
+            anyhow::ensure!(openfader_proto_xair::fx::fx_param_def(effect, idx + 1).is_some(), "xair: {id} unavailable for {fx_type}");
+            values.push((idx, *value));
+        }
+        if self.get_fx_type(slot).await? != effect {
+            self.set_fx_type(slot, effect).await?;
+            let mut confirmed = false;
+            for _ in 0..20 {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                if self.get_fx_type(slot).await? == effect {
+                    confirmed = true;
+                    break;
+                }
             }
+            anyhow::ensure!(confirmed, "xair: FX {slot} type change unconfirmed; parameters were not sent");
+        }
+        for (idx, value) in values {
+            self.set_fx_param_checked(slot, idx, value, Some(effect)).await?;
         }
         Ok(())
     }

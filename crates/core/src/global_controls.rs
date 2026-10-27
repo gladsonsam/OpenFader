@@ -232,5 +232,6 @@ fn range(min: f32, max: f32, unit: &str, decimals: u8) -> Option<DestinationRang
         max,
         unit: unit.into(),
         decimals,
+        step: None,
     })
 }

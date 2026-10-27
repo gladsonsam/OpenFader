@@ -2,6 +2,62 @@ part of 'app_store.dart';
 
 // Input source topology, routed preamp context and input delay views.
 mixin _AppStoreInput on _AppStoreContext {
+  Map<String, dynamic>? _activePreampStateFor(int channel) {
+    if (engine.driver != 'xair') return null;
+    final active = ps.optimisticValue(_maps, channel, 'source');
+    final raw = ps.optimisticValue(_maps, channel, 'xair:preamp_state');
+    if (!engine.valueKnown(channel, 'source') ||
+        !engine.valueKnown(channel, 'xair:preamp_state') ||
+        active is! String ||
+        raw is! String) {
+      return null;
+    }
+    try {
+      final state = jsonDecode(raw);
+      if (state is! Map<String, dynamic> ||
+          state['source'] != active ||
+          state['gain_available'] is! bool ||
+          state['phantom_available'] is! bool) {
+        return null;
+      }
+      if (state['gain_available'] == true &&
+          (state['gain_min'] is! num ||
+              state['gain_max'] is! num ||
+              (state['gain_min'] as num) >= (state['gain_max'] as num))) {
+        return null;
+      }
+      return state;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Map<String, dynamic>? get _activePreampState =>
+      _activePreampStateFor(_channel);
+
+  bool? preampPhantomAvailableFor(int channel) =>
+      _activePreampStateFor(channel)?['phantom_available'] as bool?;
+
+  List<double>? preampGainRangeFor(int channel) {
+    final state = _activePreampStateFor(channel);
+    if (state == null || state['gain_available'] != true) return null;
+    return [
+      (state['gain_min'] as num).toDouble(),
+      (state['gain_max'] as num).toDouble()
+    ];
+  }
+
+  @override
+  bool? get preampGainAvailable =>
+      _activePreampState?['gain_available'] as bool?;
+  @override
+  bool? get preampPhantomAvailable =>
+      _activePreampState?['phantom_available'] as bool?;
+  @override
+  List<double>? get preampGainRange {
+    return preampGainRangeFor(_channel);
+  }
+
   @override
   ChannelSourceModeVm? get sourceMode {
     final raw = ps.optimisticValue(_maps, _channel, 'wing:source_mode');

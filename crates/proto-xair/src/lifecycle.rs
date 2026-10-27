@@ -79,6 +79,8 @@ impl XAirDriver {
             + 1;
         *self.receive_since.lock().unwrap() = std::time::Instant::now();
         *self.meter_latest.lock().unwrap() = None;
+        *self.link_cache.lock().unwrap() = [None; 8];
+        *self.link_writes.lock().unwrap() = [None; 8];
         *self.dyn_cache.lock().await = None;
         // Desk-broadcast ingest: parse every unmatched inbound message into
         // the stable update channel (one task per connection; it exits when
@@ -91,6 +93,7 @@ impl XAirDriver {
         let dyn_cache = self.dyn_cache.clone();
         let receive_since = self.receive_since.clone();
         let generation = self.connection_generation.clone();
+        let link_cache = self.link_cache.clone();
         let task = tokio::spawn(async move {
             let mut fx_types = [None; 4];
             loop {
@@ -101,6 +104,13 @@ impl XAirDriver {
                         }
                         if generation.load(std::sync::atomic::Ordering::Acquire) != connection {
                             break;
+                        }
+                        if let Some((pair, linked)) = super::assignments::parse_channel_link(&msg) {
+                            // An unsolicited OFF or a late query reply can race a
+                            // link write. Only an explicit fresh read may grant
+                            // single-strip control; ON always protects both.
+                            link_cache.lock().unwrap()[pair] =
+                                linked.then_some((received_at, true));
                         }
                         if msg.addr == addrs::METER_DYN_SUBSCRIBE {
                             if let Ok(dyn_m) = Self::decode_dyn_message(&msg) {
@@ -263,6 +273,59 @@ impl XAirDriver {
             }
         });
         self.tasks.lock().unwrap().push(task);
+        // Only unsolicited traffic enters this lane: query replies are
+        // matched before `subscribe_updates`. A routing or physical-headamp
+        // change invalidates any previously displayed source-bound preamp.
+        let mut source_updates = session.subscribe_updates();
+        let preamp_tx = self.update_tx.clone();
+        let generation = self.connection_generation.clone();
+        let task = tokio::spawn(async move {
+            loop {
+                let msg = match source_updates.recv().await {
+                    Ok(msg) => msg,
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        let _ = preamp_tx.send(openfader_core::ParamUpdate {
+                            received_at: std::time::Instant::now(),
+                            strip: StripId(u16::MAX),
+                            param: "_preamp_routes_dirty".into(),
+                            value: ParamValue::Bool(true),
+                        });
+                        continue;
+                    }
+                    Err(_) => break,
+                };
+                if generation.load(std::sync::atomic::Ordering::Acquire) != connection {
+                    break;
+                }
+                let strip = if msg.addr.starts_with("/headamp/") {
+                    Some(u16::MAX)
+                } else if let Some(rest) = msg.addr.strip_prefix("/ch/") {
+                    rest.split_once('/').and_then(|(ch, leaf)| {
+                        if !matches!(
+                            leaf,
+                            "config/insrc" | "config/rtnsrc" | "preamp/rtnsw" | "config" | "preamp"
+                        ) {
+                            return None;
+                        }
+                        ch.parse::<u16>()
+                            .ok()
+                            .filter(|ch| (1..=16).contains(ch))
+                            .map(|ch| ch - 1)
+                    })
+                } else {
+                    None
+                };
+                if let Some(strip) = strip {
+                    let _ = preamp_tx.send(openfader_core::ParamUpdate {
+                        received_at: std::time::Instant::now(),
+                        strip: StripId(strip),
+                        param: "_preamp_dirty".into(),
+                        value: ParamValue::Bool(true),
+                    });
+                }
+            }
+        });
+        self.tasks.lock().unwrap().push(task);
         let old_rta = self.rta.lock().unwrap().take();
         if let Some(old) = old_rta {
             let _ = old.target("", None, true).await;
@@ -271,12 +334,24 @@ impl XAirDriver {
         // The actor runs concurrently; no RTA round trip blocks hydration.
         let stream = std::sync::Arc::new(rta::RtaStream::start(session.clone(), connection));
         *self.rta.lock().unwrap() = Some(stream);
+        self.start_output_routing(session.clone(), connection);
+        self.start_output_geq(session.clone(), connection);
+        self.start_automix_settings(session.clone(), connection);
+        self.start_rta_settings(session.clone(), connection);
+        self.start_monitor_settings(session.clone(), connection);
+        self.start_output_misc(session.clone(), connection);
         *self.session.lock().await = Some(session);
         *self.peer.lock().await = peer.to_string();
+        self.connected
+            .store(true, std::sync::atomic::Ordering::Release);
         Ok(())
     }
 
     pub(super) async fn driver_disconnect(&self) -> anyhow::Result<()> {
+        self.connected
+            .store(false, std::sync::atomic::Ordering::Release);
+        *self.link_cache.lock().unwrap() = [None; 8];
+        *self.link_writes.lock().unwrap() = [None; 8];
         self.connection_generation
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         let old_rta = self.rta.lock().unwrap().take();

@@ -122,14 +122,14 @@ pub fn parse_fx_type(args: &[OscType]) -> anyhow::Result<u8> {
 /// padding/unknown — decoded raw, still validated). Hardware facts (XR18
 /// FW 1.20):
 ///
-/// * Enum/switch pars reply as INT: D/FL par 02/08/09 = `0`/`1`/`1`, VRM
+/// * Enum/switch pars reply as INT: MODD par 02/08/09 = `0`/`1`/`2`, VRM
 ///   par 13 (Freeze) = `0`. An int on an enum def is the option index,
 ///   mapped onto `0..1` steps (`index / (options - 1)`, so OFF/ON lands
 ///   exactly on `0.0`/`1.0`); an out-of-range index bails — no guessing.
 ///   An int on a continuous (or unknown) def is the raw value (`1` →
 ///   `1.0`), still range-checked.
 /// * Pars past the effect's own count reply as float NaN (VRM/HALL 14+,
-///   D/FL 14+, PIT 7+). NaN means absent: this bails (like an unknown
+///   MODD 14+, PIT 7+). NaN means absent: this bails (like an unknown
 ///   par) and never surfaces NaN as a parameter value. Other non-finite
 ///   floats bail the same way; anything non-numeric bails too.
 ///

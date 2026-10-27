@@ -21,6 +21,8 @@ pub struct DestinationRange {
     pub max: f32,
     pub unit: String,
     pub decimals: u8,
+    /// Optional quantization step in engineering units, relative to min.
+    pub step: Option<f32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -64,6 +66,14 @@ impl DestinationControl {
                         && range.max.is_finite()
                         && range.min < range.max
                         && (range.min..=range.max).contains(&value)
+                        && range.step.is_none_or(|step| {
+                            step.is_finite()
+                                && step > 0.0
+                                && (((value - range.min) / step).round()
+                                    - (value - range.min) / step)
+                                    .abs()
+                                    < 1e-4
+                        })
                 }))
     }
 }

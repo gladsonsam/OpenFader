@@ -10,6 +10,28 @@ class _EqTab extends StatefulWidget {
 
 class _EqTabState extends State<_EqTab> {
   bool _showRta = true;
+  int? _spectrumSession;
+
+  void _followSpectrumSession() {
+    final session = widget.store.connectionEpoch;
+    if (_spectrumSession == session) return;
+    _spectrumSession = session;
+    widget.store.setChannelSpectrumActive(true);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.store.addListener(_followSpectrumSession);
+    _followSpectrumSession();
+  }
+
+  @override
+  void dispose() {
+    widget.store.removeListener(_followSpectrumSession);
+    widget.store.setChannelSpectrumActive(false);
+    super.dispose();
+  }
 
   void _pick(int band) {
     widget.store.selectEqBand(band);
@@ -158,7 +180,8 @@ class _EqTabState extends State<_EqTab> {
                 child: _PresetsButton(
                     store: store, compact: true, kind: ProcessorPresetKind.eq)),
           ListenableBuilder(
-              listenable: Listenable.merge([store.spectrum, store.audioSpectrum]),
+              listenable:
+                  Listenable.merge([store.spectrum, store.audioSpectrum]),
               builder: (context, _) {
                 final available = store.audioSpectrum.value != null ||
                     store.spectrum.value.isNotEmpty;
@@ -185,6 +208,8 @@ class _EqTabState extends State<_EqTab> {
               }),
           if (wide) const Spacer(),
         ]),
+        if (_showRta && store.rtaSettings.isNotEmpty)
+          _RtaSettings(store: store),
         const SizedBox(height: 8),
         if (eq.responseNote != null)
           Padding(
@@ -387,5 +412,74 @@ class _EqTabState extends State<_EqTab> {
         ],
       ]);
     });
+  }
+}
+
+class _RtaSettings extends StatelessWidget {
+  final ChannelStore store;
+  const _RtaSettings({required this.store});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    return Wrap(spacing: 8, runSpacing: 8, children: [
+      for (final row in store.rtaSettings)
+        if (row.choices.isNotEmpty)
+          PopupMenuButton<double>(
+            enabled: store.destinationControlIsCurrent(row),
+            tooltip: 'Shared RTA ${row.label}',
+            color: palette.processingPanel,
+            onSelected: (value) {
+              if (store.destinationControlIsCurrent(row) &&
+                  row.allowsValue(value)) {
+                store.setDestinationControl(row, value);
+              }
+            },
+            itemBuilder: (_) => [
+              for (final choice in row.choices)
+                PopupMenuItem(value: choice.value, child: Text(choice.label)),
+            ],
+            child: Chip(label: Text('${row.label}: ${row.valueLabel ?? '—'}')),
+          )
+        else if (row.numeric)
+          ActionChip(
+            label: Text('${row.label}: ${row.valueLabel ?? '—'}'),
+            onPressed: !store.destinationControlIsCurrent(row)
+                ? null
+                : () async {
+                    var value = row.value!;
+                    final selected = await showDialog<double>(
+                      context: context,
+                      builder: (dialogContext) => StatefulBuilder(
+                          builder: (dialogContext, setState) => AlertDialog(
+                                title: Text('Shared RTA ${row.label}'),
+                                content: Slider(
+                                  value: value.clamp(row.min!, row.max!),
+                                  min: row.min!,
+                                  max: row.max!,
+                                  label: value.toStringAsFixed(row.decimals),
+                                  onChanged: (next) =>
+                                      setState(() => value = next),
+                                ),
+                                actions: [
+                                  TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext),
+                                      child: const Text('Cancel')),
+                                  TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext, value),
+                                      child: const Text('Apply')),
+                                ],
+                              )),
+                    );
+                    if (selected != null &&
+                        store.destinationControlIsCurrent(row) &&
+                        row.allowsValue(selected)) {
+                      await store.setDestinationControl(row, selected);
+                    }
+                  },
+          ),
+    ]);
   }
 }

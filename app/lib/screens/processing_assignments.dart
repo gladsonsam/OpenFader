@@ -12,6 +12,37 @@ class _InputAssignments extends StatelessWidget {
   Widget build(BuildContext context) {
     final assignmentFont = wide && store.viewGroupCount > 0 ? 14.0 : 16.0;
     final groups = <String, List<Widget>>{
+      if (store.supports('automix_group'))
+        'Automix': [
+          for (var group = 0; group < 3; group++)
+            _ProcessingButton(
+                fontSize: assignmentFont,
+                label: const ['Off', 'X', 'Y'][group],
+                active: store.paramNum('automix_group') == group,
+                onTap: store.paramNum('automix_group') == null ||
+                        store.localAccessMessage('automix_group') != null
+                    ? null
+                    : () => store.cmdParam('automix_group', group.toDouble())),
+        ],
+      if (store.automixSettings.isNotEmpty)
+        'Automix settings': [
+          for (final control in store.automixSettings)
+            _ProcessingButton(
+              label: control.label,
+              detail: control.valueLabel,
+              onTap: control.available &&
+                      store.destinationControlIsCurrent(control)
+                  ? () => showDialog<void>(
+                      context: context,
+                      builder: (_) => DestinationControlEditor(
+                          changes: store,
+                          accessEpoch: () => store.controlAccessEpoch,
+                          isCurrent: store.destinationControlIsCurrent,
+                          apply: store.setDestinationControl,
+                          control: control))
+                  : null,
+            ),
+        ],
       if (store.paramApplies('lr_assign'))
         'Main': [
           _ProcessingButton(

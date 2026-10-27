@@ -127,22 +127,15 @@ async fn driver_assign_plane_roundtrip() {
 #[tokio::test]
 async fn driver_input_routing_roundtrip() {
     let (driver, _) = connected_driver().await;
-    driver
+    // The raw alias must not bypass the shared source/preamp guard.
+    assert!(driver
         .set_param(StripId(0), "usbreturn", ParamValue::Float(17.0))
         .await
-        .unwrap();
-    assert_eq!(
-        driver.get_param(StripId(0), "usbreturn").await.unwrap(),
-        ParamValue::Float(17.0)
-    );
-    driver
+        .is_err());
+    assert!(driver
         .set_param(StripId(0), "usbreturn", ParamValue::Float(0.0))
         .await
-        .unwrap();
-    assert_eq!(
-        driver.get_param(StripId(0), "usbreturn").await.unwrap(),
-        ParamValue::Float(0.0)
-    );
+        .is_err());
     for bad in [18.0, -1.0, 3.5, f32::NAN, f32::INFINITY] {
         assert!(
             driver

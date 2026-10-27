@@ -3,6 +3,61 @@
 use super::*;
 
 impl Engine {
+    fn invalidate_xair_preamp(&self, ch: u16, received: Instant, source: bool) {
+        let candidates: Vec<String> = if source {
+            vec![
+                "source".into(),
+                "xair:preamp_state".into(),
+                "gain".into(),
+                "phantom".into(),
+            ]
+        } else {
+            vec!["gain".into(), "phantom".into()]
+        };
+        let mut fields = Vec::new();
+        {
+            let mut sync = self.sync_state.lock().unwrap();
+            if received < sync.epoch {
+                return;
+            }
+            let mut cache = self.param_cache.write().unwrap();
+            for field in candidates {
+                let key = (ch, field.clone());
+                if sync
+                    .received
+                    .get(&key)
+                    .is_some_and(|(at, _)| *at > received)
+                {
+                    continue;
+                }
+                sync.revision += 1;
+                let revision = sync.revision;
+                // Advance the barrier even if there was no cached value: a
+                // pre-invalidation query must not repopulate stale preamp data.
+                sync.received.insert(key, (received, revision));
+                if let Some(values) = cache.get_mut(&ch) {
+                    values.remove(&field);
+                }
+                fields.push(field);
+            }
+        }
+        if fields.is_empty() {
+            return;
+        }
+        let driver = self.active_driver();
+        {
+            let mut queue = self.focus_queue.write().unwrap();
+            for field in &fields {
+                if !queue
+                    .iter()
+                    .any(|(d, s, p, _)| d == &driver && *s == ch && p == field)
+                {
+                    queue.push_front((driver.clone(), ch, field.clone(), String::new()));
+                }
+            }
+        }
+        self.broadcast(Event::ParamInvalidated { ch, fields });
+    }
     // ================= R2: desk-broadcast ingest =================
 
     /// Apply one desk-originated update (broadcast ingest): same
@@ -25,6 +80,31 @@ impl Engine {
         if param == "_fx_dirty" {
             self.fx_tick.store(0, Ordering::Release);
             return;
+        }
+        if param == "_preamp_dirty" || param == "_preamp_routes_dirty" {
+            if self.active_driver() != "xair" {
+                return;
+            }
+            if ch == u16::MAX {
+                for strip in 0..16 {
+                    self.invalidate_xair_preamp(strip, received, param == "_preamp_routes_dirty");
+                }
+            } else if ch < 16 {
+                self.invalidate_xair_preamp(ch, received, true);
+            }
+            return;
+        }
+        if param == "source" && self.active_driver() == "xair" {
+            let previous = self
+                .param_cache
+                .read()
+                .unwrap()
+                .get(&ch)
+                .and_then(|values| values.get("source"))
+                .cloned();
+            if previous.is_some_and(|old| old != param_value_json(pv)) {
+                self.invalidate_xair_preamp(ch, received, true);
+            }
         }
         if param == "_sync_dirty" {
             if let ParamValue::Text(suffix) = pv {

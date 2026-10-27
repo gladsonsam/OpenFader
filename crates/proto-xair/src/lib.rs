@@ -11,6 +11,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::{broadcast, Mutex};
 
 pub mod automix;
+mod automix_settings;
 pub mod codec;
 pub mod comp;
 pub mod dyn_gr;
@@ -20,10 +21,18 @@ pub mod gate;
 pub mod groups;
 pub mod headamp;
 pub mod input;
+pub mod input_routing;
 pub mod insert;
 pub mod look;
 pub mod mix;
+mod native_library;
+mod output_geq;
+mod output_misc;
+pub mod output_routing;
+mod preamp;
+mod presentations;
 pub mod rta;
+mod rta_settings;
 pub mod solo;
 mod sync_decode;
 
@@ -36,6 +45,7 @@ mod lifecycle;
 mod mapping;
 mod metadata;
 mod monitor;
+mod monitor_settings;
 mod param_read;
 mod param_write;
 mod surface;
@@ -53,7 +63,24 @@ pub struct XAirDriver {
     receive_since: std::sync::Arc<std::sync::Mutex<std::time::Instant>>,
     tasks: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>,
     connection_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
+    connected: std::sync::atomic::AtomicBool,
+    link_cache: std::sync::Arc<std::sync::Mutex<[Option<(std::time::Instant, bool)>; 8]>>,
+    link_writes: std::sync::Mutex<[Option<std::time::Instant>; 8]>,
+    preamp_write: tokio::sync::Mutex<()>,
+    output_routes: std::sync::Arc<std::sync::Mutex<output_routing::Cache>>,
+    output_route_write: tokio::sync::Mutex<()>,
+    output_geq: std::sync::Arc<std::sync::Mutex<output_geq::Cache>>,
+    output_geq_write: tokio::sync::Mutex<()>,
+    automix_settings: std::sync::Arc<std::sync::Mutex<automix_settings::Cache>>,
+    automix_settings_write: tokio::sync::Mutex<()>,
+    output_misc: std::sync::Arc<std::sync::Mutex<output_misc::Cache>>,
+    output_misc_write: tokio::sync::Mutex<()>,
+    monitor_settings: std::sync::Arc<std::sync::Mutex<monitor_settings::Cache>>,
+    monitor_settings_write: tokio::sync::Mutex<()>,
+    rta_settings: std::sync::Arc<std::sync::Mutex<rta_settings::Cache>>,
+    rta_settings_write: tokio::sync::Mutex<()>,
     rta: std::sync::Mutex<Option<std::sync::Arc<rta::RtaStream>>>,
+    native: std::sync::Mutex<native_library::Inventory>,
     session: Mutex<Option<std::sync::Arc<OscSession>>>,
     peer: Mutex<String>,
     model: addrs::XAirModel,
@@ -69,12 +96,14 @@ pub struct XAirDriver {
     /// subscribes once and applies these to its param cache live.
     update_tx: broadcast::Sender<openfader_core::ParamUpdate>,
     /// Latest `/meters/1` levels in decoded blob order (40 linear levels:
-    /// input bank `0..16`, aux-return post at idx 26 — rig-verified
-    /// 2026-10-20; families past the channels are NOT mapped to strips —
+    /// channels, aux, FX returns, buses, FX sends, main and monitor —
     /// see [`XAirDriver::poll_meters`]). `None` until the first blob
     /// arrives. Filled by the cache-drain task that
     /// [`MixerDriver::subscribe_meters`] installs; read by `poll_meters`.
     meter_latest: std::sync::Arc<std::sync::Mutex<LevelSample>>,
+    /// Timestamped `/meters/5` physical-output bank, separate from strip meters.
+    output_latest: std::sync::Arc<std::sync::Mutex<LevelSample>>,
+    input_latest: std::sync::Arc<std::sync::Mutex<LevelSample>>,
 }
 
 impl Default for XAirDriver {
@@ -98,13 +127,40 @@ impl XAirDriver {
             receive_since: std::sync::Arc::new(std::sync::Mutex::new(std::time::Instant::now())),
             tasks: std::sync::Mutex::new(Vec::new()),
             connection_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            connected: std::sync::atomic::AtomicBool::new(false),
+            link_cache: std::sync::Arc::new(std::sync::Mutex::new([None; 8])),
+            link_writes: std::sync::Mutex::new([None; 8]),
+            preamp_write: tokio::sync::Mutex::new(()),
+            output_routes: std::sync::Arc::new(std::sync::Mutex::new(
+                output_routing::Cache::default(),
+            )),
+            output_route_write: tokio::sync::Mutex::new(()),
+            output_geq: std::sync::Arc::new(std::sync::Mutex::new(output_geq::Cache::default())),
+            monitor_settings: std::sync::Arc::new(std::sync::Mutex::new(
+                monitor_settings::Cache::default(),
+            )),
+            monitor_settings_write: tokio::sync::Mutex::new(()),
+            rta_settings: std::sync::Arc::new(
+                std::sync::Mutex::new(rta_settings::Cache::default()),
+            ),
+            rta_settings_write: tokio::sync::Mutex::new(()),
+            output_geq_write: tokio::sync::Mutex::new(()),
+            automix_settings: std::sync::Arc::new(std::sync::Mutex::new(
+                automix_settings::Cache::default(),
+            )),
+            automix_settings_write: tokio::sync::Mutex::new(()),
+            output_misc: std::sync::Arc::new(std::sync::Mutex::new(output_misc::Cache::default())),
+            output_misc_write: tokio::sync::Mutex::new(()),
             rta: std::sync::Mutex::new(None),
+            native: std::sync::Mutex::new(native_library::Inventory::default()),
             session: Mutex::new(None),
             peer: Mutex::new(String::new()),
             model,
             dyn_cache: std::sync::Arc::new(Mutex::new(None)),
             update_tx,
             meter_latest: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            output_latest: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            input_latest: std::sync::Arc::new(std::sync::Mutex::new(None)),
         }
     }
 
@@ -146,6 +202,99 @@ impl XAirDriver {
 }
 
 impl MixerDriver for XAirDriver {
+    fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
+        let mut controls = self.routing_controls();
+        controls.extend(self.geq_controls());
+        controls.extend(self.automix_setting_controls());
+        controls.extend(self.rta_setting_controls());
+        controls.extend(self.monitor_setting_controls());
+        controls.extend(self.misc_controls());
+        controls
+    }
+
+    async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> {
+        self.read_automix_snapshot().await.map(Some)
+    }
+
+    async fn set_output_processor_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
+        if target == "automix" {
+            self.set_automix_setting(target, control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        } else if target == "monitor" {
+            self.set_monitor_setting(target, control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        } else if target == "rta" {
+            self.set_rta_setting(target, control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        } else if snapshot
+            .first()
+            .is_some_and(|row| matches!(row.surface.as_str(), "output_controls" | "input_insert"))
+        {
+            self.set_misc_control(target, control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        } else {
+            self.set_geq_control(target, control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        }
+    }
+
+    async fn set_routing_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        anyhow::ensure!(control == "tap", "Unknown output control");
+        self.set_routing_tap(target, value, expected, snapshot, context)
+            .await
+    }
+    fn stereo_pairs(&self) -> Vec<[u16; 2]> {
+        (0..16).step_by(2).map(|left| [left, left + 1]).collect()
+    }
+
+    async fn control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Vec<StripId>> {
+        if matches!(param, "gain" | "phantom") {
+            return self.preamp_control_members(strip).await;
+        }
+        self.stereo_control_members(strip, param)
+    }
+
+    async fn set_stereo_link(
+        &self,
+        strip: StripId,
+        linked: bool,
+    ) -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+        self.write_stereo_link(strip, linked).await
+    }
+    fn native_library(&self) -> Option<serde_json::Value> {
+        Some(self.native_inventory())
+    }
+
+    async fn native_library_action(
+        &self,
+        action: &serde_json::Value,
+        expected: &serde_json::Value,
+        check: openfader_core::native_library::Check<'_>,
+    ) -> anyhow::Result<serde_json::Value> {
+        self.native_action(action, expected, check).await
+    }
+
     fn meter_taps(&self) -> &'static [&'static str] {
         &["post", "gr_gate", "gr_comp"]
     }
@@ -157,6 +306,38 @@ impl MixerDriver for XAirDriver {
     /// Loopback-tested param-plane set (see [`XAIR_CAPABILITIES`]).
     fn capabilities(&self) -> &'static [&'static str] {
         XAIR_CAPABILITIES
+    }
+
+    fn param_defs(&self) -> &'static [openfader_core::params::ParamDef] {
+        use openfader_core::params::{ParamDef, ParamDefault, ParamKind, ParamScope, SCOPES_INPUT};
+        static DEFS: &[ParamDef] = &[
+            ParamDef {
+                id: "automix_group",
+                kind: ParamKind::Enum,
+                scope: ParamScope::Channel,
+                scopes: SCOPES_INPUT,
+                min: 0.0,
+                max: 2.0,
+                unit: "",
+                default: ParamDefault::Float(0.0),
+                label: "automix group",
+            },
+            ParamDef {
+                id: "xair:preamp_state",
+                kind: ParamKind::Text,
+                scope: ParamScope::Channel,
+                scopes: SCOPES_INPUT,
+                min: 0.0,
+                max: 0.0,
+                unit: "",
+                default: ParamDefault::Text(""),
+                label: "Active preamp availability",
+            },
+        ];
+        DEFS
+    }
+    fn param_presentations(&self) -> &'static [openfader_core::params::ParamPresentation] {
+        presentations::PRESENTATIONS
     }
 
     fn param_swatches(&self, param: &str) -> &'static [openfader_core::params::ParamSwatch] {
@@ -302,17 +483,20 @@ impl MixerDriver for XAirDriver {
         self.driver_get_solo(strip).await
     }
     /// Strip-ordered meter levels (one entry per strip, [`XAIR_STRIPS`]).
-    /// The `/meters/1` blob (the only level stream subscribed) decodes in
-    /// transport to 40 linear levels: the input bank `0..16` feeds ch 1..16
-    /// (pre-mute taps — live-verified pattern 2026-10-20: hot while the
-    /// channels sit muted, ch15-anchored at idx 14, aux pre pair at 16/17),
-    /// and idx 26 feeds the aux-return strip 35 (`/rtn/aux` mute-gated,
-    /// live-verified 2026-10-20). The documented main post-fader L/R pair
-    /// at 36/37 feeds the main strip as the louder side (not yet rig-verified).
-    /// Other unmapped strips read silence; missing or stale data returns an
-    /// empty frame.
+    /// The `/meters/1` blob has 40 levels: channels 0–15, aux 16–17,
+    /// FX returns 18–25, buses 26–31, FX sends 32–35 and main LR 36–37.
+    /// Stereo strips use the louder side; DCA levels remain unmapped.
+    /// Missing or stale data returns an empty frame.
     fn poll_meters(&self) -> openfader_core::MeterFrame {
         self.driver_poll_meters()
+    }
+    fn output_meter_targets(&self) -> Vec<String> {
+        let mut targets = Self::physical_output_targets();
+        targets.extend(Self::physical_input_targets());
+        targets
+    }
+    fn poll_output_meters(&self) -> Option<openfader_core::OutputMeterSnapshot> {
+        Some(self.driver_poll_output_meters())
     }
     async fn query_info(&self) -> anyhow::Result<MixerInfo> {
         self.driver_query_info().await
@@ -353,8 +537,8 @@ impl MixerDriver for XAirDriver {
     /// GR reads ride the param path (`gate_gr`/`comp_gr` serve dB reduction
     /// `>= 0` from the last `/meters/6` blob; no GR query address exists).
     /// `delay_on`/`delay_ms` (X32-only), `hpf_slope` (X32-only), `source`
-    /// (`insrc` live-silent, FW 1.20), `icon` (no firmware leaf), `link`
-    /// (global `/config/chlink`, no per-channel leaf), per-channel `eq5_*`
+    /// (input source selection not yet integrated), `icon` (no firmware leaf),
+    /// per-channel `eq5_*`
     /// (channels/returns carry 4 bands; `eq5/6_*` ride buses + main),
     /// `aux7/8_*`, `send11..16_*` and all legacy `auxN_mute`/`fxN_mute` plus
     /// the v2 `send1..10_on` (the send block has no on/off leaf and

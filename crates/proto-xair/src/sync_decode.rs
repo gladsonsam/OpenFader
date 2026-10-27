@@ -158,7 +158,6 @@ pub(super) fn address(strip: u16, p: &str) -> Option<String> {
         return None;
     }
     let suffix = match p {
-        "phantom" => return Some(headamp::headamp_phantom(strip + 1)),
         "usbreturn" => "config/rtnsrc",
         "trim" => "preamp/rtntrim",
         "polarity" => "preamp/invert",

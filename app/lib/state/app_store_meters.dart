@@ -162,6 +162,20 @@ mixin _AppStoreMeters on _AppStoreContext {
   ValueNotifier<double> get masterMeter => _masterMeter;
 
   // ------------------------------------------------------------------
+  @override
+  List<DestinationControlVm> get monitorControls =>
+      List.unmodifiable(engine.destinationControls
+          .where((row) => row.surface == 'output_monitor'));
+
+  @override
+  bool monitorControlIsCurrent(DestinationControlVm control) =>
+      destinationControlIsCurrent(control);
+
+  @override
+  Future<String?> setMonitorControl(
+          DestinationControlVm control, double value) =>
+      setDestinationControl(control, value);
+
   // MetersStore
   // ------------------------------------------------------------------
   @override
@@ -206,6 +220,42 @@ mixin _AppStoreMeters on _AppStoreContext {
   BridgeTap tapOf(int ch) => _taps.putIfAbsent(ch, () => BridgeTap());
 
   @override
+  List<BridgeOutputGroup> get physicalOutputGroups {
+    final targets = engine.outputMeterTargets.toSet();
+    List<BridgeOutputMeter> numbered(String kind, String label, int count) => [
+          for (var n = 1; n <= count; n++)
+            if (targets
+                .contains('physical/$kind/${n.toString().padLeft(2, '0')}'))
+              BridgeOutputMeter(
+                  'physical/$kind/${n.toString().padLeft(2, '0')}',
+                  '$label $n'),
+        ];
+    List<BridgeOutputMeter> inputs(String kind, String label, int count) => [
+          for (var n = 1; n <= count; n++)
+            if (targets.contains('input/$kind/${n.toString().padLeft(2, '0')}'))
+              BridgeOutputMeter(
+                  'input/$kind/${n.toString().padLeft(2, '0')}', '$label $n'),
+        ];
+    final groups = <BridgeOutputGroup>[
+      BridgeOutputGroup('Physical mic inputs', inputs('mic', 'Mic', 16)),
+      BridgeOutputGroup('Physical aux inputs', inputs('aux', 'Aux in', 2)),
+      BridgeOutputGroup('USB return inputs', inputs('usb', 'USB in', 18)),
+      BridgeOutputGroup('Physical aux outputs', numbered('aux', 'Aux out', 6)),
+      BridgeOutputGroup('Physical main and phones', [
+        if (targets.contains('physical/main'))
+          const BridgeOutputMeter('physical/main', 'Main output L/R'),
+        if (targets.contains('physical/phones'))
+          const BridgeOutputMeter('physical/phones', 'Phones L/R'),
+      ]),
+      BridgeOutputGroup('Ultranet outputs', numbered('p16', 'P16', 16)),
+      BridgeOutputGroup('USB outputs', numbered('usb', 'USB', 18)),
+    ];
+    return groups
+        .where((group) => group.meters.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  @override
   void setSpectrumTarget(int? ch) {
     // DL32S analysis is passive: neither entry nor meter navigation acquires
     // a named source or writes the desk's shared analyser selector.
@@ -216,6 +266,12 @@ mixin _AppStoreMeters on _AppStoreContext {
     _audioSpectrum.value = null;
     _clearAudioSpectrumPeaks();
     _send(Cmds.spectrumTarget(ch));
+  }
+
+  @override
+  void setChannelSpectrumActive(bool active) {
+    if (engine.driver != 'xair') return;
+    _send(Cmds.spectrumTarget(active ? _channel : null));
   }
 
   @override

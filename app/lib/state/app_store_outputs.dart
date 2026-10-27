@@ -36,11 +36,12 @@ mixin _AppStoreOutputs on _AppStoreContext {
         for (final control in outputProcessingControls)
           control.target: control.destinationName,
         for (final target in engine.outputMeterTargets)
-          target: engine.destinationControls
-                  .where((control) => control.target == target)
-                  .firstOrNull
-                  ?.destinationName ??
-              target,
+          if (!target.startsWith('physical/'))
+            target: engine.destinationControls
+                    .where((control) => control.target == target)
+                    .firstOrNull
+                    ?.destinationName ??
+                target,
       });
 
   @override
@@ -58,10 +59,10 @@ mixin _AppStoreOutputs on _AppStoreContext {
   String _processingTargetForBus(String id) => id.startsWith('solo:')
       ? id.split(':')[1]
       : id == 'main'
-      ? 'main'
-      : id.startsWith('subgroup')
-          ? 'subgroup/${((int.tryParse(id.substring('subgroup'.length)) ?? 0) + 1).toString().padLeft(2, '0')}'
-          : 'bus/${((int.tryParse(id.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
+          ? 'main'
+          : id.startsWith('subgroup')
+              ? 'subgroup/${((int.tryParse(id.substring('subgroup'.length)) ?? 0) + 1).toString().padLeft(2, '0')}'
+              : 'bus/${((int.tryParse(id.replaceFirst('bus', '')) ?? 0) + 1).toString().padLeft(2, '0')}';
 
   @override
   void openOutputProcessing(String target) {
