@@ -91,6 +91,21 @@ impl MackieSession {
         Ok(())
     }
 
+    /// Read one global word using the native single-parameter GET (0x12).
+    /// manufacturer mixer software 5.2 `singleParameterGetMandolinMessage` at 0x1001d0f90
+    /// builds [PID, 0x00010000 | target << 8]. Unlike sync-current-state
+    /// (0x06/6), this explicitly selects the global/type-2 bank. Only an
+    /// inbound value payload proves readback; an empty ACK proves nothing.
+    pub async fn request_global_value(&self, address: u32) -> anyhow::Result<()> {
+        self.send_request(
+            Command::ShowStatus,
+            build_read_request(address, 1, VALUE_TYPE_MUTE_GROUP),
+            REQUEST_TIMEOUT,
+        )
+        .await?;
+        Ok(())
+    }
+
     /// Probe read (the mixer answers reads with an empty body; the live
     /// value space only arrives via pushes). Noncontiguous sparse replies
     /// are withheld because this API has no way to return their addresses.

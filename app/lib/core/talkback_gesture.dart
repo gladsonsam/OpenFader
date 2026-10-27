@@ -105,12 +105,13 @@ class TalkbackGestureController {
     }
   }
 
-  void press(TalkbackModePreference mode) {
+  void press(TalkbackModePreference mode, {int elapsedMilliseconds = 0}) {
     poll();
     if (!canPress) return;
     final row = current()!;
     _error = null;
-    final press = _TalkbackPress(session(), nowMilliseconds(), mode, row);
+    final press = _TalkbackPress(
+        session(), nowMilliseconds() - elapsedMilliseconds, mode, row);
     _press = press;
     // Latch commits on a completed tap, so a cancelled tap never toggles.
     // Active peer talkback is not acquired just by touching the button.

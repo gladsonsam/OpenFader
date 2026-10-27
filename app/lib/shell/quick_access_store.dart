@@ -76,7 +76,8 @@ class ShellQuickAccessStore extends ShellStoreAdapter
   @override
   String? get talkbackGestureError => _talkback.error;
   @override
-  void pressTalkback() => _talkback.press(_talkbackMode);
+  void pressTalkback({int elapsedMilliseconds = 0}) =>
+      _talkback.press(_talkbackMode, elapsedMilliseconds: elapsedMilliseconds);
   @override
   void releaseTalkback() => _talkback.release();
   @override

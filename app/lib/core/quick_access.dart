@@ -20,7 +20,7 @@ abstract class QuickAccessStore extends ChangeNotifier {
   bool get talkbackHeld;
   bool get talkbackBusy;
   String? get talkbackGestureError;
-  void pressTalkback();
+  void pressTalkback({int elapsedMilliseconds = 0});
   void releaseTalkback();
   void cancelTalkback();
   void tapTalkback();
