@@ -127,161 +127,192 @@ class _QuickAccessPanelState extends State<QuickAccessPanel>
           }
           return Material(
             color: palette.panel,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          'Quick Access',
-                          style: TextStyle(
-                            color: palette.text1,
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                'Quick Access',
+                                style: TextStyle(
+                                  color: palette.text1,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Close Quick Access',
+                              onPressed: () => Navigator.of(context).pop(),
+                              icon: const Icon(Icons.close),
+                            ),
+                          ],
+                        ),
+                        const Text(
+                          'FX mute and tempo, talkback, solo, monitor and oscillator controls.',
+                        ),
+                        if (!currentSession)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 12),
+                            child: Text(
+                              'Connection changed. Close and reopen Quick Access.',
+                            ),
                           ),
-                        ),
-                      ),
-                      IconButton(
-                        tooltip: 'Close Quick Access',
-                        onPressed: () => Navigator.of(context).pop(),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
-                  ),
-                  const Text(
-                    'FX mute and tempo, talkback, solo, monitor and oscillator controls.',
-                  ),
-                  if (!currentSession)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 12),
-                      child: Text(
-                        'Connection changed. Close and reopen Quick Access.',
-                      ),
-                    ),
-                  for (final controls in groups.values) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      controls.first.destinationName,
-                      style: TextStyle(
-                        color: palette.text1,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    for (final control in controls)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(control.label),
-                        subtitle: Text(
-                          '${control.valueLabel ?? 'Unavailable'}'
-                          '${control.authority == 'accepted' ? ' · Unconfirmed' : ''}\n'
-                          '${control.description}',
-                        ),
-                        trailing: TextButton(
-                          onPressed: currentSession &&
-                                  store.isCurrent(control) &&
-                                  !_pending.contains(
-                                    '${control.target}/${control.id}',
-                                  )
-                              ? () => _run(control, tap: control.canTapTempo)
-                              : null,
-                          child: Text(
-                            control.canTapTempo
-                                ? 'Tap tempo'
-                                : 'Set ${control.value == control.choices.first.value ? control.choices.last.label : control.choices.first.label}',
+                        for (final controls in groups.values) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            controls.first.destinationName,
+                            style: TextStyle(
+                              color: palette.text1,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                      ),
-                  ],
-                  for (final controls in globals.values) ...[
-                    const Divider(),
-                    Text(
-                      controls.first.destinationName,
-                      style: TextStyle(
-                        color: palette.text1,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    for (final control in controls)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(control.label),
-                        subtitle: Text(
-                          '${control.valueLabel ?? 'Unavailable'}'
-                          '${control.authority == 'accepted' ? ' · Unconfirmed' : ''}',
-                        ),
-                        trailing: TextButton(
-                          onPressed: currentSession && store.isCurrent(control)
-                              ? () => _edit(control)
-                              : null,
-                          child: const Text('Edit'),
-                        ),
-                      ),
-                  ],
-                  if (store.talkbackGestureControl != null) ...[
-                    DropdownButtonFormField<TalkbackModePreference>(
-                      key: ValueKey(store.talkbackModePreference),
-                      initialValue: store.talkbackModePreference,
-                      decoration: const InputDecoration(
-                        labelText: 'Talkback mode preference (local)',
-                      ),
-                      items: const [
-                        DropdownMenuItem(
-                          value: TalkbackModePreference.momentary,
-                          child: Text('Momentary'),
-                        ),
-                        DropdownMenuItem(
-                          value: TalkbackModePreference.latch,
-                          child: Text('Latch'),
-                        ),
-                        DropdownMenuItem(
-                          value: TalkbackModePreference.auto,
-                          child: Text('Auto'),
-                        ),
+                          for (final control in controls)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(control.label),
+                              subtitle: Text(
+                                '${control.valueLabel ?? 'Unavailable'}'
+                                '${control.authority == 'accepted' ? ' · Unconfirmed' : ''}\n'
+                                '${control.description}',
+                              ),
+                              trailing: TextButton(
+                                onPressed: currentSession &&
+                                        store.isCurrent(control) &&
+                                        !_pending.contains(
+                                          '${control.target}/${control.id}',
+                                        )
+                                    ? () =>
+                                        _run(control, tap: control.canTapTempo)
+                                    : null,
+                                child: Text(
+                                  control.canTapTempo
+                                      ? 'Tap tempo'
+                                      : 'Set ${control.value == control.choices.first.value ? control.choices.last.label : control.choices.first.label}',
+                                ),
+                              ),
+                            ),
+                        ],
+                        for (final controls in globals.values) ...[
+                          const Divider(),
+                          Text(
+                            controls.first.destinationName,
+                            style: TextStyle(
+                              color: palette.text1,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          for (final control in controls)
+                            ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(control.label),
+                              subtitle: Text(
+                                '${control.valueLabel ?? 'Unavailable'}'
+                                '${control.authority == 'accepted' ? ' · Unconfirmed' : ''}',
+                              ),
+                              trailing: TextButton(
+                                onPressed:
+                                    currentSession && store.isCurrent(control)
+                                        ? () => _edit(control)
+                                        : null,
+                                child: const Text('Edit'),
+                              ),
+                            ),
+                        ],
+                        if (store.clearSoloLabel case final label?) ...[
+                          const Divider(),
+                          const Text(
+                            'Clears input solos. '
+                            'Output solos stay unchanged.',
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: currentSession && store.canClearSolo
+                                  ? () => store.clearSolo(_session)
+                                  : null,
+                              child: Text(label),
+                            ),
+                          ),
+                        ],
+                        if (groups.isEmpty &&
+                            globals.isEmpty &&
+                            store.clearSoloLabel == null)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 16),
+                            child: Text(
+                              'No Quick Access controls are available for this mixer.',
+                            ),
+                          ),
+                        if (_error != null)
+                          Text(
+                            _error!,
+                            style: TextStyle(color: palette.meterAmber),
+                          ),
                       ],
-                      onChanged: (mode) {
-                        if (mode != null) store.setTalkbackModePreference(mode);
-                      },
                     ),
-                    const Text('Momentary: hold to talk. Latch: tap to toggle. '
-                        'Auto: tap to latch, hold 500 ms or longer for momentary.'),
-                    TalkbackButton(
-                        store: store, currentSession: currentSession),
-                    if (store.talkbackGestureError case final error?)
-                      Text(error, style: TextStyle(color: palette.meterAmber)),
-                  ],
-                  if (store.clearSoloLabel case final label?) ...[
-                    const Divider(),
-                    const Text(
-                      'Clears input solos. '
-                      'Output solos stay unchanged.',
+                  ),
+                ),
+                // The footer is a sibling of the scroll view: a press here
+                // cannot become a settings scroll, even at the body's edge.
+                if (store.talkbackGestureControl != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Divider(),
+                        DropdownButtonFormField<TalkbackModePreference>(
+                          key: ValueKey(store.talkbackModePreference),
+                          initialValue: store.talkbackModePreference,
+                          decoration: const InputDecoration(
+                            labelText: 'Talkback mode preference (local)',
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: TalkbackModePreference.momentary,
+                              child: Text('Momentary'),
+                            ),
+                            DropdownMenuItem(
+                              value: TalkbackModePreference.latch,
+                              child: Text('Latch'),
+                            ),
+                            DropdownMenuItem(
+                              value: TalkbackModePreference.auto,
+                              child: Text('Auto'),
+                            ),
+                          ],
+                          onChanged: (mode) {
+                            if (mode != null) {
+                              store.setTalkbackModePreference(mode);
+                            }
+                          },
+                        ),
+                        const Text(
+                          'Momentary: hold to talk. Latch: tap to toggle. '
+                          'Auto: tap to latch, hold 500 ms or longer for momentary.',
+                        ),
+                        TalkbackButton(
+                          store: store,
+                          currentSession: currentSession,
+                        ),
+                        if (store.talkbackGestureError case final error?)
+                          Text(error,
+                              style: TextStyle(color: palette.meterAmber)),
+                      ],
                     ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton(
-                        onPressed: currentSession && store.canClearSolo
-                            ? () => store.clearSolo(_session)
-                            : null,
-                        child: Text(label),
-                      ),
-                    ),
-                  ],
-                  if (groups.isEmpty &&
-                      globals.isEmpty &&
-                      store.clearSoloLabel == null)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Text(
-                        'No Quick Access controls are available for this mixer.',
-                      ),
-                    ),
-                  if (_error != null)
-                    Text(_error!, style: TextStyle(color: palette.meterAmber)),
-                ],
-              ),
+                  ),
+              ],
             ),
           );
         },
