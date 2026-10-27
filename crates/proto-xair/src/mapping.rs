@@ -133,7 +133,12 @@ pub(super) fn strip_root(strip: u16) -> anyhow::Result<(openfader_core::StripKin
 pub(super) fn check_scope(param: &str, kind: openfader_core::StripKind) -> anyhow::Result<()> {
     let def = openfader_core::params::find(param)
         .ok_or_else(|| anyhow::anyhow!("xair: unknown param {param:?}"))?;
-    if !openfader_core::params::supports_kind(def, kind)
+    let fx_send_dca = kind == openfader_core::StripKind::FxSnd
+        && matches!(
+            param,
+            "dca1_assign" | "dca2_assign" | "dca3_assign" | "dca4_assign"
+        );
+    if (!openfader_core::params::supports_kind(def, kind) && !fx_send_dca)
         || (param == "comp_key_src" && kind == openfader_core::StripKind::Main)
     {
         anyhow::bail!("xair: {param} out of scope for {kind:?} strips");

@@ -1006,6 +1006,44 @@ pub trait MixerDriver: Send + Sync {
         let _ = (target, control, value, expected, snapshot, context);
         anyhow::bail!("guarded FX unavailable")
     }
+    /// Physical routing controls repeat session and policy authority at dispatch.
+    async fn set_routing_control_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<destinations::DestinationControl> {
+        let _ = (target, control, value, expected, snapshot, context);
+        anyhow::bail!("guarded routing control unavailable")
+    }
+    /// Output processor controls repeat engine authority at dispatch.
+    /// Fresh provider-owned automix snapshot, when supported.
+    async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> {
+        Ok(None)
+    }
+
+    async fn set_output_processor_guarded(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<Option<destinations::DestinationControl>> {
+        anyhow::ensure!(context(), "Output processor context changed");
+        let result = self
+            .set_destination_control_guarded(target, control, value, expected, snapshot)
+            .await?;
+        anyhow::ensure!(
+            context(),
+            "Output processor result uncertain: context changed"
+        );
+        Ok(result)
+    }
     /// Target solo repeats engine authority at dispatch.
     async fn set_target_solo(
         &self,

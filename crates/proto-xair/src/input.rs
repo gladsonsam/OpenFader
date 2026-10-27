@@ -32,8 +32,11 @@
 //! ACKed with zero state change, proving the SET encodings (`,i` for
 //! rtnsrc/invert/hpon, `,f` for rtntrim/hpf).
 //!
-//! UNSUPPORTED on this rig (doc-backed but live-silent — no guessing, so no
-//! driver arms; UIs must keep these hidden):
+//! Earlier probes reported the following leaves silent. On 2026-10-27,
+//! `config/insrc` and `preamp/rtnsw` answered on channels 1, 5, 9, 15 and 16.
+//! Read-only source labels now use them; source switching is not exposed.
+//!
+//! Historical observations:
 //! - `config/insrc` (input source select, firmware-doc `[0,18]`,
 //!   xair-api `inputsource`): NO reply on ch01/05/09/15/16 or `/rtn/aux`
 //!   (5 s timeout, two rounds). The per-channel source select is not
@@ -279,5 +282,25 @@ mod tests {
             args: vec![OscType::String("U18".into())],
         };
         assert!(usbreturn_from_msg(&wrong_kind).is_err());
+    }
+}
+
+/// Strict integer decoding for the active-source selector and its source index.
+pub(super) fn source_selector(msg: &OscMessage, max: i32) -> anyhow::Result<i32> {
+    match msg.args.as_slice() {
+        [OscType::Int(value)] if (0..=max).contains(value) => Ok(*value),
+        _ => anyhow::bail!("{}: invalid source selector", msg.addr),
+    }
+}
+
+/// The physical and USB source banks are zero-based on the mixer.
+pub(super) fn source_label(mode: i32, source: i32) -> String {
+    match (mode, source) {
+        (0, n @ 0..=15) => format!("Mic {}", n + 1),
+        (0, 16) => "Aux L".into(),
+        (0, 17) => "Aux R".into(),
+        (0, 18) => "Off".into(),
+        (1, n @ 0..=17) => format!("USB {}", n + 1),
+        _ => unreachable!("validated source selector"),
     }
 }

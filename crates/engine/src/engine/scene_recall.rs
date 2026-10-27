@@ -62,6 +62,7 @@ impl Engine {
                     "snapshot capture incomplete: strip {s} level, mute or name unavailable"
                 );
                 let mut params = HashMap::new();
+                let mut captured_context = std::collections::BTreeSet::new();
                 for id in &caps {
                     if *id == "fader"
                         || *id == "mute"
@@ -77,6 +78,19 @@ impl Engine {
                     if !scoped {
                         continue;
                     }
+                    let drv = self.drv(&driver);
+                    for context in drv.param_write_context(id) {
+                        captured_context.insert(*context);
+                        if !params.contains_key(*context) {
+                            let value = self.capture_read_param(&driver, strip, context).await.ok_or_else(|| {
+                                anyhow::anyhow!("snapshot capture incomplete: strip {s} {context} unavailable")
+                            })?;
+                            params.insert(context.to_string(), param_value_json(&value));
+                        }
+                    }
+                    if !drv.capture_param_applicable(strip, id).await? {
+                        continue;
+                    }
                     let captured = match self.drv(&driver).capture_param_override(strip, id).await {
                         Some(result) => Some(result.map_err(|error| {
                             anyhow::anyhow!("snapshot capture incomplete: strip {s} {id}: {error}")
@@ -87,6 +101,20 @@ impl Engine {
                         anyhow::anyhow!("snapshot capture incomplete: strip {s} {id} unavailable")
                     })?;
                     params.insert(id.to_string(), param_value_json(&pv));
+                }
+                for context in captured_context {
+                    let current = self
+                        .capture_read_param(&driver, strip, context)
+                        .await
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "snapshot capture incomplete: strip {s} {context} unavailable"
+                            )
+                        })?;
+                    anyhow::ensure!(
+                        params.get(context) == Some(&param_value_json(&current)),
+                        "snapshot capture incomplete: strip {s} {context} changed during capture"
+                    );
                 }
                 // Legacy documents use an empty name to mean no name capture.
                 // An explicit parameter preserves a deliberately blank name.
@@ -132,6 +160,7 @@ impl Engine {
                     on: row.on,
                     bypass: row.bypass,
                     params: fx::param_vec_to_map(&row.fx_type, &row.params),
+                    insert: None,
                 })
                 .collect(),
             FxFlavor::Numbered => {
@@ -155,9 +184,47 @@ impl Engine {
                     for index in 0..count {
                         let value = drv
                             .get_fx_param_with_type(slot, index as u8, Some(effect))
-                            .await?;
+                            .await
+                            .map_err(|error| {
+                                anyhow::anyhow!(
+                                    "snapshot capture incomplete: FX {slot} {fx_type} parameter {}: {error}",
+                                    index + 1
+                                )
+                            })?;
                         params.insert(format!("par{:02}", index + 1), value);
                     }
+                    anyhow::ensure!(
+                        self.connection_gen.load(Ordering::Acquire) == generation
+                            && !self.reads_suspended.load(Ordering::Acquire),
+                        "desk changed during snapshot capture"
+                    );
+                    let insert = if drv.fx_insert_supported() {
+                        let enabled = drv.get_fx_insert(slot).await.map_err(|error| {
+                            anyhow::anyhow!(
+                                "snapshot capture incomplete: FX {slot} insert: {error}"
+                            )
+                        })?;
+                        anyhow::ensure!(
+                            self.connection_gen.load(Ordering::Acquire) == generation
+                                && !self.reads_suspended.load(Ordering::Acquire),
+                            "desk changed during snapshot capture"
+                        );
+                        Some(StoredFxInsert {
+                            provider: driver.clone(),
+                            enabled,
+                        })
+                    } else {
+                        None
+                    };
+                    anyhow::ensure!(
+                        drv.fx_type_index(slot).await == Some(effect),
+                        "snapshot capture incomplete: FX {slot} type changed or became unavailable"
+                    );
+                    anyhow::ensure!(
+                        self.connection_gen.load(Ordering::Acquire) == generation
+                            && !self.reads_suspended.load(Ordering::Acquire),
+                        "desk changed during snapshot capture"
+                    );
                     // Numbered racks advertise type/params, with no on/bypass controls.
                     rows.push(StoredFx {
                         slot,
@@ -165,6 +232,7 @@ impl Engine {
                         on: true,
                         bypass: false,
                         params,
+                        insert,
                     });
                 }
                 rows
@@ -172,6 +240,73 @@ impl Engine {
             _ => Vec::new(),
         };
         let routing = self.capture_routing_on(&driver).await?;
+        if driver == "xair" {
+            super::routing::xair_scene_input_routes(&routing, &strips, &topo)?;
+        }
+        let mute_groups = if drv.mute_group_snapshot_supported() {
+            let mut masters = Vec::new();
+            for group in 0..drv.mute_group_count() {
+                let muted = drv.get_mute_group_verified(group).await.map_err(|error| {
+                    anyhow::anyhow!(
+                        "snapshot capture incomplete: mute group {}: {error}",
+                        group + 1
+                    )
+                })?;
+                anyhow::ensure!(
+                    self.connection_gen.load(Ordering::Acquire) == generation
+                        && !self.reads_suspended.load(Ordering::Acquire),
+                    "desk changed during snapshot capture"
+                );
+                masters.push(muted);
+            }
+            let mut memberships = Vec::new();
+            for family in &topo {
+                if !drv.mute_group_snapshot_applies(family.kind) {
+                    continue;
+                }
+                for index in family.first..family.first + family.count {
+                    let strip = StripId(index as u16);
+                    let mask = drv.snapshot_mute_group_mask(strip).await.map_err(|error| {
+                        anyhow::anyhow!("snapshot capture incomplete: strip {index} mute-group membership: {error}")
+                    })?;
+                    anyhow::ensure!(
+                        self.connection_gen.load(Ordering::Acquire) == generation
+                            && !self.reads_suspended.load(Ordering::Acquire),
+                        "desk changed during snapshot capture"
+                    );
+                    let key =
+                        openfader_core::strip_key_for_index(&topo, index).ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "snapshot capture incomplete: strip {index} has no stable key"
+                            )
+                        })?;
+                    memberships.push(StoredMuteGroupMembership {
+                        strip: strip.0,
+                        key,
+                        mask,
+                    });
+                }
+            }
+            Some(StoredMuteGroups {
+                provider: driver.clone(),
+                masters,
+                memberships,
+            })
+        } else {
+            None
+        };
+        let automix = drv
+            .read_automix_settings()
+            .await?
+            .map(|values| StoredAutomix {
+                provider: driver.clone(),
+                values,
+            });
+        anyhow::ensure!(
+            self.connection_gen.load(Ordering::Acquire) == generation
+                && !self.reads_suspended.load(Ordering::Acquire),
+            "desk changed during snapshot capture"
+        );
         let main_fader = self.main_fader_on(&driver).await;
         anyhow::ensure!(
             main_fader.is_some()
@@ -188,6 +323,8 @@ impl Engine {
             strips,
             fx,
             routing,
+            mute_groups,
+            automix,
         })
     }
 
@@ -217,6 +354,20 @@ impl Engine {
         check()?;
         let drv = self.drv(&driver);
         let topo = self.driver_topology(&driver);
+        let xair_input_routes = if driver == "xair" {
+            super::routing::xair_scene_input_routes(&scene.routing, &scene.strips, &topo)?
+        } else {
+            None
+        };
+        if let Some(groups) = scene
+            .mute_groups
+            .as_ref()
+            .filter(|groups| groups.provider == driver)
+        {
+            if scope.is_none_or(|sc| sc.allows_global("mute_groups") || sc.allows_group("config")) {
+                validate_mute_group_snapshot(groups, &topo, drv.as_ref())?;
+            }
+        }
         let resolve = |s: &StoredStrip| -> u16 {
             s.key
                 .as_deref()
@@ -241,6 +392,74 @@ impl Engine {
             .map(|s| (s, resolve(s)))
             .filter(|(_, r)| scope.is_none_or(|sc| sc.matches_strip(*r, &topo)))
             .collect();
+        // XR18 preamp writes affect every channel sharing that physical
+        // input, including channels outside the selected recall scope.
+        // Resolve affected members before the first write so lock overrides
+        // are reported for the complete preamp target.
+        let mut affected_preamp = std::collections::BTreeSet::new();
+        let late_affected_preamp = std::sync::Mutex::new(std::collections::BTreeSet::new());
+        if scope.is_none_or(|sc| sc.allows_global("routing")) {
+            if let Some(routes) = &xair_input_routes {
+                for (strip, wanted) in routes {
+                    for (target, desired) in [
+                        ("analog", wanted.analog),
+                        ("usb", wanted.usb),
+                        ("bank", wanted.bank),
+                    ] {
+                        check()?;
+                        let guard = drv
+                            .input_route_guard(StripId(*strip))
+                            .await?
+                            .ok_or_else(|| anyhow::anyhow!("snapshot input route unavailable"))?;
+                        let current = guard
+                            .get(target)
+                            .and_then(Value::as_i64)
+                            .ok_or_else(|| anyhow::anyhow!("snapshot input route unavailable"))?;
+                        if current == i64::from(desired) {
+                            continue;
+                        }
+                        let source = match (target, desired) {
+                            ("analog", 18) => None,
+                            ("analog", n @ 0..=15) => Some(("Mic", (n + 1) as u8)),
+                            ("analog", n @ 16..=17) => Some(("Aux", (n - 15) as u8)),
+                            ("usb", n @ 0..=17) => Some(("USB", (n + 1) as u8)),
+                            ("bank", n @ 0..=1) => Some(("Bank", (n + 1) as u8)),
+                            _ => anyhow::bail!("snapshot input route unavailable"),
+                        };
+                        drv.patch_target_guarded(
+                            StripId(*strip),
+                            target,
+                            source,
+                            Some(&guard),
+                            &|members| {
+                                check()?;
+                                late_affected_preamp
+                                    .lock()
+                                    .unwrap()
+                                    .extend(members.iter().map(|m| m.0));
+                                Ok(())
+                            },
+                        )
+                        .await?;
+                        self.apply_inbound(*strip, "_preamp_routes_dirty", &ParamValue::Bool(true));
+                    }
+                }
+            }
+        }
+        if driver == "xair" {
+            for (scene_strip, strip) in &strips {
+                let has_preamp = ["gain", "phantom"].iter().any(|id| {
+                    scene_strip.params.contains_key(*id)
+                        && scope.is_none_or(|sc| sc.allows_param_for(drv.as_ref(), id))
+                });
+                if has_preamp {
+                    check()?;
+                    for member in drv.control_members(StripId(*strip), "gain").await? {
+                        affected_preamp.insert(member.0);
+                    }
+                }
+            }
+        }
         // Faders ride the single shared fade (legacy order: pre-unmute
         // targets, ramp, snap, target mutes); params/FX/routing/main follow.
         let want_fader = scope.is_none_or(|sc| sc.allows_param("fader"));
@@ -309,6 +528,11 @@ impl Engine {
             let mut ids: Vec<&String> = s.params.keys().collect();
             ids.sort_by_key(|id| safe_order_key(id));
             for id in ids {
+                // A scene captured on another provider (or before a field
+                // became derived/read-only) may still carry this identifier.
+                if drv.param_read_only(id) {
+                    continue;
+                }
                 if scope.is_some_and(|sc| !sc.allows_param_for(self.drv(&driver).as_ref(), id)) {
                     continue;
                 }
@@ -331,6 +555,16 @@ impl Engine {
                     .collect();
                 let rr = if expected.is_empty() {
                     drv.set_param(StripId(*r), id, pv).await
+                } else if driver == "xair" && matches!(id.as_str(), "gain" | "phantom") {
+                    drv.set_param_guarded_checked(StripId(*r), id, pv, &expected, &|members| {
+                        check()?;
+                        late_affected_preamp
+                            .lock()
+                            .unwrap()
+                            .extend(members.iter().map(|m| m.0));
+                        Ok(())
+                    })
+                    .await
                 } else {
                     drv.set_param_guarded(StripId(*r), id, pv, &expected).await
                 };
@@ -385,6 +619,51 @@ impl Engine {
                 });
             }
         }
+        if let Some(automix) = scene.automix.as_ref().filter(|a| a.provider == driver) {
+            if scope.is_none_or(|sc| sc.allows_global("automix") || sc.allows_group("config")) {
+                check()?;
+                let current = drv
+                    .read_automix_settings()
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("Automix snapshot unavailable on this mixer"))?;
+                for (index, id) in ["enable_x", "enable_y", "lock_x", "lock_y"]
+                    .iter()
+                    .enumerate()
+                {
+                    if current[index] == automix.values[index] {
+                        continue;
+                    }
+                    check()?;
+                    let block: Vec<_> = drv
+                        .destination_controls()
+                        .into_iter()
+                        .filter(|r| r.surface == "automix_settings" && r.target == "automix")
+                        .collect();
+                    anyhow::ensure!(
+                        block.len() == 4
+                            && block[index].current.as_ref().is_some_and(|v| v.verified),
+                        "Automix snapshot readback unavailable"
+                    );
+                    let expected = block[index].current.as_ref().unwrap().value;
+                    let context = || check().is_ok();
+                    drv.set_output_processor_guarded(
+                        "automix",
+                        id,
+                        if automix.values[index] { 1.0 } else { 0.0 },
+                        expected,
+                        &block,
+                        &context,
+                    )
+                    .await?
+                    .ok_or_else(|| anyhow::anyhow!("Automix recall unconfirmed"))?;
+                }
+                check()?;
+                anyhow::ensure!(
+                    drv.read_automix_settings().await? == Some(automix.values),
+                    "Automix recall readback changed; result uncertain"
+                );
+            }
+        }
         // FX + routing snapshots report write failures on every provider,
         // gated on their globals; Main LR on its own global.
         if scope.is_none_or(|sc| sc.allows_global("fx")) {
@@ -392,7 +671,22 @@ impl Engine {
         }
         if scope.is_none_or(|sc| sc.allows_global("routing")) {
             check()?;
-            self.recall_routing(&scene.routing, writer, out, &check)
+            let remaining: Vec<_> = scene
+                .routing
+                .iter()
+                .filter(|r| {
+                    driver != "xair" || !matches!(r.target.as_str(), "analog" | "usb" | "bank")
+                })
+                .cloned()
+                .collect();
+            self.recall_routing(&remaining, writer, out, &check).await?;
+        }
+        if let Some(groups) = scene
+            .mute_groups
+            .as_ref()
+            .filter(|groups| groups.provider == driver)
+        {
+            self.recall_mute_groups(groups, scope, &topo, drv.as_ref(), &check, out)
                 .await?;
         }
         if scope.is_none_or(|sc| sc.allows_global("main")) {
@@ -421,6 +715,13 @@ impl Engine {
                 }
             }
         }
+        affected_preamp.extend(late_affected_preamp.into_inner().unwrap());
+        for r in affected_preamp {
+            if self.lock_holder(r).is_some_and(|holder| holder != writer) && !overrode.contains(&r)
+            {
+                overrode.push(r);
+            }
+        }
         overrode.sort_unstable();
         if !failed.is_empty() {
             anyhow::bail!(
@@ -436,6 +737,151 @@ impl Engine {
         }
         Ok(overrode)
     }
+
+    async fn recall_mute_groups(
+        &self,
+        groups: &StoredMuteGroups,
+        scope: Option<&RecallScope>,
+        topo: &[openfader_core::StripFamily],
+        drv: &dyn DynDriver,
+        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
+        out: &mut Vec<Event>,
+    ) -> anyhow::Result<()> {
+        if scope.is_some_and(|sc| !sc.allows_global("mute_groups") && !sc.allows_group("config")) {
+            return Ok(());
+        }
+        validate_mute_group_snapshot(groups, topo, drv)?;
+        let count = usize::from(drv.mute_group_count());
+        anyhow::ensure!(
+            drv.mute_group_snapshot_supported() && count <= 32 && groups.masters.len() == count,
+            "mute-group snapshot is incompatible with this mixer"
+        );
+        let max_mask = if count == 32 {
+            u32::MAX
+        } else {
+            (1u32 << count) - 1
+        };
+        let mut members = Vec::new();
+        for member in &groups.memberships {
+            anyhow::ensure!(member.mask <= max_mask, "invalid mute-group snapshot mask");
+            let index = resolve_mute_group_strip(topo, &member.key).ok_or_else(|| {
+                anyhow::anyhow!("mute-group snapshot strip {} unavailable", member.key)
+            })?;
+            let family = topo
+                .iter()
+                .find(|f| index >= f.first && index < f.first + f.count)
+                .ok_or_else(|| {
+                    anyhow::anyhow!("mute-group snapshot strip {} unavailable", member.key)
+                })?;
+            anyhow::ensure!(
+                drv.mute_group_snapshot_applies(family.kind),
+                "mute-group membership unavailable for {}",
+                member.key
+            );
+            if scope.is_none_or(|sc| {
+                let exact_key = sc
+                    .strip_keys
+                    .as_ref()
+                    .is_some_and(|keys| keys.contains(&member.key));
+                (exact_key || sc.matches_strip(index as u16, topo)) && sc.allows_group("config")
+            }) {
+                members.push((index as u16, member));
+            }
+        }
+        for (index, member) in members {
+            check()?;
+            let started = Instant::now();
+            drv.restore_mute_group_mask(StripId(index), member.mask, check)
+                .await
+                .map_err(|error| anyhow::anyhow!("snapshot recall incomplete: mute-group membership for {}: {error}; mixer may be partly changed", member.key))?;
+            check()?;
+            for group in 0..count {
+                self.evict_param_unless_fresh(
+                    StripId(index),
+                    &format!("_mg{}", group + 1),
+                    started,
+                );
+                out.push(Event::MuteGroupAssign {
+                    ch: index,
+                    group: group as u8,
+                    member: member.mask & (1 << group) != 0,
+                    key: Some(member.key.clone()),
+                });
+            }
+        }
+        if scope.is_none_or(|sc| sc.allows_global("mute_groups")) {
+            for (group, &muted) in groups.masters.iter().enumerate() {
+                check()?;
+                let started = Instant::now();
+                drv.restore_mute_group_master(group as u8, muted, check).await.map_err(|error| {
+                    anyhow::anyhow!("snapshot recall incomplete: mute group {}: {error}; mixer may be partly changed", group + 1)
+                })?;
+                check()?;
+                self.evict_param_unless_fresh(StripId(group as u16), "_mute_group", started);
+                out.push(Event::MuteGroup {
+                    group: group as u8,
+                    muted,
+                    key: Some(format!("mgroup/{:02}", group + 1)),
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+fn validate_mute_group_snapshot(
+    groups: &StoredMuteGroups,
+    topo: &[openfader_core::StripFamily],
+    drv: &dyn DynDriver,
+) -> anyhow::Result<()> {
+    let count = usize::from(drv.mute_group_count());
+    anyhow::ensure!(
+        drv.mute_group_snapshot_supported()
+            && count > 0
+            && count <= 32
+            && groups.masters.len() == count,
+        "mute-group snapshot is incompatible with this mixer"
+    );
+    let max_mask = if count == 32 {
+        u32::MAX
+    } else {
+        (1u32 << count) - 1
+    };
+    let expected_count: usize = topo
+        .iter()
+        .filter(|f| drv.mute_group_snapshot_applies(f.kind))
+        .map(|f| f.count)
+        .sum();
+    anyhow::ensure!(
+        groups.memberships.len() == expected_count,
+        "mute-group snapshot has incomplete memberships"
+    );
+    let mut seen = std::collections::HashSet::new();
+    for member in &groups.memberships {
+        anyhow::ensure!(member.mask <= max_mask, "invalid mute-group snapshot mask");
+        let index = resolve_mute_group_strip(topo, &member.key).ok_or_else(|| {
+            anyhow::anyhow!("mute-group snapshot strip {} unavailable", member.key)
+        })?;
+        let family = topo
+            .iter()
+            .find(|f| index >= f.first && index < f.first + f.count)
+            .ok_or_else(|| {
+                anyhow::anyhow!("mute-group snapshot strip {} unavailable", member.key)
+            })?;
+        anyhow::ensure!(
+            drv.mute_group_snapshot_applies(family.kind) && seen.insert(index),
+            "mute-group snapshot strip {} is invalid or duplicated",
+            member.key
+        );
+    }
+    Ok(())
+}
+
+fn resolve_mute_group_strip(topo: &[openfader_core::StripFamily], key: &str) -> Option<usize> {
+    topo.iter()
+        .flat_map(|family| family.first..family.first + family.count)
+        .find(|&index| openfader_core::strip_key_for_index(topo, index).as_deref() == Some(key))
+        .or_else(|| openfader_core::strip_index_for_key(topo, key))
 }
 
 /// Write-through [`openfader_core::show::FadeDriver`]: numbered-scene recall

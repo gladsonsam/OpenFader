@@ -149,6 +149,7 @@ impl OutputProcessingCache {
                     max: spec.max,
                     unit: spec.unit.into(),
                     decimals: 2,
+                    step: None,
                 }),
                 current: self
                     .ready(spec)

@@ -37,6 +37,19 @@ pub fn automix_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<(bool, f32)> {
     }
 }
 
+/// Preserve the firmware's OFF / X / Y group, rather than collapsing it to a boolean.
+pub fn automix_group_from_msg(msg: &rosc::OscMessage) -> anyhow::Result<(i32, f32)> {
+    match msg.args.as_slice() {
+        [rosc::OscType::Int(group @ 0..=2), rosc::OscType::Float(w)] => {
+            Ok((*group, wire_to_weight(*w)?))
+        }
+        other => anyhow::bail!(
+            "{}: automix needs group 0..2 and weight, got {other:?}",
+            msg.addr
+        ),
+    }
+}
+
 pub fn automix_to_args(on: bool, weight: f32) -> anyhow::Result<Vec<rosc::OscType>> {
     Ok(vec![
         rosc::OscType::Int(i32::from(on)),

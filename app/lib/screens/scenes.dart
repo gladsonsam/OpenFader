@@ -23,7 +23,8 @@ class SceneEntryVm {
 }
 
 // Implemented by the shell over the engine or a fixture sim.
-abstract class ScenesStore extends ChangeNotifier implements NativeLibraryStore {
+abstract class ScenesStore extends ChangeNotifier
+    implements NativeLibraryStore {
   @override
   NativeLibraryVm? get nativeLibrary => null;
   @override
@@ -35,7 +36,8 @@ abstract class ScenesStore extends ChangeNotifier implements NativeLibraryStore 
   @override
   Object get nativeContext => actionContext;
   @override
-  Future<void> nativeAction(Map<String, dynamic> action, Object captured) async {}
+  Future<void> nativeAction(
+      Map<String, dynamic> action, Object captured) async {}
   @override
   void cancelNativeAction() {}
   List<SceneEntryVm> get entries;
@@ -198,8 +200,10 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                           color: ConsolePalette.of(context).text1)),
                   const SizedBox(height: 10),
                   NativeLibrarySection(store: store),
-                  const SizedBox(height: 10),
-                  _NativeSnapshotsSection(view: store.nativeSnapshots),
+                  if (store.nativeSnapshots.driver != 'xair') ...[
+                    const SizedBox(height: 10),
+                    _NativeSnapshotsSection(view: store.nativeSnapshots),
+                  ],
                   const SizedBox(height: 16),
                   const _SectionTitle('OpenFader local library'),
                   if (store.status != null)

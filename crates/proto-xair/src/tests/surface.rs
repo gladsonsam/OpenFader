@@ -295,8 +295,11 @@ async fn driver_aux_strip_param_path() {
 #[tokio::test]
 async fn driver_headamp_gain_phantom_roundtrip() {
     let (driver, _) = connected_driver().await;
+    let expected = [("source".to_string(), ParamValue::Text("Mic 1".to_string()))]
+        .into_iter()
+        .collect();
     driver
-        .set_param(StripId(0), "gain", ParamValue::Float(24.0))
+        .write_active_preamp_guarded(StripId(0), "gain", ParamValue::Float(24.0), &expected)
         .await
         .unwrap();
     let ParamValue::Float(db) = driver.get_param(StripId(0), "gain").await.unwrap() else {
@@ -315,7 +318,7 @@ async fn driver_headamp_gain_phantom_roundtrip() {
         .is_err());
 
     driver
-        .set_param(StripId(0), "phantom", ParamValue::Bool(true))
+        .write_active_preamp_guarded(StripId(0), "phantom", ParamValue::Bool(true), &expected)
         .await
         .unwrap();
     assert_eq!(
@@ -323,7 +326,7 @@ async fn driver_headamp_gain_phantom_roundtrip() {
         ParamValue::Bool(true)
     );
     driver
-        .set_param(StripId(0), "phantom", ParamValue::Bool(false))
+        .write_active_preamp_guarded(StripId(0), "phantom", ParamValue::Bool(false), &expected)
         .await
         .unwrap();
     assert_eq!(

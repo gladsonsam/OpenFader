@@ -434,6 +434,7 @@ impl Field {
             } else {
                 2
             },
+            step: None,
         });
         row.tap_tempo = self.tap;
         row.current = value.map(|value| DestinationValue {

@@ -230,6 +230,8 @@ impl FakeMixer {
                         // stays silent there exactly like the live desk.
                         (a, Some(OscType::Int(i)))
                             if a.ends_with("/config/rtnsrc")
+                                || a.ends_with("/config/insrc")
+                                || a.ends_with("/preamp/rtnsw")
                                 || a.ends_with("/preamp/invert")
                                 || a.ends_with("/preamp/hpon") =>
                         {
@@ -448,6 +450,8 @@ impl FakeMixer {
                         // read back 0.0 wire (rtntrim −18 dB, hpf 20 Hz).
                         (a, None)
                             if a.ends_with("/config/rtnsrc")
+                                || a.ends_with("/config/insrc")
+                                || a.ends_with("/preamp/rtnsw")
                                 || a.ends_with("/preamp/invert")
                                 || a.ends_with("/preamp/hpon") =>
                         {
@@ -457,7 +461,17 @@ impl FakeMixer {
                                 .unwrap()
                                 .get(a)
                                 .copied()
-                                .unwrap_or(0);
+                                .unwrap_or_else(|| {
+                                    if a.ends_with("/config/insrc") {
+                                        a.strip_prefix("/ch/")
+                                            .and_then(|s| s.split('/').next())
+                                            .and_then(|s| s.parse::<i32>().ok())
+                                            .unwrap_or(1)
+                                            - 1
+                                    } else {
+                                        0
+                                    }
+                                });
                             Some(osc::encode_message(a, vec![OscType::Int(v)]).unwrap())
                         }
                         (a, None)
@@ -528,6 +542,7 @@ impl FakeMixer {
                             if a.ends_with("/config/color")
                                 || a.ends_with("/config/icon")
                                 || a.ends_with("/config/link")
+                                || a.starts_with("/config/chlink/")
                                 || a.ends_with("/gate/mode")
                                 || a.ends_with("/gate/keysrc")
                                 || a.ends_with("/gate/filter/on")
@@ -635,6 +650,7 @@ impl FakeMixer {
                             if a.ends_with("/config/color")
                                 || a.ends_with("/config/icon")
                                 || a.ends_with("/config/link")
+                                || a.starts_with("/config/chlink/")
                                 || a.ends_with("/gate/mode")
                                 || a.ends_with("/gate/keysrc")
                                 || a.ends_with("/gate/filter/on")

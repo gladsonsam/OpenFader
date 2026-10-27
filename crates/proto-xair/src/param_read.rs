@@ -8,6 +8,12 @@ impl XAirDriver {
         param: &str,
     ) -> anyhow::Result<ParamValue> {
         let (kind, root) = strip_root(strip.0)?;
+        if param == "automix_group" {
+            anyhow::ensure!(
+                kind == openfader_core::StripKind::In,
+                "automix group is input-only"
+            );
+        }
         if openfader_core::params::find(param).is_some() {
             check_scope(param, kind)?;
         }
@@ -53,6 +59,8 @@ impl XAirDriver {
             "fader" => self.get_fader(strip).await.map(ParamValue::Float),
             "mute" => self.get_mute(strip).await.map(ParamValue::Bool),
             "name" => self.get_name(strip).await.map(ParamValue::Text),
+            "source" => self.active_source_label(strip).await.map(ParamValue::Text),
+            "xair:preamp_state" => self.active_preamp_state(strip).await.map(ParamValue::Text),
             "color" => {
                 let guard = self.session().await?;
                 let reply = guard
@@ -73,25 +81,8 @@ impl XAirDriver {
                 look::int_from_msg(&reply, look::ICON_MIN, look::ICON_MAX, "icon")
                     .map(|i| ParamValue::Float(i as f32))
             }
-            "link" => {
-                let guard = self.session().await?;
-                let reply = guard
-                    .as_ref()
-                    .unwrap()
-                    .query(&look::strip_link(&root))
-                    .await?;
-                osc::is_on(&reply).map(ParamValue::Bool)
-            }
-            "gain" => {
-                let ch = ch()?;
-                let guard = self.session().await?;
-                let reply = guard
-                    .as_ref()
-                    .unwrap()
-                    .query(&headamp::headamp_gain(ch))
-                    .await?;
-                headamp::wire_to_db(osc::fader_value(&reply)?).map(ParamValue::Float)
-            }
+            "link" => self.read_stereo_link(strip).await.map(ParamValue::Bool),
+            "gain" | "phantom" => self.read_active_preamp(strip, param).await,
             "hpf_on" => {
                 let ch = ch()?;
                 let guard = self.session().await?;
@@ -112,7 +103,7 @@ impl XAirDriver {
                     .await?;
                 input::hpf_wire_to_hz(osc::fader_value(&reply)?).map(ParamValue::Float)
             }
-            "automix_on" => {
+            "automix_on" | "automix_group" => {
                 // No standalone leaf (the desk is silent on
                 // `{root}/automix/on`): read the container and take pos0.
                 let guard = self.session().await?;
@@ -121,13 +112,18 @@ impl XAirDriver {
                     .unwrap()
                     .query(&automix::automix(&root))
                     .await?;
-                automix::automix_from_msg(&reply).map(|(on, _)| ParamValue::Bool(on))
+                let (group, _) = automix::automix_group_from_msg(&reply)?;
+                Ok(if param == "automix_on" {
+                    ParamValue::Bool(group != 0)
+                } else {
+                    ParamValue::Float(group as f32)
+                })
             }
             p if p.starts_with("dca") => {
                 // DCA membership bits of the `{root}/grp/dca` bitmask
                 // (the scope check above already confined this to strips
                 // whose root answers the leaf — channels, FX returns,
-                // buses; main/DCA/FX-send masters are silent there).
+                // buses and FX-send masters; main/DCA are silent there).
                 let group = dca_assign(p)?;
                 let guard = self.session().await?;
                 let reply = guard

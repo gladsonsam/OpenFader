@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import '../core/access_limits.dart';
+import '../core/destination_controls.dart';
 import '../screens/routing.dart';
 import 'store_adapter.dart';
 
@@ -60,6 +61,32 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
   @override
   bool get routingSupported =>
       engine.routingCaps['supported'] == true && _planes.isNotEmpty;
+
+  @override
+  int get controlAccessEpoch => app.controlAccessEpoch;
+
+  @override
+  DestinationControlVm? get tapControl {
+    final id = _selected?['id'];
+    return engine.destinationControls
+        .where((control) =>
+            control.target == id &&
+            control.surface == 'routing' &&
+            control.id == 'tap')
+        .firstOrNull;
+  }
+
+  @override
+  bool tapIsCurrent(DestinationControlVm control) =>
+      canPatch &&
+      control.target == _selected?['id'] &&
+      app.destinationControlIsCurrent(control);
+
+  @override
+  Future<String?> setTapControl(DestinationControlVm control, double value) =>
+      tapIsCurrent(control)
+          ? app.setDestinationControl(control, value)
+          : Future.value('Routing changed; reopen the control.');
 
   Map? _route(Map d) {
     final route = engine.routing
@@ -224,7 +251,8 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
           RouteSrcTile(
             label: _sourceLabel({'group': group, 'index': i}),
             displayGroupLabel:
-                _groups.where((g) => g['key'] == group).firstOrNull?['count'] == 1
+                _groups.where((g) => g['key'] == group).firstOrNull?['count'] ==
+                        1
                     ? null
                     : groupLabel(group),
             group: group,
@@ -271,7 +299,7 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
         'epoch': engine.routingCaps['epoch'],
         'destination': d['id'],
         'expected': _route(d)!['label'],
-        if (d['output'] == true) 'guard': _route(d)!['guard'],
+        if (_route(d)!['guard'] != null) 'guard': _route(d)!['guard'],
         'source': source,
       }),
     );

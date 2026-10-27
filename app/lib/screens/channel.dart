@@ -82,6 +82,7 @@ abstract class ChannelStore extends ChangeNotifier
           AudioSpectrumPeaks.empty());
 
   void resetAudioSpectrumPeaks() {}
+  void setChannelSpectrumActive(bool active) {}
   bool get hasDynamicsMeters => false;
   ValueListenable<ChannelDynamicsMetersVm?> get dynamicsMeters =>
       const AlwaysStoppedAnimation<ChannelDynamicsMetersVm?>(null);
@@ -90,6 +91,11 @@ abstract class ChannelStore extends ChangeNotifier
 
   // --- snapshots ---
   ChannelPreampVm get preamp;
+
+  /// Null means unknown or not a source-dependent provider.
+  bool? get preampGainAvailable => null;
+  bool? get preampPhantomAvailable => null;
+  List<double>? get preampGainRange => null;
   bool get hasDelay => false;
   ChannelDelayVm? get delay => null;
   void setDelay(ChannelDelayVm snapshot, double value) {}
@@ -112,6 +118,9 @@ abstract class ChannelStore extends ChangeNotifier
   String viewGroupLabel(int group) => 'View ${group + 1}';
   void setViewGroupAssigned(int group, bool on) {}
 
+  List<DestinationControlVm> get rtaSettings => const [];
+  List<DestinationControlVm> get inputInserts => const [];
+  List<DestinationControlVm> get automixSettings => const [];
   ChannelEqVm get eq;
   ChannelDynVm get gate;
   ChannelDynVm get comp;
@@ -402,7 +411,8 @@ class _SideMenu extends StatelessWidget {
       ),
       child: LayoutBuilder(builder: (context, constraints) {
         final tabs = _availableTabs(store);
-        final height = (constraints.maxHeight / tabs.length).clamp(110.0, 190.0);
+        final height =
+            (constraints.maxHeight / tabs.length).clamp(110.0, 190.0);
         return SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -411,10 +421,10 @@ class _SideMenu extends StatelessWidget {
                 SizedBox(
                   height: height,
                   child: _MenuRow(
-                    store: store,
-                    tab: t,
-                    active: t == tab,
-                    onTap: () => onTab(t)),
+                      store: store,
+                      tab: t,
+                      active: t == tab,
+                      onTap: () => onTab(t)),
                 ),
             ],
           ),

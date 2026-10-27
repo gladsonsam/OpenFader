@@ -170,15 +170,12 @@ pub const XAIR_COLOR_SWATCHES: &[openfader_core::params::ParamSwatch] = &[
 /// Total addressable strips on the XR18 map (16 + 4 + 6 + 4 + 1 + 4 + 1).
 pub const XAIR_STRIPS: usize = 36;
 
-/// Loopback-tested param-plane capabilities: the ids this driver implements
-/// with `get_param`/`set_param` (each covered by a strict fake-desk loopback
-/// test below, and every address confirmed against the owner XR18 FW 1.20 —
-/// see XR18 baseline notes). Everything else in
+/// Param-plane capabilities implemented by this driver. Most have a strict
+/// fake-desk loopback and XR18 FW 1.20 evidence; `source` is a read-only
+/// derived value verified through live reads. Everything else in
 /// [`openfader_core::params::CATALOGUE`] is reported in `caps.unsupported`
 /// so the UI hides it. Honest exclusions: `delay_on`/`delay_ms`
-/// (X32-only), `hpf_slope` (X32-only), `source` (`insrc` live-silent on FW
-/// 1.20), `icon` (no such leaf in the firmware map), `link` (stereo link is
-/// the global `/config/chlink/1-2…`, not a per-channel leaf — silent),
+/// (X32-only), `hpf_slope` (X32-only), `icon` (no such leaf in the firmware map),
 /// `send1..10_on` + all `auxN_mute`/`fxN_mute` (the firmware send block has
 /// no on/off leaf and `/ch/NN/mix/MM/on` is live-silent — baseline T7),
 /// `send11..16_*` (only 6+4 send slots), per-channel `eq5_*` (channels and
@@ -186,13 +183,16 @@ pub const XAIR_STRIPS: usize = 36;
 /// `solo_dim`/`solo_mute`/`solo_level`/`solo_source` (global
 /// `/config/solo/*`, driven via driver methods, not strip params) and
 /// `fx_insert` (slot-addressed `/fx/N/insert`, likewise a driver method).
+/// `source` is a read-only active-source label, not an input patch command.
 pub const XAIR_CAPABILITIES: &[&str] = &[
     "fader",
     "mute",
     "name",
+    "link",
+    "source",
+    "xair:preamp_state",
     "gain",
     "phantom",
-    "usbreturn",
     "trim",
     "polarity",
     "pan",
@@ -204,6 +204,7 @@ pub const XAIR_CAPABILITIES: &[&str] = &[
     "hpf_on",
     "hpf_freq",
     "automix_on",
+    "automix_group",
     "automix_weight",
     "insert_on",
     "insert_sel",

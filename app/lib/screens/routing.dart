@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../palette.dart';
+import '../core/destination_controls.dart';
+import '../widgets/destination_control_editor.dart';
 
 class RouteStrip {
   final int strip;
@@ -64,6 +66,12 @@ abstract class RoutingStore extends ChangeNotifier {
   List<RouteSrcTile> get srcTiles;
   bool get routingSupported;
   bool get canPatch => routingSupported;
+  int get controlAccessEpoch => 0;
+  DestinationControlVm? get tapControl => null;
+  bool tapIsCurrent(DestinationControlVm control) => false;
+  Future<String?> setTapControl(
+          DestinationControlVm control, double value) async =>
+      'Routing tap unavailable.';
 
   void selectStrip(int strip);
   void selectGroup(String group);
@@ -111,12 +119,31 @@ class U4RoutingPage extends StatelessWidget {
                       : () => store.clearPatch(selectedStrip!,
                           operationKey: operationKey),
                 ),
+                if (store.tapControl case final control?)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: TextButton(
+                      onPressed: store.tapIsCurrent(control)
+                          ? () => showDialog<void>(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (_) => DestinationControlEditor(
+                                  changes: store,
+                                  accessEpoch: () => store.controlAccessEpoch,
+                                  isCurrent: store.tapIsCurrent,
+                                  apply: store.setTapControl,
+                                  control: control,
+                                ),
+                              )
+                          : null,
+                      child: Text(
+                          'Tap position: ${control.valueLabel ?? 'Unavailable'}'),
+                    ),
+                  ),
                 if (store.targets.length > 1)
                   _GroupChips(
                     groups: [for (final t in store.targets) t.key],
-                    labels: {
-                      for (final t in store.targets) t.key: t.label
-                    },
+                    labels: {for (final t in store.targets) t.key: t.label},
                     active: store.target,
                     onPick: store.selectTarget,
                   ),

@@ -420,9 +420,34 @@ impl Engine {
         check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<()> {
         for row in fx {
+            if let Some(insert) = &row.insert {
+                if insert.provider == drv.name() {
+                    anyhow::ensure!(
+                        drv.fx_insert_supported(),
+                        "FX insert unavailable on {}",
+                        drv.name()
+                    );
+                    anyhow::ensure!(
+                        (1..=drv.fx_slot_count()).contains(&usize::from(row.slot)),
+                        "invalid FX insert slot {}",
+                        row.slot
+                    );
+                }
+            }
+        }
+        for row in fx {
             check()?;
             drv.fx_apply_row(row.slot, &row.fx_type, row.on, row.bypass, &row.params)
                 .await?;
+            check()?;
+            if let Some(insert) = row
+                .insert
+                .as_ref()
+                .filter(|insert| insert.provider == drv.name())
+            {
+                drv.set_fx_insert(row.slot, insert.enabled).await?;
+                check()?;
+            }
         }
         Ok(())
     }

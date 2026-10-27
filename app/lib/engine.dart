@@ -317,8 +317,8 @@ class Cmds {
             (throw ArgumentError.value(target.value, 'expected',
                 'Destination value is outside its wire domain')),
         'value': target.wireValue(value) ??
-            (throw ArgumentError.value(
-                value, 'value', 'Destination value is outside its wire domain')),
+            (throw ArgumentError.value(value, 'value',
+                'Destination value is outside its wire domain')),
       });
   static String paramGuarded(
           int ch, String field, Object value, Map<String, Object> expect) =>
@@ -586,7 +586,9 @@ class EngineState {
     if (!connected) return const OutputMeterVm();
     if (outputMeterTargets.contains(target)) {
       final sample = _outputTelemetry.samples[target];
-      return sample != null && sample.isFresh ? sample.meter : const OutputMeterVm();
+      return sample != null && sample.isFresh
+          ? sample.meter
+          : const OutputMeterVm();
     }
     // Existing flat topology meters remain the fallback for other providers.
     final index = strips.indexWhere((strip) => strip.key == target);
@@ -595,6 +597,7 @@ class EngineState {
     }
     return OutputMeterVm(levels: [meters[index].clamp(0.0, 1.0)]);
   }
+
   List<Map<String, dynamic>> topology = [];
   List<List<int>> stereoPairs = const [];
   Map<String, dynamic> routingCaps = {};
@@ -849,7 +852,8 @@ class EngineState {
           for (final target in (e['output_meter_targets'] as List? ?? const []))
             if (target is String) target,
         ]);
-        _outputTelemetry.samples.removeWhere((key, _) => !outputMeterTargets.contains(key));
+        _outputTelemetry.samples
+            .removeWhere((key, _) => !outputMeterTargets.contains(key));
         final raw = (e['strips'] as List?) ?? const [];
         // Hardware drivers publish geometry in caps and live values in
         // params. An empty legacy snapshot must not erase that surface.
@@ -894,6 +898,15 @@ class EngineState {
             if (entry.key is String && entry.value != null)
               entry.key as String: entry.value as Object,
         });
+        return true;
+      case 'param_invalidated':
+        final ch = (e['ch'] as num?)?.toInt();
+        final fields = e['fields'];
+        if (ch == null || fields is! List) return false;
+        for (final field in fields.whereType<String>()) {
+          knownValues[ch]?.remove(field);
+          params[ch]?.remove(field);
+        }
         return true;
       case 'device_operation_complete':
         deviceOperationComplete = Map<String, dynamic>.unmodifiable(e);
@@ -995,7 +1008,8 @@ class EngineState {
         }
         return true;
       case 'output_meters':
-        _outputTelemetry.apply(e, epoch: _syncEpoch, targets: outputMeterTargets);
+        _outputTelemetry.apply(e,
+            epoch: _syncEpoch, targets: outputMeterTargets);
         return false;
       case 'meters':
         final raw = (e['levels'] as List?) ?? const [];

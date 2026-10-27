@@ -261,6 +261,17 @@ mixin _AppStorePoll on _AppStoreContext {
 
   void _confirmEcho(Map<String, dynamic> e) {
     switch (e['type']) {
+      case 'param_invalidated':
+        final ch = (e['ch'] as num?)?.toInt();
+        final fields = e['fields'];
+        if (ch == null || fields is! List) return;
+        for (final field in fields.whereType<String>()) {
+          _maps.confirmed[ch]?.remove(field);
+          _maps.pending.remove(ps.pendingKey(ch, field));
+          _presetVerifiedFields[ch]?.remove(field);
+        }
+        _invalidateDerived();
+        break;
       case 'param':
         final ch = (e['ch'] as num?)?.toInt();
         final field = e['field'] as String?;

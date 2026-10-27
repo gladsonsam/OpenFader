@@ -147,8 +147,9 @@ impl Engine {
                 driver,
                 epoch,
                 expected,
+                guard,
                 ..
-            } => Some((driver.clone(), *epoch, expected.clone())),
+            } => Some((driver.clone(), *epoch, expected.clone(), guard.clone())),
             _ => None,
         };
         let policy = self.policy_of(writer);

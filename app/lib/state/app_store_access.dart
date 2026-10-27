@@ -222,11 +222,20 @@ mixin _AppStoreAccess on _AppStoreContext {
         accessTargetAllowed,
       );
     }
+    if (control.surface == 'automix_settings') {
+      return accessFamilyAllowed(AccessFamily.masterDsp);
+    }
+    if (control.surface == 'input_insert') {
+      return accessFamilyAllowed(AccessFamily.inputDsp) &&
+          control.members.every(accessTargetAllowed);
+    }
     // Provider descriptor identifies main_return separately from FX globals.
     if (control.surface == 'fx' && control.id == 'main_return') {
       return accessTargetAllowed('main');
     }
     return accessTargetAllowed(control.target) &&
+        (control.surface != 'routing' ||
+            accessFamilyAllowed(AccessFamily.outputRouting)) &&
         (!control.surface.startsWith('output_') ||
             accessFamilyAllowed(AccessFamily.masterDsp)) &&
         (control.surface != 'fx' || accessFamilyAllowed(AccessFamily.fx));
@@ -447,7 +456,9 @@ mixin _AppStoreAccess on _AppStoreContext {
         _ => null,
       };
       final processing = command['processor'] == 'channel_processing';
-      if (ch is! int || (!processing && kind == null) || _presetFamily(ch) == null) {
+      if (ch is! int ||
+          (!processing && kind == null) ||
+          _presetFamily(ch) == null) {
         return false;
       }
       final fields = engine.supportedParams
@@ -545,7 +556,8 @@ mixin _AppStoreAccess on _AppStoreContext {
     }
     if (cmd == 'native_library' && _blockedAccess.isNotEmpty) {
       final action = command['action'];
-      if (action is! Map || !const ['inspect', 'refresh', 'read_show'].contains(action['op'])) {
+      if (action is! Map ||
+          !const ['inspect', 'refresh', 'read_show'].contains(action['op'])) {
         return false;
       }
     }

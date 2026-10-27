@@ -13,8 +13,8 @@ impl XAirDriver {
     /// GR reads ride the param path (`gate_gr`/`comp_gr` serve dB reduction
     /// `>= 0` from the last `/meters/6` blob; no GR query address exists).
     /// `delay_on`/`delay_ms` (X32-only), `hpf_slope` (X32-only), `source`
-    /// (`insrc` live-silent, FW 1.20), `icon` (no firmware leaf), `link`
-    /// (global `/config/chlink`, no per-channel leaf), per-channel `eq5_*`
+    /// (input source selection not yet integrated), `icon` (no firmware leaf),
+    /// per-channel `eq5_*`
     /// (channels/returns carry 4 bands; `eq5/6_*` ride buses + main),
     /// `aux7/8_*`, `send11..16_*` and all legacy `auxN_mute`/`fxN_mute` plus
     /// the v2 `send1..10_on` (the send block has no on/off leaf and
@@ -26,6 +26,12 @@ impl XAirDriver {
         value: ParamValue,
     ) -> anyhow::Result<()> {
         let (kind, root) = strip_root(strip.0)?;
+        if param == "automix_group" {
+            anyhow::ensure!(
+                kind == openfader_core::StripKind::In,
+                "automix group is input-only"
+            );
+        }
         if openfader_core::params::find(param).is_some() {
             check_scope(param, kind)?;
         }
@@ -34,6 +40,9 @@ impl XAirDriver {
             ("fader", ParamValue::Float(v)) => self.set_fader(strip, v).await,
             ("mute", ParamValue::Bool(m)) => self.set_mute(strip, m).await,
             ("name", ParamValue::Text(n)) => self.set_name(strip, &n).await,
+            ("link", ParamValue::Bool(linked)) => {
+                self.write_stereo_link(strip, linked).await.map(|_| ())
+            }
             ("pan", ParamValue::Float(pan)) => {
                 let wire = mix::pan_to_wire(pan)?;
                 let guard = self.session().await?;
@@ -68,15 +77,6 @@ impl XAirDriver {
                     .as_ref()
                     .unwrap()
                     .send(&look::strip_icon(&root), vec![look::icon_to_arg(v)?])
-                    .await
-            }
-            ("link", ParamValue::Bool(on)) => {
-                let _ = ch()?;
-                let guard = self.session().await?;
-                guard
-                    .as_ref()
-                    .unwrap()
-                    .send(&look::strip_link(&root), vec![codec::bool_arg(on)])
                     .await
             }
             ("gate_on", ParamValue::Bool(on)) => {
@@ -429,32 +429,15 @@ impl XAirDriver {
                     .await
             }
             ("gain", ParamValue::Float(db)) => {
-                let ch = self.check_channel(strip.0)?;
-                let wire = headamp::db_to_wire(db)?;
-                let guard = self.session().await?;
-                guard
-                    .as_ref()
-                    .unwrap()
-                    .send(&headamp::headamp_gain(ch), vec![OscType::Float(wire)])
-                    .await
+                let _ = db;
+                anyhow::bail!("xair: preamp write requires captured active source")
             }
             ("phantom", ParamValue::Bool(on)) => {
-                let ch = self.check_channel(strip.0)?;
-                let guard = self.session().await?;
-                guard
-                    .as_ref()
-                    .unwrap()
-                    .send(&headamp::headamp_phantom(ch), vec![codec::bool_arg(on)])
-                    .await
+                let _ = on;
+                anyhow::bail!("xair: preamp write requires captured active source")
             }
-            ("usbreturn", ParamValue::Float(v)) => {
-                let ch = self.check_channel(strip.0)?;
-                let guard = self.session().await?;
-                guard
-                    .as_ref()
-                    .unwrap()
-                    .send(&input::config_rtnsrc(ch), vec![input::usbreturn_to_arg(v)?])
-                    .await
+            ("usbreturn", ParamValue::Float(_)) => {
+                anyhow::bail!("xair: USB return requires guarded input routing")
             }
             ("trim", ParamValue::Float(db)) => {
                 let ch = self.check_channel(strip.0)?;
@@ -515,9 +498,37 @@ impl XAirDriver {
                 let guard = self.session().await?;
                 let session = guard.as_ref().unwrap();
                 let reply = session.query(&automix::automix(&root)).await?;
-                let (_, w) = automix::automix_from_msg(&reply)?;
+                let (group, w) = automix::automix_group_from_msg(&reply)?;
+                let next = if on {
+                    if group == 0 {
+                        1
+                    } else {
+                        group
+                    }
+                } else {
+                    0
+                };
                 session
-                    .send(&automix::automix(&root), automix::automix_to_args(on, w)?)
+                    .send(
+                        &automix::automix(&root),
+                        vec![OscType::Int(next), OscType::Float(w)],
+                    )
+                    .await
+            }
+            ("automix_group", ParamValue::Float(value)) => {
+                anyhow::ensure!(
+                    value.is_finite() && value.fract() == 0.0 && (0.0..=2.0).contains(&value),
+                    "invalid automix group"
+                );
+                let guard = self.session().await?;
+                let session = guard.as_ref().unwrap();
+                let reply = session.query(&automix::automix(&root)).await?;
+                let (_, weight) = automix::automix_group_from_msg(&reply)?;
+                session
+                    .send(
+                        &automix::automix(&root),
+                        vec![OscType::Int(value as i32), OscType::Float(weight)],
+                    )
                     .await
             }
             (p, ParamValue::Bool(member)) if p.starts_with("dca") => {

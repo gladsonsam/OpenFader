@@ -4,10 +4,14 @@
 // spectrum_target for the visible strip while visible and clears it on dispose.
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
 import '../palette.dart';
+import '../core/output_meters.dart';
+import '../core/destination_controls.dart';
+import '../widgets/output_level_meter.dart';
 
 const bridgeTopDb = 0.0;
 const bridgeFloorDb = -50.0;
@@ -32,6 +36,18 @@ class BridgeGroup {
     required this.ladders,
     this.collapsedReason,
   });
+}
+
+class BridgeOutputMeter {
+  final String target;
+  final String label;
+  const BridgeOutputMeter(this.target, this.label);
+}
+
+class BridgeOutputGroup {
+  final String title;
+  final List<BridgeOutputMeter> meters;
+  const BridgeOutputGroup(this.title, this.meters);
 }
 
 // double.negativeInfinity means honestly no data, so the ladder renders dark.
@@ -62,6 +78,13 @@ abstract class MetersStore extends ChangeNotifier {
   String? get deskName;
   List<BridgeGroup> get groups;
   BridgeTap tapOf(int ch);
+  List<BridgeOutputGroup> get physicalOutputGroups => const [];
+  List<DestinationControlVm> get monitorControls => const [];
+  bool monitorControlIsCurrent(DestinationControlVm control) => false;
+  Future<String?> setMonitorControl(
+          DestinationControlVm control, double value) async =>
+      'Monitor control unavailable.';
+  ValueListenable<OutputMeterVm> outputMeterFor(String target);
 
   Future<void> pollMeters();
 
@@ -120,7 +143,9 @@ class _U4MetersPageState extends State<U4MetersPage> {
           builder: (context, _) {
             final store = widget.store;
             final liveCount =
-                store.groups.fold<int>(0, (n, g) => n + g.ladders.length);
+                store.groups.fold<int>(0, (n, g) => n + g.ladders.length) +
+                    store.physicalOutputGroups
+                        .fold<int>(0, (n, g) => n + g.meters.length);
             return Column(
               children: [
                 _BridgeHeader(
@@ -157,6 +182,10 @@ class _U4MetersPageState extends State<U4MetersPage> {
                                   color: ConsolePalette.of(context).text7),
                             ),
                           ),
+                        if (store.monitorControls.isNotEmpty) ...[
+                          _MonitorControls(store: store),
+                          const SizedBox(height: 14),
+                        ],
                         for (final g in store.groups) ...[
                           if (g.ladders.isNotEmpty)
                             _LadderGroup(
@@ -168,6 +197,11 @@ class _U4MetersPageState extends State<U4MetersPage> {
                             _CollapsedGroup(group: g),
                           const SizedBox(height: 14),
                         ],
+                        for (final g in store.physicalOutputGroups) ...[
+                          _PhysicalOutputs(
+                              group: g, meterOf: store.outputMeterFor),
+                          const SizedBox(height: 14),
+                        ],
                       ],
                     ),
                   ),
@@ -177,6 +211,51 @@ class _U4MetersPageState extends State<U4MetersPage> {
           },
         ),
       ),
+    );
+  }
+}
+
+class _PhysicalOutputs extends StatelessWidget {
+  final BridgeOutputGroup group;
+  final ValueListenable<OutputMeterVm> Function(String) meterOf;
+  const _PhysicalOutputs({required this.group, required this.meterOf});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: palette.panel,
+        border: Border.all(color: palette.linePanel),
+        borderRadius: const BorderRadius.all(Radius.circular(10)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(group.title,
+            style: TextStyle(
+                fontFamily: U4.font,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: palette.text1)),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            for (final meter in group.meters)
+              SizedBox(
+                  width: 240,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(meter.label,
+                              style: TextStyle(color: palette.text7))),
+                      OutputLevelMeter(meter: meterOf(meter.target)),
+                    ],
+                  )),
+          ]),
+        ),
+      ]),
     );
   }
 }
@@ -546,4 +625,96 @@ class _LadderPainter extends CustomPainter {
   @override
   bool shouldRepaint(_LadderPainter old) =>
       old.tap != tap || old.palette != palette;
+}
+
+class _MonitorControls extends StatelessWidget {
+  final MetersStore store;
+  const _MonitorControls({required this.store});
+
+  Future<void> _apply(
+      BuildContext context, DestinationControlVm row, double value) async {
+    if (!store.monitorControlIsCurrent(row) ||
+        !row.allowsValue(value) ||
+        value == row.value) {
+      return;
+    }
+    final error = await store.setMonitorControl(row, value);
+    if (context.mounted && error != null) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(error)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+          color: palette.panel,
+          border: Border.all(color: palette.divider),
+          borderRadius: BorderRadius.circular(4)),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Monitor',
+            style: TextStyle(
+                fontFamily: U4.font, fontSize: 16, color: palette.text1)),
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final row in store.monitorControls)
+            if (row.choices.isNotEmpty)
+              PopupMenuButton<double>(
+                enabled: store.monitorControlIsCurrent(row),
+                tooltip: row.description,
+                color: palette.panel,
+                onSelected: (value) => _apply(context, row, value),
+                itemBuilder: (_) => [
+                  for (final choice in row.choices)
+                    PopupMenuItem(
+                        value: choice.value, child: Text(choice.label))
+                ],
+                child:
+                    Chip(label: Text('${row.label}: ${row.valueLabel ?? '—'}')),
+              )
+            else if (row.numeric)
+              ActionChip(
+                label: Text('${row.label}: ${row.valueLabel ?? '—'}'),
+                onPressed: !store.monitorControlIsCurrent(row)
+                    ? null
+                    : () async {
+                        var value = row.value!;
+                        final selected = await showDialog<double>(
+                            context: context,
+                            builder: (dialogContext) => StatefulBuilder(
+                                builder: (dialogContext, setState) =>
+                                    AlertDialog(
+                                      title: Text(row.label),
+                                      content: Slider(
+                                          value:
+                                              value.clamp(row.min!, row.max!),
+                                          min: row.min!,
+                                          max: row.max!,
+                                          label: value
+                                              .toStringAsFixed(row.decimals),
+                                          onChanged: (next) =>
+                                              setState(() => value = next)),
+                                      actions: [
+                                        TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(dialogContext),
+                                            child: const Text('Cancel')),
+                                        TextButton(
+                                            onPressed: () => Navigator.pop(
+                                                dialogContext, value),
+                                            child: const Text('Apply')),
+                                      ],
+                                    )));
+                        if (context.mounted && selected != null) {
+                          await _apply(context, row, selected);
+                        }
+                      },
+              ),
+        ]),
+      ]),
+    );
+  }
 }

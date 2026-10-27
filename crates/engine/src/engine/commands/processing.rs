@@ -9,7 +9,7 @@ impl Engine {
         writer: &str,
         out: &mut Vec<Event>,
         policy: &Policy,
-        routing_context: Option<(String, u64, String)>,
+        routing_context: Option<(String, u64, String, Option<Value>)>,
     ) -> anyhow::Result<Option<Event>> {
         match cmd {
             Cmd::FxSetType { slot, fx_type } => {
@@ -163,9 +163,19 @@ impl Engine {
                     .map(Value::String)
                     .unwrap_or(Value::Null);
                 self.validate_routing_context(&routing_context, &from)?;
-                let patch = drv
-                    .patch_target_set(StripId(strip), &target, &group, index)
-                    .await?;
+                let patch = if drv.name() == "xair" {
+                    self.patch_xair_guarded(
+                        strip,
+                        &target,
+                        Some((&group, index)),
+                        &routing_context,
+                        writer,
+                    )
+                    .await?
+                } else {
+                    drv.patch_target_set(StripId(strip), &target, &group, index)
+                        .await?
+                };
                 self.project_routing_patch(strip, writer, &patch, out).await;
                 self.offline_note(
                     strip,
@@ -200,7 +210,12 @@ impl Engine {
                     .map(Value::String)
                     .unwrap_or(Value::Null);
                 self.validate_routing_context(&routing_context, &from)?;
-                let patch = drv.patch_target_clear(StripId(strip), &target).await?;
+                let patch = if drv.name() == "xair" {
+                    self.patch_xair_guarded(strip, &target, None, &routing_context, writer)
+                        .await?
+                } else {
+                    drv.patch_target_clear(StripId(strip), &target).await?
+                };
                 self.project_routing_patch(strip, writer, &patch, out).await;
                 self.offline_note(
                     strip,

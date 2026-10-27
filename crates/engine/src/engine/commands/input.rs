@@ -327,9 +327,38 @@ impl Engine {
                 }
                 let from = self.offline_from(StripId(ch), &field).await;
                 if let Some(expected) = &expected {
-                    self.active_drv()
-                        .set_param_guarded(StripId(ch), &field, pv, expected)
-                        .await?;
+                    let driver = self.active_driver();
+                    let generation = self.connection_gen.load(Ordering::Acquire);
+                    let check = |members: &[StripId]| -> anyhow::Result<()> {
+                        anyhow::ensure!(
+                            self.active_driver() == driver
+                                && self.connection_gen.load(Ordering::Acquire) == generation
+                                && !self.reads_suspended.load(Ordering::Acquire),
+                            "mixer session changed"
+                        );
+                        let current_policy = self.policy_of(writer);
+                        for member in members {
+                            current_policy.allow_strip(*member)?;
+                            if let Some(holder) = self.lock_holder(member.0) {
+                                anyhow::ensure!(
+                                    holder == writer,
+                                    "strip {} locked by {}",
+                                    member.0,
+                                    holder
+                                );
+                            }
+                        }
+                        Ok(())
+                    };
+                    if driver == "xair" && matches!(field.as_str(), "gain" | "phantom") {
+                        self.active_drv()
+                            .set_param_guarded_checked(StripId(ch), &field, pv, expected, &check)
+                            .await?;
+                    } else {
+                        self.active_drv()
+                            .set_param_guarded(StripId(ch), &field, pv, expected)
+                            .await?;
+                    }
                 } else {
                     self.drv_set_param(StripId(ch), &field, pv).await?;
                 }

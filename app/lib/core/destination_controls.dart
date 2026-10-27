@@ -42,6 +42,7 @@ class DestinationControlVm {
   final double? max;
   final String unit;
   final int decimals;
+  final double? step;
   final double? value;
   final String? authority;
 
@@ -66,6 +67,7 @@ class DestinationControlVm {
       this.max,
       this.unit,
       this.decimals,
+      this.step,
       this.value,
       this.authority);
 
@@ -74,9 +76,13 @@ class DestinationControlVm {
       (descriptor['members'] as List? ?? const []).whereType<String>());
 
   /// Native VCA and FX-return identities also respect existing strip aliases.
-  bool soloScopeAllowed(bool familyAllowed, bool Function(String) targetAllowed) =>
-      targetSolo && familyAllowed && members.isNotEmpty &&
-      members.every((target) => targetAllowed(target) &&
+  bool soloScopeAllowed(
+          bool familyAllowed, bool Function(String) targetAllowed) =>
+      targetSolo &&
+      familyAllowed &&
+      members.isNotEmpty &&
+      members.every((target) =>
+          targetAllowed(target) &&
           (!target.startsWith('return/') ||
               targetAllowed(target.replaceFirst('return/', 'ret/'))) &&
           (!target.startsWith('vca/') ||
@@ -132,13 +138,21 @@ class DestinationControlVm {
       return null;
     }
     if (!numeric) return null;
-    final wireValue = Float32List.fromList([candidate]).first;
+    if (candidate < min! || candidate > max!) return null;
+    final quantized = step == null
+        ? candidate
+        : min! + ((candidate - min!) / step!).round() * step!;
+    final wireValue = Float32List.fromList([quantized]).first;
     return wireValue.isFinite && wireValue >= min! && wireValue <= max!
         ? wireValue
         : null;
   }
 
-  bool allowsValue(double candidate) => wireValue(candidate) != null;
+  bool allowsValue(double candidate) {
+    final normalized = wireValue(candidate);
+    return normalized != null &&
+        (step == null || (normalized - candidate).abs() < 1e-4);
+  }
 
   bool get available => valueLabel != null && authority != null;
 
@@ -181,11 +195,13 @@ class DestinationControlVm {
     double? max;
     var unit = '';
     var decimals = 0;
+    double? step;
     if (rawRange != null) {
       if (rawRange is! Map) return null;
       final low = rawRange['min'];
       final high = rawRange['max'];
       final digits = rawRange['decimals'];
+      final rawStep = rawRange['step'];
       if (low is! num ||
           high is! num ||
           !low.isFinite ||
@@ -195,13 +211,16 @@ class DestinationControlVm {
           digits is! int ||
           digits < 0 ||
           digits > 6 ||
-          choices.isNotEmpty) {
+          choices.isNotEmpty ||
+          (rawStep != null &&
+              (rawStep is! num || !rawStep.isFinite || rawStep <= 0))) {
         return null;
       }
       min = low.toDouble();
       max = high.toDouble();
       unit = rawRange['unit'] as String;
       decimals = digits;
+      step = rawStep is num ? rawStep.toDouble() : null;
     }
     if (choices.isEmpty && min == null) return null;
     final rawValue = data['value'];
@@ -236,6 +255,7 @@ class DestinationControlVm {
         max,
         unit,
         decimals,
+        step,
         value,
         authority);
   }
@@ -263,6 +283,7 @@ class DestinationControlVm {
       max == other.max &&
       unit == other.unit &&
       decimals == other.decimals &&
+      step == other.step &&
       choices.length == other.choices.length &&
       Iterable.generate(choices.length)
           .every((i) => choices[i] == other.choices[i]);
@@ -286,7 +307,7 @@ class DestinationControlVm {
       min,
       max,
       unit,
-      decimals,
+      Object.hash(decimals, step),
       Object.hashAll(choices));
 }
 

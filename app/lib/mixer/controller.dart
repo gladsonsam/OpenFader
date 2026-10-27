@@ -122,6 +122,7 @@ class MixerController extends ChangeNotifier {
     }
     return '$make $model';
   }
+
   String get error => store.visibleError;
   int get page => _page;
   int get pageSize => _pageSize;
@@ -143,7 +144,8 @@ class MixerController extends ChangeNotifier {
 
   /// Active custom layer, or the built-in All layer (unknown ids fall back
   /// to All via [MixerLayersState]).
-  MixerLayer get activeLayer => PrefsService.instance.mixerLayersState.activeLayer;
+  MixerLayer get activeLayer =>
+      PrefsService.instance.mixerLayersState.activeLayer;
   bool get isCustomLayerActive => !activeLayer.isAll;
 
   /// Custom layers ignore the bank rail: their channel source is the layer's
@@ -174,9 +176,8 @@ class MixerController extends ChangeNotifier {
   }
 
   /// Custom layers page by their own density; All keeps the configured size.
-  int get effectivePageSize => isCustomLayerActive
-      ? activeLayer.effectiveStripsPerPage
-      : _pageSize;
+  int get effectivePageSize =>
+      isCustomLayerActive ? activeLayer.effectiveStripsPerPage : _pageSize;
 
   int get pageCount => (_effectiveStrips.length / effectivePageSize).ceil();
   int get muteGroupCount => store.engine.muteGroupCount;
@@ -258,7 +259,8 @@ class MixerController extends ChangeNotifier {
   }
 
   Strip? get _masterStrip => store.engine.strips
-      .where((s) => s.key == store.masterProcessingTarget).firstOrNull;
+      .where((s) => s.key == store.masterProcessingTarget)
+      .firstOrNull;
 
   int? get masterIdentityChannel =>
       store.masterProcessingTarget.startsWith('bus/') ? _masterStrip?.ch : null;
@@ -269,21 +271,26 @@ class MixerController extends ChangeNotifier {
     final bus = target.startsWith('bus/');
     final busNumber = bus ? int.tryParse(target.substring(4)) : null;
     return MixerChannel(
-      key: 'master',
-      name: store.masterName == 'MAIN' ? 'Main' : store.masterName,
-      number: target == 'main' ? 'LR' : busNumber?.toString() ?? store.masterName,
-      channel: null,
-      artwork: 8,
-      colorChoice: bus && strip != null ? store.channelColorChoice(strip.ch) : null,
-      fader: store.masterFader,
-      pan: 0,
-      muted: store.masterMuted,
-      solo: store.soloOf(-1),
-      selected: _selectedKey == 'master',
-      master: true,
-      meter: store.masterMeter,
-      params: strip == null ? const {} : Map.unmodifiable(store.engine.params[strip.ch] ?? const {}));
+        key: 'master',
+        name: store.masterName == 'MAIN' ? 'Main' : store.masterName,
+        number:
+            target == 'main' ? 'LR' : busNumber?.toString() ?? store.masterName,
+        channel: null,
+        artwork: 8,
+        colorChoice:
+            bus && strip != null ? store.channelColorChoice(strip.ch) : null,
+        fader: store.masterFader,
+        pan: 0,
+        muted: store.masterMuted,
+        solo: store.soloOf(-1),
+        selected: _selectedKey == 'master',
+        master: true,
+        meter: store.masterMeter,
+        params: strip == null
+            ? const {}
+            : Map.unmodifiable(store.engine.params[strip.ch] ?? const {}));
   }
+
   MixerChannel? get selected {
     if (_selectedKey == 'master') return master;
     for (final s in store.engine.strips) {
@@ -408,8 +415,9 @@ class MixerController extends ChangeNotifier {
     notifyListeners();
   }
 
-  bool get canOpenMasterProcessing => store.outputProcessingControls
-      .any((control) => control.target == store.masterProcessingTarget &&
+  bool get canOpenMasterProcessing =>
+      store.outputProcessingControls.any((control) =>
+          control.target == store.masterProcessingTarget &&
           store.destinationControlIsCurrent(control));
 
   bool openMasterProcessing() {
@@ -495,11 +503,17 @@ class MixerController extends ChangeNotifier {
                 !store.engine.valueKnown(index, 'gain')))) {
       return null;
     }
-    return parameterRange(store.paramMetadata('gain'));
+    return store.engine.driver == 'xair'
+        ? store.preampGainRangeFor(index)
+        : parameterRange(store.paramMetadata('gain'));
   }
 
-  bool hasPhantomOf(MixerChannel ch) => ch.channel != null &&
-      !ch.master && store.canEditControl(ch.channel!, 'phantom');
+  bool hasPhantomOf(MixerChannel ch) =>
+      ch.channel != null &&
+      !ch.master &&
+      store.canEditControl(ch.channel!, 'phantom') &&
+      (store.engine.driver != 'xair' ||
+          store.preampPhantomAvailableFor(ch.channel!) == true);
 
   void setGain(MixerChannel ch, double value) {
     final range = gainRangeOf(ch);

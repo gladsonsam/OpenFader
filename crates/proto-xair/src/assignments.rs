@@ -2,6 +2,61 @@
 use super::*;
 
 impl XAirDriver {
+    /// Read the complete four-bit mute-group membership in a single query.
+    pub async fn snapshot_mute_group_mask(&self, strip: StripId) -> anyhow::Result<u32> {
+        let (_, root) = self.assign_root(strip.0, "mute-group assign")?;
+        let guard = self.session().await?;
+        let reply = guard
+            .as_ref()
+            .unwrap()
+            .query(&groups::grp_mute(&root))
+            .await?;
+        let mask = groups::mask_from_msg(&reply)?;
+        anyhow::ensure!(
+            (0..=groups::GROUP_MASK).contains(&mask),
+            "invalid XR18 mute-group mask {mask}"
+        );
+        Ok(mask as u32)
+    }
+
+    /// Restore the whole membership mask with one write. Per-bit read/modify/
+    /// write can lose earlier bits when the desk applies writes asynchronously.
+    pub async fn restore_mute_group_mask(
+        &self,
+        strip: StripId,
+        mask: u32,
+        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            mask <= groups::GROUP_MASK as u32,
+            "invalid XR18 mute-group mask {mask}"
+        );
+        let (_, root) = self.assign_root(strip.0, "mute-group assign")?;
+        let guard = self.session().await?;
+        check()?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(&groups::grp_mute(&root), vec![OscType::Int(mask as i32)])
+            .await
+    }
+
+    pub async fn restore_mute_group_master(
+        &self,
+        group: u8,
+        muted: bool,
+        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        let addr = addrs::mute_group(group)?;
+        let guard = self.session().await?;
+        check()?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send(&addr, vec![OscType::Int(i32::from(muted))])
+            .await
+    }
+
     /// Mute-group master mute (`/config/mute/N`, int). Polarity is
     /// INFERRED from the leaf name (`1` = group muted): only `0` has ever
     /// been observed live and the master has never been toggled on hardware
@@ -70,5 +125,97 @@ impl XAirDriver {
             .await?;
         let mask = groups::mask_from_msg(&reply)?;
         groups::mask_has(mask, group, "mute group")
+    }
+}
+
+/// Global channel-link paths use one switch for each fixed input pair.
+fn channel_link_address(strip: StripId) -> anyhow::Result<(usize, String)> {
+    anyhow::ensure!(
+        strip.0 < 16,
+        "xair: stereo linking is only supported for input channels"
+    );
+    let pair = usize::from(strip.0 / 2);
+    Ok((
+        pair,
+        format!("/config/chlink/{}-{}", pair * 2 + 1, pair * 2 + 2),
+    ))
+}
+
+pub(super) fn parse_channel_link(msg: &OscMessage) -> Option<(usize, bool)> {
+    let pair = msg.addr.strip_prefix("/config/chlink/")?;
+    let (first, second) = pair.split_once('-')?;
+    let first: usize = first.parse().ok()?;
+    let second: usize = second.parse().ok()?;
+    if first == 0 || first > 15 || first.is_multiple_of(2) || second != first + 1 {
+        return None;
+    }
+    let [OscType::Int(value @ 0..=1)] = msg.args.as_slice() else {
+        return None;
+    };
+    Some(((first - 1) / 2, *value == 1))
+}
+
+impl XAirDriver {
+    pub(super) async fn read_stereo_link(&self, strip: StripId) -> anyhow::Result<bool> {
+        let (pair, addr) = channel_link_address(strip)?;
+        let started = std::time::Instant::now();
+        let session = self.session().await?.as_ref().unwrap().clone();
+        let msg = session.query(&addr).await?;
+        let (_, linked) = parse_channel_link(&msg)
+            .ok_or_else(|| anyhow::anyhow!("{addr}: invalid link reply"))?;
+        let writes = self.link_writes.lock().unwrap();
+        if writes[pair]
+            .is_none_or(|at| at < started && at.elapsed() > std::time::Duration::from_millis(500))
+        {
+            self.link_cache.lock().unwrap()[pair] = Some((std::time::Instant::now(), linked));
+        }
+        Ok(linked)
+    }
+
+    pub(super) fn stereo_control_members(
+        &self,
+        strip: StripId,
+        param: &str,
+    ) -> anyhow::Result<Vec<StripId>> {
+        if strip.0 >= 16 || param == "link" {
+            return Ok(vec![strip]);
+        }
+        let pair = usize::from(strip.0 / 2);
+        // Never block the fader/mute hot path on an OSC query. A fresh
+        // desk-evidenced OFF permits a single-strip write; linked, unknown,
+        // or stale state protects both strips and their access/locks.
+        let unlinked = self.link_cache.lock().unwrap()[pair].is_some_and(|(at, linked)| {
+            !linked && at.elapsed() <= std::time::Duration::from_secs(5)
+        });
+        if unlinked {
+            Ok(vec![strip])
+        } else {
+            let left = strip.0 & !1;
+            Ok(vec![StripId(left), StripId(left + 1)])
+        }
+    }
+
+    pub(super) async fn write_stereo_link(
+        &self,
+        strip: StripId,
+        linked: bool,
+    ) -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+        let (pair, addr) = channel_link_address(strip)?;
+        let session = self.session().await?.as_ref().unwrap().clone();
+        // Discard the prior observation before sending; an unacknowledged
+        // local write must not grant unlinked control to either member.
+        {
+            let mut writes = self.link_writes.lock().unwrap();
+            writes[pair] = Some(std::time::Instant::now());
+            self.link_cache.lock().unwrap()[pair] = None;
+        }
+        session
+            .send(&addr, vec![OscType::Int(i32::from(linked))])
+            .await?;
+        let left = (pair * 2) as u16;
+        Ok(vec![
+            (StripId(left), "link".into(), ParamValue::Bool(linked)),
+            (StripId(left + 1), "link".into(), ParamValue::Bool(linked)),
+        ])
     }
 }

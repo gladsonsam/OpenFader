@@ -47,6 +47,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
             'output_geq': 'Graphic EQ',
             'output_comp': 'Compressor / Limiter',
             'output_delay': 'Delay',
+            'output_controls': 'Output controls',
           };
           surfaces.sort(
             (a, b) => labels.keys
@@ -120,7 +121,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                         ],
                       ),
                     ),
-                  if (surface != null)
+                  if (surface != null && surface != 'output_controls')
                     Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: OutputProcessorPresetActions(

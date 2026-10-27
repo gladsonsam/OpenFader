@@ -21,7 +21,7 @@ async fn driver_fx_param_roundtrip() {
         .insert("/fx/1/par/03".to_string(), OscType::Int(2));
     assert_eq!(driver.get_fx_param(1, 2).await.unwrap(), 1.0);
     // 14-option Pattern (D/FL par 02 on slot 3): index 1 → 1/13.
-    fake.fx_types.lock().unwrap().insert(3, 26);
+    fake.fx_types.lock().unwrap().insert(3, 25);
     fake.fx
         .lock()
         .unwrap()

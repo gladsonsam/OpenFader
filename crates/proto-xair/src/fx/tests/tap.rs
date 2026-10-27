@@ -7,14 +7,14 @@ fn tap_targets_cover_confident_delays_only() {
         (dly.par, dly.min_ms, dly.max_ms, dly.subdiv),
         (2, 1.0, 3000.0, true)
     );
-    for index in [11u8, 12, 22, 25, 26, 27] {
+    for index in [11u8, 12, 21, 24, 25, 26] {
         let t = fx_tap_target(index).unwrap();
         assert_eq!(
             (t.par, t.min_ms, t.max_ms, t.subdiv),
             (1, 1.0, 3000.0, true)
         );
     }
-    for index in [0u8, 1, 7, 13, 14, 16, 34, 59, 60, 15, 99] {
+    for index in [0u8, 1, 7, 13, 14, 16, 34, 59, 60, 15, 27, 99] {
         assert!(fx_tap_target(index).is_none(), "index {index}");
     }
 }

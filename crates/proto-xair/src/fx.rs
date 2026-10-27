@@ -1,16 +1,14 @@
 //! X-Air FX slot address mapping (`/fx/N/par/MM`) + effect-type label table.
 //!
 //! The desk exposes 4 stereo FX slots, each a flat array of 64 numbered
-//! float params. The wire is 1-based on both axes with a zero-padded
+//! parameters. The wire is 1-based on both axes with a zero-padded
 //! two-digit param number: slot `N` in `1..=4`, param `MM` in `01..=64`
 //! (hardware-verified read of `/fx/1/par/01` → `,f 0.1`, same-value
 //! roundtrip write `0.5` → `0.5` bit-exact — baseline §6 row 5).
 //!
 //! [`openfader_core::fx`] owns the shape and validation (0-based slot/index
 //! at the trait level); this module adds 1 on the wire and owns the
-//! per-effect-type label table below. FX params round-trip bit-exact on
-//! hardware (unlike faders, no ~10-bit quantization — baseline T8), so
-//! readback asserts use exact equality.
+//! per-effect-type label table below. Continuous FX params can round-trip bit-exact on hardware; enums use integer indices.
 //!
 //! ## Effect-type table
 //!
@@ -38,17 +36,13 @@
 //!   says ULC2, one section header says ULC), so all of its rows are
 //!   forced inferred too. The UI must
 //!   render those with a `?` suffix plus a header note, never assert them.
-//! * Index 15 has no documented effect (the wire order jumps FLNG 14 →
-//!   PHAS 16); [`fx_effect_name`] returns `None` there so it exercises the
-//!   same generic fallback as any out-of-range index.
-//! * Enum/switch pars reply as INT on hardware (D/FL par 02/08/09 =
-//!   `0`/`1`/`1`, VRM par 13 = `0`; baseline "Live FX par shapes") while
-//!   continuous pars reply as float — so [`parse_fx_param`] maps int wire
-//!   values through the effect's own def (option index onto `0..1` steps
-//!   for enums, raw int for continuous). Pars past the effect's own count
-//!   reply as float NaN (VRM/HALL 14+, D/FL 14+, PIT 7+) — NaN means
-//!   absent and [`parse_fx_param`] bails on it like an unknown par,
-//!   never surfacing NaN as a value.
+//! * FX type indices follow the X-Air firmware enumeration. XR18 FW 1.20
+//!   type 26 has the MODD 13-parameter signature, including integer
+//!   serial and reverb-type fields at parameters 8 and 9.
+//! * Enum/switch pars reply as integers while continuous pars reply as
+//!   normalized floats. [`parse_fx_param`] maps enum indices onto normalized
+//!   steps; writes convert them back to OSC integers. Unused parameters can
+//!   reply as float NaN, which is treated as absent and never surfaced.
 //!
 //! Mixer UI field naming: `fx{slot}_par{MM}` with the
 //! same 1-based conventions, e.g. `fx1_par01` = slot 1, param index 0.

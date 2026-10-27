@@ -39,6 +39,13 @@ pub(super) const EQ_TYPE_IDS: [&str; 6] = [
 /// FX is stateful (its type selects each parameter codec) and is decoded by
 /// the per-session receive actor. Unknown/unmapped paths remain absent.
 pub fn parse_inbound(msg: &OscMessage) -> Vec<(u16, &'static str, ParamValue)> {
+    if let Some((pair, linked)) = super::assignments::parse_channel_link(msg) {
+        let left = (pair * 2) as u16;
+        return vec![
+            (left, "link", ParamValue::Bool(linked)),
+            (left + 1, "link", ParamValue::Bool(linked)),
+        ];
+    }
     let shared = sync_decode::inbound(msg);
     if !shared.is_empty() {
         let mut shared = shared;
@@ -149,21 +156,6 @@ pub(super) fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static st
             return None;
         };
         return Some(vec![(n - 1, "solo", ParamValue::Bool(on != 0))]);
-    }
-    // Headamp gain (`/headamp/NN/gain`, 1-based wire channel): the only
-    // non-strip-root leaf covered here, decoded like `get_param`'s `gain`
-    // arm (linear wire `0..1` <-> `-12..=+60` dB).
-    if let Some(rest) = addr.strip_prefix("headamp/") {
-        let (n, leaf) = rest.split_once('/')?;
-        if leaf != "gain" {
-            return None;
-        }
-        let ch: u16 = n.parse().ok()?;
-        if !(1..=addrs::XR18_CHANNELS).contains(&ch) {
-            return None;
-        }
-        let db = headamp::wire_to_db(osc::fader_value(msg).ok()?).ok()?;
-        return Some(vec![(ch - 1, "gain", ParamValue::Float(db))]);
     }
     // DCA direct forms first (`/dca/N/fader`, `/dca/N/on` — no `/mix`).
     if let Some(rest) = addr.strip_prefix("dca/") {
@@ -401,10 +393,11 @@ pub(super) fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static st
         if kind != openfader_core::StripKind::In {
             return None;
         }
-        let (on, w) = automix::automix_from_msg(msg).ok()?;
+        let (group, w) = automix::automix_group_from_msg(msg).ok()?;
         return Some(vec![
-            (strip, "automix_on", ParamValue::Bool(on)),
+            (strip, "automix_on", ParamValue::Bool(group != 0)),
             (strip, "automix_weight", ParamValue::Float(w)),
+            (strip, "automix_group", ParamValue::Float(group as f32)),
         ]);
     }
     let (root, leaf) = match leaf {

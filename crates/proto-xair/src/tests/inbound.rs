@@ -25,12 +25,8 @@ fn inbound_covers_send_level_gain_color() {
         .next()
         .expect("fx send level parses");
     assert_eq!((strip, param), (1, "fx1_level"));
-    let (strip, param, value) = parse_inbound(&msg("/headamp/01/gain", vec![OscType::Float(0.5)]))
-        .into_iter()
-        .next()
-        .expect("headamp gain parses");
-    assert_eq!((strip, param), (0, "gain"));
-    assert!(matches!(value, ParamValue::Float(v) if (v - 24.0).abs() < 1e-5));
+    // A headamp belongs to a physical input, not necessarily the same strip.
+    assert!(parse_inbound(&msg("/headamp/01/gain", vec![OscType::Float(0.5)])).is_empty());
     let (strip, param, value) = parse_inbound(&msg("/ch/01/config/color", vec![OscType::Int(3)]))
         .into_iter()
         .next()
@@ -104,11 +100,13 @@ fn inbound_covers_assign_plane() {
         "/ch/01/automix",
         vec![OscType::Int(1), OscType::Float(0.75)],
     ));
-    assert_eq!(updates.len(), 2);
+    assert_eq!(updates.len(), 3);
     assert_eq!((updates[0].0, updates[0].1), (0, "automix_on"));
     assert!(matches!(updates[0].2, ParamValue::Bool(true)));
     assert_eq!((updates[1].0, updates[1].1), (0, "automix_weight"));
     assert!(matches!(updates[1].2, ParamValue::Float(w) if (w - 0.75).abs() < 1e-6));
+    assert_eq!((updates[2].0, updates[2].1), (0, "automix_group"));
+    assert!(matches!(updates[2].2, ParamValue::Float(1.0)));
     // Mute-group bitmask: no catalogue ids, stays silent here.
     assert_eq!(
         parse_inbound(&msg("/ch/01/grp/mute", vec![OscType::Int(3)])).len(),

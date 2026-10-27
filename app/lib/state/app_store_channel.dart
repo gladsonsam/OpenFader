@@ -21,6 +21,20 @@ mixin _AppStoreChannel on _AppStoreContext {
   // ------------------------------------------------------------------
   // ChannelStore
   // ------------------------------------------------------------------
+  @override
+  List<DestinationControlVm> get rtaSettings => List.unmodifiable(
+      engine.destinationControls.where((row) => row.surface == 'output_rta'));
+
+  @override
+  List<DestinationControlVm> get inputInserts => List.unmodifiable(engine
+      .destinationControls
+      .where((row) => row.surface == 'input_insert' && row.target == stripKey));
+
+  @override
+  List<DestinationControlVm> get automixSettings =>
+      List.unmodifiable(engine.destinationControls
+          .where((row) => row.surface == 'automix_settings'));
+
   // Current open channel index.
 
   int get channelIndex => _channel;
@@ -86,8 +100,17 @@ mixin _AppStoreChannel on _AppStoreContext {
   bool get capabilitiesReady => engine.capsReady;
 
   @override
-  Map<String, dynamic>? paramMetadata(String leaf) => parameterPresentation(
-      engine.parameterMetadata[AppStore.deskLeaf(leaf)], paramNum);
+  Map<String, dynamic>? paramMetadata(String leaf) {
+    final desk = AppStore.deskLeaf(leaf);
+    final metadata =
+        parameterPresentation(engine.parameterMetadata[desk], paramNum);
+    if (desk == 'gain' && engine.driver == 'xair' && metadata != null) {
+      final range = preampGainRange;
+      if (range == null) return {...metadata, 'available': false};
+      return {...metadata, 'min': range.first, 'max': range.last};
+    }
+    return metadata;
+  }
 
   @override
   bool paramApplies(String leaf) =>
@@ -103,6 +126,12 @@ mixin _AppStoreChannel on _AppStoreContext {
   bool supports(String leaf) {
     final desk = AppStore.deskLeaf(leaf);
     if (!paramApplies(leaf)) return false;
+    if (engine.driver == 'xair' && (desk == 'gain' || desk == 'phantom')) {
+      if ((desk == 'gain' ? preampGainAvailable : preampPhantomAvailable) !=
+          true) {
+        return false;
+      }
+    }
     if (!_accessParamAllowed(_channel, desk) ||
         !engine.capsReady ||
         _presetEditingBlocked(_channel, desk)) {
@@ -191,6 +220,7 @@ mixin _AppStoreChannel on _AppStoreContext {
         : <String, Object>{};
     _coalescer.offer('param:$ch:$desk', () {
       if (engine.session != epoch) return;
+      if (_maps.pending[ps.pendingKey(ch, desk)]?.value != coerced) return;
       if (expected.isNotEmpty &&
           (engine.session != epoch ||
               expected.entries.any(
@@ -313,11 +343,14 @@ mixin _AppStoreChannel on _AppStoreContext {
       : null;
   @override
   String dcaGroupLabel(int group) {
-    final label = paramMetadata('dca${group + 1}_assign')?['label'] as String? ??
-        'VCA ${group + 1}';
-    final match = RegExp(r'^dca(\s*\d+)$', caseSensitive: false).firstMatch(label);
+    final label =
+        paramMetadata('dca${group + 1}_assign')?['label'] as String? ??
+            'VCA ${group + 1}';
+    final match =
+        RegExp(r'^dca(\s*\d+)$', caseSensitive: false).firstMatch(label);
     return match == null ? label : 'DCA${match[1]}';
   }
+
   @override
   void setDcaAssigned(int group, bool on) =>
       cmdParam('dca${group + 1}_assign', on);
@@ -358,7 +391,8 @@ mixin _AppStoreChannel on _AppStoreContext {
   }
 
   int get _eqBandCount =>
-      (paramNum('wing:eq_bands')?.toInt() ?? (paramApplies('eq6_gain') ? 6 : 4)).clamp(4, 8);
+      (paramNum('wing:eq_bands')?.toInt() ?? (paramApplies('eq6_gain') ? 6 : 4))
+          .clamp(4, 8);
 
   @override
   ChannelEqVm get eq => ChannelEqVm(

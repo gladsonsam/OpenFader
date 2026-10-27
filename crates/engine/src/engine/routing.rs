@@ -3,6 +3,40 @@
 use super::*;
 
 impl Engine {
+    pub(super) async fn patch_xair_guarded(
+        &self,
+        strip: u16,
+        target: &str,
+        source: Option<(&str, u8)>,
+        context: &Option<(String, u64, String, Option<Value>)>,
+        writer: &str,
+    ) -> anyhow::Result<crate::drivers::RoutingPatch> {
+        let (driver, generation, _, guard) = context.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("xair: input route requires a current routing selection")
+        })?;
+        let check = |members: &[StripId]| -> anyhow::Result<()> {
+            anyhow::ensure!(
+                self.active_driver() == *driver
+                    && self.connection_gen.load(Ordering::Acquire) == *generation
+                    && !self.reads_suspended.load(Ordering::Acquire),
+                "routing session changed"
+            );
+            let policy = self.policy_of(writer);
+            for member in members {
+                policy.allow_strip(*member)?;
+                if let Some(holder) = self.lock_holder(member.0) {
+                    anyhow::ensure!(holder == writer, "strip {} locked by {}", member.0, holder);
+                }
+            }
+            Ok(())
+        };
+        let patch = self
+            .active_drv()
+            .patch_target_guarded(StripId(strip), target, source, guard.as_ref(), &check)
+            .await?;
+        self.apply_inbound(strip, "_preamp_routes_dirty", &ParamValue::Bool(true));
+        Ok(patch)
+    }
     /// Sample native revisions on the existing shell/control cadence. No new ticker.
     pub(super) fn output_routing_fingerprint(&self, driver: &str) -> Value {
         let drv = self.drv(driver);
@@ -59,10 +93,10 @@ impl Engine {
 
     pub(super) fn validate_routing_context(
         &self,
-        context: &Option<(String, u64, String)>,
+        context: &Option<(String, u64, String, Option<Value>)>,
         current: &Value,
     ) -> anyhow::Result<()> {
-        if let Some((driver, epoch, expected)) = context {
+        if let Some((driver, epoch, expected, _)) = context {
             anyhow::ensure!(
                 *driver == self.active_driver()
                     && *epoch == self.connection_gen.load(Ordering::Acquire),
@@ -205,12 +239,55 @@ impl Engine {
     pub(super) async fn routing_message(&self) -> Event {
         let driver = self.active_driver();
         let catalog = self.drv(&driver).routing_planes();
-        let mut destinations: Vec<PatchEntry> = self
-            .routing_snapshot_on(&driver)
-            .await
-            .into_iter()
-            .map(|r| PatchEntry {
-                guard: None,
+        let mut destinations: Vec<PatchEntry> = Vec::new();
+        let input_bulk = if catalog
+            .iter()
+            .flat_map(|p| &p.destinations)
+            .any(|d| !d.output)
+        {
+            self.drv(&driver).input_routes_bulk().await
+        } else {
+            None
+        };
+        for r in self.routing_snapshot_on(&driver, input_bulk.as_ref()).await {
+            let guard = if driver == "xair" {
+                input_bulk
+                    .as_ref()
+                    .and_then(|m| m.get(&(r.strip, r.target.clone())))
+                    .map(|(_, guard)| guard.clone())
+            } else {
+                None
+            };
+            if driver == "xair" {
+                let Some(guard) = guard.as_ref() else {
+                    continue;
+                };
+                let value = match r.target.as_str() {
+                    "analog" => guard
+                        .get("analog")
+                        .and_then(Value::as_i64)
+                        .map(|n| match n {
+                            0..=15 => ("Mic", n + 1),
+                            16..=17 => ("Aux", n - 15),
+                            18 => ("", 0),
+                            _ => ("?", -1),
+                        }),
+                    "usb" => guard
+                        .get("usb")
+                        .and_then(Value::as_i64)
+                        .map(|n| ("USB", n + 1)),
+                    "bank" => guard
+                        .get("bank")
+                        .and_then(Value::as_i64)
+                        .map(|n| ("Bank", n + 1)),
+                    _ => None,
+                };
+                if value != Some((r.group.as_str(), i64::from(r.index))) {
+                    continue;
+                }
+            }
+            destinations.push(PatchEntry {
+                guard,
                 destination: catalog
                     .iter()
                     .flat_map(|p| &p.destinations)
@@ -228,8 +305,8 @@ impl Engine {
                 },
                 group: r.group,
                 index: r.index,
-            })
-            .collect();
+            });
+        }
         for dest in catalog
             .iter()
             .flat_map(|p| &p.destinations)
@@ -273,7 +350,11 @@ impl Engine {
 
     /// Best-effort input rows for display frames. Durable captures use the
     /// strict reader below, including output ports under stable destination IDs.
-    pub(super) async fn routing_snapshot_on(&self, driver: &str) -> Vec<StoredRoute> {
+    pub(super) async fn routing_snapshot_on(
+        &self,
+        driver: &str,
+        input_bulk: Option<&std::collections::HashMap<(u16, String), (String, Value)>>,
+    ) -> Vec<StoredRoute> {
         let drv = self.drv(driver);
         let planes = drv.routing_planes();
         if planes.is_empty() {
@@ -288,7 +369,11 @@ impl Engine {
             .flat_map(|p| p.destinations)
             .filter(|d| !d.output)
         {
-            let label = if dest.target.is_empty() {
+            let label = if let Some(input_bulk) = input_bulk {
+                input_bulk
+                    .get(&(dest.strip, dest.target.clone()))
+                    .map(|(label, _)| label.clone())
+            } else if dest.target.is_empty() {
                 match &bulk {
                     Some(map) => map.get(&dest.strip).cloned(),
                     None => drv
@@ -334,10 +419,23 @@ impl Engine {
         // The executable provider contract owns the destination universe; input
         // topology is only used by the compatibility adapter, never by this reader.
         let bulk = drv.source_bulk();
+        let input_bulk = if planes
+            .iter()
+            .flat_map(|p| &p.destinations)
+            .any(|d| !d.output)
+        {
+            drv.input_routes_bulk().await
+        } else {
+            None
+        };
         let mut out = Vec::new();
         for dest in planes.into_iter().flat_map(|p| p.destinations) {
             let label = if dest.output {
                 Some(drv.output_route(&dest.id)?.source)
+            } else if let Some(input_bulk) = &input_bulk {
+                input_bulk
+                    .get(&(dest.strip, dest.target.clone()))
+                    .map(|(label, _)| label.clone())
             } else if dest.target.is_empty() {
                 match &bulk {
                     Some(map) => map.get(&dest.strip).cloned(),
@@ -394,13 +492,12 @@ impl Engine {
         let topo = self.driver_topology(&driver);
         for row in routing {
             check()?;
-            if row.target.starts_with("output/") {
-                let dest = drv
-                    .routing_planes()
-                    .into_iter()
-                    .flat_map(|p| p.destinations)
-                    .find(|d| d.output && d.id == row.target)
-                    .ok_or_else(|| anyhow::anyhow!("snapshot output {} unavailable", row.target))?;
+            let output_destination = drv
+                .routing_planes()
+                .into_iter()
+                .flat_map(|p| p.destinations)
+                .find(|d| d.output && d.id == row.target);
+            if let Some(dest) = output_destination {
                 let source = if row.group.is_empty() && row.index == 0 {
                     anyhow::ensure!(dest.clearable, "snapshot output cannot be cleared");
                     "—".to_string()
@@ -418,6 +515,11 @@ impl Engine {
                     .await?;
                 continue;
             }
+            anyhow::ensure!(
+                !row.target.starts_with("output/") && !row.target.starts_with("physical/"),
+                "snapshot output {} unavailable",
+                row.target
+            );
             let strip = row
                 .key
                 .as_deref()
@@ -455,4 +557,81 @@ pub(super) fn parse_source(label: &str) -> Option<(String, u8)> {
 /// Exact provider snapshot serialized for the client roundtrip.
 pub(super) fn route_guard(state: &openfader_core::routing::RouteState) -> Value {
     json!({ "source": state.source, "revision": state.revision, "generation": state.generation })
+}
+
+/// Validate the complete XR18 input-selector set before capture/recall. Older
+/// scenes with no input-route rows retain their legacy behavior.
+pub(super) fn xair_scene_input_routes(
+    routing: &[StoredRoute],
+    strips: &[StoredStrip],
+    topo: &[openfader_core::StripFamily],
+) -> anyhow::Result<
+    Option<std::collections::BTreeMap<u16, openfader_proto_xair::input_routing::InputRoute>>,
+> {
+    use openfader_proto_xair::input_routing::InputRoute;
+    let mut parts: std::collections::BTreeMap<u16, [Option<i32>; 3]> =
+        std::collections::BTreeMap::new();
+    for row in routing
+        .iter()
+        .filter(|r| matches!(r.target.as_str(), "analog" | "usb" | "bank"))
+    {
+        let strip = row
+            .key
+            .as_deref()
+            .and_then(|k| openfader_core::strip_index_for_key(topo, k))
+            .map(|i| i as u16)
+            .unwrap_or(row.strip);
+        anyhow::ensure!(
+            strip < 16,
+            "snapshot input route points outside XR18 channels"
+        );
+        let (field, value) = match (row.target.as_str(), row.group.as_str(), row.index) {
+            ("analog", "", 0) => (0, 18),
+            ("analog", "Mic", n @ 1..=16) => (0, i32::from(n) - 1),
+            ("analog", "Aux", n @ 1..=2) => (0, i32::from(n) + 15),
+            ("usb", "USB", n @ 1..=18) => (1, i32::from(n) - 1),
+            ("bank", "Bank", n @ 1..=2) => (2, i32::from(n) - 1),
+            _ => anyhow::bail!("snapshot contains an invalid XR18 input route"),
+        };
+        let entry = parts.entry(strip).or_insert([None; 3]);
+        anyhow::ensure!(
+            entry[field].replace(value).is_none(),
+            "snapshot repeats an XR18 input route"
+        );
+    }
+    if parts.is_empty() {
+        return Ok(None);
+    }
+    anyhow::ensure!(
+        parts.len() == 16,
+        "snapshot XR18 input routes are incomplete"
+    );
+    let mut routes = std::collections::BTreeMap::new();
+    for (strip, p) in parts {
+        let route = InputRoute {
+            analog: p[0].ok_or_else(|| anyhow::anyhow!("snapshot analog route missing"))?,
+            usb: p[1].ok_or_else(|| anyhow::anyhow!("snapshot USB route missing"))?,
+            bank: p[2].ok_or_else(|| anyhow::anyhow!("snapshot input bank missing"))?,
+        };
+        let saved = strips
+            .iter()
+            .find(|s| {
+                s.key
+                    .as_deref()
+                    .and_then(|k| openfader_core::strip_index_for_key(topo, k))
+                    .map(|i| i as u16)
+                    .unwrap_or(s.strip)
+                    == strip
+            })
+            .and_then(|s| s.params.get("source"))
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("snapshot input source context missing"))?;
+        anyhow::ensure!(
+            saved == route.active_label(),
+            "snapshot input route and preamp source disagree on channel {}",
+            strip + 1
+        );
+        routes.insert(strip, route);
+    }
+    Ok(Some(routes))
 }

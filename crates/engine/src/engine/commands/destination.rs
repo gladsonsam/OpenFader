@@ -42,7 +42,7 @@ impl Engine {
                         .iter()
                         .find(|row| row.target == target && row.id == control)
                         .ok_or_else(|| anyhow::anyhow!("Destination control unavailable."))?;
-                    if row.surface != "solo" {
+                    if !matches!(row.surface.as_str(), "solo" | "input_insert") {
                         policy.allow_master()?;
                     }
                     anyhow::ensure!(
@@ -56,7 +56,15 @@ impl Engine {
                         "Destination changed; reopen the control."
                     );
                     anyhow::ensure!(
-                        (!matches!(row.surface.as_str(), "global" | "solo" | "fx")
+                        (!matches!(
+                            row.surface.as_str(),
+                            "global"
+                                | "solo"
+                                | "fx"
+                                | "routing"
+                                | "input_insert"
+                                | "automix_settings"
+                        ) && !row.surface.starts_with("output_")
                             && row.gesture.is_none())
                             || guard.is_some(),
                         "Shared control requires the current configuration guard."
@@ -70,7 +78,16 @@ impl Engine {
                         let serialized = Self::destination_rows(&block);
                         anyhow::ensure!(
                             (row.preset
-                                || matches!(row.surface.as_str(), "global" | "solo" | "fx")
+                                || matches!(
+                                    row.surface.as_str(),
+                                    "global"
+                                        | "solo"
+                                        | "fx"
+                                        | "routing"
+                                        | "input_insert"
+                                        | "automix_settings"
+                                )
+                                || row.surface.starts_with("output_")
                                 || row.gesture.is_some())
                                 && row.revision.is_some()
                                 && row.generation.is_some()
@@ -91,6 +108,55 @@ impl Engine {
                             Some(
                                 driver
                                     .set_target_solo(
+                                        &target, &control, value, expected, &block, &context,
+                                    )
+                                    .await?,
+                            )
+                        } else if row.surface == "input_insert" {
+                            self.check_solo_scope(&row.members, writer)?;
+                            let driver_id = self.active_driver();
+                            let context = || {
+                                driver_id == self.active_driver()
+                                    && epoch == self.connection_gen.load(Ordering::Acquire)
+                                    && !self.reads_suspended.load(Ordering::Acquire)
+                                    && self.check_solo_scope(&row.members, writer).is_ok()
+                            };
+                            driver
+                                .set_output_processor_guarded(
+                                    &target, &control, value, expected, &block, &context,
+                                )
+                                .await?
+                        } else if row.surface.starts_with("output_")
+                            || row.surface == "automix_settings"
+                        {
+                            if !row.members.is_empty() {
+                                self.check_solo_scope(&row.members, writer)?;
+                            }
+                            let driver_id = self.active_driver();
+                            let context = || {
+                                driver_id == self.active_driver()
+                                    && epoch == self.connection_gen.load(Ordering::Acquire)
+                                    && !self.reads_suspended.load(Ordering::Acquire)
+                                    && self.policy_of(writer).allow_master().is_ok()
+                                    && (row.members.is_empty()
+                                        || self.check_solo_scope(&row.members, writer).is_ok())
+                            };
+                            driver
+                                .set_output_processor_guarded(
+                                    &target, &control, value, expected, &block, &context,
+                                )
+                                .await?
+                        } else if row.surface == "routing" {
+                            let driver_id = self.active_driver();
+                            let context = || {
+                                driver_id == self.active_driver()
+                                    && epoch == self.connection_gen.load(Ordering::Acquire)
+                                    && !self.reads_suspended.load(Ordering::Acquire)
+                                    && self.policy_of(writer).allow_master().is_ok()
+                            };
+                            Some(
+                                driver
+                                    .set_routing_control_guarded(
                                         &target, &control, value, expected, &block, &context,
                                     )
                                     .await?,

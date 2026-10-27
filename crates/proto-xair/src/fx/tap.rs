@@ -12,7 +12,7 @@ pub enum TapSubdiv {
 ///
 /// Only delay-type effects whose Time row is documented (non-`inferred`)
 /// in the notes are wired: DLY (10, par 2), 3TAP (11), 4TAP (12),
-/// D/RV (22), D/CR (25), D/FL (26) and MODD (27) — all par 1, all
+/// D/RV (21), D/CR (24), D/FL (25) and MODD (26) — all par 1, all
 /// `1..=3000` ms. Every one of these also carries a documented
 /// Factor/Pattern division enum, so `subdiv` is always true here and the
 /// UI offers quarter + dotted-eighth. All other effects — including PIT
@@ -44,7 +44,7 @@ pub fn fx_tap_target(index: u8) -> Option<FxTapTarget> {
             max_ms: 3000.0,
             subdiv: true,
         }),
-        11 | 12 | 22 | 25 | 26 | 27 => Some(FxTapTarget {
+        11 | 12 | 21 | 24 | 25 | 26 => Some(FxTapTarget {
             par: 1,
             min_ms: 1.0,
             max_ms: 3000.0,

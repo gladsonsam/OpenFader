@@ -1,6 +1,10 @@
 //! Meter subscriptions, renewal, caches, and spectrum access.
 use super::*;
 
+const INPUT_METER_STREAM: &str = "/meters/2";
+const DCA_METER_STREAM: &str = "/meters/8";
+const OUTPUT_METER_STREAM: &str = "/meters/5";
+
 impl XAirDriver {
     pub async fn last_dyn(&self) -> Option<dyn_gr::DynMeters> {
         self.dyn_cache
@@ -17,7 +21,11 @@ impl XAirDriver {
         &self,
         interval: std::time::Duration,
     ) -> anyhow::Result<broadcast::Receiver<openfader_core::MeterFrame>> {
-        let rx = self.session().await?.as_ref().unwrap().subscribe_meters();
+        let guard = self.session().await?;
+        let session = guard.as_ref().unwrap();
+        session.enable_xair_secondary_meters();
+        let rx = session.subscribe_meters();
+        drop(guard);
         self.spawn_meter_renewal(interval).await?;
         // Keep the receiver/drain and watchdog installed even after an
         // initial send failure; its same-session retry can then recover.
@@ -70,10 +78,31 @@ impl XAirDriver {
             )
             .await
             .map_err(|e| anyhow::anyhow!("dyn meter subscribe: {e}"))?;
+        session
+            .send(
+                addrs::METER_REQUEST,
+                vec![OscType::String(DCA_METER_STREAM.to_string())],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("DCA meter subscribe: {e}"))?;
+        session
+            .send(
+                addrs::METER_REQUEST,
+                vec![OscType::String(OUTPUT_METER_STREAM.to_string())],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("output meter subscribe: {e}"))?;
+        session
+            .send(
+                addrs::METER_REQUEST,
+                vec![OscType::String(INPUT_METER_STREAM.to_string())],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("input meter subscribe: {e}"))?;
         Ok(session.subscribe_meters())
     }
 
-    /// Spawn the meter renewal loop: re-send `/xremote` + both `/meters`
+    /// Spawn the meter renewal loop: re-send `/xremote` and all `/meters`
     /// subscribes every `interval` so the desk (suspected ~10 s expiry,
     /// INFERRED) keeps streaming. Fire-and-forget detached task over a
     /// cloned [`std::sync::Arc`] socket — no driver/session lock held, so
@@ -97,6 +126,18 @@ impl XAirDriver {
         let sub_dyn = osc::encode_message(
             addrs::METER_REQUEST,
             vec![OscType::String(addrs::METER_DYN_SUBSCRIBE.to_string())],
+        )?;
+        let sub_dca = osc::encode_message(
+            addrs::METER_REQUEST,
+            vec![OscType::String(DCA_METER_STREAM.to_string())],
+        )?;
+        let sub_outputs = osc::encode_message(
+            addrs::METER_REQUEST,
+            vec![OscType::String(OUTPUT_METER_STREAM.to_string())],
+        )?;
+        let sub_inputs = osc::encode_message(
+            addrs::METER_REQUEST,
+            vec![OscType::String(INPUT_METER_STREAM.to_string())],
         )?;
         let task = tokio::spawn(async move {
             let mut ticker = openfader_transport::session::keepalive_ticker(
@@ -123,7 +164,14 @@ impl XAirDriver {
                     continue;
                 }
                 renewed = std::time::Instant::now();
-                for bytes in [&xremote, &sub_levels, &sub_dyn] {
+                for bytes in [
+                    &xremote,
+                    &sub_levels,
+                    &sub_dyn,
+                    &sub_dca,
+                    &sub_outputs,
+                    &sub_inputs,
+                ] {
                     if let Err(error) = sock.send(bytes).await {
                         eprintln!("xair: subscription renewal failed: {error}");
                     }
@@ -225,6 +273,13 @@ impl XAirDriver {
         *self.dyn_cache.lock().await = None;
         session.send(addrs::XREMOTE, Vec::new()).await?;
         self.subscribe_meters_once().await?;
+        let generation = self
+            .connection_generation
+            .load(std::sync::atomic::Ordering::Acquire);
+        self.refresh_output_geq(session.clone(), generation);
+        self.refresh_automix_settings(session.clone(), generation);
+        self.refresh_output_misc(session.clone(), generation);
+        self.refresh_output_routing(session, generation);
         Ok(())
     }
 
@@ -233,11 +288,14 @@ impl XAirDriver {
     /// transport to 40 linear levels: the input bank `0..16` feeds ch 1..16
     /// (pre-mute taps — live-verified pattern 2026-10-20: hot while the
     /// channels sit muted, ch15-anchored at idx 14, aux pre pair at 16/17),
-    /// and idx 26 feeds the aux-return strip 35 (`/rtn/aux` mute-gated,
-    /// live-verified 2026-10-20). The documented main post-fader L/R pair
-    /// at 36/37 feeds the single main strip meter using the louder side
-    /// (xr-meters main.js; not yet rig-verified). Other unmapped strips
-    /// read silence. Missing or stale data returns an empty frame.
+    /// slots 16/17 are the aux pre-fader pair, 18..26 are the four stereo
+    /// FX returns, 26..32 are buses, and 32..36 are FX sends. Stereo pairs
+    /// feed the single strip meter using the louder side; 36/37 are the
+    /// main post-fader pair. The bank layout follows the X AIR OSC protocol;
+    /// bus 1 and aux were cross-checked against `/meters/0` on XR18 FW 1.20.
+    /// Four DCA levels from `/meters/8` append to the cache only while fresh;
+    /// slots 31..35 are silent without a recent DCA frame. Missing or stale
+    /// primary data returns an empty frame.
     pub(super) fn driver_poll_meters(&self) -> openfader_core::MeterFrame {
         let sample = self.meter_latest.lock().unwrap();
         let Some((_, latest)) = sample
@@ -250,11 +308,31 @@ impl XAirDriver {
         for (i, v) in latest.iter().take(16).enumerate() {
             levels[i] = *v;
         }
-        if let Some(v) = latest.get(26) {
-            levels[35] = *v;
+        if let (Some(left), Some(right)) = (latest.get(16), latest.get(17)) {
+            levels[35] = left.max(*right);
+        }
+        for i in 0..4 {
+            if let (Some(left), Some(right)) = (latest.get(18 + i * 2), latest.get(19 + i * 2)) {
+                levels[16 + i] = left.max(*right);
+            }
+        }
+        for i in 0..6 {
+            if let Some(level) = latest.get(26 + i) {
+                levels[20 + i] = *level;
+            }
+        }
+        for i in 0..4 {
+            if let Some(level) = latest.get(32 + i) {
+                levels[26 + i] = *level;
+            }
         }
         if let (Some(left), Some(right)) = (latest.get(36), latest.get(37)) {
             levels[30] = left.max(*right);
+        }
+        for i in 0..4 {
+            if let Some(level) = latest.get(40 + i) {
+                levels[31 + i] = *level;
+            }
         }
         openfader_core::MeterFrame { levels }
     }
@@ -265,6 +343,86 @@ impl XAirDriver {
             .unwrap()
             .as_ref()
             .map_or_else(Vec::new, |rta| rta.poll())
+    }
+
+    /// Physical sockets, not bus strip identities: routing can assign any source.
+    pub(super) fn physical_output_targets() -> Vec<String> {
+        (1..=6)
+            .map(|n| format!("physical/aux/{n:02}"))
+            .chain(["physical/main".to_string()])
+            .chain((1..=16).map(|n| format!("physical/p16/{n:02}")))
+            .chain((1..=18).map(|n| format!("physical/usb/{n:02}")))
+            .chain(["physical/phones".to_string()])
+            .collect()
+    }
+
+    pub(super) fn physical_input_targets() -> Vec<String> {
+        (1..=16)
+            .map(|n| format!("input/mic/{n:02}"))
+            .chain((1..=2).map(|n| format!("input/aux/{n:02}")))
+            .chain((1..=18).map(|n| format!("input/usb/{n:02}")))
+            .collect()
+    }
+
+    pub(super) fn driver_poll_output_meters(&self) -> openfader_core::OutputMeterSnapshot {
+        use std::sync::atomic::Ordering;
+        let generation = self.connection_generation.load(Ordering::Acquire);
+        let mut snapshot = openfader_core::OutputMeterSnapshot {
+            generation,
+            age_ms: 0,
+            frames: Vec::new(),
+        };
+        if !self.connected.load(Ordering::Acquire) {
+            return snapshot;
+        }
+        let since = *self.receive_since.lock().unwrap();
+        let cache = self.output_latest.lock().unwrap();
+        if let Some((at, values)) = cache.as_ref().filter(|(at, values)| {
+            *at >= since
+                && at.elapsed() <= std::time::Duration::from_millis(500)
+                && values.len() == 44
+        }) {
+            snapshot.age_ms = at.elapsed().as_millis() as u64;
+            let offsets = (0..6)
+                .map(|i| (i, 1))
+                .chain([(6, 2)])
+                .chain((8..24).map(|i| (i, 1)))
+                .chain((24..42).map(|i| (i, 1)))
+                .chain([(42, 2)]);
+            snapshot.frames.extend(
+                Self::physical_output_targets()
+                    .into_iter()
+                    .zip(offsets)
+                    .map(
+                        |(target, (index, width))| openfader_core::OutputMeterFrame {
+                            target,
+                            levels: values[index..index + width].to_vec(),
+                            inferred: true,
+                            compressor_gr: None,
+                        },
+                    ),
+            );
+        }
+        drop(cache);
+        let inputs = self.input_latest.lock().unwrap();
+        if let Some((at, values)) = inputs.as_ref().filter(|(at, values)| {
+            *at >= since
+                && at.elapsed() <= std::time::Duration::from_millis(500)
+                && values.len() == 36
+        }) {
+            snapshot.age_ms = snapshot.age_ms.max(at.elapsed().as_millis() as u64);
+            snapshot
+                .frames
+                .extend(Self::physical_input_targets().into_iter().zip(values).map(
+                    |(target, level)| openfader_core::OutputMeterFrame {
+                        target,
+                        levels: vec![*level],
+                        inferred: true,
+                        compressor_gr: None,
+                    },
+                ));
+        }
+        snapshot
     }
 
     pub(super) async fn driver_set_spectrum_target(
@@ -304,10 +462,66 @@ impl XAirDriver {
                             *guard = session
                                 .latest_meter_sample()
                                 .filter(|(at, _)| *at >= *receive_since.lock().unwrap())
-                                .map(|(at, frame)| (at, frame.levels));
+                                .map(|(at, frame)| {
+                                    let mut levels = frame.levels;
+                                    // Only the complete XR18 primary bank can be combined.
+                                    if levels.len() == 40 {
+                                        if let Some((_, dca)) = session
+                                            .latest_xair_dca_sample()
+                                            .filter(|(dca_at, _)| {
+                                                *dca_at >= *receive_since.lock().unwrap()
+                                                    && dca_at.elapsed()
+                                                        <= std::time::Duration::from_millis(500)
+                                            })
+                                        {
+                                            levels.extend(dca);
+                                        }
+                                    }
+                                    (at, levels)
+                                });
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
+        self.tasks.lock().unwrap().push(task);
+        // Output bank freshness is independent of primary strip meter delivery.
+        let session = self.session().await?.as_ref().unwrap().clone();
+        let mut output_rx = session.subscribe_received_updates();
+        let output_cache = self.output_latest.clone();
+        let input_cache = self.input_latest.clone();
+        let receive_since = self.receive_since.clone();
+        let generation = self.connection_generation.clone();
+        let connection = generation.load(std::sync::atomic::Ordering::Acquire);
+        let task = tokio::spawn(async move {
+            loop {
+                match output_rx.recv().await {
+                    Ok((_, msg)) if matches!(msg.addr.as_str(), "/meters/5" | "meters/5") => {
+                        if generation.load(std::sync::atomic::Ordering::Acquire) != connection {
+                            break;
+                        }
+                        *output_cache.lock().unwrap() = session
+                            .latest_xair_output_sample()
+                            .filter(|(at, _)| *at >= *receive_since.lock().unwrap());
+                    }
+                    Ok((at, msg)) if matches!(msg.addr.as_str(), "/meters/2" | "meters/2") => {
+                        if generation.load(std::sync::atomic::Ordering::Acquire) != connection {
+                            break;
+                        }
+                        if at >= *receive_since.lock().unwrap() {
+                            if let [OscType::Blob(blob)] = msg.args.as_slice() {
+                                if let Some(values) =
+                                    openfader_transport::meters::parse_xair_meter_blob(blob)
+                                        .filter(|v| v.len() == 36)
+                                {
+                                    *input_cache.lock().unwrap() = Some((at, values));
+                                }
+                            }
+                        }
+                    }
+                    Ok(_) | Err(broadcast::error::RecvError::Lagged(_)) => continue,
                     Err(broadcast::error::RecvError::Closed) => break,
                 }
             }

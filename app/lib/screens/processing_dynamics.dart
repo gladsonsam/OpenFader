@@ -290,6 +290,7 @@ class _DynTab extends StatelessWidget {
             ]),
           ],
         ],
+        _AdvancedDynamics(store: store, kind: kind, compact: compact),
         if (kind == DynKind.comp) ...[
           const SizedBox(height: 12),
           if (compact)
@@ -310,6 +311,109 @@ class _DynTab extends StatelessWidget {
         ],
       ]);
     });
+  }
+}
+
+/// Controls are offered only when the active provider describes their values.
+class _AdvancedDynamics extends StatelessWidget {
+  final ChannelStore store;
+  final DynKind kind;
+  final bool compact;
+  const _AdvancedDynamics(
+      {required this.store, required this.kind, required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    final prefix = kind.name;
+    final palette = ConsolePalette.of(context);
+    final enums = <(String, String)>[
+      ('mode', 'Mode'),
+      if (kind == DynKind.comp) ...[
+        ('det', 'Detector'),
+        ('env', 'Envelope'),
+      ],
+      ('key_src', 'Key source'),
+      ('filter_type', 'Key filter type'),
+    ];
+    final numbers = <(String, String, String)>[
+      if (kind == DynKind.comp) ...[
+        ('hold', 'Hold', 'ms'),
+        ('mix', 'Mix', '%'),
+      ],
+      ('filter_freq', 'Key filter frequency', 'Hz'),
+    ];
+    final toggles = <(String, String)>[
+      if (kind == DynKind.comp) ('auto', 'Auto'),
+      ('filter_on', 'Key filter'),
+    ];
+    final controls = <Widget>[];
+    for (final (prop, label) in enums) {
+      final leaf = '${prefix}_$prop';
+      if (store.supports(leaf) &&
+          parameterChoices(store.paramMetadata(leaf)).isNotEmpty) {
+        controls.add(_ParameterChoices(
+            store: store,
+            leaf: leaf,
+            label: label,
+            fallback: '—',
+            compact: compact,
+            onChanged: (value) => store.cmdParam(leaf, value)));
+      }
+    }
+    for (final (prop, label) in toggles) {
+      final leaf = '${prefix}_$prop';
+      if (!store.supports(leaf)) continue;
+      final value = store.paramBool(leaf);
+      controls.add(Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+              color: palette.processingPanel, borderRadius: U4.rWell),
+          child: Row(children: [
+            Expanded(
+                child: Text(label,
+                    style: AppDesign.type(14, color: palette.text1))),
+            Switch(
+                value: value ?? false,
+                onChanged:
+                    value == null ? null : (v) => store.cmdParam(leaf, v)),
+          ])));
+    }
+    for (final (prop, label, unit) in numbers) {
+      final leaf = '${prefix}_$prop';
+      final range = _controlRange(store, leaf);
+      if (range == null) continue;
+      final value = store.paramNum(leaf)!;
+      controls.add(Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+              color: palette.processingPanel, borderRadius: U4.rWell),
+          child: _ProcessingSlider(
+              label: label,
+              text: '${value.toStringAsFixed(value < 10 ? 1 : 0)} $unit',
+              value: value,
+              min: range.first,
+              max: range.last,
+              compact: true,
+              color: kind == DynKind.gate
+                  ? palette.processingBlue
+                  : palette.processingPurple,
+              onChanged: (v) => store.cmdParam(leaf, v))));
+    }
+    if (controls.isEmpty) return const SizedBox.shrink();
+    return Padding(
+        padding: const EdgeInsets.only(top: 12),
+        child: ExpansionTile(
+            key: PageStorageKey('advanced-$prefix-${store.stripKey}'),
+            title: Text('Advanced',
+                style: AppDesign.type(14, color: palette.text7)),
+            tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+            childrenPadding: const EdgeInsets.all(8),
+            children: [
+              for (final control in controls) ...[
+                control,
+                const SizedBox(height: 8),
+              ],
+            ]));
   }
 }
 

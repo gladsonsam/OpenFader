@@ -3,10 +3,11 @@ use super::*;
 #[test]
 fn capabilities_match_loopback_tested_set() {
     use openfader_core::params;
-    // Every advertised id exists in the canonical catalogue…
+    // Every advertised id exists in the canonical or provider catalogue…
     for id in XAIR_CAPABILITIES {
         assert!(
-            params::find(id).is_some(),
+            params::find(id).is_some()
+                || XAirDriver::new().param_defs().iter().any(|d| d.id == *id),
             "xair capability {id} not in the catalogue"
         );
     }
@@ -45,9 +46,9 @@ fn capabilities_match_loopback_tested_set() {
         "fx3_mute",
         "fx4_mute",
         "fx_insert",
+        "usbreturn",
         "hpf_slope",
         "icon",
-        "link",
         "send10_on",
         "send10_pan",
         "send11_level",
@@ -93,7 +94,6 @@ fn capabilities_match_loopback_tested_set() {
         "solo_level",
         "solo_mute",
         "solo_source",
-        "source",
     ];
     expected.sort_unstable();
     assert_eq!(unsupported, expected);

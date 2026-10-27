@@ -129,8 +129,12 @@ class NativeLibrarySection extends StatelessWidget {
                       ? () => _confirm(
                             context,
                             {'op': 'refresh'},
-                            'Download current show?',
-                            'Download and inspect the stored-show ZIP. This does not save a file or certify current unsaved edits or native restoration. The stored snapshot index is refreshed; current edits remain unverified.',
+                            view?.guard['provider'] == 'xair'
+                                ? 'Read snapshot names?'
+                                : 'Download current show?',
+                            view?.guard['provider'] == 'xair'
+                                ? 'Read the names of all 64 mixer snapshot slots.'
+                                : 'Download and inspect the stored-show ZIP. This does not save a file or certify current unsaved edits or native restoration. The stored snapshot index is refreshed; current edits remain unverified.',
                           )
                       : null,
                   child: const Text('Transfer / refresh reports'),
@@ -236,7 +240,7 @@ class NativeLibrarySection extends StatelessWidget {
                 spacing: 8,
                 children: [
                   Text(
-                    '${slot['slot']} · ${slot['name']}'
+                    '${slot['slot']} · ${slot['name'] == '' ? '(unnamed)' : slot['name']}'
                     '${view.guard['current'] == slot['slot'] ? ' · last reported recall' : ''}',
                     style: TextStyle(color: palette.text1),
                   ),
@@ -264,12 +268,16 @@ class NativeLibrarySection extends StatelessWidget {
                                     view.authority == 'mixer'
                                         ? 'Update native snapshot?'
                                         : 'Replace simulated capture?',
-                                    view.authority == 'mixer'
-                                        ? 'Store current mixer state over this user position. The provider verifies stored files by readback. Current-edit coverage and safes remain unverified. No automatic retry.'
-                                        : 'Overwrite this memory-only capture with current simulated fader, mute, pan and name values. No native file is created.',
+                                    view.guard['provider'] == 'xair'
+                                        ? 'Save current mixer settings to this slot, replacing its contents. The mixer’s snapshot scope applies.'
+                                        : view.authority == 'mixer'
+                                            ? 'Store current mixer state over this user position. The provider verifies stored files by readback. Current-edit coverage and safes remain unverified. No automatic retry.'
+                                            : 'Overwrite this memory-only capture with current simulated fader, mute, pan and name values. No native file is created.',
                                   )
                               : null,
-                      child: const Text('Replace'),
+                      child: Text(view.guard['provider'] == 'xair'
+                          ? 'Save to slot'
+                          : 'Replace'),
                     ),
                   if (view.supports('rename'))
                     TextButton(
@@ -289,9 +297,11 @@ class NativeLibrarySection extends StatelessWidget {
                                     view.authority == 'mixer'
                                         ? 'Delete native snapshot?'
                                         : 'Delete simulated slot?',
-                                    view.authority == 'mixer'
-                                        ? 'Delete this stored snapshot permanently. Later native positions compact; refresh before another operation. No automatic retry.'
-                                        : 'Delete this memory-only simulated strip capture? It cannot be undone.',
+                                    view.guard['provider'] == 'xair'
+                                        ? 'Delete this mixer snapshot. Refresh the slot names before another change.'
+                                        : view.authority == 'mixer'
+                                            ? 'Delete this stored snapshot permanently. Later native positions compact; refresh before another operation. No automatic retry.'
+                                            : 'Delete this memory-only simulated strip capture? It cannot be undone.',
                                   )
                               : null,
                       child: const Text('Delete'),

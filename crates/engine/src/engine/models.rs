@@ -77,6 +77,29 @@ pub struct StoredScene {
     pub fx: Vec<StoredFx>,
     /// Routing snapshot (positional strip + stable key, group, 1-based index).
     pub routing: Vec<StoredRoute>,
+    /// Optional provider-owned mute group state; old scenes omit it.
+    pub mute_groups: Option<StoredMuteGroups>,
+    pub automix: Option<StoredAutomix>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredAutomix {
+    pub provider: String,
+    pub values: [bool; 4],
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredMuteGroups {
+    pub provider: String,
+    pub masters: Vec<bool>,
+    pub memberships: Vec<StoredMuteGroupMembership>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredMuteGroupMembership {
+    pub strip: u16,
+    pub key: String,
+    pub mask: u32,
 }
 
 /// One strip's contribution to a [`StoredScene`].
@@ -139,7 +162,7 @@ pub struct RecallScope {
     /// WING adds `sends_matrix` and `sends_main`. `None` = all.
     #[serde(default)]
     pub groups: Option<Vec<String>>,
-    /// Global allowlist (`main`, `fx`, `routing`). `None` = all.
+    /// Global allowlist (`main`, `fx`, `routing`, `mute_groups`). `None` = all.
     #[serde(default)]
     pub globals: Option<Vec<String>>,
 }
@@ -255,6 +278,14 @@ pub struct StoredFx {
     pub on: bool,
     pub bypass: bool,
     pub params: BTreeMap<String, f32>,
+    /// Optional provider-specific FX insert state. Legacy scenes omit it.
+    pub insert: Option<StoredFxInsert>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredFxInsert {
+    pub provider: String,
+    pub enabled: bool,
 }
 
 pub(super) fn pv_bool(value: &ParamValue) -> Option<bool> {
