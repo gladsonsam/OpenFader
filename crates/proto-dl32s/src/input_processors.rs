@@ -220,3 +220,62 @@ impl Dl32sDriver {
         }
     }
 }
+
+impl Dl32sDriver {
+    /// One worker per live session, one read-only request after a quiet DSP
+    /// burst. A continuous drag postpones the bulk read instead of flooding
+    /// the desk. No-op writes also need proof: ACK never clears pending words.
+    pub(super) fn start_input_refresh(&self, generation: u64) {
+        let (tx, mut rx) = tokio::sync::watch::channel(());
+        *self.input_refresh.lock().unwrap() = Some((generation, tx));
+        let sessions = std::sync::Arc::downgrade(&self.session);
+        let gen = self.generation.clone();
+        let writes = self.output_write.clone();
+        tokio::spawn(async move {
+            while rx.changed().await.is_ok() {
+                loop {
+                    tokio::select! {
+                        changed = rx.changed() => {
+                            if changed.is_err() { return; }
+                        }
+                        _ = tokio::time::sleep(std::time::Duration::from_millis(300)) => break,
+                    }
+                }
+                // Same lane as manual/preamp and guarded processor writes.
+                // Check again after waiting for both locks: old-session work
+                // must never run on a replacement connection.
+                let _write = writes.lock().await;
+                let Some(sessions) = sessions.upgrade() else {
+                    return;
+                };
+                let guard = sessions.lock().await;
+                if gen.load(Ordering::Acquire) != generation {
+                    return;
+                }
+                if rx.has_changed().unwrap_or(true) {
+                    continue;
+                }
+                let Some(session) = guard.as_ref().filter(|s| s.is_alive()) else {
+                    return;
+                };
+                if let Err(error) = session.request_value_snapshot().await {
+                    // No replay/retry and no fabricated evidence. UI continues
+                    // to report waiting for verified readback if this fails.
+                    eprintln!("dl32s: input DSP readback request failed (edits remain unverified): {error:#}");
+                }
+            }
+        });
+    }
+
+    pub(super) fn schedule_input_refresh(&self, native: &str) {
+        let id = crate::input::canonical_for_table_key(native).unwrap_or(native);
+        if !["eq", "gate", "compressor"].iter().any(|p| member(p, id)) {
+            return;
+        }
+        if let Some((generation, tx)) = self.input_refresh.lock().unwrap().as_ref() {
+            if *generation == self.generation.load(Ordering::Acquire) {
+                tx.send_replace(());
+            }
+        }
+    }
+}

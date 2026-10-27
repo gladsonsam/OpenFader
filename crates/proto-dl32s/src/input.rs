@@ -309,7 +309,9 @@ impl Dl32sDriver {
         match out {
             Out::Int(v) => session.write_int(addr, v, VALUE_TYPE_PARAM).await,
             Out::Float(v) => session.write_float(addr, v).await,
-        }
+        }?;
+        self.schedule_input_refresh(key);
+        Ok(())
     }
 
     /// Read one table field back from the desk-proven push cache.
