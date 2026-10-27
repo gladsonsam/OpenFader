@@ -1,0 +1,23 @@
+{
+  "list": [
+    {
+      "fw": "0.1.0",
+      "id": "foh",
+      "ip": "192.168.1.20",
+      "kind": "console",
+      "model": "SimConsole 48",
+      "name": "FOH Console",
+      "state": "connected"
+    },
+    {
+      "id": "sb1",
+      "ip": "192.168.1.40",
+      "kind": "io",
+      "model": "SimIO 32",
+      "name": "Stage Box A",
+      "state": "in_use"
+    }
+  ],
+  "scanned_at": 1700000000,
+  "type": "devices"
+}

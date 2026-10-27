@@ -1,0 +1,29 @@
+[package]
+name = "openfader-serve"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "openfader-serve"
+path = "src/main.rs"
+
+[lib]
+name = "openfader_serve"
+path = "src/lib.rs"
+
+[dependencies]
+openfader-engine = { path = "../engine" }
+openfader-sim = { path = "../sim" }
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws"] }
+hyper-util = { version = "0.1", features = ["tokio", "service", "server", "http1"] }
+serde_json = "1"
+futures = "0.3"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.30"
+futures = "0.3"
+socket2 = "0.6"

@@ -1,0 +1,34 @@
+target/
+dist/
+node_modules/
+*.log
+.DS_Store
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+**/build/
+**/.gradle/
+**/.kotlin/
+**/local.properties
+**/.cxx/
+
+# Internal planning docs live elsewhere — do not track here
+BACKLOG.md
+
+# Local-only dev scripts (kept out of the repo)
+scripts/dev-xr18.sh
+scripts/flutter-sim-dev.sh
+scripts/flutter-mac-dev.sh
+
+# Flutter Rust bridge prebuilts — rebuilt in CI (deploy.yml), not tracked
+**/jniLibs/
+**/*.so
+
+# Packaged manual-build artifacts
+/artifacts/
+
+# Design references and verification records live in private docs
+/app/design/

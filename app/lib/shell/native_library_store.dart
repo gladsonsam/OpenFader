@@ -1,0 +1,161 @@
+import 'dart:io';
+
+import '../core/native_library.dart';
+import '../core/native_archive_files.dart';
+import 'store_adapter.dart';
+
+mixin ShellNativeLibrary on ShellStoreAdapter {
+  NativeLibraryVm? _nativeLibrary;
+  String? _nativeStatus;
+  bool _nativeBusy = false;
+  int _nativeRun = 0;
+  Object? _nativeSession;
+  File? _nativeArchive;
+  bool get hasNativeFile => _nativeArchive != null;
+
+  NativeLibraryVm? get nativeLibrary =>
+      _nativeSession == engine.session ? _nativeLibrary : null;
+  String? get nativeStatus => _nativeStatus;
+  bool get nativeBusy => _nativeBusy;
+  bool get nativeWritable => engine.connected && app.blockedAccess.isEmpty;
+  Object get nativeContext =>
+      (engine.session, nativeLibrary, app.controlAccessEpoch);
+
+  Future<void> nativeAction(
+    Map<String, dynamic> action,
+    Object captured,
+  ) async {
+    if (isDisposed || _nativeBusy || !engine.connected) return;
+    if (app.libraryActive || app.libraryResetting) {
+      _nativeStatus = 'Wait for the local library operation to finish.';
+      notifyListeners();
+      return;
+    }
+    if (nativeContext != captured) {
+      _nativeStatus =
+          'Provider session, inventory or access changed. Inspect again.';
+      notifyListeners();
+      return;
+    }
+    final run = ++_nativeRun;
+    final session = engine.session;
+    final access = app.controlAccessEpoch;
+    _nativeBusy = true;
+    _nativeStatus = 'Waiting for a correlated provider result…';
+    notifyListeners();
+    final result = await app.requestNativeLibrary(this, action, nativeLibrary);
+    if (isDisposed ||
+        run != _nativeRun ||
+        engine.session != session ||
+        app.controlAccessEpoch != access) {
+      if (!isDisposed && run == _nativeRun) cancelNativeAction();
+      return;
+    }
+    if (result['status'] == 'confirmed') {
+      try {
+        _nativeArchive ??= await NativeArchiveFiles.latest();
+      } catch (error) {
+        result['message'] =
+            '${result['message']} Preserved ZIP discovery failed: $error';
+      }
+      if (isDisposed ||
+          run != _nativeRun ||
+          engine.session != session ||
+          app.controlAccessEpoch != access) {
+        if (!isDisposed && run == _nativeRun) cancelNativeAction();
+        return;
+      }
+      final raw = result['file_bytes'] ??
+          (action['op'] == 'inspect_file' ? action['bytes'] : null);
+      if (raw is List) {
+        try {
+          final file = await NativeArchiveFiles.preserve(
+            raw,
+            () =>
+                !isDisposed &&
+                run == _nativeRun &&
+                engine.session == session &&
+                app.controlAccessEpoch == access,
+          );
+          if (isDisposed ||
+              run != _nativeRun ||
+              engine.session != session ||
+              app.controlAccessEpoch != access) {
+            if (!isDisposed && run == _nativeRun) cancelNativeAction();
+            return;
+          }
+          _nativeArchive = file;
+          result['message'] =
+              '${result['message']} Original ZIP saved on this device; use Export preserved ZIP to share it.';
+        } catch (error) {
+          result['status'] = 'rejected';
+          result['message'] = 'Native file persistence unconfirmed: $error';
+        }
+      }
+      final index = result['file_index'];
+      if (index is Map && index['slots'] is List) {
+        result['message'] =
+            '${result['message']} ${(index['slots'] as List).length} stored snapshots; current edits unverified.';
+      }
+    }
+    if (isDisposed || run != _nativeRun) return;
+    _nativeBusy = false;
+    _nativeStatus = '${result['status']}: ${result['message']}';
+    // Discard stale receipts. An uncertain operation invalidates the dialog
+    // guard instead of encouraging a blind repeat or optimistic slot update.
+    _nativeLibrary =
+        session == engine.session && result['status'] == 'confirmed'
+            ? NativeLibraryVm.parse(result['inventory'])
+            : null;
+    _nativeSession = session;
+    notifyListeners();
+  }
+
+  Future<void> importNativeFile() async {
+    final captured = nativeContext;
+    try {
+      final bytes = await NativeArchiveFiles.pick();
+      if (bytes == null || isDisposed) return;
+      await nativeAction({
+        'op': 'inspect_file',
+        'bytes': bytes.toList(),
+      }, captured);
+    } catch (error) {
+      if (isDisposed) return;
+      _nativeStatus = 'Native file import failed: $error';
+      notifyListeners();
+    }
+  }
+
+  Future<void> exportNativeFile() async {
+    final file = _nativeArchive;
+    if (file == null || _nativeBusy || isDisposed) return;
+    try {
+      await NativeArchiveFiles.share(file);
+      if (isDisposed) return;
+      _nativeStatus =
+          'Original native ZIP shared. Exact restoration remains unverified.';
+    } catch (error) {
+      if (isDisposed) return;
+      _nativeStatus = '$error';
+    }
+    notifyListeners();
+  }
+
+  void cancelNativeAction() {
+    _nativeRun++;
+    app.cancelNativeLibrary(this);
+    _nativeBusy = false;
+    _nativeLibrary = null;
+    _nativeStatus =
+        'Cancelled waiting. The mixer may already have changed. Inspect again.';
+    if (!isDisposed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _nativeRun++;
+    app.cancelNativeLibrary(this);
+    super.dispose();
+  }
+}

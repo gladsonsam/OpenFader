@@ -1,0 +1,17 @@
+{
+  "slots": [
+    {
+      "bypass": false,
+      "level": 0.5,
+      "on": true,
+      "params": {
+        "decay": 0.41999998688697815,
+        "mix": 1.0
+      },
+      "ret_label": "Ret 1/2",
+      "slot": 1,
+      "type": "Hall"
+    }
+  ],
+  "type": "fx"
+}

@@ -1,0 +1,414 @@
+//! Input command arms.
+
+use super::*;
+
+impl Engine {
+    pub(super) async fn apply_input(
+        &self,
+        cmd: Cmd,
+        writer: &str,
+        out: &mut Vec<Event>,
+        policy: &Policy,
+        expected: Option<BTreeMap<String, ParamValue>>,
+    ) -> anyhow::Result<Option<Event>> {
+        match cmd {
+            Cmd::InputProcessor { request_id, epoch, ch, key, processor, field, value, guard } => {
+                Ok(Some(self.apply_input_processor(request_id, epoch, ch, key, processor, field, value, guard, writer, out).await))
+            }
+            Cmd::Fader { ch, value, key } => {
+                let ch = self.resolve_strip(ch, key.as_deref())?;
+                policy.allow_fader(StripId(ch), value)?;
+                if let Some(holder) = self.lock_holder(ch) {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch, &holder)));
+                    }
+                }
+                for member in self
+                    .active_drv()
+                    .control_members(StripId(ch), "fader")
+                    .await?
+                {
+                    policy.allow_fader(member, value)?;
+                    if let Some(holder) = self.lock_holder(member.0) {
+                        if holder != writer {
+                            return Ok(Some(Self::locked_error(member.0, &holder)));
+                        }
+                    }
+                }
+                let from = self.offline_from(StripId(ch), "fader").await;
+                self.drv_set_fader(StripId(ch), value).await?;
+                if let Some(from) = from {
+                    self.offline_note(ch, "fader", from, json!(value)).await;
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                // Confirmed-value echo (same as the `param` arm): the state
+                // frame alone cannot confirm the write on drivers whose
+                // snapshot is empty (xair), so re-read and broadcast what
+                // the desk reports, falling back to the written value
+                // (including when the re-read races the desk's apply lag
+                // see `refresh_param`). The echo carries readback
+                // provenance: `verified` when the desk confirmed it,
+                // `accepted` when the write landed without readback proof
+                // (DL32S always: no echo, no independent query).
+                let (value, authority) = match self
+                    .refresh_param(StripId(ch), "fader", &json!(value))
+                    .await
+                {
+                    Some(v) => (v, Some("verified".to_string())),
+                    None => (json!(value), Some("accepted".to_string())),
+                };
+                out.push(Event::Param {
+                    ch,
+                    field: "fader".to_string(),
+                    value,
+                    by: Some(writer.to_string()),
+                    key: self.active_strip_key(ch),
+                    authority,
+                });
+                self.push_state_with_by(writer, out).await;
+                Ok(None)
+            }
+            Cmd::Mute { ch, muted, key } => {
+                let ch = self.resolve_strip(ch, key.as_deref())?;
+                policy.allow_mute(StripId(ch))?;
+                if let Some(holder) = self.lock_holder(ch) {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch, &holder)));
+                    }
+                }
+                for member in self
+                    .active_drv()
+                    .control_members(StripId(ch), "mute")
+                    .await?
+                {
+                    policy.allow_mute(member)?;
+                    if let Some(holder) = self.lock_holder(member.0) {
+                        if holder != writer {
+                            return Ok(Some(Self::locked_error(member.0, &holder)));
+                        }
+                    }
+                }
+                let from = self.offline_from(StripId(ch), "mute").await;
+                self.drv_set_mute(StripId(ch), muted).await?;
+                if let Some(from) = from {
+                    self.offline_note(ch, "mute", from, json!(muted)).await;
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                // Confirmed-value echo (same rationale as `fader` above, with
+                // the same `verified`/`accepted` provenance on the echo).
+                let (value, authority) =
+                    match self.refresh_param(StripId(ch), "mute", &json!(muted)).await {
+                        Some(v) => (v, Some("verified".to_string())),
+                        None => (json!(muted), Some("accepted".to_string())),
+                    };
+                out.push(Event::Param {
+                    ch,
+                    field: "mute".to_string(),
+                    value,
+                    by: Some(writer.to_string()),
+                    key: self.active_strip_key(ch),
+                    authority,
+                });
+                self.push_state_with_by(writer, out).await;
+                Ok(None)
+            }
+            // LR main fader (all drivers via `get_main_fader`; `None` in
+            // state when the driver has none). Not strip-locked: locks pin
+            // per-channel strips.
+            Cmd::MainFader { value } => {
+                let value = openfader_core::validate_fader(value)?;
+                policy.allow_main(value)?;
+                let from = if self.offline.read().unwrap().active {
+                    Some(
+                        self.active_main_fader()
+                            .await
+                            .map(|v| json!(v))
+                            .unwrap_or(Value::Null),
+                    )
+                } else {
+                    None
+                };
+                self.drv_set_main(value).await?;
+                if let Some(from) = from {
+                    self.offline_note(u16::MAX, "main_fader", from, json!(value))
+                        .await;
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                // `main` echo (R2 display continuity): the inclusive getters
+                // already carry own writes, so `state` + this frame keep a
+                // new attach continuous. No fabrication: the fader IS the
+                // submitted value, and `main` frames carry no `authority`
+                // field, see the `param` event for verified values.
+                self.push_state_with_by(writer, out).await;
+                let muted = self.active_drv().get_main_mute().await.ok();
+                out.push(Event::Main {
+                    fader: Some(value),
+                    muted,
+                });
+                Ok(None)
+            }
+            // R2 Main LR master mute (all drivers via `get_main_mute`;
+            // unsupported drivers bail honestly). Master gate: the main
+            // master is a shared mix like the bus masters.
+            Cmd::MainMute { muted } => {
+                policy.allow_master_mute()?;
+                self.active_drv().set_main_mute(muted).await?;
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                // `main` echo (same display-continuity rationale as above).
+                let fader = self.active_drv().get_main_fader().await.ok();
+                out.push(Event::Main {
+                    fader,
+                    muted: Some(muted),
+                });
+                self.push_state_with_by(writer, out).await;
+                Ok(None)
+            }
+            // R2 per-strip solo (monitor bus only). Channel-scoped lock +
+            // strip gate (no FOH impact, but a locked strip is someone's).
+            Cmd::Solo { ch, soloed, key } => {
+                let ch = self.resolve_strip(ch, key.as_deref())?;
+                policy.allow_strip(StripId(ch))?;
+                if let Some(holder) = self.lock_holder(ch) {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch, &holder)));
+                    }
+                }
+                for member in self
+                    .active_drv()
+                    .control_members(StripId(ch), "solo")
+                    .await?
+                {
+                    policy.allow_strip(member)?;
+                    if let Some(holder) = self.lock_holder(member.0) {
+                        if holder != writer {
+                            return Ok(Some(Self::locked_error(member.0, &holder)));
+                        }
+                    }
+                }
+                self.active_drv().set_solo(StripId(ch), soloed).await?;
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                // Echo the commanded state (house pattern, same as mute:
+                // the re-read races the desk's apply lag, so a disagreeing
+                // read falls back to the written value instead of flashing
+                // a phantom unsoloed. The write path itself is rig-verified:
+                // `/-stat/solosw/NN` 1-based sets the bank bit, `/-action/
+                // clearsolo` clears it, XR18 FW 1.20, 2026-10-18.)
+                //
+                // Cache alongside the echo (see `apply_inbound`): the poll
+                // diff then stays quiet instead of re-emitting this state.
+                if !self.active_drv().is_hardware() {
+                    self.apply_inbound(ch, "solo", &ParamValue::Bool(soloed));
+                }
+                out.push(Event::Solo {
+                    ch,
+                    soloed,
+                    key: self.active_strip_key(ch),
+                });
+                Ok(None)
+            }
+            Cmd::Param {
+                ch,
+                field,
+                value,
+                key,
+            } => {
+                let ch = self.resolve_strip(ch, key.as_deref())?;
+                let pv = match &value {
+                    Value::Number(n) => ParamValue::Float(n.as_f64().unwrap_or(0.0) as f32),
+                    Value::Bool(b) => ParamValue::Bool(*b),
+                    Value::String(s) => ParamValue::Text(s.clone()),
+                    _ => anyhow::bail!("param value must be number|bool|string"),
+                };
+                match (&field as &str, &pv) {
+                    ("fader", ParamValue::Float(v)) => {
+                        policy.allow_fader(StripId(ch), *v)?;
+                    }
+                    ("name", _) => {
+                        policy.allow_rename(StripId(ch))?;
+                    }
+                    _ => {
+                        policy.allow_strip(StripId(ch))?;
+                    }
+                }
+                if let Some(holder) = self.lock_holder(ch) {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(ch, &holder)));
+                    }
+                }
+                if field == "link" {
+                    let linked = match pv {
+                        ParamValue::Bool(value) => value,
+                        _ => anyhow::bail!("stereo link requires a boolean"),
+                    };
+                    let pair = self
+                        .active_drv()
+                        .stereo_pairs()
+                        .into_iter()
+                        .find(|pair| pair.contains(&ch))
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("stereo pairing unavailable for this channel")
+                        })?;
+                    for member in pair {
+                        // Linking can replace names, levels and assignments,
+                        // so a strip-only grant is insufficient.
+                        policy.allow_assign(StripId(member))?;
+                        if linked {
+                            policy.allow_rename(StripId(member))?;
+                        }
+                        if let Some(holder) = self.lock_holder(member) {
+                            if holder != writer {
+                                return Ok(Some(Self::locked_error(member, &holder)));
+                            }
+                        }
+                    }
+                    if linked {
+                        let level = self.active_drv().get_fader(StripId(ch)).await?;
+                        for member in pair {
+                            policy.allow_fader(StripId(member), level)?;
+                        }
+                    }
+                    let changes = self
+                        .active_drv()
+                        .set_stereo_link(StripId(ch), linked)
+                        .await?;
+                    self.note_write(writer);
+                    self.touch_holder_locks(writer);
+                    for (strip, field, value) in changes {
+                        // As with ordinary writes, superseded desk evidence
+                        // must not overwrite the accepted value in snapshots.
+                        let _ = self
+                            .refresh_param(strip, &field, &param_value_json(&value))
+                            .await;
+                        out.push(Event::Param {
+                            ch: strip.0,
+                            field,
+                            value: param_value_json(&value),
+                            by: Some(writer.to_string()),
+                            key: self.active_strip_key(strip.0),
+                            authority: Some("accepted".to_string()),
+                        });
+                    }
+                    self.push_state_with_by(writer, out).await;
+                    return Ok(None);
+                }
+                for member in self
+                    .active_drv()
+                    .control_members(StripId(ch), &field)
+                    .await?
+                {
+                    match (field.as_str(), &pv) {
+                        ("fader", ParamValue::Float(v)) => policy.allow_fader(member, *v)?,
+                        ("mute", _) => policy.allow_mute(member)?,
+                        ("name", _) => policy.allow_rename(member)?,
+                        _ => policy.allow_strip(member)?,
+                    }
+                    if let Some(holder) = self.lock_holder(member.0) {
+                        if holder != writer {
+                            return Ok(Some(Self::locked_error(member.0, &holder)));
+                        }
+                    }
+                }
+                let from = self.offline_from(StripId(ch), &field).await;
+                if let Some(expected) = &expected {
+                    self.active_drv()
+                        .set_param_guarded(StripId(ch), &field, pv, expected)
+                        .await?;
+                } else {
+                    self.drv_set_param(StripId(ch), &field, pv).await?;
+                }
+                self.note_write(writer);
+                self.touch_holder_locks(writer);
+                // Confirmed-value echo: re-read the param just written and
+                // broadcast what the driver reports (wire quantization may
+                // shift it); fall back to the written value when the
+                // re-read fails, or when it races the desk's apply lag
+                // (see `refresh_param`), so the echo still lands. Provenance
+                // rides along (`verified` on desk agreement, `accepted`
+                // otherwise); frontends must not count `accepted` as recall
+                // confirmation.
+                let refreshed = self.refresh_param(StripId(ch), &field, &value).await;
+                let (value, authority) = match refreshed {
+                    Some(v) => (v, Some("verified".to_string())),
+                    None => (value, Some("accepted".to_string())),
+                };
+                if let Some(from) = from {
+                    self.offline_note(ch, &field, from, value.clone()).await;
+                }
+                out.push(Event::Param {
+                    ch,
+                    field: field.clone(),
+                    value,
+                    by: Some(writer.to_string()),
+                    key: self.active_strip_key(ch),
+                    authority,
+                });
+                self.project_param_dependents(ch, &field, writer, out).await;
+                self.push_state_with_by(writer, out).await;
+                Ok(None)
+            }
+            Cmd::ParamGuarded { .. } => unreachable!("guarded parameter normalized above"),
+            // R2 desk fire-and-forget action: clear all solos (monitoring-side
+            // only). No desk echo, the desk ACKs by silence, so fan out
+            // explicit unsoloed frames for every known-soloed strip and drop
+            // them from the cache; otherwise the UI would stick on soloed.
+            // (A surface clear arrives the same way, via `apply_inbound`
+            // solosw broadcasts.)
+            Cmd::ClearSolo => {
+                let drv = self.active_drv();
+                if drv.clear_solo_scope() == Some("advertised") {
+                    return self.clear_advertised_solos(writer, out).await;
+                }
+                let inputs_only = drv.clear_solo_scope() == Some("inputs");
+                let count = if inputs_only {
+                    drv.channel_count()
+                } else {
+                    drv.strip_count()
+                };
+                // Check the complete affected bank before the bulk provider write.
+                for ch in 0..count as u16 {
+                    policy.allow_strip(StripId(ch))?;
+                    if let Some(holder) = self.lock_holder(ch) {
+                        if holder != writer {
+                            return Ok(Some(Self::locked_error(ch, &holder)));
+                        }
+                    }
+                }
+                drv.clear_solo().await?;
+                let cleared: Vec<u16> = {
+                    let mut sync = self.sync_state.lock().unwrap();
+                    let mut cache = self.param_cache.write().unwrap();
+                    let mut cleared = Vec::new();
+                    for (ch, map) in cache.iter_mut() {
+                        if inputs_only && usize::from(*ch) >= count {
+                            continue;
+                        }
+                        if map.get("solo") == Some(&json!(true)) {
+                            cleared.push(*ch);
+                            map.remove("solo");
+                            // Attach must not replay superseded Solo(true).
+                            // The false echo below is display continuity,
+                            // not a desk-verified replacement cache entry.
+                            sync.typed.remove(&format!("{ch}/solo"));
+                        }
+                    }
+                    cleared
+                };
+                for ch in cleared {
+                    out.push(Event::Solo {
+                        ch,
+                        soloed: false,
+                        key: self.active_strip_key(ch),
+                    });
+                }
+                self.note_write(writer);
+                Ok(None)
+            }
+            _ => unreachable!("command routed to the wrong family"),
+        }
+    }
+}

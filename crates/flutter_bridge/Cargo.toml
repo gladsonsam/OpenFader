@@ -1,0 +1,17 @@
+[package]
+name = "openfader-flutter-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "openfader_flutter_bridge"
+path = "src/lib.rs"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+openfader-engine = { path = "../engine" }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
+flutter_rust_bridge = "=2.13.0"
+serde_json = "1"
+anyhow = "1"

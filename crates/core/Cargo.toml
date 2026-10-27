@@ -1,0 +1,19 @@
+[package]
+name = "openfader-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = "1"
+serde_json = "1"
+realfft = { version = "3", optional = true }
+tokio = { version = "1", features = ["sync", "rt", "time", "macros"] }
+
+[dev-dependencies]
+openfader-sim = { path = "../sim" }
+
+[features]
+default = []
+# Real per-channel spectrum via `realfft` (safe wrapper over `rustfft`).
+fft = ["dep:realfft"]

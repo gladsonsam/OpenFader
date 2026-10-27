@@ -1,0 +1,5 @@
+{
+  "bus": 0,
+  "cmd": "bus_mute",
+  "muted": true
+}

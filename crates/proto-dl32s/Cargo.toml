@@ -1,0 +1,15 @@
+[package]
+name = "openfader-proto-dl32s"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+openfader-core = { path = "../core" }
+openfader-transport = { path = "../transport" }
+tokio = { version = "1", features = ["sync", "time"] }
+anyhow = "1"
+serde_json = "1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "time", "sync"] }

@@ -1,0 +1,23 @@
+[package]
+name = "openfader-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "openfader-cli"
+path = "src/main.rs"
+
+[dependencies]
+openfader-core = { path = "../core" }
+openfader-sim = { path = "../sim" }
+openfader-proto-xair = { path = "../proto-xair" }
+openfader-proto-wing = { path = "../proto-wing" }
+openfader-proto-dl32s = { path = "../proto-dl32s" }
+openfader-transport = { path = "../transport" }
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]
+openfader-core = { path = "../core" }
+openfader-sim = { path = "../sim" }
