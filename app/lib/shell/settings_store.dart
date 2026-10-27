@@ -159,6 +159,7 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
       'preferences': {
         'autoFind': prefs.autoFind,
         'reconnectLast': prefs.reconnectLast,
+        'reconnectArmed': prefs.reconnectArmed,
         'rememberRecents': prefs.rememberRecents,
         'startupDest': prefs.startupDest,
         'interfaceSize': prefs.interfaceSize,

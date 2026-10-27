@@ -4,6 +4,7 @@ import 'dart:io';
 import '../core/wifi_net.dart';
 import '../connection/recovery.dart';
 import '../settings/prefs.dart';
+import '../settings/recents.dart';
 import '../engine.dart';
 import '../screens/connection.dart';
 import 'store_adapter.dart';
@@ -412,10 +413,28 @@ class ShellConnectionStore extends ShellStoreAdapter
       if (!cancelled()) _operationError = 'Connection failed: $error';
     } finally {
       if (!cancelled()) {
+        if (connected()) unawaited(_persistLastConnection());
         _probing = false;
         _connectionProgress = '';
         notifyListeners();
       }
+    }
+  }
+
+  // A settled hardware handshake re-arms cold-start reconnect so the next
+  // launch can redial without asking. Failures here stay silent: the Link
+  // tab already shows the engine error, and persistence must never break
+  // the probing state machine.
+  Future<void> _persistLastConnection() async {
+    try {
+      final driver = _lastMixerType == MixerType.automatic
+          ? engine.driver
+          : _lastMixerType.driver;
+      await RecentMixers.rememberLastConnection(_lastProbe, driver);
+      await PrefsService.instance.setLastMixerAddr(_lastProbe);
+      await PrefsService.instance.setReconnectArmed(true);
+    } catch (_) {
+      // Persistence is best-effort; the live session is already up.
     }
   }
 
@@ -449,6 +468,8 @@ class ShellConnectionStore extends ShellStoreAdapter
   @override
   void disconnect() {
     _cancelConnection();
+    // Explicit leave: the next cold start must not redial this desk.
+    unawaited(PrefsService.instance.setReconnectArmed(false));
     unawaited(WifiNet.unbindWifi());
     send(Cmds.disconnect());
   }
