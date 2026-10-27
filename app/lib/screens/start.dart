@@ -270,6 +270,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
                           title: _rows().any((r) => r.discovered)
                               ? 'Mixers'
                               : 'Recent mixers',
+                          scanned: _store.lastScan != 'never',
                           onRefresh: _store.scanning || _store.probing
                               ? null
                               : () => _store.refreshKnown(_recentsBox.items
@@ -287,7 +288,8 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
                               ? _retryConnection
                               : null,
                           onConnect: _connectRow,
-                          onDiscover: () => _store.scan(),
+                          onDiscover:
+                              _store.scanning ? null : () => _store.scan(),
                           onAdd: _showManualAdd,
                         ),
                       ])),
@@ -372,6 +374,7 @@ class _Brand extends StatelessWidget {
 class _Box extends StatelessWidget {
   final bool wide;
   final String title;
+  final bool scanned;
   final VoidCallback? onRefresh;
   final bool refreshing;
   final String? error;
@@ -380,12 +383,13 @@ class _Box extends StatelessWidget {
   final String? progress;
   final VoidCallback? onRetry;
   final ValueChanged<_Row> onConnect;
-  final VoidCallback onDiscover;
+  final VoidCallback? onDiscover;
   final VoidCallback onAdd;
 
   const _Box(
       {required this.wide,
       required this.title,
+      required this.scanned,
       required this.onRefresh,
       required this.refreshing,
       required this.error,
@@ -417,18 +421,41 @@ class _Box extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                        child: Text(title,
+                        child: Text(
+                            rows.isEmpty ? title : '$title (${rows.length})',
                             style: AppDesign.type(wide ? 27 : 21,
                                 weight: FontWeight.w500,
                                 color: ConsolePalette.of(context).text))),
                     _IconButton(
-                        tooltip: 'Refresh recent mixers',
+                        tooltip: refreshing
+                            ? 'Scanning for mixers…'
+                            : 'Refresh recent mixers',
                         onTap: onRefresh,
                         child: _RefreshGlyph(spinning: refreshing)),
                   ],
                 ),
               ),
               Divider(color: ConsolePalette.of(context).line, height: 1),
+              if (refreshing)
+                Padding(
+                  padding: EdgeInsets.symmetric(
+                      horizontal: wide ? 28 : 20, vertical: 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Scanning for mixers…',
+                          style: AppDesign.type(wide ? 18 : 15,
+                              color: ConsolePalette.of(context).mutedText)),
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        minHeight: 3,
+                        color: ConsolePalette.of(context).lime,
+                        backgroundColor: ConsolePalette.of(context).line,
+                      ),
+                    ],
+                  ),
+                ),
               if (progress != null)
                 Padding(
                   padding: EdgeInsets.symmetric(
@@ -461,7 +488,12 @@ class _Box extends StatelessWidget {
                 Padding(
                   padding: EdgeInsets.symmetric(
                       horizontal: wide ? 28 : 20, vertical: wide ? 24 : 18),
-                  child: Text('No mixers yet — Discover or Add manually.',
+                  child: Text(
+                      refreshing
+                          ? 'Scanning for mixers…'
+                          : scanned
+                              ? 'No mixers found. Check Wi-Fi or Add manually.'
+                              : 'No mixers yet — Discover or Add manually.',
                       style: AppDesign.type(wide ? 23 : 17,
                           color: ConsolePalette.of(context).mutedText)),
                 )
@@ -475,6 +507,9 @@ class _Box extends StatelessWidget {
                           row: rows[i],
                           wide: wide,
                           busy: pending != null,
+                          connecting: pending != null &&
+                              (pending == rows[i].addr ||
+                                  pending == rows[i].name),
                           onConnect: () => onConnect(rows[i])),
                       if (i < rows.length - 1)
                         Divider(
@@ -494,21 +529,25 @@ class _DeviceRow extends StatelessWidget {
   final _Row row;
   final bool wide;
   final bool busy;
+  final bool connecting;
   final VoidCallback onConnect;
   const _DeviceRow(
       {required this.row,
       required this.wide,
       required this.busy,
+      required this.connecting,
       required this.onConnect});
 
   @override
   Widget build(BuildContext context) {
     final primary = row.connected || row.reachable;
-    final label = row.connected
-        ? 'Open mixer'
-        : row.reachable
-            ? 'Connect'
-            : 'Retry';
+    final label = connecting
+        ? 'Connecting…'
+        : row.connected
+            ? 'Open mixer'
+            : row.reachable
+                ? 'Connect'
+                : 'Retry';
     return Padding(
       padding: EdgeInsets.symmetric(
           horizontal: wide ? 28 : 20, vertical: wide ? 24 : 20),
@@ -542,7 +581,7 @@ class _DeviceRow extends StatelessWidget {
             height: wide ? 56 : 44,
             width: wide ? 124 : 92,
             child: ElevatedButton(
-              onPressed: busy ? null : onConnect,
+              onPressed: busy || connecting ? null : onConnect,
               style: ElevatedButton.styleFrom(
                   backgroundColor: primary
                       ? ConsolePalette.of(context).lime
@@ -570,7 +609,7 @@ class _DeviceRow extends StatelessWidget {
 
 class _BoxActions extends StatelessWidget {
   final bool wide;
-  final VoidCallback onDiscover;
+  final VoidCallback? onDiscover;
   final VoidCallback onAdd;
   const _BoxActions(
       {required this.wide, required this.onDiscover, required this.onAdd});
@@ -678,15 +717,48 @@ class _GearGlyph extends StatelessWidget {
       const DesignIcon(DesignSymbol.settings, size: 28);
 }
 
-class _RefreshGlyph extends StatelessWidget {
+class _RefreshGlyph extends StatefulWidget {
   final bool spinning;
   const _RefreshGlyph({required this.spinning});
   @override
-  Widget build(BuildContext context) => Icon(Icons.refresh,
-      size: 26,
-      color: spinning
-          ? ConsolePalette.of(context).lime
-          : ConsolePalette.of(context).text7);
+  State<_RefreshGlyph> createState() => _RefreshGlyphState();
+}
+
+class _RefreshGlyphState extends State<_RefreshGlyph>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _spin = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 900));
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.spinning) _spin.repeat();
+  }
+
+  @override
+  void didUpdateWidget(_RefreshGlyph old) {
+    super.didUpdateWidget(old);
+    if (widget.spinning && !_spin.isAnimating) {
+      _spin.repeat();
+    } else if (!widget.spinning && _spin.isAnimating) {
+      _spin.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _spin.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RotationTransition(
+      turns: _spin,
+      child: Icon(Icons.refresh,
+          size: 26,
+          color: widget.spinning
+              ? ConsolePalette.of(context).lime
+              : ConsolePalette.of(context).text7));
 }
 
 class _ScanGlyph extends StatelessWidget {

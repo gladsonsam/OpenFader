@@ -99,7 +99,9 @@ class ShellConnectionStore extends ShellStoreAdapter
           }
         }
       }
-      _lastScan = '${complete?['operation']} ${_fmtTime(DateTime.now())}';
+      final found = engine.devices.length;
+      _lastScan =
+          '${complete?['operation']} · $found ${found == 1 ? 'mixer' : 'mixers'} · ${_fmtTime(DateTime.now())}';
       WifiNet.scanStop();
       notifyListeners();
     }
