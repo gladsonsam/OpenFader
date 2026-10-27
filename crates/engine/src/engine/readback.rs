@@ -218,11 +218,6 @@ impl Engine {
     pub(super) async fn main_fader_on(&self, driver: &str) -> Option<f32> {
         self.drv(driver).get_main_fader().await.ok()
     }
-
-    /// Recall `scene` on the active driver, ramping over `fade_ms`.
-    pub(super) async fn recall_on_active(&self, scene: &Scene, fade_ms: u64) -> anyhow::Result<()> {
-        self.active_drv().recall_show(scene, fade_ms).await
-    }
 }
 
 /// JSON engineering value back to a driver [`ParamValue`].

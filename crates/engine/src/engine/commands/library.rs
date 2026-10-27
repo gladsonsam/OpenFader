@@ -41,6 +41,7 @@ impl Engine {
                 let show = clean_name(&show, "show")?;
                 let name = clean_name(&name, "name")?;
                 let fade_ms = fade_ms.unwrap_or(DEFAULT_FADE_MS);
+                let _lib_guard = self.lib_lock.lock().await;
                 let scene = {
                     let shows = self.shows.read().unwrap();
                     shows
@@ -50,62 +51,37 @@ impl Engine {
                         .cloned()
                         .ok_or_else(|| anyhow::anyhow!("unknown scene {name:?} in show {show:?}"))?
                 };
-                self.recall_on_active(&scene, fade_ms).await?;
+                // Named captures have no FX/routing plane. Reuse the pinned,
+                // cache-coherent recall path for the values they do store.
+                let stored = StoredScene {
+                    number: 0,
+                    name: scene.name,
+                    saved_at: 0,
+                    main_fader: scene.main_fader,
+                    strips: scene
+                        .strips
+                        .into_iter()
+                        .map(|s| StoredStrip {
+                            strip: s.strip.0,
+                            key: None,
+                            name: s.name,
+                            fader: s.fader,
+                            mute: s.mute,
+                            params: s
+                                .params
+                                .into_iter()
+                                .map(|(id, v)| (id, param_value_json(&v)))
+                                .collect(),
+                        })
+                        .collect(),
+                    fx: Vec::new(),
+                    routing: Vec::new(),
+                };
+                let overrode = self
+                    .recall_full(&stored, fade_ms, None, writer, out)
+                    .await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
-                // Bypass locks, but report which locked strips were changed:
-                // scene strips locked by someone other than the recaller.
-                let mut overrode: Vec<u16> = Vec::new();
-                for s in &scene.strips {
-                    if let Some(holder) = self.lock_holder(s.strip.0) {
-                        if holder != writer && !overrode.contains(&s.strip.0) {
-                            overrode.push(s.strip.0);
-                        }
-                    }
-                }
-                overrode.sort_unstable();
-                // Named-show recall provenance (same rule as numbered
-                // recall): the sim model applies writes to real in-memory
-                // state (`verified`); hardware fades are write-ACK only
-                // (`accepted`, no per-param readback on this path).
-                let authority = || {
-                    Some(
-                        if self.active_drv().is_hardware() {
-                            "accepted"
-                        } else {
-                            "verified"
-                        }
-                        .to_string(),
-                    )
-                };
-                for s in &scene.strips {
-                    out.push(Event::Param {
-                        ch: s.strip.0,
-                        field: "fader".to_string(),
-                        value: json!(s.fader),
-                        by: Some(writer.to_string()),
-                        key: None,
-                        authority: authority(),
-                    });
-                    out.push(Event::Param {
-                        ch: s.strip.0,
-                        field: "mute".to_string(),
-                        value: json!(s.mute),
-                        by: Some(writer.to_string()),
-                        key: None,
-                        authority: authority(),
-                    });
-                    for (field, val) in &s.params {
-                        out.push(Event::Param {
-                            ch: s.strip.0,
-                            field: field.clone(),
-                            value: param_value_json(val),
-                            by: Some(writer.to_string()),
-                            key: None,
-                            authority: authority(),
-                        });
-                    }
-                }
                 self.push_state_with_by(writer, out).await;
                 if overrode.is_empty() {
                     Ok(None)

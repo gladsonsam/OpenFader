@@ -63,7 +63,7 @@ pub fn now_unix() -> u64 {
 }
 
 /// One stored R2 numbered scene: full-plane capture (every catalogue
-/// value of every strip + main + FX + routing).
+/// writable value supported by each strip + main + FX + routing).
 #[derive(Clone, Debug)]
 pub struct StoredScene {
     pub number: u16,
@@ -98,6 +98,8 @@ pub struct StoredStrip {
 /// [`StoredStrip::key`]). The `group`/`index` are 1-based desk sockets.
 #[derive(Clone, Debug)]
 pub struct StoredRoute {
+    /// Input target, or full `output/.../NN` destination ID for a non-strip
+    /// output. Output rows have no strip key and recall with a fresh guard.
     pub target: String,
     pub strip: u16,
     pub key: Option<String>,
