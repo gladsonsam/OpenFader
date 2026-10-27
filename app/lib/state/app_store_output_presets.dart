@@ -310,7 +310,14 @@ mixin _AppStoreOutputPresets on _AppStoreContext {
         throw StateError('Copy a compatible output processor first.');
       }
       final fields = draft == null
-          ? target.controls.where((c) => c.preset).toList()
+          ? target.controls
+              .where((c) => c.preset)
+              // Older GEQ presets contain only bands. Preserve the current
+              // master when recalling them; newly captured presets include it.
+              .where((c) => !(target.surface == 'output_geq' &&
+                  c.id == 'geq_master_gain' &&
+                  !preset!.values.containsKey(c.id)))
+              .toList()
           : outputGeqBands(target.controls);
       final values = draft ?? preset!.values;
       total = fields.length;

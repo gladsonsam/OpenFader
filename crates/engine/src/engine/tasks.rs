@@ -266,6 +266,12 @@ impl Engine {
                             frames: snapshot.frames.into_iter().map(|m| {
                                 let mut row = json!({"target": m.target, "levels": m.levels});
                                 if m.inferred { row["inferred"] = json!(true); }
+                                if let Some(gr) = m.compressor_gr {
+                                    row["compressor_gr"] = json!({
+                                        "reduction_db": gr.reduction_db,
+                                        "inferred": gr.inferred,
+                                    });
+                                }
                                 row
                             }).collect(),
                         });

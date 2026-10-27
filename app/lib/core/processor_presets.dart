@@ -421,6 +421,7 @@ Set<String> processorPresetFields(ProcessorPresetKind kind) {
         'lpf_slope',
       },
     ProcessorPresetKind.outputGeq => {
+        'geq_master_gain',
         for (var i = 1; i <= 31; i++) 'geq${i}_gain',
       },
     ProcessorPresetKind.outputCompressor =>

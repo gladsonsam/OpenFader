@@ -9,7 +9,12 @@ import '../palette.dart';
 /// Read-only level telemetry. No timer or dependency on the application store.
 class OutputLevelMeter extends StatelessWidget {
   final ValueListenable<OutputMeterVm> meter;
-  const OutputLevelMeter({super.key, required this.meter});
+  final bool showCompressorGr;
+  const OutputLevelMeter({
+    super.key,
+    required this.meter,
+    this.showCompressorGr = false,
+  });
 
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<OutputMeterVm>(
@@ -30,6 +35,24 @@ class OutputLevelMeter extends StatelessWidget {
                         ? 'Output level'
                         : 'Output level unavailable',
                   ),
+                  if (showCompressorGr && value.compressorGr != null)
+                    Tooltip(
+                      message: value.compressorGr!.reductionDb == null
+                          ? 'The provider has no verified output GR sample. Wire layout and scale await capture.'
+                          : value.compressorGr!.inferred
+                              ? 'Measured attenuation; output mapping awaits physical correlation.'
+                              : 'Measured compressor attenuation in dB',
+                      child: Text(
+                        value.compressorGr!.reductionDb == null
+                            ? 'Compressor GR unavailable'
+                            : 'Compressor GR: ${[
+                                for (var i = 0;
+                                    i < value.compressorGr!.reductionDb!.length;
+                                    i++)
+                                  '${value.compressorGr!.reductionDb!.length == 2 ? (i == 0 ? "L " : "R ") : ""}${value.compressorGr!.reductionDb![i].toStringAsFixed(1)} dB',
+                              ].join(' · ')}',
+                      ),
+                    ),
                   for (var i = 0; i < value.levels.length; i++)
                     Row(
                       children: [

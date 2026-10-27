@@ -97,7 +97,10 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                     ),
                   ),
                   if (target != null)
-                    OutputLevelMeter(meter: store.outputMeterFor(target)),
+                    OutputLevelMeter(
+                      meter: store.outputMeterFor(target),
+                      showCompressorGr: surface == 'output_comp',
+                    ),
                   if (surfaces.isNotEmpty)
                     SingleChildScrollView(
                       scrollDirection: Axis.horizontal,
