@@ -1,6 +1,6 @@
 //! Existing 60-word family prefix only; no subscriptions or invented tap positions.
 use crate::Dl32sDriver;
-use openfader_core::{OutputMeterFrame, OutputMeterSnapshot};
+use openfader_core::{output_meters::OutputCompressorGr, OutputMeterFrame, OutputMeterSnapshot};
 use openfader_transport::mackie::{PushEvent, VALUE_TYPE_METERS};
 use std::{sync::atomic::Ordering, time::Duration};
 
@@ -44,6 +44,10 @@ pub(super) fn decode(push: &PushEvent) -> Option<Vec<OutputMeterFrame>> {
             .into_iter()
             .enumerate()
             .map(|(i, target)| OutputMeterFrame {
+                compressor_gr: compressor_gr_indices(&target).map(|_| OutputCompressorGr {
+                    reduction_db: None,
+                    inferred: true,
+                }),
                 target,
                 levels: if i == 18 {
                     levels[18..20].to_vec()
@@ -54,6 +58,32 @@ pub(super) fn decode(push: &PushEvent) -> Option<Vec<OutputMeterFrame>> {
             })
             .collect(),
     )
+}
+
+/// Compiled DL32S getters identify meter-wire-type-1 indices, NOT global
+/// type-2 parameters. These are addresses in METER_LAYOUT, never raw offsets.
+/// The captured 60/91/283-word layouts do not include a dedicated output GR
+/// block. The legacy family prefix does include 280/284 (previously inferred
+/// FX-out slots); that overlap does not prove output GR encoding/units/sign.
+/// Preserve the existing level stream and deliberately emit GR absence until
+/// a labelled capture establishes both the requested layout and sample scale.
+fn compressor_gr_indices(target: &str) -> Option<Vec<u32>> {
+    if target == "main" {
+        return Some(vec![306, 307]);
+    }
+    if let Some(n) = target
+        .strip_prefix("bus/")
+        .and_then(|n| n.parse::<u32>().ok())
+    {
+        return (1..=8).contains(&n).then(|| vec![312 + 4 * (n - 1)]);
+    }
+    if let Some(n) = target
+        .strip_prefix("subgroup/")
+        .and_then(|n| n.parse::<u32>().ok())
+    {
+        return (1..=6).contains(&n).then(|| vec![280 + 4 * (n - 1)]);
+    }
+    None
 }
 
 impl Dl32sDriver {

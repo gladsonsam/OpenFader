@@ -5,7 +5,12 @@ import 'package:flutter/foundation.dart';
 class OutputMeterVm {
   final List<double> levels;
   final bool inferred;
-  const OutputMeterVm({this.levels = const [], this.inferred = false});
+  final OutputCompressorGrVm? compressorGr;
+  const OutputMeterVm({
+    this.levels = const [],
+    this.inferred = false,
+    this.compressorGr,
+  });
   bool get available => levels.isNotEmpty;
   double get peak => levels.fold(0, (a, b) => a > b ? a : b);
 
@@ -13,9 +18,47 @@ class OutputMeterVm {
   bool operator ==(Object other) =>
       other is OutputMeterVm &&
       inferred == other.inferred &&
+      compressorGr == other.compressorGr &&
       listEquals(levels, other.levels);
   @override
-  int get hashCode => Object.hash(inferred, Object.hashAll(levels));
+  int get hashCode =>
+      Object.hash(inferred, compressorGr, Object.hashAll(levels));
+}
+
+/// Optional provider capability. Null samples mean unavailable, never zero.
+/// Values are positive attenuation in dB, mono or ordered L/R, independently
+/// normalized by the provider only after wire layout/scale/sign are proven.
+@immutable
+class OutputCompressorGrVm {
+  final List<double>? reductionDb;
+  final bool inferred;
+  const OutputCompressorGrVm({this.reductionDb, this.inferred = false});
+
+  static OutputCompressorGrVm? parse(dynamic value) {
+    if (value is! Map) return null;
+    final samples = value['reduction_db'];
+    if (samples == null) {
+      return OutputCompressorGrVm(inferred: value['inferred'] == true);
+    }
+    if (samples is! List ||
+        samples.isEmpty ||
+        samples.length > 2 ||
+        samples.any((v) => v is! num || !v.toDouble().isFinite || v < 0)) {
+      return null;
+    }
+    return OutputCompressorGrVm(
+      reductionDb: List.unmodifiable(samples.map((v) => (v as num).toDouble())),
+      inferred: value['inferred'] == true,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is OutputCompressorGrVm &&
+      inferred == other.inferred &&
+      listEquals(reductionDb, other.reductionDb);
+  @override
+  int get hashCode => Object.hash(inferred, Object.hashAll(reductionDb ?? []));
 }
 
 /// Original sample age survives relays; repeated cached frames do not renew it.
@@ -65,9 +108,10 @@ class OutputMeterTelemetry {
       if (frame is! Map || frame['target'] is! String) continue;
       final target = frame['target'] as String;
       final levels = frame['levels'];
+      final gr = OutputCompressorGrVm.parse(frame['compressor_gr']);
       if (!targets.contains(target) ||
           levels is! List ||
-          levels.isEmpty ||
+          (levels.isEmpty && gr == null) ||
           levels.length > 2 ||
           levels.any((v) => v is! num || !v.toDouble().isFinite)) {
         continue;
@@ -77,6 +121,7 @@ class OutputMeterTelemetry {
             levels: List.unmodifiable(
                 levels.map((v) => (v as num).toDouble().clamp(0.0, 1.0))),
             inferred: frame['inferred'] == true,
+            compressorGr: gr,
           ),
           sampledAt);
     }
