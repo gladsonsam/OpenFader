@@ -39,7 +39,7 @@ fn specs() -> &'static [(u32, DestinationControl)] {
                     ("monitor", "lr_defeat") => 104,
                     ("monitor", "level") => 105,
                     ("monitor", "delay_enable") => 106,
-                    ("monitor", "distance") => 107,
+                    // PID 107 is withheld until its physical unit is verified.
                     _ => unreachable!("reference global descriptor without DL32S mapping"),
                 };
                 (address, row)
