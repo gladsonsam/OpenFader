@@ -15,6 +15,7 @@ use std::sync::atomic::Ordering;
 struct SlotState {
     algorithm: Option<(u32, u64)>,
     fresh: [bool; 31],
+    selector_sequence: u64,
     operation: u64,
     // Cancellation leaves this freshness barrier in place. Only incoming desk
     // evidence clears it; dropping a future never schedules a control replay.
@@ -33,7 +34,12 @@ impl FxState {
             let observed = session.value_cache().verified(bank[0]);
             SlotState {
                 algorithm: observed.map(|v| (v.0, v.1)),
-                fresh: bank.map(|a| session.cached_verified(a).is_some()),
+                selector_sequence: observed.map_or(0, |v| v.2),
+                fresh: std::array::from_fn(|word| {
+                    session.value_cache().verified(bank[word]).is_some_and(|v| {
+                        word == 0 || observed.is_some_and(|selector| v.2 > selector.2)
+                    })
+                }),
                 ..SlotState::default()
             }
         });
@@ -44,17 +50,24 @@ impl FxState {
         };
         for (i, slot) in self.slots.iter_mut().enumerate() {
             let bank = banks::BANKS[i];
-            let current = cache.verified(bank[0]).map(|v| (v.0, v.1));
+            let selector = cache.verified(bank[0]);
+            let current = selector.map(|v| (v.0, v.1));
             if current != slot.algorithm {
                 slot.algorithm = current;
                 slot.fresh = [false; 31];
+                slot.selector_sequence = selector.map_or(0, |v| v.2);
             }
             for (word, address) in bank.iter().enumerate() {
                 if address
                     .checked_sub(start)
                     .is_some_and(|n| (n as usize) < raws.len())
                 {
-                    slot.fresh[word] = cache.verified(*address).is_some();
+                    // Push events can lag behind the transport cache. An old
+                    // bank event must not hydrate a newer selector-only push.
+                    // Full snapshots place parameter words after the selector.
+                    slot.fresh[word] = cache
+                        .verified(*address)
+                        .is_some_and(|v| word == 0 || v.2 > slot.selector_sequence);
                 }
             }
         }
