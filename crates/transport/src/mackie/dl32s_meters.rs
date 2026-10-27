@@ -28,11 +28,17 @@ pub const RTA_FRAME_LEN: usize = RTA_OFFSET + RTA_BIN_COUNT;
 pub const DYNAMICS_OFFSET: usize = RTA_FRAME_LEN;
 pub const DYNAMICS_WIDTH: usize = 6;
 pub const DYNAMICS_FRAME_LEN: usize = DYNAMICS_OFFSET + INPUT_COUNT * DYNAMICS_WIDTH;
+pub const OUTPUT_GR_OFFSET: usize = DYNAMICS_FRAME_LEN;
+pub const SUBGROUP_GR_OFFSET: usize = OUTPUT_GR_OFFSET + AUX_COUNT;
+pub const MAIN_GR_OFFSET: usize = SUBGROUP_GR_OFFSET + SUBGROUP_COUNT;
+pub const OUTPUT_GR_COUNT: usize = AUX_COUNT + SUBGROUP_COUNT + STEREO_WIDTH;
+pub const OUTPUT_GR_FRAME_LEN: usize = OUTPUT_GR_OFFSET + OUTPUT_GR_COUNT;
+pub const OUTPUT_GR_ADDRESSES: [i32; OUTPUT_GR_COUNT] = output_gr_addresses();
 pub const LEGACY_FRAME_LEN: usize = 60;
 
 /// Exact shapes produced by our explicit lists; legacy only supports input IN.
 pub fn is_explicit_shape(len: usize) -> bool {
-    matches!(len, STRIP_COUNT | RTA_FRAME_LEN | DYNAMICS_FRAME_LEN)
+    matches!(len, STRIP_COUNT | RTA_FRAME_LEN | DYNAMICS_FRAME_LEN | OUTPUT_GR_FRAME_LEN)
 }
 
 pub const STRIP_ADDRESSES: [i32; STRIP_COUNT] = strip_addresses();
@@ -71,5 +77,23 @@ const fn strip_addresses() -> [i32; STRIP_COUNT] {
     }
     a[MAIN_OFFSET] = 302;
     a[MAIN_OFFSET + 1] = 303;
+    a
+}
+
+// Native COMP_GR getters, in provider order: Aux, Subgroup, Main L/R.
+const fn output_gr_addresses() -> [i32; OUTPUT_GR_COUNT] {
+    let mut a = [0; OUTPUT_GR_COUNT];
+    let mut i = 0;
+    while i < AUX_COUNT {
+        a[i] = 312 + 4 * i as i32;
+        i += 1;
+    }
+    i = 0;
+    while i < SUBGROUP_COUNT {
+        a[AUX_COUNT + i] = 280 + 4 * i as i32;
+        i += 1;
+    }
+    a[OUTPUT_GR_COUNT - 2] = 306;
+    a[OUTPUT_GR_COUNT - 1] = 307;
     a
 }

@@ -92,8 +92,8 @@ filter remain inferred, not independently verified. Ratio101 infinity sentinel
 retains the existing input-like inference.
 
 GEQ master gain is exposed as inferred from compiled native metadata. Output
-levels use the corrected native layout described below; output GR remains
-unavailable. Measured PEQ response, linked-output propagation, presets, GEQ
+levels use the corrected native layout described below; output GR availability
+and calibration are described in the 301-word extension below. Measured PEQ response, linked-output propagation, presets, GEQ
 draw/reset, mode-1 editing and shelf-Q semantics remain incomplete. Only pushed values have readback authority; accepted writes retain
 unconfirmed authority. Unknown/out-of-domain values stay unavailable. Mode,
 expected value, per-word revision and connection-generation guards remain.
@@ -174,8 +174,9 @@ captured raw words by address into it; that is not a captured 285-word stream.
 The JSON has no serialized outbound request body, so a derived body hash is
 not an observed wire hash. No new physical calibration is claimed.
 
-All 18 captured output COMP_GR slots were zero. The production list omits
-output GR; the existing contract continues to emit `reduction_db: None` with
+At the geometry-correction stage, all 18 captured output COMP_GR slots were
+zero. That stage's production list omitted
+output GR; that revision emitted `reduction_db: None` with
 `inferred: true` for Aux/Subgroup/Main, and no compressor contract for FX
 sends. Nonzero output GR scale/sign calibration, physical connector correlation,
 OUT/SEND tap timing, and integrated device verification remain open. The
@@ -193,3 +194,92 @@ all lengths 0..349, list ID/type and nonfinite rejection, RTA sentinel,
 dynamics row/GR validity, unity at 0 dB, generation/staleness, and the derived
 serialized-prefix hash. RTA/dynamics suffix samples in this projection were
 synthetic. No hardware, mixer network, GUI/device or full app build was used.
+
+## Calibrated output GR extension (2026-10-27)
+
+The DL32S-only per-client request is now `dl32s_output_meter_addresses()`:
+the unchanged 62/93/285 prefixes plus 16 output GR words, derived length301.
+The shared family handshake, XAir and WING remain unchanged. Geometry lives in
+`transport/src/mackie/dl32s_meters.rs`; `protocol.rs` constructs the request;
+DL32S `lifecycle.rs` activates it; `telemetry.rs` accepts301 but bounds input
+dynamics to93..285 and RTA to62..93; `output_meters.rs` normalizes output GR.
+No engine, Dart contract, UI, timer, bounded delivery or output-level inferred
+flag changes are needed. All modified Rust modules remain below700 lines.
+
+Zero-based appended positions are Aux285..292 (`312+4a`), Subgroup293..298
+(`280+4s`), Main L/R299/300 (`306/307`). Only exact301, type1, list ID1 carries
+GR. Explicit62/93/285 frames publish absent GR, replacing prior samples;
+legacy60 clears output telemetry. Negative, NaN and infinite GR samples become
+absent for that output; no zero substitution. Main retains two ordered samples;
+an invalid side withholds the pair. Legitimate zero attenuation stays valid.
+
+Supplied physical evidence is `/tmp/openfader-output-gr-calibration-20261027.json`
+and its minus80/minus78 captures: Aux1 native312 is network-order f32,
+positive1:1 dB attenuation. Across144 frames, IN311 minus compressorOUT313
+agrees within0.05106473 dB. Aux1 GR is therefore `inferred:false`; Aux2–8,
+Sub1–6 and both Main sides remain `inferred:true` from static native evidence.
+This does not calibrate output levels or OUT/SEND tap timing. Calibration
+reports exact full restore in `/tmp/dl32s-aux1-gr-probe-restored-20261027.json`,
+SHA256 `370587b45503dfe19dc9c72be3ad404087fb8d98e309e78c1ce3e428ab6062d9`,
+5257 parameter words,107 type2 words,75 names. This revision made no hardware
+contact or writes; restore is supplied evidence, not a new restore operation.
+
+Separate Return gap: only Return IN258/262 is requested. Native compressor
+triples259/260/261 and263/264/265 are absent from this301 list; the input
+dynamics decoder still emits exactly32 input rows. Return output frames have
+no compressor GR capability. Return compression metering requires its own
+layout/contract/calibration work and is intentionally not added here.
+
+Local proof: existing `cargo test -p openfader-proto-dl32s -p openfader-transport
+--lib --locked` passed84 tests (including existing loopback tests), with
+`TOKIO_WORKER_THREADS=2 RUST_TEST_THREADS=1`. Scoped Clippy passed with
+`--locked -- -D warnings`. No Dart, dependencies or permanent tests changed.
+Scratch `/tmp/openfader-output-gr-diagnostic.rs` imports production output and
+telemetry modules, linked against this worktree's production transport/core.
+It projects all144 actual calibration frames by requested address into301;
+RTA/input dynamics are synthetic. It checks25 targets, unchanged level flags,
+32 bounded dynamics rows,31 RTA bins, all lengths0..349, wrong type/list ID,
+negative/nonfinite GR, independent MainL/R, short-shape unavailability,
+generation mismatch and expiry. The serialized301 request body is in
+`/tmp/openfader-output-gr-301-layout.bin` (derived, not observed on wire).
+No live301 stream, device UI or full build was verified here.
+
+### Parent-only live301 and both-simulator recipe
+
+1. Integrate this commit into the parent's current branch and finish the full
+   workspace gate with `TOKIO_WORKER_THREADS=2 RUST_TEST_THREADS=1 cargo test
+   --workspace --locked`. Rebuild the integrated bridge/app, not an older
+   engine binary. Request301 only on the DL32S connection; capture MeterLayout
+   body `[00 00 00 01]` plus301 BE-i32 addresses (1208 bytes total), its ACK,
+   then unchanged BroadcastControl and ACK. Compare the first285 addresses
+   exactly to `dl32s_dynamics_meter_addresses()` and suffix exactly to
+   `[312,316,320,324,328,332,336,340,280,284,288,292,296,300,306,307]`.
+2. Capture pushed type1/list1 frames with exactly301 raw words. Confirm input
+   IN0..31, Return32..33, sends34..37, Aux38..45, FX returns46..53,
+   Sub54..59, Main60..61, RTA62..92, dynamics93..284 are unchanged. Verify
+   `output_meters.frames`: bus/01 mono GR equals f32(word285), inferred false;
+   bus/02..08, subgroup/01..06 and Main GR inferred true; Main has ordered
+   `[f32(word299),f32(word300)]`. Every output level remains inferred true.
+   A301 capture cannot itself reproduce IN311-OUT313: request those native
+   meters in a separate parent-owned calibration session, never reinterpret
+   unrelated301 slots as compressor IN/OUT. Serialize layout sessions.
+3. Parent may repeat the established Aux1 -80/-78 threshold probe using the
+   supplied baseline/restore protocol; require GR agreement <=0.052 dB and
+   exact5257/107/75 raw equality after restore. Other outputs need their own
+   nonzero physical probes before dropping inferred status. In an offline
+   injected feed check301->285 clears GR, legacy60 clears outputs, malformed
+   shapes are rejected, >1s samples expire, reconnect clears generations, and
+   input dynamics/RTA stay live. Do not send malformed meter data to hardware.
+4. In the integrated `app` directory run `PATH="$HOME/flutter-3.47/bin:$PATH"
+   flutter build ios --simulator --debug`. Parent calls `device_list` and
+   `device_open` for iPad Pro13-inch and iPhone18 Pro, using the returned
+   independent agent-device sessions. Install `build/ios/iphonesimulator/Runner.app`
+   on each UDID with `xcrun simctl install <udid> <app-path>` and launch
+   `xcrun simctl launch <udid> com.openfader.flutter.experimental`.
+   First Work offline verifies boot/navigation; then connect each sequentially
+   to the parent-owned live DL32S session. Open Aux1 output Compressor and
+   verify positive calibrated GR, Aux2/Sub/Main inferred labels, separate
+   MainL/R, no GR capability on FX/Return, and input/RTA regression views.
+   Check idle, nonzero, disconnect/stale and reconnect states on both sizes;
+   capture `xcrun simctl io <udid> screenshot <path>` and compare at the
+   specified design dimensions. These live/device checks remain parent work.

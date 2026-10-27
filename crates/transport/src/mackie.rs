@@ -45,6 +45,7 @@ pub use names::{
 };
 pub use protocol::{
     build_meter_layout, dl32_family_meter_addresses, dl32s_dynamics_meter_addresses,
+    dl32s_output_meter_addresses,
     dl32s_meter_addresses, mute_group_master_address, mute_group_name_slot, BROADCAST_CONTROL_BODY,
     DEFAULT_PORT, DIAL_TIMEOUT, GENERAL_INFO_REPLY, HANDSHAKE_REPLY, KEEPALIVE_INTERVAL,
     MUTE_GROUP_BASE_ADDRESS, MUTE_GROUP_COUNT, MUTE_GROUP_NAME_SLOT_BASE, REQUEST_TIMEOUT,
