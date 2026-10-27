@@ -163,8 +163,10 @@ mixin _AppStoreAccess on _AppStoreContext {
       return false;
     }
     if (field == 'solo') {
-      final input = _inputSoloDescriptor(ch);
-      if (input != null && !_accessDestinationAllowed(input)) return false;
+      // Raw legacy solo commands must respect the same canonical scope and
+      // aliases as target buttons (notably VCA/DCA and FX returns).
+      final solo = _targetSolo(ch) ?? _inputSoloDescriptor(ch);
+      if (solo != null && !_accessDestinationAllowed(solo)) return false;
     }
     if (field == 'solo' && !accessFamilyAllowed(AccessFamily.channelSolo)) {
       return false;
