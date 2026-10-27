@@ -479,12 +479,36 @@ fn verify_transition(
             "Unrelated snapshot bytes changed"
         );
     }
+    // Only Show.dat and the selected snapshot payload may change. Include
+    // unreferenced snapshots and opaque members in preservation checks too.
+    let target_file = if append {
+        None
+    } else {
+        Some(format!(
+            "Snapshot{}.dat",
+            old_rows[slot as usize - 1]["file_number"].as_u64().unwrap()
+        ))
+    };
+    for (filename, bytes) in before.entries() {
+        if filename != "Show.dat" && Some(filename) != target_file.as_ref() {
+            anyhow::ensure!(
+                after.entries().get(filename) == Some(bytes),
+                "Unrelated archive member bytes changed"
+            );
+        }
+    }
     if !delete {
         let target = &new_rows[slot as usize - 1];
         if !append {
             anyhow::ensure!(
                 target["name"] == old_rows[slot as usize - 1]["name"],
                 "Stored snapshot name changed unexpectedly"
+            );
+            let filename = format!("Snapshot{}.dat", target["file_number"].as_u64().unwrap());
+            let original = target_file.as_ref().unwrap();
+            anyhow::ensure!(
+                after.entries().get(&filename) != before.entries().get(original),
+                "Unchanged snapshot payload cannot prove current state was stored"
             );
         }
         // The inspector verifies the target's file geometry and both CRCs.

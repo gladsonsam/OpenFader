@@ -23,7 +23,7 @@ struct Tree {
     codes: Vec<Vec<(u32, usize)>>,
 }
 impl Tree {
-    fn new(lengths: &[u32]) -> Result<Self> {
+    fn new(lengths: &[u32], code_lengths: bool) -> Result<Self> {
         let mut counts = [0u32; 16];
         for &n in lengths {
             ensure!(n <= 15, "Invalid Huffman length");
@@ -39,6 +39,13 @@ impl Tree {
             ensure!(code + counts[n] <= 1 << n, "Oversubscribed Huffman tree");
             next[n] = code;
         }
+        // DEFLATE permits an incomplete literal/distance alphabet only for
+        // a single one-bit symbol (or an unused, empty distance alphabet).
+        // The code-length alphabet must always fill its code space.
+        ensure!(
+            code + counts[15] == 1 << 15 || (!code_lengths && lengths.iter().all(|&n| n <= 1)),
+            "Incomplete Huffman tree"
+        );
         for (symbol, &n) in lengths.iter().enumerate() {
             if n != 0 {
                 let n = n as usize;
@@ -72,7 +79,7 @@ fn dynamic(bits: &mut Bits<'_>) -> Result<(Tree, Tree)> {
     for &n in &order[..count] {
         lengths[n] = bits.read(3)?;
     }
-    let tree = Tree::new(&lengths)?;
+    let tree = Tree::new(&lengths, true)?;
     let mut lengths = Vec::with_capacity(literals + distances);
     while lengths.len() < literals + distances {
         let symbol = tree.symbol(bits)?;
@@ -96,8 +103,8 @@ fn dynamic(bits: &mut Bits<'_>) -> Result<(Tree, Tree)> {
     }
     ensure!(lengths[256] != 0, "Missing DEFLATE end code");
     Ok((
-        Tree::new(&lengths[..literals])?,
-        Tree::new(&lengths[literals..])?,
+        Tree::new(&lengths[..literals], false)?,
+        Tree::new(&lengths[literals..], false)?,
     ))
 }
 
@@ -125,7 +132,7 @@ pub(super) fn inflate(data: &[u8], size: usize) -> Result<Vec<u8>> {
                     let mut lengths = vec![8; 288];
                     lengths[144..256].fill(9);
                     lengths[256..280].fill(7);
-                    (Tree::new(&lengths)?, Tree::new(&[5; 32])?)
+                    (Tree::new(&lengths, false)?, Tree::new(&[5; 32], false)?)
                 }
                 2 => dynamic(&mut bits)?,
                 _ => bail!("Reserved DEFLATE block type"),
