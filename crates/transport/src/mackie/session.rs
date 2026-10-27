@@ -162,6 +162,8 @@ impl MackieValueCache {
 /// Live Mackie TCP session. Cloneable via Arc internals through `&self`
 /// methods, mirroring [`crate::session::OscSession`].
 pub struct MackieSession {
+    // File operations share a device-side handle; never interleave transfers.
+    file_lane: Mutex<()>,
     write: Arc<Mutex<OwnedWriteHalf>>,
     seq: StdMutex<u8>,
     pending: Arc<StdMutex<HashMap<u8, oneshot::Sender<PendingResult>>>>,
@@ -216,6 +218,7 @@ impl MackieSession {
         };
 
         let this = Self {
+            file_lane: Mutex::new(()),
             write,
             seq: StdMutex::new(0),
             pending,

@@ -102,3 +102,25 @@ pub fn build_snapshot_save(snapshot: u32, epoch_secs: u64, name: &str) -> Vec<u8
     out.extend_from_slice(&word_swap(&padded));
     out
 }
+
+/// Native op 2 stores current state at a list position; op 3 deletes that
+/// position and compacts the index. File numbers are NOT list positions.
+/// This codec does not authorize mutation or establish backup/restore safety.
+pub fn build_snapshot_store(slot: u32, timestamp: u32) -> anyhow::Result<Vec<u8>> {
+    snapshot_mutation(2, slot, timestamp)
+}
+pub fn build_snapshot_delete(slot: u32, timestamp: u32) -> anyhow::Result<Vec<u8>> {
+    snapshot_mutation(3, slot, timestamp)
+}
+fn snapshot_mutation(operation: u32, slot: u32, timestamp: u32) -> anyhow::Result<Vec<u8>> {
+    anyhow::ensure!(
+        (1..=99).contains(&slot),
+        "Default 0 is protected; native user position must be 1..99"
+    );
+    Ok([
+        operation.to_be_bytes(),
+        slot.to_be_bytes(),
+        timestamp.to_be_bytes(),
+    ]
+    .concat())
+}

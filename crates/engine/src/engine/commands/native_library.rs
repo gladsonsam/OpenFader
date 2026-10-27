@@ -67,7 +67,7 @@ impl Engine {
                 }
             }
             let _lane = self.native_lane.lock().await;
-            let write = !matches!(operation.as_str(), "inspect" | "refresh" | "read_show");
+            let write = !matches!(operation.as_str(), "inspect" | "refresh" | "read_show" | "export_file" | "inspect_file");
             let check = || self.native_access(writer, &driver, epoch, &request_id, write);
             anyhow::ensure!(check(), "Native session/access/locks changed");
             let drv = self.drv(&driver);
