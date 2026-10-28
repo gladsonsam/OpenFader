@@ -15,6 +15,14 @@ mixin _AppStoreAssignments on _AppStoreContext {
   String _assignmentLabel(String id) {
     if (id == 'lr_assign') return 'Main LR';
     final member = _membership.firstMatch(id)!;
+    final prefix = engine.topology
+        .where((family) => family['kind'] == 'dca')
+        .map((family) => family['name_prefix'])
+        .whereType<String>()
+        .firstOrNull;
+    if (member[1] == 'dca' && prefix != null && prefix.isNotEmpty) {
+      return '$prefix ${member[2]}';
+    }
     final family = member[1] == 'view' ? 'View' : 'Control group';
     final label = engine.parameterMetadata[id]?['label'] as String?;
     final identity = '$family ${member[2]}';

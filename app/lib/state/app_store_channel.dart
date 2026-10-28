@@ -346,6 +346,11 @@ mixin _AppStoreChannel on _AppStoreContext {
       : null;
   @override
   String dcaGroupLabel(int group) {
+    for (final family in engine.topology) {
+      if (family['kind'] == 'dca' && family['name_prefix'] is String) {
+        return '${family['name_prefix']} ${group + 1}';
+      }
+    }
     final label =
         paramMetadata('dca${group + 1}_assign')?['label'] as String? ??
             'VCA ${group + 1}';
@@ -408,9 +413,8 @@ mixin _AppStoreChannel on _AppStoreContext {
   String? get _eqResponseNote {
     final notes = [
       if (paramApplies('wing:filter_model')) 'EQ curve excludes input filters.',
-      if (List.generate(_eqBandCount, (i) => _eqPresentationType(i + 1))
-          .any((type) =>
-              EqFilterShape.fromValue(type)?.hasResponseModel != true))
+      if (List.generate(_eqBandCount, (i) => _eqPresentationType(i + 1)).any(
+          (type) => EqFilterShape.fromValue(type)?.hasResponseModel != true))
         'EQ curve excludes bands with unavailable response models.',
     ];
     return notes.isEmpty ? null : notes.join(' ');

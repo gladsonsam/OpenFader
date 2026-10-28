@@ -13,6 +13,10 @@ class _InputAssignments extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final assignmentFont = wide && store.viewGroupCount > 0 ? 14.0 : 16.0;
+    final controlGroup = store.dcaCount > 0 &&
+            store.dcaGroupLabel(0).toUpperCase().startsWith('DCA')
+        ? 'DCA'
+        : 'VCA';
     final groups = <String, List<Widget>>{
       if (store.supports('automix_group'))
         'Automix': [
@@ -69,7 +73,7 @@ class _InputAssignments extends StatelessWidget {
                         store.cmdSubgroupAssign(g, !store.subgroupAssigned(g)!))
         ],
       if (store.dcaCount > 0)
-        'VCA': [
+        controlGroup: [
           for (var g = 0; g < store.dcaCount; g++)
             _ProcessingButton(
                 fontSize: assignmentFont,
@@ -110,7 +114,7 @@ class _InputAssignments extends StatelessWidget {
         if (store.subgroupAssigned(g) == true) 'Sub ${g + 1}',
       for (var g = 0; g < store.dcaCount; g++)
         if (store.dcaAssigned(g) == true)
-          _summaryLabel('VCA', store.dcaGroupLabel(g)),
+          _summaryLabel(controlGroup, store.dcaGroupLabel(g)),
       for (var g = 0; g < store.muteGroupCount; g++)
         if (store.muteGroupAssigned(g) == true) 'Mute ${g + 1}',
       for (var g = 0; g < store.viewGroupCount; g++)
@@ -235,7 +239,7 @@ class _AutomixWeight extends StatelessWidget {
     void focus() => onFocus(ChannelFocus(
           title: 'Automix',
           label: 'Weight',
-      valueListenable: store,
+          valueListenable: store,
           text: () => current() ? text() : 'Reopen control',
           entryText: () {
             final live = current() ? store.paramNum(leaf) : null;

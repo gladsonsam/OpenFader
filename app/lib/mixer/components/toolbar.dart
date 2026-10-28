@@ -90,20 +90,26 @@ class MixerToolbar extends StatelessWidget {
                     child: controller.connected && !controller.demo
                         ? Semantics(
                             button: true,
-                            label: 'Connected to ${controller.connectionDisplayName}',
+                            label:
+                                'Connected to ${controller.connectionDisplayName}',
                             child: Tooltip(
                                 message: controller.connectionDisplayName,
                                 child: InkWell(
-                                    onTap: () => onNavigate(MixerDestination.connect),
+                                    onTap: () =>
+                                        onNavigate(MixerDestination.connect),
                                     child: Align(
                                       alignment: Alignment.centerRight,
                                       child: FittedBox(
                                         fit: BoxFit.scaleDown,
-                                        child: Text(controller.connectionDisplayName,
+                                        child: Text(
+                                            controller.connectionDisplayName,
                                             maxLines: 1,
                                             textAlign: TextAlign.right,
-                                            style: mixerType(context, compact ? 11 : 13,
-                                                color: ConsolePalette.of(context).text)),
+                                            style: mixerType(
+                                                context, compact ? 11 : 13,
+                                                color:
+                                                    ConsolePalette.of(context)
+                                                        .text)),
                                       ),
                                     ))))
                         : const SizedBox.shrink()),
@@ -197,6 +203,11 @@ class MixerToolbar extends StatelessWidget {
                         value: () => showMixerBuses(context, controller),
                         child:
                             Text('Master bus', style: mixerType(context, 16))),
+                    PopupMenuItem(
+                        value: () =>
+                            showMixerGroupMembership(context, controller),
+                        child: Text('Group members',
+                            style: mixerType(context, 16))),
                     if (controller.muteGroupCount > 0)
                       PopupMenuItem(
                           value: () => showMixerMuteGroups(context, controller),

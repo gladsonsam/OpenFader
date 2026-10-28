@@ -51,14 +51,18 @@ Future<void> showMixerLayout(BuildContext context, MixerController controller,
                             }),
                       Divider(color: ConsolePalette.of(context).line),
                       ListTile(
-                          title: Text('Layers',
-                              style: mixerType(context, 17)),
+                          title: Text('Layers', style: mixerType(context, 17)),
                           subtitle: Text('Custom channel sets',
                               style: mixerType(context, 13,
-                                  color: ConsolePalette.of(context)
-                                      .mutedText)),
-                          onTap: () =>
-                              showMixerLayers(context, controller)),
+                                  color: ConsolePalette.of(context).mutedText)),
+                          onTap: () => showMixerLayers(context, controller)),
+                      ListTile(
+                          title: Text('Group members',
+                              style: mixerType(context, 17)),
+                          onTap: () {
+                            Navigator.pop(context);
+                            showMixerGroupMembership(context, controller);
+                          }),
                       ListTile(
                           title:
                               Text('Master bus', style: mixerType(context, 17)),
@@ -269,18 +273,19 @@ class MixerBanks extends StatelessWidget {
                             GestureDetector(
                                 onLongPress: () =>
                                     showMixerLayers(context, controller),
-                                child: button(
-                                    bank.label,
+                                child: button(bank.label,
                                     () => controller.setBank(bank.key),
-                                    active:
-                                        !controller.isCustomLayerActive && bank.key == controller.store.bank,
+                                    active: !controller.isCustomLayerActive &&
+                                        bank.key == controller.store.bank,
                                     size: 31)),
                           for (final layer in layers)
                             GestureDetector(
-                                onLongPress: () => showMixerLayers(context, controller),
+                                onLongPress: () =>
+                                    showMixerLayers(context, controller),
                                 child: button(layer.name,
                                     () => controller.setActiveLayer(layer.id),
-                                    active: controller.activeLayer.id == layer.id,
+                                    active:
+                                        controller.activeLayer.id == layer.id,
                                     size: 31)),
                         ])),
                     for (final bus in controller.store.busRows)
@@ -328,36 +333,41 @@ class MixerBanks extends StatelessWidget {
                                   showMixerLayers(context, controller),
                               child: DropdownButtonHideUnderline(
                                   child: DropdownButton<String>(
-                                  isExpanded: true,
-                                  dropdownColor:
-                                      ConsolePalette.of(context).chip,
-                                  value: controller.isCustomLayerActive
-                                      ? 'layer:${controller.activeLayer.id}'
-                                      : banks.any(
-                                          (b) => b.key == controller.store.bank)
-                                      ? controller.store.bank
-                                      : null,
-                                  hint: status,
-                                  style: mixerType(context, 14),
-                                  items: [
-                                    for (final b in banks)
-                                      DropdownMenuItem(
-                                          value: b.key,
-                                          child: Text(b.label,
-                                              overflow: TextOverflow.ellipsis))
-                                    ,for (final layer in layers)
-                                      DropdownMenuItem(
-                                          value: 'layer:${layer.id}',
-                                          child: Text(layer.name, overflow: TextOverflow.ellipsis))
-                                  ],
-                                  onChanged: (key) {
-                                    if (key == null) return;
-                                    if (key.startsWith('layer:')) {
-                                      controller.setActiveLayer(key.substring(6));
-                                    } else {
-                                      controller.setBank(key);
-                                    }
-                                  })))),
+                                      isExpanded: true,
+                                      dropdownColor:
+                                          ConsolePalette.of(context).chip,
+                                      value: controller.isCustomLayerActive
+                                          ? 'layer:${controller.activeLayer.id}'
+                                          : banks.any((b) =>
+                                                  b.key ==
+                                                  controller.store.bank)
+                                              ? controller.store.bank
+                                              : null,
+                                      hint: status,
+                                      style: mixerType(context, 14),
+                                      items: [
+                                        for (final b in banks)
+                                          DropdownMenuItem(
+                                              value: b.key,
+                                              child: Text(b.label,
+                                                  overflow:
+                                                      TextOverflow.ellipsis)),
+                                        for (final layer in layers)
+                                          DropdownMenuItem(
+                                              value: 'layer:${layer.id}',
+                                              child: Text(layer.name,
+                                                  overflow:
+                                                      TextOverflow.ellipsis))
+                                      ],
+                                      onChanged: (key) {
+                                        if (key == null) return;
+                                        if (key.startsWith('layer:')) {
+                                          controller
+                                              .setActiveLayer(key.substring(6));
+                                        } else {
+                                          controller.setBank(key);
+                                        }
+                                      })))),
                       SizedBox(width: 114, child: _pager(context)),
                       if (count > 0)
                         IconButton(
@@ -383,6 +393,10 @@ Future<void> showMixerMuteGroups(
                     padding: const EdgeInsets.all(16),
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       Text('Mute groups', style: mixerType(context, 20)),
+                      TextButton(
+                          onPressed: () =>
+                              showMixerGroupMembership(context, controller),
+                          child: const Text('Edit group members')),
                       const SizedBox(height: 16),
                       Wrap(spacing: 8, runSpacing: 8, children: [
                         for (var g = 0; g < controller.muteGroupCount; g++)
@@ -447,14 +461,11 @@ Future<void> showMixerBanks(BuildContext context, MixerController controller) =>
                             }),
                       Divider(color: ConsolePalette.of(context).line),
                       ListTile(
-                          title: Text('Layers',
-                              style: mixerType(context, 17)),
+                          title: Text('Layers', style: mixerType(context, 17)),
                           subtitle: Text('Custom channel sets',
                               style: mixerType(context, 13,
-                                  color: ConsolePalette.of(context)
-                                      .mutedText)),
-                          onTap: () =>
-                              showMixerLayers(context, controller)),
+                                  color: ConsolePalette.of(context).mutedText)),
+                          onTap: () => showMixerLayers(context, controller)),
                     ]))));
 
 Future<void> showCustomMixerViews(
@@ -573,5 +584,121 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Could not save view: $error')));
     }
+  }
+}
+
+Future<void> showMixerGroupMembership(
+        BuildContext context, MixerController controller) =>
+    showDialog<void>(
+        context: context, builder: (_) => _GroupMembership(controller));
+
+class _GroupMembership extends StatefulWidget {
+  final MixerController controller;
+  const _GroupMembership(this.controller);
+  @override
+  State<_GroupMembership> createState() => _GroupMembershipState();
+}
+
+class _GroupMembershipState extends State<_GroupMembership> {
+  String? selected, status;
+  bool pending = false;
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.controller.store;
+    return ListenableBuilder(
+        listenable: store,
+        builder: (context, _) {
+          final targets = [
+            for (final strip in store.assignmentStrips)
+              if (store.captureNameTarget(strip.ch) case final target?)
+                (strip.name, target)
+          ];
+          final choices = <String, String>{};
+          for (final (_, target) in targets) {
+            for (final choice in store.assignmentsForChannel(target)) {
+              if (RegExp(r'^dca[0-9]+_assign$').hasMatch(choice.id) ||
+                  choice.id.startsWith('mute_group:')) {
+                choices.putIfAbsent(choice.id, () => choice.label);
+              }
+            }
+          }
+          final id = choices.containsKey(selected)
+              ? selected
+              : choices.keys.firstOrNull;
+          return PopScope(
+              canPop: !pending,
+              child: AlertDialog(
+                backgroundColor: ConsolePalette.of(context).panel,
+                title: const Text('Group members'),
+                content: SizedBox(
+                    width: 380,
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                      if (id == null)
+                        const Text('No group memberships are available.')
+                      else ...[
+                        DropdownButton<String>(
+                            value: id,
+                            isExpanded: true,
+                            items: [
+                              for (final entry in choices.entries)
+                                DropdownMenuItem(
+                                    value: entry.key, child: Text(entry.value))
+                            ],
+                            onChanged: pending
+                                ? null
+                                : (value) => setState(() {
+                                      selected = value;
+                                      status = null;
+                                    })),
+                        Flexible(
+                            child: SingleChildScrollView(
+                                child: Column(children: [
+                          for (final (name, target) in targets)
+                            if (store
+                                .assignmentsForChannel(target)
+                                .any((c) => c.id == id))
+                              Builder(builder: (context) {
+                                final current =
+                                    store.assignmentForChannel(target, id);
+                                final error =
+                                    store.assignmentEditError(target, id);
+                                return SwitchListTile.adaptive(
+                                    title:
+                                        Text(name.isEmpty ? target.key : name),
+                                    subtitle: Text(error ?? target.key),
+                                    value: current == true,
+                                    onChanged: pending ||
+                                            current == null ||
+                                            error != null
+                                        ? null
+                                        : (value) async {
+                                            setState(() {
+                                              pending = true;
+                                              status = null;
+                                            });
+                                            final result =
+                                                await store.assignChannel(
+                                                    target, id, value,
+                                                    expected: current);
+                                            if (!mounted) return;
+                                            setState(() {
+                                              pending = false;
+                                              status = result.error ??
+                                                  'Assignment state observed.';
+                                            });
+                                          });
+                              }),
+                        ]))),
+                      ],
+                      if (pending || status != null)
+                        Text(pending ? 'Sending assignment…' : status!),
+                    ])),
+                actions: [
+                  TextButton(
+                      onPressed: pending ? null : () => Navigator.pop(context),
+                      child: const Text('Close'))
+                ],
+              ));
+        });
   }
 }

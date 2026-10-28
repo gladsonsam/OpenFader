@@ -53,6 +53,9 @@ class MixerBusRow {
 /// solo banner) notifies through [ChangeNotifier].
 abstract class MixerStore extends ChangeNotifier implements ChannelNameStore {
   List<Strip> get strips;
+
+  /// Complete roster for group editing, independent of the current bank.
+  List<Strip> get assignmentStrips;
   double panOf(int ch);
   bool soloOf(int ch);
   bool get hasSolo;
