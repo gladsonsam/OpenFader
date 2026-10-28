@@ -324,6 +324,7 @@ impl XAirDriver {
         self.refresh_output_geq(session.clone(), generation);
         self.refresh_automix_settings(session.clone(), generation);
         self.refresh_output_misc(session.clone(), generation);
+        self.refresh_bus_links(session.clone(), generation);
         self.refresh_output_routing(session, generation);
         Ok(())
     }

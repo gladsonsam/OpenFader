@@ -125,9 +125,21 @@ impl XAirDriver {
                         if msg.addr == "/config/buslink" || msg.addr.starts_with("/config/buslink/")
                         {
                             let mut cache = bus_link_cache.lock().unwrap();
-                            if let Some((pair, _)) = super::assignments::parse_bus_link(&msg) {
-                                cache[pair].0 = cache[pair].0.wrapping_add(1);
-                                cache[pair].1 = None;
+                            let observed = if msg.addr == "/config/buslink" {
+                                match msg.args.as_slice() {
+                                    [OscType::Int(a @ 0..=1), OscType::Int(b @ 0..=1), OscType::Int(c @ 0..=1)] => {
+                                        Some(vec![(0, *a == 1), (1, *b == 1), (2, *c == 1)])
+                                    }
+                                    _ => None,
+                                }
+                            } else {
+                                super::assignments::parse_bus_link(&msg).map(|entry| vec![entry])
+                            };
+                            if let Some(observed) = observed {
+                                for (pair, linked) in observed {
+                                    cache[pair].0 = cache[pair].0.wrapping_add(1);
+                                    cache[pair].1 = Some((received_at, linked));
+                                }
                             } else {
                                 for entry in cache.iter_mut() {
                                     entry.0 = entry.0.wrapping_add(1);
@@ -363,6 +375,7 @@ impl XAirDriver {
         // The actor runs concurrently; no RTA round trip blocks hydration.
         let stream = std::sync::Arc::new(rta::RtaStream::start(session.clone(), connection));
         *self.rta.lock().unwrap() = Some(stream);
+        self.refresh_bus_links(session.clone(), connection);
         self.start_output_routing(session.clone(), connection);
         self.start_output_geq(session.clone(), connection);
         self.start_automix_settings(session.clone(), connection);
