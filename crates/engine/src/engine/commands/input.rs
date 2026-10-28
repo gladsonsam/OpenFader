@@ -399,16 +399,65 @@ impl Engine {
                             }
                         }
                     }
-                    if linked {
+                    if linked && driver != "xair" {
                         let level = self.active_drv().get_fader(StripId(ch)).await?;
                         for member in pair {
                             policy.allow_fader(StripId(member), level)?;
                         }
                     }
-                    let changes = self
-                        .active_drv()
-                        .set_stereo_link(StripId(ch), linked)
-                        .await?;
+                    let changes = if driver == "xair" {
+                        let check = |members: &[StripId]| -> anyhow::Result<()> {
+                            anyhow::ensure!(
+                                self.active_driver() == driver
+                                    && self.connection_gen.load(Ordering::Acquire) == generation
+                                    && !self.reads_suspended.load(Ordering::Acquire),
+                                "mixer session changed"
+                            );
+                            anyhow::ensure!(
+                                members == [StripId(pair[0]), StripId(pair[1])],
+                                "stereo link topology changed"
+                            );
+                            let current_policy = self.policy_of(writer);
+                            for member in members {
+                                current_policy.allow_strip(*member)?;
+                                current_policy.allow_assign(*member)?;
+                                if linked {
+                                    current_policy.allow_rename(*member)?;
+                                    current_policy.allow_fader(*member, 1.0)?;
+                                }
+                                anyhow::ensure!(
+                                    self.lock_holder(member.0)
+                                        .is_none_or(|holder| holder == writer),
+                                    "strip {} locked",
+                                    member.0
+                                );
+                            }
+                            Ok(())
+                        };
+                        check(&[StripId(pair[0]), StripId(pair[1])])?;
+                        self.drv(&driver)
+                            .set_param_guarded_checked(
+                                StripId(ch),
+                                "link",
+                                ParamValue::Bool(linked),
+                                &BTreeMap::new(),
+                                &check,
+                            )
+                            .await?;
+                        pair.into_iter()
+                            .map(|member| {
+                                (
+                                    StripId(member),
+                                    "link".to_string(),
+                                    ParamValue::Bool(linked),
+                                )
+                            })
+                            .collect()
+                    } else {
+                        self.active_drv()
+                            .set_stereo_link(StripId(ch), linked)
+                            .await?
+                    };
                     self.note_write(writer);
                     self.touch_holder_locks(writer);
                     for (strip, field, value) in changes {
