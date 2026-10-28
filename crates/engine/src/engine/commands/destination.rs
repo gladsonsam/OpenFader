@@ -3,6 +3,77 @@
 use super::*;
 
 impl Engine {
+    // A provider with a bus strip family exposes the same masters through
+    // strip commands. Admit both the target and known linked members before
+    // using the native master write. Providers without that family retain
+    // their native master-only behavior.
+    async fn admit_bus_strip(
+        &self,
+        bus: u8,
+        field: &str,
+        value: Option<f32>,
+        writer: &str,
+        driver_id: &str,
+        epoch: u64,
+    ) -> anyhow::Result<Option<Event>> {
+        let driver = self.drv(driver_id);
+        let topology = driver.topology();
+        if topology
+            .iter()
+            .any(|f| f.kind == openfader_core::StripKind::Bus)
+        {
+            let key = openfader_core::strip_key("bus", u16::from(bus) + 1);
+            let index = openfader_core::strip_index_for_key(&topology, &key)
+                .filter(|&i| i < driver.strip_count() && i <= u16::MAX as usize)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "bus {bus} out of range or strip key {key:?} unavailable on {driver_id}"
+                    )
+                })?;
+            let target = StripId(index as u16);
+            let linked = driver.control_members(target, field).await?;
+            let members = std::iter::once(target).chain(linked);
+            anyhow::ensure!(
+                driver_id == self.active_driver()
+                    && epoch == self.connection_gen.load(Ordering::Acquire)
+                    && !self.reads_suspended.load(Ordering::Acquire),
+                "Destination connection changed; reopen the control."
+            );
+            let policy = self.policy_of(writer);
+            if let Some(value) = value {
+                policy.allow_master_fader(value)?;
+            } else {
+                policy.allow_master_mute()?;
+            }
+            for member in members {
+                if let Some(value) = value {
+                    policy.allow_fader(member, value)?;
+                } else {
+                    policy.allow_mute(member)?;
+                }
+                if let Some(holder) = self.lock_holder(member.0) {
+                    if holder != writer {
+                        return Ok(Some(Self::locked_error(member.0, &holder)));
+                    }
+                }
+            }
+        } else {
+            anyhow::ensure!(
+                driver_id == self.active_driver()
+                    && epoch == self.connection_gen.load(Ordering::Acquire)
+                    && !self.reads_suspended.load(Ordering::Acquire),
+                "Destination connection changed; reopen the control."
+            );
+            let policy = self.policy_of(writer);
+            if let Some(value) = value {
+                policy.allow_master_fader(value)?;
+            } else {
+                policy.allow_master_mute()?;
+            }
+        }
+        Ok(None)
+    }
+
     pub(super) async fn apply_destination(
         &self,
         cmd: Cmd,
@@ -254,8 +325,17 @@ impl Engine {
                 // `refresh_param`, a disagreeing immediate read can be the
                 // desk's pre-write value; echo the submitted value instead.
                 // This bus display frame does not establish verified proof.
-                let muted = self.active_drv().get_bus_mute(bus).await.ok();
-                self.active_drv().set_bus_fader(bus, value).await?;
+                let driver_id = self.active_driver();
+                let epoch = self.connection_gen.load(Ordering::Acquire);
+                let driver = self.drv(&driver_id);
+                let muted = driver.get_bus_mute(bus).await.ok();
+                if let Some(error) = self
+                    .admit_bus_strip(bus, "fader", Some(value), writer, &driver_id, epoch)
+                    .await?
+                {
+                    return Ok(Some(error));
+                }
+                driver.set_bus_fader(bus, value).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 out.push(match (self.bus_message(bus).await, muted) {
@@ -285,8 +365,17 @@ impl Engine {
             }
             Cmd::BusMute { bus, muted } => {
                 policy.allow_master_mute()?;
-                let fader = self.active_drv().get_bus_fader(bus).await.ok();
-                self.active_drv().set_bus_mute(bus, muted).await?;
+                let driver_id = self.active_driver();
+                let epoch = self.connection_gen.load(Ordering::Acquire);
+                let driver = self.drv(&driver_id);
+                let fader = driver.get_bus_fader(bus).await.ok();
+                if let Some(error) = self
+                    .admit_bus_strip(bus, "mute", None, writer, &driver_id, epoch)
+                    .await?
+                {
+                    return Ok(Some(error));
+                }
+                driver.set_bus_mute(bus, muted).await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 out.push(match (self.bus_message(bus).await, fader) {

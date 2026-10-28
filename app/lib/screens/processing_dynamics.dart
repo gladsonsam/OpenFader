@@ -111,10 +111,6 @@ class _DynTab extends StatelessWidget {
                           enabled: d.ranges[k.prop] != null,
                           onFocus: () => focus(k),
                           onChanged: (v) => apply(k, v))),
-                  const SizedBox(width: 16),
-                  Text(controlText(k),
-                      style: AppDesign.type(16,
-                          color: ConsolePalette.of(context).text1)),
                 ]));
     final supplemental = Row(children: [
       Expanded(
@@ -290,7 +286,8 @@ class _DynTab extends StatelessWidget {
             ]),
           ],
         ],
-        _AdvancedDynamics(store: store, kind: kind, compact: compact),
+        _AdvancedDynamics(
+            store: store, kind: kind, compact: compact, onFocus: onFocus),
         if (kind == DynKind.comp) ...[
           const SizedBox(height: 12),
           if (compact)
@@ -319,8 +316,12 @@ class _AdvancedDynamics extends StatelessWidget {
   final ChannelStore store;
   final DynKind kind;
   final bool compact;
+  final ValueChanged<ChannelFocus> onFocus;
   const _AdvancedDynamics(
-      {required this.store, required this.kind, required this.compact});
+      {required this.store,
+      required this.kind,
+      required this.compact,
+      required this.onFocus});
 
   @override
   Widget build(BuildContext context) {
@@ -383,6 +384,20 @@ class _AdvancedDynamics extends StatelessWidget {
       final range = _controlRange(store, leaf);
       if (range == null) continue;
       final value = store.paramNum(leaf)!;
+      String readout() {
+        final live = store.paramNum(leaf);
+        return live == null
+            ? 'Loading…'
+            : '${live.toStringAsFixed(live < 10 ? 1 : 0)} $unit';
+      }
+
+      void focus() => onFocus(_parameterFocus(
+          store,
+          leaf,
+          kind == DynKind.gate ? 'Gate' : 'Compressor',
+          label,
+          readout,
+          (v) => store.cmdParam(leaf, v)));
       controls.add(Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -397,7 +412,11 @@ class _AdvancedDynamics extends StatelessWidget {
               color: kind == DynKind.gate
                   ? palette.processingBlue
                   : palette.processingPurple,
-              onChanged: (v) => store.cmdParam(leaf, v))));
+              onFocus: focus,
+              onChanged: (v) {
+                store.cmdParam(leaf, v);
+                focus();
+              })));
     }
     if (controls.isEmpty) return const SizedBox.shrink();
     return Padding(

@@ -272,15 +272,24 @@ double fromN(double min, double max, double n) =>
 
 enum EqBandType { low, mid, high, lowCut, highCut }
 
-/// Confirmed response shapes, using canonical/XAir presentation values.
+/// Native shape identities, using canonical/XAir presentation values.
+/// A selectable shape does not imply that its response model is available.
 /// Driver-native values are translated only at the store boundary.
 enum EqFilterShape {
+  lowCut(0),
   lowShelf(1),
   bell(2),
-  highShelf(4);
+  veq(3),
+  highShelf(4),
+  highCut(5);
 
   const EqFilterShape(this.value);
   final int value;
+
+  bool get hasResponseModel => switch (this) {
+        lowShelf || bell || highShelf => true,
+        _ => false,
+      };
 
   static EqFilterShape? fromValue(int? value) {
     for (final shape in values) {
@@ -302,6 +311,7 @@ class EqBandVm {
   /// their stored bell Q must not change the shelf preview.
   final bool shelfUsesQ;
   final bool on;
+  final List<ParameterChoice> typeChoices;
 
   /// Canonical/XAir presentation enum: 1 = low shelf, 2 = bell,
   /// 4 = high shelf. Other canonical values retain their driver meaning;
@@ -320,6 +330,7 @@ class EqBandVm {
     this.shelfUsesQ = true,
     this.on = true,
     this.type,
+    this.typeChoices = const [],
     this.fRange,
     this.gRange,
     this.qRange,
@@ -334,6 +345,7 @@ class EqBandVm {
         shelfUsesQ: shelfUsesQ,
         on: on ?? this.on,
         type: type,
+        typeChoices: typeChoices,
         fRange: fRange,
         gRange: gRange,
         qRange: qRange,
@@ -490,6 +502,9 @@ List<double> eqResponseDb(ChannelEqVm eq) {
           db += _peakingDb(b.f, b.g, b.q <= 0 ? 1 : b.q, f);
         case EqFilterShape.highShelf:
           db += _shelfDb(true, b.f, b.g, b.shelfUsesQ ? b.q : null, f);
+        case EqFilterShape.lowCut:
+        case EqFilterShape.veq:
+        case EqFilterShape.highCut:
         case null:
           // No verified response to draw until the shape is known.
           break;

@@ -388,6 +388,34 @@ mixin _AppStoreChannel on _AppStoreContext {
     };
   }
 
+  List<ParameterChoice> _eqTypeChoices(int band) {
+    final choices = parameterChoices(paramMetadata('eq${band}_type'));
+    if (choices.isNotEmpty && engine.driver != 'dl32s') return choices;
+    if (band == 1 || band == _eqBandCount) {
+      return [
+        (
+          value: (band == 1 ? EqFilterShape.lowShelf : EqFilterShape.highShelf)
+              .value
+              .toDouble(),
+          label: 'Shelf'
+        ),
+        (value: EqFilterShape.bell.value.toDouble(), label: 'Bell'),
+      ];
+    }
+    return const [];
+  }
+
+  String? get _eqResponseNote {
+    final notes = [
+      if (paramApplies('wing:filter_model')) 'EQ curve excludes input filters.',
+      if (List.generate(_eqBandCount, (i) => _eqPresentationType(i + 1))
+          .any((type) =>
+              EqFilterShape.fromValue(type)?.hasResponseModel != true))
+        'EQ curve excludes bands with unavailable response models.',
+    ];
+    return notes.isEmpty ? null : notes.join(' ');
+  }
+
   List<double>? _editableRange(String leaf) {
     if (!supports(leaf) || paramNum(leaf)?.isFinite != true) return null;
     return parameterRange(paramMetadata(leaf));
@@ -414,9 +442,7 @@ mixin _AppStoreChannel on _AppStoreContext {
                   ][paramNum('hpf_slope')!.toInt().clamp(0, 3)])
             : 12,
         hpfInResponse: engine.driver != 'wing',
-        responseNote: paramApplies('wing:filter_model')
-            ? 'EQ curve excludes input filters.'
-            : null,
+        responseNote: _eqResponseNote,
         selectedBand: _eqBand,
         bands: [
           for (var b = 1; b <= _eqBandCount; b++)
@@ -459,6 +485,7 @@ mixin _AppStoreChannel on _AppStoreContext {
                   paramMetadata('eq${b}_type')?['curve'] != 'fixed_shelf',
               on: true,
               type: _eqPresentationType(b),
+              typeChoices: _eqTypeChoices(b),
               fRange: _editableRange('eq${b}_freq'),
               gRange: _editableRange('eq${b}_gain'),
               qRange: _editableRange('eq${b}_q'),
@@ -664,15 +691,11 @@ mixin _AppStoreChannel on _AppStoreContext {
 
   @override
   void setEqBandType(int band, EqFilterShape shape) {
-    if (band != 1 && band != _eqBandCount) return;
-    if (shape != EqFilterShape.bell &&
-        shape !=
-            (band == 1 ? EqFilterShape.lowShelf : EqFilterShape.highShelf)) {
-      return;
-    }
+    if (band < 1 || band > _eqBandCount) return;
     final leaf = 'eq${band}_type';
     if (!supports(leaf) ||
-        EqFilterShape.fromValue(_eqPresentationType(band)) == null) {
+        _eqPresentationType(band) == null ||
+        !_eqTypeChoices(band).any((choice) => choice.value == shape.value)) {
       return;
     }
     final native = engine.driver == 'dl32s' && shape == EqFilterShape.lowShelf

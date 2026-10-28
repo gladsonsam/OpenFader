@@ -235,6 +235,7 @@ class _AutomixWeight extends StatelessWidget {
     void focus() => onFocus(ChannelFocus(
           title: 'Automix',
           label: 'Weight',
+      valueListenable: store,
           text: () => current() ? text() : 'Reopen control',
           entryText: () {
             final live = current() ? store.paramNum(leaf) : null;
