@@ -175,6 +175,7 @@ fn examples() -> Vec<(String, Value)> {
                         id: "hall".to_string(),
                         label: "Hall".to_string(),
                         params: vec![openfader_engine::protocol::FxParamCaps {
+                            position: None,
                             choices: Vec::new(),
                             id: "mix".to_string(),
                             label: "Mix".to_string(),

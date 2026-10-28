@@ -100,6 +100,7 @@ impl_dyn_driver!(openfader_proto_wing::WingDriver {
         openfader_proto_wing::fx::MODELS.iter().map(|model| crate::protocol::FxTypeCaps {
             id: model.id.into(), label: model.label.into(), slots: (1..=if model.premium { 8 } else { 16 }).collect(),
             params: model.params.iter().enumerate().map(|(index, p)| crate::protocol::FxParamCaps {
+                            position: None,
                 id: format!("par{:02}", index+1), label: p.label.into(), unit: p.unit.into(), min: p.min, max: p.max,
                 default: 0., scale: p.scale().into(),
                 choices: p.choices.iter().enumerate().map(|(i, (_, label))| crate::protocol::FxChoiceCaps {

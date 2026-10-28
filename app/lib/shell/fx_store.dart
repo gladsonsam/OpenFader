@@ -150,7 +150,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       _typeMetadata(type)?['label'] as String? ?? type;
 
   String _parameterText(double normalized, Map<String, dynamic>? metadata) {
-    final hall = XairHallScale.forMarker(metadata?['scale']);
+    final hall = XairHallScale.fromMetadata(metadata);
     if (hall != null) return hall.text(hall.position(normalized));
     if (metadata?['scale'] == 'xair_deesser_steps') {
       return xairDeesserPosition(normalized).toStringAsFixed(1);
@@ -223,7 +223,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       final rawMin = (meta?['min'] as num?)?.toDouble();
       final rawMax = (meta?['max'] as num?)?.toDouble();
       final scale = meta?['scale'];
-      final hall = XairHallScale.forMarker(scale);
+      final hall = XairHallScale.fromMetadata(meta);
       final valid =
           rawMin != null &&
           rawMax != null &&
@@ -356,18 +356,13 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       return;
     }
     final params = _typeMetadata(c.type)?['params'] as List? ?? const [];
-    final isDeesser = params.whereType<Map>().any(
-      (param) => param['id'] == id && param['scale'] == 'xair_deesser_steps',
-    );
-    final hall = params
+    final position = params
         .whereType<Map>()
         .where((param) => param['id'] == id)
-        .map((param) => XairHallScale.forMarker(param['scale']))
+        .map(XairHallScale.fromMetadata)
         .firstOrNull;
-    final canonical = hall != null
-        ? (value * hall.steps).round() / hall.steps
-        : isDeesser
-        ? (value * 50).round() / 50
+    final canonical = position != null
+        ? (value * position.steps).round() / position.steps
         : value;
     send(Cmds.fxParam(c.slot, id, canonical));
   }

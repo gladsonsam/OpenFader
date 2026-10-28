@@ -22,6 +22,7 @@ impl Engine {
                         .params
                         .iter()
                         .map(|p| crate::protocol::FxParamCaps {
+                            position: None,
                             choices: Vec::new(),
                             id: p.id.to_string(),
                             label: p.label.to_string(),
