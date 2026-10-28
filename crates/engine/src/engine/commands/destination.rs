@@ -214,6 +214,7 @@ impl Engine {
                                 | "routing"
                                 | "input_insert"
                                 | "automix_settings"
+                                | "bus_link"
                         ) && !row.surface.starts_with("output_")
                             && row.gesture.is_none())
                             || guard.is_some(),
@@ -236,6 +237,7 @@ impl Engine {
                                         | "routing"
                                         | "input_insert"
                                         | "automix_settings"
+                                        | "bus_link"
                                 )
                                 || row.surface.starts_with("output_")
                                 || row.gesture.is_some())
@@ -274,6 +276,65 @@ impl Engine {
                             driver
                                 .set_output_processor_guarded(
                                     &target, &control, value, expected, &block, &context,
+                                )
+                                .await?
+                        } else if row.surface == "bus_link" {
+                            let driver_id = self.active_driver();
+                            let topology = driver.topology();
+                            let members = row
+                                .members
+                                .iter()
+                                .map(|key| {
+                                    let index = openfader_core::strip_index_for_key(&topology, key)
+                                        .ok_or_else(|| {
+                                            anyhow::anyhow!("Bus link scope unavailable")
+                                        })?;
+                                    anyhow::ensure!(
+                                        topology.iter().any(|family| family.kind
+                                            == openfader_core::StripKind::Bus
+                                            && index >= family.first
+                                            && index < family.first + family.count),
+                                        "Bus link member is not a bus"
+                                    );
+                                    Ok(StripId(u16::try_from(index)?))
+                                })
+                                .collect::<anyhow::Result<Vec<_>>>()?;
+                            anyhow::ensure!(
+                                members.len() == 2 && members[0] != members[1],
+                                "Bus link scope unavailable"
+                            );
+                            let check = || -> anyhow::Result<()> {
+                                anyhow::ensure!(
+                                    driver_id == self.active_driver()
+                                        && epoch == self.connection_gen.load(Ordering::Acquire)
+                                        && !self.reads_suspended.load(Ordering::Acquire),
+                                    "Bus link session changed"
+                                );
+                                let policy = self.policy_of(writer);
+                                // Link side effects can copy any bus level. Require
+                                // full-range access rather than sampling a moving fader.
+                                policy.allow_master_fader(1.0)?;
+                                for member in &members {
+                                    policy.allow_assign(*member)?;
+                                    policy.allow_rename(*member)?;
+                                    policy.allow_fader(*member, 1.0)?;
+                                    anyhow::ensure!(
+                                        self.lock_holder(member.0)
+                                            .is_none_or(|holder| holder == writer),
+                                        "Bus link companion locked"
+                                    );
+                                }
+                                Ok(())
+                            };
+                            check()?;
+                            driver
+                                .set_output_processor_guarded(
+                                    &target,
+                                    &control,
+                                    value,
+                                    expected,
+                                    &block,
+                                    &|| check().is_ok(),
                                 )
                                 .await?
                         } else if row.surface.starts_with("output_")

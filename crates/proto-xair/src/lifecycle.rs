@@ -88,6 +88,8 @@ impl XAirDriver {
             }
         }
         *self.bus_link_observations.lock().unwrap() = [(0, None); 3];
+        self.bus_link_pending
+            .store(0, std::sync::atomic::Ordering::Release);
         *self.link_writes.lock().unwrap() = [None; 8];
         *self.dyn_cache.lock().await = None;
         *self.automix_gain_cache.lock().await = None;
@@ -106,6 +108,7 @@ impl XAirDriver {
         let link_cache = self.link_cache.clone();
         let bus_link_cache = self.bus_link_cache.clone();
         let bus_link_observations = self.bus_link_observations.clone();
+        let bus_link_pending = self.bus_link_pending.clone();
         let task = tokio::spawn(async move {
             let mut fx_types = [None; 4];
             loop {
@@ -140,6 +143,14 @@ impl XAirDriver {
                             };
                             if let Some(observed) = observed {
                                 for (pair, linked) in observed {
+                                    if bus_link_pending.load(std::sync::atomic::Ordering::Acquire)
+                                        & (1 << pair)
+                                        != 0
+                                    {
+                                        cache[pair].0 = cache[pair].0.wrapping_add(1);
+                                        cache[pair].1 = None;
+                                        continue;
+                                    }
                                     if observations[pair]
                                         .1
                                         .is_none_or(|(_, prior)| prior != linked)
@@ -413,6 +424,8 @@ impl XAirDriver {
             }
         }
         *self.bus_link_observations.lock().unwrap() = [(0, None); 3];
+        self.bus_link_pending
+            .store(0, std::sync::atomic::Ordering::Release);
         *self.link_writes.lock().unwrap() = [None; 8];
         self.connection_generation
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);

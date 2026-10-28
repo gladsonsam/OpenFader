@@ -317,6 +317,7 @@ impl XAirDriver {
             );
             OscType::Float((value + 15.0) / 30.0)
         };
+        let _dispatch = self.bus_dispatch.read().await;
         let _lane = self.output_geq_write.lock().await;
         let generation = self.connection_generation.load(Ordering::Acquire);
         let block = || {

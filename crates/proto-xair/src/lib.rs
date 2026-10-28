@@ -72,6 +72,9 @@ pub struct XAirDriver {
     link_cache: LinkCache,
     bus_link_cache: BusLinkCache,
     bus_link_observations: BusLinkCache,
+    bus_link_pending: std::sync::Arc<std::sync::atomic::AtomicU8>,
+    bus_link_write: tokio::sync::Mutex<()>,
+    bus_dispatch: tokio::sync::RwLock<()>,
     link_writes: std::sync::Mutex<[Option<std::time::Instant>; 8]>,
     preamp_write: tokio::sync::Mutex<()>,
     output_routes: std::sync::Arc<std::sync::Mutex<output_routing::Cache>>,
@@ -140,6 +143,9 @@ impl XAirDriver {
             link_writes: std::sync::Mutex::new([None; 8]),
             bus_link_cache: std::sync::Arc::new(std::sync::Mutex::new([(0, None); 3])),
             bus_link_observations: std::sync::Arc::new(std::sync::Mutex::new([(0, None); 3])),
+            bus_link_pending: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            bus_link_write: tokio::sync::Mutex::new(()),
+            bus_dispatch: tokio::sync::RwLock::new(()),
             preamp_write: tokio::sync::Mutex::new(()),
             output_routes: std::sync::Arc::new(std::sync::Mutex::new(
                 output_routing::Cache::default(),
@@ -237,11 +243,11 @@ impl MixerDriver for XAirDriver {
         snapshot: &[openfader_core::destinations::DestinationControl],
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
-        anyhow::ensure!(
-            target != "bus_links" && !snapshot.iter().any(|row| row.surface == "bus_link_state"),
-            "Bus link state is read-only"
-        );
-        if target == "automix" {
+        if target == "bus_links" {
+            self.set_bus_link_control(control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        } else if target == "automix" {
             self.set_automix_setting(target, control, value, expected, snapshot, context)
                 .await
                 .map(Some)

@@ -222,6 +222,14 @@ mixin _AppStoreAccess on _AppStoreContext {
         accessTargetAllowed,
       );
     }
+    if (control.surface == 'bus_link_state') return false;
+    if (control.surface == 'bus_link') {
+      return accessFamilyAllowed(AccessFamily.masterDsp) &&
+          accessFamilyAllowed(AccessFamily.channelId) &&
+          accessFamilyAllowed(AccessFamily.pan) &&
+          control.members.length == 2 &&
+          control.members.every(accessTargetAllowed);
+    }
     if (control.surface == 'automix_settings') {
       return accessFamilyAllowed(AccessFamily.masterDsp);
     }

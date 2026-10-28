@@ -65,6 +65,7 @@ impl XAirDriver {
         value: ParamValue,
         check: Option<&SendCheck<'_>>,
     ) -> anyhow::Result<()> {
+        let _dispatch = self.bus_dispatch.read().await;
         if let Ok((slot, "on")) = generic_send(param) {
             if (1..=10).contains(&slot) {
                 anyhow::bail!("xair: send on/off is unsupported");

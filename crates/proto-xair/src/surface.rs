@@ -9,6 +9,7 @@ impl XAirDriver {
         value: ParamValue,
         check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<()> {
+        let _dispatch = self.bus_dispatch.read().await;
         let (kind, root) = strip_root(strip.0)?;
         anyhow::ensure!(kind == openfader_core::StripKind::Bus, "not a bus master");
         let (address, argument) = match (param, value) {
