@@ -293,6 +293,7 @@ impl XAirDriver {
                                     .connection_generation
                                     .load(std::sync::atomic::Ordering::Acquire)
                         {
+                            cache[pair].0 = cache[pair].0.wrapping_add(1);
                             cache[pair].1 = Some((std::time::Instant::now(), linked));
                         }
                     }
@@ -356,5 +357,103 @@ impl XAirDriver {
         };
         let pair = usize::from((bus - 1) / 2);
         Ok(Some((pair, (pair * 2 + 1) as u16)))
+    }
+}
+
+impl XAirDriver {
+    pub(super) fn refresh_bus_links(&self, session: std::sync::Arc<OscSession>, generation: u64) {
+        let cache = self.bus_link_cache.clone();
+        let current_generation = self.connection_generation.clone();
+        let revisions = {
+            let mut state = cache.lock().unwrap();
+            for entry in state.iter_mut() {
+                entry.0 = entry.0.wrapping_add(1);
+                entry.1 = None;
+            }
+            [state[0].0, state[1].0, state[2].0]
+        };
+        let task = tokio::spawn(async move {
+            for (pair, revision) in revisions.into_iter().enumerate() {
+                let first = pair * 2 + 1;
+                let addr = format!("/config/buslink/{first}-{}", first + 1);
+                if let Ok(msg) = session.query(&addr).await {
+                    if let Some((index, linked)) = parse_bus_link(&msg) {
+                        let mut state = cache.lock().unwrap();
+                        if index == pair
+                            && state[pair].0 == revision
+                            && current_generation.load(std::sync::atomic::Ordering::Acquire)
+                                == generation
+                        {
+                            state[pair].0 = state[pair].0.wrapping_add(1);
+                            state[pair].1 = Some((std::time::Instant::now(), linked));
+                        }
+                    }
+                }
+            }
+        });
+        self.tasks.lock().unwrap().push(task);
+    }
+
+    pub(super) fn bus_link_controls(
+        &self,
+    ) -> Vec<openfader_core::destinations::DestinationControl> {
+        use openfader_core::destinations::{
+            DestinationChoice, DestinationControl, DestinationValue,
+        };
+        use std::sync::atomic::Ordering;
+        if !self.connected.load(Ordering::Acquire) {
+            return vec![];
+        }
+        let generation = self.connection_generation.load(Ordering::Acquire);
+        let topology = self.topology();
+        let cache = self.bus_link_cache.lock().unwrap();
+        (0..3)
+            .filter_map(|pair| {
+                let first = pair * 2 + 1;
+                let members: Vec<_> = (first..=first + 1)
+                    .map(|n| openfader_core::strip_key("bus", n as u16))
+                    .collect();
+                if members
+                    .iter()
+                    .any(|key| openfader_core::strip_index_for_key(&topology, key).is_none())
+                {
+                    return None;
+                }
+                Some(DestinationControl {
+                    revision: Some(cache[pair].0),
+                    generation: Some(generation),
+                    preset: false,
+                    members,
+                    target: "bus_links".into(),
+                    target_label: "Bus links".into(),
+                    target_name: None,
+                    send_slot: None,
+                    surface: "bus_link_state".into(),
+                    description: "Read-only bus link state.".into(),
+                    id: format!("pair_{first}_{}", first + 1),
+                    label: format!("Bus {first}–{}", first + 1),
+                    tap_tempo: false,
+                    gesture: None,
+                    choices: vec![
+                        DestinationChoice {
+                            value: 0.0,
+                            label: "Unlinked".into(),
+                        },
+                        DestinationChoice {
+                            value: 1.0,
+                            label: "Linked".into(),
+                        },
+                    ],
+                    range: None,
+                    current: cache[pair]
+                        .1
+                        .filter(|(at, _)| at.elapsed() <= std::time::Duration::from_secs(5))
+                        .map(|(_, linked)| DestinationValue {
+                            value: u8::from(linked) as f32,
+                            verified: true,
+                        }),
+                })
+            })
+            .collect()
     }
 }

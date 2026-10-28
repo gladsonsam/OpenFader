@@ -218,6 +218,7 @@ impl MixerDriver for XAirDriver {
         controls.extend(self.rta_setting_controls());
         controls.extend(self.monitor_setting_controls());
         controls.extend(self.misc_controls());
+        controls.extend(self.bus_link_controls());
         controls
     }
 
@@ -234,6 +235,10 @@ impl MixerDriver for XAirDriver {
         snapshot: &[openfader_core::destinations::DestinationControl],
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
+        anyhow::ensure!(
+            target != "bus_links" && !snapshot.iter().any(|row| row.surface == "bus_link_state"),
+            "Bus link state is read-only"
+        );
         if target == "automix" {
             self.set_automix_setting(target, control, value, expected, snapshot, context)
                 .await
@@ -269,6 +274,10 @@ impl MixerDriver for XAirDriver {
         snapshot: &[openfader_core::destinations::DestinationControl],
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        anyhow::ensure!(
+            target != "bus_links" && !snapshot.iter().any(|row| row.surface == "bus_link_state"),
+            "Bus link state is read-only"
+        );
         anyhow::ensure!(control == "tap", "Unknown output control");
         self.set_routing_tap(target, value, expected, snapshot, context)
             .await
