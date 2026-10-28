@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../palette.dart';
 import '../core/destination_controls.dart';
 import '../widgets/destination_control_editor.dart';
+import '../widgets/number_entry.dart';
 
 class FxKnobVm {
   final String id;
@@ -15,6 +16,11 @@ class FxKnobVm {
   final double max;
   final double value;
   final String text;
+  final double entryMin;
+  final double entryMax;
+  final double entryValue;
+  final double Function(double)? normalize;
+  final List<String> choices;
 
   const FxKnobVm({
     required this.id,
@@ -23,6 +29,11 @@ class FxKnobVm {
     required this.max,
     required this.value,
     required this.text,
+    this.entryMin = 0,
+    this.entryMax = 1,
+    this.entryValue = 0,
+    this.normalize,
+    this.choices = const [],
   });
 }
 
@@ -47,6 +58,7 @@ class FxSlotVm {
 // Implemented by the shell over the engine or a fixture sim.
 abstract class FxStore extends ChangeNotifier {
   int get controlAccessEpoch => 0;
+  Object? get controlSession => null;
   bool get stateControlsSupported => false;
   List<DestinationControlVm> get destinationControls => const [];
   bool destinationControlIsCurrent(DestinationControlVm control) => false;
@@ -90,6 +102,8 @@ class _FxTarget {
 
 class _U4FxPageState extends State<U4FxPage> {
   String? _selection;
+  String? _focusedId;
+  String? _focusedTarget;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -124,63 +138,168 @@ class _U4FxPageState extends State<U4FxPage> {
                       : ((width - 6 * (targets.length - 1)) / targets.length)
                           .clamp(148.0, 240.0);
                   final detailHeight = math.max(330.0, bounds.maxHeight - 158);
-                  return SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
-                      child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text('FX',
-                                style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: .6,
-                                    color: palette.text1)),
-                            const SizedBox(height: 8),
-                            if (targets.isEmpty)
-                              Text(
-                                  'No FX controls are available for this mixer.',
-                                  style: TextStyle(color: palette.text4)),
-                            if (targets.isNotEmpty)
-                              SizedBox(
-                                  height: 112,
-                                  child: ListView.separated(
-                                      scrollDirection: Axis.horizontal,
-                                      itemCount: targets.length,
-                                      separatorBuilder: (context, index) =>
-                                          const SizedBox(width: 6),
-                                      itemBuilder: (context, index) {
-                                        final target = targets[index];
-                                        return SizedBox(
-                                            width: cardWidth,
-                                            child: _FxCard(
-                                                store: store,
-                                                target: target,
-                                                selected: target == selected,
-                                                onSelect: () {
-                                                  setState(() =>
-                                                      _selection = target.key);
-                                                  if (target.slot
-                                                      case final slot?) {
-                                                    store.selectSlot(slot.slot);
-                                                  }
-                                                }));
-                                      })),
-                            if (selected != null) ...[
-                              const SizedBox(height: 8),
-                              if (selected.slot case final slot?)
-                                _LegacyFxDetail(
-                                    store: store,
-                                    slot: slot,
-                                    minHeight: detailHeight)
-                              else
-                                _NativeFxDetail(
-                                    store: store,
-                                    controls: selected.controls,
-                                    minHeight: detailHeight),
-                            ],
-                          ]));
+                  return Column(children: [
+                    if (selected != null)
+                      Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+                          child: _selectedBar(context, selected)),
+                    Expanded(
+                        child: SingleChildScrollView(
+                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text('FX',
+                                      style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w700,
+                                          letterSpacing: .6,
+                                          color: palette.text1)),
+                                  const SizedBox(height: 8),
+                                  if (targets.isEmpty)
+                                    Text(
+                                        'No FX controls are available for this mixer.',
+                                        style: TextStyle(color: palette.text4)),
+                                  if (targets.isNotEmpty)
+                                    SizedBox(
+                                        height: 112,
+                                        child: ListView.separated(
+                                            scrollDirection: Axis.horizontal,
+                                            itemCount: targets.length,
+                                            separatorBuilder:
+                                                (context, index) =>
+                                                    const SizedBox(width: 6),
+                                            itemBuilder: (context, index) {
+                                              final target = targets[index];
+                                              return SizedBox(
+                                                  width: cardWidth,
+                                                  child: _FxCard(
+                                                      store: store,
+                                                      target: target,
+                                                      selected:
+                                                          target == selected,
+                                                      onSelect: () {
+                                                        setState(() =>
+                                                            _selection =
+                                                                target.key);
+                                                        _focusedId = null;
+                                                        _focusedTarget = null;
+                                                        if (target.slot
+                                                            case final slot?) {
+                                                          store.selectSlot(
+                                                              slot.slot);
+                                                        }
+                                                      }));
+                                            })),
+                                  if (selected != null) ...[
+                                    const SizedBox(height: 8),
+                                    if (selected.slot case final slot?)
+                                      _LegacyFxDetail(
+                                          store: store,
+                                          slot: slot,
+                                          minHeight: detailHeight,
+                                          onFocus: (id) => setState(() {
+                                                _focusedTarget = selected.key;
+                                                _focusedId = id;
+                                              }))
+                                    else
+                                      _NativeFxDetail(
+                                          store: store,
+                                          controls: selected.controls,
+                                          minHeight: detailHeight,
+                                          onFocus: (id) => setState(() {
+                                                _focusedTarget = selected.key;
+                                                _focusedId = id;
+                                              })),
+                                  ],
+                                ]))),
+                  ]);
                 });
               })));
+
+  Widget _selectedBar(BuildContext context, _FxTarget target) {
+    final store = widget.store;
+    final native = _focusedTarget == target.key
+        ? target.controls.where((c) => c.id == _focusedId).firstOrNull
+        : null;
+    final knob = _focusedTarget == target.key && target.slot != null
+        ? store.knobs.where((k) => k.id == _focusedId).firstOrNull
+        : null;
+    final palette = ConsolePalette.of(context);
+    return Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        decoration: BoxDecoration(
+            color: palette.panel, border: Border.all(color: palette.linePanel)),
+        child: ListTile(
+          dense: true,
+          title: Text(native?.label ?? knob?.label ?? 'Select a control',
+              style: TextStyle(color: palette.text7)),
+          trailing: Text(native?.valueLabel ?? knob?.text ?? '—',
+              style: TextStyle(color: palette.text1, fontSize: 18)),
+          onTap: native != null && store.destinationControlIsCurrent(native)
+              ? () => showDialog<void>(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => DestinationControlEditor(
+                      accessEpoch: () => store.controlAccessEpoch,
+                      changes: store,
+                      isCurrent: store.destinationControlIsCurrent,
+                      apply: store.setDestinationControl,
+                      control: native))
+              : knob == null
+                  ? null
+                  : () async {
+                      final epoch = store.controlAccessEpoch;
+                      final session = store.controlSession;
+                      final slot = target.slot!;
+                      final double? value;
+                      if (knob.choices.isNotEmpty) {
+                        value = await showDialog<double>(
+                            context: context,
+                            builder: (context) => SimpleDialog(
+                                    title: Text(knob.label),
+                                    children: [
+                                      for (var i = 0;
+                                          i < knob.choices.length;
+                                          i++)
+                                        SimpleDialogOption(
+                                            onPressed: () => Navigator.pop(
+                                                context, i.toDouble()),
+                                            child: Text(knob.choices[i]))
+                                    ]));
+                      } else {
+                        value = await showNumberEntry(
+                            context: context,
+                            title: knob.label,
+                            initial: knob.entryValue.toString(),
+                            min: knob.entryMin,
+                            max: knob.entryMax);
+                      }
+                      if (!mounted ||
+                          value == null ||
+                          epoch != store.controlAccessEpoch ||
+                          session != store.controlSession ||
+                          !value.isFinite ||
+                          value < knob.entryMin ||
+                          value > knob.entryMax ||
+                          _focusedTarget != target.key ||
+                          _focusedId != knob.id ||
+                          store.selected >= store.slots.length ||
+                          store.slots[store.selected].slot != slot.slot ||
+                          store.slots[store.selected].type != slot.type ||
+                          !store.knobs.any((k) =>
+                              k.id == knob.id &&
+                              k.min == knob.min &&
+                              k.max == knob.max &&
+                              k.entryMin == knob.entryMin &&
+                              k.entryMax == knob.entryMax)) {
+                        return;
+                      }
+                      store.setParam(
+                          knob.id, knob.normalize?.call(value) ?? value);
+                    },
+        ));
+  }
 }
 
 class _FxCard extends StatelessWidget {
@@ -293,13 +412,18 @@ class _NativeFxDetail extends StatelessWidget {
   final FxStore store;
   final List<DestinationControlVm> controls;
   final double minHeight;
+  final ValueChanged<String> onFocus;
   const _NativeFxDetail(
-      {required this.store, required this.controls, required this.minHeight});
+      {required this.store,
+      required this.controls,
+      required this.minHeight,
+      required this.onFocus});
 
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
-    final selector = controls.where((control) => control.id == 'algorithm').firstOrNull;
+    final selector =
+        controls.where((control) => control.id == 'algorithm').firstOrNull;
     final tapControls =
         controls.where((control) => control.canTapTempo).toList();
     final binaryControls = controls
@@ -324,16 +448,16 @@ class _NativeFxDetail extends StatelessWidget {
               ),
               onPressed: store.destinationControlIsCurrent(selector)
                   ? () => showDialog<void>(
-                      context: context,
-                      barrierDismissible: false,
-                      builder: (_) => DestinationControlEditor(
-                        accessEpoch: () => store.controlAccessEpoch,
-                        changes: store,
-                        isCurrent: store.destinationControlIsCurrent,
-                        apply: store.setDestinationControl,
-                        control: selector,
-                      ),
-                    )
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => DestinationControlEditor(
+                          accessEpoch: () => store.controlAccessEpoch,
+                          changes: store,
+                          isCurrent: store.destinationControlIsCurrent,
+                          apply: store.setDestinationControl,
+                          control: selector,
+                        ),
+                      )
                   : null,
             ),
             const SizedBox(height: 8),
@@ -392,15 +516,7 @@ class _NativeFxDetail extends StatelessWidget {
                                 .clamp(0, 1)
                             : 0,
                         enabled: store.destinationControlIsCurrent(control),
-                        onTap: () => showDialog<void>(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (_) => DestinationControlEditor(
-                                accessEpoch: () => store.controlAccessEpoch,
-                                changes: store,
-                                isCurrent: store.destinationControlIsCurrent,
-                                apply: store.setDestinationControl,
-                                control: control))),
+                        onTap: () => onFocus(control.id)),
               ]),
           for (final control in tapControls)
             Padding(
@@ -432,8 +548,12 @@ class _LegacyFxDetail extends StatelessWidget {
   final FxStore store;
   final FxSlotVm slot;
   final double minHeight;
+  final ValueChanged<String> onFocus;
   const _LegacyFxDetail(
-      {required this.store, required this.slot, required this.minHeight});
+      {required this.store,
+      required this.slot,
+      required this.minHeight,
+      required this.onFocus});
 
   @override
   Widget build(BuildContext context) {
@@ -492,8 +612,12 @@ class _LegacyFxDetail extends StatelessWidget {
                           .clamp(0, 1)
                       : 0,
                   enabled: true,
-                  onChange: (fraction) => store.setParam(
-                      knob.id, knob.min + fraction * (knob.max - knob.min))),
+                  onTap: () => onFocus(knob.id),
+                  onChange: (fraction) {
+                    onFocus(knob.id);
+                    store.setParam(
+                        knob.id, knob.min + fraction * (knob.max - knob.min));
+                  }),
           ]),
           if (store.tapVisible)
             Align(
@@ -622,10 +746,6 @@ class _FxRotaryState extends State<_FxRotary> {
                       Text(widget.label,
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 12, color: palette.text7)),
-                      const SizedBox(height: 4),
-                      Text(widget.text,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 13, color: palette.text1)),
                     ]))));
   }
 }
