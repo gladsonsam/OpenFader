@@ -18,13 +18,18 @@ class _MixerSetupDetail extends StatelessWidget {
       const _Note('These settings apply to the connected mixer.'),
       for (final surface in surfaces) ...[
         _Section(
-            title: surface.startsWith('bus_link') ? 'Bus links' : 'Automix',
+            title: switch (surface) {
+              'bus_link' || 'bus_link_state' => 'Bus links',
+              'link_policy_state' => 'Link preferences',
+              _ => 'Automix',
+            },
             children: [
               for (final control
                   in controls.where((row) => row.surface == surface))
                 _PrefRow(
                     label: control.label,
-                    trailing: surface == 'bus_link_state'
+                    trailing: surface == 'bus_link_state' ||
+                            surface == 'link_policy_state'
                         ? _ValueText(control.valueLabel ?? 'Unavailable')
                         : OutlinedButton(
                             onPressed: store.mixerSetupControlIsCurrent(control)
@@ -43,6 +48,8 @@ class _MixerSetupDetail extends StatelessWidget {
             ]),
         if (surface == 'bus_link_state')
           const _Note('Bus link status is read-only.'),
+        if (surface == 'link_policy_state')
+          const _Note('Link preference status is read-only.'),
       ],
     ]);
   }
