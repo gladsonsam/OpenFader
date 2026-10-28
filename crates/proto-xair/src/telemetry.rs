@@ -186,6 +186,10 @@ impl XAirDriver {
             .map(|pair| osc::query_message(&format!("/config/buslink/{pair}")))
             .into_iter()
             .collect::<anyhow::Result<Vec<_>>>()?;
+        let policy_queries = super::link_policy::IDS
+            .map(|id| osc::query_message(&format!("/config/linkcfg/{id}")))
+            .into_iter()
+            .collect::<anyhow::Result<Vec<_>>>()?;
         let task = tokio::spawn(async move {
             let mut ticker = openfader_transport::session::keepalive_ticker(
                 interval.min(std::time::Duration::from_secs(1)),
@@ -202,7 +206,7 @@ impl XAirDriver {
                 }
                 if links_renewed.elapsed() >= std::time::Duration::from_secs(2) {
                     links_renewed = std::time::Instant::now();
-                    for query in &link_queries {
+                    for query in link_queries.iter().chain(policy_queries.iter()) {
                         if let Err(error) = sock.send(query).await {
                             eprintln!("xair: bus link read failed: {error}");
                         }
