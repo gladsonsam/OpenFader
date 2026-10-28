@@ -133,6 +133,9 @@ mixin _AppStoreStrips on _AppStoreContext {
   // MixerStore
   // ------------------------------------------------------------------
   @override
+  List<Strip> get assignmentStrips => List.unmodifiable(engine.strips);
+
+  @override
   List<Strip> get strips {
     final cached = _stripsCache;
     if (cached != null) return cached;
@@ -154,7 +157,8 @@ mixin _AppStoreStrips on _AppStoreContext {
           : engine.strips.where((strip) => engine.topology.any((family) {
                 final first = (family['first'] as num).toInt();
                 final count = (family['count'] as num).toInt();
-                return strip.ch >= first && strip.ch < first + count &&
+                return strip.ch >= first &&
+                    strip.ch < first + count &&
                     (family['kind'] == 'in' || family['kind'] == 'ret');
               }));
     } else {
@@ -408,7 +412,8 @@ mixin _AppStoreStrips on _AppStoreContext {
 
   String _busDisplayName(int index) {
     final key = 'bus/${(index + 1).toString().padLeft(2, '0')}';
-    final name = engine.strips.where((s) => s.key == key).firstOrNull?.name.trim();
+    final name =
+        engine.strips.where((s) => s.key == key).firstOrNull?.name.trim();
     return name == null || name.isEmpty ? 'BUS ${index + 1}' : name;
   }
 
@@ -419,7 +424,8 @@ mixin _AppStoreStrips on _AppStoreContext {
           ? 'SUBGROUP ${_selectedSubgroup! + 1}'
           : _busId == 'main'
               ? 'MAIN'
-              : _busDisplayName(int.tryParse(_busId.replaceFirst('bus', '')) ?? 0);
+              : _busDisplayName(
+                  int.tryParse(_busId.replaceFirst('bus', '')) ?? 0);
 
   @override
   List<MixerBank> get banks {
