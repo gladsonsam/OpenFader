@@ -150,6 +150,8 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       _typeMetadata(type)?['label'] as String? ?? type;
 
   String _parameterText(double normalized, Map<String, dynamic>? metadata) {
+    final hall = XairHallScale.forMarker(metadata?['scale']);
+    if (hall != null) return hall.text(hall.position(normalized));
     if (metadata?['scale'] == 'xair_deesser_steps') {
       return xairDeesserPosition(normalized).toStringAsFixed(1);
     }
@@ -221,13 +223,15 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       final rawMin = (meta?['min'] as num?)?.toDouble();
       final rawMax = (meta?['max'] as num?)?.toDouble();
       final scale = meta?['scale'];
+      final hall = XairHallScale.forMarker(scale);
       final valid =
           rawMin != null &&
           rawMax != null &&
           rawMin.isFinite &&
           rawMax.isFinite &&
           rawMax > rawMin &&
-          (scale == 'lin' ||
+          (hall != null ||
+              scale == 'lin' ||
               scale == 'xair_deesser_steps' ||
               scale == 'log' && rawMin > 0);
       final min = choices.isNotEmpty
@@ -240,7 +244,9 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
           : valid
           ? rawMax
           : 100.0;
-      final value = scale == 'xair_deesser_steps'
+      final value = hall != null
+          ? hall.display(hall.position(normalized))
+          : scale == 'xair_deesser_steps'
           ? xairDeesserPosition(normalized)
           : choices.isNotEmpty
           ? (normalized * max).roundToDouble()
@@ -252,7 +258,9 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
         label: definitions[id]?['label'] as String? ?? id,
         min: 0,
         max: 1,
-        value: scale == 'xair_deesser_steps'
+        value: hall != null
+            ? hall.position(normalized) / hall.steps
+            : scale == 'xair_deesser_steps'
             ? xairDeesserPosition(normalized) / 50
             : c.params[id]!.clamp(0.0, 1.0),
         text: _parameterText(normalized, meta),
@@ -260,9 +268,15 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
         entryMax: max,
         entryValue: value,
         choices: choices,
-        increment: scale == 'xair_deesser_steps' ? 0.02 : 0.01,
+        increment: hall != null
+            ? 1 / hall.steps
+            : scale == 'xair_deesser_steps'
+            ? 0.02
+            : 0.01,
         normalize: (value) => max == min
             ? 0
+            : hall != null
+            ? hall.entry(value)
             : scale == 'xair_deesser_steps'
             ? xairDeesserEntry(value)
             : choices.isEmpty && valid && scale == 'log'
@@ -342,9 +356,17 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
     final isDeesser = params.whereType<Map>().any(
       (param) => param['id'] == id && param['scale'] == 'xair_deesser_steps',
     );
-    send(
-      Cmds.fxParam(c.slot, id, isDeesser ? (value * 50).round() / 50 : value),
-    );
+    final hall = params
+        .whereType<Map>()
+        .where((param) => param['id'] == id)
+        .map((param) => XairHallScale.forMarker(param['scale']))
+        .firstOrNull;
+    final canonical = hall != null
+        ? (value * hall.steps).round() / hall.steps
+        : isDeesser
+        ? (value * 50).round() / 50
+        : value;
+    send(Cmds.fxParam(c.slot, id, canonical));
   }
 
   @override
