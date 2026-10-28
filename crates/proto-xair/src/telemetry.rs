@@ -182,11 +182,16 @@ impl XAirDriver {
             addrs::METER_REQUEST,
             vec![OscType::String(AUTOMIX_METER_STREAM.to_string())],
         )?;
+        let link_queries = ["1-2", "3-4", "5-6"]
+            .map(|pair| osc::query_message(&format!("/config/buslink/{pair}")))
+            .into_iter()
+            .collect::<anyhow::Result<Vec<_>>>()?;
         let task = tokio::spawn(async move {
             let mut ticker = openfader_transport::session::keepalive_ticker(
                 interval.min(std::time::Duration::from_secs(1)),
             );
             let mut renewed = std::time::Instant::now();
+            let mut links_renewed = std::time::Instant::now();
             // `keepalive_ticker` fires immediately; consume it so the first
             // renewal lands one full `interval` after the initial subscribe.
             ticker.tick().await;
@@ -194,6 +199,14 @@ impl XAirDriver {
                 ticker.tick().await;
                 if generation.load(std::sync::atomic::Ordering::Acquire) != connection {
                     break;
+                }
+                if links_renewed.elapsed() >= std::time::Duration::from_secs(2) {
+                    links_renewed = std::time::Instant::now();
+                    for query in &link_queries {
+                        if let Err(error) = sock.send(query).await {
+                            eprintln!("xair: bus link read failed: {error}");
+                        }
+                    }
                 }
                 let stale_levels = session
                     .latest_meter_sample()

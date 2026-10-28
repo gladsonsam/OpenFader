@@ -362,7 +362,7 @@ impl XAirDriver {
 
 impl XAirDriver {
     pub(super) fn refresh_bus_links(&self, session: std::sync::Arc<OscSession>, generation: u64) {
-        let cache = self.bus_link_cache.clone();
+        let cache = self.bus_link_observations.clone();
         let current_generation = self.connection_generation.clone();
         let revisions = {
             let mut state = cache.lock().unwrap();
@@ -406,7 +406,7 @@ impl XAirDriver {
         }
         let generation = self.connection_generation.load(Ordering::Acquire);
         let topology = self.topology();
-        let cache = self.bus_link_cache.lock().unwrap();
+        let cache = self.bus_link_observations.lock().unwrap();
         (0..3)
             .filter_map(|pair| {
                 let first = pair * 2 + 1;
