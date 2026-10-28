@@ -217,6 +217,7 @@ impl Engine {
                                 | "bus_link"
                                 | "link_policy"
                                 | "usb_interface"
+                                | "clock_rate"
                                 | "midi_setup"
                         ) && !row.surface.starts_with("output_")
                             && row.gesture.is_none())
@@ -243,6 +244,7 @@ impl Engine {
                                         | "bus_link"
                                         | "link_policy"
                                         | "usb_interface"
+                                        | "clock_rate"
                                         | "midi_setup"
                                 )
                                 || row.surface.starts_with("output_")
@@ -286,7 +288,11 @@ impl Engine {
                                 .await?
                         } else if matches!(
                             row.surface.as_str(),
-                            "bus_link" | "link_policy" | "usb_interface" | "midi_setup"
+                            "bus_link"
+                                | "link_policy"
+                                | "usb_interface"
+                                | "midi_setup"
+                                | "clock_rate"
                         ) {
                             let driver_id = self.active_driver();
                             let topology = driver.topology();
@@ -335,8 +341,31 @@ impl Engine {
                                         && !self.reads_suspended.load(Ordering::Acquire),
                                     "Shared mixer session changed"
                                 );
+                                if row.surface == "clock_rate" && value != expected {
+                                    let main = topology
+                                        .iter()
+                                        .find(|family| {
+                                            family.kind == openfader_core::StripKind::Main
+                                        })
+                                        .ok_or_else(|| {
+                                            anyhow::anyhow!("Main LR state unavailable")
+                                        })?;
+                                    anyhow::ensure!(
+                                        self.param_cache
+                                            .read()
+                                            .unwrap()
+                                            .get(&(main.first as u16))
+                                            .and_then(|params| params.get("mute"))
+                                            .and_then(Value::as_bool)
+                                            == Some(true),
+                                        "Mute Main LR before changing clock rate"
+                                    );
+                                }
                                 let policy = self.policy_of(writer);
-                                // Coupling and USB reconfiguration affect shared audio.
+                                if row.surface == "clock_rate" {
+                                    policy.allow_master_mute()?;
+                                }
+                                // Shared device reconfiguration affects the full mixer.
                                 // Require full-range mixer access at dispatch.
                                 policy.allow_master_fader(1.0)?;
                                 for member in &members {

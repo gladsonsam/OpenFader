@@ -190,6 +190,7 @@ impl XAirDriver {
             .map(|id| osc::query_message(&format!("/config/linkcfg/{id}")))
             .into_iter()
             .collect::<anyhow::Result<Vec<_>>>()?;
+        let clock_query = osc::query_message("/-prefs/clockrate")?;
         let usb_query = osc::query_message("/-prefs/usbifcmode")?;
         let midi_query = osc::query_message("/-prefs/midiconfig")?;
         let is_xr18 = self.model == addrs::XAirModel::Xr18;
@@ -199,6 +200,7 @@ impl XAirDriver {
             );
             if is_xr18 {
                 let _ = sock.send(&usb_query).await;
+                let _ = sock.send(&clock_query).await;
                 let _ = sock.send(&midi_query).await;
             }
             let mut renewed = std::time::Instant::now();
@@ -215,6 +217,7 @@ impl XAirDriver {
                     links_renewed = std::time::Instant::now();
                     if is_xr18 {
                         let _ = sock.send(&usb_query).await;
+                        let _ = sock.send(&clock_query).await;
                         let _ = sock.send(&midi_query).await;
                     }
                     for query in link_queries.iter().chain(policy_queries.iter()) {

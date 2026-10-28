@@ -106,6 +106,11 @@ impl XAirDriver {
 
     pub(super) async fn driver_set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
         let (_, root) = strip_root(strip.0)?;
+        let _main_lane = if root == "/lr" {
+            Some(self.main_mute_write.lock().await)
+        } else {
+            None
+        };
         let guard = self.session().await?;
         let addr = strip_mix_on(&root);
         guard
@@ -197,6 +202,7 @@ impl XAirDriver {
     /// same polarity as channel `/mix/on`). The leaf answers queries
     /// (rig-verified XR18 FW 1.20, 2026-10-18: reads `1`).
     pub(super) async fn driver_set_main_mute(&self, muted: bool) -> anyhow::Result<()> {
+        let _main_lane = self.main_mute_write.lock().await;
         let guard = self.session().await?;
         guard
             .as_ref()

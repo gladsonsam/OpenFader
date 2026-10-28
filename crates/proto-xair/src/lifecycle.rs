@@ -90,8 +90,10 @@ impl XAirDriver {
         *self.bus_link_observations.lock().unwrap() = [(0, None); 3];
         *self.link_policy_cache.lock().unwrap() = [(0, None); 4];
         *self.usb_interface.lock().unwrap() = Default::default();
+        *self.clock_rate.lock().unwrap() = Default::default();
         *self.midi_setup.lock().unwrap() = Default::default();
         self.usb_interface.lock().unwrap().generation = connection;
+        self.clock_rate.lock().unwrap().generation = connection;
         self.midi_setup.lock().unwrap().generation = connection;
         self.bus_link_pending
             .store(0, std::sync::atomic::Ordering::Release);
@@ -114,6 +116,7 @@ impl XAirDriver {
         let generation = self.connection_generation.clone();
         let link_cache = self.link_cache.clone();
         let usb_interface = self.usb_interface.clone();
+        let clock_rate = self.clock_rate.clone();
         let midi_setup = self.midi_setup.clone();
         let link_policy_cache = self.link_policy_cache.clone();
         let link_policy_pending = self.link_policy_pending.clone();
@@ -132,6 +135,7 @@ impl XAirDriver {
                             break;
                         }
                         super::usb_interface::record(&usb_interface, &msg, received_at, connection);
+                        super::clock_rate::record(&clock_rate, &msg, received_at, connection);
                         super::midi_setup::record(&midi_setup, &msg, received_at, connection);
                         if msg.addr == "/config/linkcfg" || msg.addr.starts_with("/config/linkcfg/")
                         {
@@ -347,6 +351,7 @@ impl XAirDriver {
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         super::usb_interface::invalidate(&usb_interface, connection);
+                        super::clock_rate::invalidate(&clock_rate, connection);
                         super::midi_setup::invalidate(&midi_setup, connection);
                         eprintln!(
                             "xair: control receive lagged {n}; requesting bounded reconciliation"
@@ -427,6 +432,7 @@ impl XAirDriver {
         self.refresh_bus_links(session.clone(), connection);
         self.refresh_link_policies(session.clone(), connection);
         self.refresh_usb_interface(session.clone());
+        self.refresh_clock_rate(session.clone());
         self.refresh_midi_setup(session.clone());
         self.start_output_routing(session.clone(), connection);
         self.start_output_geq(session.clone(), connection);
@@ -443,6 +449,7 @@ impl XAirDriver {
 
     pub(super) async fn driver_disconnect(&self) -> anyhow::Result<()> {
         *self.usb_interface.lock().unwrap() = Default::default();
+        *self.clock_rate.lock().unwrap() = Default::default();
         *self.midi_setup.lock().unwrap() = Default::default();
         self.connected
             .store(false, std::sync::atomic::Ordering::Release);

@@ -31,6 +31,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
       ((control.surface != 'global' &&
               control.surface != 'fx' &&
               control.surface != 'usb_interface' &&
+              control.surface != 'clock_rate' &&
               control.surface != 'midi_setup' &&
               !control.targetSolo &&
               !control.talkbackGesture) ||
@@ -61,6 +62,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
               control.surface == 'bus_link' ||
               control.surface == 'link_policy' ||
               control.surface == 'usb_interface' ||
+              control.surface == 'clock_rate' ||
               control.surface == 'midi_setup' ||
               control.surface.startsWith('output_') ||
               control.targetSolo ||

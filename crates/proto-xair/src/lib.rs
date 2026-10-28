@@ -38,6 +38,7 @@ mod sync_decode;
 
 pub mod addrs;
 mod assignments;
+mod clock_rate;
 mod discovery;
 mod fx_driver;
 mod inbound;
@@ -75,6 +76,9 @@ pub struct XAirDriver {
     connected: std::sync::atomic::AtomicBool,
     link_cache: LinkCache,
     usb_interface: std::sync::Arc<std::sync::Mutex<usb_interface::Cache>>,
+    clock_rate: std::sync::Arc<std::sync::Mutex<clock_rate::Cache>>,
+    clock_rate_write: tokio::sync::Mutex<()>,
+    main_mute_write: tokio::sync::Mutex<()>,
     usb_interface_write: tokio::sync::Mutex<()>,
     midi_setup: std::sync::Arc<std::sync::Mutex<midi_setup::Cache>>,
     midi_setup_write: tokio::sync::Mutex<()>,
@@ -155,6 +159,9 @@ impl XAirDriver {
             usb_interface: std::sync::Arc::new(std::sync::Mutex::new(
                 usb_interface::Cache::default(),
             )),
+            clock_rate: Default::default(),
+            clock_rate_write: Default::default(),
+            main_mute_write: Default::default(),
             usb_interface_write: tokio::sync::Mutex::new(()),
             midi_setup: std::sync::Arc::new(std::sync::Mutex::new(midi_setup::Cache::default())),
             midi_setup_write: tokio::sync::Mutex::new(()),
@@ -249,6 +256,7 @@ impl MixerDriver for XAirDriver {
         controls.extend(self.bus_link_controls());
         controls.extend(self.link_policy_controls());
         controls.extend(self.usb_interface_controls());
+        controls.extend(self.clock_rate_controls());
         controls.extend(self.midi_setup_controls());
         controls
     }
@@ -314,6 +322,10 @@ impl MixerDriver for XAirDriver {
     ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
         if target == "midi_setup" {
             self.set_midi_setup_checked(control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        } else if target == "device_setup" && control == "clockrate" {
+            self.set_clock_rate_checked(control, value, expected, snapshot, context)
                 .await
                 .map(Some)
         } else if target == "device_setup" {
