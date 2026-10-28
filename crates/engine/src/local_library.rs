@@ -1,11 +1,11 @@
 //! Engine-local durable library kernel: one versioned combined document
-//! (`scenes.json` v2/v3/v4) holding the numbered scene slots AND the named show
+//! (`scenes.json` v2 through v9) holding the numbered scene slots AND the named show
 //! library, with strict whole-document load and atomic commits.
 //!
 //! Single strict transaction (no silent repair):
 //!
-//! - The document is `{version: 2|3|4|5|6|7|8, scenes: [...], shows: [...]}`. Version 3
-//!   adds provider-qualified FX insert and mute-group state; version 4 adds global automix state; version 5 adds output taps; version 6 adds monitor settings; version 7 adds RTA settings; version 8 adds output EQ. Documents without
+//! - The document is `{version: 2|3|4|5|6|7|8|9, scenes: [...], shows: [...]}`. Version 3
+//!   adds provider-qualified FX insert and mute-group state; version 4 adds global automix state; version 5 adds output taps; version 6 adds monitor settings; version 7 adds RTA settings; version 8 adds output EQ; version 9 adds stereo link settings. Documents without
 //!   those fields remain v2 so older builds can still read them. Version 1
 //!   (`{version: 1, scenes: [...]}`) is the legacy numbered-only shape: it
 //!   still loads, but it is never rewritten on load — it migrates to v2
@@ -48,7 +48,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::engine::{
-    StoredAutomix, StoredFx, StoredFxInsert, StoredMonitor, StoredMonitorValue,
+    StoredAutomix, StoredFx, StoredFxInsert, StoredLinkSettings, StoredMonitor, StoredMonitorValue,
     StoredMuteGroupMembership, StoredMuteGroups, StoredOutputEq, StoredOutputEqTarget,
     StoredOutputTaps, StoredRoute, StoredRta, StoredScene, StoredStrip, SCENE_MAX, SCENE_MIN,
 };
@@ -56,7 +56,8 @@ use super::engine::{
 /// Combined library file name under the engine data dir.
 pub const LIBRARY_FILE_NAME: &str = "scenes.json";
 /// Current combined document version.
-pub const LIBRARY_VERSION: u64 = 8;
+pub const LIBRARY_VERSION: u64 = 9;
+const LIBRARY_VERSION_V8: u64 = 8;
 const LIBRARY_VERSION_V7: u64 = 7;
 const LIBRARY_VERSION_V6: u64 = 6;
 const LIBRARY_VERSION_V5: u64 = 5;
@@ -309,6 +310,16 @@ struct NumberedSceneDoc {
     rta: Option<RtaDoc>,
     #[serde(default)]
     output_eq: Option<OutputEqDoc>,
+    #[serde(default)]
+    link_settings: Option<LinkSettingsDoc>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LinkSettingsDoc {
+    provider: String,
+    bus_links: [bool; 3],
+    policies: [bool; 4],
 }
 
 #[derive(Debug, Deserialize)]
@@ -478,7 +489,7 @@ fn parse_library_doc(doc: &Value) -> Result<ParsedLibrary, String> {
     let version = obj
         .get("version")
         .and_then(Value::as_u64)
-        .ok_or_else(|| "document needs integer \"version\" 1..=8".to_string())?;
+        .ok_or_else(|| "document needs integer \"version\" 1..=9".to_string())?;
     if !matches!(
         version,
         LIBRARY_VERSION_V1
@@ -488,6 +499,7 @@ fn parse_library_doc(doc: &Value) -> Result<ParsedLibrary, String> {
             | LIBRARY_VERSION_V5
             | LIBRARY_VERSION_V6
             | LIBRARY_VERSION_V7
+            | LIBRARY_VERSION_V8
             | LIBRARY_VERSION
     ) {
         return Err(format!(
@@ -600,9 +612,29 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
         if version < LIBRARY_VERSION_V7 && raw.as_object().is_some_and(|s| s.contains_key("rta")) {
             return Err(format!("scenes[{i}]: rta requires library version 7"));
         }
-        if version < LIBRARY_VERSION && raw.as_object().is_some_and(|s| s.contains_key("output_eq"))
+        if version < LIBRARY_VERSION_V8
+            && raw.as_object().is_some_and(|s| s.contains_key("output_eq"))
         {
             return Err(format!("scenes[{i}]: output EQ requires library version 8"));
+        }
+        if version < LIBRARY_VERSION
+            && raw
+                .as_object()
+                .is_some_and(|s| s.contains_key("link_settings"))
+        {
+            return Err(format!(
+                "scenes[{i}]: link settings require library version 9"
+            ));
+        }
+        let link_settings = doc.link_settings.map(|link| StoredLinkSettings {
+            provider: link.provider,
+            settings: openfader_core::link_settings::StereoLinkSettings {
+                bus_links: link.bus_links,
+                policies: link.policies,
+            },
+        });
+        if let Some(link) = &link_settings {
+            validate_stored_link_settings(link, &format!("scenes[{i}].link_settings"))?;
         }
         let output_eq = doc.output_eq.map(|eq| StoredOutputEq {
             provider: eq.provider,
@@ -814,6 +846,7 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
                 monitor,
                 rta,
                 output_eq,
+                link_settings,
             },
         );
     }
@@ -937,6 +970,14 @@ fn check_key(key: Option<&str>, what: &str) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+pub(crate) fn validate_stored_link_settings(
+    link: &StoredLinkSettings,
+    what: &str,
+) -> Result<(), String> {
+    check_name(&link.provider, &format!("{what}.provider"))?;
+    check_name_len(&link.provider, MAX_FX_TYPE_LEN, &format!("{what}.provider"))
 }
 
 pub(crate) fn validate_stored_output_eq(eq: &StoredOutputEq, what: &str) -> Result<(), String> {
@@ -1222,6 +1263,9 @@ pub fn validate_candidate(
             return Err(format!("{what}: key/number mismatch"));
         }
         check_name(&s.name, &format!("{what}.name"))?;
+        if let Some(link) = &s.link_settings {
+            validate_stored_link_settings(link, &format!("{what}.link_settings"))?;
+        }
         if let Some(eq) = &s.output_eq {
             validate_stored_output_eq(eq, &format!("{what}.output_eq"))?;
         }
@@ -1397,13 +1441,15 @@ fn param_value_json(pv: &ParamValue) -> Value {
     }
 }
 
-/// Render v8 for output EQ, v7 for RTA settings, v6 for monitor settings, v5 for output taps, v4 for automix, v3 for FX insert or mute-group state, otherwise retain v2.
+/// Render v9 for link settings, v8 for output EQ, v7 for RTA settings, v6 for monitor settings, v5 for output taps, v4 for automix, v3 for FX insert or mute-group state, otherwise retain v2.
 /// Numbered slots and parameter keys are sorted for stable bytes.
 pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -> Value {
     let mut slots: Vec<&StoredScene> = numbered.values().collect();
     slots.sort_by_key(|s| s.number);
-    let version = if slots.iter().any(|s| s.output_eq.is_some()) {
+    let version = if slots.iter().any(|s| s.link_settings.is_some()) {
         LIBRARY_VERSION
+    } else if slots.iter().any(|s| s.output_eq.is_some()) {
+        LIBRARY_VERSION_V8
     } else if slots.iter().any(|s| s.rta.is_some()) {
         LIBRARY_VERSION_V7
     } else if slots.iter().any(|s| s.monitor.is_some()) {
@@ -1460,6 +1506,7 @@ pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -
                     row
                 }).collect::<Vec<_>>(),
             });
+            if let Some(link) = &s.link_settings { scene["link_settings"] = serde_json::json!({"provider": link.provider, "bus_links": link.settings.bus_links, "policies": link.settings.policies}); }
             if let Some(eq) = &s.output_eq { scene["output_eq"] = serde_json::json!({"provider":eq.provider,"targets":eq.targets.iter().map(|t| serde_json::json!({"target":t.target,"mode":t.mode,"gains_db":t.gains_db})).collect::<Vec<_>>()}); }
             if let Some(r) = &s.rta { scene["rta"] = serde_json::json!({"provider":r.provider,"detector":r.detector,"decay":r.decay}); }
             if let Some(m) = &s.monitor { scene["monitor"] = serde_json::json!({"provider":m.provider,"values":m.values.iter().map(|v|serde_json::json!({"id":v.id,"value":v.value})).collect::<Vec<_>>()}); }
