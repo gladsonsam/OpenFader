@@ -313,6 +313,11 @@ impl Engine {
         } else {
             None
         };
+        let rta = drv
+            .read_rta_settings()
+            .await?
+            .map(|block| stored_rta_from_controls(&driver, &block))
+            .transpose()?;
         let monitor = drv
             .read_monitor_settings()
             .await?
@@ -350,7 +355,7 @@ impl Engine {
             automix,
             output_taps,
             monitor,
-            rta: None,
+            rta,
         })
     }
 
@@ -380,11 +385,37 @@ impl Engine {
         check()?;
         let drv = self.drv(&driver);
         let topo = self.driver_topology(&driver);
+        let rta = scene
+            .rta
+            .as_ref()
+            .filter(|r| r.provider == driver)
+            .filter(|_| {
+                scope.is_none_or(|sc| {
+                    sc.globals
+                        .as_ref()
+                        .is_some_and(|globals| globals.iter().any(|g| g == "rta"))
+                })
+            });
+        if let Some(saved) = rta {
+            check()?;
+            let block = drv
+                .read_rta_settings()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("snapshot RTA settings unavailable"))?;
+            check()?;
+            validate_rta_recall(saved, &block)?;
+        }
         let monitor = scene
             .monitor
             .as_ref()
             .filter(|m| m.provider == driver)
-            .filter(|_| scope.is_none_or(|sc| sc.allows_global("monitor")));
+            .filter(|_| {
+                scope.is_none_or(|sc| {
+                    sc.globals
+                        .as_ref()
+                        .is_some_and(|globals| globals.iter().any(|g| g == "monitor"))
+                })
+            });
         if let Some(saved) = monitor {
             check()?;
             let block = drv
@@ -858,6 +889,64 @@ impl Engine {
                 );
             }
         }
+        if let Some(saved) = rta {
+            for (id, desired) in [
+                ("detector", f32::from(saved.detector)),
+                ("decay", saved.decay),
+            ] {
+                check()?;
+                let block = drv.read_rta_settings().await?.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "snapshot RTA readback unavailable; mixer may be partly changed"
+                    )
+                })?;
+                check()?;
+                validate_rta_recall(saved, &block)?;
+                let current = block
+                    .iter()
+                    .find(|c| c.id == id)
+                    .unwrap()
+                    .current
+                    .as_ref()
+                    .unwrap()
+                    .value;
+                if (current - desired).abs() <= 0.00001 {
+                    continue;
+                }
+                let receipt = drv
+                    .set_output_processor_guarded("rta", id, desired, current, &block, &|| {
+                        check().is_ok()
+                    })
+                    .await?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "snapshot RTA recall unconfirmed; mixer may be partly changed"
+                        )
+                    })?;
+                check()?;
+                anyhow::ensure!(
+                    receipt.target == "rta"
+                        && receipt.id == id
+                        && receipt
+                            .current
+                            .as_ref()
+                            .is_some_and(|v| v.verified && (v.value - desired).abs() <= 0.00001),
+                    "snapshot RTA recall unconfirmed; mixer may be partly changed"
+                );
+            }
+            let confirmed = drv.read_rta_settings().await?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "snapshot RTA final readback unavailable; mixer may be partly changed"
+                )
+            })?;
+            check()?;
+            let confirmed = validate_rta_recall(saved, &confirmed)?;
+            anyhow::ensure!(
+                confirmed.detector == saved.detector
+                    && (confirmed.decay - saved.decay).abs() <= 0.00001,
+                "snapshot RTA final readback changed; mixer may be partly changed"
+            );
+        }
         if let Some(saved) = monitor {
             for row in &saved.values {
                 check()?;
@@ -1085,7 +1174,68 @@ impl Engine {
     }
 }
 
-fn monitor_control_allows(
+fn stored_rta_from_controls(
+    provider: &str,
+    block: &[openfader_core::destinations::DestinationControl],
+) -> anyhow::Result<StoredRta> {
+    anyhow::ensure!(block.len() == 2, "RTA snapshot roster incomplete");
+    let generation = block[0]
+        .generation
+        .ok_or_else(|| anyhow::anyhow!("RTA snapshot generation unavailable"))?;
+    for control in block {
+        anyhow::ensure!(
+            control.target == "rta"
+                && control.surface == "output_rta"
+                && control.generation == Some(generation)
+                && control.revision.is_some()
+                && control
+                    .current
+                    .as_ref()
+                    .is_some_and(|v| v.verified && snapshot_control_allows(control, v.value)),
+            "RTA snapshot metadata or readback invalid"
+        );
+    }
+    let value = |id| -> anyhow::Result<f32> {
+        let rows: Vec<_> = block.iter().filter(|c| c.id == id).collect();
+        anyhow::ensure!(rows.len() == 1, "RTA snapshot ID missing or duplicated");
+        Ok(rows[0].current.as_ref().unwrap().value)
+    };
+    let detector = value("detector")?;
+    anyhow::ensure!(
+        detector.fract() == 0.0 && (0.0..=255.0).contains(&detector),
+        "RTA snapshot detector invalid"
+    );
+    let rta = StoredRta {
+        provider: provider.to_string(),
+        detector: detector as u8,
+        decay: value("decay")?,
+    };
+    crate::local_library::validate_stored_rta(&rta, "RTA snapshot").map_err(anyhow::Error::msg)?;
+    Ok(rta)
+}
+
+fn validate_rta_recall(
+    saved: &StoredRta,
+    block: &[openfader_core::destinations::DestinationControl],
+) -> anyhow::Result<StoredRta> {
+    crate::local_library::validate_stored_rta(saved, "RTA snapshot").map_err(anyhow::Error::msg)?;
+    let live = stored_rta_from_controls(&saved.provider, block)?;
+    for (id, desired) in [
+        ("detector", f32::from(saved.detector)),
+        ("decay", saved.decay),
+    ] {
+        anyhow::ensure!(
+            block
+                .iter()
+                .any(|c| c.id == id && snapshot_control_allows(c, desired)),
+            "RTA snapshot value not advertised: {}",
+            id
+        );
+    }
+    Ok(live)
+}
+
+fn snapshot_control_allows(
     control: &openfader_core::destinations::DestinationControl,
     value: f32,
 ) -> bool {
@@ -1132,7 +1282,7 @@ fn stored_monitor_from_controls(
                 && control.generation == Some(generation)
                 && control.revision.is_some()
                 && current.verified
-                && monitor_control_allows(control, current.value),
+                && snapshot_control_allows(control, current.value),
             "monitor snapshot metadata or readback invalid"
         );
         values.push(StoredMonitorValue {
@@ -1164,7 +1314,7 @@ fn validate_monitor_recall(
         anyhow::ensure!(
             block
                 .iter()
-                .any(|c| c.id == row.id && monitor_control_allows(c, row.value)),
+                .any(|c| c.id == row.id && snapshot_control_allows(c, row.value)),
             "monitor snapshot ID or value not advertised: {}",
             row.id
         );
