@@ -358,6 +358,7 @@ impl Engine {
             monitor,
             rta,
             output_eq,
+            link_settings: None,
         })
     }
 

@@ -84,6 +84,13 @@ pub struct StoredScene {
     pub monitor: Option<StoredMonitor>,
     pub rta: Option<StoredRta>,
     pub output_eq: Option<StoredOutputEq>,
+    pub link_settings: Option<StoredLinkSettings>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredLinkSettings {
+    pub provider: String,
+    pub settings: openfader_core::link_settings::StereoLinkSettings,
 }
 
 #[derive(Clone, Debug)]

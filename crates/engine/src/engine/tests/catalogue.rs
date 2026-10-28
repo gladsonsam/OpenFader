@@ -518,6 +518,7 @@ async fn wing_scoped_scene_recall_writes_only_the_selected_send_family() {
         monitor: None,
         rta: None,
         output_eq: None,
+        link_settings: None,
         strips: vec![StoredStrip {
             strip: 0,
             key: Some("ch/01".into()),
