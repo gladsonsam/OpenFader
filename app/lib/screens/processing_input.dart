@@ -333,7 +333,7 @@ class _InputTab extends StatelessWidget {
           ),
         const SizedBox(height: 12),
       ],
-      _InputAssignments(store: store, wide: wide),
+      _InputAssignments(store: store, wide: wide, onFocus: onFocus),
     ]);
     final sends =
         Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [

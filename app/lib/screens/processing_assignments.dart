@@ -3,7 +3,9 @@ part of 'channel.dart';
 class _InputAssignments extends StatelessWidget {
   final ChannelStore store;
   final bool wide;
-  const _InputAssignments({required this.store, required this.wide});
+  final ValueChanged<ChannelFocus> onFocus;
+  const _InputAssignments(
+      {required this.store, required this.wide, required this.onFocus});
 
   String _summaryLabel(String family, String label) =>
       label.startsWith('$family ') ? label : '$family: $label';
@@ -127,50 +129,136 @@ class _InputAssignments extends StatelessWidget {
             Padding(padding: const EdgeInsets.only(bottom: 8), child: button),
         ])
     ];
+    final Widget assignments;
     if (wide) {
-      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      assignments =
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         for (var i = 0; i < columns.length; i++) ...[
           if (i > 0) const SizedBox(width: 8),
           Expanded(child: columns[i])
         ]
       ]);
+    } else {
+      assignments = Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+              // Keep the bool expansion state separate from the enclosing
+              // processing scroll view's double scroll offset in PageStorage.
+              key: PageStorageKey('input-assignments-${store.stripKey}'),
+              minTileHeight: 44,
+              dense: true,
+              tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+              childrenPadding: const EdgeInsets.all(10),
+              backgroundColor: ConsolePalette.of(context).slot,
+              collapsedBackgroundColor: ConsolePalette.of(context).slot,
+              shape: const RoundedRectangleBorder(borderRadius: U4.rBtn),
+              collapsedShape:
+                  const RoundedRectangleBorder(borderRadius: U4.rBtn),
+              title: Row(children: [
+                Text('Assignments',
+                    style: AppDesign.type(16, weight: FontWeight.w600)),
+                const SizedBox(width: 8),
+                Expanded(
+                    child: Text(selected,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.right,
+                        style: AppDesign.type(12,
+                            color: ConsolePalette.of(context).text7))),
+              ]),
+              children: [
+                LayoutBuilder(builder: (context, box) {
+                  final count = (box.maxWidth / 88).floor().clamp(1, 3);
+                  final width = (box.maxWidth - 6 * (count - 1)) / count;
+                  return Wrap(spacing: 6, runSpacing: 12, children: [
+                    for (final column in columns)
+                      SizedBox(width: width, child: column),
+                  ]);
+                })
+              ]));
     }
-    return Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-            // Keep the bool expansion state separate from the enclosing
-            // processing scroll view's double scroll offset in PageStorage.
-            key: PageStorageKey('input-assignments-${store.stripKey}'),
-            minTileHeight: 44,
-            dense: true,
-            tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-            childrenPadding: const EdgeInsets.all(10),
-            backgroundColor: ConsolePalette.of(context).slot,
-            collapsedBackgroundColor: ConsolePalette.of(context).slot,
-            shape: const RoundedRectangleBorder(borderRadius: U4.rBtn),
-            collapsedShape: const RoundedRectangleBorder(borderRadius: U4.rBtn),
-            title: Row(children: [
-              Text('Assignments',
-                  style: AppDesign.type(16, weight: FontWeight.w600)),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: Text(selected,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.right,
-                      style: AppDesign.type(12,
-                          color: ConsolePalette.of(context).text7))),
-            ]),
-            children: [
-              LayoutBuilder(builder: (context, box) {
-                final count = (box.maxWidth / 88).floor().clamp(1, 3);
-                final width = (box.maxWidth - 6 * (count - 1)) / count;
-                return Wrap(spacing: 6, runSpacing: 12, children: [
-                  for (final column in columns)
-                    SizedBox(width: width, child: column),
-                ]);
-              })
-            ]));
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      assignments,
+      if (store.paramApplies('automix_weight')) ...[
+        const SizedBox(height: 12),
+        _AutomixWeight(store: store, onFocus: onFocus),
+      ],
+    ]);
+  }
+}
+
+class _AutomixWeight extends StatelessWidget {
+  final ChannelStore store;
+  final ValueChanged<ChannelFocus> onFocus;
+  const _AutomixWeight({required this.store, required this.onFocus});
+
+  @override
+  Widget build(BuildContext context) {
+    const leaf = 'automix_weight';
+    final display =
+        ParameterNumericDisplay.fromMetadata(store.paramMetadata(leaf));
+    final value = store.paramNum(leaf);
+    final bounds = _controlRange(store, leaf);
+    final epoch = store.connectionEpoch;
+    final accessEpoch = store.controlAccessEpoch;
+    final key = store.stripKey;
+    bool current() =>
+        store.connectionEpoch == epoch &&
+        store.controlAccessEpoch == accessEpoch &&
+        store.stripKey == key &&
+        store.localAccessMessage(leaf) == null;
+    List<double>? range() {
+      final native = current() ? _controlRange(store, leaf) : null;
+      return native == null
+          ? null
+          : [
+              display?.toDisplay(native.first) ?? native.first,
+              display?.toDisplay(native.last) ?? native.last,
+            ];
+    }
+
+    String text() {
+      final live = store.paramNum(leaf);
+      return store.localAccessMessage(leaf) ??
+          (live == null
+              ? 'Loading…'
+              : display?.label(live) ?? live.toStringAsFixed(2));
+    }
+
+    void apply(double v) {
+      final native = current() ? _controlRange(store, leaf) : null;
+      if (native == null || !v.isFinite) return;
+      store.cmdParam(
+          leaf, (display?.toNative(v) ?? v).clamp(native.first, native.last));
+    }
+
+    void focus() => onFocus(ChannelFocus(
+          title: 'Automix',
+          label: 'Weight',
+          text: () => current() ? text() : 'Reopen control',
+          entryText: () {
+            final live = current() ? store.paramNum(leaf) : null;
+            return live == null
+                ? ''
+                : (display?.toDisplay(live) ?? live)
+                    .toStringAsFixed(display == null ? 2 : 1);
+          },
+          min: 0,
+          max: 1,
+          resolveRange: range,
+          apply: apply,
+        ));
+    return _ProcessingSlider(
+      label: 'Automix weight',
+      compact: true,
+      value: display?.toDisplay(value ?? bounds?.first ?? 0) ?? value ?? 0,
+      min: display?.min ?? bounds?.first ?? 0,
+      max: display?.max ?? bounds?.last ?? 1,
+      text: text(),
+      enabled: bounds != null && current(),
+      onFocus: focus,
+      onChanged: apply,
+    );
   }
 }
 
