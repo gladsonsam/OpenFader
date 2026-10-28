@@ -1,11 +1,43 @@
 //! Meter subscriptions, renewal, caches, and spectrum access.
 use super::*;
 
+const AUTOMIX_METER_STREAM: &str = "/meters/7";
 const INPUT_METER_STREAM: &str = "/meters/2";
 const DCA_METER_STREAM: &str = "/meters/8";
 const OUTPUT_METER_STREAM: &str = "/meters/5";
 
 impl XAirDriver {
+    // The two anchored slots are 1 and 14; the other positions follow the
+    // documented contiguous bank, but have not been individually correlated.
+    pub(super) fn decode_automix_gain(msg: &OscMessage) -> Option<[f32; 16]> {
+        if msg.addr != AUTOMIX_METER_STREAM {
+            return None;
+        }
+        let [OscType::Blob(blob)] = msg.args.as_slice() else {
+            return None;
+        };
+        if blob.len() != 36 || i32::from_le_bytes(blob[..4].try_into().ok()?) != 16 {
+            return None;
+        }
+        let mut values = [0.0; 16];
+        for (i, value) in values.iter_mut().enumerate() {
+            *value = f32::from(i16::from_le_bytes([blob[4 + i * 2], blob[5 + i * 2]])) / 256.0;
+        }
+        Some(values)
+    }
+
+    pub(super) async fn cached_automix_gain(&self, strip: StripId) -> anyhow::Result<f32> {
+        let cache = self.automix_gain_cache.lock().await;
+        let (_, values) = cache
+            .as_ref()
+            .filter(|(at, _)| at.elapsed() <= std::time::Duration::from_millis(500))
+            .ok_or_else(|| anyhow::anyhow!("xair: automix gain unavailable or stale"))?;
+        values
+            .get(usize::from(strip.0))
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("xair: no automix gain slot"))
+    }
+
     pub async fn last_dyn(&self) -> Option<dyn_gr::DynMeters> {
         self.dyn_cache
             .lock()
@@ -99,6 +131,13 @@ impl XAirDriver {
             )
             .await
             .map_err(|e| anyhow::anyhow!("input meter subscribe: {e}"))?;
+        session
+            .send(
+                addrs::METER_REQUEST,
+                vec![OscType::String(AUTOMIX_METER_STREAM.to_string())],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("automix meter subscribe: {e}"))?;
         Ok(session.subscribe_meters())
     }
 
@@ -139,6 +178,10 @@ impl XAirDriver {
             addrs::METER_REQUEST,
             vec![OscType::String(INPUT_METER_STREAM.to_string())],
         )?;
+        let sub_automix = osc::encode_message(
+            addrs::METER_REQUEST,
+            vec![OscType::String(AUTOMIX_METER_STREAM.to_string())],
+        )?;
         let task = tokio::spawn(async move {
             let mut ticker = openfader_transport::session::keepalive_ticker(
                 interval.min(std::time::Duration::from_secs(1)),
@@ -171,6 +214,7 @@ impl XAirDriver {
                     &sub_dca,
                     &sub_outputs,
                     &sub_inputs,
+                    &sub_automix,
                 ] {
                     if let Err(error) = sock.send(bytes).await {
                         eprintln!("xair: subscription renewal failed: {error}");
@@ -271,6 +315,7 @@ impl XAirDriver {
         *self.receive_since.lock().unwrap() = std::time::Instant::now();
         *self.meter_latest.lock().unwrap() = None;
         *self.dyn_cache.lock().await = None;
+        *self.automix_gain_cache.lock().await = None;
         session.send(addrs::XREMOTE, Vec::new()).await?;
         self.subscribe_meters_once().await?;
         let generation = self

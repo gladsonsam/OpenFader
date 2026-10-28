@@ -89,6 +89,7 @@ impl XAirDriver {
         }
         *self.link_writes.lock().unwrap() = [None; 8];
         *self.dyn_cache.lock().await = None;
+        *self.automix_gain_cache.lock().await = None;
         // Desk-broadcast ingest: parse every unmatched inbound message into
         // the stable update channel (one task per connection; it exits when
         // the next connect drops this session). `/meters/6` ALL DYN blobs
@@ -98,6 +99,7 @@ impl XAirDriver {
         let mut rx = session.subscribe_received_updates();
         let tx = self.update_tx.clone();
         let dyn_cache = self.dyn_cache.clone();
+        let automix_gain_cache = self.automix_gain_cache.clone();
         let receive_since = self.receive_since.clone();
         let generation = self.connection_generation.clone();
         let link_cache = self.link_cache.clone();
@@ -132,6 +134,12 @@ impl XAirDriver {
                                     entry.1 = None;
                                 }
                             }
+                        }
+                        if msg.addr == "/meters/7" {
+                            if let Some(values) = Self::decode_automix_gain(&msg) {
+                                *automix_gain_cache.lock().await = Some((received_at, values));
+                            }
+                            continue;
                         }
                         if msg.addr == addrs::METER_DYN_SUBSCRIBE {
                             if let Ok(dyn_m) = Self::decode_dyn_message(&msg) {
@@ -393,6 +401,7 @@ impl XAirDriver {
         self.peer.lock().await.clear();
         *self.meter_latest.lock().unwrap() = None;
         *self.dyn_cache.lock().await = None;
+        *self.automix_gain_cache.lock().await = None;
         Ok(())
     }
 

@@ -57,6 +57,7 @@ use mapping::*;
 pub use metadata::{XAIR_CAPABILITIES, XAIR_STRIPS, XAIR_TOPOLOGY};
 
 type LevelSample = Option<(std::time::Instant, Vec<f32>)>;
+type AutomixGainCache = std::sync::Arc<tokio::sync::Mutex<Option<(std::time::Instant, [f32; 16])>>>;
 type LinkCache = std::sync::Arc<std::sync::Mutex<[Option<(std::time::Instant, bool)>; 8]>>;
 
 type BusLinkCache =
@@ -96,6 +97,7 @@ pub struct XAirDriver {
     /// routes every streamed DYN blob here; the `/meters/6` subscribe in
     /// `subscribe_meters_once` starts that stream.
     dyn_cache: std::sync::Arc<tokio::sync::Mutex<Option<(std::time::Instant, dyn_gr::DynMeters)>>>,
+    automix_gain_cache: AutomixGainCache,
     /// Desk-originated mix-surface updates (see [`parse_inbound`]): stable
     /// across reconnects, fed by one ingest task per connection. The engine
     /// subscribes once and applies these to its param cache live.
@@ -163,6 +165,7 @@ impl XAirDriver {
             peer: Mutex::new(String::new()),
             model,
             dyn_cache: std::sync::Arc::new(Mutex::new(None)),
+            automix_gain_cache: std::sync::Arc::new(Mutex::new(None)),
             update_tx,
             meter_latest: std::sync::Arc::new(std::sync::Mutex::new(None)),
             output_latest: std::sync::Arc::new(std::sync::Mutex::new(None)),
