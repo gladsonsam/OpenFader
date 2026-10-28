@@ -147,15 +147,18 @@ mixin _AppStoreChannel on _AppStoreContext {
         !_sendDestinationIsStereoAux(int.parse(sendPan[1]!))) {
       return false;
     }
-    // The desk's modern DL32S EQ disables Q while a shelf is selected
-    // (reference guide p101). Keep the stored value, but block every edit
-    // path, including pinch and a previously focused numeric readout.
-    final eqQ = RegExp(r'^eq([1-4])_q$').firstMatch(desk);
-    if (engine.driver == 'dl32s' &&
-        eqQ != null &&
-        EqFilterShape.fromValue(_eqPresentationType(int.parse(eqQ[1]!))) !=
-            EqFilterShape.bell) {
-      return false;
+    // Fixed-slope shelves retain the bell Q but cannot edit it, including
+    // through pinch or a previously focused numeric readout.
+    final eqQ = RegExp(r'^eq([1-6])_q$').firstMatch(desk);
+    if (eqQ != null) {
+      final band = int.parse(eqQ[1]!);
+      final shape = EqFilterShape.fromValue(_eqPresentationType(band));
+      if (engine.driver == 'dl32s' && shape != EqFilterShape.bell ||
+          paramMetadata('eq${band}_type')?['curve'] == 'fixed_shelf' &&
+              (shape == EqFilterShape.lowShelf ||
+                  shape == EqFilterShape.highShelf)) {
+        return false;
+      }
     }
     return engine.supportedParams.contains(desk) &&
         (engine.driver == 'sim' ||
@@ -452,7 +455,8 @@ mixin _AppStoreChannel on _AppStoreContext {
                           : [80.0, 400.0, 1200.0, 6000.0])[b - 1],
               g: paramNum('eq${b}_gain') ?? 0,
               q: paramNum('eq${b}_q') ?? 1,
-              shelfUsesQ: engine.driver != 'dl32s',
+              shelfUsesQ: engine.driver != 'dl32s' &&
+                  paramMetadata('eq${b}_type')?['curve'] != 'fixed_shelf',
               on: true,
               type: _eqPresentationType(b),
               fRange: _editableRange('eq${b}_freq'),

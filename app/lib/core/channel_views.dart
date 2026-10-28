@@ -298,7 +298,7 @@ class EqBandVm {
   final double g; // dB
   final double q;
 
-  /// Whether shelf response uses Q. DL32S modern shelves have fixed slope;
+  /// Whether shelf response uses Q. XR18 and DL32S shelves have fixed slope;
   /// their stored bell Q must not change the shelf preview.
   final bool shelfUsesQ;
   final bool on;
