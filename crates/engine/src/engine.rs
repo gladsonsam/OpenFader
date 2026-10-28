@@ -57,6 +57,7 @@ mod poll_tick;
 mod readback;
 mod routing;
 mod saved_mixers;
+mod scene_input_links;
 mod scene_output_eq;
 mod scene_recall;
 mod session;
