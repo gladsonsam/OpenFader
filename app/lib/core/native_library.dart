@@ -10,6 +10,32 @@ class NativeLibraryVm {
   String get limitations => guard['limitations'] as String;
   List<Map<String, dynamic>> get slots =>
       (guard['slots'] as List).cast<Map<String, dynamic>>();
+  List<Map<String, dynamic>>? get scopeFields {
+    final fields = guard['scope_fields'];
+    if (fields is! List || fields.length != 59) return null;
+    final result = <Map<String, dynamic>>[];
+    for (var i = 0; i < fields.length; i++) {
+      final field = fields[i];
+      if (field is! Map<String, dynamic> ||
+          field['index'] != i ||
+          field['label'] is! String ||
+          (field['label'] as String).isEmpty ||
+          !const [
+            'Channels and outputs',
+            'FX',
+            'Parameters',
+            'Globals',
+          ].contains(field['group'])) {
+        return null;
+      }
+      result.add(field);
+    }
+    return result;
+  }
+
+  bool hasScope(Map<String, dynamic> slot) =>
+      slot['scope'] is String &&
+      RegExp(r'^[+-]{59}$').hasMatch(slot['scope'] as String);
   bool supports(String op) => (guard['operations'] as List).contains(op);
   static NativeLibraryVm? parse(Object? raw) {
     if (raw is! Map<String, dynamic> ||

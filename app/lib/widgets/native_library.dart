@@ -89,6 +89,95 @@ class NativeLibrarySection extends StatelessWidget {
     }
   }
 
+  Future<void> _scope(
+    BuildContext context,
+    NativeLibraryVm view,
+    Map<String, dynamic> slot,
+  ) async {
+    final captured = store.nativeContext;
+    final fields = view.scopeFields!;
+    final draft = (slot['scope'] as String).split('');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: Text('Recall scope · ${slot['slot']}'),
+            content: SizedBox(
+              width: 560,
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Select which settings are recalled from this snapshot.',
+                    ),
+                    for (final group in [
+                      'Channels and outputs',
+                      'FX',
+                      'Parameters',
+                      'Globals',
+                    ]) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: Text(
+                          group,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+                      for (final field in fields.where(
+                        (f) => f['group'] == group,
+                      ))
+                        CheckboxListTile(
+                          dense: true,
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(field['label'] as String),
+                          value: draft[field['index'] as int] == '+',
+                          onChanged: (value) => setState(
+                            () => draft[field['index'] as int] = value == true
+                                ? '+'
+                                : '-',
+                          ),
+                        ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, draft.join()),
+                child: const Text('Apply'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    if (result == null || !context.mounted) return;
+    if (store.nativeBusy ||
+        !store.nativeWritable ||
+        store.nativeContext != captured ||
+        store.nativeLibrary?.connected != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Mixer or access changed. Reopen recall scope to edit.'),
+        ),
+      );
+      return;
+    }
+    await store.nativeAction({
+      'op': 'set_scope',
+      'slot': slot['slot'],
+      'scope': result,
+    }, captured);
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
@@ -118,8 +207,8 @@ class NativeLibrarySection extends StatelessWidget {
               TextButton(
                 onPressed: enabled
                     ? () => store.nativeAction({
-                          'op': 'inspect',
-                        }, store.nativeContext)
+                        'op': 'inspect',
+                      }, store.nativeContext)
                     : null,
                 child: const Text('Inspect provider'),
               ),
@@ -127,15 +216,15 @@ class NativeLibrarySection extends StatelessWidget {
                 TextButton(
                   onPressed: enabled
                       ? () => _confirm(
-                            context,
-                            {'op': 'refresh'},
-                            view?.guard['provider'] == 'xair'
-                                ? 'Read snapshot names?'
-                                : 'Download current show?',
-                            view?.guard['provider'] == 'xair'
-                                ? 'Read the names of all 64 mixer snapshot slots.'
-                                : 'Download and inspect the stored-show ZIP. This does not save a file or certify current unsaved edits or native restoration. The stored snapshot index is refreshed; current edits remain unverified.',
-                          )
+                          context,
+                          {'op': 'refresh'},
+                          view?.guard['provider'] == 'xair'
+                              ? 'Read snapshot names and scopes?'
+                              : 'Download current show?',
+                          view?.guard['provider'] == 'xair'
+                              ? 'Read the names and recall scopes of all 64 mixer snapshot slots.'
+                              : 'Download and inspect the stored-show ZIP. This does not save a file or certify current unsaved edits or native restoration. The stored snapshot index is refreshed; current edits remain unverified.',
+                        )
                       : null,
                   child: const Text('Transfer / refresh reports'),
                 ),
@@ -143,11 +232,11 @@ class NativeLibrarySection extends StatelessWidget {
                 TextButton(
                   onPressed: enabled
                       ? () => _confirm(
-                            context,
-                            {'op': 'export_file'},
-                            'Preserve native show ZIP?',
-                            'Download, validate and save the original stored-show ZIP on this device. Unknown file bytes are retained. Current unsaved edits and exact restoration are unverified; this is not a full native backup.',
-                          )
+                          context,
+                          {'op': 'export_file'},
+                          'Preserve native show ZIP?',
+                          'Download, validate and save the original stored-show ZIP on this device. Unknown file bytes are retained. Current unsaved edits and exact restoration are unverified; this is not a full native backup.',
+                        )
                       : null,
                   child: const Text('Save native show ZIP'),
                 ),
@@ -163,15 +252,16 @@ class NativeLibrarySection extends StatelessWidget {
                 ),
               if (view?.supports('store') == true)
                 TextButton(
-                  onPressed: enabled &&
+                  onPressed:
+                      enabled &&
                           store.nativeWritable &&
                           view!.slots.length < view.capacity
                       ? () => _confirm(
-                            context,
-                            {'op': 'store'},
-                            'Save new native snapshot?',
-                            'Store current mixer state at the next user position. Native naming is retained; use Rename after save. Current-edit coverage and safes remain unverified. No automatic retry.',
-                          )
+                          context,
+                          {'op': 'store'},
+                          'Save new native snapshot?',
+                          'Store current mixer state at the next user position. Native naming is retained; use Rename after save. Current-edit coverage and safes remain unverified. No automatic retry.',
+                        )
                       : null,
                   child: const Text('Save native snapshot'),
                 ),
@@ -197,8 +287,8 @@ class NativeLibrarySection extends StatelessWidget {
               TextButton(
                 onPressed: enabled
                     ? () => store.nativeAction({
-                          'op': 'read_show',
-                        }, store.nativeContext)
+                        'op': 'read_show',
+                      }, store.nativeContext)
                     : null,
                 child: const Text('Check current show'),
               ),
@@ -213,25 +303,24 @@ class NativeLibrarySection extends StatelessWidget {
             ),
             if (view.guard['default_slot'] != null)
               TextButton(
-                onPressed: enabled &&
+                onPressed:
+                    enabled &&
                         view.connected &&
                         store.nativeWritable &&
                         view.supports('recall')
                     ? () => _confirm(
-                          context,
-                          {'op': 'recall', 'slot': view.guard['default_slot']},
-                          'Recall Default 0?',
-                          'This resets the mixer to the native default snapshot. '
-                              'It may change levels, routing and processing. Safes are not verified here. No automatic retry.',
-                        )
+                        context,
+                        {'op': 'recall', 'slot': view.guard['default_slot']},
+                        'Recall Default 0?',
+                        'This resets the mixer to the native default snapshot. '
+                            'It may change levels, routing and processing. Safes are not verified here. No automatic retry.',
+                      )
                     : null,
                 child: const Text('0 · Default — recall only'),
               ),
             if (view.slots.isEmpty)
               Text(
-                view.complete
-                    ? 'No captured slots.'
-                    : 'No names reported. This does not prove the show is empty.',
+                view.complete ? 'No captured slots.' : 'No names reported. This does not prove the show is empty.',
                 style: TextStyle(color: palette.text7),
               ),
             for (final slot in view.slots)
@@ -244,66 +333,82 @@ class NativeLibrarySection extends StatelessWidget {
                     '${view.guard['current'] == slot['slot'] ? ' · last reported recall' : ''}',
                     style: TextStyle(color: palette.text1),
                   ),
+                  if (view.supports('set_scope'))
+                    if (view.scopeFields != null && view.hasScope(slot))
+                      TextButton(
+                        onPressed:
+                            enabled && view.connected && store.nativeWritable
+                            ? () => _scope(context, view, slot)
+                            : null,
+                        child: const Text('Recall scope'),
+                      )
+                    else
+                      Text(
+                        'Recall scope unavailable',
+                        style: TextStyle(color: palette.text7),
+                      ),
                   if (view.supports('recall'))
                     TextButton(
                       onPressed:
                           enabled && view.connected && store.nativeWritable
-                              ? () => _confirm(
-                                    context,
-                                    {'op': 'recall', 'slot': slot['slot']},
-                                    'Recall provider snapshot?',
-                                    'Recall ${slot['slot']} “${slot['name']}” in ${view.label}? This may change mixer settings. '
-                                        'Safe behavior and audio state are not verified here. No automatic retry.',
-                                  )
-                              : null,
+                          ? () => _confirm(
+                              context,
+                              {'op': 'recall', 'slot': slot['slot']},
+                              'Recall provider snapshot?',
+                              'Recall ${slot['slot']} “${slot['name']}” in ${view.label}? This may change mixer settings. '
+                                  'Safe behavior and audio state are not verified here. No automatic retry.',
+                            )
+                          : null,
                       child: const Text('Recall'),
                     ),
                   if (view.supports('replace'))
                     TextButton(
                       onPressed:
                           enabled && view.connected && store.nativeWritable
-                              ? () => _confirm(
-                                    context,
-                                    {'op': 'replace', 'slot': slot['slot']},
-                                    view.authority == 'mixer'
-                                        ? 'Update native snapshot?'
-                                        : 'Replace simulated capture?',
-                                    view.guard['provider'] == 'xair'
-                                        ? 'Save current mixer settings to this slot, replacing its contents. The mixer’s snapshot scope applies.'
-                                        : view.authority == 'mixer'
-                                            ? 'Store current mixer state over this user position. The provider verifies stored files by readback. Current-edit coverage and safes remain unverified. No automatic retry.'
-                                            : 'Overwrite this memory-only capture with current simulated fader, mute, pan and name values. No native file is created.',
-                                  )
-                              : null,
-                      child: Text(view.guard['provider'] == 'xair'
-                          ? 'Save to slot'
-                          : 'Replace'),
+                          ? () => _confirm(
+                              context,
+                              {'op': 'replace', 'slot': slot['slot']},
+                              view.authority == 'mixer'
+                                  ? 'Update native snapshot?'
+                                  : 'Replace simulated capture?',
+                              view.guard['provider'] == 'xair'
+                                  ? 'Save current mixer settings to this slot, replacing its contents. The mixer’s snapshot scope applies.'
+                                  : view.authority == 'mixer'
+                                  ? 'Store current mixer state over this user position. The provider verifies stored files by readback. Current-edit coverage and safes remain unverified. No automatic retry.'
+                                  : 'Overwrite this memory-only capture with current simulated fader, mute, pan and name values. No native file is created.',
+                            )
+                          : null,
+                      child: Text(
+                        view.guard['provider'] == 'xair'
+                            ? 'Save to slot'
+                            : 'Replace',
+                      ),
                     ),
                   if (view.supports('rename'))
                     TextButton(
                       onPressed:
                           enabled && view.connected && store.nativeWritable
-                              ? () => _name(context, slot)
-                              : null,
+                          ? () => _name(context, slot)
+                          : null,
                       child: const Text('Rename'),
                     ),
                   if (view.supports('delete'))
                     TextButton(
                       onPressed:
                           enabled && view.connected && store.nativeWritable
-                              ? () => _confirm(
-                                    context,
-                                    {'op': 'delete', 'slot': slot['slot']},
-                                    view.authority == 'mixer'
-                                        ? 'Delete native snapshot?'
-                                        : 'Delete simulated slot?',
-                                    view.guard['provider'] == 'xair'
-                                        ? 'Delete this mixer snapshot. Refresh the slot names before another change.'
-                                        : view.authority == 'mixer'
-                                            ? 'Delete this stored snapshot permanently. Later native positions compact; refresh before another operation. No automatic retry.'
-                                            : 'Delete this memory-only simulated strip capture? It cannot be undone.',
-                                  )
-                              : null,
+                          ? () => _confirm(
+                              context,
+                              {'op': 'delete', 'slot': slot['slot']},
+                              view.authority == 'mixer'
+                                  ? 'Delete native snapshot?'
+                                  : 'Delete simulated slot?',
+                              view.guard['provider'] == 'xair'
+                                  ? 'Delete this mixer snapshot. Refresh the slot names before another change.'
+                                  : view.authority == 'mixer'
+                                  ? 'Delete this stored snapshot permanently. Later native positions compact; refresh before another operation. No automatic retry.'
+                                  : 'Delete this memory-only simulated strip capture? It cannot be undone.',
+                            )
+                          : null,
                       child: const Text('Delete'),
                     ),
                 ],
