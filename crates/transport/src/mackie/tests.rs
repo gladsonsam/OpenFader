@@ -349,14 +349,15 @@ async fn session_init_push_write_loopback() {
 
     let session = MackieSession::connect(&addr.to_string()).await.unwrap();
 
-    // Pushes are processed by the rx task; wait for the cache to fill.
+    // The snapshot is the final bootstrap frame. The first parameter push
+    // can be cached before later names/snapshot frames have been processed.
     let deadline = tokio::time::Instant::now() + Duration::from_secs(3);
     loop {
-        if session.cached(8) == Some(1) {
+        if session.snapshot_names().contains_key(&2) {
             break;
         }
         if tokio::time::Instant::now() > deadline {
-            panic!("bulk push never ingested");
+            panic!("initial pushes never completed");
         }
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
