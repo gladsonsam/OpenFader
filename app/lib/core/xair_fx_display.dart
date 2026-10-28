@@ -26,16 +26,25 @@ class XairHallScale {
     this.steps,
     this.logarithmic,
     this.unit,
+    this.precision,
   );
   final double min, max;
   final int steps;
   final bool logarithmic;
   final String unit;
+  final int precision;
 
   static XairHallScale? forMarker(Object? marker) => switch (marker) {
-    'xair_hall_predelay' => const XairHallScale(0, 200, 100, false, 'ms'),
-    'xair_hall_decay' => const XairHallScale(0.2, 5, 50, true, 's'),
-    'xair_hall_size' => const XairHallScale(2, 100, 49, false, ''),
+    'xair_hall_predelay' => const XairHallScale(0, 200, 100, false, 'ms', 0),
+    'xair_hall_decay' => const XairHallScale(0.2, 5, 50, true, 's', 2),
+    'xair_hall_size' => const XairHallScale(2, 100, 49, false, '', 0),
+    'xair_hall_diffusion' => const XairHallScale(1, 30, 29, false, '', 0),
+    'xair_hall_level' => const XairHallScale(-12, 12, 48, false, 'dB', 1),
+    'xair_hall_locut' => const XairHallScale(10, 500, 50, true, 'Hz', 0),
+    'xair_hall_bassmult' => const XairHallScale(0.5, 2, 50, true, '', 2),
+    'xair_hall_spread' => const XairHallScale(0, 50, 50, false, '', 0),
+    'xair_hall_shape' => const XairHallScale(0, 250, 50, false, '', 0),
+    'xair_hall_modspeed' => const XairHallScale(0, 100, 20, false, '', 0),
     _ => null,
   };
 
@@ -55,7 +64,7 @@ class XairHallScale {
   }
 
   String text(int p) {
-    final number = display(p).toStringAsFixed(logarithmic ? 2 : 0);
+    final number = display(p).toStringAsFixed(precision);
     return unit.isEmpty ? number : '$number $unit';
   }
 }
