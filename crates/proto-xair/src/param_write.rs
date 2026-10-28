@@ -47,6 +47,17 @@ impl XAirDriver {
             .await
     }
 
+    pub async fn set_bus_param_checked(
+        &self,
+        strip: StripId,
+        param: &str,
+        value: ParamValue,
+        check: &SendCheck<'_>,
+    ) -> anyhow::Result<()> {
+        self.driver_set_param_checked(strip, param, value, Some(check))
+            .await
+    }
+
     async fn driver_set_param_checked(
         &self,
         strip: StripId,
@@ -65,9 +76,31 @@ impl XAirDriver {
             check_scope(param, kind)?;
         }
         let ch = || self.check_channel(strip.0);
+        let authorize = || {
+            if kind == openfader_core::StripKind::Bus {
+                if let Some(check) = check {
+                    check(&self.current_output_control_members(strip, param)?)?;
+                }
+            }
+            Ok(())
+        };
         match (param, value) {
             ("fader", ParamValue::Float(v)) => self.set_fader(strip, v).await,
             ("mute", ParamValue::Bool(m)) => self.set_mute(strip, m).await,
+            ("name", ParamValue::Text(n))
+                if kind == openfader_core::StripKind::Bus && check.is_some() =>
+            {
+                let guard = self.session().await?;
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send_checked(
+                        &strip_config_name(&root),
+                        vec![OscType::String(n)],
+                        &authorize,
+                    )
+                    .await
+            }
             ("name", ParamValue::Text(n)) => self.set_name(strip, &n).await,
             ("link", ParamValue::Bool(linked)) => {
                 self.write_stereo_link(strip, linked).await.map(|_| ())
@@ -78,7 +111,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&format!("{root}/mix/pan"), vec![OscType::Float(wire)])
+                    .send_checked(
+                        &format!("{root}/mix/pan"),
+                        vec![OscType::Float(wire)],
+                        &authorize,
+                    )
                     .await
             }
             ("lr_assign", ParamValue::Bool(assigned)) => {
@@ -89,7 +126,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&mix::mix_lr(&root), vec![codec::bool_arg(assigned)])
+                    .send_checked(
+                        &mix::mix_lr(&root),
+                        vec![codec::bool_arg(assigned)],
+                        &authorize,
+                    )
                     .await
             }
             ("color", ParamValue::Float(v)) => {
@@ -97,7 +138,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&look::strip_color(&root), vec![look::color_to_arg(v)?])
+                    .send_checked(
+                        &look::strip_color(&root),
+                        vec![look::color_to_arg(v)?],
+                        &authorize,
+                    )
                     .await
             }
             ("icon", ParamValue::Float(v)) => {
@@ -105,7 +150,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&look::strip_icon(&root), vec![look::icon_to_arg(v)?])
+                    .send_checked(
+                        &look::strip_icon(&root),
+                        vec![look::icon_to_arg(v)?],
+                        &authorize,
+                    )
                     .await
             }
             ("gate_on", ParamValue::Bool(on)) => {
@@ -113,7 +162,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&format!("{root}/gate/on"), vec![codec::bool_arg(on)])
+                    .send_checked(
+                        &format!("{root}/gate/on"),
+                        vec![codec::bool_arg(on)],
+                        &authorize,
+                    )
                     .await
             }
             ("comp_on", ParamValue::Bool(on)) => {
@@ -121,7 +174,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&format!("{root}/dyn/on"), vec![codec::bool_arg(on)])
+                    .send_checked(
+                        &format!("{root}/dyn/on"),
+                        vec![codec::bool_arg(on)],
+                        &authorize,
+                    )
                     .await
             }
             ("eq_on", ParamValue::Bool(on)) => {
@@ -129,7 +186,7 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&eq::eq_on_r(&root), vec![codec::bool_arg(on)])
+                    .send_checked(&eq::eq_on_r(&root), vec![codec::bool_arg(on)], &authorize)
                     .await
             }
             (p, ParamValue::Float(v)) if p.starts_with("eq") => {
@@ -149,7 +206,11 @@ impl XAirDriver {
                     _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
                 };
                 let guard = self.session().await?;
-                guard.as_ref().unwrap().send(&addr, vec![arg]).await
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send_checked(&addr, vec![arg], &authorize)
+                    .await
             }
             (p, ParamValue::Float(v))
                 if matches!(p, "gate_mode" | "gate_key_src" | "gate_filter_type") =>
@@ -179,14 +240,22 @@ impl XAirDriver {
                     ),
                 };
                 let guard = self.session().await?;
-                guard.as_ref().unwrap().send(&addr, vec![arg]).await
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send_checked(&addr, vec![arg], &authorize)
+                    .await
             }
             ("gate_filter_on", ParamValue::Bool(on)) => {
                 let guard = self.session().await?;
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&gate::gate_filter_on(&root), vec![codec::bool_arg(on)])
+                    .send_checked(
+                        &gate::gate_filter_on(&root),
+                        vec![codec::bool_arg(on)],
+                        &authorize,
+                    )
                     .await
             }
             ("gate_filter_freq", ParamValue::Float(v)) => {
@@ -195,7 +264,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&gate::gate_filter_freq(&root), vec![OscType::Float(wire)])
+                    .send_checked(
+                        &gate::gate_filter_freq(&root),
+                        vec![OscType::Float(wire)],
+                        &authorize,
+                    )
                     .await
             }
             (p, ParamValue::Float(v)) if p.starts_with("gate_") => {
@@ -246,7 +319,7 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&addr.0, vec![OscType::Float(addr.1)])
+                    .send_checked(&addr.0, vec![OscType::Float(addr.1)], &authorize)
                     .await
             }
             (p, ParamValue::Float(v))
@@ -315,7 +388,7 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&addr, vec![OscType::Float(wire)])
+                    .send_checked(&addr, vec![OscType::Float(wire)], &authorize)
                     .await
             }
             ("comp_ratio", ParamValue::Float(v)) => {
@@ -324,7 +397,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&comp::comp_ratio(&root), vec![OscType::Int(idx)])
+                    .send_checked(
+                        &comp::comp_ratio(&root),
+                        vec![OscType::Int(idx)],
+                        &authorize,
+                    )
                     .await
             }
             (p, ParamValue::Float(v))
@@ -356,14 +433,22 @@ impl XAirDriver {
                     ),
                 };
                 let guard = self.session().await?;
-                guard.as_ref().unwrap().send(&addr, vec![arg]).await
+                guard
+                    .as_ref()
+                    .unwrap()
+                    .send_checked(&addr, vec![arg], &authorize)
+                    .await
             }
             ("comp_auto", ParamValue::Bool(on)) => {
                 let guard = self.session().await?;
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&comp::comp_auto(&root), vec![codec::bool_arg(on)])
+                    .send_checked(
+                        &comp::comp_auto(&root),
+                        vec![codec::bool_arg(on)],
+                        &authorize,
+                    )
                     .await
             }
             ("comp_filter_on", ParamValue::Bool(on)) => {
@@ -371,7 +456,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&comp::comp_filter_on(&root), vec![codec::bool_arg(on)])
+                    .send_checked(
+                        &comp::comp_filter_on(&root),
+                        vec![codec::bool_arg(on)],
+                        &authorize,
+                    )
                     .await
             }
             ("comp_filter_freq", ParamValue::Float(v)) => {
@@ -380,7 +469,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&comp::comp_filter_freq(&root), vec![OscType::Float(wire)])
+                    .send_checked(
+                        &comp::comp_filter_freq(&root),
+                        vec![OscType::Float(wire)],
+                        &authorize,
+                    )
                     .await
             }
             (p, ParamValue::Float(v)) if p.starts_with("aux") => {
@@ -585,7 +678,11 @@ impl XAirDriver {
                 let mask = groups::mask_from_msg(&reply)?;
                 let next = groups::mask_with(mask, group, member, "dca")?;
                 session
-                    .send(&groups::grp_dca(&root), vec![OscType::Int(next)])
+                    .send_checked(
+                        &groups::grp_dca(&root),
+                        vec![OscType::Int(next)],
+                        &authorize,
+                    )
                     .await
             }
             ("insert_on", ParamValue::Bool(on)) => {
@@ -597,7 +694,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&insert::insert_on(&root), vec![codec::bool_arg(on)])
+                    .send_checked(
+                        &insert::insert_on(&root),
+                        vec![codec::bool_arg(on)],
+                        &authorize,
+                    )
                     .await
             }
             ("insert_sel", ParamValue::Float(v)) => {
@@ -608,7 +709,11 @@ impl XAirDriver {
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&insert::insert_sel(&root), vec![insert::sel_to_arg(v)?])
+                    .send_checked(
+                        &insert::insert_sel(&root),
+                        vec![insert::sel_to_arg(v)?],
+                        &authorize,
+                    )
                     .await
             }
             (p, _) => anyhow::bail!("{}: unknown param {p:?}", self.name()),

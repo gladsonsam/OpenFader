@@ -1486,6 +1486,12 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
             }
             return self.set_bus_master_checked(strip, param, value, check).await;
         }
+        if self.current_bus_control_members(strip)?.is_some() {
+            for (id, wanted) in expected {
+                anyhow::ensure!(MixerDriver::get_param(self, strip, id).await? == *wanted, "Control changed; reopen the control.");
+            }
+            return self.set_bus_param_checked(strip, param, value, check).await;
+        }
         if is_xair_bus_send(param) {
             for (id, wanted) in expected {
                 anyhow::ensure!(MixerDriver::get_param(self, strip, id).await? == *wanted, "Input source changed; reopen the control.");
