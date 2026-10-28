@@ -150,7 +150,7 @@ fn inferred_flags_match_notes() {
     assert!(!fx_param_def(49, 3).unwrap().inferred);
     assert!(!fx_param_def(56, 1).unwrap().inferred);
     assert!(fx_param_def(4, 16).unwrap().inferred); // CHAM ERLevelR
-    assert!(fx_param_def(8, 4).unwrap().inferred); // GATE Density range
+    assert!(!fx_param_def(8, 4).unwrap().inferred); // GATE Density primary registration
     assert!(fx_param_def(60, 3).unwrap().inferred); // PIT Delay range
     assert!(fx_param_def(41, 2).unwrap().inferred); // FAC InGain range
     assert!(!fx_param_def(41, 3).unwrap().inferred);

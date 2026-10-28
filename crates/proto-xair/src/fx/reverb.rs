@@ -24,7 +24,7 @@ pub(super) static AMBI: &[FxParamDef] = &[
     p(6, "Level", "dB", "-12", "+12"),
     p(7, "LoCut", "Hz", "10", "500"),
     p(8, "HiCut", "Hz", "200", "20k"),
-    p(9, "Modulate", "%", "0", "100"),
+    p(9, "Mod", "%", "0", "100"),
     p(10, "TailGain", "%", "0", "100"),
 ];
 
@@ -40,11 +40,11 @@ pub(super) static RPLT: &[FxParamDef] = &[
     p(9, "BassMult", "", "0.25", "4"),
     p(10, "Spread", "", "0", "50"),
     p(11, "Attack", "", "0", "100"),
-    p(12, "ModSpin", "%", "0", "100"),
-    p(13, "EchoLeft", "ms", "0", "1200"),
-    p(14, "EchoRight", "ms", "0", "1200"),
-    p(15, "EchoFbL", "%", "-100", "+100"),
-    p(16, "EchoFbR", "%", "-100", "+100"),
+    p(12, "Spin", "%", "0", "100"),
+    p(13, "EcLeft", "ms", "0", "1200"),
+    p(14, "EcRight", "ms", "0", "1200"),
+    p(15, "EcFbL", "%", "-100", "+100"),
+    p(16, "EcFbR", "%", "-100", "+100"),
 ];
 
 pub(super) static ROOM: &[FxParamDef] = &[
@@ -59,11 +59,11 @@ pub(super) static ROOM: &[FxParamDef] = &[
     p(9, "BassMult", "", "0.25", "4"),
     p(10, "Spread", "", "0", "50"),
     p(11, "Shape", "", "0", "250"),
-    p(12, "ModSpin", "%", "0", "100"),
-    p(13, "EchoLeft", "ms", "0", "1200"),
-    p(14, "EchoRight", "ms", "0", "1200"),
-    p(15, "EchoFbL", "%", "-100", "+100"),
-    p(16, "EchoFbR", "%", "-100", "+100"),
+    p(12, "Spin", "%", "0", "100"),
+    p(13, "EcLeft", "ms", "0", "1200"),
+    p(14, "EcRight", "ms", "0", "1200"),
+    p(15, "EcFbL", "%", "-100", "+100"),
+    p(16, "EcFbR", "%", "-100", "+100"),
 ];
 
 pub(super) static CHAM: &[FxParamDef] = &[
@@ -78,7 +78,7 @@ pub(super) static CHAM: &[FxParamDef] = &[
     p(9, "BassMult", "", "0.25", "4"),
     p(10, "Spread", "", "0", "50"),
     p(11, "Shape", "", "0", "250"),
-    p(12, "ModSpin", "%", "0", "100"),
+    p(12, "Spin", "%", "0", "100"),
     p(13, "ERLeft", "ms", "0", "500"),
     p(14, "ERRight", "ms", "0", "500"),
     p(15, "ERLevelL", "%", "0", "100"),
@@ -105,7 +105,7 @@ pub(super) static PLAT: &[FxParamDef] = &[
 pub(super) static VREV: &[FxParamDef] = &[
     p(1, "PreDelay", "ms", "0", "120"),
     p(2, "Decay", "s", "0.4", "4.5"),
-    p(3, "Modulate", "%", "0", "100"),
+    p(3, "Mod", "%", "0", "100"),
     e(4, "Vintage", OFF_ON),
     e(5, "Output", VINTAGE_OUT),
     p(6, "Level", "dB", "-12", "+12"),
@@ -135,8 +135,8 @@ pub(super) static GATE: &[FxParamDef] = &[
     p(1, "PreDelay", "ms", "0", "200"),
     p(2, "Decay", "ms", "140", "1000"),
     p(3, "Attack", "", "0", "30"),
-    // Range conflict: cheat-sheet 1–50 vs X32 doc 1–30; X-Air preferred.
-    q(4, "Density", "", "1", "50"),
+    // Primary registration and gated-reverb binding establish 1–50.
+    p(4, "Density", "", "1", "50"),
     p(5, "Spread", "", "0", "100"),
     p(6, "Level", "dB", "-12", "+12"),
     p(7, "LoCut", "Hz", "10", "500"),
