@@ -12,6 +12,7 @@ import '../widgets/number_entry.dart';
 class FxKnobVm {
   final String id;
   final String label;
+  final String? entryTitle;
   final double min;
   final double max;
   final double value;
@@ -26,6 +27,7 @@ class FxKnobVm {
   const FxKnobVm({
     required this.id,
     required this.label,
+    this.entryTitle,
     required this.min,
     required this.max,
     required this.value,
@@ -281,7 +283,7 @@ class _U4FxPageState extends State<U4FxPage> {
                       } else {
                         value = await showNumberEntry(
                             context: context,
-                            title: knob.label,
+                            title: knob.entryTitle ?? knob.label,
                             initial: knob.entryValue.toString(),
                             min: knob.entryMin,
                             max: knob.entryMax);
