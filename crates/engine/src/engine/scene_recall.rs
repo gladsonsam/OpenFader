@@ -323,6 +323,7 @@ impl Engine {
             .await?
             .map(|block| stored_monitor_from_controls(&driver, &block))
             .transpose()?;
+        let output_eq = self.capture_scene_output_eq(&driver, generation).await?;
         let automix = drv
             .read_automix_settings()
             .await?
@@ -356,7 +357,7 @@ impl Engine {
             output_taps,
             monitor,
             rta,
-            output_eq: None,
+            output_eq,
         })
     }
 
@@ -1236,7 +1237,7 @@ fn validate_rta_recall(
     Ok(live)
 }
 
-fn snapshot_control_allows(
+pub(super) fn snapshot_control_allows(
     control: &openfader_core::destinations::DestinationControl,
     value: f32,
 ) -> bool {
