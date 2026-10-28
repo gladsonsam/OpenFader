@@ -385,6 +385,81 @@ mixin _AppStoreChannel on _AppStoreContext {
   void setCompSoftKnee(bool soft) => cmdParam(
       'comp_knee', engine.driver == 'dl32s' ? (soft ? 0 : 1) : (soft ? 3 : 0));
 
+  List<double>? eqPreviewFor(int channel) {
+    Object? value(String leaf) =>
+        ps.optimisticValue(_maps, channel, AppStore.deskLeaf(leaf));
+    double? number(String leaf) {
+      final v = value(leaf);
+      return v is num && v.isFinite ? v.toDouble() : null;
+    }
+
+    bool applies(String leaf) =>
+        _stripParamApplies(channel, AppStore.deskLeaf(leaf));
+    final on = value('eq_on');
+    if (on is! bool) return null;
+    if (!on) return eqResponseDb(const ChannelEqVm(on: false));
+    final count =
+        (number('wing:eq_bands')?.toInt() ?? (applies('eq6_gain') ? 6 : 4))
+            .clamp(4, 8);
+    final cutModel = engine.driver == 'xair'
+        ? EqCutModel.xairButterworth96k
+        : EqCutModel.unavailable;
+    final bands = <EqBandVm>[];
+    for (var b = 1; b <= count; b++) {
+      final native = number('eq${b}_type')?.toInt();
+      final type = engine.driver == 'dl32s'
+          ? switch (native) {
+              2 => EqFilterShape.bell.value,
+              3 => EqFilterShape.lowShelf.value,
+              4 => EqFilterShape.highShelf.value,
+              _ => null,
+            }
+          : native;
+      final shape = EqFilterShape.fromValue(type);
+      final f = number('eq${b}_freq');
+      if (shape?.hasResponseModel(cutModel: cutModel) != true ||
+          f == null ||
+          f <= 0) {
+        return null;
+      }
+      final fixedCut =
+          shape == EqFilterShape.lowCut || shape == EqFilterShape.highCut;
+      final g = number('eq${b}_gain');
+      final q = number('eq${b}_q');
+      if (!fixedCut && (g == null || q == null || q <= 0)) return null;
+      final metadata = parameterPresentation(
+          engine.parameterMetadata['eq${b}_type'], number);
+      bands.add(EqBandVm(
+          band: b,
+          name: '',
+          f: f,
+          g: g ?? 0,
+          q: q ?? 1,
+          type: type,
+          cutModel: cutModel,
+          shelfUsesQ:
+              engine.driver != 'dl32s' && metadata?['curve'] != 'fixed_shelf'));
+    }
+    var hpfOn = false;
+    var hpfF = 80.0;
+    if (engine.driver != 'wing' && applies('hpf_on')) {
+      final enabled = value('hpf_on');
+      if (enabled is! bool) return null;
+      hpfOn = enabled;
+      if (hpfOn) {
+        final f = number('hpf_freq');
+        if (f == null || f <= 0) return null;
+        hpfF = f;
+      }
+    }
+    return eqResponseDb(ChannelEqVm(
+        on: true,
+        hpfOn: hpfOn,
+        hpfF: hpfF,
+        hpfInResponse: engine.driver != 'wing',
+        bands: bands));
+  }
+
   int? _eqPresentationType(int band) {
     final native = paramNum('eq${band}_type')?.toInt();
     if (engine.driver != 'dl32s') return native;

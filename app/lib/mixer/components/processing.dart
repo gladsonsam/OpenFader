@@ -1,5 +1,4 @@
 import '../../palette.dart';
-import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
@@ -168,7 +167,7 @@ class MixerEqPreview extends StatelessWidget {
               child: Stack(fit: StackFit.expand, children: [
                 CustomPaint(
                     painter:
-                        _EqPainter(ConsolePalette.of(context), channel.params)),
+                        _EqPainter(ConsolePalette.of(context), channel.eqPreview)),
                 if (compact)
                   Positioned(
                       top: 3,
@@ -309,26 +308,18 @@ class _DynamicsPainter extends CustomPainter {
 
 class _EqPainter extends CustomPainter {
   final ConsolePalette palette;
-  final Map<String, Object> params;
-  _EqPainter(this.palette, this.params);
+  final List<double>? response;
+  _EqPainter(this.palette, this.response);
   @override
   void paint(Canvas c, Size s) {
     mixerBox(c, Offset.zero & s, palette.eqBg);
+    final values = response;
+    if (values == null || values.length < 2) return;
     final curve = Path();
-    for (var x = 0.0; x <= s.width; x++) {
-      final frequency = 20 * math.pow(1000, x / s.width);
-      var gain = 0.0;
-      if (params['eq_on'] != false) {
-        for (var band = 1; band <= 4; band++) {
-          final f = (params['eq${band}_freq'] as num?)?.toDouble() ?? 1000;
-          final g = (params['eq${band}_gain'] as num?)?.toDouble() ?? 0;
-          final q = (params['eq${band}_q'] as num?)?.toDouble() ?? 1;
-          final distance = math.log(frequency / math.max(f, 1)) / math.ln2;
-          gain += g * math.exp(-distance * distance * q * q / 2);
-        }
-      }
-      final y = (s.height / 2 - gain * s.height / 36).clamp(0.0, s.height);
-      if (x == 0) {
+    for (var i = 0; i < values.length; i++) {
+      final x = s.width * i / (values.length - 1);
+      final y = (s.height / 2 - values[i] * s.height / 36).clamp(0.0, s.height);
+      if (i == 0) {
         curve.moveTo(x, y);
       } else {
         curve.lineTo(x, y);
@@ -350,5 +341,5 @@ class _EqPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_EqPainter old) =>
-      old.palette != palette || !mapEquals(old.params, params);
+      old.palette != palette || !listEquals(old.response, response);
 }

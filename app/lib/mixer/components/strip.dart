@@ -316,5 +316,6 @@ class MixerStrip extends StatelessWidget {
       selected: ch.selected,
       master: ch.master,
       meter: ch.meter,
-      params: ch.params);
+      params: ch.params,
+      eqPreview: ch.eqPreview);
 }
