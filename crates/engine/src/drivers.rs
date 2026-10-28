@@ -1763,32 +1763,53 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                 let deesser = matches!(index, 31 | 32) && par <= 4;
                 let hall = if index == 0 {
                     match par {
-                        1 => Some((0.0, 200.0, "xair_hall_predelay")),
-                        2 => Some((0.2, 5.0, "xair_hall_decay")),
-                        3 => Some((2.0, 100.0, "xair_hall_size")),
-                        4 => Some((1000.0, 20000.0, "xair_hall_damping")),
-                        5 => Some((1.0, 30.0, "xair_hall_diffusion")),
-                        6 => Some((-12.0, 12.0, "xair_hall_level")),
-                        7 => Some((10.0, 500.0, "xair_hall_locut")),
-                        8 => Some((200.0, 20000.0, "xair_hall_hicut")),
-                        9 => Some((0.5, 2.0, "xair_hall_bassmult")),
-                        10 => Some((0.0, 50.0, "xair_hall_spread")),
-                        11 => Some((0.0, 250.0, "xair_hall_shape")),
-                        12 => Some((0.0, 100.0, "xair_hall_modspeed")),
+                        1 => Some((0.0, 200.0, 100, false, 0)),
+                        2 => Some((0.2, 5.0, 50, true, 2)),
+                        3 => Some((2.0, 100.0, 49, false, 0)),
+                        4 => Some((1000.0, 20000.0, 24, true, 0)),
+                        5 => Some((1.0, 30.0, 29, false, 0)),
+                        6 => Some((-12.0, 12.0, 48, false, 1)),
+                        7 => Some((10.0, 500.0, 50, true, 0)),
+                        8 => Some((200.0, 20000.0, 50, true, 0)),
+                        9 => Some((0.5, 2.0, 50, true, 2)),
+                        10 => Some((0.0, 50.0, 50, false, 0)),
+                        11 => Some((0.0, 250.0, 50, false, 0)),
+                        12 => Some((0.0, 100.0, 20, false, 0)),
                         _ => None,
                     }
-                } else {
-                    None
-                };
+                } else { None };
+                let plat = if index == 5 {
+                    match par {
+                        1 => Some((0.0, 200.0, 100, false, 0)),
+                        2 => Some((0.5, 10.0, 50, true, 2)),
+                        3 => Some((2.0, 100.0, 49, false, 0)),
+                        4 => Some((1000.0, 20000.0, 24, true, 0)),
+                        5 => Some((1.0, 30.0, 29, false, 0)),
+                        6 => Some((-12.0, 12.0, 48, false, 1)),
+                        7 => Some((10.0, 500.0, 50, true, 0)),
+                        8 => Some((200.0, 20000.0, 50, true, 0)),
+                        9 => Some((0.5, 2.0, 50, true, 2)),
+                        10 => Some((10.0, 500.0, 50, true, 2)),
+                        11 => Some((1.0, 50.0, 49, false, 0)),
+                        12 => Some((0.0, 100.0, 20, false, 0)),
+                        _ => None,
+                    }
+                } else { None };
+                let position = hall.or(plat).or(if deesser { Some((0.0, 50.0, 50, false, 1)) } else { None });
                 params.push(crate::protocol::FxParamCaps {
                     choices,
+                    position: position.map(|p| crate::protocol::FxPositionCaps {
+                        steps: p.2,
+                        curve: if p.3 { crate::protocol::FxPositionCurve::Log } else { crate::protocol::FxPositionCurve::Linear },
+                        precision: p.4,
+                    }),
                     id: format!("par{par:02}"),
                     label,
                     unit: if deesser { "" } else { def.unit }.to_string(),
-                    min: hall.map_or(0.0, |h| h.0),
-                    max: hall.map_or(if deesser { 50.0 } else { 1.0 }, |h| h.1),
+                    min: position.map_or(0.0, |h| h.0),
+                    max: position.map_or(1.0, |h| h.1),
                     default: 0.5,
-                    scale: hall.map_or(if deesser { "xair_deesser_steps" } else { "normalized" }, |h| h.2).to_string(),
+                    scale: if position.is_some() { "xair_positions" } else { "normalized" }.to_string(),
                 });
             }
             out.push(crate::protocol::FxTypeCaps {

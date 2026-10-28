@@ -597,9 +597,25 @@ pub struct FxChoiceCaps {
     pub label: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FxPositionCurve {
+    Linear,
+    Log,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FxPositionCaps {
+    pub steps: u32,
+    pub curve: FxPositionCurve,
+    pub precision: u8,
+}
+
 /// Optional provider-owned discrete choices in normalized FX space.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FxParamCaps {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub position: Option<FxPositionCaps>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub choices: Vec<FxChoiceCaps>,
     pub id: String,
