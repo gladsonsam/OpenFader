@@ -1037,6 +1037,14 @@ pub trait MixerDriver: Send + Sync {
         Ok(None)
     }
 
+    /// Fresh complete monitor inventory; None means unsupported, incomplete reads error.
+    /// Independent OSC reads cannot form an atomic snapshot during desk edits.
+    async fn read_monitor_settings(
+        &self,
+    ) -> anyhow::Result<Option<Vec<destinations::DestinationControl>>> {
+        Ok(None)
+    }
+
     /// Source-bound physical tap recall; unsupported providers reject it.
     async fn set_output_tap_guarded(
         &self,
