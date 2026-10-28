@@ -20,14 +20,22 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   final Set<String> _tapWrites = {};
   int? _tapSession;
 
-  bool get _globalAccessAllowed => app.accessFamilyAllowed(AccessFamily.fx) &&
-      (_cur == null || app.accessTargetAllowed('fx/${_cur!.slot.toString().padLeft(2, '0')}'));
+  bool get _globalAccessAllowed =>
+      app.accessFamilyAllowed(AccessFamily.fx) &&
+      (_cur == null ||
+          app.accessTargetAllowed(
+              'fx/${_cur!.slot.toString().padLeft(2, '0')}'));
 
   @override
   int get controlAccessEpoch => app.controlAccessEpoch;
 
   @override
-  bool get stateControlsSupported => _globalAccessAllowed && engine.fxStateControls;
+  Object get controlSession =>
+      (engine.driver, engine.session, engine.connected);
+
+  @override
+  bool get stateControlsSupported =>
+      _globalAccessAllowed && engine.fxStateControls;
 
   @override
   List<DestinationControlVm> get destinationControls => List.unmodifiable(
@@ -91,17 +99,17 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
           (control) => control.surface == 'fx' && control.id == 'algorithm')
       ? const []
       : [
-        for (final s in _raw)
-          FxSlotVm(
-            slot: s.slot,
-            name: 'FX ${s.slot}',
-            type: _typeMetadata(s.type)?['id'] as String? ??
-                (s.type.isEmpty ? '—' : s.type),
-            on: s.on,
-            bypass: s.bypass,
-            ret: s.returnLabel,
-          ),
-      ];
+          for (final s in _raw)
+            FxSlotVm(
+              slot: s.slot,
+              name: 'FX ${s.slot}',
+              type: _typeMetadata(s.type)?['id'] as String? ??
+                  (s.type.isEmpty ? '—' : s.type),
+              on: s.on,
+              bypass: s.bypass,
+              ret: s.returnLabel,
+            ),
+        ];
 
   @override
   int get selected => _sel.clamp(0, _raw.isEmpty ? 0 : _raw.length - 1);
@@ -110,11 +118,11 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   List<String> get typeOptions => !_globalAccessAllowed
       ? const []
       : [
-        for (final type in engine.fxTypes)
-          if (type['slots'] is! List ||
-              (type['slots'] as List).contains(selected + 1))
-            (type['id'] ?? type['label']) as String
-      ];
+          for (final type in engine.fxTypes)
+            if (type['slots'] is! List ||
+                (type['slots'] as List).contains(selected + 1))
+              (type['id'] ?? type['label']) as String
+        ];
 
   Map<String, dynamic>? _typeMetadata(String type) {
     for (final metadata in engine.fxTypes) {
@@ -190,17 +198,57 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
         if (c.params.containsKey(id)) id,
       ...unknownIds,
     ];
-    return [
-      for (final id in ids)
-        FxKnobVm(
-          id: id,
-          label: definitions[id]?['label'] as String? ?? id,
-          min: 0,
-          max: 1,
-          value: c.params[id]!.clamp(0.0, 1.0),
-          text: _parameterText(c.params[id]!.clamp(0.0, 1.0), definitions[id]),
-        ),
-    ];
+    FxKnobVm makeKnob(String id) {
+      final meta = definitions[id];
+      final normalized = c.params[id]!.clamp(0.0, 1.0);
+      final choices = (meta?['choices'] as List? ?? const [])
+          .whereType<Map>()
+          .map((v) => v['label']?.toString() ?? '')
+          .toList();
+      final rawMin = (meta?['min'] as num?)?.toDouble();
+      final rawMax = (meta?['max'] as num?)?.toDouble();
+      final scale = meta?['scale'];
+      final valid = rawMin != null &&
+          rawMax != null &&
+          rawMin.isFinite &&
+          rawMax.isFinite &&
+          rawMax > rawMin &&
+          (scale == 'lin' || scale == 'log' && rawMin > 0);
+      final min = choices.isNotEmpty
+          ? 0.0
+          : valid
+              ? rawMin
+              : 0.0;
+      final max = choices.isNotEmpty
+          ? (choices.length - 1).toDouble()
+          : valid
+              ? rawMax
+              : 100.0;
+      final value = choices.isNotEmpty
+          ? (normalized * max).roundToDouble()
+          : valid && scale == 'log'
+              ? min * math.pow(max / min, normalized)
+              : min + (max - min) * normalized;
+      return FxKnobVm(
+        id: id,
+        label: definitions[id]?['label'] as String? ?? id,
+        min: 0,
+        max: 1,
+        value: c.params[id]!.clamp(0.0, 1.0),
+        text: _parameterText(normalized, meta),
+        entryMin: min,
+        entryMax: max,
+        entryValue: value,
+        choices: choices,
+        normalize: (value) => max == min
+            ? 0
+            : choices.isEmpty && valid && scale == 'log'
+                ? math.log(value / min) / math.log(max / min)
+                : (value - min) / (max - min),
+      );
+    }
+
+    return [for (final id in ids) makeKnob(id)];
   }
 
   @override
@@ -253,7 +301,15 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   @override
   void setParam(String id, double value) {
     final c = _cur;
-    if (c == null) return;
+    if (c == null ||
+        !_globalAccessAllowed ||
+        !engine.connected ||
+        !value.isFinite ||
+        value < 0 ||
+        value > 1 ||
+        !c.params.containsKey(id)) {
+      return;
+    }
     send(Cmds.fxParam(c.slot, id, value));
   }
 
