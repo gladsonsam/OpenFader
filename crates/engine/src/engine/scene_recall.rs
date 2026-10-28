@@ -483,6 +483,12 @@ impl Engine {
             .map(|s| (s, resolve(s)))
             .filter(|(_, r)| scope.is_none_or(|sc| sc.matches_strip(*r, &topo)))
             .collect();
+        let input_links = if driver == "xair" {
+            self.prepare_scene_input_links(scene, scope, &topo, &check)
+                .await?
+        } else {
+            Vec::new()
+        };
         // Resolve bus companions before any recall writes, including scoped
         // recalls whose linked partner lies outside the selected scope.
         let mut affected_bus = std::collections::BTreeSet::new();
@@ -526,6 +532,15 @@ impl Engine {
         // are reported for the complete preamp target.
         let mut affected_preamp = std::collections::BTreeSet::new();
         let late_affected_preamp = std::sync::Mutex::new(std::collections::BTreeSet::new());
+        self.restore_scene_input_links(
+            &input_links,
+            &check,
+            &late_affected_preamp,
+            writer,
+            &topo,
+            out,
+        )
+        .await?;
         if scope.is_none_or(|sc| sc.allows_global("routing")) {
             if let Some(routes) = &xair_input_routes {
                 for (strip, wanted) in routes {
@@ -665,6 +680,12 @@ impl Engine {
             let mut ids: Vec<&String> = s.params.keys().collect();
             ids.sort_by_key(|id| safe_order_key(id));
             for id in ids {
+                if driver == "xair"
+                    && id == "link"
+                    && drv.stereo_pairs().iter().any(|pair| pair.contains(r))
+                {
+                    continue;
+                }
                 // A scene captured on another provider (or before a field
                 // became derived/read-only) may still carry this identifier.
                 if drv.param_read_only(id) {
@@ -1061,6 +1082,7 @@ impl Engine {
             }
         }
         check()?;
+        self.verify_scene_input_links(&input_links, &check).await?;
         self.refresh_fx_cache().await;
         check()?;
         out.push(self.fx_message_cached());
