@@ -313,8 +313,25 @@ impl MixerDriver for XAirDriver {
             "Bus link state is read-only"
         );
         anyhow::ensure!(control == "tap", "Unknown output control");
-        self.set_routing_tap(target, value, expected, snapshot, context)
+        self.set_routing_tap(target, value, expected, snapshot, context, None)
             .await
+    }
+    async fn set_output_tap_guarded(
+        &self,
+        desired: &openfader_core::routing::OutputTapState,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        self.set_routing_tap(
+            &desired.target,
+            f32::from(desired.tap),
+            expected,
+            snapshot,
+            context,
+            Some(&desired.source),
+        )
+        .await
     }
     fn stereo_pairs(&self) -> Vec<[u16; 2]> {
         (0..16).step_by(2).map(|left| [left, left + 1]).collect()

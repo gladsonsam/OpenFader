@@ -1037,6 +1037,18 @@ pub trait MixerDriver: Send + Sync {
         Ok(None)
     }
 
+    /// Source-bound physical tap recall; unsupported providers reject it.
+    async fn set_output_tap_guarded(
+        &self,
+        desired: &routing::OutputTapState,
+        expected: f32,
+        snapshot: &[destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<destinations::DestinationControl> {
+        let _ = (desired, expected, snapshot, context);
+        anyhow::bail!("source-bound output tap recall unavailable")
+    }
+
     async fn set_output_processor_guarded(
         &self,
         target: &str,
