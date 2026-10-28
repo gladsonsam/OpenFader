@@ -21,6 +21,7 @@ class FxKnobVm {
   final double entryValue;
   final double Function(double)? normalize;
   final List<String> choices;
+  final double increment;
 
   const FxKnobVm({
     required this.id,
@@ -34,6 +35,7 @@ class FxKnobVm {
     this.entryValue = 0,
     this.normalize,
     this.choices = const [],
+    this.increment = 0.01,
   });
 }
 
@@ -616,6 +618,7 @@ class _LegacyFxDetail extends StatelessWidget {
                   key: ValueKey('${slot.slot}/${knob.id}'),
                   label: knob.label,
                   text: knob.text,
+                  increment: knob.increment,
                   fraction: knob.max > knob.min
                       ? ((knob.value - knob.min) / (knob.max - knob.min))
                           .clamp(0, 1)
@@ -697,6 +700,7 @@ class _FxRotary extends StatefulWidget {
   final String label;
   final String text;
   final double fraction;
+  final double increment;
   final bool enabled;
   final ValueChanged<double>? onChange;
   final VoidCallback? onTap;
@@ -705,6 +709,7 @@ class _FxRotary extends StatefulWidget {
       required this.label,
       required this.text,
       required this.fraction,
+      this.increment = 0.01,
       required this.enabled,
       this.onChange,
       this.onTap});
@@ -726,8 +731,8 @@ class _FxRotaryState extends State<_FxRotary> {
         enabled: widget.enabled,
         label: widget.label,
         value: widget.text,
-        onIncrease: adjustable ? () => _step(.01) : null,
-        onDecrease: adjustable ? () => _step(-.01) : null,
+        onIncrease: adjustable ? () => _step(widget.increment) : null,
+        onDecrease: adjustable ? () => _step(-widget.increment) : null,
         child: Opacity(
             opacity: widget.enabled ? 1 : .45,
             child: GestureDetector(

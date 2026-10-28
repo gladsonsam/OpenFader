@@ -1,7 +1,10 @@
 // Shell adapter: fx responsibility. The shell owns polling.
 import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
+
 import '../engine.dart';
+import '../core/xair_fx_display.dart';
 import '../core/access_limits.dart';
 import '../screens/fx.dart';
 import 'store_adapter.dart';
@@ -24,7 +27,8 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       app.accessFamilyAllowed(AccessFamily.fx) &&
       (_cur == null ||
           app.accessTargetAllowed(
-              'fx/${_cur!.slot.toString().padLeft(2, '0')}'));
+            'fx/${_cur!.slot.toString().padLeft(2, '0')}',
+          ));
 
   @override
   int get controlAccessEpoch => app.controlAccessEpoch;
@@ -39,14 +43,16 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
 
   @override
   List<DestinationControlVm> get destinationControls => List.unmodifiable(
-      engine.destinationControls.where((control) => control.surface == 'fx'));
+    engine.destinationControls.where((control) => control.surface == 'fx'),
+  );
   @override
   bool destinationControlIsCurrent(DestinationControlVm control) =>
       app.destinationControlIsCurrent(control);
   @override
   Future<String?> setDestinationControl(
-          DestinationControlVm control, double value) =>
-      app.setDestinationControl(control, value);
+    DestinationControlVm control,
+    double value,
+  ) => app.setDestinationControl(control, value);
 
   @override
   Future<String?> tapDestinationControl(DestinationControlVm control) async {
@@ -95,15 +101,18 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   @override
   // A provider-native catalogue owns the rack presentation, including sim.
   // Keep legacy numbered/design racks for providers without that contract.
-  List<FxSlotVm> get slots => engine.destinationControls.any(
-          (control) => control.surface == 'fx' && control.id == 'algorithm')
+  List<FxSlotVm> get slots =>
+      engine.destinationControls.any(
+        (control) => control.surface == 'fx' && control.id == 'algorithm',
+      )
       ? const []
       : [
           for (final s in _raw)
             FxSlotVm(
               slot: s.slot,
               name: 'FX ${s.slot}',
-              type: _typeMetadata(s.type)?['id'] as String? ??
+              type:
+                  _typeMetadata(s.type)?['id'] as String? ??
                   (s.type.isEmpty ? '—' : s.type),
               on: s.on,
               bypass: s.bypass,
@@ -121,7 +130,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
           for (final type in engine.fxTypes)
             if (type['slots'] is! List ||
                 (type['slots'] as List).contains(selected + 1))
-              (type['id'] ?? type['label']) as String
+              (type['id'] ?? type['label']) as String,
         ];
 
   Map<String, dynamic>? _typeMetadata(String type) {
@@ -141,11 +150,15 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       _typeMetadata(type)?['label'] as String? ?? type;
 
   String _parameterText(double normalized, Map<String, dynamic>? metadata) {
+    if (metadata?['scale'] == 'xair_deesser_steps') {
+      return xairDeesserPosition(normalized).toStringAsFixed(1);
+    }
     final choices = metadata?['choices'];
     if (choices is List && choices.isNotEmpty) {
-      final index = (normalized * (choices.length - 1))
-          .round()
-          .clamp(0, choices.length - 1);
+      final index = (normalized * (choices.length - 1)).round().clamp(
+        0,
+        choices.length - 1,
+      );
       final choice = choices[index];
       if (choice is Map && choice['label'] is String) {
         return choice['label'] as String;
@@ -172,7 +185,8 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       return '${(value / 1000).toStringAsFixed(2)} kHz';
     }
     final text = value.toStringAsFixed(
-        unit == '%' || unit == 'ms' || value.abs() >= 100 ? 0 : 1);
+      unit == '%' || unit == 'ms' || value.abs() >= 100 ? 0 : 1,
+    );
     return unit.isEmpty ? text : '$text${unit == '%' ? '' : ' '}$unit';
   }
 
@@ -189,10 +203,9 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
         if (parameter is Map<String, dynamic> && parameter['id'] is String)
           parameter['id'] as String: parameter,
     };
-    final unknownIds = c.params.keys
-        .where((id) => !definitions.containsKey(id))
-        .toList()
-      ..sort();
+    final unknownIds =
+        c.params.keys.where((id) => !definitions.containsKey(id)).toList()
+          ..sort();
     final ids = [
       for (final id in definitions.keys)
         if (c.params.containsKey(id)) id,
@@ -208,43 +221,53 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       final rawMin = (meta?['min'] as num?)?.toDouble();
       final rawMax = (meta?['max'] as num?)?.toDouble();
       final scale = meta?['scale'];
-      final valid = rawMin != null &&
+      final valid =
+          rawMin != null &&
           rawMax != null &&
           rawMin.isFinite &&
           rawMax.isFinite &&
           rawMax > rawMin &&
-          (scale == 'lin' || scale == 'log' && rawMin > 0);
+          (scale == 'lin' ||
+              scale == 'xair_deesser_steps' ||
+              scale == 'log' && rawMin > 0);
       final min = choices.isNotEmpty
           ? 0.0
           : valid
-              ? rawMin
-              : 0.0;
+          ? rawMin
+          : 0.0;
       final max = choices.isNotEmpty
           ? (choices.length - 1).toDouble()
           : valid
-              ? rawMax
-              : 100.0;
-      final value = choices.isNotEmpty
+          ? rawMax
+          : 100.0;
+      final value = scale == 'xair_deesser_steps'
+          ? xairDeesserPosition(normalized)
+          : choices.isNotEmpty
           ? (normalized * max).roundToDouble()
           : valid && scale == 'log'
-              ? min * math.pow(max / min, normalized)
-              : min + (max - min) * normalized;
+          ? min * math.pow(max / min, normalized)
+          : min + (max - min) * normalized;
       return FxKnobVm(
         id: id,
         label: definitions[id]?['label'] as String? ?? id,
         min: 0,
         max: 1,
-        value: c.params[id]!.clamp(0.0, 1.0),
+        value: scale == 'xair_deesser_steps'
+            ? xairDeesserPosition(normalized) / 50
+            : c.params[id]!.clamp(0.0, 1.0),
         text: _parameterText(normalized, meta),
         entryMin: min,
         entryMax: max,
         entryValue: value,
         choices: choices,
+        increment: scale == 'xair_deesser_steps' ? 0.02 : 0.01,
         normalize: (value) => max == min
             ? 0
+            : scale == 'xair_deesser_steps'
+            ? xairDeesserEntry(value)
             : choices.isEmpty && valid && scale == 'log'
-                ? math.log(value / min) / math.log(max / min)
-                : (value - min) / (max - min),
+            ? math.log(value / min) / math.log(max / min)
+            : (value - min) / (max - min),
       );
     }
 
@@ -315,7 +338,13 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
         !c.params.containsKey(id)) {
       return;
     }
-    send(Cmds.fxParam(c.slot, id, value));
+    final params = _typeMetadata(c.type)?['params'] as List? ?? const [];
+    final isDeesser = params.whereType<Map>().any(
+      (param) => param['id'] == id && param['scale'] == 'xair_deesser_steps',
+    );
+    send(
+      Cmds.fxParam(c.slot, id, isDeesser ? (value * 50).round() / 50 : value),
+    );
   }
 
   @override

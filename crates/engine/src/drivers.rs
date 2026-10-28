@@ -1760,15 +1760,16 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                     }).collect();
                 // The provider documents endpoints but not the transfer curve.
                 // Keep unknown continuous curves normalized rather than inventing one.
+                let deesser = matches!(index, 31 | 32) && par <= 4;
                 params.push(crate::protocol::FxParamCaps {
                     choices,
                     id: format!("par{par:02}"),
                     label,
-                    unit: def.unit.to_string(),
+                    unit: if deesser { "" } else { def.unit }.to_string(),
                     min: 0.0,
-                    max: 1.0,
+                    max: if deesser { 50.0 } else { 1.0 },
                     default: 0.5,
-                    scale: "normalized".to_string(),
+                    scale: if deesser { "xair_deesser_steps" } else { "normalized" }.to_string(),
                 });
             }
             out.push(crate::protocol::FxTypeCaps {
