@@ -43,6 +43,7 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
           row.surface == 'link_policy_state' ||
           row.surface == 'link_policy' ||
           row.surface == 'usb_interface' ||
+          row.surface == 'safe_levels' ||
           row.surface == 'clock_rate' ||
           row.surface == 'midi_setup'));
   @override

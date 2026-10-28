@@ -217,6 +217,7 @@ impl Engine {
                                 | "bus_link"
                                 | "link_policy"
                                 | "usb_interface"
+                                | "safe_levels"
                                 | "clock_rate"
                                 | "midi_setup"
                         ) && !row.surface.starts_with("output_")
@@ -244,6 +245,7 @@ impl Engine {
                                         | "bus_link"
                                         | "link_policy"
                                         | "usb_interface"
+                                        | "safe_levels"
                                         | "clock_rate"
                                         | "midi_setup"
                                 )
@@ -291,6 +293,7 @@ impl Engine {
                             "bus_link"
                                 | "link_policy"
                                 | "usb_interface"
+                                | "safe_levels"
                                 | "midi_setup"
                                 | "clock_rate"
                         ) {

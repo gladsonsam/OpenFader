@@ -52,6 +52,7 @@ mod monitor;
 mod monitor_settings;
 mod param_read;
 mod param_write;
+mod safe_levels;
 mod surface;
 mod target_solo;
 mod telemetry;
@@ -76,6 +77,8 @@ pub struct XAirDriver {
     connection_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     connected: std::sync::atomic::AtomicBool,
     link_cache: LinkCache,
+    safe_levels: std::sync::Arc<std::sync::Mutex<safe_levels::Cache>>,
+    safe_levels_write: tokio::sync::Mutex<()>,
     usb_interface: std::sync::Arc<std::sync::Mutex<usb_interface::Cache>>,
     clock_rate: std::sync::Arc<std::sync::Mutex<clock_rate::Cache>>,
     clock_rate_write: tokio::sync::Mutex<()>,
@@ -159,6 +162,8 @@ impl XAirDriver {
             connected: std::sync::atomic::AtomicBool::new(false),
             link_cache: std::sync::Arc::new(std::sync::Mutex::new([None; 8])),
             link_writes: std::sync::Mutex::new([None; 8]),
+            safe_levels: std::sync::Arc::new(std::sync::Mutex::new(safe_levels::Cache::default())),
+            safe_levels_write: tokio::sync::Mutex::new(()),
             usb_interface: std::sync::Arc::new(std::sync::Mutex::new(
                 usb_interface::Cache::default(),
             )),
@@ -261,6 +266,7 @@ impl MixerDriver for XAirDriver {
         controls.extend(self.bus_link_controls());
         controls.extend(self.link_policy_controls());
         controls.extend(self.usb_interface_controls());
+        controls.extend(self.safe_levels_controls());
         controls.extend(self.clock_rate_controls());
         controls.extend(self.midi_setup_controls());
         controls.extend(self.target_solo_controls());
@@ -341,6 +347,10 @@ impl MixerDriver for XAirDriver {
     ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
         if target == "midi_setup" {
             self.set_midi_setup_checked(control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        } else if target == "device_setup" && control == "ponmute" {
+            self.set_safe_levels_checked(control, value, expected, snapshot, context)
                 .await
                 .map(Some)
         } else if target == "device_setup" && control == "clockrate" {
