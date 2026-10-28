@@ -28,6 +28,38 @@ class OutputProcessingPage extends StatefulWidget {
 
 class _OutputProcessingPageState extends State<OutputProcessingPage> {
   String? _surface;
+  String? _focusTarget, _focusSurface, _focusId;
+  double? _focusDraft;
+  DestinationControlVm? _focusCaptured;
+  bool _focusPending = false;
+  void _focus(DestinationControlVm control, double? draft, bool pending) {
+    setState(() {
+      _focusTarget = control.target;
+      _focusSurface = control.surface;
+      _focusId = control.id;
+      _focusDraft = draft;
+      _focusCaptured = control;
+      _focusPending = pending;
+    });
+  }
+
+  void _complete(DestinationControlVm control) {
+    if (_focusTarget == control.target &&
+        _focusSurface == control.surface &&
+        _focusId == control.id) {
+      setState(() {
+        _focusPending = false;
+        _focusDraft = null;
+      });
+    }
+  }
+
+  void _clearFocus() {
+    _focusTarget = _focusSurface = _focusId = null;
+    _focusDraft = null;
+    _focusCaptured = null;
+    _focusPending = false;
+  }
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
@@ -59,6 +91,17 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
               surfaces.contains(_surface) ? _surface : surfaces.firstOrNull;
           final processor =
               selected.where((control) => control.surface == surface).toList();
+          if (_focusTarget != target ||
+              _focusSurface != surface ||
+              !processor.any((c) => c.id == _focusId)) {
+            _clearFocus();
+          }
+          if (_focusDraft != null &&
+              _focusCaptured != null &&
+              !store.destinationControlIsCurrent(_focusCaptured!)) {
+            _focusDraft = null;
+          }
+          final focused = processor.where((c) => c.id == _focusId).firstOrNull;
           return Scaffold(
             backgroundColor: palette.page,
             appBar: AppBar(
@@ -68,7 +111,37 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                 tooltip: 'Mixer',
                 icon: const Icon(Icons.arrow_back),
               ),
-              title: const Text('Output processing'),
+              title: focused == null
+                  ? const Text('Output processing')
+                  : TextButton(
+                      onPressed: !_focusPending &&
+                              store.destinationControlIsCurrent(focused)
+                          ? () {
+                              final captured = focused;
+                              showDialog<void>(
+                                  context: context,
+                                  builder: (_) => DestinationControlEditor(
+                                        accessEpoch: () =>
+                                            store.controlAccessEpoch,
+                                        control: captured,
+                                        changes: store,
+                                        isCurrent: (control) =>
+                                            mounted &&
+                                            _focusTarget == control.target &&
+                                            _focusSurface == control.surface &&
+                                            _focusId == control.id &&
+                                            store.outputProcessingTarget ==
+                                                control.target &&
+                                            store.destinationControlIsCurrent(
+                                                control),
+                                        apply: store.setDestinationControl,
+                                      ));
+                            }
+                          : null,
+                      child: Text(
+                          '${focused.label}: ${_focusPending ? 'Sending…' : _focusDraft != null ? '${_focusDraft!.toStringAsFixed(focused.decimals)} ${focused.unit}' : focused.id == 'comp_ratio' && focused.value == 101 ? '∞:1' : focused.valueLabel ?? 'Unavailable'}${!_focusPending && focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                          overflow: TextOverflow.ellipsis),
+                    ),
             ),
             body: SafeArea(
               top: false,
@@ -93,7 +166,10 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                           ),
                       ],
                       onChanged: (value) {
-                        if (value != null) store.openOutputProcessing(value);
+                        if (value != null) {
+                          setState(_clearFocus);
+                          store.openOutputProcessing(value);
+                        }
                       },
                     ),
                   ),
@@ -114,8 +190,10 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                               child: ChoiceChip(
                                 label: Text(labels[item] ?? item),
                                 selected: item == surface,
-                                onSelected: (_) =>
-                                    setState(() => _surface = item),
+                                onSelected: (_) => setState(() {
+                                  _clearFocus();
+                                  _surface = item;
+                                }),
                               ),
                             ),
                         ],
@@ -157,6 +235,8 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                                     key: ValueKey((control.target, control.id)),
                                     store: store,
                                     control: control,
+                                    onFocus: _focus,
+                                    onComplete: _complete,
                                   ),
                                 const SizedBox(height: 12),
                                 SizedBox(
@@ -180,6 +260,8 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                                               )),
                                               store: store,
                                               control: control,
+                                              onFocus: _focus,
+                                              onComplete: _complete,
                                               vertical: true,
                                             ),
                                           ),
@@ -193,6 +275,8 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                                     key: ValueKey((control.target, control.id)),
                                     store: store,
                                     control: control,
+                                    onFocus: _focus,
+                                    onComplete: _complete,
                                   ),
                             ],
                           ),
@@ -211,10 +295,14 @@ class _ControlTile extends StatefulWidget {
   final OutputProcessingStore store;
   final DestinationControlVm control;
   final bool vertical;
+  final void Function(DestinationControlVm) onComplete;
+  final void Function(DestinationControlVm, double?, bool) onFocus;
   const _ControlTile({
     super.key,
     required this.store,
     required this.control,
+    required this.onFocus,
+    required this.onComplete,
     this.vertical = false,
   });
   @override
@@ -246,6 +334,7 @@ class _ControlTileState extends State<_ControlTile> {
         _draft = null;
         _dragControl = null;
       });
+      widget.onComplete(control);
       return;
     }
     setState(() {
@@ -253,28 +342,15 @@ class _ControlTileState extends State<_ControlTile> {
       _draft = null;
       _dragControl = null;
     });
+    widget.onFocus(control, null, true);
     final error = await widget.store.setDestinationControl(control, value);
     if (!mounted) return;
     setState(() => _pending = false);
+    widget.onComplete(control);
     if (error != null) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(error)));
     }
-  }
-
-  void _edit() {
-    final control = widget.control;
-    if (_pending || !widget.store.destinationControlIsCurrent(control)) return;
-    showDialog<void>(
-      context: context,
-      builder: (_) => DestinationControlEditor(
-        accessEpoch: () => widget.store.controlAccessEpoch,
-        control: control,
-        changes: widget.store,
-        isCurrent: widget.store.destinationControlIsCurrent,
-        apply: widget.store.setDestinationControl,
-      ),
-    );
   }
 
   @override
@@ -305,12 +381,16 @@ class _ControlTileState extends State<_ControlTile> {
                   '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
               onChangeStart: enabled
                   ? (_) {
+                      widget.onFocus(control, value, false);
                       _dragControl = control;
                       _dragAccessEpoch = widget.store.controlAccessEpoch;
                     }
                   : null,
               onChanged: enabled
-                  ? (v) => setState(() => _draft = engineering(v))
+                  ? (v) {
+                      setState(() => _draft = engineering(v));
+                      widget.onFocus(control, engineering(v), false);
+                    }
                   : null,
               onChangeEnd: enabled
                   ? (v) {
@@ -323,27 +403,6 @@ class _ControlTileState extends State<_ControlTile> {
             ),
           )
         : null;
-    final valueText = control.id == 'comp_ratio' && control.value == 101
-        ? '∞:1'
-        : control.valueLabel;
-    final readoutText = _pending
-        ? 'Sending…'
-        : valueText == null
-            ? 'Unavailable'
-            : '$valueText'
-                '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}';
-    final readout = TextButton(
-      onPressed: enabled ? _edit : null,
-      child: Semantics(
-        label: '${control.destinationName}, ${control.label}: $readoutText',
-        excludeSemantics: true,
-        child: Text(
-          readoutText,
-          textAlign: TextAlign.center,
-          style: TextStyle(color: enabled ? palette.lime : palette.mutedText),
-        ),
-      ),
-    );
     if (widget.vertical) {
       return DecoratedBox(
         decoration: BoxDecoration(
@@ -354,7 +413,9 @@ class _ControlTileState extends State<_ControlTile> {
           children: [
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(control.label, textAlign: TextAlign.center),
+              child: TextButton(
+                  onPressed: () => widget.onFocus(control, null, _pending),
+                  child: Text(control.label, textAlign: TextAlign.center)),
             ),
             Expanded(
               child: RotatedBox(
@@ -362,7 +423,6 @@ class _ControlTileState extends State<_ControlTile> {
                 child: slider ?? const SizedBox.shrink(),
               ),
             ),
-            readout,
           ],
         ),
       );
@@ -376,8 +436,13 @@ class _ControlTileState extends State<_ControlTile> {
           children: [
             Row(
               children: [
-                Expanded(child: Text(control.label)),
-                if (control.numeric) readout,
+                Expanded(
+                    child: TextButton(
+                        onPressed: () =>
+                            widget.onFocus(control, null, _pending),
+                        child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(control.label)))),
               ],
             ),
             if (slider != null) slider,
