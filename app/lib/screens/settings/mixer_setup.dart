@@ -22,6 +22,7 @@ class _MixerSetupDetail extends StatelessWidget {
               'bus_link' || 'bus_link_state' => 'Bus links',
               'link_policy_state' || 'link_policy' => 'Link preferences',
               'usb_interface' => 'Audio / USB',
+              'clock_rate' => 'Clock',
               'midi_setup' => 'MIDI',
               _ => 'Automix',
             },
@@ -48,6 +49,9 @@ class _MixerSetupDetail extends StatelessWidget {
                                 : null,
                             child: Text(control.valueLabel ?? 'Unavailable'))),
             ]),
+        if (surface == 'clock_rate')
+          const _Note(
+              'Selects the mixer sample rate. Mute Main LR before changing it.'),
         if (surface == 'usb_interface')
           const _Note(
               'Changes the connected computer’s USB audio channel count.'),

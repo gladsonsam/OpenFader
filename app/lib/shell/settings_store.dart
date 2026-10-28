@@ -43,6 +43,7 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
           row.surface == 'link_policy_state' ||
           row.surface == 'link_policy' ||
           row.surface == 'usb_interface' ||
+          row.surface == 'clock_rate' ||
           row.surface == 'midi_setup'));
   @override
   int get controlAccessEpoch => app.controlAccessEpoch;
@@ -54,9 +55,13 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
   @override
   Future<String?> setMixerSetupControl(
           DestinationControlVm control, double value) =>
-      mixerSetupControlIsCurrent(control)
-          ? app.setDestinationControl(control, value)
-          : Future.value('Mixer setting unavailable or read-only.');
+      control.surface == 'clock_rate' &&
+              value != control.value &&
+              engine.mainMuted != true
+          ? Future.value('Mute Main LR before changing clock rate.')
+          : mixerSetupControlIsCurrent(control)
+              ? app.setDestinationControl(control, value)
+              : Future.value('Mixer setting unavailable or read-only.');
 
   @override
   PrefsService get prefs => PrefsService.instance;
