@@ -21,6 +21,7 @@ class _MixerSetupDetail extends StatelessWidget {
             title: switch (surface) {
               'bus_link' || 'bus_link_state' => 'Bus links',
               'link_policy_state' || 'link_policy' => 'Link preferences',
+              'usb_interface' => 'Audio / USB',
               _ => 'Automix',
             },
             children: [
@@ -46,6 +47,9 @@ class _MixerSetupDetail extends StatelessWidget {
                                 : null,
                             child: Text(control.valueLabel ?? 'Unavailable'))),
             ]),
+        if (surface == 'usb_interface')
+          const _Note(
+              'Changes the connected computer’s USB audio channel count.'),
         if (surface == 'bus_link_state')
           const _Note('Bus link status is read-only.'),
         if (surface == 'link_policy_state')

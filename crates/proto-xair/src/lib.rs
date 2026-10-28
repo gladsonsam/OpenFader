@@ -52,6 +52,7 @@ mod param_read;
 mod param_write;
 mod surface;
 mod telemetry;
+mod usb_interface;
 
 use discovery::*;
 pub use inbound::parse_inbound;
@@ -72,6 +73,8 @@ pub struct XAirDriver {
     connection_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     connected: std::sync::atomic::AtomicBool,
     link_cache: LinkCache,
+    usb_interface: std::sync::Arc<std::sync::Mutex<usb_interface::Cache>>,
+    usb_interface_write: tokio::sync::Mutex<()>,
     link_policy_cache: link_policy::Cache,
     link_policy_pending: std::sync::Arc<std::sync::atomic::AtomicU8>,
     link_policy_write: tokio::sync::Mutex<()>,
@@ -146,6 +149,10 @@ impl XAirDriver {
             connected: std::sync::atomic::AtomicBool::new(false),
             link_cache: std::sync::Arc::new(std::sync::Mutex::new([None; 8])),
             link_writes: std::sync::Mutex::new([None; 8]),
+            usb_interface: std::sync::Arc::new(std::sync::Mutex::new(
+                usb_interface::Cache::default(),
+            )),
+            usb_interface_write: tokio::sync::Mutex::new(()),
             link_policy_cache: std::sync::Arc::new(std::sync::Mutex::new([(0, None); 4])),
             link_policy_pending: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
             link_policy_write: tokio::sync::Mutex::new(()),
@@ -236,6 +243,7 @@ impl MixerDriver for XAirDriver {
         controls.extend(self.misc_controls());
         controls.extend(self.bus_link_controls());
         controls.extend(self.link_policy_controls());
+        controls.extend(self.usb_interface_controls());
         controls
     }
 
@@ -298,7 +306,11 @@ impl MixerDriver for XAirDriver {
         snapshot: &[openfader_core::destinations::DestinationControl],
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
-        if target == "link_policies" {
+        if target == "device_setup" {
+            self.set_usb_interface_checked(control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        } else if target == "link_policies" {
             self.set_link_policy_checked(control, value, expected, snapshot, context)
                 .await
                 .map(Some)
@@ -342,7 +354,8 @@ impl MixerDriver for XAirDriver {
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         anyhow::ensure!(
-            target != "bus_links"
+            target != "device_setup"
+                && target != "bus_links"
                 && target != "link_policies"
                 && !snapshot.iter().any(|row| matches!(
                     row.surface.as_str(),

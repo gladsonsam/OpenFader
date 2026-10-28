@@ -30,6 +30,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
       control.available &&
       ((control.surface != 'global' &&
               control.surface != 'fx' &&
+              control.surface != 'usb_interface' &&
               !control.targetSolo &&
               !control.talkbackGesture) ||
           control.authority == 'verified') &&
@@ -58,6 +59,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
               control.surface == 'automix_settings' ||
               control.surface == 'bus_link' ||
               control.surface == 'link_policy' ||
+              control.surface == 'usb_interface' ||
               control.surface.startsWith('output_') ||
               control.targetSolo ||
               control.talkbackGesture

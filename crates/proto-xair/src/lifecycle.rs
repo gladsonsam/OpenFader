@@ -89,6 +89,8 @@ impl XAirDriver {
         }
         *self.bus_link_observations.lock().unwrap() = [(0, None); 3];
         *self.link_policy_cache.lock().unwrap() = [(0, None); 4];
+        *self.usb_interface.lock().unwrap() = Default::default();
+        self.usb_interface.lock().unwrap().generation = connection;
         self.bus_link_pending
             .store(0, std::sync::atomic::Ordering::Release);
         self.link_policy_pending
@@ -109,6 +111,7 @@ impl XAirDriver {
         let receive_since = self.receive_since.clone();
         let generation = self.connection_generation.clone();
         let link_cache = self.link_cache.clone();
+        let usb_interface = self.usb_interface.clone();
         let link_policy_cache = self.link_policy_cache.clone();
         let link_policy_pending = self.link_policy_pending.clone();
         let bus_link_cache = self.bus_link_cache.clone();
@@ -125,6 +128,7 @@ impl XAirDriver {
                         if generation.load(std::sync::atomic::Ordering::Acquire) != connection {
                             break;
                         }
+                        super::usb_interface::record(&usb_interface, &msg, received_at, connection);
                         if msg.addr == "/config/linkcfg" || msg.addr.starts_with("/config/linkcfg/")
                         {
                             super::link_policy::record(
@@ -338,6 +342,7 @@ impl XAirDriver {
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
+                        super::usb_interface::invalidate(&usb_interface, connection);
                         eprintln!(
                             "xair: control receive lagged {n}; requesting bounded reconciliation"
                         );
@@ -416,6 +421,7 @@ impl XAirDriver {
         *self.rta.lock().unwrap() = Some(stream);
         self.refresh_bus_links(session.clone(), connection);
         self.refresh_link_policies(session.clone(), connection);
+        self.refresh_usb_interface(session.clone());
         self.start_output_routing(session.clone(), connection);
         self.start_output_geq(session.clone(), connection);
         self.start_automix_settings(session.clone(), connection);
@@ -430,6 +436,7 @@ impl XAirDriver {
     }
 
     pub(super) async fn driver_disconnect(&self) -> anyhow::Result<()> {
+        *self.usb_interface.lock().unwrap() = Default::default();
         self.connected
             .store(false, std::sync::atomic::Ordering::Release);
         *self.link_cache.lock().unwrap() = [None; 8];
