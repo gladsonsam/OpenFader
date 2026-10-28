@@ -234,8 +234,17 @@ class _U4FxPageState extends State<U4FxPage> {
           dense: true,
           title: Text(native?.label ?? knob?.label ?? 'Select a control',
               style: TextStyle(color: palette.text7)),
-          trailing: Text(native?.valueLabel ?? knob?.text ?? '—',
-              style: TextStyle(color: palette.text1, fontSize: 18)),
+          trailing: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(native?.valueLabel ?? knob?.text ?? '—',
+                    style: TextStyle(color: palette.text1, fontSize: 18)),
+                if (native?.valueLabel != null &&
+                    native?.authority == 'accepted')
+                  Text('(unconfirmed)',
+                      style: TextStyle(color: palette.text4, fontSize: 11)),
+              ]),
           onTap: native != null && store.destinationControlIsCurrent(native)
               ? () => showDialog<void>(
                   context: context,

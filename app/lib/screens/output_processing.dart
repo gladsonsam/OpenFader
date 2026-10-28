@@ -139,7 +139,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                             }
                           : null,
                       child: Text(
-                          '${focused.label}: ${_focusPending ? 'Sending…' : _focusDraft != null ? '${_focusDraft!.toStringAsFixed(focused.decimals)} ${focused.unit}' : focused.id == 'comp_ratio' && focused.value == 101 ? '∞:1' : focused.valueLabel ?? 'Unavailable'}${!_focusPending && focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                          '${focused.label}: ${_focusPending ? 'Sending…' : _focusDraft != null ? '${_focusDraft!.toStringAsFixed(focused.decimals)} ${focused.unit}' : focused.id == 'comp_ratio' && focused.value == 101 ? '∞:1' : focused.valueLabel ?? 'Unavailable'}${!_focusPending && _focusDraft == null && focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
                           overflow: TextOverflow.ellipsis),
                     ),
             ),
