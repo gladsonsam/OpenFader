@@ -815,14 +815,9 @@ impl Engine {
                         "snapshot output tap descriptor unavailable for {}",
                         saved.target
                     );
-                    drv.set_routing_control_guarded(
-                        &saved.target,
-                        "tap",
-                        f32::from(saved.tap),
-                        f32::from(row.tap),
-                        &descriptors,
-                        &|| check().is_ok(),
-                    )
+                    drv.set_output_tap_guarded(saved, f32::from(row.tap), &descriptors, &|| {
+                        check().is_ok()
+                    })
                     .await?;
                     check()?;
                 }
@@ -1023,11 +1018,25 @@ fn validate_scene_output_taps(
         "snapshot output tap roster incomplete"
     );
     let planes = drv.routing_planes();
+    let controls = drv.destination_controls();
     let mut seen = std::collections::HashSet::new();
     for row in saved {
         anyhow::ensure!(
-            seen.insert(&row.target) && live_targets.contains(&row.target) && row.tap <= 10,
+            seen.insert(&row.target) && live_targets.contains(&row.target),
             "invalid snapshot output tap target or value"
+        );
+        let tap_controls: Vec<_> = controls
+            .iter()
+            .filter(|c| c.surface == "routing" && c.id == "tap" && c.target == row.target)
+            .collect();
+        anyhow::ensure!(
+            tap_controls.len() == 1
+                && tap_controls[0]
+                    .choices
+                    .iter()
+                    .any(|choice| choice.value == f32::from(row.tap)),
+            "snapshot output tap value is not advertised for {}",
+            row.target
         );
         let destinations: Vec<_> = planes
             .iter()

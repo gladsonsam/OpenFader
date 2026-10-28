@@ -476,6 +476,7 @@ impl XAirDriver {
         expected: f32,
         snapshot: &[DestinationControl],
         check: &(dyn Fn() -> bool + Send + Sync),
+        source: Option<&str>,
     ) -> anyhow::Result<DestinationControl> {
         anyhow::ensure!(
             value.is_finite() && value.fract() == 0.0 && (0.0..=10.0).contains(&value),
@@ -498,6 +499,12 @@ impl XAirDriver {
         anyhow::ensure!(
             before.revision == Some(route.revision),
             "Output source or tap changed"
+        );
+        // Bind the caller's source to this exact route revision. write_output
+        // rechecks this complete route under its lane and against live reads.
+        anyhow::ensure!(
+            source.is_none_or(|s| s == route.source),
+            "Output source changed"
         );
         let t = target(id)?;
         self.write_output(&t, true, value as i32, &route, check)
@@ -569,7 +576,16 @@ impl XAirDriver {
         } else {
             &t.src
         };
-        if let Err(e) = session.send(address, vec![OscType::Int(value)]).await {
+        if let Err(e) = session
+            .send_checked(address, vec![OscType::Int(value)], &|| {
+                anyhow::ensure!(
+                    check() && self.connection_generation.load(Ordering::Acquire) == generation,
+                    "Output session or authority changed before dispatch"
+                );
+                Ok(())
+            })
+            .await
+        {
             anyhow::bail!("Output command delivery uncertain: {e}")
         }
         // Drain earlier socket traffic before requesting independent readback.
