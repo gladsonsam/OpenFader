@@ -350,7 +350,13 @@ impl Engine {
                                                 }
                                             }
                                         }
-                                        self.check_solo_scope(&current, writer)
+                                        if current.is_empty() {
+                                            // Global controls have no strip members;
+                                            // master policy was checked above.
+                                            Ok(())
+                                        } else {
+                                            self.check_solo_scope(&current, writer)
+                                        }
                                     })()
                                     .is_ok()
                             };
