@@ -239,7 +239,25 @@ impl Engine {
             }
             _ => Vec::new(),
         };
+        let output_taps = drv.read_output_taps().await?;
+        anyhow::ensure!(
+            self.connection_gen.load(Ordering::Acquire) == generation
+                && !self.reads_suspended.load(Ordering::Acquire),
+            "desk changed during snapshot capture"
+        );
         let routing = self.capture_routing_on(&driver).await?;
+        anyhow::ensure!(
+            self.connection_gen.load(Ordering::Acquire) == generation
+                && !self.reads_suspended.load(Ordering::Acquire),
+            "desk changed during snapshot capture"
+        );
+        if let Some(values) = &output_taps {
+            validate_scene_output_taps(values, values, &routing, drv.as_ref())?;
+        }
+        let output_taps = output_taps.map(|values| StoredOutputTaps {
+            provider: driver.clone(),
+            values,
+        });
         if driver == "xair" {
             super::routing::xair_scene_input_routes(&routing, &strips, &topo)?;
         }
@@ -325,7 +343,7 @@ impl Engine {
             routing,
             mute_groups,
             automix,
-            output_taps: None,
+            output_taps,
         })
     }
 
@@ -355,6 +373,20 @@ impl Engine {
         check()?;
         let drv = self.drv(&driver);
         let topo = self.driver_topology(&driver);
+        let output_taps = scene
+            .output_taps
+            .as_ref()
+            .filter(|t| t.provider == driver)
+            .filter(|_| scope.is_none_or(|sc| sc.allows_global("routing")));
+        if let Some(taps) = output_taps {
+            check()?;
+            let live = drv
+                .read_output_taps()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("snapshot output taps unavailable"))?;
+            check()?;
+            validate_scene_output_taps(&taps.values, &live, &scene.routing, drv.as_ref())?;
+        }
         let xair_input_routes = if driver == "xair" {
             super::routing::xair_scene_input_routes(&scene.routing, &scene.strips, &topo)?
         } else {
@@ -741,6 +773,77 @@ impl Engine {
                 .cloned()
                 .collect();
             self.recall_routing(&remaining, writer, out, &check).await?;
+            check()?;
+            if let Some(taps) = output_taps {
+                let live = drv.read_output_taps().await?.ok_or_else(|| {
+                    anyhow::anyhow!("snapshot output taps unavailable after routing recall")
+                })?;
+                check()?;
+                validate_scene_output_taps(&taps.values, &live, &scene.routing, drv.as_ref())?;
+                for saved in &taps.values {
+                    let current = live.iter().find(|v| v.target == saved.target).unwrap();
+                    anyhow::ensure!(
+                        current.source == saved.source,
+                        "snapshot output source changed for {}; mixer may be partly changed",
+                        saved.target
+                    );
+                }
+                for saved in &taps.values {
+                    check()?;
+                    let current = drv.read_output_taps().await?.ok_or_else(|| {
+                        anyhow::anyhow!("snapshot output tap readback unavailable")
+                    })?;
+                    check()?;
+                    validate_scene_output_taps(
+                        &taps.values,
+                        &current,
+                        &scene.routing,
+                        drv.as_ref(),
+                    )?;
+                    let row = current.iter().find(|v| v.target == saved.target).unwrap();
+                    anyhow::ensure!(
+                        row.source == saved.source,
+                        "snapshot output source changed for {}; mixer may be partly changed",
+                        saved.target
+                    );
+                    if row.tap == saved.tap {
+                        continue;
+                    }
+                    let descriptors: Vec<_> = drv
+                        .destination_controls()
+                        .into_iter()
+                        .filter(|d| {
+                            d.surface == "routing" && d.id == "tap" && d.target == saved.target
+                        })
+                        .collect();
+                    anyhow::ensure!(
+                        descriptors.len() == 1
+                            && descriptors[0]
+                                .current
+                                .as_ref()
+                                .is_some_and(|v| v.verified && v.value == f32::from(row.tap)),
+                        "snapshot output tap descriptor unavailable for {}",
+                        saved.target
+                    );
+                    drv.set_routing_control_guarded(
+                        &saved.target,
+                        "tap",
+                        f32::from(saved.tap),
+                        f32::from(row.tap),
+                        &descriptors,
+                        &|| check().is_ok(),
+                    )
+                    .await?;
+                    check()?;
+                    let confirmed = drv.read_output_taps().await?.ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "snapshot output tap readback unavailable; mixer may be partly changed"
+                        )
+                    })?;
+                    check()?;
+                    anyhow::ensure!(confirmed.iter().any(|v| v == saved), "snapshot output tap recall unconfirmed for {}; mixer may be partly changed", saved.target);
+                }
+            }
         }
         if let Some(groups) = scene
             .mute_groups
@@ -903,6 +1006,57 @@ impl Engine {
         }
         Ok(())
     }
+}
+
+fn validate_scene_output_taps(
+    saved: &[openfader_core::routing::OutputTapState],
+    live: &[openfader_core::routing::OutputTapState],
+    routes: &[StoredRoute],
+    drv: &dyn DynDriver,
+) -> anyhow::Result<()> {
+    let mut live_targets = std::collections::HashSet::new();
+    for row in live {
+        anyhow::ensure!(
+            live_targets.insert(&row.target),
+            "duplicate live output tap target"
+        );
+    }
+    anyhow::ensure!(
+        !live.is_empty() && saved.len() == live.len(),
+        "snapshot output tap roster incomplete"
+    );
+    let planes = drv.routing_planes();
+    let mut seen = std::collections::HashSet::new();
+    for row in saved {
+        anyhow::ensure!(
+            seen.insert(&row.target) && live_targets.contains(&row.target) && row.tap <= 10,
+            "invalid snapshot output tap target or value"
+        );
+        let destinations: Vec<_> = planes
+            .iter()
+            .flat_map(|p| &p.destinations)
+            .filter(|d| d.output && d.id == row.target)
+            .collect();
+        let matching: Vec<_> = routes.iter().filter(|r| r.target == row.target).collect();
+        anyhow::ensure!(
+            destinations.len() == 1 && matching.len() == 1,
+            "snapshot output route missing or duplicated for {}",
+            row.target
+        );
+        let route = matching[0];
+        anyhow::ensure!(
+            destinations[0]
+                .source_groups
+                .iter()
+                .any(|g| g.key == route.group
+                    && route.index > 0
+                    && usize::from(route.index) <= g.count)
+                && row.source == format!("{} {}", route.group, route.index),
+            "snapshot output source invalid for {}",
+            row.target
+        );
+    }
+    Ok(())
 }
 
 fn validate_mute_group_snapshot(
