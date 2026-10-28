@@ -42,7 +42,8 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
           row.surface == 'bus_link' ||
           row.surface == 'link_policy_state' ||
           row.surface == 'link_policy' ||
-          row.surface == 'usb_interface'));
+          row.surface == 'usb_interface' ||
+          row.surface == 'midi_setup'));
   @override
   int get controlAccessEpoch => app.controlAccessEpoch;
   @override

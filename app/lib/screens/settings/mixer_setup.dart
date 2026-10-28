@@ -22,6 +22,7 @@ class _MixerSetupDetail extends StatelessWidget {
               'bus_link' || 'bus_link_state' => 'Bus links',
               'link_policy_state' || 'link_policy' => 'Link preferences',
               'usb_interface' => 'Audio / USB',
+              'midi_setup' => 'MIDI',
               _ => 'Automix',
             },
             children: [
