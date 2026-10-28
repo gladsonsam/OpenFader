@@ -501,28 +501,37 @@ impl Engine {
         // targets, ramp, snap, target mutes); params/FX/routing/main follow.
         let want_fader = scope.is_none_or(|sc| sc.allows_param("fader"));
         let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
+        let fade = ScopedSceneFade {
+            recall_mutes: want_mute,
+            driver: drv.clone(),
+            check: &check,
+            checked_buses: topo
+                .iter()
+                .filter(|family| driver == "xair" && family.kind == openfader_core::StripKind::Bus)
+                .flat_map(|family| family.first..family.first + family.count)
+                .map(|index| index as u16)
+                .collect(),
+            affected: &late_affected_preamp,
+        };
         if want_fader && !strips.is_empty() {
             let targets: Vec<_> = strips
                 .iter()
                 .map(|(s, r)| (StripId(*r), s.fader, s.mute))
                 .collect();
-            let fade = ScopedSceneFade {
-                recall_mutes: want_mute,
-                driver: drv.clone(),
-                check: &check,
-            };
             openfader_core::show::fade_strips(&fade, &targets, fade_ms).await?;
         } else if want_mute {
             for (s, r) in &strips {
                 check()?;
-                drv.set_mute(StripId(*r), s.mute).await?;
+                fade.write(StripId(*r), "mute", ParamValue::Bool(s.mute))
+                    .await?;
             }
         }
         for (s, r) in &strips {
             let want_mute = scope.is_none_or(|sc| sc.allows_param("mute"));
             if want_mute && s.mute {
                 check()?;
-                drv.set_mute(StripId(*r), true).await?;
+                fade.write(StripId(*r), "mute", ParamValue::Bool(true))
+                    .await?;
             }
             let key = openfader_core::strip_key_for_index(&topo, *r as usize);
             if want_fader {
@@ -955,12 +964,37 @@ struct ScopedSceneFade<'a> {
     recall_mutes: bool,
     driver: Arc<dyn DynDriver>,
     check: &'a (dyn Fn() -> anyhow::Result<()> + Send + Sync),
+    checked_buses: std::collections::BTreeSet<u16>,
+    affected: &'a std::sync::Mutex<std::collections::BTreeSet<u16>>,
+}
+impl ScopedSceneFade<'_> {
+    async fn write(&self, strip: StripId, field: &str, value: ParamValue) -> anyhow::Result<()> {
+        (self.check)()?;
+        if self.checked_buses.contains(&strip.0) {
+            return self
+                .driver
+                .set_param_guarded_checked(strip, field, value, &BTreeMap::new(), &|members| {
+                    (self.check)()?;
+                    self.affected
+                        .lock()
+                        .unwrap()
+                        .extend(members.iter().map(|member| member.0));
+                    Ok(())
+                })
+                .await;
+        }
+        match value {
+            ParamValue::Float(value) => self.driver.set_fader(strip, value).await,
+            ParamValue::Bool(muted) => self.driver.set_mute(strip, muted).await,
+            _ => anyhow::bail!("unsupported fade control"),
+        }
+    }
 }
 impl openfader_core::show::FadeDriver for ScopedSceneFade<'_> {
     async fn fade_set_mute(&self, strip: StripId, muted: bool) -> anyhow::Result<()> {
         (self.check)()?;
         if self.recall_mutes {
-            self.driver.set_mute(strip, muted).await
+            self.write(strip, "mute", ParamValue::Bool(muted)).await
         } else {
             Ok(())
         }
@@ -971,6 +1005,6 @@ impl openfader_core::show::FadeDriver for ScopedSceneFade<'_> {
     }
     async fn fade_set_fader(&self, strip: StripId, value: f32) -> anyhow::Result<()> {
         (self.check)()?;
-        self.driver.set_fader(strip, value).await
+        self.write(strip, "fader", ParamValue::Float(value)).await
     }
 }

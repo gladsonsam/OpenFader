@@ -240,31 +240,9 @@ impl XAirDriver {
         &self,
         strip: StripId,
     ) -> anyhow::Result<Option<Vec<StripId>>> {
-        let topology = self.topology();
-        let Some(bus) = (1..=6u16).find(|n| {
-            openfader_core::strip_index_for_key(&topology, &openfader_core::strip_key("bus", *n))
-                == Some(usize::from(strip.0))
-        }) else {
+        let Some((pair, first)) = self.bus_pair(strip)? else {
             return Ok(None);
         };
-        let pair = usize::from((bus - 1) / 2);
-        let first = (pair * 2 + 1) as u16;
-        let members: Vec<StripId> = (first..=first + 1)
-            .map(|n| {
-                let key = openfader_core::strip_key("bus", n);
-                let index = openfader_core::strip_index_for_key(&topology, &key)
-                    .ok_or_else(|| anyhow::anyhow!("missing XR18 bus strip {key}"))?;
-                anyhow::ensure!(
-                    index < self.strip_count() && index <= u16::MAX as usize,
-                    "invalid XR18 bus strip {key}"
-                );
-                anyhow::ensure!(
-                    strip_root(index as u16)?.1 == format!("/bus/{n}"),
-                    "invalid XR18 bus mapping {key}"
-                );
-                Ok(StripId(index as u16))
-            })
-            .collect::<anyhow::Result<_>>()?;
         let (revision, fresh) = {
             let cache = self.bus_link_cache.lock().unwrap();
             (
@@ -298,11 +276,51 @@ impl XAirDriver {
                 }
             }
         }
+        self.current_bus_control_members(strip)
+    }
+
+    /// Resolve the cached bus relationship without network I/O. Unknown or
+    /// expired observations protect both members. Independent desk edits can
+    /// still race an OSC send; this is not a desk-side atomic transaction.
+    pub fn current_bus_control_members(
+        &self,
+        strip: StripId,
+    ) -> anyhow::Result<Option<Vec<StripId>>> {
+        let Some((pair, first)) = self.bus_pair(strip)? else {
+            return Ok(None);
+        };
+        let topology = self.topology();
+        let members: Vec<StripId> = (first..=first + 1)
+            .map(|n| {
+                let key = openfader_core::strip_key("bus", n);
+                let index = openfader_core::strip_index_for_key(&topology, &key)
+                    .ok_or_else(|| anyhow::anyhow!("missing XR18 bus strip {key}"))?;
+                anyhow::ensure!(
+                    index < self.strip_count()
+                        && index <= u16::MAX as usize
+                        && strip_root(index as u16)?.1 == format!("/bus/{n}"),
+                    "invalid XR18 bus mapping {key}"
+                );
+                Ok(StripId(index as u16))
+            })
+            .collect::<anyhow::Result<_>>()?;
         let unlinked = self.bus_link_cache.lock().unwrap()[pair]
             .1
             .is_some_and(|(at, linked)| {
                 !linked && at.elapsed() <= std::time::Duration::from_secs(5)
             });
         Ok(Some(if unlinked { vec![strip] } else { members }))
+    }
+
+    fn bus_pair(&self, strip: StripId) -> anyhow::Result<Option<(usize, u16)>> {
+        let topology = self.topology();
+        let Some(bus) = (1..=6u16).find(|n| {
+            openfader_core::strip_index_for_key(&topology, &openfader_core::strip_key("bus", *n))
+                == Some(usize::from(strip.0))
+        }) else {
+            return Ok(None);
+        };
+        let pair = usize::from((bus - 1) / 2);
+        Ok(Some((pair, (pair * 2 + 1) as u16)))
     }
 }
