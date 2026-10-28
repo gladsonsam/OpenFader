@@ -615,12 +615,19 @@ class _GroupMembershipState extends State<_GroupMembership> {
           ];
           final choices = <String, String>{};
           for (final (_, target) in targets) {
-            for (final choice in store.assignmentsForChannel(target)) {
+            for (final choice
+                in store.assignmentsForChannel(target, includeUnknown: true)) {
               if (RegExp(r'^dca[0-9]+_assign$').hasMatch(choice.id) ||
                   choice.id.startsWith('mute_group:')) {
                 choices.putIfAbsent(choice.id, () => choice.label);
               }
             }
+          }
+          for (var group = 0;
+              group < widget.controller.muteGroupCount;
+              group++) {
+            choices.putIfAbsent(
+                'mute_group:$group', () => 'Mute group ${group + 1}');
           }
           final id = choices.containsKey(selected)
               ? selected
@@ -634,7 +641,9 @@ class _GroupMembershipState extends State<_GroupMembership> {
                     width: 380,
                     child: Column(mainAxisSize: MainAxisSize.min, children: [
                       if (id == null)
-                        const Text('No group memberships are available.')
+                        Text(!store.engine.capsReady || targets.isEmpty
+                            ? 'Loading group memberships…'
+                            : 'No group assignments are advertised for these strips.')
                       else ...[
                         DropdownButton<String>(
                             value: id,
@@ -655,21 +664,32 @@ class _GroupMembershipState extends State<_GroupMembership> {
                                 child: Column(children: [
                           for (final (name, target) in targets)
                             if (store
-                                .assignmentsForChannel(target)
-                                .any((c) => c.id == id))
+                                    .assignmentsForChannel(target,
+                                        includeUnknown: true)
+                                    .any((c) => c.id == id) ||
+                                id.startsWith('mute_group:'))
                               Builder(builder: (context) {
                                 final current =
                                     store.assignmentForChannel(target, id);
                                 final error =
                                     store.assignmentEditError(target, id);
+                                if (current == null) {
+                                  return ListTile(
+                                    title:
+                                        Text(name.isEmpty ? target.key : name),
+                                    subtitle: Text(
+                                        '${target.key}\nMembership unavailable or still loading.'),
+                                    trailing: const Text('Unavailable'),
+                                  );
+                                }
                                 return SwitchListTile.adaptive(
                                     title:
                                         Text(name.isEmpty ? target.key : name),
-                                    subtitle: Text(error ?? target.key),
+                                    subtitle: Text(error == null
+                                        ? target.key
+                                        : '${target.key}\n$error'),
                                     value: current == true,
-                                    onChanged: pending ||
-                                            current == null ||
-                                            error != null
+                                    onChanged: pending || error != null
                                         ? null
                                         : (value) async {
                                             setState(() {
