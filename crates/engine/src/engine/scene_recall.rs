@@ -325,6 +325,7 @@ impl Engine {
             routing,
             mute_groups,
             automix,
+            output_taps: None,
         })
     }
 

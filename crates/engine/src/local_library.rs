@@ -4,8 +4,8 @@
 //!
 //! Single strict transaction (no silent repair):
 //!
-//! - The document is `{version: 2|3|4, scenes: [...], shows: [...]}`. Version 3
-//!   adds provider-qualified FX insert and mute-group state; version 4 adds global automix state. Documents without
+//! - The document is `{version: 2|3|4|5, scenes: [...], shows: [...]}`. Version 3
+//!   adds provider-qualified FX insert and mute-group state; version 4 adds global automix state; version 5 adds output taps. Documents without
 //!   those fields remain v2 so older builds can still read them. Version 1
 //!   (`{version: 1, scenes: [...]}`) is the legacy numbered-only shape: it
 //!   still loads, but it is never rewritten on load — it migrates to v2
@@ -49,13 +49,14 @@ use serde_json::Value;
 
 use super::engine::{
     StoredAutomix, StoredFx, StoredFxInsert, StoredMuteGroupMembership, StoredMuteGroups,
-    StoredRoute, StoredScene, StoredStrip, SCENE_MAX, SCENE_MIN,
+    StoredOutputTaps, StoredRoute, StoredScene, StoredStrip, SCENE_MAX, SCENE_MIN,
 };
 
 /// Combined library file name under the engine data dir.
 pub const LIBRARY_FILE_NAME: &str = "scenes.json";
-/// Current combined document version (`{version: 3, scenes, shows}`).
-pub const LIBRARY_VERSION: u64 = 4;
+/// Current combined document version.
+pub const LIBRARY_VERSION: u64 = 5;
+const LIBRARY_VERSION_V4: u64 = 4;
 const LIBRARY_VERSION_V3: u64 = 3;
 const LIBRARY_VERSION_V2: u64 = 2;
 /// Legacy numbered-only document version (`{version: 1, scenes}`).
@@ -296,6 +297,23 @@ struct NumberedSceneDoc {
     mute_groups: Option<MuteGroupsDoc>,
     #[serde(default)]
     automix: Option<AutomixDoc>,
+    #[serde(default)]
+    output_taps: Option<OutputTapsDoc>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutputTapsDoc {
+    provider: String,
+    values: Vec<OutputTapDoc>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OutputTapDoc {
+    target: String,
+    source: String,
+    tap: u8,
 }
 
 #[derive(Debug, Deserialize)]
@@ -413,10 +431,14 @@ fn parse_library_doc(doc: &Value) -> Result<ParsedLibrary, String> {
     let version = obj
         .get("version")
         .and_then(Value::as_u64)
-        .ok_or_else(|| "document needs integer \"version\" 1..=3".to_string())?;
+        .ok_or_else(|| "document needs integer \"version\" 1..=5".to_string())?;
     if !matches!(
         version,
-        LIBRARY_VERSION_V1 | LIBRARY_VERSION_V2 | LIBRARY_VERSION_V3 | LIBRARY_VERSION
+        LIBRARY_VERSION_V1
+            | LIBRARY_VERSION_V2
+            | LIBRARY_VERSION_V3
+            | LIBRARY_VERSION_V4
+            | LIBRARY_VERSION
     ) {
         return Err(format!(
             "unsupported library version {version} (engine reads v1..v{LIBRARY_VERSION})"
@@ -508,8 +530,32 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
                 doc.number
             ));
         }
-        if version < LIBRARY_VERSION && doc.automix.is_some() {
+        if version < LIBRARY_VERSION_V4 && doc.automix.is_some() {
             return Err(format!("scenes[{i}]: automix requires library version 4"));
+        }
+        if version < LIBRARY_VERSION
+            && raw
+                .as_object()
+                .is_some_and(|s| s.contains_key("output_taps"))
+        {
+            return Err(format!(
+                "scenes[{i}]: output taps require library version 5"
+            ));
+        }
+        let output_taps = doc.output_taps.map(|t| StoredOutputTaps {
+            provider: t.provider,
+            values: t
+                .values
+                .into_iter()
+                .map(|v| openfader_core::routing::OutputTapState {
+                    target: v.target,
+                    source: v.source,
+                    tap: v.tap,
+                })
+                .collect(),
+        });
+        if let Some(t) = &output_taps {
+            validate_output_taps(t, &format!("scenes[{i}].output_taps"))?;
         }
         let automix = doc.automix.as_ref().map(|a| StoredAutomix {
             provider: a.provider.clone(),
@@ -665,6 +711,7 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
                 routing,
                 mute_groups,
                 automix,
+                output_taps,
             },
         );
     }
@@ -785,6 +832,26 @@ fn check_key(key: Option<&str>, what: &str) -> Result<(), String> {
                 "{what} too long ({} > {MAX_PARAM_ID_LEN})",
                 k.len()
             ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_output_taps(taps: &StoredOutputTaps, what: &str) -> Result<(), String> {
+    check_name(&taps.provider, &format!("{what}.provider"))?;
+    check_name_len(&taps.provider, MAX_FX_TYPE_LEN, &format!("{what}.provider"))?;
+    if taps.values.len() > MAX_ROUTES_PER_SCENE {
+        return Err(format!("{what}: too many values"));
+    }
+    let mut targets = std::collections::HashSet::new();
+    for value in &taps.values {
+        check_name(&value.target, &format!("{what}.target"))?;
+        check_name(&value.source, &format!("{what}.source"))?;
+        if !targets.insert(&value.target) {
+            return Err(format!("{what}: duplicate target"));
+        }
+        if taps.provider == "xair" && value.tap > 10 {
+            return Err(format!("{what}: tap out of range"));
         }
     }
     Ok(())
@@ -968,6 +1035,9 @@ pub fn validate_candidate(
             return Err(format!("{what}: key/number mismatch"));
         }
         check_name(&s.name, &format!("{what}.name"))?;
+        if let Some(t) = &s.output_taps {
+            validate_output_taps(t, &format!("{what}.output_taps"))?;
+        }
         if let Some(a) = &s.automix {
             check_name(&a.provider, &format!("{what}.automix.provider"))?;
         }
@@ -1131,13 +1201,15 @@ fn param_value_json(pv: &ParamValue) -> Value {
     }
 }
 
-/// Render v4 for automix, v3 for FX insert or mute-group state, otherwise retain v2.
+/// Render v5 for output taps, v4 for automix, v3 for FX insert or mute-group state, otherwise retain v2.
 /// Numbered slots and parameter keys are sorted for stable bytes.
 pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -> Value {
     let mut slots: Vec<&StoredScene> = numbered.values().collect();
     slots.sort_by_key(|s| s.number);
-    let version = if slots.iter().any(|s| s.automix.is_some()) {
+    let version = if slots.iter().any(|s| s.output_taps.is_some()) {
         LIBRARY_VERSION
+    } else if slots.iter().any(|s| s.automix.is_some()) {
+        LIBRARY_VERSION_V4
     } else if slots
         .iter()
         .any(|s| s.mute_groups.is_some() || s.fx.iter().any(|f| f.insert.is_some()))
@@ -1186,6 +1258,7 @@ pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -
                     row
                 }).collect::<Vec<_>>(),
             });
+            if let Some(t) = &s.output_taps { scene["output_taps"] = serde_json::json!({"provider": t.provider, "values": t.values.iter().map(|v| serde_json::json!({"target": v.target, "source": v.source, "tap": v.tap})).collect::<Vec<_>>()}); }
             if let Some(a) = &s.automix { scene["automix"] = serde_json::json!({"provider": a.provider, "values": a.values}); }
             if let Some(groups) = &s.mute_groups {
                 scene["mute_groups"] = serde_json::json!({

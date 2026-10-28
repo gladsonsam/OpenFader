@@ -78,6 +78,7 @@ impl Engine {
                     routing: Vec::new(),
                     mute_groups: None,
                     automix: None,
+                    output_taps: None,
                 };
                 let overrode = self
                     .recall_full(&stored, fade_ms, None, writer, out)

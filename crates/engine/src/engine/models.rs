@@ -80,6 +80,13 @@ pub struct StoredScene {
     /// Optional provider-owned mute group state; old scenes omit it.
     pub mute_groups: Option<StoredMuteGroups>,
     pub automix: Option<StoredAutomix>,
+    pub output_taps: Option<StoredOutputTaps>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredOutputTaps {
+    pub provider: String,
+    pub values: Vec<openfader_core::routing::OutputTapState>,
 }
 
 #[derive(Clone, Debug)]
