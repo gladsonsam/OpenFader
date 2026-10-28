@@ -219,14 +219,14 @@ impl XAirDriver {
     }
     pub(super) fn geq_controls(&self) -> Vec<DestinationControl> {
         let generation = self.connection_generation.load(Ordering::Acquire);
+        if !self.connected.load(Ordering::Acquire) {
+            return Vec::new();
+        }
         let cache = self.output_geq.lock().unwrap();
-        let empty = Cache::default();
-        let cache = if self.connected.load(Ordering::Acquire) && cache.generation == generation {
-            &*cache
-        } else {
-            &empty
-        };
-        Self::geq_controls_from_cache(cache, generation)
+        if cache.generation != generation {
+            return Vec::new();
+        }
+        Self::geq_controls_from_cache(&cache, generation)
     }
     fn geq_controls_from_cache(cache: &Cache, generation: u64) -> Vec<DestinationControl> {
         let mut controls = Vec::new();
