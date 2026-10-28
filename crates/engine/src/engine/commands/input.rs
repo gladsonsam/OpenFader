@@ -3,6 +3,53 @@
 use super::*;
 
 impl Engine {
+    async fn checked_bus_strip_write(
+        &self,
+        driver: &str,
+        epoch: u64,
+        ch: u16,
+        field: &str,
+        value: ParamValue,
+        writer: &str,
+    ) -> anyhow::Result<bool> {
+        if driver != "xair"
+            || !self.driver_topology(driver).iter().any(|family| {
+                family.kind == openfader_core::StripKind::Bus
+                    && usize::from(ch) >= family.first
+                    && usize::from(ch) < family.first + family.count
+            })
+        {
+            return Ok(false);
+        }
+        let check = |members: &[StripId]| {
+            anyhow::ensure!(
+                driver == self.active_driver()
+                    && epoch == self.connection_gen.load(Ordering::Acquire)
+                    && !self.reads_suspended.load(Ordering::Acquire),
+                "mixer session changed"
+            );
+            let policy = self.policy_of(writer);
+            for member in members {
+                match (&value, field) {
+                    (ParamValue::Float(v), "fader") => policy.allow_fader(*member, *v)?,
+                    (_, "mute") => policy.allow_mute(*member)?,
+                    _ => anyhow::bail!("unsupported bus strip write"),
+                }
+                anyhow::ensure!(
+                    self.lock_holder(member.0)
+                        .is_none_or(|holder| holder == writer),
+                    "strip {} locked",
+                    member.0
+                );
+            }
+            Ok(())
+        };
+        self.drv(driver)
+            .set_param_guarded_checked(StripId(ch), field, value.clone(), &BTreeMap::new(), &check)
+            .await?;
+        Ok(true)
+    }
+
     /// Resolve only canonical send fields through the provider's explicit destination.
     pub(in crate::engine) async fn send_bus_members(
         &self,
@@ -66,6 +113,8 @@ impl Engine {
                 .await,
             )),
             Cmd::Fader { ch, value, key } => {
+                let driver = self.active_driver();
+                let epoch = self.connection_gen.load(Ordering::Acquire);
                 let ch = self.resolve_strip(ch, key.as_deref())?;
                 policy.allow_fader(StripId(ch), value)?;
                 if let Some(holder) = self.lock_holder(ch) {
@@ -86,7 +135,19 @@ impl Engine {
                     }
                 }
                 let from = self.offline_from(StripId(ch), "fader").await;
-                self.drv_set_fader(StripId(ch), value).await?;
+                if !self
+                    .checked_bus_strip_write(
+                        &driver,
+                        epoch,
+                        ch,
+                        "fader",
+                        ParamValue::Float(value),
+                        writer,
+                    )
+                    .await?
+                {
+                    self.drv_set_fader(StripId(ch), value).await?;
+                }
                 if let Some(from) = from {
                     self.offline_note(ch, "fader", from, json!(value)).await;
                 }
@@ -120,6 +181,8 @@ impl Engine {
                 Ok(None)
             }
             Cmd::Mute { ch, muted, key } => {
+                let driver = self.active_driver();
+                let epoch = self.connection_gen.load(Ordering::Acquire);
                 let ch = self.resolve_strip(ch, key.as_deref())?;
                 policy.allow_mute(StripId(ch))?;
                 if let Some(holder) = self.lock_holder(ch) {
@@ -140,7 +203,19 @@ impl Engine {
                     }
                 }
                 let from = self.offline_from(StripId(ch), "mute").await;
-                self.drv_set_mute(StripId(ch), muted).await?;
+                if !self
+                    .checked_bus_strip_write(
+                        &driver,
+                        epoch,
+                        ch,
+                        "mute",
+                        ParamValue::Bool(muted),
+                        writer,
+                    )
+                    .await?
+                {
+                    self.drv_set_mute(StripId(ch), muted).await?;
+                }
                 if let Some(from) = from {
                     self.offline_note(ch, "mute", from, json!(muted)).await;
                 }
@@ -281,6 +356,9 @@ impl Engine {
                     ("name", _) => {
                         policy.allow_rename(StripId(ch))?;
                     }
+                    (field, _) if field == "lr_assign" || field.starts_with("dca") => {
+                        policy.allow_assign(StripId(ch))?;
+                    }
                     _ => {
                         policy.allow_strip(StripId(ch))?;
                     }
@@ -355,6 +433,9 @@ impl Engine {
                         ("fader", ParamValue::Float(v)) => policy.allow_fader(member, *v)?,
                         ("mute", _) => policy.allow_mute(member)?,
                         ("name", _) => policy.allow_rename(member)?,
+                        (field, _) if field == "lr_assign" || field.starts_with("dca") => {
+                            policy.allow_assign(member)?
+                        }
                         _ => policy.allow_strip(member)?,
                     }
                     if let Some(holder) = self.lock_holder(member.0) {
@@ -380,13 +461,17 @@ impl Engine {
                         }
                     }
                 }
-                let is_xair_bus = driver == "xair" && self.driver_topology(&driver).iter().any(|family| {
-                    family.kind == openfader_core::StripKind::Bus
-                        && usize::from(ch) >= family.first
-                        && usize::from(ch) < family.first + family.count
-                });
+                let is_xair_bus = driver == "xair"
+                    && self.driver_topology(&driver).iter().any(|family| {
+                        family.kind == openfader_core::StripKind::Bus
+                            && usize::from(ch) >= family.first
+                            && usize::from(ch) < family.first + family.count
+                    });
                 let from = self.offline_from(StripId(ch), &field).await;
-                if expected.is_some() || (driver == "xair" && !send_members.is_empty()) || is_xair_bus {
+                if expected.is_some()
+                    || (driver == "xair" && !send_members.is_empty())
+                    || is_xair_bus
+                {
                     let empty = BTreeMap::new();
                     let expected = expected.as_ref().unwrap_or(&empty);
                     let drv = self.drv(&driver);
@@ -400,9 +485,14 @@ impl Engine {
                         let current_policy = self.policy_of(writer);
                         for member in members {
                             match (field.as_str(), &pv) {
-                                ("fader", ParamValue::Float(v)) => current_policy.allow_fader(*member, *v)?,
+                                ("fader", ParamValue::Float(v)) => {
+                                    current_policy.allow_fader(*member, *v)?
+                                }
                                 ("mute", _) => current_policy.allow_mute(*member)?,
                                 ("name", _) => current_policy.allow_rename(*member)?,
+                                (field, _) if field == "lr_assign" || field.starts_with("dca") => {
+                                    current_policy.allow_assign(*member)?
+                                }
                                 _ => current_policy.allow_strip(*member)?,
                             }
                             if let Some(holder) = self.lock_holder(member.0) {
@@ -418,10 +508,17 @@ impl Engine {
                     };
                     if driver == "xair"
                         && (matches!(field.as_str(), "gain" | "phantom")
-                            || !send_members.is_empty() || is_xair_bus)
+                            || !send_members.is_empty()
+                            || is_xair_bus)
                     {
-                        drv.set_param_guarded_checked(StripId(ch), &field, pv.clone(), expected, &check)
-                            .await?;
+                        drv.set_param_guarded_checked(
+                            StripId(ch),
+                            &field,
+                            pv.clone(),
+                            expected,
+                            &check,
+                        )
+                        .await?;
                     } else {
                         drv.set_param_guarded(StripId(ch), &field, pv, expected)
                             .await?;

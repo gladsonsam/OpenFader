@@ -602,12 +602,16 @@ impl Engine {
                 let send_members = self.send_bus_members(&driver, id).await?;
                 check()?;
                 let bus_send = !send_members.is_empty();
-                let bus_param = topo.iter().any(|family| family.kind == openfader_core::StripKind::Bus
-                    && usize::from(*r) >= family.first && usize::from(*r) < family.first + family.count);
+                let bus_param = topo.iter().any(|family| {
+                    family.kind == openfader_core::StripKind::Bus
+                        && usize::from(*r) >= family.first
+                        && usize::from(*r) < family.first + family.count
+                });
                 affected_bus.extend(send_members.into_iter().map(|m| m.0));
                 let rr = if driver == "xair"
                     && (matches!(id.as_str(), "gain" | "phantom") && !expected.is_empty()
-                        || bus_send || bus_param)
+                        || bus_send
+                        || bus_param)
                 {
                     drv.set_param_guarded_checked(StripId(*r), id, pv, &expected, &|members| {
                         check()?;
