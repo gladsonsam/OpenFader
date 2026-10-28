@@ -56,6 +56,7 @@ use rosc::OscType;
 mod catalogue;
 mod definitions;
 mod delay_modulation;
+mod display;
 mod dynamics_equalization;
 mod enhancement;
 mod reverb;
@@ -66,6 +67,7 @@ pub use catalogue::{fx_effect_full_name, fx_effect_name, fx_param_count, fx_para
 use definitions::*;
 pub use definitions::{FxParamDef, GEQ_BANDS};
 use delay_modulation::*;
+pub use display::{fx_position_def, FxPositionDef};
 use dynamics_equalization::*;
 use enhancement::*;
 use reverb::*;

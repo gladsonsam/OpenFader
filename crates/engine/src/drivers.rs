@@ -1758,56 +1758,19 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                         } else { 0.0 },
                         label: (*label).to_string(),
                     }).collect();
-                // The provider documents endpoints but not the transfer curve.
-                // Keep unknown continuous curves normalized rather than inventing one.
-                let deesser = matches!(index, 31 | 32) && par <= 4;
-                let hall = if index == 0 {
-                    match par {
-                        1 => Some((0.0, 200.0, 100, false, 0)),
-                        2 => Some((0.2, 5.0, 50, true, 2)),
-                        3 => Some((2.0, 100.0, 49, false, 0)),
-                        4 => Some((1000.0, 20000.0, 24, true, 0)),
-                        5 => Some((1.0, 30.0, 29, false, 0)),
-                        6 => Some((-12.0, 12.0, 48, false, 1)),
-                        7 => Some((10.0, 500.0, 50, true, 0)),
-                        8 => Some((200.0, 20000.0, 50, true, 0)),
-                        9 => Some((0.5, 2.0, 50, true, 2)),
-                        10 => Some((0.0, 50.0, 50, false, 0)),
-                        11 => Some((0.0, 250.0, 50, false, 0)),
-                        12 => Some((0.0, 100.0, 20, false, 0)),
-                        _ => None,
-                    }
-                } else { None };
-                let plat = if index == 5 {
-                    match par {
-                        1 => Some((0.0, 200.0, 100, false, 0)),
-                        2 => Some((0.5, 10.0, 50, true, 2)),
-                        3 => Some((2.0, 100.0, 49, false, 0)),
-                        4 => Some((1000.0, 20000.0, 24, true, 0)),
-                        5 => Some((1.0, 30.0, 29, false, 0)),
-                        6 => Some((-12.0, 12.0, 48, false, 1)),
-                        7 => Some((10.0, 500.0, 50, true, 0)),
-                        8 => Some((200.0, 20000.0, 50, true, 0)),
-                        9 => Some((0.5, 2.0, 50, true, 2)),
-                        10 => Some((10.0, 500.0, 50, true, 2)),
-                        11 => Some((1.0, 50.0, 49, false, 0)),
-                        12 => Some((0.0, 100.0, 20, false, 0)),
-                        _ => None,
-                    }
-                } else { None };
-                let position = hall.or(plat).or(if deesser { Some((0.0, 50.0, 50, false, 1)) } else { None });
+                let position = xfx::fx_position_def(index, par);
                 params.push(crate::protocol::FxParamCaps {
                     choices,
                     position: position.map(|p| crate::protocol::FxPositionCaps {
-                        steps: p.2,
-                        curve: if p.3 { crate::protocol::FxPositionCurve::Log } else { crate::protocol::FxPositionCurve::Linear },
-                        precision: p.4,
+                        steps: p.steps,
+                        curve: if p.logarithmic { crate::protocol::FxPositionCurve::Log } else { crate::protocol::FxPositionCurve::Linear },
+                        precision: p.precision,
                     }),
                     id: format!("par{par:02}"),
                     label,
-                    unit: if deesser { "" } else { def.unit }.to_string(),
-                    min: position.map_or(0.0, |h| h.0),
-                    max: position.map_or(1.0, |h| h.1),
+                    unit: position.and_then(|p| p.unit).unwrap_or(def.unit).to_string(),
+                    min: position.map_or(0.0, |h| h.min),
+                    max: position.map_or(1.0, |h| h.max),
                     default: 0.5,
                     scale: if position.is_some() { "xair_positions" } else { "normalized" }.to_string(),
                 });
