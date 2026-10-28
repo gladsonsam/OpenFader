@@ -476,14 +476,20 @@ pub(super) fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static st
     }
 }
 
-/// Decode return solo updates only for the XR18; ordinary decoding remains input-only.
-pub(super) fn return_solos(msg: &OscMessage) -> Vec<(u16, &'static str, ParamValue)> {
+/// Decode mapped return and bus solo updates only for XR18; ordinary decoding is input-only.
+pub(super) fn non_input_solos(msg: &OscMessage) -> Vec<(u16, &'static str, ParamValue)> {
     let addr = msg.addr.trim_start_matches('/');
     let indices: Vec<usize> = if addr == "-stat/solosw" {
-        (16..21).collect()
+        (16..54)
+            .filter(|&i| super::monitor::solo_strip(i, addrs::XAirModel::Xr18).is_some())
+            .collect()
     } else if let Some(rest) = addr.strip_prefix("-stat/solosw/") {
         match rest.parse::<usize>() {
-            Ok(n @ 17..=21) => vec![n - 1],
+            Ok(n @ 17..=54)
+                if super::monitor::solo_strip(n - 1, addrs::XAirModel::Xr18).is_some() =>
+            {
+                vec![n - 1]
+            }
             _ => vec![],
         }
     } else {

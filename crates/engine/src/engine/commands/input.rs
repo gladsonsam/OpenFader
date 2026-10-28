@@ -296,6 +296,10 @@ impl Engine {
             // R2 per-strip solo (monitor bus only). Channel-scoped lock +
             // strip gate (no FOH impact, but a locked strip is someone's).
             Cmd::Solo { ch, soloed, key } => {
+                // Pin the driver before linked-member discovery can await I/O.
+                let driver = self.active_driver();
+                let epoch = self.connection_gen.load(Ordering::Acquire);
+                let drv = self.drv(&driver);
                 let ch = self.resolve_strip(ch, key.as_deref())?;
                 policy.allow_strip(StripId(ch))?;
                 if let Some(holder) = self.lock_holder(ch) {
@@ -303,11 +307,7 @@ impl Engine {
                         return Ok(Some(Self::locked_error(ch, &holder)));
                     }
                 }
-                for member in self
-                    .active_drv()
-                    .control_members(StripId(ch), "solo")
-                    .await?
-                {
+                for member in drv.control_members(StripId(ch), "solo").await? {
                     policy.allow_strip(member)?;
                     if let Some(holder) = self.lock_holder(member.0) {
                         if holder != writer {
@@ -315,7 +315,27 @@ impl Engine {
                         }
                     }
                 }
-                self.active_drv().set_solo(StripId(ch), soloed).await?;
+                let check = |members: &[StripId]| -> anyhow::Result<()> {
+                    anyhow::ensure!(
+                        driver == self.active_driver()
+                            && epoch == self.connection_gen.load(Ordering::Acquire)
+                            && !self.reads_suspended.load(Ordering::Acquire),
+                        "mixer session changed"
+                    );
+                    let policy = self.policy_of(writer);
+                    for member in members.iter().copied().chain(std::iter::once(StripId(ch))) {
+                        policy.allow_strip(member)?;
+                        anyhow::ensure!(
+                            self.lock_holder(member.0)
+                                .is_none_or(|holder| holder == writer),
+                            "strip {} locked",
+                            member.0
+                        );
+                    }
+                    Ok(())
+                };
+                drv.set_solo_checked(StripId(ch), soloed, &check).await?;
+                check(&[])?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 // Echo the commanded state (house pattern, same as mute:
@@ -327,13 +347,13 @@ impl Engine {
                 //
                 // Cache alongside the echo (see `apply_inbound`): the poll
                 // diff then stays quiet instead of re-emitting this state.
-                if !self.active_drv().is_hardware() {
+                if !drv.is_hardware() {
                     self.apply_inbound(ch, "solo", &ParamValue::Bool(soloed));
                 }
                 out.push(Event::Solo {
                     ch,
                     soloed,
-                    key: self.active_strip_key(ch),
+                    key: openfader_core::strip_key_for_index(&drv.topology(), ch as usize),
                 });
                 Ok(None)
             }
