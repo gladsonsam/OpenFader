@@ -437,6 +437,9 @@ mixin _AppStoreChannel on _AppStoreContext {
           q: q ?? 1,
           type: type,
           cutModel: cutModel,
+          shelfModel: engine.driver == 'xair'
+              ? EqShelfModel.xair96k
+              : EqShelfModel.standard,
           shelfUsesQ:
               engine.driver != 'dl32s' && metadata?['curve'] != 'fixed_shelf'));
     }
@@ -576,6 +579,9 @@ mixin _AppStoreChannel on _AppStoreContext {
               g: paramNum('eq${b}_gain') ?? 0,
               q: paramNum('eq${b}_q') ?? 1,
               cutModel: _eqCutModel,
+              shelfModel: engine.driver == 'xair'
+                  ? EqShelfModel.xair96k
+                  : EqShelfModel.standard,
               shelfUsesQ: engine.driver != 'dl32s' &&
                   paramMetadata('eq${b}_type')?['curve'] != 'fixed_shelf',
               on: true,

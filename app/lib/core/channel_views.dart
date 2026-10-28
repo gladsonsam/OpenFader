@@ -304,6 +304,8 @@ enum EqFilterShape {
   }
 }
 
+enum EqShelfModel { standard, xair96k }
+
 /// One EQ band view-model (bands 1..4 parametric; HPF handled separately).
 class EqBandVm {
   final int band; // 1..4
@@ -315,6 +317,9 @@ class EqBandVm {
   /// Whether shelf response uses Q. XR18 and DL32S shelves have fixed slope;
   /// their stored bell Q must not change the shelf preview.
   final bool shelfUsesQ;
+
+  /// Provider-qualified shelf display response.
+  final EqShelfModel shelfModel;
 
   /// Provider-qualified display model for cut bands, independent of gain/Q.
   final EqCutModel cutModel;
@@ -343,6 +348,7 @@ class EqBandVm {
     required this.g,
     required this.q,
     this.shelfUsesQ = true,
+    this.shelfModel = EqShelfModel.standard,
     this.cutModel = EqCutModel.unavailable,
     this.on = true,
     this.type,
@@ -359,6 +365,7 @@ class EqBandVm {
         g: g ?? this.g,
         q: q ?? this.q,
         shelfUsesQ: shelfUsesQ,
+        shelfModel: shelfModel,
         cutModel: cutModel,
         on: on ?? this.on,
         type: type,
@@ -491,6 +498,17 @@ double _shelfDb(bool high, double f0, double gainDb, double? q, double f) {
       f);
 }
 
+// X AIR Edit's graph uses a 96 kHz bilinear mapping and fixed damping.
+double _xairShelfDb(bool high, double f0, double gainDb, double f) {
+  if (!f0.isFinite || f0 <= 0 || f0 >= 48000 || !gainDb.isFinite) return 0;
+  final ratio = math.tan(math.pi * f / 96000) / math.tan(math.pi * f0 / 96000);
+  final t = high ? ratio : 1 / ratio;
+  final t2 = t * t;
+  final t4 = t2 * t2;
+  final gainPower = math.pow(10, gainDb.abs() / 10).toDouble();
+  return gainDb.sign * 10 * math.log((1 + gainPower * t4) / (1 + t4)) / math.ln10;
+}
+
 double _highpassDb(double f0, double f) {
   final w0 = 2 * math.pi * f0 / _fs;
   final alpha = math.sin(w0) / (2 * 0.7071);
@@ -524,11 +542,15 @@ List<double> eqResponseDb(ChannelEqVm eq) {
       if (!b.on) continue;
       switch (EqFilterShape.fromValue(b.type)) {
         case EqFilterShape.lowShelf:
-          db += _shelfDb(false, b.f, b.g, b.shelfUsesQ ? b.q : null, f);
+          db += b.shelfModel == EqShelfModel.xair96k
+              ? _xairShelfDb(false, b.f, b.g, f)
+              : _shelfDb(false, b.f, b.g, b.shelfUsesQ ? b.q : null, f);
         case EqFilterShape.bell:
           db += _peakingDb(b.f, b.g, b.q <= 0 ? 1 : b.q, f);
         case EqFilterShape.highShelf:
-          db += _shelfDb(true, b.f, b.g, b.shelfUsesQ ? b.q : null, f);
+          db += b.shelfModel == EqShelfModel.xair96k
+              ? _xairShelfDb(true, b.f, b.g, f)
+              : _shelfDb(true, b.f, b.g, b.shelfUsesQ ? b.q : null, f);
         case EqFilterShape.lowCut:
           if (b.cutModel == EqCutModel.xairButterworth96k) {
             db += _xairCutDb(true, b.f, f);
