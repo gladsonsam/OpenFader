@@ -279,6 +279,17 @@ impl XAirDriver {
         self.current_bus_control_members(strip)
     }
 
+    pub fn current_output_control_members(
+        &self,
+        strip: StripId,
+        param: &str,
+    ) -> anyhow::Result<Vec<StripId>> {
+        match self.current_bus_control_members(strip)? {
+            Some(members) => Ok(members),
+            None => self.stereo_control_members(strip, param),
+        }
+    }
+
     /// Resolve the cached bus relationship without network I/O. Unknown or
     /// expired observations protect both members. Independent desk edits can
     /// still race an OSC send; this is not a desk-side atomic transaction.

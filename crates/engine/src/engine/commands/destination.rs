@@ -315,8 +315,44 @@ impl Engine {
                                     && epoch == self.connection_gen.load(Ordering::Acquire)
                                     && !self.reads_suspended.load(Ordering::Acquire)
                                     && self.policy_of(writer).allow_master().is_ok()
-                                    && (members.is_empty()
-                                        || self.check_solo_scope(&members, writer).is_ok())
+                                    && (|| -> anyhow::Result<()> {
+                                        let mut current = Vec::new();
+                                        for key in &row.members {
+                                            let Some(index) =
+                                                openfader_core::strip_index_for_key(&topology, key)
+                                            else {
+                                                current.push(key.clone());
+                                                continue;
+                                            };
+                                            match driver.current_control_members(
+                                                StripId(index as u16),
+                                                &control,
+                                            )? {
+                                                Some(companions) => {
+                                                    for member in companions {
+                                                        let key =
+                                                            openfader_core::strip_key_for_index(
+                                                                &topology,
+                                                                member.0 as usize,
+                                                            )
+                                                            .ok_or_else(|| {
+                                                                anyhow::anyhow!(
+                                                                    "Missing control member"
+                                                                )
+                                                            })?;
+                                                        if !current.contains(&key) {
+                                                            current.push(key);
+                                                        }
+                                                    }
+                                                }
+                                                None => {
+                                                    return self.check_solo_scope(&members, writer)
+                                                }
+                                            }
+                                        }
+                                        self.check_solo_scope(&current, writer)
+                                    })()
+                                    .is_ok()
                             };
                             driver
                                 .set_output_processor_guarded(

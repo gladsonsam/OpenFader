@@ -138,6 +138,10 @@ pub trait DynDriver: Send + Sync {
         Ok(vec![strip])
     }
 
+    fn current_control_members(&self, _strip: StripId, _param: &str) -> anyhow::Result<Option<Vec<StripId>>> {
+        Ok(None)
+    }
+
     async fn set_stereo_link(
         &self,
         _source: StripId,
@@ -1362,6 +1366,9 @@ impl_dyn_driver!(openfader_sim::SimDriver {
 });
 
 impl_dyn_driver!(openfader_proto_xair::XAirDriver {
+    fn current_control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Option<Vec<StripId>>> {
+        self.current_output_control_members(strip, param).map(Some)
+    }
     async fn input_routes_bulk(&self) -> Option<std::collections::HashMap<(u16, String), (String, serde_json::Value)>> {
         let reads = futures::future::join_all((0..16_u16).map(|i| self.input_route(StripId(i)))).await;
         let mut out = std::collections::HashMap::new();
