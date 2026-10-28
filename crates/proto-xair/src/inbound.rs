@@ -380,13 +380,32 @@ pub(super) fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static st
                 .collect(),
         );
     }
+    // Native leaf edits can be broadcast independently of the container.
+    if let Some(am_root) = addr.strip_suffix("/automix/group") {
+        let strip = strip_of_root(&format!("/{am_root}"))?;
+        if strip_root(strip).ok()?.0 != openfader_core::StripKind::In {
+            return None;
+        }
+        let [rosc::OscType::Int(group @ 0..=2)] = msg.args.as_slice() else {
+            return None;
+        };
+        return Some(vec![
+            (strip, "automix_on", ParamValue::Bool(*group != 0)),
+            (strip, "automix_group", ParamValue::Float(*group as f32)),
+        ]);
+    }
+    if let Some(am_root) = addr.strip_suffix("/automix/weight") {
+        let strip = strip_of_root(&format!("/{am_root}"))?;
+        if strip_root(strip).ok()?.0 != openfader_core::StripKind::In {
+            return None;
+        }
+        let weight = automix::wire_to_weight(osc::fader_value(msg).ok()?).ok()?;
+        return Some(vec![(strip, "automix_weight", ParamValue::Float(weight))]);
+    }
     // Automix container (`{root}/automix`, `(int, float)` = enable +
     // weight): one update per leaf (same decode as the `automix_on` /
     // `automix_weight` get_param arms). Channel strips only — the desk is
-    // silent on `automix` everywhere else. (`…/automix/weight` does not
-    // match this suffix and keeps its existing handling: none — weight
-    // queries ride `get_param`; desk-side weight moves arrive as container
-    // broadcasts, decoded here.)
+    // silent on `automix` everywhere else.
     if let Some(am_root) = addr.strip_suffix("/automix") {
         let strip = strip_of_root(&format!("/{am_root}"))?;
         let (kind, _) = strip_root(strip).ok()?;

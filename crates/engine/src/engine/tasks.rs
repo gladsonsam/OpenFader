@@ -315,6 +315,30 @@ impl Engine {
                             });
                         }
                     }
+                    if drv.name() == "xair" && !engine.reads_suspended.load(Ordering::Acquire) {
+                        let generation = spectrum_generation;
+                        for ch in 0..drv.channel_count() {
+                            let db = match drv
+                                .get_param(StripId(ch as u16), "xair:automix_gain")
+                                .await
+                            {
+                                Ok(ParamValue::Float(value)) if value.is_finite() => Some(value),
+                                _ => None,
+                            };
+                            let _sync = engine.sync_state.lock().unwrap();
+                            if generation != engine.connection_gen.load(Ordering::Acquire)
+                                || engine.active_driver() != drv.name()
+                                || engine.reads_suspended.load(Ordering::Acquire)
+                            {
+                                break;
+                            }
+                            engine.broadcast(Event::AutomixGain {
+                                epoch: generation,
+                                ch: ch as u16,
+                                db,
+                            });
+                        }
+                    }
                     // Read-only native desk snapshots: re-sample the driver
                     // hook on this same tick (lock-local session-cache
                     // reads, no I/O, no new timer) and broadcast only on

@@ -324,6 +324,17 @@ impl MixerDriver for XAirDriver {
         use openfader_core::params::{ParamDef, ParamDefault, ParamKind, ParamScope, SCOPES_INPUT};
         static DEFS: &[ParamDef] = &[
             ParamDef {
+                id: "xair:automix_gain",
+                kind: ParamKind::Float,
+                scope: ParamScope::Channel,
+                scopes: SCOPES_INPUT,
+                min: -128.0,
+                max: 0.0,
+                unit: "dB",
+                default: ParamDefault::Float(0.0),
+                label: "Automix gain",
+            },
+            ParamDef {
                 id: "automix_group",
                 kind: ParamKind::Enum,
                 scope: ParamScope::Channel,

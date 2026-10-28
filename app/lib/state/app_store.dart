@@ -262,6 +262,7 @@ class AppStore extends _AppStoreContext
     for (final b in _busMeters.values) {
       b.dispose();
     }
+    _automixGain.dispose();
     _dynamicsMeters.dispose();
     _levelDb.dispose();
     _spectrum.dispose();

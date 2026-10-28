@@ -6,6 +6,7 @@ import '../core/channel_name.dart';
 import '../core/destination_controls.dart';
 import '../core/processor_presets.dart';
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
@@ -86,6 +87,8 @@ abstract class ChannelStore extends ChangeNotifier
   bool get hasDynamicsMeters => false;
   ValueListenable<ChannelDynamicsMetersVm?> get dynamicsMeters =>
       const AlwaysStoppedAnimation<ChannelDynamicsMetersVm?>(null);
+  ValueListenable<double?> get automixGain =>
+      const AlwaysStoppedAnimation<double?>(null);
   double? grDb(DynKind kind);
   Future<void> pollMeters();
 

@@ -1502,7 +1502,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         // The bool loses the distinction between groups X and Y; snapshots
         // capture and restore the group enum instead. The source label is
         // derived from multiple desk fields and is not a routing write.
-        matches!(param, "automix_on" | "source" | "xair:preamp_state" | "usbreturn")
+        matches!(param, "automix_on" | "source" | "xair:automix_gain" | "xair:preamp_state" | "usbreturn")
     }
     fn send_destination(&self, slot: u16) -> Option<SendDestination> {
         send_destinations::legacy_send_destination(slot, 6, 4)

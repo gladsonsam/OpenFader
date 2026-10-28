@@ -187,6 +187,10 @@ class _InputAssignments extends StatelessWidget {
         const SizedBox(height: 12),
         _AutomixWeight(store: store, onFocus: onFocus),
       ],
+      if (store.paramApplies('xair:automix_gain')) ...[
+        const SizedBox(height: 12),
+        _AutomixGainMeter(store: store, onFocus: onFocus),
+      ],
     ]);
   }
 }
@@ -470,5 +474,96 @@ class _ProcessingSend extends StatelessWidget {
                             control: control))
                     : null)),
     ]);
+  }
+}
+
+class _AutomixGainMeter extends StatelessWidget {
+  final ChannelStore store;
+  final ValueChanged<ChannelFocus> onFocus;
+  const _AutomixGainMeter({required this.store, required this.onFocus});
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = ConsolePalette.of(context);
+    final key = store.stripKey;
+    final epoch = store.connectionEpoch;
+    bool active() {
+      final group = store.paramNum('automix_group');
+      final id = group == 1
+          ? 'enable_x'
+          : group == 2
+              ? 'enable_y'
+              : null;
+      return id != null &&
+          store.automixSettings
+                  .where((control) => control.id == id)
+                  .firstOrNull
+                  ?.value ==
+              1;
+    }
+
+    String readout() {
+      if (store.stripKey != key || store.connectionEpoch != epoch) {
+        return 'Reopen control';
+      }
+      if (store.paramNum('automix_group') == 0) return 'Off';
+      final group = store.paramNum('automix_group');
+      if (group != 1 && group != 2) return 'Unavailable';
+      final enabled = store.automixSettings
+          .where(
+              (control) => control.id == (group == 1 ? 'enable_x' : 'enable_y'))
+          .firstOrNull
+          ?.value;
+      if (enabled == 0) return 'Group disabled';
+      final value = store.automixGain.value;
+      if (!active() || value == null) return 'Unavailable';
+      final rounded = value.abs() < .05 ? 0.0 : value;
+      return '${rounded > 0 ? '+' : ''}${rounded.toStringAsFixed(1)} dB';
+    }
+
+    void focus() => onFocus(ChannelFocus(
+          title: 'Automix',
+          label: 'Gain',
+          text: readout,
+          valueListenable: Listenable.merge([store, store.automixGain]),
+          min: 0,
+          max: 0,
+          resolveRange: () => null,
+          apply: (_) {},
+        ));
+    return ValueListenableBuilder<double?>(
+      valueListenable: store.automixGain,
+      builder: (context, value, _) => Semantics(
+        label: 'Automix gain',
+        value: readout(),
+        button: true,
+        excludeSemantics: true,
+        onTap: focus,
+        child: InkWell(
+            onTap: focus,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(children: [
+                Text('Automix gain',
+                    style: AppDesign.type(14, color: palette.text7)),
+                const SizedBox(width: 12),
+                Expanded(
+                    child: !active() || value == null
+                        ? Text(readout(),
+                            textAlign: TextAlign.right,
+                            style: AppDesign.type(12, color: palette.text7))
+                        : LinearProgressIndicator(
+                            minHeight: 10,
+                            value: math
+                                .pow(10, value / 20)
+                                .toDouble()
+                                .clamp(0.0, 1.0),
+                            backgroundColor: palette.well,
+                            color: palette.lime,
+                          )),
+              ]),
+            )),
+      ),
+    );
   }
 }

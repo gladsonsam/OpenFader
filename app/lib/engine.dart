@@ -630,6 +630,19 @@ class EngineState {
   Map<int, Map<String, double>> dynamicsMeters = {};
   Map<int, double> grGate = {};
   Map<int, double> grComp = {};
+  final Map<int, double> automixGain = {};
+  final Map<int, DateTime> _automixGainAt = {};
+
+  double? freshAutomixGain(int ch) {
+    final at = _automixGainAt[ch];
+    if (!connected ||
+        at == null ||
+        DateTime.now().difference(at).inMilliseconds >= 500) {
+      return null;
+    }
+    return automixGain[ch];
+  }
+
   Map<int, double> busFaders = {};
   Map<int, bool> busMuted = {};
   Map<int, double> subgroupFaders = {};
@@ -749,6 +762,8 @@ class EngineState {
     dynamicsMeters.clear();
     grGate.clear();
     grComp.clear();
+    automixGain.clear();
+    _automixGainAt.clear();
     busFaders.clear();
     busMuted.clear();
     subgroupFaders.clear();
@@ -1064,6 +1079,25 @@ class EngineState {
           dynamicsMeters[ch] = values;
           grGate[ch] = values['gate_reduction']!;
           grComp[ch] = values['comp_reduction']!;
+        }
+        return false;
+      case 'automix_gain':
+        if (e['epoch'] is! int || e['epoch'] != _syncEpoch) return false;
+        final rawChannel = e['ch'];
+        if (rawChannel is! num ||
+            !rawChannel.isFinite ||
+            rawChannel < 0 ||
+            rawChannel % 1 != 0) {
+          return false;
+        }
+        final ch = rawChannel.toInt();
+        final a = e['db'];
+        if (a is num && a.isFinite) {
+          automixGain[ch] = a.toDouble();
+          _automixGainAt[ch] = DateTime.now();
+        } else {
+          automixGain.remove(ch);
+          _automixGainAt.remove(ch);
         }
         return false;
       case 'gr':
