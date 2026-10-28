@@ -360,7 +360,15 @@ impl XAirDriver {
         };
         let outcome = async {
             anyhow::ensure!(check(), "Monitor access changed");
-            session.send(ADDRS[index], vec![wire]).await?;
+            session
+                .send_checked(ADDRS[index], vec![wire], &|| {
+                    anyhow::ensure!(
+                        check() && self.connection_generation.load(Ordering::Acquire) == generation,
+                        "Monitor access or session changed before dispatch"
+                    );
+                    Ok(())
+                })
+                .await?;
             for _ in 0..4 {
                 tokio::time::sleep(Duration::from_millis(25)).await;
                 anyhow::ensure!(
