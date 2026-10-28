@@ -57,6 +57,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
               control.surface == 'input_insert' ||
               control.surface == 'automix_settings' ||
               control.surface == 'bus_link' ||
+              control.surface == 'link_policy' ||
               control.surface.startsWith('output_') ||
               control.targetSolo ||
               control.talkbackGesture

@@ -20,7 +20,7 @@ class _MixerSetupDetail extends StatelessWidget {
         _Section(
             title: switch (surface) {
               'bus_link' || 'bus_link_state' => 'Bus links',
-              'link_policy_state' => 'Link preferences',
+              'link_policy_state' || 'link_policy' => 'Link preferences',
               _ => 'Automix',
             },
             children: [

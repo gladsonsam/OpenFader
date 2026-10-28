@@ -215,6 +215,7 @@ impl Engine {
                                 | "input_insert"
                                 | "automix_settings"
                                 | "bus_link"
+                                | "link_policy"
                         ) && !row.surface.starts_with("output_")
                             && row.gesture.is_none())
                             || guard.is_some(),
@@ -238,6 +239,7 @@ impl Engine {
                                         | "input_insert"
                                         | "automix_settings"
                                         | "bus_link"
+                                        | "link_policy"
                                 )
                                 || row.surface.starts_with("output_")
                                 || row.gesture.is_some())
@@ -278,7 +280,7 @@ impl Engine {
                                     &target, &control, value, expected, &block, &context,
                                 )
                                 .await?
-                        } else if row.surface == "bus_link" {
+                        } else if matches!(row.surface.as_str(), "bus_link" | "link_policy") {
                             let driver_id = self.active_driver();
                             let topology = driver.topology();
                             let members = row
@@ -290,19 +292,35 @@ impl Engine {
                                             anyhow::anyhow!("Bus link scope unavailable")
                                         })?;
                                     anyhow::ensure!(
-                                        topology.iter().any(|family| family.kind
-                                            == openfader_core::StripKind::Bus
-                                            && index >= family.first
-                                            && index < family.first + family.count),
+                                        row.surface == "link_policy"
+                                            || topology.iter().any(|family| family.kind
+                                                == openfader_core::StripKind::Bus
+                                                && index >= family.first
+                                                && index < family.first + family.count),
                                         "Bus link member is not a bus"
                                     );
                                     Ok(StripId(u16::try_from(index)?))
                                 })
                                 .collect::<anyhow::Result<Vec<_>>>()?;
-                            anyhow::ensure!(
-                                members.len() == 2 && members[0] != members[1],
-                                "Bus link scope unavailable"
-                            );
+                            if row.surface == "link_policy" {
+                                let roster = (0..driver.strip_count())
+                                    .map(|index| {
+                                        openfader_core::strip_key_for_index(&topology, index)
+                                    })
+                                    .collect::<Option<Vec<_>>>()
+                                    .ok_or_else(|| {
+                                        anyhow::anyhow!("Mixer link scope unavailable")
+                                    })?;
+                                anyhow::ensure!(
+                                    !roster.is_empty() && row.members == roster,
+                                    "Complete mixer link scope required"
+                                );
+                            } else {
+                                anyhow::ensure!(
+                                    members.len() == 2 && members[0] != members[1],
+                                    "Bus link scope unavailable"
+                                );
+                            }
                             let check = || -> anyhow::Result<()> {
                                 anyhow::ensure!(
                                     driver_id == self.active_driver()

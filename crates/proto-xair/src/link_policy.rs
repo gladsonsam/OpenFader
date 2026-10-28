@@ -90,19 +90,27 @@ impl XAirDriver {
         if self.connection_generation.load(Ordering::Acquire) != generation {
             return vec![];
         }
+        let topology = self.topology();
+        let Some(members) = (0..self.strip_count())
+            .map(|index| openfader_core::strip_key_for_index(&topology, index))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return vec![];
+        };
         let labels = ["Preamp", "EQ", "Dynamics", "Fader/Mute"];
         (0..4)
             .map(|i| DestinationControl {
                 revision: Some(cache[i].0),
                 generation: Some(generation),
                 preset: false,
-                members: vec![],
+                members: members.clone(),
                 target: "link_policies".into(),
                 target_label: "Link policies".into(),
                 target_name: None,
                 send_slot: None,
-                surface: "link_policy_state".into(),
-                description: "Read-only global link preference.".into(),
+                surface: "link_policy".into(),
+                description: "Changes shared stereo-link behavior. Full mixer access is required."
+                    .into(),
                 id: IDS[i].into(),
                 label: labels[i].into(),
                 tap_tempo: false,
@@ -120,7 +128,10 @@ impl XAirDriver {
                 range: None,
                 current: cache[i]
                     .1
-                    .filter(|(at, _)| at.elapsed() <= std::time::Duration::from_secs(5))
+                    .filter(|(at, _)| {
+                        self.link_policy_pending.load(Ordering::Acquire) & (1 << i) == 0
+                            && at.elapsed() <= std::time::Duration::from_secs(5)
+                    })
                     .map(|(_, value)| DestinationValue {
                         value: u8::from(value) as f32,
                         verified: true,

@@ -40,7 +40,8 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
           row.surface == 'automix_settings' ||
           row.surface == 'bus_link_state' ||
           row.surface == 'bus_link' ||
-          row.surface == 'link_policy_state'));
+          row.surface == 'link_policy_state' ||
+          row.surface == 'link_policy'));
   @override
   int get controlAccessEpoch => app.controlAccessEpoch;
   @override
