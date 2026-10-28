@@ -428,3 +428,18 @@ impl Default for EngineConfig {
         }
     }
 }
+
+/// Canonicalize XR18 legacy bus-send levels for admission and dispatch.
+pub(super) fn canonical_send_field<'a>(driver: &str, field: &'a str) -> std::borrow::Cow<'a, str> {
+    if driver == "xair" {
+        if let Some(n) = field
+            .strip_prefix("aux")
+            .and_then(|s| s.strip_suffix("_level"))
+        {
+            if matches!(n, "1" | "2" | "3" | "4" | "5" | "6") {
+                return std::borrow::Cow::Owned(format!("send{n}_level"));
+            }
+        }
+    }
+    std::borrow::Cow::Borrowed(field)
+}

@@ -583,6 +583,7 @@ impl Engine {
                     continue;
                 }
                 let value = s.params.get(id).expect("key just listed");
+                let id = super::models::canonical_send_field(&driver, id).into_owned();
                 let pv = json_to_param_value(value)?;
                 // Best-effort per param on hardware (a desk that went
                 // silent mid-recall must not abort the rest); strict on
@@ -590,7 +591,7 @@ impl Engine {
                 check()?;
                 let strict = !drv.is_hardware();
                 let expected: BTreeMap<_, _> = drv
-                    .param_write_context(id)
+                    .param_write_context(&id)
                     .iter()
                     .filter_map(|field| {
                         s.params
@@ -599,7 +600,7 @@ impl Engine {
                             .map(|v| ((*field).to_string(), v))
                     })
                     .collect();
-                let send_members = self.send_bus_members(&driver, id).await?;
+                let send_members = self.send_bus_members(&driver, &id).await?;
                 check()?;
                 let bus_send = !send_members.is_empty();
                 let bus_param = topo.iter().any(|family| {
@@ -613,7 +614,7 @@ impl Engine {
                         || bus_send
                         || bus_param)
                 {
-                    drv.set_param_guarded_checked(StripId(*r), id, pv, &expected, &|members| {
+                    drv.set_param_guarded_checked(StripId(*r), &id, pv, &expected, &|members| {
                         check()?;
                         late_affected_preamp
                             .lock()
@@ -623,9 +624,9 @@ impl Engine {
                     })
                     .await
                 } else if expected.is_empty() {
-                    drv.set_param(StripId(*r), id, pv).await
+                    drv.set_param(StripId(*r), &id, pv).await
                 } else {
-                    drv.set_param_guarded(StripId(*r), id, pv, &expected).await
+                    drv.set_param_guarded(StripId(*r), &id, pv, &expected).await
                 };
                 if let Err(error) = rr {
                     if strict {
@@ -637,12 +638,12 @@ impl Engine {
                     continue;
                 }
                 check()?;
-                self.reconcile_scene_write(StripId(*r), id, value).await;
+                self.reconcile_scene_write(StripId(*r), &id, value).await;
                 // Recall-path echo: provenance per the `proven` flag above
                 // (no readback on this path).
                 out.push(Event::Param {
                     ch: *r,
-                    field: (*id).clone(),
+                    field: id.clone(),
                     value: value.clone(),
                     by: Some(writer.to_string()),
                     key: openfader_core::strip_key_for_index(&topo, *r as usize),

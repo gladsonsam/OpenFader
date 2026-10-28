@@ -65,6 +65,11 @@ impl XAirDriver {
         value: ParamValue,
         check: Option<&SendCheck<'_>>,
     ) -> anyhow::Result<()> {
+        if let Ok((slot, "on")) = generic_send(param) {
+            if (1..=10).contains(&slot) {
+                anyhow::bail!("xair: send on/off is unsupported");
+            }
+        }
         let (kind, root) = strip_root(strip.0)?;
         if param == "automix_group" {
             anyhow::ensure!(
