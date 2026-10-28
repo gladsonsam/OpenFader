@@ -365,6 +365,14 @@ pub trait DynDriver: Send + Sync {
         Ok(None)
     }
 
+    /// Fresh complete monitor inventory; None means unsupported, incomplete reads error.
+    /// Independent OSC reads cannot form an atomic snapshot during desk edits.
+    async fn read_monitor_settings(
+        &self,
+    ) -> anyhow::Result<Option<Vec<openfader_core::destinations::DestinationControl>>> {
+        Ok(None)
+    }
+
     /// Source-bound physical tap recall; unsupported providers reject it.
     async fn set_output_tap_guarded(
         &self,
@@ -1046,6 +1054,7 @@ macro_rules! impl_dyn_driver {
         }
         async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> { MixerDriver::read_automix_settings(self).await }
         async fn read_output_taps(&self) -> anyhow::Result<Option<Vec<openfader_core::routing::OutputTapState>>> { MixerDriver::read_output_taps(self).await }
+        async fn read_monitor_settings(&self) -> anyhow::Result<Option<Vec<openfader_core::destinations::DestinationControl>>> { MixerDriver::read_monitor_settings(self).await }
         async fn set_output_tap_guarded(&self, desired: &openfader_core::routing::OutputTapState, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
             MixerDriver::set_output_tap_guarded(self, desired, expected, snapshot, context).await
         }
