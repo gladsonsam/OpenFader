@@ -961,6 +961,11 @@ pub enum Event {
         gate: f32,
         comp: f32,
     },
+    AutomixGain {
+        epoch: u64,
+        ch: u16,
+        db: Option<f32>,
+    },
     Caps {
         #[serde(default, skip_serializing_if = "is_false")]
         input_processor_guard: bool,
@@ -1284,6 +1289,7 @@ impl Event {
             Event::Spectrum { .. } => "spectrum",
             Event::AudioSpectrum { .. } => "audio_spectrum",
             Event::Gr { .. } => "gr",
+            Event::AutomixGain { .. } => "automix_gain",
             Event::OutputMeters { .. } => "output_meters",
             Event::DynamicsMeters { .. } => "dynamics_meters",
             Event::Caps { .. } => "caps",

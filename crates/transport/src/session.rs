@@ -191,8 +191,16 @@ impl OscSession {
                                     | "meters/5"
                                     | "/meters/2"
                                     | "meters/2"
+                                    | "/meters/7"
+                                    | "meters/7"
                             )
                         {
+                            // Automix is signed gain telemetry, not a level
+                            // frame. Let the provider validate its own bank.
+                            if matches!(msg.addr.as_str(), "/meters/7" | "meters/7") {
+                                let _ = received_tx.send((received, msg.clone()));
+                                continue;
+                            }
                             if let [OscType::Blob(blob)] = msg.args.as_slice() {
                                 let dca = matches!(msg.addr.as_str(), "/meters/8" | "meters/8");
                                 let input = matches!(msg.addr.as_str(), "/meters/2" | "meters/2");
@@ -372,7 +380,7 @@ impl OscSession {
         self.latest_meter.lock().unwrap().clone()
     }
 
-    /// Route X-Air `/meters/2`, `/meters/5` and `/meters/8` separately from primary levels.
+    /// Route X-Air secondary banks separately from primary levels.
     pub fn enable_xair_secondary_meters(&self) {
         self.xair_secondary_meters_enabled
             .store(true, std::sync::atomic::Ordering::Release);

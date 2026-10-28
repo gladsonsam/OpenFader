@@ -191,6 +191,7 @@ pub const XAIR_CAPABILITIES: &[&str] = &[
     "link",
     "source",
     "xair:preamp_state",
+    "xair:automix_gain",
     "gain",
     "phantom",
     "trim",

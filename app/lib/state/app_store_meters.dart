@@ -31,6 +31,7 @@ mixin _AppStoreMeters on _AppStoreContext {
   ValueListenable<OutputMeterVm> outputMeterFor(String target) => _outputMeters
       .putIfAbsent(target, () => ValueNotifier(engine.outputMeter(target)));
 
+  final _automixGain = ValueNotifier<double?>(null);
   final _dynamicsMeters = ValueNotifier<ChannelDynamicsMetersVm?>(null);
   @override
   final ValueNotifier<double> _levelDb = ValueNotifier(double.negativeInfinity);
@@ -92,6 +93,7 @@ mixin _AppStoreMeters on _AppStoreContext {
     final ci = engine.strips.indexWhere((s) => s.ch == _channel);
     final lv = ci >= 0 && ci < _meters.length ? _meters[ci].value : 0.0;
     _levelDb.value = _linToDb(lv);
+    _automixGain.value = engine.freshAutomixGain(_channel);
     final dynamics = engine.dynamicsMeters[_channel];
     _dynamicsMeters.value = dynamics == null
         ? null
@@ -293,6 +295,9 @@ mixin _AppStoreMeters on _AppStoreContext {
   @override
   ValueListenable<ChannelDynamicsMetersVm?> get dynamicsMeters =>
       _dynamicsMeters;
+
+  @override
+  ValueListenable<double?> get automixGain => _automixGain;
 
   @override
   double? grDb(DynKind kind) {
