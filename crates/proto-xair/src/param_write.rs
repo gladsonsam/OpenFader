@@ -109,7 +109,13 @@ impl XAirDriver {
             }
             ("name", ParamValue::Text(n)) => self.set_name(strip, &n).await,
             ("link", ParamValue::Bool(linked)) => {
-                self.write_stereo_link(strip, linked).await.map(|_| ())
+                if let Some(check) = check {
+                    self.write_stereo_link_checked(strip, linked, check)
+                        .await
+                        .map(|_| ())
+                } else {
+                    self.write_stereo_link(strip, linked).await.map(|_| ())
+                }
             }
             ("pan", ParamValue::Float(pan)) => {
                 let wire = mix::pan_to_wire(pan)?;
