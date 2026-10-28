@@ -458,7 +458,16 @@ impl XAirDriver {
                     .is_some_and(|current| Arc::ptr_eq(current, &session)),
             "Output control session changed"
         );
-        if let Err(error) = session.send(&address(&root, index), vec![wire]).await {
+        if let Err(error) = session
+            .send_checked(&address(&root, index), vec![wire], &|| {
+                anyhow::ensure!(
+                    check() && self.connection_generation.load(Ordering::Acquire) == generation,
+                    "Output processor session changed"
+                );
+                Ok(())
+            })
+            .await
+        {
             anyhow::bail!("Output control command delivery uncertain: {error}");
         }
         drop(session_guard);
