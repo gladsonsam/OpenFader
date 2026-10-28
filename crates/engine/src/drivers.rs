@@ -1761,16 +1761,32 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                 // The provider documents endpoints but not the transfer curve.
                 // Keep unknown continuous curves normalized rather than inventing one.
                 let deesser = matches!(index, 31 | 32) && par <= 4;
-                let hall = index == 0 && par <= 3;
+                let hall = if index == 0 {
+                    match par {
+                        1 => Some((0.0, 200.0, "xair_hall_predelay")),
+                        2 => Some((0.2, 5.0, "xair_hall_decay")),
+                        3 => Some((2.0, 100.0, "xair_hall_size")),
+                        5 => Some((1.0, 30.0, "xair_hall_diffusion")),
+                        6 => Some((-12.0, 12.0, "xair_hall_level")),
+                        7 => Some((10.0, 500.0, "xair_hall_locut")),
+                        9 => Some((0.5, 2.0, "xair_hall_bassmult")),
+                        10 => Some((0.0, 50.0, "xair_hall_spread")),
+                        11 => Some((0.0, 250.0, "xair_hall_shape")),
+                        12 => Some((0.0, 100.0, "xair_hall_modspeed")),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
                 params.push(crate::protocol::FxParamCaps {
                     choices,
                     id: format!("par{par:02}"),
                     label,
                     unit: if deesser { "" } else { def.unit }.to_string(),
-                    min: if hall { [0.0, 0.2, 2.0][(par - 1) as usize] } else { 0.0 },
-                    max: if hall { [200.0, 5.0, 100.0][(par - 1) as usize] } else if deesser { 50.0 } else { 1.0 },
+                    min: hall.map_or(0.0, |h| h.0),
+                    max: hall.map_or(if deesser { 50.0 } else { 1.0 }, |h| h.1),
                     default: 0.5,
-                    scale: if hall { ["xair_hall_predelay", "xair_hall_decay", "xair_hall_size"][(par - 1) as usize] } else if deesser { "xair_deesser_steps" } else { "normalized" }.to_string(),
+                    scale: hall.map_or(if deesser { "xair_deesser_steps" } else { "normalized" }, |h| h.2).to_string(),
                 });
             }
             out.push(crate::protocol::FxTypeCaps {
