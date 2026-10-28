@@ -81,6 +81,9 @@ impl XAirDriver {
         }
         let generation = self.connection_generation.load(Ordering::Acquire);
         let cache = self.link_policy_cache.lock().unwrap();
+        if self.connection_generation.load(Ordering::Acquire) != generation {
+            return vec![];
+        }
         let labels = ["Preamp", "EQ", "Dynamics", "Fader/Mute"];
         (0..4)
             .map(|i| DestinationControl {

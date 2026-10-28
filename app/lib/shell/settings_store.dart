@@ -39,12 +39,14 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
       List.unmodifiable(engine.destinationControls.where((row) =>
           row.surface == 'automix_settings' ||
           row.surface == 'bus_link_state' ||
-          row.surface == 'bus_link'));
+          row.surface == 'bus_link' ||
+          row.surface == 'link_policy_state'));
   @override
   int get controlAccessEpoch => app.controlAccessEpoch;
   @override
   bool mixerSetupControlIsCurrent(DestinationControlVm control) =>
       control.surface != 'bus_link_state' &&
+      control.surface != 'link_policy_state' &&
       app.destinationControlIsCurrent(control);
   @override
   Future<String?> setMixerSetupControl(
