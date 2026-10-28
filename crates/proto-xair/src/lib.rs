@@ -59,6 +59,9 @@ pub use metadata::{XAIR_CAPABILITIES, XAIR_STRIPS, XAIR_TOPOLOGY};
 type LevelSample = Option<(std::time::Instant, Vec<f32>)>;
 type LinkCache = std::sync::Arc<std::sync::Mutex<[Option<(std::time::Instant, bool)>; 8]>>;
 
+type BusLinkCache =
+    std::sync::Arc<std::sync::Mutex<[(u64, Option<(std::time::Instant, bool)>); 3]>>;
+
 /// Live XR18-class mixer on UDP 10024.
 pub struct XAirDriver {
     receive_since: std::sync::Arc<std::sync::Mutex<std::time::Instant>>,
@@ -66,6 +69,7 @@ pub struct XAirDriver {
     connection_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     connected: std::sync::atomic::AtomicBool,
     link_cache: LinkCache,
+    bus_link_cache: BusLinkCache,
     link_writes: std::sync::Mutex<[Option<std::time::Instant>; 8]>,
     preamp_write: tokio::sync::Mutex<()>,
     output_routes: std::sync::Arc<std::sync::Mutex<output_routing::Cache>>,
@@ -131,6 +135,7 @@ impl XAirDriver {
             connected: std::sync::atomic::AtomicBool::new(false),
             link_cache: std::sync::Arc::new(std::sync::Mutex::new([None; 8])),
             link_writes: std::sync::Mutex::new([None; 8]),
+            bus_link_cache: std::sync::Arc::new(std::sync::Mutex::new([(0, None); 3])),
             preamp_write: tokio::sync::Mutex::new(()),
             output_routes: std::sync::Arc::new(std::sync::Mutex::new(
                 output_routing::Cache::default(),
@@ -270,6 +275,9 @@ impl MixerDriver for XAirDriver {
     }
 
     async fn control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Vec<StripId>> {
+        if let Some(members) = self.bus_control_members(strip).await? {
+            return Ok(members);
+        }
         if matches!(param, "gain" | "phantom") {
             return self.preamp_control_members(strip).await;
         }

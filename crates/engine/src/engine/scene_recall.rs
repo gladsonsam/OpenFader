@@ -392,6 +392,30 @@ impl Engine {
             .map(|s| (s, resolve(s)))
             .filter(|(_, r)| scope.is_none_or(|sc| sc.matches_strip(*r, &topo)))
             .collect();
+        // Resolve bus companions before any recall writes, including scoped
+        // recalls whose linked partner lies outside the selected scope.
+        let mut affected_bus = std::collections::BTreeSet::new();
+        for (scene_strip, strip) in &strips {
+            let is_bus = topo.iter().any(|family| {
+                family.kind == openfader_core::StripKind::Bus
+                    && usize::from(*strip) >= family.first
+                    && usize::from(*strip) < family.first + family.count
+            });
+            let writes = scope.is_none_or(|sc| sc.allows_param("fader") || sc.allows_param("mute"))
+                || scene_strip
+                    .params
+                    .keys()
+                    .any(|id| scope.is_none_or(|sc| sc.allows_param_for(drv.as_ref(), id)));
+            if is_bus && writes {
+                affected_bus.extend(
+                    drv.control_members(StripId(*strip), "fader")
+                        .await?
+                        .into_iter()
+                        .map(|member| member.0),
+                );
+                check()?;
+            }
+        }
         // XR18 preamp writes affect every channel sharing that physical
         // input, including channels outside the selected recall scope.
         // Resolve affected members before the first write so lock overrides
@@ -715,6 +739,7 @@ impl Engine {
                 }
             }
         }
+        affected_preamp.extend(affected_bus);
         affected_preamp.extend(late_affected_preamp.into_inner().unwrap());
         for r in affected_preamp {
             if self.lock_holder(r).is_some_and(|holder| holder != writer) && !overrode.contains(&r)

@@ -219,3 +219,90 @@ impl XAirDriver {
         ])
     }
 }
+
+/// Bus keys are topology identities; OSC uses unpadded one-based numbers.
+pub(super) fn parse_bus_link(msg: &OscMessage) -> Option<(usize, bool)> {
+    let pair = msg.addr.strip_prefix("/config/buslink/")?;
+    let index = match pair {
+        "1-2" => 0,
+        "3-4" => 1,
+        "5-6" => 2,
+        _ => return None,
+    };
+    let [OscType::Int(value @ 0..=1)] = msg.args.as_slice() else {
+        return None;
+    };
+    Some((index, *value == 1))
+}
+
+impl XAirDriver {
+    pub(super) async fn bus_control_members(
+        &self,
+        strip: StripId,
+    ) -> anyhow::Result<Option<Vec<StripId>>> {
+        let topology = self.topology();
+        let Some(bus) = (1..=6u16).find(|n| {
+            openfader_core::strip_index_for_key(&topology, &openfader_core::strip_key("bus", *n))
+                == Some(usize::from(strip.0))
+        }) else {
+            return Ok(None);
+        };
+        let pair = usize::from((bus - 1) / 2);
+        let first = (pair * 2 + 1) as u16;
+        let members: Vec<StripId> = (first..=first + 1)
+            .map(|n| {
+                let key = openfader_core::strip_key("bus", n);
+                let index = openfader_core::strip_index_for_key(&topology, &key)
+                    .ok_or_else(|| anyhow::anyhow!("missing XR18 bus strip {key}"))?;
+                anyhow::ensure!(
+                    index < self.strip_count() && index <= u16::MAX as usize,
+                    "invalid XR18 bus strip {key}"
+                );
+                anyhow::ensure!(
+                    strip_root(index as u16)?.1 == format!("/bus/{n}"),
+                    "invalid XR18 bus mapping {key}"
+                );
+                Ok(StripId(index as u16))
+            })
+            .collect::<anyhow::Result<_>>()?;
+        let (revision, fresh) = {
+            let cache = self.bus_link_cache.lock().unwrap();
+            (
+                cache[pair].0,
+                cache[pair]
+                    .1
+                    .is_some_and(|(at, _)| at.elapsed() <= std::time::Duration::from_secs(5)),
+            )
+        };
+        if !fresh {
+            let generation = self
+                .connection_generation
+                .load(std::sync::atomic::Ordering::Acquire);
+            let addr = format!("/config/buslink/{}-{}", first, first + 1);
+            if let Ok(guard) = self.session().await {
+                let session = guard.as_ref().unwrap().clone();
+                drop(guard);
+                if let Ok(msg) = session.query(&addr).await {
+                    if let Some((reply_pair, linked)) = parse_bus_link(&msg) {
+                        let mut cache = self.bus_link_cache.lock().unwrap();
+                        if reply_pair == pair
+                            && cache[pair].0 == revision
+                            && generation
+                                == self
+                                    .connection_generation
+                                    .load(std::sync::atomic::Ordering::Acquire)
+                        {
+                            cache[pair].1 = Some((std::time::Instant::now(), linked));
+                        }
+                    }
+                }
+            }
+        }
+        let unlinked = self.bus_link_cache.lock().unwrap()[pair]
+            .1
+            .is_some_and(|(at, linked)| {
+                !linked && at.elapsed() <= std::time::Duration::from_secs(5)
+            });
+        Ok(Some(if unlinked { vec![strip] } else { members }))
+    }
+}
