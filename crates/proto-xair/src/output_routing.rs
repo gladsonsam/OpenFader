@@ -202,6 +202,117 @@ fn observe(cache: &Shared, generation: u64, when: Instant, msg: &OscMessage) {
     }
 }
 impl XAirDriver {
+    /// Read the declared inventory, not the filtered presentation cache.
+    /// Two matching passes include source context so a route change cannot
+    /// silently combine a captured source with an unrelated tap.
+    pub async fn read_output_tap_snapshot(
+        &self,
+    ) -> anyhow::Result<Vec<openfader_core::routing::OutputTapState>> {
+        anyhow::ensure!(
+            self.model == addrs::XAirModel::Xr18,
+            "Output tap capture requires XR18 geometry"
+        );
+        let _lane = self.output_route_write.lock().await;
+        let generation = self.connection_generation.load(Ordering::Acquire);
+        let session = self.session().await?.as_ref().unwrap().clone();
+        let inventory: Vec<_> = targets().into_iter().filter(|t| t.tap.is_some()).collect();
+        let check = || -> anyhow::Result<()> {
+            anyhow::ensure!(
+                self.connected.load(Ordering::Acquire)
+                    && self.connection_generation.load(Ordering::Acquire) == generation,
+                "Output tap capture session changed"
+            );
+            Ok(())
+        };
+        let mut captured = Vec::with_capacity(inventory.len());
+        let mut receipts = Vec::with_capacity(inventory.len());
+        for pass in 0..2 {
+            for (index, t) in inventory.iter().enumerate() {
+                check()?;
+                let (source_at, source) = session
+                    .query_received_timeout(&t.src, Duration::from_millis(350))
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!("Output tap capture incomplete: {} source: {e}", t.id)
+                    })?;
+                let [OscType::Int(raw_source)] = source.args.as_slice() else {
+                    anyhow::bail!("Output tap capture invalid source: {}", t.id);
+                };
+                anyhow::ensure!(
+                    decode(t.groups, *raw_source).is_some(),
+                    "Output tap source not advertised: {}",
+                    t.id
+                );
+                let (tap_at, tap) = session
+                    .query_received_timeout(t.tap.as_ref().unwrap(), Duration::from_millis(350))
+                    .await
+                    .map_err(|e| {
+                        anyhow::anyhow!("Output tap capture incomplete: {} tap: {e}", t.id)
+                    })?;
+                let [OscType::Int(raw_tap @ 0..=10)] = tap.args.as_slice() else {
+                    anyhow::bail!("Output tap capture invalid tap: {}", t.id);
+                };
+                check()?;
+                let values = (*raw_source, *raw_tap);
+                if pass == 0 {
+                    captured.push(values);
+                } else {
+                    anyhow::ensure!(
+                        captured[index] == values,
+                        "Output routing changed during tap capture: {}",
+                        t.id
+                    );
+                    receipts.push((source_at, tap_at));
+                }
+            }
+        }
+        // Wait for the ordered receive actor to observe the independently
+        // read values. Never stamp a cached replay with a fabricated time.
+        let deadline = Instant::now() + Duration::from_millis(350);
+        loop {
+            check()?;
+            let ready = {
+                let cache = self.output_routes.lock().unwrap();
+                anyhow::ensure!(
+                    cache.generation == generation,
+                    "Output tap cache session changed"
+                );
+                inventory.iter().zip(&captured).zip(&receipts).all(
+                    |((t, &(source, tap)), &(source_at, tap_at))| {
+                        cache.cells.get(&t.id).is_some_and(|cell| {
+                            !cell.pending
+                                && cell.source == Some(source)
+                                && cell.tap == Some(tap)
+                                && cell.source_at.is_some_and(|at| at >= source_at)
+                                && cell.tap_at.is_some_and(|at| at >= tap_at)
+                        })
+                    },
+                )
+            };
+            if ready {
+                break;
+            }
+            anyhow::ensure!(
+                Instant::now() < deadline,
+                "Output routing changed or tap readback incomplete during capture"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        check()?;
+        inventory
+            .into_iter()
+            .zip(captured)
+            .map(|(t, (source, tap))| {
+                Ok(openfader_core::routing::OutputTapState {
+                    target: t.id,
+                    source: decode(t.groups, source)
+                        .ok_or_else(|| anyhow::anyhow!("Output source unavailable"))?,
+                    tap: u8::try_from(tap)?,
+                })
+            })
+            .collect()
+    }
+
     pub(super) fn start_output_routing(&self, session: Arc<OscSession>, generation: u64) {
         let cache = self.output_routes.clone();
         *cache.lock().unwrap() = Cache {

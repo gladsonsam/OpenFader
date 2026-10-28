@@ -90,7 +90,7 @@ pub fn resolve_peer(addr: &str, default_port: u16) -> anyhow::Result<SocketAddr>
 }
 
 struct PendingQuery {
-    tx: oneshot::Sender<OscMessage>,
+    tx: oneshot::Sender<(std::time::Instant, OscMessage)>,
     accepts: fn(&OscMessage) -> bool,
 }
 
@@ -245,7 +245,7 @@ impl OscSession {
                         let mut guard = pending.lock().await;
                         if guard.get(&msg.addr).is_some_and(|q| (q.accepts)(&msg)) {
                             let query = guard.remove(&msg.addr).expect("matched pending query");
-                            let _ = query.tx.send(msg);
+                            let _ = query.tx.send((received, msg));
                         } else {
                             // No outstanding query: desk-originated traffic.
                             // Forward a clone to update subscribers (drivers
@@ -323,6 +323,18 @@ impl OscSession {
             .await
     }
 
+    /// Query reply with the same socket receipt timestamp published on the
+    /// ordered receive plane. Consumers can wait for their cache actor to
+    /// reach this reply without assigning fresh times to older observations.
+    pub async fn query_received_timeout(
+        &self,
+        addr: &str,
+        timeout: Duration,
+    ) -> anyhow::Result<(std::time::Instant, OscMessage)> {
+        self.query_received_with_args_timeout(addr, vec![], timeout, |_| true)
+            .await
+    }
+
     /// Query a mixer-specific OSC operation and accept only its reply shape.
     /// For example, WING node definitions and values share addresses but use
     /// different payload types. Unmatched traffic stays on the update plane.
@@ -336,6 +348,18 @@ impl OscSession {
         timeout: Duration,
         accepts: fn(&OscMessage) -> bool,
     ) -> anyhow::Result<OscMessage> {
+        self.query_received_with_args_timeout(addr, args, timeout, accepts)
+            .await
+            .map(|(_, message)| message)
+    }
+
+    async fn query_received_with_args_timeout(
+        &self,
+        addr: &str,
+        args: Vec<OscType>,
+        timeout: Duration,
+        accepts: fn(&OscMessage) -> bool,
+    ) -> anyhow::Result<(std::time::Instant, OscMessage)> {
         let bytes = osc::encode_message(addr, args)?;
         let _guard = self.query_shards[query_shard(addr)].lock().await;
         let (tx, rx) = oneshot::channel();

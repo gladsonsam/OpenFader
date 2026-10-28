@@ -1031,6 +1031,12 @@ pub trait MixerDriver: Send + Sync {
         Ok(None)
     }
 
+    /// Complete provider-owned physical tap inventory, independently read.
+    /// None means unsupported; an incomplete supported inventory is an error.
+    async fn read_output_taps(&self) -> anyhow::Result<Option<Vec<routing::OutputTapState>>> {
+        Ok(None)
+    }
+
     async fn set_output_processor_guarded(
         &self,
         target: &str,
