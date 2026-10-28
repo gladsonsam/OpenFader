@@ -831,7 +831,7 @@ class DynCurvePainter extends CustomPainter {
           ..strokeWidth = 2,
       );
     }
-    // Threshold line + tag.
+    // The selected-control bar owns the numeric threshold readout.
     if (dyn.thr.isFinite) {
       final x = px(dyn.thr.clamp(lo, 0));
       canvas.drawLine(
@@ -840,14 +840,6 @@ class DynCurvePainter extends CustomPainter {
           Paint()
             ..color = color
             ..strokeWidth = 1.5);
-      final tp = TextPainter(
-        text: TextSpan(
-            text: '${dyn.thr.toStringAsFixed(1)} dB',
-            style: TextStyle(
-                fontFamily: U4.font, fontSize: 10, color: palette.text1)),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      tp.paint(canvas, Offset((x + 4).clamp(0, size.width - tp.width), 2));
     }
     // Operating dot (SPEC 2a: live level reader; frozen parks at lo).
     final lv = (levelDb ?? lo).clamp(lo, 0.0);
