@@ -417,7 +417,9 @@ mixin _AppStoreChannel on _AppStoreContext {
           : native;
       final shape = EqFilterShape.fromValue(type);
       final f = number('eq${b}_freq');
-      if (shape?.hasResponseModel(cutModel: cutModel) != true ||
+      if (shape?.hasResponseModel(
+                  cutModel: cutModel, bellModel: _eqBellModel) !=
+              true ||
           f == null ||
           f <= 0) {
         return null;
@@ -437,6 +439,7 @@ mixin _AppStoreChannel on _AppStoreContext {
           q: q ?? 1,
           type: type,
           cutModel: cutModel,
+          bellModel: _eqBellModel,
           shelfModel: engine.driver == 'xair'
               ? EqShelfModel.xair96k
               : EqShelfModel.standard,
@@ -496,6 +499,9 @@ mixin _AppStoreChannel on _AppStoreContext {
       ? EqCutModel.xairButterworth96k
       : EqCutModel.unavailable;
 
+  EqBellModel get _eqBellModel =>
+      engine.driver == 'xair' ? EqBellModel.xair96k : EqBellModel.standard;
+
   bool _eqFixedCut(int band) =>
       _eqCutModel == EqCutModel.xairButterworth96k &&
       const [0, 5].contains(_eqPresentationType(band));
@@ -505,8 +511,8 @@ mixin _AppStoreChannel on _AppStoreContext {
       if (paramApplies('wing:filter_model')) 'EQ curve excludes input filters.',
       if (List.generate(_eqBandCount, (i) => _eqPresentationType(i + 1)).any(
           (type) =>
-              EqFilterShape.fromValue(type)
-                  ?.hasResponseModel(cutModel: _eqCutModel) !=
+              EqFilterShape.fromValue(type)?.hasResponseModel(
+                  cutModel: _eqCutModel, bellModel: _eqBellModel) !=
               true))
         'EQ curve excludes bands with unavailable response models.',
     ];
@@ -579,6 +585,7 @@ mixin _AppStoreChannel on _AppStoreContext {
               g: paramNum('eq${b}_gain') ?? 0,
               q: paramNum('eq${b}_q') ?? 1,
               cutModel: _eqCutModel,
+              bellModel: _eqBellModel,
               shelfModel: engine.driver == 'xair'
                   ? EqShelfModel.xair96k
                   : EqShelfModel.standard,
