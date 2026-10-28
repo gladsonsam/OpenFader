@@ -67,9 +67,8 @@ impl Engine {
                             self.active_driver(),
                         )
                     });
-                let snap = self.active_snapshot_on(&pin_driver, pin_gen).await?;
-                let mut scene = Scene::capture(&name, &snap);
-                scene.main_fader = self.main_fader_on(&pin_driver).await;
+                let snapshot = self.capture_full_on(1, &name, &pin_driver, pin_gen).await?;
+                let scene = Scene::from_full(snapshot);
                 match shows.iter_mut().find(|s| s.name == show) {
                     Some(slot) => slot.add_scene(scene),
                     None => {

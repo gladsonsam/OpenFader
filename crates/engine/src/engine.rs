@@ -18,7 +18,7 @@ use std::{
 use openfader_core::{
     access::{Policy, Role},
     params::{self, ParamRegistry},
-    show::{Scene, Show, DEFAULT_FADE_MS},
+    show::DEFAULT_FADE_MS,
     MeterFrame, NativeSnapshots, ParamValue, StripId,
 };
 use serde_json::{json, Value};
@@ -75,15 +75,17 @@ pub use mailbox::{ClientHandle, ClientMailbox};
 pub use models::{
     check_filename, now_unix, param_scope_group, validate_scene_n, EngineConfig, LinkState,
     OfflineState, RecallScope, StoredAutomix, StoredFx, StoredFxInsert, StoredLinkSettings,
-    StoredMonitor, StoredMonitorValue, StoredMuteGroupMembership, StoredMuteGroups, StoredOutputEq,
-    StoredOutputEqTarget, StoredOutputTaps, StoredRoute, StoredRta, StoredScene, StoredStrip,
-    DESK_SAMPLE_RATE, FILE_MAX_BYTES, FX_POLL_EVERY, GR_CHANNELS, LINK_INTERVAL, LOCK_TTL,
-    PARAM_POLL_INTERVAL, POLL_TIMEOUT_STRIKES, SCENE_MAX, SCENE_MIN, SPECTRUM_CHANNELS,
+    StoredMonitor, StoredMonitorValue, StoredMuteGroupMembership, StoredMuteGroups,
+    StoredNamedScene, StoredOutputEq, StoredOutputEqTarget, StoredOutputTaps, StoredRoute,
+    StoredRta, StoredScene, StoredShow, StoredStrip, DESK_SAMPLE_RATE, FILE_MAX_BYTES,
+    FX_POLL_EVERY, GR_CHANNELS, LINK_INTERVAL, LOCK_TTL, PARAM_POLL_INTERVAL, POLL_TIMEOUT_STRIKES,
+    SCENE_MAX, SCENE_MIN, SPECTRUM_CHANNELS,
 };
 use models::{
     pv_bool, CommitDisposition, FxSlotRt, ReadFailures, SyncState, DIRECT_IDENTIFY_TIMEOUT,
     SCAN_VERIFY_TIMEOUT,
 };
+use models::{StoredNamedScene as Scene, StoredShow as Show};
 use poll_lanes::*;
 use poll_reads::*;
 use readback::*;

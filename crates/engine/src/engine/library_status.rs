@@ -244,6 +244,23 @@ pub(super) fn show_frame(show: &Show) -> ShowFrame {
 
 /// One scene in the `shows` event.
 pub(super) fn scene_frame(scene: &Scene) -> SceneFrame {
+    if let Some(full) = scene.full() {
+        return SceneFrame {
+            name: full.name.clone(),
+            main_fader: full.main_fader,
+            strips: full
+                .strips
+                .iter()
+                .map(|s| crate::protocol::SceneStrip {
+                    ch: s.strip,
+                    key: s.key.clone(),
+                    name: s.name.clone(),
+                    fader: s.fader,
+                    muted: s.mute,
+                })
+                .collect(),
+        };
+    }
     SceneFrame {
         name: scene.name.clone(),
         main_fader: scene.main_fader,
