@@ -114,10 +114,10 @@ async fn driver_solo_roundtrip() {
     assert!(driver.get_solo(StripId(15)).await.unwrap());
     assert!(!driver.get_solo(StripId(0)).await.unwrap());
     driver.clear_solo().await.unwrap();
-    // Bus/main/DCA strips have no verified solo leaf.
-    assert!(driver.set_solo(StripId(20), true).await.is_err());
+    // FX send and Main strips still have no supported solo mapping.
+    assert!(driver.set_solo(StripId(26), true).await.is_err());
     assert!(driver.set_solo(StripId(30), true).await.is_err());
-    assert!(driver.get_solo(StripId(20)).await.is_err());
+    assert!(driver.get_solo(StripId(26)).await.is_err());
 }
 
 /// Solo monitoring globals loopback over UDP (`crate::solo`,

@@ -501,6 +501,15 @@ pub trait DynDriver: Send + Sync {
     async fn set_main_mute(&self, muted: bool) -> anyhow::Result<()>;
     async fn get_main_mute(&self) -> anyhow::Result<bool>;
     async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()>;
+    async fn set_solo_checked(
+        &self,
+        strip: StripId,
+        soloed: bool,
+        check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        check(&[strip])?;
+        self.set_solo(strip, soloed).await
+    }
     async fn get_solo(&self, strip: StripId) -> anyhow::Result<bool>;
     /// Verification/poll read: push-cache providers must withhold own writes.
     async fn get_solo_verified(&self, strip: StripId) -> anyhow::Result<bool> {
@@ -1444,6 +1453,10 @@ impl_dyn_driver!(openfader_sim::SimDriver {
 });
 
 impl_dyn_driver!(openfader_proto_xair::XAirDriver {
+    async fn set_solo_checked(&self, strip: StripId, soloed: bool, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
+        openfader_proto_xair::XAirDriver::set_solo_checked(self, strip, soloed, check).await
+    }
+
     fn current_control_members(&self, strip: StripId, param: &str) -> anyhow::Result<Option<Vec<StripId>>> {
         self.current_output_control_members(strip, param).map(Some)
     }

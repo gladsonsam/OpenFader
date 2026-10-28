@@ -41,16 +41,9 @@ impl XAirDriver {
                     == generation,
             "Solo snapshot session changed"
         );
-        let count = if self.model == addrs::XAirModel::Xr18 {
-            21
-        } else {
-            self.model.channels() as usize
-        };
-        (0..count)
-            .map(|i| {
-                let strip = solo_strip(i, self.model).expect("known solo bank slot");
-                Ok((StripId(strip), solo_value(reply.args.get(i), i)?))
-            })
+        (0..54)
+            .filter_map(|i| solo_strip(i, self.model).map(|strip| (i, strip)))
+            .map(|(i, strip)| Ok((StripId(strip), solo_value(reply.args.get(i), i)?)))
             .collect()
     }
 
@@ -136,7 +129,7 @@ impl XAirDriver {
     /// 1-based `/-stat/solosw/NN` sets bank bit `NN - 1` (soloing ch16 set
     /// bits 14+15: ch15/16 are stereo-linked on that desk), and
     /// `/-action/clearsolo` clears the bank. Inputs map to bank indices 0..15; XR18 Aux and FX returns map to
-    /// indices 16..20. Other strip types are unsupported.
+    /// indices 16..20; XR18 buses use indices 39..44. Other strip types are unsupported.
     pub(super) async fn driver_set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
         let ch = self.solo_index(strip)? + 1;
         let addr = format!("{}/{ch:02}", addrs::SOLO_SW);
@@ -148,6 +141,41 @@ impl XAirDriver {
             .await
     }
 
+    /// Recheck current coupled members immediately before the UDP write.
+    pub async fn set_solo_checked(
+        &self,
+        strip: StripId,
+        soloed: bool,
+        check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        let _dispatch = self.bus_dispatch.read().await;
+        let ch = self.solo_index(strip)? + 1;
+        let addr = format!("{}/{ch:02}", addrs::SOLO_SW);
+        let generation = self
+            .connection_generation
+            .load(std::sync::atomic::Ordering::Acquire);
+        let guard = self.session().await?;
+        guard
+            .as_ref()
+            .unwrap()
+            .send_checked(&addr, vec![OscType::Int(i32::from(soloed))], &|| {
+                anyhow::ensure!(
+                    self.connected.load(std::sync::atomic::Ordering::Acquire)
+                        && self
+                            .connection_generation
+                            .load(std::sync::atomic::Ordering::Acquire)
+                            == generation,
+                    "Solo session changed"
+                );
+                let mut members = self.current_output_control_members(strip, "solo")?;
+                if !members.contains(&strip) {
+                    members.push(strip);
+                }
+                check(&members)
+            })
+            .await
+    }
+
     pub(super) async fn driver_get_solo(&self, strip: StripId) -> anyhow::Result<bool> {
         let idx = self.solo_index(strip)?;
         let guard = self.session().await?;
@@ -156,7 +184,7 @@ impl XAirDriver {
     }
 
     fn solo_index(&self, strip: StripId) -> anyhow::Result<usize> {
-        (0..21)
+        (0..54)
             .find(|&i| solo_strip(i, self.model) == Some(strip.0))
             .ok_or_else(|| anyhow::anyhow!("unsupported solo strip {}", strip.0))
     }
@@ -170,6 +198,7 @@ pub(super) fn solo_strip(index: usize, model: addrs::XAirModel) -> Option<u16> {
         return match index {
             16 => Some(35),
             17..=20 => Some(index as u16 - 1),
+            39..=44 => Some(index as u16 - 19),
             _ => None,
         };
     }

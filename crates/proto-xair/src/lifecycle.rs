@@ -343,7 +343,7 @@ impl XAirDriver {
                         }
                         for (strip, param, value) in parse_inbound(&msg).into_iter().chain(
                             if model == addrs::XAirModel::Xr18 {
-                                inbound::return_solos(&msg)
+                                inbound::non_input_solos(&msg)
                             } else {
                                 Vec::new()
                             },
