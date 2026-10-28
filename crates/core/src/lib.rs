@@ -13,6 +13,7 @@ pub mod access;
 pub mod destinations;
 pub mod fx;
 pub mod global_controls;
+pub mod link_settings;
 pub mod output_meters;
 pub mod params;
 pub mod routing;
@@ -1025,14 +1026,19 @@ pub trait MixerDriver: Send + Sync {
         let _ = (target, control, value, expected, snapshot, context);
         anyhow::bail!("guarded routing control unavailable")
     }
-    /// Output processor controls repeat engine authority at dispatch.
+    /// Fresh value-only link settings; None means unsupported.
+    /// This returns no cache-backed write token or independent-OFF admission.
+    async fn read_link_settings(
+        &self,
+    ) -> anyhow::Result<Option<link_settings::StereoLinkSettings>> {
+        Ok(None)
+    }
+
     /// Fresh provider-owned automix snapshot, when supported.
     async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> {
         Ok(None)
     }
 
-    /// Complete provider-owned physical tap inventory, independently read.
-    /// None means unsupported; an incomplete supported inventory is an error.
     /// Fresh complete per-target GEQ inventory; None means unsupported.
     async fn read_output_geq(
         &self,
@@ -1041,6 +1047,7 @@ pub trait MixerDriver: Send + Sync {
         Ok(None)
     }
 
+    /// Complete independently read physical tap inventory; incomplete reads error.
     async fn read_output_taps(&self) -> anyhow::Result<Option<Vec<routing::OutputTapState>>> {
         Ok(None)
     }
@@ -1072,6 +1079,7 @@ pub trait MixerDriver: Send + Sync {
         anyhow::bail!("source-bound output tap recall unavailable")
     }
 
+    /// Output processor controls repeat engine authority at dispatch.
     async fn set_output_processor_guarded(
         &self,
         target: &str,
