@@ -173,6 +173,7 @@ impl XAirDriver {
             }
             // GR reads ride the param path (DYN blob cache; no desk query
             // address). Placed before the `gate_`/`comp_` prefix arms.
+            "xair:automix_gain" => self.cached_automix_gain(strip).await.map(ParamValue::Float),
             "gate_gr" => self.cached_gr(strip, true).await.map(ParamValue::Float),
             "comp_gr" => self.cached_gr(strip, false).await.map(ParamValue::Float),
             p if p.starts_with("eq") => {
