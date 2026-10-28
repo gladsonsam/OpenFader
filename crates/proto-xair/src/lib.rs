@@ -640,9 +640,8 @@ impl MixerDriver for XAirDriver {
     /// on the owner rig (XR18 FW 1.20, 2026-10-18) — writing `1` to the
     /// 1-based `/-stat/solosw/NN` sets bank bit `NN - 1` (soloing ch16 set
     /// bits 14+15: ch15/16 are stereo-linked on that desk), and
-    /// `/-action/clearsolo` clears the bank. Only channel strips
-    /// (`0..16`) map (1-based index `strip + 1`); buses/mains/DCAs have no
-    /// verified solo leaf and bail out (never faked).
+    /// `/-action/clearsolo` clears the bank. Inputs map to bank indices 0..15; XR18 Aux and FX returns map to
+    /// indices 16..20. Other strip types are unsupported.
     async fn set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
         self.driver_set_solo(strip, soloed).await
     }

@@ -133,7 +133,7 @@ pub(super) fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static st
                 .take(16)
                 .enumerate()
                 .filter_map(|(i, arg)| match arg {
-                    OscType::Int(v) => Some((i as u16, "solo", ParamValue::Bool(*v != 0))),
+                    OscType::Int(v @ 0..=1) => Some((i as u16, "solo", ParamValue::Bool(*v == 1))),
                     _ => None,
                 })
                 .collect(),
@@ -155,7 +155,10 @@ pub(super) fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static st
         let Ok(on) = osc::int_arg(msg) else {
             return None;
         };
-        return Some(vec![(n - 1, "solo", ParamValue::Bool(on != 0))]);
+        if !(0..=1).contains(&on) {
+            return None;
+        }
+        return Some(vec![(n - 1, "solo", ParamValue::Bool(on == 1))]);
     }
     // DCA direct forms first (`/dca/N/fader`, `/dca/N/on` — no `/mix`).
     if let Some(rest) = addr.strip_prefix("dca/") {
@@ -471,4 +474,35 @@ pub(super) fn parse_inbound_go(msg: &OscMessage) -> Option<Vec<(u16, &'static st
         }
         _ => None,
     }
+}
+
+/// Decode return solo updates only for the XR18; ordinary decoding remains input-only.
+pub(super) fn return_solos(msg: &OscMessage) -> Vec<(u16, &'static str, ParamValue)> {
+    let addr = msg.addr.trim_start_matches('/');
+    let indices: Vec<usize> = if addr == "-stat/solosw" {
+        (16..21).collect()
+    } else if let Some(rest) = addr.strip_prefix("-stat/solosw/") {
+        match rest.parse::<usize>() {
+            Ok(n @ 17..=21) => vec![n - 1],
+            _ => vec![],
+        }
+    } else {
+        vec![]
+    };
+    indices
+        .into_iter()
+        .filter_map(|i| {
+            let arg = if addr == "-stat/solosw" {
+                msg.args.get(i)
+            } else {
+                msg.args.first()
+            };
+            let value = super::monitor::solo_value(arg, i).ok()?;
+            Some((
+                super::monitor::solo_strip(i, addrs::XAirModel::Xr18)?,
+                "solo",
+                ParamValue::Bool(value),
+            ))
+        })
+        .collect()
 }
