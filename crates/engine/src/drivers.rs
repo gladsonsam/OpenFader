@@ -1463,6 +1463,12 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         if matches!(param, "gain" | "phantom") {
             return self.write_active_preamp_guarded_checked(strip, param, value, expected, check).await;
         }
+        if is_xair_bus_send(param) {
+            for (id, wanted) in expected {
+                anyhow::ensure!(MixerDriver::get_param(self, strip, id).await? == *wanted, "Input source changed; reopen the control.");
+            }
+            return self.set_bus_send_checked(strip, param, value, check).await;
+        }
         check(&[strip])?;
         self.set_param_guarded(strip, param, value, expected).await
     }
@@ -2024,4 +2030,14 @@ pub(crate) fn parse_par_id(id: &str) -> Option<u8> {
     } else {
         None
     }
+}
+
+fn is_xair_bus_send(param: &str) -> bool {
+    param
+        .strip_prefix("send")
+        .and_then(|s| s.split_once('_'))
+        .is_some_and(|(n, leaf)| {
+            matches!(n, "1" | "2" | "3" | "4" | "5" | "6")
+                && matches!(leaf, "level" | "tap" | "pan" | "grpon")
+        })
 }

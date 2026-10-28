@@ -285,6 +285,24 @@ impl OscSession {
         Ok(())
     }
 
+    pub async fn send_checked(
+        &self,
+        addr: &str,
+        args: Vec<OscType>,
+        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        let bytes = osc::encode_message(addr, args)?;
+        loop {
+            self.socket.writable().await?;
+            check()?;
+            match self.socket.try_send(&bytes) {
+                Ok(_) => return Ok(()),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => continue,
+                Err(e) => return Err(e.into()),
+            }
+        }
+    }
+
     /// Send a no-arg query and await the mixer's reply to the same address.
     /// Same-address queries serialize on their shard so they never steal
     /// each other's reply; distinct addresses run concurrently.

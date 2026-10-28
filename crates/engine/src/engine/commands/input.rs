@@ -3,6 +3,44 @@
 use super::*;
 
 impl Engine {
+    /// Resolve only canonical send fields through the provider's explicit destination.
+    pub(in crate::engine) async fn send_bus_members(
+        &self,
+        driver: &str,
+        field: &str,
+    ) -> anyhow::Result<Vec<StripId>> {
+        let Some(rest) = field.strip_prefix("send") else {
+            return Ok(Vec::new());
+        };
+        let Some((slot, suffix)) = rest.split_once('_') else {
+            return Ok(Vec::new());
+        };
+        if !matches!(suffix, "level" | "tap" | "pan" | "grpon") {
+            return Ok(Vec::new());
+        }
+        let Ok(slot) = slot.parse::<u16>() else {
+            return Ok(Vec::new());
+        };
+        let drv = self.drv(driver);
+        let Some(destination) = drv.send_destination(slot) else {
+            return Ok(Vec::new());
+        };
+        if !destination.key.starts_with("bus/") {
+            return Ok(Vec::new());
+        }
+        let topology = self.driver_topology(driver);
+        if !topology
+            .iter()
+            .any(|family| family.kind == openfader_core::StripKind::Bus)
+        {
+            return Ok(Vec::new());
+        }
+        let index = openfader_core::strip_index_for_key(&topology, &destination.key)
+            .ok_or_else(|| anyhow::anyhow!("missing send destination {}", destination.key))?;
+        let index = u16::try_from(index)?;
+        drv.control_members(StripId(index), "fader").await
+    }
+
     pub(super) async fn apply_input(
         &self,
         cmd: Cmd,
@@ -325,10 +363,28 @@ impl Engine {
                         }
                     }
                 }
+                let driver = self.active_driver();
+                let generation = self.connection_gen.load(Ordering::Acquire);
+                let send_members = self.send_bus_members(&driver, &field).await?;
+                anyhow::ensure!(
+                    self.active_driver() == driver
+                        && self.connection_gen.load(Ordering::Acquire) == generation
+                        && !self.reads_suspended.load(Ordering::Acquire),
+                    "mixer session changed"
+                );
+                for member in &send_members {
+                    self.policy_of(writer).allow_strip(*member)?;
+                    if let Some(holder) = self.lock_holder(member.0) {
+                        if holder != writer {
+                            return Ok(Some(Self::locked_error(member.0, &holder)));
+                        }
+                    }
+                }
                 let from = self.offline_from(StripId(ch), &field).await;
-                if let Some(expected) = &expected {
-                    let driver = self.active_driver();
-                    let generation = self.connection_gen.load(Ordering::Acquire);
+                if expected.is_some() || (driver == "xair" && !send_members.is_empty()) {
+                    let empty = BTreeMap::new();
+                    let expected = expected.as_ref().unwrap_or(&empty);
+                    let drv = self.drv(&driver);
                     let check = |members: &[StripId]| -> anyhow::Result<()> {
                         anyhow::ensure!(
                             self.active_driver() == driver
@@ -350,13 +406,14 @@ impl Engine {
                         }
                         Ok(())
                     };
-                    if driver == "xair" && matches!(field.as_str(), "gain" | "phantom") {
-                        self.active_drv()
-                            .set_param_guarded_checked(StripId(ch), &field, pv, expected, &check)
+                    if driver == "xair"
+                        && (matches!(field.as_str(), "gain" | "phantom")
+                            || !send_members.is_empty())
+                    {
+                        drv.set_param_guarded_checked(StripId(ch), &field, pv, expected, &check)
                             .await?;
                     } else {
-                        self.active_drv()
-                            .set_param_guarded(StripId(ch), &field, pv, expected)
+                        drv.set_param_guarded(StripId(ch), &field, pv, expected)
                             .await?;
                     }
                 } else {
