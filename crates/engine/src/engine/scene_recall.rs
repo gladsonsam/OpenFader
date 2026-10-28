@@ -739,8 +739,22 @@ impl Engine {
             .as_ref()
             .filter(|groups| groups.provider == driver)
         {
-            self.recall_mute_groups(groups, scope, &topo, drv.as_ref(), &check, out)
-                .await?;
+            self.recall_mute_groups(
+                groups,
+                scope,
+                &topo,
+                drv.as_ref(),
+                &|members| {
+                    check()?;
+                    late_affected_preamp
+                        .lock()
+                        .unwrap()
+                        .extend(members.iter().map(|m: &StripId| m.0));
+                    Ok(())
+                },
+                out,
+            )
+            .await?;
         }
         if scope.is_none_or(|sc| sc.allows_global("main")) {
             if let Some(m) = scene.main_fader {
@@ -798,7 +812,7 @@ impl Engine {
         scope: Option<&RecallScope>,
         topo: &[openfader_core::StripFamily],
         drv: &dyn DynDriver,
-        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
+        check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync),
         out: &mut Vec<Event>,
     ) -> anyhow::Result<()> {
         if scope.is_some_and(|sc| !sc.allows_global("mute_groups") && !sc.allows_group("config")) {
@@ -843,12 +857,12 @@ impl Engine {
             }
         }
         for (index, member) in members {
-            check()?;
+            check(&[])?;
             let started = Instant::now();
             drv.restore_mute_group_mask(StripId(index), member.mask, check)
                 .await
                 .map_err(|error| anyhow::anyhow!("snapshot recall incomplete: mute-group membership for {}: {error}; mixer may be partly changed", member.key))?;
-            check()?;
+            check(&[])?;
             for group in 0..count {
                 self.evict_param_unless_fresh(
                     StripId(index),
@@ -865,12 +879,12 @@ impl Engine {
         }
         if scope.is_none_or(|sc| sc.allows_global("mute_groups")) {
             for (group, &muted) in groups.masters.iter().enumerate() {
-                check()?;
+                check(&[])?;
                 let started = Instant::now();
-                drv.restore_mute_group_master(group as u8, muted, check).await.map_err(|error| {
+                drv.restore_mute_group_master(group as u8, muted, &|| check(&[])).await.map_err(|error| {
                     anyhow::anyhow!("snapshot recall incomplete: mute group {}: {error}; mixer may be partly changed", group + 1)
                 })?;
-                check()?;
+                check(&[])?;
                 self.evict_param_unless_fresh(StripId(group as u16), "_mute_group", started);
                 out.push(Event::MuteGroup {
                     group: group as u8,

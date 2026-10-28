@@ -25,7 +25,7 @@ impl XAirDriver {
         &self,
         strip: StripId,
         mask: u32,
-        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
+        check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<()> {
         anyhow::ensure!(
             mask <= groups::GROUP_MASK as u32,
@@ -33,11 +33,19 @@ impl XAirDriver {
         );
         let (_, root) = self.assign_root(strip.0, "mute-group assign")?;
         let guard = self.session().await?;
-        check()?;
         guard
             .as_ref()
             .unwrap()
-            .send(&groups::grp_mute(&root), vec![OscType::Int(mask as i32)])
+            .send_checked(
+                &groups::grp_mute(&root),
+                vec![OscType::Int(mask as i32)],
+                &|| {
+                    let members = self
+                        .current_bus_control_members(strip)?
+                        .unwrap_or_else(|| vec![strip]);
+                    check(&members)
+                },
+            )
             .await
     }
 
@@ -96,15 +104,30 @@ impl XAirDriver {
         group: u8,
         member: bool,
     ) -> anyhow::Result<()> {
-        let (kind, root) = self.assign_root(ch.0, "mute-group assign")?;
-        let _ = kind;
+        self.set_mute_group_assign_checked(ch, group, member, &|_| Ok(()))
+            .await
+    }
+
+    pub async fn set_mute_group_assign_checked(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+        check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        let (_, root) = self.assign_root(ch.0, "mute-group assign")?;
         let guard = self.session().await?;
         let session = guard.as_ref().unwrap();
         let reply = session.query(&groups::grp_mute(&root)).await?;
         let mask = groups::mask_from_msg(&reply)?;
         let next = groups::mask_with(mask, group, member, "mute group")?;
         session
-            .send(&groups::grp_mute(&root), vec![OscType::Int(next)])
+            .send_checked(&groups::grp_mute(&root), vec![OscType::Int(next)], &|| {
+                let members = self
+                    .current_bus_control_members(ch)?
+                    .unwrap_or_else(|| vec![ch]);
+                check(&members)
+            })
             .await
     }
 

@@ -658,8 +658,32 @@ impl Engine {
                 if let Some(error) = self.admit_assignment_members(ch, writer).await? {
                     return Ok(Some(error));
                 }
-                self.active_drv()
-                    .set_mute_group_assign(StripId(ch), group, member)
+                let id = self.active_driver();
+                let epoch = self.connection_gen.load(Ordering::Acquire);
+                let driver = self.drv(&id);
+                let check = |members: &[StripId]| -> anyhow::Result<()> {
+                    anyhow::ensure!(
+                        id == self.active_driver()
+                            && epoch == self.connection_gen.load(Ordering::Acquire)
+                            && !self.reads_suspended.load(Ordering::Acquire),
+                        "mixer session changed"
+                    );
+                    let policy = self.policy_of(writer);
+                    for member in std::iter::once(&StripId(ch)).chain(members) {
+                        policy.allow_assign(*member)?;
+                        if let Some(holder) = self.lock_holder(member.0) {
+                            anyhow::ensure!(
+                                holder == writer,
+                                "strip {} locked by {}",
+                                member.0,
+                                holder
+                            );
+                        }
+                    }
+                    Ok(())
+                };
+                driver
+                    .set_mute_group_assign_checked(StripId(ch), group, member, &check)
                     .await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
