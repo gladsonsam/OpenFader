@@ -387,6 +387,9 @@ impl Engine {
         check()?;
         let drv = self.drv(&driver);
         let topo = self.driver_topology(&driver);
+        let output_eq = self
+            .prepare_scene_output_eq(scene.output_eq.as_ref(), scope, &driver, &check)
+            .await?;
         let rta = scene
             .rta
             .as_ref()
@@ -891,6 +894,13 @@ impl Engine {
                 );
             }
         }
+        self.recall_scene_output_eq(&output_eq, &driver, &check, &late_affected_preamp)
+            .await
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "Snapshot output EQ recall incomplete; mixer may be partly changed: {error}"
+                )
+            })?;
         if let Some(saved) = rta {
             for (id, desired) in [
                 ("detector", f32::from(saved.detector)),

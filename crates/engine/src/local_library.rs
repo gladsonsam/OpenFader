@@ -1397,7 +1397,7 @@ fn param_value_json(pv: &ParamValue) -> Value {
     }
 }
 
-/// Render v7 for RTA settings, v6 for monitor settings, v5 for output taps, v4 for automix, v3 for FX insert or mute-group state, otherwise retain v2.
+/// Render v8 for output EQ, v7 for RTA settings, v6 for monitor settings, v5 for output taps, v4 for automix, v3 for FX insert or mute-group state, otherwise retain v2.
 /// Numbered slots and parameter keys are sorted for stable bytes.
 pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -> Value {
     let mut slots: Vec<&StoredScene> = numbered.values().collect();
