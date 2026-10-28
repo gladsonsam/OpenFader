@@ -83,6 +83,20 @@ pub struct StoredScene {
     pub output_taps: Option<StoredOutputTaps>,
     pub monitor: Option<StoredMonitor>,
     pub rta: Option<StoredRta>,
+    pub output_eq: Option<StoredOutputEq>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredOutputEq {
+    pub provider: String,
+    pub targets: Vec<StoredOutputEqTarget>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredOutputEqTarget {
+    pub target: String,
+    pub mode: u8,
+    pub gains_db: Vec<f32>,
 }
 
 #[derive(Clone, Debug)]
