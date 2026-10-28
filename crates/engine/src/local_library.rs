@@ -4,8 +4,8 @@
 //!
 //! Single strict transaction (no silent repair):
 //!
-//! - The document is `{version: 2|3|4|5, scenes: [...], shows: [...]}`. Version 3
-//!   adds provider-qualified FX insert and mute-group state; version 4 adds global automix state; version 5 adds output taps. Documents without
+//! - The document is `{version: 2|3|4|5|6, scenes: [...], shows: [...]}`. Version 3
+//!   adds provider-qualified FX insert and mute-group state; version 4 adds global automix state; version 5 adds output taps; version 6 adds monitor settings. Documents without
 //!   those fields remain v2 so older builds can still read them. Version 1
 //!   (`{version: 1, scenes: [...]}`) is the legacy numbered-only shape: it
 //!   still loads, but it is never rewritten on load — it migrates to v2
@@ -48,14 +48,16 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::engine::{
-    StoredAutomix, StoredFx, StoredFxInsert, StoredMuteGroupMembership, StoredMuteGroups,
-    StoredOutputTaps, StoredRoute, StoredScene, StoredStrip, SCENE_MAX, SCENE_MIN,
+    StoredAutomix, StoredFx, StoredFxInsert, StoredMonitor, StoredMonitorValue,
+    StoredMuteGroupMembership, StoredMuteGroups, StoredOutputTaps, StoredRoute, StoredScene,
+    StoredStrip, SCENE_MAX, SCENE_MIN,
 };
 
 /// Combined library file name under the engine data dir.
 pub const LIBRARY_FILE_NAME: &str = "scenes.json";
 /// Current combined document version.
-pub const LIBRARY_VERSION: u64 = 5;
+pub const LIBRARY_VERSION: u64 = 6;
+const LIBRARY_VERSION_V5: u64 = 5;
 const LIBRARY_VERSION_V4: u64 = 4;
 const LIBRARY_VERSION_V3: u64 = 3;
 const LIBRARY_VERSION_V2: u64 = 2;
@@ -299,6 +301,22 @@ struct NumberedSceneDoc {
     automix: Option<AutomixDoc>,
     #[serde(default)]
     output_taps: Option<OutputTapsDoc>,
+    #[serde(default)]
+    monitor: Option<MonitorDoc>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MonitorDoc {
+    provider: String,
+    values: Vec<MonitorValueDoc>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MonitorValueDoc {
+    id: String,
+    value: f32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -431,13 +449,14 @@ fn parse_library_doc(doc: &Value) -> Result<ParsedLibrary, String> {
     let version = obj
         .get("version")
         .and_then(Value::as_u64)
-        .ok_or_else(|| "document needs integer \"version\" 1..=5".to_string())?;
+        .ok_or_else(|| "document needs integer \"version\" 1..=6".to_string())?;
     if !matches!(
         version,
         LIBRARY_VERSION_V1
             | LIBRARY_VERSION_V2
             | LIBRARY_VERSION_V3
             | LIBRARY_VERSION_V4
+            | LIBRARY_VERSION_V5
             | LIBRARY_VERSION
     ) {
         return Err(format!(
@@ -533,7 +552,7 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
         if version < LIBRARY_VERSION_V4 && doc.automix.is_some() {
             return Err(format!("scenes[{i}]: automix requires library version 4"));
         }
-        if version < LIBRARY_VERSION
+        if version < LIBRARY_VERSION_V5
             && raw
                 .as_object()
                 .is_some_and(|s| s.contains_key("output_taps"))
@@ -541,6 +560,23 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
             return Err(format!(
                 "scenes[{i}]: output taps require library version 5"
             ));
+        }
+        if version < LIBRARY_VERSION && raw.as_object().is_some_and(|s| s.contains_key("monitor")) {
+            return Err(format!("scenes[{i}]: monitor requires library version 6"));
+        }
+        let monitor = doc.monitor.map(|m| StoredMonitor {
+            provider: m.provider,
+            values: m
+                .values
+                .into_iter()
+                .map(|v| StoredMonitorValue {
+                    id: v.id,
+                    value: v.value,
+                })
+                .collect(),
+        });
+        if let Some(m) = &monitor {
+            validate_stored_monitor(m, &format!("scenes[{i}].monitor"))?;
         }
         let output_taps = doc.output_taps.map(|t| StoredOutputTaps {
             provider: t.provider,
@@ -712,6 +748,7 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
                 mute_groups,
                 automix,
                 output_taps,
+                monitor,
             },
         );
     }
@@ -833,6 +870,44 @@ fn check_key(key: Option<&str>, what: &str) -> Result<(), String> {
                 k.len()
             ));
         }
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_stored_monitor(monitor: &StoredMonitor, what: &str) -> Result<(), String> {
+    check_name(&monitor.provider, &format!("{what}.provider"))?;
+    check_name_len(
+        &monitor.provider,
+        MAX_FX_TYPE_LEN,
+        &format!("{what}.provider"),
+    )?;
+    if monitor.values.is_empty() || monitor.values.len() > 128 {
+        return Err(format!("{what}: monitor roster out of range"));
+    }
+    let mut ids = std::collections::HashSet::new();
+    for row in &monitor.values {
+        check_name(&row.id, &format!("{what}.id"))?;
+        check_name_len(&row.id, MAX_PARAM_ID_LEN, &format!("{what}.id"))?;
+        if !ids.insert(&row.id) || !row.value.is_finite() {
+            return Err(format!("{what}: duplicate ID or nonfinite value"));
+        }
+        if monitor.provider == "xair" {
+            let max = match row.id.as_str() {
+                "level" | "trim" | "dim_gain" => None,
+                "source" => Some(14.0),
+                "channel_mode" | "bus_mode" | "dim" | "mono" | "mute" | "dim_pfl" => Some(1.0),
+                _ => return Err(format!("{what}: unknown XR18 monitor ID")),
+            };
+            if match max {
+                Some(max) => row.value.fract() != 0.0 || !(0.0..=max).contains(&row.value),
+                None => !(0.0..=1.0).contains(&row.value),
+            } {
+                return Err(format!("{what}: invalid XR18 monitor value"));
+            }
+        }
+    }
+    if monitor.provider == "xair" && ids.len() != 10 {
+        return Err(format!("{what}: incomplete XR18 monitor roster"));
     }
     Ok(())
 }
@@ -1035,6 +1110,9 @@ pub fn validate_candidate(
             return Err(format!("{what}: key/number mismatch"));
         }
         check_name(&s.name, &format!("{what}.name"))?;
+        if let Some(m) = &s.monitor {
+            validate_stored_monitor(m, &format!("{what}.monitor"))?;
+        }
         if let Some(t) = &s.output_taps {
             validate_output_taps(t, &format!("{what}.output_taps"))?;
         }
@@ -1201,13 +1279,15 @@ fn param_value_json(pv: &ParamValue) -> Value {
     }
 }
 
-/// Render v5 for output taps, v4 for automix, v3 for FX insert or mute-group state, otherwise retain v2.
+/// Render v6 for monitor settings, v5 for output taps, v4 for automix, v3 for FX insert or mute-group state, otherwise retain v2.
 /// Numbered slots and parameter keys are sorted for stable bytes.
 pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -> Value {
     let mut slots: Vec<&StoredScene> = numbered.values().collect();
     slots.sort_by_key(|s| s.number);
-    let version = if slots.iter().any(|s| s.output_taps.is_some()) {
+    let version = if slots.iter().any(|s| s.monitor.is_some()) {
         LIBRARY_VERSION
+    } else if slots.iter().any(|s| s.output_taps.is_some()) {
+        LIBRARY_VERSION_V5
     } else if slots.iter().any(|s| s.automix.is_some()) {
         LIBRARY_VERSION_V4
     } else if slots
@@ -1258,6 +1338,7 @@ pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -
                     row
                 }).collect::<Vec<_>>(),
             });
+            if let Some(m) = &s.monitor { scene["monitor"] = serde_json::json!({"provider":m.provider,"values":m.values.iter().map(|v|serde_json::json!({"id":v.id,"value":v.value})).collect::<Vec<_>>()}); }
             if let Some(t) = &s.output_taps { scene["output_taps"] = serde_json::json!({"provider": t.provider, "values": t.values.iter().map(|v| serde_json::json!({"target": v.target, "source": v.source, "tap": v.tap})).collect::<Vec<_>>()}); }
             if let Some(a) = &s.automix { scene["automix"] = serde_json::json!({"provider": a.provider, "values": a.values}); }
             if let Some(groups) = &s.mute_groups {

@@ -313,6 +313,11 @@ impl Engine {
         } else {
             None
         };
+        let monitor = drv
+            .read_monitor_settings()
+            .await?
+            .map(|block| stored_monitor_from_controls(&driver, &block))
+            .transpose()?;
         let automix = drv
             .read_automix_settings()
             .await?
@@ -344,6 +349,7 @@ impl Engine {
             mute_groups,
             automix,
             output_taps,
+            monitor,
         })
     }
 
@@ -373,6 +379,20 @@ impl Engine {
         check()?;
         let drv = self.drv(&driver);
         let topo = self.driver_topology(&driver);
+        let monitor = scene
+            .monitor
+            .as_ref()
+            .filter(|m| m.provider == driver)
+            .filter(|_| scope.is_none_or(|sc| sc.allows_global("monitor")));
+        if let Some(saved) = monitor {
+            check()?;
+            let block = drv
+                .read_monitor_settings()
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("snapshot monitor settings unavailable"))?;
+            check()?;
+            validate_monitor_recall(saved, &block)?;
+        }
         let output_taps = scene
             .output_taps
             .as_ref()
@@ -837,6 +857,70 @@ impl Engine {
                 );
             }
         }
+        if let Some(saved) = monitor {
+            for row in &saved.values {
+                check()?;
+                let block = drv.read_monitor_settings().await?.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "snapshot monitor readback unavailable; mixer may be partly changed"
+                    )
+                })?;
+                check()?;
+                validate_monitor_recall(saved, &block)?;
+                let current = block
+                    .iter()
+                    .find(|c| c.id == row.id)
+                    .unwrap()
+                    .current
+                    .as_ref()
+                    .unwrap()
+                    .value;
+                if (current - row.value).abs() <= 0.00001 {
+                    continue;
+                }
+                let receipt = drv
+                    .set_output_processor_guarded(
+                        "monitor",
+                        &row.id,
+                        row.value,
+                        current,
+                        &block,
+                        &|| check().is_ok(),
+                    )
+                    .await?
+                    .ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "snapshot monitor recall unconfirmed; mixer may be partly changed"
+                        )
+                    })?;
+                check()?;
+                anyhow::ensure!(
+                    receipt.id == row.id
+                        && receipt.target == "monitor"
+                        && receipt
+                            .current
+                            .as_ref()
+                            .is_some_and(|v| v.verified && (v.value - row.value).abs() <= 0.00001),
+                    "snapshot monitor recall unconfirmed; mixer may be partly changed"
+                );
+            }
+            let confirmed = drv.read_monitor_settings().await?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "snapshot monitor final readback unavailable; mixer may be partly changed"
+                )
+            })?;
+            check()?;
+            validate_monitor_recall(saved, &confirmed)?;
+            anyhow::ensure!(
+                saved.values.iter().all(|row| confirmed.iter().any(|c| {
+                    c.id == row.id
+                        && c.current
+                            .as_ref()
+                            .is_some_and(|v| v.verified && (v.value - row.value).abs() <= 0.00001)
+                })),
+                "snapshot monitor final readback changed; mixer may be partly changed"
+            );
+        }
         if let Some(groups) = scene
             .mute_groups
             .as_ref()
@@ -998,6 +1082,93 @@ impl Engine {
         }
         Ok(())
     }
+}
+
+fn monitor_control_allows(
+    control: &openfader_core::destinations::DestinationControl,
+    value: f32,
+) -> bool {
+    if !value.is_finite() {
+        return false;
+    }
+    if !control.choices.is_empty() {
+        return control.choices.iter().any(|c| c.value == value);
+    }
+    control.range.as_ref().is_some_and(|range| {
+        range.min.is_finite()
+            && range.max.is_finite()
+            && range.min <= range.max
+            && (range.min..=range.max).contains(&value)
+            && range.step.is_none_or(|step| {
+                step.is_finite() && step > 0.0 && {
+                    let n = (value - range.min) / step;
+                    (n - n.round()).abs() <= 0.001
+                }
+            })
+    })
+}
+
+fn stored_monitor_from_controls(
+    provider: &str,
+    block: &[openfader_core::destinations::DestinationControl],
+) -> anyhow::Result<StoredMonitor> {
+    anyhow::ensure!(
+        !block.is_empty() && block.len() <= 128,
+        "monitor snapshot roster incomplete"
+    );
+    let generation = block[0]
+        .generation
+        .ok_or_else(|| anyhow::anyhow!("monitor snapshot generation unavailable"))?;
+    let mut values = Vec::new();
+    for control in block {
+        let current = control
+            .current
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("monitor snapshot readback unavailable"))?;
+        anyhow::ensure!(
+            control.target == "monitor"
+                && control.surface == "output_monitor"
+                && control.generation == Some(generation)
+                && control.revision.is_some()
+                && current.verified
+                && monitor_control_allows(control, current.value),
+            "monitor snapshot metadata or readback invalid"
+        );
+        values.push(StoredMonitorValue {
+            id: control.id.clone(),
+            value: current.value,
+        });
+    }
+    let monitor = StoredMonitor {
+        provider: provider.to_string(),
+        values,
+    };
+    crate::local_library::validate_stored_monitor(&monitor, "monitor snapshot")
+        .map_err(anyhow::Error::msg)?;
+    Ok(monitor)
+}
+
+fn validate_monitor_recall(
+    saved: &StoredMonitor,
+    block: &[openfader_core::destinations::DestinationControl],
+) -> anyhow::Result<()> {
+    crate::local_library::validate_stored_monitor(saved, "monitor snapshot")
+        .map_err(anyhow::Error::msg)?;
+    let live = stored_monitor_from_controls(&saved.provider, block)?;
+    anyhow::ensure!(
+        saved.values.len() == live.values.len(),
+        "monitor snapshot roster mismatch"
+    );
+    for row in &saved.values {
+        anyhow::ensure!(
+            block
+                .iter()
+                .any(|c| c.id == row.id && monitor_control_allows(c, row.value)),
+            "monitor snapshot ID or value not advertised: {}",
+            row.id
+        );
+    }
+    Ok(())
 }
 
 fn validate_scene_output_taps(

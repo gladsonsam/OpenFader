@@ -81,6 +81,19 @@ pub struct StoredScene {
     pub mute_groups: Option<StoredMuteGroups>,
     pub automix: Option<StoredAutomix>,
     pub output_taps: Option<StoredOutputTaps>,
+    pub monitor: Option<StoredMonitor>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredMonitor {
+    pub provider: String,
+    pub values: Vec<StoredMonitorValue>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredMonitorValue {
+    pub id: String,
+    pub value: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -169,7 +182,7 @@ pub struct RecallScope {
     /// WING adds `sends_matrix` and `sends_main`. `None` = all.
     #[serde(default)]
     pub groups: Option<Vec<String>>,
-    /// Global allowlist (`main`, `fx`, `routing`, `mute_groups`). `None` = all.
+    /// Global allowlist (`main`, `fx`, `routing`, `mute_groups`, `automix`, `monitor`). `None` = all.
     #[serde(default)]
     pub globals: Option<Vec<String>>,
 }

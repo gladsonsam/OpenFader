@@ -79,6 +79,7 @@ impl Engine {
                     mute_groups: None,
                     automix: None,
                     output_taps: None,
+                    monitor: None,
                 };
                 let overrode = self
                     .recall_full(&stored, fade_ms, None, writer, out)
