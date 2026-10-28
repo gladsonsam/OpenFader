@@ -413,7 +413,12 @@ class ShellConnectionStore extends ShellStoreAdapter
       if (!cancelled()) _operationError = 'Connection failed: $error';
     } finally {
       if (!cancelled()) {
-        if (connected()) unawaited(_persistLastConnection());
+        if (connected()) {
+          final driver = _lastMixerType == MixerType.automatic
+              ? engine.driver
+              : _lastMixerType.driver;
+          unawaited(_persistLastConnection(_lastProbe, driver, cancelled));
+        }
         _probing = false;
         _connectionProgress = '';
         notifyListeners();
@@ -425,13 +430,14 @@ class ShellConnectionStore extends ShellStoreAdapter
   // launch can redial without asking. Failures here stay silent: the Link
   // tab already shows the engine error, and persistence must never break
   // the probing state machine.
-  Future<void> _persistLastConnection() async {
+  Future<void> _persistLastConnection(
+      String addr, String driver, bool Function() cancelled) async {
     try {
-      final driver = _lastMixerType == MixerType.automatic
-          ? engine.driver
-          : _lastMixerType.driver;
-      await RecentMixers.rememberLastConnection(_lastProbe, driver);
-      await PrefsService.instance.setLastMixerAddr(_lastProbe);
+      if (cancelled()) return;
+      await RecentMixers.rememberLastConnection(addr, driver);
+      if (cancelled()) return;
+      await PrefsService.instance.setLastMixerAddr(addr);
+      if (cancelled()) return;
       await PrefsService.instance.setReconnectArmed(true);
     } catch (_) {
       // Persistence is best-effort; the live session is already up.

@@ -100,7 +100,7 @@ class RecentMixers extends ChangeNotifier {
     return 'auto';
   }
 
-  /// Add or rename. The caller enables remembering.
+  /// Record a successful connection, most recent first. The caller enables remembering.
   Future<void> remember(String name, String addr, {String? driver}) async {
     if (addr.isEmpty) return;
     final i = _items.indexWhere((r) => r.addr == addr);
@@ -110,13 +110,14 @@ class RecentMixers extends ChangeNotifier {
         addr: addr,
         driver: driver ?? previous?.driver ?? 'auto');
     if (previous != null) {
-      if (previous.name == entry.name && previous.driver == entry.driver) {
+      if (i == 0 &&
+          previous.name == entry.name &&
+          previous.driver == entry.driver) {
         return;
       }
-      _items[i] = entry;
-    } else {
-      _items.add(entry);
+      _items.removeAt(i);
     }
+    _items.insert(0, entry);
     await _save();
   }
 

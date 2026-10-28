@@ -204,8 +204,6 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
   Future<void> _persistConnection(
       String name, String addr, MixerType mixerType) async {
     if (addr.isEmpty || addr.startsWith('id:')) return;
-    await RecentMixers.rememberLastConnection(addr, mixerType.driver);
-    await PrefsService.instance.setLastMixerAddr(addr);
     if (PrefsService.instance.rememberRecents) {
       await RecentMixers.instance
           .remember(name, addr, driver: mixerType.driver);
