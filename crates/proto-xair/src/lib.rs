@@ -341,6 +341,12 @@ impl MixerDriver for XAirDriver {
         presentations::PRESENTATIONS
     }
 
+    fn param_numeric_display(&self, param: &str) -> Option<(f32, f32, &'static str)> {
+        // XR18 FW 1.20 / X AIR Edit: -6 dB -> .25, 0 dB -> .5,
+        // +3 dB -> .625 (2026-10-28; original weight restored).
+        (param == "automix_weight").then_some((-12.0, 12.0, "dB"))
+    }
+
     fn param_swatches(&self, param: &str) -> &'static [openfader_core::params::ParamSwatch] {
         if param == "color" {
             metadata::XAIR_COLOR_SWATCHES

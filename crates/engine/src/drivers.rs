@@ -226,6 +226,9 @@ pub trait DynDriver: Send + Sync {
     fn param_text_rules(&self, _param: &str) -> Option<openfader_core::params::ParamTextRules> {
         None
     }
+    fn param_numeric_display(&self, _param: &str) -> Option<(f32, f32, &'static str)> {
+        None
+    }
     fn param_dependents(&self, _param: &str) -> &'static [&'static str] {
         &[]
     }
@@ -963,6 +966,9 @@ macro_rules! impl_dyn_driver {
         }
         fn param_text_rules(&self, param: &str) -> Option<openfader_core::params::ParamTextRules> {
             MixerDriver::param_text_rules(self, param)
+        }
+        fn param_numeric_display(&self, param: &str) -> Option<(f32, f32, &'static str)> {
+            MixerDriver::param_numeric_display(self, param)
         }
         async fn set_spectrum_target(&self, owner: &str, strip: Option<StripId>) -> anyhow::Result<()> {
             MixerDriver::set_spectrum_target(self, owner, strip).await

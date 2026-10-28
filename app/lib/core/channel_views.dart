@@ -61,6 +61,40 @@ List<double>? parameterRange(Map<String, dynamic>? metadata) {
 
 typedef ParameterChoice = ({double value, String label});
 
+/// Provider-declared linear presentation; commands remain in native units.
+class ParameterNumericDisplay {
+  final double nativeMin, nativeMax, min, max;
+  final String unit;
+  const ParameterNumericDisplay(
+      this.nativeMin, this.nativeMax, this.min, this.max, this.unit);
+
+  static ParameterNumericDisplay? fromMetadata(Map<String, dynamic>? metadata) {
+    final native = parameterRange(metadata);
+    final display = metadata?['numeric_display'];
+    if (native == null || display is! Map) return null;
+    final min = display['min'], max = display['max'], unit = display['unit'];
+    if (min is! num ||
+        max is! num ||
+        unit is! String ||
+        !min.isFinite ||
+        !max.isFinite ||
+        min >= max) {
+      return null;
+    }
+    return ParameterNumericDisplay(
+        native.first, native.last, min.toDouble(), max.toDouble(), unit);
+  }
+
+  double toDisplay(double value) =>
+      min + (value - nativeMin) / (nativeMax - nativeMin) * (max - min);
+  double toNative(double value) =>
+      nativeMin + (value - min) / (max - min) * (nativeMax - nativeMin);
+  String label(double value) {
+    final display = toDisplay(value);
+    return '${display >= 0 ? '+' : ''}${display.toStringAsFixed(1)} $unit';
+  }
+}
+
 List<ParameterChoice> parameterChoices(Map<String, dynamic>? metadata) {
   final rows = metadata?['choices'];
   if (rows is! List) return const [];
@@ -141,6 +175,9 @@ Map<String, dynamic>? parameterPresentation(
       if (!match) continue;
     }
     result['hidden'] = row['hidden'] == true;
+    if (row.containsKey('numeric_display')) {
+      result['numeric_display'] = row['numeric_display'];
+    }
     if (row.containsKey('swatches')) result['swatches'] = row['swatches'];
     if (row.containsKey('symbols')) result['symbols'] = row['symbols'];
     if (row.containsKey('text')) result['text'] = row['text'];

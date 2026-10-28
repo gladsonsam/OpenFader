@@ -784,6 +784,12 @@ pub trait MixerDriver: Send + Sync {
         None
     }
 
+    /// Verified linear display bounds and unit for a parameter's native range.
+    /// Presentation only: stored values and commands retain their native units.
+    fn param_numeric_display(&self, _param: &str) -> Option<(f32, f32, &'static str)> {
+        None
+    }
+
     /// Ordered strip families in the global strip index space
     /// (`caps.topology`). Default is one `in` family covering
     /// [`MixerDriver::channel_count`] so drivers that have not grown

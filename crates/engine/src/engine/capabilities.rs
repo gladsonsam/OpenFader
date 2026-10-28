@@ -72,6 +72,13 @@ impl Engine {
                 if let Some(group) = self.drv(&driver).param_recall_group(def.id) {
                     frame.presentations.insert(0, json!({ "recall_group": group }));
                 }
+                if let Some((min, max, unit)) = self.drv(&driver).param_numeric_display(def.id) {
+                    if min.is_finite() && max.is_finite() && min < max {
+                        frame.presentations.insert(0, json!({ "numeric_display": {
+                            "min": min, "max": max, "unit": unit,
+                        }}));
+                    }
+                }
                 if !swatches.is_empty() {
                     frame.presentations.insert(0, json!({
                         "swatches": swatches.iter().map(|s| json!({
