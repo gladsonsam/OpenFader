@@ -1045,6 +1045,13 @@ pub trait MixerDriver: Send + Sync {
         Ok(None)
     }
 
+    /// Fresh complete RTA inventory; None means unsupported.
+    async fn read_rta_settings(
+        &self,
+    ) -> anyhow::Result<Option<Vec<destinations::DestinationControl>>> {
+        Ok(None)
+    }
+
     /// Source-bound physical tap recall; unsupported providers reject it.
     async fn set_output_tap_guarded(
         &self,

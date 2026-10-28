@@ -3,7 +3,10 @@ use super::*;
 use openfader_core::destinations::{
     DestinationChoice, DestinationControl, DestinationRange, DestinationValue,
 };
-use std::{sync::atomic::Ordering, time::Duration};
+use std::{
+    sync::atomic::Ordering,
+    time::{Duration, Instant},
+};
 const ADDRS: [&str; 2] = ["/-prefs/rta/det", "/-prefs/rta/decay"];
 const TIMEOUT: Duration = Duration::from_millis(350);
 #[derive(Default)]
@@ -12,6 +15,7 @@ pub(super) struct Cache {
     revision: u64,
     values: [Option<f32>; 2],
     pending: bool,
+    observed: [Option<Instant>; 2],
 }
 struct Pending {
     cache: std::sync::Arc<std::sync::Mutex<Cache>>,
@@ -24,6 +28,7 @@ impl Drop for Pending {
             state.pending = false;
             state.revision = state.revision.wrapping_add(1);
             state.values = [None; 2];
+            state.observed = [None; 2];
         }
     }
 }
@@ -51,7 +56,20 @@ impl XAirDriver {
         });
         self.tasks.lock().unwrap().push(task);
         let task = tokio::spawn(async move {
-            while let Ok((_, msg)) = updates.recv().await {
+            loop {
+                let (at, msg) = match updates.recv().await {
+                    Ok(update) => update,
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let mut state = cache.lock().unwrap();
+                        if state.generation == generation {
+                            state.values = [None; 2];
+                            state.observed = [None; 2];
+                            state.revision = state.revision.wrapping_add(1);
+                        }
+                        continue;
+                    }
+                    Err(_) => break,
+                };
                 if active.load(Ordering::Acquire) != generation {
                     break;
                 }
@@ -63,6 +81,7 @@ impl XAirDriver {
                 if state.generation != generation || state.pending {
                     continue;
                 }
+                state.observed[index] = Some(at);
                 if state.values[index] != value {
                     state.revision = state.revision.wrapping_add(1);
                     state.values[index] = value;
@@ -80,6 +99,9 @@ impl XAirDriver {
         if state.generation != generation {
             return vec![];
         }
+        Self::rta_controls_from_cache(&state, generation)
+    }
+    fn rta_controls_from_cache(state: &Cache, generation: u64) -> Vec<DestinationControl> {
         (0..2)
             .map(|i| DestinationControl {
                 revision: Some(state.revision),
@@ -130,6 +152,68 @@ impl XAirDriver {
             })
             .collect()
     }
+    pub(super) async fn read_rta_snapshot(&self) -> anyhow::Result<Vec<DestinationControl>> {
+        let _lane = self.rta_settings_write.lock().await;
+        let generation = self.connection_generation.load(Ordering::Acquire);
+        let check = || -> anyhow::Result<()> {
+            anyhow::ensure!(
+                self.connected.load(Ordering::Acquire)
+                    && self.connection_generation.load(Ordering::Acquire) == generation,
+                "RTA capture session changed"
+            );
+            Ok(())
+        };
+        check()?;
+        let session = self.session().await?.as_ref().unwrap().clone();
+        check()?;
+        let mut values = [0.0; 2];
+        let mut receipts = [None; 2];
+        for pass in 0..2 {
+            for i in 0..2 {
+                check()?;
+                let (at, message) = session.query_received_timeout(ADDRS[i], TIMEOUT).await?;
+                check()?;
+                let value = decode(i, &message)
+                    .ok_or_else(|| anyhow::anyhow!("Invalid RTA readback: {}", ADDRS[i]))?;
+                if pass == 0 {
+                    values[i] = value;
+                } else {
+                    anyhow::ensure!(
+                        values[i] == value,
+                        "RTA changed during capture: {}",
+                        ADDRS[i]
+                    );
+                    receipts[i] = Some(at);
+                }
+            }
+        }
+        let deadline = Instant::now() + TIMEOUT;
+        loop {
+            check()?;
+            {
+                let state = self.rta_settings.lock().unwrap();
+                anyhow::ensure!(
+                    state.generation == generation && !state.pending,
+                    "RTA cache unavailable"
+                );
+                if (0..2).all(|i| {
+                    state.values[i] == Some(values[i])
+                        && state.observed[i]
+                            .zip(receipts[i])
+                            .is_some_and(|(at, receipt)| at >= receipt)
+                }) {
+                    check()?;
+                    return Ok(Self::rta_controls_from_cache(&state, generation));
+                }
+            }
+            anyhow::ensure!(
+                Instant::now() < deadline,
+                "RTA changed or readback incomplete during capture"
+            );
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+    }
+
     pub(super) async fn set_rta_setting(
         &self,
         target: &str,
@@ -191,6 +275,7 @@ impl XAirDriver {
                 "RTA session changed"
             );
             state.pending = true;
+            state.observed = [None; 2];
         }
         let _pending = Pending {
             cache: self.rta_settings.clone(),
@@ -203,7 +288,15 @@ impl XAirDriver {
         };
         let outcome = async {
             anyhow::ensure!(check(), "RTA access changed");
-            session.send(ADDRS[index], vec![wire]).await?;
+            session
+                .send_checked(ADDRS[index], vec![wire], &|| {
+                    anyhow::ensure!(
+                        check() && self.connection_generation.load(Ordering::Acquire) == generation,
+                        "RTA access or session changed before dispatch"
+                    );
+                    Ok(())
+                })
+                .await?;
             for _ in 0..4 {
                 tokio::time::sleep(Duration::from_millis(25)).await;
                 anyhow::ensure!(
@@ -232,6 +325,7 @@ impl XAirDriver {
             let mut state = self.rta_settings.lock().unwrap();
             if state.generation == generation {
                 state.pending = false;
+                state.observed = [None; 2];
                 state.revision = state.revision.wrapping_add(1);
                 state.values = outcome
                     .as_ref()
