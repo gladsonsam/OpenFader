@@ -61,7 +61,22 @@ const fn presentation(id: &'static str, choices: &'static [ParamChoice]) -> Para
         curve: None,
     }
 }
+
+const fn eq_presentation(id: &'static str) -> ParamPresentation {
+    ParamPresentation {
+        // mixer control software 1.8.1 / XR18 FW 1.20, 2026-10-28: shelf
+        // response is unchanged across Q .3, 3.1 and 10. Bell Q is retained.
+        curve: Some("fixed_shelf"),
+        ..presentation(id, &[])
+    }
+}
 pub(super) const PRESENTATIONS: &[ParamPresentation] = &[
+    eq_presentation("eq1_type"),
+    eq_presentation("eq2_type"),
+    eq_presentation("eq3_type"),
+    eq_presentation("eq4_type"),
+    eq_presentation("eq5_type"),
+    eq_presentation("eq6_type"),
     presentation("gate_mode", GATE_MODES),
     presentation("gate_key_src", KEYS),
     presentation("gate_filter_type", FILTERS),

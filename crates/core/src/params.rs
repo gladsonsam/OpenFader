@@ -101,6 +101,7 @@ pub struct ParamPresentation {
     /// Optional verified transfer-curve model for this processor mode.
     /// `gate_attenuation` means input minus Range below Threshold.
     /// `hard_knee` means an abrupt compressor threshold (zero knee width).
+    /// `fixed_shelf` means EQ shelves retain but do not use bell Q.
     pub curve: Option<&'static str>,
 }
 
