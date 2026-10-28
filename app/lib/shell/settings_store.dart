@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:share_plus/share_plus.dart';
 
 import '../core/access_limits.dart';
+import '../core/destination_controls.dart';
 import '../settings/mixes.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
@@ -30,6 +31,26 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
 
   @override
   AccessLimitsStore get accessLimits => app;
+
+  @override
+  bool get mixerConnected => engine.connected;
+  @override
+  List<DestinationControlVm> get mixerSetupControls =>
+      List.unmodifiable(engine.destinationControls.where((row) =>
+          row.surface == 'automix_settings' ||
+          row.surface == 'bus_link_state'));
+  @override
+  int get controlAccessEpoch => app.controlAccessEpoch;
+  @override
+  bool mixerSetupControlIsCurrent(DestinationControlVm control) =>
+      control.surface != 'bus_link_state' &&
+      app.destinationControlIsCurrent(control);
+  @override
+  Future<String?> setMixerSetupControl(
+          DestinationControlVm control, double value) =>
+      mixerSetupControlIsCurrent(control)
+          ? app.setDestinationControl(control, value)
+          : Future.value('Mixer setting unavailable or read-only.');
 
   @override
   PrefsService get prefs => PrefsService.instance;
