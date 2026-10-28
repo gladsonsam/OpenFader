@@ -251,14 +251,11 @@ impl MixerDriver for XAirDriver {
         snapshot: &[openfader_core::destinations::DestinationControl],
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
-        anyhow::ensure!(
-            target != "link_policies"
-                && !snapshot
-                    .iter()
-                    .any(|row| row.surface == "link_policy_state"),
-            "Link policy state is read-only"
-        );
-        if target == "bus_links" {
+        if target == "link_policies" {
+            self.set_link_policy_checked(control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        } else if target == "bus_links" {
             self.set_bus_link_control(control, value, expected, snapshot, context)
                 .await
                 .map(Some)

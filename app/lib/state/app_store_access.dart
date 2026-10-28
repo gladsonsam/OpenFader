@@ -226,6 +226,12 @@ mixin _AppStoreAccess on _AppStoreContext {
         control.surface == 'link_policy_state') {
       return false;
     }
+    if (control.surface == 'link_policy') {
+      return blockedAccess.isEmpty &&
+          control.members.isNotEmpty &&
+          AccessFamily.values.every(accessFamilyAllowed) &&
+          control.members.every(accessTargetAllowed);
+    }
     if (control.surface == 'bus_link') {
       return accessFamilyAllowed(AccessFamily.masterDsp) &&
           accessFamilyAllowed(AccessFamily.channelId) &&
