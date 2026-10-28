@@ -2,6 +2,111 @@
 
 use super::*;
 
+/// Named scene with an optional full typed snapshot.
+#[derive(Clone, Debug)]
+pub struct StoredNamedScene {
+    legacy: openfader_core::show::Scene,
+    full: Option<StoredScene>,
+}
+
+impl StoredNamedScene {
+    pub fn from_full(mut snapshot: StoredScene) -> Self {
+        // Identity is internal only; named scenes never occupy a numbered slot.
+        snapshot.number = 1;
+        let legacy = openfader_core::show::Scene {
+            name: snapshot.name.clone(),
+            main_fader: snapshot.main_fader,
+            strips: snapshot
+                .strips
+                .iter()
+                .map(|s| openfader_core::show::SceneStrip {
+                    strip: openfader_core::StripId(s.strip),
+                    name: s.name.clone(),
+                    fader: s.fader,
+                    mute: s.mute,
+                    params: s
+                        .params
+                        .iter()
+                        .filter_map(|(k, v)| {
+                            let value = match v {
+                                serde_json::Value::Bool(b) => openfader_core::ParamValue::Bool(*b),
+                                serde_json::Value::String(s) => {
+                                    openfader_core::ParamValue::Text(s.clone())
+                                }
+                                serde_json::Value::Number(n) => {
+                                    openfader_core::ParamValue::Float(n.as_f64()? as f32)
+                                }
+                                _ => return None,
+                            };
+                            Some((k.clone(), value))
+                        })
+                        .collect(),
+                })
+                .collect(),
+            notes: Default::default(),
+        };
+        Self {
+            legacy,
+            full: Some(snapshot),
+        }
+    }
+    pub fn full(&self) -> Option<&StoredScene> {
+        self.full.as_ref()
+    }
+    pub fn into_legacy(self) -> anyhow::Result<openfader_core::show::Scene> {
+        if self.full.is_some() {
+            anyhow::bail!("full named scene requires full-state recall");
+        }
+        Ok(self.legacy)
+    }
+}
+impl From<openfader_core::show::Scene> for StoredNamedScene {
+    fn from(legacy: openfader_core::show::Scene) -> Self {
+        Self { legacy, full: None }
+    }
+}
+impl std::ops::Deref for StoredNamedScene {
+    type Target = openfader_core::show::Scene;
+    fn deref(&self) -> &Self::Target {
+        &self.legacy
+    }
+}
+
+/// Engine-owned ordered named-show library.
+#[derive(Clone, Debug)]
+pub struct StoredShow {
+    pub name: String,
+    pub scenes: Vec<StoredNamedScene>,
+}
+
+impl StoredShow {
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            scenes: Vec::new(),
+        }
+    }
+
+    pub fn add_scene(&mut self, scene: impl Into<StoredNamedScene>) {
+        let scene = scene.into();
+        if let Some(slot) = self.scenes.iter_mut().find(|s| s.name == scene.name) {
+            *slot = scene;
+        } else {
+            self.scenes.push(scene);
+        }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&StoredNamedScene> {
+        self.scenes.iter().find(|s| s.name == name)
+    }
+
+    pub fn remove(&mut self, name: &str) -> bool {
+        let before = self.scenes.len();
+        self.scenes.retain(|s| s.name != name);
+        self.scenes.len() != before
+    }
+}
+
 /// Link re-broadcast interval (R2): the `link` event goes out on every
 /// change plus on this cadence with a fresh round-trip measurement.
 pub const LINK_INTERVAL: Duration = Duration::from_secs(2);
@@ -452,7 +557,7 @@ pub struct EngineConfig {
     /// Optional sim desk preset (hardware drivers ignore it).
     pub preset: Option<openfader_sim::SimPreset>,
     /// R2 scene library directory: the combined numbered+named library
-    /// persists as `scenes.json` (v2) here and reloads on the next
+    /// persists as versioned `scenes.json` here and reloads on the next
     /// [`Engine::new`]. Load is strict whole-document: a corrupt file
     /// latches a visible library error and blocks overwriting writes
     /// until reset or restart. `None` = in-memory only (tests default

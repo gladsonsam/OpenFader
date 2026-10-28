@@ -1,11 +1,11 @@
 //! Engine-local durable library kernel: one versioned combined document
-//! (`scenes.json` v2 through v9) holding the numbered scene slots AND the named show
+//! (`scenes.json` v2 through v10) holding the numbered scene slots AND the named show
 //! library, with strict whole-document load and atomic commits.
 //!
 //! Single strict transaction (no silent repair):
 //!
-//! - The document is `{version: 2|3|4|5|6|7|8|9, scenes: [...], shows: [...]}`. Version 3
-//!   adds provider-qualified FX insert and mute-group state; version 4 adds global automix state; version 5 adds output taps; version 6 adds monitor settings; version 7 adds RTA settings; version 8 adds output EQ; version 9 adds stereo link settings. Documents without
+//! - The document is `{version: 2|3|4|5|6|7|8|9|10, scenes: [...], shows: [...]}`. Version 3
+//!   adds provider-qualified FX insert and mute-group state; version 4 adds global automix state; version 5 adds output taps; version 6 adds monitor settings; version 7 adds RTA settings; version 8 adds output EQ; version 9 adds stereo link settings; version 10 adds full named snapshots. Documents without
 //!   those fields remain v2 so older builds can still read them. Version 1
 //!   (`{version: 1, scenes: [...]}`) is the legacy numbered-only shape: it
 //!   still loads, but it is never rewritten on load — it migrates to v2
@@ -40,23 +40,22 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use openfader_core::{
-    show::{Scene, Show},
-    ParamValue, StripId,
-};
+use openfader_core::{show::Scene, ParamValue, StripId};
 use serde::Deserialize;
 use serde_json::Value;
 
 use super::engine::{
     StoredAutomix, StoredFx, StoredFxInsert, StoredLinkSettings, StoredMonitor, StoredMonitorValue,
     StoredMuteGroupMembership, StoredMuteGroups, StoredOutputEq, StoredOutputEqTarget,
-    StoredOutputTaps, StoredRoute, StoredRta, StoredScene, StoredStrip, SCENE_MAX, SCENE_MIN,
+    StoredOutputTaps, StoredRoute, StoredRta, StoredScene, StoredShow as Show, StoredStrip,
+    SCENE_MAX, SCENE_MIN,
 };
 
 /// Combined library file name under the engine data dir.
 pub const LIBRARY_FILE_NAME: &str = "scenes.json";
 /// Current combined document version.
-pub const LIBRARY_VERSION: u64 = 9;
+pub const LIBRARY_VERSION: u64 = 10;
+const LIBRARY_VERSION_V9: u64 = 9;
 const LIBRARY_VERSION_V8: u64 = 8;
 const LIBRARY_VERSION_V7: u64 = 7;
 const LIBRARY_VERSION_V6: u64 = 6;
@@ -489,7 +488,7 @@ fn parse_library_doc(doc: &Value) -> Result<ParsedLibrary, String> {
     let version = obj
         .get("version")
         .and_then(Value::as_u64)
-        .ok_or_else(|| "document needs integer \"version\" 1..=9".to_string())?;
+        .ok_or_else(|| "document needs integer \"version\" 1..=10".to_string())?;
     if !matches!(
         version,
         LIBRARY_VERSION_V1
@@ -500,6 +499,7 @@ fn parse_library_doc(doc: &Value) -> Result<ParsedLibrary, String> {
             | LIBRARY_VERSION_V6
             | LIBRARY_VERSION_V7
             | LIBRARY_VERSION_V8
+            | LIBRARY_VERSION_V9
             | LIBRARY_VERSION
     ) {
         return Err(format!(
@@ -552,7 +552,7 @@ fn parse_library_doc(doc: &Value) -> Result<ParsedLibrary, String> {
         return Err(format!("too many shows ({} > {MAX_SHOWS})", named.len()));
     }
     let numbered = parse_numbered(scenes, version)?;
-    let shows = parse_shows(named)?;
+    let shows = parse_shows(named, version)?;
     Ok((numbered, shows, version))
 }
 
@@ -617,7 +617,7 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
         {
             return Err(format!("scenes[{i}]: output EQ requires library version 8"));
         }
-        if version < LIBRARY_VERSION
+        if version < LIBRARY_VERSION_V9
             && raw
                 .as_object()
                 .is_some_and(|s| s.contains_key("link_settings"))
@@ -853,12 +853,47 @@ fn parse_numbered(scenes: &[Value], version: u64) -> Result<HashMap<u16, StoredS
     Ok(out)
 }
 
-fn parse_shows(named: &[Value]) -> Result<Vec<Show>, String> {
+fn parse_shows(named: &[Value], version: u64) -> Result<Vec<Show>, String> {
     let mut out = Vec::with_capacity(named.len());
     let mut seen_shows = std::collections::HashSet::new();
     for (i, raw) in named.iter().enumerate() {
+        let mut adapted = raw.clone();
+        let mut full_scenes = HashMap::new();
+        if let Some(rows) = adapted.get_mut("scenes").and_then(Value::as_array_mut) {
+            for (j, row) in rows.iter_mut().enumerate() {
+                if row.as_object().is_some_and(|o| o.contains_key("snapshot")) {
+                    if version < LIBRARY_VERSION {
+                        return Err(format!(
+                            "shows[{i}].scenes[{j}]: snapshot requires version 10"
+                        ));
+                    }
+                    let obj = row.as_object().unwrap();
+                    if obj.len() != 2 || !obj.contains_key("name") {
+                        return Err("full named scene must contain only name and snapshot".into());
+                    }
+                    let name = obj
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .ok_or("named scene needs name")?
+                        .to_owned();
+                    let mut snapshot = obj["snapshot"]
+                        .as_object()
+                        .ok_or("snapshot must be an object")?
+                        .clone();
+                    if snapshot.contains_key("number") || snapshot.contains_key("name") {
+                        return Err("snapshot must not contain identity".into());
+                    }
+                    // Placeholder is used only by the shared numbered decoder.
+                    snapshot.insert("number".into(), serde_json::json!(1));
+                    snapshot.insert("name".into(), serde_json::json!(name));
+                    let mut parsed = parse_numbered(&[Value::Object(snapshot)], version)?;
+                    full_scenes.insert(j, parsed.remove(&1).unwrap());
+                    *row = serde_json::json!({"name": name});
+                }
+            }
+        }
         let doc: ShowDoc =
-            serde_json::from_value(raw.clone()).map_err(|e| format!("shows[{i}]: {e}"))?;
+            serde_json::from_value(adapted).map_err(|e| format!("shows[{i}]: {e}"))?;
         let name = check_name(&doc.name, &format!("shows[{i}].name"))?;
         if !seen_shows.insert(name.clone()) {
             return Err(format!("shows[{i}]: duplicate show name {name:?}"));
@@ -876,6 +911,10 @@ fn parse_shows(named: &[Value]) -> Result<Vec<Show>, String> {
             let scene_name = check_name(&sc.name, &format!("{what}.name"))?;
             if !seen_scenes.insert(scene_name.clone()) {
                 return Err(format!("{what}: duplicate scene name {scene_name:?}"));
+            }
+            if let Some(full) = full_scenes.remove(&j) {
+                scenes.push(super::engine::StoredNamedScene::from_full(full));
+                continue;
             }
             let main_fader = match sc.main_fader {
                 Some(v) => Some(check_fader(v, &format!("{what}.main_fader"))?),
@@ -930,12 +969,15 @@ fn parse_shows(named: &[Value]) -> Result<Vec<Show>, String> {
                 }
                 notes.insert(key.clone(), value.clone());
             }
-            scenes.push(Scene {
-                name: scene_name,
-                strips,
-                main_fader,
-                notes,
-            });
+            scenes.push(
+                Scene {
+                    name: scene_name,
+                    strips,
+                    main_fader,
+                    notes,
+                }
+                .into(),
+            );
         }
         out.push(Show { name, scenes });
     }
@@ -1381,6 +1423,13 @@ pub fn validate_candidate(
                     ));
                 }
             }
+            if let Some(full) = scene.full() {
+                let mut one = HashMap::new();
+                one.insert(1, full.clone());
+                validate_candidate(&one, &[])?;
+                // Also exercise the strict decoder used on reload.
+                parse_numbered(&[render_numbered(full)], LIBRARY_VERSION)?;
+            }
             if scene.strips.len() > MAX_STRIPS_PER_SCENE {
                 return Err(format!(
                     "show {:?} scene {:?}: too many strips",
@@ -1441,13 +1490,18 @@ fn param_value_json(pv: &ParamValue) -> Value {
     }
 }
 
-/// Render v9 for link settings, v8 for output EQ, v7 for RTA settings, v6 for monitor settings, v5 for output taps, v4 for automix, v3 for FX insert or mute-group state, otherwise retain v2.
+/// Render v10 for full named snapshots, v9 for link settings, v8 for output EQ, v7 for RTA settings, v6 for monitor settings, v5 for output taps, v4 for automix, v3 for FX insert or mute-group state, otherwise retain v2.
 /// Numbered slots and parameter keys are sorted for stable bytes.
 pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -> Value {
     let mut slots: Vec<&StoredScene> = numbered.values().collect();
     slots.sort_by_key(|s| s.number);
-    let version = if slots.iter().any(|s| s.link_settings.is_some()) {
+    let version = if shows
+        .iter()
+        .any(|show| show.scenes.iter().any(|s| s.full().is_some()))
+    {
         LIBRARY_VERSION
+    } else if slots.iter().any(|s| s.link_settings.is_some()) {
+        LIBRARY_VERSION_V9
     } else if slots.iter().any(|s| s.output_eq.is_some()) {
         LIBRARY_VERSION_V8
     } else if slots.iter().any(|s| s.rta.is_some()) {
@@ -1466,91 +1520,101 @@ pub fn build_library_doc(numbered: &HashMap<u16, StoredScene>, shows: &[Show]) -
     } else {
         LIBRARY_VERSION_V2
     };
-    let scenes: Vec<Value> = slots
-        .iter()
-        .map(|s| {
-            fn params_sorted(p: &HashMap<String, Value>) -> BTreeMap<&String, &Value> {
-                p.iter().collect()
-            }
-            let mut scene = serde_json::json!({
-                "number": s.number,
-                "name": s.name,
-                "saved_at": s.saved_at,
-                "main_fader": s.main_fader,
-                "strips": s.strips.iter().map(|st| serde_json::json!({
-                    "strip": st.strip,
-                    "key": st.key,
-                    "name": st.name,
-                    "fader": st.fader,
-                    "mute": st.mute,
-                    "params": params_sorted(&st.params),
-                })).collect::<Vec<_>>(),
-                "fx": s.fx.iter().map(|f| {
-                    let mut row = serde_json::json!({
-                        "slot": f.slot,
-                        "type": f.fx_type,
-                        "on": f.on,
-                        "bypass": f.bypass,
-                        "params": f.params,
-                    });
-                    if let Some(insert) = &f.insert {
-                        row["insert"] = serde_json::json!({"provider":insert.provider,"enabled":insert.enabled});
-                    }
-                    row
-                }).collect::<Vec<_>>(),
-                "routing": s.routing.iter().map(|r| {
-                    let mut row = serde_json::json!({
-                        "strip": r.strip, "key": r.key, "group": r.group, "index": r.index,
-                    });
-                    if !r.target.is_empty() { row["target"] = serde_json::json!(r.target); }
-                    row
-                }).collect::<Vec<_>>(),
-            });
-            if let Some(link) = &s.link_settings { scene["link_settings"] = serde_json::json!({"provider": link.provider, "bus_links": link.settings.bus_links, "policies": link.settings.policies}); }
-            if let Some(eq) = &s.output_eq { scene["output_eq"] = serde_json::json!({"provider":eq.provider,"targets":eq.targets.iter().map(|t| serde_json::json!({"target":t.target,"mode":t.mode,"gains_db":t.gains_db})).collect::<Vec<_>>()}); }
-            if let Some(r) = &s.rta { scene["rta"] = serde_json::json!({"provider":r.provider,"detector":r.detector,"decay":r.decay}); }
-            if let Some(m) = &s.monitor { scene["monitor"] = serde_json::json!({"provider":m.provider,"values":m.values.iter().map(|v|serde_json::json!({"id":v.id,"value":v.value})).collect::<Vec<_>>()}); }
-            if let Some(t) = &s.output_taps { scene["output_taps"] = serde_json::json!({"provider": t.provider, "values": t.values.iter().map(|v| serde_json::json!({"target": v.target, "source": v.source, "tap": v.tap})).collect::<Vec<_>>()}); }
-            if let Some(a) = &s.automix { scene["automix"] = serde_json::json!({"provider": a.provider, "values": a.values}); }
-            if let Some(groups) = &s.mute_groups {
-                scene["mute_groups"] = serde_json::json!({
-                    "provider": groups.provider,
-                    "masters": groups.masters,
-                    "memberships": groups.memberships.iter().map(|member| serde_json::json!({
-                        "strip": member.strip, "key": member.key, "mask": member.mask,
-                    })).collect::<Vec<_>>(),
-                });
-            }
-            scene
-        })
-        .collect();
+    let scenes: Vec<Value> = slots.iter().map(|s| render_numbered(s)).collect();
     let show_docs: Vec<Value> = shows
         .iter()
         .map(|show| {
             serde_json::json!({
                 "name": show.name,
-                "scenes": show.scenes.iter().map(|scene| serde_json::json!({
+                "scenes": show.scenes.iter().map(|scene| {
+                    if let Some(full) = scene.full() {
+                        let mut snapshot = render_numbered(full);
+                        let obj = snapshot.as_object_mut().unwrap();
+                        obj.remove("number"); obj.remove("name");
+                        return serde_json::json!({"name": scene.name, "snapshot": snapshot});
+                    }
+                    serde_json::json!({
                     "name": scene.name,
                     "main_fader": scene.main_fader,
                     "strips": scene.strips.iter().map(|st| {
                         let mut params = BTreeMap::new();
-                        for (id, pv) in &st.params {
-                            params.insert(id.clone(), param_value_json(pv));
-                        }
-                        serde_json::json!({
-                            "strip": st.strip.0,
-                            "name": st.name,
-                            "fader": st.fader,
-                            "mute": st.mute,
-                            "params": params,
-                        })
+                        for (id, pv) in &st.params { params.insert(id.clone(), param_value_json(pv)); }
+                        serde_json::json!({"strip": st.strip.0, "name": st.name, "fader": st.fader, "mute": st.mute, "params": params})
                     }).collect::<Vec<_>>(),
                     "notes": scene.notes,
-                })).collect::<Vec<_>>(),
+                }) }).collect::<Vec<_>>(),
             })
-        })
-        .collect();
+        }).collect();
     serde_json::json!({ "version": version, "scenes": scenes, "shows": show_docs })
+}
+
+fn render_numbered(s: &StoredScene) -> Value {
+    fn params_sorted(p: &HashMap<String, Value>) -> BTreeMap<&String, &Value> {
+        p.iter().collect()
+    }
+    let mut scene = serde_json::json!({
+        "number": s.number,
+        "name": s.name,
+        "saved_at": s.saved_at,
+        "main_fader": s.main_fader,
+        "strips": s.strips.iter().map(|st| serde_json::json!({
+            "strip": st.strip,
+            "key": st.key,
+            "name": st.name,
+            "fader": st.fader,
+            "mute": st.mute,
+            "params": params_sorted(&st.params),
+        })).collect::<Vec<_>>(),
+        "fx": s.fx.iter().map(|f| {
+            let mut row = serde_json::json!({
+                "slot": f.slot,
+                "type": f.fx_type,
+                "on": f.on,
+                "bypass": f.bypass,
+                "params": f.params,
+            });
+            if let Some(insert) = &f.insert {
+                row["insert"] = serde_json::json!({"provider":insert.provider,"enabled":insert.enabled});
+            }
+            row
+        }).collect::<Vec<_>>(),
+        "routing": s.routing.iter().map(|r| {
+            let mut row = serde_json::json!({
+                "strip": r.strip, "key": r.key, "group": r.group, "index": r.index,
+            });
+            if !r.target.is_empty() { row["target"] = serde_json::json!(r.target); }
+            row
+        }).collect::<Vec<_>>(),
+    });
+    if let Some(link) = &s.link_settings {
+        scene["link_settings"] = serde_json::json!({"provider": link.provider, "bus_links": link.settings.bus_links, "policies": link.settings.policies});
+    }
+    if let Some(eq) = &s.output_eq {
+        scene["output_eq"] = serde_json::json!({"provider":eq.provider,"targets":eq.targets.iter().map(|t| serde_json::json!({"target":t.target,"mode":t.mode,"gains_db":t.gains_db})).collect::<Vec<_>>()});
+    }
+    if let Some(r) = &s.rta {
+        scene["rta"] =
+            serde_json::json!({"provider":r.provider,"detector":r.detector,"decay":r.decay});
+    }
+    if let Some(m) = &s.monitor {
+        scene["monitor"] = serde_json::json!({"provider":m.provider,"values":m.values.iter().map(|v|serde_json::json!({"id":v.id,"value":v.value})).collect::<Vec<_>>()});
+    }
+    if let Some(t) = &s.output_taps {
+        scene["output_taps"] = serde_json::json!({"provider": t.provider, "values": t.values.iter().map(|v| serde_json::json!({"target": v.target, "source": v.source, "tap": v.tap})).collect::<Vec<_>>()});
+    }
+    if let Some(a) = &s.automix {
+        scene["automix"] = serde_json::json!({"provider": a.provider, "values": a.values});
+    }
+    if let Some(groups) = &s.mute_groups {
+        scene["mute_groups"] = serde_json::json!({
+            "provider": groups.provider,
+            "masters": groups.masters,
+            "memberships": groups.memberships.iter().map(|member| serde_json::json!({
+                "strip": member.strip, "key": member.key, "mask": member.mask,
+            })).collect::<Vec<_>>(),
+        });
+    }
+    scene
 }
 
 // ================= atomic file commit =================

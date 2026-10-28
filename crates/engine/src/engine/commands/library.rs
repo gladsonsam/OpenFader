@@ -51,38 +51,41 @@ impl Engine {
                         .cloned()
                         .ok_or_else(|| anyhow::anyhow!("unknown scene {name:?} in show {show:?}"))?
                 };
-                // Named captures have no FX/routing plane. Reuse the pinned,
-                // cache-coherent recall path for the values they do store.
-                let stored = StoredScene {
-                    number: 0,
-                    name: scene.name,
-                    saved_at: 0,
-                    main_fader: scene.main_fader,
-                    strips: scene
-                        .strips
-                        .into_iter()
-                        .map(|s| StoredStrip {
-                            strip: s.strip.0,
-                            key: None,
-                            name: s.name,
-                            fader: s.fader,
-                            mute: s.mute,
-                            params: s
-                                .params
-                                .into_iter()
-                                .map(|(id, v)| (id, param_value_json(&v)))
-                                .collect(),
-                        })
-                        .collect(),
-                    fx: Vec::new(),
-                    routing: Vec::new(),
-                    mute_groups: None,
-                    automix: None,
-                    output_taps: None,
-                    monitor: None,
-                    rta: None,
-                    output_eq: None,
-                    link_settings: None,
+                let stored = if let Some(full) = scene.full() {
+                    full.clone()
+                } else {
+                    let scene = scene.into_legacy()?;
+                    StoredScene {
+                        number: 0,
+                        name: scene.name,
+                        saved_at: 0,
+                        main_fader: scene.main_fader,
+                        strips: scene
+                            .strips
+                            .into_iter()
+                            .map(|s| StoredStrip {
+                                strip: s.strip.0,
+                                key: None,
+                                name: s.name,
+                                fader: s.fader,
+                                mute: s.mute,
+                                params: s
+                                    .params
+                                    .into_iter()
+                                    .map(|(id, v)| (id, param_value_json(&v)))
+                                    .collect(),
+                            })
+                            .collect(),
+                        fx: Vec::new(),
+                        routing: Vec::new(),
+                        mute_groups: None,
+                        automix: None,
+                        output_taps: None,
+                        monitor: None,
+                        rta: None,
+                        output_eq: None,
+                        link_settings: None,
+                    }
                 };
                 let overrode = self
                     .recall_full(&stored, fade_ms, None, writer, out)
