@@ -228,6 +228,7 @@ mixin _AppStoreAccess on _AppStoreContext {
     }
     if (control.surface == 'link_policy' ||
         control.surface == 'usb_interface' ||
+        control.surface == 'safe_levels' ||
         control.surface == 'clock_rate' ||
         control.surface == 'midi_setup') {
       return blockedAccess.isEmpty &&
