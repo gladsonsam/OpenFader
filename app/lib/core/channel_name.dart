@@ -88,13 +88,15 @@ class ChannelAssignmentResult {
 }
 
 abstract class ChannelNameStore implements Listenable {
-  List<ChannelAssignmentChoice> assignmentsForChannel(ChannelNameTarget target);
+  List<ChannelAssignmentChoice> assignmentsForChannel(ChannelNameTarget target,
+      {bool includeUnknown = false});
   bool? assignmentForChannel(ChannelNameTarget target, String id);
   String? assignmentEditError(ChannelNameTarget target, String id);
 
   /// Membership events lack request IDs; success means matching state observed.
   Future<ChannelAssignmentResult> assignChannel(
-      ChannelNameTarget target, String id, bool value, {required bool expected});
+      ChannelNameTarget target, String id, bool value,
+      {required bool expected});
   ChannelNameTarget? captureNameTarget([int? channel]);
   String? nameEditError(ChannelNameTarget target);
 

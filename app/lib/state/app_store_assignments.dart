@@ -49,8 +49,9 @@ mixin _AppStoreAssignments on _AppStoreContext {
 
   @override
   List<ChannelAssignmentChoice> assignmentsForChannel(
-    ChannelNameTarget target,
-  ) {
+    ChannelNameTarget target, {
+    bool includeUnknown = false,
+  }) {
     if (!engine.capsReady) return const [];
     final fields = engine.supportedParams
         .where((id) => id == 'lr_assign' || _membership.hasMatch(id))
@@ -59,7 +60,7 @@ mixin _AppStoreAssignments on _AppStoreContext {
     return [
       for (final id in fields)
         if (_assignmentParamApplies(target, id) &&
-            assignmentForChannel(target, id) != null)
+            (includeUnknown || assignmentForChannel(target, id) != null))
           ChannelAssignmentChoice(
             id,
             _assignmentLabel(id),
