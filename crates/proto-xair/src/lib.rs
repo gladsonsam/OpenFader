@@ -242,6 +242,15 @@ impl MixerDriver for XAirDriver {
         self.read_automix_snapshot().await.map(Some)
     }
 
+    async fn read_output_taps(
+        &self,
+    ) -> anyhow::Result<Option<Vec<openfader_core::routing::OutputTapState>>> {
+        if self.model != addrs::XAirModel::Xr18 {
+            return Ok(None);
+        }
+        self.read_output_tap_snapshot().await.map(Some)
+    }
+
     async fn set_output_processor_guarded(
         &self,
         target: &str,

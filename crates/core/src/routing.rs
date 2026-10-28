@@ -7,6 +7,14 @@ pub struct RouteState {
     pub generation: u64,
 }
 
+/// Independently captured tap and source context for one physical output.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutputTapState {
+    pub target: String,
+    pub source: String,
+    pub tap: u8,
+}
+
 #[derive(Clone, Debug)]
 pub struct OutputPlane {
     pub key: &'static str,
