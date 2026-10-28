@@ -14,6 +14,46 @@ pub(super) struct Inventory {
     last_slot: Option<usize>,
 }
 
+fn scope_fields() -> Vec<Value> {
+    let mut fields = Vec::new();
+    let mut add = |group: &str, label: String| {
+        fields.push(json!({"index": fields.len(), "group": group, "label": label}));
+    };
+    for i in 1..=16 {
+        add("Channels and outputs", format!("Channel {i}"));
+    }
+    add("Channels and outputs", "Aux input 17–18".into());
+    for i in 1..=4 {
+        add("FX", format!("FX return {i}"));
+    }
+    for i in 1..=6 {
+        add("Channels and outputs", format!("Bus master {i}"));
+    }
+    for i in 1..=4 {
+        add("FX", format!("FX send master {i}"));
+    }
+    add("Channels and outputs", "Main LR".into());
+    for i in 1..=4 {
+        add("Channels and outputs", format!("DCA {i}"));
+    }
+    for i in 1..=4 {
+        add("FX", format!("FX algorithm {i}"));
+    }
+    for label in ["Source", "Input", "Config", "EQ", "Dynamics"] {
+        add("Parameters", label.into());
+    }
+    for i in 1..=6 {
+        add("Parameters", format!("Bus send {i}"));
+    }
+    for i in 1..=4 {
+        add("Parameters", format!("FX send {i}"));
+    }
+    for label in ["Fader / Pan", "Mute", "Routing", "Console configuration"] {
+        add("Globals", label.into());
+    }
+    fields
+}
+
 impl XAirDriver {
     pub(super) fn native_inventory(&self) -> Value {
         let generation = self.connection_generation.load(Ordering::Acquire);
@@ -31,7 +71,7 @@ impl XAirDriver {
             .collect();
         json!({"authority":"mixer", "provider":"xair", "label":"XR18 native snapshots", "connected":connected,
             "generation":generation, "revision":cache.revision, "capacity":64, "last_slot":if names.is_some() {cache.last_slot} else {None},
-            "complete":names.is_some(), "slots":slots,
+            "complete":names.is_some(), "slots":slots, "scope_fields":scope_fields(),
             "operations":if names.is_some() {vec!["inspect", "refresh", "recall", "replace", "rename", "delete", "set_scope"]} else {vec!["inspect", "refresh"]},
             "limitations":"Names are read from the mixer; an empty name does not prove a slot is empty. Native recall scope is stored on the mixer. Saves and recalls are sent once and their audio or full contents are not independently verified. Refresh after changes."
         })
@@ -123,9 +163,16 @@ impl XAirDriver {
                 "Native session changed"
             );
             let sent = session
-                .send(
+                .send_checked(
                     &format!("/-snap/{slot:02}/scope"),
                     vec![OscType::String(next.to_owned())],
+                    &|| {
+                        anyhow::ensure!(
+                            valid() && self.native_inventory() == *expected,
+                            "Native session or inventory changed"
+                        );
+                        Ok(())
+                    },
                 )
                 .await;
             drop(held_session);
