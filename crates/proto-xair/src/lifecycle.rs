@@ -80,6 +80,13 @@ impl XAirDriver {
         *self.receive_since.lock().unwrap() = std::time::Instant::now();
         *self.meter_latest.lock().unwrap() = None;
         *self.link_cache.lock().unwrap() = [None; 8];
+        {
+            let mut cache = self.bus_link_cache.lock().unwrap();
+            for entry in cache.iter_mut() {
+                entry.0 = entry.0.wrapping_add(1);
+                entry.1 = None;
+            }
+        }
         *self.link_writes.lock().unwrap() = [None; 8];
         *self.dyn_cache.lock().await = None;
         // Desk-broadcast ingest: parse every unmatched inbound message into
@@ -94,6 +101,7 @@ impl XAirDriver {
         let receive_since = self.receive_since.clone();
         let generation = self.connection_generation.clone();
         let link_cache = self.link_cache.clone();
+        let bus_link_cache = self.bus_link_cache.clone();
         let task = tokio::spawn(async move {
             let mut fx_types = [None; 4];
             loop {
@@ -111,6 +119,19 @@ impl XAirDriver {
                             // single-strip control; ON always protects both.
                             link_cache.lock().unwrap()[pair] =
                                 linked.then_some((received_at, true));
+                        }
+                        if msg.addr == "/config/buslink" || msg.addr.starts_with("/config/buslink/")
+                        {
+                            let mut cache = bus_link_cache.lock().unwrap();
+                            if let Some((pair, _)) = super::assignments::parse_bus_link(&msg) {
+                                cache[pair].0 = cache[pair].0.wrapping_add(1);
+                                cache[pair].1 = None;
+                            } else {
+                                for entry in cache.iter_mut() {
+                                    entry.0 = entry.0.wrapping_add(1);
+                                    entry.1 = None;
+                                }
+                            }
                         }
                         if msg.addr == addrs::METER_DYN_SUBSCRIBE {
                             if let Ok(dyn_m) = Self::decode_dyn_message(&msg) {
@@ -351,6 +372,13 @@ impl XAirDriver {
         self.connected
             .store(false, std::sync::atomic::Ordering::Release);
         *self.link_cache.lock().unwrap() = [None; 8];
+        {
+            let mut cache = self.bus_link_cache.lock().unwrap();
+            for entry in cache.iter_mut() {
+                entry.0 = entry.0.wrapping_add(1);
+                entry.1 = None;
+            }
+        }
         *self.link_writes.lock().unwrap() = [None; 8];
         self.connection_generation
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);

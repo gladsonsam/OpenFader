@@ -74,6 +74,33 @@ impl Engine {
         Ok(None)
     }
 
+    async fn admit_assignment_members(
+        &self,
+        ch: u16,
+        writer: &str,
+    ) -> anyhow::Result<Option<Event>> {
+        let id = self.active_driver();
+        let epoch = self.connection_gen.load(Ordering::Acquire);
+        let driver = self.drv(&id);
+        let members = driver.control_members(StripId(ch), "assign").await?;
+        anyhow::ensure!(
+            id == self.active_driver()
+                && epoch == self.connection_gen.load(Ordering::Acquire)
+                && !self.reads_suspended.load(Ordering::Acquire),
+            "Destination connection changed; reopen the control."
+        );
+        let policy = self.policy_of(writer);
+        for member in std::iter::once(StripId(ch)).chain(members) {
+            policy.allow_assign(member)?;
+            if let Some(holder) = self.lock_holder(member.0) {
+                if holder != writer {
+                    return Ok(Some(Self::locked_error(member.0, &holder)));
+                }
+            }
+        }
+        Ok(None)
+    }
+
     pub(super) async fn apply_destination(
         &self,
         cmd: Cmd,
@@ -200,17 +227,44 @@ impl Engine {
                         } else if row.surface.starts_with("output_")
                             || row.surface == "automix_settings"
                         {
-                            if !row.members.is_empty() {
-                                self.check_solo_scope(&row.members, writer)?;
-                            }
                             let driver_id = self.active_driver();
+                            let mut members = row.members.clone();
+                            let topology = driver.topology();
+                            for key in &row.members {
+                                if let Some(index) =
+                                    openfader_core::strip_index_for_key(&topology, key)
+                                {
+                                    for member in driver
+                                        .control_members(StripId(index as u16), &control)
+                                        .await?
+                                    {
+                                        if let Some(key) = openfader_core::strip_key_for_index(
+                                            &topology,
+                                            member.0 as usize,
+                                        ) {
+                                            if !members.contains(&key) {
+                                                members.push(key);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            anyhow::ensure!(
+                                driver_id == self.active_driver()
+                                    && epoch == self.connection_gen.load(Ordering::Acquire)
+                                    && !self.reads_suspended.load(Ordering::Acquire),
+                                "Destination connection changed; reopen the control."
+                            );
+                            if !members.is_empty() {
+                                self.check_solo_scope(&members, writer)?;
+                            }
                             let context = || {
                                 driver_id == self.active_driver()
                                     && epoch == self.connection_gen.load(Ordering::Acquire)
                                     && !self.reads_suspended.load(Ordering::Acquire)
                                     && self.policy_of(writer).allow_master().is_ok()
-                                    && (row.members.is_empty()
-                                        || self.check_solo_scope(&row.members, writer).is_ok())
+                                    && (members.is_empty()
+                                        || self.check_solo_scope(&members, writer).is_ok())
                             };
                             driver
                                 .set_output_processor_guarded(
@@ -446,11 +500,8 @@ impl Engine {
                 key,
             } => {
                 let ch = self.resolve_strip(ch, key.as_deref())?;
-                policy.allow_assign(StripId(ch))?;
-                if let Some(holder) = self.lock_holder(ch) {
-                    if holder != writer {
-                        return Ok(Some(Self::locked_error(ch, &holder)));
-                    }
+                if let Some(error) = self.admit_assignment_members(ch, writer).await? {
+                    return Ok(Some(error));
                 }
                 self.active_drv()
                     .set_subgroup_assign(StripId(ch), group, member)
@@ -494,11 +545,8 @@ impl Engine {
                 key,
             } => {
                 let ch = self.resolve_strip(ch, key.as_deref())?;
-                policy.allow_assign(StripId(ch))?;
-                if let Some(holder) = self.lock_holder(ch) {
-                    if holder != writer {
-                        return Ok(Some(Self::locked_error(ch, &holder)));
-                    }
+                if let Some(error) = self.admit_assignment_members(ch, writer).await? {
+                    return Ok(Some(error));
                 }
                 self.active_drv()
                     .set_mute_group_assign(StripId(ch), group, member)
