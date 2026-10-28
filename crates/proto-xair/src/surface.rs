@@ -2,6 +2,36 @@
 use super::*;
 
 impl XAirDriver {
+    pub async fn set_bus_master_checked(
+        &self,
+        strip: StripId,
+        param: &str,
+        value: ParamValue,
+        check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        let (kind, root) = strip_root(strip.0)?;
+        anyhow::ensure!(kind == openfader_core::StripKind::Bus, "not a bus master");
+        let (address, argument) = match (param, value) {
+            ("fader", ParamValue::Float(value)) => (
+                strip_mix_fader(&root),
+                osc::fader_arg(openfader_core::validate_fader(value)?),
+            ),
+            ("mute", ParamValue::Bool(muted)) => (strip_mix_on(&root), osc::on_arg(muted)),
+            _ => anyhow::bail!("unsupported checked bus master control"),
+        };
+        let session = self.session().await?;
+        session
+            .as_ref()
+            .unwrap()
+            .send_checked(&address, vec![argument], &|| {
+                let members = self
+                    .current_bus_control_members(strip)?
+                    .ok_or_else(|| anyhow::anyhow!("bus topology changed"))?;
+                check(&members)
+            })
+            .await
+    }
+
     /// Stereo aux return strip (`/rtn/aux`, hardware-verified present,
     /// baseline §2). Kept as explicit methods — not a `StripId` — so the
     /// 0..16 channel range maps 1:1 to wire `/ch/01..16` with no phantom

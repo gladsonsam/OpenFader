@@ -74,6 +74,58 @@ impl Engine {
         Ok(None)
     }
 
+    async fn dispatch_bus_master(
+        &self,
+        bus: u8,
+        field: &str,
+        value: ParamValue,
+        writer: &str,
+        driver_id: &str,
+        epoch: u64,
+    ) -> anyhow::Result<()> {
+        let driver = self.drv(driver_id);
+        if driver_id != "xair" {
+            return match (field, value) {
+                ("fader", ParamValue::Float(value)) => driver.set_bus_fader(bus, value).await,
+                ("mute", ParamValue::Bool(muted)) => driver.set_bus_mute(bus, muted).await,
+                _ => anyhow::bail!("unsupported bus master control"),
+            };
+        }
+        let key = openfader_core::strip_key("bus", u16::from(bus) + 1);
+        let index = openfader_core::strip_index_for_key(&driver.topology(), &key)
+            .ok_or_else(|| anyhow::anyhow!("bus {bus} out of range"))?;
+        let strip = StripId(u16::try_from(index)?);
+        let desired = value.clone();
+        let check = |members: &[StripId]| -> anyhow::Result<()> {
+            anyhow::ensure!(
+                driver_id == self.active_driver()
+                    && epoch == self.connection_gen.load(Ordering::Acquire)
+                    && !self.reads_suspended.load(Ordering::Acquire),
+                "mixer session changed"
+            );
+            let policy = self.policy_of(writer);
+            match &desired {
+                ParamValue::Float(value) => policy.allow_master_fader(*value)?,
+                ParamValue::Bool(_) => policy.allow_master_mute()?,
+                _ => anyhow::bail!("unsupported bus master control"),
+            }
+            for member in std::iter::once(&strip).chain(members) {
+                match &desired {
+                    ParamValue::Float(value) => policy.allow_fader(*member, *value)?,
+                    ParamValue::Bool(_) => policy.allow_mute(*member)?,
+                    _ => unreachable!(),
+                }
+                if let Some(holder) = self.lock_holder(member.0) {
+                    anyhow::ensure!(holder == writer, "strip {} locked by {}", member.0, holder);
+                }
+            }
+            Ok(())
+        };
+        driver
+            .set_param_guarded_checked(strip, field, value, &BTreeMap::new(), &check)
+            .await
+    }
+
     async fn admit_assignment_members(
         &self,
         ch: u16,
@@ -389,7 +441,15 @@ impl Engine {
                 {
                     return Ok(Some(error));
                 }
-                driver.set_bus_fader(bus, value).await?;
+                self.dispatch_bus_master(
+                    bus,
+                    "fader",
+                    ParamValue::Float(value),
+                    writer,
+                    &driver_id,
+                    epoch,
+                )
+                .await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 out.push(match (self.bus_message(bus).await, muted) {
@@ -429,7 +489,15 @@ impl Engine {
                 {
                     return Ok(Some(error));
                 }
-                driver.set_bus_mute(bus, muted).await?;
+                self.dispatch_bus_master(
+                    bus,
+                    "mute",
+                    ParamValue::Bool(muted),
+                    writer,
+                    &driver_id,
+                    epoch,
+                )
+                .await?;
                 self.note_write(writer);
                 self.touch_holder_locks(writer);
                 out.push(match (self.bus_message(bus).await, fader) {
