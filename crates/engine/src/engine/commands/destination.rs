@@ -217,6 +217,7 @@ impl Engine {
                                 | "bus_link"
                                 | "link_policy"
                                 | "usb_interface"
+                                | "midi_setup"
                         ) && !row.surface.starts_with("output_")
                             && row.gesture.is_none())
                             || guard.is_some(),
@@ -242,6 +243,7 @@ impl Engine {
                                         | "bus_link"
                                         | "link_policy"
                                         | "usb_interface"
+                                        | "midi_setup"
                                 )
                                 || row.surface.starts_with("output_")
                                 || row.gesture.is_some())
@@ -284,7 +286,7 @@ impl Engine {
                                 .await?
                         } else if matches!(
                             row.surface.as_str(),
-                            "bus_link" | "link_policy" | "usb_interface"
+                            "bus_link" | "link_policy" | "usb_interface" | "midi_setup"
                         ) {
                             let driver_id = self.active_driver();
                             let topology = driver.topology();

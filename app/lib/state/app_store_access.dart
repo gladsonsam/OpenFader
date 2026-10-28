@@ -227,7 +227,8 @@ mixin _AppStoreAccess on _AppStoreContext {
       return false;
     }
     if (control.surface == 'link_policy' ||
-        control.surface == 'usb_interface') {
+        control.surface == 'usb_interface' ||
+        control.surface == 'midi_setup') {
       return blockedAccess.isEmpty &&
           control.members.isNotEmpty &&
           AccessFamily.values.every(accessFamilyAllowed) &&
