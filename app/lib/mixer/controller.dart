@@ -40,6 +40,7 @@ class MixerChannel {
   final bool muted, solo, selected, master;
   final ValueListenable<double> meter;
   final Map<String, Object> params;
+  final List<double>? eqPreview;
   const MixerChannel(
       {required this.key,
       required this.name,
@@ -56,7 +57,8 @@ class MixerChannel {
       required this.selected,
       required this.master,
       required this.meter,
-      required this.params});
+      required this.params,
+      this.eqPreview});
   String get levelLabel => '${fmtDb(fader)} dB';
 }
 
@@ -238,6 +240,7 @@ class MixerController extends ChangeNotifier {
       selected: selected ?? _selectedKey == s.key,
       master: false,
       meter: store.meterOf(s.ch),
+      eqPreview: store.eqPreviewFor(s.ch),
       params: Map.unmodifiable({
         ...?store.engine.params[s.ch],
         // Gain edits are optimistic; engine snapshots lag behind the drag.
@@ -286,6 +289,7 @@ class MixerController extends ChangeNotifier {
         selected: _selectedKey == 'master',
         master: true,
         meter: store.masterMeter,
+        eqPreview: strip == null ? null : store.eqPreviewFor(strip.ch),
         params: strip == null
             ? const {}
             : Map.unmodifiable(store.engine.params[strip.ch] ?? const {}));
