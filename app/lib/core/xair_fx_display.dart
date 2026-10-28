@@ -38,6 +38,8 @@ class XairHallScale {
     'xair_hall_predelay' => const XairHallScale(0, 200, 100, false, 'ms', 0),
     'xair_hall_decay' => const XairHallScale(0.2, 5, 50, true, 's', 2),
     'xair_hall_size' => const XairHallScale(2, 100, 49, false, '', 0),
+    'xair_hall_damping' => const XairHallScale(1000, 20000, 24, true, 'Hz', 0),
+    'xair_hall_hicut' => const XairHallScale(200, 20000, 50, true, 'Hz', 0),
     'xair_hall_diffusion' => const XairHallScale(1, 30, 29, false, '', 0),
     'xair_hall_level' => const XairHallScale(-12, 12, 48, false, 'dB', 1),
     'xair_hall_locut' => const XairHallScale(10, 500, 50, true, 'Hz', 0),

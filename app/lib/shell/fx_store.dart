@@ -256,6 +256,9 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
       return FxKnobVm(
         id: id,
         label: definitions[id]?['label'] as String? ?? id,
+        entryTitle: hall != null && hall.unit.isNotEmpty
+            ? '${definitions[id]?['label'] as String? ?? id} (${hall.unit})'
+            : null,
         min: 0,
         max: 1,
         value: hall != null
