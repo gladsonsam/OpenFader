@@ -18,7 +18,7 @@ class _MixerSetupDetail extends StatelessWidget {
       const _Note('These settings apply to the connected mixer.'),
       for (final surface in surfaces) ...[
         _Section(
-            title: surface == 'bus_link_state' ? 'Bus links' : 'Automix',
+            title: surface.startsWith('bus_link') ? 'Bus links' : 'Automix',
             children: [
               for (final control
                   in controls.where((row) => row.surface == surface))

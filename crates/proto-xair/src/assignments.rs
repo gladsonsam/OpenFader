@@ -1,7 +1,196 @@
 //! Mute-group membership and bank controls.
 use super::*;
 
+struct BusLinkPending<'a> {
+    driver: &'a XAirDriver,
+    pair: usize,
+    generation: u64,
+    confirmed: bool,
+}
+impl Drop for BusLinkPending<'_> {
+    fn drop(&mut self) {
+        use std::sync::atomic::Ordering;
+        let mut admission = self.driver.bus_link_cache.lock().unwrap();
+        let mut observed = self.driver.bus_link_observations.lock().unwrap();
+        if self.driver.connection_generation.load(Ordering::Acquire) != self.generation {
+            return;
+        }
+        admission[self.pair].0 = admission[self.pair].0.wrapping_add(1);
+        admission[self.pair].1 = None;
+        if !self.confirmed {
+            observed[self.pair].0 = observed[self.pair].0.wrapping_add(1);
+            observed[self.pair].1 = None;
+        }
+        self.driver
+            .bus_link_pending
+            .fetch_and(!(1 << self.pair), Ordering::AcqRel);
+    }
+}
+
 impl XAirDriver {
+    pub(super) async fn set_bus_link_control(
+        &self,
+        id: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        check: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        use std::sync::atomic::Ordering;
+        let pair = ["pair_1_2", "pair_3_4", "pair_5_6"]
+            .iter()
+            .position(|key| *key == id)
+            .ok_or_else(|| anyhow::anyhow!("Unknown bus link"))?;
+        anyhow::ensure!(value == 0.0 || value == 1.0, "Invalid bus link value");
+        let _lane = self.bus_link_write.lock().await;
+        let _dispatch = self.bus_dispatch.write().await;
+        let generation = self.connection_generation.load(Ordering::Acquire);
+        anyhow::ensure!(
+            check() && self.bus_link_controls() == snapshot && snapshot.len() == 3,
+            "Bus links changed; reopen the control"
+        );
+        anyhow::ensure!(
+            snapshot[pair]
+                .current
+                .as_ref()
+                .is_some_and(|v| v.verified && v.value == expected)
+                && snapshot
+                    .iter()
+                    .all(|row| row.current.as_ref().is_some_and(|v| v.verified)),
+            "Wait for complete bus link readback"
+        );
+        let topology = self.topology();
+        for key in &snapshot[pair].members {
+            let index = openfader_core::strip_index_for_key(&topology, key)
+                .ok_or_else(|| anyhow::anyhow!("Bus link topology unavailable"))?;
+            anyhow::ensure!(
+                self.bus_pair(StripId(u16::try_from(index)?))?
+                    .is_some_and(|(p, _)| p == pair),
+                "Bus link topology changed"
+            );
+            anyhow::ensure!(
+                self.current_bus_control_members(StripId(u16::try_from(index)?))?
+                    .is_some(),
+                "Bus link roots unavailable"
+            );
+        }
+        anyhow::ensure!(
+            snapshot[pair].members.len() == 2,
+            "Bus link scope unavailable"
+        );
+        let session = self.session().await?.as_ref().unwrap().clone();
+        for (index, row) in snapshot.iter().enumerate() {
+            let first = index * 2 + 1;
+            let reply = session
+                .query_timeout(
+                    &format!("/config/buslink/{first}-{}", first + 1),
+                    std::time::Duration::from_millis(350),
+                )
+                .await?;
+            anyhow::ensure!(
+                check()
+                    && self.connection_generation.load(Ordering::Acquire) == generation
+                    && parse_bus_link(&reply).map(|(_, linked)| u8::from(linked) as f32)
+                        == row.current.as_ref().map(|v| v.value),
+                "Bus links changed; reopen the control"
+            );
+        }
+        anyhow::ensure!(
+            self.bus_link_controls() == snapshot,
+            "Bus links changed; reopen the control"
+        );
+        {
+            let mut admission = self.bus_link_cache.lock().unwrap();
+            let mut observed = self.bus_link_observations.lock().unwrap();
+            anyhow::ensure!(
+                self.connection_generation.load(Ordering::Acquire) == generation
+                    && self.bus_link_pending.load(Ordering::Acquire) == 0
+                    && observed.iter().zip(snapshot).all(|(cell, row)| Some(cell.0)
+                        == row.revision
+                        && cell.1.is_some_and(|(at, v)| at.elapsed()
+                            <= std::time::Duration::from_secs(5)
+                            && row
+                                .current
+                                .as_ref()
+                                .is_some_and(|r| r.value == u8::from(v) as f32))),
+                "Bus links changed; reopen the control"
+            );
+            self.bus_link_pending.fetch_or(1 << pair, Ordering::AcqRel);
+            admission[pair].0 = admission[pair].0.wrapping_add(1);
+            admission[pair].1 = None;
+            observed[pair].0 = observed[pair].0.wrapping_add(1);
+            observed[pair].1 = None;
+        }
+        let mut pending = BusLinkPending {
+            driver: self,
+            pair,
+            generation,
+            confirmed: false,
+        };
+        let first = pair * 2 + 1;
+        let address = format!("/config/buslink/{first}-{}", first + 1);
+        let guard = self.session().await?;
+        anyhow::ensure!(
+            guard
+                .as_ref()
+                .is_some_and(|s| std::sync::Arc::ptr_eq(s, &session)),
+            "Bus link session changed"
+        );
+        session
+            .send_checked(&address, vec![OscType::Int(value as i32)], &|| {
+                anyhow::ensure!(
+                    check()
+                        && self.connected.load(Ordering::Acquire)
+                        && self.connection_generation.load(Ordering::Acquire) == generation,
+                    "Bus link access or session changed"
+                );
+                Ok(())
+            })
+            .await?;
+        drop(guard);
+        for _ in 0..8 {
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+            let reply = session
+                .query_timeout(&address, std::time::Duration::from_millis(350))
+                .await;
+            anyhow::ensure!(
+                check()
+                    && self.connected.load(Ordering::Acquire)
+                    && self.connection_generation.load(Ordering::Acquire) == generation,
+                "Bus link result uncertain: access or session changed"
+            );
+            if reply
+                .as_ref()
+                .ok()
+                .and_then(parse_bus_link)
+                .is_some_and(|(p, v)| p == pair && v == (value == 1.0))
+            {
+                let mut observed = self.bus_link_observations.lock().unwrap();
+                anyhow::ensure!(
+                    self.connection_generation.load(Ordering::Acquire) == generation,
+                    "Bus link session changed"
+                );
+                observed[pair].0 = observed[pair].0.wrapping_add(1);
+                observed[pair].1 = Some((std::time::Instant::now(), value == 1.0));
+                pending.confirmed = true;
+                drop(observed);
+                drop(pending);
+                return self
+                    .bus_link_controls()
+                    .into_iter()
+                    .find(|row| {
+                        row.id == id
+                            && row
+                                .current
+                                .as_ref()
+                                .is_some_and(|v| v.verified && v.value == value)
+                    })
+                    .ok_or_else(|| anyhow::anyhow!("Bus link result unavailable"));
+            }
+        }
+        anyhow::bail!("Bus link command sent; independent readback unavailable")
+    }
+
     /// Read the complete four-bit mute-group membership in a single query.
     pub async fn snapshot_mute_group_mask(&self, strip: StripId) -> anyhow::Result<u32> {
         let (_, root) = self.assign_root(strip.0, "mute-group assign")?;
@@ -27,6 +216,7 @@ impl XAirDriver {
         mask: u32,
         check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<()> {
+        let _dispatch = self.bus_dispatch.read().await;
         anyhow::ensure!(
             mask <= groups::GROUP_MASK as u32,
             "invalid XR18 mute-group mask {mask}"
@@ -115,6 +305,7 @@ impl XAirDriver {
         member: bool,
         check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<()> {
+        let _dispatch = self.bus_dispatch.read().await;
         let (_, root) = self.assign_root(ch.0, "mute-group assign")?;
         let guard = self.session().await?;
         let session = guard.as_ref().unwrap();
@@ -287,6 +478,11 @@ impl XAirDriver {
                     if let Some((reply_pair, linked)) = parse_bus_link(&msg) {
                         let mut cache = self.bus_link_cache.lock().unwrap();
                         if reply_pair == pair
+                            && self
+                                .bus_link_pending
+                                .load(std::sync::atomic::Ordering::Acquire)
+                                & (1 << pair)
+                                == 0
                             && cache[pair].0 == revision
                             && generation
                                 == self
@@ -339,11 +535,16 @@ impl XAirDriver {
                 Ok(StripId(index as u16))
             })
             .collect::<anyhow::Result<_>>()?;
-        let unlinked = self.bus_link_cache.lock().unwrap()[pair]
-            .1
-            .is_some_and(|(at, linked)| {
-                !linked && at.elapsed() <= std::time::Duration::from_secs(5)
-            });
+        let unlinked = self
+            .bus_link_pending
+            .load(std::sync::atomic::Ordering::Acquire)
+            & (1 << pair)
+            == 0
+            && self.bus_link_cache.lock().unwrap()[pair]
+                .1
+                .is_some_and(|(at, linked)| {
+                    !linked && at.elapsed() <= std::time::Duration::from_secs(5)
+                });
         Ok(Some(if unlinked { vec![strip] } else { members }))
     }
 
@@ -363,6 +564,7 @@ impl XAirDriver {
 impl XAirDriver {
     pub(super) fn refresh_bus_links(&self, session: std::sync::Arc<OscSession>, generation: u64) {
         let cache = self.bus_link_observations.clone();
+        let pending = self.bus_link_pending.clone();
         let current_generation = self.connection_generation.clone();
         let revisions = {
             let mut state = cache.lock().unwrap();
@@ -379,7 +581,8 @@ impl XAirDriver {
                 if let Ok(msg) = session.query(&addr).await {
                     if let Some((index, linked)) = parse_bus_link(&msg) {
                         let mut state = cache.lock().unwrap();
-                        if index == pair
+                        if pending.load(std::sync::atomic::Ordering::Acquire) & (1 << pair) == 0
+                            && index == pair
                             && state[pair].0 == revision
                             && current_generation.load(std::sync::atomic::Ordering::Acquire)
                                 == generation
@@ -428,8 +631,8 @@ impl XAirDriver {
                     target_label: "Bus links".into(),
                     target_name: None,
                     send_slot: None,
-                    surface: "bus_link_state".into(),
-                    description: "Read-only bus link state.".into(),
+                    surface: "bus_link".into(),
+                    description: "Links both buses and may copy their levels, names and processing. Full access to both buses is required.".into(),
                     id: format!("pair_{first}_{}", first + 1),
                     label: format!("Bus {first}–{}", first + 1),
                     tap_tempo: false,
@@ -447,7 +650,7 @@ impl XAirDriver {
                     range: None,
                     current: cache[pair]
                         .1
-                        .filter(|(at, _)| at.elapsed() <= std::time::Duration::from_secs(5))
+                        .filter(|(at, _)| self.bus_link_pending.load(Ordering::Acquire) & (1 << pair) == 0 && at.elapsed() <= std::time::Duration::from_secs(5))
                         .map(|(_, linked)| DestinationValue {
                             value: u8::from(linked) as f32,
                             verified: true,
