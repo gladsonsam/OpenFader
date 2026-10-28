@@ -147,6 +147,10 @@ mixin _AppStoreChannel on _AppStoreContext {
         !_sendDestinationIsStereoAux(int.parse(sendPan[1]!))) {
       return false;
     }
+    final cutControl = RegExp(r'^eq([1-6])_(gain|q)$').firstMatch(desk);
+    if (cutControl != null && _eqFixedCut(int.parse(cutControl[1]!))) {
+      return false;
+    }
     // Fixed-slope shelves retain the bell Q but cannot edit it, including
     // through pinch or a previously focused numeric readout.
     final eqQ = RegExp(r'^eq([1-6])_q$').firstMatch(desk);
@@ -410,11 +414,22 @@ mixin _AppStoreChannel on _AppStoreContext {
     return const [];
   }
 
+  EqCutModel get _eqCutModel => engine.driver == 'xair'
+      ? EqCutModel.xairButterworth96k
+      : EqCutModel.unavailable;
+
+  bool _eqFixedCut(int band) =>
+      _eqCutModel == EqCutModel.xairButterworth96k &&
+      const [0, 5].contains(_eqPresentationType(band));
+
   String? get _eqResponseNote {
     final notes = [
       if (paramApplies('wing:filter_model')) 'EQ curve excludes input filters.',
       if (List.generate(_eqBandCount, (i) => _eqPresentationType(i + 1)).any(
-          (type) => EqFilterShape.fromValue(type)?.hasResponseModel != true))
+          (type) =>
+              EqFilterShape.fromValue(type)
+                  ?.hasResponseModel(cutModel: _eqCutModel) !=
+              true))
         'EQ curve excludes bands with unavailable response models.',
     ];
     return notes.isEmpty ? null : notes.join(' ');
@@ -485,14 +500,15 @@ mixin _AppStoreChannel on _AppStoreContext {
                           : [80.0, 400.0, 1200.0, 6000.0])[b - 1],
               g: paramNum('eq${b}_gain') ?? 0,
               q: paramNum('eq${b}_q') ?? 1,
+              cutModel: _eqCutModel,
               shelfUsesQ: engine.driver != 'dl32s' &&
                   paramMetadata('eq${b}_type')?['curve'] != 'fixed_shelf',
               on: true,
               type: _eqPresentationType(b),
               typeChoices: _eqTypeChoices(b),
               fRange: _editableRange('eq${b}_freq'),
-              gRange: _editableRange('eq${b}_gain'),
-              qRange: _editableRange('eq${b}_q'),
+              gRange: _eqFixedCut(b) ? null : _editableRange('eq${b}_gain'),
+              qRange: _eqFixedCut(b) ? null : _editableRange('eq${b}_q'),
             ),
         ],
       );

@@ -476,7 +476,7 @@ class EqCurvePainter extends CustomPainter {
     for (final band in eq.bands) {
       node(
           Offset(EqGraphGeom.xOf(band.f.clamp(20, 20000)) * sx,
-              EqGraphGeom.yOf(band.g.clamp(-15, 15)) * sy),
+              EqGraphGeom.yOf(band.graphGain.clamp(-15, 15)) * sy),
           band.band,
           band.on);
     }
@@ -624,7 +624,9 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
     for (final b in widget.eq.bands) {
       final node = Offset(
         EqGraphGeom.xOf(b.f.clamp(20, 20000)) / EqGraphGeom.w * widget.width,
-        EqGraphGeom.yOf(b.g.clamp(-15, 15)) / EqGraphGeom.h * widget.height,
+        EqGraphGeom.yOf(b.graphGain.clamp(-15, 15)) /
+            EqGraphGeom.h *
+            widget.height,
       );
       final d = (node - local).distance;
       if (d < bestD) {
