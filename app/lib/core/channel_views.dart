@@ -289,11 +289,13 @@ enum EqFilterShape {
   const EqFilterShape(this.value);
   final int value;
 
-  bool hasResponseModel({EqCutModel cutModel = EqCutModel.unavailable}) =>
+  bool hasResponseModel(
+          {EqCutModel cutModel = EqCutModel.unavailable,
+          EqBellModel bellModel = EqBellModel.standard}) =>
       switch (this) {
         lowShelf || bell || highShelf => true,
         lowCut || highCut => cutModel == EqCutModel.xairButterworth96k,
-        _ => false,
+        veq => bellModel == EqBellModel.xair96k,
       };
 
   static EqFilterShape? fromValue(int? value) {
@@ -305,6 +307,9 @@ enum EqFilterShape {
 }
 
 enum EqShelfModel { standard, xair96k }
+
+/// Provider-qualified bell and VEQ graph response.
+enum EqBellModel { standard, xair96k }
 
 /// One EQ band view-model (bands 1..4 parametric; HPF handled separately).
 class EqBandVm {
@@ -320,6 +325,7 @@ class EqBandVm {
 
   /// Provider-qualified shelf display response.
   final EqShelfModel shelfModel;
+  final EqBellModel bellModel;
 
   /// Provider-qualified display model for cut bands, independent of gain/Q.
   final EqCutModel cutModel;
@@ -349,6 +355,7 @@ class EqBandVm {
     required this.q,
     this.shelfUsesQ = true,
     this.shelfModel = EqShelfModel.standard,
+    this.bellModel = EqBellModel.standard,
     this.cutModel = EqCutModel.unavailable,
     this.on = true,
     this.type,
@@ -366,6 +373,7 @@ class EqBandVm {
         q: q ?? this.q,
         shelfUsesQ: shelfUsesQ,
         shelfModel: shelfModel,
+        bellModel: bellModel,
         cutModel: cutModel,
         on: on ?? this.on,
         type: type,
@@ -506,7 +514,10 @@ double _xairShelfDb(bool high, double f0, double gainDb, double f) {
   final t2 = t * t;
   final t4 = t2 * t2;
   final gainPower = math.pow(10, gainDb.abs() / 10).toDouble();
-  return gainDb.sign * 10 * math.log((1 + gainPower * t4) / (1 + t4)) / math.ln10;
+  return gainDb.sign *
+      10 *
+      math.log((1 + gainPower * t4) / (1 + t4)) /
+      math.ln10;
 }
 
 double _highpassDb(double f0, double f) {
@@ -525,6 +536,32 @@ double _xairCutDb(bool highpass, double f0, double f) {
   final power4 = ratio * ratio * ratio * ratio;
   final power = highpass ? power4 / (1 + power4) : 1 / (1 + power4);
   return 10 * math.log(power) / math.ln10;
+}
+
+// 96 kHz is the graph calculation rate, not the desk clock rate.
+double _xairBellDb(double f0, double gainDb, double q, double f,
+    {required bool veq}) {
+  if (!f0.isFinite ||
+      f0 <= 0 ||
+      f0 >= 48000 ||
+      !f.isFinite ||
+      f < 0 ||
+      f > 48000 ||
+      !gainDb.isFinite ||
+      gainDb.abs() > 100 ||
+      !q.isFinite ||
+      q <= 0) {
+    return 0;
+  }
+  if (gainDb == 0 || f == 0 || f == 48000) return 0;
+  final v = math.pow(10, gainDb / 20).toDouble();
+  final k = math.tan(math.pi * f0 / 96000);
+  final t = math.tan(math.pi * f / 96000);
+  final x = t / k - k / t;
+  final width = veq ? math.min(v, 1.0) : math.sqrt(v);
+  final a = 1 / (q * width);
+  final power = (x * x + v * a * v * a) / (x * x + a * a);
+  return power.isFinite && power > 0 ? 10 * math.log(power) / math.ln10 : 0;
 }
 
 /// Summed EQ magnitude curve in dB over [EqGraphGeom.n] log-spaced samples.
@@ -546,7 +583,9 @@ List<double> eqResponseDb(ChannelEqVm eq) {
               ? _xairShelfDb(false, b.f, b.g, f)
               : _shelfDb(false, b.f, b.g, b.shelfUsesQ ? b.q : null, f);
         case EqFilterShape.bell:
-          db += _peakingDb(b.f, b.g, b.q <= 0 ? 1 : b.q, f);
+          db += b.bellModel == EqBellModel.xair96k
+              ? _xairBellDb(b.f, b.g, b.q, f, veq: false)
+              : _peakingDb(b.f, b.g, b.q <= 0 ? 1 : b.q, f);
         case EqFilterShape.highShelf:
           db += b.shelfModel == EqShelfModel.xair96k
               ? _xairShelfDb(true, b.f, b.g, f)
@@ -560,6 +599,9 @@ List<double> eqResponseDb(ChannelEqVm eq) {
             db += _xairCutDb(false, b.f, f);
           }
         case EqFilterShape.veq:
+          if (b.bellModel == EqBellModel.xair96k) {
+            db += _xairBellDb(b.f, b.g, b.q, f, veq: true);
+          }
         case null:
           // No verified response to draw until the shape is known.
           break;
