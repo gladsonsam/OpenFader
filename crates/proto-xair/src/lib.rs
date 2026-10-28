@@ -50,6 +50,7 @@ mod metadata;
 mod midi_setup;
 mod monitor;
 mod monitor_settings;
+mod mute_behavior;
 mod param_read;
 mod param_write;
 mod safe_levels;
@@ -88,6 +89,8 @@ pub struct XAirDriver {
     target_solo_write: tokio::sync::Mutex<()>,
     midi_setup: std::sync::Arc<std::sync::Mutex<midi_setup::Cache>>,
     midi_setup_write: tokio::sync::Mutex<()>,
+    mute_behavior: std::sync::Arc<std::sync::Mutex<mute_behavior::Cache>>,
+    mute_behavior_write: tokio::sync::Mutex<()>,
     link_policy_cache: link_policy::Cache,
     link_policy_pending: std::sync::Arc<std::sync::atomic::AtomicU8>,
     link_policy_write: tokio::sync::Mutex<()>,
@@ -175,6 +178,10 @@ impl XAirDriver {
             usb_interface_write: tokio::sync::Mutex::new(()),
             midi_setup: std::sync::Arc::new(std::sync::Mutex::new(midi_setup::Cache::default())),
             midi_setup_write: tokio::sync::Mutex::new(()),
+            mute_behavior: std::sync::Arc::new(std::sync::Mutex::new(
+                mute_behavior::Cache::default(),
+            )),
+            mute_behavior_write: tokio::sync::Mutex::new(()),
             link_policy_cache: std::sync::Arc::new(std::sync::Mutex::new([(0, None); 4])),
             link_policy_pending: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
             link_policy_write: tokio::sync::Mutex::new(()),
@@ -269,6 +276,7 @@ impl MixerDriver for XAirDriver {
         controls.extend(self.safe_levels_controls());
         controls.extend(self.clock_rate_controls());
         controls.extend(self.midi_setup_controls());
+        controls.extend(self.mute_behavior_controls());
         controls.extend(self.target_solo_controls());
         controls
     }
@@ -345,7 +353,11 @@ impl MixerDriver for XAirDriver {
         snapshot: &[openfader_core::destinations::DestinationControl],
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
-        if target == "midi_setup" {
+        if target == "mute_behavior" {
+            self.set_mute_behavior_checked(control, value, expected, snapshot, context)
+                .await
+                .map(Some)
+        } else if target == "midi_setup" {
             self.set_midi_setup_checked(control, value, expected, snapshot, context)
                 .await
                 .map(Some)
@@ -405,7 +417,8 @@ impl MixerDriver for XAirDriver {
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         anyhow::ensure!(
-            target != "midi_setup"
+            target != "mute_behavior"
+                && target != "midi_setup"
                 && target != "device_setup"
                 && target != "bus_links"
                 && target != "link_policies"
@@ -427,7 +440,7 @@ impl MixerDriver for XAirDriver {
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         anyhow::ensure!(
-            desired.target != "midi_setup",
+            desired.target != "mute_behavior" && desired.target != "midi_setup",
             "MIDI setup requires guarded processor writes"
         );
         self.set_routing_tap(

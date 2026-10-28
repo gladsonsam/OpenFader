@@ -220,6 +220,7 @@ impl Engine {
                                 | "safe_levels"
                                 | "clock_rate"
                                 | "midi_setup"
+                                | "mute_behavior"
                         ) && !row.surface.starts_with("output_")
                             && row.gesture.is_none())
                             || guard.is_some(),
@@ -248,6 +249,7 @@ impl Engine {
                                         | "safe_levels"
                                         | "clock_rate"
                                         | "midi_setup"
+                                        | "mute_behavior"
                                 )
                                 || row.surface.starts_with("output_")
                                 || row.gesture.is_some())
@@ -295,6 +297,7 @@ impl Engine {
                                 | "usb_interface"
                                 | "safe_levels"
                                 | "midi_setup"
+                                | "mute_behavior"
                                 | "clock_rate"
                         ) {
                             let driver_id = self.active_driver();
