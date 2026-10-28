@@ -216,6 +216,7 @@ impl Engine {
                                 | "automix_settings"
                                 | "bus_link"
                                 | "link_policy"
+                                | "usb_interface"
                         ) && !row.surface.starts_with("output_")
                             && row.gesture.is_none())
                             || guard.is_some(),
@@ -240,6 +241,7 @@ impl Engine {
                                         | "automix_settings"
                                         | "bus_link"
                                         | "link_policy"
+                                        | "usb_interface"
                                 )
                                 || row.surface.starts_with("output_")
                                 || row.gesture.is_some())
@@ -280,7 +282,10 @@ impl Engine {
                                     &target, &control, value, expected, &block, &context,
                                 )
                                 .await?
-                        } else if matches!(row.surface.as_str(), "bus_link" | "link_policy") {
+                        } else if matches!(
+                            row.surface.as_str(),
+                            "bus_link" | "link_policy" | "usb_interface"
+                        ) {
                             let driver_id = self.active_driver();
                             let topology = driver.topology();
                             let members = row
@@ -289,10 +294,10 @@ impl Engine {
                                 .map(|key| {
                                     let index = openfader_core::strip_index_for_key(&topology, key)
                                         .ok_or_else(|| {
-                                            anyhow::anyhow!("Bus link scope unavailable")
+                                            anyhow::anyhow!("Shared mixer scope unavailable")
                                         })?;
                                     anyhow::ensure!(
-                                        row.surface == "link_policy"
+                                        row.surface != "bus_link"
                                             || topology.iter().any(|family| family.kind
                                                 == openfader_core::StripKind::Bus
                                                 && index >= family.first
@@ -302,23 +307,23 @@ impl Engine {
                                     Ok(StripId(u16::try_from(index)?))
                                 })
                                 .collect::<anyhow::Result<Vec<_>>>()?;
-                            if row.surface == "link_policy" {
+                            if row.surface != "bus_link" {
                                 let roster = (0..driver.strip_count())
                                     .map(|index| {
                                         openfader_core::strip_key_for_index(&topology, index)
                                     })
                                     .collect::<Option<Vec<_>>>()
                                     .ok_or_else(|| {
-                                        anyhow::anyhow!("Mixer link scope unavailable")
+                                        anyhow::anyhow!("Shared mixer scope unavailable")
                                     })?;
                                 anyhow::ensure!(
                                     !roster.is_empty() && row.members == roster,
-                                    "Complete mixer link scope required"
+                                    "Complete mixer scope required"
                                 );
                             } else {
                                 anyhow::ensure!(
                                     members.len() == 2 && members[0] != members[1],
-                                    "Bus link scope unavailable"
+                                    "Shared mixer scope unavailable"
                                 );
                             }
                             let check = || -> anyhow::Result<()> {
@@ -326,11 +331,11 @@ impl Engine {
                                     driver_id == self.active_driver()
                                         && epoch == self.connection_gen.load(Ordering::Acquire)
                                         && !self.reads_suspended.load(Ordering::Acquire),
-                                    "Bus link session changed"
+                                    "Shared mixer session changed"
                                 );
                                 let policy = self.policy_of(writer);
-                                // Link side effects can copy any bus level. Require
-                                // full-range access rather than sampling a moving fader.
+                                // Coupling and USB reconfiguration affect shared audio.
+                                // Require full-range mixer access at dispatch.
                                 policy.allow_master_fader(1.0)?;
                                 for member in &members {
                                     policy.allow_assign(*member)?;
@@ -339,7 +344,7 @@ impl Engine {
                                     anyhow::ensure!(
                                         self.lock_holder(member.0)
                                             .is_none_or(|holder| holder == writer),
-                                        "Bus link companion locked"
+                                        "Shared mixer member locked"
                                     );
                                 }
                                 Ok(())

@@ -190,10 +190,15 @@ impl XAirDriver {
             .map(|id| osc::query_message(&format!("/config/linkcfg/{id}")))
             .into_iter()
             .collect::<anyhow::Result<Vec<_>>>()?;
+        let usb_query = osc::query_message("/-prefs/usbifcmode")?;
+        let is_xr18 = self.model == addrs::XAirModel::Xr18;
         let task = tokio::spawn(async move {
             let mut ticker = openfader_transport::session::keepalive_ticker(
                 interval.min(std::time::Duration::from_secs(1)),
             );
+            if is_xr18 {
+                let _ = sock.send(&usb_query).await;
+            }
             let mut renewed = std::time::Instant::now();
             let mut links_renewed = std::time::Instant::now();
             // `keepalive_ticker` fires immediately; consume it so the first
@@ -206,6 +211,9 @@ impl XAirDriver {
                 }
                 if links_renewed.elapsed() >= std::time::Duration::from_secs(2) {
                     links_renewed = std::time::Instant::now();
+                    if is_xr18 {
+                        let _ = sock.send(&usb_query).await;
+                    }
                     for query in link_queries.iter().chain(policy_queries.iter()) {
                         if let Err(error) = sock.send(query).await {
                             eprintln!("xair: bus link read failed: {error}");

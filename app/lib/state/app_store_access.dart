@@ -226,7 +226,8 @@ mixin _AppStoreAccess on _AppStoreContext {
         control.surface == 'link_policy_state') {
       return false;
     }
-    if (control.surface == 'link_policy') {
+    if (control.surface == 'link_policy' ||
+        control.surface == 'usb_interface') {
       return blockedAccess.isEmpty &&
           control.members.isNotEmpty &&
           AccessFamily.values.every(accessFamilyAllowed) &&
