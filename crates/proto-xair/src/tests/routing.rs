@@ -308,10 +308,9 @@ async fn driver_send_level_roundtrip() {
 /// (same as `fx1..4`); tap rides the six-point enum
 /// (`0..=5 // IN, PREEQ, POSTEQ, PRE, POST, GRP`), pan rides floats.
 /// The `sendN_on` leaf has NO desk leaf (firmware send block lists no
-/// on/off; `/ch/NN/mix/MM/on` live-silent, T7) and is out of caps — the
-/// fake still answers it so the retained driver arm stays loopback-tested.
+/// on/off; `/ch/NN/mix/MM/on` live-silent, T7) and must be rejected.
 #[tokio::test]
-async fn driver_send_tap_pan_on_roundtrip() {
+async fn driver_send_tap_pan_roundtrip_rejects_on() {
     let (driver, _) = connected_driver().await;
     let s = StripId(0);
     driver
@@ -351,14 +350,12 @@ async fn driver_send_tap_pan_on_roundtrip() {
         panic!("send1_pan read back non-float");
     };
     assert!((pan + 20.0).abs() < 1e-3, "send1_pan {pan}");
-    driver
+    assert!(driver
         .set_param(s, "send1_on", ParamValue::Bool(false))
         .await
-        .unwrap();
-    assert_eq!(
-        driver.get_param(s, "send1_on").await.unwrap(),
-        ParamValue::Bool(false)
-    );
+        .unwrap_err()
+        .to_string()
+        .contains("unsupported"));
 
     // Slots 11..16 have no wire; legacy send mutes stay errors (T7).
     assert!(driver

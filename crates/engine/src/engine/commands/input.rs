@@ -343,10 +343,11 @@ impl Engine {
                 value,
                 key,
             } => {
+                let driver = self.active_driver();
+                let generation = self.connection_gen.load(Ordering::Acquire);
                 let ch = self.resolve_strip(ch, key.as_deref())?;
                 let field =
-                    super::super::models::canonical_send_field(&self.active_driver(), &field)
-                        .into_owned();
+                    super::super::models::canonical_send_field(&driver, &field).into_owned();
                 let pv = match &value {
                     Value::Number(n) => ParamValue::Float(n.as_f64().unwrap_or(0.0) as f32),
                     Value::Bool(b) => ParamValue::Bool(*b),
@@ -448,8 +449,6 @@ impl Engine {
                         }
                     }
                 }
-                let driver = self.active_driver();
-                let generation = self.connection_gen.load(Ordering::Acquire);
                 let send_members = self.send_bus_members(&driver, &field).await?;
                 anyhow::ensure!(
                     self.active_driver() == driver
