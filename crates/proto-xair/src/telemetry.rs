@@ -191,6 +191,10 @@ impl XAirDriver {
             .into_iter()
             .collect::<anyhow::Result<Vec<_>>>()?;
         let clock_query = osc::query_message("/-prefs/clockrate")?;
+        let mute_queries = [
+            osc::query_message("/-prefs/hardmute")?,
+            osc::query_message("/-prefs/dcamute")?,
+        ];
         let safe_query = osc::query_message("/-prefs/ponmute")?;
         let usb_query = osc::query_message("/-prefs/usbifcmode")?;
         let solo_query = osc::query_message(addrs::SOLO_SW)?;
@@ -203,6 +207,9 @@ impl XAirDriver {
             if is_xr18 {
                 let _ = sock.send(&usb_query).await;
                 let _ = sock.send(&safe_query).await;
+                for query in &mute_queries {
+                    let _ = sock.send(query).await;
+                }
                 let _ = sock.send(&clock_query).await;
                 let _ = sock.send(&midi_query).await;
                 let _ = sock.send(&solo_query).await;
@@ -222,6 +229,9 @@ impl XAirDriver {
                     if is_xr18 {
                         let _ = sock.send(&usb_query).await;
                         let _ = sock.send(&safe_query).await;
+                        for query in &mute_queries {
+                            let _ = sock.send(query).await;
+                        }
                         let _ = sock.send(&clock_query).await;
                         let _ = sock.send(&midi_query).await;
                         let _ = sock.send(&solo_query).await;

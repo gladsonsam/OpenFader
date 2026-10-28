@@ -94,11 +94,13 @@ impl XAirDriver {
         *self.target_solo.lock().unwrap() = Default::default();
         *self.clock_rate.lock().unwrap() = Default::default();
         *self.midi_setup.lock().unwrap() = Default::default();
+        *self.mute_behavior.lock().unwrap() = Default::default();
         self.usb_interface.lock().unwrap().generation = connection;
         self.safe_levels.lock().unwrap().generation = connection;
         self.target_solo.lock().unwrap().generation = connection;
         self.clock_rate.lock().unwrap().generation = connection;
         self.midi_setup.lock().unwrap().generation = connection;
+        self.mute_behavior.lock().unwrap().generation = connection;
         self.bus_link_pending
             .store(0, std::sync::atomic::Ordering::Release);
         self.link_policy_pending
@@ -124,6 +126,7 @@ impl XAirDriver {
         let target_solo = self.target_solo.clone();
         let clock_rate = self.clock_rate.clone();
         let midi_setup = self.midi_setup.clone();
+        let mute_behavior = self.mute_behavior.clone();
         let link_policy_cache = self.link_policy_cache.clone();
         let link_policy_pending = self.link_policy_pending.clone();
         let bus_link_cache = self.bus_link_cache.clone();
@@ -146,6 +149,7 @@ impl XAirDriver {
                         super::safe_levels::record(&safe_levels, &msg, received_at, connection);
                         super::clock_rate::record(&clock_rate, &msg, received_at, connection);
                         super::midi_setup::record(&midi_setup, &msg, received_at, connection);
+                        super::mute_behavior::record(&mute_behavior, &msg, received_at, connection);
                         if msg.addr == "/config/linkcfg" || msg.addr.starts_with("/config/linkcfg/")
                         {
                             super::link_policy::record(
@@ -370,6 +374,7 @@ impl XAirDriver {
                         super::safe_levels::invalidate(&safe_levels, connection);
                         super::clock_rate::invalidate(&clock_rate, connection);
                         super::midi_setup::invalidate(&midi_setup, connection);
+                        super::mute_behavior::invalidate(&mute_behavior, connection);
                         eprintln!(
                             "xair: control receive lagged {n}; requesting bounded reconciliation"
                         );
@@ -453,6 +458,7 @@ impl XAirDriver {
         self.refresh_target_solo(session.clone());
         self.refresh_clock_rate(session.clone());
         self.refresh_midi_setup(session.clone());
+        self.refresh_mute_behavior(session.clone());
         self.start_output_routing(session.clone(), connection);
         self.start_output_geq(session.clone(), connection);
         self.start_automix_settings(session.clone(), connection);
@@ -472,6 +478,7 @@ impl XAirDriver {
         *self.target_solo.lock().unwrap() = Default::default();
         *self.clock_rate.lock().unwrap() = Default::default();
         *self.midi_setup.lock().unwrap() = Default::default();
+        *self.mute_behavior.lock().unwrap() = Default::default();
         self.connected
             .store(false, std::sync::atomic::Ordering::Release);
         *self.link_cache.lock().unwrap() = [None; 8];

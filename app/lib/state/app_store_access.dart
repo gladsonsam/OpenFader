@@ -230,7 +230,8 @@ mixin _AppStoreAccess on _AppStoreContext {
         control.surface == 'usb_interface' ||
         control.surface == 'safe_levels' ||
         control.surface == 'clock_rate' ||
-        control.surface == 'midi_setup') {
+        control.surface == 'midi_setup' ||
+        control.surface == 'mute_behavior') {
       return blockedAccess.isEmpty &&
           control.members.isNotEmpty &&
           AccessFamily.values.every(accessFamilyAllowed) &&

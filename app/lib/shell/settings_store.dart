@@ -45,14 +45,24 @@ class ShellSettingsStore extends ShellStoreAdapter implements SettingsStore {
           row.surface == 'usb_interface' ||
           row.surface == 'safe_levels' ||
           row.surface == 'clock_rate' ||
-          row.surface == 'midi_setup'));
+          row.surface == 'midi_setup' ||
+          row.surface == 'mute_behavior'));
   @override
   int get controlAccessEpoch => app.controlAccessEpoch;
   @override
-  bool mixerSetupControlIsCurrent(DestinationControlVm control) =>
-      control.surface != 'bus_link_state' &&
-      control.surface != 'link_policy_state' &&
-      app.destinationControlIsCurrent(control);
+  bool mixerSetupControlIsCurrent(DestinationControlVm control) {
+    if (control.surface == 'bus_link_state' ||
+        control.surface == 'link_policy_state' ||
+        !app.destinationControlIsCurrent(control)) {
+      return false;
+    }
+    if (control.surface == 'mute_behavior') {
+      final block = engine.destinationControls.where((row) =>
+          row.target == control.target && row.surface == control.surface);
+      return block.length == 2 && block.every(app.destinationControlIsCurrent);
+    }
+    return true;
+  }
   @override
   Future<String?> setMixerSetupControl(
           DestinationControlVm control, double value) =>

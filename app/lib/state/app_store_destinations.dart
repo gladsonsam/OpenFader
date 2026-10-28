@@ -34,6 +34,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
               control.surface != 'safe_levels' &&
               control.surface != 'clock_rate' &&
               control.surface != 'midi_setup' &&
+              control.surface != 'mute_behavior' &&
               !control.targetSolo &&
               !control.talkbackGesture) ||
           control.authority == 'verified') &&
@@ -66,6 +67,7 @@ mixin _AppStoreDestinations on _AppStoreContext {
               control.surface == 'safe_levels' ||
               control.surface == 'clock_rate' ||
               control.surface == 'midi_setup' ||
+              control.surface == 'mute_behavior' ||
               control.surface.startsWith('output_') ||
               control.targetSolo ||
               control.talkbackGesture

@@ -25,6 +25,7 @@ class _MixerSetupDetail extends StatelessWidget {
               'safe_levels' => 'Safe Levels',
               'clock_rate' => 'Clock',
               'midi_setup' => 'MIDI',
+              'mute_behavior' => 'Mute behavior',
               _ => 'Automix',
             },
             children: [
