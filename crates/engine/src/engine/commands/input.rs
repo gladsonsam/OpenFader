@@ -380,8 +380,13 @@ impl Engine {
                         }
                     }
                 }
+                let is_xair_bus = driver == "xair" && self.driver_topology(&driver).iter().any(|family| {
+                    family.kind == openfader_core::StripKind::Bus
+                        && usize::from(ch) >= family.first
+                        && usize::from(ch) < family.first + family.count
+                });
                 let from = self.offline_from(StripId(ch), &field).await;
-                if expected.is_some() || (driver == "xair" && !send_members.is_empty()) {
+                if expected.is_some() || (driver == "xair" && !send_members.is_empty()) || is_xair_bus {
                     let empty = BTreeMap::new();
                     let expected = expected.as_ref().unwrap_or(&empty);
                     let drv = self.drv(&driver);
@@ -394,7 +399,12 @@ impl Engine {
                         );
                         let current_policy = self.policy_of(writer);
                         for member in members {
-                            current_policy.allow_strip(*member)?;
+                            match (field.as_str(), &pv) {
+                                ("fader", ParamValue::Float(v)) => current_policy.allow_fader(*member, *v)?,
+                                ("mute", _) => current_policy.allow_mute(*member)?,
+                                ("name", _) => current_policy.allow_rename(*member)?,
+                                _ => current_policy.allow_strip(*member)?,
+                            }
                             if let Some(holder) = self.lock_holder(member.0) {
                                 anyhow::ensure!(
                                     holder == writer,
@@ -408,9 +418,9 @@ impl Engine {
                     };
                     if driver == "xair"
                         && (matches!(field.as_str(), "gain" | "phantom")
-                            || !send_members.is_empty())
+                            || !send_members.is_empty() || is_xair_bus)
                     {
-                        drv.set_param_guarded_checked(StripId(ch), &field, pv, expected, &check)
+                        drv.set_param_guarded_checked(StripId(ch), &field, pv.clone(), expected, &check)
                             .await?;
                     } else {
                         drv.set_param_guarded(StripId(ch), &field, pv, expected)
