@@ -30,25 +30,6 @@ class _InputAssignments extends StatelessWidget {
                     ? null
                     : () => store.cmdParam('automix_group', group.toDouble())),
         ],
-      if (store.automixSettings.isNotEmpty)
-        'Automix settings': [
-          for (final control in store.automixSettings)
-            _ProcessingButton(
-              label: control.label,
-              detail: control.valueLabel,
-              onTap: control.available &&
-                      store.destinationControlIsCurrent(control)
-                  ? () => showDialog<void>(
-                      context: context,
-                      builder: (_) => DestinationControlEditor(
-                          changes: store,
-                          accessEpoch: () => store.controlAccessEpoch,
-                          isCurrent: store.destinationControlIsCurrent,
-                          apply: store.setDestinationControl,
-                          control: control))
-                  : null,
-            ),
-        ],
       if (store.paramApplies('lr_assign'))
         'Main': [
           _ProcessingButton(
@@ -183,6 +164,36 @@ class _InputAssignments extends StatelessWidget {
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       assignments,
+      if (store.automixSettings.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        Text('Automix settings',
+            style: AppDesign.type(14, color: ConsolePalette.of(context).text7)),
+        const SizedBox(height: 8),
+        LayoutBuilder(builder: (context, box) {
+          final count = box.maxWidth >= 640 ? 4 : 2;
+          final width = (box.maxWidth - 8 * (count - 1)) / count;
+          return Wrap(spacing: 8, runSpacing: 8, children: [
+            for (final control in store.automixSettings)
+              SizedBox(
+                  width: width,
+                  child: _ProcessingButton(
+                      fontSize: 14,
+                      label: control.label,
+                      detail: control.valueLabel,
+                      onTap: control.available &&
+                              store.destinationControlIsCurrent(control)
+                          ? () => showDialog<void>(
+                              context: context,
+                              builder: (_) => DestinationControlEditor(
+                                  changes: store,
+                                  accessEpoch: () => store.controlAccessEpoch,
+                                  isCurrent: store.destinationControlIsCurrent,
+                                  apply: store.setDestinationControl,
+                                  control: control))
+                          : null)),
+          ]);
+        }),
+      ],
       if (store.paramApplies('automix_weight')) ...[
         const SizedBox(height: 12),
         _AutomixWeight(store: store, onFocus: onFocus),
