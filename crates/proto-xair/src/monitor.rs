@@ -129,8 +129,13 @@ impl XAirDriver {
     /// 1-based `/-stat/solosw/NN` sets bank bit `NN - 1` (soloing ch16 set
     /// bits 14+15: ch15/16 are stereo-linked on that desk), and
     /// `/-action/clearsolo` clears the bank. Inputs map to bank indices 0..15; XR18 Aux and FX returns map to
-    /// indices 16..20; XR18 buses use indices 39..44. Other strip types are unsupported.
+    /// indices 16..20; XR18 buses and FX sends use indices 39..48. Main and DCA
+    /// writes require the verified target-control path.
     pub(super) async fn driver_set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.model != addrs::XAirModel::Xr18 || !(30..=34).contains(&strip.0),
+            "Main/DCA solo requires guarded target solo"
+        );
         let ch = self.solo_index(strip)? + 1;
         let addr = format!("{}/{ch:02}", addrs::SOLO_SW);
         let guard = self.session().await?;
@@ -149,6 +154,10 @@ impl XAirDriver {
         check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<()> {
         let _dispatch = self.bus_dispatch.read().await;
+        anyhow::ensure!(
+            self.model != addrs::XAirModel::Xr18 || !(30..=34).contains(&strip.0),
+            "Main/DCA solo requires guarded target solo"
+        );
         let ch = self.solo_index(strip)? + 1;
         let addr = format!("{}/{ch:02}", addrs::SOLO_SW);
         let generation = self
@@ -198,7 +207,7 @@ pub(super) fn solo_strip(index: usize, model: addrs::XAirModel) -> Option<u16> {
         return match index {
             16 => Some(35),
             17..=20 => Some(index as u16 - 1),
-            39..=44 => Some(index as u16 - 19),
+            39..=53 => Some(index as u16 - 19),
             _ => None,
         };
     }

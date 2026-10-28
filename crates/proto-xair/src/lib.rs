@@ -53,6 +53,7 @@ mod monitor_settings;
 mod param_read;
 mod param_write;
 mod surface;
+mod target_solo;
 mod telemetry;
 mod usb_interface;
 
@@ -80,6 +81,8 @@ pub struct XAirDriver {
     clock_rate_write: tokio::sync::Mutex<()>,
     main_mute_write: tokio::sync::Mutex<()>,
     usb_interface_write: tokio::sync::Mutex<()>,
+    target_solo: std::sync::Arc<std::sync::Mutex<target_solo::Cache>>,
+    target_solo_write: tokio::sync::Mutex<()>,
     midi_setup: std::sync::Arc<std::sync::Mutex<midi_setup::Cache>>,
     midi_setup_write: tokio::sync::Mutex<()>,
     link_policy_cache: link_policy::Cache,
@@ -159,6 +162,8 @@ impl XAirDriver {
             usb_interface: std::sync::Arc::new(std::sync::Mutex::new(
                 usb_interface::Cache::default(),
             )),
+            target_solo: Default::default(),
+            target_solo_write: Default::default(),
             clock_rate: Default::default(),
             clock_rate_write: Default::default(),
             main_mute_write: Default::default(),
@@ -258,7 +263,21 @@ impl MixerDriver for XAirDriver {
         controls.extend(self.usb_interface_controls());
         controls.extend(self.clock_rate_controls());
         controls.extend(self.midi_setup_controls());
+        controls.extend(self.target_solo_controls());
         controls
+    }
+
+    async fn set_target_solo(
+        &self,
+        target: &str,
+        control: &str,
+        value: f32,
+        expected: f32,
+        snapshot: &[openfader_core::destinations::DestinationControl],
+        context: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
+        self.set_target_solo_checked(target, control, value, expected, snapshot, context)
+            .await
     }
 
     async fn read_link_settings(
