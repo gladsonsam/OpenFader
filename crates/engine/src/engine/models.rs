@@ -211,9 +211,9 @@ pub struct RecallScope {
     /// WING adds `sends_matrix` and `sends_main`. `None` = all.
     #[serde(default)]
     pub groups: Option<Vec<String>>,
-    /// Global allowlist (`main`, `fx`, `routing`, `mute_groups`, `automix`, `monitor`, `rta`).
-    /// None includes legacy globals. Monitor and RTA require explicit entries
-    /// whenever a scope is supplied; an absent scope includes both.
+    /// Global allowlist (`main`, `fx`, `routing`, `mute_groups`, `automix`, `monitor`, `rta`, `link_settings`).
+    /// None includes legacy globals. Monitor, RTA and link settings require explicit entries
+    /// whenever a scope is supplied; an absent scope includes all three.
     #[serde(default)]
     pub globals: Option<Vec<String>>,
 }
