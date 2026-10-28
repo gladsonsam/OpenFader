@@ -790,19 +790,9 @@ impl Engine {
                 }
                 for saved in &taps.values {
                     check()?;
-                    let current = drv.read_output_taps().await?.ok_or_else(|| {
-                        anyhow::anyhow!("snapshot output tap readback unavailable")
-                    })?;
-                    check()?;
-                    validate_scene_output_taps(
-                        &taps.values,
-                        &current,
-                        &scene.routing,
-                        drv.as_ref(),
-                    )?;
-                    let row = current.iter().find(|v| v.target == saved.target).unwrap();
+                    let row = live.iter().find(|v| v.target == saved.target).unwrap();
                     anyhow::ensure!(
-                        row.source == saved.source,
+                        drv.output_route(&saved.target)?.source == saved.source,
                         "snapshot output source changed for {}; mixer may be partly changed",
                         saved.target
                     );
@@ -835,14 +825,21 @@ impl Engine {
                     )
                     .await?;
                     check()?;
-                    let confirmed = drv.read_output_taps().await?.ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "snapshot output tap readback unavailable; mixer may be partly changed"
-                        )
-                    })?;
-                    check()?;
-                    anyhow::ensure!(confirmed.iter().any(|v| v == saved), "snapshot output tap recall unconfirmed for {}; mixer may be partly changed", saved.target);
                 }
+                // Each changed target is independently checked/read back by its
+                // native write. Confirm the complete final state once, including
+                // targets that did not need a write.
+                let confirmed = drv.read_output_taps().await?.ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "snapshot output tap readback unavailable; mixer may be partly changed"
+                    )
+                })?;
+                check()?;
+                validate_scene_output_taps(&taps.values, &confirmed, &scene.routing, drv.as_ref())?;
+                anyhow::ensure!(
+                    taps.values.iter().all(|saved| confirmed.contains(saved)),
+                    "snapshot output tap recall unconfirmed; mixer may be partly changed"
+                );
             }
         }
         if let Some(groups) = scene
