@@ -56,6 +56,7 @@ impl Engine {
         driver: &str,
         field: &str,
     ) -> anyhow::Result<Vec<StripId>> {
+        let field = super::super::models::canonical_send_field(driver, field);
         let Some(rest) = field.strip_prefix("send") else {
             return Ok(Vec::new());
         };
@@ -343,6 +344,9 @@ impl Engine {
                 key,
             } => {
                 let ch = self.resolve_strip(ch, key.as_deref())?;
+                let field =
+                    super::super::models::canonical_send_field(&self.active_driver(), &field)
+                        .into_owned();
                 let pv = match &value {
                     Value::Number(n) => ParamValue::Float(n.as_f64().unwrap_or(0.0) as f32),
                     Value::Bool(b) => ParamValue::Bool(*b),
