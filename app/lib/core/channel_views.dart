@@ -272,6 +272,9 @@ double fromN(double min, double max, double n) =>
 
 enum EqBandType { low, mid, high, lowCut, highCut }
 
+/// Independently selected display model; never the mixer's sample rate.
+enum EqCutModel { unavailable, xairButterworth96k }
+
 /// Native shape identities, using canonical/XAir presentation values.
 /// A selectable shape does not imply that its response model is available.
 /// Driver-native values are translated only at the store boundary.
@@ -286,8 +289,10 @@ enum EqFilterShape {
   const EqFilterShape(this.value);
   final int value;
 
-  bool get hasResponseModel => switch (this) {
+  bool hasResponseModel({EqCutModel cutModel = EqCutModel.unavailable}) =>
+      switch (this) {
         lowShelf || bell || highShelf => true,
+        lowCut || highCut => cutModel == EqCutModel.xairButterworth96k,
         _ => false,
       };
 
@@ -310,6 +315,9 @@ class EqBandVm {
   /// Whether shelf response uses Q. XR18 and DL32S shelves have fixed slope;
   /// their stored bell Q must not change the shelf preview.
   final bool shelfUsesQ;
+
+  /// Provider-qualified display model for cut bands, independent of gain/Q.
+  final EqCutModel cutModel;
   final bool on;
   final List<ParameterChoice> typeChoices;
 
@@ -321,6 +329,13 @@ class EqBandVm {
   final List<double>? gRange;
   final List<double>? qRange;
 
+  bool get fixedCut =>
+      cutModel == EqCutModel.xairButterworth96k &&
+      (type == EqFilterShape.lowCut.value ||
+          type == EqFilterShape.highCut.value);
+
+  double get graphGain => fixedCut ? 0 : g;
+
   const EqBandVm({
     required this.band,
     required this.name,
@@ -328,6 +343,7 @@ class EqBandVm {
     required this.g,
     required this.q,
     this.shelfUsesQ = true,
+    this.cutModel = EqCutModel.unavailable,
     this.on = true,
     this.type,
     this.typeChoices = const [],
@@ -343,6 +359,7 @@ class EqBandVm {
         g: g ?? this.g,
         q: q ?? this.q,
         shelfUsesQ: shelfUsesQ,
+        cutModel: cutModel,
         on: on ?? this.on,
         type: type,
         typeChoices: typeChoices,
@@ -482,6 +499,16 @@ double _highpassDb(double f0, double f) {
       (1 + cw) / 2, -(1 + cw), (1 + cw) / 2, 1 + alpha, -2 * cw, 1 - alpha, f);
 }
 
+// Fixed second-order Butterworth cut, using the vendor graph's 96 kHz
+// bilinear frequency mapping. This is display maths, not the desk clock rate.
+double _xairCutDb(bool highpass, double f0, double f) {
+  if (!f0.isFinite || f0 <= 0 || f0 >= 48000) return 0;
+  final ratio = math.tan(math.pi * f / 96000) / math.tan(math.pi * f0 / 96000);
+  final power4 = ratio * ratio * ratio * ratio;
+  final power = highpass ? power4 / (1 + power4) : 1 / (1 + power4);
+  return 10 * math.log(power) / math.ln10;
+}
+
 /// Summed EQ magnitude curve in dB over [EqGraphGeom.n] log-spaced samples.
 List<double> eqResponseDb(ChannelEqVm eq) {
   final out = List<double>.filled(EqGraphGeom.n + 1, 0.0);
@@ -503,8 +530,14 @@ List<double> eqResponseDb(ChannelEqVm eq) {
         case EqFilterShape.highShelf:
           db += _shelfDb(true, b.f, b.g, b.shelfUsesQ ? b.q : null, f);
         case EqFilterShape.lowCut:
-        case EqFilterShape.veq:
+          if (b.cutModel == EqCutModel.xairButterworth96k) {
+            db += _xairCutDb(true, b.f, f);
+          }
         case EqFilterShape.highCut:
+          if (b.cutModel == EqCutModel.xairButterworth96k) {
+            db += _xairCutDb(false, b.f, f);
+          }
+        case EqFilterShape.veq:
         case null:
           // No verified response to draw until the shape is known.
           break;
