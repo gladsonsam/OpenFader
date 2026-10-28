@@ -1,6 +1,8 @@
 //! Strip parameter command dispatch.
 use super::*;
 
+type SendCheck<'a> = dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync + 'a;
+
 impl XAirDriver {
     /// Full param plane (see [`XAIR_CAPABILITIES`]). Strip roots come from
     /// [`strip_root`]: channels (`/ch/NN`) carry the whole set; FX returns
@@ -24,6 +26,33 @@ impl XAirDriver {
         strip: StripId,
         param: &str,
         value: ParamValue,
+    ) -> anyhow::Result<()> {
+        self.driver_set_param_checked(strip, param, value, None)
+            .await
+    }
+
+    pub async fn set_bus_send_checked(
+        &self,
+        strip: StripId,
+        param: &str,
+        value: ParamValue,
+        check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        let (slot, leaf) = generic_send(param)?;
+        anyhow::ensure!(
+            (1..=6).contains(&slot) && matches!(leaf, "level" | "tap" | "pan" | "grpon"),
+            "not a bus send"
+        );
+        self.driver_set_param_checked(strip, param, value, Some(check))
+            .await
+    }
+
+    async fn driver_set_param_checked(
+        &self,
+        strip: StripId,
+        param: &str,
+        value: ParamValue,
+        check: Option<&SendCheck<'_>>,
     ) -> anyhow::Result<()> {
         let (kind, root) = strip_root(strip.0)?;
         if param == "automix_group" {
@@ -388,22 +417,35 @@ impl XAirDriver {
                 let slot = mix::generic_send_slot(n)?;
                 let guard = self.session().await?;
                 let session = guard.as_ref().unwrap();
+                let authorize = || self.authorize_send(strip, n.into(), check);
                 match leaf {
                     "level" => {
                         let wire = mix::send_db_to_wire(v)?;
                         session
-                            .send(&mix::send_level(ch, slot)?, vec![OscType::Float(wire)])
+                            .send_checked(
+                                &mix::send_level(ch, slot)?,
+                                vec![OscType::Float(wire)],
+                                &authorize,
+                            )
                             .await
                     }
                     "tap" => {
                         session
-                            .send(&mix::send_tap(&root, slot)?, vec![mix::tap_to_arg(v)?])
+                            .send_checked(
+                                &mix::send_tap(&root, slot)?,
+                                vec![mix::tap_to_arg(v)?],
+                                &authorize,
+                            )
                             .await
                     }
                     "pan" => {
                         let wire = mix::pan_to_wire(v)?;
                         session
-                            .send(&mix::send_pan(&root, slot)?, vec![OscType::Float(wire)])
+                            .send_checked(
+                                &mix::send_pan(&root, slot)?,
+                                vec![OscType::Float(wire)],
+                                &authorize,
+                            )
                             .await
                     }
                     _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
@@ -422,10 +464,11 @@ impl XAirDriver {
                     "grpon" => mix::send_grpon(&root, slot)?,
                     _ => anyhow::bail!("{}: unknown param {p:?}", self.name()),
                 };
+                let authorize = || self.authorize_send(strip, n.into(), check);
                 guard
                     .as_ref()
                     .unwrap()
-                    .send(&addr, vec![codec::bool_arg(on)])
+                    .send_checked(&addr, vec![codec::bool_arg(on)], &authorize)
                     .await
             }
             ("gain", ParamValue::Float(db)) => {
@@ -570,5 +613,45 @@ impl XAirDriver {
             }
             (p, _) => anyhow::bail!("{}: unknown param {p:?}", self.name()),
         }
+    }
+}
+
+impl XAirDriver {
+    fn authorize_send(
+        &self,
+        strip: StripId,
+        slot: u16,
+        check: Option<&SendCheck<'_>>,
+    ) -> anyhow::Result<()> {
+        let Some(check) = check else {
+            return Ok(());
+        };
+        let topology = self.topology();
+        let first = ((slot - 1) / 2) * 2 + 1;
+        let mut buses = Vec::new();
+        for n in first..=first + 1 {
+            let key = openfader_core::strip_key("bus", n);
+            let index = openfader_core::strip_index_for_key(&topology, &key)
+                .ok_or_else(|| anyhow::anyhow!("missing XR18 bus strip {key}"))?;
+            anyhow::ensure!(
+                index < self.strip_count()
+                    && index <= u16::MAX as usize
+                    && strip_root(index as u16)?.1 == format!("/bus/{n}"),
+                "invalid XR18 bus mapping {key}"
+            );
+            buses.push(StripId(index as u16));
+        }
+        let unlinked = self.bus_link_cache.lock().unwrap()[usize::from((slot - 1) / 2)]
+            .1
+            .is_some_and(|(at, linked)| {
+                !linked && at.elapsed() <= std::time::Duration::from_secs(5)
+            });
+        let mut members = self.stereo_control_members(strip, "send")?;
+        if unlinked {
+            members.push(buses[usize::from((slot - 1) % 2)]);
+        } else {
+            members.extend(buses);
+        }
+        check(&members)
     }
 }

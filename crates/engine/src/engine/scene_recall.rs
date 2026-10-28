@@ -416,6 +416,19 @@ impl Engine {
                 check()?;
             }
         }
+        for (scene_strip, _) in &strips {
+            for id in scene_strip.params.keys() {
+                if scope.is_none_or(|sc| sc.allows_param_for(drv.as_ref(), id)) {
+                    affected_bus.extend(
+                        self.send_bus_members(&driver, id)
+                            .await?
+                            .into_iter()
+                            .map(|m| m.0),
+                    );
+                    check()?;
+                }
+            }
+        }
         // XR18 preamp writes affect every channel sharing that physical
         // input, including channels outside the selected recall scope.
         // Resolve affected members before the first write so lock overrides
@@ -577,9 +590,14 @@ impl Engine {
                             .map(|v| ((*field).to_string(), v))
                     })
                     .collect();
-                let rr = if expected.is_empty() {
-                    drv.set_param(StripId(*r), id, pv).await
-                } else if driver == "xair" && matches!(id.as_str(), "gain" | "phantom") {
+                let send_members = self.send_bus_members(&driver, id).await?;
+                check()?;
+                let bus_send = !send_members.is_empty();
+                affected_bus.extend(send_members.into_iter().map(|m| m.0));
+                let rr = if driver == "xair"
+                    && (matches!(id.as_str(), "gain" | "phantom") && !expected.is_empty()
+                        || bus_send)
+                {
                     drv.set_param_guarded_checked(StripId(*r), id, pv, &expected, &|members| {
                         check()?;
                         late_affected_preamp
@@ -589,6 +607,8 @@ impl Engine {
                         Ok(())
                     })
                     .await
+                } else if expected.is_empty() {
+                    drv.set_param(StripId(*r), id, pv).await
                 } else {
                     drv.set_param_guarded(StripId(*r), id, pv, &expected).await
                 };
