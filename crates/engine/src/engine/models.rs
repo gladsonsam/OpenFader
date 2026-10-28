@@ -82,6 +82,14 @@ pub struct StoredScene {
     pub automix: Option<StoredAutomix>,
     pub output_taps: Option<StoredOutputTaps>,
     pub monitor: Option<StoredMonitor>,
+    pub rta: Option<StoredRta>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredRta {
+    pub provider: String,
+    pub detector: u8,
+    pub decay: f32,
 }
 
 #[derive(Clone, Debug)]

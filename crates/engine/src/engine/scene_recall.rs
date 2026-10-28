@@ -350,6 +350,7 @@ impl Engine {
             automix,
             output_taps,
             monitor,
+            rta: None,
         })
     }
 

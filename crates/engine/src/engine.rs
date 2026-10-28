@@ -73,9 +73,9 @@ pub use models::{
     check_filename, now_unix, param_scope_group, validate_scene_n, EngineConfig, LinkState,
     OfflineState, RecallScope, StoredAutomix, StoredFx, StoredFxInsert, StoredMonitor,
     StoredMonitorValue, StoredMuteGroupMembership, StoredMuteGroups, StoredOutputTaps, StoredRoute,
-    StoredScene, StoredStrip, DESK_SAMPLE_RATE, FILE_MAX_BYTES, FX_POLL_EVERY, GR_CHANNELS,
-    LINK_INTERVAL, LOCK_TTL, PARAM_POLL_INTERVAL, POLL_TIMEOUT_STRIKES, SCENE_MAX, SCENE_MIN,
-    SPECTRUM_CHANNELS,
+    StoredRta, StoredScene, StoredStrip, DESK_SAMPLE_RATE, FILE_MAX_BYTES, FX_POLL_EVERY,
+    GR_CHANNELS, LINK_INTERVAL, LOCK_TTL, PARAM_POLL_INTERVAL, POLL_TIMEOUT_STRIKES, SCENE_MAX,
+    SCENE_MIN, SPECTRUM_CHANNELS,
 };
 use models::{
     pv_bool, CommitDisposition, FxSlotRt, ReadFailures, SyncState, DIRECT_IDENTIFY_TIMEOUT,
