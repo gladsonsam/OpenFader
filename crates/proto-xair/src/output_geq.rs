@@ -219,13 +219,16 @@ impl XAirDriver {
     }
     pub(super) fn geq_controls(&self) -> Vec<DestinationControl> {
         let generation = self.connection_generation.load(Ordering::Acquire);
-        if !self.connected.load(Ordering::Acquire) {
-            return Vec::new();
-        }
         let cache = self.output_geq.lock().unwrap();
-        if cache.generation != generation {
-            return Vec::new();
-        }
+        let empty = Cache::default();
+        let cache = if self.connected.load(Ordering::Acquire) && cache.generation == generation {
+            &*cache
+        } else {
+            &empty
+        };
+        Self::geq_controls_from_cache(cache, generation)
+    }
+    fn geq_controls_from_cache(cache: &Cache, generation: u64) -> Vec<DestinationControl> {
         let mut controls = Vec::new();
         for (target, label, _) in targets() {
             let block = cache.blocks.get(&target);
@@ -285,6 +288,93 @@ impl XAirDriver {
             }
         }
         controls
+    }
+    pub(super) async fn read_output_geq_snapshot(
+        &self,
+        target: &str,
+    ) -> anyhow::Result<Vec<DestinationControl>> {
+        let (_, _, root) = targets()
+            .into_iter()
+            .find(|(key, _, _)| key == target)
+            .ok_or_else(|| anyhow::anyhow!("Unknown GEQ target"))?;
+        let _dispatch = self.bus_dispatch.read().await;
+        let _lane = self.output_geq_write.lock().await;
+        let generation = self.connection_generation.load(Ordering::Acquire);
+        let check = || -> anyhow::Result<()> {
+            anyhow::ensure!(
+                self.connected.load(Ordering::Acquire)
+                    && self.connection_generation.load(Ordering::Acquire) == generation,
+                "Output EQ session changed"
+            );
+            Ok(())
+        };
+        check()?;
+        let session = self.session().await?.as_ref().unwrap().clone();
+        check()?;
+        let mut values = [0.0; FIELDS];
+        let mut receipts = [None; FIELDS];
+        for pass in 0..2 {
+            for i in 0..FIELDS {
+                check()?;
+                let (at, reply) = session
+                    .query_received_timeout(&address(&root, i), TIMEOUT)
+                    .await?;
+                check()?;
+                let value = decode(i, &reply).ok_or_else(|| {
+                    anyhow::anyhow!("Invalid output EQ readback: {}", field_id(i))
+                })?;
+                if pass == 0 {
+                    values[i] = value;
+                } else {
+                    anyhow::ensure!(
+                        values[i] == value,
+                        "Output EQ changed during capture: {}",
+                        field_id(i)
+                    );
+                    receipts[i] = Some(at);
+                }
+            }
+        }
+        let deadline = Instant::now() + TIMEOUT;
+        loop {
+            check()?;
+            let session_guard = self.session().await?;
+            anyhow::ensure!(
+                session_guard
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, &session)),
+                "Output EQ session changed"
+            );
+            {
+                let cache = self.output_geq.lock().unwrap();
+                anyhow::ensure!(
+                    cache.generation == generation,
+                    "Output EQ cache session changed"
+                );
+                if cache.blocks.get(target).is_some_and(|block| {
+                    block.cells.iter().enumerate().all(|(i, cell)| {
+                        !cell.pending
+                            && cell.value == Some(values[i])
+                            && cell
+                                .observed
+                                .zip(receipts[i])
+                                .is_some_and(|(at, receipt)| at >= receipt)
+                    })
+                }) {
+                    check()?;
+                    return Ok(Self::geq_controls_from_cache(&cache, generation)
+                        .into_iter()
+                        .filter(|c| c.target == target)
+                        .collect());
+                }
+            }
+            drop(session_guard);
+            anyhow::ensure!(
+                Instant::now() < deadline,
+                "Output EQ changed or readback incomplete during capture"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
     }
     pub(super) async fn set_geq_control(
         &self,
