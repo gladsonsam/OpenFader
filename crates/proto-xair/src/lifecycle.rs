@@ -87,6 +87,7 @@ impl XAirDriver {
                 entry.1 = None;
             }
         }
+        *self.bus_link_observations.lock().unwrap() = [(0, None); 3];
         *self.link_writes.lock().unwrap() = [None; 8];
         *self.dyn_cache.lock().await = None;
         *self.automix_gain_cache.lock().await = None;
@@ -104,6 +105,7 @@ impl XAirDriver {
         let generation = self.connection_generation.clone();
         let link_cache = self.link_cache.clone();
         let bus_link_cache = self.bus_link_cache.clone();
+        let bus_link_observations = self.bus_link_observations.clone();
         let task = tokio::spawn(async move {
             let mut fx_types = [None; 4];
             loop {
@@ -125,6 +127,7 @@ impl XAirDriver {
                         if msg.addr == "/config/buslink" || msg.addr.starts_with("/config/buslink/")
                         {
                             let mut cache = bus_link_cache.lock().unwrap();
+                            let mut observations = bus_link_observations.lock().unwrap();
                             let observed = if msg.addr == "/config/buslink" {
                                 match msg.args.as_slice() {
                                     [OscType::Int(a @ 0..=1), OscType::Int(b @ 0..=1), OscType::Int(c @ 0..=1)] => {
@@ -137,11 +140,20 @@ impl XAirDriver {
                             };
                             if let Some(observed) = observed {
                                 for (pair, linked) in observed {
-                                    cache[pair].0 = cache[pair].0.wrapping_add(1);
-                                    cache[pair].1 = Some((received_at, linked));
+                                    if observations[pair]
+                                        .1
+                                        .is_none_or(|(_, prior)| prior != linked)
+                                    {
+                                        cache[pair].0 = cache[pair].0.wrapping_add(1);
+                                        cache[pair].1 = None;
+                                        observations[pair].0 = observations[pair].0.wrapping_add(1);
+                                    }
+                                    // Display freshness never refreshes the separate
+                                    // explicit-read evidence used for admission.
+                                    observations[pair].1 = Some((received_at, linked));
                                 }
                             } else {
-                                for entry in cache.iter_mut() {
+                                for entry in cache.iter_mut().chain(observations.iter_mut()) {
                                     entry.0 = entry.0.wrapping_add(1);
                                     entry.1 = None;
                                 }
@@ -400,6 +412,7 @@ impl XAirDriver {
                 entry.1 = None;
             }
         }
+        *self.bus_link_observations.lock().unwrap() = [(0, None); 3];
         *self.link_writes.lock().unwrap() = [None; 8];
         self.connection_generation
             .fetch_add(1, std::sync::atomic::Ordering::AcqRel);

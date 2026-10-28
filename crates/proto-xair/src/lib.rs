@@ -71,6 +71,7 @@ pub struct XAirDriver {
     connected: std::sync::atomic::AtomicBool,
     link_cache: LinkCache,
     bus_link_cache: BusLinkCache,
+    bus_link_observations: BusLinkCache,
     link_writes: std::sync::Mutex<[Option<std::time::Instant>; 8]>,
     preamp_write: tokio::sync::Mutex<()>,
     output_routes: std::sync::Arc<std::sync::Mutex<output_routing::Cache>>,
@@ -138,6 +139,7 @@ impl XAirDriver {
             link_cache: std::sync::Arc::new(std::sync::Mutex::new([None; 8])),
             link_writes: std::sync::Mutex::new([None; 8]),
             bus_link_cache: std::sync::Arc::new(std::sync::Mutex::new([(0, None); 3])),
+            bus_link_observations: std::sync::Arc::new(std::sync::Mutex::new([(0, None); 3])),
             preamp_write: tokio::sync::Mutex::new(()),
             output_routes: std::sync::Arc::new(std::sync::Mutex::new(
                 output_routing::Cache::default(),
