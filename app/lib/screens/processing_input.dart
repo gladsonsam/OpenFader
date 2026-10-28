@@ -415,6 +415,7 @@ class _InputDelayControl extends StatelessWidget {
       onFocus(ChannelFocus(
           title: 'Delay',
           label: snapshot.unitLabel,
+          valueListenable: store,
           text: () =>
               current() ? readout(store.delay!) : 'Reopen delay control',
           entryText: () => current() ? store.delay!.value.toString() : '',

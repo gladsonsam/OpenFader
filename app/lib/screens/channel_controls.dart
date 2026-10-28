@@ -36,6 +36,7 @@ ChannelFocus _parameterFocus(ChannelStore store, String leaf, String title,
   return ChannelFocus(
       title: title,
       label: label,
+      valueListenable: store,
       text: () => current() ? text() : 'Reopen control',
       entryText: () => current() ? store.paramNum(leaf)?.toString() ?? '' : '',
       min: 0,

@@ -62,12 +62,21 @@ const fn presentation(id: &'static str, choices: &'static [ParamChoice]) -> Para
     }
 }
 
+const EQ_TYPES: &[ParamChoice] = &[
+    c(0., "Low Cut"),
+    c(1., "Low Shelf"),
+    c(2., "PEQ"),
+    c(3., "VEQ"),
+    c(4., "High Shelf"),
+    c(5., "High Cut"),
+];
+
 const fn eq_presentation(id: &'static str) -> ParamPresentation {
     ParamPresentation {
         // mixer control software 1.8.1 / XR18 FW 1.20, 2026-10-28: shelf
         // response is unchanged across Q .3, 3.1 and 10. Bell Q is retained.
         curve: Some("fixed_shelf"),
-        ..presentation(id, &[])
+        ..presentation(id, EQ_TYPES)
     }
 }
 pub(super) const PRESENTATIONS: &[ParamPresentation] = &[

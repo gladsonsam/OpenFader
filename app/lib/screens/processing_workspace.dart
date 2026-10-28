@@ -97,7 +97,7 @@ class _ProcessingSlider extends StatefulWidget {
       this.enabled = true,
       this.pan = false,
       this.showLabel = true,
-      this.showValue = true,
+      this.showValue = false,
       this.compact = false,
       this.solidFill = false,
       this.fillFromStart = false,

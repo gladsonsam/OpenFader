@@ -108,23 +108,37 @@ class _EqTabState extends State<_EqTab> {
   }
 
   Widget _shapeChoices(EqBandVm band, {bool compact = false}) {
-    final shelf =
-        band.band == 1 ? EqFilterShape.lowShelf : EqFilterShape.highShelf;
-    final current = EqFilterShape.fromValue(band.type);
     final enabled =
-        current != null && widget.store.supports('eq${band.band}_type');
-    return Row(children: [
-      for (final shape in [shelf, EqFilterShape.bell])
-        Expanded(
-            child: _ProcessingButton(
-                label: shape == EqFilterShape.bell ? 'Bell' : 'Shelf',
-                semanticsLabel:
-                    'Band ${band.band} ${shape == EqFilterShape.bell ? 'Bell' : 'Shelf'}',
-                fontSize: compact ? 14 : 16,
-                active: band.type == shape.value,
-                onTap: enabled
-                    ? () => widget.store.setEqBandType(band.band, shape)
-                    : null)),
+        band.type != null && widget.store.supports('eq${band.band}_type');
+    if (band.typeChoices.length > 2) {
+      return DropdownButton<EqFilterShape>(
+        isExpanded: true,
+        value: EqFilterShape.fromValue(band.type),
+        hint: const Text('Shape'),
+        items: [
+          for (final choice in band.typeChoices)
+            if (EqFilterShape.fromValue(choice.value.toInt()) case final shape?)
+              DropdownMenuItem(value: shape, child: Text(choice.label)),
+        ],
+        onChanged: enabled
+            ? (shape) {
+                if (shape != null) widget.store.setEqBandType(band.band, shape);
+              }
+            : null,
+      );
+    }
+    return Wrap(spacing: 2, runSpacing: 2, children: [
+      for (final choice in band.typeChoices)
+        if (EqFilterShape.fromValue(choice.value.toInt()) case final shape?)
+          _ProcessingButton(
+            label: choice.label,
+            semanticsLabel: 'Band ${band.band} ${choice.label}',
+            fontSize: compact ? 12 : 14,
+            active: band.type == shape.value,
+            onTap: enabled
+                ? () => widget.store.setEqBandType(band.band, shape)
+                : null,
+          ),
     ]);
   }
 
@@ -143,8 +157,7 @@ class _EqTabState extends State<_EqTab> {
                 ? () => widget.store.setEqBandOn(band.band, !band.on)
                 : null),
         const Spacer(),
-        if (band.band == 1 || band.band == widget.store.eq.bands.length)
-          _shapeChoices(band),
+        if (band.typeChoices.isNotEmpty) _shapeChoices(band),
         _slider(band, 'g', 'G'),
         _slider(band, 'f', 'F'),
         _slider(band, 'q', 'Q'),
@@ -158,8 +171,8 @@ class _EqTabState extends State<_EqTab> {
     final selected =
         eq.bands.where((b) => b.band == eq.selectedBand).firstOrNull ??
             eq.bands.firstOrNull;
-    final showMobileShapes = selected != null &&
-        (selected.band == 1 || selected.band == eq.bands.length);
+    final showMobileShapes =
+        selected != null && selected.typeChoices.isNotEmpty;
     return LayoutBuilder(builder: (context, bounds) {
       final scale = bounds.maxWidth / 1443;
       return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
