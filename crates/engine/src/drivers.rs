@@ -359,6 +359,13 @@ pub trait DynDriver: Send + Sync {
     async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> {
         Ok(None)
     }
+    /// Fresh complete per-target GEQ inventory; None means unsupported.
+    async fn read_output_geq(
+        &self,
+        _target: &str,
+    ) -> anyhow::Result<Option<Vec<openfader_core::destinations::DestinationControl>>> {
+        Ok(None)
+    }
     async fn read_output_taps(
         &self,
     ) -> anyhow::Result<Option<Vec<openfader_core::routing::OutputTapState>>> {
@@ -1060,6 +1067,7 @@ macro_rules! impl_dyn_driver {
             MixerDriver::set_routing_control_guarded(self, target, control, value, expected, snapshot, context).await
         }
         async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> { MixerDriver::read_automix_settings(self).await }
+        async fn read_output_geq(&self, target: &str) -> anyhow::Result<Option<Vec<openfader_core::destinations::DestinationControl>>> { MixerDriver::read_output_geq(self, target).await }
         async fn read_output_taps(&self) -> anyhow::Result<Option<Vec<openfader_core::routing::OutputTapState>>> { MixerDriver::read_output_taps(self).await }
         async fn read_rta_settings(&self) -> anyhow::Result<Option<Vec<openfader_core::destinations::DestinationControl>>> { MixerDriver::read_rta_settings(self).await }
         async fn read_monitor_settings(&self) -> anyhow::Result<Option<Vec<openfader_core::destinations::DestinationControl>>> { MixerDriver::read_monitor_settings(self).await }

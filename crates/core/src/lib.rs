@@ -1033,6 +1033,14 @@ pub trait MixerDriver: Send + Sync {
 
     /// Complete provider-owned physical tap inventory, independently read.
     /// None means unsupported; an incomplete supported inventory is an error.
+    /// Fresh complete per-target GEQ inventory; None means unsupported.
+    async fn read_output_geq(
+        &self,
+        _target: &str,
+    ) -> anyhow::Result<Option<Vec<destinations::DestinationControl>>> {
+        Ok(None)
+    }
+
     async fn read_output_taps(&self) -> anyhow::Result<Option<Vec<routing::OutputTapState>>> {
         Ok(None)
     }
