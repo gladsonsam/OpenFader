@@ -356,6 +356,7 @@ impl Engine {
             output_taps,
             monitor,
             rta,
+            output_eq: None,
         })
     }
 

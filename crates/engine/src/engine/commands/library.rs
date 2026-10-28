@@ -81,6 +81,7 @@ impl Engine {
                     output_taps: None,
                     monitor: None,
                     rta: None,
+                    output_eq: None,
                 };
                 let overrode = self
                     .recall_full(&stored, fade_ms, None, writer, out)
