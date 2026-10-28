@@ -41,6 +41,7 @@ impl Engine {
         generation: u64,
     ) -> anyhow::Result<StoredScene> {
         let driver = pin_driver.to_string();
+        let capture_links = self.begin_scene_link_capture(&driver, generation).await?;
         let topo = self.driver_topology(&driver);
         let caps = self.driver_capabilities(&driver);
         let reg = self.registry(&driver);
@@ -344,6 +345,9 @@ impl Engine {
                     .any(|f| f.kind == openfader_core::StripKind::Main),
             "snapshot capture incomplete: main level unavailable"
         );
+        let link_settings = self
+            .finish_scene_link_capture(&capture_links, &strips, &driver, generation)
+            .await?;
         Ok(StoredScene {
             number,
             name: name.to_string(),
@@ -358,7 +362,7 @@ impl Engine {
             monitor,
             rta,
             output_eq,
-            link_settings: None,
+            link_settings,
         })
     }
 
@@ -388,6 +392,9 @@ impl Engine {
         check()?;
         let drv = self.drv(&driver);
         let topo = self.driver_topology(&driver);
+        let link_settings = self
+            .prepare_scene_link_settings(scene.link_settings.as_ref(), scope, &driver, &check)
+            .await?;
         let output_eq = self
             .prepare_scene_output_eq(scene.output_eq.as_ref(), scope, &driver, &check)
             .await?;
@@ -526,12 +533,43 @@ impl Engine {
                 }
             }
         }
+        // Confirm route endpoint availability before any coupling mutation.
+        // Re-read guards at each write because linking or external edits can
+        // invalidate the current source context.
+        if scope.is_none_or(|sc| sc.allows_global("routing")) {
+            if let Some(routes) = &xair_input_routes {
+                for strip in routes.keys() {
+                    check()?;
+                    let guard = drv
+                        .input_route_guard(StripId(*strip))
+                        .await?
+                        .ok_or_else(|| anyhow::anyhow!("snapshot input route unavailable"))?;
+                    check()?;
+                    for (field, max) in [("analog", 18), ("usb", 17), ("bank", 1)] {
+                        anyhow::ensure!(
+                            guard
+                                .get(field)
+                                .and_then(Value::as_i64)
+                                .is_some_and(|v| (0..=max).contains(&v)),
+                            "snapshot input route guard invalid: {field}"
+                        );
+                    }
+                }
+            }
+        }
         // XR18 preamp writes affect every channel sharing that physical
         // input, including channels outside the selected recall scope.
         // Resolve affected members before the first write so lock overrides
         // are reported for the complete preamp target.
         let mut affected_preamp = std::collections::BTreeSet::new();
         let late_affected_preamp = std::sync::Mutex::new(std::collections::BTreeSet::new());
+        self.restore_scene_link_settings(
+            link_settings.as_ref(),
+            &driver,
+            &check,
+            &late_affected_preamp,
+        )
+        .await?;
         self.restore_scene_input_links(
             &input_links,
             &check,
@@ -1083,6 +1121,8 @@ impl Engine {
         }
         check()?;
         self.verify_scene_input_links(&input_links, &check).await?;
+        self.verify_scene_link_settings(link_settings.as_ref(), &driver, &check)
+            .await?;
         self.refresh_fx_cache().await;
         check()?;
         out.push(self.fx_message_cached());

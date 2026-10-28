@@ -873,6 +873,10 @@ pub(super) async fn connected_driver() -> (XAirDriver, Arc<FakeMixer>) {
     let session = OscSession::from_connected_socket(sock, Some(KeepaliveConfig::xremote()));
     let driver = XAirDriver::new();
     *driver.session.lock().await = Some(std::sync::Arc::new(session));
+    // Match the connected lifecycle state expected by checked dispatch.
+    driver
+        .connected
+        .store(true, std::sync::atomic::Ordering::Release);
     // Drain the fake's potential early datagrams by a tiny settle.
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     (driver, fake)

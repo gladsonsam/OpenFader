@@ -237,8 +237,16 @@ pub fn strip_key_for_index(topology: &[StripFamily], index: usize) -> Option<Str
 
 /// Global strip index for a stable key under `topology` (`None` when the
 /// key names no strip here). Accepts the `mix/..` legacy alias and bare
-/// `main`; single-strip families also accept `key/1`.
+/// single-strip family keys; single-strip families also accept `key/1`.
 pub fn strip_index_for_key(topology: &[StripFamily], key: &str) -> Option<usize> {
+    // Match the bare keys emitted by strip_key_for_index for every singleton,
+    // including XR18's aux return, rather than special-casing only main.
+    if let Some(fam) = topology
+        .iter()
+        .find(|f| f.count == 1 && canonical_family_key(f) == key.trim())
+    {
+        return Some(fam.first);
+    }
     let (fam_key, idx) = parse_strip_key(key)?;
     // Exact family-key match first (covers `ch2/01`, `fxsnd/..`, …), then
     // the canonical bus fallback (`bus/01` on the sim `mix` family).

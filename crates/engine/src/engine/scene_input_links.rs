@@ -13,10 +13,12 @@ impl Engine {
         scene: &StoredScene,
         scope: Option<&RecallScope>,
         topo: &[openfader_core::StripFamily],
-        check: &dyn Fn() -> anyhow::Result<()>,
+        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<Vec<InputLink>> {
         let drv = self.drv("xair");
-        if scope.is_some_and(|s| !s.allows_param_for(drv.as_ref(), "link")) {
+        if drv.param_read_only("link")
+            || scope.is_some_and(|s| !s.allows_param_for(drv.as_ref(), "link"))
+        {
             return Ok(Vec::new());
         }
         let resolve = |s: &StoredStrip| {
@@ -30,10 +32,13 @@ impl Engine {
         let mut selected = BTreeSet::new();
         for s in &scene.strips {
             let index = resolve(s);
-            if scope.is_none_or(|sc| sc.matches_strip(index, topo)) {
-                if let Some(pair) = pairs.iter().find(|p| p.contains(&index)) {
-                    selected.insert(*pair);
-                }
+            if s.params.contains_key("link") && scope.is_none_or(|sc| sc.matches_strip(index, topo))
+            {
+                let pair = pairs
+                    .iter()
+                    .find(|p| p.contains(&index))
+                    .ok_or_else(|| anyhow::anyhow!("snapshot link target has no input pair"))?;
+                selected.insert(*pair);
             }
         }
         let mut result = Vec::new();
@@ -70,10 +75,10 @@ impl Engine {
         Ok(result)
     }
 
-    async fn read_scene_input_link(
+    pub(super) async fn read_scene_input_link(
         &self,
         pair: [u16; 2],
-        check: &dyn Fn() -> anyhow::Result<()>,
+        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<bool> {
         let mut state = None;
         for member in pair {
@@ -95,7 +100,7 @@ impl Engine {
     pub(super) async fn restore_scene_input_links(
         &self,
         links: &[InputLink],
-        check: &(dyn Fn() -> anyhow::Result<()> + Sync),
+        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
         affected: &std::sync::Mutex<BTreeSet<u16>>,
         writer: &str,
         topo: &[openfader_core::StripFamily],
@@ -125,12 +130,13 @@ impl Engine {
                         .await?;
                     check()?;
                 }
-                let mut verified = false;
+                let mut verified = None;
                 for attempt in 0..5 {
                     check()?;
+                    let query_started = Instant::now();
                     if self.read_scene_input_link(link.pair, check).await.ok() == Some(link.wanted)
                     {
-                        verified = true;
+                        verified = Some(query_started);
                         break;
                     }
                     check()?;
@@ -139,9 +145,18 @@ impl Engine {
                         check()?;
                     }
                 }
-                anyhow::ensure!(verified, "snapshot input link readback failed");
+                let verified = verified
+                    .ok_or_else(|| anyhow::anyhow!("snapshot input link readback failed"))?;
                 for member in link.pair {
-                    self.apply_inbound(member, "link", &ParamValue::Bool(link.wanted));
+                    // A conservative query-start stamp prevents old-session
+                    // proof being inserted after a concurrent SyncEpoch.
+                    self.apply_received(
+                        member,
+                        "link",
+                        &ParamValue::Bool(link.wanted),
+                        verified,
+                        Some(verified),
+                    );
                     out.push(Event::Param {
                         ch: member,
                         field: "link".into(),
@@ -162,7 +177,7 @@ impl Engine {
     pub(super) async fn verify_scene_input_links(
         &self,
         links: &[InputLink],
-        check: &dyn Fn() -> anyhow::Result<()>,
+        check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<()> {
         for link in links {
             let state = self
