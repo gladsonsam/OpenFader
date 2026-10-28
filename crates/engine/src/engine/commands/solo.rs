@@ -47,7 +47,11 @@ impl Engine {
                         )
                     })
                 })
-                .filter(|(key, _, _)| key == target)
+                .filter(|(key, ch, _)| {
+                    key == target
+                        || openfader_core::strip_key_for_index(&topology, *ch as usize).as_ref()
+                            == Some(target)
+                })
                 .map(|(_, ch, kind)| (ch, kind))
                 .collect::<Vec<_>>();
             if !strips.is_empty() {

@@ -90,9 +90,11 @@ impl XAirDriver {
         *self.bus_link_observations.lock().unwrap() = [(0, None); 3];
         *self.link_policy_cache.lock().unwrap() = [(0, None); 4];
         *self.usb_interface.lock().unwrap() = Default::default();
+        *self.target_solo.lock().unwrap() = Default::default();
         *self.clock_rate.lock().unwrap() = Default::default();
         *self.midi_setup.lock().unwrap() = Default::default();
         self.usb_interface.lock().unwrap().generation = connection;
+        self.target_solo.lock().unwrap().generation = connection;
         self.clock_rate.lock().unwrap().generation = connection;
         self.midi_setup.lock().unwrap().generation = connection;
         self.bus_link_pending
@@ -116,6 +118,7 @@ impl XAirDriver {
         let generation = self.connection_generation.clone();
         let link_cache = self.link_cache.clone();
         let usb_interface = self.usb_interface.clone();
+        let target_solo = self.target_solo.clone();
         let clock_rate = self.clock_rate.clone();
         let midi_setup = self.midi_setup.clone();
         let link_policy_cache = self.link_policy_cache.clone();
@@ -135,6 +138,7 @@ impl XAirDriver {
                         if generation.load(std::sync::atomic::Ordering::Acquire) != connection {
                             break;
                         }
+                        super::target_solo::record(&target_solo, &msg, received_at, connection);
                         super::usb_interface::record(&usb_interface, &msg, received_at, connection);
                         super::clock_rate::record(&clock_rate, &msg, received_at, connection);
                         super::midi_setup::record(&midi_setup, &msg, received_at, connection);
@@ -357,6 +361,7 @@ impl XAirDriver {
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
+                        super::target_solo::invalidate(&target_solo, connection);
                         super::usb_interface::invalidate(&usb_interface, connection);
                         super::clock_rate::invalidate(&clock_rate, connection);
                         super::midi_setup::invalidate(&midi_setup, connection);
@@ -439,6 +444,7 @@ impl XAirDriver {
         self.refresh_bus_links(session.clone(), connection);
         self.refresh_link_policies(session.clone(), connection);
         self.refresh_usb_interface(session.clone());
+        self.refresh_target_solo(session.clone());
         self.refresh_clock_rate(session.clone());
         self.refresh_midi_setup(session.clone());
         self.start_output_routing(session.clone(), connection);
@@ -456,6 +462,7 @@ impl XAirDriver {
 
     pub(super) async fn driver_disconnect(&self) -> anyhow::Result<()> {
         *self.usb_interface.lock().unwrap() = Default::default();
+        *self.target_solo.lock().unwrap() = Default::default();
         *self.clock_rate.lock().unwrap() = Default::default();
         *self.midi_setup.lock().unwrap() = Default::default();
         self.connected

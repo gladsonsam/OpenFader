@@ -192,6 +192,7 @@ impl XAirDriver {
             .collect::<anyhow::Result<Vec<_>>>()?;
         let clock_query = osc::query_message("/-prefs/clockrate")?;
         let usb_query = osc::query_message("/-prefs/usbifcmode")?;
+        let solo_query = osc::query_message(addrs::SOLO_SW)?;
         let midi_query = osc::query_message("/-prefs/midiconfig")?;
         let is_xr18 = self.model == addrs::XAirModel::Xr18;
         let task = tokio::spawn(async move {
@@ -202,6 +203,7 @@ impl XAirDriver {
                 let _ = sock.send(&usb_query).await;
                 let _ = sock.send(&clock_query).await;
                 let _ = sock.send(&midi_query).await;
+                let _ = sock.send(&solo_query).await;
             }
             let mut renewed = std::time::Instant::now();
             let mut links_renewed = std::time::Instant::now();
@@ -219,6 +221,7 @@ impl XAirDriver {
                         let _ = sock.send(&usb_query).await;
                         let _ = sock.send(&clock_query).await;
                         let _ = sock.send(&midi_query).await;
+                        let _ = sock.send(&solo_query).await;
                     }
                     for query in link_queries.iter().chain(policy_queries.iter()) {
                         if let Err(error) = sock.send(query).await {

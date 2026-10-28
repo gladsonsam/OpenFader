@@ -114,10 +114,10 @@ async fn driver_solo_roundtrip() {
     assert!(driver.get_solo(StripId(15)).await.unwrap());
     assert!(!driver.get_solo(StripId(0)).await.unwrap());
     driver.clear_solo().await.unwrap();
-    // FX send and Main strips still have no supported solo mapping.
-    assert!(driver.set_solo(StripId(26), true).await.is_err());
+    // Invalid strips remain unsupported; Main requires the guarded target path.
+    assert!(driver.set_solo(StripId(36), true).await.is_err());
     assert!(driver.set_solo(StripId(30), true).await.is_err());
-    assert!(driver.get_solo(StripId(26)).await.is_err());
+    assert!(driver.get_solo(StripId(36)).await.is_err());
 }
 
 /// Solo monitoring globals loopback over UDP (`crate::solo`,
