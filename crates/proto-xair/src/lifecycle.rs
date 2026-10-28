@@ -91,6 +91,8 @@ impl XAirDriver {
         *self.link_policy_cache.lock().unwrap() = [(0, None); 4];
         self.bus_link_pending
             .store(0, std::sync::atomic::Ordering::Release);
+        self.link_policy_pending
+            .store(0, std::sync::atomic::Ordering::Release);
         *self.link_writes.lock().unwrap() = [None; 8];
         *self.dyn_cache.lock().await = None;
         *self.automix_gain_cache.lock().await = None;
@@ -108,6 +110,7 @@ impl XAirDriver {
         let generation = self.connection_generation.clone();
         let link_cache = self.link_cache.clone();
         let link_policy_cache = self.link_policy_cache.clone();
+        let link_policy_pending = self.link_policy_pending.clone();
         let bus_link_cache = self.bus_link_cache.clone();
         let bus_link_observations = self.bus_link_observations.clone();
         let bus_link_pending = self.bus_link_pending.clone();
@@ -126,6 +129,7 @@ impl XAirDriver {
                         {
                             super::link_policy::record(
                                 &link_policy_cache,
+                                &link_policy_pending,
                                 &msg,
                                 received_at,
                                 &generation,
@@ -444,6 +448,8 @@ impl XAirDriver {
             *cache = [(0, None); 4];
         }
         self.bus_link_pending
+            .store(0, std::sync::atomic::Ordering::Release);
+        self.link_policy_pending
             .store(0, std::sync::atomic::Ordering::Release);
         *self.link_writes.lock().unwrap() = [None; 8];
         let old_rta = self.rta.lock().unwrap().take();
