@@ -10,6 +10,8 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/access_limits.dart';
+import '../core/destination_controls.dart';
+import '../widgets/destination_control_editor.dart';
 import 'settings_access.dart';
 
 import '../settings/mixes.dart';
@@ -25,6 +27,7 @@ part 'settings/navigation.dart';
 part 'settings/section_widgets.dart';
 part 'settings/controls.dart';
 part 'settings/connections.dart';
+part 'settings/mixer_setup.dart';
 part 'settings/mixes.dart';
 part 'settings/data.dart';
 part 'settings/appearance.dart';
@@ -34,6 +37,7 @@ part 'settings/about.dart';
 
 enum SettingsSection {
   connections('Connections', Icons.wifi),
+  mixer('Mixer setup', Icons.tune),
   mixes('Mixes & backups', Icons.library_music_outlined),
   access('Access limits', Icons.lock_outline),
   data('App data', Icons.storage_outlined),
@@ -51,6 +55,12 @@ abstract class SettingsStore extends ChangeNotifier {
   AccessLimitsStore get accessLimits;
   RecentMixers get recents;
   LocalMixStore get mixes;
+  bool get mixerConnected;
+  List<DestinationControlVm> get mixerSetupControls;
+  int get controlAccessEpoch;
+  bool mixerSetupControlIsCurrent(DestinationControlVm control);
+  Future<String?> setMixerSetupControl(
+      DestinationControlVm control, double value);
 
   /// Live channel catalog for the custom-layers editor (master excluded).
   List<({String key, String name})> get layerChannelOptions;
@@ -286,7 +296,10 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Sidebar(active: _sel, onSelect: (s) => setState(() => _sel = s), onHome: widget.onHome),
+              _Sidebar(
+                  active: _sel,
+                  onSelect: (s) => setState(() => _sel = s),
+                  onHome: widget.onHome),
               Expanded(child: _detailScroll(_sel, wide: true)),
             ],
           ),
@@ -390,6 +403,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
             ),
           ),
         switch (s) {
+          SettingsSection.mixer => _MixerSetupDetail(store: widget.store),
           SettingsSection.connections => _ConnectionsDetail(
               store: widget.store,
               toast: _toast,
