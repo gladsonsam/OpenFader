@@ -434,6 +434,16 @@ pub trait DynDriver: Send + Sync {
         group: u8,
         member: bool,
     ) -> anyhow::Result<()>;
+    async fn set_mute_group_assign_checked(
+        &self,
+        ch: StripId,
+        group: u8,
+        member: bool,
+        check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        check(&[ch])?;
+        self.set_mute_group_assign(ch, group, member).await
+    }
     async fn get_mute_group_assign(&self, ch: StripId, group: u8) -> anyhow::Result<bool>;
     async fn download_file(&self, filename: &str) -> anyhow::Result<Vec<u8>>;
     async fn upload_file(&self, filename: &str, data: &[u8], file_type: u32) -> anyhow::Result<()>;
@@ -735,7 +745,7 @@ pub trait DynDriver: Send + Sync {
         &self,
         _strip: StripId,
         _mask: u32,
-        _check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync),
+        _check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync),
     ) -> anyhow::Result<()> {
         anyhow::bail!("{}: mute-group snapshot unsupported", self.name())
     }
@@ -1485,6 +1495,9 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         check(&[strip])?;
         self.set_param_guarded(strip, param, value, expected).await
     }
+    async fn set_mute_group_assign_checked(&self, ch: StripId, group: u8, member: bool, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
+        openfader_proto_xair::XAirDriver::set_mute_group_assign_checked(self, ch, group, member, check).await
+    }
     fn mute_group_snapshot_supported(&self) -> bool { true }
     fn mute_group_snapshot_applies(&self, kind: StripKind) -> bool {
         matches!(kind, StripKind::In | StripKind::Ret | StripKind::Bus | StripKind::FxSnd)
@@ -1492,7 +1505,7 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
     async fn snapshot_mute_group_mask(&self, strip: StripId) -> anyhow::Result<u32> {
         openfader_proto_xair::XAirDriver::snapshot_mute_group_mask(self, strip).await
     }
-    async fn restore_mute_group_mask(&self, strip: StripId, mask: u32, check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
+    async fn restore_mute_group_mask(&self, strip: StripId, mask: u32, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
         openfader_proto_xair::XAirDriver::restore_mute_group_mask(self, strip, mask, check).await
     }
     async fn restore_mute_group_master(&self, group: u8, muted: bool, check: &(dyn Fn() -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
