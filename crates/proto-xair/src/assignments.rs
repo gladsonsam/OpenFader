@@ -427,10 +427,10 @@ impl XAirDriver {
         let (pair, addr) = channel_link_address(strip)?;
         let left = (pair * 2) as u16;
         let members = [StripId(left), StripId(left + 1)];
-        let _lane = self.preamp_write.lock().await;
         let generation = self
             .connection_generation
             .load(std::sync::atomic::Ordering::Acquire);
+        let _lane = self.preamp_write.lock().await;
         let authorize = || {
             anyhow::ensure!(
                 self.connected.load(std::sync::atomic::Ordering::Acquire)
