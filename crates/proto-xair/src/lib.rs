@@ -42,6 +42,7 @@ mod discovery;
 mod fx_driver;
 mod inbound;
 mod lifecycle;
+mod link_policy;
 mod mapping;
 mod metadata;
 mod monitor;
@@ -70,6 +71,7 @@ pub struct XAirDriver {
     connection_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     connected: std::sync::atomic::AtomicBool,
     link_cache: LinkCache,
+    link_policy_cache: link_policy::Cache,
     bus_link_cache: BusLinkCache,
     bus_link_observations: BusLinkCache,
     bus_link_pending: std::sync::Arc<std::sync::atomic::AtomicU8>,
@@ -141,6 +143,7 @@ impl XAirDriver {
             connected: std::sync::atomic::AtomicBool::new(false),
             link_cache: std::sync::Arc::new(std::sync::Mutex::new([None; 8])),
             link_writes: std::sync::Mutex::new([None; 8]),
+            link_policy_cache: std::sync::Arc::new(std::sync::Mutex::new([(0, None); 4])),
             bus_link_cache: std::sync::Arc::new(std::sync::Mutex::new([(0, None); 3])),
             bus_link_observations: std::sync::Arc::new(std::sync::Mutex::new([(0, None); 3])),
             bus_link_pending: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
@@ -227,6 +230,7 @@ impl MixerDriver for XAirDriver {
         controls.extend(self.monitor_setting_controls());
         controls.extend(self.misc_controls());
         controls.extend(self.bus_link_controls());
+        controls.extend(self.link_policy_controls());
         controls
     }
 
@@ -243,6 +247,13 @@ impl MixerDriver for XAirDriver {
         snapshot: &[openfader_core::destinations::DestinationControl],
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<Option<openfader_core::destinations::DestinationControl>> {
+        anyhow::ensure!(
+            target != "link_policies"
+                && !snapshot
+                    .iter()
+                    .any(|row| row.surface == "link_policy_state"),
+            "Link policy state is read-only"
+        );
         if target == "bus_links" {
             self.set_bus_link_control(control, value, expected, snapshot, context)
                 .await
@@ -283,7 +294,12 @@ impl MixerDriver for XAirDriver {
         context: &(dyn Fn() -> bool + Send + Sync),
     ) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
         anyhow::ensure!(
-            target != "bus_links" && !snapshot.iter().any(|row| row.surface == "bus_link_state"),
+            target != "bus_links"
+                && target != "link_policies"
+                && !snapshot.iter().any(|row| matches!(
+                    row.surface.as_str(),
+                    "bus_link_state" | "link_policy_state"
+                )),
             "Bus link state is read-only"
         );
         anyhow::ensure!(control == "tap", "Unknown output control");

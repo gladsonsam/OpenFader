@@ -88,6 +88,7 @@ impl XAirDriver {
             }
         }
         *self.bus_link_observations.lock().unwrap() = [(0, None); 3];
+        *self.link_policy_cache.lock().unwrap() = [(0, None); 4];
         self.bus_link_pending
             .store(0, std::sync::atomic::Ordering::Release);
         *self.link_writes.lock().unwrap() = [None; 8];
@@ -106,6 +107,7 @@ impl XAirDriver {
         let receive_since = self.receive_since.clone();
         let generation = self.connection_generation.clone();
         let link_cache = self.link_cache.clone();
+        let link_policy_cache = self.link_policy_cache.clone();
         let bus_link_cache = self.bus_link_cache.clone();
         let bus_link_observations = self.bus_link_observations.clone();
         let bus_link_pending = self.bus_link_pending.clone();
@@ -119,6 +121,16 @@ impl XAirDriver {
                         }
                         if generation.load(std::sync::atomic::Ordering::Acquire) != connection {
                             break;
+                        }
+                        if msg.addr == "/config/linkcfg" || msg.addr.starts_with("/config/linkcfg/")
+                        {
+                            super::link_policy::record(
+                                &link_policy_cache,
+                                &msg,
+                                received_at,
+                                &generation,
+                                connection,
+                            );
                         }
                         if let Some((pair, linked)) = super::assignments::parse_channel_link(&msg) {
                             // An unsolicited OFF or a late query reply can race a
@@ -399,6 +411,7 @@ impl XAirDriver {
         let stream = std::sync::Arc::new(rta::RtaStream::start(session.clone(), connection));
         *self.rta.lock().unwrap() = Some(stream);
         self.refresh_bus_links(session.clone(), connection);
+        self.refresh_link_policies(session.clone(), connection);
         self.start_output_routing(session.clone(), connection);
         self.start_output_geq(session.clone(), connection);
         self.start_automix_settings(session.clone(), connection);
@@ -424,11 +437,15 @@ impl XAirDriver {
             }
         }
         *self.bus_link_observations.lock().unwrap() = [(0, None); 3];
+        {
+            let mut cache = self.link_policy_cache.lock().unwrap();
+            self.connection_generation
+                .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            *cache = [(0, None); 4];
+        }
         self.bus_link_pending
             .store(0, std::sync::atomic::Ordering::Release);
         *self.link_writes.lock().unwrap() = [None; 8];
-        self.connection_generation
-            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         let old_rta = self.rta.lock().unwrap().take();
         if let Some(old) = old_rta {
             let _ = old.target("", None, true).await;
