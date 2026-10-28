@@ -138,7 +138,11 @@ pub trait DynDriver: Send + Sync {
         Ok(vec![strip])
     }
 
-    fn current_control_members(&self, _strip: StripId, _param: &str) -> anyhow::Result<Option<Vec<StripId>>> {
+    fn current_control_members(
+        &self,
+        _strip: StripId,
+        _param: &str,
+    ) -> anyhow::Result<Option<Vec<StripId>>> {
         Ok(None)
     }
 
