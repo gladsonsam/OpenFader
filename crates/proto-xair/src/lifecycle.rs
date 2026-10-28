@@ -123,6 +123,7 @@ impl XAirDriver {
         let bus_link_cache = self.bus_link_cache.clone();
         let bus_link_observations = self.bus_link_observations.clone();
         let bus_link_pending = self.bus_link_pending.clone();
+        let model = self.model;
         let task = tokio::spawn(async move {
             let mut fx_types = [None; 4];
             loop {
@@ -340,7 +341,13 @@ impl XAirDriver {
                             }
                             continue;
                         }
-                        for (strip, param, value) in parse_inbound(&msg) {
+                        for (strip, param, value) in parse_inbound(&msg).into_iter().chain(
+                            if model == addrs::XAirModel::Xr18 {
+                                inbound::return_solos(&msg)
+                            } else {
+                                Vec::new()
+                            },
+                        ) {
                             let _ = tx.send(openfader_core::ParamUpdate {
                                 received_at,
                                 strip: StripId(strip),

@@ -23,9 +23,35 @@ impl XAirDriver {
         let n = self.model.channels() as usize;
         let guard = self.session().await?;
         let reply = guard.as_ref().unwrap().query(addrs::SOLO_SW).await?;
-        Ok((0..n)
-            .map(|i| matches!(reply.args.get(i), Some(OscType::Int(v)) if *v != 0))
-            .collect())
+        (0..n).map(|i| solo_value(reply.args.get(i), i)).collect()
+    }
+
+    /// One bank query containing only mapped strip identities.
+    pub async fn solo_states(&self) -> anyhow::Result<Vec<(StripId, bool)>> {
+        let generation = self
+            .connection_generation
+            .load(std::sync::atomic::Ordering::Acquire);
+        let guard = self.session().await?;
+        let reply = guard.as_ref().unwrap().query(addrs::SOLO_SW).await?;
+        anyhow::ensure!(
+            self.connected.load(std::sync::atomic::Ordering::Acquire)
+                && self
+                    .connection_generation
+                    .load(std::sync::atomic::Ordering::Acquire)
+                    == generation,
+            "Solo snapshot session changed"
+        );
+        let count = if self.model == addrs::XAirModel::Xr18 {
+            21
+        } else {
+            self.model.channels() as usize
+        };
+        (0..count)
+            .map(|i| {
+                let strip = solo_strip(i, self.model).expect("known solo bank slot");
+                Ok((StripId(strip), solo_value(reply.args.get(i), i)?))
+            })
+            .collect()
     }
 
     /// Solo monitoring globals (`/config/solo/*`, see [`crate::solo`]).
@@ -109,11 +135,10 @@ impl XAirDriver {
     /// on the owner rig (XR18 FW 1.20, 2026-10-18) — writing `1` to the
     /// 1-based `/-stat/solosw/NN` sets bank bit `NN - 1` (soloing ch16 set
     /// bits 14+15: ch15/16 are stereo-linked on that desk), and
-    /// `/-action/clearsolo` clears the bank. Only channel strips
-    /// (`0..16`) map (1-based index `strip + 1`); buses/mains/DCAs have no
-    /// verified solo leaf and bail out (never faked).
+    /// `/-action/clearsolo` clears the bank. Inputs map to bank indices 0..15; XR18 Aux and FX returns map to
+    /// indices 16..20. Other strip types are unsupported.
     pub(super) async fn driver_set_solo(&self, strip: StripId, soloed: bool) -> anyhow::Result<()> {
-        let ch = self.check_channel(strip.0)?;
+        let ch = self.solo_index(strip)? + 1;
         let addr = format!("{}/{ch:02}", addrs::SOLO_SW);
         let guard = self.session().await?;
         guard
@@ -124,15 +149,39 @@ impl XAirDriver {
     }
 
     pub(super) async fn driver_get_solo(&self, strip: StripId) -> anyhow::Result<bool> {
-        let ch = self.check_channel(strip.0)?;
+        let idx = self.solo_index(strip)?;
         let guard = self.session().await?;
         let reply = guard.as_ref().unwrap().query(addrs::SOLO_SW).await?;
-        let idx = ch as usize - 1;
-        match reply.args.get(idx) {
-            Some(OscType::Int(i)) => Ok(*i != 0),
-            other => {
-                anyhow::bail!("/-stat/solosw: solo bank needs an int at index {idx}, got {other:?}")
-            }
+        solo_value(reply.args.get(idx), idx)
+    }
+
+    fn solo_index(&self, strip: StripId) -> anyhow::Result<usize> {
+        (0..21)
+            .find(|&i| solo_strip(i, self.model) == Some(strip.0))
+            .ok_or_else(|| anyhow::anyhow!("unsupported solo strip {}", strip.0))
+    }
+}
+
+pub(super) fn solo_strip(index: usize, model: addrs::XAirModel) -> Option<u16> {
+    if index < model.channels() as usize {
+        return Some(index as u16);
+    }
+    if model == addrs::XAirModel::Xr18 {
+        return match index {
+            16 => Some(35),
+            17..=20 => Some(index as u16 - 1),
+            _ => None,
+        };
+    }
+    None
+}
+
+pub(super) fn solo_value(arg: Option<&OscType>, index: usize) -> anyhow::Result<bool> {
+    match arg {
+        Some(OscType::Int(0)) => Ok(false),
+        Some(OscType::Int(1)) => Ok(true),
+        other => {
+            anyhow::bail!("/-stat/solosw: expected binary int at index {index}, got {other:?}")
         }
     }
 }

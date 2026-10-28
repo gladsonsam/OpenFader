@@ -248,6 +248,9 @@ impl Engine {
     pub(super) async fn masters_snapshot(&self) -> Vec<Event> {
         let mut out = Vec::new();
         let driver = self.active_driver();
+        let generation = self
+            .connection_gen
+            .load(std::sync::atomic::Ordering::Acquire);
         let drv = self.drv(&driver);
         let (buses, subgroups, mute_groups) = (
             drv.bus_count(),
@@ -374,19 +377,29 @@ impl Engine {
         if drv.live_solo_bank() {
             let topo = self.driver_topology(&driver);
             let started = Instant::now();
-            if let Ok(bank) = drv.solo_bank(drv.channel_count()).await {
-                for (ch, soloed) in bank.iter().enumerate() {
-                    let ch = ch as u16;
+            if let Ok(bank) = drv.solo_states(drv.channel_count()).await {
+                if driver != self.active_driver()
+                    || generation
+                        != self
+                            .connection_gen
+                            .load(std::sync::atomic::Ordering::Acquire)
+                    || self
+                        .reads_suspended
+                        .load(std::sync::atomic::Ordering::Acquire)
+                {
+                    return Vec::new();
+                }
+                for (StripId(ch), soloed) in bank {
                     self.apply_received(
                         ch,
                         "solo",
-                        &ParamValue::Bool(*soloed),
+                        &ParamValue::Bool(soloed),
                         Instant::now(),
                         Some(started),
                     );
                     out.push(Event::Solo {
                         ch,
-                        soloed: *soloed,
+                        soloed,
                         key: openfader_core::strip_key_for_index(&topo, ch as usize),
                     });
                 }

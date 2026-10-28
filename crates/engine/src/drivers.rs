@@ -541,6 +541,17 @@ pub trait DynDriver: Send + Sync {
         Ok(out)
     }
 
+    /// Sparse solo snapshot, preserving the legacy bank for other drivers.
+    async fn solo_states(&self, channels: usize) -> anyhow::Result<Vec<(StripId, bool)>> {
+        Ok(self
+            .solo_bank(channels)
+            .await?
+            .into_iter()
+            .enumerate()
+            .map(|(i, value)| (StripId(i as u16), value))
+            .collect())
+    }
+
     // ---- engine extensions (defaults: honestly unsupported) ----
 
     /// FX rack flavor behind the `FxSetType`/`FxParam`/recall write paths.
@@ -1776,6 +1787,9 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
     async fn solo_bank(&self, channels: usize) -> anyhow::Result<Vec<bool>> {
         let _ = channels;
         openfader_proto_xair::XAirDriver::solo_bank(self).await
+    }
+    async fn solo_states(&self, _channels: usize) -> anyhow::Result<Vec<(StripId, bool)>> {
+        openfader_proto_xair::XAirDriver::solo_states(self).await
     }
     /// Desk-native type select (`/fx/N/type`, rig-verified 2026-10-19):
     /// resolve the caps-advertised name (short code `id` like `HALL`/`VRM`
