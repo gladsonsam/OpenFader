@@ -294,7 +294,12 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   @override
   void setType(String type) {
     final c = _cur;
-    if (c == null) return;
+    if (c == null ||
+        !_globalAccessAllowed ||
+        !engine.connected ||
+        !typeOptions.contains(type)) {
+      return;
+    }
     send(Cmds.fxSetType(c.slot, type));
   }
 

@@ -1632,17 +1632,23 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                 if def.inferred {
                     label.push('?');
                 }
+                let choices: Vec<_> = def.options.unwrap_or(&[]).iter().enumerate()
+                    .map(|(i, label)| crate::protocol::FxChoiceCaps {
+                        value: if def.options.unwrap_or(&[]).len() > 1 {
+                            i as f32 / (def.options.unwrap_or(&[]).len() - 1) as f32
+                        } else { 0.0 },
+                        label: (*label).to_string(),
+                    }).collect();
+                // The provider documents endpoints but not the transfer curve.
+                // Keep unknown continuous curves normalized rather than inventing one.
                 params.push(crate::protocol::FxParamCaps {
-                    choices: Vec::new(),
+                    choices,
                     id: format!("par{par:02}"),
                     label,
                     unit: def.unit.to_string(),
                     min: 0.0,
                     max: 1.0,
                     default: 0.5,
-                    // The desk's engineering conversion is unmeasured.
-                    // Retain labels/units without presenting normalized
-                    // values as seconds, Hertz or decibels in clients.
                     scale: "normalized".to_string(),
                 });
             }

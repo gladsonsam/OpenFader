@@ -586,20 +586,20 @@ class _LegacyFxDetail extends StatelessWidget {
             ],
           ]),
           const SizedBox(height: 12),
-          LayoutBuilder(builder: (context, bounds) {
-            final types = store.typeOptions;
-            final columns = math.max(
-                1, math.min(types.length, (bounds.maxWidth / 140).floor()));
-            return Wrap(spacing: 6, runSpacing: 6, children: [
-              for (final type in types)
-                SizedBox(
-                    width: (bounds.maxWidth - 6 * (columns - 1)) / columns,
-                    child: _FxToggle(
-                        label: store.typeLabel(type),
-                        active: type == slot.type,
-                        onTap: () => store.setType(type))),
-            ]);
-          }),
+          if (store.typeOptions.isNotEmpty)
+            DropdownButton<String>(
+              isExpanded: true,
+              value: store.typeOptions.contains(slot.type) ? slot.type : null,
+              hint: Text(store.typeLabel(slot.type)),
+              items: [
+                for (final type in store.typeOptions)
+                  DropdownMenuItem(
+                      value: type, child: Text(store.typeLabel(type))),
+              ],
+              onChanged: (type) {
+                if (type != null && type != slot.type) store.setType(type);
+              },
+            ),
           const SizedBox(height: 12),
           _KnobLayout(minHeight: minHeight - 130, children: [
             for (final knob in knobs)
