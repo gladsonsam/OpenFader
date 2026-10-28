@@ -414,8 +414,38 @@ impl XAirDriver {
         strip: StripId,
         linked: bool,
     ) -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
+        self.write_stereo_link_checked(strip, linked, &|_| Ok(()))
+            .await
+    }
+
+    pub(super) async fn write_stereo_link_checked(
+        &self,
+        strip: StripId,
+        linked: bool,
+        check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<Vec<(StripId, String, ParamValue)>> {
         let (pair, addr) = channel_link_address(strip)?;
-        let session = self.session().await?.as_ref().unwrap().clone();
+        let left = (pair * 2) as u16;
+        let members = [StripId(left), StripId(left + 1)];
+        let _lane = self.preamp_write.lock().await;
+        let generation = self
+            .connection_generation
+            .load(std::sync::atomic::Ordering::Acquire);
+        let authorize = || {
+            anyhow::ensure!(
+                self.connected.load(std::sync::atomic::Ordering::Acquire)
+                    && self
+                        .connection_generation
+                        .load(std::sync::atomic::Ordering::Acquire)
+                        == generation,
+                "xair: connection changed; reopen the control"
+            );
+            check(&members)
+        };
+        authorize()?;
+        let guard = self.session().await?;
+        let session = guard.as_ref().unwrap().clone();
+        authorize()?;
         // Discard the prior observation before sending; an unacknowledged
         // local write must not grant unlinked control to either member.
         {
@@ -424,9 +454,10 @@ impl XAirDriver {
             self.link_cache.lock().unwrap()[pair] = None;
         }
         session
-            .send(&addr, vec![OscType::Int(i32::from(linked))])
+            .send_checked(&addr, vec![OscType::Int(i32::from(linked))], &authorize)
             .await?;
-        let left = (pair * 2) as u16;
+        authorize()?;
+        drop(guard);
         Ok(vec![
             (StripId(left), "link".into(), ParamValue::Bool(linked)),
             (StripId(left + 1), "link".into(), ParamValue::Bool(linked)),
