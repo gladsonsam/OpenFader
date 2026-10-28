@@ -88,6 +88,7 @@ impl Engine {
         self.remember_desk(driver, &target);
         *self.active.write().unwrap() = driver.to_string();
         self.param_cache.write().unwrap().clear();
+        self.fx_cache.write().unwrap().clear();
         self.reads_suspended.store(false, Ordering::Release);
         // The FX cache mirrors the active driver (sim rows / xair
         // placeholders); refresh it on every switch, including boot.
