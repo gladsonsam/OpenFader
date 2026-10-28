@@ -4,7 +4,7 @@
 //!
 //! Single strict transaction (no silent repair):
 //!
-//! - The document is `{version: 2|3|4|5|6, scenes: [...], shows: [...]}`. Version 3
+//! - The document is `{version: 2|3|4|5|6|7, scenes: [...], shows: [...]}`. Version 3
 //!   adds provider-qualified FX insert and mute-group state; version 4 adds global automix state; version 5 adds output taps; version 6 adds monitor settings; version 7 adds RTA settings. Documents without
 //!   those fields remain v2 so older builds can still read them. Version 1
 //!   (`{version: 1, scenes: [...]}`) is the legacy numbered-only shape: it
@@ -460,7 +460,7 @@ fn parse_library_doc(doc: &Value) -> Result<ParsedLibrary, String> {
     let version = obj
         .get("version")
         .and_then(Value::as_u64)
-        .ok_or_else(|| "document needs integer \"version\" 1..=6".to_string())?;
+        .ok_or_else(|| "document needs integer \"version\" 1..=7".to_string())?;
     if !matches!(
         version,
         LIBRARY_VERSION_V1
