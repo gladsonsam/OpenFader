@@ -356,6 +356,12 @@ pub trait DynDriver: Send + Sync {
         let _ = (target, control, value, expected, snapshot, context);
         anyhow::bail!("guarded routing control unavailable")
     }
+    async fn read_link_settings(
+        &self,
+    ) -> anyhow::Result<Option<openfader_core::link_settings::StereoLinkSettings>> {
+        Ok(None)
+    }
+
     async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> {
         Ok(None)
     }
@@ -1066,6 +1072,7 @@ macro_rules! impl_dyn_driver {
         async fn set_routing_control_guarded(&self, target: &str, control: &str, value: f32, expected: f32, snapshot: &[openfader_core::destinations::DestinationControl], context: &(dyn Fn() -> bool + Send + Sync)) -> anyhow::Result<openfader_core::destinations::DestinationControl> {
             MixerDriver::set_routing_control_guarded(self, target, control, value, expected, snapshot, context).await
         }
+        async fn read_link_settings(&self) -> anyhow::Result<Option<openfader_core::link_settings::StereoLinkSettings>> { MixerDriver::read_link_settings(self).await }
         async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> { MixerDriver::read_automix_settings(self).await }
         async fn read_output_geq(&self, target: &str) -> anyhow::Result<Option<Vec<openfader_core::destinations::DestinationControl>>> { MixerDriver::read_output_geq(self, target).await }
         async fn read_output_taps(&self) -> anyhow::Result<Option<Vec<openfader_core::routing::OutputTapState>>> { MixerDriver::read_output_taps(self).await }

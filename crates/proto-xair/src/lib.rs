@@ -43,6 +43,7 @@ mod fx_driver;
 mod inbound;
 mod lifecycle;
 mod link_policy;
+mod link_settings;
 mod mapping;
 mod metadata;
 mod monitor;
@@ -236,6 +237,15 @@ impl MixerDriver for XAirDriver {
         controls.extend(self.bus_link_controls());
         controls.extend(self.link_policy_controls());
         controls
+    }
+
+    async fn read_link_settings(
+        &self,
+    ) -> anyhow::Result<Option<openfader_core::link_settings::StereoLinkSettings>> {
+        if self.model != addrs::XAirModel::Xr18 {
+            return Ok(None);
+        }
+        self.read_link_settings_snapshot().await.map(Some)
     }
 
     async fn read_automix_settings(&self) -> anyhow::Result<Option<[bool; 4]>> {
