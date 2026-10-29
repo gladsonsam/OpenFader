@@ -263,6 +263,16 @@ impl XAirDriver {
 }
 
 impl MixerDriver for XAirDriver {
+    fn param_text_rules(&self, param: &str) -> Option<openfader_core::params::ParamTextRules> {
+        (self.model == addrs::XAirModel::Xr18 && param == "name").then_some(
+            openfader_core::params::ParamTextRules {
+                max_utf8_bytes: None,
+                allow_empty: true,
+                allow_edge_whitespace: true,
+            },
+        )
+    }
+
     fn destination_controls(&self) -> Vec<openfader_core::destinations::DestinationControl> {
         let mut controls = self.routing_controls();
         controls.extend(self.geq_controls());
