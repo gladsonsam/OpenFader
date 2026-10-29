@@ -129,10 +129,14 @@ impl Engine {
         writer: &str,
         out: &mut Vec<Event>,
     ) -> anyhow::Result<Option<Event>> {
-        // MR1 write lane: mark the command in flight so the param poller
-        // yields its tick while any command (fader/mute/param/main or
-        // otherwise) runs. RAII: every return path below drops the guard.
-        let _write_guard = WriteGuard::new(&self.writes_in_flight);
+        // Discovery and recent-host checks use independent, read-only sockets.
+        // They can run for seconds and must not hold up a newly connected
+        // mixer's initial control reads. Mutating commands still preempt polls.
+        let _write_guard = (!matches!(
+            &cmd,
+            Cmd::Scan | Cmd::DiscoverDevices { .. } | Cmd::RefreshDevices { .. }
+        ))
+        .then(|| WriteGuard::new(&self.writes_in_flight));
         // Opportunistic expiry: release stale holds before any check so a
         // just-expired strip reads as unlocked, and broadcast when the
         // sweep actually removed something.
