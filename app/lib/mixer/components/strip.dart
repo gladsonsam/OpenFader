@@ -109,9 +109,7 @@ class MixerStrip extends StatelessWidget {
             valueListenable: controller.store
                 .controlReadyNote(isMaster ? -1 : chIndex ?? -1),
             builder: (context, ready, _) => ColoredBox(
-                color: ch.selected
-                    ? ConsolePalette.of(context).selected
-                    : ConsolePalette.of(context).background,
+                color: ConsolePalette.of(context).background,
                 child: DecoratedBox(
                     decoration: BoxDecoration(
                         border: Border(

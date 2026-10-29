@@ -42,8 +42,8 @@ class _MixerFaderState extends State<MixerFader> {
         final geometry = _FaderGeometry(box.biggest, widget.compact);
         final position = _drag ?? MixerFaderScale.fromEngine(ch.fader);
         final y = geometry.top + (1 - position) * geometry.travel;
-        // Enlarge only during a drag; selection keeps its border and glow.
-        final scale = _drag != null ? (widget.compact ? 1.25 : 1.4) : 1.0;
+        // Enlarge only while held; selection keeps only its outline.
+        final scale = _held ? (widget.compact ? 1.25 : 1.4) : 1.0;
         return Semantics(
             label: '${ch.name} level',
             value: ch.levelLabel,
@@ -133,9 +133,7 @@ class _MixerFaderState extends State<MixerFader> {
                                           child: CustomPaint(
                                               painter: _CapPainter(
                                                   palette: ConsolePalette.of(
-                                                      context),
-                                                  held: _held,
-                                                  glow: ch.selected)))))))),
+                                                      context))))))))),
                 ])));
       });
 }
@@ -205,30 +203,11 @@ class _ScalePainter extends CustomPainter {
 
 class _CapPainter extends CustomPainter {
   final ConsolePalette palette;
-  final bool held, glow;
-  const _CapPainter(
-      {required this.palette, required this.held, this.glow = false});
+  const _CapPainter({required this.palette});
   @override
   void paint(Canvas c, Size s) {
     // Design cap: one rounded square with ribbed grip zones top + bottom
     // and the lime position line through the middle.
-    final rect =
-        RRect.fromRectAndRadius(Offset.zero & s, const Radius.circular(14));
-    if (glow) {
-      c.drawPath(
-          Path()..addRRect(rect),
-          Paint()
-            ..color = palette.faderAccent.withValues(alpha: .4)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
-    }
-    if (held) {
-      c.drawPath(
-          Path()..addRRect(rect),
-          Paint()
-            ..color = palette.faderAccent.withValues(alpha: .27)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4));
-    }
-    c.drawShadow(Path()..addRRect(rect), palette.shadow, 3, false);
     mixerBox(c, Offset.zero & s, palette.cap,
         radius: 14, border: palette.capBorder);
     // Ribbed grips: repeating dark slits across the top and bottom zones.
@@ -259,6 +238,5 @@ class _CapPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CapPainter old) =>
-      old.palette != palette || old.held != held || old.glow != glow;
+  bool shouldRepaint(_CapPainter old) => old.palette != palette;
 }
