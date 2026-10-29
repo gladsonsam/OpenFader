@@ -62,7 +62,9 @@ class _MixerPageState extends State<MixerPage> {
   Widget build(BuildContext context) => Material(
       color: ConsolePalette.of(context).background,
       child: SafeArea(
-          bottom: true,
+          bottom: false,
+          minimum: EdgeInsets.only(
+              bottom: MediaQuery.paddingOf(context).bottom * .5),
           child: LayoutBuilder(builder: (context, constraints) {
             final controller = widget.controller;
             final mobile = constraints.maxWidth < 600;
