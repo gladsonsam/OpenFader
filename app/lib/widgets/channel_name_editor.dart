@@ -10,8 +10,14 @@ import '../palette.dart';
 import 'channel_symbol.dart';
 import 'channel_quick_assign.dart';
 
-Future<void> showChannelNameEditor(BuildContext context, ChannelNameStore store,
-        ChannelNameTarget target) {
+String _identityLabel(ChannelNameTarget target) =>
+    target.label ??
+    (target.key.startsWith('bus/')
+        ? 'Bus ${int.tryParse(target.key.split('/').last) ?? target.key}'
+        : 'Channel ${target.channel + 1}');
+
+Future<void> showChannelNameEditor(
+    BuildContext context, ChannelNameStore store, ChannelNameTarget target) {
   final processing = store is ChannelClipboardStore
       ? (store as ChannelClipboardStore).captureChannelProcessingTarget(target)
       : null;
@@ -34,9 +40,10 @@ Future<void> showChannelNameEditor(BuildContext context, ChannelNameStore store,
         ]
       : <ProcessorPresetTarget>[];
   return showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => _NameEditor(store: store, target: target, presets: presets, processing: processing),
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => _NameEditor(
+        store: store, target: target, presets: presets, processing: processing),
   );
 }
 
@@ -45,8 +52,11 @@ class _NameEditor extends StatefulWidget {
   final ChannelNameTarget target;
   final List<ProcessorPresetTarget> presets;
   final ChannelProcessingTarget? processing;
-  const _NameEditor({required this.store, required this.target,
-      required this.presets, required this.processing});
+  const _NameEditor(
+      {required this.store,
+      required this.target,
+      required this.presets,
+      required this.processing});
   @override
   State<_NameEditor> createState() => _NameEditorState();
 }
@@ -93,16 +103,17 @@ class _NameEditorState extends State<_NameEditor> {
 
   Future<void> _presets() => showDialog<void>(
       context: context,
-      builder: (context) => SimpleDialog(
-          title: const Text('Presets'),
-          children: [
+      builder: (context) =>
+          SimpleDialog(title: const Text('Presets'), children: [
             for (final target in widget.presets)
               SimpleDialogOption(
                   onPressed: () {
                     Navigator.pop(context);
-                    showProcessorPresetLibrary(this.context,
+                    showProcessorPresetLibrary(
+                        this.context,
                         widget.store as InputProcessorPresetStore,
-                        target.kind, target);
+                        target.kind,
+                        target);
                   },
                   child: Text(target.kind.label)),
           ]));
@@ -144,9 +155,7 @@ class _NameEditorState extends State<_NameEditor> {
           canPop: !_pending,
           child: AlertDialog(
             backgroundColor: p.panel,
-            title: Text(widget.target.key.startsWith('bus/')
-                ? 'Bus ${int.tryParse(widget.target.key.split('/').last) ?? widget.target.key}'
-                : 'Channel ${widget.target.channel + 1}',
+            title: Text(_identityLabel(widget.target),
                 style: AppDesign.type(18, color: p.text7)),
             content: SizedBox(
               width: 320,
@@ -261,12 +270,16 @@ class _NameEditorState extends State<_NameEditor> {
                     ]),
                   ),
                 ),
-                if (widget.store.assignmentsForChannel(widget.target).isNotEmpty)
+                if (widget.store
+                    .assignmentsForChannel(widget.target)
+                    .isNotEmpty)
                   Align(
                     alignment: Alignment.centerLeft,
                     child: TextButton(
-                      onPressed: _pending ? null : () => showChannelQuickAssign(
-                          context, widget.store, widget.target),
+                      onPressed: _pending
+                          ? null
+                          : () => showChannelQuickAssign(
+                              context, widget.store, widget.target),
                       child: const Row(children: [
                         Icon(Icons.playlist_add_check, size: 20),
                         SizedBox(width: 12),
@@ -396,10 +409,7 @@ class _AppearanceEditorState extends State<_AppearanceEditor> {
             canPop: !_pending,
             child: AlertDialog(
               backgroundColor: p.panel,
-              title: Text(
-                  widget.target.key.startsWith('bus/')
-                      ? 'Bus ${int.tryParse(widget.target.key.split('/').last) ?? widget.target.key} ${widget.field}'
-                      : 'Channel ${widget.target.channel + 1} ${widget.field}',
+              title: Text('${_identityLabel(widget.target)} ${widget.field}',
                   style: AppDesign.type(18, color: p.text7)),
               content: SizedBox(
                 width: 320,
