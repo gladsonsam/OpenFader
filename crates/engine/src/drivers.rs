@@ -1777,7 +1777,12 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                     scale: if position.is_some() { "xair_positions" } else { "normalized" }.to_string(),
                 });
             }
+            let tap_target = xfx::fx_tap_target(index).and_then(|target| {
+                let id = format!("par{:02}", target.par);
+                params.iter().find(|p| p.id == id && p.unit == "ms" && p.position.as_ref().is_some_and(|position| position.steps > 0) && p.min.is_finite() && p.max.is_finite() && p.min == target.min_ms as f32 && p.max == target.max_ms as f32).map(|_| id)
+            });
             out.push(crate::protocol::FxTypeCaps {
+                tap_target,
                     slots: Vec::new(),
                 id: code.to_string(),
                 label: label.to_string(),

@@ -22,6 +22,8 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   final Map<String, int> _tapTimes = {};
   final Set<String> _tapWrites = {};
   int? _tapSession;
+  Object? _legacyTapContext;
+  int? _legacyTapTime;
 
   bool get _globalAccessAllowed =>
       app.accessFamilyAllowed(AccessFamily.fx) &&
@@ -292,8 +294,22 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   }
 
   @override
-  // The engine has no tap command/capability yet; do not offer a no-op.
-  bool get tapVisible => false;
+  bool get tapVisible => tapTarget != null;
+
+  @override
+  String? get tapTarget {
+    final c = _cur;
+    if (c == null || !_globalAccessAllowed || !engine.connected) return null;
+    final metadata = _typeMetadata(c.type);
+    final id = metadata?['tap_target'];
+    if (id is! String || !c.params.containsKey(id)) return null;
+    final param = (metadata?['params'] as List? ?? const [])
+        .whereType<Map>()
+        .where((p) => p['id'] == id)
+        .firstOrNull;
+    final scale = XairHallScale.fromMetadata(param);
+    return scale != null && scale.unit == 'ms' ? id : null;
+  }
 
   @override
   String get tapLabel => 'TAP';
@@ -316,6 +332,19 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
 
   void _syncFxMeters() {
     if (isDisposed) return;
+    final context = (
+      engine.driver,
+      engine.session,
+      engine.connected,
+      _cur?.slot,
+      _cur?.type,
+      app.controlAccessEpoch,
+      _globalAccessAllowed,
+    );
+    if (_legacyTapContext != context) {
+      _legacyTapContext = context;
+      _legacyTapTime = null;
+    }
     for (final e in _meters.entries) {
       final i = _raw.indexWhere((s) => s.slot == e.key);
       if (i >= 0 && i < engine.meters.length) {
@@ -327,6 +356,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
   @override
   void selectSlot(int slot) {
     final i = _raw.indexWhere((s) => s.slot == slot);
+    _legacyTapTime = null;
     _sel = i < 0 ? slot : i;
     notifyListeners();
   }
@@ -340,6 +370,7 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
         !typeOptions.contains(type)) {
       return;
     }
+    _legacyTapTime = null;
     send(Cmds.fxSetType(c.slot, type));
   }
 
@@ -381,8 +412,24 @@ class ShellFxStore extends ShellStoreAdapter implements FxStore {
     send(Cmds.fxBypass(c.slot, bypass));
   }
 
-  // No tap-tempo cmd exists, so the TAP tile stays a no-op until the protocol grows one.
-
   @override
-  void tap() {}
+  void tap() {
+    _syncFxMeters();
+    final id = tapTarget;
+    if (id == null) {
+      _legacyTapTime = null;
+      return;
+    }
+    final params = _typeMetadata(_cur!.type)?['params'] as List? ?? const [];
+    final scale = XairHallScale.fromMetadata(
+      params.whereType<Map>().where((p) => p['id'] == id).firstOrNull,
+    )!;
+    final now = _tapClock.elapsedMilliseconds;
+    final previous = _legacyTapTime;
+    _legacyTapTime = now;
+    if (previous == null) return;
+    final interval = (now - previous).toDouble();
+    if (interval < scale.min || interval > scale.max) return;
+    setParam(id, scale.entry(interval));
+  }
 }

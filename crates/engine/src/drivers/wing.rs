@@ -98,6 +98,7 @@ impl_dyn_driver!(openfader_proto_wing::WingDriver {
     }
     fn fx_type_caps(&self) -> Vec<crate::protocol::FxTypeCaps> {
         openfader_proto_wing::fx::MODELS.iter().map(|model| crate::protocol::FxTypeCaps {
+                    tap_target: None,
             id: model.id.into(), label: model.label.into(), slots: (1..=if model.premium { 8 } else { 16 }).collect(),
             params: model.params.iter().enumerate().map(|(index, p)| crate::protocol::FxParamCaps {
                             position: None,
