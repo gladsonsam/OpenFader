@@ -4,6 +4,14 @@ use super::*;
 
 type FillResult = anyhow::Result<ParamValue>;
 
+fn initial_read_timeout(driver: &str) -> Duration {
+    if driver == "xair" {
+        openfader_transport::session::CONNECT_BURST_TIMEOUT
+    } else {
+        openfader_transport::session::DEFAULT_QUERY_TIMEOUT
+    }
+}
+
 /// One concurrent fill read's outcome: a finished query (ok or desk
 /// error), a pair the desk already pushed while the fill was opening
 /// (skip without cost), or an exhausted deadline (stop the fill).
@@ -207,6 +215,33 @@ impl Engine {
         deadline: Instant,
     ) {
         let drv = self.drv(driver);
+        let sampled = Instant::now();
+        if let Ok((fader, muted)) = tokio::time::timeout(
+            deadline
+                .saturating_duration_since(sampled)
+                .min(initial_read_timeout(driver)),
+            async {
+                if driver == "xair" {
+                    let (fader, muted) = tokio::join!(drv.get_main_fader(), drv.get_main_mute());
+                    (fader.ok(), muted.ok())
+                } else {
+                    (
+                        drv.get_main_fader().await.ok(),
+                        drv.get_main_mute().await.ok(),
+                    )
+                }
+            },
+        )
+        .await
+        {
+            self.publish_initial(generation, Event::Main { fader, muted }, sampled);
+        }
+        if sampled.elapsed() >= Duration::from_millis(300) {
+            eprintln!(
+                "engine: {driver} slow initial main: {:?}",
+                sampled.elapsed()
+            );
+        }
         for bus in 0..drv.bus_count() {
             let sampled = Instant::now();
             let read = async {
@@ -215,8 +250,13 @@ impl Engine {
                     drv.get_bus_mute(bus).await?,
                 ))
             };
-            if let Ok(Ok((fader, muted))) =
-                tokio::time::timeout(deadline.saturating_duration_since(sampled), read).await
+            if let Ok(Ok((fader, muted))) = tokio::time::timeout(
+                deadline
+                    .saturating_duration_since(sampled)
+                    .min(initial_read_timeout(driver)),
+                read,
+            )
+            .await
             {
                 if !self.publish_initial(
                     generation,
@@ -234,6 +274,12 @@ impl Engine {
                     return;
                 }
             }
+            if sampled.elapsed() >= Duration::from_millis(300) {
+                eprintln!(
+                    "engine: {driver} slow initial bus {bus}: {:?}",
+                    sampled.elapsed()
+                );
+            }
             if Instant::now() >= deadline {
                 return;
             }
@@ -246,8 +292,13 @@ impl Engine {
                     drv.get_subgroup_mute(group).await?,
                 ))
             };
-            if let Ok(Ok((fader, muted))) =
-                tokio::time::timeout(deadline.saturating_duration_since(sampled), read).await
+            if let Ok(Ok((fader, muted))) = tokio::time::timeout(
+                deadline
+                    .saturating_duration_since(sampled)
+                    .min(initial_read_timeout(driver)),
+                read,
+            )
+            .await
             {
                 if !self.publish_initial(
                     generation,
@@ -266,22 +317,10 @@ impl Engine {
                 return;
             }
         }
-        let sampled = Instant::now();
-        if let Ok((fader, muted)) =
-            tokio::time::timeout(deadline.saturating_duration_since(sampled), async {
-                (
-                    drv.get_main_fader().await.ok(),
-                    drv.get_main_mute().await.ok(),
-                )
-            })
-            .await
-        {
-            self.publish_initial(generation, Event::Main { fader, muted }, sampled);
-        }
     }
 
     /// Bounded concurrent fill, field-major across the entire topology:
-    /// levels -> masters -> mutes -> names/look -> EQ -> remaining fields.
+    /// levels -> masters -> mutes/pan -> names/look -> EQ -> remaining fields.
     /// Provider scopes/capabilities still decide which leaves can be read.
     /// Reads within a phase fly concurrently (up to the driver's poll
     /// inflight bound; the transport serializes same-address queries while
@@ -343,8 +382,9 @@ impl Engine {
             phase_items.sort();
             phase_items.dedup();
             eprintln!(
-                "engine: {driver} fill phase {phase}: {} items",
-                phase_items.len()
+                "engine: {driver} fill phase {phase}: {} items at {:?}",
+                phase_items.len(),
+                start.elapsed()
             );
             let mut pending = Vec::with_capacity(phase_items.len());
             for (ch, id) in phase_items {
@@ -368,12 +408,11 @@ impl Engine {
                         return FillRead::Skipped;
                     }
                     let started = Instant::now();
-                    // Bound a silent leaf by the steady-state query budget so one
-                    // dead address can't eat the whole fill; the poller retries
-                    // it later under the normal budget.
+                    // Bound each initial read so silent leaves do not stall first paint.
+                    // The background poller retries under the normal budget.
                     let budget = deadline
                         .saturating_duration_since(started)
-                        .min(openfader_transport::session::DEFAULT_QUERY_TIMEOUT);
+                        .min(initial_read_timeout(&driver));
                     if budget.is_zero() {
                         return FillRead::Stop;
                     }
@@ -397,6 +436,12 @@ impl Engine {
                     }
                     FillRead::Stop => break 'fill,
                 };
+                if started.elapsed() >= Duration::from_millis(300) {
+                    eprintln!(
+                        "engine: {driver} slow initial read {ch}/{id}: {:?}",
+                        started.elapsed()
+                    );
+                }
                 match result {
                     Ok(Ok(value)) => {
                         self.note_read_ok(&driver, ch, id);
@@ -422,6 +467,10 @@ impl Engine {
                 }
             }
             if phase == 0 {
+                eprintln!(
+                    "engine: {driver} initial channel levels ready in {:?}",
+                    start.elapsed()
+                );
                 self.hydrate_master_levels(&driver, generation, deadline)
                     .await;
                 eprintln!(

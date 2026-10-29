@@ -107,16 +107,9 @@ class MixerToolbar extends StatelessWidget {
                                           alignment: Alignment.centerRight,
                                           child: FittedBox(
                                             fit: BoxFit.scaleDown,
-                                            child: Text(
-                                                controller
-                                                    .connectionDisplayName,
-                                                maxLines: 1,
-                                                textAlign: TextAlign.right,
-                                                style: mixerType(
-                                                    context, compact ? 11 : 13,
-                                                    color: ConsolePalette.of(
-                                                            context)
-                                                        .text)),
+                                            child: _MixerConnectionStatus(
+                                                controller: controller,
+                                                compact: compact),
                                           ),
                                         ))))
                             : const SizedBox.shrink()),
@@ -225,6 +218,42 @@ class MixerToolbar extends StatelessWidget {
               ),
             ),
         ]));
+  }
+}
+
+// Readiness listens directly to controls without enabling unverified values.
+class _MixerConnectionStatus extends StatelessWidget {
+  final MixerController controller;
+  final bool compact;
+  const _MixerConnectionStatus(
+      {required this.controller, required this.compact});
+
+  @override
+  Widget build(BuildContext context) {
+    final channels = controller.channels
+        .where((c) => c.channel != null &&
+            !controller.store.engine.locks.containsKey(c.channel) &&
+            controller.store.accessTargetAllowed(c.key))
+        .take(8)
+        .toList();
+    final notes = [
+      for (final channel in channels)
+        controller.store.controlReadyNote(channel.channel!)
+    ];
+    return ListenableBuilder(
+      listenable: Listenable.merge(notes),
+      builder: (context, _) {
+        final ready = notes.where((note) => note.value & 3 == 3).length;
+        final syncing = notes.isNotEmpty && ready < notes.length;
+        return Text(
+            syncing ? 'Syncing $ready/${notes.length}' : controller.connectionDisplayName,
+            maxLines: 1,
+            textAlign: TextAlign.right,
+            style: mixerType(context, compact ? 11 : 13,
+                color: syncing
+                    ? ConsolePalette.of(context).mutedText
+                    : ConsolePalette.of(context).text));
+      });
   }
 }
 

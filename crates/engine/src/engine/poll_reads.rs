@@ -203,7 +203,7 @@ pub(super) fn is_timeout_error(e: &anyhow::Error) -> bool {
 pub(super) fn initial_load_priority(id: &str) -> u8 {
     match id {
         "fader" => 0,
-        "mute" => 1,
+        "mute" | "pan" | "balance" => 1,
         "name" => 2,
         "icon" | "color" => 3,
         id if id.starts_with("eq") || id.starts_with("hpf_") => 4,
