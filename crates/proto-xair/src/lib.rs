@@ -42,6 +42,7 @@ mod clock_rate;
 mod discovery;
 mod fx_driver;
 mod inbound;
+pub mod lan;
 mod lifecycle;
 mod link_policy;
 mod link_settings;
@@ -77,6 +78,7 @@ pub struct XAirDriver {
     tasks: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>,
     connection_generation: std::sync::Arc<std::sync::atomic::AtomicU64>,
     connected: std::sync::atomic::AtomicBool,
+    lan_operations: tokio::sync::Mutex<()>,
     link_cache: LinkCache,
     safe_levels: std::sync::Arc<std::sync::Mutex<safe_levels::Cache>>,
     safe_levels_write: tokio::sync::Mutex<()>,
@@ -163,6 +165,7 @@ impl XAirDriver {
             tasks: std::sync::Mutex::new(Vec::new()),
             connection_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
             connected: std::sync::atomic::AtomicBool::new(false),
+            lan_operations: Default::default(),
             link_cache: std::sync::Arc::new(std::sync::Mutex::new([None; 8])),
             link_writes: std::sync::Mutex::new([None; 8]),
             safe_levels: std::sync::Arc::new(std::sync::Mutex::new(safe_levels::Cache::default())),
