@@ -243,7 +243,11 @@ class MixerStrip extends StatelessWidget {
                                                         .text7)),
                                           ))),
                                     if (ready & 1 == 0)
-                                      const Center(child: Text('Loading…')),
+                                      Center(
+                                          child: Text('—',
+                                              style: AppDesign.type(14,
+                                                  color: ConsolePalette.of(context)
+                                                      .mutedText))),
                                   ]))),
                       place(
                           StripElement.solo,
