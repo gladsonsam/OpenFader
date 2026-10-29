@@ -34,5 +34,6 @@ class MixerGeometry {
   static double stripWidth(double availableWidth, bool phone, [int count = 8]) => phone
       ? availableWidth * 104.2 / 466 * 8 / count.clamp(4, 12)
       : math.min(120, (availableWidth - railWidth(availableWidth)) / (count.clamp(4, 12) + 1));
-  static double railWidth(double availableWidth) => availableWidth * 93 / 1823;
+  static double railWidth(double availableWidth) =>
+      math.max(88, availableWidth * 93 / 1823);
 }

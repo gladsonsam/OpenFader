@@ -167,7 +167,7 @@ class MixerBanks extends StatelessWidget {
                 // Keep the authored visual scale separate from the hit target.
                 // Short viewports scroll rather than compressing/overlapping rows.
                 double h(double value) =>
-                    (value * sy).clamp(44.0, double.infinity);
+                    (value * sy).clamp(50.0, double.infinity);
                 Widget fittedLabel(String text, double size,
                         {Color? color, FontWeight weight = FontWeight.w400}) =>
                     FittedBox(
@@ -243,7 +243,7 @@ class MixerBanks extends StatelessWidget {
                                   right: 7 * sx,
                                   child: Align(
                                       alignment: Alignment.centerLeft,
-                                      child: fittedLabel('LR', 16,
+                                      child: fittedLabel(controller.master.number, 16,
                                           color: ConsolePalette.of(context).bus,
                                           weight: FontWeight.w700))),
                               Positioned(
@@ -257,40 +257,20 @@ class MixerBanks extends StatelessWidget {
                                       color: ConsolePalette.of(context).text,
                                       weight: FontWeight.w600)),
                             ]))),
+                    title('OUTPUTS', 40, size: 20),
                     Container(
                         width: double.infinity,
-                        constraints: BoxConstraints(minHeight: 360 * sy),
-                        padding: EdgeInsets.symmetric(vertical: 6 * sy),
+                        padding: EdgeInsets.symmetric(vertical: 8 * sy),
                         decoration: BoxDecoration(
                             color: ConsolePalette.of(context).background,
                             border: Border.all(
-                                color: ConsolePalette.of(context).cap,
-                                width: 2),
+                                color: ConsolePalette.of(context).cap, width: 2),
                             borderRadius: BorderRadius.circular(14 * sx)),
                         child: Column(children: [
-                          for (final bank in banks)
-                            // Long-press opens the custom layers editor.
-                            GestureDetector(
-                                onLongPress: () =>
-                                    showMixerLayers(context, controller),
-                                child: button(bank.label,
-                                    () => controller.setBank(bank.key),
-                                    active: !controller.isCustomLayerActive &&
-                                        bank.key == controller.store.bank,
-                                    size: 31)),
-                          for (final layer in layers)
-                            GestureDetector(
-                                onLongPress: () =>
-                                    showMixerLayers(context, controller),
-                                child: button(layer.name,
-                                    () => controller.setActiveLayer(layer.id),
-                                    active:
-                                        controller.activeLayer.id == layer.id,
-                                    size: 31)),
+                          for (final bus in controller.store.busRows)
+                            button(bus.name, () => controller.store.selectBus(bus.id),
+                                active: bus.active, size: 28, height: 56),
                         ])),
-                    for (final bus in controller.store.busRows)
-                      button(bus.name, () => controller.store.selectBus(bus.id),
-                          active: bus.active, size: 31),
                     if (controller.pageCount > 1) ...[
                       button(
                           '‹',

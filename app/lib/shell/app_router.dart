@@ -9,6 +9,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../palette.dart';
+import '../mixer/geometry.dart';
 
 import '../design.dart';
 import '../engine.dart';
@@ -652,7 +653,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               }
               final screen = MediaQuery.sizeOf(context).width -
                   MediaQuery.paddingOf(context).horizontal;
-              final railWidth = screen * 93 / 1823;
+              final railWidth = MixerGeometry.railWidth(screen);
               return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
