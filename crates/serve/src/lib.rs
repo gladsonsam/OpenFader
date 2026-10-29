@@ -7,7 +7,7 @@
 //! frames for meter fan-out when the client opted in via `hello`). No mixer
 //! state lives here, sessions, the driver bank, the poller, shows, pins
 //! and the roster all live in the engine. The wire protocol is specified in
-//! `crates/engine/README.md`.
+//! the private engine protocol notes.
 //!
 //! Realtime duties of this adapter (MR1):
 //! - `TCP_NODELAY` on every accepted socket ([`configure_accepted`], wired

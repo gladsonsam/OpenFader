@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../palette.dart';
+import '../core/selected_control_readout.dart';
 import '../core/destination_controls.dart';
 import '../widgets/destination_control_editor.dart';
 import '../widgets/number_entry.dart';
@@ -93,7 +94,8 @@ abstract class FxStore extends ChangeNotifier {
 
 class U4FxPage extends StatefulWidget {
   final FxStore store;
-  const U4FxPage({super.key, required this.store});
+  final ValueChanged<SelectedControlReadoutData?> onReadout;
+  const U4FxPage({super.key, required this.store, required this.onReadout});
   @override
   State<U4FxPage> createState() => _U4FxPageState();
 }
@@ -109,6 +111,7 @@ class _U4FxPageState extends State<U4FxPage> {
   String? _selection;
   String? _focusedId;
   String? _focusedTarget;
+  Object? _focusContext;
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -135,6 +138,27 @@ class _U4FxPageState extends State<U4FxPage> {
                 final selected =
                     targets.where((t) => t.key == _selection).firstOrNull ??
                         fallback;
+                final focusContext = (
+                  store.controlSession,
+                  store.controlAccessEpoch,
+                  selected?.key,
+                  selected?.slot?.type ??
+                      selected?.controls.firstOrNull?.targetName
+                );
+                if (_focusContext != focusContext) {
+                  _focusContext = focusContext;
+                  _focusedTarget = null;
+                  _focusedId = null;
+                }
+                final readout = selected == null
+                    ? null
+                    : _selectedReadout(context, selected);
+                final readoutSession = store.controlSession;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted && readoutSession == store.controlSession) {
+                    widget.onReadout(readout);
+                  }
+                });
                 return LayoutBuilder(builder: (context, bounds) {
                   final palette = ConsolePalette.of(context);
                   final width = math.max(0.0, bounds.maxWidth - 24);
@@ -144,10 +168,6 @@ class _U4FxPageState extends State<U4FxPage> {
                           .clamp(148.0, 240.0);
                   final detailHeight = math.max(330.0, bounds.maxHeight - 158);
                   return Column(children: [
-                    if (selected != null)
-                      Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-                          child: _selectedBar(context, selected)),
                     Expanded(
                         child: SingleChildScrollView(
                             padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
@@ -222,7 +242,8 @@ class _U4FxPageState extends State<U4FxPage> {
                 });
               })));
 
-  Widget _selectedBar(BuildContext context, _FxTarget target) {
+  SelectedControlReadoutData _selectedReadout(
+      BuildContext context, _FxTarget target) {
     final store = widget.store;
     final native = _focusedTarget == target.key
         ? target.controls.where((c) => c.id == _focusedId).firstOrNull
@@ -230,28 +251,24 @@ class _U4FxPageState extends State<U4FxPage> {
     final knob = _focusedTarget == target.key && target.slot != null
         ? store.knobs.where((k) => k.id == _focusedId).firstOrNull
         : null;
-    final palette = ConsolePalette.of(context);
-    return Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-            color: palette.panel, border: Border.all(color: palette.linePanel)),
-        child: ListTile(
-          dense: true,
-          title: Text(native?.label ?? knob?.label ?? 'Select a control',
-              style: TextStyle(color: palette.text7)),
-          trailing: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(native?.valueLabel ?? knob?.text ?? '—',
-                    style: TextStyle(color: palette.text1, fontSize: 18)),
-                if (native?.valueLabel != null &&
-                    native?.authority == 'accepted')
-                  Text('(unconfirmed)',
-                      style: TextStyle(color: palette.text4, fontSize: 11)),
-              ]),
-          onTap: native != null && store.destinationControlIsCurrent(native)
-              ? () => showDialog<void>(
+    return SelectedControlReadoutData(
+      target: target.slot == null
+          ? target.controls.first.targetName ??
+              target.controls.first.targetLabel
+          : '${target.slot!.name} · ${store.typeLabel(target.slot!.type)}',
+      label: native?.label ?? knob?.label ?? 'Select a control',
+      value: native?.valueLabel ?? knob?.text ?? '—',
+      unconfirmed:
+          native?.valueLabel != null && native?.authority == 'accepted',
+      onEdit: native != null && store.destinationControlIsCurrent(native)
+          ? () async {
+              if (!mounted ||
+                  _focusedTarget != target.key ||
+                  _focusedId != native.id ||
+                  !store.destinationControlIsCurrent(native)) {
+                return;
+              }
+              await showDialog<void>(
                   context: context,
                   barrierDismissible: false,
                   builder: (_) => DestinationControlEditor(
@@ -259,60 +276,65 @@ class _U4FxPageState extends State<U4FxPage> {
                       changes: store,
                       isCurrent: store.destinationControlIsCurrent,
                       apply: store.setDestinationControl,
-                      control: native))
-              : knob == null
-                  ? null
-                  : () async {
-                      final epoch = store.controlAccessEpoch;
-                      final session = store.controlSession;
-                      final slot = target.slot!;
-                      final double? value;
-                      if (knob.choices.isNotEmpty) {
-                        value = await showDialog<double>(
-                            context: context,
-                            builder: (context) => SimpleDialog(
-                                    title: Text(knob.label),
-                                    children: [
-                                      for (var i = 0;
-                                          i < knob.choices.length;
-                                          i++)
-                                        SimpleDialogOption(
-                                            onPressed: () => Navigator.pop(
-                                                context, i.toDouble()),
-                                            child: Text(knob.choices[i]))
-                                    ]));
-                      } else {
-                        value = await showNumberEntry(
-                            context: context,
-                            title: knob.entryTitle ?? knob.label,
-                            initial: knob.entryValue.toString(),
-                            min: knob.entryMin,
-                            max: knob.entryMax);
-                      }
-                      if (!mounted ||
-                          value == null ||
-                          epoch != store.controlAccessEpoch ||
-                          session != store.controlSession ||
-                          !value.isFinite ||
-                          value < knob.entryMin ||
-                          value > knob.entryMax ||
-                          _focusedTarget != target.key ||
-                          _focusedId != knob.id ||
-                          store.selected >= store.slots.length ||
-                          store.slots[store.selected].slot != slot.slot ||
-                          store.slots[store.selected].type != slot.type ||
-                          !store.knobs.any((k) =>
-                              k.id == knob.id &&
-                              k.min == knob.min &&
-                              k.max == knob.max &&
-                              k.entryMin == knob.entryMin &&
-                              k.entryMax == knob.entryMax)) {
-                        return;
-                      }
-                      store.setParam(
-                          knob.id, knob.normalize?.call(value) ?? value);
-                    },
-        ));
+                      control: native));
+            }
+          : knob == null
+              ? null
+              : () async {
+                  if (!mounted ||
+                      _focusedTarget != target.key ||
+                      _focusedId != knob.id ||
+                      store.selected >= store.slots.length ||
+                      store.slots[store.selected].slot != target.slot?.slot ||
+                      store.slots[store.selected].type != target.slot?.type) {
+                    return;
+                  }
+                  final epoch = store.controlAccessEpoch;
+                  final session = store.controlSession;
+                  final slot = target.slot!;
+                  final double? value;
+                  if (knob.choices.isNotEmpty) {
+                    value = await showDialog<double>(
+                        context: context,
+                        builder: (context) =>
+                            SimpleDialog(title: Text(knob.label), children: [
+                              for (var i = 0; i < knob.choices.length; i++)
+                                SimpleDialogOption(
+                                    onPressed: () =>
+                                        Navigator.pop(context, i.toDouble()),
+                                    child: Text(knob.choices[i]))
+                            ]));
+                  } else {
+                    value = await showNumberEntry(
+                        context: context,
+                        title: knob.entryTitle ?? knob.label,
+                        initial: knob.entryValue.toString(),
+                        min: knob.entryMin,
+                        max: knob.entryMax);
+                  }
+                  if (!mounted ||
+                      value == null ||
+                      epoch != store.controlAccessEpoch ||
+                      session != store.controlSession ||
+                      !value.isFinite ||
+                      value < knob.entryMin ||
+                      value > knob.entryMax ||
+                      _focusedTarget != target.key ||
+                      _focusedId != knob.id ||
+                      store.selected >= store.slots.length ||
+                      store.slots[store.selected].slot != slot.slot ||
+                      store.slots[store.selected].type != slot.type ||
+                      !store.knobs.any((k) =>
+                          k.id == knob.id &&
+                          k.min == knob.min &&
+                          k.max == knob.max &&
+                          k.entryMin == knob.entryMin &&
+                          k.entryMax == knob.entryMax)) {
+                    return;
+                  }
+                  store.setParam(knob.id, knob.normalize?.call(value) ?? value);
+                },
+    );
   }
 }
 
@@ -637,7 +659,9 @@ class _LegacyFxDetail extends StatelessWidget {
           if (store.tapVisible)
             Align(
                 child: _FxToggle(
-                    label: store.tapLabel, active: false, onTap: () {
+                    label: store.tapLabel,
+                    active: false,
+                    onTap: () {
                       final id = store.tapTarget;
                       if (id != null) onFocus(id);
                       store.tap();
