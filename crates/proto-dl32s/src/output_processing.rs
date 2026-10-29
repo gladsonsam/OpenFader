@@ -1,10 +1,10 @@
 //! Output DSP geometry inferred from the 2026-10-26 full raw baseline.
 //!
 //! Main native movement anchors and inferred family strides are documented in
-//! OUTPUT_PROCESSING.md. Readback provenance does not prove inferred mappings.
+//! the private output-processing notes. Readback provenance does not prove inferred mappings.
 //! Input-like compressor and reversed four-band PEQ records recur in all 15
 //! output strips. Main/Aux add 31 GEQ gains and HP/LP filters. Keep this map
-//! separate from the hardware-proven input table. See OUTPUT_PROCESSING.md.
+//! separate from the hardware-proven input table. See the private output-processing notes.
 use std::collections::BTreeMap;
 
 use openfader_core::destinations::{

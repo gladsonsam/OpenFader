@@ -5,7 +5,7 @@
 //! roster). A feature that is not in the engine does not exist.
 //!
 //! The engine speaks exactly one protocol: [`Cmd`] in, [`Event`] out (see
-//! [`protocol`], specified in `crates/engine/README.md`). Adapters
+//! [`protocol`], specified in the private engine protocol notes). Adapters
 //! (`crates/serve` for WebSocket, `crates/flutter_bridge` for the native
 //! app) only move `Cmd`/`Event` JSON; they contain no mixer logic.
 //!

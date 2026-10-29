@@ -14,6 +14,8 @@ import '../design.dart';
 import '../engine.dart';
 import '../ffi_engine.dart';
 import '../mixer/components/meter.dart';
+import '../mixer/components/toolbar.dart';
+import '../core/selected_control_readout.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
 import '../state/app_store.dart';
@@ -91,6 +93,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   AppTab _prevTab = AppTab.mixer;
   Timer? _shellLoop;
   final _channelFocus = ValueNotifier<ChannelFocus?>(null);
+  final _fxReadout = ValueNotifier<SelectedControlReadoutData?>(null);
+  Object? _fxReadoutSession;
   Object? _channelFocusTarget;
 
   void _syncChannelFocus() {
@@ -268,6 +272,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     widget.store.removeListener(_syncChannelFocus);
     _mixer.dispose();
     _channelFocus.dispose();
+    _fxReadout.dispose();
     _conn.dispose();
     _routing.dispose();
     _scenes.dispose();
@@ -278,7 +283,11 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   }
 
   void _go(AppTab t) {
-    if (t != _tab) _channelFocus.value = null;
+    if (t != _tab) {
+      _channelFocus.value = null;
+      _fxReadout.value = null;
+      _fxReadoutSession = null;
+    }
     if (t == AppTab.scenes) widget.store.refreshLocalLibrary();
     setState(() {
       if (t == AppTab.settings && _tab != AppTab.settings) {
@@ -347,63 +356,67 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         }
         // Settings and channel views carry their own top bars, so the shared header steps aside.
 
-        final Widget header = isChan && store.outputProcessingTarget != null
-            ? const SizedBox.shrink()
-            : isChan
-                ? ChannelToolbar(
-                    key: ValueKey(
-                        (store.stripKey, store.bank, store.engine.driver)),
-                    controlFocus: _channelFocus,
-                    store: store,
-                    compact: MediaQuery.sizeOf(context).width < 600,
-                    onHome: () => _go(AppTab.mixer),
-                    onTool: _channelTool,
-                    onLock: () =>
-                        store.locked ? store.cmdUnlock() : store.cmdLock(),
-                  )
-                : _tab == AppTab.settings
-                    ? const SizedBox.shrink()
-                    : U4ShellHeader(
-                        title: title,
-                        pageTitle: _tab.label,
-                        showBack: _tab != AppTab.mixer,
-                        onBack: () => _go(AppTab.mixer),
-                        mode: _modeOf(_tab),
-                        connected: connected,
-                        connDot: connected
-                            ? (sim
-                                ? ConsolePalette.of(context).text7
-                                : ConsolePalette.of(context).meterGreen)
-                            : ConsolePalette.of(context).meterAmber,
-                        connAria: !connected
-                            ? 'Disconnected'
-                            : sim
-                                ? 'Demo simulator (not a desk)'
-                                : 'Connected to desk',
-                        isChannel: isChan,
-                        channelName: isChan ? store.displayName : '',
-                        metersActive: _tab == AppTab.meters,
-                        scenesActive: _tab == AppTab.scenes,
-                        sceneNum: _sceneNum(store),
-                        sceneName: _sceneName(store),
-                        sceneAria:
-                            '${_sceneNum(store).isEmpty ? '' : 'Scene ${_sceneNum(store)}, '}${_sceneName(store)}, open scene list',
+        final Widget header = _tab == AppTab.fx
+            ? _fxToolbar()
+            : isChan && store.outputProcessingTarget != null
+                ? const SizedBox.shrink()
+                : isChan
+                    ? ChannelToolbar(
+                        key: ValueKey(
+                            (store.stripKey, store.bank, store.engine.driver)),
+                        controlFocus: _channelFocus,
+                        store: store,
                         compact: MediaQuery.sizeOf(context).width < 600,
-                        onFx: () => _go(AppTab.fx),
-                        onRouting: () => _go(AppTab.routing),
-                        onConnect: () => _go(AppTab.connect),
-                        onSettings: () => _go(AppTab.settings),
-                        onMeters: () => _go(AppTab.meters),
-                        onScene: () => _go(AppTab.scenes),
-                        onPrevChannel: isChan && connected
-                            ? () => store.openChannel((store.channelIndex - 1)
-                                .clamp(0, store.engine.strips.length - 1))
-                            : null,
-                        onNextChannel: isChan && connected
-                            ? () => store.openChannel((store.channelIndex + 1)
-                                .clamp(0, store.engine.strips.length - 1))
-                            : null,
-                      );
+                        onHome: () => _go(AppTab.mixer),
+                        onTool: _channelTool,
+                        onLock: () =>
+                            store.locked ? store.cmdUnlock() : store.cmdLock(),
+                      )
+                    : _tab == AppTab.settings
+                        ? const SizedBox.shrink()
+                        : U4ShellHeader(
+                            title: title,
+                            pageTitle: _tab.label,
+                            showBack: _tab != AppTab.mixer,
+                            onBack: () => _go(AppTab.mixer),
+                            mode: _modeOf(_tab),
+                            connected: connected,
+                            connDot: connected
+                                ? (sim
+                                    ? ConsolePalette.of(context).text7
+                                    : ConsolePalette.of(context).meterGreen)
+                                : ConsolePalette.of(context).meterAmber,
+                            connAria: !connected
+                                ? 'Disconnected'
+                                : sim
+                                    ? 'Demo simulator (not a desk)'
+                                    : 'Connected to desk',
+                            isChannel: isChan,
+                            channelName: isChan ? store.displayName : '',
+                            metersActive: _tab == AppTab.meters,
+                            scenesActive: _tab == AppTab.scenes,
+                            sceneNum: _sceneNum(store),
+                            sceneName: _sceneName(store),
+                            sceneAria:
+                                '${_sceneNum(store).isEmpty ? '' : 'Scene ${_sceneNum(store)}, '}${_sceneName(store)}, open scene list',
+                            compact: MediaQuery.sizeOf(context).width < 600,
+                            onFx: () => _go(AppTab.fx),
+                            onRouting: () => _go(AppTab.routing),
+                            onConnect: () => _go(AppTab.connect),
+                            onSettings: () => _go(AppTab.settings),
+                            onMeters: () => _go(AppTab.meters),
+                            onScene: () => _go(AppTab.scenes),
+                            onPrevChannel: isChan && connected
+                                ? () => store.openChannel((store.channelIndex -
+                                        1)
+                                    .clamp(0, store.engine.strips.length - 1))
+                                : null,
+                            onNextChannel: isChan && connected
+                                ? () => store.openChannel((store.channelIndex +
+                                        1)
+                                    .clamp(0, store.engine.strips.length - 1))
+                                : null,
+                          );
         final page = _pageFor(_tab, store);
         final rail = _NavRail(
           active: _tab,
@@ -459,19 +472,44 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     }
   }
 
+  void _navigateMixer(MixerDestination destination) =>
+      _go(switch (destination) {
+        MixerDestination.meters => AppTab.meters,
+        MixerDestination.channel => AppTab.channel,
+        MixerDestination.scenes => AppTab.scenes,
+        MixerDestination.fx => AppTab.fx,
+        MixerDestination.routing => AppTab.routing,
+        MixerDestination.connect => AppTab.connect,
+        MixerDestination.settings => AppTab.settings,
+        MixerDestination.debug => AppTab.debug,
+      });
+
+  Widget _fxToolbar() => ListenableBuilder(
+      listenable: Listenable.merge([_mixer, _fx, _fxReadout]),
+      builder: (context, _) {
+        final compact = MediaQuery.sizeOf(context).width < 600;
+        final data =
+            _fxReadoutSession == _fx.controlSession ? _fxReadout.value : null;
+        return MixerToolbar(
+            controller: _mixer,
+            compact: compact,
+            onNavigate: _navigateMixer,
+            onHome: () => setState(() => _showStart = true),
+            readoutContent: SelectedControlReadout(
+                data: data ??
+                    const SelectedControlReadoutData(
+                        target: 'FX', label: 'Select a control', value: '—'),
+                compact: compact,
+                connectionName: _mixer.connected && !_mixer.demo
+                    ? _mixer.connectionDisplayName
+                    : '',
+                onConnection: () => _go(AppTab.connect)));
+      });
+
   Widget _mixerPage() => MixerPage(
       controller: _mixer,
       onHome: () => setState(() => _showStart = true),
-      onNavigate: (destination) => _go(switch (destination) {
-            MixerDestination.meters => AppTab.meters,
-            MixerDestination.channel => AppTab.channel,
-            MixerDestination.scenes => AppTab.scenes,
-            MixerDestination.fx => AppTab.fx,
-            MixerDestination.routing => AppTab.routing,
-            MixerDestination.connect => AppTab.connect,
-            MixerDestination.settings => AppTab.settings,
-            MixerDestination.debug => AppTab.debug,
-          }));
+      onNavigate: _navigateMixer);
 
   Widget _pageFor(AppTab t, AppStore store) {
     final Widget content = _pageContent(t, store);
@@ -534,7 +572,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
               mixerControls: _processingMixerControls(),
               controlFocus: _channelFocus),
       AppTab.scenes => U4ScenesPage(store: _scenes),
-      AppTab.fx => U4FxPage(store: _fx),
+      AppTab.fx => U4FxPage(
+          store: _fx,
+          onReadout: (readout) {
+            if (!mounted || _tab != AppTab.fx) return;
+            _fxReadoutSession = _fx.controlSession;
+            _fxReadout.value = readout;
+          }),
       AppTab.routing => U4RoutingPage(store: _routing),
       AppTab.connect => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

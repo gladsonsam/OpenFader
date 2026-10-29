@@ -1,4 +1,5 @@
 import '../../palette.dart';
+import '../../core/selected_control_readout.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../controller.dart';
@@ -14,12 +15,14 @@ class MixerToolbar extends StatelessWidget {
 
   /// Back to the Connections start screen (top-left home button).
   final VoidCallback? onHome;
+  final Widget? readoutContent;
   final bool compact, showBankControls;
   const MixerToolbar(
       {super.key,
       required this.controller,
       required this.onNavigate,
       this.onHome,
+      this.readoutContent,
       required this.compact,
       this.showBankControls = false});
   @override
@@ -44,76 +47,80 @@ class MixerToolbar extends StatelessWidget {
                   color: ConsolePalette.of(context).panel,
                   borderRadius: MixerDesign.radius,
                   border: Border.all(color: ConsolePalette.of(context).line)),
-              child: Row(children: [
-                // Equal constrained side lanes keep the numeric value centered
-                // in the box on both layouts. Long names stay in the left lane.
-                Expanded(
-                    child: GestureDetector(
-                        onTap: channel == null || channel.master
-                            ? null
-                            : () {
-                                controller.select(channel);
-                                onNavigate(MixerDestination.channel);
-                              },
-                        behavior: HitTestBehavior.opaque,
-                        child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                  channel == null
-                                      ? controller.connected
-                                          ? 'No channel selected'
-                                          : 'Connecting…'
-                                      : _targetLabel(channel),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: mixerType(context, compact ? 12 : 14,
-                                      color: ConsolePalette.of(context)
-                                          .mutedText)),
-                              Text(_controlLabel(focus.control),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: mixerType(context, compact ? 12 : 14,
-                                      color: ConsolePalette.of(context)
-                                          .mutedText)),
-                            ]))),
-                Expanded(
-                    flex: compact ? 2 : 1,
-                    child: Center(
-                        child: _SelectedLevel(
-                            controller: controller,
-                            channel: channel,
-                            control: focus.control,
-                            compact: compact))),
-                Expanded(
-                    child: controller.connected && !controller.demo
-                        ? Semantics(
-                            button: true,
-                            label:
-                                'Connected to ${controller.connectionDisplayName}',
-                            child: Tooltip(
-                                message: controller.connectionDisplayName,
-                                child: InkWell(
-                                    onTap: () =>
-                                        onNavigate(MixerDestination.connect),
-                                    child: Align(
-                                      alignment: Alignment.centerRight,
-                                      child: FittedBox(
-                                        fit: BoxFit.scaleDown,
-                                        child: Text(
-                                            controller.connectionDisplayName,
-                                            maxLines: 1,
-                                            textAlign: TextAlign.right,
-                                            style: mixerType(
-                                                context, compact ? 11 : 13,
-                                                color:
-                                                    ConsolePalette.of(context)
+              child: readoutContent ??
+                  Row(children: [
+                    // Equal constrained side lanes keep the numeric value centered
+                    // in the box on both layouts. Long names stay in the left lane.
+                    Expanded(
+                        child: GestureDetector(
+                            onTap: channel == null || channel.master
+                                ? null
+                                : () {
+                                    controller.select(channel);
+                                    onNavigate(MixerDestination.channel);
+                                  },
+                            behavior: HitTestBehavior.opaque,
+                            child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                      channel == null
+                                          ? controller.connected
+                                              ? 'No channel selected'
+                                              : 'Connecting…'
+                                          : _targetLabel(channel),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: mixerType(
+                                          context, compact ? 12 : 14,
+                                          color: ConsolePalette.of(context)
+                                              .mutedText)),
+                                  Text(_controlLabel(focus.control),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: mixerType(
+                                          context, compact ? 12 : 14,
+                                          color: ConsolePalette.of(context)
+                                              .mutedText)),
+                                ]))),
+                    Expanded(
+                        flex: compact ? 2 : 1,
+                        child: Center(
+                            child: _SelectedLevel(
+                                controller: controller,
+                                channel: channel,
+                                control: focus.control,
+                                compact: compact))),
+                    Expanded(
+                        child: controller.connected && !controller.demo
+                            ? Semantics(
+                                button: true,
+                                label:
+                                    'Connected to ${controller.connectionDisplayName}',
+                                child: Tooltip(
+                                    message: controller.connectionDisplayName,
+                                    child: InkWell(
+                                        onTap: () => onNavigate(
+                                            MixerDestination.connect),
+                                        child: Align(
+                                          alignment: Alignment.centerRight,
+                                          child: FittedBox(
+                                            fit: BoxFit.scaleDown,
+                                            child: Text(
+                                                controller
+                                                    .connectionDisplayName,
+                                                maxLines: 1,
+                                                textAlign: TextAlign.right,
+                                                style: mixerType(
+                                                    context, compact ? 11 : 13,
+                                                    color: ConsolePalette.of(
+                                                            context)
                                                         .text)),
-                                      ),
-                                    ))))
-                        : const SizedBox.shrink()),
-              ]));
+                                          ),
+                                        ))))
+                            : const SizedBox.shrink()),
+                  ]));
         });
     return Container(
         height: compact ? 64 : 68,
@@ -457,4 +464,71 @@ class _BrandButton extends StatelessWidget {
       SizedBox(width: trailingGap),
     ]);
   }
+}
+
+/// Selected controls use the same centered readout lanes on every mixer.
+class SelectedControlReadout extends StatelessWidget {
+  final SelectedControlReadoutData data;
+  final bool compact;
+  final String connectionName;
+  final VoidCallback? onConnection;
+
+  const SelectedControlReadout(
+      {super.key,
+      required this.data,
+      required this.compact,
+      this.connectionName = '',
+      this.onConnection});
+
+  @override
+  Widget build(BuildContext context) => Row(children: [
+        Expanded(
+            child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text(data.target,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: mixerType(context, compact ? 12 : 14,
+                      color: ConsolePalette.of(context).mutedText)),
+              Text(data.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: mixerType(context, compact ? 12 : 14,
+                      color: ConsolePalette.of(context).mutedText)),
+            ])),
+        Expanded(
+            flex: compact ? 2 : 1,
+            child: Semantics(
+                button: data.onEdit != null,
+                label: '${data.target}, ${data.label}, ${data.value}',
+                child: InkWell(
+                    onTap: data.onEdit,
+                    child: Center(
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                      FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(data.value,
+                              style: mixerType(context, compact ? 20 : 24,
+                                  color: ConsolePalette.of(context).lime,
+                                  weight: FontWeight.w700))),
+                      if (data.unconfirmed)
+                        Text('(unconfirmed)',
+                            style: mixerType(context, 11,
+                                color: ConsolePalette.of(context).mutedText)),
+                    ]))))),
+        Expanded(
+            child: InkWell(
+                onTap: onConnection,
+                child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(connectionName,
+                            maxLines: 1,
+                            style: mixerType(context, compact ? 11 : 13,
+                                color: ConsolePalette.of(context).text)))))),
+      ]);
 }

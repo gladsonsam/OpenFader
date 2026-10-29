@@ -1,7 +1,7 @@
 //! [`Cmd`] in, [`Event`] out: the single protocol every adapter speaks.
 //!
 //! The JSON is byte-compatible with the `openfader-serve` WebSocket protocol
-//! (see `crates/engine/README.md`): same `cmd`/`type` tags, same field
+//! (see the private engine protocol notes): same `cmd`/`type` tags, same field
 //! names, same shapes. Existing clients must not notice the move.
 
 use std::collections::BTreeMap;
@@ -1370,7 +1370,7 @@ impl Event {
 
     /// Encode a meter-class event as a compact WS BINARY frame (MR1).
     ///
-    /// Layout (little-endian, documented in `crates/engine/README.md`):
+    /// Layout (little-endian, documented in the private engine protocol notes):
     /// `[u8 type (1=meters, 2=gr, 3=taps), u8 version=1, u16 n, u32 seq,
     /// u32 t_ms]`, then for meters `n × u16` (linear 0..1 → 0..65535),
     /// for gr `n × (u8 ch, u8 gate dB×4, u8 comp dB×4)` (currently one
