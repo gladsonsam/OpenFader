@@ -53,16 +53,16 @@ class MixerNameplate extends StatelessWidget {
                         : Color(0xff000000 | channel.colorChoice!.rgb!)
                     : ConsolePalette.of(context)
                         .tapes[(channel.channel ?? 0) % 8];
-            // Keep identity text and artwork in separate bounded regions.
+            // Center smaller artwork above the tape, with symmetric clearance
+            // for the identity row (or the master tab).
             final identityHeight = math.min(iconHeight, nameOffset);
             final numberHeight =
                 math.min(identityHeight, (compact ? 20 : 26) * sx);
             final tabHeight = channel.master ? (compact ? 18 : 26) * sx : 0.0;
-            final artworkTop = channel.master ? 0.0 : numberHeight + 4 * sx;
-            final artworkHeight =
-                math.max(0.0, identityHeight - artworkTop - tabHeight);
-            final artworkSize =
-                math.min((compact ? 56 : 103) * sx, artworkHeight);
+            final artworkPadding =
+                channel.master ? tabHeight : numberHeight + 2 * sx;
+            final artworkSize = math.min((compact ? 48 : 86) * sx,
+                math.max(0.0, identityHeight - 2 * artworkPadding));
             return Stack(clipBehavior: Clip.none, children: [
               if (!channel.master)
                 Positioned(
@@ -84,8 +84,8 @@ class MixerNameplate extends StatelessWidget {
               Positioned(
                   left: 0,
                   right: 0,
-                  top: artworkTop,
-                  height: artworkHeight,
+                  top: 0,
+                  height: identityHeight,
                   child: Center(
                       child: SizedBox.square(
                           dimension: artworkSize,
