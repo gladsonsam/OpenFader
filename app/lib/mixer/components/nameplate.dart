@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/semantics.dart';
 import '../../palette.dart';
 import 'package:flutter/material.dart';
@@ -51,26 +53,52 @@ class MixerNameplate extends StatelessWidget {
                         : Color(0xff000000 | channel.colorChoice!.rgb!)
                     : ConsolePalette.of(context)
                         .tapes[(channel.channel ?? 0) % 8];
+            // Keep identity text and artwork in separate bounded regions.
+            final identityHeight = math.min(iconHeight, nameOffset);
+            final numberHeight =
+                math.min(identityHeight, (compact ? 20 : 26) * sx);
+            final tabHeight = channel.master ? (compact ? 18 : 26) * sx : 0.0;
+            final artworkTop = channel.master ? 0.0 : numberHeight + 4 * sx;
+            final artworkHeight =
+                math.max(0.0, identityHeight - artworkTop - tabHeight);
+            final artworkSize =
+                math.min((compact ? 56 : 103) * sx, artworkHeight);
             return Stack(clipBehavior: Clip.none, children: [
               if (!channel.master)
                 Positioned(
                     left: (compact ? 10 : 12) * sx,
-                    top: 2,
-                    child: Text(channel.number,
-                        style: mixerType(context, (compact ? 15 : 20) * sx,
-                            color: ConsolePalette.of(context).mutedText,
-                            weight: FontWeight.w600))),
+                    right: (compact ? 10 : 12) * sx,
+                    top: 0,
+                    height: numberHeight,
+                    child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: Text(channel.number,
+                                maxLines: 1,
+                                style: mixerType(
+                                    context, (compact ? 15 : 20) * sx,
+                                    color: ConsolePalette.of(context).mutedText,
+                                    weight: FontWeight.w600))))),
               Positioned(
-                  left: (compact ? 24 : 46) * sx,
-                  top: iconHeight * (compact ? 8 / 86 : 4 / 122),
-                  width: (compact ? 56 : 103) * sx,
-                  height: iconHeight * (compact ? 60 / 86 : 98 / 122),
-                  child: channel.master
-                      ? const MixerMainArtwork()
-                      : channel.hasIconChoices
-                          ? ChannelSymbol(channel.iconChoice?.symbol)
-                          : MixerArtwork('instrument_${channel.artwork}',
-                              width: double.infinity, height: double.infinity)),
+                  left: 0,
+                  right: 0,
+                  top: artworkTop,
+                  height: artworkHeight,
+                  child: Center(
+                      child: SizedBox.square(
+                          dimension: artworkSize,
+                          child: ClipRect(
+                              child: channel.master
+                                  ? const MixerMainArtwork()
+                                  : channel.hasIconChoices
+                                      ? ChannelSymbol(
+                                          channel.iconChoice?.symbol)
+                                      : MixerArtwork(
+                                          'instrument_${channel.artwork}',
+                                          width: double.infinity,
+                                          height: double.infinity))))),
               Positioned(
                   left: 0,
                   right: 0,
