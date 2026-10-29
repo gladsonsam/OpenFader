@@ -319,7 +319,12 @@ class EqCurvePainter extends CustomPainter {
     }
     for (final db in _dbTicks) {
       final y = EqGraphGeom.yOf(db) * sy;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), grid);
+      canvas.drawLine(
+          Offset(0, y),
+          Offset(size.width, y),
+          db == 0
+              ? (Paint()..color = palette.text7.withValues(alpha: .35))
+              : grid);
       label(db.toStringAsFixed(0), Offset(-24, y));
     }
     for (final f in _freqTicks) {
@@ -336,18 +341,30 @@ class EqCurvePainter extends CustomPainter {
     }
     canvas.save();
     canvas.clipRect(Offset.zero & size);
-    // Individual band contributions use the same DSP response as the sum.
-    for (final band in eq.bands.where((b) => b.on)) {
-      final samples = eqResponseDb(ChannelEqVm(bands: [band]));
-      final area = Path()..moveTo(0, size.height / 2);
+    // Shade each active filter using the same response as the combined curve.
+    void drawContribution(List<double> samples, Color color) {
+      final zeroY = EqGraphGeom.yOf(0) * sy;
+      final area = Path()..moveTo(0, zeroY);
       for (var i = 0; i < samples.length; i++) {
         area.lineTo(i / (samples.length - 1) * size.width,
             EqGraphGeom.yOf(samples[i]) * sy);
       }
-      area.lineTo(size.width, size.height / 2);
+      area.lineTo(size.width, zeroY);
       area.close();
-      canvas.drawPath(area,
-          Paint()..color = palette.bandColor(band.band).withValues(alpha: .25));
+      canvas.drawPath(area, Paint()..color = color.withValues(alpha: .25));
+    }
+
+    if (eq.on) {
+      if (eq.hpfOn && eq.hpfInResponse) {
+        drawContribution(
+            eqResponseDb(
+                ChannelEqVm(hpfOn: true, hpfF: eq.hpfF, hpfSlope: eq.hpfSlope)),
+            palette.bandColor(0));
+      }
+      for (final band in eq.bands.where((b) => b.on)) {
+        drawContribution(eqResponseDb(ChannelEqVm(bands: [band])),
+            palette.bandColor(band.band));
+      }
     }
     // Reference HTML: adjacent outlined rectangles, one per frequency band.
     // The demo provides explicit synthetic bands; no smoothing or invented
