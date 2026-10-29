@@ -650,7 +650,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                     ? const SizedBox.shrink()
                     : strip(selected);
               }
-              final railWidth = box.maxWidth * 93 / 285.2;
+              final screen = MediaQuery.sizeOf(context).width -
+                  MediaQuery.paddingOf(context).horizontal;
+              final railWidth = screen * 93 / 1823;
               return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [

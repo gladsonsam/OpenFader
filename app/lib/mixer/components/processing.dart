@@ -313,6 +313,9 @@ class _EqPainter extends CustomPainter {
   @override
   void paint(Canvas c, Size s) {
     mixerBox(c, Offset.zero & s, palette.eqBg);
+    final zeroY = s.height / 2;
+    c.drawLine(Offset(0, zeroY), Offset(s.width, zeroY),
+        Paint()..color = palette.text7.withValues(alpha: .35));
     final values = response;
     if (values == null || values.length < 2) return;
     final curve = Path();
@@ -326,8 +329,8 @@ class _EqPainter extends CustomPainter {
       }
     }
     final fill = Path.from(curve)
-      ..lineTo(s.width, s.height)
-      ..lineTo(0, s.height)
+      ..lineTo(s.width, zeroY)
+      ..lineTo(0, zeroY)
       ..close();
     c.drawPath(
         fill, Paint()..color = palette.eqPreviewFill.withValues(alpha: .85));

@@ -15,6 +15,7 @@ import '../core/channel_views.dart';
 import '../core/audio_spectrum_peaks.dart';
 import '../engine.dart' show AudioSpectrumFrame;
 import '../settings/prefs.dart';
+import '../mixer/geometry.dart';
 import '../theme.dart';
 import '../widgets/mobile_reference_width.dart';
 import '../palette.dart';
@@ -329,7 +330,8 @@ class _ChannelPageState extends State<ChannelPage> {
             );
             return LayoutBuilder(builder: (context, bounds) {
               final stripWidth = wide
-                  ? bounds.maxWidth * (192.2 + 93) / 1823
+                  ? MixerGeometry.stripWidth(bounds.maxWidth, false) +
+                      MixerGeometry.railWidth(bounds.maxWidth)
                   : bounds.maxWidth * 104 / 466;
               return Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
