@@ -2,48 +2,7 @@
 use super::*;
 use std::{sync::atomic::Ordering, time::Duration};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LanMode {
-    Static,
-    Dhcp,
-    DhcpServer,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ActiveNetworkMode {
-    Lan,
-    Is,
-    Ap,
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LanConfiguration {
-    pub mode: LanMode,
-    pub address: [u8; 4],
-    pub mask: [u8; 4],
-    pub gateway: [u8; 4],
-}
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LanSnapshot {
-    pub generation: u64,
-    pub stored: LanConfiguration,
-    pub active_mode: ActiveNetworkMode,
-}
-#[derive(Debug)]
-pub enum LanApplyStatus {
-    NotRequested,
-    DispatchedUncertain,
-    DispatchUncertain(String),
-}
-#[derive(Debug)]
-pub struct LanWriteResult {
-    pub verified_stored: LanConfiguration,
-    pub apply: LanApplyStatus,
-}
-#[derive(Debug)]
-pub struct LanWriteError {
-    pub message: String,
-    /// A dispatch was attempted; some preferences may have been staged.
-    pub possibly_staged: bool,
-}
+pub use openfader_core::lan::*;
 
 impl XAirDriver {
     fn lan_valid(&self, generation: u64) -> bool {
@@ -103,9 +62,9 @@ impl XAirDriver {
                 _ => anyhow::bail!("Invalid LAN mode"),
             };
             let active_mode = match scalar(4)? {
-                0 => ActiveNetworkMode::Lan,
-                1 => ActiveNetworkMode::Is,
-                2 => ActiveNetworkMode::Ap,
+                0 => ActiveNetworkMode::Ethernet,
+                1 => ActiveNetworkMode::WirelessClient,
+                2 => ActiveNetworkMode::AccessPoint,
                 _ => anyhow::bail!("Invalid active network mode"),
             };
             let snapshot = LanSnapshot {
@@ -199,6 +158,7 @@ impl XAirDriver {
                 verified.stored == desired && verified.active_mode == expected.active_mode,
                 "LAN verification mismatch; preferences may be partially staged"
             );
+            check()?;
             let apply = if apply_requested {
                 match session
                     .send_checked("/-action/updnet", vec![OscType::Int(1)], &check)

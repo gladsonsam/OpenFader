@@ -211,6 +211,19 @@ pub enum Cmd {
         action: Value,
         expected: Option<Value>,
     },
+    LanRead {
+        request_id: String,
+        driver: String,
+        epoch: u64,
+    },
+    LanWrite {
+        request_id: String,
+        driver: String,
+        epoch: u64,
+        expected: openfader_core::lan::LanSnapshot,
+        desired: openfader_core::lan::LanConfiguration,
+        apply_requested: bool,
+    },
     NativeLibraryCancel {
         request_id: String,
     },
@@ -1245,6 +1258,20 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         data: Option<String>,
     },
+    LanResult {
+        request_id: String,
+        driver: String,
+        epoch: u64,
+        operation: String,
+        result: Value,
+    },
+    NativeLibraryResult {
+        request_id: String,
+        driver: String,
+        epoch: u64,
+        operation: String,
+        result: Value,
+    },
     /// Read-only native desk snapshot slots (DL32S push evidence; distinct
     /// from the app-local numbered `scenes` library `001..999`).
     /// `supported:false` where the driver models no native slots (sim,
@@ -1264,13 +1291,6 @@ pub enum Event {
     /// no command writes these slots.
     /// Unicast in the attach/resume snapshots; broadcast on change (no
     /// audio-param fanout, this frame carries no strip params).
-    NativeLibraryResult {
-        request_id: String,
-        driver: String,
-        epoch: u64,
-        operation: String,
-        result: Value,
-    },
     NativeSnapshots {
         driver: String,
         supported: bool,
@@ -1338,6 +1358,7 @@ impl Event {
             Event::Solo { .. } => "solo",
             Event::File { .. } => "file",
             Event::NativeSnapshots { .. } => "native_snapshots",
+            Event::LanResult { .. } => "lan_result",
             Event::NativeLibraryResult { .. } => "native_library_result",
         }
     }

@@ -287,6 +287,14 @@ pub trait DynDriver: Send + Sync {
     fn native_library(&self) -> Option<serde_json::Value> {
         None
     }
+    async fn read_lan(&self) -> anyhow::Result<openfader_core::lan::LanSnapshot>;
+    async fn write_lan(
+        &self,
+        expected: openfader_core::lan::LanSnapshot,
+        desired: openfader_core::lan::LanConfiguration,
+        authorize: &(dyn Fn() -> bool + Send + Sync),
+        apply_requested: bool,
+    ) -> Result<openfader_core::lan::LanWriteResult, openfader_core::lan::LanWriteError>;
     async fn native_library_action(
         &self,
         _action: &serde_json::Value,
@@ -1068,6 +1076,11 @@ macro_rules! impl_dyn_driver {
             MixerDriver::meter_taps(self)
         }
         fn native_library(&self) -> Option<serde_json::Value> { MixerDriver::native_library(self) }
+        async fn read_lan(&self) -> anyhow::Result<openfader_core::lan::LanSnapshot> { MixerDriver::read_lan(self).await }
+        async fn write_lan(&self, expected: openfader_core::lan::LanSnapshot, desired: openfader_core::lan::LanConfiguration,
+            authorize: &(dyn Fn() -> bool + Send + Sync), apply_requested: bool) -> Result<openfader_core::lan::LanWriteResult, openfader_core::lan::LanWriteError> {
+            MixerDriver::write_lan(self, expected, desired, authorize, apply_requested).await
+        }
         async fn native_library_action(&self, action: &serde_json::Value, expected: &serde_json::Value,
             check: openfader_core::native_library::Check<'_>) -> anyhow::Result<serde_json::Value> {
             MixerDriver::native_library_action(self, action, expected, check).await

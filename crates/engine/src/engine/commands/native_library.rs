@@ -10,6 +10,121 @@ pub(crate) struct NativeRequests {
 }
 
 impl Engine {
+    pub(super) async fn apply_lan(&self, cmd: Cmd, writer: &str) -> Event {
+        let (request_id, driver, epoch, write) = match cmd {
+            Cmd::LanRead {
+                request_id,
+                driver,
+                epoch,
+            } => (request_id, driver, epoch, None),
+            Cmd::LanWrite {
+                request_id,
+                driver,
+                epoch,
+                expected,
+                desired,
+                apply_requested,
+            } => (
+                request_id,
+                driver,
+                epoch,
+                Some((expected, desired, apply_requested)),
+            ),
+            _ => unreachable!(),
+        };
+        let operation = if write.is_some() { "write" } else { "read" };
+        let result: anyhow::Result<Value> = async {
+            anyhow::ensure!(
+                !request_id.is_empty() && request_id.len() <= 128,
+                "Invalid LAN request ID"
+            );
+            {
+                let mut requests = self.native_requests.lock().unwrap();
+                anyhow::ensure!(
+                    epoch == self.connection_gen.load(Ordering::Acquire),
+                    "LAN session changed"
+                );
+                if requests.epoch != epoch {
+                    *requests = NativeRequests {
+                        epoch,
+                        ..Default::default()
+                    };
+                }
+                anyhow::ensure!(
+                    requests.seen.len() < 256
+                        && requests.seen.insert((writer.into(), request_id.clone())),
+                    "Duplicate or exhausted LAN request"
+                );
+            }
+            let _lane = self.native_lane.lock().await;
+            let drv = self.drv(&driver);
+            let topology = drv.topology();
+            let roster = (0..drv.strip_count())
+                .map(|index| openfader_core::strip_key_for_index(&topology, index))
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| anyhow::anyhow!("Complete mixer scope unavailable"))?;
+            anyhow::ensure!(
+                !roster.is_empty()
+                    && roster.iter().enumerate().all(|(index, key)| {
+                        openfader_core::strip_index_for_key(&topology, key) == Some(index)
+                    }),
+                "Complete mixer scope unavailable"
+            );
+            let check = || {
+                if !self.has_client(writer)
+                    || self.active_driver() != driver
+                    || epoch != self.connection_gen.load(Ordering::Acquire)
+                    || self.reads_suspended.load(Ordering::Acquire)
+                {
+                    return false;
+                }
+                let policy = self.policy_of(writer);
+                if policy.allow_master().is_err() || policy.allow_master_fader(1.0).is_err() {
+                    return false;
+                }
+                roster.iter().all(|key| {
+                    openfader_core::strip_index_for_key(&topology, key).is_some_and(|index| {
+                        let Ok(index) = u16::try_from(index) else {
+                            return false;
+                        };
+                        let strip = StripId(index);
+                        policy.allow_assign(strip).is_ok()
+                            && policy.allow_rename(strip).is_ok()
+                            && policy.allow_fader(strip, 1.0).is_ok()
+                            && self
+                                .lock_holder(index)
+                                .is_none_or(|holder| holder == writer)
+                    })
+                })
+            };
+            anyhow::ensure!(check(), "LAN session/access/locks changed");
+            if let Some((expected, desired, apply_requested)) = write {
+                match drv
+                    .write_lan(expected, desired, &check, apply_requested)
+                    .await
+                {
+                    Ok(receipt) => {
+                        Ok(serde_json::json!({"status":"stored_verified", "receipt":receipt}))
+                    }
+                    Err(error) => Ok(serde_json::json!({"status":"failed", "error":error})),
+                }
+            } else {
+                let snapshot = drv.read_lan().await?;
+                anyhow::ensure!(check(), "LAN session/access/locks changed");
+                Ok(serde_json::json!({"status":"read", "snapshot":snapshot}))
+            }
+        }
+        .await;
+        let result = result.unwrap_or_else(|e| serde_json::json!({"status":"rejected", "message":e.to_string(), "possibly_staged":false}));
+        Event::LanResult {
+            request_id,
+            driver,
+            epoch,
+            operation: operation.into(),
+            result,
+        }
+    }
+
     fn native_access(
         &self,
         writer: &str,
