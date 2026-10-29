@@ -830,6 +830,9 @@ class _EqPreviewPainter extends CustomPainter {
     canvas.drawRRect(
         RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(8)),
         Paint()..color = palette.eqBg);
+    final zeroY = size.height / 2;
+    canvas.drawLine(Offset(0, zeroY), Offset(size.width, zeroY),
+        Paint()..color = palette.text7.withValues(alpha: .35));
     final response = eqResponseDb(eq);
     if (response.isEmpty) return;
     final curve = Path();
@@ -843,8 +846,8 @@ class _EqPreviewPainter extends CustomPainter {
       }
     }
     final fill = Path.from(curve)
-      ..lineTo(size.width, size.height)
-      ..lineTo(0, size.height)
+      ..lineTo(size.width, zeroY)
+      ..lineTo(0, zeroY)
       ..close();
     canvas.drawPath(
         fill, Paint()..color = palette.eqPreviewFill.withValues(alpha: .85));
