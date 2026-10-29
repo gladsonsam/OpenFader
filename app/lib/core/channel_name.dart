@@ -6,10 +6,13 @@ class ChannelNameTarget {
   final int? accessEpoch;
   final String key;
 
+  /// Provider-qualified strip identity, independent of its editable name.
+  final String? label;
+
   /// Actual parameter value; null means it was not available at capture.
   final String? name;
   const ChannelNameTarget(this.session, this.channel, this.key, this.name,
-      {this.accessEpoch});
+      {this.accessEpoch, this.label});
 }
 
 class ChannelColorChoice {

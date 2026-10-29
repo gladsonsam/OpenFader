@@ -46,9 +46,24 @@ mixin _AppStoreAppearance on _AppStoreContext {
     for (final strip in engine.strips) {
       if (strip.ch != ch) continue;
       final rawName = ps.optimisticValue(_maps, ch, 'name');
+      final family = _presetFamily(ch);
+      final first = family?['first'];
+      final count = family?['count'];
+      final prefix = family?['name_prefix'];
+      final index = first is num ? ch - first.toInt() + 1 : ch + 1;
+      final String? label;
+      if (family?['kind'] == 'in') {
+        label = 'Channel $index';
+      } else if (family?['kind'] == 'bus') {
+        label = 'Bus $index';
+      } else if (count == 1 && family?['label'] is String) {
+        label = family!['label'] as String;
+      } else {
+        label = prefix is String && prefix.isNotEmpty ? '$prefix $index' : null;
+      }
       final target = ChannelNameTarget(
           engine.session, ch, strip.key, rawName is String ? rawName : null,
-          accessEpoch: controlAccessEpoch);
+          accessEpoch: controlAccessEpoch, label: label);
       return target;
     }
     return null;
