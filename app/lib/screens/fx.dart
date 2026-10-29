@@ -77,6 +77,7 @@ abstract class FxStore extends ChangeNotifier {
   String typeLabel(String type);
   List<FxKnobVm> get knobs;
   bool get tapVisible;
+  String? get tapTarget;
   String get tapLabel;
   ValueNotifier<double> meterOf(int slot);
 
@@ -636,7 +637,11 @@ class _LegacyFxDetail extends StatelessWidget {
           if (store.tapVisible)
             Align(
                 child: _FxToggle(
-                    label: store.tapLabel, active: false, onTap: store.tap)),
+                    label: store.tapLabel, active: false, onTap: () {
+                      final id = store.tapTarget;
+                      if (id != null) onFocus(id);
+                      store.tap();
+                    })),
         ]));
   }
 }

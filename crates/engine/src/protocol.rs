@@ -635,6 +635,8 @@ pub struct FxTypeCaps {
     pub id: String,
     pub label: String,
     pub params: Vec<FxParamCaps>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tap_target: Option<String>,
 }
 
 /// `caps.fx` (R2): FX slot family of the active driver (`slots` = slot

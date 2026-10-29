@@ -15,6 +15,7 @@ impl Engine {
             openfader_core::fx::FX_TYPES
                 .iter()
                 .map(|t| crate::protocol::FxTypeCaps {
+                    tap_target: None,
                     slots: Vec::new(),
                     id: t.id.to_string(),
                     label: t.label.to_string(),
