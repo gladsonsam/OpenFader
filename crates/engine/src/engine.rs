@@ -165,7 +165,7 @@ pub struct Engine {
     /// queued behind a poll read. Writes themselves run inline on the
     /// caller's task, they never wait on poller or meter state, and meter
     /// fan-out is a third lane (read-only driver calls from the ticker
-    /// task). See `crates/engine/README.md` "Write priority".
+    /// task). See the private engine protocol notes "Write priority".
     writes_in_flight: AtomicU64,
     /// Diagnostic: poller ticks skipped due to [`writes_in_flight`](Engine::writes_in_flight).
     poll_skips: AtomicU64,

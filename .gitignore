@@ -32,3 +32,14 @@ scripts/flutter-mac-dev.sh
 
 # Design references and verification records live in private docs
 /app/design/
+
+# Internal engineering documentation is maintained in openmix-docs-private
+/docs/
+/ARCHITECTURE.md
+/CHANGELOG.md
+/RIG.md
+/.agents/skills/
+**/COMPATIBILITY.md
+**/OUTPUT_PROCESSING.md
+/crates/engine/README.md
+/crates/proto-wing/README.md
