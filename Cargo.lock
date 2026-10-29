@@ -879,6 +879,7 @@ dependencies = [
  "anyhow",
  "openfader-sim",
  "realfft",
+ "serde",
  "serde_json",
  "tokio",
 ]

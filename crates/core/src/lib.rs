@@ -13,6 +13,7 @@ pub mod access;
 pub mod destinations;
 pub mod fx;
 pub mod global_controls;
+pub mod lan;
 pub mod link_settings;
 pub mod output_meters;
 pub mod params;
@@ -942,6 +943,21 @@ pub trait MixerDriver: Send + Sync {
     /// dispatch, return a confirmed/uncertain receipt; never retry internally.
     fn native_library(&self) -> Option<serde_json::Value> {
         None
+    }
+    async fn read_lan(&self) -> anyhow::Result<lan::LanSnapshot> {
+        anyhow::bail!("LAN unsupported")
+    }
+    async fn write_lan(
+        &self,
+        _expected: lan::LanSnapshot,
+        _desired: lan::LanConfiguration,
+        _authorize: &(dyn Fn() -> bool + Send + Sync),
+        _apply_requested: bool,
+    ) -> Result<lan::LanWriteResult, lan::LanWriteError> {
+        Err(lan::LanWriteError {
+            message: "LAN unsupported".into(),
+            possibly_staged: false,
+        })
     }
     async fn native_library_action(
         &self,

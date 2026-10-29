@@ -192,6 +192,9 @@ impl Engine {
             other => (other, None),
         };
         match cmd {
+            cmd @ (Cmd::LanRead { .. } | Cmd::LanWrite { .. }) => {
+                Ok(Some(self.apply_lan(cmd, writer).await))
+            }
             cmd @ Cmd::NativeLibrary { .. } => {
                 Ok(Some(self.apply_native_library(cmd, writer).await))
             }
