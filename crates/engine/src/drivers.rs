@@ -1743,12 +1743,15 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                 let Some(def) = xfx::fx_param_def(index, par) else {
                     continue;
                 };
-                let mut label = def.label.to_string();
+                let position = xfx::fx_position_def(index, par);
+                let mut label = position.and_then(|p| p.registered_label).unwrap_or(def.label).to_string();
                 if let Some(bank) = def.bank {
-                    label.push(' ');
-                    label.push_str(bank);
+                    if position.is_none() || !label.ends_with(bank) {
+                        label.push(' ');
+                        label.push_str(bank);
+                    }
                 }
-                if def.inferred {
+                if def.inferred && position.is_none() {
                     label.push('?');
                 }
                 let choices: Vec<_> = def.options.unwrap_or(&[]).iter().enumerate()
@@ -1758,7 +1761,6 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
                         } else { 0.0 },
                         label: (*label).to_string(),
                     }).collect();
-                let position = xfx::fx_position_def(index, par);
                 params.push(crate::protocol::FxParamCaps {
                     choices,
                     position: position.map(|p| crate::protocol::FxPositionCaps {
