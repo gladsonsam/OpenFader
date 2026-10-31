@@ -1039,6 +1039,7 @@ done"#,
             })
         }
     }
+    #[cfg(unix)]
     struct BlockingBackend {
         cancellation: soundcheck_backend::CancellationHandle,
         entered: std::sync::Arc<tokio::sync::Notify>,
@@ -1046,6 +1047,7 @@ done"#,
         calls: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
         mode: String,
     }
+    #[cfg(unix)]
     impl soundcheck_backend::SoundcheckBackend for BlockingBackend {
         fn cancellation_handle(&self) -> soundcheck_backend::CancellationHandle {
             if self.cancellation.output_terminated() {

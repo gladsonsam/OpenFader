@@ -45,41 +45,27 @@ pub struct ProcessSupervisor {
 
 impl ProcessSupervisor {
     /// Spawn an explicit executable and argument list, without a shell.
-    #[cfg(unix)]
     pub fn spawn<I, S>(executable: impl AsRef<OsStr>, args: I) -> io::Result<Self>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
-        use std::os::fd::AsRawFd;
-        let mut child = Command::new(executable)
+        let mut command = Command::new(executable);
+        command
             .args(args)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()?;
+            .stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        }
+        let mut child = command.spawn()?;
         let stdin = child.stdin.take().expect("piped stdin");
         let stdout = child.stdout.take().expect("piped stdout");
-        // F_SETFL preserves existing flags and enables deadline-aware reads.
-        unsafe extern "C" {
-            fn fcntl(fd: i32, cmd: i32, ...) -> i32;
-        }
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        const NONBLOCK: i32 = 0x4;
-        #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-        const NONBLOCK: i32 = 0x800;
-        let fd = stdout.as_raw_fd();
-        // SAFETY: fd is owned and valid for the lifetime of stdout; fcntl takes integer arguments.
-        let result = unsafe {
-            let flags = fcntl(fd, 3);
-            if flags < 0 {
-                -1
-            } else {
-                fcntl(fd, 4, flags | NONBLOCK)
-            }
-        };
-        if result < 0 {
-            let error = io::Error::last_os_error();
+        #[cfg(unix)]
+        if let Err(error) = make_nonblocking(&stdout) {
             let _ = child.kill();
             let _ = child.wait();
             return Err(error);
@@ -161,7 +147,7 @@ impl ProcessSupervisor {
             let count = buf
                 .len()
                 .min(max.saturating_sub(self.pending.len()).saturating_add(1));
-            match self.stdout.read(&mut buf[..count]) {
+            match read_available(&mut self.stdout, &mut buf[..count]) {
                 Ok(0) => return Err(SupervisorError::Eof),
                 Ok(n) => self.pending.extend_from_slice(&buf[..n]),
                 Err(e) if e.kind() == io::ErrorKind::WouldBlock => thread::sleep(
@@ -299,5 +285,132 @@ mod tests {
         // SAFETY: status points to writable storage; pid identifies our child.
         assert_eq!(unsafe { waitpid(pid as i32, &mut status, 1) }, -1);
         assert_eq!(io::Error::last_os_error().raw_os_error(), Some(10)); // ECHILD on Linux; macOS uses 10 too.
+    }
+}
+
+#[cfg(unix)]
+fn make_nonblocking(stdout: &ChildStdout) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
+    // F_SETFL preserves existing flags and enables deadline-aware reads.
+    unsafe extern "C" {
+        fn fcntl(fd: i32, cmd: i32, ...) -> i32;
+    }
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
+    const NONBLOCK: i32 = 0x4;
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    const NONBLOCK: i32 = 0x800;
+    let fd = stdout.as_raw_fd();
+    // SAFETY: fd is owned and valid for the lifetime of stdout; fcntl takes integer arguments.
+    let result = unsafe {
+        let flags = fcntl(fd, 3);
+        if flags < 0 {
+            -1
+        } else {
+            fcntl(fd, 4, flags | NONBLOCK)
+        }
+    };
+    if result < 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
+    }
+}
+
+// Peek before a synchronous anonymous-pipe read: ReadFile otherwise blocks past
+// the operation deadline when the helper has not produced a complete response.
+#[cfg(windows)]
+fn read_available(stdout: &mut ChildStdout, buf: &mut [u8]) -> io::Result<usize> {
+    use std::os::windows::io::AsRawHandle;
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn PeekNamedPipe(
+            pipe: *mut std::ffi::c_void,
+            buffer: *mut std::ffi::c_void,
+            buffer_size: u32,
+            bytes_read: *mut u32,
+            available: *mut u32,
+            remaining: *mut u32,
+        ) -> i32;
+    }
+    let mut available = 0u32;
+    // SAFETY: the pipe handle remains owned by stdout and available is writable.
+    let ok = unsafe {
+        PeekNamedPipe(
+            stdout.as_raw_handle(),
+            std::ptr::null_mut(),
+            0,
+            std::ptr::null_mut(),
+            &mut available,
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        let error = io::Error::last_os_error();
+        return if error.raw_os_error() == Some(109) {
+            Ok(0)
+        } else {
+            Err(error)
+        };
+    }
+    if available == 0 {
+        return Err(io::ErrorKind::WouldBlock.into());
+    }
+    let count = buf.len().min(available as usize);
+    stdout.read(&mut buf[..count])
+}
+#[cfg(not(windows))]
+fn read_available(stdout: &mut ChildStdout, buf: &mut [u8]) -> io::Result<usize> {
+    stdout.read(buf)
+}
+
+#[cfg(all(test, windows))]
+mod windows_tests {
+    use super::*;
+    #[test]
+    fn readiness_and_deadline_reap_windows_children() {
+        let mut child = ProcessSupervisor::spawn("cmd.exe", ["/D", "/C", "echo true"]).unwrap();
+        let value = child
+            .wait_for_ready(Instant::now() + Duration::from_secs(5), 1024, |v| v == true)
+            .unwrap();
+        assert_eq!(value, true);
+        assert!(child
+            .stop(Instant::now() + Duration::from_secs(2))
+            .unwrap()
+            .success());
+        let mut child = ProcessSupervisor::spawn(
+            "powershell.exe",
+            [
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 30",
+            ],
+        )
+        .unwrap();
+        assert!(matches!(
+            child.wait_for_ready(Instant::now() + Duration::from_millis(100), 1024, |_| true),
+            Err(SupervisorError::Timeout)
+        ));
+        assert!(child.child.try_wait().unwrap().is_some());
+        let mut child = ProcessSupervisor::spawn(
+            "powershell.exe",
+            [
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Start-Sleep -Seconds 30",
+            ],
+        )
+        .unwrap();
+        assert!(matches!(
+            child.wait_for_ready_cancelled(
+                Instant::now() + Duration::from_secs(5),
+                1024,
+                |_| true,
+                || true
+            ),
+            Err(SupervisorError::Cancelled)
+        ));
+        assert!(child.child.try_wait().unwrap().is_some());
     }
 }
