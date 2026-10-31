@@ -18,6 +18,8 @@ impl Engine {
                     key: g.key.to_string(),
                     label: g.label.to_string(),
                     count: g.count,
+                    options: Vec::new(),
+                    mode: false,
                 }
             })
             .collect();

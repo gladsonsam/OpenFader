@@ -63,6 +63,10 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
       engine.routingCaps['supported'] == true && _planes.isNotEmpty;
 
   @override
+  bool get isModeSelector =>
+      _groups.isNotEmpty && _groups.every((g) => g['mode'] == true);
+
+  @override
   int get controlAccessEpoch => app.controlAccessEpoch;
 
   @override
@@ -209,6 +213,11 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
     final group = route['group'] as String;
     final index = (route['index'] as num).toInt();
     if (group.isEmpty && index == 0) return '—';
+    final descriptor = _groups.where((g) => g['key'] == group).firstOrNull;
+    final options = _list(descriptor?['options']);
+    if (index > 0 && index <= options.length && options[index - 1] is String) {
+      return options[index - 1] as String;
+    }
     return _groups.where((g) => g['key'] == group).firstOrNull?['count'] == 1
         ? groupLabel(group)
         : '${groupLabel(group)} $index';
@@ -267,6 +276,9 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
                     : groupLabel(group),
             group: group,
             index: i,
+            mode:
+                _groups.where((g) => g['key'] == group).firstOrNull?['mode'] ==
+                    true,
             operationKey: _identity(_selected),
             current: _selected != null &&
                 _route(_selected!)?['group'] == group &&

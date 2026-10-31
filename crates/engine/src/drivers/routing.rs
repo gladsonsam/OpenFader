@@ -40,6 +40,8 @@ pub fn input_planes<D: DynDriver + ?Sized>(drv: &D) -> Vec<RoutingPlaneCaps> {
                                     key: g.key.to_string(),
                                     label: g.label.to_string(),
                                     count: g.count,
+                                    options: Vec::new(),
+                                    mode: false,
                                 })
                                 .collect(),
                         })
@@ -75,6 +77,8 @@ pub fn output_planes(planes: Vec<openfader_core::routing::OutputPlane>) -> Vec<R
                                 key: (*key).into(),
                                 label: (*label).into(),
                                 count: *count,
+                                options: Vec::new(),
+                                mode: false,
                             })
                             .collect(),
                     }
