@@ -159,7 +159,7 @@ jobs:
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
           test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
           gh release download "$GITHUB_REF_NAME" --dir release-assets
-          (cd release-assets && sha256sum -c windows-SHA256SUMS android-SHA256SUMS)
+          (cd release-assets && sed 's/\r$//' windows-SHA256SUMS android-SHA256SUMS | sha256sum -c -)
           python3 -c 'import json,os; from pathlib import Path; assert all(json.loads(Path("release-assets", f"{p}-build.json").read_text())["commit"] == os.environ["EXPECTED_SHA"] for p in ("windows", "android")), "asset commit mismatch"'
           version="${GITHUB_REF_NAME#v}"
           test -s "release-assets/OpenFader-${version}-windows-x64-setup.exe"
