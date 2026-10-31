@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 
 import '../theme.dart';
+import '../widgets/anchored_menu.dart';
 import '../palette.dart';
 import '../core/destination_controls.dart';
 import '../widgets/destination_control_editor.dart';
@@ -31,6 +32,7 @@ class RouteSrcTile {
   final int index;
   final String usedBy;
   final bool current;
+  final bool mode;
   final String? operationKey;
 
   const RouteSrcTile({
@@ -41,6 +43,7 @@ class RouteSrcTile {
     this.usedBy = '',
     this.operationKey,
     this.current = false,
+    this.mode = false,
   });
 }
 
@@ -74,6 +77,7 @@ abstract class RoutingStore extends ChangeNotifier {
   List<RouteSrcTile> get srcTiles;
   List<RouteSrcTile> get allSrcTiles => srcTiles;
   bool get routingSupported;
+  bool get isModeSelector;
   bool get canPatch => routingSupported;
   int get controlAccessEpoch => 0;
   DestinationControlVm? get tapControl => null;
@@ -212,12 +216,14 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text('Route ${strip.name}',
+                      Text(
+                          '${tile.mode ? 'Input mode ·' : 'Route'} ${strip.name}',
                           style: Theme.of(context).textTheme.titleLarge),
                       const SizedBox(height: 16),
-                      Text('Current: ${strip.src}'),
+                      Text('Current${tile.mode ? ' mode' : ''}: ${strip.src}'),
                       const SizedBox(height: 8),
-                      Text('New source: ${tile.label}',
+                      Text(
+                          '${tile.mode ? 'New mode' : 'New source'}: ${tile.label}',
                           style: const TextStyle(fontWeight: FontWeight.w700)),
                       const SizedBox(height: 16),
                       if (!valid)
@@ -230,7 +236,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                   Navigator.pop(sheetContext);
                                 }
                               : null,
-                          child: const Text('Confirm route')),
+                          child: Text(
+                              tile.mode ? 'Confirm mode' : 'Confirm route')),
                       TextButton(
                           onPressed: () => Navigator.pop(sheetContext),
                           child: const Text('Cancel')),
@@ -250,72 +257,192 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
 
   Widget _targetSelector() {
     final p = ConsolePalette.of(context);
-    return SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: [
-          for (final target in store.targets)
-            Container(
-                decoration: BoxDecoration(
-                    border: Border(
-                        bottom: BorderSide(
-                            color: target.key == store.target
-                                ? p.cyan
-                                : p.tileBorder,
-                            width: target.key == store.target ? 3 : 1))),
-                child: TextButton(
-                    style: TextButton.styleFrom(
-                        minimumSize: const Size(64, 48),
-                        foregroundColor:
-                            target.key == store.target ? p.cyan : p.text4,
-                        padding: const EdgeInsets.symmetric(horizontal: 16)),
-                    onPressed: () {
-                      if (target.key == store.target) return;
-                      setState(() {
-                        _previewStrip = null;
-                        _previewSource = null;
-                        _pickedStrip = null;
-                        _pickedSource = null;
-                        _dragStart = null;
-                        _dragPending = [];
-                      });
-                      store.selectTarget(target.key);
-                    },
-                    child: Text(target.label))),
-        ]));
+    return LayoutBuilder(builder: (context, constraints) {
+      var minimum = 96.0;
+      for (final target in store.targets) {
+        final text = TextPainter(
+            text: TextSpan(
+                text: target.label,
+                style: Theme.of(context).textTheme.labelLarge),
+            textDirection: Directionality.of(context))
+          ..layout();
+        if (text.width + 32 > minimum) minimum = text.width + 32;
+      }
+      final width = (minimum * store.targets.length +
+              8 * (store.targets.length - 1).clamp(0, store.targets.length))
+          .clamp(constraints.maxWidth, double.infinity);
+      return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(
+              width: width,
+              child: Row(spacing: 8, children: [
+                for (final target in store.targets)
+                  Expanded(
+                      child: Semantics(
+                          selected: target.key == store.target,
+                          child: Container(
+                            decoration: BoxDecoration(
+                                border: Border(
+                                    bottom: BorderSide(
+                                        color: target.key == store.target
+                                            ? p.cyan
+                                            : p.tileBorder,
+                                        width: target.key == store.target
+                                            ? 3
+                                            : 1))),
+                            child: TextButton(
+                                style: TextButton.styleFrom(
+                                    minimumSize: const Size(0, 48),
+                                    foregroundColor: target.key == store.target
+                                        ? p.cyan
+                                        : p.text4,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12)),
+                                onPressed: () {
+                                  if (target.key == store.target) return;
+                                  setState(() {
+                                    _previewStrip = null;
+                                    _previewSource = null;
+                                    _pickedStrip = null;
+                                    _pickedSource = null;
+                                    _dragStart = null;
+                                    _dragPending = [];
+                                  });
+                                  store.selectTarget(target.key);
+                                },
+                                child: Text(target.label, maxLines: 1)),
+                          ))),
+              ])));
+    });
   }
 
-  Widget _mapButton() => TextButton.icon(
-      onPressed:
-          store.strips.isEmpty || store.allSrcTiles.isEmpty ? null : _quickMap,
-      icon: const Icon(Icons.auto_fix_high_outlined, size: 18),
-      label: const Text('Map'),
-      style: TextButton.styleFrom(minimumSize: const Size(72, 48)));
+  Widget _modeRows() {
+    final p = ConsolePalette.of(context);
+    final sources = store.allSrcTiles;
+    Widget name(String text) => Expanded(
+        child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis)));
+    return Column(children: [
+      Row(
+          spacing: 8,
+          children: [Expanded(child: _targetSelector()), _mapButton()]),
+      Container(
+          height: 48,
+          color: p.well,
+          child: Row(children: [
+            name('Active input'),
+            for (final source in sources)
+              Expanded(
+                  child: Center(
+                      child: Text(source.label,
+                          style:
+                              const TextStyle(fontWeight: FontWeight.w600)))),
+          ])),
+      Expanded(
+          child: ListView.separated(
+              itemCount: store.strips.length,
+              separatorBuilder: (_, __) =>
+                  Divider(height: 1, color: p.tileBorder),
+              itemBuilder: (context, i) {
+                final strip = store.strips[i];
+                return SizedBox(
+                    height: 56,
+                    child: Row(children: [
+                      name(strip.name),
+                      for (final source in sources)
+                        Expanded(
+                            child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 4),
+                                child: OutlinedButton(
+                                  style: OutlinedButton.styleFrom(
+                                      minimumSize: const Size(0, 48),
+                                      backgroundColor: strip.src == source.label
+                                          ? p.cyan
+                                          : p.well,
+                                      foregroundColor: strip.src == source.label
+                                          ? p.onAccent
+                                          : p.text4),
+                                  onPressed: () => _choose(strip, source),
+                                  child: Semantics(
+                                      selected: strip.src == source.label,
+                                      label: '${strip.name}: ${source.label}',
+                                      child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
+                                          children: [
+                                            if (strip.src == source.label)
+                                              const Padding(
+                                                  padding:
+                                                      EdgeInsets.only(right: 6),
+                                                  child: Icon(Icons.check,
+                                                      size: 18)),
+                                            Flexible(
+                                                child: Text(source.label,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis)),
+                                          ])),
+                                ))),
+                    ]));
+              })),
+    ]);
+  }
 
-  Future<void> _quickMap() async {
-    final mode = await showModalBottomSheet<String>(
-        context: context,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-              ListTile(
-                  title: const Text('1:1'),
-                  subtitle: Text(
-                      '${store.groupLabel(store.groups.first)} · in order'),
-                  onTap: () => Navigator.pop(context, 'forward')),
-              ListTile(
-                  title: const Text('Reverse 1:1'),
-                  subtitle: Text(
-                      '${store.groupLabel(store.groups.first)} · reverse order'),
-                  onTap: () => Navigator.pop(context, 'reverse')),
-              if (_pickedTarget == store.target &&
-                  _pickedStrip != null &&
-                  _pickedSource != null)
-                ListTile(
-                    title: const Text('1:1 from selected point'),
-                    subtitle: Text(
-                        '${_pickedSource!.label} → ${_pickedStrip!.name}, then continue'),
-                    onTap: () => Navigator.pop(context, 'selected')),
-            ])));
+  Widget _mapButton() => Builder(
+      builder: (anchor) => TextButton.icon(
+          onPressed: store.strips.isEmpty || store.allSrcTiles.isEmpty
+              ? null
+              : () => _quickMap(anchor),
+          icon: const Icon(Icons.auto_fix_high_outlined, size: 18),
+          label: const Text('Map'),
+          style: TextButton.styleFrom(minimumSize: const Size(72, 48))));
+
+  Future<void> _quickMap(BuildContext anchor) async {
+    final target = store.target;
+    if (store.isModeSelector) {
+      final source = await showAnchoredMenu<RouteSrcTile>(anchor, [
+        for (final source in store.allSrcTiles)
+          PopupMenuItem(
+              height: 52, value: source, child: Text('All ${source.label}')),
+      ]);
+      if (mounted && source != null && store.target == target) {
+        await _reviewMappings(
+            [for (final strip in store.strips) (strip.strip, source)]);
+      }
+      return;
+    }
+    final mode = await showAnchoredMenu<String>(anchor, [
+      PopupMenuItem(
+          height: 56,
+          value: 'forward',
+          child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('1:1'),
+              subtitle:
+                  Text('${store.groupLabel(store.groups.first)} · in order'))),
+      PopupMenuItem(
+          height: 56,
+          value: 'reverse',
+          child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Reverse 1:1'),
+              subtitle: Text(
+                  '${store.groupLabel(store.groups.first)} · reverse order'))),
+      if (_pickedTarget == store.target &&
+          _pickedStrip != null &&
+          _pickedSource != null)
+        PopupMenuItem(
+            height: 64,
+            value: 'selected',
+            child: ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('1:1 from selected point'),
+                subtitle:
+                    Text('${_pickedSource!.label} → ${_pickedStrip!.name}'))),
+    ]);
+    if (store.target != target) return;
     if (!mounted || mode == null) return;
     final strips = store.strips;
     // Presets stay within a single bank instead of spilling into USB/network.
@@ -372,7 +499,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Text(
-                                    'Review ${plan.length} route${plan.length == 1 ? '' : 's'}',
+                                    'Review ${plan.length} change${plan.length == 1 ? '' : 's'}',
                                     style:
                                         Theme.of(context).textTheme.titleLarge),
                                 const SizedBox(height: 12),
@@ -435,7 +562,9 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   Widget _mobileRoutes() {
     final p = ConsolePalette.of(context);
     return Column(children: [
-      Row(children: [Expanded(child: _targetSelector()), _mapButton()]),
+      Row(
+          spacing: 8,
+          children: [Expanded(child: _targetSelector()), _mapButton()]),
       Expanded(
           child: store.strips.isEmpty
               ? const Center(child: Text('Waiting for destinations…'))
@@ -713,6 +842,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                         child: Text(
                             'Routing controls are unavailable for this driver.'));
                   }
+                  if (store.isModeSelector) return _modeRows();
                   if (MediaQuery.sizeOf(context).width < 700) {
                     return _mobileRoutes();
                   }
@@ -732,7 +862,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                       children: [
                         Padding(
                             padding: const EdgeInsets.all(10),
-                            child: Row(children: [
+                            child: Row(spacing: 8, children: [
                               Expanded(child: _targetSelector()),
                               _mapButton(),
                             ])),

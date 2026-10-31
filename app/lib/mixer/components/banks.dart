@@ -1,4 +1,5 @@
 import '../../palette.dart';
+import '../../widgets/anchored_menu.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
 import '../design.dart';
@@ -14,10 +15,10 @@ Future<void> showMixerLayout(BuildContext context, MixerController controller,
         context: context,
         backgroundColor: ConsolePalette.of(context).background,
         showDragHandle: true,
-        builder: (context) => SafeArea(
+        builder: (_) => SafeArea(
             child: ListenableBuilder(
                 listenable: controller,
-                builder: (context, _) => ListView(shrinkWrap: true, children: [
+                builder: (_, __) => ListView(shrinkWrap: true, children: [
                       Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           child: Text('Layout',
@@ -91,36 +92,35 @@ Future<void> showMixerLayout(BuildContext context, MixerController controller,
                             }),
                     ]))));
 
-Future<void> showMixerBuses(BuildContext context, MixerController controller) =>
-    showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: ConsolePalette.of(context).background,
-        showDragHandle: true,
-        builder: (context) => SafeArea(
-            child: ListenableBuilder(
-                listenable: controller,
-                builder: (context, _) => ListView(shrinkWrap: true, children: [
-                      ListTile(
-                          title: Text('Master bus',
-                              style: mixerType(context, 20,
-                                  weight: FontWeight.w600))),
-                      for (final bus in controller.store.busRows)
-                        ListTile(
-                            title:
-                                Text(bus.name, style: mixerType(context, 17)),
-                            subtitle: Text(bus.sub,
-                                style: mixerType(context, 13,
-                                    color:
-                                        ConsolePalette.of(context).mutedText)),
-                            trailing: bus.active
-                                ? Icon(Icons.check,
-                                    color: ConsolePalette.of(context).lime)
-                                : null,
-                            onTap: () {
-                              controller.store.selectBus(bus.id);
-                              Navigator.pop(context);
-                            }),
-                    ]))));
+Future<void> showMixerBuses(
+    BuildContext context, MixerController controller) async {
+  final selected = await showAnchoredMenu<String>(context, [
+    for (final bus in controller.store.busRows)
+      PopupMenuItem(
+          value: bus.id,
+          height: 56,
+          child: Row(children: [
+            Expanded(
+                child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(bus.name, style: mixerType(context, 16)),
+                  Text(bus.sub,
+                      style: mixerType(context, 12,
+                          color: ConsolePalette.of(context).mutedText)),
+                ])),
+            if (bus.active)
+              Icon(Icons.check,
+                  color: ConsolePalette.of(context).lime, size: 20),
+          ])),
+  ]);
+  if (context.mounted &&
+      selected != null &&
+      controller.store.busRows.any((bus) => bus.id == selected)) {
+    controller.store.selectBus(selected);
+  }
+}
 
 class MixerBanks extends StatelessWidget {
   final MixerController controller;
@@ -243,19 +243,24 @@ class MixerBanks extends StatelessWidget {
                                   right: 7 * sx,
                                   child: Align(
                                       alignment: Alignment.centerLeft,
-                                      child: fittedLabel(controller.master.number, 16,
+                                      child: fittedLabel(
+                                          controller.master.number, 16,
                                           color: ConsolePalette.of(context).bus,
                                           weight: FontWeight.w700))),
                               Positioned(
                                   top: 59 * sy,
                                   left: 0,
                                   right: 0,
-                                  child: button(controller.master.name,
-                                      () => showMixerBuses(context, controller),
-                                      size: 36,
-                                      height: 54,
-                                      color: ConsolePalette.of(context).text,
-                                      weight: FontWeight.w600)),
+                                  child: Builder(
+                                      builder: (anchor) => button(
+                                          controller.master.name,
+                                          () => showMixerBuses(
+                                              anchor, controller),
+                                          size: 36,
+                                          height: 54,
+                                          color:
+                                              ConsolePalette.of(context).text,
+                                          weight: FontWeight.w600))),
                             ]))),
                     title('OUTPUTS', 40, size: 20),
                     Container(
@@ -264,11 +269,13 @@ class MixerBanks extends StatelessWidget {
                         decoration: BoxDecoration(
                             color: ConsolePalette.of(context).background,
                             border: Border.all(
-                                color: ConsolePalette.of(context).cap, width: 2),
+                                color: ConsolePalette.of(context).cap,
+                                width: 2),
                             borderRadius: BorderRadius.circular(14 * sx)),
                         child: Column(children: [
                           for (final bus in controller.store.busRows)
-                            button(bus.name, () => controller.store.selectBus(bus.id),
+                            button(bus.name,
+                                () => controller.store.selectBus(bus.id),
                                 active: bus.active, size: 28, height: 56),
                         ])),
                     if (controller.pageCount > 1) ...[

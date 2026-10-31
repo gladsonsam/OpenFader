@@ -739,6 +739,11 @@ pub struct RoutingGroupCaps {
     pub key: String,
     pub label: String,
     pub count: usize,
+    /// Explicit option labels for selectors that are not numbered sockets.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mode: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

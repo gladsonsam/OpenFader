@@ -14,6 +14,7 @@ class MixerNameplate extends StatelessWidget {
   final bool compact;
   final VoidCallback onSelect, onOpen;
   final VoidCallback? onRename;
+  final ValueChanged<BuildContext>? onOpenAt;
   const MixerNameplate(
       {super.key,
       required this.channel,
@@ -25,7 +26,8 @@ class MixerNameplate extends StatelessWidget {
       this.fontSize = 17,
       required this.onSelect,
       required this.onOpen,
-      this.onRename});
+      this.onRename,
+      this.onOpenAt});
   @override
   Widget build(BuildContext context) => Semantics(
       button: true,
@@ -39,7 +41,13 @@ class MixerNameplate extends StatelessWidget {
       child: GestureDetector(
           onTap: () {
             onSelect();
-            (onRename ?? onOpen)();
+            if (onRename != null) {
+              onRename!();
+            } else if (onOpenAt != null) {
+              onOpenAt!(context);
+            } else {
+              onOpen();
+            }
           },
           onLongPress: onRename,
           behavior: HitTestBehavior.opaque,

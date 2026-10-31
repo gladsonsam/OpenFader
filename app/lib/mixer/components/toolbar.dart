@@ -181,41 +181,46 @@ class MixerToolbar extends StatelessWidget {
           if (compact)
             Padding(
               padding: const EdgeInsets.only(right: 10),
-              child: _MenuButton(
-                onSelected: (action) => action(),
-                items: [
-                  if (onHome != null)
-                    PopupMenuItem(
-                        value: onHome!,
-                        child:
-                            Text('Connections', style: mixerType(context, 16))),
-                  for (final a in actions)
-                    PopupMenuItem(
-                        value: () => onNavigate(a.$2),
-                        child: Text(a.$1, style: mixerType(context, 16))),
-                  if (showBankControls) ...[
-                    const PopupMenuDivider(),
-                    PopupMenuItem(
-                        value: () => showMixerBanks(context, controller),
-                        child: Text('Channels & banks',
-                            style: mixerType(context, 16))),
-                    PopupMenuItem(
-                        value: () => showMixerBuses(context, controller),
-                        child:
-                            Text('Master bus', style: mixerType(context, 16))),
-                    PopupMenuItem(
-                        value: () =>
-                            showMixerGroupMembership(context, controller),
-                        child: Text('Group members',
-                            style: mixerType(context, 16))),
-                    if (controller.muteGroupCount > 0)
-                      PopupMenuItem(
-                          value: () => showMixerMuteGroups(context, controller),
-                          child: Text('Mute groups',
-                              style: mixerType(context, 16))),
-                  ],
-                ],
-              ),
+              child: Builder(
+                  builder: (menuAnchor) => _MenuButton(
+                        onSelected: (action) => action(),
+                        items: [
+                          if (onHome != null)
+                            PopupMenuItem(
+                                value: onHome!,
+                                child: Text('Connections',
+                                    style: mixerType(context, 16))),
+                          for (final a in actions)
+                            PopupMenuItem(
+                                value: () => onNavigate(a.$2),
+                                child:
+                                    Text(a.$1, style: mixerType(context, 16))),
+                          if (showBankControls) ...[
+                            const PopupMenuDivider(),
+                            PopupMenuItem(
+                                value: () =>
+                                    showMixerBanks(context, controller),
+                                child: Text('Channels & banks',
+                                    style: mixerType(context, 16))),
+                            PopupMenuItem(
+                                value: () =>
+                                    showMixerBuses(menuAnchor, controller),
+                                child: Text('Master bus',
+                                    style: mixerType(context, 16))),
+                            PopupMenuItem(
+                                value: () => showMixerGroupMembership(
+                                    context, controller),
+                                child: Text('Group members',
+                                    style: mixerType(context, 16))),
+                            if (controller.muteGroupCount > 0)
+                              PopupMenuItem(
+                                  value: () =>
+                                      showMixerMuteGroups(context, controller),
+                                  child: Text('Mute groups',
+                                      style: mixerType(context, 16))),
+                          ],
+                        ],
+                      )),
             ),
         ]));
   }

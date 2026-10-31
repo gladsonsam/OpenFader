@@ -1525,13 +1525,16 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         for (target, label, clearable, groups) in [
             ("analog", "Analog inputs", true, vec![("Mic", "Mic inputs", 16), ("Aux", "Aux L / R", 2)]),
             ("usb", "USB returns", false, vec![("USB", "USB returns", 18)]),
-            ("bank", "Input bank", false, vec![("Bank", "1 Analog / 2 USB", 2)]),
+            ("bank", "Input mode", false, vec![("Bank", "Input mode", 2)]),
         ] {
             let plane = format!("input/{target}");
             let destinations = (0..16_u16).map(|strip| {
                 let key = format!("ch/{:02}", strip + 1);
                 RoutingDestinationCaps { output: false, id: format!("{plane}/{key}"), key, strip, label: format!("Channel {}", strip + 1), target: target.into(), clearable,
-                    source_groups: groups.iter().map(|(key, label, count)| RoutingGroupCaps { key: (*key).into(), label: (*label).into(), count: *count }).collect() }
+                    source_groups: groups.iter().map(|(key, label, count)| RoutingGroupCaps { key: (*key).into(), label: (*label).into(), count: *count,
+                        options: if target == "bank" { vec!["Analog".into(), "USB".into()] } else { Vec::new() },
+                        mode: target == "bank",
+                    }).collect() }
             }).collect();
             input.push(RoutingPlaneCaps { key: plane, label: label.into(), destinations });
         }
