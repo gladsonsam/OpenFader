@@ -123,7 +123,7 @@ class MixerBanks extends StatelessWidget {
                 // Keep the authored visual scale separate from the hit target.
                 // Short viewports scroll rather than compressing/overlapping rows.
                 double h(double value) =>
-                    (value * sy).clamp(50.0, double.infinity);
+                    (value * sy).clamp(44.0, double.infinity);
                 Widget fittedLabel(String text, double size,
                         {Color? color, FontWeight weight = FontWeight.w400}) =>
                     FittedBox(
@@ -172,8 +172,9 @@ class MixerBanks extends StatelessWidget {
                                     weight: weight))));
                 return Column(children: [
                   Expanded(
-                      child: SingleChildScrollView(
-                          child: Column(children: [
+                      child: Scrollbar(
+                          child: SingleChildScrollView(
+                              child: Column(children: [
                     title('MUTE', 58),
                     Container(
                         constraints: BoxConstraints(minHeight: 256 * sy),
@@ -251,7 +252,7 @@ class MixerBanks extends StatelessWidget {
                               : null),
                     ],
                     title('MASTERS', 31, size: 16),
-                  ]))),
+                  ])))),
                   // Keep monitoring recovery reachable even when the provider
                   // exposes enough banks/buses to fill the scrolling rail.
                   if (controller.hasSolo)
