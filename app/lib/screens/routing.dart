@@ -50,6 +50,13 @@ class RoutePatchTarget {
   const RoutePatchTarget(this.key, this.label, this.clearable);
 }
 
+class RouteChange {
+  final RouteStrip destination;
+  final RouteSrcTile source;
+  final String guard;
+  const RouteChange(this.destination, this.source, this.guard);
+}
+
 // Implemented by the shell over the engine or a fixture sim.
 abstract class RoutingStore extends ChangeNotifier {
   List<RouteStrip> get strips;
@@ -79,6 +86,9 @@ abstract class RoutingStore extends ChangeNotifier {
   void selectGroup(String group);
   void patch(RouteSrcTile tile);
   void clearPatch(int strip, {String? operationKey});
+  List<RouteChange>? planMappings(List<(int, RouteSrcTile)> mappings);
+  bool planIsCurrent(List<RouteChange> plan);
+  bool applyPlan(List<RouteChange> plan);
 }
 
 class U4RoutingPage extends StatefulWidget {
@@ -95,8 +105,14 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   RouteStrip? _previewStrip;
   RouteSrcTile? _previewSource;
   String? _previewTarget;
+  RouteStrip? _pickedStrip;
+  RouteSrcTile? _pickedSource;
+  String? _pickedTarget;
+  (int, int)? _dragStart;
+  List<(int, RouteSrcTile)> _dragPending = [];
   PointerDeviceKind _pointer = PointerDeviceKind.touch;
   bool _confirming = false;
+  bool _pickingSource = false;
   RoutingStore get store => widget.store;
 
   void _preview(RouteStrip strip, RouteSrcTile source) {
@@ -127,12 +143,33 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
       });
       return;
     }
+    _dragStart ??= (row, column);
+    final (firstRow, firstColumn) = _dragStart!;
+    final rowStep = row >= firstRow ? 1 : -1;
+    final sourceStep = column == firstColumn
+        ? 0
+        : column > firstColumn
+            ? 1
+            : -1;
+    final pending = <(int, RouteSrcTile)>[];
+    for (var offset = 0; offset <= (row - firstRow).abs(); offset++) {
+      final sourceIndex = firstColumn + offset * sourceStep;
+      if (sourceIndex < 0 || sourceIndex >= sources.length) break;
+      pending.add(
+          (strips[firstRow + offset * rowStep].strip, sources[sourceIndex]));
+    }
+    setState(() => _dragPending = pending);
     _preview(strips[row], sources[column]);
   }
 
   Future<void> _choose(RouteStrip strip, RouteSrcTile source,
       {bool direct = false}) async {
     if (_confirming) return;
+    setState(() {
+      _pickedStrip = strip;
+      _pickedSource = source;
+      _pickedTarget = store.target;
+    });
     store.selectStrip(strip.strip);
     final tile = store.allSrcTiles
         .where((t) => t.group == source.group && t.index == source.index)
@@ -211,51 +248,194 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     }
   }
 
-  Widget _selector(List<String> keys, String selected,
-      String Function(String) label, ValueChanged<String> pick) {
-    if (keys.isEmpty) return const SizedBox.shrink();
+  Widget _targetSelector() {
     final p = ConsolePalette.of(context);
-    return DropdownButtonFormField<String>(
-      initialValue: keys.contains(selected) ? selected : keys.first,
-      key: ValueKey('$selected:${keys.join(',')}'),
-      isExpanded: true,
-      decoration: InputDecoration(
-          isDense: true,
-          filled: true,
-          fillColor: p.well,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-          border: OutlineInputBorder(
-              borderRadius: U4.rBtn,
-              borderSide: BorderSide(color: p.tileBorder))),
-      items: [
-        for (final key in keys)
-          DropdownMenuItem(
-              value: key,
-              child: Text(label(key),
-                  maxLines: 1, overflow: TextOverflow.ellipsis))
-      ],
-      onChanged: (value) {
-        if (value == null) return;
-        setState(() {
-          _previewStrip = null;
-          _previewSource = null;
-        });
-        pick(value);
-      },
-    );
+    return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(children: [
+          for (final target in store.targets)
+            Container(
+                decoration: BoxDecoration(
+                    border: Border(
+                        bottom: BorderSide(
+                            color: target.key == store.target
+                                ? p.cyan
+                                : p.tileBorder,
+                            width: target.key == store.target ? 3 : 1))),
+                child: TextButton(
+                    style: TextButton.styleFrom(
+                        minimumSize: const Size(64, 48),
+                        foregroundColor:
+                            target.key == store.target ? p.cyan : p.text4,
+                        padding: const EdgeInsets.symmetric(horizontal: 16)),
+                    onPressed: () {
+                      if (target.key == store.target) return;
+                      setState(() {
+                        _previewStrip = null;
+                        _previewSource = null;
+                        _pickedStrip = null;
+                        _pickedSource = null;
+                        _dragStart = null;
+                        _dragPending = [];
+                      });
+                      store.selectTarget(target.key);
+                    },
+                    child: Text(target.label))),
+        ]));
   }
 
-  Widget _targetSelector() => _selector(
-      [for (final t in store.targets) t.key],
-      store.target,
-      (key) => store.targets.firstWhere((t) => t.key == key).label,
-      store.selectTarget);
+  Widget _mapButton() => TextButton.icon(
+      onPressed:
+          store.strips.isEmpty || store.allSrcTiles.isEmpty ? null : _quickMap,
+      icon: const Icon(Icons.auto_fix_high_outlined, size: 18),
+      label: const Text('Map'),
+      style: TextButton.styleFrom(minimumSize: const Size(72, 48)));
+
+  Future<void> _quickMap() async {
+    final mode = await showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (context) => SafeArea(
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+              ListTile(
+                  title: const Text('1:1'),
+                  subtitle: Text(
+                      '${store.groupLabel(store.groups.first)} · in order'),
+                  onTap: () => Navigator.pop(context, 'forward')),
+              ListTile(
+                  title: const Text('Reverse 1:1'),
+                  subtitle: Text(
+                      '${store.groupLabel(store.groups.first)} · reverse order'),
+                  onTap: () => Navigator.pop(context, 'reverse')),
+              if (_pickedTarget == store.target &&
+                  _pickedStrip != null &&
+                  _pickedSource != null)
+                ListTile(
+                    title: const Text('1:1 from selected point'),
+                    subtitle: Text(
+                        '${_pickedSource!.label} → ${_pickedStrip!.name}, then continue'),
+                    onTap: () => Navigator.pop(context, 'selected')),
+            ])));
+    if (!mounted || mode == null) return;
+    final strips = store.strips;
+    // Presets stay within a single bank instead of spilling into USB/network.
+    final sourceGroup =
+        mode == 'selected' ? _pickedSource?.group : store.groups.firstOrNull;
+    final sources =
+        store.allSrcTiles.where((s) => s.group == sourceGroup).toList();
+    final firstRow = mode == 'selected'
+        ? strips.indexWhere((s) => s.id == _pickedStrip?.id)
+        : 0;
+    final firstColumn = mode == 'selected'
+        ? sources.indexWhere((s) =>
+            s.group == _pickedSource?.group && s.index == _pickedSource?.index)
+        : 0;
+    if (firstRow < 0 || firstColumn < 0) return;
+    final count = (strips.length - firstRow) < (sources.length - firstColumn)
+        ? strips.length - firstRow
+        : sources.length - firstColumn;
+    await _reviewMappings([
+      for (var i = 0; i < count; i++)
+        (
+          strips[firstRow + i].strip,
+          sources[firstColumn + (mode == 'reverse' ? count - 1 - i : i)]
+        )
+    ]);
+  }
+
+  Future<void> _reviewMappings(List<(int, RouteSrcTile)> mappings) async {
+    final plan = store.planMappings(mappings);
+    if (plan == null || plan.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(plan == null
+              ? 'Cannot map this range: a destination is protected or unavailable.'
+              : 'These routes already match.')));
+      return;
+    }
+    _confirming = true;
+    final target = store.target;
+    await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        showDragHandle: true,
+        builder: (sheetContext) => FractionallySizedBox(
+            heightFactor: .7,
+            child: SafeArea(
+                child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: ListenableBuilder(
+                        listenable: store,
+                        builder: (context, _) {
+                          final valid = store.target == target &&
+                              store.planIsCurrent(plan);
+                          return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                    'Review ${plan.length} route${plan.length == 1 ? '' : 's'}',
+                                    style:
+                                        Theme.of(context).textTheme.titleLarge),
+                                const SizedBox(height: 12),
+                                Expanded(
+                                    child: ListView.builder(
+                                        itemCount: plan.length,
+                                        itemBuilder: (context, i) {
+                                          final change = plan[i];
+                                          return ListTile(
+                                              contentPadding: EdgeInsets.zero,
+                                              title:
+                                                  Text(change.destination.name),
+                                              subtitle: Text(
+                                                  '${change.destination.src} → ${change.source.label}'));
+                                        })),
+                                if (!valid)
+                                  const Text(
+                                      'Routing changed. Close and review a fresh mapping.'),
+                                FilledButton(
+                                    onPressed: valid
+                                        ? () {
+                                            final sent = store.applyPlan(plan);
+                                            Navigator.pop(sheetContext);
+                                            if (sent) {
+                                              ScaffoldMessenger.of(this.context)
+                                                  .showSnackBar(SnackBar(
+                                                      content: Text(
+                                                          '${plan.length} routing changes sent')));
+                                            }
+                                          }
+                                        : null,
+                                    child:
+                                        Text('Apply ${plan.length} changes')),
+                                TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(sheetContext),
+                                    child: const Text('Cancel')),
+                              ]);
+                        })))));
+    if (mounted) setState(() => _confirming = false);
+  }
+
+  void _finishDrag() {
+    final pending = List<(int, RouteSrcTile)>.of(_dragPending);
+    final strip = _previewStrip;
+    final source = _previewSource;
+    final current = _previewTarget == store.target;
+    setState(() {
+      _dragStart = null;
+      _dragPending = [];
+    });
+    if (!current || strip == null || source == null) return;
+    if (pending.length > 1) {
+      _reviewMappings(pending);
+    } else {
+      _choose(strip, source);
+    }
+  }
 
   Widget _mobileRoutes() {
     final p = ConsolePalette.of(context);
     return Column(children: [
-      Padding(padding: const EdgeInsets.all(12), child: _targetSelector()),
+      Row(children: [Expanded(child: _targetSelector()), _mapButton()]),
       Expanded(
           child: store.strips.isEmpty
               ? const Center(child: Text('Waiting for destinations…'))
@@ -292,6 +472,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   }
 
   Future<void> _pickSource(RouteStrip strip) async {
+    if (_pickingSource || _confirming) return;
+    _pickingSource = true;
     store.selectStrip(strip.strip);
     final target = store.target;
     final operation = store.operationKey;
@@ -508,6 +690,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                 });
           }))),
     );
+    _pickingSource = false;
     if (!mounted || source == null) return;
     if (store.target != target ||
         store.operationKey != operation ||
@@ -535,11 +718,15 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                   }
                   final strips = store.strips;
                   final sources = store.allSrcTiles;
-                  final preview = _previewTarget == store.target &&
-                      strips.any((s) => s.id == _previewStrip?.id) &&
+                  final activeStrip = _previewStrip ?? _pickedStrip;
+                  final activeSource = _previewSource ?? _pickedSource;
+                  final activeTarget =
+                      _previewStrip == null ? _pickedTarget : _previewTarget;
+                  final preview = activeTarget == store.target &&
+                      strips.any((s) => s.id == activeStrip?.id) &&
                       sources.any((s) =>
-                          s.group == _previewSource?.group &&
-                          s.index == _previewSource?.index);
+                          s.group == activeSource?.group &&
+                          s.index == activeSource?.index);
                   return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -547,27 +734,51 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                             padding: const EdgeInsets.all(10),
                             child: Row(children: [
                               Expanded(child: _targetSelector()),
-                              const SizedBox(width: 4),
-                              const Tooltip(
-                                  message:
-                                      'Hover to preview, click to route. On touch, hold and drag, then release to confirm.',
-                                  child: SizedBox(
-                                      width: 44,
-                                      height: 44,
-                                      child:
-                                          Icon(Icons.info_outline, size: 20))),
+                              _mapButton(),
                             ])),
                         Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
+                            height: 48,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
                             color: p.well,
-                            child: Text(
-                                preview
-                                    ? '${_previewStrip!.name}: ${_previewStrip!.src} → ${_previewSource!.label}'
-                                    : '${strips.length} destinations · ${sources.length} sources',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: p.cyan))),
+                            child: Row(children: [
+                              Expanded(
+                                  child: Text(
+                                      preview
+                                          ? _dragPending.length > 1
+                                              ? '${_dragPending.length} routes · release to review'
+                                              : '${activeStrip!.name}: ${activeStrip.src} → ${activeSource!.label}'
+                                          : '${strips.length} destinations · ${sources.length} sources',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                          color: preview ? p.cyan : p.text7))),
+                              if (store.selectedStrip != null) ...[
+                                if (store.tapControl case final control?)
+                                  TextButton(
+                                      onPressed: store.tapIsCurrent(control)
+                                          ? () => showDialog<void>(
+                                              context: context,
+                                              barrierDismissible: false,
+                                              builder: (_) =>
+                                                  DestinationControlEditor(
+                                                      changes: store,
+                                                      accessEpoch: () => store
+                                                          .controlAccessEpoch,
+                                                      isCurrent:
+                                                          store.tapIsCurrent,
+                                                      apply:
+                                                          store.setTapControl,
+                                                      control: control))
+                                          : null,
+                                      child: Text(
+                                          'Tap: ${control.valueLabel ?? 'Unavailable'}')),
+                                TextButton(
+                                    onPressed: store.canClear
+                                        ? () => _confirmClear()
+                                        : null,
+                                    child: const Text('Unpatch')),
+                              ],
+                            ])),
                         Expanded(
                             child: sources.isEmpty || strips.isEmpty
                                 ? const Center(
@@ -599,7 +810,15 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                     padding:
                                                         const EdgeInsets.all(4),
                                                     decoration: BoxDecoration(
-                                                        color: p.well,
+                                                        color: preview &&
+                                                                activeSource?.group ==
+                                                                    source
+                                                                        .group &&
+                                                                activeSource
+                                                                        ?.index ==
+                                                                    source.index
+                                                            ? p.selected
+                                                            : p.well,
                                                         border: Border.all(
                                                             color:
                                                                 p.tileBorder)),
@@ -609,33 +828,25 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                         maxLines: 3,
                                                         overflow: TextOverflow
                                                             .ellipsis,
-                                                        style: const TextStyle(
-                                                            fontSize: 11,
-                                                            fontWeight:
-                                                                FontWeight
-                                                                    .w600)))),
+                                                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)))),
                                         ]),
                                         Expanded(
                                             child: SingleChildScrollView(
                                                 child: GestureDetector(
-                                          onLongPressStart: (d) =>
-                                              _drag(d.globalPosition),
+                                          onLongPressStart: (d) {
+                                            _dragStart = null;
+                                            _dragPending = [];
+                                            _drag(d.globalPosition);
+                                          },
                                           onLongPressMoveUpdate: (d) =>
                                               _drag(d.globalPosition),
                                           onLongPressCancel: () => setState(() {
                                             _previewStrip = null;
                                             _previewSource = null;
+                                            _dragStart = null;
+                                            _dragPending = [];
                                           }),
-                                          onLongPressEnd: (_) {
-                                            final strip = _previewStrip;
-                                            final source = _previewSource;
-                                            if (strip != null &&
-                                                source != null &&
-                                                _previewTarget ==
-                                                    store.target) {
-                                              _choose(strip, source);
-                                            }
-                                          },
+                                          onLongPressEnd: (_) => _finishDrag(),
                                           child: Column(
                                               key: _matrixKey,
                                               children: [
@@ -645,6 +856,13 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                         width: _labelWidth,
                                                         height: _row,
                                                         child: TextButton(
+                                                            style: TextButton.styleFrom(
+                                                                backgroundColor: preview &&
+                                                                        activeStrip?.id ==
+                                                                            strip
+                                                                                .id
+                                                                    ? p.selected
+                                                                    : p.page),
                                                             onPressed: () => store
                                                                 .selectStrip(
                                                                     strip
@@ -685,19 +903,36 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                         final connected =
                                                             strip.src ==
                                                                 source.label;
-                                                        final highlighted =
-                                                            _previewSource
+                                                        final rowActive =
+                                                            preview &&
+                                                                activeStrip
+                                                                        ?.id ==
+                                                                    strip.id;
+                                                        final columnActive =
+                                                            preview &&
+                                                                activeSource
                                                                         ?.group ==
                                                                     source
                                                                         .group &&
-                                                                preview &&
-                                                                _previewStrip
-                                                                        ?.id ==
-                                                                    strip.id &&
-                                                                _previewSource
+                                                                activeSource
                                                                         ?.index ==
                                                                     source
                                                                         .index;
+                                                        final planned =
+                                                            _dragPending.any((m) =>
+                                                                m.$1 ==
+                                                                    strip
+                                                                        .strip &&
+                                                                m.$2.group ==
+                                                                    source
+                                                                        .group &&
+                                                                m.$2.index ==
+                                                                    source
+                                                                        .index);
+                                                        final highlighted =
+                                                            rowActive &&
+                                                                    columnActive ||
+                                                                planned;
                                                         return MouseRegion(
                                                             onEnter: (_) =>
                                                                 _preview(strip,
@@ -729,7 +964,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                                             child: Material(
                                                                                 color: connected
                                                                                     ? p.cyan
-                                                                                    : highlighted
+                                                                                    : highlighted || rowActive || columnActive
                                                                                         ? p.selected
                                                                                         : p.well,
                                                                                 shape: RoundedRectangleBorder(borderRadius: U4.rBtn, side: BorderSide(color: highlighted ? p.cyan : p.tileBorder, width: highlighted ? 2 : 1)),
@@ -756,42 +991,6 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                       ]),
                                     ),
                                   ))),
-                        if (store.selectedStrip != null)
-                          Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 4),
-                              child: Wrap(
-                                  spacing: 12,
-                                  crossAxisAlignment: WrapCrossAlignment.center,
-                                  children: [
-                                    Text(store.selectedName,
-                                        style: const TextStyle(
-                                            fontWeight: FontWeight.w600)),
-                                    if (store.tapControl case final control?)
-                                      TextButton(
-                                          onPressed: store.tapIsCurrent(control)
-                                              ? () => showDialog<void>(
-                                                  context: context,
-                                                  barrierDismissible: false,
-                                                  builder: (_) =>
-                                                      DestinationControlEditor(
-                                                          changes: store,
-                                                          accessEpoch: () => store
-                                                              .controlAccessEpoch,
-                                                          isCurrent: store
-                                                              .tapIsCurrent,
-                                                          apply: store
-                                                              .setTapControl,
-                                                          control: control))
-                                              : null,
-                                          child: Text(
-                                              'Tap: ${control.valueLabel ?? 'Unavailable'}')),
-                                    TextButton(
-                                        onPressed: store.canClear
-                                            ? () => _confirmClear()
-                                            : null,
-                                        child: const Text('Unpatch')),
-                                  ])),
                       ]);
                 })),
       );
