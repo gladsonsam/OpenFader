@@ -741,6 +741,7 @@ pub mod output_routing;
 mod solo;
 
 pub struct SimDriver {
+    selector_routes: RwLock<[[i32; 3]; 32]>,
     fx_controls: RwLock<Vec<fx_controls::FxSlot>>,
     native_library: RwLock<native_library::SimLibrary>,
     output_routes: RwLock<HashMap<String, (String, u64)>>,
@@ -778,6 +779,31 @@ pub struct SimDriver {
 }
 
 impl SimDriver {
+    pub fn selector_read(&self, strip: u16) -> anyhow::Result<[i32; 3]> {
+        self.selector_routes
+            .read()
+            .unwrap()
+            .get(strip as usize)
+            .copied()
+            .ok_or_else(|| anyhow::anyhow!("invalid input strip"))
+    }
+    pub fn selector_write(
+        &self,
+        strip: u16,
+        expected: [i32; 3],
+        desired: [i32; 3],
+        check: &(dyn Fn(&[StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        let mut routes = self.selector_routes.write().unwrap();
+        let route = routes
+            .get_mut(strip as usize)
+            .ok_or_else(|| anyhow::anyhow!("invalid input strip"))?;
+        anyhow::ensure!(*route == expected, "input route changed");
+        check(&[StripId(strip)])?;
+        *route = desired;
+        Ok(())
+    }
+
     pub fn new() -> Self {
         Self::with_preset(SimPreset::Generic)
     }
@@ -805,6 +831,7 @@ impl SimDriver {
             })
             .collect();
         Self {
+            selector_routes: RwLock::new(std::array::from_fn(|i| [i as i32, i as i32, 0])),
             output_routes: RwLock::new(HashMap::new()),
             fx_controls: RwLock::new(fx_controls::initial()),
             globals: RwLock::new(

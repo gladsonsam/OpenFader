@@ -125,6 +125,14 @@ impl XAirDriver {
         if changes == 0 {
             return Ok(());
         }
+        // A linked channel can change its peer as a side effect. Until the
+        // transaction journals and validates both members, refuse the write.
+        // Query the desk here rather than relying on the expiring link cache.
+        anyhow::ensure!(
+            !self.read_stereo_link(strip).await?,
+            "xair: linked input routing requires coupled transaction support"
+        );
+        check(&members)?;
         let (addr, value) = if expected.analog != desired.analog {
             (format!("/ch/{ch:02}/config/insrc"), desired.analog)
         } else if expected.usb != desired.usb {
@@ -143,6 +151,84 @@ impl XAirDriver {
         anyhow::ensure!(
             self.input_route(strip).await? == desired,
             "xair: input route sent but not confirmed; mixer may have changed"
+        );
+        Ok(())
+    }
+}
+
+impl XAirDriver {
+    /// Switch a linked pair's bank with a single physical write. Both complete
+    /// routes and the live link state are checked in the preamp write lane.
+    pub async fn set_linked_input_bank_guarded(
+        &self,
+        left: StripId,
+        expected: [InputRoute; 2],
+        bank: i32,
+        check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            left.0 < 16 && left.0.is_multiple_of(2),
+            "xair: invalid input pair"
+        );
+        anyhow::ensure!((0..=1).contains(&bank), "xair: invalid bank");
+        anyhow::ensure!(
+            expected[0].bank == expected[1].bank,
+            "xair: unequal pair banks"
+        );
+        let members = [left, StripId(left.0 + 1)];
+        let _lane = self.preamp_write.lock().await;
+        let generation = self
+            .connection_generation
+            .load(std::sync::atomic::Ordering::Acquire);
+        check(&members)?;
+        anyhow::ensure!(
+            self.read_stereo_link(left).await?,
+            "xair: input pair is not linked"
+        );
+        for (member, route) in members.iter().zip(expected) {
+            anyhow::ensure!(
+                self.input_route(*member).await? == route,
+                "xair: input pair route changed"
+            );
+        }
+        anyhow::ensure!(
+            self.read_stereo_link(left).await?,
+            "xair: input pair link changed"
+        );
+        anyhow::ensure!(
+            self.connection_generation
+                .load(std::sync::atomic::Ordering::Acquire)
+                == generation,
+            "xair: connection changed"
+        );
+        check(&members)?;
+        if expected[0].bank != bank {
+            let ch = self.check_channel(left.0)?;
+            let session = self.session().await?.as_ref().unwrap().clone();
+            session
+                .send(
+                    &format!("/ch/{ch:02}/preamp/rtnsw"),
+                    vec![OscType::Int(bank)],
+                )
+                .await?;
+        }
+        anyhow::ensure!(
+            self.read_stereo_link(left).await?,
+            "xair: input pair link changed"
+        );
+        for (member, mut route) in members.iter().zip(expected) {
+            route.bank = bank;
+            anyhow::ensure!(
+                self.input_route(*member).await? == route,
+                "xair: linked input bank not confirmed"
+            );
+        }
+        check(&members)?;
+        anyhow::ensure!(
+            self.connection_generation
+                .load(std::sync::atomic::Ordering::Acquire)
+                == generation,
+            "xair: connection changed"
         );
         Ok(())
     }

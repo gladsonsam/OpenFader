@@ -190,6 +190,9 @@ async fn stats_reports_counters() {
     let addr = serve().await;
     let (mut tx, mut rx) = connect(&addr).await;
     let _ = next_typed(&mut rx, "state").await;
+    // Initial parameter synchronization may coalesce telemetry before the
+    // client becomes ready. Start the steady-state check after its first meter.
+    let _ = next_typed(&mut rx, "meters").await;
 
     tx.send(Message::text(json!({"cmd":"stats"}).to_string()))
         .await
@@ -210,17 +213,27 @@ async fn stats_reports_counters() {
     assert_eq!(st.get("binary"), Some(&json!(false)), "default is JSON");
     assert_eq!(st.get("type"), Some(&json!("stats")));
 
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    let initial = st;
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(300);
+    loop {
+        match tokio::time::timeout_at(deadline, rx.next()).await {
+            Ok(Some(message)) => {
+                message.expect("live client read");
+            }
+            Ok(None) => panic!("live client closed"),
+            Err(_) => break,
+        }
+    }
     tx.send(Message::text(json!({"cmd":"stats"}).to_string()))
         .await
         .unwrap();
     let st = next_typed(&mut rx, "stats").await;
     assert!(
-        st.get("meters_sent").and_then(Value::as_u64).unwrap_or(0) > 0,
+        st["meters_sent"].as_u64().unwrap() > initial["meters_sent"].as_u64().unwrap(),
         "meters flow on a live client: {st}"
     );
-    assert_eq!(st.get("meters_dropped"), Some(&json!(0)));
-    assert_eq!(st.get("gr_dropped"), Some(&json!(0)));
+    assert_eq!(st["meters_dropped"], initial["meters_dropped"]);
+    assert_eq!(st["gr_dropped"], initial["gr_dropped"]);
     assert!(
         st.get("queue_depth").and_then(Value::as_u64).unwrap_or(999) < 32,
         "fast client queue stays drained: {st}"

@@ -34,6 +34,8 @@ mod presentations;
 pub mod rta;
 mod rta_settings;
 pub mod solo;
+pub mod soundcheck_profile;
+pub mod soundcheck_readback;
 mod sync_decode;
 
 pub mod addrs;

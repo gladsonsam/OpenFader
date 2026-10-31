@@ -89,6 +89,10 @@ fn address(id: &str) -> anyhow::Result<(u32, &str)> {
     Ok((start + u32::from(slot - 1), plane))
 }
 
+pub(crate) fn usb_send_address(slot: u32) -> anyhow::Result<u32> {
+    Ok(address(&format!("output/usb/{slot:02}"))?.0)
+}
+
 fn raw_source(plane: &str, source: &str) -> anyhow::Result<u32> {
     let (group, index) = source
         .split_once(' ')
