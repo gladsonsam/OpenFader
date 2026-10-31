@@ -116,6 +116,7 @@ class _MixerPageState extends State<MixerPage> {
                           widget.onNavigate(MixerDestination.channel);
                         }
                       } : null,
+                      onOpenAt: ch.master ? (anchor) => showMixerBuses(anchor, controller) : null,
                       onOpen: () {
                         controller.select(ch);
                         if (ch.master) {

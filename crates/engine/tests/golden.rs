@@ -197,6 +197,8 @@ fn examples() -> Vec<(String, Value)> {
                         key: "Lcl".to_string(),
                         label: "Local".to_string(),
                         count: 32,
+                        options: Vec::new(),
+                        mode: false,
                     }],
                     per_strip: true,
                     supported: true,

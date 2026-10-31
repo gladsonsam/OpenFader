@@ -26,6 +26,7 @@ class MixerStrip extends StatelessWidget {
   final MixerController controller;
   final VoidCallback onOpen;
   final VoidCallback? onOpenProcessing;
+  final ValueChanged<BuildContext>? onOpenAt;
   final int? identityChannel;
   final ValueChanged<MixerReadoutControl>? onControlFocus;
   final bool compact;
@@ -39,6 +40,7 @@ class MixerStrip extends StatelessWidget {
       this.bottomInset = 0,
       required this.onOpen,
       this.onOpenProcessing,
+      this.onOpenAt,
       this.identityChannel});
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
@@ -286,6 +288,7 @@ class MixerStrip extends StatelessWidget {
                               compact: compact,
                               onSelect: () => controller.select(ch),
                               onOpen: onOpen,
+                              onOpenAt: onOpenAt,
                               onRename: (identityChannel ?? chIndex) == null ||
                                       controller.store.captureNameTarget(identityChannel ?? chIndex) == null
                                   ? null
