@@ -176,7 +176,7 @@ class _IconBtnInline extends StatelessWidget {
   const _IconBtnInline({
     required this.tooltip,
     required this.onTap,
-    this.icon = Icons.delete_outline,
+    this.icon = Icons.close,
   });
 
   @override
