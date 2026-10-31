@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import '../palette.dart';
-import '../design.dart';
+import '../../palette.dart';
+import '../../design.dart';
 
 /// Shared console action: quiet hover/press feedback, keyboard focus, and a
 /// 44-point target. Colour indicates state or intent rather than screen type.

@@ -1,11 +1,9 @@
-import '../design.dart';
 // Connection screen: scan, probe, connect, and disconnect desks.
 // Screens stay constructor-injected so Area A can implement the store.
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
-import '../palette.dart';
-import '../widgets/console_button.dart';
+import '../ui/console.dart';
 
 // Automatic asks every registered hardware driver to identify the host.
 enum MixerType {

@@ -1,8 +1,7 @@
-import '../../palette.dart';
-import '../../widgets/anchored_menu.dart';
+import '../design.dart';
+import '../../ui/console.dart';
 import 'package:flutter/material.dart';
 import '../controller.dart';
-import '../design.dart';
 import 'layers.dart';
 import '../store.dart';
 import '../../settings/prefs.dart';
