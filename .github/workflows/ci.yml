@@ -53,3 +53,39 @@ jobs:
         working-directory: app
       - run: flutter analyze --no-pub
         working-directory: app
+
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: '0'
+      CARGO_PROFILE_DEV_DEBUG: '0'
+      CARGO_PROFILE_TEST_DEBUG: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Provision pinned ASIO SDK and libclang
+        shell: pwsh
+        run: ./scripts/provision-windows-ci.ps1
+      - run: cargo check --workspace --locked
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: flutter pub get --enforce-lockfile
+        working-directory: app
+      - run: ./scripts/build-windows.ps1
+        shell: pwsh
+      - name: Verify packaged host and bridge
+        shell: pwsh
+        run: |
+          $bundle = 'app/build/windows/x64/runner/Release'
+          foreach ($file in @('openfader-serve.exe', 'openfader-capture-helper.exe', 'openfader_flutter_bridge.dll')) {
+            if (-not (Test-Path (Join-Path $bundle $file))) { throw "Missing $file in $bundle" }
+          }

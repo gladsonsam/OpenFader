@@ -1,0 +1,5 @@
+# Windows and Android release packaging
+
+Before merging, run the **Build and release apps** workflow with `workflow_dispatch`, select the working branch and `windows-android`, and inspect both build results. Disable `upload-artifacts` for a smoke run when the Actions artifact quota is full. The Android job requires the existing `OPENFADER_ANDROID_DEV_KEYSTORE_BASE64` Actions secret. It restores and verifies the persistent development certificate; the APK is not Play Store signed.
+
+A push of a `v` tag matching `VERSION` creates a draft release and builds both platforms. Each build uploads directly to that draft, avoiding the Actions artifact storage quota. Only after both jobs succeed, the publish job checks the tag target, asset commit metadata and checksums before publishing the release. Failed builds leave an unpublished draft for inspection. Do not move release tags. The Windows setup installs per user and is unsigned. Platform-specific SHA256SUMS and build metadata accompany the installer, portable ZIP, universal APK and Android app bundle.

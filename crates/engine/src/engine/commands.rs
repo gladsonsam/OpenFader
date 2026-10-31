@@ -15,6 +15,58 @@ mod offline;
 mod output_routing;
 mod processing;
 
+fn is_routing_mutation(cmd: &Cmd) -> bool {
+    match cmd {
+        Cmd::RoutePatch { .. }
+        | Cmd::PatchSet { .. }
+        | Cmd::PatchClear { .. }
+        | Cmd::RecallScene { .. }
+        | Cmd::SceneRecall { .. } => true,
+        Cmd::Param { field, .. } | Cmd::ParamGuarded { field, .. } => {
+            matches!(
+                field.as_str(),
+                "source"
+                    | "source_a"
+                    | "source_b"
+                    | "source_select"
+                    | "inputsource"
+                    | "usbreturn"
+                    | "bank"
+            )
+        }
+        Cmd::InputProcessor {
+            processor,
+            field,
+            value,
+            ..
+        } => {
+            value.is_some()
+                && (matches!(
+                    processor.as_str(),
+                    "source"
+                        | "source_a"
+                        | "source_b"
+                        | "source_select"
+                        | "inputsource"
+                        | "usbreturn"
+                        | "bank"
+                ) || field.as_deref().is_some_and(|f| {
+                    matches!(
+                        f,
+                        "source"
+                            | "source_a"
+                            | "source_b"
+                            | "source_select"
+                            | "inputsource"
+                            | "usbreturn"
+                            | "bank"
+                    )
+                }))
+        }
+        _ => false,
+    }
+}
+
 impl Engine {
     /// Adapter entry: apply one raw JSON command line from `writer` without
     /// a [`ClientHandle`] (the serve inbound task owns none, the outbound
@@ -129,6 +181,12 @@ impl Engine {
         writer: &str,
         out: &mut Vec<Event>,
     ) -> anyhow::Result<Option<Event>> {
+        // This outer boundary owns the guard; scene and routing helpers never lock it.
+        let _routing_guard = if is_routing_mutation(&cmd) {
+            Some(self.routing_mutation_guard().await)
+        } else {
+            None
+        };
         // Discovery and recent-host checks use independent, read-only sockets.
         // They can run for seconds and must not hold up a newly connected
         // mixer's initial control reads. Mutating commands still preempt polls.

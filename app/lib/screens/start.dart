@@ -23,6 +23,7 @@ class ConnectionsStartScreen extends StatefulWidget {
 
   /// Work offline chosen: the owner connects the demo desk, then enters.
   final VoidCallback onWorkOffline;
+  final VoidCallback? onConnectComputer;
 
   const ConnectionsStartScreen(
       {super.key,
@@ -30,7 +31,8 @@ class ConnectionsStartScreen extends StatefulWidget {
       required this.onSettings,
       required this.onHelp,
       required this.onEnterMixer,
-      required this.onWorkOffline});
+      required this.onWorkOffline,
+      this.onConnectComputer});
 
   @override
   State<ConnectionsStartScreen> createState() => _ConnectionsStartState();
@@ -291,9 +293,18 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
                       ])),
                 ))),
                 SizedBox(
-                    height: wide ? 112 : 100,
+                    height: widget.onConnectComputer == null
+                        ? (wide ? 112 : 100)
+                        : 150,
                     child: Center(
-                        child: _WorkOffline(onTap: widget.onWorkOffline))),
+                        child:
+                            Column(mainAxisSize: MainAxisSize.min, children: [
+                      if (widget.onConnectComputer != null)
+                        TextButton(
+                            onPressed: widget.onConnectComputer,
+                            child: const Text('Connect to computer')),
+                      _WorkOffline(onTap: widget.onWorkOffline),
+                    ]))),
               ]),
               Positioned(
                 top: wide ? 32 : 18,
