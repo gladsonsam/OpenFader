@@ -1,3 +1,4 @@
+import '../design.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -24,7 +25,8 @@ class OutputLevelMeter extends StatelessWidget {
         builder: (context, value, _) {
           final palette = ConsolePalette.of(context);
           return Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppDesign.spaceMd, vertical: AppDesign.spaceSm),
             child: Tooltip(
               message: value.inferred
                   ? 'Read-only measured level. Output mapping awaits physical correlation; tap position is unspecified.'

@@ -1,3 +1,4 @@
+import '../../design.dart';
 import '../../palette.dart';
 import '../../core/selected_control_readout.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import '../controller.dart';
 import '../design.dart';
 import '../../u4law.dart';
 import '../../widgets/number_entry.dart';
+import '../../widgets/console_controls.dart';
 
 class MixerToolbar extends StatelessWidget {
   final MixerController controller;
@@ -34,7 +36,7 @@ class MixerToolbar extends StatelessWidget {
           final channel = controller.readoutChannel;
           return Container(
               padding: EdgeInsets.symmetric(horizontal: compact ? 6 : 10),
-              height: 52,
+              height: AppDesign.readoutHeight,
               decoration: BoxDecoration(
                   color: ConsolePalette.of(context).panel,
                   borderRadius: MixerDesign.radius,
@@ -46,7 +48,11 @@ class MixerToolbar extends StatelessWidget {
                               child: Text(pageTitle!,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: mixerType(context, compact ? 16 : 18,
+                                  style: mixerType(
+                                      context,
+                                      compact
+                                          ? AppDesign.compactParameterValue
+                                          : AppDesign.parameterValue,
                                       weight: FontWeight.w600))),
                           if (!compact)
                             Expanded(
@@ -150,7 +156,8 @@ class MixerToolbar extends StatelessWidget {
                         ])));
         });
     return Container(
-        height: compact ? 64 : 68,
+        height:
+            compact ? AppDesign.toolbarCompactHeight : AppDesign.toolbarHeight,
         padding:
             EdgeInsets.symmetric(horizontal: compact ? 6 : 10, vertical: 6),
         decoration: BoxDecoration(
@@ -170,7 +177,7 @@ class MixerToolbar extends StatelessWidget {
                       // Keep the readout aligned with the two navigation controls.
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: readout)),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppDesign.spaceSm),
           MixerToolButton(
               label: 'Effects',
               active: pageTitle == 'FX',
@@ -179,17 +186,18 @@ class MixerToolbar extends StatelessWidget {
                   style: mixerType(context, 17,
                       color: ConsolePalette.of(context).mutedText,
                       weight: FontWeight.w600))),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppDesign.spaceSm),
           MixerToolButton(
               label: 'Settings',
               active: pageTitle == 'Settings',
               onPressed: () => onNavigate(MixerDestination.settings),
               child: Icon(Icons.settings_outlined,
-                  size: 22, color: ConsolePalette.of(context).mutedText)),
-          const SizedBox(width: 8),
+                  size: AppDesign.iconSize,
+                  color: ConsolePalette.of(context).mutedText)),
+          const SizedBox(width: AppDesign.spaceSm),
           SizedBox(
               width: compact ? 48 : null,
-              height: 44,
+              height: AppDesign.touchTarget,
               child: OutlinedButton(
                   onPressed: pageTitle == 'Tools' ? onHome : onOpenTools,
                   style: compact
@@ -313,7 +321,11 @@ class _SelectedLevel extends StatelessWidget {
                 fit: BoxFit.scaleDown,
                 child: Text(text,
                     maxLines: 1,
-                    style: mixerType(context, compact ? 16 : 18,
+                    style: mixerType(
+                        context,
+                        compact
+                            ? AppDesign.compactParameterValue
+                            : AppDesign.parameterValue,
                         color: ConsolePalette.of(context).lime,
                         weight: FontWeight.w700)))));
   }
@@ -376,29 +388,12 @@ class MixerToolButton extends StatelessWidget {
       required this.onPressed,
       this.active = false});
   @override
-  Widget build(BuildContext context) => Semantics(
-      button: true,
+  Widget build(BuildContext context) => ConsoleIconButton(
       label: label,
-      child: Tooltip(
-          message: label,
-          child: SizedBox(
-              width: 44,
-              height: 44,
-              child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: onPressed,
-                  child: Container(
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                          color: active
-                              ? ConsolePalette.of(context).selected
-                              : ConsolePalette.of(context).chip,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color: active
-                                  ? ConsolePalette.of(context).cyan
-                                  : ConsolePalette.of(context).line)),
-                      child: child)))));
+      onPressed: onPressed,
+      selected: active,
+      filled: true,
+      child: child);
 }
 
 /// Persistent workspace home: the logo always returns to Mixer.
@@ -479,7 +474,11 @@ class SelectedControlReadout extends StatelessWidget {
                       FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(data.value,
-                              style: mixerType(context, compact ? 16 : 18,
+                              style: mixerType(
+                                  context,
+                                  compact
+                                      ? AppDesign.compactParameterValue
+                                      : AppDesign.parameterValue,
                                   color: ConsolePalette.of(context).lime,
                                   weight: FontWeight.w700))),
                       if (data.unconfirmed)

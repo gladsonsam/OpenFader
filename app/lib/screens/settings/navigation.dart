@@ -11,7 +11,7 @@ class _Sidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 260,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppDesign.spaceMd),
       decoration: BoxDecoration(
         color: ConsolePalette.of(context).headerBg,
         border: Border(
@@ -54,13 +54,13 @@ class _Sidebar extends StatelessWidget {
                               ? ConsolePalette.of(context).cyan
                               : ConsolePalette.of(context).text7,
                         ),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: AppDesign.spaceLg),
                         Expanded(
                           child: Text(
                             s.label,
                             style: TextStyle(
                               fontFamily: U4.font,
-                              fontSize: 16,
+                              fontSize: AppDesign.controlLabel,
                               fontWeight: FontWeight.w500,
                               color: s == active
                                   ? ConsolePalette.of(context).cyan
@@ -100,7 +100,7 @@ class _OverviewBrand extends StatelessWidget {
                   'OpenFader',
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: 16,
+                    fontSize: AppDesign.controlLabel,
                     fontWeight: FontWeight.w600,
                     color: ConsolePalette.of(context).text1,
                   ),
@@ -146,13 +146,13 @@ class _OverviewCard extends StatelessWidget {
                   size: 24,
                   color: ConsolePalette.of(context).text7,
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: AppDesign.spaceLg),
                 Expanded(
                   child: Text(
                     section.label,
                     style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: 17,
+                      fontSize: AppDesign.rowLabel,
                       fontWeight: FontWeight.w500,
                       color: ConsolePalette.of(context).text1,
                     ),

@@ -11,31 +11,11 @@ class _IconBtn extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Semantics(
-        button: true,
-        label: tooltip,
-        onTap: () => _runSettingsAction(context, onTap),
-        child: Tooltip(
-          message: tooltip,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => _runSettingsAction(context, onTap),
-              child: Container(
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: ConsolePalette.of(context).chip,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: ConsolePalette.of(context).line),
-                ),
-                child: child,
-              ),
-            ),
-          ),
-        ),
-      );
+  Widget build(BuildContext context) => ConsoleIconButton(
+      label: tooltip,
+      filled: true,
+      onPressed: () => _runSettingsAction(context, onTap),
+      child: child);
 }
 
 class _Toggle extends StatelessWidget {
@@ -49,60 +29,11 @@ class _Toggle extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
-    final w = wide ? 60.0 : 50.0;
-    final h = wide ? 36.0 : 30.0;
-    final knob = wide ? 28.0 : 22.0;
-    return Semantics(
-      button: true,
-      label: '$label ${value ? 'on' : 'off'}',
-      onTap: () => _runSettingsAction(context, () => onChanged(!value)),
-      child: GestureDetector(
-        onTap: () => _runSettingsAction(context, () => onChanged(!value)),
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: w,
-          height: 44,
-          child: Center(
-            child: Container(
-              width: w,
-              height: h,
-              decoration: BoxDecoration(
-                color: value
-                    ? ConsolePalette.of(context).cyan
-                    : ConsolePalette.of(context).control,
-                borderRadius: BorderRadius.circular(h / 2),
-                border: Border.all(
-                  color: value
-                      ? ConsolePalette.of(context).cyan
-                      : ConsolePalette.of(context).lineCtl,
-                ),
-              ),
-              child: Stack(
-                children: [
-                  Positioned(
-                    left: value ? w - knob - 4 : 4,
-                    top: (h - knob) / 2,
-                    child: Container(
-                      width: knob,
-                      height: knob,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: value
-                            ? ConsolePalette.of(context).onAccent
-                            : ConsolePalette.of(context).text,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => ConsoleToggle(
+      label: label,
+      value: value,
+      onChanged: (value) =>
+          _runSettingsAction(context, () => onChanged(value)));
 }
 
 class _Select extends StatelessWidget {
@@ -118,55 +49,16 @@ class _Select extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
-    return PopupMenuButton<String>(
-      tooltip: label,
-      initialValue: value,
-      popUpAnimationStyle: AnimationStyle.noAnimation,
-      position: PopupMenuPosition.under,
-      color: ConsolePalette.of(context).chip,
-      constraints:
-          const BoxConstraints(minWidth: 180, maxWidth: 320, maxHeight: 400),
-      onSelected: (v) => _runSettingsAction(context, () => onChanged(v)),
-      itemBuilder: (context) => [
-        for (final option in options)
-          CheckedPopupMenuItem<String>(
-            height: 48,
-            value: option.$1,
-            checked: option.$1 == value,
-            child: Text(option.$2, style: const TextStyle(fontSize: 16)),
-          ),
-      ],
-      child: Semantics(
-          button: true,
-          child: Container(
-            constraints:
-                BoxConstraints(minHeight: 44, maxWidth: wide ? 260 : 174),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: ConsolePalette.of(context).control,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: ConsolePalette.of(context).lineCtl),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Flexible(
-                  child: Text(
-                      options.where((o) => o.$1 == value).firstOrNull?.$2 ??
-                          value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontFamily: U4.font,
-                          fontSize: 16,
-                          color: ConsolePalette.of(context).text1))),
-              const SizedBox(width: 12),
-              _SettingsIcon(Icons.expand_more,
-                  size: 18, color: ConsolePalette.of(context).text7),
-            ]),
-          )),
-    );
-  }
+  Widget build(BuildContext context) => ConsoleSelect<String>(
+      label: label,
+      value: value,
+      options: options,
+      maxWidth:
+          MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint
+              ? AppDesign.selectMaxWidth
+              : AppDesign.compactSelectMaxWidth,
+      onChanged: (value) =>
+          _runSettingsAction(context, () => onChanged(value)));
 }
 
 class _IconBtnInline extends StatelessWidget {
@@ -180,29 +72,14 @@ class _IconBtnInline extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) => Semantics(
-        button: true,
-        label: tooltip,
-        onTap: () => _runSettingsAction(context, onTap),
-        child: Tooltip(
-          message: tooltip,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => _runSettingsAction(context, onTap),
-              child: Center(
-                child: Icon(
-                  icon,
-                  size: icon == Icons.close ? 16 : 22,
-                  color: ConsolePalette.of(context).text7,
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
+  Widget build(BuildContext context) => ConsoleIconButton(
+      label: tooltip,
+      onPressed: () => _runSettingsAction(context, onTap),
+      child: Icon(icon,
+          size: icon == Icons.close
+              ? AppDesign.removeIconSize
+              : AppDesign.iconSize,
+          color: ConsolePalette.of(context).text7));
 }
 
 class _PrimaryButton extends StatelessWidget {
@@ -212,52 +89,12 @@ class _PrimaryButton extends StatelessWidget {
   const _PrimaryButton({required this.label, required this.onTap, this.icon});
 
   @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
-    return Semantics(
-      button: true,
+  Widget build(BuildContext context) => ConsoleButton(
       label: label,
-      onTap: () => _runSettingsAction(context, onTap),
-      child: GestureDetector(
-        onTap: () => _runSettingsAction(context, onTap),
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          constraints: BoxConstraints(minHeight: 48),
-          padding: EdgeInsets.symmetric(
-            horizontal: wide ? 22 : 14,
-            vertical: 10,
-          ),
-          decoration: BoxDecoration(
-            color: ConsolePalette.of(context).cyan,
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                _SettingsIcon(
-                  icon!,
-                  size: wide ? 22 : 18,
-                  color: ConsolePalette.of(context).onAccent,
-                ),
-                SizedBox(width: wide ? 12 : 8),
-              ],
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: U4.font,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w600,
-                  color: ConsolePalette.of(context).onAccent,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+      icon: icon,
+      primary: true,
+      fontSize: AppDesign.rowLabel,
+      onPressed: () => _runSettingsAction(context, onTap));
 }
 
 class _PlainButton extends StatelessWidget {
@@ -267,53 +104,11 @@ class _PlainButton extends StatelessWidget {
   const _PlainButton({required this.label, required this.onTap, this.icon});
 
   @override
-  Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
-    return Semantics(
-      button: true,
+  Widget build(BuildContext context) => ConsoleButton(
       label: label,
-      onTap: () => _runSettingsAction(context, onTap),
-      child: GestureDetector(
-        onTap: () => _runSettingsAction(context, onTap),
-        behavior: HitTestBehavior.opaque,
-        child: Container(
-          constraints: BoxConstraints(minHeight: 48),
-          padding: EdgeInsets.symmetric(
-            horizontal: wide ? 22 : 14,
-            vertical: 10,
-          ),
-          decoration: BoxDecoration(
-            color: ConsolePalette.of(context).control,
-            borderRadius: BorderRadius.circular(9),
-            border: Border.all(color: ConsolePalette.of(context).lineCtl),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                _SettingsIcon(
-                  icon!,
-                  size: wide ? 22 : 18,
-                  color: ConsolePalette.of(context).text1,
-                ),
-                SizedBox(width: wide ? 12 : 8),
-              ],
-              Text(
-                label,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontFamily: U4.font,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w500,
-                  color: ConsolePalette.of(context).text1,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+      icon: icon,
+      fontSize: AppDesign.rowLabel,
+      onPressed: () => _runSettingsAction(context, onTap));
 }
 
 // Awaitable wrapper so gesture and semantics taps can call async actions.
