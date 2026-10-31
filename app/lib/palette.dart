@@ -13,6 +13,25 @@ class ConsolePalette extends ThemeExtension<ConsolePalette> {
   bool get isLight => brightness == Brightness.light;
   Color pair(int dark, int light) => Color(isLight ? light : dark);
 
+  Color get arrangementLane => const Color(0xff171717);
+  Color get arrangementLaneAlt => const Color(0xff191919);
+  Color get arrangementTrack => const Color(0xff242424);
+  Color get arrangementTrackButton => const Color(0xff303030);
+  Color get arrangementTrackButtonBorder => const Color(0xff404040);
+  Color get arrangementGrid => const Color(0xff1f1f1f);
+  Color get arrangementGold => const Color(0xffe0b75f);
+  Color get arrangementBlue => const Color(0xff7fb7c9);
+  Color get arrangementOrange => const Color(0xffe08f5f);
+  Color get arrangementPurple => const Color(0xffc79ae0);
+  Color get arrangementGrey => const Color(0xffb5b5b5);
+  Color get recorderBar => const Color(0xff202020);
+  Color get recorderSurface => const Color(0xff181818);
+  Color get recorderControl => const Color(0xff2a2a2a);
+  Color get recorderBorder => const Color(0xff3a3a3a);
+  Color get recorderClock => const Color(0xff0b0b0b);
+  Color get recorderOlive => const Color(0xff262b14);
+  Color get recorderOliveBorder => const Color(0xff5d6b1f);
+  Color get recorderMuted => const Color(0xffb5b5b5);
   Color get background => pair(0xff1c1c1c, 0xffd7dce1);
   Color get selected => pair(0xff232323, 0xffcbd2d8);
   Color get well => pair(0xff080808, 0xffe9edf0);

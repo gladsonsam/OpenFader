@@ -32,6 +32,7 @@ pub mod engine;
 pub mod local_library;
 pub mod protocol;
 
+pub use drivers::SoundcheckProfile;
 pub use engine::{ClientHandle, ClientMailbox, Engine, EngineConfig, RecallScope};
 pub use local_library::LibraryStatusView;
 pub use protocol::{parse_cmd, Cmd, Event, LibraryAction, SharedEvent};
@@ -45,3 +46,6 @@ pub use engine::SPECTRUM_CHANNELS;
 
 /// Legacy simulator GR fanout budget (hardware uses its whole topology).
 pub use engine::GR_CHANNELS;
+
+/// XR18 soundcheck routing assessment supplied by its protocol driver.
+pub use openfader_proto_xair::soundcheck_profile as xair_soundcheck_profile;

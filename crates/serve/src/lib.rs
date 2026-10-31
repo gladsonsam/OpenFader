@@ -22,6 +22,19 @@
 //! - Binary meter encoding for opted-in clients
 //!   (`{"cmd":"hello","binary_meters":true}` → [`Event::to_binary`]).
 
+#[cfg(unix)]
+pub mod capture_client;
+pub mod coordinator_backend;
+pub mod engine_adapter;
+pub mod playback_client;
+mod recorder;
+pub use recorder::soundcheck_backend;
+pub mod remote_access;
+pub mod remote_listener;
+pub mod routing_transaction;
+pub mod soundcheck;
+pub mod soundcheck_transport;
+
 use std::{
     collections::{HashMap, VecDeque},
     path::{Path as StdPath, PathBuf},
@@ -95,9 +108,25 @@ async fn ws_handler(
     ws: WebSocketUpgrade,
     Query(params): Query<std::collections::HashMap<String, String>>,
     AxumState(app): AxumState<AppState>,
-) -> impl IntoResponse {
+    headers: axum::http::HeaderMap,
+) -> axum::response::Response {
+    let active = if app.remote_audience {
+        bearer(&headers)
+            .and_then(|t| app.remote.access.authenticate_connection(t))
+            .map(|(_, rx)| rx)
+    } else {
+        None
+    };
+    if (app.remote_audience && active.is_none())
+        || (!app.remote_audience
+            && app.recorder_token.is_some()
+            && !recorder_authorized(&app, &headers))
+    {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
     let name = params.get("name").cloned();
-    ws.on_upgrade(move |socket| handle_socket(socket, app.engine, name, app.sim_only))
+    ws.on_upgrade(move |socket| handle_socket(socket, app.engine, name, app.sim_only, active))
+        .into_response()
 }
 
 /// Which meter stream a queued outbound frame belongs to (for drop/send
@@ -376,6 +405,7 @@ async fn handle_socket(
     engine: Arc<openfader_engine::Engine>,
     name: Option<String>,
     sim_only: bool,
+    active: Option<tokio::sync::watch::Receiver<bool>>,
 ) {
     let client = engine.attach(name).await;
     let id = client.id.clone();
@@ -387,7 +417,8 @@ async fn handle_socket(
     // Inbound: socket -> engine. Owns no handle: commands go through
     // `Engine::handle_json`; the binary/taps preferences are re-read from
     // the engine after every command (single source of truth).
-    let inbound = {
+    let mut inbound = {
+        let active = active.clone();
         let engine = Arc::clone(&engine);
         let outbox = Arc::clone(&outbox);
         let notify = Arc::clone(&notify);
@@ -397,6 +428,9 @@ async fn handle_socket(
             while let Some(msg) = rx.next().await {
                 match msg {
                     Ok(Message::Text(text)) => {
+                        if active.as_ref().is_some_and(|rx| !*rx.borrow()) {
+                            break;
+                        }
                         if sim_only {
                             use openfader_engine::Cmd;
                             let operation = match openfader_engine::parse_cmd(&text) {
@@ -469,7 +503,7 @@ async fn handle_socket(
     // Pump: engine mailbox -> outbox. Never blocks on the socket, so the
     // engine mailbox stays drained even when the peer stalls; meter-class
     // events collapse into slots of 1 (drop counted), control stays FIFO.
-    let pump = {
+    let mut pump = {
         let outbox = Arc::clone(&outbox);
         let notify = Arc::clone(&notify);
         tokio::spawn(async move {
@@ -487,7 +521,7 @@ async fn handle_socket(
     // Sender: outbox -> socket. The only task that blocks on the wire;
     // backpressure here never grows the engine mailbox (the pump keeps
     // draining it into bounded slots).
-    let sender = {
+    let mut sender = {
         let engine = Arc::clone(&engine);
         let outbox = Arc::clone(&outbox);
         let notify = Arc::clone(&notify);
@@ -547,11 +581,301 @@ async fn handle_socket(
         })
     };
 
-    let _ = tokio::join!(inbound, pump, sender);
+    if let Some(mut active) = active {
+        tokio::select! {
+            _ = async { if *active.borrow() { let _ = active.changed().await; } } => {},
+            _ = &mut inbound => {},
+            _ = &mut pump => {},
+            _ = &mut sender => {},
+        }
+        inbound.abort();
+        pump.abort();
+        sender.abort();
+        engine.detach_client(&id).await;
+    } else {
+        let _ = tokio::join!(inbound, pump, sender);
+    }
 }
 
 async fn health(AxumState(app): AxumState<AppState>) -> impl IntoResponse {
     Json(serde_json::json!({"ok": true, "driver": app.engine.active_driver()}))
+}
+
+// Recorder access is enabled only for an explicitly provisioned loopback host.
+fn bearer(headers: &axum::http::HeaderMap) -> Option<&str> {
+    headers
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+}
+fn recorder_authorized(app: &AppState, headers: &axum::http::HeaderMap) -> bool {
+    if app.remote_audience {
+        return bearer(headers)
+            .and_then(|t| app.remote.access.authenticate(t))
+            .is_some();
+    }
+    let Some(expected) = app.recorder_token.as_deref() else {
+        return false;
+    };
+    let Some(actual) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+    else {
+        return false;
+    };
+    let a = actual.as_bytes();
+    let b = expected.as_bytes();
+    if a.len() != b.len() {
+        return false;
+    }
+    a.iter().zip(b).fold(0u8, |diff, (x, y)| diff | (x ^ y)) == 0
+}
+async fn recorder_request(
+    app: AppState,
+    headers: axum::http::HeaderMap,
+    request: serde_json::Value,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if app.recorder_token.is_none() || app.recorder.is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"recorder bootstrap unavailable"})),
+        );
+    }
+    if !recorder_authorized(&app, &headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error":"unauthorized"})),
+        );
+    }
+    if app.remote_audience
+        && request["op"] == "command"
+        && request["command"]["action"] == "start_recording"
+        && !app
+            .remote
+            .microphone_authorized
+            .load(std::sync::atomic::Ordering::SeqCst)
+    {
+        return (
+            StatusCode::OK,
+            Json(
+                serde_json::json!({"ok":false, "request_id":request["command"]["request_id"], "error":"Allow microphone access in OpenFader on the computer"}),
+            ),
+        );
+    }
+    let value = app.recorder.as_ref().unwrap().request(request).await;
+    (StatusCode::OK, Json(value))
+}
+async fn desktop_host(
+    AxumState(app): AxumState<AppState>,
+    headers: axum::http::HeaderMap,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if !recorder_authorized(&app, &headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error":"unauthorized"})),
+        );
+    }
+    match &app.desktop_instance {
+        Some(id) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"version":1,"instance_id":id.as_str()})),
+        ),
+        None => (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"error":"desktop host unavailable"})),
+        ),
+    }
+}
+async fn desktop_shutdown(
+    AxumState(app): AxumState<AppState>,
+    headers: axum::http::HeaderMap,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if !recorder_authorized(&app, &headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"ok":false,"error":"unauthorized"})),
+        );
+    }
+    if app.desktop_instance.is_none() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({"ok":false,"error":"desktop host unavailable"})),
+        );
+    }
+    let Some(recorder) = &app.recorder else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"ok":false,"error":"recorder unavailable"})),
+        );
+    };
+    let result = recorder.request(serde_json::json!({"op":"shutdown"})).await;
+    if result["ok"] == true {
+        app.shutdown.notify_one();
+        (StatusCode::OK, Json(result))
+    } else {
+        (StatusCode::CONFLICT, Json(result))
+    }
+}
+async fn recorder_state(
+    AxumState(app): AxumState<AppState>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    recorder_request(app, headers, serde_json::json!({"op":"state"})).await
+}
+async fn recorder_devices(
+    AxumState(app): AxumState<AppState>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    recorder_request(app, headers, serde_json::json!({"op":"devices"})).await
+}
+async fn recorder_refresh_devices(
+    AxumState(app): AxumState<AppState>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    recorder_request(app, headers, serde_json::json!({"op":"refresh_devices"})).await
+}
+async fn recorder_waveform(
+    AxumState(app): AxumState<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if !recorder_authorized(&app, &headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error":"unauthorized"})),
+        );
+    }
+    let Some(root) = recorder::data_dir() else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"recorder unavailable"})),
+        );
+    };
+    let (Some(id), Some(start), Some(end), Some(buckets)) = (
+        request["take_id"].as_str(),
+        request["start_frame"].as_u64(),
+        request["end_frame"].as_u64(),
+        request["buckets"].as_u64(),
+    ) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"invalid waveform request"})),
+        );
+    };
+    let Ok(buckets) = usize::try_from(buckets) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"invalid waveform resolution"})),
+        );
+    };
+    static LIMIT: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let Ok(permit) = LIMIT
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(2)))
+        .clone()
+        .try_acquire_owned()
+    else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"waveform workers busy"})),
+        );
+    };
+    let id = id.to_owned();
+    let worker_id = id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        openfader_audio::waveform_peaks(&root, &worker_id, start, end, buckets)
+    })
+    .await;
+    match result {
+        Ok(Ok(channels)) => (
+            StatusCode::OK,
+            Json(
+                serde_json::json!({"take_id":id,"start_frame":start,"end_frame":end,"buckets":buckets,"channels":channels}),
+            ),
+        ),
+        Ok(Err(e)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":e.to_string()})),
+        ),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error":"waveform worker failed"})),
+        ),
+    }
+}
+async fn recorder_inspect(
+    AxumState(app): AxumState<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(request): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if !recorder_authorized(&app, &headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error":"unauthorized"})),
+        );
+    }
+    let (Some(root), Some(id)) = (recorder::data_dir(), request["take_id"].as_str()) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":"invalid inspection request"})),
+        );
+    };
+    static LIMIT: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let Ok(permit) = LIMIT
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(2)))
+        .clone()
+        .try_acquire_owned()
+    else {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(serde_json::json!({"error":"inspection workers busy"})),
+        );
+    };
+    let id = id.to_owned();
+    match tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        openfader_audio::inspect_take(&root, &id)
+    })
+    .await
+    {
+        Ok(Ok(value)) => (StatusCode::OK, Json(value)),
+        Ok(Err(e)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error":e.to_string()})),
+        ),
+        Err(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error":"inspection worker failed"})),
+        ),
+    }
+}
+async fn recorder_takes(
+    AxumState(app): AxumState<AppState>,
+    headers: axum::http::HeaderMap,
+) -> impl IntoResponse {
+    recorder_request(app, headers, serde_json::json!({"op":"takes"})).await
+}
+async fn recorder_command(
+    AxumState(app): AxumState<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(command): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if command["action"] == "probe_output" && app.remote_audience {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({"ok":false,"error":"local administration required"})),
+        );
+    }
+    recorder_request(
+        app,
+        headers,
+        serde_json::json!({"op":"command", "command":command}),
+    )
+    .await
 }
 
 fn content_type(path: &str) -> &'static str {
@@ -634,6 +958,188 @@ struct AppState {
     sim_only: bool,
     engine: Arc<openfader_engine::Engine>,
     static_dir: Option<Arc<PathBuf>>,
+    recorder: Option<recorder::Recorder>,
+    recorder_token: Option<Arc<String>>,
+    desktop_instance: Option<Arc<String>>,
+    shutdown: Arc<tokio::sync::Notify>,
+    remote: Arc<RemoteHost>,
+    remote_audience: bool,
+}
+
+// Identity and client credentials live only for this host process. Restart requires re-pairing.
+#[derive(Default)]
+struct MemoryIdentity(std::sync::Mutex<Option<remote_access::TlsIdentity>>);
+impl remote_access::IdentityStorage for MemoryIdentity {
+    fn load_or_create(
+        &self,
+        create: &mut dyn FnMut() -> anyhow::Result<remote_access::TlsIdentity>,
+    ) -> anyhow::Result<remote_access::TlsIdentity> {
+        let mut identity = self.0.lock().unwrap();
+        if identity.is_none() {
+            *identity = Some(create()?);
+        }
+        Ok(identity.as_ref().unwrap().clone())
+    }
+}
+type RemoteListener = (
+    std::net::SocketAddr,
+    tokio::sync::oneshot::Sender<()>,
+    tokio::task::JoinHandle<()>,
+);
+struct RemoteHost {
+    access: remote_access::RemoteAccess,
+    listener: tokio::sync::Mutex<Option<RemoteListener>>,
+    microphone_authorized: std::sync::atomic::AtomicBool,
+}
+async fn remote_admin(
+    AxumState(app): AxumState<AppState>,
+    headers: axum::http::HeaderMap,
+    method: axum::http::Method,
+    uri: axum::http::Uri,
+    body: Option<Json<serde_json::Value>>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    if !recorder_authorized(&app, &headers) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error":"unauthorized"})),
+        );
+    }
+    let mut listener = app.remote.listener.lock().await;
+    let result = match (method.as_str(), uri.path()) {
+        ("GET", "/api/remote/v1/status") => {
+            serde_json::json!({"enabled":app.remote.access.is_enabled(),"port":listener.as_ref().map(|v| v.0.port()),"fingerprint":app.remote.access.fingerprint()})
+        }
+        ("POST", "/api/remote/v1/microphone") => {
+            let authorized = body
+                .as_ref()
+                .and_then(|v| v.0.get("authorized"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            app.remote
+                .microphone_authorized
+                .store(authorized, std::sync::atomic::Ordering::SeqCst);
+            serde_json::json!({"authorized":authorized})
+        }
+        ("POST", "/api/remote/v1/enable") => {
+            if listener.is_none() {
+                let ip = body
+                    .as_ref()
+                    .and_then(|v| v.0.get("ip"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("0.0.0.0");
+                let Ok(ip) = ip.parse::<std::net::IpAddr>() else {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(serde_json::json!({"error":"invalid ip"})),
+                    );
+                };
+                let bound = match tokio::net::TcpListener::bind((ip, 0)).await {
+                    Ok(v) => v,
+                    Err(_) => {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({"error":"bind failed"})),
+                        )
+                    }
+                };
+                let addr = bound.local_addr().unwrap();
+                let (tx, rx) = tokio::sync::oneshot::channel();
+                app.remote.access.set_enabled(true);
+                let mut remote_app = app.clone();
+                remote_app.remote_audience = true;
+                let router = remote_router(remote_app);
+                let identity = app.remote.access.tls_identity().clone();
+                let task = tokio::spawn(async move {
+                    let _ = remote_listener::serve(bound, router, identity, async {
+                        let _ = rx.await;
+                    })
+                    .await;
+                });
+                *listener = Some((addr, tx, task));
+            }
+            serde_json::json!({"enabled":true,"port":listener.as_ref().unwrap().0.port()})
+        }
+        ("POST", "/api/remote/v1/disable") => {
+            app.remote.access.set_enabled(false);
+            if let Some((_, tx, task)) = listener.take() {
+                let _ = tx.send(());
+                let _ = task.await;
+            }
+            serde_json::json!({"enabled":false})
+        }
+        ("POST", "/api/remote/v1/pairing") => match (
+            listener.as_ref(),
+            app.remote.access.begin_pairing(Duration::from_secs(120)),
+        ) {
+            (Some((addr, _, _)), Ok(secret)) => {
+                serde_json::json!({"secret":secret,"expires_in":120,"fingerprint":app.remote.access.fingerprint(),"port":addr.port()})
+            }
+            _ => {
+                return (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({"error":"remote access disabled"})),
+                )
+            }
+        },
+        ("GET", "/api/remote/v1/clients") => {
+            serde_json::json!({"clients":app.remote.access.clients()})
+        }
+        ("POST", "/api/remote/v1/revoke") => {
+            let id = body
+                .as_ref()
+                .and_then(|v| v.0.get("client_id"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            serde_json::json!({"revoked":app.remote.access.revoke(id)})
+        }
+        _ => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error":"not found"})),
+            )
+        }
+    };
+    (StatusCode::OK, Json(result))
+}
+async fn remote_pair(
+    AxumState(app): AxumState<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> (StatusCode, Json<serde_json::Value>) {
+    match app
+        .remote
+        .access
+        .exchange(body["secret"].as_str().unwrap_or(""))
+    {
+        Ok(c) => (
+            StatusCode::OK,
+            Json(serde_json::json!({"client_id":c.client_id,"token":c.bearer_token})),
+        ),
+        Err(_) => (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error":"invalid or expired pairing secret"})),
+        ),
+    }
+}
+fn remote_router(app: AppState) -> Router {
+    Router::new()
+        .route("/pair", axum::routing::post(remote_pair))
+        .route("/ws", get(ws_handler))
+        .route("/api/recorder/v1/state", get(recorder_state))
+        .route("/api/recorder/v1/devices", get(recorder_devices))
+        .route("/api/recorder/v1/takes", get(recorder_takes))
+        .route(
+            "/api/recorder/v1/inspect",
+            axum::routing::post(recorder_inspect),
+        )
+        .route(
+            "/api/recorder/v1/waveform",
+            axum::routing::post(recorder_waveform),
+        )
+        .route(
+            "/api/recorder/v1/command",
+            axum::routing::post(recorder_command),
+        )
+        .with_state(app)
 }
 
 /// Accept loop with MR1 socket options (see [`configure_accepted`]).
@@ -643,9 +1149,17 @@ struct AppState {
 /// option-setting in [`configure_accepted`], covered by
 /// `accepted_socket_has_nodelay` below. Otherwise identical behaviour:
 /// HTTP/1 + upgrades, one task per connection.
-async fn serve_loop(listener: tokio::net::TcpListener, app: Router) -> std::io::Result<()> {
+async fn serve_loop(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    shutdown: Arc<tokio::sync::Notify>,
+) -> std::io::Result<()> {
     loop {
-        let (stream, _peer) = match listener.accept().await {
+        let accepted = tokio::select! {
+            result = listener.accept() => result,
+            _ = shutdown.notified() => return Ok(()),
+        };
+        let (stream, _peer) = match accepted {
             Ok(v) => v,
             Err(e) => {
                 eprintln!("openfader-serve: accept error: {e:#}; continuing");
@@ -748,19 +1262,81 @@ pub async fn run_with_full(
         Some(dir) => eprintln!("openfader-serve: serving UI from {}", dir.display()),
         None => eprintln!("openfader-serve: no ui/ directory found; API only"),
     }
+    let token = std::env::var("OPENFADER_RECORDER_TOKEN")
+        .ok()
+        .filter(|s| s.len() >= 32 && s.is_ascii());
+    let recorder_token = if local.ip().is_loopback() {
+        token.map(Arc::new)
+    } else {
+        None
+    };
+    let recorder = if recorder_token.is_some() {
+        recorder::data_dir().map(|root| recorder::Recorder::start(root, engine.clone()))
+    } else {
+        None
+    };
+    let desktop_instance = std::env::var("OPENFADER_DESKTOP_INSTANCE")
+        .ok()
+        .map(Arc::new);
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+    let remote = Arc::new(RemoteHost {
+        access: remote_access::RemoteAccess::new(&MemoryIdentity::default())?,
+        listener: tokio::sync::Mutex::new(None),
+        microphone_authorized: std::sync::atomic::AtomicBool::new(false),
+    });
     let app = Router::new()
+        .route(
+            "/api/remote/v1/{action}",
+            get(remote_admin).post(remote_admin),
+        )
         .route("/ws", get(ws_handler))
         .route("/healthz", get(health))
+        .route("/api/recorder/v1/host", get(desktop_host))
+        .route(
+            "/api/recorder/v1/shutdown",
+            axum::routing::post(desktop_shutdown),
+        )
+        .route("/api/recorder/v1/state", get(recorder_state))
+        .route("/api/recorder/v1/devices", get(recorder_devices))
+        .route(
+            "/api/recorder/v1/devices/refresh",
+            axum::routing::post(recorder_refresh_devices),
+        )
+        .route("/api/recorder/v1/takes", get(recorder_takes))
+        .route(
+            "/api/recorder/v1/inspect",
+            axum::routing::post(recorder_inspect),
+        )
+        .route(
+            "/api/recorder/v1/waveform",
+            axum::routing::post(recorder_waveform),
+        )
+        .route(
+            "/api/recorder/v1/command",
+            axum::routing::post(recorder_command),
+        )
         .route("/", get(static_root))
         .route("/{*path}", get(static_file))
         .with_state(AppState {
             engine,
             static_dir,
             sim_only: opts.sim_only,
+            recorder,
+            recorder_token,
+            desktop_instance,
+            shutdown: shutdown.clone(),
+            remote: remote.clone(),
+            remote_audience: false,
         });
 
     eprintln!("openfader-serve: listening on http://{local} (ws://{local}/ws)");
-    serve_loop(listener, app).await?;
+    let result = serve_loop(listener, app, shutdown).await;
+    remote.access.set_enabled(false);
+    if let Some((_, stop, task)) = remote.listener.lock().await.take() {
+        let _ = stop.send(());
+        let _ = task.await;
+    }
+    result?;
     Ok(())
 }
 
@@ -922,5 +1498,324 @@ mod tests {
         assert_eq!(o.meters_sent, 1);
         let snap = o.snapshot();
         assert_eq!(snap.queue_depth, 3, "spectrum(3) + gr(3,4) remain");
+    }
+}
+
+#[cfg(test)]
+mod remote_router_tests {
+    use super::*;
+    use futures::StreamExt;
+    use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
+    use tokio_rustls::rustls::{
+        pki_types::{CertificateDer, ServerName},
+        ClientConfig, RootCertStore,
+    };
+    use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+    const MASTER: &str = "01234567890123456789012345678901";
+    async fn request<S: AsyncRead + AsyncWrite + Unpin>(
+        mut stream: S,
+        method: &str,
+        path: &str,
+        token: &str,
+        body: &str,
+    ) -> (u16, serde_json::Value) {
+        let body = if body.is_empty() { "{}" } else { body };
+        let req = format!("{method} {path} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        stream.write_all(req.as_bytes()).await.unwrap();
+        let mut data = Vec::new();
+        let _ = tokio::time::timeout(Duration::from_secs(3), stream.read_to_end(&mut data))
+            .await
+            .unwrap();
+        let text = String::from_utf8(data).unwrap();
+        let (headers, body) = text.split_once("\r\n\r\n").unwrap();
+        (
+            headers.split_whitespace().nth(1).unwrap().parse().unwrap(),
+            serde_json::from_str(body).unwrap_or_else(|_| panic!("invalid response: {text:?}")),
+        )
+    }
+    async fn tls(
+        addr: std::net::SocketAddr,
+        identity: &remote_access::TlsIdentity,
+    ) -> tokio_rustls::client::TlsStream<tokio::net::TcpStream> {
+        let mut roots = RootCertStore::empty();
+        roots
+            .add(CertificateDer::from(identity.certificate_der.clone()))
+            .unwrap();
+        let config = ClientConfig::builder()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+        tokio_rustls::TlsConnector::from(Arc::new(config))
+            .connect(
+                ServerName::try_from("localhost").unwrap(),
+                tokio::net::TcpStream::connect(addr).await.unwrap(),
+            )
+            .await
+            .unwrap()
+    }
+    #[tokio::test]
+    async fn remote_host_routes_and_lifecycle() {
+        let engine = openfader_engine::Engine::new(Default::default());
+        engine.connect("sim", None).await.unwrap();
+        let root =
+            std::env::temp_dir().join(format!("openfader-remote-test-{}", std::process::id()));
+        let remote = Arc::new(RemoteHost {
+            access: remote_access::RemoteAccess::new(&MemoryIdentity::default()).unwrap(),
+            listener: tokio::sync::Mutex::new(None),
+            microphone_authorized: std::sync::atomic::AtomicBool::new(false),
+        });
+        let app = AppState {
+            sim_only: true,
+            recorder: Some(recorder::Recorder::start(root.clone(), engine.clone())),
+            engine,
+            static_dir: None,
+            recorder_token: Some(Arc::new(MASTER.into())),
+            desktop_instance: None,
+            shutdown: Arc::new(tokio::sync::Notify::new()),
+            remote: remote.clone(),
+            remote_audience: false,
+        };
+        let router = Router::new()
+            .route(
+                "/api/remote/v1/{action}",
+                get(remote_admin).post(remote_admin),
+            )
+            .route("/api/recorder/v1/state", get(recorder_state))
+            .with_state(app);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let local = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        async fn local_req(
+            addr: std::net::SocketAddr,
+            method: &str,
+            path: &str,
+            token: &str,
+            body: &str,
+        ) -> (u16, serde_json::Value) {
+            request(
+                tokio::net::TcpStream::connect(addr).await.unwrap(),
+                method,
+                path,
+                token,
+                body,
+            )
+            .await
+        }
+        let status = local_req(local, "GET", "/api/remote/v1/status", MASTER, "")
+            .await
+            .1;
+        assert_eq!(status["enabled"], false);
+        assert_eq!(
+            local_req(local, "POST", "/api/remote/v1/pairing", MASTER, "{}")
+                .await
+                .0,
+            409
+        );
+        let enabled = local_req(
+            local,
+            "POST",
+            "/api/remote/v1/enable",
+            MASTER,
+            r#"{"ip":"127.0.0.1"}"#,
+        )
+        .await
+        .1;
+        let addr =
+            std::net::SocketAddr::from(([127, 0, 0, 1], enabled["port"].as_u64().unwrap() as u16));
+        let identity = remote.access.tls_identity().clone();
+        let pairing = local_req(local, "POST", "/api/remote/v1/pairing", MASTER, "{}")
+            .await
+            .1;
+        let body = serde_json::json!({"secret":pairing["secret"]}).to_string();
+        let (code, credentials) =
+            request(tls(addr, &identity).await, "POST", "/pair", "", &body).await;
+        assert_eq!(code, 200);
+        assert_eq!(
+            request(tls(addr, &identity).await, "POST", "/pair", "", &body)
+                .await
+                .0,
+            401
+        );
+        let token = credentials["token"].as_str().unwrap();
+        assert_eq!(
+            local_req(local, "GET", "/api/remote/v1/status", token, "")
+                .await
+                .0,
+            401
+        );
+        assert_eq!(
+            request(
+                tls(addr, &identity).await,
+                "GET",
+                "/api/recorder/v1/state",
+                MASTER,
+                ""
+            )
+            .await
+            .0,
+            401
+        );
+        let start = r#"{"request_id":"permission-test","action":"start_recording","args":{}}"#;
+        let denied = request(
+            tls(addr, &identity).await,
+            "POST",
+            "/api/recorder/v1/command",
+            token,
+            start,
+        )
+        .await;
+        assert_eq!(
+            denied.1["error"],
+            "Allow microphone access in OpenFader on the computer"
+        );
+        assert_eq!(
+            local_req(
+                local,
+                "POST",
+                "/api/remote/v1/microphone",
+                token,
+                r#"{"authorized":true}"#
+            )
+            .await
+            .0,
+            401
+        );
+        assert_eq!(
+            local_req(
+                local,
+                "POST",
+                "/api/remote/v1/microphone",
+                MASTER,
+                r#"{"authorized":true}"#
+            )
+            .await
+            .1["authorized"],
+            true
+        );
+        let accepted = request(
+            tls(addr, &identity).await,
+            "POST",
+            "/api/recorder/v1/command",
+            token,
+            start,
+        )
+        .await;
+        assert_ne!(
+            accepted.1["error"],
+            "Allow microphone access in OpenFader on the computer"
+        );
+        let local_state = local_req(local, "GET", "/api/recorder/v1/state", MASTER, "").await;
+        let remote_state = request(
+            tls(addr, &identity).await,
+            "GET",
+            "/api/recorder/v1/state",
+            token,
+            "",
+        )
+        .await;
+        assert_eq!(local_state, remote_state);
+        assert_eq!(remote_state.0, 200);
+        let mut master_req = "wss://localhost/ws".into_client_request().unwrap();
+        master_req
+            .headers_mut()
+            .insert("Authorization", format!("Bearer {MASTER}").parse().unwrap());
+        assert!(
+            tokio_tungstenite::client_async(master_req, tls(addr, &identity).await)
+                .await
+                .is_err()
+        );
+        let mut req = "wss://localhost/ws".into_client_request().unwrap();
+        req.headers_mut()
+            .insert("Authorization", format!("Bearer {token}").parse().unwrap());
+        let (mut ws, _) = tokio_tungstenite::client_async(req, tls(addr, &identity).await)
+            .await
+            .unwrap();
+        let clients = local_req(local, "GET", "/api/remote/v1/clients", MASTER, "")
+            .await
+            .1;
+        assert!(clients["clients"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == &credentials["client_id"]));
+        let revoke = serde_json::json!({"client_id":credentials["client_id"]}).to_string();
+        assert_eq!(
+            local_req(local, "POST", "/api/remote/v1/revoke", MASTER, &revoke)
+                .await
+                .1["revoked"],
+            true
+        );
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while let Some(Ok(msg)) = ws.next().await {
+                if msg.is_close() {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            request(
+                tls(addr, &identity).await,
+                "GET",
+                "/api/recorder/v1/state",
+                token,
+                ""
+            )
+            .await
+            .0,
+            401
+        );
+        assert_eq!(
+            local_req(local, "POST", "/api/remote/v1/disable", MASTER, "{}")
+                .await
+                .1["enabled"],
+            false
+        );
+        assert!(tokio::net::TcpStream::connect(addr).await.is_err());
+        let again = local_req(
+            local,
+            "POST",
+            "/api/remote/v1/enable",
+            MASTER,
+            r#"{"ip":"127.0.0.1"}"#,
+        )
+        .await
+        .1;
+        assert_eq!(again["enabled"], true);
+        let addr2 =
+            std::net::SocketAddr::from(([127, 0, 0, 1], again["port"].as_u64().unwrap() as u16));
+        let pairing2 = local_req(local, "POST", "/api/remote/v1/pairing", MASTER, "{}")
+            .await
+            .1;
+        let body2 = serde_json::json!({"secret":pairing2["secret"]}).to_string();
+        let credential2 = request(tls(addr2, &identity).await, "POST", "/pair", "", &body2)
+            .await
+            .1;
+        let mut req2 = "wss://localhost/ws".into_client_request().unwrap();
+        req2.headers_mut().insert(
+            "Authorization",
+            format!("Bearer {}", credential2["token"].as_str().unwrap())
+                .parse()
+                .unwrap(),
+        );
+        let (mut ws2, _) = tokio_tungstenite::client_async(req2, tls(addr2, &identity).await)
+            .await
+            .unwrap();
+
+        local_req(local, "POST", "/api/remote/v1/disable", MASTER, "{}").await;
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while let Some(Ok(msg)) = ws2.next().await {
+                if msg.is_close() {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert!(tokio::net::TcpStream::connect(addr2).await.is_err());
+        server.abort();
+        let _ = server.await;
+        let _ = std::fs::remove_dir_all(root);
     }
 }
