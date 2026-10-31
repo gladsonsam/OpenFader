@@ -161,6 +161,7 @@ class U4ShellHeader extends StatelessWidget {
                 active: action.$4),
         if (compact)
           PopupMenuButton<int>(
+            popUpAnimationStyle: AnimationStyle.noAnimation,
             tooltip: 'More',
             icon:
                 Icon(Icons.more_horiz, color: ConsolePalette.of(context).text7),

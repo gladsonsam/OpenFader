@@ -129,6 +129,7 @@ class _U4MetersPageState extends State<U4MetersPage> {
     final store = widget.store;
     var value = row.value!;
     final selected = await showDialog<double>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialogState) => AlertDialog(
@@ -842,6 +843,7 @@ class _MonitorControls extends StatelessWidget {
               for (final row in store.monitorControls)
                 if (row.choices.isNotEmpty)
                   PopupMenuButton<double>(
+                    popUpAnimationStyle: AnimationStyle.noAnimation,
                     enabled: store.monitorControlIsCurrent(row),
                     tooltip: row.description,
                     color: palette.panel,

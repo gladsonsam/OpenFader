@@ -195,6 +195,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     final target = store.target;
     final epoch = store.controlAccessEpoch;
     await showModalBottomSheet<void>(
+      sheetAnimationStyle: AnimationStyle.noAnimation,
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(
@@ -482,6 +483,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     _confirming = true;
     final target = store.target;
     await showModalBottomSheet<void>(
+        sheetAnimationStyle: AnimationStyle.noAnimation,
         context: context,
         isScrollControlled: true,
         showDragHandle: true,
@@ -609,6 +611,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     final gridKey = GlobalKey();
     RouteSrcTile? preview;
     final source = await showModalBottomSheet<RouteSrcTile>(
+      sheetAnimationStyle: AnimationStyle.noAnimation,
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -681,6 +684,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                       onPressed: valid &&
                                               store.tapIsCurrent(control)
                                           ? () => showDialog<void>(
+                                              animationStyle:
+                                                  AnimationStyle.noAnimation,
                                               context: context,
                                               barrierDismissible: false,
                                               builder: (_) =>
@@ -866,49 +871,6 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                               Expanded(child: _targetSelector()),
                               _mapButton(),
                             ])),
-                        Container(
-                            height: 48,
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            color: p.well,
-                            child: Row(children: [
-                              Expanded(
-                                  child: Text(
-                                      preview
-                                          ? _dragPending.length > 1
-                                              ? '${_dragPending.length} routes · release to review'
-                                              : '${activeStrip!.name}: ${activeStrip.src} → ${activeSource!.label}'
-                                          : '${strips.length} destinations · ${sources.length} sources',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                          color: preview ? p.cyan : p.text7))),
-                              if (store.selectedStrip != null) ...[
-                                if (store.tapControl case final control?)
-                                  TextButton(
-                                      onPressed: store.tapIsCurrent(control)
-                                          ? () => showDialog<void>(
-                                              context: context,
-                                              barrierDismissible: false,
-                                              builder: (_) =>
-                                                  DestinationControlEditor(
-                                                      changes: store,
-                                                      accessEpoch: () => store
-                                                          .controlAccessEpoch,
-                                                      isCurrent:
-                                                          store.tapIsCurrent,
-                                                      apply:
-                                                          store.setTapControl,
-                                                      control: control))
-                                          : null,
-                                      child: Text(
-                                          'Tap: ${control.valueLabel ?? 'Unavailable'}')),
-                                TextButton(
-                                    onPressed: store.canClear
-                                        ? () => _confirmClear()
-                                        : null,
-                                    child: const Text('Unpatch')),
-                              ],
-                            ])),
                         Expanded(
                             child: sources.isEmpty || strips.isEmpty
                                 ? const Center(
@@ -982,50 +944,11 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                               children: [
                                                 for (final strip in strips)
                                                   Row(children: [
-                                                    SizedBox(
-                                                        width: _labelWidth,
-                                                        height: _row,
-                                                        child: TextButton(
-                                                            style: TextButton.styleFrom(
-                                                                backgroundColor: preview &&
-                                                                        activeStrip?.id ==
-                                                                            strip
-                                                                                .id
-                                                                    ? p.selected
-                                                                    : p.page),
-                                                            onPressed: () => store
-                                                                .selectStrip(
-                                                                    strip
-                                                                        .strip),
-                                                            child: Align(
-                                                                alignment: Alignment
-                                                                    .centerLeft,
-                                                                child: Column(
-                                                                    mainAxisAlignment:
-                                                                        MainAxisAlignment
-                                                                            .center,
-                                                                    crossAxisAlignment:
-                                                                        CrossAxisAlignment
-                                                                            .start,
-                                                                    children: [
-                                                                      Text(
-                                                                          strip
-                                                                              .name,
-                                                                          maxLines:
-                                                                              1,
-                                                                          overflow:
-                                                                              TextOverflow.ellipsis),
-                                                                      Text(
-                                                                          strip
-                                                                              .src,
-                                                                          maxLines:
-                                                                              1,
-                                                                          overflow: TextOverflow
-                                                                              .ellipsis,
-                                                                          style: TextStyle(
-                                                                              fontSize: 11,
-                                                                              color: p.text7))
-                                                                    ])))),
+                                                    _destinationLabel(
+                                                        strip,
+                                                        preview &&
+                                                            activeStrip?.id ==
+                                                                strip.id),
                                                     for (final source
                                                         in sources)
                                                       Builder(
@@ -1125,11 +1048,79 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                 })),
       );
 
+  Widget _destinationLabel(RouteStrip strip, bool active) => SizedBox(
+        width: _labelWidth,
+        height: _row,
+        child: Builder(
+            builder: (anchor) => TextButton(
+                  style: TextButton.styleFrom(
+                      backgroundColor: active
+                          ? ConsolePalette.of(context).selected
+                          : ConsolePalette.of(context).page),
+                  onPressed: () => _destinationOptions(anchor, strip),
+                  child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(strip.name,
+                                maxLines: 1, overflow: TextOverflow.ellipsis),
+                            Text(strip.src,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    color: ConsolePalette.of(context).text7)),
+                          ])),
+                )),
+      );
+
+  Future<void> _destinationOptions(
+      BuildContext anchor, RouteStrip strip) async {
+    store.selectStrip(strip.strip);
+    final target = store.target;
+    final key = store.operationKey;
+    final control = store.tapControl;
+    final choice = await showAnchoredMenu<String>(anchor, [
+      if (store.canClear)
+        const PopupMenuItem(value: 'clear', height: 48, child: Text('Unpatch')),
+      if (control != null && store.tapIsCurrent(control))
+        PopupMenuItem(
+            value: 'tap',
+            height: 48,
+            child: Text('Tap: ${control.valueLabel ?? 'Unavailable'}')),
+    ]);
+    if (!mounted ||
+        choice == null ||
+        target != store.target ||
+        key != store.operationKey) {
+      return;
+    }
+    if (choice == 'clear') {
+      await _confirmClear();
+    } else if (choice == 'tap' &&
+        control != null &&
+        store.tapIsCurrent(control)) {
+      await showDialog<void>(
+          context: context,
+          animationStyle: AnimationStyle.noAnimation,
+          barrierDismissible: false,
+          builder: (_) => DestinationControlEditor(
+              changes: store,
+              accessEpoch: () => store.controlAccessEpoch,
+              isCurrent: store.tapIsCurrent,
+              apply: store.setTapControl,
+              control: control));
+    }
+  }
+
   Future<void> _confirmClear() async {
     final strip = store.selectedStrip;
     final key = store.operationKey;
     final name = store.selectedName;
     final confirmed = await showDialog<bool>(
+        animationStyle: AnimationStyle.noAnimation,
         context: context,
         builder: (context) => AlertDialog(
                 title: Text('Unpatch $name?'),

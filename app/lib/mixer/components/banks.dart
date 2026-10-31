@@ -12,6 +12,7 @@ Future<void> showMixerLayout(BuildContext context, MixerController controller,
         ValueChanged<MixerDestination> onNavigate,
         {bool? locked, VoidCallback? onLock}) =>
     showModalBottomSheet<void>(
+        sheetAnimationStyle: AnimationStyle.noAnimation,
         context: context,
         backgroundColor: ConsolePalette.of(context).background,
         showDragHandle: true,
@@ -370,6 +371,7 @@ class MixerBanks extends StatelessWidget {
 Future<void> showMixerMuteGroups(
         BuildContext context, MixerController controller) =>
     showModalBottomSheet<void>(
+        sheetAnimationStyle: AnimationStyle.noAnimation,
         context: context,
         backgroundColor: ConsolePalette.of(context).background,
         showDragHandle: true,
@@ -404,6 +406,7 @@ Future<void> showMixerMuteGroups(
 
 Future<void> showMixerBanks(BuildContext context, MixerController controller) =>
     showModalBottomSheet<void>(
+        sheetAnimationStyle: AnimationStyle.noAnimation,
         context: context,
         backgroundColor: ConsolePalette.of(context).background,
         showDragHandle: true,
@@ -458,6 +461,7 @@ Future<void> showMixerBanks(BuildContext context, MixerController controller) =>
 Future<void> showCustomMixerViews(
         BuildContext context, MixerController controller) =>
     showModalBottomSheet<void>(
+      sheetAnimationStyle: AnimationStyle.noAnimation,
       context: context,
       backgroundColor: ConsolePalette.of(context).background,
       showDragHandle: true,
@@ -490,6 +494,7 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
   final name = TextEditingController(text: existing?.name ?? '');
   final selected = <String>{...?existing?.stripKeys};
   final route = DialogRoute<String>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) => StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
@@ -577,6 +582,7 @@ Future<void> _editCustomView(BuildContext context, MixerController controller,
 Future<void> showMixerGroupMembership(
         BuildContext context, MixerController controller) =>
     showDialog<void>(
+        animationStyle: AnimationStyle.noAnimation,
         context: context, builder: (_) => _GroupMembership(controller));
 
 class _GroupMembership extends StatefulWidget {

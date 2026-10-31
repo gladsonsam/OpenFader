@@ -136,6 +136,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
     final accessEpoch = widget.store.accessLimits.controlAccessEpoch;
     final wide = MediaQuery.sizeOf(context).width > 900;
     final ok = await showDialog<bool>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: ConsolePalette.of(context).chip,

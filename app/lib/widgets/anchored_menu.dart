@@ -14,6 +14,7 @@ Future<T?> showAnchoredMenu<T>(
   if (box == null || overlay == null || !box.attached) return null;
   final origin = box.localToGlobal(Offset.zero, ancestor: overlay);
   return showMenu<T>(
+    popUpAnimationStyle: AnimationStyle.noAnimation,
     context: anchor,
     color: ConsolePalette.of(anchor).panel,
     constraints:

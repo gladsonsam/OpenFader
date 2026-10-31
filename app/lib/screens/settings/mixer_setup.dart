@@ -39,6 +39,7 @@ class _MixerSetupDetail extends StatelessWidget {
                         : OutlinedButton(
                             onPressed: store.mixerSetupControlIsCurrent(control)
                                 ? () => showDialog<void>(
+                                    animationStyle: AnimationStyle.noAnimation,
                                     context: context,
                                     builder: (_) => DestinationControlEditor(
                                         changes: store,

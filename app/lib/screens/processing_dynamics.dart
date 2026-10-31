@@ -473,6 +473,7 @@ class _ParameterChoices extends StatelessWidget {
         button: true,
         enabled: enabled,
         child: PopupMenuButton<double>(
+          popUpAnimationStyle: AnimationStyle.noAnimation,
           enabled: enabled,
           tooltip: label,
           color: palette.processingPanel,

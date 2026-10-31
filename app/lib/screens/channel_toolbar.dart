@@ -272,6 +272,7 @@ class _ChannelMenuButton extends StatelessWidget {
         Overlay.of(context).context.findRenderObject() as RenderBox?;
     if (box == null || overlay == null) return;
     final choice = await showMenu<VoidCallback>(
+      popUpAnimationStyle: AnimationStyle.noAnimation,
       context: context,
       color: ConsolePalette.of(context).chip,
       position: RelativeRect.fromRect(

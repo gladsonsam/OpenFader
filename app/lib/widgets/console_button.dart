@@ -46,7 +46,7 @@ class _ConsoleButtonState extends State<ConsoleButton> {
         scale: _pressed ? 0.97 : 1.0,
         duration: animationsOff
             ? Duration.zero
-            : const Duration(milliseconds: 100),
+            : const Duration(milliseconds: 40),
         curve: Curves.easeOut,
         child: TextButton(
         onPressed: widget.onPressed,
@@ -67,7 +67,7 @@ class _ConsoleButtonState extends State<ConsoleButton> {
         ).copyWith(
             animationDuration: animationsOff
                 ? Duration.zero
-                : const Duration(milliseconds: 100),
+                : const Duration(milliseconds: 40),
             side: WidgetStateProperty.resolveWith(
                 (states) => states.contains(WidgetState.focused)
                     ? BorderSide(color: ConsolePalette.of(context).selectedLine)

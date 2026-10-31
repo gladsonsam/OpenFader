@@ -128,7 +128,7 @@ class _MixerFaderState extends State<MixerFader> {
                                                       context)
                                                   ? Duration.zero
                                                   : const Duration(
-                                                      milliseconds: 110),
+                                                      milliseconds: 40),
                                           curve: Curves.easeOutCubic,
                                           child: CustomPaint(
                                               painter: _CapPainter(

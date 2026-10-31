@@ -112,6 +112,7 @@ ThemeData u4Theme(
                 AppDesign.type(16, color: p.text, weight: FontWeight.w600)),
     textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
+      animationDuration: const Duration(milliseconds: 40),
       foregroundColor: p.text1,
       backgroundColor: p.control,
       minimumSize: const Size(44, 44),
@@ -126,6 +127,7 @@ ThemeData u4Theme(
                         : null))),
     outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
+      animationDuration: const Duration(milliseconds: 40),
       foregroundColor: p.cyan,
       minimumSize: const Size(44, 44),
       side: BorderSide(color: p.lineCtl),
@@ -133,6 +135,7 @@ ThemeData u4Theme(
     )),
     filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
+      animationDuration: const Duration(milliseconds: 40),
       foregroundColor: p.onAccent,
       backgroundColor: p.cyan,
       minimumSize: const Size(44, 44),
@@ -140,6 +143,7 @@ ThemeData u4Theme(
     )),
     iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
+      animationDuration: const Duration(milliseconds: 40),
       foregroundColor: p.text7,
       minimumSize: const Size(44, 44),
       shape: shape,

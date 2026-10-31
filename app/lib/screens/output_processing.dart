@@ -119,6 +119,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                           ? () {
                               final captured = focused;
                               showDialog<void>(
+                                  animationStyle: AnimationStyle.noAnimation,
                                   context: context,
                                   builder: (_) => DestinationControlEditor(
                                         accessEpoch: () =>
