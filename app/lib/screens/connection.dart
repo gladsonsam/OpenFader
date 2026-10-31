@@ -165,7 +165,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                       ),
                       const SizedBox(width: 6),
                       _Btn(
-                        label: 'Demo desk',
+                        label: 'Work offline',
                         onTap: store.connectSim,
                       ),
                       if (store.isConnected) ...[
@@ -294,7 +294,14 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                               color: ConsolePalette.of(context).text4)),
                     ),
                   const SizedBox(height: 10),
-                  _InfoCard(store: store, onOpenDebug: widget.onOpenDebug),
+                  ExpansionTile(
+                    title: const Text('Connection details'),
+                    tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+                    expansionAnimationStyle: AnimationStyle.noAnimation,
+                    children: [
+                      _InfoCard(store: store, onOpenDebug: widget.onOpenDebug)
+                    ],
+                  ),
                 ],
               ),
             );

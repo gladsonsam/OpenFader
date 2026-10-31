@@ -29,8 +29,8 @@ class _Section extends StatelessWidget {
             title,
             style: TextStyle(
               fontFamily: U4.font,
-              fontSize: wide ? 26 : 17,
-              height: wide ? 34 / 26 : 23 / 17,
+              fontSize: wide ? 18 : 17,
+              height: 1.3,
               fontWeight: FontWeight.w500,
               color: ConsolePalette.of(context).text7,
             ),
@@ -80,7 +80,7 @@ class _Note extends StatelessWidget {
         text,
         style: TextStyle(
           fontFamily: U4.font,
-          fontSize: wide ? 23 : 15,
+          fontSize: wide ? 14 : 14,
           height: wide ? 1.5 : 22 / 15,
           color: ConsolePalette.of(context).panFill,
         ),
@@ -100,10 +100,10 @@ class _PrefRow extends StatelessWidget {
     final wide = MediaQuery.sizeOf(context).width > 900;
     final compact = !wide && _SettingsLayout.isConnections(context);
     return Container(
-      constraints: BoxConstraints(minHeight: wide ? 96 : (compact ? 66 : 76)),
+      constraints: BoxConstraints(minHeight: wide ? 68 : (compact ? 64 : 68)),
       padding: EdgeInsets.symmetric(
-        horizontal: wide ? 26 : 16,
-        vertical: wide ? 22 : (compact ? 12 : 16),
+        horizontal: 16,
+        vertical: 12,
       ),
       child: Row(
         children: [
@@ -115,7 +115,7 @@ class _PrefRow extends StatelessWidget {
                   label,
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: wide ? 27 : 18,
+                    fontSize: wide ? 17 : 16,
                     height: wide ? 1.25 : 24 / 18,
                     fontWeight: FontWeight.w500,
                     color: ConsolePalette.of(context).text1,
@@ -127,7 +127,7 @@ class _PrefRow extends StatelessWidget {
                     desc!,
                     style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: wide ? 23 : 15,
+                      fontSize: wide ? 14 : 14,
                       height: wide ? 1.4 : 21 / 15,
                       color: ConsolePalette.of(context).text7,
                     ),
@@ -167,10 +167,10 @@ class _ActionRow extends StatelessWidget {
         onTap: () => _runSettingsAction(context, onTap),
         behavior: HitTestBehavior.opaque,
         child: Container(
-          constraints: BoxConstraints(minHeight: wide ? 96 : 76),
+          constraints: BoxConstraints(minHeight: 68),
           padding: EdgeInsets.symmetric(
-            horizontal: wide ? 26 : 16,
-            vertical: wide ? 22 : 16,
+            horizontal: 16,
+            vertical: 12,
           ),
           child: Row(
             children: [
@@ -182,7 +182,7 @@ class _ActionRow extends StatelessWidget {
                       label,
                       style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: wide ? 27 : 18,
+                        fontSize: wide ? 17 : 16,
                         height: wide ? 1.25 : 24 / 18,
                         fontWeight: FontWeight.w500,
                         color: danger
@@ -196,7 +196,7 @@ class _ActionRow extends StatelessWidget {
                         desc!,
                         style: TextStyle(
                           fontFamily: U4.font,
-                          fontSize: wide ? 23 : 15,
+                          fontSize: wide ? 14 : 14,
                           height: wide ? 1.4 : 21 / 15,
                           color: ConsolePalette.of(context).text7,
                         ),
@@ -232,7 +232,7 @@ class _ValueText extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
         fontFamily: U4.font,
-        fontSize: wide ? 27 : 18,
+        fontSize: wide ? 17 : 16,
         height: wide ? 1.3 : 24 / 18,
         color: ConsolePalette.of(context).text7,
         fontFeatures: const [FontFeature.tabularFigures()],

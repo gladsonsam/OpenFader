@@ -193,13 +193,6 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('SCENES',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6,
-                          color: ConsolePalette.of(context).text1)),
-                  const SizedBox(height: 10),
                   NativeLibrarySection(store: store),
                   if (store.nativeSnapshots.driver != 'xair') ...[
                     const SizedBox(height: 10),
@@ -269,7 +262,8 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         'unavailable here.',
                                     label: 'Recall',
                                     action: () => store.recallShow(scene)),
-                            child: const Text('LOAD')),
+                            child: const Text('Recall')),
+                        const SizedBox(width: 8),
                         TextButton(
                             onPressed: store.busy
                                 ? null
@@ -279,7 +273,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         '“${store.show}”? This cannot be undone.',
                                     label: 'Delete',
                                     action: () => store.deleteShow(scene)),
-                            child: const Text('DELETE')),
+                            child: const Text('Delete')),
                       ]),
                   ],
                   const SizedBox(height: 14),
@@ -348,9 +342,9 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                       gridDelegate:
                           const SliverGridDelegateWithMaxCrossAxisExtent(
                         maxCrossAxisExtent: 520,
-                        mainAxisExtent: 140,
-                        mainAxisSpacing: 6,
-                        crossAxisSpacing: 6,
+                        mainAxisExtent: 112,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
                       ),
                       itemCount: store.entries.length,
                       itemBuilder: (context, i) {
@@ -456,10 +450,12 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                         ),
                                       ),
                                     ),
-                                    Row(
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 4,
                                       children: [
-                                        GestureDetector(
-                                          onTap: store.busy
+                                        TextButton(
+                                          onPressed: store.busy
                                               ? null
                                               : () => _recallSnapshot(e),
                                           child: Text('RECALL',
@@ -470,9 +466,8 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                                       ConsolePalette.of(context)
                                                           .meterGreen)),
                                         ),
-                                        const SizedBox(width: 12),
-                                        GestureDetector(
-                                          onTap: store.busy
+                                        TextButton(
+                                          onPressed: store.busy
                                               ? null
                                               : () {
                                                   _renameCtl.text = e.name;
@@ -488,9 +483,8 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                                       ConsolePalette.of(context)
                                                           .text7)),
                                         ),
-                                        const SizedBox(width: 12),
-                                        GestureDetector(
-                                          onTap: store.busy
+                                        TextButton(
+                                          onPressed: store.busy
                                               ? null
                                               : () => _confirm(
                                                   title: 'Delete snapshot?',

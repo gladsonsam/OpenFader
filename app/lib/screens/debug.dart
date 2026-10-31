@@ -58,7 +58,7 @@ class _U4DebugPageState extends State<U4DebugPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('world-debug · tick ${store.tick}',
+                  Text('Diagnostics · tick ${store.tick}',
                       style: TextStyle(
                           fontFamily: 'monospace',
                           fontSize: 15,
