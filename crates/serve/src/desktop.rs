@@ -332,65 +332,6 @@ mod windows {
             }
         }
     }
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-        #[test]
-        fn current_user_security_and_lock_lifecycle() {
-            let security = Security::current().unwrap();
-            let mut control = 0;
-            let mut revision = 0;
-            assert_ne!(
-                unsafe {
-                    windows_sys::Win32::Security::GetSecurityDescriptorControl(
-                        security.0,
-                        &mut control,
-                        &mut revision,
-                    )
-                },
-                0
-            );
-            assert_ne!(control & windows_sys::Win32::Security::SE_DACL_PROTECTED, 0);
-            let mut random = [0u8; 8];
-            assert!(
-                unsafe {
-                    BCryptGenRandom(
-                        ptr::null_mut(),
-                        random.as_mut_ptr(),
-                        8,
-                        BCRYPT_USE_SYSTEM_PREFERRED_RNG,
-                    )
-                } >= 0
-            );
-            let path = std::env::temp_dir()
-                .join(format!("openfader-test-{:x}", u64::from_le_bytes(random)));
-            fs::create_dir(&path).unwrap();
-            let owner = start_at(&path, 1234).unwrap();
-            let descriptor = path.join("OpenFader/Recorder/host.json");
-            let descriptor_handle = File::open(&descriptor).unwrap();
-            verify_security(&descriptor_handle, &security).unwrap();
-            drop(descriptor_handle);
-            let data: serde_json::Value =
-                serde_json::from_slice(&fs::read(&descriptor).unwrap()).unwrap();
-            assert_eq!(data["version"], 1);
-            assert_eq!(data["endpoint"], "http://127.0.0.1:1234");
-            assert_eq!(data["token"].as_str().unwrap().len(), 64);
-            assert_eq!(data["instance_id"].as_str().unwrap().len(), 32);
-            assert!(start_at(&path, 1234).is_err());
-            assert!(pin_directory(&descriptor).is_err());
-            drop(owner);
-            assert!(!descriptor.exists());
-            let link = path.join("reparse");
-            match std::os::windows::fs::symlink_dir(&path, &link) {
-                Ok(()) => {
-                    assert!(pin_directory(&link).is_err());
-                    fs::remove_dir(&link).unwrap();
-                }
-                Err(e) => eprintln!("Skipping reparse test: symlink creation unavailable: {e}"),
-            }
-            fs::remove_dir_all(path).unwrap();
-        }
-    }
     pub fn start(port: u16) -> anyhow::Result<Owner> {
         let appdata = PathBuf::from(
             std::env::var_os("LOCALAPPDATA")
@@ -468,6 +409,65 @@ mod windows {
             descriptor,
             instance,
         })
+    }
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        #[test]
+        fn current_user_security_and_lock_lifecycle() {
+            let security = Security::current().unwrap();
+            let mut control = 0;
+            let mut revision = 0;
+            assert_ne!(
+                unsafe {
+                    windows_sys::Win32::Security::GetSecurityDescriptorControl(
+                        security.0,
+                        &mut control,
+                        &mut revision,
+                    )
+                },
+                0
+            );
+            assert_ne!(control & windows_sys::Win32::Security::SE_DACL_PROTECTED, 0);
+            let mut random = [0u8; 8];
+            assert!(
+                unsafe {
+                    BCryptGenRandom(
+                        ptr::null_mut(),
+                        random.as_mut_ptr(),
+                        8,
+                        BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+                    )
+                } >= 0
+            );
+            let path = std::env::temp_dir()
+                .join(format!("openfader-test-{:x}", u64::from_le_bytes(random)));
+            fs::create_dir(&path).unwrap();
+            let owner = start_at(&path, 1234).unwrap();
+            let descriptor = path.join("OpenFader/Recorder/host.json");
+            let descriptor_handle = File::open(&descriptor).unwrap();
+            verify_security(&descriptor_handle, &security).unwrap();
+            drop(descriptor_handle);
+            let data: serde_json::Value =
+                serde_json::from_slice(&fs::read(&descriptor).unwrap()).unwrap();
+            assert_eq!(data["version"], 1);
+            assert_eq!(data["endpoint"], "http://127.0.0.1:1234");
+            assert_eq!(data["token"].as_str().unwrap().len(), 64);
+            assert_eq!(data["instance_id"].as_str().unwrap().len(), 32);
+            assert!(start_at(&path, 1234).is_err());
+            assert!(pin_directory(&descriptor).is_err());
+            drop(owner);
+            assert!(!descriptor.exists());
+            let link = path.join("reparse");
+            match std::os::windows::fs::symlink_dir(&path, &link) {
+                Ok(()) => {
+                    assert!(pin_directory(&link).is_err());
+                    fs::remove_dir(&link).unwrap();
+                }
+                Err(e) => eprintln!("Skipping reparse test: symlink creation unavailable: {e}"),
+            }
+            fs::remove_dir_all(path).unwrap();
+        }
     }
 }
 #[cfg(target_os = "windows")]
