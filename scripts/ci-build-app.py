@@ -184,7 +184,7 @@ def main():
         with path.open('rb') as stream:
             digest = hashlib.file_digest(stream, 'sha256').hexdigest()
         checksums.append(f'{digest}  {path.name}\n')
-    (OUT / f'{platform}-SHA256SUMS').write_text(''.join(checksums))
+    (OUT / f'{platform}-SHA256SUMS').write_bytes(''.join(checksums).encode('utf-8'))
 
 
 if __name__ == '__main__':
