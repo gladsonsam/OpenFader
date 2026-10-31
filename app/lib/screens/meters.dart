@@ -3,6 +3,7 @@
 // Freshness comes from the single shell-owned 80 ms loop; this page sends
 // spectrum_target for the visible strip while visible and clears it on dispose.
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,7 +12,6 @@ import '../theme.dart';
 import '../palette.dart';
 import '../core/output_meters.dart';
 import '../core/destination_controls.dart';
-import '../widgets/output_level_meter.dart';
 
 const bridgeTopDb = 0.0;
 const bridgeFloorDb = -50.0;
@@ -277,24 +277,6 @@ class _U4MetersPageState extends State<U4MetersPage> {
                               ),
                             ),
                           ),
-                        if (store.monitorControls.isNotEmpty) ...[
-                          ExpansionTile(
-                            expansionAnimationStyle: AnimationStyle.noAnimation,
-                            tilePadding:
-                                const EdgeInsets.symmetric(horizontal: 12),
-                            title: const Text('Monitor controls',
-                                style: TextStyle(
-                                    fontSize: 15, fontWeight: FontWeight.w600)),
-                            children: [
-                              _MonitorControls(
-                                  store: store,
-                                  focused: focused,
-                                  onSelect: (row) =>
-                                      setState(() => _focused = row))
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                        ],
                         for (final g in store.groups) ...[
                           if (g.ladders.isNotEmpty)
                             _LadderGroup(
@@ -310,6 +292,24 @@ class _U4MetersPageState extends State<U4MetersPage> {
                           _PhysicalOutputs(
                             group: g,
                             meterOf: store.outputMeterFor,
+                          ),
+                          const SizedBox(height: 14),
+                        ],
+                        if (store.monitorControls.isNotEmpty) ...[
+                          ExpansionTile(
+                            expansionAnimationStyle: AnimationStyle.noAnimation,
+                            tilePadding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                            title: const Text('Monitor controls',
+                                style: TextStyle(
+                                    fontSize: 15, fontWeight: FontWeight.w600)),
+                            children: [
+                              _MonitorControls(
+                                  store: store,
+                                  focused: focused,
+                                  onSelect: (row) =>
+                                      setState(() => _focused = row))
+                            ],
                           ),
                           const SizedBox(height: 14),
                         ],
@@ -359,22 +359,10 @@ class _PhysicalOutputs extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 for (final meter in group.meters)
-                  SizedBox(
-                    width: 240,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            meter.label,
-                            style: TextStyle(color: palette.text7),
-                          ),
-                        ),
-                        OutputLevelMeter(
-                            meter: meterOf(meter.target), label: 'Level'),
-                      ],
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _PhysicalLadder(
+                        label: meter.label, meter: meterOf(meter.target)),
                   ),
               ],
             ),
@@ -383,6 +371,75 @@ class _PhysicalOutputs extends StatelessWidget {
       ),
     );
   }
+}
+
+// Adapt provider telemetry to the same visual scale as channel meters.
+// Listen directly to the existing meter notifier; this owns no polling timer.
+class _PhysicalLadder extends StatefulWidget {
+  final String label;
+  final ValueListenable<OutputMeterVm> meter;
+  const _PhysicalLadder({required this.label, required this.meter});
+  @override
+  State<_PhysicalLadder> createState() => _PhysicalLadderState();
+}
+
+class _PhysicalLadderState extends State<_PhysicalLadder> {
+  final _taps = [BridgeTap(), BridgeTap()];
+  int _count = 1;
+  void _update() {
+    final value = widget.meter.value;
+    final count = value.levels.length == 2 ? 2 : 1;
+    if (_count != count) setState(() => _count = count);
+    for (var i = 0; i < _taps.length; i++) {
+      final level = i < value.levels.length ? value.levels[i] : 0.0;
+      _taps[i].db.value = value.available && level > 0
+          ? 20 * math.log(level) / math.ln10
+          : double.negativeInfinity;
+      _taps[i].clip.value = value.available && level >= 1;
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.meter.addListener(_update);
+    _update();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PhysicalLadder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.meter != widget.meter) {
+      oldWidget.meter.removeListener(_update);
+      widget.meter.addListener(_update);
+      _update();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.meter.removeListener(_update);
+    for (final tap in _taps) {
+      tap.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+      message: widget.meter.value.inferred
+          ? '${widget.label}: measured signal; physical mapping is unverified'
+          : widget.label,
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        for (var i = 0; i < _count; i++)
+          _Ladder(
+              ladder: BridgeLadder(
+                  ch: -1,
+                  label: widget.label,
+                  sub: _count == 2 ? (i == 0 ? 'L' : 'R') : ''),
+              tap: _taps[i],
+              height: 160),
+      ]));
 }
 
 class _LadderGroup extends StatelessWidget {
@@ -507,8 +564,9 @@ class _CollapsedGroup extends StatelessWidget {
 class _Ladder extends StatefulWidget {
   final BridgeLadder ladder;
   final BridgeTap tap;
+  final double height;
 
-  const _Ladder({required this.ladder, required this.tap});
+  const _Ladder({required this.ladder, required this.tap, this.height = 229});
 
   @override
   State<_Ladder> createState() => _LadderState();
@@ -548,7 +606,7 @@ class _LadderState extends State<_Ladder> {
       width: 64,
       child: Column(
         children: [
-          CustomPaint(size: const Size(44, 229), painter: _painter),
+          CustomPaint(size: Size(44, widget.height), painter: _painter),
           const SizedBox(height: 4),
           Text(
             widget.ladder.label ?? '—',
@@ -561,17 +619,18 @@ class _LadderState extends State<_Ladder> {
               color: ConsolePalette.of(context).text1,
             ),
           ),
-          Text(
-            widget.ladder.sub,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: U4.font,
-              fontSize: 11,
-              color: ConsolePalette.of(context).text7,
+          if (widget.ladder.sub.isNotEmpty)
+            Text(
+              widget.ladder.sub,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: U4.font,
+                fontSize: 11,
+                color: ConsolePalette.of(context).text7,
+              ),
             ),
-          ),
         ],
       ),
     );
