@@ -82,7 +82,7 @@ class ChannelToolbar extends StatelessWidget {
                     border: Border.all(
                         color: ConsolePalette.of(context).linePanel)),
             child: Stack(alignment: Alignment.center, children: [
-              if (trailing != null)
+              if (trailing != null && !compact)
                 Align(
                     alignment: Alignment.centerRight,
                     child: FractionallySizedBox(
@@ -90,7 +90,7 @@ class ChannelToolbar extends StatelessWidget {
               Align(
                   alignment: Alignment.centerLeft,
                   child: FractionallySizedBox(
-                      widthFactor: .30,
+                      widthFactor: compact ? .45 : .30,
                       child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -134,9 +134,10 @@ class ChannelToolbar extends StatelessWidget {
                                 style: AppDesign.type(compact ? 12 : 14,
                                     color: ConsolePalette.of(context).text7)),
                           ]))),
-              Center(
+              Align(
+                  alignment: compact ? Alignment.centerRight : Alignment.center,
                   child: FractionallySizedBox(
-                      widthFactor: .40,
+                      widthFactor: compact ? .50 : .40,
                       child: focus == null
                           ? _FaderValue(store: store, compact: compact)
                           : _FocusedValue(
@@ -250,7 +251,7 @@ class _FocusedValue extends StatelessWidget {
               child: Text(focus.text(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppDesign.type(compact ? 18 : 22,
+                  style: AppDesign.type(compact ? 16 : 18,
                       color: ConsolePalette.of(context).cyan,
                       weight: FontWeight.w700)))));
 }
@@ -400,7 +401,7 @@ class _FaderValue extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                   fontFamily: U4.font,
-                                  fontSize: compact ? 18 : 22,
+                                  fontSize: compact ? 16 : 18,
                                   fontWeight: FontWeight.w700,
                                   color: ConsolePalette.of(context).cyan,
                                   fontFeatures: const [
