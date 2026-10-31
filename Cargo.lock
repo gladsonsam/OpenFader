@@ -1290,7 +1290,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "openfader-audio"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "cpal",
  "rtrb",
@@ -1300,7 +1300,7 @@ dependencies = [
 
 [[package]]
 name = "openfader-cli"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "openfader-core",
@@ -1314,7 +1314,7 @@ dependencies = [
 
 [[package]]
 name = "openfader-core"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "openfader-sim",
@@ -1326,7 +1326,7 @@ dependencies = [
 
 [[package]]
 name = "openfader-engine"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1346,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "openfader-flutter-bridge"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "flutter_rust_bridge",
@@ -1357,7 +1357,7 @@ dependencies = [
 
 [[package]]
 name = "openfader-proto-dl32s"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "openfader-core",
@@ -1368,7 +1368,7 @@ dependencies = [
 
 [[package]]
 name = "openfader-proto-wing"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "openfader-core",
@@ -1379,7 +1379,7 @@ dependencies = [
 
 [[package]]
 name = "openfader-proto-xair"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "openfader-core",
@@ -1391,7 +1391,7 @@ dependencies = [
 
 [[package]]
 name = "openfader-serve"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1416,7 +1416,7 @@ dependencies = [
 
 [[package]]
 name = "openfader-sim"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "openfader-core",
@@ -1426,7 +1426,7 @@ dependencies = [
 
 [[package]]
 name = "openfader-transport"
-version = "0.1.1"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "futures",
