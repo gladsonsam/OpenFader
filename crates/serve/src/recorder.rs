@@ -1,8 +1,8 @@
 //! Serialized desktop audio worker. The service and streams remain on its thread.
 use serde_json::{json, Value};
+use std::{collections::HashMap, path::PathBuf};
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::{
-    collections::HashMap,
-    path::PathBuf,
     sync::mpsc,
     time::{Duration, Instant},
 };

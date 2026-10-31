@@ -8,6 +8,15 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub input_channels: u16,
+    pub output_channels: u16,
+    pub sample_rate: u32,
+}
+
 pub const CHANNELS: usize = 18;
 /// Normalize an optional output mask against the selected device layout.
 pub fn playback_output_mask(mask: Option<Vec<bool>>, channels: u16) -> std::io::Result<Vec<bool>> {
@@ -435,7 +444,7 @@ mod macos_devices;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 mod service;
 #[cfg(any(target_os = "macos", target_os = "windows"))]
-pub use service::{DeviceInfo, RecorderService, RecorderStatus};
+pub use service::{RecorderService, RecorderStatus};
 
 /// Read a bounded interval of a completed take and aggregate real PCM extrema.
 pub fn waveform_peaks(
