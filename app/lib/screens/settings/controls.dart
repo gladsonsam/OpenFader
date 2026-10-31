@@ -192,10 +192,12 @@ class _IconBtnInline extends StatelessWidget {
             child: InkWell(
               borderRadius: BorderRadius.circular(10),
               onTap: () => _runSettingsAction(context, onTap),
-              child: _SettingsIcon(
-                icon,
-                size: 22,
-                color: ConsolePalette.of(context).text7,
+              child: Center(
+                child: Icon(
+                  icon,
+                  size: icon == Icons.close ? 16 : 22,
+                  color: ConsolePalette.of(context).text7,
+                ),
               ),
             ),
           ),
