@@ -65,6 +65,7 @@ abstract class RoutingStore extends ChangeNotifier {
   String get selectedName;
   String get selectedSrc;
   List<RouteSrcTile> get srcTiles;
+  List<RouteSrcTile> get allSrcTiles => srcTiles;
   bool get routingSupported;
   bool get canPatch => routingSupported;
   int get controlAccessEpoch => 0;
@@ -113,7 +114,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     final point = box.globalToLocal(global);
     final column = ((point.dx - _labelWidth) / _cell).floor();
     final row = (point.dy / _row).floor();
-    final sources = store.srcTiles;
+    final sources = store.allSrcTiles;
     final strips = store.strips;
     if (point.dx < _labelWidth ||
         row < 0 ||
@@ -133,7 +134,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
       {bool direct = false}) async {
     if (_confirming) return;
     store.selectStrip(strip.strip);
-    final tile = store.srcTiles
+    final tile = store.allSrcTiles
         .where((t) => t.group == source.group && t.index == source.index)
         .firstOrNull;
     if (tile == null || !store.canPatch) {
@@ -166,7 +167,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                     store.selectedStrip == strip.strip &&
                     store.controlAccessEpoch == epoch &&
                     store.operationKey == tile.operationKey &&
-                    store.srcTiles.any((t) =>
+                    store.allSrcTiles.any((t) =>
                         t.group == tile.group &&
                         t.index == tile.index &&
                         t.operationKey == tile.operationKey);
@@ -307,7 +308,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                 listenable: store,
                 builder: (context, _) {
                   final p = ConsolePalette.of(context);
-                  final tiles = store.srcTiles;
+                  final tiles = store.allSrcTiles;
                   final valid = store.target == target &&
                       store.selectedStrip == strip.strip &&
                       store.operationKey == operation &&
@@ -355,14 +356,6 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                   icon: const Icon(Icons.close),
                                   onPressed: () => Navigator.pop(sheetContext))
                             ])),
-                        Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            child: _selector(
-                                store.groups, store.group, store.groupLabel,
-                                (group) {
-                              update(() => preview = null);
-                              store.selectGroup(group);
-                            })),
                         if (store.canClear || store.tapControl != null)
                           Padding(
                               padding:
@@ -484,20 +477,15 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                                         color: p
                                                                             .onAccent)),
                                                               Flexible(
-                                                                  child: Text(
-                                                                      tile.displayGroupLabel == null
-                                                                          ? tile
-                                                                              .label
-                                                                          : '${tile.index}',
+                                                                  child: Text(tile.label,
                                                                       textAlign:
                                                                           TextAlign
                                                                               .center,
                                                                       maxLines:
                                                                           2,
                                                                       style: TextStyle(
-                                                                          fontSize: tile.displayGroupLabel == null
-                                                                              ? 12
-                                                                              : 20,
+                                                                          fontSize:
+                                                                              13,
                                                                           fontWeight: FontWeight
                                                                               .w600,
                                                                           color: tile.current
@@ -546,7 +534,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                     return _mobileRoutes();
                   }
                   final strips = store.strips;
-                  final sources = store.srcTiles;
+                  final sources = store.allSrcTiles;
                   final preview = _previewTarget == store.target &&
                       strips.any((s) => s.id == _previewStrip?.id) &&
                       sources.any((s) =>
@@ -559,10 +547,6 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                             padding: const EdgeInsets.all(10),
                             child: Row(children: [
                               Expanded(child: _targetSelector()),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                  child: _selector(store.groups, store.group,
-                                      store.groupLabel, store.selectGroup)),
                               const SizedBox(width: 4),
                               const Tooltip(
                                   message:
@@ -702,7 +686,11 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                                             strip.src ==
                                                                 source.label;
                                                         final highlighted =
-                                                            preview &&
+                                                            _previewSource
+                                                                        ?.group ==
+                                                                    source
+                                                                        .group &&
+                                                                preview &&
                                                                 _previewStrip
                                                                         ?.id ==
                                                                     strip.id &&
