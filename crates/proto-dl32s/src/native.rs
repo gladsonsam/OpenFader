@@ -89,6 +89,8 @@ impl NativeCache {
                 Some((id, assignment_name_label(slot, &name)?))
             })
             .collect();
+        self.view.complete = false;
+        self.view.error = None;
         self.view.slots = slots;
         self.view.current = session.current_snapshot_pushed();
         self.view.received = !self.view.slots.is_empty() || self.view.current.is_some();

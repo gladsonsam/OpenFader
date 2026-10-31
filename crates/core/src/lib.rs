@@ -401,15 +401,10 @@ pub struct NativeSnapshotSlot {
 /// snapshot recall or rename relay received on the live session. Own-write
 /// optimism (a local save accept, a delete) never populates this view, so
 /// it can never launder an unconfirmed write into a confirmed slot.
-/// `received` stays true once ANY genuine snapshot push has been observed
-/// this session, even when `slots` is empty, that is PARTIAL observed
-/// metadata only, never a full catalogue and never proof of an empty desk.
-/// Unless `complete` is true, `ready` means "observed something", not a complete inventory:
-/// `slots` empty with `current: Some(n)` proves only the last reported
-/// recall, never a non-empty inventory. `connected` reports whether a
-/// live desk session backs this view; `current` is the last
-/// desk-observed recall slot, `None` means no recall observed, never a
-/// slot-0 default.
+/// `received` means the driver has desk evidence: name/recall pushes or a
+/// validated stored-show catalogue. Only `complete` certifies the stored slot
+/// list is complete; unsaved mixer edits and audio state are not certified.
+/// `current` remains the last desk-reported recall, never an invented default.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NativeSnapshots {
     /// A validated stored-show catalogue, rather than partial name pushes.
@@ -420,7 +415,7 @@ pub struct NativeSnapshots {
     pub slots: Vec<NativeSnapshotSlot>,
     /// Last desk-evidenced recall slot (`None` = no recall observed).
     pub current: Option<u32>,
-    /// Any genuine snapshot push observed this session (even empty).
+    /// Snapshot metadata received from pushes or a validated stored catalogue.
     pub received: bool,
     /// A live desk session backs this view.
     pub connected: bool,
