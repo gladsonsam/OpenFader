@@ -1,6 +1,7 @@
-// Patch matrix: patch goes through cmdPatchSet, unpatch through cmdPatchClear.
-// Screens stay constructor-injected so Area A can implement the store.
+// Patch matrix: previews stay local; confirmed edits use the injected store.
+// The store retains provider identity, access and stale-operation guards.
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 
 import '../theme.dart';
 import '../palette.dart';
@@ -79,407 +80,465 @@ abstract class RoutingStore extends ChangeNotifier {
   void clearPatch(int strip, {String? operationKey});
 }
 
-class U4RoutingPage extends StatelessWidget {
+class U4RoutingPage extends StatefulWidget {
   final RoutingStore store;
-
   const U4RoutingPage({super.key, required this.store});
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: ConsolePalette.of(context).page,
-      body: SafeArea(
-        child: ListenableBuilder(
-          listenable: store,
-          builder: (context, _) {
-            if (!store.routingSupported) {
-              return Center(
-                child: Text(
-                  'Routing controls are unavailable for this driver.',
-                  style: TextStyle(color: ConsolePalette.of(context).text4),
-                ),
-              );
-            }
-            final operationKey = store.operationKey;
-            final selectedStrip = store.selectedStrip;
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!store.canPatch)
-                  const Padding(
-                    padding: EdgeInsets.all(8),
-                    child: Text(
-                        'Select a current destination to edit; device limits apply.'),
-                  ),
-                _Header(
-                  selectedName: store.selectedName,
-                  selectedSrc: store.selectedSrc,
-                  onClear: store.selectedStrip == null || !store.canClear
-                      ? null
-                      : () => store.clearPatch(selectedStrip!,
-                          operationKey: operationKey),
-                ),
-                if (store.tapControl case final control?)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: TextButton(
-                      onPressed: store.tapIsCurrent(control)
-                          ? () => showDialog<void>(
-                                context: context,
-                                barrierDismissible: false,
-                                builder: (_) => DestinationControlEditor(
-                                  changes: store,
-                                  accessEpoch: () => store.controlAccessEpoch,
-                                  isCurrent: store.tapIsCurrent,
-                                  apply: store.setTapControl,
-                                  control: control,
-                                ),
-                              )
-                          : null,
-                      child: Text(
-                          'Tap position: ${control.valueLabel ?? 'Unavailable'}'),
-                    ),
-                  ),
-                if (store.targets.length > 1)
-                  _GroupChips(
-                    groups: [for (final t in store.targets) t.key],
-                    labels: {for (final t in store.targets) t.key: t.label},
-                    active: store.target,
-                    onPick: store.selectTarget,
-                  ),
-                _GroupChips(
-                  labels: {
-                    for (final g in store.groups) g: store.groupLabel(g)
-                  },
-                  groups: store.groups,
-                  active: store.group,
-                  onPick: store.selectGroup,
-                ),
-                Expanded(
-                  child: store.strips.isEmpty
-                      ? Center(
-                          child: Text('waiting for desk…',
-                              style: TextStyle(
-                                  color: ConsolePalette.of(context).text7)),
-                        )
-                      : ListView.separated(
-                          padding: const EdgeInsets.all(8),
-                          itemCount: store.strips.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 4),
-                          itemBuilder: (context, i) {
-                            final s = store.strips[i];
-                            final on = s.strip == store.selectedStrip;
-                            return _RoutingTap(
-                              selected: on,
-                              onTap: () => store.selectStrip(s.strip),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 8),
-                                decoration: BoxDecoration(
-                                  color: on
-                                      ? ConsolePalette.of(context).selected
-                                      : ConsolePalette.of(context).well,
-                                  border: Border.all(
-                                      color: on
-                                          ? ConsolePalette.of(context)
-                                              .selectedLine
-                                          : ConsolePalette.of(context)
-                                              .tileBorder),
-                                  borderRadius: U4.rBtn,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Expanded(
-                                      child: Text(
-                                        s.name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w600,
-                                            color: ConsolePalette.of(context)
-                                                .text1),
-                                      ),
-                                    ),
-                                    Text(
-                                      s.src,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: s.src == '—'
-                                            ? ConsolePalette.of(context).mute
-                                            : ConsolePalette.of(context).cyan,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                ),
-                Divider(color: ConsolePalette.of(context).divider, height: 1),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: store.srcTiles.isEmpty
-                        ? Text('no sources in this group',
-                            style: TextStyle(
-                                fontSize: 12,
-                                color: ConsolePalette.of(context).text7))
-                        : GridView.builder(
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 4,
-                              mainAxisSpacing: 4,
-                              crossAxisSpacing: 4,
-                              mainAxisExtent: 52,
-                            ),
-                            itemCount: store.srcTiles.length,
-                            itemBuilder: (context, i) {
-                              final t = store.srcTiles[i];
-                              final free = t.usedBy.isEmpty && !t.current;
-                              return _RoutingTap(
-                                selected: t.current,
-                                onTap: store.selectedStrip == null ||
-                                        !store.canPatch
-                                    ? null
-                                    : () => store.patch(t),
-                                child: Container(
-                                  alignment: Alignment.center,
-                                  padding:
-                                      const EdgeInsets.symmetric(horizontal: 4),
-                                  decoration: BoxDecoration(
-                                    color: t.current
-                                        ? ConsolePalette.of(context).cyan
-                                        : free
-                                            ? ConsolePalette.of(context).well
-                                            : ConsolePalette.of(context)
-                                                .control,
-                                    border: Border.all(
-                                        color: t.current
-                                            ? ConsolePalette.of(context).cyan
-                                            : ConsolePalette.of(context)
-                                                .tileBorder),
-                                    borderRadius: U4.rBtn,
-                                  ),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _SourceLabel(tile: t),
-                                      if (!t.current && t.usedBy.isNotEmpty)
-                                        Text(
-                                          '→ ${t.usedBy}',
-                                          textAlign: TextAlign.center,
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                              fontSize: 10,
-                                              color: ConsolePalette.of(context)
-                                                  .text7),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                  ),
-                ),
-              ],
-            );
-          },
+  State<U4RoutingPage> createState() => _U4RoutingPageState();
+}
+
+class _U4RoutingPageState extends State<U4RoutingPage> {
+  static const double _labelWidth = 168, _cell = 56, _row = 56;
+  final _matrixKey = GlobalKey();
+  RouteStrip? _previewStrip;
+  RouteSrcTile? _previewSource;
+  String? _previewTarget;
+  PointerDeviceKind _pointer = PointerDeviceKind.touch;
+  bool _confirming = false;
+  RoutingStore get store => widget.store;
+
+  void _preview(RouteStrip strip, RouteSrcTile source) {
+    if (_confirming) return;
+    setState(() {
+      _previewStrip = strip;
+      _previewSource = source;
+      _previewTarget = store.target;
+    });
+  }
+
+  void _drag(Offset global) {
+    final box = _matrixKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final point = box.globalToLocal(global);
+    final column = ((point.dx - _labelWidth) / _cell).floor();
+    final row = (point.dy / _row).floor();
+    final sources = store.srcTiles;
+    final strips = store.strips;
+    if (point.dx < _labelWidth ||
+        row < 0 ||
+        row >= strips.length ||
+        column < 0 ||
+        column >= sources.length) {
+      setState(() {
+        _previewStrip = null;
+        _previewSource = null;
+      });
+      return;
+    }
+    _preview(strips[row], sources[column]);
+  }
+
+  Future<void> _choose(RouteStrip strip, RouteSrcTile source,
+      {bool direct = false}) async {
+    if (_confirming) return;
+    store.selectStrip(strip.strip);
+    final tile = store.srcTiles
+        .where((t) => t.group == source.group && t.index == source.index)
+        .firstOrNull;
+    if (tile == null || !store.canPatch) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('This destination is unavailable or protected.')));
+      }
+      return;
+    }
+    _preview(strip, tile);
+    if (tile.current) return;
+    if (direct) {
+      store.patch(tile);
+      return;
+    }
+    _confirming = true;
+    final target = store.target;
+    final epoch = store.controlAccessEpoch;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+          child: ListenableBuilder(
+              listenable: store,
+              builder: (context, _) {
+                final valid = store.target == target &&
+                    store.canPatch &&
+                    store.selectedStrip == strip.strip &&
+                    store.controlAccessEpoch == epoch &&
+                    store.operationKey == tile.operationKey &&
+                    store.srcTiles.any((t) =>
+                        t.group == tile.group &&
+                        t.index == tile.index &&
+                        t.operationKey == tile.operationKey);
+                return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text('Route ${strip.name}',
+                          style: Theme.of(context).textTheme.titleLarge),
+                      const SizedBox(height: 16),
+                      Text('Current: ${strip.src}'),
+                      const SizedBox(height: 8),
+                      Text('New source: ${tile.label}',
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 16),
+                      if (!valid)
+                        const Text(
+                            'Routing changed. Close and select the route again.'),
+                      FilledButton(
+                          onPressed: valid
+                              ? () {
+                                  store.patch(tile);
+                                  Navigator.pop(sheetContext);
+                                }
+                              : null,
+                          child: const Text('Confirm route')),
+                      TextButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          child: const Text('Cancel')),
+                    ]);
+              }),
         ),
       ),
     );
+    if (mounted) {
+      setState(() {
+        _confirming = false;
+        _previewStrip = null;
+        _previewSource = null;
+      });
+    }
   }
-}
 
-class _SourceLabel extends StatelessWidget {
-  final RouteSrcTile tile;
-
-  const _SourceLabel({required this.tile});
+  Widget _tabs(List<String> keys, String selected,
+          String Function(String) label, ValueChanged<String> pick) =>
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        child: Row(children: [
+          for (final key in keys)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                  label: Text(label(key)),
+                  selected: key == selected,
+                  materialTapTargetSize: MaterialTapTargetSize.padded,
+                  onSelected: (_) {
+                    setState(() {
+                      _previewStrip = null;
+                      _previewSource = null;
+                    });
+                    pick(key);
+                  }),
+            )
+        ]),
+      );
 
   @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontSize: 12,
-      fontWeight: FontWeight.w700,
-      color: tile.current
-          ? ConsolePalette.of(context).onAccent
-          : ConsolePalette.of(context).text1,
-    );
-    final groupLabel = tile.displayGroupLabel;
-    return Semantics(
-      label: tile.label,
-      child: ExcludeSemantics(
-        child: groupLabel == null
-            ? Text(
-                tile.label,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: style,
-              )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Text(
-                      groupLabel,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: style,
-                    ),
-                  ),
-                  Text(' ${tile.index}', style: style),
-                ],
-              ),
-      ),
-    );
+  Widget build(BuildContext context) => Scaffold(
+        backgroundColor: ConsolePalette.of(context).page,
+        body: SafeArea(
+            child: ListenableBuilder(
+                listenable: store,
+                builder: (context, _) {
+                  final p = ConsolePalette.of(context);
+                  if (!store.routingSupported) {
+                    return const Center(
+                        child: Text(
+                            'Routing controls are unavailable for this driver.'));
+                  }
+                  final strips = store.strips;
+                  final sources = store.srcTiles;
+                  final preview = _previewTarget == store.target &&
+                      strips.any((s) => s.id == _previewStrip?.id) &&
+                      sources.any((s) =>
+                          s.group == _previewSource?.group &&
+                          s.index == _previewSource?.index);
+                  return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Patch matrix',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleLarge),
+                                  const SizedBox(height: 4),
+                                  Text('Sources across · destinations down',
+                                      style: TextStyle(color: p.text4)),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                      'Mouse: hover to preview, click to route. Touch: tap or hold and drag, then confirm.',
+                                      style: TextStyle(
+                                          fontSize: 12, color: p.text7)),
+                                ])),
+                        _tabs(
+                            [for (final t in store.targets) t.key],
+                            store.target,
+                            (key) => store.targets
+                                .firstWhere((t) => t.key == key)
+                                .label,
+                            store.selectTarget),
+                        _tabs(store.groups, store.group, store.groupLabel,
+                            store.selectGroup),
+                        Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 10),
+                            color: p.well,
+                            child: Text(
+                                preview
+                                    ? '${_previewStrip!.name}: ${_previewStrip!.src} → ${_previewSource!.label}'
+                                    : '✓ Patched   ·   + Preview   ·   Scroll to see more sources',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: preview ? p.cyan : p.text4,
+                                    fontWeight: FontWeight.w600))),
+                        Expanded(
+                            child: sources.isEmpty || strips.isEmpty
+                                ? const Center(
+                                    child: Text(
+                                        'Waiting for routing sources and destinations…'))
+                                : Scrollbar(
+                                    child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: SizedBox(
+                                      width:
+                                          _labelWidth + sources.length * _cell,
+                                      child: Column(children: [
+                                        Row(children: [
+                                          SizedBox(
+                                              width: _labelWidth,
+                                              height: 64,
+                                              child: Center(
+                                                  child: Text('DESTINATION ↓',
+                                                      style: TextStyle(
+                                                          color: p.text7,
+                                                          fontSize: 11)))),
+                                          for (final source in sources)
+                                            Tooltip(
+                                                message: source.label,
+                                                child: Container(
+                                                    width: _cell,
+                                                    height: 64,
+                                                    alignment: Alignment.center,
+                                                    padding:
+                                                        const EdgeInsets.all(4),
+                                                    decoration: BoxDecoration(
+                                                        color: p.well,
+                                                        border: Border.all(
+                                                            color:
+                                                                p.tileBorder)),
+                                                    child: Text(source.label,
+                                                        textAlign:
+                                                            TextAlign.center,
+                                                        maxLines: 3,
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: const TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .w600)))),
+                                        ]),
+                                        Expanded(
+                                            child: SingleChildScrollView(
+                                                child: GestureDetector(
+                                          onLongPressStart: (d) =>
+                                              _drag(d.globalPosition),
+                                          onLongPressMoveUpdate: (d) =>
+                                              _drag(d.globalPosition),
+                                          onLongPressCancel: () => setState(() {
+                                            _previewStrip = null;
+                                            _previewSource = null;
+                                          }),
+                                          onLongPressEnd: (_) {
+                                            final strip = _previewStrip;
+                                            final source = _previewSource;
+                                            if (strip != null &&
+                                                source != null &&
+                                                _previewTarget ==
+                                                    store.target) {
+                                              _choose(strip, source);
+                                            }
+                                          },
+                                          child: Column(
+                                              key: _matrixKey,
+                                              children: [
+                                                for (final strip in strips)
+                                                  Row(children: [
+                                                    SizedBox(
+                                                        width: _labelWidth,
+                                                        height: _row,
+                                                        child: TextButton(
+                                                            onPressed: () => store
+                                                                .selectStrip(
+                                                                    strip
+                                                                        .strip),
+                                                            child: Align(
+                                                                alignment: Alignment
+                                                                    .centerLeft,
+                                                                child: Column(
+                                                                    mainAxisAlignment:
+                                                                        MainAxisAlignment
+                                                                            .center,
+                                                                    crossAxisAlignment:
+                                                                        CrossAxisAlignment
+                                                                            .start,
+                                                                    children: [
+                                                                      Text(
+                                                                          strip
+                                                                              .name,
+                                                                          maxLines:
+                                                                              1,
+                                                                          overflow:
+                                                                              TextOverflow.ellipsis),
+                                                                      Text(
+                                                                          strip
+                                                                              .src,
+                                                                          maxLines:
+                                                                              1,
+                                                                          overflow: TextOverflow
+                                                                              .ellipsis,
+                                                                          style: TextStyle(
+                                                                              fontSize: 11,
+                                                                              color: p.text7))
+                                                                    ])))),
+                                                    for (final source
+                                                        in sources)
+                                                      Builder(
+                                                          builder: (context) {
+                                                        final connected =
+                                                            strip.src ==
+                                                                source.label;
+                                                        final highlighted =
+                                                            preview &&
+                                                                _previewStrip
+                                                                        ?.id ==
+                                                                    strip.id &&
+                                                                _previewSource
+                                                                        ?.index ==
+                                                                    source
+                                                                        .index;
+                                                        return MouseRegion(
+                                                            onEnter: (_) =>
+                                                                _preview(strip,
+                                                                    source),
+                                                            onExit: (_) {
+                                                              if (!_confirming) {
+                                                                setState(() {
+                                                                  _previewStrip =
+                                                                      null;
+                                                                  _previewSource =
+                                                                      null;
+                                                                });
+                                                              }
+                                                            },
+                                                            child: Listener(
+                                                                onPointerDown:
+                                                                    (event) =>
+                                                                        _pointer =
+                                                                            event.kind,
+                                                                child: Semantics(
+                                                                    label: '${source.label} to ${strip.name}',
+                                                                    selected: connected,
+                                                                    child: SizedBox(
+                                                                        width: _cell,
+                                                                        height: _row,
+                                                                        child: Padding(
+                                                                            padding: const EdgeInsets.all(3),
+                                                                            child: Material(
+                                                                                color: connected
+                                                                                    ? p.cyan
+                                                                                    : highlighted
+                                                                                        ? p.selected
+                                                                                        : p.well,
+                                                                                shape: RoundedRectangleBorder(borderRadius: U4.rBtn, side: BorderSide(color: highlighted ? p.cyan : p.tileBorder, width: highlighted ? 2 : 1)),
+                                                                                child: InkWell(
+                                                                                    borderRadius: U4.rBtn,
+                                                                                    onTap: () => _choose(strip, source, direct: _pointer == PointerDeviceKind.mouse),
+                                                                                    child: Center(
+                                                                                        child: Icon(
+                                                                                            connected
+                                                                                                ? Icons.check_rounded
+                                                                                                : highlighted
+                                                                                                    ? Icons.add
+                                                                                                    : Icons.circle_outlined,
+                                                                                            size: connected || highlighted ? 22 : 10,
+                                                                                            color: connected
+                                                                                                ? p.onAccent
+                                                                                                : highlighted
+                                                                                                    ? p.cyan
+                                                                                                    : p.text7)))))))));
+                                                      }),
+                                                  ]),
+                                              ]),
+                                        ))),
+                                      ]),
+                                    ),
+                                  ))),
+                        if (store.selectedStrip != null)
+                          Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 4),
+                              child: Wrap(
+                                  spacing: 12,
+                                  crossAxisAlignment: WrapCrossAlignment.center,
+                                  children: [
+                                    Text(store.selectedName,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w600)),
+                                    if (store.tapControl case final control?)
+                                      TextButton(
+                                          onPressed: store.tapIsCurrent(control)
+                                              ? () => showDialog<void>(
+                                                  context: context,
+                                                  barrierDismissible: false,
+                                                  builder: (_) =>
+                                                      DestinationControlEditor(
+                                                          changes: store,
+                                                          accessEpoch: () => store
+                                                              .controlAccessEpoch,
+                                                          isCurrent: store
+                                                              .tapIsCurrent,
+                                                          apply: store
+                                                              .setTapControl,
+                                                          control: control))
+                                              : null,
+                                          child: Text(
+                                              'Tap: ${control.valueLabel ?? 'Unavailable'}')),
+                                    TextButton(
+                                        onPressed: store.canClear
+                                            ? () => _confirmClear()
+                                            : null,
+                                        child: const Text('Unpatch')),
+                                  ])),
+                      ]);
+                })),
+      );
+
+  Future<void> _confirmClear() async {
+    final strip = store.selectedStrip;
+    final key = store.operationKey;
+    final name = store.selectedName;
+    final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+                title: Text('Unpatch $name?'),
+                content: const Text('This removes its current source.'),
+                actions: [
+                  TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel')),
+                  FilledButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text('Unpatch'))
+                ]));
+    if (confirmed == true && mounted && strip != null) {
+      store.clearPatch(strip, operationKey: key);
+    }
   }
-}
-
-class _Header extends StatelessWidget {
-  final String selectedName;
-  final String selectedSrc;
-  final VoidCallback? onClear;
-
-  const _Header({
-    required this.selectedName,
-    required this.selectedSrc,
-    required this.onClear,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        border: Border(
-            bottom: BorderSide(color: ConsolePalette.of(context).lineHeader)),
-      ),
-      child: Row(
-        children: [
-          Text('ROUTING',
-              style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                  color: ConsolePalette.of(context).text1)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              selectedName.isEmpty
-                  ? 'pick a strip, then a source'
-                  : '$selectedName · $selectedSrc',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  fontSize: 12, color: ConsolePalette.of(context).text7),
-            ),
-          ),
-          if (onClear != null)
-            _RoutingTap(
-              onTap: onClear,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: ConsolePalette.of(context).well,
-                  border: Border.all(color: ConsolePalette.of(context).lineCtl),
-                  borderRadius: U4.rBtn,
-                ),
-                child: Text('Unpatch',
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: ConsolePalette.of(context).text1)),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _GroupChips extends StatelessWidget {
-  final List<String> groups;
-  final Map<String, String> labels;
-  final String active;
-  final ValueChanged<String> onPick;
-
-  const _GroupChips({
-    required this.groups,
-    this.labels = const {},
-    required this.active,
-    required this.onPick,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-      child: Wrap(
-        runSpacing: 6,
-        children: [
-          for (final g in groups) ...[
-            _RoutingTap(
-              selected: g == active,
-              onTap: () => onPick(g),
-              child: Container(
-                margin: const EdgeInsets.only(right: 6),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: g == active
-                      ? ConsolePalette.of(context).cyan
-                      : ConsolePalette.of(context).well,
-                  borderRadius: U4.rBtn,
-                  border: Border.all(
-                      color: g == active
-                          ? ConsolePalette.of(context).cyan
-                          : ConsolePalette.of(context).railBorder),
-                ),
-                child: Text(
-                  labels[g] ?? g,
-                  textAlign: TextAlign.center,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: g == active
-                        ? ConsolePalette.of(context).onAccent
-                        : ConsolePalette.of(context).text4,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _RoutingTap extends StatelessWidget {
-  final Widget child;
-  final VoidCallback? onTap;
-  final bool? selected;
-  const _RoutingTap({required this.child, required this.onTap, this.selected});
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-      button: true,
-      enabled: onTap != null,
-      selected: selected,
-      child: GestureDetector(onTap: onTap, child: child));
 }
