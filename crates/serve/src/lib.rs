@@ -22,7 +22,6 @@
 //! - Binary meter encoding for opted-in clients
 //!   (`{"cmd":"hello","binary_meters":true}` → [`Event::to_binary`]).
 
-#[cfg(unix)]
 pub mod capture_client;
 pub mod coordinator_backend;
 pub mod engine_adapter;
