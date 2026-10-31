@@ -131,8 +131,8 @@ class _SavedMixerRow extends StatelessWidget {
     final wide = MediaQuery.sizeOf(context).width > 900;
     return Padding(
       padding: EdgeInsets.symmetric(
-        horizontal: wide ? 26 : 16,
-        vertical: wide ? 22 : 12,
+        horizontal: 16,
+        vertical: 12,
       ),
       child: Row(
         children: [
@@ -146,7 +146,7 @@ class _SavedMixerRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: wide ? 27 : 18,
+                    fontSize: 17,
                     height: wide ? 1.25 : 24 / 18,
                     fontWeight: FontWeight.w500,
                     color: ConsolePalette.of(context).text1,
@@ -159,7 +159,7 @@ class _SavedMixerRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: wide ? 23 : 14,
+                    fontSize: 14,
                     height: wide ? 1.4 : 1.5,
                     color: ConsolePalette.of(context).text7,
                     fontFeatures: const [FontFeature.tabularFigures()],

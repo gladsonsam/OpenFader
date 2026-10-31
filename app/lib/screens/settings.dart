@@ -150,7 +150,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
           title,
           style: TextStyle(
             fontFamily: U4.font,
-            fontSize: wide ? 30 : 23,
+            fontSize: 22,
             fontWeight: FontWeight.w600,
             color: ConsolePalette.of(context).text1,
           ),
@@ -159,7 +159,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
           body,
           style: TextStyle(
             fontFamily: U4.font,
-            fontSize: wide ? 25 : 17,
+            fontSize: 16,
             height: 1.5,
             color: ConsolePalette.of(context).text7,
           ),
@@ -171,7 +171,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
               'Cancel',
               style: TextStyle(
                 fontFamily: U4.font,
-                fontSize: wide ? 22 : 17,
+                fontSize: 16,
                 color: ConsolePalette.of(context).text1,
               ),
             ),
@@ -192,7 +192,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
               action,
               style: TextStyle(
                 fontFamily: U4.font,
-                fontSize: wide ? 22 : 17,
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
                 color: ConsolePalette.of(context).onDanger,
               ),
@@ -312,6 +312,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _topbar(title: 'Settings', showBack: false),
+        const SizedBox(height: 16),
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -412,12 +413,12 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
       children: [
         if (wide)
           Padding(
-            padding: const EdgeInsets.only(bottom: 30),
+            padding: const EdgeInsets.only(bottom: 24),
             child: Text(
               s.label,
               style: TextStyle(
                 fontFamily: U4.font,
-                fontSize: 36,
+                fontSize: 26,
                 height: 1.22,
                 fontWeight: FontWeight.w600,
                 color: ConsolePalette.of(context).text1,

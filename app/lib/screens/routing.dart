@@ -259,15 +259,18 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   Widget _targetSelector() {
     final p = ConsolePalette.of(context);
     return LayoutBuilder(builder: (context, constraints) {
-      var minimum = 96.0;
+      final compact = MediaQuery.sizeOf(context).width < 700;
+      final tabStyle = Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: compact ? 13 : 14);
+      var minimum = compact ? 80.0 : 96.0;
       for (final target in store.targets) {
         final text = TextPainter(
             text: TextSpan(
                 text: target.label,
-                style: Theme.of(context).textTheme.labelLarge),
+                style: tabStyle),
             textDirection: Directionality.of(context))
           ..layout();
-        if (text.width + 32 > minimum) minimum = text.width + 32;
+        final needed = text.width + (compact ? 24 : 32);
+        if (needed > minimum) minimum = needed;
       }
       final width = (minimum * store.targets.length +
               8 * (store.targets.length - 1).clamp(0, store.targets.length))
@@ -311,7 +314,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                   });
                                   store.selectTarget(target.key);
                                 },
-                                child: Text(target.label, maxLines: 1)),
+                                child: Text(target.label, maxLines: 1, style: tabStyle)),
                           ))),
               ])));
     });
@@ -325,9 +328,10 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis)));
     return Column(children: [
-      Row(
-          spacing: 8,
-          children: [Expanded(child: _targetSelector()), _mapButton()]),
+      Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(spacing: 8,
+              children: [Expanded(child: _targetSelector()), _mapButton()])),
       Container(
           height: 48,
           color: p.well,
@@ -391,14 +395,21 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     ]);
   }
 
-  Widget _mapButton() => Builder(
-      builder: (anchor) => TextButton.icon(
-          onPressed: store.strips.isEmpty || store.allSrcTiles.isEmpty
-              ? null
-              : () => _quickMap(anchor),
-          icon: const Icon(Icons.auto_fix_high_outlined, size: 18),
-          label: const Text('Map'),
-          style: TextButton.styleFrom(minimumSize: const Size(72, 48))));
+  Widget _mapButton() => Builder(builder: (anchor) {
+    final action = store.strips.isEmpty || store.allSrcTiles.isEmpty
+        ? null : () => _quickMap(anchor);
+    if (MediaQuery.sizeOf(context).width < 700) {
+      return TextButton(
+          onPressed: action,
+          style: TextButton.styleFrom(minimumSize: const Size(52, 48), padding: const EdgeInsets.symmetric(horizontal: 10)),
+          child: const Text('Map', style: TextStyle(fontSize: 13)));
+    }
+    return TextButton.icon(
+        onPressed: action,
+        icon: const Icon(Icons.auto_fix_high_outlined, size: 18),
+        label: const Text('Map'),
+        style: TextButton.styleFrom(minimumSize: const Size(72, 48)));
+  });
 
   Future<void> _quickMap(BuildContext anchor) async {
     final target = store.target;
@@ -564,9 +575,10 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   Widget _mobileRoutes() {
     final p = ConsolePalette.of(context);
     return Column(children: [
-      Row(
-          spacing: 8,
-          children: [Expanded(child: _targetSelector()), _mapButton()]),
+      Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(spacing: 8,
+              children: [Expanded(child: _targetSelector()), _mapButton()])),
       Expanded(
           child: store.strips.isEmpty
               ? const Center(child: Text('Waiting for destinations…'))
@@ -866,7 +878,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Padding(
-                            padding: const EdgeInsets.all(10),
+                            padding: const EdgeInsets.all(16),
                             child: Row(spacing: 8, children: [
                               Expanded(child: _targetSelector()),
                               _mapButton(),

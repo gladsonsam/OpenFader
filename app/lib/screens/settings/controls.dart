@@ -120,47 +120,51 @@ class _Select extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.sizeOf(context).width > 900;
-    return Container(
-      constraints: BoxConstraints(
-        minHeight: wide ? 50 : 44,
-        maxHeight: wide ? 60 : 44,
-        maxWidth: wide ? 360 : 174,
-      ),
-      padding: EdgeInsets.symmetric(horizontal: wide ? 16 : 12),
-      decoration: BoxDecoration(
-        color: ConsolePalette.of(context).control,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: ConsolePalette.of(context).lineCtl),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          isDense: true,
-          value: value,
-          dropdownColor: ConsolePalette.of(context).chip,
-          icon: _SettingsIcon(
-            Icons.arrow_drop_down,
-            size: 18,
-            color: ConsolePalette.of(context).text7,
+    return PopupMenuButton<String>(
+      tooltip: label,
+      initialValue: value,
+      popUpAnimationStyle: AnimationStyle.noAnimation,
+      position: PopupMenuPosition.under,
+      color: ConsolePalette.of(context).chip,
+      constraints:
+          const BoxConstraints(minWidth: 180, maxWidth: 320, maxHeight: 400),
+      onSelected: (v) => _runSettingsAction(context, () => onChanged(v)),
+      itemBuilder: (context) => [
+        for (final option in options)
+          CheckedPopupMenuItem<String>(
+            height: 48,
+            value: option.$1,
+            checked: option.$1 == value,
+            child: Text(option.$2, style: const TextStyle(fontSize: 16)),
           ),
-          style: TextStyle(
-            fontFamily: U4.font,
-            fontSize: wide ? 27 : 17,
-            color: ConsolePalette.of(context).text1,
-          ),
-          items: [
-            for (final o in options)
-              DropdownMenuItem(
-                value: o.$1,
-                child: Text(o.$2, overflow: TextOverflow.ellipsis),
-              ),
-          ],
-          onChanged: (v) {
-            if (v != null) {
-              _runSettingsAction(context, () => onChanged(v));
-            }
-          },
-        ),
-      ),
+      ],
+      child: Semantics(
+          button: true,
+          child: Container(
+            constraints:
+                BoxConstraints(minHeight: 44, maxWidth: wide ? 260 : 174),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: ConsolePalette.of(context).control,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: ConsolePalette.of(context).lineCtl),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Flexible(
+                  child: Text(
+                      options.where((o) => o.$1 == value).firstOrNull?.$2 ??
+                          value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontFamily: U4.font,
+                          fontSize: 16,
+                          color: ConsolePalette.of(context).text1))),
+              const SizedBox(width: 12),
+              _SettingsIcon(Icons.expand_more,
+                  size: 18, color: ConsolePalette.of(context).text7),
+            ]),
+          )),
     );
   }
 }
@@ -216,7 +220,7 @@ class _PrimaryButton extends StatelessWidget {
         onTap: () => _runSettingsAction(context, onTap),
         behavior: HitTestBehavior.opaque,
         child: Container(
-          constraints: BoxConstraints(minHeight: wide ? 62 : 44),
+          constraints: BoxConstraints(minHeight: 48),
           padding: EdgeInsets.symmetric(
             horizontal: wide ? 22 : 14,
             vertical: 10,
@@ -241,7 +245,7 @@ class _PrimaryButton extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: U4.font,
-                  fontSize: wide ? 27 : 17,
+                  fontSize: 17,
                   fontWeight: FontWeight.w600,
                   color: ConsolePalette.of(context).onAccent,
                 ),
@@ -271,7 +275,7 @@ class _PlainButton extends StatelessWidget {
         onTap: () => _runSettingsAction(context, onTap),
         behavior: HitTestBehavior.opaque,
         child: Container(
-          constraints: BoxConstraints(minHeight: wide ? 62 : 44),
+          constraints: BoxConstraints(minHeight: 48),
           padding: EdgeInsets.symmetric(
             horizontal: wide ? 22 : 14,
             vertical: 10,
@@ -297,7 +301,7 @@ class _PlainButton extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: U4.font,
-                  fontSize: wide ? 27 : 17,
+                  fontSize: 17,
                   fontWeight: FontWeight.w500,
                   color: ConsolePalette.of(context).text1,
                 ),

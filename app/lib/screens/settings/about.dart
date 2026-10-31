@@ -212,7 +212,7 @@ class _LinkRow extends StatelessWidget {
         child: Container(
           constraints: BoxConstraints(minHeight: wide ? 96 : 76),
           padding: EdgeInsets.symmetric(
-            horizontal: wide ? 26 : 16,
+            horizontal: 16,
             vertical: wide ? 22 : 16,
           ),
           child: Row(
@@ -225,7 +225,7 @@ class _LinkRow extends StatelessWidget {
                       label,
                       style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: wide ? 27 : 18,
+                        fontSize: 17,
                         height: wide ? 1.25 : 24 / 18,
                         fontWeight: FontWeight.w500,
                         color: ConsolePalette.of(context).text1,
@@ -237,7 +237,7 @@ class _LinkRow extends StatelessWidget {
                         desc!,
                         style: TextStyle(
                           fontFamily: U4.font,
-                          fontSize: wide ? 23 : 15,
+                          fontSize: 14,
                           height: wide ? 1.4 : 21 / 15,
                           color: ConsolePalette.of(context).text7,
                         ),
@@ -287,7 +287,7 @@ class _HelpAccordionState extends State<_HelpAccordion> {
             child: Container(
               constraints: BoxConstraints(minHeight: wide ? 88 : 70),
               padding: EdgeInsets.symmetric(
-                horizontal: wide ? 26 : 16,
+                horizontal: 16,
                 vertical: wide ? 24 : 18,
               ),
               child: Row(
@@ -297,7 +297,7 @@ class _HelpAccordionState extends State<_HelpAccordion> {
                       widget.title,
                       style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: wide ? 27 : 18,
+                        fontSize: 17,
                         height: 1.2,
                         fontWeight: FontWeight.w500,
                         color: ConsolePalette.of(context).text1,
@@ -332,7 +332,7 @@ class _HelpAccordionState extends State<_HelpAccordion> {
                     paragraph,
                     style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: wide ? 23 : 15,
+                      fontSize: 14,
                       height: wide ? 1.5 : 22 / 15,
                       color: ConsolePalette.of(context).text7,
                     ),
