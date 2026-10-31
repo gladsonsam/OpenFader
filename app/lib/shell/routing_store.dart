@@ -240,7 +240,14 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
       _selected == null ? '' : _sourceLabel(_route(_selected!));
 
   @override
-  List<RouteSrcTile> get srcTiles => [
+  List<RouteSrcTile> get srcTiles => _tilesForGroup(group);
+
+  @override
+  List<RouteSrcTile> get allSrcTiles => [
+        for (final sourceGroup in groups) ..._tilesForGroup(sourceGroup),
+      ];
+
+  List<RouteSrcTile> _tilesForGroup(String group) => [
         for (var i = 1;
             i <=
                 ((_groups.where((g) => g['key'] == group).firstOrNull?['count']
@@ -313,7 +320,7 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
   void patch(RouteSrcTile tile) {
     if (tile.operationKey == null ||
         tile.operationKey != _selection ||
-        !srcTiles.any(
+        !allSrcTiles.any(
           (t) =>
               t.group == tile.group &&
               t.index == tile.index &&
