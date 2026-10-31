@@ -8,7 +8,7 @@ async fn main() -> anyhow::Result<()> {
         .nth(1)
         .ok_or_else(|| anyhow::anyhow!("usage: snapshot_inventory HOST:PORT"))?;
     driver.connect(&addr).await?;
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(35);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(65);
     loop {
         let view = driver.native_snapshots().unwrap();
         if view.complete || view.error.is_some() || tokio::time::Instant::now() >= deadline {

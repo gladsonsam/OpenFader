@@ -5,6 +5,43 @@ use super::*;
 impl MackieSession {
     // ---- file transfer ----
 
+    /// Read the stored show using the vendor's readiness/completion handshake.
+    /// No recall, store, or show upload is issued. Completion is sent on errors too.
+    pub async fn download_show_archive_guarded(
+        &self,
+        timeout: Duration,
+        authorize: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<Vec<u8>> {
+        let _file_lane = tokio::time::timeout(timeout, self.file_lane.lock())
+            .await
+            .map_err(|_| anyhow::anyhow!("Show file lane busy"))?;
+        let ready = self
+            .send_request_guarded(
+                Command::ShowSnapshot,
+                6u32.to_be_bytes().to_vec(),
+                Duration::from_secs(5),
+                authorize,
+            )
+            .await?;
+        anyhow::ensure!(
+            ready.body.len() == 8
+                && ready.body[..4] == 6u32.to_be_bytes()
+                && ready.body[4..] == 1u32.to_be_bytes(),
+            "Mixer show is not ready for archive read"
+        );
+        let result = tokio::time::timeout(
+            timeout,
+            self.download_file_locked("Show.zip", timeout, authorize),
+        )
+        .await;
+        // Release this session's show-transfer handshake even when authority has
+        // changed. This is completion of our read, never a mixer-state mutation.
+        let completed = tokio::time::timeout(Duration::from_secs(2), self.show_ok()).await;
+        let bytes = result.map_err(|_| anyhow::anyhow!("Show archive download timed out"))??;
+        completed.map_err(|_| anyhow::anyhow!("Show read completion timed out"))??;
+        Ok(bytes)
+    }
+
     pub async fn download_file(
         &self,
         filename: &str,
@@ -22,6 +59,16 @@ impl MackieSession {
     ) -> anyhow::Result<Vec<u8>> {
         validate_filename(filename)?;
         let _file_lane = self.file_lane.lock().await;
+        self.download_file_locked(filename, timeout, authorize)
+            .await
+    }
+
+    async fn download_file_locked(
+        &self,
+        filename: &str,
+        timeout: Duration,
+        authorize: &(dyn Fn() -> bool + Send + Sync),
+    ) -> anyhow::Result<Vec<u8>> {
         anyhow::ensure!(authorize(), "File authority changed while waiting");
         let name = filename.as_bytes();
         let mut padded = name.to_vec();
