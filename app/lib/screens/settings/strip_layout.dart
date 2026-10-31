@@ -64,9 +64,8 @@ class _StripLayoutSection extends StatelessWidget {
                 )
               else
                 _PrefRow(
-                  label: el == StripElement.meter
-                      ? 'Meter (in fader)'
-                      : el.label,
+                  label:
+                      el == StripElement.meter ? 'Meter (in fader)' : el.label,
                   trailing: _Toggle(
                     label: '${el.label} visible',
                     value: layout.visible.contains(el),
@@ -92,8 +91,8 @@ class _StripLayoutSection extends StatelessWidget {
                   max: 6,
                   divisions: 10,
                   label: layout.faderWeight.toStringAsFixed(1),
-                  onChanged: (v) => prefs.setStripLayoutDebounced(
-                      layout.copyWith(faderWeight: v)),
+                  onChanged: (v) => prefs
+                      .setStripLayoutDebounced(layout.copyWith(faderWeight: v)),
                 ),
               ),
             ),
@@ -103,8 +102,8 @@ class _StripLayoutSection extends StatelessWidget {
               trailing: _Toggle(
                 label: 'Compact processing',
                 value: layout.compactProcessing,
-                onChanged: (v) async => apply(
-                    layout.copyWith(compactProcessing: v)),
+                onChanged: (v) async =>
+                    apply(layout.copyWith(compactProcessing: v)),
               ),
             ),
             Padding(
@@ -124,8 +123,9 @@ class _StripLayoutSection extends StatelessWidget {
               itemCount:
                   layout.order.where((el) => el != StripElement.meter).length,
               itemBuilder: (context, i) {
-                final order =
-                    layout.order.where((el) => el != StripElement.meter).toList();
+                final order = layout.order
+                    .where((el) => el != StripElement.meter)
+                    .toList();
                 final el = order[i];
                 return ListTile(
                   key: ValueKey(el.key),
@@ -134,7 +134,7 @@ class _StripLayoutSection extends StatelessWidget {
                     el.label,
                     style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: 17,
+                      fontSize: AppDesign.rowLabel,
                       color: layout.visible.contains(el) ||
                               el == StripElement.fader
                           ? ConsolePalette.of(context).text1
@@ -151,15 +151,16 @@ class _StripLayoutSection extends StatelessWidget {
                 );
               },
               onReorderItem: (oldIndex, newIndex) async {
-                final order =
-                    layout.order.where((el) => el != StripElement.meter).toList();
+                final order = layout.order
+                    .where((el) => el != StripElement.meter)
+                    .toList();
                 final el = order.removeAt(oldIndex);
                 order.insert(newIndex, el);
                 // Meter stays fused to the fader; keep it out of the row order.
                 await apply(layout.copyWith(order: order));
               },
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppDesign.spaceSm),
           ],
         );
       },
@@ -183,8 +184,7 @@ class _PresetChip extends StatelessWidget {
           onTap: () => _runSettingsAction(context, onTap),
           behavior: HitTestBehavior.opaque,
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: selected
                   ? ConsolePalette.of(context).cyan
@@ -200,7 +200,7 @@ class _PresetChip extends StatelessWidget {
               label,
               style: TextStyle(
                 fontFamily: U4.font,
-                fontSize: 17,
+                fontSize: AppDesign.rowLabel,
                 fontWeight: FontWeight.w500,
                 color: selected
                     ? ConsolePalette.of(context).onAccent

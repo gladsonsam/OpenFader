@@ -6,10 +6,10 @@ import 'palette.dart';
 /// belong to ConsolePalette so light/dark and accent stay coherent.
 abstract final class U4 {
   static const font = AppDesign.font;
-  static const headerH = 64.0;
-  static const r3 = Radius.circular(10);
-  static const r5 = Radius.circular(10);
-  static const r8 = Radius.circular(10);
+  static const headerH = AppDesign.toolbarCompactHeight;
+  static const r3 = Radius.circular(AppDesign.panelRadius);
+  static const r5 = Radius.circular(AppDesign.panelRadius);
+  static const r8 = Radius.circular(AppDesign.panelRadius);
   static const rStrip = AppDesign.radius;
   static const rWell = AppDesign.radius;
   static const rBtn = AppDesign.radius;
@@ -105,19 +105,19 @@ ThemeData u4Theme(
     textTheme: theme.textTheme
         .apply(bodyColor: p.text1, displayColor: p.text1)
         .copyWith(
-            bodyMedium: AppDesign.type(14, color: p.text),
-            bodySmall: AppDesign.type(12, color: p.text),
-            bodyLarge: AppDesign.type(16, color: p.text),
-            titleSmall:
-                AppDesign.type(16, color: p.text, weight: FontWeight.w600)),
+            bodyMedium: AppDesign.type(AppDesign.body, color: p.text),
+            bodySmall: AppDesign.type(AppDesign.caption, color: p.text),
+            bodyLarge: AppDesign.type(AppDesign.controlLabel, color: p.text),
+            titleSmall: AppDesign.type(AppDesign.controlLabel,
+                color: p.text, weight: FontWeight.w600)),
     textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
-      animationDuration: const Duration(milliseconds: 40),
+      animationDuration: AppDesign.feedbackDuration,
       foregroundColor: p.text1,
       backgroundColor: p.control,
-      minimumSize: const Size(44, 44),
+      minimumSize: AppDesign.controlSize,
       shape: shape,
-      textStyle: AppDesign.type(14, weight: FontWeight.w600),
+      textStyle: AppDesign.type(AppDesign.body, weight: FontWeight.w600),
     ).copyWith(
             overlayColor: WidgetStateProperty.resolveWith(
                 (states) => states.contains(WidgetState.pressed)
@@ -127,25 +127,26 @@ ThemeData u4Theme(
                         : null))),
     outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-      animationDuration: const Duration(milliseconds: 40),
+      animationDuration: AppDesign.feedbackDuration,
       foregroundColor: p.cyan,
-      minimumSize: const Size(44, 44),
+      minimumSize: AppDesign.controlSize,
       side: BorderSide(color: p.lineCtl),
       shape: shape,
     )),
     filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-      animationDuration: const Duration(milliseconds: 40),
+      animationDuration: AppDesign.feedbackDuration,
       foregroundColor: p.onAccent,
       backgroundColor: p.cyan,
-      minimumSize: const Size(44, 44),
+      minimumSize: AppDesign.controlSize,
       shape: shape,
     )),
     iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
-      animationDuration: const Duration(milliseconds: 40),
+      animationDuration: AppDesign.feedbackDuration,
       foregroundColor: p.text7,
-      minimumSize: const Size(44, 44),
+      iconSize: AppDesign.iconSize,
+      minimumSize: AppDesign.controlSize,
       shape: shape,
     )),
     inputDecorationTheme: InputDecorationThemeData(
@@ -153,7 +154,7 @@ ThemeData u4Theme(
       fillColor: p.well,
       labelStyle: TextStyle(color: p.text7),
       hintStyle: TextStyle(color: p.text10),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      contentPadding: AppDesign.fieldPadding,
       border: OutlineInputBorder(
           borderRadius: U4.rBtn, borderSide: BorderSide(color: p.lineCtl)),
       enabledBorder: OutlineInputBorder(

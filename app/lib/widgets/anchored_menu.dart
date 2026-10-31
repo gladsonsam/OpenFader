@@ -1,3 +1,4 @@
+import '../design.dart';
 import 'package:flutter/material.dart';
 
 import '../palette.dart';
@@ -17,8 +18,7 @@ Future<T?> showAnchoredMenu<T>(
     popUpAnimationStyle: AnimationStyle.noAnimation,
     context: anchor,
     color: ConsolePalette.of(anchor).panel,
-    constraints:
-        const BoxConstraints(minWidth: 224, maxWidth: 320, maxHeight: 400),
+    constraints: AppDesign.menuConstraints,
     position: RelativeRect.fromRect(
       Rect.fromLTWH(origin.dx, origin.dy + box.size.height, box.size.width, 0),
       Offset.zero & overlay.size,

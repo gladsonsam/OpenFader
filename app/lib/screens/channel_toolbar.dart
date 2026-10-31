@@ -165,22 +165,22 @@ class ChannelToolbar extends StatelessWidget {
                           style: AppDesign.type(20,
                               color: ConsolePalette.of(context).text7,
                               weight: FontWeight.w600))),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppDesign.spaceSm),
                   _ToolButton(
                       label: 'Settings',
                       onPressed: () => onTool(ChannelTool.settings),
                       child: const DesignIcon(DesignSymbol.settings)),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppDesign.spaceSm),
                   _ToolButton(
                       label: 'Routing',
                       onPressed: () => onTool(ChannelTool.routing),
                       child: const DesignIcon(DesignSymbol.routing)),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppDesign.spaceSm),
                   _ToolButton(
                       label: 'Layout',
                       onPressed: () => onTool(ChannelTool.layout),
                       child: const DesignIcon(DesignSymbol.layout)),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppDesign.spaceSm),
                   SizedBox(
                       width: 88,
                       height: 44,
@@ -251,7 +251,10 @@ class _FocusedValue extends StatelessWidget {
               child: Text(focus.text(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: AppDesign.type(compact ? 16 : 18,
+                  style: AppDesign.type(
+                      compact
+                          ? AppDesign.compactParameterValue
+                          : AppDesign.parameterValue,
                       color: ConsolePalette.of(context).cyan,
                       weight: FontWeight.w700)))));
 }
@@ -401,7 +404,9 @@ class _FaderValue extends StatelessWidget {
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                   fontFamily: U4.font,
-                                  fontSize: compact ? 16 : 18,
+                                  fontSize: compact
+                                      ? AppDesign.compactParameterValue
+                                      : AppDesign.parameterValue,
                                   fontWeight: FontWeight.w700,
                                   color: ConsolePalette.of(context).cyan,
                                   fontFeatures: const [

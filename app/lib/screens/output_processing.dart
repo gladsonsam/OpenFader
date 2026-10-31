@@ -1,3 +1,4 @@
+import '../design.dart';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
@@ -164,7 +165,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(AppDesign.spaceLg),
                     child: DropdownButtonFormField<String>(
                       key: ValueKey((target, targets.length)),
                       initialValue: targets.containsKey(target) ? target : null,
@@ -234,7 +235,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                             child: Text('Output processing is unavailable.'),
                           )
                         : ListView(
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(AppDesign.spaceMd),
                             children: [
                               if (surface == 'output_peq' ||
                                   surface == 'output_geq' ||
@@ -243,7 +244,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                                   controls: processor,
                                   surface: surface!,
                                 ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: AppDesign.spaceMd),
                               if (surface == 'output_geq') ...[
                                 for (final control in processor.where(
                                   (c) =>
@@ -256,7 +257,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                                     onFocus: _focus,
                                     onComplete: _complete,
                                   ),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: AppDesign.spaceMd),
                                 SizedBox(
                                   height: 310,
                                   child: SingleChildScrollView(

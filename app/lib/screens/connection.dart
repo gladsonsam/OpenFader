@@ -1,3 +1,4 @@
+import '../design.dart';
 // Connection screen: scan, probe, connect, and disconnect desks.
 // Screens stay constructor-injected so Area A can implement the store.
 import 'package:flutter/material.dart';
@@ -152,7 +153,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
           builder: (context, _) {
             final store = widget.store;
             return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              padding: AppDesign.pagePadding,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -233,7 +234,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
                         ? null
                         : (type) => setState(() => _mixerType = type),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppDesign.spaceSm),
                   Row(
                     children: [
                       Expanded(
@@ -341,12 +342,12 @@ class _ErrorBanner extends StatelessWidget {
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: ConsolePalette.of(context).onErrorContainer)),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppDesign.spaceXs),
           Text(err,
               style: TextStyle(
                   fontSize: 12,
                   color: ConsolePalette.of(context).onErrorContainer)),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppDesign.spaceSm),
           Row(
             children: [
               if (canRetry)
@@ -385,7 +386,7 @@ class _StatusCard extends StatelessWidget {
         ? ConsolePalette.of(context).meterGreen
         : ConsolePalette.of(context).mute;
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppDesign.spaceMd),
       decoration: BoxDecoration(
         color: ConsolePalette.of(context).panel,
         border: Border.all(
@@ -485,7 +486,7 @@ class _DeviceRow extends StatelessWidget {
                   : ConsolePalette.of(context).text4,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppDesign.spaceSm),
           if (!device.connected)
             GestureDetector(
               onTap: onConnect,
@@ -543,7 +544,7 @@ class _InfoCard extends StatelessWidget {
                     color: ConsolePalette.of(context).cyan)),
           ),
           if (onOpenDebug != null) ...[
-            const SizedBox(height: 4),
+            const SizedBox(height: AppDesign.spaceXs),
             GestureDetector(
               onTap: onOpenDebug,
               child: Text('OPEN DEBUG LOG →',

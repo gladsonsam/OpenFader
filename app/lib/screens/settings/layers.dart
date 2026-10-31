@@ -31,7 +31,7 @@ class _LayersSection extends StatelessWidget {
                 'All',
                 style: TextStyle(
                   fontFamily: U4.font,
-                  fontSize: 17,
+                  fontSize: AppDesign.rowLabel,
                   color: ConsolePalette.of(context).text1,
                 ),
               ),
@@ -39,13 +39,12 @@ class _LayersSection extends StatelessWidget {
                 'Follows bank paging',
                 style: TextStyle(
                   fontFamily: U4.font,
-                  fontSize: 14,
+                  fontSize: AppDesign.body,
                   color: ConsolePalette.of(context).text7,
                 ),
               ),
               trailing: state.activeLayer.isAll
-                  ? Icon(Icons.check,
-                      color: ConsolePalette.of(context).cyan)
+                  ? Icon(Icons.check, color: ConsolePalette.of(context).cyan)
                   : null,
               onTap: () => _runSettingsAction(context, () async {
                 await activate(MixerLayer.allLayerId);
@@ -58,7 +57,7 @@ class _LayersSection extends StatelessWidget {
                   layer.name,
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: 17,
+                    fontSize: AppDesign.rowLabel,
                     color: ConsolePalette.of(context).text1,
                   ),
                 ),
@@ -68,7 +67,7 @@ class _LayersSection extends StatelessWidget {
                   '${layer.deviceHint == null ? '' : ' · ${layer.deviceHint}'}',
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: 14,
+                    fontSize: AppDesign.body,
                     color: ConsolePalette.of(context).text7,
                   ),
                 ),
@@ -76,8 +75,7 @@ class _LayersSection extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     if (layer.id == state.activeLayerId)
-                      Icon(Icons.check,
-                          color: ConsolePalette.of(context).cyan),
+                      Icon(Icons.check, color: ConsolePalette.of(context).cyan),
                     PopupMenuButton<String>(
                       popUpAnimationStyle: AnimationStyle.noAnimation,
                       tooltip: 'Layer actions',
@@ -101,15 +99,11 @@ class _LayersSection extends StatelessWidget {
                         }
                       }),
                       itemBuilder: (context) => const [
+                        PopupMenuItem(value: 'edit', child: Text('Edit')),
+                        PopupMenuItem(value: 'rename', child: Text('Rename')),
                         PopupMenuItem(
-                            value: 'edit', child: Text('Edit')),
-                        PopupMenuItem(
-                            value: 'rename', child: Text('Rename')),
-                        PopupMenuItem(
-                            value: 'duplicate',
-                            child: Text('Duplicate')),
-                        PopupMenuItem(
-                            value: 'delete', child: Text('Delete')),
+                            value: 'duplicate', child: Text('Duplicate')),
+                        PopupMenuItem(value: 'delete', child: Text('Delete')),
                       ],
                     ),
                   ],
@@ -128,7 +122,7 @@ class _LayersSection extends StatelessWidget {
                   'New layer',
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: 17,
+                    fontSize: AppDesign.rowLabel,
                     fontWeight: FontWeight.w500,
                   ),
                 ),

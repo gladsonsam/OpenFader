@@ -1,3 +1,4 @@
+import '../design.dart';
 import 'package:flutter/material.dart';
 
 import '../mixer/controller.dart';
@@ -32,7 +33,7 @@ class WorkspaceHome extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10))),
             child: Row(children: [
               Icon(icon, size: 24, color: palette.mutedText),
-              const SizedBox(width: 16),
+              const SizedBox(width: AppDesign.spaceLg),
               Expanded(
                   child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -41,7 +42,7 @@ class WorkspaceHome extends StatelessWidget {
                     Text(title,
                         style: const TextStyle(
                             fontSize: 17, fontWeight: FontWeight.w600)),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: AppDesign.spaceXs),
                     Text(subtitle,
                         style:
                             TextStyle(fontSize: 13, color: palette.mutedText)),
@@ -54,7 +55,7 @@ class WorkspaceHome extends StatelessWidget {
               ? 2
               : 1;
       return SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(AppDesign.spaceLg),
         child: Center(
             child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 1100),
@@ -109,7 +110,7 @@ class WorkspaceHome extends StatelessWidget {
                                 Icons.settings_outlined,
                                 () => onNavigate(MixerDestination.settings)),
                           ]),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: AppDesign.spaceLg),
                       Align(
                           alignment: Alignment.centerLeft,
                           child: TextButton(

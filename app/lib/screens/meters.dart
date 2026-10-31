@@ -1,3 +1,4 @@
+import '../design.dart';
 // Meter bridge: read-only ladders and provider-owned monitor controls.
 // Offline ladders read -inf and render dark because levels come only from the live engine.
 // Freshness comes from the single shell-owned 80 ms loop; this page sends
@@ -11,6 +12,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../palette.dart';
 import '../core/output_meters.dart';
+import '../widgets/console_controls.dart';
 import '../core/destination_controls.dart';
 
 const bridgeTopDb = 0.0;
@@ -248,7 +250,7 @@ class _U4MetersPageState extends State<U4MetersPage> {
                   ),
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                    padding: AppDesign.pagePadding,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -272,7 +274,7 @@ class _U4MetersPageState extends State<U4MetersPage> {
                               'Offline — ladders are dark until a live link is up. Connect for live meters.',
                               style: TextStyle(
                                 fontFamily: U4.font,
-                                fontSize: 12,
+                                fontSize: AppDesign.caption,
                                 color: ConsolePalette.of(context).text7,
                               ),
                             ),
@@ -334,13 +336,7 @@ class _PhysicalOutputs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: palette.panel,
-        border: Border.all(color: palette.linePanel),
-        borderRadius: const BorderRadius.all(Radius.circular(10)),
-      ),
+    return ConsolePanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -348,12 +344,12 @@ class _PhysicalOutputs extends StatelessWidget {
             group.title,
             style: TextStyle(
               fontFamily: U4.font,
-              fontSize: 12,
+              fontSize: AppDesign.caption,
               fontWeight: FontWeight.w700,
               color: palette.text1,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppDesign.spaceLg),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -456,13 +452,7 @@ class _LadderGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-      decoration: BoxDecoration(
-        color: ConsolePalette.of(context).panel,
-        border: Border.all(color: ConsolePalette.of(context).linePanel),
-        borderRadius: const BorderRadius.all(Radius.circular(10)),
-      ),
+    return ConsolePanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -472,7 +462,7 @@ class _LadderGroup extends StatelessWidget {
                 group.title,
                 style: TextStyle(
                   fontFamily: U4.font,
-                  fontSize: 12,
+                  fontSize: AppDesign.caption,
                   fontWeight: FontWeight.w700,
                   color: ConsolePalette.of(context).text1,
                 ),
@@ -491,7 +481,7 @@ class _LadderGroup extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppDesign.spaceLg),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -537,7 +527,7 @@ class _CollapsedGroup extends StatelessWidget {
               group.title,
               style: TextStyle(
                 fontFamily: U4.font,
-                fontSize: 12,
+                fontSize: AppDesign.caption,
                 fontWeight: FontWeight.w600,
                 color: ConsolePalette.of(context).text7,
               ),
@@ -550,7 +540,7 @@ class _CollapsedGroup extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontFamily: U4.font,
-                  fontSize: 11,
+                  fontSize: AppDesign.minorText,
                   color: ConsolePalette.of(context).text10,
                 ),
               ),
@@ -608,7 +598,7 @@ class _LadderState extends State<_Ladder> {
       child: Column(
         children: [
           CustomPaint(size: Size(44, widget.height), painter: _painter),
-          const SizedBox(height: 12),
+          const SizedBox(height: AppDesign.spaceMd),
           Text(
             widget.ladder.label ?? '—',
             maxLines: 1,
@@ -616,7 +606,7 @@ class _LadderState extends State<_Ladder> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: U4.font,
-              fontSize: 12,
+              fontSize: AppDesign.caption,
               color: ConsolePalette.of(context).text1,
             ),
           ),
@@ -628,7 +618,7 @@ class _LadderState extends State<_Ladder> {
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontFamily: U4.font,
-                fontSize: 11,
+                fontSize: AppDesign.minorText,
                 color: ConsolePalette.of(context).text7,
               ),
             ),
@@ -771,7 +761,7 @@ class _MonitorControls extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppDesign.spaceMd),
       decoration: BoxDecoration(
         color: palette.panel,
         border: Border.all(color: palette.divider),
@@ -788,7 +778,7 @@ class _MonitorControls extends StatelessWidget {
               color: palette.text1,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppDesign.spaceSm),
           Wrap(
             spacing: 8,
             runSpacing: 8,

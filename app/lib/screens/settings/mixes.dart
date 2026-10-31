@@ -20,7 +20,8 @@ class _MixesDetail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     final mixes = store.mixes.mixes;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -42,7 +43,7 @@ class _MixesDetail extends StatelessWidget {
                       'No mixes saved yet',
                       style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: 17,
+                        fontSize: AppDesign.rowLabel,
                         height: wide ? 1.25 : 24 / 18,
                         fontWeight: FontWeight.w500,
                         color: ConsolePalette.of(context).text1,
@@ -53,7 +54,7 @@ class _MixesDetail extends StatelessWidget {
                       'Import a mix, or open the offline mixer to prepare one.',
                       style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: 14,
+                        fontSize: AppDesign.body,
                         height: wide ? 1.4 : 21 / 15,
                         color: ConsolePalette.of(context).text7,
                       ),
@@ -191,7 +192,8 @@ class _MixRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Padding(
       padding: EdgeInsets.symmetric(
         horizontal: 16,
@@ -209,7 +211,7 @@ class _MixRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: 17,
+                    fontSize: AppDesign.rowLabel,
                     fontWeight: FontWeight.w500,
                     color: ConsolePalette.of(context).text1,
                   ),
@@ -221,7 +223,7 @@ class _MixRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: 14,
+                    fontSize: AppDesign.body,
                     color: ConsolePalette.of(context).text7,
                   ),
                 ),

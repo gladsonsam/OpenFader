@@ -21,6 +21,9 @@ import '../mixer/components/layers.dart';
 import '../mixer/mixer_layers.dart';
 import '../mixer/strip_layout.dart';
 import '../theme.dart';
+import '../design.dart';
+import '../widgets/console_button.dart';
+import '../widgets/console_controls.dart';
 import '../palette.dart';
 
 part 'settings/navigation.dart';
@@ -136,7 +139,8 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
     required Future<void> Function() onConfirm,
   }) async {
     final accessEpoch = widget.store.accessLimits.controlAccessEpoch;
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     final ok = await showDialog<bool>(
       animationStyle: AnimationStyle.noAnimation,
       context: context,
@@ -159,7 +163,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
           body,
           style: TextStyle(
             fontFamily: U4.font,
-            fontSize: 16,
+            fontSize: AppDesign.controlLabel,
             height: 1.5,
             color: ConsolePalette.of(context).text7,
           ),
@@ -171,7 +175,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
               'Cancel',
               style: TextStyle(
                 fontFamily: U4.font,
-                fontSize: 16,
+                fontSize: AppDesign.controlLabel,
                 color: ConsolePalette.of(context).text1,
               ),
             ),
@@ -192,7 +196,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
               action,
               style: TextStyle(
                 fontFamily: U4.font,
-                fontSize: 16,
+                fontSize: AppDesign.controlLabel,
                 fontWeight: FontWeight.w600,
                 color: ConsolePalette.of(context).onDanger,
               ),
@@ -216,7 +220,8 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Scaffold(
       backgroundColor: ConsolePalette.of(context).page,
       // Dialogs handle their own keyboard insets; keep navigation at full height.
@@ -248,10 +253,12 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                        fontSize: 18, fontWeight: FontWeight.w600))),
+                        fontSize: AppDesign.sectionTitle,
+                        fontWeight: FontWeight.w600))),
           ]));
     }
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Container(
       height: wide ? 104 : 88,
       padding: wide
@@ -312,7 +319,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _topbar(title: 'Settings', showBack: false),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppDesign.spaceLg),
         Expanded(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -342,7 +349,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
               children: [
                 if (!widget.embedded) ...[
                   _OverviewBrand(onHome: widget.onHome),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppDesign.spaceXl),
                 ],
                 for (final s in SettingsSection.values)
                   Padding(
@@ -407,7 +414,8 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
   }
 
   Widget _detailBody(SettingsSection s) {
-    final wide = MediaQuery.sizeOf(context).width > 900;
+    final wide =
+        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -418,7 +426,7 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
               s.label,
               style: TextStyle(
                 fontFamily: U4.font,
-                fontSize: 26,
+                fontSize: AppDesign.pageTitle,
                 height: 1.22,
                 fontWeight: FontWeight.w600,
                 color: ConsolePalette.of(context).text1,

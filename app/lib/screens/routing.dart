@@ -1,3 +1,4 @@
+import '../design.dart';
 // Patch matrix: previews stay local; confirmed edits use the injected store.
 // The store retains provider identity, access and stale-operation guards.
 import 'package:flutter/material.dart';
@@ -220,13 +221,13 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                       Text(
                           '${tile.mode ? 'Input mode ·' : 'Route'} ${strip.name}',
                           style: Theme.of(context).textTheme.titleLarge),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: AppDesign.spaceLg),
                       Text('Current${tile.mode ? ' mode' : ''}: ${strip.src}'),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppDesign.spaceSm),
                       Text(
                           '${tile.mode ? 'New mode' : 'New source'}: ${tile.label}',
                           style: const TextStyle(fontWeight: FontWeight.w700)),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: AppDesign.spaceLg),
                       if (!valid)
                         const Text(
                             'Routing changed. Close and select the route again.'),
@@ -259,7 +260,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   Widget _targetSelector() {
     final p = ConsolePalette.of(context);
     return LayoutBuilder(builder: (context, constraints) {
-      final compact = MediaQuery.sizeOf(context).width < 700;
+      final compact = MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint;
       final tabStyle = Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: compact ? 13 : 14);
       var minimum = compact ? 80.0 : 96.0;
       for (final target in store.targets) {
@@ -329,7 +330,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
             child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis)));
     return Column(children: [
       Padding(
-          padding: const EdgeInsets.all(16),
+          padding: AppDesign.pagePadding,
           child: Row(spacing: 8,
               children: [Expanded(child: _targetSelector()), _mapButton()])),
       Container(
@@ -398,7 +399,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   Widget _mapButton() => Builder(builder: (anchor) {
     final action = store.strips.isEmpty || store.allSrcTiles.isEmpty
         ? null : () => _quickMap(anchor);
-    if (MediaQuery.sizeOf(context).width < 700) {
+    if (MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint) {
       return TextButton(
           onPressed: action,
           style: TextButton.styleFrom(minimumSize: const Size(52, 48), padding: const EdgeInsets.symmetric(horizontal: 10)),
@@ -515,7 +516,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                     'Review ${plan.length} change${plan.length == 1 ? '' : 's'}',
                                     style:
                                         Theme.of(context).textTheme.titleLarge),
-                                const SizedBox(height: 12),
+                                const SizedBox(height: AppDesign.spaceMd),
                                 Expanded(
                                     child: ListView.builder(
                                         itemCount: plan.length,
@@ -576,7 +577,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     final p = ConsolePalette.of(context);
     return Column(children: [
       Padding(
-          padding: const EdgeInsets.all(16),
+          padding: AppDesign.pagePadding,
           child: Row(spacing: 8,
               children: [Expanded(child: _targetSelector()), _mapButton()])),
       Expanded(
@@ -673,7 +674,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                         style: Theme.of(context)
                                             .textTheme
                                             .titleLarge),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: AppDesign.spaceXs),
                                     Text('Current · ${strip.src}',
                                         style: TextStyle(color: p.text7)),
                                   ])),
@@ -714,7 +715,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                       child: Text(
                                           'Tap: ${control.valueLabel ?? 'Unavailable'}')),
                               ])),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: AppDesign.spaceMd),
                         if (!valid)
                           const Padding(
                               padding: EdgeInsets.all(16),
@@ -823,7 +824,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                       }),
                                 ))),
                         Padding(
-                            padding: const EdgeInsets.all(16),
+                            padding: AppDesign.pagePadding,
                             child: Text(
                                 preview == null
                                     ? 'Choose a source to preview the change'
@@ -860,7 +861,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                             'Routing controls are unavailable for this driver.'));
                   }
                   if (store.isModeSelector) return _modeRows();
-                  if (MediaQuery.sizeOf(context).width < 700) {
+                  if (MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint) {
                     return _mobileRoutes();
                   }
                   final strips = store.strips;
@@ -878,7 +879,7 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Padding(
-                            padding: const EdgeInsets.all(16),
+                            padding: AppDesign.pagePadding,
                             child: Row(spacing: 8, children: [
                               Expanded(child: _targetSelector()),
                               _mapButton(),

@@ -1,3 +1,4 @@
+import '../design.dart';
 // Snapshot library plus named show capture and recall.
 // Local transactions and guarded provider operations keep separate authorities.
 // Screens stay constructor-injected so Area A can implement the store.
@@ -189,7 +190,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
           builder: (context, _) {
             final store = widget.store;
             return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              padding: AppDesign.pagePadding,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -198,7 +199,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                     const SizedBox(height: 10),
                     _NativeSnapshotsSection(view: store.nativeSnapshots),
                   ],
-                  const SizedBox(height: 16),
+                  const SizedBox(height: AppDesign.spaceLg),
                   const _SectionTitle('OpenFader local library'),
                   if (store.status != null)
                     Padding(
@@ -218,7 +219,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                           onPressed: store.busy ? null : store.beginShow,
                           child: const Text('New show')),
                   ]),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppDesign.spaceSm),
                   _NameRow(
                     controller: _showCtl,
                     hint: store.show == null
@@ -264,7 +265,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                                     label: 'Recall',
                                     action: () => store.recallShow(scene)),
                             child: const Text('Recall')),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: AppDesign.spaceSm),
                         TextButton(
                             onPressed: store.busy
                                 ? null
@@ -315,7 +316,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                         ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppDesign.spaceSm),
                   _NameRow(
                     controller: _saveCtl,
                     hint: 'Snapshot name…',
@@ -546,7 +547,7 @@ class _NativeSnapshotsSection extends StatelessWidget {
       }
     }
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(AppDesign.spaceMd),
       decoration: BoxDecoration(
           color: palette.well,
           border: Border.all(color: palette.railBorder),
@@ -557,7 +558,7 @@ class _NativeSnapshotsSection extends StatelessWidget {
           const _SectionTitle('Passive mixer snapshot reports'),
           Text(message, style: TextStyle(fontSize: 12, color: palette.text7)),
           if (view.status == NativeSnapshotsStatus.ready) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppDesign.spaceSm),
             Text(
                 view.current == null
                     ? 'No native recall slot reported.'
@@ -567,7 +568,7 @@ class _NativeSnapshotsSection extends StatelessWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: palette.text1)),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppDesign.spaceSm),
             if (view.slots.isEmpty)
               Text('No slot names reported yet.',
                   style: TextStyle(fontSize: 12, color: palette.text7)),
@@ -579,7 +580,7 @@ class _NativeSnapshotsSection extends StatelessWidget {
                     children: [
                       Text('Slot ${slot.slot}',
                           style: TextStyle(fontSize: 12, color: palette.text4)),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: AppDesign.spaceMd),
                       Expanded(
                         child: Text(
                             slot.name.trim().isEmpty

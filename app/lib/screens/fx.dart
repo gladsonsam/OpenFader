@@ -1,3 +1,4 @@
+import '../design.dart';
 // FX rack: slot cards, type choices and rotary parameter controls.
 // Screens stay constructor-injected so Area A can implement the store.
 import 'dart:math' as math;
@@ -5,6 +6,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../palette.dart';
+import '../widgets/console_controls.dart';
 import '../core/selected_control_readout.dart';
 import '../core/destination_controls.dart';
 import '../widgets/destination_control_editor.dart';
@@ -170,7 +172,7 @@ class _U4FxPageState extends State<U4FxPage> {
                   return Column(children: [
                     Expanded(
                         child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+                            padding: AppDesign.pagePadding,
                             child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
@@ -210,7 +212,7 @@ class _U4FxPageState extends State<U4FxPage> {
                                                       }));
                                             })),
                                   if (selected != null) ...[
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: AppDesign.spaceSm),
                                     if (selected.slot case final slot?)
                                       _LegacyFxDetail(
                                           store: store,
@@ -415,7 +417,7 @@ class _FxCard extends StatelessWidget {
                             maxLines: 1,
                             style:
                                 TextStyle(fontSize: 10, color: palette.text7)),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: AppDesign.spaceXs),
                         ValueListenableBuilder<double>(
                             valueListenable: store.meterOf(slot.slot),
                             builder: (context, value, _) =>
@@ -433,11 +435,6 @@ class _FxCard extends StatelessWidget {
                     ]))));
   }
 }
-
-BoxDecoration _detailDecoration(ConsolePalette palette) => BoxDecoration(
-    color: palette.panel,
-    border: Border.all(color: palette.linePanel),
-    borderRadius: BorderRadius.circular(2));
 
 class _NativeFxDetail extends StatelessWidget {
   final FxStore store;
@@ -460,119 +457,113 @@ class _NativeFxDetail extends StatelessWidget {
     final binaryControls = controls
         .where((control) => !control.numeric && control.choices.length == 2)
         .toList();
-    return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: _detailDecoration(palette),
+    return ConsolePanel(
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Text(controls.first.destinationName,
-              style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: palette.text1)),
-          const SizedBox(height: 12),
-          if (selector != null) ...[
-            OutlinedButton.icon(
-              icon: const Icon(Icons.expand_more),
-              label: Text(
-                '${selector.label}: ${selector.valueLabel ?? 'Waiting for mixer'}',
-              ),
-              onPressed: store.destinationControlIsCurrent(selector)
-                  ? () => showDialog<void>(
-                        animationStyle: AnimationStyle.noAnimation,
-                        context: context,
-                        barrierDismissible: false,
-                        builder: (_) => DestinationControlEditor(
-                          accessEpoch: () => store.controlAccessEpoch,
-                          changes: store,
-                          isCurrent: store.destinationControlIsCurrent,
-                          apply: store.setDestinationControl,
-                          control: selector,
-                        ),
-                      )
-                  : null,
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'FX preset library is unavailable for this mixer.',
-              style: TextStyle(fontSize: 12, color: palette.text4),
-            ),
-            const SizedBox(height: 12),
-          ],
-          if (binaryControls.isNotEmpty)
-            Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Wrap(spacing: 12, runSpacing: 12, children: [
-                  for (final control in binaryControls)
-                    Tooltip(
-                        message: control.description,
-                        child: _FxToggle(
-                            label:
-                                '${control.label}: ${control.valueLabel ?? 'Unavailable'}'
-                                '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                            active: control.value == control.choices.last.value,
-                            onTap: store.destinationControlIsCurrent(control)
-                                ? () async {
-                                    final next = control.value ==
-                                            control.choices.first.value
+      Text(controls.first.destinationName,
+          style: TextStyle(
+              fontSize: 18, fontWeight: FontWeight.w600, color: palette.text1)),
+      const SizedBox(height: AppDesign.spaceMd),
+      if (selector != null) ...[
+        OutlinedButton.icon(
+          icon: const Icon(Icons.expand_more),
+          label: Text(
+            '${selector.label}: ${selector.valueLabel ?? 'Waiting for mixer'}',
+          ),
+          onPressed: store.destinationControlIsCurrent(selector)
+              ? () => showDialog<void>(
+                    animationStyle: AnimationStyle.noAnimation,
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => DestinationControlEditor(
+                      accessEpoch: () => store.controlAccessEpoch,
+                      changes: store,
+                      isCurrent: store.destinationControlIsCurrent,
+                      apply: store.setDestinationControl,
+                      control: selector,
+                    ),
+                  )
+              : null,
+        ),
+        const SizedBox(height: AppDesign.spaceSm),
+        Text(
+          'FX preset library is unavailable for this mixer.',
+          style: TextStyle(fontSize: 12, color: palette.text4),
+        ),
+        const SizedBox(height: AppDesign.spaceMd),
+      ],
+      if (binaryControls.isNotEmpty)
+        Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Wrap(spacing: 12, runSpacing: 12, children: [
+              for (final control in binaryControls)
+                Tooltip(
+                    message: control.description,
+                    child: _FxToggle(
+                        label:
+                            '${control.label}: ${control.valueLabel ?? 'Unavailable'}'
+                            '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                        active: control.value == control.choices.last.value,
+                        onTap: store.destinationControlIsCurrent(control)
+                            ? () async {
+                                final next =
+                                    control.value == control.choices.first.value
                                         ? control.choices.last.value
                                         : control.choices.first.value;
-                                    final error = await store
-                                        .setDestinationControl(control, next);
-                                    if (context.mounted && error != null) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                              SnackBar(content: Text(error)));
-                                    }
-                                  }
-                                : null)),
-                ])),
-          _KnobLayout(
-              minHeight: math.max(
-                  0.0,
-                  minHeight -
-                      68 -
-                      64 * tapControls.length -
-                      (binaryControls.isEmpty ? 0 : 56)),
-              children: [
-                for (final control in controls)
-                  if (control != selector && !binaryControls.contains(control))
-                    _FxRotary(
-                        key: ValueKey('${control.target}/${control.id}'),
-                        label: control.label,
-                        text: '${control.valueLabel ?? 'Unavailable'}'
-                            '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                        fraction: control.numeric && control.value != null
-                            ? ((control.value! - control.min!) /
-                                    (control.max! - control.min!))
-                                .clamp(0, 1)
-                            : 0,
-                        enabled: store.destinationControlIsCurrent(control),
-                        onTap: () => onFocus(control.id)),
-              ]),
-          for (final control in tapControls)
-            Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: Align(
-                    child: Tooltip(
-                        message: 'Tap tempo for ${control.destinationName}',
-                        child: _FxToggle(
-                            label: tapControls.length == 1
-                                ? 'Tap tempo'
-                                : 'Tap ${control.label}',
-                            active: false,
-                            onTap: store.destinationControlIsCurrent(control)
-                                ? () async {
-                                    final error = await store
-                                        .tapDestinationControl(control);
-                                    if (context.mounted && error != null) {
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                              SnackBar(content: Text(error)));
-                                    }
-                                  }
-                                : null)))),
-        ]));
+                                final error = await store.setDestinationControl(
+                                    control, next);
+                                if (context.mounted && error != null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(error)));
+                                }
+                              }
+                            : null)),
+            ])),
+      _KnobLayout(
+          minHeight: math.max(
+              0.0,
+              minHeight -
+                  68 -
+                  64 * tapControls.length -
+                  (binaryControls.isEmpty ? 0 : 56)),
+          children: [
+            for (final control in controls)
+              if (control != selector && !binaryControls.contains(control))
+                _FxRotary(
+                    key: ValueKey('${control.target}/${control.id}'),
+                    label: control.label,
+                    text: '${control.valueLabel ?? 'Unavailable'}'
+                        '${control.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                    fraction: control.numeric && control.value != null
+                        ? ((control.value! - control.min!) /
+                                (control.max! - control.min!))
+                            .clamp(0, 1)
+                        : 0,
+                    enabled: store.destinationControlIsCurrent(control),
+                    onTap: () => onFocus(control.id)),
+          ]),
+      for (final control in tapControls)
+        Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Align(
+                child: Tooltip(
+                    message: 'Tap tempo for ${control.destinationName}',
+                    child: _FxToggle(
+                        label: tapControls.length == 1
+                            ? 'Tap tempo'
+                            : 'Tap ${control.label}',
+                        active: false,
+                        onTap: store.destinationControlIsCurrent(control)
+                            ? () async {
+                                final error =
+                                    await store.tapDestinationControl(control);
+                                if (context.mounted && error != null) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text(error)));
+                                }
+                              }
+                            : null)))),
+    ]));
   }
 }
 
@@ -591,82 +582,80 @@ class _LegacyFxDetail extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = ConsolePalette.of(context);
     final knobs = store.knobs;
-    return Container(
-        padding: const EdgeInsets.all(14),
-        decoration: _detailDecoration(palette),
+    return ConsolePanel(
         child:
             Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [
-            Expanded(
-                child: Text('FX ${slot.slot} · ${store.typeLabel(slot.type)}',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                        color: palette.text1))),
-            if (store.stateControlsSupported) ...[
-              _FxToggle(
-                  label: slot.on ? 'On' : 'Off',
-                  active: slot.on,
-                  activeColor: palette.meterGreen,
-                  onTap: () => store.setOn(!slot.on)),
-              const SizedBox(width: 6),
-              _FxToggle(
-                  label: slot.bypass ? 'Bypassed' : 'Bypass',
-                  active: slot.bypass,
-                  activeColor: palette.meterAmber,
-                  onTap: () => store.setBypass(!slot.bypass)),
-            ],
-          ]),
-          const SizedBox(height: 12),
-          if (store.typeOptions.isNotEmpty)
-            DropdownButton<String>(
-              isExpanded: true,
-              value: store.typeOptions.contains(slot.type) ? slot.type : null,
-              hint: Text(store.typeLabel(slot.type)),
-              items: [
-                for (final type in store.typeOptions)
-                  DropdownMenuItem(
-                      value: type,
-                      child: Padding(
-                          padding: const EdgeInsets.only(right: 12),
-                          child: Text(store.typeLabel(type),
-                              maxLines: 1, overflow: TextOverflow.ellipsis))),
-              ],
-              onChanged: (type) {
-                if (type != null && type != slot.type) store.setType(type);
-              },
-            ),
-          const SizedBox(height: 12),
-          _KnobLayout(minHeight: minHeight - 130, children: [
-            for (final knob in knobs)
-              _FxRotary(
-                  key: ValueKey('${slot.slot}/${knob.id}'),
-                  label: knob.label,
-                  text: knob.text,
-                  increment: knob.increment,
-                  fraction: knob.max > knob.min
-                      ? ((knob.value - knob.min) / (knob.max - knob.min))
-                          .clamp(0, 1)
-                      : 0,
-                  enabled: true,
-                  onTap: () => onFocus(knob.id),
-                  onChange: (fraction) {
-                    onFocus(knob.id);
-                    store.setParam(
-                        knob.id, knob.min + fraction * (knob.max - knob.min));
-                  }),
-          ]),
-          if (store.tapVisible)
-            Align(
-                child: _FxToggle(
-                    label: store.tapLabel,
-                    active: false,
-                    onTap: () {
-                      final id = store.tapTarget;
-                      if (id != null) onFocus(id);
-                      store.tap();
-                    })),
-        ]));
+      Row(children: [
+        Expanded(
+            child: Text('FX ${slot.slot} · ${store.typeLabel(slot.type)}',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: palette.text1))),
+        if (store.stateControlsSupported) ...[
+          _FxToggle(
+              label: slot.on ? 'On' : 'Off',
+              active: slot.on,
+              activeColor: palette.meterGreen,
+              onTap: () => store.setOn(!slot.on)),
+          const SizedBox(width: 6),
+          _FxToggle(
+              label: slot.bypass ? 'Bypassed' : 'Bypass',
+              active: slot.bypass,
+              activeColor: palette.meterAmber,
+              onTap: () => store.setBypass(!slot.bypass)),
+        ],
+      ]),
+      const SizedBox(height: AppDesign.spaceMd),
+      if (store.typeOptions.isNotEmpty)
+        DropdownButton<String>(
+          isExpanded: true,
+          value: store.typeOptions.contains(slot.type) ? slot.type : null,
+          hint: Text(store.typeLabel(slot.type)),
+          items: [
+            for (final type in store.typeOptions)
+              DropdownMenuItem(
+                  value: type,
+                  child: Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: Text(store.typeLabel(type),
+                          maxLines: 1, overflow: TextOverflow.ellipsis))),
+          ],
+          onChanged: (type) {
+            if (type != null && type != slot.type) store.setType(type);
+          },
+        ),
+      const SizedBox(height: AppDesign.spaceMd),
+      _KnobLayout(minHeight: minHeight - 130, children: [
+        for (final knob in knobs)
+          _FxRotary(
+              key: ValueKey('${slot.slot}/${knob.id}'),
+              label: knob.label,
+              text: knob.text,
+              increment: knob.increment,
+              fraction: knob.max > knob.min
+                  ? ((knob.value - knob.min) / (knob.max - knob.min))
+                      .clamp(0, 1)
+                  : 0,
+              enabled: true,
+              onTap: () => onFocus(knob.id),
+              onChange: (fraction) {
+                onFocus(knob.id);
+                store.setParam(
+                    knob.id, knob.min + fraction * (knob.max - knob.min));
+              }),
+      ]),
+      if (store.tapVisible)
+        Align(
+            child: _FxToggle(
+                label: store.tapLabel,
+                active: false,
+                onTap: () {
+                  final id = store.tapTarget;
+                  if (id != null) onFocus(id);
+                  store.tap();
+                })),
+    ]));
   }
 }
 
@@ -793,11 +782,11 @@ class _FxRotaryState extends State<_FxRotary> {
                       CustomPaint(
                           size: const Size(88, 88),
                           painter: _FxKnobPainter(widget.fraction, palette)),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: AppDesign.spaceSm),
                       Text(widget.label,
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 12, color: palette.text7)),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: AppDesign.spaceXs),
                       Text(widget.text,
                           textAlign: TextAlign.center,
                           maxLines: 1,
