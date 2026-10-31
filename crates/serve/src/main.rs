@@ -9,6 +9,8 @@
 
 use std::{net::SocketAddr, path::PathBuf};
 
+mod desktop;
+
 use openfader_serve::ServeOptions;
 
 const HELP: &str = "\
@@ -37,13 +39,18 @@ Options:
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let argv: Vec<String> = std::env::args().skip(1).collect();
-    let mut port: u16 = 8080;
-    let mut bind = "0.0.0.0".to_string();
+    let desktop_host = argv.iter().any(|arg| arg == "--desktop-host");
+    if desktop_host && argv.len() != 1 {
+        anyhow::bail!("--desktop-host accepts no other arguments");
+    }
+    let mut port: u16 = if desktop_host { 0 } else { 8080 };
+    let mut bind = if desktop_host { "127.0.0.1" } else { "0.0.0.0" }.to_string();
     let mut poll_ms: u64 = 50;
     let mut opts = ServeOptions::default();
     let mut i = 0;
     while i < argv.len() {
         match argv[i].as_str() {
+            "--desktop-host" => {}
             "--sim-only" => opts.sim_only = true,
             "--port" => {
                 i += 1;
@@ -160,6 +167,16 @@ async fn main() -> anyhow::Result<()> {
 
     let sock: SocketAddr = format!("{bind}:{port}").parse()?;
     let listener = tokio::net::TcpListener::bind(sock).await?;
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let _desktop_owner = if desktop_host {
+        Some(desktop::start(listener.local_addr()?.port())?)
+    } else {
+        None
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    if desktop_host {
+        anyhow::bail!("secure desktop host is not available on this platform");
+    }
     openfader_serve::run_with_full(
         listener,
         opts,

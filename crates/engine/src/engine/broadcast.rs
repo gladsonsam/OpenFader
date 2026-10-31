@@ -208,9 +208,10 @@ impl Engine {
         }
     }
 
-    /// Current `locks` event, pruning expired holds first.
+    /// Current `locks` event. Leave expired entries for the sweeper or
+    /// command path to remove and broadcast; a snapshot must not consume an
+    /// expiry silently before other clients are notified.
     pub(super) fn locks_message(&self) -> Event {
-        let _ = self.prune_expired_locks();
         self.locks_message_inner()
     }
 

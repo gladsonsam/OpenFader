@@ -1,0 +1,18 @@
+[package]
+name = "openfader-audio"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+cpal = "=0.17.3"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+cpal = { version = "=0.17.3", features = ["asio"] }
+
+[target.'cfg(any(target_os = "macos", target_os = "windows"))'.dependencies]
+rtrb = "=0.3.2"

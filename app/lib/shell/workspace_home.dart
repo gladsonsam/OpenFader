@@ -7,11 +7,13 @@ import '../palette.dart';
 /// Workspace tools have a stable home instead of competing with mixer controls.
 class WorkspaceHome extends StatelessWidget {
   final VoidCallback onMixer;
+  final VoidCallback? onRecorder;
   final ValueChanged<MixerDestination> onNavigate;
   final ValueChanged<BuildContext> onLayout;
   const WorkspaceHome(
       {super.key,
       required this.onMixer,
+      this.onRecorder,
       required this.onNavigate,
       required this.onLayout});
 
@@ -73,6 +75,12 @@ class WorkspaceHome extends StatelessWidget {
                           children: [
                             tile('Mixer', 'Channels, faders and mixes',
                                 Icons.tune, onMixer),
+                            if (onRecorder != null)
+                              tile(
+                                  'Recorder & takes',
+                                  'Recording and virtual soundcheck',
+                                  Icons.fiber_manual_record,
+                                  onRecorder!),
                             tile(
                                 'Routing',
                                 'Patch sources to destinations',
