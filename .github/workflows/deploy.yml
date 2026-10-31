@@ -12,11 +12,39 @@ on:
         default: all
         options: [all, windows-android, ios, macos, linux, windows, android]
 
+      upload-artifacts:
+        description: Store manual-build downloads (requires available Actions artifact quota)
+        type: boolean
+        default: true
+
 permissions:
   contents: read
 
 jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Prepare draft release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "v$(tr -d '\r\n' < VERSION)"
+          if gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft > /tmp/release-draft; then
+            test "$(cat /tmp/release-draft)" = true
+          else
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "OpenFader ${GITHUB_REF_NAME#v}" --notes "XR18 hardware tested. Mackie VSC is unavailable pending USB proof. The Windows installer is unsigned. The Android APK uses the persistent development signing key and is not signed for Play Store distribution."
+          fi
+
   build:
+    needs: prepare
+    permissions:
+      contents: write
     name: ${{ matrix.platform }} bundles
     runs-on: ${{ fromJSON('{"ios":"macos-15","macos":"macos-15","linux":"ubuntu-22.04","windows":"windows-2022","android":"ubuntu-22.04"}')[matrix.platform] }}
     timeout-minutes: 60
@@ -85,17 +113,27 @@ jobs:
           OPENFADER_PLATFORM: ${{ matrix.platform }}
         run: python scripts/ci-build-app.py "$OPENFADER_PLATFORM"
       - uses: actions/upload-artifact@v7
+        if: github.event_name == 'workflow_dispatch' && inputs.upload-artifacts
         with:
           name: openfader-${{ matrix.platform }}-${{ github.sha }}
           path: artifacts/*
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 3
           compression-level: 0
+      - name: Upload draft release assets
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
+          gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber
       - name: Artifact summary
         shell: bash
         run: |
           echo '### ${{ matrix.platform }}' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Download the bundles from this run’s Artifacts section. Checksums and build metadata are included.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Tagged bundles go directly to the release. Manual downloads are available when artifact upload is enabled. Checksums and build metadata are included.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Apple device bundles are unsigned; Android release builds use a development key. These are not store submissions.' >> "$GITHUB_STEP_SUMMARY"
 
   publish:
@@ -108,11 +146,6 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: actions/download-artifact@v8
-        with:
-          pattern: openfader-*
-          path: release-assets
-          merge-multiple: true
       - name: Check tag and publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -124,7 +157,11 @@ jobs:
           git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
           test "$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")" = "$EXPECTED_SHA"
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = true
+          gh release download "$GITHUB_REF_NAME" --dir release-assets
+          (cd release-assets && sha256sum -c windows-SHA256SUMS android-SHA256SUMS)
+          python3 -c 'import json,os; from pathlib import Path; assert all(json.loads(Path("release-assets", f"{p}-build.json").read_text())["commit"] == os.environ["EXPECTED_SHA"] for p in ("windows", "android")), "asset commit mismatch"'
           version="${GITHUB_REF_NAME#v}"
           test -s "release-assets/OpenFader-${version}-windows-x64-setup.exe"
           test -s "release-assets/OpenFader-${version}-android.apk"
-          gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --title "OpenFader $version" --notes "XR18 hardware tested. Mackie VSC is unavailable pending USB proof. The Windows installer is unsigned. The Android APK uses the persistent development signing key and is not signed for Play Store distribution."
+          gh release edit "$GITHUB_REF_NAME" --draft=false
