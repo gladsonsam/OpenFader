@@ -265,8 +265,8 @@
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"$PROJECT_DIR/../../scripts/flutter-rust-macos.sh\"\n";
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\nexport CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0\n\"$PROJECT_DIR/../../scripts/flutter-rust-macos.sh\"\ncd \"$PROJECT_DIR/../..\"\nprofile=debug\ncargo_profile=dev\nif [[ \"$CONFIGURATION\" != Debug* ]]; then profile=release; cargo_profile=release; fi\nbinaries=()\nfor arch in $ARCHS; do\n  case \"$arch\" in arm64) target=aarch64-apple-darwin ;; x86_64) target=x86_64-apple-darwin ;; *) exit 1 ;; esac\n  cargo build --locked -p openfader-serve --target \"$target\" --profile \"$cargo_profile\"\n  binaries+=(\"target/$target/$profile/openfader-serve\")\ndone\nmkdir -p \"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/MacOS\"\nxcrun lipo -create \"${binaries[@]}\" -output \"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/MacOS/openfader-serve\"\nif [ \"$CODE_SIGNING_ALLOWED\" = YES ]; then\n  /usr/bin/codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY:--}\" --options runtime --entitlements \"$PROJECT_DIR/Runner/Host.entitlements\" \"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/MacOS/openfader-serve\"\nfi\n";
 		};
 		3399D490228B24CF009A79C7 /* ShellScript */ = {
 			isa = PBXShellScriptBuildPhase;

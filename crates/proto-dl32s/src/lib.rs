@@ -23,6 +23,7 @@ mod output_processing;
 pub mod output_routing;
 mod preamp;
 mod solo;
+pub mod soundcheck;
 pub mod strips;
 mod telemetry;
 

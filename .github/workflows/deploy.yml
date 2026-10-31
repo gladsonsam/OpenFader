@@ -1,15 +1,16 @@
-name: Build apps (manual)
+name: Build and release apps
 run-name: Build ${{ inputs.platform }} apps · ${{ github.ref_name }}
 
-# No push, PR, release or schedule triggers: building apps is opt-in.
 on:
+  push:
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       platform:
         description: Platforms to build
         type: choice
         default: all
-        options: [all, ios, macos, linux, windows, android]
+        options: [all, windows-android, ios, macos, linux, windows, android]
 
 permissions:
   contents: read
@@ -22,9 +23,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: ${{ inputs.platform == 'all' && fromJSON('["ios","macos","linux","windows","android"]') || fromJSON(format('["{0}"]', inputs.platform)) }}
+        platform: ${{ github.event_name == 'push' && fromJSON('["windows","android"]') || inputs.platform == 'windows-android' && fromJSON('["windows","android"]') || inputs.platform == 'all' && fromJSON('["ios","macos","linux","windows","android"]') || fromJSON(format('["{0}"]', inputs.platform)) }}
     steps:
       - uses: actions/checkout@v7
+      - name: Validate release tag
+        if: github.event_name == 'push'
+        shell: bash
+        run: test "$GITHUB_REF_NAME" = "v$(tr -d '\r\n' < VERSION)"
+      - name: Provision Windows native dependencies
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: ./scripts/provision-windows-ci.ps1
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -59,7 +68,7 @@ jobs:
         if: matrix.platform == 'android'
         shell: bash
         run: |
-          sdkmanager 'platforms;android-36' 'build-tools;36.0.0' 'ndk;28.2.13676358'
+          sdkmanager 'platforms;android-37' 'build-tools;36.0.0' 'ndk;28.2.13676358'
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/28.2.13676358" >> "$GITHUB_ENV"
           rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
           cargo install cargo-ndk --version 4.1.2 --locked
@@ -88,3 +97,34 @@ jobs:
           echo '### ${{ matrix.platform }}' >> "$GITHUB_STEP_SUMMARY"
           echo 'Download the bundles from this run’s Artifacts section. Checksums and build metadata are included.' >> "$GITHUB_STEP_SUMMARY"
           echo 'Apple device bundles are unsigned; Android release builds use a development key. These are not store submissions.' >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: openfader-*
+          path: release-assets
+          merge-multiple: true
+      - name: Check tag and publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "v$(tr -d '\r\n' < VERSION)"
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          test "$(git rev-parse "refs/tags/$GITHUB_REF_NAME^{commit}")" = "$EXPECTED_SHA"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
+          version="${GITHUB_REF_NAME#v}"
+          test -s "release-assets/OpenFader-${version}-windows-x64-setup.exe"
+          test -s "release-assets/OpenFader-${version}-android.apk"
+          gh release create "$GITHUB_REF_NAME" release-assets/* --verify-tag --title "OpenFader $version" --notes "XR18 hardware tested. Mackie VSC is unavailable pending USB proof. The Windows installer is unsigned. The Android APK uses the persistent development signing key and is not signed for Play Store distribution."

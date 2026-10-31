@@ -61,6 +61,7 @@ mod scene_input_links;
 mod scene_link_settings;
 mod scene_output_eq;
 mod scene_recall;
+pub mod selector_session;
 mod session;
 mod state;
 mod tasks;
@@ -225,6 +226,8 @@ pub struct Engine {
     scenes_current: RwLock<Option<u16>>,
     /// Serializes ALL numbered/named library mutations (one engine-owned
     /// async lock; never a `std` lock across `.await`).
+    // Outer command boundary for routing mutations and scene recalls.
+    routing_mutation: Arc<Mutex<()>>,
     lib_lock: Mutex<()>,
     native_lane: Mutex<()>,
     native_requests: std::sync::Mutex<commands::NativeRequests>,
@@ -334,6 +337,7 @@ pub struct Engine {
     /// Wakeup for the connect-fill worker (see [`Engine::ensure_tasks`]).
     fill_notify: Arc<Notify>,
     /// Invalidates in-flight reads even when reconnecting the same driver.
+    selector_nonce: [u8; 16],
     connection_gen: AtomicU64,
     fill_connection_gen: AtomicU64,
     connection_changed: Notify,
@@ -344,6 +348,12 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// Exclusively reserve routing mutations after all earlier routing writes drain.
+    /// Callers holding this guard must not dispatch a routing command or scene recall.
+    pub async fn routing_mutation_guard(&self) -> tokio::sync::OwnedMutexGuard<()> {
+        self.routing_mutation.clone().lock_owned().await
+    }
+
     /// Build a new session. No background work starts here (safe to call
     /// outside a runtime); the poller/sweeper/meter tasks spawn on the
     /// first [`attach`](Engine::attach).
@@ -421,6 +431,7 @@ impl Engine {
             link: RwLock::new(LinkState::default()),
             scenes_lib: RwLock::new(scenes_lib),
             scenes_current: RwLock::new(None),
+            routing_mutation: Arc::new(Mutex::new(())),
             lib_lock: Mutex::new(()),
             native_lane: Mutex::new(()),
             native_requests: std::sync::Mutex::new(Default::default()),
@@ -452,6 +463,11 @@ impl Engine {
             notify: Arc::new(Notify::new()),
             fill_gen: AtomicU64::new(0),
             fill_notify: Arc::new(Notify::new()),
+            selector_nonce: {
+                let mut nonce = [0; 16];
+                getrandom::fill(&mut nonce).expect("secure random selector nonce");
+                nonce
+            },
             connection_gen: AtomicU64::new(1),
             fill_connection_gen: AtomicU64::new(1),
             connection_changed: Notify::new(),

@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  crypto: ^3.0.0
   ffi: ^2.1.0
   flutter_rust_bridge: ^2.13.0
   web_socket_channel: ^3.0.0
@@ -43,3 +44,8 @@ flutter:
           weight: 600
         - asset: assets/fonts/Barlow-Bold.ttf
           weight: 700
+
+    - family: Barlow Condensed
+      fonts:
+        - asset: assets/fonts/BarlowCondensed-SemiBold.ttf
+          weight: 600

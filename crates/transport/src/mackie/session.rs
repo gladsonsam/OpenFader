@@ -135,6 +135,12 @@ pub struct MackieValueCache {
     caches: Arc<Caches>,
 }
 
+/// Receipt baseline bound to the transport cache that created it.
+pub struct ValueReceiptBarrier {
+    caches: Arc<Caches>,
+    sequence: u64,
+}
+
 impl std::fmt::Debug for MackieValueCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MackieValueCache").finish_non_exhaustive()
@@ -142,6 +148,47 @@ impl std::fmt::Debug for MackieValueCache {
 }
 
 impl MackieValueCache {
+    /// Capture the receive baseline before issuing a read-only request.
+    pub fn receipt_barrier(&self) -> ValueReceiptBarrier {
+        let sequence = self
+            .caches
+            .values
+            .lock()
+            .expect("value cache poisoned")
+            .sequence;
+        ValueReceiptBarrier {
+            caches: self.caches.clone(),
+            sequence,
+        }
+    }
+
+    /// Return all values received since the barrier, or the missing addresses.
+    /// A barrier from another session cannot establish freshness.
+    pub fn received_since(
+        &self,
+        barrier: &ValueReceiptBarrier,
+        addresses: &[u32],
+    ) -> Result<Vec<(u32, u64, u64)>, Vec<u32>> {
+        if !Arc::ptr_eq(&self.caches, &barrier.caches) {
+            return Err(addresses.to_vec());
+        }
+        let store = self.caches.values.lock().expect("value cache poisoned");
+        let mut missing = Vec::new();
+        let mut values = Vec::with_capacity(addresses.len());
+        for address in addresses {
+            match store.observed.get(address) {
+                Some(value) if value.2 > barrier.sequence && !store.pending.contains(address) => {
+                    values.push(*value)
+                }
+                _ => missing.push(*address),
+            }
+        }
+        if missing.is_empty() {
+            Ok(values)
+        } else {
+            Err(missing)
+        }
+    }
     pub fn verified_snapshot(&self, addresses: &[u32]) -> Option<Vec<(u32, u64, u64)>> {
         let store = self.caches.values.lock().ok()?;
         addresses

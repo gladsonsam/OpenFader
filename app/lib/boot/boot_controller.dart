@@ -2,7 +2,11 @@
 // The native engine load runs after "Preparing interface" has painted because it is the slow step.
 library;
 
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
+
+import 'desktop_host.dart';
 
 import '../engine.dart';
 import '../ffi_engine.dart';
@@ -75,10 +79,15 @@ class BootController extends ChangeNotifier {
       _step = 1;
       notifyListeners();
       if (_api == null) {
-        final ffi = await FfiEngine.create();
-        if (_disposed) return;
-        _isRealEngine = ffi != null;
-        _api = ffi ?? FakeSimEngine();
+        if (Platform.isMacOS || Platform.isWindows) {
+          _api = await DesktopHost.start();
+          _isRealEngine = true;
+        } else {
+          final ffi = await FfiEngine.create();
+          if (_disposed) return;
+          _isRealEngine = ffi != null;
+          _api = ffi ?? FakeSimEngine();
+        }
       }
       final api = _api!;
 

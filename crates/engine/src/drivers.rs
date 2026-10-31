@@ -98,6 +98,35 @@ pub struct SendDestination {
 
 /// Object-safe mirror of [`MixerDriver`] plus the engine-only extensions.
 /// Defaults are honestly unsupported; providers override what they serve.
+/// Provider-neutral description of a soundcheck route and its guards.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct SoundcheckProfile {
+    pub capture_channels: u16,
+    pub output_channels: u16,
+    pub output_mask: Vec<bool>,
+    pub route_changes: Vec<(String, i32)>,
+    pub snapshot_keys: Vec<String>,
+    pub driver_state: serde_json::Value,
+}
+
+impl SoundcheckProfile {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            (1..=64).contains(&self.capture_channels),
+            "invalid capture channel count"
+        );
+        anyhow::ensure!(
+            (1..=64).contains(&self.output_channels),
+            "invalid output channel count"
+        );
+        anyhow::ensure!(
+            self.output_mask.len() == usize::from(self.output_channels),
+            "output mask length mismatch"
+        );
+        Ok(())
+    }
+}
+
 #[async_trait::async_trait]
 pub trait DynDriver: Send + Sync {
     /// Read-only identification, independent of the active mixer session.
@@ -713,12 +742,57 @@ pub trait DynDriver: Send + Sync {
             _ => anyhow::bail!("routing source is not a label"),
         }
     }
+    /// Build a fresh provider-owned soundcheck profile, or None when unsupported.
+    async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {
+        Ok(None)
+    }
+
+    /// Read a provider-owned soundcheck route using its opaque guard state.
+    async fn soundcheck_route_read(
+        &self,
+        _key: &str,
+        _driver_state: &serde_json::Value,
+        _check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<i32> {
+        anyhow::bail!("soundcheck routing unsupported")
+    }
+
+    /// Compare and write a route, returning the updated opaque guard state.
+    async fn soundcheck_route_write(
+        &self,
+        _key: &str,
+        _driver_state: &serde_json::Value,
+        _expected: i32,
+        _desired: i32,
+        _check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<serde_json::Value> {
+        anyhow::bail!("soundcheck routing unsupported")
+    }
+
+    /// Fresh provider-owned soundcheck preflight, or None when unsupported.
+    async fn soundcheck_readback(&self) -> anyhow::Result<Option<serde_json::Value>> {
+        Ok(None)
+    }
     /// Optional provider-owned opaque input-route state for guarded commands.
     async fn input_route_guard(
         &self,
         _strip: StripId,
     ) -> anyhow::Result<Option<serde_json::Value>> {
         Ok(None)
+    }
+    /// Fresh link state for an even, zero-based input pair; None means unsupported.
+    async fn input_pair_link(&self, _left: StripId) -> anyhow::Result<Option<bool>> {
+        Ok(None)
+    }
+    /// Guarded pair-bank write; expected contains both complete route JSON objects.
+    async fn linked_input_bank_guarded(
+        &self,
+        _left: StripId,
+        _expected: [serde_json::Value; 2],
+        _bank: i32,
+        _check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync),
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("linked input bank unsupported")
     }
     async fn input_routes_bulk(
         &self,
@@ -1285,7 +1359,124 @@ macro_rules! impl_dyn_driver {
     };
 }
 
+fn soundcheck_key(key: &str, count: u16) -> anyhow::Result<(u16, usize)> {
+    let parts: Vec<_> = key.split('/').collect();
+    anyhow::ensure!(
+        parts.len() == 3 && parts[0] == "input",
+        "invalid routing key"
+    );
+    let channel: u16 = parts[1].parse()?;
+    anyhow::ensure!(channel < count, "invalid input channel");
+    let index = match parts[2] {
+        "analog" => 0,
+        "usb" => 1,
+        "bank" => 2,
+        _ => anyhow::bail!("invalid selector"),
+    };
+    Ok((channel, index))
+}
+fn soundcheck_guard(
+    state: &serde_json::Value,
+    channel: u16,
+    route: [i32; 3],
+) -> anyhow::Result<()> {
+    if !state.is_null() {
+        let expected = &state["expected"][channel.to_string()];
+        anyhow::ensure!(
+            *expected == serde_json::json!({"analog":route[0],"usb":route[1],"bank":route[2]}),
+            "routing conflict: input/{channel}"
+        );
+    }
+    Ok(())
+}
+fn soundcheck_update(
+    state: &serde_json::Value,
+    channel: u16,
+    route: [i32; 3],
+) -> serde_json::Value {
+    let mut updated = state.clone();
+    if !updated.is_null() {
+        updated["expected"][channel.to_string()] =
+            serde_json::json!({"analog":route[0],"usb":route[1],"bank":route[2]});
+    }
+    updated
+}
+
 impl_dyn_driver!(openfader_sim::SimDriver {
+    async fn soundcheck_route_read(&self, key: &str, state: &serde_json::Value, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<i32> {
+        let (channel, index) = soundcheck_key(key, 32)?;
+        check(&[StripId(channel)])?;
+        let route = self.selector_read(channel)?;
+        check(&[StripId(channel)])?;
+        soundcheck_guard(state, channel, route)?;
+        Ok(route[index])
+    }
+    async fn soundcheck_route_write(&self, key: &str, state: &serde_json::Value, expected: i32, desired: i32, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<serde_json::Value> {
+        let (channel, index) = soundcheck_key(key, 32)?;
+        check(&[StripId(channel)])?;
+        let route = self.selector_read(channel)?;
+        soundcheck_guard(state, channel, route)?;
+        anyhow::ensure!(route[index] == expected, "routing conflict");
+        let mut next = route; next[index] = desired;
+        self.selector_write(channel, route, next, check)?;
+        check(&[StripId(channel)])?;
+        anyhow::ensure!(self.selector_read(channel)? == next, "selector readback mismatch");
+        check(&[StripId(channel)])?;
+        Ok(soundcheck_update(state, channel, next))
+    }
+
+    async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {
+        let count = openfader_sim::SIM_TOPOLOGY.iter().find(|f| f.kind == StripKind::In)
+            .ok_or_else(|| anyhow::anyhow!("missing simulator input topology"))?.count;
+        let count = u16::try_from(count)?;
+        let mut mask = vec![false; usize::from(count)];
+        let mut changes = Vec::new();
+        let mut keys = Vec::new();
+        let mut expected = serde_json::Map::new();
+        for channel in 0..count {
+            let [analog, usb, bank] = self.selector_read(channel)?;
+            if bank == 0 && (0..i32::from(count)).contains(&analog) {
+                mask[analog as usize] = true;
+                changes.push((format!("input/{channel}/usb"), analog));
+                changes.push((format!("input/{channel}/bank"), 1));
+                keys.extend(["analog", "usb", "bank"].map(|key| format!("input/{channel}/{key}")));
+                expected.insert(channel.to_string(), serde_json::json!({"analog": analog, "usb": usb, "bank": bank}));
+            }
+        }
+        let profile = SoundcheckProfile { capture_channels: count, output_channels: count, output_mask: mask, route_changes: changes, snapshot_keys: keys, driver_state: serde_json::json!({"expected": expected, "links": []}) };
+        profile.validate()?;
+        Ok(Some(profile))
+    }
+
+    async fn soundcheck_readback(&self) -> anyhow::Result<Option<serde_json::Value>> {
+        let mut inputs = Vec::new();
+        for n in 0..16 { let [analog, usb, bank] = self.selector_read(n)?; inputs.push(serde_json::json!({"analog":analog,"usb":usb,"bank":bank})); }
+        Ok(Some(serde_json::json!({"model":"XR18","firmware":"1.20","sends":(0..18).map(|n| serde_json::json!({"source":n,"tap":0})).collect::<Vec<_>>(),"inputs":inputs,"aux_usb_pair":8,"aux_bank":1,"input_links":(vec![false; 8])})))
+    }
+
+    async fn input_pair_link(&self, _left: StripId) -> anyhow::Result<Option<bool>> { Ok(Some(false)) }
+    async fn input_route_guard(&self, strip: StripId) -> anyhow::Result<Option<serde_json::Value>> {
+        let [analog, usb, bank] = self.selector_read(strip.0)?;
+        Ok(Some(serde_json::json!({"analog": analog, "usb": usb, "bank": bank})))
+    }
+    async fn patch_target_guarded(&self, strip: StripId, target: &str, source: Option<(&str, u8)>, guard: Option<&serde_json::Value>, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<RoutingPatch> {
+        let guard = guard.ok_or_else(|| anyhow::anyhow!("missing route guard"))?;
+        let field = |name| -> anyhow::Result<i32> { Ok(i32::try_from(guard[name].as_i64().ok_or_else(|| anyhow::anyhow!("invalid route guard"))?)?) };
+        let expected = [field("analog")?, field("usb")?, field("bank")?];
+        let mut desired = expected;
+        let (index, value) = match (target, source) {
+            ("analog", None) => (0, 18),
+            ("analog", Some(("Mic", n @ 1..=16))) => (0, i32::from(n) - 1),
+            ("analog", Some(("Aux", n @ 1..=2))) => (0, i32::from(n) + 15),
+            ("usb", Some(("USB", n @ 1..=18))) => (1, i32::from(n) - 1),
+            ("bank", Some(("Bank", n @ 1..=2))) => (2, i32::from(n) - 1),
+            _ => anyhow::bail!("invalid selector"),
+        };
+        desired[index] = value;
+        self.selector_write(strip.0, expected, desired, check)?;
+        Ok(RoutingPatch { label: value.to_string(), param: None })
+    }
+
     fn clear_solo_scope(&self) -> Option<&'static str> { Some("advertised") }
     fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> { openfader_sim::strip_schema::scopes() }
     fn routing_strip_kind(&self, kind: StripKind) -> bool { kind == StripKind::In || kind == openfader_sim::strip_schema::RETURN_KIND }
@@ -1466,6 +1657,74 @@ impl_dyn_driver!(openfader_sim::SimDriver {
 });
 
 impl_dyn_driver!(openfader_proto_xair::XAirDriver {
+    async fn soundcheck_route_read(&self, key: &str, state: &serde_json::Value, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<i32> {
+        if let Some(rest) = key.strip_prefix("input_pair/") {
+            let (left, field) = rest.split_once('/').ok_or_else(|| anyhow::anyhow!("invalid pair"))?;
+            let left: u16 = left.parse()?;
+            anyhow::ensure!(left < 16 && left.is_multiple_of(2), "invalid pair");
+            let members = [StripId(left), StripId(left + 1)];
+            check(&members)?;
+            let linked = matches!(MixerDriver::get_param(self, members[0], "link").await?, ParamValue::Bool(true));
+            check(&members)?;
+            if !state.is_null() { anyhow::ensure!(state["links"][usize::from(left / 2)].as_bool() == Some(linked), "input link changed"); }
+            if field == "link" { return Ok(i32::from(linked)); }
+            anyhow::ensure!(field == "bank" && linked, "input pair link changed");
+            let a = self.input_route(members[0]).await?; check(&members)?;
+            let b = self.input_route(members[1]).await?; check(&members)?;
+            soundcheck_guard(state, left, [a.analog,a.usb,a.bank])?;
+            soundcheck_guard(state, left + 1, [b.analog,b.usb,b.bank])?;
+            anyhow::ensure!(a.bank == b.bank, "unequal pair banks");
+            return Ok(a.bank);
+        }
+        let (channel,index) = soundcheck_key(key, 18)?;
+        check(&[StripId(channel)])?;
+        let route = self.input_route(StripId(channel)).await?;
+        check(&[StripId(channel)])?;
+        let route = [route.analog,route.usb,route.bank];
+        soundcheck_guard(state, channel, route)?;
+        Ok(route[index])
+    }
+    async fn soundcheck_route_write(&self, key: &str, state: &serde_json::Value, expected: i32, desired: i32, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<serde_json::Value> {
+        if let Some(rest) = key.strip_prefix("input_pair/") {
+            let (left, field) = rest.split_once('/').ok_or_else(|| anyhow::anyhow!("invalid pair"))?;
+            let left: u16 = left.parse()?;
+            anyhow::ensure!(field == "bank" && left < 16 && left.is_multiple_of(2), "invalid pair");
+            anyhow::ensure!(DynDriver::soundcheck_route_read(self, key, state, check).await? == expected, "routing conflict");
+            let members = [StripId(left), StripId(left + 1)];
+            let a = self.input_route(members[0]).await?; check(&members)?;
+            let b = self.input_route(members[1]).await?; check(&members)?;
+            soundcheck_guard(state, left, [a.analog,a.usb,a.bank])?;
+            soundcheck_guard(state, left + 1, [b.analog,b.usb,b.bank])?;
+            anyhow::ensure!(a.bank == expected && b.bank == expected, "routing conflict");
+            self.set_linked_input_bank_guarded(members[0], [a,b], desired, check).await?;
+            check(&members)?;
+            let updated = soundcheck_update(state, left, [a.analog,a.usb,desired]);
+            return Ok(soundcheck_update(&updated, left + 1, [b.analog,b.usb,desired]));
+        }
+        let (channel,index) = soundcheck_key(key, 18)?;
+        let member = StripId(channel); check(&[member])?;
+        let route = self.input_route(member).await?; check(&[member])?;
+        let values = [route.analog,route.usb,route.bank];
+        soundcheck_guard(state, channel, values)?;
+        anyhow::ensure!(values[index] == expected, "routing conflict");
+        let mut next = route;
+        match index { 0 => next.analog = desired, 1 => next.usb = desired, _ => next.bank = desired };
+        self.set_input_route_guarded(member, route, next, check).await?;
+        check(&[member])?;
+        let actual = self.input_route(member).await?; check(&[member])?;
+        anyhow::ensure!(actual == next, "selector readback mismatch");
+        Ok(soundcheck_update(state, channel, [next.analog,next.usb,next.bank]))
+    }
+
+    async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {
+        let readback = openfader_proto_xair::XAirDriver::soundcheck_readback(self).await?;
+        let preflight = openfader_proto_xair::soundcheck_profile::preflight(&readback)?;
+        let expected: serde_json::Map<String, serde_json::Value> = preflight.expected.iter().map(|(channel, route)| (channel.to_string(), serde_json::json!({"analog": route.analog, "usb": route.usb, "bank": route.bank}))).collect();
+        let profile = SoundcheckProfile { capture_channels: 18, output_channels: 18, output_mask: preflight.output_mask.to_vec(), route_changes: preflight.plan, snapshot_keys: preflight.keys, driver_state: serde_json::json!({"expected": expected, "links": preflight.links}) };
+        profile.validate()?;
+        Ok(Some(profile))
+    }
+
     async fn set_solo_checked(&self, strip: StripId, soloed: bool, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
         openfader_proto_xair::XAirDriver::set_solo_checked(self, strip, soloed, check).await
     }
@@ -1486,6 +1745,17 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
         }
         Some(out)
     }
+    async fn input_pair_link(&self, left: StripId) -> anyhow::Result<Option<bool>> {
+        match MixerDriver::get_param(self, left, "link").await? { ParamValue::Bool(value) => Ok(Some(value)), _ => anyhow::bail!("invalid link state") }
+    }
+    async fn linked_input_bank_guarded(&self, left: StripId, expected: [serde_json::Value; 2], bank: i32, check: &(dyn for<'a> Fn(&'a [StripId]) -> anyhow::Result<()> + Send + Sync)) -> anyhow::Result<()> {
+        let parse = |v: &serde_json::Value| -> anyhow::Result<openfader_proto_xair::input_routing::InputRoute> {
+            let field = |key: &str| -> anyhow::Result<i32> { Ok(i32::try_from(v[key].as_i64().ok_or_else(|| anyhow::anyhow!("invalid route"))?)?) };
+            Ok(openfader_proto_xair::input_routing::InputRoute { analog: field("analog")?, usb: field("usb")?, bank: field("bank")? })
+        };
+        self.set_linked_input_bank_guarded(left, [parse(&expected[0])?, parse(&expected[1])?], bank, check).await
+    }
+    async fn soundcheck_readback(&self) -> anyhow::Result<Option<serde_json::Value>> { Ok(Some(openfader_proto_xair::XAirDriver::soundcheck_readback(self).await?)) }
     async fn input_route_guard(&self, strip: StripId) -> anyhow::Result<Option<serde_json::Value>> {
         let route = self.input_route(strip).await?;
         Ok(Some(serde_json::json!({"analog": route.analog, "usb": route.usb, "bank": route.bank})))
@@ -1934,6 +2204,10 @@ impl_dyn_driver!(openfader_proto_xair::XAirDriver {
 });
 
 impl_dyn_driver!(openfader_proto_dl32s::Dl32sDriver {
+    async fn soundcheck_profile(&self) -> anyhow::Result<Option<SoundcheckProfile>> {
+        openfader_proto_dl32s::soundcheck::assess()?;
+        Ok(None)
+    }
     fn routing_strip_kind(&self, kind: StripKind) -> bool { matches!(kind, StripKind::In | StripKind::Ret) }
     fn scope_restrictions(&self) -> Vec<(&'static str, &'static [StripKind])> { openfader_proto_dl32s::strips::scopes() }
     fn routing_planes(&self) -> Vec<crate::protocol::RoutingPlaneCaps> {
@@ -2183,4 +2457,85 @@ fn is_xair_bus_send(param: &str) -> bool {
             matches!(n, "1" | "2" | "3" | "4" | "5" | "6")
                 && matches!(leaf, "level" | "tap" | "pan" | "grpon")
         })
+}
+
+#[cfg(test)]
+mod soundcheck_profile_tests {
+    use super::*;
+
+    #[test]
+    fn validates_channel_counts_and_masks() {
+        for count in [18, 32] {
+            let mut profile = SoundcheckProfile {
+                capture_channels: count,
+                output_channels: count,
+                output_mask: vec![true; count as usize],
+                route_changes: vec![],
+                snapshot_keys: vec![],
+                driver_state: serde_json::Value::Null,
+            };
+            assert!(profile.validate().is_ok());
+            profile.output_mask.pop();
+            assert!(profile.validate().is_err());
+            profile.output_mask.push(true);
+            profile.capture_channels = 0;
+            assert!(profile.validate().is_err());
+            profile.capture_channels = 65;
+            assert!(profile.validate().is_err());
+        }
+    }
+
+    #[tokio::test]
+    async fn mackie_soundcheck_reports_unverified_signal_path() {
+        let driver = openfader_proto_dl32s::Dl32sDriver::new();
+        let error = DynDriver::soundcheck_profile(&driver).await.unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<openfader_proto_dl32s::soundcheck::UnavailableReason>(),
+            Some(&openfader_proto_dl32s::soundcheck::UnavailableReason::UnverifiedSignalPath)
+        );
+    }
+}
+
+#[cfg(test)]
+mod soundcheck_driver_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn sim_channel_31_transaction_rejects_stale_state() {
+        let sim = openfader_sim::SimDriver::new();
+        let driver: &dyn DynDriver = &sim;
+        let check = |_: &[StripId]| Ok(());
+        let profile = driver.soundcheck_profile().await.unwrap().unwrap();
+        assert_eq!(profile.capture_channels, 32);
+        assert_eq!(
+            driver
+                .soundcheck_route_read("input/31/usb", &profile.driver_state, &check)
+                .await
+                .unwrap(),
+            31
+        );
+        let state = driver
+            .soundcheck_route_write("input/31/usb", &profile.driver_state, 31, 5, &check)
+            .await
+            .unwrap();
+        assert!(driver
+            .soundcheck_route_write("input/31/bank", &profile.driver_state, 0, 1, &check)
+            .await
+            .is_err());
+        let state = driver
+            .soundcheck_route_write("input/31/bank", &state, 0, 1, &check)
+            .await
+            .unwrap();
+        assert_eq!(
+            driver
+                .soundcheck_route_read("input/31/bank", &state, &check)
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(driver
+            .soundcheck_route_write("input/31/usb", &serde_json::Value::Null, 31, 0, &check)
+            .await
+            .is_err());
+    }
 }
