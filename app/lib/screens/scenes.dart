@@ -455,8 +455,8 @@ class _NativeSnapshotsSection extends StatelessWidget {
           ? 'Unavailable in simulator'
           : 'Snapshot reports unsupported',
       NativeSnapshotsStatus.unavailable => 'Unavailable while disconnected',
-      NativeSnapshotsStatus.loading => 'Waiting for snapshot reports',
-      NativeSnapshotsStatus.ready => 'Observed slots',
+      NativeSnapshotsStatus.loading => 'Loading mixer snapshots…',
+      NativeSnapshotsStatus.ready => view.complete ? 'Stored mixer snapshots' : 'Observed slots (partial)',
     };
     String? reportedName;
     for (final slot in view.slots) {
@@ -473,8 +473,8 @@ class _NativeSnapshotsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const _SectionTitle('Passive mixer snapshot reports'),
-          Text(message, style: TextStyle(fontSize: 12, color: palette.text7)),
+          const _SectionTitle('Mixer snapshots'),
+          Text(view.error ?? message, style: TextStyle(fontSize: 12, color: palette.text7)),
           if (view.status == NativeSnapshotsStatus.ready) ...[
             const SizedBox(height: AppDesign.spaceSm),
             Text(

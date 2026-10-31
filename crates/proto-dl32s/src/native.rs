@@ -166,6 +166,7 @@ pub(super) fn ingest_native(
                 if v.view.connected {
                     v.library_revision += 1;
                     v.library_index = None;
+                    v.view.complete = false;
                     match v.view.slots.iter_mut().find(|s| s.slot == *slot) {
                         Some(row) => row.name = name.clone(),
                         None => v.view.slots.push(openfader_core::NativeSnapshotSlot {

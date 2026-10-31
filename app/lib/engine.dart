@@ -11,7 +11,7 @@ export 'core/local_library.dart';
 export 'core/destination_controls.dart';
 
 /// Passive native desk reports, separate from OpenFader's local scene library.
-/// `ready` means some push evidence arrived, never a complete slot inventory.
+/// `complete` distinguishes a validated stored-show catalogue from partial pushes.
 enum NativeSnapshotsStatus { unknown, unsupported, unavailable, loading, ready }
 
 class NativeSnapshotSlotVm {
@@ -36,13 +36,17 @@ class NativeSnapshotsVm {
   final bool supported;
   final bool readOnly;
   final NativeSnapshotsStatus status;
+  final bool complete;
+  final String? error;
   final List<NativeSnapshotSlotVm> slots;
 
   /// Last reported native recall id, not confirmation of mixer audio state.
   final int? current;
 
   const NativeSnapshotsVm.unknown({this.driver = ''})
-      : epoch = null,
+      : complete = false,
+        error = null,
+        epoch = null,
         supported = false,
         readOnly = false,
         status = NativeSnapshotsStatus.unknown,
@@ -50,7 +54,9 @@ class NativeSnapshotsVm {
         current = null;
 
   const NativeSnapshotsVm.unsupported({this.driver = ''})
-      : epoch = null,
+      : complete = false,
+        error = null,
+        epoch = null,
         supported = false,
         readOnly = false,
         status = NativeSnapshotsStatus.unsupported,
@@ -63,6 +69,8 @@ class NativeSnapshotsVm {
     required this.supported,
     required this.readOnly,
     required this.status,
+    this.complete = false,
+    this.error,
     List<NativeSnapshotSlotVm> slots = const [],
     this.current,
   }) : slots = List.unmodifiable(slots);
@@ -145,7 +153,9 @@ class NativeSnapshotsVm {
         readOnly: readOnly,
         status: status,
         slots: slots,
-        current: current as int?);
+        current: current as int?,
+        complete: e['complete'] == true,
+        error: e['error'] is String ? e['error'] as String : null);
   }
 
   @override
@@ -157,13 +167,14 @@ class NativeSnapshotsVm {
       readOnly == other.readOnly &&
       status == other.status &&
       current == other.current &&
+      complete == other.complete && error == other.error &&
       slots.length == other.slots.length &&
       Iterable<int>.generate(slots.length)
           .every((i) => slots[i] == other.slots[i]);
 
   @override
   int get hashCode => Object.hash(driver, epoch, supported, readOnly, status,
-      current, Object.hashAll(slots));
+      current, complete, error, Object.hashAll(slots));
 }
 
 /// Measured audio bands with explicit provenance. Never infer a channel from
