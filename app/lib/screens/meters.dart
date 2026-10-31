@@ -353,6 +353,7 @@ class _PhysicalOutputs extends StatelessWidget {
               color: palette.text1,
             ),
           ),
+          const SizedBox(height: 16),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -490,7 +491,7 @@ class _LadderGroup extends StatelessWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 16),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
@@ -607,7 +608,7 @@ class _LadderState extends State<_Ladder> {
       child: Column(
         children: [
           CustomPaint(size: Size(44, widget.height), painter: _painter),
-          const SizedBox(height: 4),
+          const SizedBox(height: 12),
           Text(
             widget.ladder.label ?? '—',
             maxLines: 1,
