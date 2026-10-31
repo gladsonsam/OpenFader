@@ -1,12 +1,10 @@
-import '../design.dart';
 // FX rack: slot cards, type choices and rotary parameter controls.
 // Screens stay constructor-injected so Area A can implement the store.
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../palette.dart';
-import '../widgets/console_controls.dart';
+import '../ui/console.dart';
 import '../core/selected_control_readout.dart';
 import '../core/destination_controls.dart';
 import '../widgets/destination_control_editor.dart';

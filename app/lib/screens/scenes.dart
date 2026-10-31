@@ -1,4 +1,3 @@
-import '../design.dart';
 // Snapshot library plus named show capture and recall.
 // Local transactions and guarded provider operations keep separate authorities.
 // Screens stay constructor-injected so Area A can implement the store.
@@ -6,72 +5,9 @@ import 'package:flutter/material.dart';
 
 import '../engine.dart' show NativeSnapshotsVm, NativeSnapshotsStatus;
 import '../theme.dart';
-import '../core/native_library.dart';
+import '../core/scenes_store.dart';
 import '../widgets/native_library.dart';
-import '../palette.dart';
-import '../widgets/console_button.dart';
-
-class SceneEntryVm {
-  final int number;
-  final String name;
-  final bool current;
-
-  const SceneEntryVm({
-    required this.number,
-    required this.name,
-    this.current = false,
-  });
-}
-
-// Implemented by the shell over the engine or a fixture sim.
-abstract class ScenesStore extends ChangeNotifier
-    implements NativeLibraryStore {
-  @override
-  NativeLibraryVm? get nativeLibrary => null;
-  @override
-  String? get nativeStatus => null;
-  @override
-  bool get nativeBusy => false;
-  @override
-  bool get nativeWritable => false;
-  @override
-  Object get nativeContext => actionContext;
-  @override
-  Future<void> nativeAction(
-      Map<String, dynamic> action, Object captured) async {}
-  @override
-  void cancelNativeAction() {}
-  List<SceneEntryVm> get entries;
-  List<String> get shows;
-  List<String> get showScenes;
-  bool get busy;
-  String? get status;
-  String get libraryDescription =>
-      'Local library durability is not yet proven. '
-      'It is not a native mixer backup.';
-  String? get show; // active show for capture/recall, null = numbered only
-  bool get online;
-
-  /// Optional passive surface. Stores without native support remain honest.
-  NativeSnapshotsVm get nativeSnapshots =>
-      const NativeSnapshotsVm.unsupported();
-
-  // Validation rejects stale targets without sending.
-  Object get actionContext;
-  bool validateActionContext(Object captured);
-  bool captureWillOverwrite(String name);
-
-  void save(String name);
-  void recall(int number);
-  void rename(int number, String name);
-  void remove(int number);
-  void clearAll();
-  void selectShow(String show);
-  void beginShow();
-  void captureShow(String name);
-  void recallShow(String name);
-  void deleteShow(String name);
-}
+import '../ui/console.dart';
 
 class U4ScenesPage extends StatefulWidget {
   final ScenesStore store;
@@ -98,26 +34,8 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
     final store = widget.store;
     if (store.busy || !store.online) return;
     final captured = store.actionContext;
-    final ok = await showDialog<bool>(
-      animationStyle: AnimationStyle.noAnimation,
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: ConsolePalette.of(context).chip,
-        scrollable: true,
-        title: Text(title,
-            style: TextStyle(color: ConsolePalette.of(context).text1)),
-        content: Text(body,
-            style: TextStyle(color: ConsolePalette.of(context).text7)),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: Text(label)),
-        ],
-      ),
-    );
+    final ok = await showConsoleConfirmation(context,
+        title: title, message: body, confirmLabel: label);
     if (!mounted || !identical(store, widget.store) || ok != true) return;
     if (store.validateActionContext(captured)) action();
   }

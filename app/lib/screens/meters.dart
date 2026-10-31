@@ -1,4 +1,3 @@
-import '../design.dart';
 // Meter bridge: read-only ladders and provider-owned monitor controls.
 // Offline ladders read -inf and render dark because levels come only from the live engine.
 // Freshness comes from the single shell-owned 80 ms loop; this page sends
@@ -10,9 +9,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
-import '../palette.dart';
 import '../core/output_meters.dart';
-import '../widgets/console_controls.dart';
+import '../ui/console.dart';
 import '../core/destination_controls.dart';
 
 const bridgeTopDb = 0.0;

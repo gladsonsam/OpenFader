@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import '../palette.dart';
+import '../../palette.dart';
+import '../../design.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 /// Paths use a 24-unit grid (viewBox 0 0 24 24).
@@ -19,7 +20,8 @@ class DesignIcon extends StatelessWidget {
   final DesignSymbol symbol;
   final double size;
   final Color? color;
-  const DesignIcon(this.symbol, {super.key, this.size = 22, this.color});
+  const DesignIcon(this.symbol,
+      {super.key, this.size = AppDesign.iconSize, this.color});
 
   @override
   Widget build(BuildContext context) {

@@ -1,7 +1,7 @@
-import '../design.dart';
+import '../../design.dart';
 import 'package:flutter/material.dart';
 
-import '../palette.dart';
+import '../../palette.dart';
 
 /// Keep option menus attached to the control that opened them. Flutter fits
 /// the menu to the available space when its trigger is near a screen edge.

@@ -1,100 +1,12 @@
-import '../design.dart';
 // Patch matrix: previews stay local; confirmed edits use the injected store.
 // The store retains provider identity, access and stale-operation guards.
 import 'package:flutter/material.dart';
 import 'package:flutter/gestures.dart';
 
 import '../theme.dart';
-import '../widgets/anchored_menu.dart';
-import '../palette.dart';
-import '../core/destination_controls.dart';
+import '../ui/console.dart';
+import '../core/routing_store.dart';
 import '../widgets/destination_control_editor.dart';
-
-class RouteStrip {
-  final int strip;
-  final String id;
-  final String name;
-  final String src;
-
-  const RouteStrip({
-    required this.strip,
-    required this.id,
-    required this.name,
-    required this.src,
-  });
-}
-
-class RouteSrcTile {
-  final String label;
-  // Numbered sources reserve space for the index independently of the group.
-  // Null keeps the complete label for unnumbered sources.
-  final String? displayGroupLabel;
-  final String group;
-  final int index;
-  final String usedBy;
-  final bool current;
-  final bool mode;
-  final String? operationKey;
-
-  const RouteSrcTile({
-    required this.label,
-    required this.group,
-    required this.index,
-    this.displayGroupLabel,
-    this.usedBy = '',
-    this.operationKey,
-    this.current = false,
-    this.mode = false,
-  });
-}
-
-class RoutePatchTarget {
-  final String key, label;
-  final bool clearable;
-  const RoutePatchTarget(this.key, this.label, this.clearable);
-}
-
-class RouteChange {
-  final RouteStrip destination;
-  final RouteSrcTile source;
-  final String guard;
-  const RouteChange(this.destination, this.source, this.guard);
-}
-
-// Implemented by the shell over the engine or a fixture sim.
-abstract class RoutingStore extends ChangeNotifier {
-  List<RouteStrip> get strips;
-  List<RoutePatchTarget> get targets;
-  String get target;
-  bool get canClear;
-  String? get operationKey;
-  void selectTarget(String target);
-  String groupLabel(String group);
-  List<String> get groups;
-  String get group;
-  int? get selectedStrip;
-  String get selectedName;
-  String get selectedSrc;
-  List<RouteSrcTile> get srcTiles;
-  List<RouteSrcTile> get allSrcTiles => srcTiles;
-  bool get routingSupported;
-  bool get isModeSelector;
-  bool get canPatch => routingSupported;
-  int get controlAccessEpoch => 0;
-  DestinationControlVm? get tapControl => null;
-  bool tapIsCurrent(DestinationControlVm control) => false;
-  Future<String?> setTapControl(
-          DestinationControlVm control, double value) async =>
-      'Routing tap unavailable.';
-
-  void selectStrip(int strip);
-  void selectGroup(String group);
-  void patch(RouteSrcTile tile);
-  void clearPatch(int strip, {String? operationKey});
-  List<RouteChange>? planMappings(List<(int, RouteSrcTile)> mappings);
-  bool planIsCurrent(List<RouteChange> plan);
-  bool applyPlan(List<RouteChange> plan);
-}
 
 class U4RoutingPage extends StatefulWidget {
   final RoutingStore store;
@@ -260,14 +172,16 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   Widget _targetSelector() {
     final p = ConsolePalette.of(context);
     return LayoutBuilder(builder: (context, constraints) {
-      final compact = MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint;
-      final tabStyle = Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: compact ? 13 : 14);
+      final compact =
+          MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint;
+      final tabStyle = Theme.of(context)
+          .textTheme
+          .labelLarge
+          ?.copyWith(fontSize: compact ? 13 : 14);
       var minimum = compact ? 80.0 : 96.0;
       for (final target in store.targets) {
         final text = TextPainter(
-            text: TextSpan(
-                text: target.label,
-                style: tabStyle),
+            text: TextSpan(text: target.label, style: tabStyle),
             textDirection: Directionality.of(context))
           ..layout();
         final needed = text.width + (compact ? 24 : 32);
@@ -315,7 +229,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                                   });
                                   store.selectTarget(target.key);
                                 },
-                                child: Text(target.label, maxLines: 1, style: tabStyle)),
+                                child: Text(target.label,
+                                    maxLines: 1, style: tabStyle)),
                           ))),
               ])));
     });
@@ -331,7 +246,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     return Column(children: [
       Padding(
           padding: AppDesign.pagePadding,
-          child: Row(spacing: 8,
+          child: Row(
+              spacing: 8,
               children: [Expanded(child: _targetSelector()), _mapButton()])),
       Container(
           height: 48,
@@ -397,20 +313,23 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
   }
 
   Widget _mapButton() => Builder(builder: (anchor) {
-    final action = store.strips.isEmpty || store.allSrcTiles.isEmpty
-        ? null : () => _quickMap(anchor);
-    if (MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint) {
-      return TextButton(
-          onPressed: action,
-          style: TextButton.styleFrom(minimumSize: const Size(52, 48), padding: const EdgeInsets.symmetric(horizontal: 10)),
-          child: const Text('Map', style: TextStyle(fontSize: 13)));
-    }
-    return TextButton.icon(
-        onPressed: action,
-        icon: const Icon(Icons.auto_fix_high_outlined, size: 18),
-        label: const Text('Map'),
-        style: TextButton.styleFrom(minimumSize: const Size(72, 48)));
-  });
+        final action = store.strips.isEmpty || store.allSrcTiles.isEmpty
+            ? null
+            : () => _quickMap(anchor);
+        if (MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint) {
+          return TextButton(
+              onPressed: action,
+              style: TextButton.styleFrom(
+                  minimumSize: const Size(52, 48),
+                  padding: const EdgeInsets.symmetric(horizontal: 10)),
+              child: const Text('Map', style: TextStyle(fontSize: 13)));
+        }
+        return TextButton.icon(
+            onPressed: action,
+            icon: const Icon(Icons.auto_fix_high_outlined, size: 18),
+            label: const Text('Map'),
+            style: TextButton.styleFrom(minimumSize: const Size(72, 48)));
+      });
 
   Future<void> _quickMap(BuildContext anchor) async {
     final target = store.target;
@@ -578,7 +497,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     return Column(children: [
       Padding(
           padding: AppDesign.pagePadding,
-          child: Row(spacing: 8,
+          child: Row(
+              spacing: 8,
               children: [Expanded(child: _targetSelector()), _mapButton()])),
       Expanded(
           child: store.strips.isEmpty
@@ -861,7 +781,8 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
                             'Routing controls are unavailable for this driver.'));
                   }
                   if (store.isModeSelector) return _modeRows();
-                  if (MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint) {
+                  if (MediaQuery.sizeOf(context).width <
+                      AppDesign.phoneBreakpoint) {
                     return _mobileRoutes();
                   }
                   final strips = store.strips;
@@ -1132,20 +1053,10 @@ class _U4RoutingPageState extends State<U4RoutingPage> {
     final strip = store.selectedStrip;
     final key = store.operationKey;
     final name = store.selectedName;
-    final confirmed = await showDialog<bool>(
-        animationStyle: AnimationStyle.noAnimation,
-        context: context,
-        builder: (context) => AlertDialog(
-                title: Text('Unpatch $name?'),
-                content: const Text('This removes its current source.'),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Cancel')),
-                  FilledButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Unpatch'))
-                ]));
+    final confirmed = await showConsoleConfirmation(context,
+        title: 'Unpatch $name?',
+        message: 'This removes its current source.',
+        confirmLabel: 'Unpatch');
     if (confirmed == true && mounted && strip != null) {
       store.clearPatch(strip, operationKey: key);
     }

@@ -8,9 +8,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../design.dart';
-import '../palette.dart';
-import '../widgets/design_icon.dart';
+import '../ui/console.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
 import 'connection.dart';

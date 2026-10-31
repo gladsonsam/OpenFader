@@ -1,8 +1,7 @@
+import '../ui/console.dart';
 import 'package:flutter/material.dart';
 
 import '../core/processor_presets.dart';
-import '../design.dart';
-import '../palette.dart';
 
 /// The target is captured by the trigger, before any modal or I/O. Every
 /// callback uses this identity even if selection changes behind the dialog.
@@ -98,29 +97,9 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
         if (changed == true) await _reload();
       });
 
-  Future<bool> _confirm(String title, String message, String action) async =>
-      await showDialog<bool>(
-          animationStyle: AnimationStyle.noAnimation,
-          context: context,
-          builder: (context) {
-            final p = ConsolePalette.of(context);
-            return AlertDialog(
-                backgroundColor: p.panel,
-                title: Text(title, style: AppDesign.type(20, color: p.text1)),
-                content:
-                    Text(message, style: AppDesign.type(16, color: p.text1)),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: Text('Cancel',
-                          style: AppDesign.type(16, color: p.mutedText))),
-                  TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: Text(action,
-                          style: AppDesign.type(16, color: p.cyan))),
-                ]);
-          }) ??
-      false;
+  Future<bool> _confirm(String title, String message, String action) =>
+      showConsoleConfirmation(context,
+          title: title, message: message, confirmLabel: action);
 
   Future<void> _recall(ProcessorPreset preset) => _run(() async {
         final target = widget.target!;
@@ -231,7 +210,8 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
                               onPressed: enabled ? () => _name() : null,
                               icon: const Icon(Icons.add),
                               label: const Text('Save current')),
-                          if (widget.store case final InputProcessorPresetStore clipboard)
+                          if (widget.store
+                              case final InputProcessorPresetStore clipboard)
                             Wrap(spacing: 8, children: [
                               TextButton.icon(
                                   onPressed: enabled ? _copy : null,
@@ -244,8 +224,11 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
                                           'Paste copied processor',
                                   child: TextButton.icon(
                                       onPressed: enabled &&
-                                              clipboard.processorPasteError(target!) == null
-                                          ? _paste : null,
+                                              clipboard.processorPasteError(
+                                                      target!) ==
+                                                  null
+                                          ? _paste
+                                          : null,
                                       icon: const Icon(Icons.paste),
                                       label: const Text('Paste processor'))),
                             ]),

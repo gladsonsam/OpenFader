@@ -4,9 +4,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../theme.dart';
-import '../palette.dart';
-import '../design.dart';
-import '../widgets/design_icon.dart';
+import '../ui/console.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../u4law.dart';
