@@ -12,6 +12,7 @@ if [[ "$CONFIGURATION" != Debug* ]]; then
 fi
 mac_sdk="$(xcrun --sdk macosx --show-sdk-path)"
 libraries=()
+helpers=()
 for arch in $ARCHS; do
   case "$arch" in
     arm64) target=aarch64-apple-darwin ;;
@@ -22,6 +23,10 @@ for arch in $ARCHS; do
     --manifest-path "$repo_root/Cargo.toml" -p openfader-flutter-bridge \
     --target "$target" --profile "$cargo_profile"
   libraries+=("$CARGO_TARGET_DIR/$target/$profile/libopenfader_flutter_bridge.dylib")
+  env SDKROOT="$mac_sdk" MACOSX_DEPLOYMENT_TARGET=11.0 cargo build --locked \
+    --manifest-path "$repo_root/Cargo.toml" -p openfader-audio --bin openfader-capture-helper \
+    --target "$target" --profile "$cargo_profile"
+  helpers+=("$CARGO_TARGET_DIR/$target/$profile/openfader-capture-helper")
 done
 frameworks="$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH"
 mkdir -p "$frameworks"
@@ -29,3 +34,10 @@ library="$frameworks/libopenfader_flutter_bridge.dylib"
 xcrun lipo -create "${libraries[@]}" -output "$library"
 xcrun install_name_tool -id '@rpath/libopenfader_flutter_bridge.dylib' "$library"
 /usr/bin/codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$library"
+
+mkdir -p "$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/MacOS"
+helper="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/MacOS/openfader-capture-helper"
+xcrun lipo -create "${helpers[@]}" -output "$helper"
+if [ "$CODE_SIGNING_ALLOWED" = YES ]; then
+  /usr/bin/codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" --options runtime --entitlements "$PROJECT_DIR/Runner/Host.entitlements" "$helper"
+fi

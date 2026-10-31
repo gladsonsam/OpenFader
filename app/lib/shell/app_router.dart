@@ -5,7 +5,11 @@
 // Stats frames are not yet parsed into EngineState.
 library;
 
+import '../boot/host_transport.dart';
+import '../boot/remote_host.dart';
+
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import '../palette.dart';
@@ -36,6 +40,8 @@ import '../screens/start.dart';
 import '../mixer/controller.dart';
 import '../mixer/page.dart';
 import '../screens/routing.dart';
+import '../screens/recorder.dart';
+import 'recorder_store.dart';
 import '../screens/scenes.dart';
 import '../screens/settings.dart';
 
@@ -49,6 +55,7 @@ import 'debug_store.dart';
 enum AppTab {
   home('Tools'),
   mixer('Mixer'),
+  recorder('Recorder'),
   meters('Meters'),
   channel('Channel'),
   scenes('Scenes'),
@@ -118,15 +125,25 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
   late final ShellSettingsStore _settings;
   late final ShellFxStore _fx;
   late final ShellDebugStore _debug;
+  late final ShellRecorderStore _recorder;
 
   @override
   void initState() {
     super.initState();
+    final host = widget.api;
+    _recorder = ShellRecorderStore(
+        host: host is HostTransport ? host : null,
+        names: () => {
+              for (final strip in widget.store.assignmentStrips)
+                if (strip.ch >= 0 && strip.ch < 64 && strip.name.isNotEmpty)
+                  strip.ch: strip.name
+            });
     WidgetsBinding.instance.addObserver(this);
     _tab = widget.initialTab;
     _syncChannelFocus();
     widget.store.addListener(_syncChannelFocus);
-    _showStart = PrefsService.instance.startupDest != 'last';
+    _showStart = widget.api is! RemoteHost &&
+        PrefsService.instance.startupDest != 'last';
     _mixer = MixerController(widget.store,
         seedReferenceDemo: widget.initialTab == AppTab.mixer);
     _conn = ShellConnectionStore(widget.store);
@@ -258,6 +275,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     try {
       await widget.store.pollMeters();
       _conn.tickRecovery();
+      if (widget.api is HostTransport) _recorder.tick();
       if (mounted && _tab == AppTab.debug) _debug.captureFrame();
     } catch (_) {
       // A transport hiccup must not crash the shell loop.
@@ -281,7 +299,67 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _settings.dispose();
     _fx.dispose();
     _debug.dispose();
+    _recorder.dispose();
     super.dispose();
+  }
+
+  Future<void> _pairComputer() async {
+    final controller = TextEditingController();
+    var json = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+              title: const Text('Connect to computer'),
+              content: TextField(
+                  controller: controller,
+                  autofocus: true,
+                  minLines: 3,
+                  maxLines: 6,
+                  decoration:
+                      const InputDecoration(labelText: 'Paste pairing JSON')),
+              actions: [
+                TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Cancel')),
+                TextButton(
+                    onPressed: () =>
+                        Navigator.pop(dialogContext, controller.text),
+                    child: const Text('Connect'))
+              ],
+            ));
+    controller.dispose();
+    if (json == null || !mounted) return;
+    RemoteHost? host;
+    AppStore? remoteStore;
+    try {
+      final link = PairingLink.parse(json);
+      json = null;
+      host = await RemoteHost.pair(link);
+      final id = await host.boot();
+      remoteStore = AppStore(host, id);
+      await remoteStore.attach(id);
+      if (remoteStore.transportError.isNotEmpty) {
+        throw StateError(remoteStore.transportError);
+      }
+      remoteStore.setOnline(true);
+      await remoteStore.pollMeters();
+      if (remoteStore.transportError.isNotEmpty) {
+        throw StateError(remoteStore.transportError);
+      }
+      if (!mounted) return;
+      _shellLoop?.cancel();
+      await Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) =>
+              AppShell(api: host!, store: remoteStore!, isRealEngine: true)));
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Could not connect to computer: $error')));
+      }
+    } finally {
+      remoteStore?.dispose();
+      await host?.disconnect();
+      if (mounted) _restartLoop();
+    }
   }
 
   void _go(AppTab t) {
@@ -317,6 +395,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         listenable: store,
         builder: (context, _) => ConnectionsStartScreen(
           store: _conn,
+          onConnectComputer:
+              (Platform.isIOS || Platform.isAndroid) ? _pairComputer : null,
           onSettings: () => _openSettings(null),
           onHelp: () => _openSettings(SettingsSection.about),
           onEnterMixer: () => setState(() => _showStart = false),
@@ -337,9 +417,61 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
             MediaQuery.sizeOf(context).width < AppDesign.phoneBreakpoint;
         return U4Shell(
           header: Column(mainAxisSize: MainAxisSize.min, children: [
-            _workspaceToolbar(),
-            Container(
-                height: narrow ? 6 : 8, color: ConsolePalette.of(context).bus),
+            if (widget.api case final RemoteHost remote)
+              Material(
+                  color: ConsolePalette.of(context).panel,
+                  child: SafeArea(
+                      bottom: false,
+                      child: Row(children: [
+                        Expanded(
+                            child: Padding(
+                                padding: const EdgeInsets.only(left: 12),
+                                child: Text(
+                                    'Computer ${remote.endpoint.host}:${remote.endpoint.port} · ${store.transportError.isEmpty ? 'Connected' : 'Connection lost'}',
+                                    overflow: TextOverflow.ellipsis))),
+                        TextButton(
+                            onPressed: () => Navigator.of(context).pop(),
+                            child: const Text('Disconnect')),
+                      ]))),
+            if (_tab != AppTab.recorder) _workspaceToolbar(),
+            if (widget.api is HostTransport && _tab != AppTab.recorder)
+              ListenableBuilder(
+                listenable: _recorder,
+                builder: (context, _) {
+                  final state = _recorder.state;
+                  final mode = state['input_mode'];
+                  final transport = state['transport'];
+                  if (transport != 'recording' &&
+                      mode != 'soundcheck' &&
+                      mode != 'recovery_required') {
+                    return const SizedBox.shrink();
+                  }
+                  return Material(
+                    color: ConsolePalette.of(context).panel,
+                    child: Row(children: [
+                      const SizedBox(width: 12),
+                      Expanded(
+                          child: Text(
+                              'Recorder: ${transport ?? 'unknown'} · ${mode ?? 'unknown'} · dropouts ${state['xruns'] ?? '—'}',
+                              style: TextStyle(
+                                  color: ConsolePalette.of(context).text1))),
+                      if (mode == 'soundcheck' || mode == 'recovery_required')
+                        TextButton(
+                            onPressed: _recorder.pending
+                                ? null
+                                : () => _recorder.command('return_live'),
+                            child: const Text('Return to live')),
+                      TextButton(
+                          onPressed: () => _go(AppTab.recorder),
+                          child: const Text('Recorder')),
+                    ]),
+                  );
+                },
+              ),
+            if (_tab != AppTab.recorder)
+              Container(
+                  height: narrow ? 6 : 8,
+                  color: ConsolePalette.of(context).bus),
           ]),
           bottomSafeArea:
               !(narrow && (_tab == AppTab.mixer || _tab == AppTab.channel)),
@@ -484,6 +616,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     return switch (t) {
       AppTab.home => WorkspaceHome(
           onMixer: () => _go(AppTab.mixer),
+          onRecorder:
+              (widget.api is HostTransport) ? () => _go(AppTab.recorder) : null,
           onNavigate: _navigateMixer,
           onLayout: (anchor) => showMixerLayout(anchor, _mixer, _navigateMixer,
               locked: widget.store.locked,
@@ -491,6 +625,13 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   ? widget.store.cmdUnlock()
                   : widget.store.cmdLock())),
       AppTab.mixer => _mixerPage(),
+      AppTab.recorder => RecorderPage(
+          store: _recorder,
+          onMixer: () => _go(AppTab.mixer),
+          onFx: () => _go(AppTab.fx),
+          onSettings: () => _go(AppTab.settings),
+          onTools: () => _go(AppTab.home),
+          mixerName: _mixer.demo ? 'Demo desk' : _mixer.connectionDisplayName),
       AppTab.meters =>
         U4MetersPage(store: store, onClose: () => _go(AppTab.mixer)),
       AppTab.channel => store.outputProcessingTarget != null

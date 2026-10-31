@@ -53,3 +53,5 @@ async fn settle_parked_poller(engine: &Engine, client: &mut ClientHandle) {
     tokio::time::sleep(Duration::from_millis(100)).await;
     while client.events.try_recv().is_ok() {}
 }
+
+mod routing_exclusion;

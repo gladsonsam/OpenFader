@@ -141,6 +141,15 @@ def main():
                 raise RuntimeError('Visual C++ redistributable DLLs not found')
             for library in redist[-1].glob('*.dll'):
                 shutil.copy2(library, bundle)
+            for name in ('openfader.exe', 'openfader-serve.exe', 'openfader-capture-helper.exe',
+                         'openfader_flutter_bridge.dll', 'flutter_windows.dll', 'msvcp140.dll', 'vcruntime140.dll'):
+                if not (bundle / name).is_file():
+                    raise RuntimeError(f'Missing Windows bundle component: {name}')
+            iscc = Path(os.environ['ProgramFiles(x86)']) / 'Inno Setup 6/ISCC.exe'
+            if not iscc.is_file():
+                raise RuntimeError('Inno Setup 6 compiler not found on runner')
+            run(iscc, f'/DAppVersion={version}', ROOT / 'scripts/windows-installer.iss', cwd=ROOT)
+            output(f'OpenFader-{version}-windows-x64-setup.exe')
             zip_tree(bundle, output('openfader-windows-x64.zip'), prefix='openfader')
     else:
         # Gradle builds the Rust bridge for every packaged ABI, including local
@@ -148,7 +157,12 @@ def main():
         run(flutter, 'build', 'apk', '--release', *flags)
         apk = APP / 'build/app/outputs/flutter-apk/app-release.apk'
         signing = android_signer(apk)
-        shutil.copy2(apk, output('openfader-android-dev-signed.apk'))
+        with zipfile.ZipFile(apk) as archive:
+            for abi in ('armeabi-v7a', 'arm64-v8a', 'x86_64'):
+                name = f'lib/{abi}/libopenfader_flutter_bridge.so'
+                if name not in archive.namelist() or archive.getinfo(name).file_size == 0:
+                    raise RuntimeError(f'APK missing native bridge: {name}')
+        shutil.copy2(apk, output(f'OpenFader-{version}-android.apk'))
         run(flutter, 'build', 'appbundle', '--release', *flags)
         bundle = APP / 'build/app/outputs/bundle/release/app-release.aab'
         signing['bundle_certificate_sha256'] = verify_android_bundle(bundle, signing['certificate_sha256'])
