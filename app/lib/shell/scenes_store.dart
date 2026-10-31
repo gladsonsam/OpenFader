@@ -1,7 +1,7 @@
 import 'dart:async';
 // Shell adapter: scenes responsibility. The shell owns polling.
 import '../engine.dart';
-import '../screens/scenes.dart';
+import '../core/scenes_store.dart';
 import 'store_adapter.dart';
 import 'native_library_store.dart';
 

@@ -3,8 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 
-import '../palette.dart';
-import '../widgets/console_button.dart';
+import '../ui/console.dart';
 
 class DebugSection {
   final String title;

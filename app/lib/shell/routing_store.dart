@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import '../core/access_limits.dart';
 import '../core/destination_controls.dart';
-import '../screens/routing.dart';
+import '../core/routing_store.dart';
 import 'store_adapter.dart';
 
 class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {

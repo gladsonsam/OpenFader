@@ -21,10 +21,7 @@ import '../mixer/components/layers.dart';
 import '../mixer/mixer_layers.dart';
 import '../mixer/strip_layout.dart';
 import '../theme.dart';
-import '../design.dart';
-import '../widgets/console_button.dart';
-import '../widgets/console_controls.dart';
-import '../palette.dart';
+import '../ui/console.dart';
 
 part 'settings/navigation.dart';
 part 'settings/section_widgets.dart';
@@ -139,72 +136,8 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
     required Future<void> Function() onConfirm,
   }) async {
     final accessEpoch = widget.store.accessLimits.controlAccessEpoch;
-    final wide =
-        MediaQuery.sizeOf(context).width > AppDesign.settingsSidebarBreakpoint;
-    final ok = await showDialog<bool>(
-      animationStyle: AnimationStyle.noAnimation,
-      context: context,
-      builder: (context) => AlertDialog(
-        backgroundColor: ConsolePalette.of(context).chip,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(14),
-          side: BorderSide(color: ConsolePalette.of(context).lineCtl),
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            fontFamily: U4.font,
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
-            color: ConsolePalette.of(context).text1,
-          ),
-        ),
-        content: Text(
-          body,
-          style: TextStyle(
-            fontFamily: U4.font,
-            fontSize: AppDesign.controlLabel,
-            height: 1.5,
-            color: ConsolePalette.of(context).text7,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: Text(
-              'Cancel',
-              style: TextStyle(
-                fontFamily: U4.font,
-                fontSize: AppDesign.controlLabel,
-                color: ConsolePalette.of(context).text1,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(
-              backgroundColor: ConsolePalette.of(context).mute,
-              padding: EdgeInsets.symmetric(
-                horizontal: 22,
-                vertical: wide ? 12 : 10,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(9),
-              ),
-            ),
-            child: Text(
-              action,
-              style: TextStyle(
-                fontFamily: U4.font,
-                fontSize: AppDesign.controlLabel,
-                fontWeight: FontWeight.w600,
-                color: ConsolePalette.of(context).onDanger,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    final ok = await showConsoleConfirmation(context,
+        title: title, message: body, confirmLabel: action, danger: true);
     if (ok == true) {
       try {
         if (widget.store.accessLimits.controlAccessEpoch != accessEpoch) {

@@ -1,9 +1,9 @@
+import '../ui/console.dart';
 import 'package:flutter/material.dart';
 
 import '../core/output_presets.dart';
 import '../core/output_processing.dart';
 import '../core/processor_presets.dart';
-import '../palette.dart';
 
 /// Capture before opening the modal: selection changes cannot retarget it.
 class OutputProcessorPresetActions extends StatelessWidget {
@@ -135,26 +135,11 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
       });
 
   Future<void> _rename(ProcessorPreset preset) => _run(() async {
-        var draft = preset.name;
-        final name = await showDialog<String>(
-            animationStyle: AnimationStyle.noAnimation,
-            context: context,
-            builder: (context) => AlertDialog(
-                    backgroundColor: ConsolePalette.of(context).panel,
-                    title: const Text('Rename preset'),
-                    content: TextFormField(
-                        initialValue: preset.name,
-                        onChanged: (value) => draft = value,
-                        autofocus: true,
-                        maxLength: kProcessorPresetMaxNameLength),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Cancel')),
-                      TextButton(
-                          onPressed: () => Navigator.pop(context, draft),
-                          child: const Text('Rename'))
-                    ]));
+        final name = await showConsoleNameDialog(context,
+            title: 'Rename preset',
+            initialValue: preset.name,
+            maxLength: kProcessorPresetMaxNameLength,
+            confirmLabel: 'Rename');
         if (!mounted || name == null) return;
         final error = await widget.store
             .renameOutputPreset(widget.target, preset.id, name);
@@ -163,21 +148,11 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
       });
 
   Future<void> _delete(ProcessorPreset preset) => _run(() async {
-        final confirmed = await showDialog<bool>(
-            animationStyle: AnimationStyle.noAnimation,
-            context: context,
-            builder: (context) => AlertDialog(
-                    backgroundColor: ConsolePalette.of(context).panel,
-                    title: const Text('Delete preset?'),
-                    content: Text(preset.name),
-                    actions: [
-                      TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel')),
-                      TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Delete'))
-                    ]));
+        final confirmed = await showConsoleConfirmation(context,
+            title: 'Delete preset?',
+            message: preset.name,
+            confirmLabel: 'Delete',
+            danger: true);
         if (confirmed != true) return;
         final error =
             await widget.store.deleteOutputPreset(widget.target, preset.id);
@@ -249,7 +224,8 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
                                           : null,
                                       child: const Text('Recall')),
                                   PopupMenuButton<String>(
-                                      popUpAnimationStyle: AnimationStyle.noAnimation,
+                                      popUpAnimationStyle:
+                                          AnimationStyle.noAnimation,
                                       enabled: enabled,
                                       onSelected: (action) => action == 'rename'
                                           ? _rename(preset)

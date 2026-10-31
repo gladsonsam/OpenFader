@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 /// Shared application UI tokens. Prefer named roles over page-local literals.
-/// Reusable controls live in widgets/console_controls.dart and console_button.dart.
+/// Reusable controls live in ui/console.dart.
 /// Runtime colors live in ConsolePalette and are resolved from the widget tree.
 abstract final class AppDesign {
   static const radius = BorderRadius.all(Radius.circular(panelRadius));
@@ -48,6 +48,8 @@ abstract final class AppDesign {
   static const rowLabel = 17.0;
   static const sectionTitle = 18.0;
   static const pageTitle = 26.0;
+  static const dialogTitle = 20.0;
+  static const dialogMaxWidth = 520.0;
   static const parameterValue = 18.0;
   static const compactParameterValue = 16.0;
 
