@@ -248,7 +248,7 @@ class _U4MetersPageState extends State<U4MetersPage> {
                   ),
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [

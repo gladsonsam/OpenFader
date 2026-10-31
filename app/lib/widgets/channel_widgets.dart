@@ -248,6 +248,45 @@ class _KnobPainter extends CustomPainter {
 // EQ curve + RTA overlay
 // ---------------------------------------------------------------------------
 
+// Share displaced handle positions between painting and hit testing. Curve
+// samples retain their exact frequency/gain coordinates; drags remain relative.
+Map<int, Offset> _eqNodePositions(ChannelEqVm eq, Size size) {
+  Offset point(double frequency, double gain) => Offset(
+      EqGraphGeom.xOf(frequency.clamp(20, 20000)) / EqGraphGeom.w * size.width,
+      EqGraphGeom.yOf(gain.clamp(-15, 15)) / EqGraphGeom.h * size.height);
+  final anchors = <int, Offset>{
+    for (final band in eq.bands) band.band: point(band.f, band.graphGain),
+    0: point(eq.hpfF, 0),
+  };
+  final radius = size.width < 500 ? 15.0 : 22.0;
+  final spacing = math.max(48.0, radius * 2 + 8);
+  final positions = <int, Offset>{};
+  final order = [
+    if (anchors.containsKey(eq.selectedBand)) eq.selectedBand,
+    ...anchors.keys.where((band) => band != eq.selectedBand),
+  ];
+  for (final band in order) {
+    final anchor = anchors[band]!;
+    var candidate = anchor;
+    bool free(Offset p) =>
+        positions.values.every((other) => (other - p).distance >= spacing);
+    if (!free(candidate)) {
+      for (final step in [-1, 1, -2, 2, -3, 3, -4, 4]) {
+        final shifted = Offset(
+            anchor.dx,
+            (anchor.dy + step * spacing)
+                .clamp(radius, math.max(radius, size.height - radius)));
+        if (free(shifted)) {
+          candidate = shifted;
+          break;
+        }
+      }
+    }
+    positions[band] = candidate;
+  }
+  return positions;
+}
+
 /// Measured bands keep their frequency edges and dB scale; synthetic demo
 /// magnitudes stay on their separate path.
 class EqCurvePainter extends CustomPainter {
@@ -475,9 +514,19 @@ class EqCurvePainter extends CustomPainter {
       );
     }
     canvas.restore();
-    void node(Offset point, int band, bool on) {
+    final positions = _eqNodePositions(eq, size);
+    void node(Offset anchor, int band, bool on) {
+      final point = positions[band] ?? anchor;
       final color = palette.bandColor(band);
       final radius = size.width < 500 ? 15.0 : 22.0;
+      if ((point - anchor).distance > 1) {
+        canvas.drawLine(
+            anchor,
+            point,
+            Paint()
+              ..color = color
+              ..strokeWidth = 1);
+      }
       canvas.drawCircle(point, radius, Paint()..color = palette.chip);
       canvas.drawCircle(
           point,
@@ -638,26 +687,15 @@ class _EqGraphGestureState extends State<_EqGraphGesture> {
   int? _hitBand(Offset local) {
     int? best;
     var bestD = 30.0;
-    for (final b in widget.eq.bands) {
-      final node = Offset(
-        EqGraphGeom.xOf(b.f.clamp(20, 20000)) / EqGraphGeom.w * widget.width,
-        EqGraphGeom.yOf(b.graphGain.clamp(-15, 15)) /
-            EqGraphGeom.h *
-            widget.height,
-      );
-      final d = (node - local).distance;
+    final positions =
+        _eqNodePositions(widget.eq, Size(widget.width, widget.height));
+    for (final entry in positions.entries) {
+      final d = (entry.value - local).distance;
       if (d < bestD) {
         bestD = d;
-        best = b.band;
+        best = entry.key;
       }
     }
-    final hpf = Offset(
-      EqGraphGeom.xOf(widget.eq.hpfF.clamp(20, 20000)) /
-          EqGraphGeom.w *
-          widget.width,
-      widget.height / 2,
-    );
-    if ((hpf - local).distance < bestD) best = 0;
     return best;
   }
 

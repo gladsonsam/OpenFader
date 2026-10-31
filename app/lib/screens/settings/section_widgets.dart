@@ -36,11 +36,9 @@ class _Section extends StatelessWidget {
             ),
           ),
         ),
-        Container(
-          decoration: BoxDecoration(
-            color: ConsolePalette.of(context).chip,
-            borderRadius: BorderRadius.circular(wide ? 14 : 12),
-          ),
+        Material(
+          color: ConsolePalette.of(context).chip,
+          borderRadius: BorderRadius.circular(wide ? 14 : 12),
           clipBehavior: Clip.antiAlias,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,

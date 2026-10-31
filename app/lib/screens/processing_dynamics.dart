@@ -530,13 +530,34 @@ class _DynamicsGeometry {
   double get height => size.height * (compact ? 408 / 570 : 440 / 620);
   double x(double db) => left + (db + 80) / 80 * width;
   double y(double db) => top - db.clamp(-80, 0) / 80 * height;
-  Offset node(ChannelDynVm d, String prop) => switch (prop) {
+  double get handleRadius =>
+      compact ? 21.0 : (size.width * 48 / 1280).clamp(22.0, 48.0);
+  Offset anchor(ChannelDynVm d, String prop) => switch (prop) {
         'thr' =>
           Offset(x(d.thr), y(d.thr + (d.kind == DynKind.comp ? d.makeup : 0))),
         'ratio' => Offset(x(0), y(compOut(d, 0))),
         'range' => Offset(x(d.thr), y(d.thr - d.range)),
         _ => Offset(x(-80), y(-80 + d.makeup)),
       };
+  // Keep nearby controls independently readable and touchable. Drags use deltas,
+  // so moving the handle away from its curve point does not change its value.
+  Offset node(ChannelDynVm d, String prop) {
+    final point = anchor(d, prop);
+    if (d.kind != DynKind.comp || prop != 'thr') return point;
+    final spacing = math.max(52.0, handleRadius * 2 + 8);
+    var x = point.dx;
+    for (final other in ['ratio', 'makeup']) {
+      final fixed = anchor(d, other);
+      final dy = point.dy - fixed.dy;
+      if (dy.abs() >= spacing) continue;
+      final dx = math.sqrt(spacing * spacing - dy * dy);
+      if ((x - fixed.dx).abs() < dx) {
+        x = fixed.dx + (other == 'ratio' ? -dx : dx);
+      }
+    }
+    return Offset(x, point.dy);
+  }
+
   List<String> handles(ChannelDynVm d) => [
         if (d.kind == DynKind.gate &&
             d.responseCurve == 'gate_attenuation' &&
@@ -760,7 +781,16 @@ class _DynamicsPainter extends CustomPainter {
           ..style = PaintingStyle.stroke);
     for (final prop in g.handles(dyn)) {
       final p = g.node(dyn, prop);
-      final r = compact ? 21.0 : (size.width * 48 / 1280).clamp(22.0, 48.0);
+      final r = g.handleRadius;
+      final anchor = g.anchor(dyn, prop);
+      if ((anchor - p).distance > 1) {
+        canvas.drawLine(
+            anchor,
+            p,
+            Paint()
+              ..color = palette.scaleTick
+              ..strokeWidth = 1);
+      }
       canvas.drawCircle(p, r, Paint()..color = palette.chip);
       canvas.drawCircle(
           p,

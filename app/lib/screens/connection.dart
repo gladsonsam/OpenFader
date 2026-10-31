@@ -52,7 +52,12 @@ class MixerTypeField extends StatelessWidget {
       ),
       items: [
         for (final type in MixerType.values)
-          DropdownMenuItem(value: type, child: Text(type.label)),
+          DropdownMenuItem(
+              value: type,
+              child: Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Text(type.label,
+                      maxLines: 1, overflow: TextOverflow.ellipsis))),
       ],
       onChanged: onChanged == null ? null : (type) => onChanged!(type!),
     );
@@ -147,7 +152,7 @@ class _U4ConnectionPageState extends State<U4ConnectionPage> {
           builder: (context, _) {
             final store = widget.store;
             return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [

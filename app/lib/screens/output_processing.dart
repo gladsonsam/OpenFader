@@ -164,7 +164,7 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.all(16),
                     child: DropdownButtonFormField<String>(
                       key: ValueKey((target, targets.length)),
                       initialValue: targets.containsKey(target) ? target : null,
@@ -174,10 +174,13 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
                         for (final entry in targets.entries)
                           DropdownMenuItem(
                             value: entry.key,
-                            child: Text(
-                              entry.value,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            child: Padding(
+                                padding: const EdgeInsets.only(right: 12),
+                                child: Text(
+                                  entry.value,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                )),
                           ),
                       ],
                       onChanged: (value) {

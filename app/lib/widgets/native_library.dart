@@ -200,12 +200,15 @@ class NativeLibrarySection extends StatelessWidget {
             view?.label ?? 'Provider show / snapshot library',
             style: TextStyle(color: palette.text1, fontWeight: FontWeight.w700),
           ),
+          const SizedBox(height: 4),
           Text(
             'Separate from the OpenFader local library.',
             style: TextStyle(color: palette.text7),
           ),
+          const SizedBox(height: 8),
           Wrap(
             spacing: 8,
+            runSpacing: 8,
             children: [
               TextButton(
                 onPressed: enabled
