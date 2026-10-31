@@ -13,8 +13,8 @@ class MixerGeometry {
   double get sx => width / (phone ? 104.2 : 192.2);
   double y(double value) => value * sy;
   double x(double value) => value * sx;
-  double get left => x(phone ? 5 : 8);
-  double get right => x(phone ? 3 : 6);
+  double get left => x(phone ? 4 : 7);
+  double get right => left;
   // Reclaim the tablet top gap for fader/meter travel.
   double get rackY => y(6);
   double get rackH => y(phone ? 62 : 188);
