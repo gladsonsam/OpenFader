@@ -16,10 +16,12 @@ import 'output_processing_graph.dart';
 class OutputProcessingPage extends StatefulWidget {
   final OutputProcessingStore store;
   final VoidCallback onClose;
+  final bool embedded;
   const OutputProcessingPage({
     super.key,
     required this.store,
     required this.onClose,
+    this.embedded = false,
   });
 
   @override
@@ -104,46 +106,58 @@ class _OutputProcessingPageState extends State<OutputProcessingPage> {
           final focused = processor.where((c) => c.id == _focusId).firstOrNull;
           return Scaffold(
             backgroundColor: palette.page,
-            appBar: AppBar(
-              backgroundColor: palette.panel,
-              leading: IconButton(
-                onPressed: widget.onClose,
-                tooltip: 'Mixer',
-                icon: const Icon(Icons.arrow_back),
-              ),
-              title: focused == null
-                  ? const Text('Output processing')
-                  : TextButton(
-                      onPressed: !_focusPending &&
-                              store.destinationControlIsCurrent(focused)
-                          ? () {
-                              final captured = focused;
-                              showDialog<void>(
-                                  animationStyle: AnimationStyle.noAnimation,
-                                  context: context,
-                                  builder: (_) => DestinationControlEditor(
-                                        accessEpoch: () =>
-                                            store.controlAccessEpoch,
-                                        control: captured,
-                                        changes: store,
-                                        isCurrent: (control) =>
-                                            mounted &&
-                                            _focusTarget == control.target &&
-                                            _focusSurface == control.surface &&
-                                            _focusId == control.id &&
-                                            store.outputProcessingTarget ==
-                                                control.target &&
-                                            store.destinationControlIsCurrent(
-                                                control),
-                                        apply: store.setDestinationControl,
-                                      ));
-                            }
-                          : null,
-                      child: Text(
-                          '${focused.label}: ${_focusPending ? 'Sending…' : _focusDraft != null ? '${_focusDraft!.toStringAsFixed(focused.decimals)} ${focused.unit}' : focused.id == 'comp_ratio' && focused.value == 101 ? '∞:1' : focused.valueLabel ?? 'Unavailable'}${!_focusPending && _focusDraft == null && focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
-                          overflow: TextOverflow.ellipsis),
-                    ),
-            ),
+            appBar: widget.embedded && focused == null
+                ? null
+                : AppBar(
+                    toolbarHeight: widget.embedded ? 48 : null,
+                    automaticallyImplyLeading: false,
+                    backgroundColor: palette.panel,
+                    leading: widget.embedded
+                        ? null
+                        : IconButton(
+                            onPressed: widget.onClose,
+                            tooltip: 'Mixer',
+                            icon: const Icon(Icons.arrow_back),
+                          ),
+                    title: focused == null
+                        ? const Text('Output processing')
+                        : TextButton(
+                            onPressed: !_focusPending &&
+                                    store.destinationControlIsCurrent(focused)
+                                ? () {
+                                    final captured = focused;
+                                    showDialog<void>(
+                                        animationStyle:
+                                            AnimationStyle.noAnimation,
+                                        context: context,
+                                        builder: (_) =>
+                                            DestinationControlEditor(
+                                              accessEpoch: () =>
+                                                  store.controlAccessEpoch,
+                                              control: captured,
+                                              changes: store,
+                                              isCurrent: (control) =>
+                                                  mounted &&
+                                                  _focusTarget ==
+                                                      control.target &&
+                                                  _focusSurface ==
+                                                      control.surface &&
+                                                  _focusId == control.id &&
+                                                  store.outputProcessingTarget ==
+                                                      control.target &&
+                                                  store
+                                                      .destinationControlIsCurrent(
+                                                          control),
+                                              apply:
+                                                  store.setDestinationControl,
+                                            ));
+                                  }
+                                : null,
+                            child: Text(
+                                '${focused.label}: ${_focusPending ? 'Sending…' : _focusDraft != null ? '${_focusDraft!.toStringAsFixed(focused.decimals)} ${focused.unit}' : focused.id == 'comp_ratio' && focused.value == 101 ? '∞:1' : focused.valueLabel ?? 'Unavailable'}${!_focusPending && _focusDraft == null && focused.authority == 'accepted' ? ' (unconfirmed)' : ''}',
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                  ),
             body: SafeArea(
               top: false,
               child: Column(

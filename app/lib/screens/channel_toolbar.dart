@@ -19,6 +19,8 @@ enum ChannelTool { fx, settings, routing, layout, scenes }
 class ChannelToolbar extends StatelessWidget {
   final ChannelStore store;
   final bool compact;
+  final bool embedded;
+  final Widget? trailing;
   final VoidCallback onHome;
   final ValueChanged<ChannelTool> onTool;
   final VoidCallback? onLock;
@@ -31,7 +33,9 @@ class ChannelToolbar extends StatelessWidget {
       required this.onHome,
       required this.onTool,
       this.onLock,
-      this.controlFocus});
+      this.controlFocus,
+      this.embedded = false,
+      this.trailing});
 
   @override
   Widget build(BuildContext context) {
@@ -44,12 +48,18 @@ class ChannelToolbar extends StatelessWidget {
   }
 
   Widget _toolbar(BuildContext context, ChannelFocus? focus) => Container(
-      height: compact ? 64 : 68,
-      decoration: BoxDecoration(
-          color: ConsolePalette.of(context).page,
-          border: Border(
-              bottom:
-                  BorderSide(color: ConsolePalette.of(context).lineHeader))),
+      height: embedded
+          ? 52
+          : compact
+              ? 64
+              : 68,
+      decoration: embedded
+          ? null
+          : BoxDecoration(
+              color: ConsolePalette.of(context).page,
+              border: Border(
+                  bottom: BorderSide(
+                      color: ConsolePalette.of(context).lineHeader))),
       child: LayoutBuilder(builder: (context, box) {
         final toolsWidth = compact ? 44.0 : 296.0;
         final toolsLeft = box.maxWidth - 16 - toolsWidth;
@@ -60,83 +70,89 @@ class ChannelToolbar extends StatelessWidget {
             : store.stripKey.startsWith('bus/')
                 ? 'Bus ${int.tryParse(store.stripKey.split('/').last) ?? store.channelNumber}'
                 : 'channel ${store.channelNumber}';
+        final readout = Container(
+            padding: embedded
+                ? EdgeInsets.zero
+                : const EdgeInsets.symmetric(horizontal: 12),
+            decoration: embedded
+                ? null
+                : BoxDecoration(
+                    color: ConsolePalette.of(context).panel,
+                    borderRadius: U4.rBtn,
+                    border: Border.all(
+                        color: ConsolePalette.of(context).linePanel)),
+            child: Stack(alignment: Alignment.center, children: [
+              if (trailing != null)
+                Align(
+                    alignment: Alignment.centerRight,
+                    child: FractionallySizedBox(
+                        widthFactor: .30, child: trailing)),
+              Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                      widthFactor: .30,
+                      child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Tooltip(
+                                message: 'Rename $identity',
+                                child: Semantics(
+                                    button: true,
+                                    label: 'Rename $identity',
+                                    child: InkWell(
+                                        onTap: store.captureNameTarget() == null
+                                            ? null
+                                            : () {
+                                                final target =
+                                                    store.captureNameTarget();
+                                                if (target != null) {
+                                                  showChannelNameEditor(
+                                                      context, store, target);
+                                                }
+                                              },
+                                        child: Text(
+                                            store.stripKey == 'main'
+                                                ? 'Main LR'
+                                                : store.stripKey
+                                                        .startsWith('bus/')
+                                                    ? 'Bus ${int.tryParse(store.stripKey.split('/').last) ?? store.channelNumber} · ${store.displayName}'
+                                                    : 'Ch ${store.channelNumber} · ${store.displayName}',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: AppDesign.type(
+                                                compact ? 12 : 14,
+                                                color:
+                                                    ConsolePalette.of(context)
+                                                        .text7))))),
+                            Text(
+                                focus == null
+                                    ? 'Fader'
+                                    : '${focus.title} · ${focus.label}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppDesign.type(compact ? 12 : 14,
+                                    color: ConsolePalette.of(context).text7)),
+                          ]))),
+              Center(
+                  child: FractionallySizedBox(
+                      widthFactor: .40,
+                      child: focus == null
+                          ? _FaderValue(store: store, compact: compact)
+                          : _FocusedValue(
+                              focus: focus,
+                              compact: compact,
+                              isCurrent: () =>
+                                  identical(controlFocus?.value, focus)))),
+            ]));
+        if (embedded) return readout;
         return Stack(alignment: Alignment.centerLeft, children: [
           Positioned(left: 16, child: _HomeButton(onHome: onHome)),
           Positioned(
               left: compact ? 76 : 60 + (toolsLeft - 60 - readoutWidth) / 2,
               width: readoutWidth,
               height: 52,
-              child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: BoxDecoration(
-                      color: ConsolePalette.of(context).panel,
-                      borderRadius: U4.rBtn,
-                      border: Border.all(
-                          color: ConsolePalette.of(context).linePanel)),
-                  child: Stack(alignment: Alignment.center, children: [
-                    Align(
-                        alignment: Alignment.centerLeft,
-                        child: FractionallySizedBox(
-                            widthFactor: .30,
-                            child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Tooltip(
-                                      message: 'Rename $identity',
-                                      child: Semantics(
-                                          button: true,
-                                          label: 'Rename $identity',
-                                          child: InkWell(
-                                              onTap:
-                                                  store.captureNameTarget() ==
-                                                          null
-                                                      ? null
-                                                      : () {
-                                                          final target = store
-                                                              .captureNameTarget();
-                                                          if (target != null) {
-                                                            showChannelNameEditor(
-                                                                context,
-                                                                store,
-                                                                target);
-                                                          }
-                                                        },
-                                              child: Text(
-                                                  store.stripKey == 'main'
-                                                      ? 'Main LR'
-                                                      : store.stripKey.startsWith('bus/')
-                                                          ? 'Bus ${int.tryParse(store.stripKey.split('/').last) ?? store.channelNumber} · ${store.displayName}'
-                                                          : 'Ch ${store.channelNumber} · ${store.displayName}',
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
-                                                  style: AppDesign.type(
-                                                      compact ? 12 : 14,
-                                                      color: ConsolePalette.of(
-                                                              context)
-                                                          .text7))))),
-                                  Text(
-                                      focus == null
-                                          ? 'Fader'
-                                          : '${focus.title} · ${focus.label}',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: AppDesign.type(compact ? 12 : 14,
-                                          color: ConsolePalette.of(context)
-                                              .text7)),
-                                ]))),
-                    Center(
-                        child: FractionallySizedBox(
-                            widthFactor: .40,
-                            child: focus == null
-                                ? _FaderValue(store: store, compact: compact)
-                                : _FocusedValue(
-                                    focus: focus,
-                                    compact: compact,
-                                    isCurrent: () => identical(
-                                        controlFocus?.value, focus)))),
-                  ]))),
+              child: readout),
           Positioned(
               left: toolsLeft,
               child: Row(children: [

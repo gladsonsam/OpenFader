@@ -166,18 +166,6 @@ class _ScalePainter extends CustomPainter {
     mixerBox(c, Rect.fromLTWH(g.x - 3, g.top - 3, 6, g.travel + 6),
         palette.faderSlot,
         radius: 3, border: palette.faderSlotBorder);
-    // Design number column (tablet+ only): 1-6 repeated in three banks.
-    // The mock marks the third bank's "1" red on channel 1; replicate it.
-    if (!g.compact) {
-      final size = (s.width * .088).clamp(12.0, 18.0);
-      for (var i = 0; i < 18; i++) {
-        final y = g.top + (i + .5) / 18 * g.travel - size / 2;
-        final red = number == '1' && i == 12;
-        mixerText(c, '${i % 6 + 1}', Offset(s.width * .08, y), size,
-            color: red ? palette.mute : palette.text10,
-            weight: FontWeight.w600);
-      }
-    }
     for (final mark in MixerFaderScale.marks) {
       final y = g.top + (1 - MixerFaderScale.positionForDb(mark.$1)) * g.travel;
       final x = s.width * (g.compact ? 66 / 96.2 : 127 / 178.2);

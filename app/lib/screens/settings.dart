@@ -84,6 +84,7 @@ class U4SettingsPage extends StatefulWidget {
   final SettingsStore store;
   final SettingsSection? initialSection;
   final VoidCallback onClose;
+  final bool embedded;
   final VoidCallback onOpenMixer;
   final VoidCallback onHome;
 
@@ -94,6 +95,7 @@ class U4SettingsPage extends StatefulWidget {
     required this.onClose,
     required this.onOpenMixer,
     required this.onHome,
+    this.embedded = false,
   });
 
   @override
@@ -232,6 +234,23 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
   }
 
   Widget _topbar({required String title, required bool showBack}) {
+    if (widget.embedded) {
+      if (title == 'Settings') return const SizedBox.shrink();
+      return SizedBox(
+          height: 52,
+          child: Row(children: [
+            IconButton(
+                tooltip: 'Settings',
+                onPressed: () => setState(() => _page = null),
+                icon: const Icon(Icons.chevron_left)),
+            Expanded(
+                child: Text(title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w600))),
+          ]));
+    }
     final wide = MediaQuery.sizeOf(context).width > 900;
     return Container(
       height: wide ? 104 : 88,
@@ -320,8 +339,10 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _OverviewBrand(onHome: widget.onHome),
-                const SizedBox(height: 24),
+                if (!widget.embedded) ...[
+                  _OverviewBrand(onHome: widget.onHome),
+                  const SizedBox(height: 24),
+                ],
                 for (final s in SettingsSection.values)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 10),
@@ -351,10 +372,10 @@ class _U4SettingsPageState extends State<U4SettingsPage> {
   Widget _detailScroll(SettingsSection section, {required bool wide}) {
     final about = section == SettingsSection.about;
     final padding = EdgeInsets.fromLTRB(
-      wide ? 56 : 16,
-      wide ? 44 : 20,
-      wide ? 56 : 16,
-      wide ? 60 : (about ? 12 : 36),
+      wide ? 24 : 16,
+      wide ? 20 : 16,
+      wide ? 24 : 16,
+      wide ? 24 : (about ? 12 : 24),
     );
     return LayoutBuilder(
       builder: (context, viewport) {

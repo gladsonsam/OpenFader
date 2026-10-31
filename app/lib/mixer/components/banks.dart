@@ -9,89 +9,45 @@ import '../../settings/prefs.dart';
 import 'toggle.dart';
 
 Future<void> showMixerLayout(BuildContext context, MixerController controller,
-        ValueChanged<MixerDestination> onNavigate,
-        {bool? locked, VoidCallback? onLock}) =>
-    showModalBottomSheet<void>(
-        sheetAnimationStyle: AnimationStyle.noAnimation,
-        context: context,
-        backgroundColor: ConsolePalette.of(context).background,
-        showDragHandle: true,
-        builder: (_) => SafeArea(
-            child: ListenableBuilder(
-                listenable: controller,
-                builder: (_, __) => ListView(shrinkWrap: true, children: [
-                      Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: Text('Layout',
-                              style: mixerType(context, 20,
-                                  weight: FontWeight.w600))),
-                      if (locked != null && onLock != null)
-                        ListTile(
-                            title: Text(
-                                locked ? 'Unlock channel' : 'Lock channel',
-                                style: mixerType(context, 17)),
-                            trailing: Icon(
-                                locked
-                                    ? Icons.lock_outline
-                                    : Icons.lock_open_outlined,
-                                color: ConsolePalette.of(context).mutedText),
-                            onTap: () {
-                              Navigator.pop(context);
-                              onLock();
-                            }),
-                      for (final bank in controller.store.banks)
-                        ListTile(
-                            title:
-                                Text(bank.label, style: mixerType(context, 17)),
-                            trailing: bank.key == controller.store.bank
-                                ? Icon(Icons.check,
-                                    color: ConsolePalette.of(context).lime)
-                                : null,
-                            onTap: () {
-                              controller.setBank(bank.key);
-                              Navigator.pop(context);
-                            }),
-                      Divider(color: ConsolePalette.of(context).line),
-                      ListTile(
-                          title: Text('Layers', style: mixerType(context, 17)),
-                          subtitle: Text('Custom channel sets',
-                              style: mixerType(context, 13,
-                                  color: ConsolePalette.of(context).mutedText)),
-                          onTap: () => showMixerLayers(context, controller)),
-                      ListTile(
-                          title: Text('Group members',
-                              style: mixerType(context, 17)),
-                          onTap: () {
-                            Navigator.pop(context);
-                            showMixerGroupMembership(context, controller);
-                          }),
-                      ListTile(
-                          title:
-                              Text('Master bus', style: mixerType(context, 17)),
-                          subtitle: Text(
-                              controller.store.busRows
-                                  .where((b) => b.active)
-                                  .map((b) => b.name)
-                                  .join(', '),
-                              style: mixerType(context, 13,
-                                  color: ConsolePalette.of(context).mutedText)),
-                          onTap: () {
-                            Navigator.pop(context);
-                            showMixerBuses(context, controller);
-                          }),
-                      for (final entry in <(String, MixerDestination)>[
-                        ('Meter bridge', MixerDestination.meters),
-                        ('Connection', MixerDestination.connect),
-                        ('Debug', MixerDestination.debug),
-                      ])
-                        ListTile(
-                            title:
-                                Text(entry.$1, style: mixerType(context, 17)),
-                            onTap: () {
-                              Navigator.pop(context);
-                              onNavigate(entry.$2);
-                            }),
-                    ]))));
+    ValueChanged<MixerDestination> onNavigate,
+    {bool? locked, VoidCallback? onLock}) async {
+  final action = await showAnchoredMenu<VoidCallback>(context, [
+    if (locked != null && onLock != null)
+      PopupMenuItem(
+          height: 48,
+          value: onLock,
+          child: Text(locked ? 'Unlock channel' : 'Lock channel')),
+    for (final bank in controller.store.banks)
+      PopupMenuItem(
+          height: 48,
+          value: () => controller.setBank(bank.key),
+          child: Row(children: [
+            Expanded(child: Text(bank.label)),
+            if (bank.key == controller.store.bank)
+              Icon(Icons.check,
+                  color: ConsolePalette.of(context).cyan, size: 18),
+          ])),
+    const PopupMenuDivider(),
+    PopupMenuItem(
+        height: 48,
+        value: () => showMixerLayers(context, controller),
+        child: const Text('Layers')),
+    PopupMenuItem(
+        height: 48,
+        value: () => showMixerGroupMembership(context, controller),
+        child: const Text('Group members')),
+    PopupMenuItem(
+        height: 48,
+        value: () => showMixerBuses(context, controller),
+        child: const Text('Master bus')),
+    if (controller.muteGroupCount > 0)
+      PopupMenuItem(
+          height: 48,
+          value: () => showMixerMuteGroups(context, controller),
+          child: const Text('Mute groups')),
+  ]);
+  if (context.mounted) action?.call();
+}
 
 Future<void> showMixerBuses(
     BuildContext context, MixerController controller) async {
@@ -583,7 +539,8 @@ Future<void> showMixerGroupMembership(
         BuildContext context, MixerController controller) =>
     showDialog<void>(
         animationStyle: AnimationStyle.noAnimation,
-        context: context, builder: (_) => _GroupMembership(controller));
+        context: context,
+        builder: (_) => _GroupMembership(controller));
 
 class _GroupMembership extends StatefulWidget {
   final MixerController controller;

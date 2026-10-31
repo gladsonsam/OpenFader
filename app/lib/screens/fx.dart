@@ -165,7 +165,7 @@ class _U4FxPageState extends State<U4FxPage> {
                   final cardWidth = targets.isEmpty
                       ? 180.0
                       : ((width - 6 * (targets.length - 1)) / targets.length)
-                          .clamp(148.0, 240.0);
+                          .clamp(120.0, double.infinity);
                   final detailHeight = math.max(330.0, bounds.maxHeight - 158);
                   return Column(children: [
                     Expanded(
@@ -174,13 +174,6 @@ class _U4FxPageState extends State<U4FxPage> {
                             child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  Text('FX',
-                                      style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w700,
-                                          letterSpacing: .6,
-                                          color: palette.text1)),
-                                  const SizedBox(height: 8),
                                   if (targets.isEmpty)
                                     Text(
                                         'No FX controls are available for this mixer.',
@@ -713,7 +706,7 @@ class _KnobLayout extends StatelessWidget {
         final columns = math.max(
             1, math.min(children.length, (bounds.maxWidth / 150).floor()));
         final rows = (children.length / columns).ceil();
-        final height = math.max(minHeight, rows * 170.0);
+        final height = rows * 170.0;
         return SizedBox(
             height: height,
             child: Center(
@@ -763,8 +756,14 @@ class _FxRotaryState extends State<_FxRotary> {
         button: widget.enabled && widget.onTap != null,
         slider: adjustable,
         enabled: widget.enabled,
-        label: widget.label,
-        value: widget.text,
+        label: '${widget.label}, ${widget.text}',
+        value: '${(widget.fraction * 100).round()}%',
+        increasedValue: adjustable
+            ? '${((widget.fraction + widget.increment).clamp(0, 1) * 100).round()}%'
+            : null,
+        decreasedValue: adjustable
+            ? '${((widget.fraction - widget.increment).clamp(0, 1) * 100).round()}%'
+            : null,
         onIncrease: adjustable ? () => _step(widget.increment) : null,
         onDecrease: adjustable ? () => _step(-widget.increment) : null,
         child: Opacity(
@@ -794,6 +793,15 @@ class _FxRotaryState extends State<_FxRotary> {
                       Text(widget.label,
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 12, color: palette.text7)),
+                      const SizedBox(height: 4),
+                      Text(widget.text,
+                          textAlign: TextAlign.center,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: palette.text1)),
                     ]))));
   }
 }

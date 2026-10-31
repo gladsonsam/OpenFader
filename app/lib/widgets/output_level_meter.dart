@@ -10,10 +10,12 @@ import '../palette.dart';
 class OutputLevelMeter extends StatelessWidget {
   final ValueListenable<OutputMeterVm> meter;
   final bool showCompressorGr;
+  final String label;
   const OutputLevelMeter({
     super.key,
     required this.meter,
     this.showCompressorGr = false,
+    this.label = 'Output level',
   });
 
   @override
@@ -31,9 +33,7 @@ class OutputLevelMeter extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    value.available
-                        ? 'Output level'
-                        : 'Output level unavailable',
+                    value.available ? label : '$label unavailable',
                   ),
                   if (showCompressorGr && value.compressorGr != null)
                     Tooltip(

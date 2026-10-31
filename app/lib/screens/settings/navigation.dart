@@ -4,20 +4,22 @@ class _Sidebar extends StatelessWidget {
   final SettingsSection active;
   final ValueChanged<SettingsSection> onSelect;
   final VoidCallback onHome;
-  const _Sidebar({required this.active, required this.onSelect, required this.onHome});
+  const _Sidebar(
+      {required this.active, required this.onSelect, required this.onHome});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 400,
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
+      width: 260,
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: ConsolePalette.of(context).headerBg,
         border: Border(
           right: BorderSide(color: ConsolePalette.of(context).line),
         ),
       ),
-      child: Column(
+      child: SingleChildScrollView(
+          child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final s in SettingsSection.values)
@@ -33,10 +35,10 @@ class _Sidebar extends StatelessWidget {
                   behavior: HitTestBehavior.opaque,
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 18,
+                      horizontal: 12,
+                      vertical: 12,
                     ),
-                    constraints: const BoxConstraints(minHeight: 88),
+                    constraints: const BoxConstraints(minHeight: 56),
                     decoration: BoxDecoration(
                       color: s == active
                           ? ConsolePalette.of(context).selectionFill
@@ -47,7 +49,7 @@ class _Sidebar extends StatelessWidget {
                       children: [
                         _SettingsIcon(
                           s.icon,
-                          size: 26,
+                          size: 22,
                           color: s == active
                               ? ConsolePalette.of(context).cyan
                               : ConsolePalette.of(context).text7,
@@ -58,7 +60,7 @@ class _Sidebar extends StatelessWidget {
                             s.label,
                             style: TextStyle(
                               fontFamily: U4.font,
-                              fontSize: 25,
+                              fontSize: 16,
                               fontWeight: FontWeight.w500,
                               color: s == active
                                   ? ConsolePalette.of(context).cyan
@@ -72,41 +74,8 @@ class _Sidebar extends StatelessWidget {
                 ),
               ),
             ),
-          const Spacer(),
-          Semantics(
-            button: true,
-            label: 'Open Connections home',
-            child: GestureDetector(
-            onTap: onHome,
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 24, 20, 6),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 44,
-                    height: 44,
-                    child: SvgPicture.asset(
-                      'assets/brand/open-fader-logo.svg',
-                      semanticsLabel: 'OpenFader',
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Text(
-                    'OpenFader',
-                    style: TextStyle(
-                      fontFamily: U4.font,
-                      fontSize: 25,
-                      fontWeight: FontWeight.w600,
-                      color: ConsolePalette.of(context).text1,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )),
         ],
-      ),
+      )),
     );
   }
 }
@@ -116,27 +85,29 @@ class _OverviewBrand extends StatelessWidget {
   const _OverviewBrand({required this.onHome});
   @override
   Widget build(BuildContext context) => Semantics(
-        button: true, label: 'Open Connections home',
-        child: GestureDetector(
-        onTap: onHome, behavior: HitTestBehavior.opaque,
-        child: Padding(
-        padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
-        child: Row(
-          children: [
-            SizedBox(width: 54, height: 54, child: SvgPictureAssetLogo()),
-            SizedBox(width: 14),
-            Text(
-              'OpenFader',
-              style: TextStyle(
-                fontFamily: U4.font,
-                fontSize: 25,
-                fontWeight: FontWeight.w600,
-                color: ConsolePalette.of(context).text1,
-              ),
+      button: true,
+      label: 'Open Connections home',
+      child: GestureDetector(
+          onTap: onHome,
+          behavior: HitTestBehavior.opaque,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
+            child: Row(
+              children: [
+                SizedBox(width: 54, height: 54, child: SvgPictureAssetLogo()),
+                SizedBox(width: 14),
+                Text(
+                  'OpenFader',
+                  style: TextStyle(
+                    fontFamily: U4.font,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: ConsolePalette.of(context).text1,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      )));
+          )));
 }
 
 class SvgPictureAssetLogo extends StatelessWidget {
@@ -162,8 +133,8 @@ class _OverviewCard extends StatelessWidget {
           onTap: () => _runSettingsAction(context, onTap),
           behavior: HitTestBehavior.opaque,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-            constraints: const BoxConstraints(minHeight: 90),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            constraints: const BoxConstraints(minHeight: 64),
             decoration: BoxDecoration(
               color: ConsolePalette.of(context).chip,
               borderRadius: BorderRadius.circular(12),
@@ -181,7 +152,7 @@ class _OverviewCard extends StatelessWidget {
                     section.label,
                     style: TextStyle(
                       fontFamily: U4.font,
-                      fontSize: 19,
+                      fontSize: 17,
                       fontWeight: FontWeight.w500,
                       color: ConsolePalette.of(context).text1,
                     ),
