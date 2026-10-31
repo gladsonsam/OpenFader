@@ -197,14 +197,14 @@ mixin _AppStoreMeters on _AppStoreContext {
         ? const [
             BridgeGroup(
                 key: 'in',
-                title: 'Inputs',
+                title: 'Channels',
                 ladders: [],
                 collapsedReason: 'offline'),
           ]
         : List<BridgeGroup>.unmodifiable([
             BridgeGroup(
               key: 'in',
-              title: 'Inputs',
+              title: 'Channels',
               ladders: [
                 for (final s in engine.strips)
                   BridgeLadder(

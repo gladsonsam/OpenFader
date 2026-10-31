@@ -6,8 +6,6 @@ import '../controller.dart';
 import '../design.dart';
 import '../../u4law.dart';
 import '../../widgets/number_entry.dart';
-import '../../widgets/design_icon.dart';
-import 'banks.dart';
 
 class MixerToolbar extends StatelessWidget {
   final MixerController controller;
@@ -15,36 +13,21 @@ class MixerToolbar extends StatelessWidget {
 
   /// Persistent workspace home (top-left brand button).
   final VoidCallback? onHome;
+  final VoidCallback? onOpenTools;
   final Widget? readoutContent;
   final String? pageTitle;
-  final MixerDestination? activeDestination;
-  final VoidCallback? onLock;
-  final bool locked;
-  final bool compact, showBankControls;
+  final bool compact;
   const MixerToolbar(
       {super.key,
       required this.controller,
       required this.onNavigate,
       this.onHome,
+      this.onOpenTools,
       this.readoutContent,
       this.pageTitle,
-      this.activeDestination,
-      this.onLock,
-      this.locked = false,
-      required this.compact,
-      this.showBankControls = false});
+      required this.compact});
   @override
   Widget build(BuildContext context) {
-    final actions = <(String, MixerDestination)>[
-      ('Channel', MixerDestination.channel),
-      ('Effects', MixerDestination.fx),
-      ('Settings', MixerDestination.settings),
-      ('Routing', MixerDestination.routing),
-      ('Meters', MixerDestination.meters),
-      ('Scenes', MixerDestination.scenes),
-      ('Connections', MixerDestination.connect),
-      ('Diagnostics', MixerDestination.debug),
-    ];
     final readout = ValueListenableBuilder<MixerReadoutFocus>(
         valueListenable: controller.readoutFocus,
         builder: (context, focus, _) {
@@ -169,7 +152,7 @@ class MixerToolbar extends StatelessWidget {
             border: Border(
                 bottom: BorderSide(color: ConsolePalette.of(context).line))),
         child: Row(children: [
-          // Approved symbol returns to Connections on both layouts.
+          // The brand button always returns to Mixer.
           _BrandButton(
               compact: compact,
               onHome: onHome,
@@ -178,101 +161,15 @@ class MixerToolbar extends StatelessWidget {
               child: compact
                   ? readout
                   : Padding(
-                      // Equal insets center the bounded box in the gap from
-                      // the brand button's trailing edge to the FX button.
+                      // Keep the readout aligned with the two navigation controls.
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child:
-                          Center(child: SizedBox(width: 892, child: readout)))),
-          if (compact) const SizedBox(width: 4),
-          if (!compact) ...[
-            MixerToolButton(
-                label: 'Effects',
-                active: activeDestination == MixerDestination.fx,
-                onPressed: () => onNavigate(MixerDestination.fx),
-                child: Text('FX',
-                    style: mixerType(context, 20,
-                        color: ConsolePalette.of(context).mutedText,
-                        weight: FontWeight.w600))),
-            const SizedBox(width: 8),
-            MixerToolButton(
-                label: 'Settings',
-                active: activeDestination == MixerDestination.settings,
-                onPressed: () => onNavigate(MixerDestination.settings),
-                child: const DesignIcon(DesignSymbol.settings)),
-            const SizedBox(width: 8),
-            MixerToolButton(
-                label: 'Routing',
-                active: activeDestination == MixerDestination.routing,
-                onPressed: () => onNavigate(MixerDestination.routing),
-                child: const DesignIcon(DesignSymbol.routing)),
-            const SizedBox(width: 8),
-            MixerToolButton(
-                label: 'Meters',
-                active: activeDestination == MixerDestination.meters,
-                onPressed: () => onNavigate(MixerDestination.meters),
-                child: const Icon(Icons.graphic_eq, size: 22)),
-            const SizedBox(width: 8),
-            Builder(
-                builder: (anchor) => MixerToolButton(
-                    label: 'Mixer layout',
-                    onPressed: () => showMixerLayout(
-                        anchor, controller, onNavigate,
-                        locked: onLock == null ? null : locked, onLock: onLock),
-                    child: const DesignIcon(DesignSymbol.layout))),
-            Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: SizedBox(
-                    height: 44,
-                    child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                            foregroundColor:
-                                activeDestination == MixerDestination.scenes
-                                    ? ConsolePalette.of(context).cyan
-                                    : ConsolePalette.of(context).mutedText,
-                            backgroundColor: ConsolePalette.of(context).chip,
-                            side: BorderSide(
-                                color: ConsolePalette.of(context).lineCtl),
-                            shape: const RoundedRectangleBorder(
-                                borderRadius: MixerDesign.radius)),
-                        onPressed: () => onNavigate(MixerDestination.scenes),
-                        child: const Text('Scenes')))),
-          ],
-          Padding(
-            padding: EdgeInsets.only(right: compact ? 4 : 0, left: 4),
-            child: Builder(
-                builder: (menuAnchor) => _MenuButton(
-                      onSelected: (action) => action(),
-                      items: [
-                        if (onHome != null)
-                          PopupMenuItem(
-                              value: onHome!,
-                              child:
-                                  Text('Mixer', style: mixerType(context, 16))),
-                        for (final a in actions)
-                          PopupMenuItem(
-                              value: () => onNavigate(a.$2),
-                              child: Row(children: [
-                                Expanded(
-                                    child: Text(a.$1,
-                                        style: mixerType(context, 16))),
-                                if (activeDestination == a.$2)
-                                  Icon(Icons.check,
-                                      color: ConsolePalette.of(context).cyan,
-                                      size: 18),
-                              ])),
-                        if (showBankControls) ...[
-                          const PopupMenuDivider(),
-                          PopupMenuItem(
-                              height: 48,
-                              value: () => showMixerLayout(
-                                  menuAnchor, controller, onNavigate,
-                                  locked: onLock == null ? null : locked,
-                                  onLock: onLock),
-                              child: const Text('Mixer layout')),
-                        ],
-                      ],
-                    )),
-          ),
+                      child: readout)),
+          const SizedBox(width: 8),
+          SizedBox(
+              height: 44,
+              child: OutlinedButton(
+                  onPressed: pageTitle == 'Tools' ? onHome : onOpenTools,
+                  child: Text(pageTitle == 'Tools' ? 'Mixer' : 'Tools'))),
         ]));
   }
 }
@@ -435,59 +332,6 @@ Future<void> _typeControl(BuildContext context, MixerController controller,
       controller.setPan(channel, value / 100);
     case MixerReadoutControl.gain:
       controller.setGain(channel, value);
-  }
-}
-
-/// Phone menu: explicit semantics button opening a menu sheet.
-class _MenuButton extends StatelessWidget {
-  final ValueChanged<VoidCallback> onSelected;
-  final List<PopupMenuEntry<VoidCallback>> items;
-  const _MenuButton({required this.onSelected, required this.items});
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-      button: true,
-      label: 'Menu',
-      onTap: () => _open(context),
-      child: Tooltip(
-          message: 'Menu',
-          child: SizedBox(
-              width: 44,
-              height: 44,
-              child: InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () => _open(context),
-                  child: Container(
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                          color: ConsolePalette.of(context).chip,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color: ConsolePalette.of(context).line)),
-                      child: Icon(Icons.menu,
-                          size: 22,
-                          color: ConsolePalette.of(context).mutedText))))));
-
-  Future<void> _open(BuildContext context) async {
-    final box = context.findRenderObject() as RenderBox?;
-    final overlay =
-        Overlay.of(context).context.findRenderObject() as RenderBox?;
-    if (box == null || overlay == null) return;
-    final choice = await showMenu<VoidCallback>(
-      popUpAnimationStyle: AnimationStyle.noAnimation,
-      context: context,
-      color: ConsolePalette.of(context).chip,
-      position: RelativeRect.fromRect(
-          Rect.fromPoints(
-              box.localToGlobal(Offset.zero, ancestor: overlay),
-              box.localToGlobal(box.size.bottomRight(Offset.zero),
-                  ancestor: overlay)),
-          Offset.zero & overlay.size),
-      constraints:
-          const BoxConstraints(minWidth: 224, maxWidth: 320, maxHeight: 480),
-      items: items,
-    );
-    if (choice != null) onSelected(choice);
   }
 }
 

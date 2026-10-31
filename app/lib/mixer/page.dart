@@ -154,7 +154,7 @@ class _MixerPageState extends State<MixerPage> {
                                 onNavigate: widget.onNavigate,
                                 onHome: widget.onHome,
                                 compact: constraints.maxWidth < 800,
-                                showBankControls: mobile),
+                                onOpenTools: widget.onHome),
                             // Design bus bar: full-width strip in the
                             // selected bus colour between toolbar + strips.
                             if (!widget.embedded) Container(

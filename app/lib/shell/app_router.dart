@@ -22,6 +22,7 @@ import '../settings/recents.dart';
 import '../state/app_store.dart';
 import '../u4law.dart' show panText;
 import 'shell.dart';
+import 'workspace_home.dart';
 import '../screens/channel.dart';
 import '../screens/output_processing.dart';
 import '../mixer/components/banks.dart';
@@ -46,6 +47,7 @@ import 'fx_store.dart';
 import 'debug_store.dart';
 
 enum AppTab {
+  home('Tools'),
   mixer('Mixer'),
   meters('Meters'),
   channel('Channel'),
@@ -437,24 +439,9 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                 : _tab == AppTab.channel && store.outputProcessingTarget != null
                     ? 'Output processing'
                     : _tab.label,
-            activeDestination: switch (_tab) {
-              AppTab.mixer => null,
-              AppTab.channel => MixerDestination.channel,
-              AppTab.fx => MixerDestination.fx,
-              AppTab.routing => MixerDestination.routing,
-              AppTab.meters => MixerDestination.meters,
-              AppTab.scenes => MixerDestination.scenes,
-              AppTab.connect => MixerDestination.connect,
-              AppTab.settings => MixerDestination.settings,
-              AppTab.debug => MixerDestination.debug,
-            },
-            showBankControls: true,
-            locked: store.locked,
-            onLock: _tab == AppTab.channel
-                ? () => store.locked ? store.cmdUnlock() : store.cmdLock()
-                : null,
             onNavigate: _navigateMixer,
             onHome: () => _go(AppTab.mixer),
+            onOpenTools: () => _go(AppTab.home),
             readoutContent: readout);
       });
 
@@ -493,6 +480,14 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       ]));
     }
     return switch (t) {
+      AppTab.home => WorkspaceHome(
+          onMixer: () => _go(AppTab.mixer),
+          onNavigate: _navigateMixer,
+          onLayout: (anchor) => showMixerLayout(anchor, _mixer, _navigateMixer,
+              locked: widget.store.locked,
+              onLock: () => widget.store.locked
+                  ? widget.store.cmdUnlock()
+                  : widget.store.cmdLock())),
       AppTab.mixer => _mixerPage(),
       AppTab.meters =>
         U4MetersPage(store: store, onClose: () => _go(AppTab.mixer)),
