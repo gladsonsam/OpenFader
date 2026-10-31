@@ -42,12 +42,14 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, box) {
         final sy = box.maxHeight / 202;
         final sx = box.maxWidth / 178.2;
-        Widget place(double top, double height, Widget child) => Positioned(
-            left: 5 * sx,
-            right: 5 * sx,
-            top: top * sy,
-            height: height * sy,
-            child: child);
+        Widget place(double top, double height, Widget child,
+                {double? inset}) =>
+            Positioned(
+                left: inset ?? 5 * sx,
+                right: inset ?? 5 * sx,
+                top: top * sy,
+                height: height * sy,
+                child: child);
         return DecoratedBox(
             decoration: BoxDecoration(
                 color: ConsolePalette.of(context).well,
@@ -113,10 +115,9 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
               place(
                   47,
                   79,
-                  Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 7),
-                      child: MixerEqPreview(
-                          channel: widget.channel, onOpen: widget.onOpen))),
+                  MixerEqPreview(
+                      channel: widget.channel, onOpen: widget.onOpen),
+                  inset: MixerStripMetrics.contentInset),
               place(
                   132,
                   62,
@@ -124,19 +125,21 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                       button: true,
                       label: '${widget.channel.name} dynamics and processing',
                       child: GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        onTap: widget.onOpen,
-                        child: CustomPaint(
-                      painter: _DynamicsPainter(
-                          ConsolePalette.of(context),
-                          widget.channel.params,
-                          widget.demo &&
-                                  !widget.channel.params
-                                      .containsKey('gate_gr') &&
-                                  !widget.channel.params.containsKey('comp_gr')
-                              ? mixerDemoStrips[widget.channel.artwork]
-                                  .compression
-                              : null))))),
+                          behavior: HitTestBehavior.opaque,
+                          onTap: widget.onOpen,
+                          child: CustomPaint(
+                              painter: _DynamicsPainter(
+                                  ConsolePalette.of(context),
+                                  widget.channel.params,
+                                  widget.demo &&
+                                          !widget.channel.params
+                                              .containsKey('gate_gr') &&
+                                          !widget.channel.params
+                                              .containsKey('comp_gr')
+                                      ? mixerDemoStrips[widget.channel.artwork]
+                                          .compression
+                                      : null)))),
+                  inset: MixerStripMetrics.contentInset),
             ]));
       });
 }
@@ -276,14 +279,14 @@ class _DynamicsPainter extends CustomPainter {
   _DynamicsPainter(this.palette, this.params, this.fixture);
   @override
   void paint(Canvas c, Size s) {
-    c.save();
-    c.scale(1, s.height / 62);
-    s = Size(s.width, 62);
-    mixerBox(c, Offset.zero & s, palette.panel, radius: 6);
+    final trackHeight = s.height * 15 / 62;
+    final gap = s.height * 8 / 62;
+    final top = (s.height - trackHeight * 2 - gap) / 2;
     for (var i = 0; i < 2; i++) {
-      final y = 7.0 + i * 23;
-      mixerBox(c, Rect.fromLTWH(4, y, s.width - 14, 15), palette.well,
-          radius: 3, border: palette.line, stroke: 2);
+      final track =
+          Rect.fromLTWH(0, top + i * (trackHeight + gap), s.width, trackHeight);
+      mixerBox(c, track, palette.well,
+          radius: 3, border: palette.line, stroke: 1);
       final value = fixture != null && i < fixture!.length
           ? fixture![i] / 100
           : ((params[i == 0 ? 'gate_gr' : 'comp_gr'] as num?)
@@ -291,12 +294,21 @@ class _DynamicsPainter extends CustomPainter {
                       .abs() ??
                   0) /
               30;
-      final w = (s.width - 12) * value.clamp(0.0, 1.0);
-      if (w > 0) {
-        mixerBox(c, Rect.fromLTWH(s.width - 6 - w, y + 3, w, 9), palette.comp);
+      // Both meters use the same well and inset. Reduction stays inside the
+      // well even at 100%, instead of spilling past its right/bottom edges.
+      final inner = track.deflate((trackHeight / 4).clamp(0.0, 2.0));
+      final width = inner.width * value.clamp(0.0, 1.0);
+      if (width > 0) {
+        c.save();
+        c.clipRRect(RRect.fromRectAndRadius(inner, const Radius.circular(2)));
+        mixerBox(
+            c,
+            Rect.fromLTWH(inner.right - width, inner.top, width, inner.height),
+            palette.comp,
+            radius: 2);
+        c.restore();
       }
     }
-    c.restore();
   }
 
   @override

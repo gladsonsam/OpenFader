@@ -11,6 +11,10 @@ import '../design.dart';
 // Retain mixer call sites while every screen shares the same design tokens.
 typedef MixerDesign = AppDesign;
 
+abstract final class MixerStripMetrics {
+  static const contentInset = 12.0;
+}
+
 /// Reference travel is a display coordinate. Engine values continue to use
 /// the canonical law in u4law.dart; no protocol values depend on screen size.
 abstract final class MixerFaderScale {
