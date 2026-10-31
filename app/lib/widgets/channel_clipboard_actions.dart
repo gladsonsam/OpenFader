@@ -43,6 +43,7 @@ class _ChannelClipboardActionsState extends State<ChannelClipboardActions> {
       );
       if (!mounted) return;
       final confirmed = await showDialog<bool>(
+        animationStyle: AnimationStyle.noAnimation,
         context: context,
         builder: (context) => AlertDialog(
           title: Text('Paste Processing to ${proposal.destination}?'),

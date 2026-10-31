@@ -183,6 +183,7 @@ class _InputAssignments extends StatelessWidget {
                       onTap: control.available &&
                               store.destinationControlIsCurrent(control)
                           ? () => showDialog<void>(
+                              animationStyle: AnimationStyle.noAnimation,
                               context: context,
                               builder: (_) => DestinationControlEditor(
                                   changes: store,
@@ -475,6 +476,7 @@ class _ProcessingSend extends StatelessWidget {
                 fontSize: 12,
                 onTap: store.destinationControlIsCurrent(control)
                     ? () => showDialog<void>(
+                        animationStyle: AnimationStyle.noAnimation,
                         context: context,
                         barrierDismissible: false,
                         builder: (_) => DestinationControlEditor(

@@ -26,6 +26,7 @@ class OutputProcessorPresetActions extends StatelessWidget {
                 return;
               }
               showDialog<void>(
+                  animationStyle: AnimationStyle.noAnimation,
                   context: context,
                   barrierDismissible: false,
                   builder: (_) =>
@@ -136,6 +137,7 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
   Future<void> _rename(ProcessorPreset preset) => _run(() async {
         var draft = preset.name;
         final name = await showDialog<String>(
+            animationStyle: AnimationStyle.noAnimation,
             context: context,
             builder: (context) => AlertDialog(
                     backgroundColor: ConsolePalette.of(context).panel,
@@ -162,6 +164,7 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
 
   Future<void> _delete(ProcessorPreset preset) => _run(() async {
         final confirmed = await showDialog<bool>(
+            animationStyle: AnimationStyle.noAnimation,
             context: context,
             builder: (context) => AlertDialog(
                     backgroundColor: ConsolePalette.of(context).panel,
@@ -246,6 +249,7 @@ class _OutputPresetLibraryState extends State<_OutputPresetLibrary> {
                                           : null,
                                       child: const Text('Recall')),
                                   PopupMenuButton<String>(
+                                      popUpAnimationStyle: AnimationStyle.noAnimation,
                                       enabled: enabled,
                                       onSelected: (action) => action == 'rename'
                                           ? _rename(preset)

@@ -13,6 +13,7 @@ Future<void> editAccessPasscode(
 ) async {
   final epoch = store.controlAccessEpoch;
   final values = await showDialog<_Passcodes>(
+    animationStyle: AnimationStyle.noAnimation,
     context: context,
     builder: (_) => _AccessPasscodeDialog(action: action),
   );

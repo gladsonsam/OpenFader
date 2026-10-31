@@ -98,6 +98,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
     if (store.busy || !store.online) return;
     final captured = store.actionContext;
     final ok = await showDialog<bool>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: ConsolePalette.of(context).chip,

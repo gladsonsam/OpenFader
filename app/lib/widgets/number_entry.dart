@@ -21,6 +21,7 @@ Future<double?> showNumberEntry({
   final ctl = TextEditingController(text: initial);
   String? error;
   return showDialog<double>(
+    animationStyle: AnimationStyle.noAnimation,
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(

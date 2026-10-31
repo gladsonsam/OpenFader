@@ -28,6 +28,7 @@ class NativeLibrarySection extends StatelessWidget {
   ) async {
     final captured = store.nativeContext;
     final ok = await showDialog<bool>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) => AlertDialog(
         title: Text(title),
@@ -53,6 +54,7 @@ class NativeLibrarySection extends StatelessWidget {
     final captured = store.nativeContext;
     var enteredName = slot?['name'] as String? ?? '';
     final name = await showDialog<String>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) => AlertDialog(
         title: Text(
@@ -98,6 +100,7 @@ class NativeLibrarySection extends StatelessWidget {
     final fields = view.scopeFields!;
     final draft = (slot['scope'] as String).split('');
     final result = await showDialog<String>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) {

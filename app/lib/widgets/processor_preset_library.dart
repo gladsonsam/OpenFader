@@ -12,6 +12,7 @@ Future<void> showProcessorPresetLibrary(
         ProcessorPresetKind kind,
         ProcessorPresetTarget? target) =>
     showDialog<void>(
+        animationStyle: AnimationStyle.noAnimation,
         context: context,
         barrierDismissible: false,
         builder: (_) =>
@@ -79,6 +80,7 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
   Future<void> _name({ProcessorPreset? preset}) => _run(() async {
         final target = widget.target!;
         final changed = await showDialog<bool>(
+            animationStyle: AnimationStyle.noAnimation,
             context: context,
             barrierDismissible: false,
             builder: (_) => _PresetNameDialog(
@@ -98,6 +100,7 @@ class _ProcessorPresetLibraryState extends State<_ProcessorPresetLibrary> {
 
   Future<bool> _confirm(String title, String message, String action) async =>
       await showDialog<bool>(
+          animationStyle: AnimationStyle.noAnimation,
           context: context,
           builder: (context) {
             final p = ConsolePalette.of(context);

@@ -81,6 +81,7 @@ Future<void> shareMixerLayers(BuildContext context) async {
 Future<void> showMixerLayerImport(BuildContext context) async {
   final editing = TextEditingController();
   final pasted = await showDialog<String>(
+    animationStyle: AnimationStyle.noAnimation,
     context: context,
     builder: (context) => AlertDialog(
       backgroundColor: ConsolePalette.of(context).chip,
@@ -126,6 +127,7 @@ Future<void> showMixerLayerImport(BuildContext context) async {
 Future<void> showMixerLayerRename(
     BuildContext context, MixerLayer layer) async {  final editing = TextEditingController(text: layer.name);
   final name = await showDialog<String>(
+    animationStyle: AnimationStyle.noAnimation,
     context: context,
     builder: (context) => AlertDialog(
       backgroundColor: ConsolePalette.of(context).chip,
@@ -162,6 +164,7 @@ Future<void> showMixerLayers(
     BuildContext context, MixerController controller) {
   final channels = layerChannelOptionsOf(controller);
   return showModalBottomSheet<void>(
+    sheetAnimationStyle: AnimationStyle.noAnimation,
     context: context,
     backgroundColor: ConsolePalette.of(context).background,
     showDragHandle: true,
@@ -232,6 +235,7 @@ Future<void> showMixerLayers(
                         Icon(Icons.check,
                             color: ConsolePalette.of(context).lime),
                       PopupMenuButton<String>(
+                        popUpAnimationStyle: AnimationStyle.noAnimation,
                         tooltip: 'Layer actions',
                         icon: Icon(Icons.more_vert,
                             color: ConsolePalette.of(context).mutedText),
@@ -355,6 +359,7 @@ Future<void> showMixerLayerEditor(
   required List<LayerChannelOption> channels,
 }) =>
     showModalBottomSheet<void>(
+      sheetAnimationStyle: AnimationStyle.noAnimation,
       context: context,
       backgroundColor: ConsolePalette.of(context).background,
       showDragHandle: true,

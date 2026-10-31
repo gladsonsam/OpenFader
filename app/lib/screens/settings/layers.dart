@@ -79,6 +79,7 @@ class _LayersSection extends StatelessWidget {
                       Icon(Icons.check,
                           color: ConsolePalette.of(context).cyan),
                     PopupMenuButton<String>(
+                      popUpAnimationStyle: AnimationStyle.noAnimation,
                       tooltip: 'Layer actions',
                       icon: Icon(Icons.more_vert,
                           color: ConsolePalette.of(context).text7),

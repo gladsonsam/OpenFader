@@ -439,6 +439,7 @@ class _RtaSettings extends StatelessWidget {
       for (final row in store.rtaSettings)
         if (row.choices.isNotEmpty)
           PopupMenuButton<double>(
+            popUpAnimationStyle: AnimationStyle.noAnimation,
             enabled: store.destinationControlIsCurrent(row),
             tooltip: 'Shared RTA ${row.label}',
             color: palette.processingPanel,
@@ -462,6 +463,7 @@ class _RtaSettings extends StatelessWidget {
                 : () async {
                     var value = row.value!;
                     final selected = await showDialog<double>(
+                      animationStyle: AnimationStyle.noAnimation,
                       context: context,
                       builder: (dialogContext) => StatefulBuilder(
                           builder: (dialogContext, setState) => AlertDialog(

@@ -6,6 +6,7 @@ import '../palette.dart';
 Future<void> showChannelQuickAssign(BuildContext context,
         ChannelNameStore store, ChannelNameTarget target) =>
     showDialog<void>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       barrierDismissible: false,
       builder: (_) => _QuickAssign(store: store, target: target),

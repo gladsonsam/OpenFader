@@ -67,7 +67,7 @@ class MixerToggle extends StatelessWidget {
                                 animationDuration:
                                     MediaQuery.disableAnimationsOf(context)
                                         ? Duration.zero
-                                        : const Duration(milliseconds: 100),
+                                        : const Duration(milliseconds: 40),
                                 overlayColor:
                                     WidgetStateProperty.resolveWith((states) {
                                   if (states.contains(WidgetState.pressed)) {
