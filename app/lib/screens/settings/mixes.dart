@@ -32,7 +32,7 @@ class _MixesDetail extends StatelessWidget {
             if (mixes.isEmpty)
               Padding(
                 padding: EdgeInsets.symmetric(
-                  horizontal: wide ? 26 : 16,
+                  horizontal: 16,
                   vertical: wide ? 32 : 22,
                 ),
                 child: Column(
@@ -42,7 +42,7 @@ class _MixesDetail extends StatelessWidget {
                       'No mixes saved yet',
                       style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: wide ? 27 : 18,
+                        fontSize: 17,
                         height: wide ? 1.25 : 24 / 18,
                         fontWeight: FontWeight.w500,
                         color: ConsolePalette.of(context).text1,
@@ -53,7 +53,7 @@ class _MixesDetail extends StatelessWidget {
                       'Import a mix, or open the offline mixer to prepare one.',
                       style: TextStyle(
                         fontFamily: U4.font,
-                        fontSize: wide ? 23 : 15,
+                        fontSize: 14,
                         height: wide ? 1.4 : 21 / 15,
                         color: ConsolePalette.of(context).text7,
                       ),
@@ -194,7 +194,7 @@ class _MixRow extends StatelessWidget {
     final wide = MediaQuery.sizeOf(context).width > 900;
     return Padding(
       padding: EdgeInsets.symmetric(
-        horizontal: wide ? 26 : 16,
+        horizontal: 16,
         vertical: wide ? 22 : 16,
       ),
       child: Row(
@@ -209,7 +209,7 @@ class _MixRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: wide ? 27 : 18,
+                    fontSize: 17,
                     fontWeight: FontWeight.w500,
                     color: ConsolePalette.of(context).text1,
                   ),
@@ -221,7 +221,7 @@ class _MixRow extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     fontFamily: U4.font,
-                    fontSize: wide ? 23 : 14,
+                    fontSize: 14,
                     color: ConsolePalette.of(context).text7,
                   ),
                 ),

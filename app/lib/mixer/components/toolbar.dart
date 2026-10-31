@@ -48,27 +48,30 @@ class MixerToolbar extends StatelessWidget {
                                   overflow: TextOverflow.ellipsis,
                                   style: mixerType(context, compact ? 16 : 18,
                                       weight: FontWeight.w600))),
-                          Expanded(
-                              child: Align(
-                                  alignment: Alignment.centerRight,
-                                  child: TextButton(
-                                      style: TextButton.styleFrom(
-                                          backgroundColor: Colors.transparent),
-                                      onPressed: () =>
-                                          onNavigate(MixerDestination.connect),
-                                      child: Text(
-                                          controller.demo
-                                              ? 'Demo desk'
-                                              : controller.connected
-                                                  ? controller
-                                                      .connectionDisplayName
-                                                  : 'Disconnected',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: mixerType(
-                                              context, compact ? 11 : 13,
-                                              color: ConsolePalette.of(context)
-                                                  .mutedText))))),
+                          if (!compact)
+                            Expanded(
+                                child: Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                        style: TextButton.styleFrom(
+                                            backgroundColor:
+                                                Colors.transparent),
+                                        onPressed: () => onNavigate(
+                                            MixerDestination.connect),
+                                        child: Text(
+                                            controller.demo
+                                                ? 'Demo desk'
+                                                : controller.connected
+                                                    ? controller
+                                                        .connectionDisplayName
+                                                    : 'Disconnected',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: mixerType(
+                                                context, compact ? 11 : 13,
+                                                color:
+                                                    ConsolePalette.of(context)
+                                                        .mutedText))))),
                         ])
                       : Row(children: [
                           // Equal constrained side lanes keep the numeric value centered

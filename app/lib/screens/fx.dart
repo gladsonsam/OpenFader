@@ -161,16 +161,16 @@ class _U4FxPageState extends State<U4FxPage> {
                 });
                 return LayoutBuilder(builder: (context, bounds) {
                   final palette = ConsolePalette.of(context);
-                  final width = math.max(0.0, bounds.maxWidth - 24);
+                  final width = math.max(0.0, bounds.maxWidth - 32);
                   final cardWidth = targets.isEmpty
                       ? 180.0
                       : ((width - 6 * (targets.length - 1)) / targets.length)
-                          .clamp(120.0, double.infinity);
+                          .clamp(112.0, double.infinity);
                   final detailHeight = math.max(330.0, bounds.maxHeight - 158);
                   return Column(children: [
                     Expanded(
                         child: SingleChildScrollView(
-                            padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
                             child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
@@ -626,7 +626,11 @@ class _LegacyFxDetail extends StatelessWidget {
               items: [
                 for (final type in store.typeOptions)
                   DropdownMenuItem(
-                      value: type, child: Text(store.typeLabel(type))),
+                      value: type,
+                      child: Padding(
+                          padding: const EdgeInsets.only(right: 12),
+                          child: Text(store.typeLabel(type),
+                              maxLines: 1, overflow: TextOverflow.ellipsis))),
               ],
               onChanged: (type) {
                 if (type != null && type != slot.type) store.setType(type);

@@ -189,7 +189,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
           builder: (context, _) {
             final store = widget.store;
             return SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
@@ -218,6 +218,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                           onPressed: store.busy ? null : store.beginShow,
                           child: const Text('New show')),
                   ]),
+                  const SizedBox(height: 8),
                   _NameRow(
                     controller: _showCtl,
                     hint: store.show == null
@@ -314,6 +315,7 @@ class _U4ScenesPageState extends State<U4ScenesPage> {
                         ),
                     ],
                   ),
+                  const SizedBox(height: 8),
                   _NameRow(
                     controller: _saveCtl,
                     hint: 'Snapshot name…',
