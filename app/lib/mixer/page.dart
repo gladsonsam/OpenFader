@@ -17,13 +17,14 @@ class MixerPage extends StatefulWidget {
   final MixerController controller;
   final ValueChanged<MixerDestination> onNavigate;
 
-  /// Return to the Connections start screen (top-left home button).
+  /// Return to the Mixer workspace home.
   final VoidCallback? onHome;
+  final bool embedded;
   const MixerPage(
       {super.key,
       required this.controller,
       required this.onNavigate,
-      this.onHome});
+      this.onHome, this.embedded = false});
   @override
   State<MixerPage> createState() => _MixerPageState();
 }
@@ -148,7 +149,7 @@ class _MixerPageState extends State<MixerPage> {
                           focusNode: _focus,
                           autofocus: true,
                           child: Column(children: [
-                            MixerToolbar(
+                            if (!widget.embedded) MixerToolbar(
                                 controller: controller,
                                 onNavigate: widget.onNavigate,
                                 onHome: widget.onHome,
@@ -156,7 +157,7 @@ class _MixerPageState extends State<MixerPage> {
                                 showBankControls: mobile),
                             // Design bus bar: full-width strip in the
                             // selected bus colour between toolbar + strips.
-                            Container(
+                            if (!widget.embedded) Container(
                                 height: mobile ? 6 : 8,
                                 color: ConsolePalette.of(context).bus),
                             // Custom layer banner: names the active layer.

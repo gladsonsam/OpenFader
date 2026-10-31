@@ -227,23 +227,9 @@ class _U4MetersPageState extends State<U4MetersPage> {
           listenable: widget.store,
           builder: (context, _) {
             final store = widget.store;
-            final liveCount =
-                store.groups.fold<int>(0, (n, g) => n + g.ladders.length) +
-                    store.physicalOutputGroups.fold<int>(
-                      0,
-                      (n, g) => n + g.meters.length,
-                    );
             final focused = _currentFocus;
             return Column(
               children: [
-                _BridgeHeader(
-                  online: store.online,
-                  demo: store.demo,
-                  deskName: store.deskName,
-                  liveCount: liveCount,
-                  onClose:
-                      widget.onClose ?? () => Navigator.of(context).maybePop(),
-                ),
                 if (focused != null)
                   Container(
                     width: double.infinity,
@@ -292,10 +278,20 @@ class _U4MetersPageState extends State<U4MetersPage> {
                             ),
                           ),
                         if (store.monitorControls.isNotEmpty) ...[
-                          _MonitorControls(
-                            store: store,
-                            focused: focused,
-                            onSelect: (row) => setState(() => _focused = row),
+                          ExpansionTile(
+                            expansionAnimationStyle: AnimationStyle.noAnimation,
+                            tilePadding:
+                                const EdgeInsets.symmetric(horizontal: 12),
+                            title: const Text('Monitor controls',
+                                style: TextStyle(
+                                    fontSize: 15, fontWeight: FontWeight.w600)),
+                            children: [
+                              _MonitorControls(
+                                  store: store,
+                                  focused: focused,
+                                  onSelect: (row) =>
+                                      setState(() => _focused = row))
+                            ],
                           ),
                           const SizedBox(height: 14),
                         ],
@@ -375,115 +371,12 @@ class _PhysicalOutputs extends StatelessWidget {
                             style: TextStyle(color: palette.text7),
                           ),
                         ),
-                        OutputLevelMeter(meter: meterOf(meter.target)),
+                        OutputLevelMeter(
+                            meter: meterOf(meter.target), label: 'Level'),
                       ],
                     ),
                   ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BridgeHeader extends StatelessWidget {
-  final bool online;
-  final bool demo;
-  final String? deskName;
-  final int liveCount;
-  final VoidCallback onClose;
-
-  const _BridgeHeader({
-    required this.online,
-    required this.demo,
-    required this.deskName,
-    required this.liveCount,
-    required this.onClose,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final badge = !online
-        ? (
-            'OFFLINE',
-            ConsolePalette.of(context).solo,
-            ConsolePalette.of(context).onSolo,
-          )
-        : demo
-            ? (
-                'DEMO',
-                ConsolePalette.of(context).solo,
-                ConsolePalette.of(context).onSolo,
-              )
-            : (
-                'LIVE · ${deskName ?? ''}',
-                ConsolePalette.of(context).successContainer,
-                ConsolePalette.of(context).onSuccessContainer,
-              );
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: ConsolePalette.of(context).lineHeader),
-        ),
-      ),
-      child: Row(
-        children: [
-          Text(
-            'METERS',
-            style: TextStyle(
-              fontFamily: U4.font,
-              fontSize: 15,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.6,
-              color: ConsolePalette.of(context).text1,
-            ),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(color: badge.$2, borderRadius: U4.rBtn),
-            child: Text(
-              badge.$1,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontFamily: U4.font,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: badge.$3,
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            '$liveCount ladders',
-            style: TextStyle(
-              fontFamily: U4.font,
-              fontSize: 11,
-              color: ConsolePalette.of(context).text7,
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: onClose,
-            child: Container(
-              width: 44,
-              height: 44,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: ConsolePalette.of(context).control,
-                border: Border.all(color: ConsolePalette.of(context).lineCtl),
-                borderRadius: U4.rBtn,
-              ),
-              child: const Text(
-                '✕',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontFamily: U4.font, fontSize: 16),
-              ),
             ),
           ),
         ],
@@ -652,7 +545,7 @@ class _LadderState extends State<_Ladder> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 52,
+      width: 64,
       child: Column(
         children: [
           CustomPaint(size: const Size(44, 229), painter: _painter),
@@ -664,7 +557,7 @@ class _LadderState extends State<_Ladder> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: U4.font,
-              fontSize: 11,
+              fontSize: 12,
               color: ConsolePalette.of(context).text1,
             ),
           ),
@@ -675,7 +568,7 @@ class _LadderState extends State<_Ladder> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontFamily: U4.font,
-              fontSize: 10,
+              fontSize: 11,
               color: ConsolePalette.of(context).text7,
             ),
           ),
@@ -855,8 +748,15 @@ class _MonitorControls extends StatelessWidget {
                           child: Text(choice.label),
                         ),
                     ],
-                    child: Chip(
-                      label: Text('${row.label}: ${row.valueLabel ?? '—'}'),
+                    child: Container(
+                      constraints: const BoxConstraints(minHeight: 48),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      decoration: BoxDecoration(
+                          color: palette.control,
+                          border: Border.all(color: palette.lineCtl),
+                          borderRadius: U4.rBtn),
+                      child: Text('${row.label}: ${row.valueLabel ?? '—'}'),
                     ),
                   )
                 else if (row.numeric)

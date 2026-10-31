@@ -20,7 +20,6 @@ import '../core/selected_control_readout.dart';
 import '../settings/prefs.dart';
 import '../settings/recents.dart';
 import '../state/app_store.dart';
-import '../theme.dart';
 import '../u4law.dart' show panText;
 import 'shell.dart';
 import '../screens/channel.dart';
@@ -55,7 +54,7 @@ enum AppTab {
   routing('Routing'),
   connect('Connection'),
   settings('Settings'),
-  debug('Debug');
+  debug('Diagnostics');
 
   const AppTab(this.label);
   final String label;
@@ -295,6 +294,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         _prevTab = _tab;
       }
       _tab = t;
+      if (t != AppTab.settings) _showStart = false;
     });
   }
 
@@ -304,16 +304,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     _settingsSection = section;
     _go(AppTab.settings);
   }
-
-  ShellMode _modeOf(AppTab t) => switch (t) {
-        AppTab.mixer || AppTab.meters => ShellMode.mixer,
-        AppTab.channel => ShellMode.channel,
-        AppTab.scenes => ShellMode.scenes,
-        AppTab.fx => ShellMode.fx,
-        AppTab.routing => ShellMode.routing,
-        AppTab.connect => ShellMode.connect,
-        AppTab.settings || AppTab.debug => ShellMode.settings,
-      };
 
   @override
   Widget build(BuildContext context) {
@@ -341,103 +331,17 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
-        final connected = store.engine.connected;
-        final sim = store.engine.driver == 'sim';
-
-        // SIM gets its own tag so it never reads as a desk; the backend verdict stays loud.
-
-        final title = sim
-            ? 'OpenFader · Demo desk'
-            : '${store.engine.linkName.isEmpty ? 'OpenFader' : store.engine.linkName} · ${store.engine.linkState.isEmpty ? 'Not connected' : store.engine.linkState}';
-        final isChan = _tab == AppTab.channel;
-        final narrow = MediaQuery.sizeOf(context).width < 720;
-        if (_tab == AppTab.mixer &&
-            (connected || sim || store.engine.linkState == 'offline')) {
-          return _mixerPage();
-        }
-        // Settings and channel views carry their own top bars, so the shared header steps aside.
-
-        final Widget header = _tab == AppTab.fx
-            ? _fxToolbar()
-            : isChan && store.outputProcessingTarget != null
-                ? const SizedBox.shrink()
-                : isChan
-                    ? ChannelToolbar(
-                        key: ValueKey(
-                            (store.stripKey, store.bank, store.engine.driver)),
-                        controlFocus: _channelFocus,
-                        store: store,
-                        compact: MediaQuery.sizeOf(context).width < 600,
-                        onHome: () => _go(AppTab.mixer),
-                        onTool: _channelTool,
-                        onLock: () =>
-                            store.locked ? store.cmdUnlock() : store.cmdLock(),
-                      )
-                    : _tab == AppTab.settings
-                        ? const SizedBox.shrink()
-                        : U4ShellHeader(
-                            title: title,
-                            pageTitle: _tab.label,
-                            showBack: _tab != AppTab.mixer,
-                            onBack: () => _go(AppTab.mixer),
-                            mode: _modeOf(_tab),
-                            connected: connected,
-                            connDot: connected
-                                ? (sim
-                                    ? ConsolePalette.of(context).text7
-                                    : ConsolePalette.of(context).meterGreen)
-                                : ConsolePalette.of(context).meterAmber,
-                            connAria: !connected
-                                ? 'Disconnected'
-                                : sim
-                                    ? 'Demo simulator (not a desk)'
-                                    : 'Connected to desk',
-                            isChannel: isChan,
-                            channelName: isChan ? store.displayName : '',
-                            metersActive: _tab == AppTab.meters,
-                            scenesActive: _tab == AppTab.scenes,
-                            sceneNum: _sceneNum(store),
-                            sceneName: _sceneName(store),
-                            sceneAria:
-                                '${_sceneNum(store).isEmpty ? '' : 'Scene ${_sceneNum(store)}, '}${_sceneName(store)}, open scene list',
-                            compact: MediaQuery.sizeOf(context).width < 600,
-                            onFx: () => _go(AppTab.fx),
-                            onRouting: () => _go(AppTab.routing),
-                            onConnect: () => _go(AppTab.connect),
-                            onSettings: () => _go(AppTab.settings),
-                            onMeters: () => _go(AppTab.meters),
-                            onScene: () => _go(AppTab.scenes),
-                            onPrevChannel: isChan && connected
-                                ? () => store.openChannel((store.channelIndex -
-                                        1)
-                                    .clamp(0, store.engine.strips.length - 1))
-                                : null,
-                            onNextChannel: isChan && connected
-                                ? () => store.openChannel((store.channelIndex +
-                                        1)
-                                    .clamp(0, store.engine.strips.length - 1))
-                                : null,
-                          );
-        final page = _pageFor(_tab, store);
-        final rail = _NavRail(
-          active: _tab,
-          onGo: _go,
-          vertical: !narrow,
-        );
-        final ownsNavigation = isChan || _tab == AppTab.settings;
-        final body = ownsNavigation
-            ? page
-            : narrow
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [Expanded(child: page), rail],
-                  )
-                : Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [Expanded(child: page), rail],
-                  );
+        final narrow = MediaQuery.sizeOf(context).width < 700;
         return U4Shell(
-            header: header, bottomSafeArea: !(isChan && narrow), child: body);
+          header: Column(mainAxisSize: MainAxisSize.min, children: [
+            _workspaceToolbar(),
+            Container(
+                height: narrow ? 6 : 8, color: ConsolePalette.of(context).bus),
+          ]),
+          bottomSafeArea:
+              !(narrow && (_tab == AppTab.mixer || _tab == AppTab.channel)),
+          child: _pageFor(_tab, store),
+        );
       },
     );
   }
@@ -485,31 +389,79 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         MixerDestination.debug => AppTab.debug,
       });
 
-  Widget _fxToolbar() => ListenableBuilder(
-      listenable: Listenable.merge([_mixer, _fx, _fxReadout]),
+  Widget _workspaceToolbar() => ListenableBuilder(
+      listenable: Listenable.merge([_mixer, _fx, _fxReadout, _channelFocus]),
       builder: (context, _) {
-        final compact = MediaQuery.sizeOf(context).width < 600;
-        final data =
-            _fxReadoutSession == _fx.controlSession ? _fxReadout.value : null;
+        final compact = MediaQuery.sizeOf(context).width < 800;
+        final store = widget.store;
+        Widget? readout;
+        if (_tab == AppTab.fx) {
+          final data =
+              _fxReadoutSession == _fx.controlSession ? _fxReadout.value : null;
+          readout = SelectedControlReadout(
+              data: data ??
+                  const SelectedControlReadoutData(
+                      target: 'FX', label: 'Select a control', value: '—'),
+              compact: compact,
+              connectionName:
+                  _mixer.demo ? 'Demo desk' : _mixer.connectionDisplayName,
+              onConnection: () => _go(AppTab.connect));
+        } else if (_tab == AppTab.channel &&
+            store.outputProcessingTarget == null) {
+          readout = ChannelToolbar(
+              key: ValueKey((store.stripKey, store.bank, store.engine.driver)),
+              store: store,
+              compact: compact,
+              embedded: true,
+              controlFocus: _channelFocus,
+              onHome: () => _go(AppTab.mixer),
+              onTool: _channelTool,
+              onLock: () => store.locked ? store.cmdUnlock() : store.cmdLock(),
+              trailing: TextButton(
+                  style:
+                      TextButton.styleFrom(backgroundColor: Colors.transparent),
+                  onPressed: () => _go(AppTab.connect),
+                  child: Text(
+                      _mixer.demo ? 'Demo desk' : _mixer.connectionDisplayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: compact ? 11 : 13,
+                          color: ConsolePalette.of(context).mutedText))));
+        }
         return MixerToolbar(
             controller: _mixer,
             compact: compact,
+            pageTitle: _tab == AppTab.mixer
+                ? null
+                : _tab == AppTab.channel && store.outputProcessingTarget != null
+                    ? 'Output processing'
+                    : _tab.label,
+            activeDestination: switch (_tab) {
+              AppTab.mixer => null,
+              AppTab.channel => MixerDestination.channel,
+              AppTab.fx => MixerDestination.fx,
+              AppTab.routing => MixerDestination.routing,
+              AppTab.meters => MixerDestination.meters,
+              AppTab.scenes => MixerDestination.scenes,
+              AppTab.connect => MixerDestination.connect,
+              AppTab.settings => MixerDestination.settings,
+              AppTab.debug => MixerDestination.debug,
+            },
+            showBankControls: true,
+            locked: store.locked,
+            onLock: _tab == AppTab.channel
+                ? () => store.locked ? store.cmdUnlock() : store.cmdLock()
+                : null,
             onNavigate: _navigateMixer,
-            onHome: () => setState(() => _showStart = true),
-            readoutContent: SelectedControlReadout(
-                data: data ??
-                    const SelectedControlReadoutData(
-                        target: 'FX', label: 'Select a control', value: '—'),
-                compact: compact,
-                connectionName: _mixer.connected && !_mixer.demo
-                    ? _mixer.connectionDisplayName
-                    : '',
-                onConnection: () => _go(AppTab.connect)));
+            onHome: () => _go(AppTab.mixer),
+            readoutContent: readout);
       });
 
   Widget _mixerPage() => MixerPage(
       controller: _mixer,
-      onHome: () => setState(() => _showStart = true),
+      embedded: true,
+      onHome: () => _go(AppTab.mixer),
       onNavigate: _navigateMixer);
 
   Widget _pageFor(AppTab t, AppStore store) =>
@@ -545,7 +497,8 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       AppTab.meters =>
         U4MetersPage(store: store, onClose: () => _go(AppTab.mixer)),
       AppTab.channel => store.outputProcessingTarget != null
-          ? OutputProcessingPage(store: store, onClose: () => _go(AppTab.mixer))
+          ? OutputProcessingPage(
+              store: store, onClose: () => _go(AppTab.mixer), embedded: true)
           : ChannelPage(
               key: ValueKey((store.stripKey, store.bank, store.engine.driver)),
               stripKey: store.stripKey,
@@ -564,7 +517,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
       AppTab.connect => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _EngineTagBanner(isReal: widget.isRealEngine),
+            if (!widget.isRealEngine) const _EngineTagBanner(isReal: false),
             Expanded(
                 child: U4ConnectionPage(
                     store: _conn, onOpenDebug: () => _go(AppTab.debug))),
@@ -572,6 +525,7 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
         ),
       AppTab.settings => U4SettingsPage(
           initialSection: _settingsSection,
+          embedded: true,
           store: _settings,
           onClose: () {
             _settingsSection = null;
@@ -647,84 +601,6 @@ class _AppShellState extends State<AppShell> with WidgetsBindingObserver {
                   ]);
             });
       });
-
-  String _sceneNum(AppStore s) {
-    for (final e in s.engine.scenes) {
-      if (e.current) return e.number.toString().padLeft(3, '0');
-    }
-    return '';
-  }
-
-  String _sceneName(AppStore s) {
-    for (final e in s.engine.scenes) {
-      if (e.current) return e.name.isEmpty ? 'Scene ${e.number}' : e.name;
-    }
-    return s.engine.scenes.isEmpty
-        ? 'Scenes'
-        : '${s.engine.scenes.length} ${s.engine.scenes.length == 1 ? 'scene' : 'scenes'}';
-  }
-}
-
-class _NavRail extends StatelessWidget {
-  final AppTab active;
-  final ValueChanged<AppTab> onGo;
-  final bool vertical;
-
-  const _NavRail(
-      {required this.active, required this.onGo, required this.vertical});
-
-  @override
-  Widget build(BuildContext context) {
-    final items = [
-      for (final t in AppTab.values)
-        Padding(
-          padding: EdgeInsets.only(
-              right: vertical ? 0 : 4, bottom: vertical ? 4 : 0),
-          child: TextButton(
-            onPressed: () => onGo(t),
-            style: TextButton.styleFrom(
-                backgroundColor: t == active
-                    ? ConsolePalette.of(context).control
-                    : Colors.transparent,
-                foregroundColor: t == active
-                    ? ConsolePalette.of(context).cyan
-                    : ConsolePalette.of(context).text7,
-                minimumSize: const Size(44, 44),
-                padding: EdgeInsets.symmetric(horizontal: vertical ? 10 : 14),
-                shape: const RoundedRectangleBorder(borderRadius: U4.rBtn)),
-            child: Text(t.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style:
-                    const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-          ),
-        ),
-    ];
-    if (vertical) {
-      return Container(
-        width: 108,
-        padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
-        decoration: BoxDecoration(
-            border: Border(
-                left:
-                    BorderSide(color: ConsolePalette.of(context).lineHeader))),
-        child: SingleChildScrollView(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch, children: items),
-        ),
-      );
-    }
-    return Container(
-      padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-      decoration: BoxDecoration(
-          border: Border(
-              top: BorderSide(color: ConsolePalette.of(context).lineHeader))),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(children: items),
-      ),
-    );
-  }
 }
 
 // Backend banner: the boot-time verdict stays loud on the Link tab.

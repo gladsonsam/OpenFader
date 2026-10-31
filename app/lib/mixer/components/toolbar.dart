@@ -13,9 +13,13 @@ class MixerToolbar extends StatelessWidget {
   final MixerController controller;
   final ValueChanged<MixerDestination> onNavigate;
 
-  /// Back to the Connections start screen (top-left home button).
+  /// Persistent workspace home (top-left brand button).
   final VoidCallback? onHome;
   final Widget? readoutContent;
+  final String? pageTitle;
+  final MixerDestination? activeDestination;
+  final VoidCallback? onLock;
+  final bool locked;
   final bool compact, showBankControls;
   const MixerToolbar(
       {super.key,
@@ -23,18 +27,23 @@ class MixerToolbar extends StatelessWidget {
       required this.onNavigate,
       this.onHome,
       this.readoutContent,
+      this.pageTitle,
+      this.activeDestination,
+      this.onLock,
+      this.locked = false,
       required this.compact,
       this.showBankControls = false});
   @override
   Widget build(BuildContext context) {
     final actions = <(String, MixerDestination)>[
+      ('Channel', MixerDestination.channel),
       ('Effects', MixerDestination.fx),
       ('Settings', MixerDestination.settings),
       ('Routing', MixerDestination.routing),
-      ('Meter bridge', MixerDestination.meters),
-      ('Snapshots', MixerDestination.scenes),
-      ('Connection', MixerDestination.connect),
-      ('Debug', MixerDestination.debug),
+      ('Meters', MixerDestination.meters),
+      ('Scenes', MixerDestination.scenes),
+      ('Connections', MixerDestination.connect),
+      ('Diagnostics', MixerDestination.debug),
     ];
     final readout = ValueListenableBuilder<MixerReadoutFocus>(
         valueListenable: controller.readoutFocus,
@@ -48,72 +57,108 @@ class MixerToolbar extends StatelessWidget {
                   borderRadius: MixerDesign.radius,
                   border: Border.all(color: ConsolePalette.of(context).line)),
               child: readoutContent ??
-                  Row(children: [
-                    // Equal constrained side lanes keep the numeric value centered
-                    // in the box on both layouts. Long names stay in the left lane.
-                    Expanded(
-                        child: GestureDetector(
-                            onTap: channel == null || channel.master
-                                ? null
-                                : () {
-                                    controller.select(channel);
-                                    onNavigate(MixerDestination.channel);
-                                  },
-                            behavior: HitTestBehavior.opaque,
-                            child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                      channel == null
-                                          ? controller.connected
-                                              ? 'No channel selected'
-                                              : 'Connecting…'
-                                          : _targetLabel(channel),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: mixerType(
-                                          context, compact ? 12 : 14,
-                                          color: ConsolePalette.of(context)
-                                              .mutedText)),
-                                  Text(_controlLabel(focus.control),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: mixerType(
-                                          context, compact ? 12 : 14,
-                                          color: ConsolePalette.of(context)
-                                              .mutedText)),
-                                ]))),
-                    Expanded(
-                        flex: compact ? 2 : 1,
-                        child: Center(
-                            child: _SelectedLevel(
-                                controller: controller,
-                                channel: channel,
-                                control: focus.control,
-                                compact: compact))),
-                    Expanded(
-                        child: controller.connected && !controller.demo
-                            ? Semantics(
-                                button: true,
-                                label:
-                                    'Connected to ${controller.connectionDisplayName}',
-                                child: Tooltip(
-                                    message: controller.connectionDisplayName,
-                                    child: InkWell(
-                                        onTap: () => onNavigate(
-                                            MixerDestination.connect),
-                                        child: Align(
-                                          alignment: Alignment.centerRight,
-                                          child: FittedBox(
-                                            fit: BoxFit.scaleDown,
-                                            child: _MixerConnectionStatus(
-                                                controller: controller,
-                                                compact: compact),
-                                          ),
-                                        ))))
-                            : const SizedBox.shrink()),
-                  ]));
+                  (pageTitle != null
+                      ? Row(children: [
+                          Expanded(
+                              child: Text(pageTitle!,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: mixerType(context, compact ? 16 : 18,
+                                      weight: FontWeight.w600))),
+                          Expanded(
+                              child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton(
+                                      style: TextButton.styleFrom(
+                                          backgroundColor: Colors.transparent),
+                                      onPressed: () =>
+                                          onNavigate(MixerDestination.connect),
+                                      child: Text(
+                                          controller.demo
+                                              ? 'Demo desk'
+                                              : controller.connected
+                                                  ? controller
+                                                      .connectionDisplayName
+                                                  : 'Disconnected',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: mixerType(
+                                              context, compact ? 11 : 13,
+                                              color: ConsolePalette.of(context)
+                                                  .mutedText))))),
+                        ])
+                      : Row(children: [
+                          // Equal constrained side lanes keep the numeric value centered
+                          // in the box on both layouts. Long names stay in the left lane.
+                          Expanded(
+                              child: GestureDetector(
+                                  onTap: channel == null || channel.master
+                                      ? null
+                                      : () {
+                                          controller.select(channel);
+                                          onNavigate(MixerDestination.channel);
+                                        },
+                                  behavior: HitTestBehavior.opaque,
+                                  child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                            channel == null
+                                                ? controller.connected
+                                                    ? 'No channel selected'
+                                                    : 'Connecting…'
+                                                : _targetLabel(channel),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: mixerType(
+                                                context, compact ? 12 : 14,
+                                                color:
+                                                    ConsolePalette.of(context)
+                                                        .mutedText)),
+                                        Text(_controlLabel(focus.control),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: mixerType(
+                                                context, compact ? 12 : 14,
+                                                color:
+                                                    ConsolePalette.of(context)
+                                                        .mutedText)),
+                                      ]))),
+                          Expanded(
+                              flex: compact ? 2 : 1,
+                              child: Center(
+                                  child: _SelectedLevel(
+                                      controller: controller,
+                                      channel: channel,
+                                      control: focus.control,
+                                      compact: compact))),
+                          Expanded(
+                              child: controller.connected && !controller.demo
+                                  ? Semantics(
+                                      button: true,
+                                      label:
+                                          'Connected to ${controller.connectionDisplayName}',
+                                      child: Tooltip(
+                                          message:
+                                              controller.connectionDisplayName,
+                                          child: InkWell(
+                                              onTap: () => onNavigate(
+                                                  MixerDestination.connect),
+                                              child: Align(
+                                                alignment:
+                                                    Alignment.centerRight,
+                                                child: FittedBox(
+                                                  fit: BoxFit.scaleDown,
+                                                  child: _MixerConnectionStatus(
+                                                      controller: controller,
+                                                      compact: compact),
+                                                ),
+                                              ))))
+                                  : const SizedBox.shrink()),
+                        ])));
         });
     return Container(
         height: compact ? 64 : 68,
@@ -142,6 +187,7 @@ class MixerToolbar extends StatelessWidget {
           if (!compact) ...[
             MixerToolButton(
                 label: 'Effects',
+                active: activeDestination == MixerDestination.fx,
                 onPressed: () => onNavigate(MixerDestination.fx),
                 child: Text('FX',
                     style: mixerType(context, 20,
@@ -150,78 +196,83 @@ class MixerToolbar extends StatelessWidget {
             const SizedBox(width: 8),
             MixerToolButton(
                 label: 'Settings',
+                active: activeDestination == MixerDestination.settings,
                 onPressed: () => onNavigate(MixerDestination.settings),
                 child: const DesignIcon(DesignSymbol.settings)),
             const SizedBox(width: 8),
             MixerToolButton(
                 label: 'Routing',
+                active: activeDestination == MixerDestination.routing,
                 onPressed: () => onNavigate(MixerDestination.routing),
                 child: const DesignIcon(DesignSymbol.routing)),
             const SizedBox(width: 8),
             MixerToolButton(
-                label: 'Layout',
-                onPressed: () =>
-                    showMixerLayout(context, controller, onNavigate),
-                child: const DesignIcon(DesignSymbol.layout)),
+                label: 'Meters',
+                active: activeDestination == MixerDestination.meters,
+                onPressed: () => onNavigate(MixerDestination.meters),
+                child: const Icon(Icons.graphic_eq, size: 22)),
+            const SizedBox(width: 8),
+            Builder(
+                builder: (anchor) => MixerToolButton(
+                    label: 'Mixer layout',
+                    onPressed: () => showMixerLayout(
+                        anchor, controller, onNavigate,
+                        locked: onLock == null ? null : locked, onLock: onLock),
+                    child: const DesignIcon(DesignSymbol.layout))),
             Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
                 child: SizedBox(
                     height: 44,
                     child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                            foregroundColor: ConsolePalette.of(context).lime,
+                            foregroundColor:
+                                activeDestination == MixerDestination.scenes
+                                    ? ConsolePalette.of(context).cyan
+                                    : ConsolePalette.of(context).mutedText,
                             backgroundColor: ConsolePalette.of(context).chip,
                             side: BorderSide(
                                 color: ConsolePalette.of(context).lineCtl),
                             shape: const RoundedRectangleBorder(
                                 borderRadius: MixerDesign.radius)),
                         onPressed: () => onNavigate(MixerDestination.scenes),
-                        child: const Text('Shows')))),
+                        child: const Text('Scenes')))),
           ],
-          if (compact)
-            Padding(
-              padding: const EdgeInsets.only(right: 10),
-              child: Builder(
-                  builder: (menuAnchor) => _MenuButton(
-                        onSelected: (action) => action(),
-                        items: [
-                          if (onHome != null)
-                            PopupMenuItem(
-                                value: onHome!,
-                                child: Text('Connections',
-                                    style: mixerType(context, 16))),
-                          for (final a in actions)
-                            PopupMenuItem(
-                                value: () => onNavigate(a.$2),
-                                child:
-                                    Text(a.$1, style: mixerType(context, 16))),
-                          if (showBankControls) ...[
-                            const PopupMenuDivider(),
-                            PopupMenuItem(
-                                value: () =>
-                                    showMixerBanks(context, controller),
-                                child: Text('Channels & banks',
-                                    style: mixerType(context, 16))),
-                            PopupMenuItem(
-                                value: () =>
-                                    showMixerBuses(menuAnchor, controller),
-                                child: Text('Master bus',
-                                    style: mixerType(context, 16))),
-                            PopupMenuItem(
-                                value: () => showMixerGroupMembership(
-                                    context, controller),
-                                child: Text('Group members',
-                                    style: mixerType(context, 16))),
-                            if (controller.muteGroupCount > 0)
-                              PopupMenuItem(
-                                  value: () =>
-                                      showMixerMuteGroups(context, controller),
-                                  child: Text('Mute groups',
-                                      style: mixerType(context, 16))),
-                          ],
+          Padding(
+            padding: EdgeInsets.only(right: compact ? 4 : 0, left: 4),
+            child: Builder(
+                builder: (menuAnchor) => _MenuButton(
+                      onSelected: (action) => action(),
+                      items: [
+                        if (onHome != null)
+                          PopupMenuItem(
+                              value: onHome!,
+                              child:
+                                  Text('Mixer', style: mixerType(context, 16))),
+                        for (final a in actions)
+                          PopupMenuItem(
+                              value: () => onNavigate(a.$2),
+                              child: Row(children: [
+                                Expanded(
+                                    child: Text(a.$1,
+                                        style: mixerType(context, 16))),
+                                if (activeDestination == a.$2)
+                                  Icon(Icons.check,
+                                      color: ConsolePalette.of(context).cyan,
+                                      size: 18),
+                              ])),
+                        if (showBankControls) ...[
+                          const PopupMenuDivider(),
+                          PopupMenuItem(
+                              height: 48,
+                              value: () => showMixerLayout(
+                                  menuAnchor, controller, onNavigate,
+                                  locked: onLock == null ? null : locked,
+                                  onLock: onLock),
+                              child: const Text('Mixer layout')),
                         ],
-                      )),
-            ),
+                      ],
+                    )),
+          ),
         ]));
   }
 }
@@ -236,7 +287,8 @@ class _MixerConnectionStatus extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final channels = controller.channels
-        .where((c) => c.channel != null &&
+        .where((c) =>
+            c.channel != null &&
             !controller.store.engine.locks.containsKey(c.channel) &&
             controller.store.accessTargetAllowed(c.key))
         .take(8)
@@ -246,19 +298,21 @@ class _MixerConnectionStatus extends StatelessWidget {
         controller.store.controlReadyNote(channel.channel!)
     ];
     return ListenableBuilder(
-      listenable: Listenable.merge(notes),
-      builder: (context, _) {
-        final ready = notes.where((note) => note.value & 3 == 3).length;
-        final syncing = notes.isNotEmpty && ready < notes.length;
-        return Text(
-            syncing ? 'Syncing $ready/${notes.length}' : controller.connectionDisplayName,
-            maxLines: 1,
-            textAlign: TextAlign.right,
-            style: mixerType(context, compact ? 11 : 13,
-                color: syncing
-                    ? ConsolePalette.of(context).mutedText
-                    : ConsolePalette.of(context).text));
-      });
+        listenable: Listenable.merge(notes),
+        builder: (context, _) {
+          final ready = notes.where((note) => note.value & 3 == 3).length;
+          final syncing = notes.isNotEmpty && ready < notes.length;
+          return Text(
+              syncing
+                  ? 'Syncing $ready/${notes.length}'
+                  : controller.connectionDisplayName,
+              maxLines: 1,
+              textAlign: TextAlign.right,
+              style: mixerType(context, compact ? 11 : 13,
+                  color: syncing
+                      ? ConsolePalette.of(context).mutedText
+                      : ConsolePalette.of(context).text));
+        });
   }
 }
 
@@ -429,6 +483,8 @@ class _MenuButton extends StatelessWidget {
               box.localToGlobal(box.size.bottomRight(Offset.zero),
                   ancestor: overlay)),
           Offset.zero & overlay.size),
+      constraints:
+          const BoxConstraints(minWidth: 224, maxWidth: 320, maxHeight: 480),
       items: items,
     );
     if (choice != null) onSelected(choice);
@@ -441,11 +497,13 @@ class MixerToolButton extends StatelessWidget {
   final String label;
   final Widget child;
   final VoidCallback onPressed;
+  final bool active;
   const MixerToolButton(
       {super.key,
       required this.label,
       required this.child,
-      required this.onPressed});
+      required this.onPressed,
+      this.active = false});
   @override
   Widget build(BuildContext context) => Semantics(
       button: true,
@@ -461,14 +519,18 @@ class MixerToolButton extends StatelessWidget {
                   child: Container(
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                          color: ConsolePalette.of(context).chip,
+                          color: active
+                              ? ConsolePalette.of(context).selected
+                              : ConsolePalette.of(context).chip,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                              color: ConsolePalette.of(context).line)),
+                              color: active
+                                  ? ConsolePalette.of(context).cyan
+                                  : ConsolePalette.of(context).line)),
                       child: child)))));
 }
 
-/// Approved top-left logo symbol. Tapping returns to Connections.
+/// Persistent workspace home: the logo always returns to Mixer.
 class _BrandButton extends StatelessWidget {
   final bool compact;
   final VoidCallback? onHome;
@@ -485,10 +547,10 @@ class _BrandButton extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, children: [
       Semantics(
           button: true,
-          label: 'OpenFader — Connections',
+          label: 'OpenFader — Mixer',
           onTap: onHome,
           child: Tooltip(
-              message: 'Connections',
+              message: 'Mixer',
               child: InkWell(
                   borderRadius: BorderRadius.circular(10),
                   onTap: onHome,
