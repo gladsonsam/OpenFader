@@ -149,26 +149,29 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
 
   @override
   bool get canPatch =>
+      _canEdit(_selected) &&
+      _selection != null &&
+      _selection == _identity(_selected);
+
+  bool _canEdit(Map? d) =>
+      d != null &&
       !isDisposed &&
       routingSupported &&
       engine.connected &&
-      app.accessFamilyAllowed(
-        _selected?['output'] == true
-            ? AccessFamily.outputRouting
-            : AccessFamily.inputRouting,
-      ) &&
-      _selection != null &&
-      _selection == _identity(_selected) &&
-      (_selected?['output'] == true || !engine.locks.containsKey(_sel)) &&
-      _membersAllowed;
+      _identity(d) != null &&
+      app.accessFamilyAllowed(d['output'] == true
+          ? AccessFamily.outputRouting
+          : AccessFamily.inputRouting) &&
+      (d['output'] == true || !engine.locks.containsKey(d['strip'])) &&
+      _membersAllowed(d);
 
-  bool get _membersAllowed {
-    final d = _selected;
+  bool _membersAllowed(Map? d) {
     if (d == null || !app.accessTargetAllowed(d['key'] as String)) return false;
     if (d['output'] == true) return true;
     // Backend owns provider control_members. Conservatively protect both sides
     // while stereo state is linked or unknown, including peer local limits.
-    final pair = engine.stereoPairs.where((p) => p.contains(_sel)).firstOrNull;
+    final pair =
+        engine.stereoPairs.where((p) => p.contains(d['strip'])).firstOrNull;
     if (pair == null ||
         pair.every((ch) => engine.params[ch]?['link'] == false)) {
       return true;
@@ -329,6 +332,77 @@ class ShellRoutingStore extends ShellStoreAdapter implements RoutingStore {
       return;
     }
     _write({'group': tile.group, 'index': tile.index});
+  }
+
+  bool _sourceAllowed(Map d, RouteSrcTile source) =>
+      _list(d['source_groups']).whereType<Map>().any((g) =>
+          g['key'] == source.group &&
+          g['count'] is int &&
+          source.index > 0 &&
+          source.index <= (g['count'] as int));
+
+  @override
+  List<RouteChange>? planMappings(List<(int, RouteSrcTile)> mappings) {
+    final plan = <RouteChange>[];
+    final seen = <int>{};
+    for (final (strip, source) in mappings) {
+      final d = _destination(strip);
+      if (d == null || !seen.add(strip) || !_sourceAllowed(d, source)) {
+        return null;
+      }
+      final route = _route(d);
+      if (route?['group'] == source.group && route?['index'] == source.index) {
+        continue;
+      }
+      if (!_canEdit(d)) return null;
+      final identity = _identity(d);
+      if (identity == null) return null;
+      plan.add(RouteChange(
+          RouteStrip(
+              strip: strip,
+              id: d['id'] as String,
+              name: _name(d),
+              src: _sourceLabel(route)),
+          source,
+          identity));
+    }
+    return List.unmodifiable(plan);
+  }
+
+  @override
+  bool planIsCurrent(List<RouteChange> plan) =>
+      !isDisposed &&
+      plan.every((change) {
+        final d = _destination(change.destination.strip);
+        return d != null &&
+            d['id'] == change.destination.id &&
+            _canEdit(d) &&
+            _sourceAllowed(d, change.source) &&
+            _identity(d) == change.guard;
+      });
+
+  @override
+  bool applyPlan(List<RouteChange> plan) {
+    if (plan.isEmpty || !planIsCurrent(plan)) return false;
+    // Preflight the complete plan before sending any existing route commands.
+    // This is a series of guarded writes, not a device-side atomic transaction.
+    for (final change in plan) {
+      final d = _destination(change.destination.strip)!;
+      final route = _route(d)!;
+      send(jsonEncode({
+        'cmd': 'route_patch',
+        'driver': engine.driver,
+        'epoch': engine.routingCaps['epoch'],
+        'destination': d['id'],
+        'expected': route['label'],
+        if (route['guard'] != null) 'guard': route['guard'],
+        'source': {'group': change.source.group, 'index': change.source.index},
+      }));
+    }
+    _sequence++;
+    _selection = null;
+    notifyListeners();
+    return true;
   }
 
   @override
