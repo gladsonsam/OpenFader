@@ -44,6 +44,7 @@ class _InputTab extends StatelessWidget {
         store.supports('phantom') &&
         store.paramBool('phantom') == current;
     final confirmed = await showDialog<bool>(
+        animationStyle: AnimationStyle.noAnimation,
         context: context,
         builder: (dialogContext) => ListenableBuilder(
             listenable: store,
@@ -82,6 +83,7 @@ class _InputTab extends StatelessWidget {
         store.sourceMode?.context == snapshot.context &&
         store.sourceMode?.editable == true;
     final result = await showDialog<int>(
+        animationStyle: AnimationStyle.noAnimation,
         context: context,
         builder: (dialogContext) => StatefulBuilder(
             builder: (context, setLocalState) => ListenableBuilder(
@@ -321,6 +323,7 @@ class _InputTab extends StatelessWidget {
               onTap: control.available &&
                       store.destinationControlIsCurrent(control)
                   ? () => showDialog<void>(
+                      animationStyle: AnimationStyle.noAnimation,
                       context: context,
                       builder: (_) => DestinationControlEditor(
                           changes: store,

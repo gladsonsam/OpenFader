@@ -94,6 +94,7 @@ class _AboutDetail extends StatelessWidget {
               label: 'Licences & credits',
               icon: Icons.chevron_right,
               onTap: () => showDialog<void>(
+                animationStyle: AnimationStyle.noAnimation,
                 context: context,
                 builder: (context) => AlertDialog(
                   backgroundColor: ConsolePalette.of(context).chip,

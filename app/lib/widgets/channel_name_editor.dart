@@ -40,6 +40,7 @@ Future<void> showChannelNameEditor(
         ]
       : <ProcessorPresetTarget>[];
   return showDialog<void>(
+    animationStyle: AnimationStyle.noAnimation,
     context: context,
     barrierDismissible: false,
     builder: (_) => _NameEditor(
@@ -73,6 +74,7 @@ class _NameEditorState extends State<_NameEditor> {
     final original = widget.store.linkedForChannel(widget.target);
     if (_pending || original == null) return;
     final confirmed = await showDialog<bool>(
+        animationStyle: AnimationStyle.noAnimation,
         context: context,
         builder: (context) => AlertDialog(
               title: Text(linked ? 'Link channels?' : 'Unlink channels?'),
@@ -102,6 +104,7 @@ class _NameEditorState extends State<_NameEditor> {
   }
 
   Future<void> _presets() => showDialog<void>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) =>
           SimpleDialog(title: const Text('Presets'), children: [
@@ -219,6 +222,7 @@ class _NameEditorState extends State<_NameEditor> {
                         ? null
                         : () async {
                             final sent = await showDialog<bool>(
+                                animationStyle: AnimationStyle.noAnimation,
                                 context: context,
                                 barrierDismissible: false,
                                 builder: (_) => _AppearanceEditor(
@@ -250,6 +254,7 @@ class _NameEditorState extends State<_NameEditor> {
                         ? null
                         : () async {
                             final sent = await showDialog<bool>(
+                                animationStyle: AnimationStyle.noAnimation,
                                 context: context,
                                 barrierDismissible: false,
                                 builder: (_) => _AppearanceEditor(

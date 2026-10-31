@@ -26,6 +26,7 @@ class OutputGeqDraftActions extends StatelessWidget {
       return;
     }
     showDialog<void>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       barrierDismissible: false,
       builder: (_) =>

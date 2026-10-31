@@ -269,6 +269,7 @@ class _U4FxPageState extends State<U4FxPage> {
                 return;
               }
               await showDialog<void>(
+                  animationStyle: AnimationStyle.noAnimation,
                   context: context,
                   barrierDismissible: false,
                   builder: (_) => DestinationControlEditor(
@@ -295,6 +296,7 @@ class _U4FxPageState extends State<U4FxPage> {
                   final double? value;
                   if (knob.choices.isNotEmpty) {
                     value = await showDialog<double>(
+                        animationStyle: AnimationStyle.noAnimation,
                         context: context,
                         builder: (context) =>
                             SimpleDialog(title: Text(knob.label), children: [
@@ -484,6 +486,7 @@ class _NativeFxDetail extends StatelessWidget {
               ),
               onPressed: store.destinationControlIsCurrent(selector)
                   ? () => showDialog<void>(
+                        animationStyle: AnimationStyle.noAnimation,
                         context: context,
                         barrierDismissible: false,
                         builder: (_) => DestinationControlEditor(

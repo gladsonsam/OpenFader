@@ -333,6 +333,7 @@ class _ConnectionsStartState extends State<ConnectionsStartScreen> {
   void _showManualAdd() {
     if (_store.probing) return;
     showDialog<void>(
+      animationStyle: AnimationStyle.noAnimation,
       context: context,
       builder: (context) => _ManualAddDialog(
         onSubmit: (addr, name, mixerType) {
