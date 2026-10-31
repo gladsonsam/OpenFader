@@ -114,7 +114,7 @@ class _MixerProcessingRackState extends State<MixerProcessingRack> {
                   47,
                   79,
                   Padding(
-                      padding: const EdgeInsets.only(left: 4, right: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 7),
                       child: MixerEqPreview(
                           channel: widget.channel, onOpen: widget.onOpen))),
               place(
