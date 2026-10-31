@@ -92,7 +92,9 @@ class _PanPainter extends CustomPainter {
     s = Size(s.width, 44);
     mixerBox(c, Offset.zero & s, palette.well,
         radius: 12, border: held ? palette.selectedLine : null);
-    final left = 12.0, right = s.width - 12, center = s.width / 2;
+    final left = MixerStripMetrics.contentInset,
+        right = s.width - MixerStripMetrics.contentInset,
+        center = s.width / 2;
     final bow = Path()
       ..moveTo(left, 8)
       ..quadraticBezierTo(center, 26, right, 8)
