@@ -404,7 +404,7 @@ pub struct NativeSnapshotSlot {
 /// `received` stays true once ANY genuine snapshot push has been observed
 /// this session, even when `slots` is empty, that is PARTIAL observed
 /// metadata only, never a full catalogue and never proof of an empty desk.
-/// `ready` therefore means "observed something", not "complete inventory":
+/// Unless `complete` is true, `ready` means "observed something", not a complete inventory:
 /// `slots` empty with `current: Some(n)` proves only the last reported
 /// recall, never a non-empty inventory. `connected` reports whether a
 /// live desk session backs this view; `current` is the last
@@ -412,7 +412,11 @@ pub struct NativeSnapshotSlot {
 /// slot-0 default.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct NativeSnapshots {
-    /// Push-evidenced slots in slot-id order.
+    /// A validated stored-show catalogue, rather than partial name pushes.
+    pub complete: bool,
+    /// Bounded catalogue fetch failure, without hiding already observed names.
+    pub error: Option<String>,
+    /// Desk-pushed or validated stored-show slots in slot-id order.
     pub slots: Vec<NativeSnapshotSlot>,
     /// Last desk-evidenced recall slot (`None` = no recall observed).
     pub current: Option<u32>,

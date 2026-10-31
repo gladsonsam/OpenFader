@@ -37,7 +37,7 @@ use tokio::sync::{broadcast, Mutex};
 
 /// Live DL32S-class mixer on TCP 50001.
 pub struct Dl32sDriver {
-    session: Arc<Mutex<Option<MackieSession>>>,
+    session: Arc<Mutex<Option<Arc<MackieSession>>>>,
     /// Serialize input/output processor writes through independent readback.
     /// Output readback releases the session for native ingestion; input
     /// readback consumes transport provenance directly while holding it.

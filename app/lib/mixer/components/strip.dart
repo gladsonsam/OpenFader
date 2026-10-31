@@ -63,30 +63,37 @@ class MixerStrip extends StatelessWidget {
           final visible = layout.visibleOrder;
           final gap = g.y(compact ? 8 : 10);
           final top = g.rackY;
-          final available = (box.maxHeight - top - gap * (visible.length - 1)).clamp(0.0, box.maxHeight);
-          final fixed = visible.fold<double>(0, (sum, element) => sum + (heights[element] ?? 0));
-          final densityScale = layout.faderWeight > 3
-              ? 1 - (layout.faderWeight - 3) * .08
-              : 1.0;
+          final available = (box.maxHeight - top - gap * (visible.length - 1))
+              .clamp(0.0, box.maxHeight);
+          final fixed = visible.fold<double>(
+              0, (sum, element) => sum + (heights[element] ?? 0));
+          final densityScale =
+              layout.faderWeight > 3 ? 1 - (layout.faderWeight - 3) * .08 : 1.0;
           final fitScale = fixed > available ? available / fixed : 1.0;
           final scale = densityScale < fitScale ? densityScale : fitScale;
           final remaining = (available - fixed * scale).clamp(0.0, available);
-          final faderHeight = remaining * (layout.faderWeight < 3
-              ? .7 + .15 * (layout.faderWeight - 1)
-              : 1.0);
+          final faderHeight = remaining *
+              (layout.faderWeight < 3
+                  ? .7 + .15 * (layout.faderWeight - 1)
+                  : 1.0);
           var y = top;
           for (final element in visible) {
-            final height = element == StripElement.fader ? faderHeight : (heights[element] ?? 0) * scale;
+            final height = element == StripElement.fader
+                ? faderHeight
+                : (heights[element] ?? 0) * scale;
             positions[element] = Rect.fromLTWH(0, y, box.maxWidth, height);
             y += height + gap;
           }
         }
+        double allocated(StripElement element, double fallback) =>
+            baseline ? fallback : positions[element]?.height ?? 0;
         final nameplateScale = baseline
             ? 1.0
             : ((positions[StripElement.nameplate]?.height ?? 0) /
                     (box.maxHeight - g.scribbleY))
                 .clamp(0.0, 1.0);
-        Widget place(StripElement element, double y, double height, Widget child,
+        Widget place(
+            StripElement element, double y, double height, Widget child,
             {bool touch = false}) {
           if (!layout.visible.contains(element)) return const SizedBox.shrink();
           if (!baseline) {
@@ -125,7 +132,8 @@ class MixerStrip extends StatelessWidget {
                           g.rackH,
                           compact || layout.compactProcessing
                               ? MixerEqPreview(
-                                  channel: ch, compact: true,
+                                  channel: ch,
+                                  compact: true,
                                   showPhantom: controller.hasPhantomOf(ch),
                                   onOpen: onOpenProcessing ?? onOpen)
                               : MixerProcessingRack(
@@ -143,7 +151,8 @@ class MixerStrip extends StatelessWidget {
                               ? MixerPan(
                                   name: ch.name,
                                   value: 0,
-                                  visualHeight: g.panH,
+                                  visualHeight:
+                                      allocated(StripElement.pan, g.panH),
                                   onChanged: null)
                               : ValueListenableBuilder<double>(
                                   valueListenable:
@@ -153,7 +162,8 @@ class MixerStrip extends StatelessWidget {
                                       value: pan,
                                       onTouch: () => onControlFocus
                                           ?.call(MixerReadoutControl.pan),
-                                      visualHeight: g.panH,
+                                      visualHeight:
+                                          allocated(StripElement.pan, g.panH),
                                       onChanged: ready & 4 != 0
                                           ? (v) {
                                               onControlFocus?.call(
@@ -171,7 +181,8 @@ class MixerStrip extends StatelessWidget {
                                   controller.muteNoteOf(chIndex, isMaster),
                               builder: (context, muted, _) => MixerToggle(
                                   label: ready & 2 != 0 ? 'Mute' : 'Mute · —',
-                                  visualHeight: g.muteH,
+                                  visualHeight:
+                                      allocated(StripElement.mute, g.muteH),
                                   fontSize: g.x(compact ? 20 : 32),
                                   channelName: ch.name,
                                   on: ready & 2 != 0 && muted,
@@ -196,60 +207,48 @@ class MixerStrip extends StatelessWidget {
                                             ignoring: ready & 1 == 0,
                                             child: Opacity(
                                                 opacity: ready & 1 != 0 ? 1 : 0,
-                                                child: MixerFader(
-                                                    channel:
-                                                        _withFader(ch, fader),
-                                                    compact: compact,
-                                                    showMeter: layout.showMeter,
-                                                    onTouch: () =>
-                                                        onControlFocus?.call(
-                                                            MixerReadoutControl
-                                                                .volume),
-                                                    onPosition: (v) {
-                                                      onControlFocus?.call(
-                                                          MixerReadoutControl
-                                                              .volume);
-                                                      controller.setPosition(
-                                                          ch, v);
-                                                    },
-                                                    onSelect: () {
-                                                      onControlFocus?.call(
-                                                          MixerReadoutControl
-                                                              .volume);
-                                                      controller.select(ch);
-                                                    },
-                                                    onUnity: () {
-                                                      onControlFocus?.call(
-                                                          MixerReadoutControl
-                                                              .volume);
-                                                      controller.unity(ch);
-                                                    })))),
-                                    if (!isMaster && chIndex != null)
-                                      Positioned(
-                                          left: 0,
-                                          right: 0,
-                                          bottom: 0,
-                                          child: IgnorePointer(
-                                              child: ValueListenableBuilder<
-                                                  String>(
-                                            valueListenable: controller.store
-                                                .controlGroupNoteOf(chIndex),
-                                            builder: (context, text, _) => Text(
-                                                text,
-                                                maxLines: 2,
-                                                textAlign: TextAlign.center,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: AppDesign.type(10,
-                                                    color: ConsolePalette.of(
-                                                            context)
-                                                        .text7)),
-                                          ))),
+                                                child: ValueListenableBuilder<
+                                                        String>(
+                                                    valueListenable: controller
+                                                        .store
+                                                        .controlGroupNoteOf(
+                                                            chIndex ?? -1),
+                                                    builder: (context, group, _) => Tooltip(
+                                                        message: group,
+                                                        child: MixerFader(
+                                                            channel: _withFader(ch, fader),
+                                                            compact: compact,
+                                                            showMeter: layout.showMeter,
+                                                            onTouch: () => onControlFocus?.call(MixerReadoutControl.volume),
+                                                            onPosition: (v) {
+                                                              onControlFocus?.call(
+                                                                  MixerReadoutControl
+                                                                      .volume);
+                                                              controller
+                                                                  .setPosition(
+                                                                      ch, v);
+                                                            },
+                                                            onSelect: () {
+                                                              onControlFocus?.call(
+                                                                  MixerReadoutControl
+                                                                      .volume);
+                                                              controller
+                                                                  .select(ch);
+                                                            },
+                                                            onUnity: () {
+                                                              onControlFocus?.call(
+                                                                  MixerReadoutControl
+                                                                      .volume);
+                                                              controller
+                                                                  .unity(ch);
+                                                            })))))),
                                     if (ready & 1 == 0)
                                       Center(
                                           child: Text('—',
                                               style: AppDesign.type(14,
-                                                  color: ConsolePalette.of(context)
-                                                      .mutedText))),
+                                                  color:
+                                                      ConsolePalette.of(context)
+                                                          .mutedText))),
                                   ]))),
                       place(
                           StripElement.solo,
@@ -263,7 +262,8 @@ class MixerStrip extends StatelessWidget {
                                   unavailableReason: ready & 8 != 0
                                       ? null
                                       : 'Solo unavailable',
-                                  visualHeight: g.soloH,
+                                  visualHeight:
+                                      allocated(StripElement.solo, g.soloH),
                                   fontSize: g.x(compact ? 20 : 32),
                                   channelName: ch.name,
                                   on: ready & 8 != 0 && solo,
@@ -274,32 +274,44 @@ class MixerStrip extends StatelessWidget {
                                       ? () => controller.toggleSolo(ch)
                                       : null)),
                           touch: true),
-                      if (layout.visible.contains(StripElement.nameplate)) Positioned(
-                          left: 0,
-                          right: 0,
-                          top: baseline ? g.scribbleY : positions[StripElement.nameplate]?.top ?? g.scribbleY,
-                          height: baseline ? box.maxHeight - g.scribbleY : positions[StripElement.nameplate]?.height ?? 0,
-                          child: MixerNameplate(
-                              channel: ch,
-                              iconHeight: g.scribbleH * nameplateScale,
-                              nameHeight: g.nameH * nameplateScale,
-                              nameOffset: (g.nameY - g.scribbleY) * nameplateScale,
-                              fontSize: g.nameText,
-                              compact: compact,
-                              onSelect: () => controller.select(ch),
-                              onOpen: onOpen,
-                              onOpenAt: onOpenAt,
-                              onRename: (identityChannel ?? chIndex) == null ||
-                                      controller.store.captureNameTarget(identityChannel ?? chIndex) == null
-                                  ? null
-                                  : () {
-                                      final target = controller.store
-                                          .captureNameTarget(identityChannel ?? chIndex);
-                                      if (target != null) {
-                                        showChannelNameEditor(
-                                            context, controller.store, target);
-                                      }
-                                    })),
+                      if (layout.visible.contains(StripElement.nameplate))
+                        Positioned(
+                            left: 0,
+                            right: 0,
+                            top: baseline
+                                ? g.scribbleY
+                                : positions[StripElement.nameplate]?.top ??
+                                    g.scribbleY,
+                            height: baseline
+                                ? box.maxHeight - g.scribbleY
+                                : positions[StripElement.nameplate]?.height ??
+                                    0,
+                            child: MixerNameplate(
+                                channel: ch,
+                                iconHeight: g.scribbleH * nameplateScale,
+                                nameHeight: g.nameH * nameplateScale,
+                                nameOffset:
+                                    (g.nameY - g.scribbleY) * nameplateScale,
+                                fontSize: g.nameText,
+                                compact: compact,
+                                onSelect: () => controller.select(ch),
+                                onOpen: onOpen,
+                                onOpenAt: onOpenAt,
+                                onRename: (identityChannel ?? chIndex) ==
+                                            null ||
+                                        controller.store.captureNameTarget(
+                                                identityChannel ?? chIndex) ==
+                                            null
+                                    ? null
+                                    : () {
+                                        final target = controller.store
+                                            .captureNameTarget(
+                                                identityChannel ?? chIndex);
+                                        if (target != null) {
+                                          showChannelNameEditor(context,
+                                              controller.store, target);
+                                        }
+                                      })),
                     ]))));
       });
 

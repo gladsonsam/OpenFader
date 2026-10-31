@@ -70,7 +70,7 @@ class MixerNameplate extends StatelessWidget {
             final artworkPadding =
                 channel.master ? tabHeight : numberHeight + 2 * sx;
             final artworkSize = math.min((compact ? 48 : 86) * sx,
-                math.max(0.0, identityHeight - 2 * artworkPadding));
+                math.max(0.0, identityHeight - artworkPadding));
             return Stack(clipBehavior: Clip.none, children: [
               if (!channel.master)
                 Positioned(
@@ -92,8 +92,8 @@ class MixerNameplate extends StatelessWidget {
               Positioned(
                   left: 0,
                   right: 0,
-                  top: 0,
-                  height: identityHeight,
+                  top: artworkPadding,
+                  height: math.max(0, identityHeight - artworkPadding),
                   child: Center(
                       child: SizedBox.square(
                           dimension: artworkSize,

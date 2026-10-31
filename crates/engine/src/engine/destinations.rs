@@ -141,6 +141,8 @@ impl Engine {
     ) -> Event {
         match view {
             None => Event::NativeSnapshots {
+                complete: false,
+                error: None,
                 driver: driver.to_string(),
                 supported: false,
                 read_only: false,
@@ -150,6 +152,8 @@ impl Engine {
                 epoch,
             },
             Some(v) => Event::NativeSnapshots {
+                complete: v.complete,
+                error: v.error.clone(),
                 driver: driver.to_string(),
                 supported: true,
                 read_only: true,

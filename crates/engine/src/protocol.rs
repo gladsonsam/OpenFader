@@ -1297,6 +1297,8 @@ pub enum Event {
     /// Unicast in the attach/resume snapshots; broadcast on change (no
     /// audio-param fanout, this frame carries no strip params).
     NativeSnapshots {
+        complete: bool,
+        error: Option<String>,
         driver: String,
         supported: bool,
         read_only: bool,

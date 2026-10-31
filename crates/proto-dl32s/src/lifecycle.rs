@@ -97,7 +97,9 @@ impl Dl32sDriver {
         Ok(())
     }
 
-    pub(super) async fn session(&self) -> anyhow::Result<MutexGuard<'_, Option<MackieSession>>> {
+    pub(super) async fn session(
+        &self,
+    ) -> anyhow::Result<MutexGuard<'_, Option<Arc<MackieSession>>>> {
         let guard = self.session.lock().await;
         if guard.is_none() {
             anyhow::bail!("not connected: call connect() first");
@@ -291,7 +293,14 @@ impl Dl32sDriver {
                 }
             }
         });
-        *self.session.lock().await = Some(session);
+        let session = Arc::new(session);
+        *self.session.lock().await = Some(session.clone());
+        crate::native_library::start_inventory_load(
+            session,
+            self.native.clone(),
+            self.generation.clone(),
+            generation,
+        );
         self.start_input_refresh(generation);
         *self.addr.lock().await = Some(addr.to_string());
         Ok(())
