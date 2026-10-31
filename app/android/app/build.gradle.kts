@@ -14,7 +14,9 @@ if (System.getenv("GITHUB_ACTIONS") == "true" && ciDevelopmentKeystore.isNullOrB
 android {
     namespace = "com.openfader.app"
     // permission_handler_android 13.x metadata requires API 37.
-    compileSdk = 37
+    compileSdk {
+        version = release(37) { minorApiLevel = 0 }
+    }
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

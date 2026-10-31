@@ -1,4 +1,6 @@
-use crate::{read_manifest, recover, ChannelLayout, TakeManifest, TakeWriter, MAX_CHANNELS};
+use crate::{
+    read_manifest, recover, ChannelLayout, DeviceInfo, TakeManifest, TakeWriter, MAX_CHANNELS,
+};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -32,14 +34,6 @@ fn validate_playback_config(channels: u16, rate: u32, take_rate: u32) -> io::Res
         return Err(error("device sample rate differs from take"));
     }
     Ok(())
-}
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DeviceInfo {
-    pub id: String,
-    pub name: String,
-    pub input_channels: u16,
-    pub output_channels: u16,
-    pub sample_rate: u32,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RecorderStatus {
