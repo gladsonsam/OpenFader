@@ -111,36 +111,39 @@ class MixerToolbar extends StatelessWidget {
                                                         .mutedText)),
                                       ]))),
                           Expanded(
-                              flex: compact ? 2 : 1,
+                              flex: 1,
                               child: Center(
                                   child: _SelectedLevel(
                                       controller: controller,
                                       channel: channel,
                                       control: focus.control,
                                       compact: compact))),
-                          Expanded(
-                              child: controller.connected && !controller.demo
-                                  ? Semantics(
-                                      button: true,
-                                      label:
-                                          'Connected to ${controller.connectionDisplayName}',
-                                      child: Tooltip(
-                                          message:
-                                              controller.connectionDisplayName,
-                                          child: InkWell(
-                                              onTap: () => onNavigate(
-                                                  MixerDestination.connect),
-                                              child: Align(
-                                                alignment:
-                                                    Alignment.centerRight,
-                                                child: FittedBox(
-                                                  fit: BoxFit.scaleDown,
-                                                  child: _MixerConnectionStatus(
-                                                      controller: controller,
-                                                      compact: compact),
-                                                ),
-                                              ))))
-                                  : const SizedBox.shrink()),
+                          if (!compact)
+                            Expanded(
+                                child: controller.connected && !controller.demo
+                                    ? Semantics(
+                                        button: true,
+                                        label:
+                                            'Connected to ${controller.connectionDisplayName}',
+                                        child: Tooltip(
+                                            message: controller
+                                                .connectionDisplayName,
+                                            child: InkWell(
+                                                onTap: () => onNavigate(
+                                                    MixerDestination.connect),
+                                                child: Align(
+                                                  alignment:
+                                                      Alignment.centerRight,
+                                                  child: FittedBox(
+                                                    fit: BoxFit.scaleDown,
+                                                    child:
+                                                        _MixerConnectionStatus(
+                                                            controller:
+                                                                controller,
+                                                            compact: compact),
+                                                  ),
+                                                ))))
+                                    : const SizedBox.shrink()),
                         ])));
         });
     return Container(
@@ -165,11 +168,32 @@ class MixerToolbar extends StatelessWidget {
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: readout)),
           const SizedBox(width: 8),
+          MixerToolButton(
+              label: 'Effects',
+              active: pageTitle == 'FX',
+              onPressed: () => onNavigate(MixerDestination.fx),
+              child: Text('FX',
+                  style: mixerType(context, 17,
+                      color: ConsolePalette.of(context).mutedText,
+                      weight: FontWeight.w600))),
+          const SizedBox(width: 8),
+          MixerToolButton(
+              label: 'Settings',
+              active: pageTitle == 'Settings',
+              onPressed: () => onNavigate(MixerDestination.settings),
+              child: Icon(Icons.settings_outlined,
+                  size: 22, color: ConsolePalette.of(context).mutedText)),
+          const SizedBox(width: 8),
           SizedBox(
+              width: compact ? 48 : null,
               height: 44,
               child: OutlinedButton(
                   onPressed: pageTitle == 'Tools' ? onHome : onOpenTools,
-                  child: Text(pageTitle == 'Tools' ? 'Mixer' : 'Tools'))),
+                  style: compact
+                      ? OutlinedButton.styleFrom(padding: EdgeInsets.zero)
+                      : null,
+                  child: Text(pageTitle == 'Tools' ? 'Mixer' : 'Tools',
+                      style: compact ? const TextStyle(fontSize: 12) : null))),
         ]));
   }
 }
@@ -286,7 +310,7 @@ class _SelectedLevel extends StatelessWidget {
                 fit: BoxFit.scaleDown,
                 child: Text(text,
                     maxLines: 1,
-                    style: mixerType(context, compact ? 18 : 22,
+                    style: mixerType(context, compact ? 16 : 18,
                         color: ConsolePalette.of(context).lime,
                         weight: FontWeight.w700)))));
   }
@@ -440,7 +464,7 @@ class SelectedControlReadout extends StatelessWidget {
                       color: ConsolePalette.of(context).mutedText)),
             ])),
         Expanded(
-            flex: compact ? 2 : 1,
+            flex: 1,
             child: Semantics(
                 button: data.onEdit != null,
                 label: '${data.target}, ${data.label}, ${data.value}',
@@ -452,7 +476,7 @@ class SelectedControlReadout extends StatelessWidget {
                       FittedBox(
                           fit: BoxFit.scaleDown,
                           child: Text(data.value,
-                              style: mixerType(context, compact ? 20 : 24,
+                              style: mixerType(context, compact ? 16 : 18,
                                   color: ConsolePalette.of(context).lime,
                                   weight: FontWeight.w700))),
                       if (data.unconfirmed)
@@ -460,16 +484,17 @@ class SelectedControlReadout extends StatelessWidget {
                             style: mixerType(context, 11,
                                 color: ConsolePalette.of(context).mutedText)),
                     ]))))),
-        Expanded(
-            child: InkWell(
-                onTap: onConnection,
-                child: Align(
-                    alignment: Alignment.centerRight,
-                    child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(connectionName,
-                            maxLines: 1,
-                            style: mixerType(context, compact ? 11 : 13,
-                                color: ConsolePalette.of(context).text)))))),
+        if (!compact)
+          Expanded(
+              child: InkWell(
+                  onTap: onConnection,
+                  child: Align(
+                      alignment: Alignment.centerRight,
+                      child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(connectionName,
+                              maxLines: 1,
+                              style: mixerType(context, compact ? 11 : 13,
+                                  color: ConsolePalette.of(context).text)))))),
       ]);
 }
