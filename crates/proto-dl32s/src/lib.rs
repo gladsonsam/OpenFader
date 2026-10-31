@@ -53,7 +53,9 @@ pub struct Dl32sDriver {
     /// the session's push-only verified stores on connect (covering pushes
     /// that arrived before this connection's ingest subscription), then
     /// updated from genuine `SnapshotRecall`/`SnapshotRename` pushes by
-    /// the ingest task. Own saves/deletes never touch it. Reset on
+    /// the ingest task. A bounded read-only stored-show fetch publishes the complete
+    /// catalogue after identity/CRC/session validation. Own saves/deletes never
+    /// fabricate entries. Reset on
     /// disconnect so a dead session reads unavailable, never the last desk.
     native: Arc<std::sync::Mutex<NativeCache>>,
 }

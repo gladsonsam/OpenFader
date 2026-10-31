@@ -36,7 +36,7 @@ impl Dl32sDriver {
             "operations":if connected && cache.library_show_info.is_some() {if cache.library_index.is_some() {vec!["inspect","read_show","refresh","export_file","inspect_file","recall","rename","store","replace","delete"]} else {vec!["inspect","read_show","refresh","export_file","inspect_file","recall","rename"]}} else {vec!["inspect","read_show","refresh","export_file","inspect_file"]},
             "slots":slots,
             "current":if connected {cache.view.current} else {None},
-            "limitations":"Stored index is complete only after explicit ZIP refresh. Store captures native current state; readback verifies stored files, not every current edit or safes. Default 0 is protected; delete compacts positions. Firmware restore remains unproved. Export preserves the original stored-show archive; importing inspects a file without writing the mixer. Names use a conservative 63-byte UTF-8 envelope, not an asserted native UI character limit."
+            "limitations":"Stored index is complete only after a validated ZIP read. Store captures native current state; readback verifies stored files, not every current edit or safes. Default 0 is protected; delete compacts positions. Firmware restore remains unproved. Export preserves the original stored-show archive; importing inspects a file without writing the mixer. Names use a conservative 63-byte UTF-8 envelope, not an asserted native UI character limit."
         }))
     }
 
@@ -88,6 +88,8 @@ impl Dl32sDriver {
                         cache.view.slots.clear();
                         cache.view.current = None;
                         cache.view.received = false;
+                        cache.view.complete = false;
+                        cache.view.error = None;
                         cache.library_revision += 1;
                     }
                     cache.library_show_info = Some(info.body);
@@ -126,7 +128,7 @@ impl Dl32sDriver {
                 );
                 let result: anyhow::Result<(Vec<u8>, Value)> = async {
                     let bytes = session
-                        .download_file_guarded("Show.zip", Duration::from_secs(5), &authorize)
+                        .download_show_archive_guarded(Duration::from_secs(5), &authorize)
                         .await?;
                     let after = session
                         .get_show_info_guarded(Duration::from_secs(5), &valid)
@@ -225,7 +227,7 @@ impl Dl32sDriver {
                 );
                 let before = crate::native_archive::NativeArchive::parse(
                     session
-                        .download_file_guarded("Show.zip", Duration::from_secs(5), &valid)
+                        .download_show_archive_guarded(Duration::from_secs(5), &valid)
                         .await?,
                 )?;
                 let fresh = crate::native_show::inspect(&before)?;
@@ -252,7 +254,7 @@ impl Dl32sDriver {
                         .await?;
                     let after = crate::native_archive::NativeArchive::parse(
                         session
-                            .download_file_guarded("Show.zip", Duration::from_secs(5), check)
+                            .download_show_archive_guarded(Duration::from_secs(5), check)
                             .await?,
                     )?;
                     let updated = crate::native_show::inspect(&after)?;
@@ -323,7 +325,7 @@ impl Dl32sDriver {
                 let baseline = if expected["stored_index"].is_object() {
                     let archive = crate::native_archive::NativeArchive::parse(
                         session
-                            .download_file_guarded("Show.zip", Duration::from_secs(5), &valid)
+                            .download_show_archive_guarded(Duration::from_secs(5), &valid)
                             .await?,
                     )?;
                     let inspected = crate::native_show::inspect(&archive)?;
@@ -347,6 +349,8 @@ impl Dl32sDriver {
                         cache.view.slots.clear();
                         cache.view.current = None;
                         cache.view.received = false;
+                        cache.view.complete = false;
+                        cache.view.error = None;
                         cache.library_revision += 1;
                     }
                     return Ok(receipt("rejected", "Native show identity changed. Nothing was mutated. Inspect and read identity again.", Value::Null));
@@ -402,7 +406,7 @@ impl Dl32sDriver {
                             .await?;
                         let after = crate::native_archive::NativeArchive::parse(
                             session
-                                .download_file_guarded("Show.zip", Duration::from_secs(5), check)
+                                .download_show_archive_guarded(Duration::from_secs(5), check)
                                 .await?,
                         )?;
                         let index = crate::native_show::inspect(&after)?;
@@ -561,7 +565,7 @@ pub(super) fn start_inventory_load(
                         && c.library_revision == revision
                 })
         };
-        let result = tokio::time::timeout(Duration::from_secs(30), async {
+        let result = tokio::time::timeout(Duration::from_secs(60), async {
             let before = session
                 .get_show_info_guarded(Duration::from_secs(5), &valid)
                 .await?;
@@ -570,7 +574,7 @@ pub(super) fn start_inventory_load(
                 "unsupported show identity"
             );
             let bytes = session
-                .download_file_guarded("Show.zip", Duration::from_secs(20), &valid)
+                .download_show_archive_guarded(Duration::from_secs(20), &valid)
                 .await?;
             let after = session
                 .get_show_info_guarded(Duration::from_secs(5), &valid)
